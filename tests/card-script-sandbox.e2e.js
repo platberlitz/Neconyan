@@ -14,13 +14,15 @@ for (const phone of [true, false]) {
         await page.setViewportSize(phone ? { width: 393, height: 852 } : { width: 1280, height: 900 });
         const id = await seedCardScriptMessage(page, demoCardHtml);
         await runCardForBrowser(page, id, { protectedBrowser });
-        const { outer, card } = cardLocators(page, id);
+        const { message, outer, card } = cardLocators(page, id);
         await expect(outer).toBeVisible();
         await expect(card.locator('#status')).toHaveText('Script ran automatically');
         await expect(card.locator('#isolation')).toHaveText('Parent access blocked');
         await expect(outer).toHaveAttribute('sandbox', 'allow-scripts');
         await expect(outer).toHaveAttribute('referrerpolicy', 'no-referrer');
-        await expect(card.locator('body')).toHaveCSS('color', 'rgb(244, 235, 219)');
+        // Card text inherits the rendered message colour, including light themes.
+        const messageColour = await message.locator('.mes_text').evaluate(element => getComputedStyle(element).color);
+        await expect(card.locator('body')).toHaveCSS('color', messageColour);
         const initial = (await outer.boundingBox()).height;
         await card.locator('#grow').click();
         await expect(card.locator('#status')).toHaveText('Button worked');

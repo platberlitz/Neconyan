@@ -148,9 +148,10 @@ test('desktop: four questions apply real settings, undo guards an outside change
             input.checked = true;
             input.dispatchEvent(new Event('input', { bubbles: true }));
         });
-        await page.locator('#nn-miso-guide-undo').click();
-        await expect(page.locator(`${GUIDE} .nn-miso-guide-status`)).toContainText(/changed elsewhere/);
+        // The settings listener disables Undo before another click can overwrite the change.
+        await expect(page.locator(`${GUIDE} .nn-miso-guide-undo-blocked`)).toContainText(/changed elsewhere/);
         await expect(page.locator('#nn-miso-guide-undo')).toBeDisabled();
+        expect(await readSettings(page)).toEqual({ ...afterApply, tokenCount: true });
 
         await page.evaluate(() => {
             const input = document.getElementById('messageTokensEnabled');

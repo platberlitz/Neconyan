@@ -44,7 +44,15 @@ for (const phone of [false, true]) {
                 const body = await response.json();
                 if (typeof body.settings !== 'string') return route.fulfill({ response, json: body });
                 const settings = savedSettings ? structuredClone(savedSettings) : JSON.parse(body.settings);
-                settings.accountStorage = { ...settings.accountStorage, 'NeconyanWorkspaceRailCollapsed.v1': 'false', [sectionsKey]: stored };
+                // The server is shared with other test files, including Simple Mode checks.
+                settings.firstRun = false;
+                settings.accountStorage = {
+                    ...settings.accountStorage,
+                    'NeconyanSimpleMode.v1': 'off',
+                    'NeconyanTutorialStatus.v1': 'skipped',
+                    'NeconyanWorkspaceRailCollapsed.v1': 'false',
+                    [sectionsKey]: stored,
+                };
                 await route.fulfill({ response, json: { ...body, settings: JSON.stringify(settings) } });
             });
             await page.route('**/api/settings/save', async route => {
