@@ -1627,6 +1627,7 @@ const nnState = {
         chatListRequest: 0,
         chatPicker: null,
         personaBubble: null,
+        personaAvatarRevisions: new Map(),
         reasoningButton: null,
         navCluster: null,
         scratchpadButton: null,
@@ -21009,6 +21010,15 @@ function setActivePersonaAppendixIdsFromContext(context, avatarId, ids) {
     }
 }
 
+function recordPersonaAvatarRevision(avatarId) {
+    const key = String(avatarId ?? '');
+    const revisions = getBottomChatBarState().personaAvatarRevisions;
+    if (!key || !revisions) {
+        return;
+    }
+    revisions.set(key, Math.max(Date.now(), (revisions.get(key) ?? 0) + 1));
+}
+
 function updatePersonaBubble(bubble) {
     if (!(bubble instanceof HTMLElement)) {
         bubble = document.getElementById('sb-persona-bubble');
@@ -21018,9 +21028,14 @@ function updatePersonaBubble(bubble) {
     }
 
     const { context, currentAvatarId, currentName } = getCurrentPersonaSelection();
-    const avatarUrl = currentAvatarId
+    const thumbnailUrl = currentAvatarId
         ? getThumbnailUrlForViewport('persona', currentAvatarId)
         : '';
+    // A replaced persona picture keeps its file name, so the thumbnail URL
+    // alone would repaint the cached copy. PERSONA_AVATAR_CHANGED records a
+    // revision that stays on every later render too.
+    const revision = currentAvatarId ? getBottomChatBarState().personaAvatarRevisions?.get(currentAvatarId) : 0;
+    const avatarUrl = revision ? `${thumbnailUrl}&t=${revision}` : thumbnailUrl;
 
     if (avatarUrl) {
         bubble.style.backgroundImage = `url("${avatarUrl}")`;
@@ -21224,6 +21239,13 @@ function bindBottomChatBarEvents() {
 
     for (const eventName of new Set(personaEvents)) {
         eventSource.on(eventName, refreshPersona);
+    }
+
+    if (eventTypes.PERSONA_AVATAR_CHANGED) {
+        eventSource.on(eventTypes.PERSONA_AVATAR_CHANGED, (avatarId) => {
+            recordPersonaAvatarRevision(avatarId);
+            refreshPersona();
+        });
     }
 
     const refreshReasoningEffort = () => window.requestAnimationFrame(() => updateReasoningEffortButton());
