@@ -105,7 +105,16 @@ async function storeOrder(page, initial, collapsed = false) {
         const body = await response.json();
         if (typeof body.settings !== 'string') return route.fulfill({ response, json: body });
         const data = JSON.parse(body.settings);
-        data.accountStorage = { ...data.accountStorage, 'NeconyanWorkspaceRailCollapsed.v1': String(collapsed), 'NeconyanWorkspaceRailSections.v1': '{}', [key]: state.stored };
+        // These checks need every section, regardless of what an earlier file saved.
+        data.firstRun = false;
+        data.accountStorage = {
+            ...data.accountStorage,
+            'NeconyanSimpleMode.v1': 'off',
+            'NeconyanTutorialStatus.v1': 'skipped',
+            'NeconyanWorkspaceRailCollapsed.v1': String(collapsed),
+            'NeconyanWorkspaceRailSections.v1': '{}',
+            [key]: state.stored,
+        };
         await route.fulfill({ response, json: { ...body, settings: JSON.stringify(data) } });
     });
     await page.route('**/api/settings/save', async route => {
