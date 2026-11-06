@@ -57,6 +57,7 @@ jest.unstable_mockModule('../public/scripts/world-info.js', () => ({
 }));
 const presetSnapshot = {
     kind: 'chat', api: 'Chat Completion', name: 'Lantern',
+    targets: [{ api: 'openai', name: 'Lantern' }],
     modules: [
         { id: 'main', name: 'Main Prompt', enabled: true, marker: false, role: 'system', depth: null, content: 'Write {{char}}\'s next reply.' },
         { id: 'charDescription', name: 'Char Description', enabled: true, marker: true, role: '', depth: null, content: '' },
@@ -485,6 +486,7 @@ describe('Scratchpad current preset', () => {
         const result = await buildContext({ source: currentSource(), settings });
         expect(result.text).not.toContain('Current preset');
         expect(result.preset).toBeNull();
+        expect(result.capabilities.preset).toBeUndefined();
         expect(readCurrentPreset).not.toHaveBeenCalled();
     });
 
@@ -499,6 +501,8 @@ describe('Scratchpad current preset', () => {
         expect(text.indexOf('## Character: Roleplay')).toBeLessThan(text.indexOf('## Current preset'));
         expect(text.indexOf('## Lorebooks')).toBeLessThan(text.indexOf('## Current preset'));
         expect(result.preset).toEqual({ name: 'Lantern', on: 4, off: 1 });
+        expect(result.capabilities.preset).toEqual([{ api: 'openai', name: 'Lantern' }]);
+        expect(section).toContain('Editable preset target: {"api":"openai","name":"Lantern"}');
     });
 
     test('lists every module in order, marks it on or off and leaves its text as saved', () => {
@@ -506,9 +510,9 @@ describe('Scratchpad current preset', () => {
         const order = ['Main Prompt', 'Char Description', 'Spice', 'Reminder', 'Chat History'].map(name => text.indexOf(`] ${name}`));
         expect(order).toEqual([...order].sort((a, b) => a - b));
         expect(order.every(index => index > 0)).toBe(true);
-        expect(text).toContain('### [on] Main Prompt (system)\nWrite {{char}}\'s next reply.');
-        expect(text).toContain('### [off] Spice (system)\nOff module text.');
-        expect(text).toContain('### [on] Reminder (user, in chat at depth 2)\nStay in tense.');
+        expect(text).toContain('### [on] Main Prompt (system)\nModule ID: main\nWrite {{char}}\'s next reply.');
+        expect(text).toContain('### [off] Spice (system)\nModule ID: nsfw\nOff module text.');
+        expect(text).toContain('### [on] Reminder (user, in chat at depth 2)\nModule ID: reminder\nStay in tense.');
         expect(text).toContain('### [on] Char Description (slot, filled from the character card)');
         expect(text).toContain('### [on] Chat History (slot, filled from the chat messages)');
     });
@@ -517,6 +521,7 @@ describe('Scratchpad current preset', () => {
         conversationState.conversationWorkspaceOpen = true;
         const result = await buildContext({ source: currentSource(), settings: { ...settings, include: { ...settings.include, preset: true } } });
         expect(result.text).not.toContain('Current preset');
+        expect(result.capabilities.preset).toBeUndefined();
         expect(readCurrentPreset).not.toHaveBeenCalled();
     });
 });

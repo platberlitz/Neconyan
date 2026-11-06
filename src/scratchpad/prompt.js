@@ -99,8 +99,14 @@ function imageInstructions({ image, avatar, persona }) {
     ].join('\n');
 }
 
-function changeInstructions({ lore, character, chat, members, notebook, persona }) {
+function changeInstructions({ lore, character, chat, members, notebook, persona, preset }) {
     const kinds = [];
+    if (preset?.length) kinds.push([
+        `Shared preset targets: ${JSON.stringify(preset)}. Use their exact api and name; do not edit an unshared preset.`,
+        '{"type":"preset","action":"replace","api":"openai","preset":"<shared preset name>","module":"<exact Module ID>","field":"content","value":"<complete replacement text>","reason":"<why>"}',
+        'Chat Completion module fields: content, name, role (system/user/assistant), enabled (boolean), injection_position (0 for relative, 1 for in-chat), injection_depth (integer 0 to 10000). Slots filled from elsewhere support only enabled. Preserve literal macros and the parts the user wants to keep. Each change replaces one field; do not rename IDs or replace the entire preset.',
+        'For Text Completion templates use the api and name from Editable preset target, omit module, and choose a field shown in its fields object. System prompt fields are content and post_history; context fields are story_string, example_separator and chat_start; instruct fields are the shared input/output/system sequences, suffixes and story string prefix/suffix. Values are complete strings, including whitespace. Sampler and connection settings are not editable here.',
+    ].join('\n'));
     if (persona) kinds.push([
         'Shared user persona fields (not the assistant personality):',
         `To create a saved Scenario Note for this persona, use {"type":"persona-note","action":"create","persona":${JSON.stringify(persona.name)},"name":"<note label>","description":"<note text>","reason":"<why>"}. Put it in its own scratchpad-change fence. The owner reviews and can edit it before saving. The new note is not activated automatically. Do not supply IDs, avatar paths or activation settings.`,
@@ -171,7 +177,7 @@ export function buildScratchpadSystemPrompt({ assistant, gender, persona: savedP
     const story = characterName ? `the story chat with ${characterName}` : 'the story chat';
     const general = sourceKind === 'general';
     const contextNotice = general ? `You are talking directly with ${names.user} in General Scratchpad. No story chat is open and no story messages or lorebooks are shared. Any supplied character card is reference material, not evidence of a live story. Only selected, shared cards and the shared persona (including its Scenario Notes) may receive field-change suggestions. Never propose story message or lorebook edits here.` : '';
-    if (general) capabilities = { ...capabilities, chat: false, lore: false, members: [] };
+    if (general) capabilities = { ...capabilities, chat: false, lore: false, members: [], preset: [] };
     const sections = [
         `You are ${persona.name}, ${savedPersona ? 'the user\'s chosen assistant' : 'one of the three Neconyan assistants (Miso, Taro and Nori)'}. ${general ? contextNotice : `You are working in Scratchpad, a private side discussion beside ${names.user}'s ${story.replace(/^the /, '')}.`}`,
         `Stay fully in character as ${persona.name} in every reply. Scratchpad is separate from the user's story, not separate from your personality. Your temperament, humour, reactions and relationship with ${names.user} shape how you explain, question, disagree, comfort and joke, including during practical help.`,
@@ -188,7 +194,7 @@ export function buildScratchpadSystemPrompt({ assistant, gender, persona: savedP
     ];
     const instructions = typeof customPrompt === 'string' && customPrompt.trim()
         ? [customPrompt, contextNotice && !customPrompt.includes(contextNotice) ? contextNotice : '', webSearch ? WEB_SEARCH_INSTRUCTIONS : '',
-            capabilities.notebook || capabilities.persona ? changeInstructions({ notebook: capabilities.notebook, persona: capabilities.persona }) : ''].filter(Boolean).join('\n\n')
+            capabilities.notebook || capabilities.persona || capabilities.preset?.length ? changeInstructions({ notebook: capabilities.notebook, persona: capabilities.persona, preset: capabilities.preset }) : ''].filter(Boolean).join('\n\n')
         : sections.filter(Boolean).join('\n\n');
     const reference = help ? `Neconyan reference for app questions (use it only when ${names.user} asks how something in Neconyan works):\n${help}` : '';
     const preferences = userInstructions.trim() ? `The user's global Scratchpad instructions for you:\n${userInstructions}` : '';

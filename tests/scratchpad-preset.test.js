@@ -27,7 +27,9 @@ jest.unstable_mockModule('../public/script.js', () => ({ main_api: script.main_a
 jest.unstable_mockModule('../public/scripts/openai.js', () => ({ oai_settings, promptManager }));
 jest.unstable_mockModule('../public/scripts/PromptManager.js', () => ({ INJECTION_POSITION: { RELATIVE: 0, ABSOLUTE: 1 } }));
 jest.unstable_mockModule('../public/scripts/power-user.js', () => ({ power_user }));
-jest.unstable_mockModule('../public/scripts/preset-manager.js', () => ({ getPresetManager: () => ({ getSelectedPresetName: () => presetName.value }) }));
+jest.unstable_mockModule('../public/scripts/preset-manager.js', () => ({ getPresetManager: api => ({
+    getSelectedPresetName: () => ({ openai: 'Lantern', sysprompt: 'Neutral', context: 'Default', instruct: 'Alpaca' })[api] ?? presetName.value,
+}) }));
 
 async function load(api) {
     script.main_api = api;
@@ -41,18 +43,25 @@ beforeEach(() => {
         [7, [{ identifier: 'main', enabled: true }, { identifier: 'charDescription', enabled: true }, { identifier: 'nsfw', enabled: false }, { identifier: 'reminder', enabled: true }, { identifier: 'missing', enabled: true }]],
         [100001, [{ identifier: 'main', enabled: false }]],
     ]);
+    prompts[0].content = 'Write {{char}}\'s next reply.';
 });
 
 describe('Scratchpad preset reader', () => {
     test('reads Prompt Manager modules in order with on, off, role, depth and raw text', () => {
         const preset = readCurrentPreset();
         expect(preset).toMatchObject({ kind: 'chat', api: 'Chat Completion', name: 'Lantern' });
+        expect(preset.targets).toEqual([{ api: 'openai', name: 'Lantern' }]);
         expect(preset.modules).toEqual([
             { id: 'main', name: 'Main Prompt', enabled: true, marker: false, role: 'system', depth: null, content: 'Write {{char}}\'s next reply.' },
             { id: 'charDescription', name: 'Char Description', enabled: true, marker: true, role: '', depth: null, content: '' },
             { id: 'nsfw', name: 'Spice', enabled: false, marker: false, role: 'system', depth: null, content: 'Off text.' },
             { id: 'reminder', name: 'Reminder', enabled: true, marker: false, role: 'user', depth: 2, content: 'Stay in tense.' },
         ]);
+    });
+
+    test('keeps whitespace and literal macros in editable prompt text', () => {
+        prompts[0].content = '  {{char}}\n\n{{lastMessage}}\n';
+        expect(readCurrentPreset().modules[0].content).toBe(prompts[0].content);
     });
 
     test('falls back to the shared prompt order when the character has none', () => {
@@ -72,5 +81,10 @@ describe('Scratchpad preset reader', () => {
         ]);
         expect(preset.modules[0].content).toBe('Be {{char}}.\n\nPost-history instructions:\nStay short.');
         expect(preset.modules[1].content).toBe('{{description}}');
+        expect(preset.targets).toEqual([
+            { api: 'sysprompt', name: 'Neutral', fields: { content: 'Be {{char}}.', post_history: 'Stay short.' } },
+            { api: 'context', name: 'Default', fields: { story_string: '{{description}}', example_separator: '', chat_start: '' } },
+            expect.objectContaining({ api: 'instruct', name: 'Alpaca', fields: expect.objectContaining({ input_sequence: '', output_sequence: '' }) }),
+        ]);
     });
 });

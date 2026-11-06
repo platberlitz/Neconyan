@@ -451,10 +451,13 @@ export function formatPreset(preset) {
         const tags = item.marker
             ? [`slot, filled from ${PRESET_SLOT_SOURCES[item.id] || 'elsewhere'}`]
             : [item.role, where].filter(Boolean);
-        const heading = `### [${item.enabled ? 'on' : 'off'}] ${item.name}${tags.length ? ` (${tags.join(', ')})` : ''}`;
+        const heading = `### [${item.enabled ? 'on' : 'off'}] ${item.name}${tags.length ? ` (${tags.join(', ')})` : ''}\nModule ID: ${item.id}`;
         lines.push(item.content ? `${heading}\n${item.content}` : heading);
     }
     if (!modules.length) lines.push('(This preset has no modules to show.)');
+    for (const target of preset?.targets ?? []) {
+        lines.push(`Editable preset target: ${JSON.stringify(target)}`);
+    }
     return lines.join('\n\n');
 }
 
@@ -564,9 +567,11 @@ export async function buildContext({ source, settings, pendingText = '', session
     }
 
     let preset = null;
+    let presetTargets = [];
     if (include.preset && source.kind === 'roleplay') {
         const snapshot = readCurrentPreset();
         sections.push(formatPreset(snapshot));
+        presetTargets = (snapshot?.targets ?? []).map(({ api, name }) => ({ api, name }));
         const modules = Array.isArray(snapshot?.modules) ? snapshot.modules : [];
         preset = { name: snapshot?.name || '', on: modules.filter(item => item.enabled).length, off: modules.filter(item => !item.enabled).length };
     }
@@ -631,6 +636,7 @@ export async function buildContext({ source, settings, pendingText = '', session
         leftOut,
         targets: include.card ? people.map(item => ({ avatar: item.avatar, name: item.name })) : [],
         capabilities: {
+            ...(presetTargets.length ? { preset: presetTargets } : {}),
             ...(include.persona && sourcePersona(source) ? { persona: sourcePersona(source) } : {}),
             lore: loreBooks.length > 0,
             character: people.length > 0 && (!general || include.card === true),
