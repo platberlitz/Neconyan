@@ -2,6 +2,15 @@ import { normalizeScenarioAvatar } from '../persona-appendix-avatar.js';
 
 export const PERSONA_FIELDS = Object.freeze({ name: 'Name', description: 'Description', title: 'Title', avatar: 'Avatar' });
 
+export function personaDraft(value, { note = false } = {}) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Use a JSON object for the new persona or Scenario Note.');
+    return {
+        name: personaFieldValue('name', value.name),
+        description: personaFieldValue('description', value.description ?? ''),
+        ...(!note ? { title: personaFieldValue('title', value.title ?? '') } : {}),
+    };
+}
+
 export function personaFieldValue(field, value) {
     if (field === 'avatar') {
         if (value === '' || normalizeScenarioAvatar(value)) return value;

@@ -12,6 +12,19 @@ import {
 const fence = value => `\`\`\`scratchpad-change\n${JSON.stringify(value)}\n\`\`\``;
 
 describe('Scratchpad reply parsing', () => {
+    test('new personas and Scenario Notes have separate creation targets and discard supplied identities', () => {
+        const persona = normaliseChange({ type: 'persona', action: 'create', name: ' Rowan ', description: '{{user}} sails.', avatar: 'User.png', id: 'existing', activeAppendices: { chat: 'au' } });
+        expect(persona).toEqual({ type: 'persona', action: 'create', name: 'Rowan', description: '{{user}} sails.', title: '', reason: '' });
+        expect(describeChange(persona)).toBe('Create persona \'Rowan\'');
+        const note = normaliseChange({ type: 'persona-note', action: 'create', persona: 'Kris', name: 'Voyage', description: '{{user}} sails.', noteId: 'au', title: 'Discard', avatar: '/user/images/old.png' });
+        expect(note).toEqual({ type: 'persona-note', action: 'create', persona: 'Kris', name: 'Voyage', description: '{{user}} sails.', reason: '' });
+        expect(describeChange(note)).toBe('Create Scenario Note \'Voyage\' for Kris');
+        for (const extra of [{ name: '' }, { name: 'x'.repeat(201) }, { description: {} }, { title: 123 }]) {
+            expect(() => normaliseChange({ ...persona, ...extra })).toThrow();
+        }
+        expect(() => normaliseChange({ ...note, persona: '' })).toThrow();
+        expect(splitReply(fence(persona))[0]).toMatchObject({ error: '', change: persona });
+    });
     test('keeps persona, Scenario Note and avatar targets distinct', () => {
         const persona = normaliseChange({ type: 'persona', persona: 'Kris', field: 'description', value: '{{user}} is a traveller.' });
         expect(persona).toMatchObject({ type: 'persona', persona: 'Kris', value: '{{user}} is a traveller.' });
