@@ -120,6 +120,7 @@
 - PR #497 (2026-11-05) `fix(personas): keep scenario note portraits at full size`
 - PR #498 (2026-11-05) `fix(startup): offer a safe start after repeated browser crashes`
 - PR #499 (2026-11-05) `fix(agents): keep the changes badge after returning to the tab`
+- PR #500 (2026-11-06) `chore(release): prepare 1.5.0 for release`
 
 ## v1.4.1
 
