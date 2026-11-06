@@ -88,8 +88,43 @@ export function isPathUnderOwnedDataRoot(targetPath) {
     return false;
 }
 
-function fail(message) {
-    return Object.assign(new Error(message), { code: 'DATA_ROOT_OWNED' });
+const APP_SERVER_BUSY = 'The previous Neconyan server on this phone may still be using your data. Close Neconyan from the recent apps screen, or force stop it in Android settings, then open it again.';
+const APP_LOCK_DAMAGED = 'The data folder lock on this phone needs checking, so it was left untouched. Save a backup of your data from this screen and report the problem. Lock problem: ';
+
+function fail(message, details) {
+    const error = Object.assign(new Error(details ? `${message} ${formatLeaseDetails(details)}` : message), { code: 'DATA_ROOT_OWNED' });
+    if (details) error.details = details;
+    return error;
+}
+
+const leaseText = value => String(value).replace(/[^\x21-\x7e]/g, '?').slice(0, 64);
+
+/** One key=value sentence naming the lease record and this start, for the log and the startup note. Never includes the nonce. */
+function formatLeaseDetails(details) {
+    const side = (entry, withPurpose) => `pid=${leaseText(entry.pid)} platform=${leaseText(entry.platform)} host=${leaseText(entry.hostname)}`
+        + `${withPurpose ? ` purpose=${leaseText(entry.purpose)}` : ''} processStart=${entry.processStart === null ? 'none' : leaseText(entry.processStart)}`
+        + ` root=${leaseText(entry.root.dev)}:${leaseText(entry.root.ino)}`;
+    const record = details.owner ? side(details.owner, true) : 'incomplete or unreadable';
+    const differs = details.owner ? (details.differs.length ? details.differs.join(', ') : 'none') : 'unknown';
+    return `Lease record: ${record}; this start: ${side(details.current, false)}; differs: ${differs}.`;
+}
+
+function leaseDetails(owner, identity) {
+    const record = owner && isOwnerRecord(owner) ? owner : null;
+    const differs = [];
+    if (record) {
+        if (record.hostname !== os.hostname()) differs.push('hostname');
+        if (record.platform !== process.platform) differs.push('platform');
+        if (record.root.dev !== identity.dev) differs.push('root.dev');
+        if (record.root.ino !== identity.ino) differs.push('root.ino');
+    }
+    return Object.freeze({
+        owner: record && Object.freeze({ pid: record.pid, platform: record.platform, hostname: record.hostname,
+            processStart: record.processStart, purpose: record.purpose, root: Object.freeze({ dev: record.root.dev, ino: record.root.ino }) }),
+        current: Object.freeze({ pid: process.pid, platform: process.platform, hostname: os.hostname(), processStart: processStartIdentity(),
+            root: Object.freeze({ dev: identity.dev, ino: identity.ino }) }),
+        differs: Object.freeze(differs),
+    });
 }
 
 function flushDirectory(directory) {
@@ -141,6 +176,16 @@ function processStartIdentity(pid = process.pid) {
     } catch { return null; }
 }
 
+function isOwnerRecord(value) {
+    return value?.version === 1 && Object.keys(value).sort().join(',') === 'hostname,nonce,pid,platform,processStart,purpose,root,version'
+        && Object.keys(value.root ?? {}).sort().join(',') === 'dev,ino' && /^[a-f0-9]{32}$/.test(value.nonce)
+        && typeof value.hostname === 'string' && typeof value.platform === 'string'
+        && Number.isSafeInteger(value.pid) && value.pid >= 1
+        && ['server', 'repair'].includes(value.purpose)
+        && /^\d+$/.test(value.root?.dev) && /^\d+$/.test(value.root?.ino)
+        && (value.processStart === null || typeof value.processStart === 'string' && /^\d+$/.test(value.processStart));
+}
+
 function readOwner(directory) {
     const dir = fs.lstatSync(directory);
     if (!dir.isDirectory() || dir.isSymbolicLink()) throw fail('The data root ownership entry is unsafe.');
@@ -152,15 +197,7 @@ function readOwner(directory) {
         const stat = fs.fstatSync(fd);
         if (!stat.isFile() || stat.nlink !== 1 || stat.size > 4096) throw fail('The data root ownership record is unsafe.');
         const value = JSON.parse(fs.readFileSync(fd, 'utf8'));
-        if (value?.version !== 1 || Object.keys(value).sort().join(',') !== 'hostname,nonce,pid,platform,processStart,purpose,root,version'
-            || Object.keys(value.root ?? {}).sort().join(',') !== 'dev,ino' || !/^[a-f0-9]{32}$/.test(value.nonce)
-            || typeof value.hostname !== 'string' || typeof value.platform !== 'string'
-            || !Number.isSafeInteger(value.pid) || value.pid < 1
-            || !['server', 'repair'].includes(value.purpose)
-            || !/^\d+$/.test(value.root?.dev) || !/^\d+$/.test(value.root?.ino)
-            || !(value.processStart === null || typeof value.processStart === 'string' && /^\d+$/.test(value.processStart))) {
-            throw fail('The data root ownership record needs inspection.');
-        }
+        if (!isOwnerRecord(value)) throw fail('The data root ownership record needs inspection.');
         return value;
     } catch (error) {
         if (error?.code === 'DATA_ROOT_OWNED') throw error;
@@ -168,29 +205,94 @@ function readOwner(directory) {
     } finally { fs.closeSync(fd); }
 }
 
+/** True only inside the Android app's own server: Android platform, the app marker, and the app's linked neconyan_fs binding (Termux shares the platform and anyone can set the marker). */
+export function isAndroidAppServer({ env = process.env, platform = process.platform, linkedBinding = name => process._linkedBinding(name), warn = console.warn } = {}) {
+    if (platform !== 'android' || env.NECONYAN_ANDROID_APP !== '1') return false;
+    try { if (linkedBinding('neconyan_fs')) return true; } catch { /* fall through */ }
+    warn('The Android app marker is set but the neconyan_fs binding is missing, so the data folder lease keeps its strict checks.');
+    return false;
+}
+
+function leaseReclaimed(reason, details) {
+    return Object.freeze({ reason, details, message: `Reclaimed a stale data folder lease (${reason}). ${formatLeaseDetails(details)}` });
+}
+
+/** Desktop, Termux and shared folders: only a fully identified local process proven absent can be reclaimed automatically. */
+function reclaimDeadLocalLease(root, directory, identity) {
+    let existing;
+    try { existing = readOwner(directory); } catch (error) {
+        if (error?.code === 'DATA_ROOT_OWNED') throw fail(error.message, leaseDetails(null, identity));
+        throw error;
+    }
+    const details = leaseDetails(existing, identity);
+    if (details.differs.length) {
+        throw fail('The data folder is already owned or needs its ownership checked. Stop all installations before continuing.', details);
+    }
+    let running = true;
+    try { process.kill(existing.pid, 0); } catch (cause) {
+        if (cause.code === 'ESRCH') running = false;
+        else if (cause.code !== 'EPERM') throw cause;
+    }
+    if (running) throw fail('The data folder is already owned by a running process.', details);
+    const snapshot = ownerRecoverySnapshot(root);
+    if (!snapshot.owner || snapshot.owner.nonce !== existing.nonce) throw fail('The ownership record changed.', details);
+    try { recoverDataRootOwner(root, snapshot.token); } catch (error) {
+        if (error?.code === 'DATA_ROOT_OWNED') throw fail(error.message, details);
+        throw error;
+    }
+    return leaseReclaimed('process-ended', details);
+}
+
+function appLeaseReason(owner) {
+    if (owner === null) return 'incomplete-record';
+    if (owner.pid === process.pid) return 'pid-reused';
+    let signalled = true;
+    try { process.kill(owner.pid, 0); } catch (error) {
+        if (error.code === 'ESRCH') return 'process-ended';
+        if (error.code !== 'EPERM') return 'unidentified';
+        signalled = false;
+    }
+    const start = processStartIdentity(owner.pid);
+    if (owner.processStart !== null && start === owner.processStart) return 'running';
+    if (!signalled) return 'pid-of-another-app';
+    if (owner.processStart !== null && start !== null) return 'pid-reused';
+    return 'unidentified';
+}
+
+/** The Android app is the only program that can use its private data folder, so a leftover lease is its own earlier run: only a live or unidentifiable owner, or unsafe evidence, is refused. */
+function reclaimAppServerLease(root, identity) {
+    for (const held of activeOwners.values()) {
+        if (held.root === root) throw fail('This server already holds the data folder.', leaseDetails(held.owner, identity));
+    }
+    let snapshot;
+    try { snapshot = ownerRecoverySnapshot(root); } catch (error) {
+        if (error?.code === 'DATA_ROOT_OWNED') throw fail(APP_LOCK_DAMAGED + error.message, leaseDetails(null, identity));
+        throw error;
+    }
+    // The directory vanished after EEXIST: something is changing the lease right now, so do not race it.
+    if (!snapshot.token) throw fail(APP_SERVER_BUSY, leaseDetails(null, identity));
+    const owner = isOwnerRecord(snapshot.owner) ? snapshot.owner : null;
+    const details = leaseDetails(owner, identity);
+    const reason = appLeaseReason(owner);
+    if (reason === 'running' || reason === 'unidentified') throw fail(APP_SERVER_BUSY, details);
+    try { removeCheckedOwner(root, snapshot.token); } catch (error) {
+        if (error?.code === 'DATA_ROOT_OWNED') throw fail(APP_SERVER_BUSY, details);
+        throw error;
+    }
+    return leaseReclaimed(reason, details);
+}
+
 /** Hold the fixed root-relative lease until every writer has stopped. No timeout steals it. */
-export function acquireDataRootOwner(dataRoot, purpose) {
+export function acquireDataRootOwner(dataRoot, purpose, { androidAppServer = false } = {}) {
     if (!['server', 'repair'].includes(purpose)) throw new TypeError('Invalid data root ownership purpose.');
+    if (typeof androidAppServer !== 'boolean' || androidAppServer && purpose !== 'server') throw new TypeError('Invalid data root ownership option.');
     const root = fs.realpathSync(path.resolve(dataRoot));
     const identity = Object.freeze(rootIdentity(root));
     const directory = path.join(root, DATA_ROOT_OWNER_DIRECTORY);
+    let reclaimed = null;
     try { fs.mkdirSync(directory, { mode: 0o700 }); } catch (error) {
         if (error.code !== 'EEXIST') throw error;
-        // Only a fully identified local process proven absent can be reclaimed automatically.
-        const existing = readOwner(directory);
-        if (existing.hostname !== os.hostname() || existing.platform !== process.platform
-            || existing.root.dev !== identity.dev || existing.root.ino !== identity.ino) {
-            throw fail('The data folder is already owned or needs its ownership checked. Stop all installations before continuing.');
-        }
-        try {
-            process.kill(existing.pid, 0);
-            throw fail('The data folder is already owned by a running process.');
-        } catch (cause) {
-            if (cause.code !== 'ESRCH') throw cause;
-        }
-        const snapshot = ownerRecoverySnapshot(root);
-        if (!snapshot.owner || snapshot.owner.nonce !== existing.nonce) throw fail('The ownership record changed.');
-        recoverDataRootOwner(root, snapshot.token);
+        reclaimed = androidAppServer ? reclaimAppServerLease(root, identity) : reclaimDeadLocalLease(root, directory, identity);
         fs.mkdirSync(directory, { mode: 0o700 });
     }
     flushDirectory(root);
@@ -210,7 +312,7 @@ export function acquireDataRootOwner(dataRoot, purpose) {
     flushDirectory(directory);
     let released = false;
     const capability = {
-        root, identity,
+        root, identity, reclaimed,
         release() {
             if (released) return;
             const currentDirectory = fs.lstatSync(directory, { bigint: true });
@@ -323,10 +425,15 @@ export function recoverDataRootOwner(dataRoot, token) {
             }
         }
     }
+    removeCheckedOwner(dataRoot, token);
+}
+
+/** Remove the ownership entry only if it still matches the exact inspected token. */
+function removeCheckedOwner(dataRoot, token) {
     const confirmed = ownerRecoverySnapshot(dataRoot);
     if (confirmed.token !== token) throw fail('The data root ownership changed. Check its status again.');
-    const directory = path.join(checked.root, DATA_ROOT_OWNER_DIRECTORY);
-    if (checked.file) fs.unlinkSync(path.join(directory, OWNER_NAME));
+    const directory = path.join(confirmed.root, DATA_ROOT_OWNER_DIRECTORY);
+    if (confirmed.file) fs.unlinkSync(path.join(directory, OWNER_NAME));
     fs.rmdirSync(directory);
-    flushDirectory(checked.root);
+    flushDirectory(confirmed.root);
 }

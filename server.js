@@ -30,8 +30,9 @@ globalThis.COMMAND_LINE_ARGS = cliArgs;
 
 let diagnosticsReady = false;
 try {
-    const { acquireDataRootOwner } = await import('./src/data-root-owner.js');
-    acquireDataRootOwner(globalThis.DATA_ROOT, 'server');
+    const { acquireDataRootOwner, isAndroidAppServer } = await import('./src/data-root-owner.js');
+    const lease = acquireDataRootOwner(globalThis.DATA_ROOT, 'server', { androidAppServer: isAndroidAppServer() });
+    if (lease.reclaimed) console.info(lease.reclaimed.message);
     try {
         fs.lstatSync(path.join(globalThis.DATA_ROOT, '_neconyan-policy-repair'));
         throw Object.assign(new Error(`An identity repair is unfinished for ${globalThis.DATA_ROOT}. Run node scripts/repair-data-identity.js status --dataRoot "${globalThis.DATA_ROOT}" and resume it before starting Neconyan.`),
@@ -47,7 +48,7 @@ try {
     writeStartupNote(error);
     if (diagnosticsReady) recordFatalError('startup-failure', error);
     console.error('A critical error has occurred while starting the server:', error);
-    if (error.code === 'DATA_ROOT_OWNED') {
+    if (error.code === 'DATA_ROOT_OWNED' && process.env.NECONYAN_ANDROID_APP !== '1') {
         console.error(`Stop every Neconyan installation, then inspect ownership with node scripts/repair-data-identity.js status --dataRoot "${globalThis.DATA_ROOT}".`);
     }
     process.exit(1);

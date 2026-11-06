@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
+import { acquireDataRootOwner } from '../src/data-root-owner.js';
 import { STARTUP_NOTE_PREFIX, startupNoteMessage, writeStartupNote } from '../src/startup-note.js';
 
 const read = file => fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
@@ -138,4 +139,30 @@ test('the service preserves a note this start wrote', () => {
     assert.match(helper, /new File\(getCacheDir\(\), "startup-status\.txt"\)/);
     assert.ok(helper.includes('.startsWith("' + p + '")'));
     assert.ok(service.includes('status("Could not start Neconyan: " + error.getMessage()'));
+});
+
+test('a lease refusal reaches the startup note with the lease evidence', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'startup-note-lease-'));
+    const held = acquireDataRootOwner(directory, 'server');
+    try {
+        let refusal;
+        try { acquireDataRootOwner(directory, 'server'); } catch (error) { refusal = error; }
+        assert.ok(refusal, 'the second acquisition must be refused');
+        const message = startupNoteMessage(refusal);
+        assert.ok(message.includes(`Lease record: pid=${process.pid}`));
+        assert.doesNotMatch(message, /\.\./);
+        assert.ok(message.endsWith('Saved data has been kept.'));
+    } finally {
+        held.release();
+        fs.rmSync(directory, { recursive: true, force: true });
+    }
+});
+
+test('the server asks for the Android lease policy only through the app check', () => {
+    assert.ok(server.includes('acquireDataRootOwner(globalThis.DATA_ROOT, \'server\', { androidAppServer: isAndroidAppServer() })'));
+    assert.ok(server.includes('if (lease.reclaimed) console.info(lease.reclaimed.message);'));
+    assert.ok(server.includes('error.code === \'DATA_ROOT_OWNED\' && process.env.NECONYAN_ANDROID_APP !== \'1\''));
+    const marker = bootstrap.indexOf('process.env.NECONYAN_ANDROID_APP = \'1\'');
+    assert.notEqual(marker, -1);
+    assert.ok(marker < bootstrap.indexOf('await import(\'./server.js\')'));
 });
