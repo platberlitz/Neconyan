@@ -1,5 +1,7 @@
 // Questions and distinguishing facts shared by Node and real-browser retrieval checks.
 export const refreshedKnowledgeCases = [
+    ['Can I pin Catelier in Quick Actions?', 'navigation.quick-actions', 'Every page from the main search can be pinned'],
+    ['Can I edit Quick Actions in Simple Mode?', 'navigation.quick-actions', 'including the phone menu and Simple Mode'],
     ['How do I start a private character draft in Catelier?', 'catelier.start', 'Save to library publishes it'],
     ['How does Ask questions first work in Catelier writing?', 'catelier.writing', 'answer what you want, then choose Generate'],
     ['Can Catelier close the page while writing?', 'catelier.server', 'Closing the page is different from Cancel'],
