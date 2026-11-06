@@ -9,6 +9,7 @@ import { normaliseAssistant, normaliseGender } from './store.js';
 import { isCustomAssistant, assistantProfileError } from './assistant-profiles.js';
 import { SCRATCHPAD_MACRO_GUIDANCE } from './macros.js';
 import { NOTE_TOOL_DEFINITIONS, NOTE_MUTATING_KINDS, NOTE_TOOL_NOTICE } from '../../public/scripts/notebooks/assistant-note-tools.js';
+import { attachmentContent } from '../../public/scripts/scratchpad/attachment-data.js';
 
 export const CHANGE_FENCE = 'scratchpad-change';
 const CARD_CACHE = new Map();
@@ -205,7 +206,7 @@ export function buildScratchpadSystemPrompt({ assistant, gender, persona: savedP
 
 export const SCRATCHPAD_CONTEXT_ACK = 'I have read the shared context. What would you like to work on?';
 
-export function buildScratchpadMessages({ system, context, notebookContext = '', history, text, assistant, assistantNames = {}, webSearchPlaceholder = '' }) {
+export function buildScratchpadMessages({ system, context, notebookContext = '', history, text, attachments = [], assistant, assistantNames = {}, webSearchPlaceholder = '' }) {
     const messages = [{ role: 'system', content: system }];
     if (context) {
         messages.push({ role: 'user', content: `<story_context>\n${context}\n</story_context>` });
@@ -218,11 +219,11 @@ export function buildScratchpadMessages({ system, context, notebookContext = '',
     for (const message of history) {
         const peer = message.role === 'assistant' && message.assistant && assistant && message.assistant !== assistant;
         messages.push({ role: peer ? 'user' : message.role,
-            content: peer ? `[Earlier reply from ${message.assistantName || assistantNames[message.assistant] || FALLBACK_NAMES[normaliseAssistant(message.assistant)] || 'Assistant'} in Scratchpad]\n${message.text}` : message.text });
+            content: peer ? `[Earlier reply from ${message.assistantName || assistantNames[message.assistant] || FALLBACK_NAMES[normaliseAssistant(message.assistant)] || 'Assistant'} in Scratchpad]\n${message.text}` : attachmentContent(message.text, message.attachments) });
     }
     // The job replaces this reservation with the numbered results and an acknowledgement
     // before the final user message. It is never sent as written.
     if (webSearchPlaceholder) messages.push({ role: 'user', content: webSearchPlaceholder });
-    messages.push({ role: 'user', content: text });
+    messages.push({ role: 'user', content: attachmentContent(text, attachments) });
     return messages;
 }

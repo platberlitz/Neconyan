@@ -16,7 +16,8 @@ export const SCRATCHPAD_MACRO_GUIDANCE = [
 
 /** Drafts are data: preserve their macros while still expanding connection formatting. */
 export function scratchpadMacroEnvironment(names, messages = []) {
-    const literal = new Set(messages.map(message => message.content));
+    const literal = new Set(messages.flatMap(message => Array.isArray(message.content)
+        ? message.content.filter(part => part.type === 'text').map(part => part.text) : [message.content]));
     const protect = environment => {
         const evaluate = environment.evaluate.bind(environment);
         const fork = environment.fork.bind(environment);

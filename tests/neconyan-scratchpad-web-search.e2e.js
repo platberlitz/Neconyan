@@ -4,6 +4,7 @@
 import { expect } from '@playwright/test';
 import { test } from './neconyan-scratchpad-search-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+import { settleCssTransitions } from './chat-scroll-regression-helpers.js';
 
 async function openScratchpad(page) {
     await page.evaluate(async () => (await import('/scripts/scratchpad/index.js')).openScratchpad({ tab: 'chat' }));
@@ -38,14 +39,18 @@ async function send(page, text) {
 
 async function checkAccents(page, phone) {
     const measurements = [];
+    await page.locator('input[type="file"][aria-label="Attach files"]').setInputFiles({ name: 'accent.txt', mimeType: 'text/plain', buffer: Buffer.from('Accent check.') });
+    await expect(page.locator('.scratchpad-file-remove')).toBeEnabled();
     for (const theme of ['Neconyan Calico Dark', 'Neconyan Calico']) {
         await page.locator('#themes').selectOption({ label: theme }, { force: true });
         if (phone) await applyIOSOnlyCss(page);
         for (const accent of [null, 'Pearl', 'Midnight Ink']) {
             if (accent) await page.locator(`.sb-accent-profile-apply[aria-label="Apply ${accent} accent profile"]`).evaluate(element => element.click());
             for (const enabled of [true, false]) {
+                await page.locator('.scratchpad-plus').click();
                 await expect(page.locator('.scratchpad-web-toggle')).toHaveAttribute('aria-pressed', String(enabled));
-                const measured = await page.locator('.scratchpad-web-toggle').evaluate(async element => {
+                await settleCssTransitions(page);
+                const controls = await page.locator('.scratchpad-plus, .scratchpad-compose-menu button, .scratchpad-file-remove').evaluateAll(async elements => {
                     const { contrastRatio } = await import('/scripts/theme-contrast.js');
                     const canvas = document.createElement('canvas').getContext('2d');
                     const channels = colour => {
@@ -54,21 +59,27 @@ async function checkAccents(page, phone) {
                         canvas.fillRect(0, 0, 1, 1);
                         return [...canvas.getImageData(0, 0, 1, 1).data].slice(0, 3);
                     };
-                    const style = getComputedStyle(element);
-                    const label = getComputedStyle(element.querySelector('i'));
-                    const rect = element.getBoundingClientRect();
-                    return { contrast: contrastRatio(channels(label.color), channels(style.backgroundColor)), height: rect.height, width: rect.width,
-                        foreground: label.color, background: style.backgroundColor, pageWidth: document.documentElement.scrollWidth };
+                    return elements.map(element => {
+                        const style = getComputedStyle(element);
+                        const label = getComputedStyle(element.querySelector('i'));
+                        const rect = element.getBoundingClientRect();
+                        return { control: element.getAttribute('aria-label'), contrast: contrastRatio(channels(label.color), channels(style.backgroundColor)), height: rect.height, width: rect.width,
+                            foreground: label.color, background: style.backgroundColor, pageWidth: document.documentElement.scrollWidth };
+                    });
                 });
-                measurements.push({ theme, accent, enabled, ...measured });
-                expect(measured.contrast, JSON.stringify(measurements)).toBeGreaterThanOrEqual(4.5);
-                expect(measured.height).toBe(44);
-                expect(measured.width).toBe(44);
-                expect(measured.pageWidth).toBe(phone ? 393 : 1280);
+                expect(controls).toHaveLength(4);
+                for (const measured of controls) {
+                    measurements.push({ theme, accent, enabled, ...measured });
+                    expect(measured.contrast, JSON.stringify(measurements)).toBeGreaterThanOrEqual(4.5);
+                    expect(measured.height).toBe(44);
+                    expect(measured.width).toBeGreaterThanOrEqual(44);
+                    expect(measured.pageWidth).toBe(phone ? 393 : 1280);
+                }
                 await page.locator('.scratchpad-web-toggle').click();
             }
         }
     }
+    await page.getByRole('button', { name: 'Remove accent.txt', exact: true }).click();
     await test.info().attach('web-toggle-contrast', { body: JSON.stringify(measurements, null, 2), contentType: 'application/json' });
 }
 
@@ -83,9 +94,10 @@ for (const phone of [false, true]) {
         if (phone) await applyIOSOnlyCss(page);
         const question = 'Find sources about the first public libraries.';
         await page.locator('.scratchpad-composer').fill(question);
+        await page.locator('.scratchpad-plus').click();
         await expect(page.locator('.scratchpad-web-toggle')).toHaveAttribute('aria-pressed', 'false');
         await expect(page.locator('.scratchpad-web-toggle')).toHaveAccessibleName('Set up web search in Context');
-        await expect(page.locator('.scratchpad-web-toggle')).toHaveText('');
+        await expect(page.locator('.scratchpad-web-toggle')).toHaveText('Web search');
         await page.locator('.scratchpad-web-toggle').click();
         await expect(page.locator('#scratchpad-web-search-provider')).toBeVisible();
         await page.locator('#scratchpad-web-search-provider').selectOption('brave');
@@ -106,10 +118,11 @@ for (const phone of [false, true]) {
         await page.screenshot({ path: `../screenshots/scratchpad-web-search-settings-${size}-after.png`, scale: 'css' });
         await page.getByRole('tab', { name: 'Chat', exact: true }).click();
         await expect(page.locator('.scratchpad-composer')).toHaveValue(question);
+        await page.locator('.scratchpad-plus').click();
         await expect(page.locator('.scratchpad-web-toggle')).toHaveAccessibleName('Search the web for this message');
         await page.locator('.scratchpad-web-toggle').click();
         await expect(page.locator('.scratchpad-web-toggle')).toHaveAttribute('aria-pressed', 'true');
-        await expect(page.locator('.scratchpad-web-toggle')).toHaveAccessibleName('Web search is on for this session');
+        await expect(page.locator('.scratchpad-plus')).toHaveClass(/menu_button_primary/);
         await page.evaluate(() => window.toastr?.remove());
         await page.screenshot({ path: `../screenshots/scratchpad-web-search-${size}-after.png`, scale: 'css' });
 
@@ -165,6 +178,7 @@ test('search failures still deliver a reply and Stop cancels a held search befor
     await openScratchpad(page);
     await configureSearch(page, search.url);
     await page.getByRole('tab', { name: 'Chat', exact: true }).click();
+    await page.locator('.scratchpad-plus').click();
     await page.locator('.scratchpad-web-toggle').click();
     search.mode.status = 503;
     app.provider.mode.reply = { choices: [{ message: { content: 'Web search was unavailable. I can still discuss the question.' } }] };
@@ -195,6 +209,7 @@ test('a round table searches once and gives every assistant the same sources', a
     await configureSearch(page, search.url);
     for (const assistant of ['taro', 'nori']) await page.locator(`#scratchpad-connection-${assistant}`).selectOption('durable');
     await page.getByRole('tab', { name: 'Chat', exact: true }).click();
+    await page.locator('.scratchpad-plus').click();
     await page.locator('.scratchpad-web-toggle').click();
     await page.locator('.scratchpad-round-table').click();
     await expect(page.locator('.scratchpad-send')).toHaveAccessibleName('Ask 3');
@@ -217,6 +232,7 @@ test('server errors, invalid JSON and a stalled response body still allow the mo
     await openScratchpad(page);
     await configureSearch(page, search.url);
     await page.getByRole('tab', { name: 'Chat', exact: true }).click();
+    await page.locator('.scratchpad-plus').click();
     await page.locator('.scratchpad-web-toggle').click();
     app.provider.mode.reply = { choices: [{ message: { content: 'I could not search the web, but I can still answer your question.' } }] };
     for (const [fault, mode] of [
@@ -306,6 +322,7 @@ test('a custom address searches the chosen service and sends its key in the chos
     });
 
     await page.getByRole('tab', { name: 'Chat', exact: true }).click();
+    await page.locator('.scratchpad-plus').click();
     await page.locator('.scratchpad-web-toggle').click();
     app.provider.mode.reply = { choices: [{ message: { content: 'The library archive describes early public libraries. [1]' } }] };
     const question = 'Find public library history through the custom service.';

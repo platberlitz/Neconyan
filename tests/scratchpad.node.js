@@ -96,6 +96,57 @@ function saveAssistant(a, input, revision) {
     return store.withScratchpad(a.base, lease => saveAssistantLocked(lease, input, revision ?? readAssistantsLocked(lease).revision));
 }
 
+test('attachments reach the model and survive saved history, regeneration and import', async t => {
+    const a = account(t);
+    const session = startSession(a);
+    const attachments = [
+        { name: 'scene.json', kind: 'text', mimeType: 'text/plain', size: 30, text: '{"name":"{{char}}","owner":"{{user}}"}' },
+        { name: 'portrait.png', kind: 'image', mimeType: 'image/png', size: png.length, dataUrl: `data:image/png;base64,${png.toString('base64')}` },
+    ];
+    const calls = [];
+    registerScratchpadJobs({ generate: async options => { calls.push(options); return { text: 'The files arrived.' }; } });
+    const body = sendBody(session, { text: '', attachments });
+    const accepted = await acceptScratchpadReply(a.request(body), body);
+    await runJob(getJob(a.directories, accepted.job.id));
+    const content = calls[0].messages.at(-1).content;
+    assert.equal(content.find(part => part.type === 'image_url').image_url.url, attachments[1].dataUrl);
+    const document = content.find(part => part.text?.includes('scene.json')).text;
+    assert.ok(document.includes(attachments[0].text));
+    assert.equal(calls[0].macroEnvironment.evaluate(document), document, 'file macros stay literal');
+    const saved = a.read(SOURCE).sessions[0];
+    assert.deepEqual(saved.messages[0].attachments, attachments);
+    const retry = sendBody(session, { regenerate: saved.messages.at(-1).id });
+    const regenerated = await acceptScratchpadReply(a.request(retry), retry);
+    await runJob(getJob(a.directories, regenerated.job.id));
+    assert.deepEqual(calls[1].messages.at(-1).content, content);
+    const followup = sendBody(session, { text: 'Compare the files.' });
+    const following = await acceptScratchpadReply(a.request(followup), followup);
+    await runJob(getJob(a.directories, following.job.id));
+    assert.ok(calls[2].messages.some(message => JSON.stringify(message.content) === JSON.stringify(content)));
+    const imported = a.mutate(OTHER, bucket => store.createSession(bucket, { messages: saved.messages }));
+    assert.deepEqual(imported.messages[0].attachments, attachments);
+    a.mutate(OTHER, bucket => store.updateMessage(bucket, imported.id, imported.messages[0].id, ''));
+    assert.deepEqual(a.read(OTHER).sessions[0].messages[0].attachments, attachments);
+    const changed = { ...body, attachments: [{ ...attachments[0], text: 'Different' }] };
+    await assert.rejects(acceptScratchpadReply(a.request(changed), changed), error => error.code === 'JOB_SUBMISSION_CONFLICT');
+});
+
+test('invalid and oversized attachments fail before a reply or imported session is saved', async t => {
+    const a = account(t);
+    const session = startSession(a);
+    const file = { name: 'file.txt', kind: 'text', size: 1, text: 'x' };
+    for (const attachments of [null, Array(9).fill(file), [{ ...file, name: '\u0001' }], [{ ...file, text: 'x'.repeat(1024 * 1024 + 1) }],
+        [{ ...file, kind: 'image', dataUrl: 'https://example.com/private.png' }],
+        [{ ...file, kind: 'image', dataUrl: 'data:image/svg+xml;base64,PHN2Zz4=' }],
+        [{ ...file, kind: 'image', dataUrl: 'data:image/png;base64,aGVsbG8=' }]]) {
+        const body = sendBody(session, { attachments });
+        await assert.rejects(acceptScratchpadReply(a.request(body), body), error => error.code === 'SCRATCHPAD_ATTACHMENT_INVALID');
+        assert.throws(() => a.mutate(OTHER, bucket => store.createSession(bucket, { messages: [{ role: 'user', text: '', attachments }] })), error => error.code === 'SCRATCHPAD_ATTACHMENT_INVALID');
+    }
+    assert.equal(a.read(SOURCE).sessions[0].messages.length, 0);
+    assert.equal(a.read(OTHER).sessions.length, 0);
+});
+
 test('persona edit authority is captured from saved settings without image configuration and stripped on import', async t => {
     const a = account(t);
     const target = { avatar: 'User.png', name: 'Kris' };

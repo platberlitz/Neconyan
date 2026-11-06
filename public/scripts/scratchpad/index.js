@@ -10,7 +10,7 @@ import { extension_settings } from '../extensions.js';
 import { t } from '../i18n.js';
 import { updateMessageTokenCounts } from '../message-token-counts.js';
 import { getAssistantGender, getAssistantIconSrc } from '../neconyan-assistant-art.js';
-import { append, clear, h } from '../notebooks/dom.js';
+import { append, clear, h, formatBytes } from '../notebooks/dom.js';
 import { callGenericPopup, POPUP_RESULT, POPUP_TYPE } from '../popup.js';
 import { buildTextDiffMarkup } from '../text-diff.js';
 import { accountStorage } from '../util/AccountStorage.js';
@@ -45,8 +45,10 @@ import { observeJob, TERMINAL } from '../jobs.js';
 import * as images from './images.js';
 import { integerSettingValue, reflectSavedValue, reflectedSettingValue } from './setting-input.js';
 import { renderWebSearchSettings, renderWebSearchSources, setWebSearchToggle } from './web-search.js';
+import { prepareAttachment } from './attachments.js';
+import { MAX_ATTACHMENTS, normaliseAttachments } from './attachment-data.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261106-scratchpad-copy';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261107-scratchpad-attachments';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -127,6 +129,10 @@ const app = {
     editing: '',
     drafts: new Map(),
     draftKey: '',
+    draftOwner: '',
+    attachments: [],
+    attachmentDrafts: new Map(),
+    readingFiles: new Set(),
     previews: new Map(),
     foldedThinking: new Set(),
     openLorebooks: new Set(),
@@ -455,8 +461,33 @@ function buildChatPanel() {
         oninput: fitComposer,
     });
     el.send = iconButton('', () => onSendButton(), { icon: 'fa-paper-plane', className: 'scratchpad-send', title: t`Send`, primary: true });
-    el.webSearch = iconButton('', () => void toggleWebSearch(),
+    el.webSearch = iconButton(t`Web search`, () => { closeComposeMenu(); void toggleWebSearch(); },
         { icon: 'fa-globe', className: 'scratchpad-web-toggle', title: t`Search the web for this message`, pressed: false });
+    el.fileInput = h('input', { type: 'file', multiple: true, hidden: true, 'aria-label': t`Attach files`, onchange: () => {
+        const files = [...el.fileInput.files];
+        el.fileInput.value = '';
+        void addAttachments(files);
+    } });
+    el.attach = iconButton(t`Attach files`, () => { closeComposeMenu(); el.fileInput.click(); }, { icon: 'fa-paperclip' });
+    el.composeMenu = h('div', { id: 'scratchpad-compose-menu', class: 'scratchpad-compose-menu', hidden: true, role: 'group', 'aria-label': t`Message options` }, el.webSearch, el.attach);
+    el.plus = iconButton('', () => {
+        const open = el.composeMenu.hidden;
+        el.composeMenu.hidden = !open;
+        el.plus.setAttribute('aria-expanded', String(open));
+        if (open) el.webSearch.focus();
+    }, { icon: 'fa-plus', className: 'scratchpad-plus', title: t`Message options` });
+    el.plus.setAttribute('aria-controls', 'scratchpad-compose-menu');
+    el.plus.setAttribute('aria-expanded', 'false');
+    el.composeActions = h('div', { class: 'scratchpad-compose-actions', onkeydown: event => {
+        if (event.key === 'Escape') { event.stopPropagation(); closeComposeMenu(); el.plus.focus(); }
+    }, onfocusout: event => {
+        if (event.relatedTarget && !el.composeActions.contains(event.relatedTarget)) closeComposeMenu();
+    } }, el.plus, el.composeMenu, el.fileInput);
+    document.addEventListener('pointerdown', event => {
+        if (!el.composeActions.contains(event.target)) closeComposeMenu();
+    });
+    el.attachments = h('div', { class: 'scratchpad-draft-attachments', 'aria-label': t`Attached files` });
+    el.fileStatus = h('p', { class: 'scratchpad-muted scratchpad-file-status', role: 'status', hidden: true });
     el.overviewToggle = h('button', {
         type: 'button',
         class: 'scratchpad-overview-toggle',
@@ -481,11 +512,12 @@ function buildChatPanel() {
         el.overviewBar,
         el.overview,
         el.messages,
-        h('div', { class: 'scratchpad-compose' }, el.quick, h('div', { class: 'scratchpad-compose-row' }, el.webSearch, el.composer, el.send)),
+        h('div', { class: 'scratchpad-compose' }, el.quick, el.attachments, el.fileStatus, h('div', { class: 'scratchpad-compose-row' }, el.composeActions, el.composer, el.send)),
     ]);
 }
 
 function selectTab(key) {
+    closeComposeMenu();
     app.tab = key;
     for (const [name, tab] of Object.entries(app.el.tabs)) {
         const selected = name === key;
@@ -516,11 +548,25 @@ function applyBucket(bucket, { ticket = null } = {}) {
 }
 
 function syncDraft({ carry = false } = {}) {
+    const owner = getCurrentUserHandle();
+    if (app.draftOwner !== owner) {
+        app.draftOwner = owner;
+        app.attachments = [];
+        app.attachmentDrafts.clear();
+        app.drafts.clear();
+        app.draftKey = '';
+        app.el.composer.value = '';
+    }
     const key = JSON.stringify([app.source?.kind, app.source?.key, activeSession()?.id]);
     if (key === app.draftKey) return;
     const draft = app.el.composer.value;
     const emptyKey = JSON.stringify([app.source?.kind, app.source?.key, null]);
     const firstSession = key !== emptyKey && app.draftKey === emptyKey;
+    closeComposeMenu();
+    const attachments = app.attachments;
+    if (firstSession) app.attachmentDrafts.delete(emptyKey);
+    else if (app.draftKey) app.attachmentDrafts.set(app.draftKey, attachments);
+    app.attachments = app.attachmentDrafts.get(key) ?? (carry || firstSession ? attachments : []);
     if (firstSession) app.drafts.delete(emptyKey);
     else if (app.draftKey) app.drafts.set(app.draftKey, draft);
     app.draftKey = key;
@@ -867,7 +913,7 @@ function sessionText(session) {
 }
 
 async function send({ regenerate = '' } = {}) {
-    if (app.sending) return;
+    if (app.sending || app.readingFiles.has(app.attachments)) return;
     const source = app.source;
     if (!source) return;
     if (!isCurrentSource(source)) {
@@ -877,7 +923,9 @@ async function send({ regenerate = '' } = {}) {
     const draft = app.el.composer.value;
     const initialSessionId = activeSession()?.id;
     const text = regenerate ? '' : draft.trim();
-    if (!regenerate && !text) {
+    const attachedDraft = app.attachments;
+    const attachments = regenerate ? [] : [...attachedDraft];
+    if (!regenerate && !text && !attachments.length) {
         app.el.composer.focus();
         return;
     }
@@ -916,6 +964,7 @@ async function send({ regenerate = '' } = {}) {
             sessionId: session.id,
             regenerate: regenerate || undefined,
             text,
+            attachments,
             context: context.text,
             help,
             capabilities: { ...context.capabilities, image: app.imageAvailability.image },
@@ -926,6 +975,7 @@ async function send({ regenerate = '' } = {}) {
             acknowledgement,
         });
         if (!regenerate) {
+            attachedDraft.splice(0, attachments.length);
             if ((app.draftKey === draftKey || (sameSourceBucket(source, app.source) && activeSession()?.id === session.id)) && app.el.composer.value === draft) app.el.composer.value = '';
             else if (app.drafts.get(draftKey) === draft) app.drafts.set(draftKey, '');
         }
@@ -956,6 +1006,57 @@ async function stopReply() {
 function onSendButton() {
     if (pendingReply()) void stopReply();
     else void send();
+}
+
+function closeComposeMenu() {
+    if (!app.el.composeMenu) return;
+    app.el.composeMenu.hidden = true;
+    app.el.plus.setAttribute('aria-expanded', 'false');
+}
+
+async function addAttachments(files) {
+    if (!files.length || app.sending || app.readingFiles.has(app.attachments)) return;
+    const draft = app.attachments;
+    const account = getCurrentUserHandle();
+    if (draft.length + files.length > MAX_ATTACHMENTS) {
+        toastr.warning(t`Attach up to eight files per message.`);
+        return;
+    }
+    app.readingFiles.add(draft);
+    renderComposer();
+    try {
+        for (const file of files) {
+            try {
+                const attachment = await prepareAttachment(file);
+                if (getCurrentUserHandle() !== account) return;
+                normaliseAttachments([...draft, attachment]);
+                draft.push(attachment);
+            } catch (error) {
+                reportError(error, t`Scratchpad could not attach that file.`);
+            }
+        }
+    } finally {
+        app.readingFiles.delete(draft);
+        renderComposer();
+    }
+}
+
+function renderAttachments(files, { draft = false } = {}) {
+    return files.map((file, index) => {
+        const image = file.kind === 'image';
+        const label = h('span', { class: 'scratchpad-file-label' },
+            h('span', { text: file.name, 'data-i18n-ignore': '' }),
+            h('small', { text: `${formatBytes(file.size)} · ${image ? t`Image` : file.mimeType === 'application/pdf' ? t`PDF text` : t`Text`}` }));
+        const icon = image ? h('img', { class: 'scratchpad-file-thumb', src: file.dataUrl, alt: '' }) : h('i', { class: 'fa-solid fa-file-lines', 'aria-hidden': 'true' });
+        if (draft) return h('div', { class: 'scratchpad-file' }, icon, label,
+            iconButton('', () => { files.splice(index, 1); renderComposer(); }, {
+                icon: 'fa-xmark', title: t`Remove ${file.name}`, disabled: app.sending || app.readingFiles.has(files), className: 'scratchpad-file-remove',
+            }));
+        return h('details', { class: 'scratchpad-file-preview' },
+            h('summary', { class: 'scratchpad-file' }, icon, label),
+            image ? h('img', { class: 'scratchpad-attached-image', src: file.dataUrl, alt: file.name, loading: 'lazy' })
+                : h('pre', { class: 'scratchpad-attached-text', text: file.text, 'data-i18n-ignore': '' }));
+    });
 }
 
 function onComposerKey(event) {
@@ -1213,6 +1314,7 @@ function renderMessage(session, message, { latest }) {
 
     if (message.role === 'user') {
         article.append(h('p', { class: 'scratchpad-plain', text: message.text }));
+        append(article, renderAttachments(message.attachments ?? []));
     } else if (message.state === 'pending') {
         const preview = replyPreview(message);
         const thinking = {
@@ -1650,7 +1752,7 @@ function renderEditor(session, message) {
         h('div', { class: 'scratchpad-editor-actions' },
             iconButton(t`Save`, async () => {
                 const text = editor.value.trim();
-                if (!text) return;
+                if (!text && !message.attachments?.length) return;
                 app.editing = '';
                 await change(source => api.updateMessage(source, session.id, message.id, text), t`Scratchpad could not save that edit.`);
                 renderMessages();
@@ -1663,7 +1765,8 @@ function renderComposer() {
     fitComposer();
     const el = app.el;
     const pending = pendingReply();
-    const disabled = !app.source || !app.bucket || app.sending;
+    const readingFiles = app.readingFiles.has(app.attachments);
+    const disabled = !app.source || !app.bucket || app.sending || readingFiles;
     el.composer.disabled = !app.source || !app.bucket;
     el.send.disabled = disabled && !pending;
     const count = randomReplyEnabled() ? 1 : sessionAssistants().length;
@@ -1674,6 +1777,14 @@ function renderComposer() {
     el.send.querySelector('i').className = `fa-solid ${pending ? 'fa-stop' : 'fa-paper-plane'}`;
     setWebSearchToggle(el.webSearch, { enabled: currentSettings().webSearch === true, configured: app.webSearch?.readiness?.configured === true });
     el.webSearch.disabled = !app.source || !app.bucket || app.sending || Boolean(pending);
+    el.plus.disabled = disabled;
+    el.plus.classList.toggle('menu_button_primary', currentSettings().webSearch === true);
+    el.attach.disabled = disabled;
+    clear(el.attachments);
+    append(el.attachments, renderAttachments(app.attachments, { draft: true }));
+    el.attachments.hidden = !app.attachments.length;
+    el.fileStatus.hidden = !readingFiles && !app.attachments.length;
+    el.fileStatus.textContent = readingFiles ? t`Reading files...` : t`PDFs share extracted text. Images are resized and need an image-capable model.`;
     for (const chip of el.quick.querySelectorAll('button')) chip.disabled = !app.source;
 }
 
@@ -2382,6 +2493,7 @@ export async function openScratchpad({ tab = '', note = null } = {}) {
 }
 
 export function hideScratchpad() {
+    closeComposeMenu();
     if (!app.open) return;
     app.open = false;
     app.openMenus.clear();
