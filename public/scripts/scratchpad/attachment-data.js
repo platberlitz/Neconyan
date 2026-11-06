@@ -38,7 +38,8 @@ export function attachmentContent(text, attachments = []) {
     if (!attachments.length) return text;
     const parts = [{ type: 'text', text: text || 'Please read the attached files.' }];
     for (const file of attachments) {
-        parts.push({ type: 'text', text: `Attached file: ${JSON.stringify(file.name)}${file.kind === 'text' ? `\n${file.text}\n[End of attached file]` : ''}` });
+        const label = `Attached file: ${JSON.stringify(file.name)}`;
+        parts.push({ type: 'text', text: file.kind === 'text' ? [label, file.text, '[End of attached file]'].join('\n') : label });
         if (file.kind === 'image') parts.push({ type: 'image_url', image_url: { url: file.dataUrl, detail: 'auto' } });
     }
     return attachments.some(file => file.kind === 'image') ? parts : parts.map(part => part.text).join('\n\n');
