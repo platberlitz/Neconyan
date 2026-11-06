@@ -510,6 +510,15 @@ describe('Pathfinder settings persistence', () => {
         expect(store.getAgentById('agent-a').settings.suppressKeywordActivation).toBe(!value);
     });
 
+    test('reuses the lore on swipes by default and saves turning it off', async () => {
+        const agent = store.getAgentById('agent-a');
+        delete agent.settings.reuseRetrievalOnSwipe;
+        const panel = await ui.openPathfinderSettings(agent);
+        expect(panel.find('#pf--reuse-retrieval-on-swipe').prop('checked')).toBe(true);
+        await setting(panel, 'reuseRetrievalOnSwipe', false);
+        expect(store.getAgentById('agent-a').settings.reuseRetrievalOnSwipe).toBe(false);
+    });
+
     test('refreshes committed auto-sync selections without overwriting a summary draft', async () => {
         const panel = await ui.openPathfinderSettings(store.getAgentById('agent-a'));
         editSummary(panel, 'Keep this draft');
