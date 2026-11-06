@@ -130,6 +130,11 @@
     outline-offset: 3px;
 }
 
+/* Field rings stay inside scrollports and clipped extension panels. */
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) :is(input, select, textarea):focus-visible {
+    outline-offset: -2px;
+}
+
 :root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) #send_form {
     border: 1px solid var(--kittyless-line);
     border-radius: 20px;

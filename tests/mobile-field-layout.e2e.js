@@ -1,14 +1,21 @@
 // @ts-check
 /* global document, window, getComputedStyle */
 /* eslint-disable playwright/no-conditional-in-test, playwright/no-conditional-expect -- Fixed viewport cases exercise different responsive layouts. */
-import { acknowledgeSettingsSave } from './chat-scroll-regression-helpers.js';
+import { isolateSettingsSaves } from './chat-scroll-regression-helpers.js';
 import { test, expect } from '@playwright/test';
 
 test.use({ hasTouch: true, serviceWorkers: 'block', reducedMotion: 'reduce' });
 test.setTimeout(90_000);
 
 test.beforeEach(async ({ page }) => {
-    await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
+    await isolateSettingsSaves(page, settings => {
+        settings.firstRun = false;
+        settings.accountStorage = {
+            ...settings.accountStorage,
+            'NeconyanTutorialStatus.v1': 'skipped',
+            'NeconyanSimpleMode.v1': 'off',
+        };
+    });
     await page.setViewportSize({ width: 393, height: 852 });
     await page.goto('/');
     await expect(page.locator('body')).toHaveClass(/neconyan-rail-ready/, { timeout: 60_000 });
@@ -124,7 +131,7 @@ test('memory corrections and expression actions fit phone, tablet and desktop wi
     }
 });
 
-test('field focus stays inside clipped core and bundled-extension panels', async ({ page }, testInfo) => {
+async function checkFieldFocus(page, testInfo, shell) {
     const extensionRoot = '/scripts/extensions/';
     for (const stylesheet of [
         '/css/mewmory.css', '/css/world-info.css',
@@ -150,7 +157,7 @@ test('field focus stays inside clipped core and bundled-extension panels', async
     await expect(query).toBeFocused();
     expect(await query.evaluate(element => element.selectionEnd - element.selectionStart)).toBe(20);
     await expect(query).toHaveCSS('outline-offset', '-2px');
-    await page.screenshot({ path: testInfo.outputPath('botsearcher-focus-phone.png') });
+    await page.screenshot({ path: testInfo.outputPath(`botsearcher-focus-${shell}-phone.png`) });
     await page.locator('dialog.popup[open] .popup-button-close').click();
     await expect(query).toBeHidden();
 
@@ -196,5 +203,21 @@ test('field focus stays inside clipped core and bundled-extension panels', async
                 expect(ring.colour).not.toBe('rgba(0, 0, 0, 0)');
             }
         }
+    }
+}
+
+test('field focus stays inside clipped core and bundled-extension panels', async ({ page }, testInfo) => {
+    for (const shell of ['calico', 'kittyless']) {
+        await page.emulateMedia({ forcedColors: 'none' });
+        await page.evaluate(() => {
+            document.querySelector('#field-focus-probe')?.remove();
+            window.NeconyanShell.openTab('right', 'settings');
+        });
+        await page.locator(`[data-sb-theme-option="${shell}"]`).evaluate(element => element.click());
+        await expect(page.locator('html')).toHaveAttribute('data-sb-theme', shell);
+        if (shell === 'kittyless') {
+            await page.waitForFunction(() => Boolean(document.querySelector('link[data-sb-shell-style="kittyless"]')?.sheet));
+        }
+        await checkFieldFocus(page, testInfo, shell);
     }
 });
