@@ -437,7 +437,8 @@ export function zaiSupportsReasoningEffort(model) {
  * @returns {boolean} Whether the model is Kimi K3 or K3.1 Pro
  */
 export function isKimiK3Model(model) {
-    const normalizedModel = String(model ?? '').trim().toLowerCase();
+    // Ignore bracketed routing labels for detection only; requests retain the original ID.
+    const normalizedModel = String(model ?? '').trim().toLowerCase().replace(/(^|[/:])(?:\[[^\]]*\]\s*)+/g, '$1');
     return /(?:^|[/:])kimi-k3(?:\.1(?:-pro)?)?(?:[-/:]|$)/.test(normalizedModel);
 }
 

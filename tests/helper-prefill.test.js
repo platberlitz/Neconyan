@@ -9,7 +9,7 @@ import {
 } from '../public/scripts/extensions/helper-prefill.js';
 
 describe('helper prefill role blocks', () => {
-    test.each(['kimi-k3', 'moonshot/kimi-k3.1', 'kimi-k3.1-pro'])('keeps the partial continuation last for %s', model => {
+    test.each(['kimi-k3', 'moonshot/kimi-k3.1', 'kimi-k3.1-pro', '[kimi]kimi-k3', '[kimi] kimi-k3.1-pro'])('keeps the partial continuation last for %s', model => {
         const messages = [{ role: 'system', content: 'Rules' }, { role: 'user', content: 'Task' }];
         const result = prepareHelperPartialPrefill(messages, '<think>Check carefully.</think>Answer: ', model);
         expect(result.messages.at(-1)).toEqual({ role: 'assistant', content: '<think>Check carefully.</think>Answer: ', partial: true });

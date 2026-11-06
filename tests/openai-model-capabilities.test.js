@@ -127,6 +127,21 @@ describe('Kimi K3 model capabilities', () => {
         }
     });
 
+    test.each([
+        '[kimi]kimi-k3', '[kimi] kimi-k3', ' [KIMI]KIMI-K3 ',
+        '[free][kimi]kimi-k3.1-pro', '[free] moonshotai/kimi-k3.1-pro-highspeed',
+        'provider/[kimi]kimi-k3', 'models:[kimi]kimi-k3.1',
+    ])('recognizes bracket-labelled K3 model %s', model => {
+        expect(isKimiK3Model(model)).toBe(true);
+    });
+
+    test.each([
+        '[kimi]kimi-k2.5', '[kimi]not-kimi-k3', '[kimi]kimi-k30', '[kimi]kimi-k3.2-pro',
+        '[kimi-k3]other-model', '[route/kimi-k3:fast]other-model', '[kimi-k3]',
+    ])('does not mistake a label or unrelated model for K3: %s', model => {
+        expect(isKimiK3Model(model)).toBe(false);
+    });
+
     test('removes parameters fixed by the Kimi K3 and K3.1 Pro APIs', () => {
         for (const model of ['moonshotai/Kimi-K3', 'moonshotai/kimi-k3.1-pro']) {
             const payload = {
