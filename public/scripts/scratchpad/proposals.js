@@ -6,6 +6,7 @@ import { NOTE_TOOL_DEFINITIONS, NOTE_MUTATING_KINDS } from '../notebooks/assista
 import { normaliseCharacterDraft } from '../neconyan-character-draft.js';
 import { CHARACTER_FIELDS, characterField, characterFieldName } from './character-fields.js';
 import { PERSONA_FIELDS, personaDraft, personaFieldValue } from './persona-fields.js';
+import { validPresetValue } from './preset-fields.js';
 
 export const CHANGE_FENCE = 'scratchpad-change';
 const FENCE_PATTERN = /```scratchpad-change[^\n]*\n([\s\S]*?)```/g;
@@ -52,6 +53,13 @@ export function normaliseChange(value) {
     if (value?.type === 'creator') return normaliseScratchpadCreator(value);
     if (!value || typeof value !== 'object' || Array.isArray(value)) fail('This change is not a JSON object.');
     const reason = text(value.reason, 1000).trim();
+    if (value.type === 'preset') {
+        if (value.action !== 'replace' || typeof value.preset !== 'string' || !value.preset.trim() || value.preset.length > 300
+            || !validPresetValue(value.api, value.field, value.value)) fail('This preset change needs a shared preset, a supported field and a valid value.');
+        if (value.api === 'openai' && (typeof value.module !== 'string' || !value.module || value.module.length > 300)) fail('This preset change needs the exact prompt module ID.');
+        return { type: 'preset', action: 'replace', api: value.api, preset: value.preset,
+            ...(value.api === 'openai' ? { module: value.module } : {}), field: value.field, value: value.value, reason };
+    }
     if (value.type === 'image') {
         if (value.action !== 'generate' || !['image', 'avatar', 'persona-avatar', 'persona-note-avatar'].includes(value.target)) fail('This image suggestion needs a valid action and target.');
         const personaTarget = ['persona-avatar', 'persona-note-avatar'].includes(value.target);
@@ -214,6 +222,10 @@ export function splitReply(reply) {
 }
 
 export function describeChange(change) {
+    if (change.type === 'preset') {
+        const field = change.module ? `${change.module} / ${change.field}` : change.field;
+        return `Edit preset '${change.preset}': ${field}`;
+    }
     if (change.type === 'persona' && change.action === 'create') return `Create persona '${change.name}'`;
     if (change.type === 'persona-note' && change.action === 'create') return `Create Scenario Note '${change.name}' for ${change.persona}`;
     if (change.type === 'creator') return `Catelier draft: ${change.name}`;

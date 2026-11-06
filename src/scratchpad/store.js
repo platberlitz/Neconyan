@@ -9,6 +9,7 @@ import { BUILTIN_ASSISTANT_IDS, isAssistantId, orderedAssistants, normaliseAssis
 import { readSharedBucketLocked, writeSharedBucketLocked } from './shared-sessions.js';
 import { hasPendingImages, imagePart, imageChangeHash, normaliseStoredImages } from './image-state.js';
 import { normaliseStoredWebSearch } from './web-search-record.js';
+import { normalisePresetTargets } from '../../public/scripts/scratchpad/preset-fields.js';
 
 export const SCRATCHPAD_SCHEMA = 1;
 export const ASSISTANT_IDS = BUILTIN_ASSISTANT_IDS;
@@ -304,6 +305,8 @@ function normaliseMessage(input, { allowInternalKeys = false } = {}) {
         const proposals = normaliseProposals(input.proposals);
         if (Object.keys(proposals).length) message.proposals = proposals;
         if (allowInternalKeys) {
+            const sharedPreset = normalisePresetTargets(input.sharedPreset);
+            if (sharedPreset.length) message.sharedPreset = sharedPreset;
             const images = normaliseStoredImages(input.images);
             if (Object.keys(images).length) message.images = images;
             const webSearch = normaliseStoredWebSearch(input.webSearch);
@@ -658,7 +661,7 @@ export function createSession(bucket, input = {}) {
     if (Array.isArray(input.messages)) {
         const contextSource = Object.fromEntries(Object.entries(normaliseSource(bucket.source)).filter(([key]) => key !== 'scope'));
         session.messages = input.messages.map(item => normaliseMessage({ ...item, id: undefined, state: 'done', jobId: undefined, proposals: undefined, notebookProposals: undefined,
-            sharedAvatar: undefined, sharedPersona: undefined, images: undefined, targets: undefined, contextSource }))
+            sharedAvatar: undefined, sharedPersona: undefined, sharedPreset: undefined, images: undefined, targets: undefined, contextSource }))
             .filter(Boolean).slice(-MAX_MESSAGES);
     }
     bucket.sessions.unshift(session);
