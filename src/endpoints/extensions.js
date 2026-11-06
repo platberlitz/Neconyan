@@ -221,15 +221,30 @@ async function getRemoteDefaultBranch(git) {
     return firstRemoteBranch.replace(/^origin\//, '');
 }
 
-async function ensureExtensionRepo(extensionPath, isGlobal = false) {
-    const git = simpleGit({ baseDir: extensionPath, ...OPTIONS });
+const extensionRepoBootstraps = new Map();
+
+export async function ensureExtensionRepo(extensionPath, isGlobal = false) {
+    const key = fs.realpathSync(extensionPath);
+    if (extensionRepoBootstraps.has(key)) {
+        return extensionRepoBootstraps.get(key);
+    }
+    const pending = bootstrapExtensionRepo(key, isGlobal);
+    extensionRepoBootstraps.set(key, pending);
     try {
-        const isRepo = await git.checkIsRepo(CheckRepoActions.IS_REPO_ROOT);
-        if (isRepo) {
-            return true;
-        }
-    } catch {
-        // Continue into the bootstrap path below.
+        return await pending;
+    } finally {
+        extensionRepoBootstraps.delete(key);
+    }
+}
+
+async function bootstrapExtensionRepo(extensionPath, isGlobal) {
+    const git = simpleGit({ baseDir: extensionPath, ...OPTIONS });
+    if (await git.checkIsRepo(CheckRepoActions.IS_REPO_ROOT)) {
+        return true;
+    }
+    const metadataPath = path.join(extensionPath, '.git');
+    if (fs.lstatSync(metadataPath, { throwIfNoEntry: false })) {
+        throw new Error('The extension has existing Git metadata that could not be opened.');
     }
 
     if (!isGlobal) {
@@ -242,39 +257,46 @@ async function ensureExtensionRepo(extensionPath, isGlobal = false) {
         return false;
     }
 
-    const snapshotPath = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-ext-'));
+    // Prepare everything beside the extension, on the same volume as the final rename.
+    // A failed fetch or a locked file must never alter the installed extension.
+    const stagingPath = fs.mkdtempSync(path.join(path.dirname(extensionPath), '.neconyan-ext-'));
+    const stagedGit = simpleGit({ baseDir: stagingPath, ...OPTIONS });
 
     try {
-        copyDirectoryContents(extensionPath, snapshotPath);
+        await stagedGit.init();
+        await stagedGit.addRemote('origin', repoUrl);
+        await stagedGit.raw(['fetch', '--depth', '1', 'origin']);
 
-        await git.init();
-        await git.addRemote('origin', repoUrl);
-        clearDirectoryContents(extensionPath, new Set(['.git']));
-        await git.raw(['fetch', '--depth', '1', 'origin']);
+        const defaultBranch = await getRemoteDefaultBranch(stagedGit);
+        await stagedGit.checkout(['-B', defaultBranch, `origin/${defaultBranch}`]);
 
-        const defaultBranch = await getRemoteDefaultBranch(git);
-        await git.checkout(['-B', defaultBranch, `origin/${defaultBranch}`]);
+        clearDirectoryContents(stagingPath, new Set(['.git']));
+        assertSafeExtensionTree(extensionPath);
+        copyDirectoryContents(extensionPath, stagingPath);
+        await stagedGit.raw(['config', 'user.name', 'Neconyan']);
+        await stagedGit.raw(['config', 'user.email', 'neconyan@local']);
+        await stagedGit.add('.');
 
-        copyDirectoryContents(snapshotPath, extensionPath);
-        await git.raw(['config', 'user.name', 'Neconyan']);
-        await git.raw(['config', 'user.email', 'neconyan@local']);
-        await git.add('.');
-
-        const status = await git.status();
+        const status = await stagedGit.status();
         if (status.files.length > 0) {
-            await git.commit('Neconyan bundled adjustments');
+            await stagedGit.commit('Neconyan bundled adjustments');
         }
 
+        if (fs.lstatSync(metadataPath, { throwIfNoEntry: false })) {
+            throw new Error('The extension Git metadata changed while preparing its repository.');
+        }
+        fs.renameSync(path.join(stagingPath, '.git'), metadataPath);
         console.info(`Bootstrapped bundled extension repo at ${extensionPath} from ${repoUrl}`);
         return true;
     } catch (error) {
-        clearDirectoryContents(extensionPath, new Set(['.git']));
-        copyDirectoryContents(snapshotPath, extensionPath);
-        fs.rmSync(path.join(extensionPath, '.git'), { recursive: true, force: true });
         console.error(`Failed to bootstrap bundled extension repo at ${extensionPath}`, error);
-        return false;
+        throw error;
     } finally {
-        fs.rmSync(snapshotPath, { recursive: true, force: true });
+        try {
+            fs.rmSync(stagingPath, { recursive: true, force: true, maxRetries: 3 });
+        } catch (error) {
+            console.warn(`Could not remove temporary extension repository at ${stagingPath}`, error);
+        }
     }
 }
 
