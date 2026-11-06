@@ -105,3 +105,21 @@ test('iOS native version is generated from package.json rather than hardcoded in
     assert.match(verifier, /info\['CFBundleShortVersionString'\] == provenance\['version'\]/);
     assert.match(verifier, /info\['CFBundleVersion'\] == provenance\['version'\]/);
 });
+
+test('the iOS lease policy is tied to the bootstrap, the Swift data path and the server start', () => {
+    const bootstrap = fs.readFileSync(path.join(root, 'ios/server-bootstrap.mjs'), 'utf8');
+    const marker = bootstrap.indexOf('process.env.NECONYAN_IOS_APP = \'1\'');
+    assert.ok(marker > 0);
+    assert.ok(marker < bootstrap.indexOf('await import(\'./server.js\')'));
+    assert.ok(bootstrap.includes('dataRoot: path.join(statePath, \'data\')'));
+    assert.ok(bootstrap.includes('fs.realpathSync(privatePath)'));
+    const swift = fs.readFileSync(path.join(root, 'ios/App/LocalServer.swift'), 'utf8');
+    assert.ok(swift.includes('.applicationSupportDirectory'));
+    assert.ok(swift.includes('appendingPathComponent("Neconyan", isDirectory: true)'));
+    const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
+    assert.ok(server.includes('let iosAppServer = false;'));
+    assert.ok(server.indexOf('let iosAppServer = false;') < server.indexOf('try {'));
+    assert.ok(server.includes('iosAppServer = isIosAppServer({ dataRoot: globalThis.DATA_ROOT });'));
+    assert.ok(server.includes('acquireDataRootOwner(globalThis.DATA_ROOT, \'server\', { androidAppServer: isAndroidAppServer(), iosAppServer })'));
+    assert.ok(server.includes('process.env.NECONYAN_ANDROID_APP !== \'1\' && !iosAppServer'));
+});

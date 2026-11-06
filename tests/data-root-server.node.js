@@ -103,9 +103,9 @@ test('server owns a fresh root, refuses overlap and reclaims a dead owner before
 const ownerModuleUrl = new URL('../src/data-root-owner.js', import.meta.url).href;
 const bump = value => String(BigInt(value) + 1n);
 
-function preload(directory, bindingWorks) {
-    const file = path.join(directory, 'android-preload.mjs');
-    fs.writeFileSync(file, `Object.defineProperty(process, 'platform', { value: 'android' });
+function preload(directory, bindingWorks, platform = 'android') {
+    const file = path.join(directory, `${platform}-preload.mjs`);
+    fs.writeFileSync(file, `Object.defineProperty(process, 'platform', { value: ${JSON.stringify(platform)} });
 process._linkedBinding = name => { if (${bindingWorks} && name === 'neconyan_fs') return {}; throw new Error('No such binding'); };
 `);
     return pathToFileURL(file).href;
@@ -123,18 +123,19 @@ function plantDeadLease(data, change) {
     return { filename, bytes: fs.readFileSync(filename) };
 }
 
-async function runFailingStart(t, { dataName = 'data', change, preloadBinding, repairMarker = false }) {
+async function runFailingStart(t, { dataName = 'data', change, preloadBinding, repairMarker = false, appEnv = { NECONYAN_ANDROID_APP: '1' }, preloadPlatform, afterPlant }) {
     const fixture = serverFixture(dataName);
     const tmp = path.join(fixture.directory, 'tmp');
     fs.mkdirSync(tmp);
     t.after(() => fs.rmSync(fixture.directory, { recursive: true, force: true }));
     const planted = plantDeadLease(fixture.data, change);
     if (repairMarker) fs.mkdirSync(path.join(fixture.data, '_neconyan-policy-repair'));
+    if (afterPlant) afterPlant(fixture.data);
     const args = ['server.js', '--configPath', fixture.configPath, '--dataRoot', fixture.data,
         '--port', String(await port()), '--browserLaunchEnabled', 'false'];
-    if (preloadBinding !== undefined) args.unshift('--import', preload(fixture.directory, preloadBinding));
+    if (preloadBinding !== undefined) args.unshift('--import', preload(fixture.directory, preloadBinding, preloadPlatform));
     const child = spawn(process.execPath, args, { cwd: app, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
-        env: { ...process.env, NECONYAN_SUPERVISED: '1', NECONYAN_ANDROID_APP: '1', TMPDIR: tmp } });
+        env: { ...process.env, NECONYAN_SUPERVISED: '1', ...appEnv, TMPDIR: tmp } });
     let logs = '';
     child.stdout.on('data', chunk => { logs += chunk; });
     child.stderr.on('data', chunk => { logs += chunk; });
@@ -178,4 +179,58 @@ test('a Termux-like start without the app binding keeps the strict lease checks'
     assert.notEqual(run.child.exitCode, 0);
     assert.deepEqual(fs.readFileSync(run.planted.filename), run.planted.bytes);
     assert.equal(run.logs.split('neconyan_fs binding is missing').length - 1, 1);
+});
+
+// Simulated iOS app starts (IOS-LEASE-01). The real server.js runs; only the platform is faked.
+const iosEnv = { NECONYAN_IOS_APP: '1' };
+
+for (const variant of ['hostname', 'root']) {
+    test(`a simulated iOS app start reclaims a dead lease with a foreign ${variant}`, { timeout: 120000, skip: process.platform !== 'linux' }, async t => {
+        const change = value => {
+            value.platform = 'ios';
+            if (variant === 'hostname') value.hostname = 'foreign-host';
+            else { value.root.dev = bump(value.root.dev); value.root.ino = bump(value.root.ino); }
+        };
+        const run = await runFailingStart(t, { change, preloadBinding: false, preloadPlatform: 'ios', appEnv: iosEnv, repairMarker: true });
+        assert.notEqual(run.child.exitCode, 0);
+        assert.match(run.logs, /Reclaimed a stale data folder lease \(process-ended\)/);
+        assert.match(run.logs, variant === 'hostname' ? /differs: hostname/ : /differs: root\.dev, root\.ino/);
+        assert.match(run.logs, /identity repair is unfinished/);
+        assert.doesNotMatch(run.logs, /already owned/);
+        assert.doesNotMatch(run.logs, /iOS app marker is set/);
+        assert.equal(inspectDataRootOwner(run.data).pid, run.child.pid);
+    });
+}
+
+test('the iOS marker with a darwin runtime outside the app container keeps the strict lease checks', { timeout: 120000, skip: process.platform !== 'linux' }, async t => {
+    const run = await runFailingStart(t, { change: value => { value.platform = 'darwin'; value.hostname = 'foreign-host'; },
+        preloadBinding: false, preloadPlatform: 'darwin', appEnv: iosEnv });
+    assert.notEqual(run.child.exitCode, 0);
+    assert.deepEqual(fs.readFileSync(run.planted.filename), run.planted.bytes);
+    assert.match(run.logs, /Lease record: pid=/);
+    assert.match(run.logs, /differs: hostname/);
+    assert.equal(run.logs.split('iOS app marker is set').length - 1, 1);
+    assert.match(run.logs, /Stop every Neconyan installation/);
+    assert.ok(!fs.existsSync(path.join(run.tmp, 'startup-status.txt')));
+});
+
+test('the iOS marker on a real Linux runtime keeps the strict lease checks', { timeout: 120000, skip: process.platform !== 'linux' }, async t => {
+    const run = await runFailingStart(t, { change: value => { value.hostname = 'foreign-host'; }, appEnv: iosEnv });
+    assert.notEqual(run.child.exitCode, 0);
+    assert.deepEqual(fs.readFileSync(run.planted.filename), run.planted.bytes);
+    assert.equal(run.logs.split('iOS app marker is set').length - 1, 1);
+    assert.match(run.logs, /platform linux/);
+    assert.match(run.logs, /Stop every Neconyan installation/);
+});
+
+test('an iOS refusal does not print the desktop repair hint', { timeout: 120000, skip: process.platform !== 'linux' }, async t => {
+    let lock;
+    const run = await runFailingStart(t, { change: value => { value.platform = 'ios'; }, preloadBinding: false, preloadPlatform: 'ios', appEnv: iosEnv,
+        afterPlant: data => { lock = path.join(data, DATA_ROOT_OWNER_DIRECTORY); fs.writeFileSync(path.join(lock, 'extra'), 'x'); } });
+    assert.notEqual(run.child.exitCode, 0);
+    assert.deepEqual(fs.readFileSync(run.planted.filename), run.planted.bytes);
+    assert.deepEqual(fs.readdirSync(lock).sort(), ['extra', 'owner.json']);
+    assert.equal(fs.readFileSync(path.join(lock, 'extra'), 'utf8'), 'x');
+    assert.match(run.logs, /Keep Neconyan installed/);
+    assert.doesNotMatch(run.logs, /Stop every Neconyan installation/);
 });
