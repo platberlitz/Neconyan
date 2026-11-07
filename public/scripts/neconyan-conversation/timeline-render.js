@@ -2188,6 +2188,9 @@ export function ensureConversationChrome() {
                     <button type="button" class="sb-conversation-tool-button" data-sb-conversation-action="scratchpad" title="Plan this chat with Miso, Taro or Nori">
                         <i class="fa-solid fa-clipboard-list" aria-hidden="true"></i><span>Scratchpad</span>
                     </button>
+                    <button type="button" class="sb-conversation-tool-button" data-sb-conversation-action="games" title="Play a game with this chat">
+                        <i class="fa-solid fa-dice" aria-hidden="true"></i><span>Games</span>
+                    </button>
                 </div>
                 <label class="sb-conversation-search-wrap" for="${CHROME_IDS.search}">
                     <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>

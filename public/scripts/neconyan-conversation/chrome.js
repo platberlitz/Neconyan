@@ -786,6 +786,11 @@ export function bindConversationChromeControls(sheld) {
                 await openScratchpad();
                 break;
             }
+            case 'games': {
+                const { openGames } = await import('./games/index.js');
+                await openGames();
+                break;
+            }
             case 'force-response': {
                 const avatar = getCurrentCharAvatar();
                 if (avatar) {

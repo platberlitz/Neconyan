@@ -2018,6 +2018,7 @@ function activateNeconyanRailRoute(route) {
     const shell = globalThis.NeconyanShell;
     globalThis.NeconyanNotes?.onRoute?.(route);
     globalThis.NeconyanScratchpad?.onRoute?.(route);
+    globalThis.NeconyanGames?.onRoute?.(route);
     if (Object.hasOwn(NECONYAN_RAIL_TOOL_ROUTES, route)) {
         globalThis.NeconyanNativeTools?.activate?.(NECONYAN_RAIL_TOOL_ROUTES[route]);
         return;

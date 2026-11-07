@@ -70,6 +70,29 @@ afterEach(() => {
 });
 
 describe('conversation store synchronisation', () => {
+    test('a changed refresh notifies views after adopting the server copy', async () => {
+        seed(store({ 'nova.png': thread([]) }), 7);
+        const previousWindow = globalThis.window;
+        const notifications = [];
+        globalThis.window = { dispatchEvent: event => notifications.push({
+            type: event.type,
+            version: storeSync.getConversationSavedVersion(),
+            messages: extension_settings[KEY].characters['nova.png'].branches.b1.messages.length,
+        }) };
+        globalThis.fetch = async () => jsonResponse(200, {
+            store: store({ 'nova.png': thread([message('native', 'Hello')]) }), version: 8,
+        });
+        try {
+            await storeSync.refreshConversationStore();
+            await storeSync.refreshConversationStore();
+            expect(notifications).toEqual([{
+                type: 'neconyan:conversation-store-refreshed', version: 8, messages: 1,
+            }]);
+        } finally {
+            globalThis.window = previousWindow;
+        }
+    });
+
     test('the first Conversation branch saves after the server initialises an absent store', async () => {
         seed({}, 0);
         const local = store({ 'nori.png': thread([]) }, { localStorageMigrated: true });
