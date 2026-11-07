@@ -265,7 +265,8 @@ function saveRecord() {
 
 function refreshChangedRecord() {
     const branch = activeBranch();
-    if (!app.target || (branch && JSON.stringify(branch.games ?? null) === app.savedRecord)) {
+    const sameContext = contextKeyOf(resolveTarget()) === app.contextKey;
+    if (sameContext && (!app.target || (branch && JSON.stringify(branch.games ?? null) === app.savedRecord))) {
         return false;
     }
     app.turnToken += 1;

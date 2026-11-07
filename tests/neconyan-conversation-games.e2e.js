@@ -273,6 +273,18 @@ test('switching branches keeps each board separate and ignores a late pal reply'
     await expect(panel.locator('.neco-games-cf-cell[data-seat="y"]')).toHaveCount(2, { timeout: 60000 });
     await expect.poll(async () => (await account.branch('main'))?.games?.state.history).toEqual([0, 3, 1, 3]);
     expect((await account.branch(branchId)).games.id).toBe('minesweeper');
+
+    app.provider.mode.hold = palCalls(app)[0].model;
+    await panel.locator('.neco-games-cf-column[data-column="2"]').click();
+    await expect.poll(() => palCalls(app).length).toBe(4);
+    await expect.poll(async () => (await account.branch('main'))?.games?.state.history).toEqual([0, 3, 1, 3, 2]);
+    await account.changeStore(store => { store.characters[account.threadKey].activeBranchId = branchId; });
+    await page.evaluate(async () => (await import('/scripts/neconyan-conversation/store-sync.js')).refreshConversationStore());
+    await expect(panel.locator('.neco-games-mines-grid')).toBeVisible();
+    await app.release();
+    await expect.poll(() => palCalls(app).every(call => call.completedAt !== null)).toBe(true);
+    expect((await account.branch('main')).games.state.history).toEqual([0, 3, 1, 3, 2]);
+    expect((await account.branch(branchId)).games.id).toBe('minesweeper');
 });
 
 test('a refreshed game deletion cancels a pending pal turn and a reset branch can save again', async ({ app }) => {
