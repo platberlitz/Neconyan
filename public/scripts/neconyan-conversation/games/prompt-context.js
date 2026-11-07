@@ -108,7 +108,9 @@ function buildVersusContext(rules, state, user, pals) {
     }
     if (status.over) {
         const reason = rules.id === 'chess' ? cleanName(status.detail, '') : '';
-        lines.push(`The game is over. ${winnerLine(status, user, pals)}${reason ? ` ${reason}` : ''}`.trim());
+        // Join the parts instead of nesting interpolations: the locale collector
+        // rejects captions whose placeholders touch, and this text reaches prompts only.
+        lines.push(['The game is over.', winnerLine(status, user, pals), reason].filter(Boolean).join(' '));
     } else {
         const turn = rules.turn(state);
         const check = status.label === 'Check' ? ' The king is in check.' : '';
