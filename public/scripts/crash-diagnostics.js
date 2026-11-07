@@ -408,6 +408,19 @@
     }
 
     api.capture = capture;
+    api.updateReport = (id, error) => {
+        if (capturing || !safeId(id)) return null;
+        const report = reports.find(item => item.id === id);
+        if (!report) return null;
+        capturing = true;
+        try {
+            const described = describeError(error);
+            report.error = described;
+            if (JSON.stringify(report).length > 60000) report.error = { ...described, cause: 'Omitted: report size limit', errors: undefined };
+            save();
+            return report;
+        } catch { return null; } finally { capturing = false; }
+    };
     api.getReports = () => JSON.parse(JSON.stringify({ reports, recoveries, storageError, retainedActivities }));
     api.clear = () => {
         reports = [];

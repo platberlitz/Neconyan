@@ -1090,12 +1090,87 @@ async function openAdminPanel() {
 }
 
 /**
+ * Turn off notification delivery without importing the optional notifications module.
+ * The browser service worker reads the cached record, so this suppresses old pushes.
+ * Owner and device stay in place so a later successful load can revoke properly.
+ */
+const NOTIFICATION_PREFERENCE_KEY = 'neconyan-system-notifications';
+const NOTIFICATION_PREFERENCE_CACHE = 'neconyan-notification-preferences';
+const NOTIFICATION_PREFERENCE_URL = '/__neconyan_notification_preferences';
+
+async function disableNotificationPreferencesForLogout() {
+    let state = {};
+
+    try {
+        const raw = localStorage.getItem(NOTIFICATION_PREFERENCE_KEY);
+        const parsed = raw ? JSON.parse(raw) : null;
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            state = parsed;
+        }
+        state = { ...state, enabled: false };
+        localStorage.setItem(NOTIFICATION_PREFERENCE_KEY, JSON.stringify(state));
+    } catch { /* Logout continues when storage is unavailable. */ }
+
+    let cacheWriteFailed = false;
+
+    if (globalThis.caches) {
+        try {
+            const cache = await globalThis.caches.open(NOTIFICATION_PREFERENCE_CACHE);
+            let cached = {};
+
+            try {
+                const response = await cache.match(NOTIFICATION_PREFERENCE_URL);
+                const parsed = response ? await response.json() : null;
+                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                    cached = parsed;
+                }
+            } catch { /* The local record still supplies owner and device. */ }
+
+            const merged = { ...cached, ...state, enabled: false };
+            await cache.put(NOTIFICATION_PREFERENCE_URL, new Response(JSON.stringify(merged)));
+        } catch {
+            cacheWriteFailed = true;
+        }
+
+        if (cacheWriteFailed) {
+            try {
+                const cache = await globalThis.caches.open(NOTIFICATION_PREFERENCE_CACHE);
+                await cache.delete(NOTIFICATION_PREFERENCE_URL);
+            } catch {
+                try {
+                    await globalThis.caches.delete(NOTIFICATION_PREFERENCE_CACHE);
+                } catch { /* The subscription cleanup below still stops delivery. */ }
+            }
+        }
+    }
+
+    try {
+        const registration = await navigator.serviceWorker?.getRegistration();
+        const subscription = await registration?.pushManager?.getSubscription?.();
+        await subscription?.unsubscribe?.();
+    } catch { /* Closing notifications and logout continue independently. */ }
+
+    try {
+        const registration = await navigator.serviceWorker?.getRegistration();
+        for (const notification of await registration?.getNotifications?.() || []) {
+            notification.close();
+        }
+    } catch { /* Closing displayed notifications is best effort. */ }
+}
+
+/**
  * Log out the current user.
  * @returns {Promise<void>}
  */
 async function logout() {
-    const { disablePushNotifications } = await import('./push-notifications.js');
-    await disablePushNotifications().catch(() => {});
+    try {
+        const { disablePushNotifications } = await import('./push-notifications.js');
+        await disablePushNotifications().catch(() => {});
+    } catch (error) {
+        // Notifications are optional. A blocked or missing module must not stop logout.
+        console.warn('Notifications are unavailable during logout.', error);
+        await disableNotificationPreferencesForLogout().catch(() => {});
+    }
     window.dispatchEvent(new CustomEvent('neconyan:account-changing'));
     let signedOut = false;
 
