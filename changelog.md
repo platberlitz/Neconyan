@@ -19,6 +19,7 @@
 - PR #524 (2026-11-07) `fix: recover saved replies and show readable startup failures`
 - PR #525 (2026-11-07) `feat(agents): add companion depth insertion for kept notes`
 - PR #526 (2026-11-07) `fix(quick-image-gen): surface provider refusals during prompt rewrites`
+- PR #527 (2026-11-07) `fix(shell): cap panel rounding in pill styles`
 
 ## v1.5.1
 
