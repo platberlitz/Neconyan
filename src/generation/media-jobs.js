@@ -1,7 +1,7 @@
 import { assertMutableImagePath } from '../managed-image-files.js';
 import fs from 'node:fs';
 import path from 'node:path';
-import { acceptJob, getJob } from '../jobs/store.js';
+import { acceptJob, getJob, hasJob } from '../jobs/store.js';
 import { assertRoleplaySourceLocked } from './roleplay-source.js';
 import { assertConversationAssistantSourceLocked } from './conversation-assistant-source.js';
 import { assertUntrackedRoleplayFiles, confirmRoleplayAccount, createRoleplayDirectory, readRoleplayFile,
@@ -51,7 +51,7 @@ function saveReceipt(filename, value, baseline) {
     }
 }
 
-function reserveReceipt(base, filename, targetHash, releaseStoppedTarget) {
+function reserveReceipt(base, account, filename, targetHash, releaseStoppedTarget) {
     const directory = path.dirname(filename);
     createRoleplayDirectory(directory, roleplayStoreDirectory(base));
     let used = RECEIPT_LIMIT;
@@ -66,7 +66,14 @@ function reserveReceipt(base, filename, targetHash, releaseStoppedTarget) {
             value = { ...value, state: 'closed', result };
             file = saveReceipt(path.join(directory, name), value, file);
         }
-        used += value.state === 'closed' ? file.bytes.length : RECEIPT_LIMIT;
+        // A record from another data epoch belongs to retired data, and an accepted record
+        // whose job has left the ledger cannot be run or written again: every receipt writer
+        // and retry needs the saved job. Keep both records and their proofs intact, but do
+        // not reserve room that no future write can use.
+        const settled = value.state === 'accepted'
+            && (value.account.accountId !== account.accountId || value.account.dataEpoch !== account.dataEpoch
+                || !hasJob(base.directories, value.jobId));
+        used += value.state === 'closed' || settled ? file.bytes.length : RECEIPT_LIMIT;
         if (used > STORE_LIMIT) throw fail('Media record storage is full. Earlier records were kept.', 'MEDIA_STORE_FULL');
     }
 }
@@ -95,7 +102,7 @@ export function admitNativeMediaJob(base, account, { operationKey, source, kind,
         assertMediaSourceLocked(lease, source, kind);
         if (!value) {
             if (approvalReservation) reserveJobApprovalCapacityLocked(lease, approvalReservation);
-            reserveReceipt(base, filename, targetHash, releaseStoppedTarget);
+            reserveReceipt(base, account, filename, targetHash, releaseStoppedTarget);
             value = { version: 1, account: stamp(account), intentHash, targetHash, jobId: null, state: 'preparing', effects: {},
                 ...(approvalReservation ? { approvalReservation } : {}) };
             file = saveReceipt(filename, value, null);
