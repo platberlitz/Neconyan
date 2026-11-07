@@ -7,6 +7,7 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
     private var web: WKWebView!
     private var server: LocalServer?
     private var keeper: BackgroundKeeper?
+    private var notifications: NativeNotifications?
     private var pickReply: (@MainActor @Sendable (Any?, String?) -> Void)?
     private let status = UILabel()
     private let actions = UIStackView()
@@ -36,6 +37,7 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
         config.userContentController.add(self, name: "nativeDiagnostics")
         config.userContentController.add(self, name: "neconyanBackground")
         config.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "neconyanImport")
+        config.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "neconyanNotifications")
         config.userContentController.addUserScript(WKUserScript(source: #"""
         (() => {
             const resources = new Set();
@@ -176,7 +178,8 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
                 if server == nil { server = try LocalServer() }
                 guard let server else { return }
                 if keeper == nil {
-                    keeper = BackgroundKeeper(marker: server.state.appendingPathComponent("ios-busy"))
+                    notifications = NativeNotifications(inbox: server.state.appendingPathComponent("native-notifications.json"))
+                    keeper = BackgroundKeeper(marker: server.state.appendingPathComponent("ios-busy"), pollNotifications: { [weak self] in self?.notifications?.drain() })
                     keeper?.start()
                 }
                 // Installing the payload and starting Node must not block UIKit's main thread.
@@ -255,7 +258,21 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage, replyHandler: @escaping @MainActor @Sendable (Any?, String?) -> Void) {
         guard message.frameInfo.isMainFrame, let source = message.frameInfo.request.url, isLocal(source),
-              let body = message.body as? [String: Any], body["action"] as? String == "pickArchive" else {
+              let body = message.body as? [String: Any] else {
+            replyHandler(nil, "Unsupported request.")
+            return
+        }
+        if message.name == "neconyanNotifications", let notifications {
+            Task {
+                if body["action"] as? String == "set", let enabled = body["enabled"] as? Bool {
+                    replyHandler(await notifications.setEnabled(enabled), nil)
+                } else if body["action"] as? String == "status" {
+                    replyHandler(await notifications.state(), nil)
+                } else { replyHandler(nil, "Unsupported request.") }
+            }
+            return
+        }
+        guard message.name == "neconyanImport", body["action"] as? String == "pickArchive" else {
             replyHandler(nil, "Unsupported request.")
             return
         }

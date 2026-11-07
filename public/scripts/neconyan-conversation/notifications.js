@@ -321,6 +321,7 @@ export function showConversationToast(avatar, message, { branchId = '', groupId 
     toastr.info(preview, title, {
         ...SAFE_TOAST_OPTIONS,
         timeOut: 6000,
+        neconyanSystemNotification: !String(message.id || '').startsWith('job_'),
         onclick: () => void openConversationFromNotification(avatar, { branchId, groupId, personaId }),
     });
 }

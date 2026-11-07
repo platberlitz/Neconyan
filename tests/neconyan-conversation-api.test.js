@@ -2,7 +2,9 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, jest, tes
 import express from 'express';
 import fs from 'node:fs';
 import http from 'node:http';
-import { createHash } from 'node:crypto';
+import { createHash, createECDH, randomUUID } from 'node:crypto';
+import webpush from 'web-push';
+import { setNotificationDevice } from '../src/push-notifications.js';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -163,6 +165,7 @@ describe('Neconyan Conversation REST API', () => {
     });
 
     afterEach(() => {
+        jest.restoreAllMocks();
         for (const dir of tempDirs.splice(0)) {
             fs.rmSync(dir, { recursive: true, force: true });
         }
@@ -216,6 +219,11 @@ describe('Neconyan Conversation REST API', () => {
     }
 
     test('native job effects retain receipts with messages, preserve other writes and reject edited or deleted targets', async () => {
+        const delivered = jest.spyOn(webpush, 'sendNotification').mockResolvedValue({});
+        const key = createECDH('prime256v1');
+        setNotificationDevice(userDirectories, { device: randomUUID(), enabled: true, subscription: {
+            endpoint: 'https://fcm.googleapis.com/fixture', keys: { p256dh: key.generateKeys().toString('base64url'), auth: Buffer.alloc(16, 1).toString('base64url') },
+        } });
         const { captureConversationTarget, appendConversationJobMessage, commitConversationEffect, commitConversationJobCommands } = await import('../src/generation/conversation-effects.js');
         const { acceptJob, requestCancellation } = await import('../src/jobs/store.js');
         const created = await postJson('/thread/save', { avatar: 'nova.png', version: 0, messages: [{ role: 'user', mes: 'Hello', name: 'User' }] });
@@ -227,6 +235,8 @@ describe('Neconyan Conversation REST API', () => {
         const message = { role: 'character', name: 'Nova', mes: 'First bubble' };
         const first = await appendConversationJobMessage(context, target, 'bubble-0', message);
         expect(await appendConversationJobMessage(context, target, 'bubble-0', message)).toEqual(first);
+        expect(delivered).toHaveBeenCalledTimes(1);
+        expect(JSON.parse(delivered.mock.calls[0][1])).toMatchObject({ id: first.id, owner: userHandle, body: message.mes });
         expect(readConversationStore().characters['nova.png'].branches.main.messages).toHaveLength(2);
         expect(readConversationStore().characters['nova.png'].branches.main.unread).toBe(1);
         expect(Object.keys(readConversationStore().characters['nova.png'].branches.main.pendingPresentations)).toEqual([first.id]);
@@ -252,6 +262,7 @@ describe('Neconyan Conversation REST API', () => {
         expect(readConversationStore().characters['nova.png']).toBeUndefined();
         requestCancellation(userDirectories, job.id);
         await expect(appendConversationJobMessage(context, target, 'bubble-1', message)).rejects.toMatchObject({ name: 'AbortError' });
+        expect(delivered).toHaveBeenCalledTimes(1);
     });
 
     test('native outgoing messages do not mark identifier-less read history unread', async () => {

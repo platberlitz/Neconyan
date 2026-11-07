@@ -92,6 +92,10 @@
     cursor: pointer;
 }
 
+#sb-notifications-drawer .nn-vt-row {
+    border-top: 0;
+}
+
 :is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-row:hover {
     background: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 6%, transparent);
 }
