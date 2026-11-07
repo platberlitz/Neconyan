@@ -15,7 +15,14 @@ function bindings(directories, job, output, records) {
     if (!outcome || typeof text !== 'string' || !text.trim() || Buffer.byteLength(text) > 256 * 1024
         || text !== provider.text || roleplayHash(outcome) !== roleplayHash(message?.extra?.generation_outcome)
         || output.continuedText !== undefined || output.agentProof !== undefined || output.messages?.length > 1
-        || Object.keys(message.extra ?? {}).some(key => /^inChatAgent|^agent_/.test(key))) throw fail();
+        || Object.keys(message.extra ?? {}).some(key => key !== 'inChatAgents' && /^inChatAgent|^agent_/.test(key))) throw fail();
+    // Display-only scripts are frozen before dispatch, not evidence that any
+    // post-generation Agent ran. Bind them without permitting transformed text.
+    if (message.extra?.inChatAgents !== undefined) {
+        const { hash, ...saved } = readArtifact(directories, job.id, 'roleplay-agent-display') ?? {};
+        if (!hash || hash !== roleplayHash(saved) || saved.intentHash !== roleplayHash(job.intent)
+            || roleplayHash(saved.display) !== roleplayHash(message.extra.inChatAgents)) throw fail();
+    }
     const baseline = job.intent.effect === 'continue' ? records[job.intent.source.message.index + 1] : null;
     if (job.intent.effect === 'continue' && typeof baseline?.mes !== 'string') throw fail();
     const delivered = structuredClone(output);

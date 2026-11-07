@@ -1,9 +1,10 @@
-/* global document, window */
+/* global document, window, getComputedStyle */
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { expect } from '@playwright/test';
 import { test, MODEL, send as sendConversation } from './neconyan-conversation-durable-fixture.js';
+import { startNativeReply } from './native-roleplay-helpers.js';
 
 test.setTimeout(180000);
 const PARTIAL = 'The reply ends in the middle of';
@@ -18,6 +19,51 @@ const companion = { id: 'companion', name: 'Companion', enabled: true, category:
 const interceptor = { id: 'interceptor', name: 'Post-main interceptor', enabled: true, phase: 'pre',
     prompt: 'Revise the reply.', connectionProfile: 'interceptor',
     preProcess: { mode: 'intercept', interceptTiming: 'post-main-generation', applyMode: 'replace' } };
+
+for (const phone of [false, true]) {
+    const viewport = phone ? 'phone' : 'desktop';
+    test(`server provider error ${viewport} preserves display regex and reports the outcome`, async ({ app }) => {
+        const formatter = { ...post, regexScripts: [{ id: 'error-display', scriptName: 'Display formatting',
+            findRegex: '/middle/g', replaceString: '**middle**', placement: [2], disabled: false,
+            markdownOnly: true, promptOnly: false, trimStrings: [], substituteRegex: 0 }] };
+        const { account, page } = await setup(app, { phone, agents: [formatter, companion] });
+        app.provider.mode.streamEvents = stream(PARTIAL, 'error');
+        await page.locator('#send_textarea').fill('Describe the fountain.');
+        await startNativeReply(page);
+        await expect.poll(async () => page.evaluate(async () => (await import('/script.js')).chat.at(-1)?.extra?.generation_outcome),
+            { timeout: 60000 }).toEqual({ version: 1, status: 'error', reason: 'error' });
+        await fs.mkdir(path.resolve('../screenshots'), { recursive: true });
+        await page.screenshot({ path: path.resolve(`../screenshots/server-error-${process.env.REPLY_EVIDENCE_PHASE || 'after'}-${viewport}.png`) });
+        await expect(page.locator('#toast-container .toast').filter({ hasText: 'The provider ended this reply with an error. Automatic agents were not run' })).toHaveCount(1);
+        const formatted = page.locator('#chat .mes').last().locator('.mes_text strong');
+        await expect(formatted).toHaveText('middle');
+        const geometry = await formatted.evaluate(element => ({ weight: Number(getComputedStyle(element).fontWeight),
+            width: element.getBoundingClientRect().width, height: element.getBoundingClientRect().height }));
+        expect(geometry.weight).toBeGreaterThanOrEqual(600);
+        expect(geometry.width).toBeGreaterThan(0);
+        expect(geometry.height).toBeGreaterThan(0);
+        expect(await page.evaluate(async () => (await import('/script.js')).chat.at(-1).mes)).toBe(PARTIAL);
+        await wakeRecovery(page);
+        expect(app.provider.calls.map(call => call.model)).toEqual([MODEL]);
+        await page.close();
+        const reopened = await openChat(account);
+        await expect(reopened.locator('#chat .mes').last().locator('.mes_text strong')).toHaveText('middle');
+        await expect(reopened.locator('#chat .mes').last().locator('.generation_outcome')).toBeVisible();
+        await expect(reopened.locator('#toast-container .toast').filter({ hasText: 'The provider ended this reply with an error' })).toHaveCount(0);
+    });
+
+    test(`server provider error ${viewport} with no text retains its error notice`, async ({ app }) => {
+        const { page } = await setup(app, { phone, agents: [post, companion] });
+        app.provider.mode.streamEvents = stream('', 'MALFORMED_FUNCTION_CALL');
+        await page.locator('#send_textarea').fill('A request that ends before text.');
+        await startNativeReply(page);
+        await expect(page.locator('#toast-container .toast').filter({ hasText: 'The provider ended this reply with an error' })).toHaveCount(1, { timeout: 60000 });
+        await wakeRecovery(page);
+        expect(app.provider.calls.map(call => call.model)).toEqual([MODEL]);
+        expect(await page.evaluate(async () => (await import('/script.js')).chat.at(-1).is_user)).toBe(true);
+        await expect(page.locator('#chat .generation_outcome')).toHaveCount(0);
+    });
+}
 
 async function openChat(account) {
     const page = await account.open({ workspace: false });

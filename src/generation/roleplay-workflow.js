@@ -780,7 +780,8 @@ export function recoverWaitingRoleplayWorkflow({ job, directories, owner }) {
             ? ' The provider may still have processed this request, so it was not retried automatically.' : '';
         const code = child.error?.code === 'GENERATION_BLOCKED' || String(child.error?.code || '').startsWith('MEWMORY_WAIT_')
             ? child.error.code : 'ROLEPLAY_WORKFLOW_CHILD';
-        updateJob(directories, current.id, { state: 'interrupted', stage: 'child-needs-recovery', error: { code, message: reason + uncertainty } });
+        updateJob(directories, current.id, { state: 'interrupted', stage: 'child-needs-recovery', error: { code, message: reason + uncertainty,
+            ...(child.error?.generationOutcome ? { generationOutcome: child.error.generationOutcome } : {}) } });
     }
 }
 

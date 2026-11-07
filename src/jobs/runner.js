@@ -206,7 +206,8 @@ async function reportFailure(directories, id, error, signal) {
     const status = typeof error?.status === 'number' ? error.status : 500;
     const recoverable = saved?.recoverability === 'unknown-outcome' || error?.recoverable === true || signal?.aborted;
     await settleQuietly(() => setJobState(directories, id, recoverable ? 'interrupted' : 'failed', {
-        error: { message: error?.message ?? 'The job failed.', code: error?.code ?? 'JOB_FAILED', status },
+        error: { message: error?.message ?? 'The job failed.', code: error?.code ?? 'JOB_FAILED', status,
+            ...(error?.generationOutcome ? { generationOutcome: error.generationOutcome } : {}) },
     }));
 }
 

@@ -937,7 +937,7 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, messageI
             }
             // The origin is the workflow's own chat and account, as given when it was accepted or found in the job record.
             if (isImageInputIssue(value.error)) globalThis.dispatchEvent(new CustomEvent(IMAGE_REFUSED_EVENT, { detail: imageInputIssueDetail(value.error, roleplayImageOrigin(locator, account)) }));
-            else if (value.error?.code === 'GENERATION_BLOCKED') globalThis.toastr?.warning?.(generationBlockedNotice(false));
+            else if (value.error?.code === 'GENERATION_BLOCKED') globalThis.toastr?.warning?.(generationBlockedNotice(false, value.error.generationOutcome));
             else if (message) {
                 // Whether this failure was saved by the server keeper is decided
                 // from its receipt in onStop. Show the notice only after that read,

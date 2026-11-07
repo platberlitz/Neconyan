@@ -252,7 +252,12 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
             output.extra.structured_prefill = continuedPrefillMetadata(previous?.extra?.structured_prefill, result.response.choices[0].structured_prefill);
         }
         let reply = output.message ?? output.messages?.[0] ?? output;
-        if (blocked) reply.extra.generation_outcome = blocked;
+        if (blocked) {
+            reply.extra.generation_outcome = blocked;
+            const display = inChatAgents ?? roleplayAgentDisplaySnapshot(context, { base, snapshot: request.worldInfo,
+                generationType: request.worldInfo?.global.trigger, agentCache });
+            if (display) reply.extra.inChatAgents = display;
+        }
         if (thinkingRecovery) reply.extra[THINKING_RECOVERY_RUN_EXTRA_KEY] = thinkingRecovery;
         // The paid main reply is complete from here on. A late Stop turns into
         // a soft stop for optional postprocessing instead of cancelling text

@@ -48,7 +48,7 @@ test('a continuation cannot use the failure stop to skip Agent proof', t => {
 });
 
 const { saveBlockedOutputProof } = await import('../src/generation/blocked-output-proof.js');
-function blockedFixture(t, continuation = false) {
+function blockedFixture(t, continuation = false, display = undefined) {
     const f = prepared(t);
     if (continuation) {
         f.job.intent.effect = 'continue';
@@ -61,6 +61,11 @@ function blockedFixture(t, continuation = false) {
     writeArtifact(f.directories, f.job.id, step, result);
     f.output = continuation ? { text: result.text, extra: { generation_outcome: outcome } }
         : { message: { mes: result.text, extra: { generation_outcome: outcome } } };
+    if (display) {
+        const saved = { intentHash: roleplayHash(f.job.intent), display };
+        writeArtifact(f.directories, f.job.id, 'roleplay-agent-display', { ...saved, hash: roleplayHash(saved) });
+        (f.output.message ?? f.output).extra.inChatAgents = display;
+    }
     saveBlockedOutputProof(f.directories, f.job, f.output, f.records);
     return { ...f, step, result };
 }
@@ -87,4 +92,21 @@ test('blocked continuation proof rejects a different accepted baseline', t => {
     const f = blockedFixture(t, true);
     f.records[1].mes = 'Different baseline';
     assert.throws(() => applyAgentCompletionRecords(f.directories, f.job, f.records, f.output), { code: 'ROLEPLAY_BLOCKED_RECOVERY' });
+});
+
+test('blocked output retains only its frozen display scripts, including on replay', t => {
+    const display = { activeAgentIds: ['format'], generationType: 'normal', edited: false,
+        regexScriptRefs: [], nativeRegexScripts: [{ agentId: 'format', script: { findRegex: '/partial/g', replaceString: '**partial**' } }] };
+    for (const continuation of [false, true]) {
+        const f = blockedFixture(t, continuation, display);
+        assert.equal(applyAgentCompletionRecords(f.directories, f.job, f.records, structuredClone(f.output)), undefined);
+        const changed = structuredClone(f.output);
+        (changed.message ?? changed).extra.inChatAgents.nativeRegexScripts[0].script.replaceString = 'forged';
+        assert.throws(() => saveBlockedOutputProof(f.directories, f.job, changed, f.records), { code: 'ROLEPLAY_BLOCKED_RECOVERY' });
+        assert.throws(() => applyAgentCompletionRecords(f.directories, f.job, f.records, changed), { code: 'ROLEPLAY_BLOCKED_RECOVERY' });
+        const forged = { intentHash: 'b'.repeat(64), display };
+        writeArtifact(f.directories, f.job.id, 'roleplay-agent-display', { ...forged, hash: roleplayHash(forged) });
+        assert.throws(() => saveBlockedOutputProof(f.directories, f.job, f.output, f.records), { code: 'ROLEPLAY_BLOCKED_RECOVERY' });
+        assert.throws(() => applyAgentCompletionRecords(f.directories, f.job, f.records, f.output), { code: 'ROLEPLAY_BLOCKED_RECOVERY' });
+    }
 });
