@@ -26,6 +26,7 @@ export function createGenerationStream(onUpdate, { allowTools = false } = {}) {
     let terminated = false;
     let textBytes = 0;
     let reasoningBytes = 0;
+    let structuredPrefill;
     const accept = event => {
         const eventType = event.split('\n').find(line => line.startsWith('event:'))?.slice(6).trim();
         const data = event.split('\n').filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n');
@@ -46,6 +47,7 @@ export function createGenerationStream(onUpdate, { allowTools = false } = {}) {
         if (terminated) throw new Error('The AI service sent extra text after the reply had finished.');
         const choice = chunk.choices?.find((value, index) => (value.index ?? index) === 0);
         const delta = choice?.delta ?? choice?.message;
+        structuredPrefill = choice?.structured_prefill ?? structuredPrefill;
         const candidate = chunk.candidates?.find((value, index) => (value.index ?? index) === 0);
         const parts = candidate?.content?.parts;
         if (chunk.choices?.length && !choice || chunk.candidates?.length && !candidate) return;
@@ -85,7 +87,7 @@ export function createGenerationStream(onUpdate, { allowTools = false } = {}) {
         reasoning += nextReasoning;
         if (chunk.type === 'message_stop' || chunk.type === 'message-end' || chunk.type === 'response.completed' || chunk.done === true || choice?.finish_reason != null
             || candidate?.finishReason || chunk.event === 'done') complete = true;
-        if (nextText || nextReasoning) onUpdate?.({ text, reasoning });
+        if (nextText || nextReasoning || choice?.structured_prefill) onUpdate?.({ text, reasoning, ...(structuredPrefill ? { structured_prefill: structuredPrefill } : {}) });
     };
     return {
         push(chunk) {
@@ -103,7 +105,7 @@ export function createGenerationStream(onUpdate, { allowTools = false } = {}) {
             if (unsupportedOutput && !outcome) throw new Error('The AI service sent a kind of output that a Roleplay reply cannot save.');
             const toolCalls = outcome ? [] : tools?.finish() ?? [];
             if (!complete || !outcome && !text.trim() && !reasoning.trim() && !toolCalls.length) throw new Error('The AI service ended the reply before it was finished.');
-            return { ...(usage ? { usage } : {}), choices: [{ ...(outcome || finishReason != null ? { finish_reason: outcome?.reason ?? finishReason } : {}), text, reasoning, message: { content: text, reasoning_content: reasoning, reasoning,
+            return { ...(structuredPrefill ? { structured_prefill_wire: true } : {}), ...(usage ? { usage } : {}), choices: [{ ...(structuredPrefill ? { structured_prefill: structuredPrefill } : {}), ...(outcome || finishReason != null ? { finish_reason: outcome?.reason ?? finishReason } : {}), text, reasoning, message: { content: text, reasoning_content: reasoning, reasoning,
                 ...(toolCalls.length ? { tool_calls: toolCalls } : {}),
                 ...(signature ? { reasoning_details: [{ id: 'thought', type: 'reasoning.encrypted', data: signature }] } : {}) } }],
             content: [{ type: 'thinking', thinking: reasoning }, { type: 'text', text }], thinking: reasoning,

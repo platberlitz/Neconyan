@@ -188,7 +188,7 @@ describe('generation lifecycle wiring', () => {
         const generateSource = getFunctionSource('Generate', { exported: true });
         const interceptIndex = generateSource.indexOf('await applyMainGenerationOutputInterceptors({');
         // Matched on the stable leading arguments, so the later completion-marker arguments do not break the ordering check.
-        const saveIndex = generateSource.indexOf('await saveReply({ type, getMessage, title, swipes, reasoning, imageUrls, reasoningSignature, reasoningTokens: data.reasoningTokens,');
+        const saveIndex = generateSource.indexOf('await saveReply({ type, getMessage, title, swipes, reasoning, imageUrls, reasoningSignature, structuredPrefill, reasoningTokens: data.reasoningTokens,');
         const saveCall = generateSource.slice(saveIndex, generateSource.indexOf('}));', saveIndex));
 
         expect(interceptIndex).toBeGreaterThanOrEqual(0);
@@ -196,5 +196,6 @@ describe('generation lifecycle wiring', () => {
         expect(interceptIndex).toBeLessThan(saveIndex);
         expect(saveCall).toContain('reasoningUnclosed: limitedOutput.unclosed === true');
         expect(saveCall).toContain('toolTurn: ToolManager.hasToolCalls(data)');
+        expect(saveCall).toContain('structuredPrefill');
     });
 });

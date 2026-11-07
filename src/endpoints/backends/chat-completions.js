@@ -484,7 +484,10 @@ async function sendClaudeRequest(request, response) {
         }
 
         // Structured output is a forced tool
-        if (request.body.json_schema) {
+        if (request.structuredPrefill && request.body.json_schema) {
+            requestBody.output_config ??= {};
+            requestBody.output_config.format = { type: 'json_schema', schema: request.body.json_schema.value };
+        } else if (request.body.json_schema) {
             const jsonTool = {
                 name: request.body.json_schema.name,
                 description: request.body.json_schema.description || 'Well-formed JSON object',
@@ -610,7 +613,7 @@ async function sendClaudeRequest(request, response) {
             },
         };
         // Neconyan: node-fetch's stream pipeline leaks Bun timeout rejections; direct HTTPS preserves global agents.
-        const generateResponse = isBunRuntime() && request.body.stream && request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.LINKAPI
+        const generateResponse = !request.fetch && isBunRuntime() && request.body.stream && request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.LINKAPI
             ? await fetchBunLinkApiStream(requestUrl, requestOptions)
             : await (request.fetch || fetch)(requestUrl, requestOptions);
 
@@ -628,6 +631,7 @@ async function sendClaudeRequest(request, response) {
 
             /** @type {any} */
             const generateResponseJson = await generateResponse.json();
+            if (generateResponseJson.structured_prefill_wire) return response.send(generateResponseJson);
             // Neconyan: scan all content blocks for the first text block, not just
             // content[0]. When adaptive thinking is enabled, content[0] is a thinking
             // block ({ type: 'thinking', thinking: '...' }) with no .text property,
@@ -726,6 +730,10 @@ async function sendMakerSuiteRequest(request, response) {
         responseSchema: responseSchema,
         seed: request.body.seed,
     };
+    if (request.structuredPrefill && request.body.json_schema) {
+        delete generationConfig.responseSchema;
+        generationConfig.responseJsonSchema = request.body.json_schema.value;
+    }
 
     function getGeminiBody() {
         // #region UGLY MODEL LISTS AREA
@@ -977,6 +985,7 @@ async function sendMakerSuiteRequest(request, response) {
             /** @type {any} */
             const generateResponseJson = await generateResponse.json();
 
+            if (generateResponseJson.structured_prefill_wire) return response.send(generateResponseJson);
             const candidates = generateResponseJson?.candidates;
             if (!candidates || candidates.length === 0) {
                 let message = `${apiName} API returned no candidate`;
@@ -1242,7 +1251,7 @@ async function sendCohereRequest(request, response) {
 
         if (request.body.json_schema) {
             requestBody.response_format = {
-                type: 'json_schema',
+                type: request.structuredPrefill ? 'json_object' : 'json_schema',
                 schema: request.body.json_schema.value,
             };
         }
@@ -3019,6 +3028,12 @@ async function sendOpenAIResponsesRequest(request, response) {
             };
         }
 
+        if (request.structuredPrefill && request.body.json_schema) {
+            requestBody.text ??= {};
+            requestBody.text.format = { type: 'json_schema', name: request.body.json_schema.name,
+                strict: true, schema: request.body.json_schema.value };
+        }
+
         // Model-specific parameter cleanup (mirrors frontend logic in createGenerationParameters)
         const model = request.body.model || '';
         if (/^(o1|o3|o4)/.test(model)) {
@@ -3048,11 +3063,13 @@ async function sendOpenAIResponsesRequest(request, response) {
 
         if (request.body.stream) {
             console.info('Streaming Responses API request in progress');
+            if (request.structuredPrefill) return forwardFetchResponse(fetchResponse, response, request, () => controller.abort());
             return forwardResponsesApiStream(fetchResponse, response, request, () => controller.abort());
         }
 
         if (fetchResponse.ok) {
             const json = await fetchResponse.json();
+            if (json.structured_prefill_wire) return response.send(json);
             console.debug('OpenAI Responses API response:', summarizeLlmPayloadForLog(json));
             const transformed = transformResponsesApiResponse(json);
             return response.send(transformed);
@@ -3089,6 +3106,13 @@ function getSafeCompletionErrorStatus(status) {
 export async function handleChatCompletionsGenerate(request, response) {
     try {
         if (!request.body) return response.status(400).send({ error: true });
+
+        if (request.body.structured_prefill?.enabled) {
+            try {
+                const { prepareStructuredPrefill } = await import('../../structured-prefill.js');
+                await prepareStructuredPrefill(request);
+            } catch (error) { return response.status(400).send({ error: { message: error.message } }); }
+        }
 
         // Neconyan divergence: normalize here, before the source switch, so every provider
         // branch below inherits it. Extensions and hand-edited connection profiles can supply a
@@ -3152,7 +3176,7 @@ export async function handleChatCompletionsGenerate(request, response) {
         }
 
         if (request.body.json_schema?.value) {
-            request.body.json_schema.value = flattenSchema(request.body.json_schema.value, request.body.chat_completion_source);
+            if (!request.structuredPrefill) request.body.json_schema.value = flattenSchema(request.body.json_schema.value, request.body.chat_completion_source);
         }
 
         switch (request.body.chat_completion_source) {

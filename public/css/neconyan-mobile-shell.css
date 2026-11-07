@@ -1,6 +1,11 @@
 /* Neconyan mobile shell foundation: final sheet contract for modal drawers.
  * Keep this at the end of the shell sheet so it beats older mobile drawer rules. */
 @media screen and (max-width: 768px) {
+    body.neconyan #structured-prefill-settings :is(.menu_button, summary) {
+        min-height: 44px;
+        align-content: center;
+    }
+
     /* Overflow hints are siblings, never extra tools inside the scrolling strip. */
     .sb-mobile-swipe-rail {
         --sb-rail-fade-left: 0px;

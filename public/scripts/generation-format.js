@@ -76,6 +76,7 @@ export function extractProviderReasoning(data, { mainApi, textGenType, chatCompl
     }
     if (mainApi !== 'openai' || !showThoughts) return '';
     const message = data?.choices?.[0]?.message;
+    if (data?.structured_prefill_wire) return message?.reasoning_content ?? message?.reasoning ?? '';
     switch (chatCompletionSource) {
         case 'deepseek':
         case 'xai': return message?.reasoning_content ?? '';
@@ -100,7 +101,7 @@ export function extractProviderReasoningSignature(data, { mainApi, chatCompletio
     const isGemini = chatCompletionSource === 'makersuite' || chatCompletionSource === 'vertexai'
         || (chatCompletionSource === 'linkapi' && Boolean(data?.responseContent || data?.candidates));
     const details = data?.choices?.[0]?.message?.reasoning_details;
-    if (chatCompletionSource === 'openrouter' && Array.isArray(details)) {
+    if ((chatCompletionSource === 'openrouter' || data?.structured_prefill_wire) && Array.isArray(details)) {
         for (const detail of details) {
             if (!/^tool_/.test(detail.id) && detail.type === 'reasoning.encrypted' && detail.data) return detail.data;
         }
