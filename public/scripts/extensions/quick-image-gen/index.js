@@ -6926,6 +6926,7 @@ function extractLLMResponseDetails(response) {
     let sawCandidate = false;
     let firstCandidateLabel = "";
     let firstCandidateShape = "";
+    const emptyChoices = Array.isArray(response?.choices) && response.choices.length === 0;
 
     for (const candidate of candidates) {
         if (candidate.value === undefined) continue;
@@ -6962,7 +6963,7 @@ function extractLLMResponseDetails(response) {
         sourcePath: firstCandidateLabel,
         extractionStatus: sawNullContent
             ? "null_content"
-            : (sawStructuredContent ? "no_text_parts" : (sawCandidate ? "empty_string" : "unsupported_shape")),
+            : (emptyChoices ? "empty_choices" : (sawStructuredContent ? "no_text_parts" : (sawCandidate ? "empty_string" : "unsupported_shape"))),
         finishReason,
         responseShape,
         contentShape: firstCandidateShape,
@@ -7001,9 +7002,18 @@ function buildLLMEmptyPromptWarning(meta, rawText, cleanedText) {
         return `${routeLabel}'s reply was cut off before it finished, so the raw prompt was used. Raise Max Tokens in the LLM rewrite options to give it more room.`;
     }
 
+    // Gemini-style refusal finish reasons that OpenAI-compatible proxies pass through
+    // when the provider blocks the scene instead of replying (e.g. prohibited_content).
+    const refusalFinishReasons = new Set(["content_filter", "prohibited_content", "safety", "recitation", "blocklist"]);
+    if (meta?.finishReason && refusalFinishReasons.has(String(meta.finishReason))) {
+        return `${routeLabel}'s model refused the request (finish reason: ${meta.finishReason}), so the raw prompt was used.`;
+    }
+
     switch (meta?.extractionStatus) {
         case "null_content":
             return `${routeLabel} returned an empty reply, so the raw prompt was used.`;
+        case "empty_choices":
+            return `${routeLabel} returned no response choices, so the raw prompt was used.`;
         case "no_text_parts":
             return `${routeLabel} replied without any usable text, so the raw prompt was used.`;
         case "unsupported_shape":
@@ -7080,6 +7090,10 @@ async function callOverrideLLM(instruction, systemPrompt = "", signal = null, { 
     } catch (e) {
         if (e.name === "AbortError") throw e;
         log(`LLM Override failed (profile: ${s.llmOverrideProfileId}): ${e.message}`);
+        if (e.code === "GENERATION_BLOCKED") {
+            const reason = e.generationOutcome?.reason ? ` (${e.generationOutcome.reason})` : "";
+            throw new Error(`The separate AI profile's model refused this request on a content filter${reason}, so the scene was not rewritten. Try different scene paragraphs or another profile.`);
+        }
         throw new Error(`The selected separate AI profile '${s.llmOverrideProfileId}' failed: ${e.message} Check the profile's API type, endpoint, and API key in Connection Manager. The request was NOT sent to the main chat AI.`);
     }
 }
