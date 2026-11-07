@@ -1183,20 +1183,20 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
 
 @media screen and (max-width: 768px) {
     #left-nav-panel[data-neconyan-native-page='formatting'] #AdvancedFormatting .sb-af-settings-drawer > .inline-drawer-header {
-        grid-template-columns: 34px minmax(0, 1fr) 18px;
-        gap: 10px;
-        padding: 14px 12px;
-        padding-right: 16px;
+        grid-template-columns: 30px minmax(0, 1fr) 18px;
+        gap: 9px;
+        padding: 10px 16px 10px 12px;
     }
 
     #left-nav-panel #AdvancedFormatting .sb-af-section-icon {
-        width: 34px;
-        height: 34px;
-        border-radius: 10px;
+        width: 30px;
+        height: 30px;
+        border-radius: 9px;
+        font-size: 13px;
     }
 
     #left-nav-panel #AdvancedFormatting .sb-af-settings-drawer > .inline-drawer-content {
-        padding: 14px 12px;
+        padding: 12px;
     }
 
     #left-nav-panel #AdvancedFormatting :is(#af_master_import, #af_master_export) {
