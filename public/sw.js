@@ -1,10 +1,42 @@
-const NN_SW_CACHE_VERSION = 'neconyan-cache-v20261107-tour-card-pan';
+const NN_SW_CACHE_VERSION = 'neconyan-cache-v20261107-push-notifications';
 // Storage revision for the service worker caches. It is separate from the
 // stylesheet query version so old entries can be evicted without touching CSS.
 const NN_SW_CACHE_EPOCH = '20261018a-native-startup';
 const NN_CACHE_PREFIX = 'neconyan-cache-';
 const NN_STATIC_CACHE = `${NN_SW_CACHE_VERSION}-${NN_SW_CACHE_EPOCH}-static`;
 const NN_FRONTEND_ASSET_PREFIX = '/frontend-assets/';
+const NN_NOTIFICATION_STATE_CACHE = 'neconyan-notification-preferences';
+
+async function notificationPreferences() {
+    const cache = await caches.open(NN_NOTIFICATION_STATE_CACHE);
+    const response = await cache.match('/__neconyan_notification_preferences');
+    return response ? response.json() : {};
+}
+
+self.addEventListener('push', event => {
+    event.waitUntil((async () => {
+        let message;
+        try { message = event.data?.json(); } catch { return; }
+        const preferences = await notificationPreferences();
+        if (!preferences.enabled || preferences.owner !== message?.owner || preferences.device !== message?.device) return;
+        await self.registration.showNotification(String(message.title || 'Neconyan').slice(0, 80), {
+            body: String(message.body || '').slice(0, 240), tag: String(message.id || '').slice(0, 128),
+            icon: '/img/neconyan-icon-192.png', data: { owner: message.owner, device: message.device },
+        });
+    })());
+});
+
+self.addEventListener('notificationclick', event => {
+    event.notification.close();
+    event.waitUntil((async () => {
+        const preferences = await notificationPreferences();
+        if (!preferences.enabled || preferences.owner !== event.notification.data?.owner || preferences.device !== event.notification.data?.device) return;
+        const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+        const existing = windows.find(client => new URL(client.url).origin === self.location.origin);
+        if (existing) await existing.focus();
+        else await self.clients.openWindow('/');
+    })());
+});
 const NN_HASHED_FRONTEND_ASSET_RE = /-[a-f0-9]{8,}\.[a-z0-9]+$/i;
 
 const NN_STALE_WHILE_REVALIDATE_PREFIXES = Object.freeze([

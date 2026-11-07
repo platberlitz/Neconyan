@@ -27,7 +27,7 @@ export function captureAccountBackup(base, account, input, { sourceBase, include
                 const filename = path.join(folder, entry.name);
                 const relative = path.relative(source.directories.root, filename);
                 // Disposable work ledgers are not portable account data. Their permanent proof stays outside this root.
-                if (!depth && entry.name === 'jobs') continue;
+                if (!depth && ['jobs', 'push-notifications.json'].includes(entry.name)) continue;
                 if (!includeSecrets && (relative === SECRETS_FILE || relative === '.secret_key' || /^backups\/secrets_migration_.*\.json$/.test(relative))) continue;
                 if (entry.isSymbolicLink()) throw operationError('This backup contains a linked source. Its files were kept.');
                 if (entry.isDirectory()) walk(filename, depth + 1);

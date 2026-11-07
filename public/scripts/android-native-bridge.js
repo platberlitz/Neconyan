@@ -46,6 +46,22 @@ export function showAndroidCrashReports() {
     return invoke('NeconyanExport', 'showCrashReports');
 }
 
+export function androidNotificationState() {
+    const result = invoke('NeconyanExport', 'notificationState');
+    try { return result ? JSON.parse(result) : null; } catch { return null; }
+}
+
+export async function setAndroidNotifications(enabled) {
+    const result = invoke('NeconyanExport', 'setNotificationsEnabled', [Boolean(enabled)]);
+    if (!result) return null;
+    for (let attempt = 0; attempt < 240; attempt++) {
+        const state = androidNotificationState();
+        if (!state?.pending) return state;
+        await new Promise(resolve => setTimeout(resolve, 250));
+    }
+    return { enabled: false };
+}
+
 // Spreading the whole chunk into String.fromCharCode can exceed the JavaScript
 // argument limit and the native stack, so convert in bounded slices.
 const BASE64_CONVERT_CHUNK = 8192;

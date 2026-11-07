@@ -5,7 +5,8 @@ import { parseReminderDelayToMs } from '../../public/scripts/neconyan-conversati
 import { countConversationUnread } from '../../public/scripts/neconyan-conversation/notification-utils.js';
 import { isConversationGroupSpeakerEligible } from '../../public/scripts/neconyan-conversation/partners-utils.js';
 import { authorizeConversationGroup, normalizeConversationGroupRecord } from '../endpoints/conversation-groups.js';
-import { normalizeConversationSettings } from '../endpoints/conversation-generation.js';
+import { getConversationSettings, normalizeConversationSettings } from '../endpoints/conversation-generation.js';
+import { sendSystemNotification, shouldNotifyConversation } from '../push-notifications.js';
 import { createConversationMessage, refreshBranchPreview } from '../endpoints/conversation-messages.js';
 import { ensureConversationStore, getConversationThreadKey, readUserSettingsWithStatus, saveConversationStore } from '../endpoints/conversation-store.js';
 import { repairConversationBranchMessageIds, seedConversationReadBoundary } from '../endpoints/conversation-utils.js';
@@ -229,8 +230,9 @@ export async function commitConversationEffect(context, target, effectId, mutate
     return result;
 }
 
-export function appendConversationJobMessage(context, target, effectId, value, { mutate, presentation, verify } = {}) {
-    return commitConversationEffect(context, target, effectId, (branch, store, settings) => {
+export async function appendConversationJobMessage(context, target, effectId, value, { mutate, presentation, verify } = {}) {
+    let notification;
+    const result = await commitConversationEffect(context, target, effectId, (branch, store, settings) => {
         const message = createConversationMessage({ ...value, id: `job_${digest([context.job.id, effectId]).slice(0, 32)}` });
         if (!message) throw Object.assign(new Error('The generated Conversation message is invalid.'), { status: 400 });
         if (seedConversationReadBoundary(branch) === null) conflict('The Conversation message identities must be prepared before delivery.');
@@ -249,8 +251,22 @@ export function appendConversationJobMessage(context, target, effectId, value, {
         }
         refreshBranchPreview(branch);
         mutate?.(branch, store, settings);
+        if (!['user', 'system'].includes(message.role)) {
+            notification = { id: message.id, title: `New DM from ${message.name || 'Character'}`, body: message.mes || 'New Conversation message' };
+        }
         return { id: message.id };
     }, { verify });
+    // Receipt replays never enter the mutation above, and failed saves never reach here.
+    if (notification) {
+        try {
+            // Settings lookup normalises thread objects; keep it outside the atomic message/receipt write.
+            const request = { user: { directories: context.directories, profile: { handle: context.owner } } };
+            const { store } = readConversationTarget(request, target);
+            const preferences = getConversationSettings(request, store, target.avatar, target.groupId, {}, { personaId: target.personaId });
+            if (shouldNotifyConversation(preferences, store.automation?.timeZone)) void sendSystemNotification(context.directories, context.owner, notification);
+        } catch { console.warn('Conversation notification preferences were unavailable.'); }
+    }
+    return result;
 }
 
 /**

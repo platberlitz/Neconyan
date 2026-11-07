@@ -335,6 +335,7 @@ import { appendFileContent, hasPendingFileAttachment, populateFileAttachment, de
 import { getPresetManager, initPresetManager } from './scripts/preset-manager.js';
 import { evaluateMacros, getLastMessageId, initMacros } from './scripts/macros.js';
 import { getCurrentUserHandle, isAdmin, setUserControls } from './scripts/user.js';
+import { initPushNotifications, mirrorToastNotification } from './scripts/push-notifications.js';
 import { POPUP_RESULT, POPUP_TYPE, Popup, callGenericPopup, fixToastrForDialogs } from './scripts/popup.js';
 import { renderTemplate, renderTemplateAsync } from './scripts/templates.js';
 import { initScrapers } from './scripts/scrapers.js';
@@ -527,6 +528,7 @@ installToastMinimumDuration(toastr);
 
 // Run once during startup
 toastr.subscribe(function (args) {
+    mirrorToastNotification(args);
     if (args.state !== 'visible') {
         return;
     }
@@ -1551,6 +1553,7 @@ async function firstLoadInit() {
         await fixViewport();
         initPromptMediaControls();
         await eventSource.emit(event_types.APP_READY);
+        void initPushNotifications({ owner: getCurrentUserHandle(), headers: getRequestHeaders }).catch(error => console.warn('Notifications are unavailable.', error));
         void showLanguageChoicePrompt().catch(error => console.warn('Language choice unavailable.', error));
         const { initChatNavigation } = await import('./scripts/chat-navigation.js');
         await initChatNavigation();

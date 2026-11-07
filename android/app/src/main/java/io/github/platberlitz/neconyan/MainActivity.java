@@ -29,6 +29,8 @@ public final class MainActivity extends Activity {
     private WebView web;
     private ApkUpdater apkUpdater;
     private final BridgeCallerGate bridgeGate = new BridgeCallerGate();
+    private volatile boolean notificationPermissionPending;
+    private String notificationPermissionToken;
     private String bridgeToken;
     private TextView status;
     private String origin;
@@ -268,8 +270,6 @@ public final class MainActivity extends Activity {
             } else external(Uri.parse(url));
         });
         logStartup("WebView built");
-        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED)
-            requestPermissions(new String[] { "android.permission.POST_NOTIFICATIONS" }, 11);
     }
 
     private void recoverCrashReports() {
@@ -411,6 +411,28 @@ public final class MainActivity extends Activity {
     @JavascriptInterface public boolean showCrashReports(String token) {
         if (!bridgeGate.accepts(token)) return false;
         showCrashReportsInternal(token);
+        return true;
+    }
+
+    @JavascriptInterface public String notificationState(String token) {
+        if (!bridgeGate.accepts(token)) return null;
+        return "{\"enabled\":" + NativeNotifications.enabled(this) + ",\"pending\":" + notificationPermissionPending + "}";
+    }
+
+    @JavascriptInterface public boolean setNotificationsEnabled(String token, boolean enabled) {
+        if (!bridgeGate.accepts(token)) return false;
+        notificationPermissionPending = true;
+        runOnUiThread(() -> {
+            if (!bridgeGate.accepts(token)) { notificationPermissionPending = false; return; }
+            if (enabled && Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED) {
+                notificationPermissionToken = token;
+                requestPermissions(new String[] { "android.permission.POST_NOTIFICATIONS" }, 11);
+            } else {
+                notificationPermissionToken = null;
+                NativeNotifications.setEnabled(this, enabled && getSystemService(NotificationManager.class).areNotificationsEnabled());
+                notificationPermissionPending = false;
+            }
+        });
         return true;
     }
 
@@ -1034,6 +1056,12 @@ public final class MainActivity extends Activity {
     }
     @Override public void onRequestPermissionsResult(int code, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(code, permissions, results);
+        if (code == 11) {
+            NativeNotifications.setEnabled(this, bridgeGate.accepts(notificationPermissionToken) && results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED);
+            notificationPermissionToken = null;
+            notificationPermissionPending = false;
+            return;
+        }
         if (code != 12 || media == null) return;
         List<String> granted = new ArrayList<>();
         for (int i = 0; i < permissions.length; i++) if (results[i] == PackageManager.PERMISSION_GRANTED)
