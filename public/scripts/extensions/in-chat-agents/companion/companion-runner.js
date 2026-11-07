@@ -73,10 +73,10 @@ import {
     isRetryableCompanionFailure,
     isSuppressedCompanionResult,
     isValidCompanionMessage,
-    normalizeCompanionChatHistoryInjection,
     normalizeCompanionChatHistoryPlacement,
     normalizePlotCompassObjective,
     planCompanionNoteCleanup,
+    resolveCompanionChatHistoryInjection,
     TRACKER_EMPTY_OUTPUT_INSTRUCTION,
 } from './companion-shared.js';
 import { resolveCompanionContentMacros } from './companion-macros.js';
@@ -617,7 +617,8 @@ export function updateCompanionResult(message, agentId, update = {}) {
 }
 
 /**
- * Copies where kept notes go, plus the Position, Depth, Role and scan used for a kept-notes block.
+ * Copies where kept notes go, plus the injection used for a kept-notes block: the agent's
+ * Position, Depth, Role and scan fields, or the companion's own Depth Insertion when it sets one.
  * @param {object} agent
  * @param {object} companion
  * @returns {{ chatHistoryPlacement: string, chatHistoryInjection: { position: number, depth: number, role: number, scan: boolean } }}
@@ -625,7 +626,7 @@ export function updateCompanionResult(message, agentId, update = {}) {
 function getCompanionChatHistoryPlacementPolicy(agent, companion) {
     return {
         chatHistoryPlacement: normalizeCompanionChatHistoryPlacement(companion.chatHistoryPlacement),
-        chatHistoryInjection: normalizeCompanionChatHistoryInjection(agent?.injection),
+        chatHistoryInjection: resolveCompanionChatHistoryInjection(agent?.injection, companion),
     };
 }
 

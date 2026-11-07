@@ -175,6 +175,14 @@ function agentAction(action) {
     };
 }
 
+/** Blank clears Depth Insertion; a whole number 0-99 sets it; anything else keeps the saved value. */
+function parseCompanionChatHistoryInsertDepth(value, fallback) {
+    const text = String(value ?? '').trim();
+    if (!text) return null;
+    const depth = Number(text);
+    return Number.isInteger(depth) && depth >= 0 && depth <= 99 ? depth : fallback;
+}
+
 async function refreshSavedAgents(ids) {
     // The agent write is acknowledged already. Show it before saving note metadata.
     renderAgentList();
@@ -4138,6 +4146,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
     editorEl.find('#ica--editor-companion-chatHistoryDepth').val(companion.chatHistoryDepth);
     editorEl.find('#ica--editor-companion-includeAllChatHistory').prop('checked', companion.includeAllChatHistory);
     editorEl.find('#ica--editor-companion-chatHistoryPlacement').val(companion.chatHistoryPlacement ?? 'latest');
+    editorEl.find('#ica--editor-companion-chatHistoryInsertDepth').val(companion.chatHistoryInsertDepth ?? '');
     editorEl.find('#ica--editor-companion-keepInChatHistoryWhenHostHidden').prop('checked', companion.keepInChatHistoryWhenHostHidden);
     editorEl.find('#ica--editor-companion-feedbackEnabled').prop('checked', companion.feedback.enabled);
     editorEl.find('#ica--editor-companion-feedbackDepth').val(companion.feedback.depth);
@@ -4455,6 +4464,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
         editorEl.find('#ica--companion-chat-history-row').toggle(showChatHistoryOptions);
         editorEl.find('#ica--editor-companion-chatHistoryDepth').prop('disabled', editorEl.find('#ica--editor-companion-includeAllChatHistory').prop('checked'));
         editorEl.find('#ica--companion-chat-history-placement-note').toggle(isEditorKeptNotesBlock());
+        editorEl.find('#ica--companion-chat-history-insert-depth').toggle(isEditorKeptNotesBlock());
         editorEl.find('#ica--companion-feedback-depth-row').toggle(editorEl.find('#ica--editor-companion-feedbackEnabled').prop('checked'));
         editorEl.find('#ica--companion-batch-row').toggle(companionExecution);
         editorEl.find('#ica--companion-batch-select-row').toggle(companionExecution && editorEl.find('#ica--editor-companion-batch').prop('checked'));
@@ -4503,6 +4513,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
             chatHistoryDepth: Number(root.find('#ica--editor-companion-chatHistoryDepth').val()) || current.chatHistoryDepth,
             includeAllChatHistory: root.find('#ica--editor-companion-includeAllChatHistory').prop('checked'),
             chatHistoryPlacement: root.find('#ica--editor-companion-chatHistoryPlacement').val()?.toString() || current.chatHistoryPlacement,
+            chatHistoryInsertDepth: parseCompanionChatHistoryInsertDepth(root.find('#ica--editor-companion-chatHistoryInsertDepth').val(), current.chatHistoryInsertDepth),
             keepInChatHistoryWhenHostHidden: root.find('#ica--editor-companion-keepInChatHistoryWhenHostHidden').prop('checked'),
             historyDepth: Number(root.find('#ica--editor-companion-historyDepth').val()) || current.historyDepth,
             feedback: {
@@ -4539,6 +4550,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
         editorEl.find('#ica--editor-companion-chatHistoryDepth').val(nextCompanion.chatHistoryDepth);
         editorEl.find('#ica--editor-companion-includeAllChatHistory').prop('checked', nextCompanion.includeAllChatHistory);
         editorEl.find('#ica--editor-companion-chatHistoryPlacement').val(nextCompanion.chatHistoryPlacement ?? 'latest');
+        editorEl.find('#ica--editor-companion-chatHistoryInsertDepth').val(nextCompanion.chatHistoryInsertDepth ?? '');
         editorEl.find('#ica--editor-companion-keepInChatHistoryWhenHostHidden').prop('checked', nextCompanion.keepInChatHistoryWhenHostHidden);
         editorEl.find('#ica--editor-companion-feedbackEnabled').prop('checked', nextCompanion.feedback.enabled);
         editorEl.find('#ica--editor-companion-feedbackDepth').val(nextCompanion.feedback.depth);
@@ -4855,6 +4867,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
             chatHistoryDepth: currentCompanion.chatHistoryDepth,
             includeAllChatHistory: currentCompanion.includeAllChatHistory,
             chatHistoryPlacement: currentCompanion.chatHistoryPlacement,
+            chatHistoryInsertDepth: currentCompanion.chatHistoryInsertDepth,
             keepInChatHistoryWhenHostHidden: currentCompanion.keepInChatHistoryWhenHostHidden,
         });
         toastr.success('Applied generated companion. Review and save when ready.');

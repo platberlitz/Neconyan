@@ -37,6 +37,17 @@ describe('companion quick controls', () => {
         expect(quick.applyCompanionQuickChange(agent, { kind: 'depth', value: '2.5' })).toBeNull();
     });
 
+    test('a depth insertion switches kept notes to one block, blank clears it, and bad values change nothing', () => {
+        const agent = companion('a', 'Alpha');
+        expect(quick.applyCompanionQuickChange(agent, { kind: 'insertDepth', value: '3' }).companion).toMatchObject({ includeInChatHistory: true, chatHistoryPlacement: 'block', chatHistoryInsertDepth: 3 });
+        expect(quick.applyCompanionQuickChange(companion('a', 'Alpha', { chatHistoryInsertDepth: 3 }), { kind: 'insertDepth', value: ' ' }).companion).toMatchObject({ chatHistoryInsertDepth: null });
+        expect(quick.applyCompanionQuickChange(agent, { kind: 'insertDepth', value: '0' }).companion).toMatchObject({ chatHistoryInsertDepth: 0 });
+        expect(quick.applyCompanionQuickChange(agent, { kind: 'insertDepth', value: '2.5' })).toBeNull();
+        expect(quick.applyCompanionQuickChange(agent, { kind: 'insertDepth', value: '150' })).toBeNull();
+        expect(quick.applyCompanionQuickChange(agent, { kind: 'insertDepth', value: '-1' })).toBeNull();
+        expect(agent.companion).toEqual({});
+    });
+
     test('linking replaces template references and keeps the matching switch in step', () => {
         const target = companion('b-copy', 'Beta', {}, { sourceTemplateId: 'b-template' });
         const agent = companion('a', 'Alpha', { contextRecipientAgentIds: ['b-template', 'c'], sendContextToCompanions: true });
@@ -70,6 +81,15 @@ describe('companion quick controls', () => {
         expect(html).toContain('Beta &lt;b&gt;');
         expect(html).not.toContain('data-candidate-id="x"');
         expect(html).toContain('More connection options');
+    });
+
+    test('the depth insertion control shows the saved depth and stays blank otherwise', () => {
+        const saved = quick.buildCompanionQuickControlsHtml(companion('a', 'Alpha', { chatHistoryInsertDepth: 5 }));
+        expect(saved).toContain('data-quick-insert-depth');
+        expect(saved).toContain('value="5"');
+        const blank = quick.buildCompanionQuickControlsHtml(companion('a', 'Alpha'));
+        expect(blank).toContain('data-quick-insert-depth aria-label="Depth to insert kept notes for Alpha (blank uses the agent\'s fields)"');
+        expect(blank).toContain('placeholder="Auto"');
     });
 
     test('a closed Connections panel leaves its checkbox groups out until it opens', () => {

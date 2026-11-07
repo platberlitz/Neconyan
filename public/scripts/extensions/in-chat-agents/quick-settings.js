@@ -163,6 +163,9 @@ export async function openAgentQuickSettings(ids, { view = 'settings', lockAgent
             addSelect(history, 'includeAllChatHistory', 'Keep all saved notes', yesNo, config.includeAllChatHistory, true);
             addNumber(history, 'chatHistoryDepth', 'Notes to keep when not keeping all', config.chatHistoryDepth, 1, null, true);
             addSelect(history, 'chatHistoryPlacement', 'Where kept notes go', [['latest', 'Newest reply'], ['source', 'Each note\'s own reply'], ['block', 'One labelled block']], config.chatHistoryPlacement ?? 'latest', true);
+            addNumber(history, 'chatHistoryInsertDepth', 'Insert the block at depth', config.chatHistoryInsertDepth ?? '', 0, 99, true);
+            fields.at(-1).nullable = true;
+            history.append('<p class="ica--profile-help">Depth Insertion only applies to one labelled block. It counts messages up from the newest reply; setting it also switches kept notes to a block. Blank follows the agent\'s Position and Depth fields.</p>');
             addSelect(history, 'keepInChatHistoryWhenHostHidden', 'Keep notes when the reply is hidden', yesNo, config.keepInChatHistoryWhenHostHidden, true);
             history.append('<p class="ica--profile-help">Saved companion notes become context for future replies. These settings also update notes in the open chat.</p>');
             const behaviour = addSection('Companion settings');
@@ -223,8 +226,8 @@ export async function openAgentQuickSettings(ids, { view = 'settings', lockAgent
                 const drafts = agents.map(agent => structuredClone(agent));
                 for (const field of fields) {
                     let value = field.input.value;
-                    if (field.apply ? !field.apply.checked : value === field.initial || value === KEEP || (field.number && value === '')) continue;
-                    if (field.number) value = Number(value);
+                    if (field.apply ? !field.apply.checked : value === field.initial || value === KEEP || (field.number && value === '' && (!field.nullable || bulk))) continue;
+                    if (field.number) value = value === '' ? null : Number(value);
                     if (field.companion && ['batchAgentIds', 'contextRecipientAgentIds'].includes(field.key)) {
                         changeSelectedCompanionLinks(drafts, field.key, value === 'true');
                         continue;
@@ -234,6 +237,10 @@ export async function openAgentQuickSettings(ids, { view = 'settings', lockAgent
                             if (!isCompanionAgent(draft)) continue;
                             draft.companion = getCompanionConfig(draft);
                             draft.companion[field.key] = ['true', 'false'].includes(value) ? value === 'true' : value;
+                            if (field.key === 'chatHistoryInsertDepth' && value !== null) {
+                                draft.companion.chatHistoryPlacement = 'block';
+                                draft.companion.includeInChatHistory = true;
+                            }
                         } else if (field.key === 'order') draft.injection = { ...draft.injection, order: value };
                         else if (field.postProcess) draft.postProcess = { ...draft.postProcess, [field.key]: normalizePromptTransformContextMessages(value) };
                         else if (field.setting) draft.settings = { ...draft.settings, [field.key]: String(value).trim() || DEFAULT_LENGTH_TARGET };

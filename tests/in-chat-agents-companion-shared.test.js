@@ -7,6 +7,7 @@ import {
     getCompanionResultStores,
     isRetryableCompanionFailure,
     planCompanionNoteCleanup,
+    resolveCompanionChatHistoryInjection,
 } from '../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
 
 function note(content, extra = {}) {
@@ -110,6 +111,19 @@ describe('companion result stores', () => {
         expect(getCompanionResultStores(userMessage)).toEqual([]);
         expect(getCompanionResultStores({ extra: { [COMPANION_RESULTS_EXTRA_KEY]: ['bad'] } })).toEqual([]);
         expect(getCompanionResultStores(null)).toEqual([]);
+    });
+});
+
+describe('companion kept-notes injection', () => {
+    test('follows the agent fields unless the companion saves a depth insertion', () => {
+        const injection = { position: 0, depth: 7, role: 2, scan: true };
+        expect(resolveCompanionChatHistoryInjection(injection, {})).toEqual({ position: 0, depth: 7, role: 2, scan: true });
+        expect(resolveCompanionChatHistoryInjection(injection, { chatHistoryInsertDepth: null })).toEqual({ position: 0, depth: 7, role: 2, scan: true });
+        expect(resolveCompanionChatHistoryInjection(injection, { chatHistoryInsertDepth: 3 })).toEqual({ position: 1, depth: 3, role: 2, scan: true });
+        expect(resolveCompanionChatHistoryInjection(injection, { chatHistoryInsertDepth: '4' }).depth).toBe(4);
+        expect(resolveCompanionChatHistoryInjection(injection, { chatHistoryInsertDepth: 200 }).depth).toBe(99);
+        expect(resolveCompanionChatHistoryInjection(injection, { chatHistoryInsertDepth: -2 }).depth).toBe(0);
+        expect(resolveCompanionChatHistoryInjection(injection, { chatHistoryInsertDepth: 'abc' })).toEqual({ position: 0, depth: 7, role: 2, scan: true });
     });
 });
 

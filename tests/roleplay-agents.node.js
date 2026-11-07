@@ -342,6 +342,11 @@ test('native Agent defaults retain explicit regex identities and unbounded saved
     assert.equal(first.companion.chatHistoryPlacement, 'latest');
     assert.equal(nativeAgentDefinition({ ...raw, companion: { chatHistoryPlacement: 'block' } }).companion.chatHistoryPlacement, 'block');
     assert.equal(nativeAgentDefinition({ ...raw, companion: { chatHistoryPlacement: 'elsewhere' } }).companion.chatHistoryPlacement, 'latest');
+    assert.equal(first.companion.chatHistoryInsertDepth, null);
+    assert.equal(nativeAgentDefinition({ ...raw, companion: { chatHistoryInsertDepth: '7' } }).companion.chatHistoryInsertDepth, 7);
+    assert.equal(nativeAgentDefinition({ ...raw, companion: { chatHistoryInsertDepth: 200 } }).companion.chatHistoryInsertDepth, 99);
+    assert.equal(nativeAgentDefinition({ ...raw, companion: { chatHistoryInsertDepth: -1 } }).companion.chatHistoryInsertDepth, 0);
+    assert.equal(nativeAgentDefinition({ ...raw, companion: { chatHistoryInsertDepth: '' } }).companion.chatHistoryInsertDepth, null);
     assert.deepEqual(first.companion.dependencies, ['A', 'B']);
     assert.equal(first.regexScripts[0].id, 'stable-agent:regex:0');
     assert.equal(nativeAgentDefinition({ id: 'legacy', postProcess: { enabled: true, type: 'regex', regexFind: 'one', regexReplace: 'two' } }).regexScripts[0].findRegex, '/one/g');

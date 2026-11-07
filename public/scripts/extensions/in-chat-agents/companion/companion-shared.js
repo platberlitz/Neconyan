@@ -245,6 +245,22 @@ export function normalizeCompanionChatHistoryInjection(injection) {
 }
 
 /**
+ * Resolves the injection a kept-notes block uses: the agent's own Position, Depth, Role and scan
+ * fields, or In Chat at the companion's own depth when it sets one (Depth Insertion).
+ * @param {object|null|undefined} injection Agent injection config.
+ * @param {object|null|undefined} companion Companion config.
+ * @returns {{ position: number, depth: number, role: number, scan: boolean }}
+ */
+export function resolveCompanionChatHistoryInjection(injection, companion) {
+    const normalized = normalizeCompanionChatHistoryInjection(injection);
+    const raw = companion?.chatHistoryInsertDepth;
+    if (raw === null || raw === undefined || raw === '') return normalized;
+    const depth = Number(raw);
+    if (!Number.isFinite(depth)) return normalized;
+    return { ...normalized, position: 1, depth: Math.min(99, Math.max(0, Math.floor(depth))) };
+}
+
+/**
  * Builds the labelled kept-notes blocks for Companions that send their notes as one block.
  * @param {{ agentId: string, placement: string, injection: object|null, contribution: { name: string, content: string }, worldInfoContent?: string }[]} entries
  * @param {(entry: object) => string} [getContent]

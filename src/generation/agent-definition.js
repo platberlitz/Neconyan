@@ -8,6 +8,8 @@ const text = value => typeof value === 'string' ? value : '';
 const oneOf = (value, values, fallback) => values.includes(value) ? value : fallback;
 const number = (value, fallback, min, max = Number.MAX_SAFE_INTEGER) => Number.isFinite(Number(value))
     ? Math.max(min, Math.min(max, Math.floor(Number(value)))) : fallback;
+const nullableNumber = (value, min, max) => value === null || value === undefined || value === '' || !Number.isFinite(Number(value))
+    ? null : Math.max(min, Math.min(max, Math.floor(Number(value))));
 export const MAX_AGENT_FALLBACK_CONNECTIONS = 10;
 export const isNativeCompanion = agent => agent.execution === 'companion' || agent.category === 'companion';
 export const agentTokenLimit = (value, fallback = 8192) => number(value, fallback, 16, 64000);
@@ -66,6 +68,7 @@ export function nativeAgentDefinition(raw) {
             includeInChatHistory: Boolean(companion.includeInChatHistory), includeAllChatHistory: companion.includeAllChatHistory !== false,
             keepInChatHistoryWhenHostHidden: Boolean(companion.keepInChatHistoryWhenHostHidden), chatHistoryDepth: number(companion.chatHistoryDepth, 1, 1),
             chatHistoryPlacement: oneOf(companion.chatHistoryPlacement, ['latest', 'source', 'block'], 'latest'),
+            chatHistoryInsertDepth: nullableNumber(companion.chatHistoryInsertDepth, 0, 99),
             historyDepth: number(companion.historyDepth, 3, 1, 10), feedback: { enabled: Boolean(companion.feedback?.enabled), depth: number(companion.feedback?.depth, 1, 1, 10) },
             batch: Boolean(companion.batch), batchAgentIds: identifiers(companion.batchAgentIds),
             sendContextToCompanions: Boolean(companion.sendContextToCompanions), contextRecipientAgentIds: identifiers(companion.contextRecipientAgentIds),
