@@ -26,6 +26,7 @@
 - PR #531 (2026-11-07) `feat(starlight): add sparkle bursts to mobile taps`
 - PR #532 (2026-11-07) `fix(roleplay): report server reply errors and retain display regex`
 - PR #533 (2026-11-07) `feat(notifications): add opt-in push alerts across platforms`
+- PR #534 (2026-11-07) `fix(starlight): soften cursor effects and lift foreground twinkles`
 
 ## v1.5.1
 
