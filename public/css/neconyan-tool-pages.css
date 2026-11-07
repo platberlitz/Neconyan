@@ -953,6 +953,24 @@ body.neconyan-tool-tour-active #neconyan-tour-coachmark {
     line-height: 1.6;
 }
 
+/* Structured Prefill is a section card now, so the card draws the frame and the old fold steps aside. */
+#left-nav-panel #AdvancedFormatting #sb-af-prefill > .inline-drawer-content > #structured-prefill-settings {
+    display: block;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    overflow: visible;
+}
+
+#left-nav-panel #AdvancedFormatting #sb-af-prefill > .inline-drawer-content > #structured-prefill-settings > summary {
+    display: none;
+}
+
+#left-nav-panel #AdvancedFormatting #sb-af-prefill > .inline-drawer-content > #structured-prefill-settings > div {
+    padding: 0;
+}
+
 #left-nav-panel #AdvancedFormatting.sb-chat-completion-mode > .flex-container:first-child {
     display: none;
 }

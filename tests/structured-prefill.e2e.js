@@ -18,8 +18,9 @@ async function openControls(page) {
     await page.evaluate(() => window.NeconyanShell.openTab('left', 'advanced-formatting'));
     const later = page.getByRole('button', { name: 'Not now', exact: true });
     if (await later.isVisible()) await later.click();
-    if (!await page.locator('#start_reply_with').isVisible()) await page.locator('#sb-af-replies .inline-drawer-header').click();
-    await expect(page.locator('#start_reply_with')).toBeVisible();
+    const header = page.locator('#sb-af-prefill > .inline-drawer-header');
+    if (await header.getAttribute('aria-expanded') !== 'true') await header.click();
+    await expect(page.locator('#structured-prefill-settings')).toBeVisible();
 }
 
 async function capture(page, filename) {
@@ -56,14 +57,13 @@ for (const [location, stream, phone] of [['browser', false, false], ['browser', 
             await page.reload();
             await expect(page.locator('body')).toHaveClass(/neconyan-rail-ready/, { timeout: 60000 });
             await openControls(page);
-            await page.locator('#start_reply_with').scrollIntoViewIfNeeded();
+            await page.locator('#sb-af-prefill').scrollIntoViewIfNeeded();
             await capture(page, `prefill-${phone ? 'phone' : 'desktop'}-before.png`);
             await page.unroute(app.url + '/');
             await page.reload();
             await expect(page.locator('body')).toHaveClass(/neconyan-rail-ready/, { timeout: 60000 });
         }
         await openControls(page);
-        await page.locator('#structured-prefill-settings > summary').click();
         const controls = page.locator('#structured-prefill-settings');
         await expect(controls.locator('[data-sp="enabled"]')).toBeChecked();
         await controls.locator('[data-sp="output_method"]').selectOption('instructions');
@@ -72,13 +72,13 @@ for (const [location, stream, phone] of [['browser', false, false], ['browser', 
         await controls.locator('[data-sp="override_prefill_enabled"]').check();
         await controls.locator('[data-sp="override_prefill_text"]').fill(prefix + '[[keep]]');
         if (screenshots && location === 'browser') {
-            await controls.locator('summary').first().evaluate(element => element.scrollIntoView({ block: 'start' }));
+            await page.locator('#sb-af-prefill').evaluate(element => element.scrollIntoView({ block: 'start' }));
             await capture(page, `prefill-${phone ? 'phone' : 'desktop'}-after.png`);
         }
-        const bounds = await controls.evaluate(element => {
-            const outer = element.getBoundingClientRect();
-            const text = element.querySelector(':scope > div > p').getBoundingClientRect();
-            return { width: outer.width, overflow: element.scrollWidth - element.clientWidth, leftInset: text.left - outer.left, rightInset: outer.right - text.right };
+        const bounds = await page.locator('#sb-af-prefill').evaluate(card => {
+            const outer = card.getBoundingClientRect();
+            const text = card.querySelector('#structured-prefill-settings > div > p.description').getBoundingClientRect();
+            return { width: outer.width, overflow: card.scrollWidth - card.clientWidth, leftInset: text.left - outer.left, rightInset: outer.right - text.right };
         });
         expect(bounds.width).toBeGreaterThan(200);
         expect(bounds.overflow).toBeLessThanOrEqual(2);

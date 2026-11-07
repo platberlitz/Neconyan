@@ -2,7 +2,7 @@
 
 I brought the template approach from [StructuredPrefill, Cheesedozer Edition](https://github.com/hatredofmusic/StructuredPrefill-Cheesedozer-Edition) into Neconyan's reply handling. You don't need the extension. It starts switched off.
 
-Open **Fine-tuning → Formatting → Reply controls**, then expand **Structured Prefill** below **Start Reply With**. Enable it to turn the last assistant prefill into a reply pattern. You can also choose **Use a separate starter template**.
+Open **Fine-tuning → Formatting → Structured Prefill**, the last section on that page. Enable it to turn the last assistant prefill into a reply pattern. You can also choose **Use a separate starter template**.
 
 Choose an **Output method**:
 

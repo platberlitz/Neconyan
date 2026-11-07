@@ -61,7 +61,7 @@ for (const phone of [true, false]) {
                 await page.goto('/', { waitUntil: 'domcontentloaded' });
                 await openFormatting(page);
                 const drawers = page.locator('#AdvancedFormatting .sb-af-settings-drawer:visible');
-                await expect(drawers).toHaveCount(5);
+                await expect(drawers).toHaveCount(6);
                 const insets = await drawers.evaluateAll(nodes => nodes.map(drawer => {
                     const header = drawer.querySelector(':scope > .inline-drawer-header');
                     return header.getBoundingClientRect().right - header.querySelector('.inline-drawer-icon').getBoundingClientRect().right;
@@ -70,6 +70,10 @@ for (const phone of [true, false]) {
                 await expect(page.locator('#sb-af-reasoning #reasoning_auto_parse')).toHaveCount(1);
                 await expect(page.locator('#sb-af-replies #custom_stopping_strings')).toHaveCount(1);
                 await expect(page.locator('#sb-af-sysprompt #reasoning_auto_parse')).toHaveCount(0);
+                await expect(page.locator('#sb-af-prefill')).toHaveCount(1);
+                await expect(page.locator('#sb-af-prefill #structured-prefill-settings')).toHaveCount(1);
+                await expect(page.locator('#sb-af-replies #structured-prefill-settings')).toHaveCount(0);
+                await expect(page.locator('#AdvancedFormatting .sb-af-settings-drawer').last()).toHaveId('sb-af-prefill');
 
                 const header = await expand(page, 'sb-af-sysprompt');
                 await header.focus();
@@ -114,7 +118,7 @@ for (const phone of [true, false]) {
                     }
                 }
 
-                for (const id of ['sb-af-context', 'sb-af-instruct', 'sb-af-sysprompt', 'sb-af-reasoning', 'sb-af-replies']) {
+                for (const id of ['sb-af-context', 'sb-af-instruct', 'sb-af-sysprompt', 'sb-af-reasoning', 'sb-af-replies', 'sb-af-prefill']) {
                     await expand(page, id);
                     const bad = await page.locator(`#${id}`).evaluate(drawer => [...drawer.querySelectorAll('.sb-af-preset-action, select, textarea')]
                         .filter(el => el.checkVisibility()).flatMap(el => {
@@ -135,9 +139,10 @@ for (const phone of [true, false]) {
                 await expect.poll(() => savedSettings?.power_user?.user_prompt_bias).toBe('Formatting persistence check');
                 await page.reload({ waitUntil: 'domcontentloaded' });
                 await openFormatting(page, 'openai');
-                await expect(drawers).toHaveCount(3);
+                await expect(drawers).toHaveCount(4);
                 await expect(page.locator('#sb-af-sysprompt')).toBeHidden();
                 await expect(page.locator('#sb-af-instruct')).toBeHidden();
+                await expect(page.locator('#sb-af-prefill')).toBeVisible();
                 await expand(page, 'sb-af-context');
                 await expect(page.locator('#trim_spaces')).toBeVisible();
                 await expand(page, 'sb-af-reasoning');
@@ -146,6 +151,8 @@ for (const phone of [true, false]) {
                 await expect(page.locator('#start_reply_with')).toHaveValue('Formatting persistence check');
                 await expect(page.locator('#custom_stopping_strings')).toBeVisible();
                 await expect(page.locator('#tokenizer')).toBeHidden();
+                await expand(page, 'sb-af-prefill');
+                await expect(page.locator('#sb-af-prefill [data-sp="enabled"]')).toBeVisible();
             } finally {
                 await context.close();
             }
