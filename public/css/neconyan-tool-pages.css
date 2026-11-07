@@ -211,6 +211,7 @@ body.neconyan :is(#left-nav-panel, #user-settings-block, #right-nav-panel) .neco
     width: min(400px, calc(100vw - 24px));
     max-height: min(60dvh, 520px);
     overflow: auto;
+    overflow-x: clip;
     overscroll-behavior: contain;
     padding: 16px;
     border: 1px solid var(--neco-border);
@@ -1065,6 +1066,13 @@ body.neconyan-tool-tour-active #neconyan-tour-coachmark {
         width: auto;
         max-height: 48dvh;
         padding: 14px;
+    }
+
+    /* The action row pulls against the card padding; keep both at 14px or it widens the scroll area. */
+    #neconyan-tool-tour.neconyan-tool-tour .neconyan-tool-tour-actions {
+        bottom: -14px;
+        margin: 0 -14px -14px;
+        padding: 8px 14px 14px;
     }
 
     .neconyan-tool-tour-actions button {
