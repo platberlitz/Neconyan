@@ -11,6 +11,7 @@
 - PR #516 (2026-11-06) `feat(scratchpad): attach files and images from the composer`
 - PR #517 (2026-11-07) `feat(prefill): add native structured reply templates`
 - PR #518 (2026-11-07) `fix(formatting): pair the sections and drop the blank bands`
+- PR #519 (2026-11-07) `feat(formatting): give structured prefill its own section`
 - PR #520 (2026-11-07) `fix(presets): stop pill shells clipping the prompt list`
 
 ## v1.5.1
