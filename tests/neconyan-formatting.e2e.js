@@ -75,6 +75,24 @@ for (const phone of [true, false]) {
                 await expect(page.locator('#sb-af-replies #structured-prefill-settings')).toHaveCount(0);
                 await expect(page.locator('#AdvancedFormatting .sb-af-settings-drawer').last()).toHaveId('sb-af-prefill');
 
+                // Start closed so the grouping is the same whatever state was saved last time.
+                const opened = page.locator('#AdvancedFormatting .sb-af-settings-drawer > .inline-drawer-header[aria-expanded="true"]');
+                await opened.evaluateAll(headers => headers.forEach(header => header.click()));
+                await expect(opened).toHaveCount(0);
+
+                // Desktop pairs the closed sections; phones stay in one column.
+                const layout = await page.locator('#AdvancedFormatting > .sb-af-drawers').evaluate(group => {
+                    const closed = [...group.querySelectorAll(':scope > .sb-af-settings-drawer')]
+                        .filter(card => card.checkVisibility() && !card.querySelector(':scope > .inline-drawer-header[aria-expanded="true"]'));
+                    const tops = closed.map(card => Math.round(card.getBoundingClientRect().top));
+                    return {
+                        paired: tops.some((top, index) => tops.indexOf(top) < index),
+                        columns: getComputedStyle(group).gridTemplateColumns.split(' ').length,
+                    };
+                });
+                expect(layout.columns, 'closed sections sit two per row on desktop').toBe(phone ? 1 : 2);
+                expect(layout.paired, 'closed sections share a row').toBe(!phone);
+
                 const header = await expand(page, 'sb-af-sysprompt');
                 await header.focus();
                 await page.keyboard.press('Space');
@@ -83,6 +101,12 @@ for (const phone of [true, false]) {
                 await expect(header).toHaveAttribute('aria-expanded', 'true');
                 await expect(page.locator('#sysprompt_content')).toBeVisible();
                 await expect(header.locator('.inline-drawer-icon')).toHaveAttribute('tabindex', '-1');
+                await expect
+                    .poll(() => page.evaluate(() => Math.abs(
+                        document.querySelector('#AdvancedFormatting > .sb-af-drawers').getBoundingClientRect().width
+                        - document.querySelector('#sb-af-sysprompt').getBoundingClientRect().width,
+                    )), { message: 'an open section keeps the full panel width' })
+                    .toBeLessThanOrEqual(1);
 
                 // Selecting a template still reaches its original editor and export action.
                 const presets = page.locator('#sysprompt_select');
