@@ -42,6 +42,16 @@
     gap: 10px;
 }
 
+/*
+ * The list borrows the text_pole class for its input-like frame, but it is a
+ * scrolling panel rather than a control. Pill shells set --sb-radius-button to
+ * 999px, which turns the frame into an ellipse and clips the rows inside it, so
+ * cap the borrowed radius at the panel size.
+ */
+#completion_prompt_manager #completion_prompt_manager_list.text_pole {
+    border-radius: min(var(--sb-radius-button), 18px);
+}
+
 #completion_prompt_manager .completion_prompt_manager_list_separator hr {
     grid-column-start: 1;
     grid-column-end: 4;
