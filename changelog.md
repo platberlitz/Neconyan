@@ -14,6 +14,7 @@
 - PR #519 (2026-11-07) `feat(formatting): give structured prefill its own section`
 - PR #520 (2026-11-07) `fix(presets): stop pill shells clipping the prompt list`
 - PR #521 (2026-11-07) `feat(prefill): add presets, guided setup and reply checks`
+- PR #522 (2026-11-07) `fix(catelier): share settings across drafts and export ccv3 cards`
 
 ## v1.5.1
 
