@@ -6,7 +6,7 @@ export function composeConversationSystemPrompt({
     settings, character = {}, charName = character.name || 'Character', userName = 'User', groupId = '',
     partnerNames = [], threadCharacter = null, timeContext = '', participantContext = '',
     authorNote = '', availability = '', personaStatus = '', personaContext = '', memorySummary = '',
-    soloMemory = null, groupMemories = [], lifeContext = '',
+    soloMemory = null, groupMemories = [], lifeContext = '', gamesContext = '',
 }) {
     let opening = `You are ${charName} in a private direct-message conversation with ${userName}.`;
     if (groupId) {
@@ -35,6 +35,7 @@ export function composeConversationSystemPrompt({
     }
     if (personaContext) fields.push(`User persona and active Scenario Notes:\n${formatPromptText(personaContext, 2600)}`);
     if (partnerNames.length) fields.push(`${groupId ? 'Other group DM participants' : 'Group DM participants who may chime in'}: ${partnerNames.join(', ')}. Treat them as independent people in the chat. Do not speak for them unless specifically generating their message.`);
+    if (gamesContext) fields.push(gamesContext);
     if (memorySummary) fields.push(`Long-term DM memory summary:\n${memorySummary}`);
     if (settings.include_related_memory && groupId) {
         if (soloMemory?.summary) fields.push(`Relevant solo DM memory for ${charName}:\n${formatPromptText(soloMemory.summary, 1200)}\nUse this as remembered private context for ${charName}, but do not reveal private solo DM details unless they naturally belong in this group Conversation.`);

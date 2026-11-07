@@ -461,21 +461,12 @@ function describeMove(state, move) {
     return `Column ${column + 1}`;
 }
 
-function promptBoard(state) {
+/** The grid alone, with no seat wording, so any reader can frame it for their own eyes. */
+function boardText(state) {
     if (!state) {
         return '';
     }
-    const seat = state.toPlay;
-    const symbol = SEAT_SYMBOLS[seat] || '?';
-    const rivalSymbol = SEAT_SYMBOLS[otherSeat(seat)] || '?';
-    const lines = [
-        'Connect Four on a grid of 7 columns and 6 rows.',
-        `${rivalSymbol} is the human player, ${symbol} is your seat.`,
-        'A disc falls to the lowest free cell of the column you name.',
-        'Columns are numbered 1 to 7 from the left. Four in a row wins, sideways, upright or diagonal.',
-        '',
-    ];
-    lines.push(`  ${[1, 2, 3, 4, 5, 6, 7].join(' ')}`);
+    const lines = [`  ${[1, 2, 3, 4, 5, 6, 7].join(' ')}`];
     for (let row = 0; row < ROWS; row++) {
         const cells = [];
         for (let col = 0; col < COLS; col++) {
@@ -484,12 +475,32 @@ function promptBoard(state) {
         }
         lines.push(`  ${cells.join(' ')}`);
     }
-    lines.push('');
+    return lines.join('\n');
+}
+
+function promptBoard(state) {
+    if (!state) {
+        return '';
+    }
+    // Seats never swap in Connect Four, so the legend never flips with the turn.
+    const lines = [
+        'Connect Four on a grid of 7 columns and 6 rows.',
+        `${SEAT_SYMBOLS[HUMAN]} is the human player, ${SEAT_SYMBOLS[PAL]} is your seat.`,
+        'A disc falls to the lowest free cell of the column you name.',
+        'Columns are numbered 1 to 7 from the left. Four in a row wins, sideways, upright or diagonal.',
+        '',
+        boardText(state),
+        '',
+    ];
     if (state.over) {
         lines.push(`The game is over. ${status(state).label || 'Finished'}: ${status(state).detail}`);
         return lines.join('\n');
     }
-    lines.push(`Your seat is ${symbol} and it is your turn.`);
+    if (state.toPlay === HUMAN) {
+        lines.push(`Your seat is ${SEAT_SYMBOLS[PAL]}, and the human player is to move.`);
+        return lines.join('\n');
+    }
+    lines.push(`Your seat is ${SEAT_SYMBOLS[PAL]} and it is your turn.`);
     lines.push(`Legal columns: ${playableColumns(state.heights).map(column => column + 1).join(' ')}`);
     lines.push('Answer with one column number, such as 4.');
     return lines.join('\n');
@@ -671,6 +682,7 @@ export const RULES = {
     describeMove,
     pickCpuMove,
     promptBoard,
+    boardText,
     parseMoveReply,
     hydrate,
 };

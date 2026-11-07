@@ -873,7 +873,8 @@ function describeMove(state, move) {
         + (move.promotion ? `, promoted to a ${names[String(move.promotion).toUpperCase()] || 'queen'}` : '');
 }
 
-function promptBoard(state) {
+/** The grid alone, with no seat wording, so any reader can frame it for their own eyes. */
+function boardText(state) {
     if (!state) {
         return '';
     }
@@ -882,7 +883,6 @@ function promptBoard(state) {
         bK: 'k', bQ: 'q', bR: 'r', bB: 'b', bN: 'n', bP: 'p',
     };
     const lines = [
-        'Chess. Uppercase pieces are the human player and lowercase pieces are your seat.',
         'Files run a to h from the left and ranks run 8 at the top down to 1.',
         '',
         '  +-----------------+',
@@ -897,7 +897,18 @@ function promptBoard(state) {
     }
     lines.push('  +-----------------+');
     lines.push('    a b c d e f g h');
-    lines.push('');
+    return lines.join('\n');
+}
+
+function promptBoard(state) {
+    if (!state) {
+        return '';
+    }
+    // The human seat follows the first-move choice, so the colours must too.
+    const seats = state.you === 'w'
+        ? 'Uppercase pieces are the human player and lowercase pieces are your seat.'
+        : 'Uppercase pieces are your seat and lowercase pieces are the human player.';
+    const lines = [`Chess. ${seats}`, boardText(state), ''];
     if (state.over) {
         lines.push(`The game is finished: ${status(state).label}. ${status(state).detail}`);
         return lines.join('\n');
@@ -1158,6 +1169,7 @@ export const RULES = {
     describeMove,
     pickCpuMove,
     promptBoard,
+    boardText,
     parseMoveReply,
     hydrate,
     hintCell,

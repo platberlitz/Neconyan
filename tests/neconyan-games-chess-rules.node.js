@@ -210,7 +210,16 @@ test('the board prompt shows both seats and asks for one move', () => {
     assert.match(prompt, /a b c d e f g h/);
     assert.match(prompt, /You are to move\./);
     assert.match(prompt, /Answer with one move/);
+    assert.match(prompt, /Uppercase pieces are your seat and lowercase pieces are the human player\./);
     assert.equal(RULES.promptBoard(null), '');
+});
+
+test('the board prompt keeps the seat colours right when the human moves first', () => {
+    const game = RULES.createState({ random: () => 0.5 });
+    const prompt = RULES.promptBoard(game);
+    assert.match(prompt, /Uppercase pieces are the human player and lowercase pieces are your seat\./);
+    assert.match(prompt, /The human player is to move\./);
+    assert.ok(!prompt.includes('Answer with one move'), 'it is not the model seat\'s turn, so no move is requested');
 });
 
 test('a saved game survives a JSON round trip and rejects impossible positions', () => {

@@ -148,4 +148,13 @@ test('the rules card describes the game and its options', () => {
     assert.match(prompt, /Connect Four on a grid of 7 columns and 6 rows/);
     assert.match(prompt, /Answer with one column number/);
     assert.match(prompt, /Legal columns: 1 2 3 4 5 6 7/);
+    assert.match(prompt, /O is the human player, X is your seat\./);
+});
+
+test('the board prompt waits quietly while the human is to drop', () => {
+    const prompt = RULES.promptBoard(RULES.createState({ random: seeded(15) }));
+    assert.match(prompt, /O is the human player, X is your seat\./);
+    assert.match(prompt, /the human player is to move/);
+    assert.ok(!prompt.includes('Answer with one column number'), 'no move is requested off turn');
+    assert.ok(!prompt.includes('Legal columns'), 'legal columns only matter on the model seat\'s turn');
 });
