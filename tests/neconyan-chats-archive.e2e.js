@@ -106,6 +106,81 @@ test.afterAll(async () => {
     }
 });
 
+test.describe('pill shell shapes', () => {
+    test.use({ hasTouch: true });
+    test('keeps archive panels rectangular across pill shells', async ({ page }) => {
+        test.setTimeout(120000);
+        await routeOrganization(page);
+        await routeOperation(page, 'archive-inventory', route => fulfillJson(route, archivePage([
+            linkedRow('A chat with a long title that wraps onto another line'),
+        ], null, null, 1)));
+        const measurements = [];
+        for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 }]) {
+            await page.setViewportSize(viewport);
+            for (const shell of ['starlight-conservatory', 'cozy-warm', 'sunken-reef', 'kittyless']) {
+                await openArchive(page);
+                await page.locator('body').evaluate(body => body.classList.add('neconyan'));
+                await page.addStyleTag({ url: `${baseUrl}/public/css/neconyan.css` });
+                await page.locator('html').evaluate((root, value) => root.dataset.sbTheme = value, shell);
+                await page.addStyleTag({ url: `${baseUrl}/public/css/shell-styles/${shell}.css` });
+                await expect(page.locator('.sbca-row-button').first()).toBeVisible();
+                measurements.push(await page.locator('.sbca-list-panel').evaluate(panel => ({
+                    radius: parseFloat(getComputedStyle(panel).borderTopLeftRadius),
+                    fits: panel.scrollWidth <= panel.clientWidth,
+                })));
+                if (process.env.NECONYAN_SHAPE_SCREENSHOTS) {
+                    const directory = path.resolve(publicRoot, '..', 'screenshots');
+                    await fs.mkdir(directory, { recursive: true });
+                    await page.screenshot({ path: path.join(directory,
+                        `${process.env.NECONYAN_SHAPE_SCREENSHOTS}-${shell}-${viewport.width}.png`) });
+                }
+                await page.locator('.sbca-tools > summary').click();
+                measurements.push(await page.locator('.sbca-tools-content').evaluate(panel => ({
+                    radius: parseFloat(getComputedStyle(panel).borderTopLeftRadius),
+                    fits: panel.scrollWidth <= panel.clientWidth,
+                })));
+                expect(await page.locator('.sbca-owner-summary').evaluate(control =>
+                    parseFloat(getComputedStyle(control).borderTopLeftRadius))).toBe(999);
+            }
+        }
+        expect(measurements.every(item => item.radius <= 18 && item.fits)).toBe(true);
+    });
+});
+
+test('caps borrowed frames, dropdowns and backup previews without changing single-line pills', async ({ page }) => {
+    await page.goto(baseUrl);
+    await page.addStyleTag({ url: `${baseUrl}/public/css/chat-backups.css` });
+    await page.locator('body').evaluate(body => {
+        body.innerHTML = `<main id="shape-audit" style="padding:24px">
+            <div class="text_pole">A borrowed panel frame<br>Second line</div>
+            <textarea class="text_pole">First line\nSecond line</textarea>
+            <input class="text_pole" value="Single-line field">
+            <select class="text_pole"><option>Single choice</option></select>
+            <select class="text_pole" multiple><option>First</option><option>Second</option></select>
+            <div id="chat"><textarea class="edit_textarea">Editing a reply</textarea></div>
+            <div class="select2-container--default"><div class="select2-dropdown">First result<br>Second result</div></div>
+            <div id="nanogpt_form"><div class="select2-selection--multiple">First provider<br>Second provider</div></div>
+            <div class="chatBackupPreviewName">Backup preview</div>
+            <div class="chatBackupPreviewMessages">First message<br>Second message</div>
+        </main>`;
+    });
+    for (const radius of ['999px', '7px', '0px']) {
+        await page.locator('body').evaluate((body, value) => body.style.setProperty('--sb-radius-button', value), radius);
+        const shapes = await page.locator('#shape-audit').evaluate(root => {
+            const radiusOf = selector => parseFloat(getComputedStyle(root.querySelector(selector)).borderTopLeftRadius);
+            return {
+                panels: ['div.text_pole', 'textarea.text_pole', 'select[multiple]', '.edit_textarea',
+                    '.select2-dropdown', '.select2-selection--multiple', '.chatBackupPreviewName'].map(radiusOf),
+                backup: parseFloat(getComputedStyle(root.querySelector('.chatBackupPreviewMessages')).borderBottomLeftRadius),
+                controls: ['input', 'select:not([multiple])'].map(radiusOf),
+            };
+        });
+        expect(shapes.panels).toEqual(Array(7).fill(Math.min(parseFloat(radius), 18)));
+        expect(shapes.backup).toBe(Math.min(parseFloat(radius), 18));
+        expect(shapes.controls).toEqual(Array(2).fill(parseFloat(radius)));
+    }
+});
+
 test('shows a resilient label with at least a 44px mobile touch target', async ({ page }) => {
     await page.goto(`${baseUrl}/?long`);
     await expect(page.locator('html')).toHaveAttribute('data-archive-ready', 'true');

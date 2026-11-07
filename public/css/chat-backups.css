@@ -135,7 +135,7 @@ body.safari #select_chat_popup.chatBackupsOpen {
     overflow: hidden;
     padding: 8px 10px;
     border: 1px solid var(--SmartThemeBorderColor);
-    border-radius: var(--sb-radius-button) var(--sb-radius-button) 0 0;
+    border-radius: min(var(--sb-radius-button), 18px) min(var(--sb-radius-button), 18px) 0 0;
     background: var(--sb-input-bg);
     font-size: calc(var(--mainFontSize) * 0.9);
     font-weight: 600;
@@ -148,7 +148,7 @@ body.safari #select_chat_popup.chatBackupsOpen {
     min-width: 0;
     border: 1px solid var(--SmartThemeBorderColor);
     border-top: 0;
-    border-radius: 0 0 var(--sb-radius-button) var(--sb-radius-button);
+    border-radius: 0 0 min(var(--sb-radius-button), 18px) min(var(--sb-radius-button), 18px);
     background: var(--sb-input-bg);
 }
 

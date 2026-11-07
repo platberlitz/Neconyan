@@ -218,7 +218,7 @@ body.neconyan .sbca-root :is(input, select, .sbca-owner-summary) {
     padding: var(--sbca-space-md);
     margin-block-start: var(--sbca-space-sm);
     border: 1px solid var(--sbca-border);
-    border-radius: var(--sb-radius-button, 14px);
+    border-radius: min(var(--sb-radius-button, 14px), 18px);
     background: var(--sbca-surface);
 }
 
@@ -298,7 +298,7 @@ body.neconyan .sbca-root :is(input, select, .sbca-owner-summary) {
     overflow-y: auto;
     padding: var(--sbca-space-xs);
     border: 1px solid var(--sbca-border);
-    border-radius: var(--sb-radius-button, 14px);
+    border-radius: min(var(--sb-radius-button, 14px), 18px);
     background: var(--sbca-surface);
     box-shadow: var(--sb-shadow-popup, 0 8px 24px rgb(0 0 0 / 20%));
 }
@@ -789,7 +789,7 @@ body.neconyan .sbca-root :is(input, select, .sbca-owner-summary) {
 .sbca-organizer {
     padding: var(--sbca-space-md);
     border: 1px solid var(--sbca-border);
-    border-radius: var(--sb-radius-button, 14px);
+    border-radius: min(var(--sb-radius-button, 14px), 18px);
     background: var(--sbca-surface);
 }
 
@@ -889,7 +889,7 @@ body.neconyan .sbca-root :is(input, select, .sbca-owner-summary) {
 .sbca-viewer {
     padding: var(--sbca-space-md);
     border: 1px solid var(--sbca-border);
-    border-radius: var(--sb-radius-button, 14px);
+    border-radius: min(var(--sb-radius-button, 14px), 18px);
     background: var(--sbca-surface);
 }
 
@@ -983,7 +983,7 @@ body.neconyan .sbca-root :is(input, select, .sbca-owner-summary) {
     min-block-size: 44px;
     padding: var(--sbca-space-sm);
     border: 1px solid var(--sbca-border);
-    border-radius: var(--sb-radius-button, 14px);
+    border-radius: min(var(--sb-radius-button, 14px), 18px);
     background: var(--neco-raised, var(--sbca-surface));
     color: inherit;
     font: inherit;
@@ -1159,7 +1159,7 @@ body.neconyan .sbca-root :is(input, select, .sbca-owner-summary) {
     gap: var(--sbca-space-md);
     padding: var(--sbca-space-lg);
     border: 1px solid var(--sbca-border);
-    border-radius: var(--sb-radius-button, 14px);
+    border-radius: min(var(--sb-radius-button, 14px), 18px);
     background: var(--sbca-surface);
 }
 
@@ -1198,7 +1198,7 @@ body.neconyan .sbca-root :is(input, select, .sbca-owner-summary) {
     min-inline-size: 0;
     padding: var(--sbca-space-md);
     border: 1px solid var(--sbca-border);
-    border-radius: var(--sb-radius-button, 14px);
+    border-radius: min(var(--sb-radius-button, 14px), 18px);
     background: var(--sbca-surface);
 }
 
