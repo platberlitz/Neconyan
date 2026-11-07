@@ -51,7 +51,7 @@ for (const [location, stream, phone] of [['browser', false, false], ['browser', 
         const page = await account.open({ workspace: false });
         page.setDefaultTimeout(15000);
         if (screenshots && location === 'browser') {
-            const beforeHtml = execFileSync('git', ['show', 'HEAD:public/index.html'], { encoding: 'utf8' });
+            const beforeHtml = execFileSync('git', ['show', 'origin/staging:public/index.html'], { encoding: 'utf8' });
             await page.route(app.url + '/', route => route.fulfill({ contentType: 'text/html', body: beforeHtml }));
             await page.reload();
             await expect(page.locator('body')).toHaveClass(/neconyan-rail-ready/, { timeout: 60000 });
@@ -72,12 +72,18 @@ for (const [location, stream, phone] of [['browser', false, false], ['browser', 
         await controls.locator('[data-sp="override_prefill_enabled"]').check();
         await controls.locator('[data-sp="override_prefill_text"]').fill(prefix + '[[keep]]');
         if (screenshots && location === 'browser') {
-            await controls.locator('summary').first().scrollIntoViewIfNeeded();
+            await controls.locator('summary').first().evaluate(element => element.scrollIntoView({ block: 'start' }));
             await capture(page, `prefill-${phone ? 'phone' : 'desktop'}-after.png`);
         }
-        const bounds = await controls.evaluate(element => ({ width: element.getBoundingClientRect().width, overflow: element.scrollWidth - element.clientWidth }));
+        const bounds = await controls.evaluate(element => {
+            const outer = element.getBoundingClientRect();
+            const text = element.querySelector(':scope > div > p').getBoundingClientRect();
+            return { width: outer.width, overflow: element.scrollWidth - element.clientWidth, leftInset: text.left - outer.left, rightInset: outer.right - text.right };
+        });
         expect(bounds.width).toBeGreaterThan(200);
         expect(bounds.overflow).toBeLessThanOrEqual(2);
+        expect(bounds.leftInset).toBeGreaterThanOrEqual(12);
+        expect(bounds.rightInset).toBeGreaterThanOrEqual(12);
         await controls.getByText('Prefill presets', { exact: true }).click();
         for (const accent of [null, 'Pearl', 'Midnight Ink']) {
             if (accent) await page.locator(`.sb-accent-profile-apply[aria-label="Apply ${accent} accent profile"]`).evaluate(element => element.click());
