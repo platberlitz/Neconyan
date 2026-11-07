@@ -135,11 +135,11 @@ export function renderWritingPartner(workspace, main) {
     main.append(choices);
     const modes = element('div', 'creator-actions');
     for (const [mode, title] of [['full', 'Director + grounded prose'], ['positive', 'Positive guidance only'], ['custom', 'My prose rules']]) {
-        const control = button(title, () => workspace.edit(next => { next.writing = { ...next.writing, mode }; }, true), false, 'creator-chip-btn');
+        const control = button(title, () => workspace.editGlobal(next => { next.writing = { ...next.writing, mode }; }, true), false, 'creator-chip-btn');
         control.setAttribute('aria-pressed', String((draft.writing?.mode ?? 'full') === mode)); modes.append(control);
     }
     main.append(modes);
-    if (draft.writing?.mode === 'custom') main.append(textField('My prose rules', draft.writing.custom ?? '', value => workspace.edit(next => { next.writing.custom = value; })));
+    if (draft.writing?.mode === 'custom') main.append(textField('My prose rules', draft.writing.custom ?? '', value => workspace.editGlobal(next => { next.writing.custom = value; })));
     const privateLabel = element('label', 'creator-choice-pill');
     const privateInput = element('input'); privateInput.type = 'checkbox';
     privateLabel.append(privateInput, document.createTextNode('Include private notes and private facts in this request'));

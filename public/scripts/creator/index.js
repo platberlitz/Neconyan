@@ -120,7 +120,7 @@ class CreatorWorkspace {
             const draft = restoreCreatorBackup(JSON.parse(await file.text()));
             await this.session.queue;
             if (this.session.draft) await this.session.save();
-            this.session.draft = draft; this.session.revision = null; this.session.pending = null;
+            this.session.restore({ draft, revision: null, pending: null });
             await this.session.save(); this.render();
             this.status('Backup restored as a new draft. External books will be new copies; rename them in Lorebooks if those names already exist.');
         }));
@@ -128,15 +128,18 @@ class CreatorWorkspace {
         welcomeActions.append(restore);
         const recovery = this.session.draft ? { draft: this.session.draft, revision: this.session.revision, pending: this.session.pending } : this.session.recovery();
         if (recovery) {
-            welcomeActions.append(button(`Recover ${recovery.draft.card.data.name || 'untitled draft'}`, () => {
-                this.session.restore(recovery); this.render(); this.status(recovery.pending ? 'A previous save needs recovery. Resume it from Review & save.' : 'Local draft recovered.');
-            }));
+            welcomeActions.append(button(`Recover ${recovery.draft.card.data.name || 'untitled draft'}`, () => this.run(async () => {
+                this.session.restore(recovery); this.render();
+                await this.session.saveGlobalSettings();
+                this.status(recovery.pending ? 'A previous save needs recovery. Resume it from Review & save.' : 'Local draft recovered.');
+            })));
         }
         const previousRecovery = this.session.recovery(true);
-        if (previousRecovery) welcomeActions.append(button('Recover previous local version', () => {
+        if (previousRecovery) welcomeActions.append(button('Recover previous local version', () => this.run(async () => {
             this.session.restore(previousRecovery); this.render();
+            await this.session.saveGlobalSettings();
             this.status('Previous local version restored. Export a private backup before replacing a newer saved draft.');
-        }), button('Clear previous local recovery', event => {
+        })), button('Clear previous local recovery', event => {
             if (event.currentTarget.dataset.confirm !== 'true') {
                 event.currentTarget.dataset.confirm = 'true';
                 event.currentTarget.textContent = 'Confirm clear previous local recovery';
@@ -227,10 +230,13 @@ class CreatorWorkspace {
         this.host.append(hub);
     }
 
-    change(operation, redraw = false) {
+    change(operation, redraw = false, { shareCreator = false } = {}) {
         if (this.session.pending || this.session.publishing) { this.status('Finish the previous save before changing this draft.', true); return false; }
         try {
-            this.session.draft = operation(this.session.draft);
+            const next = operation(this.session.draft);
+            if (shareCreator && next.card.data.creator !== this.session.draft.card.data.creator) this.session.updateGlobalSettings(next);
+            this.session.draft = next;
+            this.session.applyGlobalSettings();
             clearTimeout(this.recoveryTimer);
             if (creatorTextEditKey()) this.recoveryTimer = setTimeout(() => {
                 try { this.session.remember(); } catch (error) { this.status(error.message, true); }
@@ -255,11 +261,22 @@ class CreatorWorkspace {
         } catch (error) { this.status(error.message, true); return false; }
     }
 
-    edit(operation, redraw = false, options) { return this.change(draft => editCreatorDraft(draft, operation, options), redraw); }
+    edit(operation, redraw = false, options) { return this.change(draft => editCreatorDraft(draft, operation, options), redraw, options); }
+
+    editGlobal(operation, redraw = false) {
+        return this.change(draft => {
+            const next = editCreatorDraft(draft, operation, { record: false });
+            this.session.updateGlobalSettings(next);
+            return next;
+        }, redraw);
+    }
 
     field(field) {
         const draft = this.session.draft;
-        const node = textField(labels[field] || field, draft.card.data[field], value => this.change(current => setCreatorField(current, field, value)), { name: field === 'name', rows: field === 'creator' || field === 'character_version' ? 1 : 4, hint: field === 'mes_example' ? 'Use Interviewer: for questions and {{char}}: for the character’s replies.' : '' });
+        const node = textField(labels[field] || field, draft.card.data[field], value => field === 'creator'
+            ? this.editGlobal(next => { next.card.data.creator = value; })
+            : this.change(current => setCreatorField(current, field, value)), { name: field === 'name', rows: field === 'creator' || field === 'character_version' ? 1 : 4, hint: field === 'creator' ? 'Shared across Catelier drafts on your account. Saved library cards change only after Review & save.' : field === 'mes_example' ? 'Use Interviewer: for questions and {{char}}: for the character’s replies.' : '' });
+        if (field === 'creator') return node;
         if (field !== 'name') {
             const locked = draft.locks.includes(field);
             const lock = button(locked ? 'Locked for AI' : 'Lock for AI', () => this.edit(next => {
@@ -272,6 +289,7 @@ class CreatorWorkspace {
     }
 
     render() {
+        this.session.applyGlobalSettings();
         const draft = this.session.draft;
         const key = `${draft.id}:${draft.view.section}`;
         const railLeft = this.renderKey?.startsWith(`${draft.id}:`) ? this.host.querySelector('.creator-sections')?.scrollLeft ?? 0 : 0;
@@ -348,9 +366,6 @@ class CreatorWorkspace {
             this.stringList(main, 'Group greetings', 'group_only_greetings');
         } else if (section === 'prompts') {
             main.append(element('div', 'creator-section-intro', 'Optional system and depth instructions for this character.'), this.field('system_prompt'), this.field('post_history_instructions'));
-            main.append(textField('Custom User Instructions', draft.writing?.userInstructions ?? '', value => this.edit(next => {
-                next.writing ??= {}; next.writing.userInstructions = value;
-            }), { hint: 'Your directions for Catelier’s writing, generation and interviews. Sent with those requests, kept in this draft, and not exported as a character prompt.' }));
             const depth = draft.card.data.extensions?.depth_prompt ?? { prompt: '', depth: 4, role: 'system' };
             main.append(attachCreatorGenerator(this, textField('Depth prompt', depth.prompt, value => this.edit(next => { next.card.data.extensions ??= {}; next.card.data.extensions.depth_prompt = { ...depth, ...next.card.data.extensions.depth_prompt, prompt: value }; })), 'depth_prompt'));
             this.jsonField(main, 'Depth and role', { depth: depth.depth, role: depth.role }, value => {
@@ -403,7 +418,7 @@ class CreatorWorkspace {
             for (const field of unlockedFields) selection.add(field);
             for (const item of choiceInputs) if (!item.input.disabled) item.input.checked = true;
             syncCreateSummary();
-            this.edit(next => { next.writing ??= {}; next.writing.dossierFields = [...selection]; });
+            this.editGlobal(next => { next.writing ??= {}; next.writing.dossierFields = [...selection]; });
         });
         selectAllBtn.classList.add('creator-mini-btn');
         selectAllBtn.setAttribute('aria-label', 'Select all fields to create');
@@ -411,7 +426,7 @@ class CreatorWorkspace {
             for (const field of unlockedFields) selection.delete(field);
             for (const item of choiceInputs) if (!item.input.disabled) item.input.checked = false;
             syncCreateSummary();
-            this.edit(next => { next.writing ??= {}; next.writing.dossierFields = [...selection]; });
+            this.editGlobal(next => { next.writing ??= {}; next.writing.dossierFields = [...selection]; });
         });
         clearAllBtn.classList.add('creator-mini-btn');
         clearAllBtn.setAttribute('aria-label', 'Clear fields to create');
@@ -434,7 +449,7 @@ class CreatorWorkspace {
             checkbox.addEventListener('change', () => {
                 if (checkbox.checked) selection.add(field); else selection.delete(field);
                 syncCreateSummary();
-                this.edit(next => { next.writing ??= {}; next.writing.dossierFields = [...selection]; });
+                this.editGlobal(next => { next.writing ??= {}; next.writing.dossierFields = [...selection]; });
             });
             const textSpan = element('span', 'creator-choice-label', labels[field]);
             label.append(checkbox, textSpan);
@@ -714,7 +729,7 @@ class CreatorWorkspace {
                 }));
             }
             group.append(button('Accept this field', () => {
-                this.change(draft => acceptCreatorProposal(draft, draft.proposals.find(item => item.id === proposal.id), [change.field]));
+                this.change(draft => acceptCreatorProposal(draft, draft.proposals.find(item => item.id === proposal.id), [change.field]), false, { shareCreator: true });
                 const remaining = this.session.draft.proposals.find(item => item.id === proposal.id);
                 if (remaining) this.proposal(remaining);
                 else review.remove();
@@ -731,7 +746,7 @@ class CreatorWorkspace {
         }
         const footer = element('div', 'creator-actions');
         if (proposal.changes.length) footer.append(button('Accept all fields', () => {
-            this.change(draft => acceptCreatorProposal(draft, draft.proposals.find(item => item.id === proposal.id)));
+            this.change(draft => acceptCreatorProposal(draft, draft.proposals.find(item => item.id === proposal.id)), false, { shareCreator: true });
             const remaining = this.session.draft.proposals.find(item => item.id === proposal.id);
             if (remaining) this.proposal(remaining);
             else review.remove();
@@ -812,7 +827,7 @@ class CreatorWorkspace {
         }
         if (this.session.draft.id !== draft.id) throw new Error('Reopen comparison for the current draft.');
         const content = this.host.querySelector('.creator-content');
-        content.replaceChildren(element('h3', '', 'Compare with your library'), element('p', '', 'Independent changes are combined. Choose which version to keep wherever both copies changed. Nothing is published by this comparison.'));
+        content.replaceChildren(element('h3', '', 'Compare with your library'), element('p', '', 'Independent changes are combined. Choose which version to keep wherever both copies changed. Choosing a different creator name also updates it for your other Catelier drafts. Nothing is published by this comparison.'));
         const draftChoices = [];
         const selectAll = button('Keep all draft changes', () => {
             for (const radio of draftChoices) {
@@ -860,7 +875,7 @@ class CreatorWorkspace {
                     const book = next.books.find(item => item.id === resource.bookId);
                     book.data = merged[index].value; book.original = structuredClone(resource.remote); book.revision = resource.revision;
                 }
-            }, true);
+            }, true, { shareCreator: true });
             this.status('Comparison applied to your draft. Review it before saving to the library.');
         }), true));
     }

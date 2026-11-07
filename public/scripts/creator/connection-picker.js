@@ -12,7 +12,7 @@ export function renderCreatorConnection(workspace, main) {
     group.dataset.creatorConnection = '';
     group.append(element('legend', '', 'Model connection'), element('p', 'creator-muted', 'Used for all Catelier writing requests. Failed requests try fallback profiles in order. The output limit is sent as entered, without automatic adjustment to the model. Lower it if your provider rejects it or your local model has a smaller context.'));
     if (unavailable) group.append(element('p', 'creator-muted', 'Connection Manager is unavailable. Choose Current connection to keep writing. Saved profile choices are retained until you change them.'));
-    const edit = (change, redraw = true) => workspace.edit(next => {
+    const edit = (change, redraw = true) => workspace.editGlobal(next => {
         next.writing ??= {};
         next.writing.connection ??= {};
         change(next.writing.connection);
@@ -56,7 +56,7 @@ export function renderCreatorConnection(workspace, main) {
     });
     label.append(input); group.append(label);
     group.append(textField('Prefill', value.prefill ?? '', prefill => edit(next => { next.prefill = prefill; }, false), {
-        rows: 3, hint: 'Start the model’s reply with this text. Kept in this draft and used for Catelier writing requests. Your provider must support assistant prefills.',
+        rows: 3, hint: 'Start the model’s reply with this text. Shared across your Catelier drafts. Your provider must support assistant prefills.',
     }));
     const models = [value.profile ? profiles.find(profile => profile.id === value.profile)?.model : getGeneratingModel(), ...(value.fallbacks ?? []).map(id => profiles.find(profile => profile.id === id)?.model)];
     if (models.some(isKimiK3Model)) group.append(textField('Partial prefill', value.partialPrefill ?? '', partialPrefill => edit(next => { next.partialPrefill = partialPrefill; }, false), {

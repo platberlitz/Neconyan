@@ -42,10 +42,10 @@ export function renderPortrait(workspace, main) {
     upload.addEventListener('change', () => { if (upload.files[0]) void workspace.run(() => add(upload.files[0], upload.files[0].name)); });
     uploadWrap.append(upload);
     main.append(textField('Portrait prompt', creatorPortraitPrompt(draft), value => workspace.edit(next => { next.portraitPrompt = value; }), { rows: 6, hint: 'Starts from the card’s description, personality, setting and Character’s Note. Quick Image Gen receives this prompt and name and may also apply saved image settings or reference pictures for a matching library character. Private draft notes and the Dossier stay out.' }));
-    main.append(textField('Image prompt guidelines (optional)', draft.portraitGuidelines ?? '', value => workspace.edit(next => { next.portraitGuidelines = value; }), { rows: 2, hint: 'For example: watercolour, head-and-shoulders, soft morning light. Used when the model writes the image prompt.' }));
+    main.append(textField('Image prompt guidelines (optional)', draft.portraitGuidelines ?? '', value => workspace.editGlobal(next => { next.portraitGuidelines = value; }), { rows: 2, hint: 'For example: watercolour, head-and-shoulders, soft morning light. Shared across your drafts and used when the model writes the image prompt.' }));
     const negativeToggle = element('label', 'creator-choice-pill');
     const supportsNegative = element('input'); supportsNegative.type = 'checkbox'; supportsNegative.checked = draft.portraitSupportsNegative === true;
-    supportsNegative.addEventListener('change', () => workspace.edit(next => { next.portraitSupportsNegative = supportsNegative.checked; }, true));
+    supportsNegative.addEventListener('change', () => workspace.editGlobal(next => { next.portraitSupportsNegative = supportsNegative.checked; }, true));
     negativeToggle.append(supportsNegative, document.createTextNode('Image provider supports negative prompts'));
     main.append(negativeToggle);
     if (draft.portraitSupportsNegative === true) main.append(textField('Negative portrait prompt', draft.portraitNegativePrompt ?? '', value => workspace.edit(next => { next.portraitNegativePrompt = value; }), { rows: 3, hint: 'Things to exclude from the image. The model may leave this empty. Sent to image generation only while the checkbox is checked.' }));

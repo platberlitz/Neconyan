@@ -1,6 +1,8 @@
 import { getRequestHeaders, adoptServerSettingsWrite, saveSettings } from '../../script.js';
 import { getCurrentUserHandle } from '../user.js';
+import { extension_settings } from '../extensions.js';
 import { createCreatorDraft, validateCreatorDraft } from './model.js';
+import { applyCreatorGlobalSettings, creatorGlobalSettings } from './settings.js';
 
 /** Each workspace owns its account, source and request queue, independently of the active chat. */
 export class CreatorSession {
@@ -10,10 +12,41 @@ export class CreatorSession {
         this.revision = null;
         this.pending = null;
         this.queue = Promise.resolve();
+        this.settingsRevision = 0;
+        this.savedSettingsRevision = 0;
     }
 
     assertOwner() {
         if (this.owner !== getCurrentUserHandle()) throw new Error('The account changed. Reopen Catelier before continuing.');
+    }
+
+    applyGlobalSettings() {
+        this.assertOwner();
+        // A pending library save must keep its exact frozen document for recovery.
+        if (!this.draft || this.pending) return;
+        applyCreatorGlobalSettings(this.draft, extension_settings.neconyan_creator);
+    }
+
+    updateGlobalSettings(draft) {
+        this.assertOwner();
+        extension_settings.neconyan_creator = creatorGlobalSettings(draft);
+        this.settingsRevision++;
+    }
+
+    migrateGlobalSettings() {
+        this.assertOwner();
+        // Seed once from the first existing draft opened, never from a library import.
+        if (!this.pending && !extension_settings.neconyan_creator) this.updateGlobalSettings(this.draft);
+        this.applyGlobalSettings();
+    }
+
+    async saveGlobalSettings() {
+        this.assertOwner();
+        const revision = this.settingsRevision;
+        if (revision === this.savedSettingsRevision) return;
+        if (!await saveSettings(0, { returnResult: true })) throw new Error('Catelier settings could not be saved to your account. Keep this page open and try again.');
+        this.assertOwner();
+        this.savedSettingsRevision = revision;
     }
 
     async request(path, body = {}) {
@@ -52,6 +85,7 @@ export class CreatorSession {
 
     async open(id) {
         await this.queue;
+        await this.saveGlobalSettings();
         const openingDraft = this.draft;
         const openingRevision = this.revision;
         const recovery = this.draft ? { draft: this.draft, revision: this.revision, pending: this.pending } : this.recovery();
@@ -74,6 +108,8 @@ export class CreatorSession {
         this.draft = result.draft;
         this.revision = result.revision;
         this.pending = result.publication ?? null;
+        this.migrateGlobalSettings();
+        await this.saveGlobalSettings();
         this.remember();
     }
 
@@ -117,6 +153,7 @@ export class CreatorSession {
         this.draft = draft;
         this.revision = null;
         this.pending = null;
+        this.applyGlobalSettings();
         this.remember();
         await this.save();
     }
@@ -126,14 +163,17 @@ export class CreatorSession {
         this.draft = validateCreatorDraft(structuredClone(value.draft));
         this.revision = value.revision;
         this.pending = value.pending;
+        this.migrateGlobalSettings();
     }
 
     save() {
         this.assertOwner();
+        this.applyGlobalSettings();
         this.remember();
         const draft = structuredClone(this.draft);
         const action = async () => {
             if (this.draft?.id !== draft.id) throw new Error('The draft changed before it could be saved.');
+            await this.saveGlobalSettings();
             const result = await this.request('save', { draft, expectedRevision: this.revision });
             this.revision = result.revision;
             this.remember();
@@ -152,15 +192,21 @@ export class CreatorSession {
         } finally { this.publishing = false; }
     }
 
+    async clearPendingPublication() {
+        this.pending = null;
+        this.migrateGlobalSettings();
+        this.remember();
+        await this.saveGlobalSettings();
+    }
+
     async recoverPublication() {
         if (!this.pending || this.publishing) throw new Error('Wait for the current save before recovering it.');
         await this.queue;
         const result = await this.request('recover', { id: this.draft.id, operationId: this.pending.operationId, expectedRevision: this.revision });
         this.draft = result.draft;
         this.revision = result.revision;
-        this.pending = null;
-        this.remember();
         await this.refreshPublishedResources(result.draft.journal);
+        await this.clearPendingPublication();
     }
 
     async refreshPublishedResources(result) {
@@ -195,8 +241,7 @@ export class CreatorSession {
                 // Acknowledge that identity without replacing any subsequent edits.
                 await this.refreshPublishedResources(journal);
                 await this.request('acknowledge', { id: this.draft.id, operationId: journal.operationId });
-                this.pending = null;
-                this.remember();
+                await this.clearPendingPublication();
                 return journal;
             }
             throw new Error('This draft contains edits made after the library save started. Use Recover for comparison to keep those edits.');
@@ -222,7 +267,7 @@ export class CreatorSession {
                 this.remember();
                 await this.refreshPublishedResources(receipt);
             } catch (receiptError) {
-                if (receiptError.status === 404) { this.pending = null; this.remember(); }
+                if (receiptError.status === 404) await this.clearPendingPublication();
             }
             throw error;
         }
@@ -256,8 +301,7 @@ export class CreatorSession {
         this.revision = adopted.revision;
         this.remember();
         await this.request('acknowledge', { id: next.id, operationId: result.operationId });
-        this.pending = null;
-        this.remember();
+        await this.clearPendingPublication();
         return result;
     }
 }

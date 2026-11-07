@@ -4,8 +4,10 @@ import { createCreatorDraft } from '../public/scripts/creator/model.js';
 
 let owner = 'owner';
 const saveSettings = jest.fn(async () => true);
+const extension_settings = {};
 jest.unstable_mockModule('../public/script.js', () => ({ getRequestHeaders: () => ({}), adoptServerSettingsWrite: jest.fn(), saveSettings }));
 jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHandle: () => owner }));
+jest.unstable_mockModule('../public/scripts/extensions.js', () => ({ extension_settings }));
 const invalidateWorldInfoCache = jest.fn();
 const updateWorldInfoList = jest.fn(async () => {});
 jest.unstable_mockModule('../public/scripts/world-info.js', () => ({ world_info: {}, invalidateWorldInfoCache, updateWorldInfoList }));
@@ -14,6 +16,7 @@ const { CreatorSession } = await import('../public/scripts/creator/session.js');
 beforeEach(() => {
     owner = 'owner';
     saveSettings.mockReset().mockResolvedValue(true);
+    delete extension_settings.neconyan_creator;
     invalidateWorldInfoCache.mockClear();
     updateWorldInfoList.mockReset().mockResolvedValue(true);
     const storage = new Map();
@@ -22,6 +25,8 @@ beforeEach(() => {
 
 test.each([true, false])('canonical book readback acknowledges saved work even when list refresh succeeds: %s', async refreshed => {
     const session = pendingSession();
+    session.migrateGlobalSettings();
+    expect(extension_settings.neconyan_creator).toBeUndefined();
     updateWorldInfoList.mockResolvedValue(refreshed);
     session.draft.books = [{ id: 'book', name: 'City/Places', mode: 'copy', data: { entries: {} }, revision: null }];
     session.request = jest.fn(async route => {
@@ -40,6 +45,8 @@ test.each([true, false])('canonical book readback acknowledges saved work even w
     expect(invalidateWorldInfoCache).toHaveBeenCalledWith('CityPlaces');
     expect(updateWorldInfoList).toHaveBeenCalledTimes(1);
     expect(session.request.mock.calls.map(([route]) => route).slice(-2)).toEqual(['save', 'acknowledge']);
+    expect(extension_settings.neconyan_creator.writing.userInstructions).toBe('Pending draft instructions');
+    expect(saveSettings).toHaveBeenCalledWith(0, { returnResult: true });
 });
 
 test('explicit recovery adopts the server draft before unlocking local edits', async () => {
@@ -53,11 +60,14 @@ test('explicit recovery adopts the server draft before unlocking local edits', a
     expect(session.draft.source.avatar).toBe('AlreadySaved.png');
     expect(session.pending).toBeNull();
     expect(session.revision).toBe('recovered');
+    expect(extension_settings.neconyan_creator.writing.userInstructions).toBe('Pending draft instructions');
+    expect(saveSettings).toHaveBeenCalledWith(0, { returnResult: true });
 });
 
 function pendingSession() {
     const session = new CreatorSession();
     session.draft = createCreatorDraft({ id: 'draft', card: { data: { name: 'Mira' } } });
+    session.draft.writing = { userInstructions: 'Pending draft instructions' };
     session.revision = 'draft-revision';
     session.pending = { id: 'draft', expectedRevision: 'draft-revision', operationId: 'operation', copy: false };
     return session;
@@ -115,6 +125,8 @@ test('Retrying a lost acknowledgement preserves edits made after adoption', asyn
     expect(session.draft.card.data.description).toBe('Newer edits');
     expect(session.pending).toBeNull();
     expect(session.request).toHaveBeenCalledTimes(1);
+    expect(extension_settings.neconyan_creator.writing.userInstructions).toBe('Pending draft instructions');
+    expect(saveSettings).toHaveBeenCalledWith(0, { returnResult: true });
 });
 
 test('Opening the server version preserves the previous local recovery copy', async () => {
@@ -194,4 +206,56 @@ test('opening a character with an unreadable book keeps the previous draft intac
     await expect(session.create('Other.png')).rejects.toThrow('Book unavailable');
     expect(session.draft).toEqual(before);
     expect(session.revision).toBe('draft-revision');
+});
+
+test('global preferences migrate once, survive opening old drafts and save to the account', async () => {
+    const session = new CreatorSession();
+    const old = createCreatorDraft({ id: 'old' });
+    old.writing = { prompts: { grounded: '' }, askQuestionsFirst: false, userInstructions: 'Shared instructions' };
+    old.card.data.creator = 'Author';
+    session.request = jest.fn(async () => ({ draft: structuredClone(old), revision: 'old-revision' }));
+    await session.open('old');
+    expect(extension_settings.neconyan_creator.writing.userInstructions).toBe('Shared instructions');
+    expect(saveSettings).toHaveBeenCalledWith(0, { returnResult: true });
+    session.draft.writing.askQuestionsFirst = true;
+    session.draft.card.data.creator = 'New author';
+    session.updateGlobalSettings(session.draft);
+    session.request = jest.fn(async route => route === 'save' ? { revision: 'saved' } : { draft: structuredClone(old), revision: 'old-revision' });
+    await session.create();
+    expect(session.draft.card.data.creator).toBe('New author');
+    expect(session.draft.writing.askQuestionsFirst).toBe(true);
+    expect(session.draft.writing.prompts.grounded).toBe('');
+    // Opening the old server copy must not replace the current account preferences.
+    session.draft = null;
+    globalThis.localStorage.setItem(session.recoveryKey, 'null');
+    await session.open('old');
+    expect(session.draft.card.data.creator).toBe('New author');
+    expect(session.draft.writing.askQuestionsFirst).toBe(true);
+});
+
+test('restored backups use account preferences but pending publications stay frozen', () => {
+    const session = new CreatorSession();
+    const draft = createCreatorDraft({ id: 'backup' });
+    draft.card.data.creator = 'Backup author';
+    session.updateGlobalSettings({ ...draft, card: { data: { creator: 'Account author' } } });
+    session.restore({ draft, revision: null, pending: null });
+    expect(session.draft.card.data.creator).toBe('Account author');
+    session.restore({ draft, revision: 'frozen', pending: { operationId: 'pending' } });
+    expect(session.draft.card.data.creator).toBe('Backup author');
+});
+
+test('failed account settings saves remain retryable and never report draft success', async () => {
+    const session = new CreatorSession();
+    session.draft = createCreatorDraft({ id: 'save' });
+    session.updateGlobalSettings(session.draft);
+    session.request = jest.fn(async () => ({ revision: 'saved' }));
+    saveSettings.mockResolvedValueOnce(false);
+    await expect(session.save()).rejects.toThrow('Catelier settings could not be saved');
+    expect(session.request).not.toHaveBeenCalled();
+    await session.save();
+    expect(saveSettings).toHaveBeenCalledTimes(2);
+    expect(session.revision).toBe('saved');
+    owner = 'other-account';
+    expect(() => session.updateGlobalSettings(session.draft)).toThrow('account changed');
+    expect(() => session.applyGlobalSettings()).toThrow('account changed');
 });
