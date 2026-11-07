@@ -20,6 +20,7 @@
 - PR #525 (2026-11-07) `feat(agents): add companion depth insertion for kept notes`
 - PR #526 (2026-11-07) `fix(quick-image-gen): surface provider refusals during prompt rewrites`
 - PR #527 (2026-11-07) `fix(shell): cap panel rounding in pill styles`
+- PR #528 (2026-11-07) `fix(tour): stop the phone card panning sideways`
 
 ## v1.5.1
 
