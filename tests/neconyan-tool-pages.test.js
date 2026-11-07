@@ -371,6 +371,18 @@ describe('settings pages open as Neconyan pages with an assistant tour', () => {
         expect(read('../public/css/neconyan-notes.css')).toContain('#neconyan-notes .neconyan-tool-page-intro > :is(.neconyan-page-intro-toggle, .neconyan-tool-tour-button) {\n    min-height: 28px;');
     });
 
+    test('the phone tour card cannot be dragged sideways', () => {
+        const css = read('../public/css/neconyan-tool-pages.css');
+        const card = css.match(/#neconyan-tool-tour\.neconyan-tool-tour \{([^}]*)\}/)?.[1] ?? '';
+        expect(card).toContain('overflow: auto;');
+        expect(card).toContain('overflow-x: clip;');
+        const phone = css.slice(css.lastIndexOf('@media (max-width: 768px)'));
+        const actions = phone.match(/\.neconyan-tool-tour-actions \{([^}]*)\}/)?.[1] ?? '';
+        expect(actions).toContain('bottom: -14px;');
+        expect(actions).toContain('margin: 0 -14px -14px;');
+        expect(actions).toContain('padding: 8px 14px 14px;');
+    });
+
     test('Nori explains presets without pressing save, import or delete and skips unavailable controls', () => {
         const steps = getToolTourSteps('presets');
         expect(steps.map(step => step.id)).toEqual(['welcome', 'choose', 'save', 'copy', 'files', 'linking', 'parameters', 'prompts', 'done']);
