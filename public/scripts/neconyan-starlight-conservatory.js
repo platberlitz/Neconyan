@@ -1113,7 +1113,6 @@ function onPointerMove(event) {
 
 function onPointerDown(event) {
     if (state.still) return;
-    if (event.pointerType && event.pointerType !== 'mouse' && event.pointerType !== 'pen') return;
     spawnNova(event.clientX, event.clientY);
 }
 
