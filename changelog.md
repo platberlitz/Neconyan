@@ -13,6 +13,7 @@
 - PR #518 (2026-11-07) `fix(formatting): pair the sections and drop the blank bands`
 - PR #519 (2026-11-07) `feat(formatting): give structured prefill its own section`
 - PR #520 (2026-11-07) `fix(presets): stop pill shells clipping the prompt list`
+- PR #521 (2026-11-07) `feat(prefill): add presets, guided setup and reply checks`
 
 ## v1.5.1
 
