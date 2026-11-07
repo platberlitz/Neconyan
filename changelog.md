@@ -24,6 +24,7 @@
 - PR #529 (2026-11-07) `fix(prefill): send starter requests with captured stopping strings`
 - PR #530 (2026-11-07) `perf(retrieval): cache jev decisions for mewmory and pawthfinder`
 - PR #531 (2026-11-07) `feat(starlight): add sparkle bursts to mobile taps`
+- PR #532 (2026-11-07) `fix(roleplay): report server reply errors and retain display regex`
 
 ## v1.5.1
 
