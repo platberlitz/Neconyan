@@ -20,6 +20,7 @@ public final class ServerService extends Service {
     private volatile boolean nodeStarted;
     private PowerManager.WakeLock wake;
     private FileObserver busyWatcher;
+    private NativeNotifications messageNotifications;
     private volatile boolean stopping;
     private final Object stopLock = new Object();
     private static final String BUSY = "android-busy";
@@ -45,6 +46,7 @@ public final class ServerService extends Service {
         super.onCreate();
         NotificationManager notifications = getSystemService(NotificationManager.class);
         notifications.createNotificationChannel(new NotificationChannel("server", "Local Neconyan server", NotificationManager.IMPORTANCE_LOW));
+        messageNotifications = new NativeNotifications(this);
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
@@ -122,6 +124,7 @@ public final class ServerService extends Service {
     private synchronized void stopWake() {
         stopping = true;
         if (busyWatcher != null) busyWatcher.stopWatching();
+        if (messageNotifications != null) messageNotifications.close();
         if (wake != null && wake.isHeld()) wake.release();
     }
 

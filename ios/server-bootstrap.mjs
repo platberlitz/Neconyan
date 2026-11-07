@@ -29,6 +29,7 @@ config.logging.enableAccessLog = false;
 writeFileAtomicSync(configPath, YAML.stringify(config), { mode: 0o600 });
 process.env.NECONYAN_SUPERVISED = '1';
 process.env.NECONYAN_IOS_APP = '1';
+process.env.NECONYAN_NATIVE_NOTIFICATION_FILE = path.join(statePath, 'native-notifications.json');
 // The app moves ZIPs picked in its own file picker here, so big imports skip the browser upload.
 process.env.NECONYAN_LOCAL_IMPORT_DIR = path.join(statePath, 'import-inbox');
 process.argv = [process.argv[0], path.join(root, 'server.js'), '--configPath', configPath];

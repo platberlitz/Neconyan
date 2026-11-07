@@ -8,6 +8,7 @@ import UIKit
 @MainActor
 final class BackgroundKeeper {
     private let marker: URL
+    private let pollNotifications: () -> Void
     private let engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
     private let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 2)!
@@ -17,8 +18,9 @@ final class BackgroundKeeper {
     private var pageBusy = false
     private var bridge: UIBackgroundTaskIdentifier = .invalid
 
-    init(marker: URL) {
+    init(marker: URL, pollNotifications: @escaping () -> Void = {}) {
         self.marker = marker
+        self.pollNotifications = pollNotifications
         engine.attach(player)
         engine.connect(player, to: engine.mainMixerNode, format: format)
     }
@@ -54,6 +56,7 @@ final class BackgroundKeeper {
     }
 
     private func poll() {
+        pollNotifications()
         let busy = pageBusy || FileManager.default.fileExists(atPath: marker.path)
         if busy != holding {
             holding = busy
