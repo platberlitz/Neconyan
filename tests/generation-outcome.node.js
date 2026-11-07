@@ -11,6 +11,7 @@ for (const [label, data] of Object.entries({
     claudeAdapter: { choices: [{ finish_reason: 'refusal' }] },
     gemini: { candidates: [{ finishReason: 'SAFETY' }] },
     geminiAdapter: { choices: [{ finish_reason: 'PROHIBITED_CONTENT' }] },
+    geminiAdapterLowercase: { choices: [{ finish_reason: 'prohibited_content' }] },
     geminiInput: { promptFeedback: { blockReason: 'BLOCKLIST' } },
 })) test(`explicit ${label} block`, () => assert.equal(classifyGenerationOutcome(data)?.status, 'blocked'));
 test('normal, unknown and textual refusals are not blocks; choice index owns the outcome', () => {

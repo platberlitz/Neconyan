@@ -1,6 +1,10 @@
 /** Explicit provider facts only. This module is shared by browser and native workers. */
-const blockedReasons = new Set(['content_filter', 'content_policy_violation', 'refusal', 'SAFETY', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII', 'IMAGE_SAFETY', 'IMAGE_PROHIBITED_CONTENT', 'RECITATION', 'IMAGE_RECITATION']);
-const errorReasons = new Set(['error', 'MALFORMED_FUNCTION_CALL', 'MALFORMED_RESPONSE', 'UNEXPECTED_TOOL_CALL', 'TOO_MANY_TOOL_CALLS', 'MISSING_THOUGHT_SIGNATURE', 'PUP_LIMITED_DISABLED']);
+// Reason tokens are compared case-insensitively: Gemini-style proxies emit both the
+// native uppercase codes (PROHIBITED_CONTENT) and lowercase snake_case (prohibited_content).
+const blockedReasons = new Set(['content_filter', 'content_policy_violation', 'refusal', 'safety', 'blocklist', 'prohibited_content', 'spii', 'image_safety', 'image_prohibited_content', 'recitation', 'image_recitation']);
+const errorReasons = new Set(['error', 'malformed_function_call', 'malformed_response', 'unexpected_tool_call', 'too_many_tool_calls', 'missing_thought_signature', 'pup_limited_disabled']);
+
+const matchesReason = (value, reasons) => value != null && reasons.has(String(value).toLowerCase());
 
 export function classifyGenerationOutcome(data, choiceIndex = 0) {
     if (!data || typeof data !== 'object') return null;
@@ -9,9 +13,9 @@ export function classifyGenerationOutcome(data, choiceIndex = 0) {
     const reasons = [choice?.finish_reason, candidate?.finishReason];
     if (choiceIndex === 0) reasons.push(data.stop_reason, data.delta?.stop_reason, data.promptFeedback?.blockReason,
         data.error?.code, data.error?.type, data.code, data.detail?.error?.code);
-    const reason = reasons.find(value => blockedReasons.has(value));
+    const reason = reasons.find(value => matchesReason(value, blockedReasons));
     if (reason) return { version: 1, status: 'blocked', reason };
-    const error = [choice?.finish_reason, candidate?.finishReason].find(value => errorReasons.has(value));
+    const error = [choice?.finish_reason, candidate?.finishReason].find(value => matchesReason(value, errorReasons));
     return error ? { version: 1, status: 'error', reason: error } : null;
 }
 
@@ -21,7 +25,7 @@ export function generationErrorEnvelope(data, eventType = '') {
 }
 
 export function isBlockedGeneration(outcome) {
-    return outcome?.version === 1 && outcome.status === 'blocked' && blockedReasons.has(outcome.reason);
+    return outcome?.version === 1 && outcome.status === 'blocked' && matchesReason(outcome.reason, blockedReasons);
 }
 
 export function messageGenerationBlocked(message) {
