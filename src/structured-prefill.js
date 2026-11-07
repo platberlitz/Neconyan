@@ -95,8 +95,14 @@ export function createPrefillDecoder(compiled, overlap = '') {
 }
 
 async function generatedStarter(request, config, messages) {
-    if (!config.prefill_gen_enabled || !config.prefill_gen_profile_id) throw new Error('Choose a starter model connection profile to use [[pg]].');
+    const setupError = message => Object.assign(new Error(message), { starterMessage: message });
+    if (!config.prefill_gen_enabled) throw setupError('Enable the starter model to use [[pg]].');
+    if (!config.prefill_gen_profile_id) throw setupError('Choose a starter model connection profile to use [[pg]].');
     const [{ captureChatProfile }, { runChatProfile }] = await Promise.all([import('./generation/profiles.js'), import('./generation/service.js')]);
+    let binding;
+    try { binding = { kind: 'profile', ...captureChatProfile(request.user.directories, config.prefill_gen_profile_id) }; } catch (error) {
+        throw setupError(error.status === 409 ? error.message : 'Check the saved starter connection profile.');
+    }
     const controller = new AbortController();
     const cancel = abortOnRequestClose(request, controller);
     let timedOut = false;
@@ -104,15 +110,18 @@ async function generatedStarter(request, config, messages) {
     try {
         const prompt = structuredClone(messages);
         if (config.prefill_gen_extra_prompt) prompt.push({ role: config.prefill_gen_extra_prompt_role === 'user' ? 'user' : 'system', content: config.prefill_gen_extra_prompt });
+        const stops = config.prefill_gen_stop.split('\n').filter(Boolean);
         const result = await runChatProfile({ context: { owner: request.user.profile.handle, directories: request.user.directories },
-            binding: { kind: 'profile', ...captureChatProfile(request.user.directories, config.prefill_gen_profile_id) }, messages: prompt,
+            binding, messages: prompt, userName: request.body.user_name, characterName: request.body.char_name, groupNames: request.body.group_names,
             maxTokens: config.prefill_gen_max_tokens, signal: controller.signal, fetch: request.fetch,
-            ephemeralStops: config.prefill_gen_stop.split('\n').filter(Boolean), generationType: 'quiet' });
-        if (result.outcome || !result.text) throw new Error('The starter model returned no usable text.');
+            rawOptions: { resolvedStoppingStrings: config.starter_stopping_strings },
+            overridePayload: { stop: [...config.starter_stopping_strings, ...stops] }, ephemeralStops: stops, generationType: 'quiet' });
+        if (result.outcome || !result.text) throw setupError('The starter model returned no usable text.');
         const matched = result.response?.matched_stop ?? result.response?.choices?.[0]?.matched_stop;
         return result.text + (config.prefill_gen_keep_matched_stop_string && typeof matched === 'string' ? matched : '');
     } catch (error) {
         if (cancel.isAborted && !timedOut) throw Object.assign(new Error('The starter request was cancelled.'), { code: 'PREFILL_CANCELLED' });
+        if (timedOut) throw setupError('The starter model timed out.');
         throw error;
     } finally { clearTimeout(timer); cancel.cleanup(); }
 }
@@ -147,15 +156,17 @@ export async function prepareStructuredPrefill(request) {
     }
     const warnings = [];
     let generated = '';
+    let starter;
     if (!continuing && template.includes('[[pg]]')) {
-        try { generated = await generatedStarter(request, config, messages); } catch (error) {
+        try { generated = await generatedStarter(request, config, messages); starter = 'generated'; } catch (error) {
             if (error.code === 'PREFILL_CANCELLED' || request.aborted || request.generationSignal?.aborted) throw error;
-            warnings.push('The starter model failed. The main reply continued with an empty [[pg]] slot.');
+            starter = 'failed';
+            warnings.push(`The starter model failed. ${error.starterMessage ? error.starterMessage + ' ' : ''}The main reply continued with an empty [[pg]] slot.`);
         }
     }
     const compiled = compileStructuredPrefill(template, { ...config, ...(continuing ? { hide_prefill_in_display: false, remove_prefill_from_history: false } : {}) },
         [body.user_name, body.char_name, ...(Array.isArray(body.group_names) ? body.group_names : [])], { literal: continuing, generated });
-    compiled.context = { source: body.chat_completion_source, model: body.model, method: config.output_method,
+    compiled.context = { source: body.chat_completion_source, model: body.model, method: config.output_method, ...(starter ? { starter } : {}),
         prefill_source: continuing ? 'continue' : config.override_prefill_enabled ? 'template' : fieldPrefill === template ? 'assistant_prefill' : 'assistant message', warnings };
     body.messages = messages;
     if (fieldPrefill && !continuing) delete body.assistant_prefill;

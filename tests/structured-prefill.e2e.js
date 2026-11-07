@@ -30,6 +30,90 @@ async function capture(page, filename) {
     await page.screenshot({ path: path.join(screenshots, filename) });
 }
 
+for (const [location, phone] of [['browser', false], ['server', true]]) {
+    test(`${location} Starter sends a separate request with expanded chat stops`, async ({ app }) => {
+        const calls = [];
+        const account = await app.account({ phone, activeConnection: true, configureSettings: saved => {
+            saved.power_user.reply_generation_location = location;
+            saved.power_user.custom_stopping_strings_macro = true;
+            saved.power_user.custom_stopping_strings = '["{{char}}:STOP"]';
+            saved.power_user.structured_prefill = { enabled: true, min_chars_after_prefix: 0, hide_prefill_in_display: false,
+                override_prefill_enabled: true, override_prefill_text: '[[pg]] ', prefill_gen_enabled: true,
+                prefill_gen_profile_id: 'starter', prefill_gen_stop: '{{char}}:END', prefill_gen_max_tokens: 15 };
+            saved.extension_settings.connectionManager.profiles.push({ ...saved.extension_settings.connectionManager.profiles[0], id: 'starter', name: 'Starter fixture', model: 'starter-model' });
+        } });
+        app.provider.mode.reply = body => {
+            calls.push(body);
+            return { choices: [{ message: { content: body.model === 'starter-model' ? 'Nova smiles.' : JSON.stringify({ response: 'Nova smiles. ' + prose }) }, finish_reason: 'stop' }] };
+        };
+        const page = await account.open({ workspace: false });
+        await page.evaluate(async avatar => {
+            const core = await import('/script.js');
+            await core.getCharacters();
+            await core.selectCharacterById(core.characters.findIndex(character => character.avatar === avatar), { switchMenu: false });
+        }, account.avatar);
+        await acknowledgeActiveSettings(page);
+        await page.locator('#send_textarea').fill('Open the window.');
+        await page.locator('#send_but').click();
+        await expect(page.locator('#chat .mes').last().locator('.mes_text')).toContainText('Nova smiles. ' + prose, { timeout: 60000 });
+        expect(calls).toHaveLength(2);
+        expect(calls[0].model).toBe('starter-model');
+        expect(calls[0].max_tokens).toBe(15);
+        expect(calls[0].stop).toEqual(['Durable Nova:STOP', 'Durable Nova:END']);
+        expect(calls[0].response_format).toBeUndefined();
+        expect(new RegExp(calls[1].response_format.json_schema.schema.properties.response.pattern).test('Nova smiles. ' + prose)).toBe(true);
+        await openControls(page);
+        await expect(page.locator('[data-sp-verification]')).toContainText('Starter model supplied the opening.');
+        await page.locator('[data-sp-verification]').scrollIntoViewIfNeeded();
+        if (screenshots) await capture(page, `starter-${phone ? 'phone' : 'desktop'}-success.png`);
+        await page.close();
+    });
+}
+
+for (const phone of [false, true]) {
+    test(`Starter explains a missing saved model on ${phone ? 'phone' : 'desktop'}`, async ({ app }) => {
+        let calls = 0;
+        const account = await app.account({ phone, activeConnection: true, configureSettings: saved => {
+            saved.power_user.structured_prefill = { enabled: true, min_chars_after_prefix: 0,
+                override_prefill_enabled: true, override_prefill_text: '[[pg]]', prefill_gen_enabled: true, prefill_gen_profile_id: 'starter' };
+            saved.extension_settings.connectionManager.profiles.push({ id: 'starter', name: 'Starter fixture', mode: 'cc', api: 'nanogpt', model: null });
+        } });
+        app.provider.mode.reply = () => {
+            calls++;
+            return { choices: [{ message: { content: JSON.stringify({ response: prose }) }, finish_reason: 'stop' }] };
+        };
+        const page = await account.open({ workspace: false });
+        await page.evaluate(async avatar => {
+            const core = await import('/script.js');
+            await core.getCharacters();
+            await core.selectCharacterById(core.characters.findIndex(character => character.avatar === avatar), { switchMenu: false });
+        }, account.avatar);
+        await acknowledgeActiveSettings(page);
+        await page.locator('#send_textarea').fill('Open the window.');
+        await page.locator('#send_but').click();
+        await expect(page.locator('#chat .mes').last().locator('.mes_text')).toHaveText(prose, { timeout: 60000 });
+        expect(calls).toBe(1);
+        await openControls(page);
+        const status = page.locator('[data-sp-verification]');
+        await expect(status).toContainText('Save a model in this connection profile.');
+        const bounds = await status.evaluate(element => ({ overflow: element.scrollWidth - element.clientWidth, fontSize: getComputedStyle(element).fontSize }));
+        expect(bounds.overflow).toBeLessThanOrEqual(2);
+        expect(parseFloat(bounds.fontSize)).toBeGreaterThanOrEqual(12);
+        if (screenshots) {
+            await status.scrollIntoViewIfNeeded();
+            await capture(page, `starter-${phone ? 'phone' : 'desktop'}-after.png`);
+            // Reconstruct the old warning from the same recorded reply for the copy comparison.
+            await page.evaluate(async () => {
+                const { reportStructuredPrefillStatus } = await import('/scripts/structured-prefill.js');
+                const metadata = (await import('/script.js')).chat.at(-1).extra.structured_prefill;
+                reportStructuredPrefillStatus({ ...metadata, warnings: ['The starter model failed. The main reply continued with an empty [[pg]] slot.'] });
+            });
+            await capture(page, `starter-${phone ? 'phone' : 'desktop'}-before.png`);
+        }
+        await page.close();
+    });
+}
+
 for (const [location, stream, phone] of [['browser', false, false], ['browser', true, true], ['server', false, true]]) {
     test(`${location} ${stream ? 'streamed' : 'buffered'} prefill keeps full history and hides only its saved prefix`, async ({ app }, info) => {
         let sent;

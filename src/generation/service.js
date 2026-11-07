@@ -184,7 +184,7 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
     if (['kobold', 'novel', 'horde'].includes(binding?.backend)) return runLegacyProfile({ context, binding, messages, maxTokens, macroEnvironment,
         ephemeralStops, userName, characterName, groupNames, signal, fetch: fetchImpl, jobContext,
         modelOverride, overridePayload, rawOptions, beforeDispatch, validatePrompt, stream, preparedText, cfgValues, onProviderStep, stepNamespace, captureMacroState });
-    if (!raw && Object.keys(rawOptions).some(option => !['jsonSchema', 'cacheScope', 'includePreset', 'includeInstruct'].includes(option))) {
+    if (!raw && Object.keys(rawOptions).some(option => !['jsonSchema', 'cacheScope', 'includePreset', 'includeInstruct', 'resolvedStoppingStrings'].includes(option))) {
         fail('This request option requires the acknowledged active connection.', 409);
     }
     if (['includePreset', 'includeInstruct'].some(key => rawOptions[key] !== undefined && typeof rawOptions[key] !== 'boolean')) fail('Preset request controls must be boolean.', 400);
@@ -344,10 +344,12 @@ async function prepareChatRequest({ context, binding, messages, maxTokens, macro
     userName, characterName, groupNames, signal, fetch: fetchImpl, modelOverride, overridePayload, rawOptions = {}, functionTools = [], generationType = 'quiet', lastAssistant = null, captureCleanupStops }, material) {
     const saved = readJsonShared(path.join(context.directories.root, 'settings.json'), {});
     const power = { ...saved.power_user, ...material?.power };
-    if (power.custom_stopping_strings_macro && !macroEnvironment?.evaluate) fail('This profile requires the captured chat macro context.', 400);
+    const capturedStops = rawOptions.resolvedStoppingStrings;
+    if (capturedStops !== undefined && (!Array.isArray(capturedStops) || capturedStops.some(value => typeof value !== 'string'))) fail('The captured stopping strings are invalid.', 400);
+    if (capturedStops === undefined && power.custom_stopping_strings_macro && !macroEnvironment?.evaluate) fail('This profile requires the captured chat macro context.', 400);
     let stoppingStrings;
     const getStoppingStrings = limit => {
-        stoppingStrings ??= resolveCustomStoppingStrings(power, text => macroEnvironment.evaluate(text, {
+        stoppingStrings ??= capturedStops !== undefined ? [...capturedStops, ...ephemeralStops] : resolveCustomStoppingStrings(power, text => macroEnvironment.evaluate(text, {
             legacy: material?.kind === 'active' && !power.experimental_macro_engine, strictCapabilities: material?.kind === 'active',
         }), ephemeralStops);
         return limit > 0 ? stoppingStrings.slice(0, limit) : stoppingStrings;
@@ -409,6 +411,7 @@ async function prepareChatRequest({ context, binding, messages, maxTokens, macro
     if (power.structured_prefill?.enabled) {
         const { structuredPrefillRequest } = await import('../../public/scripts/structured-prefill.js');
         payload.structured_prefill = structuredPrefillRequest(payload, { ...power.structured_prefill, last_assistant: lastAssistant,
+            starter_stopping_strings: getStoppingStrings(),
             original_prefill: macroEnvironment?.evaluate(power.user_prompt_bias || '', { strictCapabilities: true }) ?? power.user_prompt_bias ?? '' }, generationType,
         value => macroEnvironment?.evaluate(value, { strictCapabilities: true }) ?? value);
     }

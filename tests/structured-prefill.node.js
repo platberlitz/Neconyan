@@ -7,11 +7,27 @@ import { Response } from 'node-fetch';
 import { fixture } from './roleplay-transactions-fixture.js';
 import { compileStructuredPrefill, continuedPrefillMetadata, structuredPrefillDisplay, structuredPrefillRequest, structuredPrefillStatus, STRUCTURED_PREFILL_PRESETS } from '../public/scripts/structured-prefill.js';
 import { extractProviderReasoning } from '../public/scripts/generation-format.js';
+import { resolveCustomStoppingStrings } from '../public/scripts/chat-request-controls.js';
 const { createPrefillDecoder, decodePrefillStream, prepareStructuredPrefill } = await import('../src/structured-prefill.js');
 const { runTextGeneration } = await import('../src/generation/service.js');
 const { writeSecret, SECRET_KEYS } = await import('../src/endpoints/secrets.js');
 const settings = { enabled: true, min_chars_after_prefix: 0 };
 const wire = text => JSON.stringify({ response: text });
+
+test('starter stops are captured once with chat substitutions and survive backend normalisation', () => {
+    const expanded = resolveCustomStoppingStrings({ custom_stopping_strings: '["{{char}}:STOP"]', custom_stopping_strings_macro: true }, (...args) => {
+        assert.equal(args.length, 1, 'Array indexes and the stop list must not replace the chat names');
+        return args[0].replace('{{char}}', 'Nova');
+    });
+    assert.deepEqual(expanded, ['Nova:STOP']);
+    const payload = { chat_completion_source: 'nanogpt', stop: ['Older client stop'] };
+    const config = structuredPrefillRequest(payload, { ...settings, prefill_gen_stop: '{{user}}:', starter_stopping_strings: ['Alex:', '', null] }, 'normal', text => text.replace('{{user}}', 'Alex'));
+    assert.equal(config.prefill_gen_stop, 'Alex:');
+    assert.deepEqual(config.starter_stopping_strings, ['Alex:']);
+    assert.deepEqual(structuredPrefillRequest(payload, config, 'normal').starter_stopping_strings, ['Alex:']);
+    assert.deepEqual(structuredPrefillRequest(payload, settings, 'normal').starter_stopping_strings, ['Older client stop']);
+    assert.match(structuredPrefillStatus({ verification: 'matched', starter: 'generated' }), /Starter model supplied the opening/);
+});
 
 test('Continue records its new check without exposing the original hidden prefix', () => {
     const previous = { hidden_prefix: 'Private. ', verification: 'matched', history_removed: false };
@@ -242,22 +258,25 @@ for (const reason of ['stop', 'content_filter']) for (const stream of [false, tr
     assert.equal(result.response.choices[0].structured_prefill.pending, false);
 });
 
-test('starter model uses its saved profile once and treats generated slot-looking text literally', async t => {
+for (const api of ['custom', 'nanogpt']) test(`${api} starter uses its saved profile with default stop macros and treats generated slots literally`, async t => {
     const f = fixture(t);
+    const secretId = writeSecret(f.scope.directories, SECRET_KEYS.NANOGPT, 'fixture-only');
     fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
         oai_settings: {},
-        power_user: { structured_prefill: settings },
-        extension_settings: { connectionManager: { profiles: [{ id: 'starter', mode: 'cc', api: 'custom', model: 'starter-model', 'api-url': 'http://starter.invalid/v1' }] } },
+        power_user: { structured_prefill: settings, custom_stopping_strings_macro: true, custom_stopping_strings: '["{{user}}:", "{{getvar::stop}}"]' },
+        extension_settings: { connectionManager: { profiles: [{ id: 'starter', mode: 'cc', api, model: 'mistral-small', 'secret-id': api === 'nanogpt' ? secretId : undefined, 'api-url': 'http://starter.invalid/v1' }] } },
     }));
     const calls = [];
     const result = await runTextGeneration({ context: f.scope, backend: 'chat', payload: {
         chat_completion_source: 'custom', custom_url: 'http://main.invalid/v1', model: 'main-model', stream: false,
         messages: [{ role: 'user', content: 'Hello' }, { role: 'assistant', content: '[[pg]]: [[keep]]' }],
-        structured_prefill: { ...settings, type: 'normal', prefill_gen_enabled: true, prefill_gen_profile_id: 'starter', prefill_gen_extra_prompt: 'Write a starter.' },
+        structured_prefill: { ...settings, type: 'normal', prefill_gen_enabled: true, prefill_gen_profile_id: 'starter', prefill_gen_extra_prompt: 'Write a starter.',
+            starter_stopping_strings: ['Alex:', 'End scene'], prefill_gen_stop: 'END' },
     }, fetch: async (url, options) => {
         const body = JSON.parse(options.body); calls.push(body);
         if (calls.length === 1) {
-            assert.equal(body.model, 'starter-model');
+            assert.equal(body.model, 'mistral-small');
+            assert.deepEqual(body.stop, ['Alex:', 'End scene', 'END']);
             assert.equal(body.response_format, undefined);
             assert.equal(body.messages.at(-1).content, 'Write a starter.');
             return new Response(JSON.stringify({ choices: [{ message: { content: '[[keep]]<NL>' }, finish_reason: 'stop' }] }));
@@ -268,6 +287,26 @@ test('starter model uses its saved profile once and treats generated slot-lookin
     assert.equal(calls.length, 2);
     assert.equal(result.text, '[[keep]]<NL>: reply');
     assert.equal(result.response.choices[0].structured_prefill.hidden_prefix, '[[keep]]<NL>: ');
+    assert.equal(result.response.choices[0].structured_prefill.starter, 'generated');
+});
+
+test('a starter profile without a saved model reports how to fix it without sending a starter request', async t => {
+    const f = fixture(t);
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({ oai_settings: {},
+        extension_settings: { connectionManager: { profiles: [{ id: 'starter', mode: 'cc', api: 'nanogpt', model: null }] } } }));
+    let calls = 0;
+    const result = await runTextGeneration({ context: f.scope, backend: 'chat', payload: {
+        chat_completion_source: 'custom', custom_url: 'http://main.invalid/v1', model: 'main-model',
+        messages: [{ role: 'user', content: 'Hello' }],
+        structured_prefill: { ...settings, type: 'normal', override_prefill_enabled: true, override_prefill_text: '[[pg]]', prefill_gen_enabled: true, prefill_gen_profile_id: 'starter' },
+    }, fetch: async () => {
+        calls++;
+        return new Response(JSON.stringify({ choices: [{ message: { content: wire('Main reply') }, finish_reason: 'stop' }] }));
+    } });
+    assert.equal(calls, 1);
+    assert.equal(result.text, 'Main reply');
+    assert.match(result.response.choices[0].structured_prefill.warnings.join(' '), /Save a model in this connection profile/);
+    assert.equal(result.response.choices[0].structured_prefill.starter, 'failed');
 });
 
 test('cancelling the starter does not fall back to a main request', async t => {

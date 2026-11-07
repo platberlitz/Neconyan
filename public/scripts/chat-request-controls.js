@@ -30,7 +30,7 @@ export function resolveCustomStoppingStrings(settings, substitute, ephemeral = [
         console.warn('Error parsing custom stopping strings:', error);
         permanent = [];
     }
-    if (settings.custom_stopping_strings_macro) permanent = permanent.map(substitute);
+    if (settings.custom_stopping_strings_macro) permanent = permanent.map(value => substitute(value));
     const strings = [...permanent, ...ephemeral];
     return limit > 0 ? strings.slice(0, limit) : strings;
 }
