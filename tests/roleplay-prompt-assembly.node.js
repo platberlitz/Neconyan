@@ -429,6 +429,47 @@ test('a clean Mewmory prompt resumes before dispatch without rerunning macros or
     assert.equal(readRoleplayChat(job.f.scope, job.f.locator).records[0].chat_metadata.variables.turns, 5);
 });
 
+test('a completed Mewmory reply recovers after interruption without another provider call', async t => {
+    for (const agents of [false, true]) await t.test(agents ? 'with Agents' : 'without Agents', async t => {
+        const job = promptJob(t, [main, history], ['main', 'chatHistory'], agents
+            ? { extension_settings: { inChatAgents: { globalSettings: { enabled: true } } } } : {},
+        f => {
+            if (!agents) return;
+            f.scope.directories.inChatAgents = path.join(f.scope.directories.root, 'InChatAgents');
+            fs.mkdirSync(f.scope.directories.inChatAgents);
+            fs.writeFileSync(path.join(f.scope.directories.inChatAgents, 'recovery.json'), JSON.stringify({
+                id: 'recovery', name: 'Recovery', enabled: true, phase: 'post',
+                postProcess: { enabled: true, type: 'append', appendText: ' Agent finished.' },
+            }));
+        }, undefined, {}, { serverPrompt: true });
+        enableMemory(job);
+        const step = 'provider:' + 'a'.repeat(64);
+        let calls = 0;
+        await assert.rejects(job.run(async ({ beforeDispatch, onProviderStep }) => {
+            beforeDispatch();
+            calls++;
+            onProviderStep(step);
+            writeArtifact(job.context.directories, job.context.job.id, step, { text: 'The completed paid reply.' });
+            throw new Error('Interrupted after saving the provider result');
+        }), /Interrupted after saving/);
+        const prompt = readArtifact(job.context.directories, job.context.job.id, 'roleplay-prompt');
+        assert.ok(prompt.memoryPresentation);
+        assert.equal(Boolean(prompt.agentsHash), agents);
+        // Recovery must still reject changed evidence, including the memory data.
+        writeArtifact(job.context.directories, job.context.job.id, 'roleplay-prompt', {
+            ...prompt, memoryPresentation: { ...prompt.memoryPresentation, memoryText: 'Changed on disk' },
+        });
+        await assert.rejects(job.run(async () => assert.fail('Never repeat the paid request')), { code: 'ROLEPLAY_RECOVERY_REQUIRED' });
+        writeArtifact(job.context.directories, job.context.job.id, 'roleplay-prompt', prompt);
+        await job.run(async () => assert.fail('Recover the saved reply without dispatch'));
+        await job.run(async () => assert.fail('Do not repeat a recovered reply'));
+        assert.equal(calls, 1);
+        const replies = readRoleplayChat(job.f.scope, job.f.locator).records.filter(row => row.mes?.startsWith('The completed paid reply.'));
+        assert.equal(replies.length, 1);
+        if (agents) assert.match(replies[0].mes, /Agent finished\./);
+    });
+});
+
 test('Mewmory changes during preparation refuse dispatch and retain the earlier prompt evidence', async t => {
     const job = promptJob(t, [main, history], ['main', 'chatHistory']);
     enableMemory(job);
