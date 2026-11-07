@@ -180,6 +180,91 @@ test('decision requests budget their actual payload without a generated reply re
     assert.equal(state.calls.length, 1, 'chat requests still reserve reply space');
 });
 
+test('Mewmory caches exact decisions, reapplies thresholds and checks current permissions', async t => {
+    const { directories, config, state } = await decisionFixture(t);
+    saveConfig(directories, config);
+    const call = (input = decisionInput, settings = readConfig(directories), options) =>
+        callJsonRole(directories, settings, 'selector', SELECTION_CONTRACT, input, options);
+    const first = await call();
+    assert.equal(first.usage.cached, false);
+    assert.ok(first.usage.input > 0);
+    const second = await call();
+    assert.deepEqual(second.value, first.value);
+    assert.equal(second.usage.cached, true);
+    assert.equal(second.usage.input, 0);
+    assert.equal(second.usage.output, 0);
+    assert.equal(state.calls.length, 1);
+    const changed = publicConfig(directories);
+    changed.roles.selector.decisionThreshold = 0.95;
+    saveConfig(directories, changed);
+    assert.deepEqual((await call()).value.selections, []);
+    assert.equal(state.calls.length, 1, 'threshold changes reuse scores, not selections');
+    const input = structuredClone(decisionInput);
+    input.candidates[0].excerpt += ' It moved.';
+    await call(input);
+    assert.equal(state.calls.length, 2);
+    const scene = structuredClone(decisionInput);
+    scene.scene[0].text = 'Where is the market?';
+    await call(scene);
+    assert.equal(state.calls.length, 3);
+    const keyed = publicConfig(directories);
+    keyed.roles.selector.apiKey = 'rotated-test-key';
+    saveConfig(directories, keyed);
+    await call();
+    assert.equal(state.calls.length, 4);
+    await assert.rejects(call(decisionInput, readConfig(directories), { signal: AbortSignal.abort() }), /abort/i);
+    const stale = readConfig(directories);
+    const disabled = publicConfig(directories);
+    disabled.roles.selector.enabled = false;
+    saveConfig(directories, disabled);
+    await assert.rejects(call(decisionInput, stale), error => error.status === 409);
+    await assert.rejects(call(), error => error.status === 409);
+    assert.equal(state.calls.length, 4);
+});
+
+test('Mewmory does not cache malformed decision responses', async t => {
+    const { directories, config, state } = await decisionFixture(t);
+    saveConfig(directories, config);
+    const call = () => callJsonRole(directories, readConfig(directories), 'selector', SELECTION_CONTRACT, decisionInput);
+    state.response = { answers: { q_0: 0.9 } };
+    await assert.rejects(call(), error => error.status === 502);
+    state.response = { answers: { q_0: 0.9, q_1: 0.2 } };
+    assert.equal((await call()).usage.cached, false);
+    assert.equal((await call()).usage.cached, true);
+    assert.equal(state.calls.length, 2);
+});
+
+test('Mewmory isolates accounts and roles, and rejects decisions if settings change during dispatch', async t => {
+    const { directories, config, state } = await decisionFixture(t);
+    config.roles.fallback = { ...config.roles.selector };
+    saveConfig(directories, config);
+    const other = { root: path.join(directories.root, 'other-account') };
+    saveConfig(other, config);
+    for (const account of [directories, other]) {
+        for (const role of ['selector', 'fallback']) {
+            const call = () => callJsonRole(account, readConfig(account), role, SELECTION_CONTRACT, decisionInput);
+            assert.equal((await call()).usage.cached, false);
+            assert.equal((await call()).usage.cached, true);
+        }
+    }
+    assert.equal(state.calls.length, 4);
+    const input = structuredClone(decisionInput);
+    input.scene[0].text = 'A new scene';
+    const valid = state.response;
+    state.response = () => {
+        const changed = publicConfig(directories);
+        changed.roles.selector.decisionThreshold = 0.7;
+        saveConfig(directories, changed);
+        return valid;
+    };
+    await assert.rejects(callJsonRole(directories, readConfig(directories), 'selector', SELECTION_CONTRACT, input),
+        error => error.status === 409);
+    state.response = valid;
+    const retry = await callJsonRole(directories, readConfig(directories), 'selector', SELECTION_CONTRACT, input);
+    assert.equal(retry.usage.cached, false);
+    assert.equal(state.calls.length, 6, 'a response invalidated during dispatch is not cached');
+});
+
 test('both Mewmory decision roles explain a TypeSafe and OpenRouter model mismatch', async t => {
     const { directories } = await decisionFixture(t);
     for (const role of ['selector', 'fallback']) {
