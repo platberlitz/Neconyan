@@ -9,6 +9,7 @@
 - PR #514 (2026-11-06) `feat(scratchpad): edit presets and copy every code block`
 - PR #515 (2026-11-06) `fix(kimi): detect partial prefill for bracket-labelled models`
 - PR #516 (2026-11-06) `feat(scratchpad): attach files and images from the composer`
+- PR #517 (2026-11-07) `feat(prefill): add native structured reply templates`
 
 ## v1.5.1
 
