@@ -27,6 +27,7 @@
 - PR #532 (2026-11-07) `fix(roleplay): report server reply errors and retain display regex`
 - PR #533 (2026-11-07) `feat(notifications): add opt-in push alerts across platforms`
 - PR #534 (2026-11-07) `fix(starlight): soften cursor effects and lift foreground twinkles`
+- PR #535 (2026-11-07) `fix(startup): tolerate blocked optional notifications`
 
 ## v1.5.1
 
