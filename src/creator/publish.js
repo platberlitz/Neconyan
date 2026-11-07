@@ -88,7 +88,7 @@ export function publishCreatorDraft(lease, { id, expectedRevision, operationId, 
         const item = getCreatorDraft(lease, id);
         if (item.revision !== expectedRevision) throw conflict('The draft changed after review. Review it again before saving.');
         const draft = item.draft;
-        const card = creatorPublicationCard(draft);
+        const card = creatorPublicationCard(draft, { ccv3: true });
         if (typeof card.data.name !== 'string' || !card.data.name.trim() || card.data.name.length > 200) throw roleplayError('CREATOR_NAME', 'Give your character a name of up to 200 characters.', 400);
         const source = draft.source.avatar ? creatorCharacterSource(lease, draft.source.avatar) : null;
         if (source && !copy && source.revision !== draft.source.revision) throw conflict('The original character changed. Compare changes or save a copy.');

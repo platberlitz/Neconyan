@@ -19,8 +19,32 @@ export function withCreatorTextEdit(key, operation) {
     try { return operation(); } finally { textEditKey = previous; }
 }
 
+/** Complete the public CCv3 fields without rebuilding or discarding imported metadata. */
+export function creatorCardV3(card = {}) {
+    const document = copy(card);
+    document.spec = 'chara_card_v3';
+    document.spec_version = '3.0';
+    if (!document.data || typeof document.data !== 'object' || Array.isArray(document.data)) document.data = {};
+    for (const field of TEXT_FIELDS) {
+        if (document.data[field] === undefined) document.data[field] = String(document[field === 'creator_notes' ? 'creatorcomment' : field] ?? '');
+        if (typeof document.data[field] !== 'string') throw new Error(`The character ${field} must be text.`);
+    }
+    for (const field of ['alternate_greetings', 'group_only_greetings', 'tags']) {
+        if (document.data[field] === undefined) document.data[field] = copy(document[field] ?? []);
+        if (!Array.isArray(document.data[field]) || document.data[field].some(value => typeof value !== 'string')) throw new Error(`The character ${field} must be a list of text values.`);
+    }
+    if (document.data.extensions === undefined) document.data.extensions = copy(document.extensions ?? {});
+    if (!document.data.extensions || typeof document.data.extensions !== 'object' || Array.isArray(document.data.extensions)) throw new Error('The character extensions must be an object.');
+    for (const field of ['name', 'description', 'personality', 'scenario', 'first_mes', 'mes_example', 'tags']) {
+        if (Object.hasOwn(document, field)) document[field] = copy(document.data[field]);
+    }
+    if (Object.hasOwn(document, 'creatorcomment')) document.creatorcomment = document.data.creator_notes;
+    return document;
+}
+
 export function createCreatorDraft({ id, card, avatar = null, revision = null, extraBooks = [] }) {
-    const original = copy(card ?? { spec: 'chara_card_v2', spec_version: '2.0', data: {} });
+    // Imported comparison baselines keep their original format until publication.
+    const original = copy(card ?? creatorCardV3());
     const document = copy(original);
     if (!document.data || typeof document.data !== 'object' || Array.isArray(document.data)) document.data = {};
     for (const field of TEXT_FIELDS) {

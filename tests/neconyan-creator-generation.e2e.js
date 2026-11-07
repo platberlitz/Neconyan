@@ -84,8 +84,8 @@ for (const phone of [false, true]) {
         // exactly, except where the browser must clamp it to the new bottom limit.
         expect(after.map(value => value.top), JSON.stringify({ before, after }))
             .toEqual(before.map((value, index) => Math.min(value.top, after[index].max)));
-        await creator.getByRole('button', { name: 'Prompts', exact: true }).click();
-        await creator.getByLabel('Custom User Instructions', { exact: true }).fill('Write terse, precise sentences.');
+        await creator.getByRole('button', { name: 'Writing instructions', exact: true }).click();
+        await creator.getByLabel('Custom user instructions', { exact: true }).fill('Write terse, precise sentences.');
         await creator.getByRole('button', { name: 'Identity', exact: true }).click();
         app.provider.mode.reply = { choices: [{ message: { role: 'assistant', content: JSON.stringify({ value: 'Mira repairs ships with {{poss}} tools.' }) } }] };
         await creator.getByRole('button', { name: 'Generate Description', exact: true }).click();

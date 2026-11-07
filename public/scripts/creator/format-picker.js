@@ -3,7 +3,7 @@ import { CREATOR_FORMATS, CREATOR_TENSES, CREATOR_POVS, CREATOR_CANON_MODES, CRE
 
 export function renderCreatorTargets(workspace, host, { open = false } = {}) {
     const targets = workspace.session.draft.writing?.targets ?? {};
-    const setTarget = (key, value, redraw = false) => workspace.edit(next => {
+    const setTarget = (key, value, redraw = false) => workspace.editGlobal(next => {
         next.writing ??= {};
         next.writing.targets ??= {};
         // Older drafts kept one shared length target; it now belongs to the character fields.
@@ -71,7 +71,7 @@ export function renderCreatorTargets(workspace, host, { open = false } = {}) {
     body.append(taskGrid);
     body.append(textField('What each greeting should do', creatorTargetValue(targets, 'openingScenarios'), val => setTarget('openingScenarios', val), { rows: 2, placeholder: 'e.g. 4 everyday scenarios grounded in routine, varied emotional arcs, sensation-first hooks' }));
 
-    body.append(button('Reset lengths and lists to defaults', () => workspace.edit(next => {
+    body.append(button('Reset lengths and lists to defaults', () => workspace.editGlobal(next => {
         for (const key of [...Object.keys(CREATOR_TARGET_DEFAULTS), 'words', 'tokens']) delete next.writing?.targets?.[key];
     }, true), false, 'creator-chip-btn'));
 
@@ -80,7 +80,7 @@ export function renderCreatorTargets(workspace, host, { open = false } = {}) {
     nsfwGroup.append(element('span', 'creator-target-label', 'NSFW instructions'));
     const nsfwStrip = element('div', 'creator-actions creator-chip-strip');
     for (const [enabled, label] of [[false, 'Off'], [true, 'On']]) {
-        const choice = button(label, () => workspace.edit(next => {
+        const choice = button(label, () => workspace.editGlobal(next => {
             next.writing ??= {};
             next.writing.nsfw = { ...next.writing.nsfw, enabled };
         }, true), false, 'creator-chip-btn');
@@ -90,15 +90,15 @@ export function renderCreatorTargets(workspace, host, { open = false } = {}) {
     nsfwGroup.append(nsfwStrip);
     body.append(nsfwGroup);
     if (nsfw.enabled) {
-        const field = textField('NSFW instructions for descriptions and greetings', typeof nsfw.instruction === 'string' ? nsfw.instruction : CREATOR_NSFW_GUIDANCE, val => workspace.edit(next => {
+        const field = textField('NSFW instructions for descriptions and greetings', typeof nsfw.instruction === 'string' ? nsfw.instruction : CREATOR_NSFW_GUIDANCE, val => workspace.editGlobal(next => {
             next.writing.nsfw = { ...next.writing.nsfw, instruction: val };
-        }), { rows: 5, hint: 'Based on the Director preset’s NSFW Mode. Sent only while this is on, and kept private to this draft.' });
-        const reset = button('Reset default', () => workspace.edit(next => {
+        }), { rows: 5, hint: 'Based on the Director preset’s NSFW Mode. Shared across your drafts and sent only while this is on.' });
+        const reset = button('Reset default', () => workspace.editGlobal(next => {
             if (next.writing?.nsfw) delete next.writing.nsfw.instruction;
         }, true), false, 'creator-chip-btn');
         reset.setAttribute('aria-label', 'Reset NSFW instructions');
         field.querySelector('.creator-field-heading')?.append(reset);
-        const fetishes = textField('Fetishes to focus on (greetings only)', nsfw.fetishes ?? '', val => workspace.edit(next => {
+        const fetishes = textField('Fetishes to focus on (greetings only)', nsfw.fetishes ?? '', val => workspace.editGlobal(next => {
             next.writing ??= {};
             next.writing.nsfw = { ...next.writing.nsfw, fetishes: val };
         }), {
@@ -125,7 +125,7 @@ export function renderCreatorFormat(workspace, main) {
         radio.name = 'creator-format';
         radio.value = id;
         radio.checked = current === id;
-        radio.addEventListener('change', () => workspace.edit(next => { next.style = id; }, true));
+        radio.addEventListener('change', () => workspace.editGlobal(next => { next.style = id; }, true));
         label.title = format.hint;
         label.append(radio, element('span', 'creator-choice-label', format.label));
         if (id !== 'purachina') {
@@ -203,10 +203,10 @@ export function renderCreatorFormat(workspace, main) {
     }), false, 'creator-chip-btn');
     const convertActions = element('div', 'creator-actions');
     convertActions.append(convert, cancel);
-    group.append(row, convertActions, element('p', 'creator-muted', 'Used by Dossier conversion, Generate and the Writing partner. Choosing a format does not replace existing text.'), feedback);
-    group.append(textField('Custom writing format instructions', workspace.session.draft.writing?.formatInstruction ?? '', value => workspace.edit(next => {
+    group.append(row, convertActions, element('p', 'creator-muted', 'Shared across your Catelier drafts. Used by Dossier conversion, Generate and the Writing partner. Choosing a format does not replace existing text.'), feedback);
+    group.append(textField('Custom writing format instructions', workspace.session.draft.writing?.formatInstruction ?? '', value => workspace.editGlobal(next => {
         next.writing ??= {}; next.writing.formatInstruction = value;
-    }), { rows: 2, hint: workspace.session.draft.style === 'custom' ? 'Your only writing format. Built-in formats, prose guidance and style targets are omitted. The greeting count and required response structure still apply. Kept private to this draft.' : 'Add your own structure, formatting and style rules. Choose Custom to use these alone; otherwise they accompany the selected format. Kept private to this draft.' }));
+    }), { rows: 2, hint: workspace.session.draft.style === 'custom' ? 'Your only writing format. Built-in formats, prose guidance and style targets are omitted. The greeting count and required response structure still apply. Shared across your drafts, not exported with the card.' : 'Add your own structure, formatting and style rules. Choose Custom to use these alone; otherwise they accompany the selected format. Shared across your drafts, not exported with the card.' }));
     if (workspace.session.draft.style === 'plist') {
         const destinations = element('div', 'creator-choice-subgroup');
         destinations.append(element('span', 'creator-choice-subheading', 'Place the PList in'));
@@ -218,7 +218,7 @@ export function renderCreatorFormat(workspace, main) {
             radio.name = 'creator-plist-destination';
             radio.value = id;
             radio.checked = (workspace.session.draft.writing?.plistDestination ?? 'description') === id;
-            radio.addEventListener('change', () => workspace.edit(next => {
+            radio.addEventListener('change', () => workspace.editGlobal(next => {
                 next.writing ??= {}; next.writing.plistDestination = id;
             }, true));
             choice.append(radio, element('span', 'creator-choice-label', label));

@@ -1,4 +1,5 @@
 import { serializeWorldInfoEntry } from '../world-info-character-book.js';
+import { creatorCardV3 } from './model.js';
 
 // Native World Info positions are part of the card interchange format.
 const POSITIONS = { before: 0, after: 1, ANTop: 2, ANBottom: 3, atDepth: 4, EMTop: 5, EMBottom: 6, outlet: 7 };
@@ -16,13 +17,30 @@ export function creatorEmbeddedBook(book) {
     return { ...structuredClone(source), name: book.name, entries };
 }
 
-export function creatorPublicationCard(draft) {
+export function creatorPublicationCard(draft, { ccv3 = false } = {}) {
     const card = structuredClone(draft.card);
     const embedded = draft.books.filter(book => book.mode === 'embedded' && !book.detached);
     if (embedded.length > 1) throw new Error('A character card can contain one portable lorebook. Combine or detach the others.');
     if (embedded.length) card.data.character_book = creatorEmbeddedBook(embedded[0]);
     else if (draft.books.some(book => book.mode === 'embedded' && book.detached)) delete card.data.character_book;
-    return card;
+    // Comparison must use the untouched imported shape, not format-only additions.
+    if (!ccv3) return card;
+    const result = creatorCardV3(card);
+    const book = result.data.character_book;
+    if (book) {
+        book.extensions ??= {};
+        book.entries ??= [];
+        for (const entry of book.entries) {
+            entry.keys ??= [];
+            entry.content ??= '';
+            entry.extensions ??= {};
+            entry.enabled ??= true;
+            entry.insertion_order ??= 100;
+            entry.use_regex ??= false;
+            if (entry.case_sensitive === null) delete entry.case_sensitive;
+        }
+    }
+    return result;
 }
 
 /** Rebuild the editable portable book from the chosen comparison, including removal. */

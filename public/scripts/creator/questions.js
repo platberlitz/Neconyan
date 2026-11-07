@@ -4,7 +4,7 @@ export function renderCreatorQuestionsOption(workspace, main) {
     const label = element('label', 'creator-choice-pill');
     const input = element('input'); input.type = 'checkbox';
     input.checked = workspace.session.draft.writing?.askQuestionsFirst === true;
-    input.addEventListener('change', () => workspace.edit(next => {
+    input.addEventListener('change', () => workspace.editGlobal(next => {
         next.writing ??= {}; next.writing.askQuestionsFirst = input.checked;
     }));
     label.append(input, document.createTextNode('Ask questions first'));
