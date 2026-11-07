@@ -26,6 +26,7 @@ import {
 } from '../../public/scripts/neconyan-conversation/constants.js';
 import { composeConversationPromptMessages } from '../../public/scripts/neconyan-conversation/prompt-messages.js';
 import { composeConversationSystemPrompt } from '../../public/scripts/neconyan-conversation/prompt-system.js';
+import { buildConversationGamesContext } from '../../public/scripts/neconyan-conversation/games/prompt-context.js';
 import {
     normalizeChatroomPromptSettings,
     formatPromptText,
@@ -289,6 +290,12 @@ export function buildConversationSystemPrompt({ settings, character, userName, g
         timeContext: context.timeContext ?? getConversationSystemTimeContext(),
         authorNote: settings.authors_note || character.creator_notes,
         memorySummary: branch?.memorySummary || '',
+        gamesContext: buildConversationGamesContext(branch?.games, {
+            charName: character?.name || '',
+            // Group snapshots name the other members through the saved context, not participantNames.
+            palNames: [character?.name, ...(participantNames.length ? participantNames : Array.isArray(context?.partnerNames) ? context.partnerNames : [])].filter(Boolean),
+            userName,
+        }),
         participantContext: groupId && participantNames.length
             ? `Active group participants: ${participantNames.map(name => formatPromptText(name, 80)).filter(Boolean).join(', ')}.` : '',
     });

@@ -1,0 +1,1099 @@
+/* Conversation games panel. Loaded lazily the first time Games opens.
+   The rules modules own the boards; this sheet only frames them. */
+
+/* One declaration site so the panel and the shifted chat agree on the width. */
+body.neconyan {
+    --neco-games-width: clamp(380px, 40vw, 560px);
+}
+
+#neconyan-conversation-games[hidden],
+#neconyan-conversation-games [hidden] {
+    display: none;
+}
+
+.neco-games {
+    position: fixed;
+    inset: var(--sb-topbar-layout-offset, 0px) 0 0 var(--neco-sidebar-offset, 0px);
+    z-index: 61;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
+    background: var(--neco-canvas);
+    color: var(--neco-ink);
+    font-family: var(--sb-font-main, var(--mainFontFamily, 'Nunito', sans-serif));
+    font-size: 15px;
+    container-type: inline-size;
+    container-name: games;
+}
+
+.neco-games[data-layout="beside"] {
+    left: auto;
+    width: var(--neco-games-width, 480px);
+    border-left: 1px solid var(--neco-border);
+}
+
+body.neconyan.neconyan-games-beside #sheld {
+    right: var(--neco-games-width, 480px);
+}
+
+@media (min-width: 769px) and (max-width: 1400px) {
+    body.neconyan.neconyan-games-beside #sheld[data-sb-conversation-mode='on'] #sb_conversation_header {
+        grid-template-columns: 64px minmax(0, 1fr);
+        grid-template-areas: 'avatar copy' 'pals actions';
+    }
+
+    body.neconyan.neconyan-games-beside #sb_conversation_header .sb-conversation-header-actions {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 4px;
+    }
+}
+
+/* A pinned character panel keeps the right edge, so Games sits to its left. */
+@media (min-width: 769px) {
+    body.neconyan #top-settings-holder:has(> * > #right-nav-panel.openDrawer.pinnedOpen:not(.sb-character-editor-fullscreen)) ~ .neco-games {
+        right: min(400px, 38vw);
+    }
+
+    body.neconyan.neconyan-games-beside #top-settings-holder:has(> * > #right-nav-panel.openDrawer.pinnedOpen:not(.sb-character-editor-fullscreen)) ~ #sheld {
+        right: calc(min(400px, 38vw) + var(--neco-games-width, 480px));
+    }
+}
+
+.neco-games[data-layout="phone"] {
+    left: 0;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Frame */
+
+.neco-games-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--neco-border);
+    background: var(--neco-surface);
+}
+
+.neco-games-titles {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.neco-games-title {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.neco-games-subtitle {
+    margin: 2px 0 0;
+    color: var(--neco-muted);
+    font-size: 0.82rem;
+    line-height: 1.35;
+}
+
+.neco-games-head-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.neco-games-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--neco-ink);
+    font-size: 1rem;
+    cursor: pointer;
+}
+
+.neco-games-icon:hover {
+    background: color-mix(in srgb, var(--neco-ginger) 12%, transparent);
+    border-color: var(--neco-border);
+}
+
+.neco-games-icon:focus-visible {
+    outline: 2px solid var(--neco-ginger);
+    outline-offset: 2px;
+}
+
+.neco-games-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    padding: 14px;
+}
+
+/* Buttons */
+
+.neco-games-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 44px;
+    padding: 10px 16px;
+    border: 1px solid var(--neco-border);
+    border-radius: 10px;
+    background: var(--neco-surface);
+    color: var(--neco-ink);
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.neco-games-button:hover {
+    background: color-mix(in srgb, var(--neco-ginger) 12%, var(--neco-surface));
+    border-color: var(--neco-ginger);
+}
+
+.neco-games-button:focus-visible {
+    outline: 2px solid var(--neco-ginger);
+    outline-offset: 2px;
+}
+
+.neco-games-button-primary {
+    background: var(--neco-ginger);
+    border-color: var(--neco-ginger);
+    color: var(--neco-on-accent);
+}
+
+.neco-games-button-primary:hover {
+    background: var(--neco-ginger-hover);
+    border-color: var(--neco-ginger-hover);
+}
+
+.neco-games-button-quiet {
+    background: transparent;
+}
+
+.neco-games-button[disabled] {
+    opacity: 0.55;
+    cursor: default;
+}
+
+.neco-games-button[disabled]:hover {
+    background: var(--neco-surface);
+    border-color: var(--neco-border);
+}
+
+.neco-games-button-quiet[disabled]:hover {
+    background: transparent;
+}
+
+/* Picker */
+
+.neco-games-resume {
+    margin-bottom: 14px;
+    padding: 12px;
+    border: 1px solid color-mix(in srgb, var(--neco-ginger) 45%, var(--neco-border));
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--neco-ginger) 8%, var(--neco-surface));
+}
+
+.neco-games-resume-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 10px;
+    font-weight: 700;
+}
+
+.neco-games-resume-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.neco-games-intro {
+    margin: 0 0 10px;
+    color: var(--neco-muted);
+    font-size: 0.86rem;
+    line-height: 1.4;
+}
+
+.neco-games-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 8px;
+}
+
+.neco-games-card {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr);
+    grid-template-areas: 'icon text' 'kind kind';
+    gap: 4px 10px;
+    padding: 12px;
+    border: 1px solid var(--neco-border);
+    border-radius: 12px;
+    background: var(--neco-surface);
+    color: var(--neco-ink);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.neco-games-card:hover {
+    border-color: var(--neco-ginger);
+    background: color-mix(in srgb, var(--neco-ginger) 8%, var(--neco-surface));
+}
+
+.neco-games-card[aria-pressed="true"] {
+    border-color: var(--neco-ginger);
+    box-shadow: inset 0 0 0 1px var(--neco-ginger);
+    background: color-mix(in srgb, var(--neco-ginger) 12%, var(--neco-surface));
+}
+
+.neco-games-card:focus-visible {
+    outline: 2px solid var(--neco-ginger);
+    outline-offset: 2px;
+}
+
+.neco-games-card-icon {
+    grid-area: icon;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--neco-ginger) 16%, transparent);
+    color: var(--neco-ink);
+}
+
+.neco-games-card-text {
+    grid-area: text;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.neco-games-card-name {
+    font-weight: 700;
+}
+
+.neco-games-card-blurb {
+    color: var(--neco-muted);
+    font-size: 0.8rem;
+    line-height: 1.35;
+}
+
+.neco-games-card-kind {
+    grid-area: kind;
+    margin-top: 4px;
+    color: var(--neco-muted);
+    font-size: 0.72rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.neco-games-setup {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--neco-border);
+}
+
+.neco-games-field {
+    margin-bottom: 12px;
+}
+
+.neco-games-field-label {
+    margin: 0 0 6px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--neco-muted);
+}
+
+.neco-games-choices {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.neco-games-choice {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-height: 44px;
+    padding: 8px 12px;
+    border: 1px solid var(--neco-border);
+    border-radius: 10px;
+    background: var(--neco-surface);
+    color: var(--neco-ink);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.neco-games-choice:hover {
+    border-color: var(--neco-ginger);
+}
+
+.neco-games-choice[aria-pressed="true"] {
+    border-color: var(--neco-ginger);
+    box-shadow: inset 0 0 0 1px var(--neco-ginger);
+    background: color-mix(in srgb, var(--neco-ginger) 12%, var(--neco-surface));
+}
+
+.neco-games-choice:focus-visible {
+    outline: 2px solid var(--neco-ginger);
+    outline-offset: 2px;
+}
+
+.neco-games-choice-label {
+    font-weight: 700;
+    font-size: 0.88rem;
+}
+
+.neco-games-choice-detail {
+    color: var(--neco-muted);
+    font-size: 0.75rem;
+    line-height: 1.3;
+    max-width: 30ch;
+}
+
+.neco-games-setup-hint {
+    margin: 0 0 12px;
+    color: var(--neco-muted);
+    font-size: 0.8rem;
+    line-height: 1.4;
+}
+
+.neco-games-start {
+    width: 100%;
+}
+
+/* Game bar */
+
+.neco-games-game {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.neco-games-game-bar {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.neco-games-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 36px;
+    padding: 6px 10px;
+    border: 1px solid var(--neco-border);
+    border-radius: 8px;
+    background: var(--neco-surface);
+    color: var(--neco-ink);
+    font: inherit;
+    font-size: 0.8rem;
+    cursor: pointer;
+}
+
+.neco-games-back:hover {
+    border-color: var(--neco-ginger);
+}
+
+.neco-games-back:focus-visible {
+    outline: 2px solid var(--neco-ginger);
+    outline-offset: 2px;
+}
+
+.neco-games-game-titles {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.neco-games-game-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    font-weight: 700;
+}
+
+.neco-games-game-meta {
+    margin: 2px 0 0;
+    color: var(--neco-muted);
+    font-size: 0.78rem;
+    line-height: 1.35;
+}
+
+.neco-games-status {
+    margin: 0;
+    padding: 8px 10px;
+    border: 1px solid var(--neco-border);
+    border-radius: 8px;
+    background: var(--neco-surface);
+    font-size: 0.86rem;
+    line-height: 1.4;
+}
+
+.neco-games-status[data-turn="you"] {
+    border-color: color-mix(in srgb, var(--neco-ginger) 55%, var(--neco-border));
+    background: color-mix(in srgb, var(--neco-ginger) 8%, var(--neco-surface));
+}
+
+.neco-games-status[data-turn="over"] {
+    font-weight: 700;
+}
+
+.neco-games-thinking {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    color: var(--neco-muted);
+    font-size: 0.84rem;
+}
+
+.neco-games-dots {
+    display: inline-flex;
+    gap: 3px;
+}
+
+.neco-games-dots span {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--neco-ginger);
+    opacity: 0.4;
+}
+
+.neco-games-note {
+    margin: 0;
+    padding: 8px 10px;
+    border-left: 3px solid var(--neco-ginger);
+    background: color-mix(in srgb, var(--neco-ginger) 8%, transparent);
+    font-size: 0.82rem;
+    line-height: 1.4;
+}
+
+.neco-games-board {
+    display: flex;
+    justify-content: center;
+}
+
+.neco-games-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-top: 4px;
+    border-top: 1px solid var(--neco-border);
+}
+
+/* Chess */
+
+.neco-games-chess {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+    min-width: 0;
+}
+
+.neco-games-chess-board {
+    --neconyan-control-radius: 4px;
+    display: grid;
+    grid-template-columns: 14px repeat(8, minmax(0, 1fr));
+    width: 100%;
+    max-width: 520px;
+    margin: 0 auto;
+    padding: 0;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.neco-games-chess-rank,
+.neco-games-chess-file {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--neco-muted);
+    font-size: 0.6rem;
+    line-height: 1;
+}
+
+.neco-games-chess-file {
+    height: 14px;
+}
+
+.neco-games-chess-square {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    aspect-ratio: 1;
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--neco-ink) 9%, var(--neco-surface));
+    color: var(--neco-ink);
+    font: inherit;
+    cursor: pointer;
+}
+
+.neco-games-chess-square.is-light {
+    background: color-mix(in srgb, var(--neco-ink) 3%, var(--neco-surface));
+}
+
+.neco-games-chess-square[data-side="you"] {
+    color: var(--neco-ink);
+}
+
+.neco-games-chess-square[data-side="pal"] {
+    color: color-mix(in srgb, var(--neco-ink) 62%, var(--neco-ginger));
+}
+
+.neco-games-chess-square:focus-visible {
+    outline: 2px solid var(--neco-ginger);
+    outline-offset: -2px;
+    z-index: 1;
+}
+
+.neco-games-chess-square.is-last {
+    box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--neco-ginger) 40%, transparent);
+}
+
+.neco-games-chess-square.is-selected {
+    background: color-mix(in srgb, var(--neco-ginger) 42%, var(--neco-surface));
+    box-shadow: inset 0 0 0 2px var(--neco-ginger);
+}
+
+.neco-games-chess-square.is-target::after {
+    content: "";
+    position: absolute;
+    width: 26%;
+    height: 26%;
+    border-radius: 50%;
+    background: var(--neco-ginger);
+    opacity: 0.55;
+}
+
+.neco-games-chess-square.is-capture::after {
+    content: "";
+    position: absolute;
+    inset: 6%;
+    border: 3px solid var(--neco-ginger);
+    border-radius: 50%;
+    opacity: 0.7;
+}
+
+.neco-games-chess-square.is-check {
+    background: color-mix(in srgb, var(--sb-color-danger, #c0392b) 32%, var(--neco-surface));
+}
+
+.neco-games-chess-square.is-hint {
+    outline: 2px dashed var(--neco-ginger);
+    outline-offset: -4px;
+}
+
+.neco-games-chess-glyph {
+    font-size: clamp(18px, 7cqw, 40px);
+    line-height: 1;
+}
+
+.neco-games-chess-promotion {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding: 8px;
+    border: 1px solid var(--neco-border);
+    border-radius: 10px;
+    background: var(--neco-raised);
+}
+
+.neco-games-chess-promotion-label {
+    color: var(--neco-muted);
+    font-size: 0.78rem;
+}
+
+.neco-games-chess-promo {
+    --neconyan-control-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0 10px;
+    border: 1px solid var(--neco-border);
+    border-radius: 6px;
+    background: var(--neco-surface);
+    color: var(--neco-ink);
+    font: inherit;
+    font-size: 1.4rem;
+    cursor: pointer;
+}
+
+.neco-games-chess-promo:hover {
+    border-color: var(--neco-ginger);
+    background: color-mix(in srgb, var(--neco-ginger) 12%, var(--neco-surface));
+}
+
+.neco-games-chess-promo.is-cancel {
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+/* Connect Four */
+
+.neco-games-cf {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+    max-width: 460px;
+    margin: 0 auto;
+}
+
+.neco-games-cf-numbers {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 4px;
+    padding: 0 6px;
+    color: var(--neco-muted);
+    font-size: 0.72rem;
+    text-align: center;
+}
+
+.neco-games-cf-board {
+    --neconyan-control-radius: 4px;
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 4px;
+    padding: 6px;
+    border: 1px solid var(--neco-border);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--neco-ink) 10%, var(--neco-surface));
+}
+
+.neco-games-cf-column {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    font: inherit;
+    cursor: pointer;
+}
+
+.neco-games-cf-column:hover .neco-games-cf-cell[data-seat=""] {
+    background: color-mix(in srgb, var(--neco-ginger) 18%, var(--neco-surface));
+}
+
+.neco-games-cf-column:focus-visible {
+    outline: 2px solid var(--neco-ginger);
+    outline-offset: 2px;
+}
+
+.neco-games-cf-column[disabled] {
+    cursor: default;
+}
+
+.neco-games-cf-column[disabled]:hover .neco-games-cf-cell[data-seat=""] {
+    background: var(--neco-surface);
+}
+
+.neco-games-cf-cell {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    aspect-ratio: 1;
+    width: 100%;
+    border-radius: 50%;
+    background: var(--neco-surface);
+    box-shadow: inset 0 1px 2px color-mix(in srgb, var(--neco-ink) 18%, transparent);
+    color: var(--neco-ink);
+    font-size: clamp(11px, 4cqw, 22px);
+    font-weight: 700;
+    line-height: 1;
+}
+
+.neco-games-cf-cell[data-seat="y"] {
+    background: color-mix(in srgb, var(--neco-ink) 55%, var(--neco-surface));
+    color: var(--neco-surface);
+}
+
+.neco-games-cf-cell[data-seat="r"] {
+    background: var(--neco-ginger);
+    color: var(--neco-on-accent);
+}
+
+.neco-games-cf-cell.is-win {
+    box-shadow: inset 0 0 0 3px var(--sb-color-warning, #d98b00);
+}
+
+.neco-games-cf-cell.is-last {
+    box-shadow: inset 0 0 0 2px var(--neco-ink);
+}
+
+/* Picross */
+
+.neco-games-picross,
+.neco-games-mines {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+    min-width: 0;
+    container-type: inline-size;
+}
+
+.neco-games-picross-tools,
+.neco-games-mines-tools {
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+}
+
+.neco-games-picross-tool,
+.neco-games-mines-tool {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 44px;
+    padding: 8px 14px;
+    border: 1px solid var(--neco-border);
+    border-radius: 10px;
+    background: var(--neco-surface);
+    color: var(--neco-ink);
+    font: inherit;
+    font-size: 0.86rem;
+    cursor: pointer;
+}
+
+.neco-games-picross-tool:hover,
+.neco-games-mines-tool:hover {
+    border-color: var(--neco-ginger);
+}
+
+.neco-games-picross-tool[aria-pressed="true"],
+.neco-games-mines-tool[aria-pressed="true"] {
+    border-color: var(--neco-ginger);
+    background: color-mix(in srgb, var(--neco-ginger) 16%, var(--neco-surface));
+    box-shadow: inset 0 0 0 1px var(--neco-ginger);
+    font-weight: 700;
+}
+
+.neco-games-picross-tool:focus-visible,
+.neco-games-mines-tool:focus-visible {
+    outline: 2px solid var(--neco-ginger);
+    outline-offset: 2px;
+}
+
+.neco-games-picross-puzzle {
+    --cell: 22px;
+    display: grid;
+    grid-template-columns: calc(var(--cell) * 3.6) auto;
+    width: fit-content;
+    max-width: 100%;
+    margin: 0 auto;
+    justify-content: center;
+    padding: 4px;
+}
+
+/* The clue column and the frame come out of the panel first, so the board always fits. */
+.neco-games-picross[data-cols="5"] .neco-games-picross-puzzle {
+    --cell: min(48px, calc((100cqw - 16px) / 8.6));
+}
+
+.neco-games-picross[data-cols="10"] .neco-games-picross-puzzle {
+    --cell: min(36px, calc((100cqw - 16px) / 13.6));
+}
+
+.neco-games-picross[data-cols="15"] .neco-games-picross-puzzle {
+    --cell: min(30px, calc((100cqw - 16px) / 18.6));
+}
+
+.neco-games-picross-corner {
+    grid-column: 1;
+    grid-row: 1;
+}
+
+.neco-games-picross-col-clues {
+    grid-column: 2;
+    grid-row: 1;
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: var(--cell);
+    align-items: end;
+}
+
+.neco-games-picross-row-clues {
+    grid-column: 1;
+    grid-row: 2;
+    display: grid;
+    grid-auto-flow: row;
+    grid-auto-rows: var(--cell);
+    align-items: center;
+}
+
+.neco-games-picross-clue {
+    display: flex;
+    color: var(--neco-muted);
+    font-size: max(8px, calc(var(--cell) * 0.42));
+    line-height: 1.05;
+    font-variant-numeric: tabular-nums;
+}
+
+.neco-games-picross-clue.is-column {
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    height: 100%;
+    padding-bottom: 2px;
+}
+
+.neco-games-picross-clue.is-row {
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.28em;
+    padding-right: 6px;
+    white-space: nowrap;
+}
+
+.neco-games-picross-clue > span {
+    display: block;
+}
+
+.neco-games-picross-grid {
+    --neconyan-control-radius: 3px;
+    grid-column: 2;
+    grid-row: 2;
+    display: grid;
+    grid-auto-rows: var(--cell);
+    border: 1px solid var(--neco-border);
+    border-radius: 2px;
+    background: var(--neco-surface);
+}
+
+.neco-games-picross[data-cols="5"] .neco-games-picross-grid {
+    grid-template-columns: repeat(5, var(--cell));
+}
+
+.neco-games-picross[data-cols="10"] .neco-games-picross-grid {
+    grid-template-columns: repeat(10, var(--cell));
+}
+
+.neco-games-picross[data-cols="15"] .neco-games-picross-grid {
+    grid-template-columns: repeat(15, var(--cell));
+}
+
+.neco-games-picross-cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--cell);
+    height: var(--cell);
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-top: 1px solid var(--neco-border);
+    border-left: 1px solid var(--neco-border);
+    border-radius: 0;
+    background: transparent;
+    color: var(--neco-muted);
+    font: inherit;
+    cursor: pointer;
+}
+
+.neco-games-picross-cell.is-fifth-col {
+    border-left: 2px solid color-mix(in srgb, var(--neco-ink) 45%, var(--neco-border));
+}
+
+.neco-games-picross-cell.is-fifth-row {
+    border-top: 2px solid color-mix(in srgb, var(--neco-ink) 45%, var(--neco-border));
+}
+
+.neco-games-picross-cell:focus-visible {
+    outline: 2px solid var(--neco-ginger);
+    outline-offset: -2px;
+    z-index: 1;
+}
+
+.neco-games-picross-cell.is-painted {
+    background: var(--neco-ink);
+}
+
+.neco-games-picross-mark {
+    font-size: calc(var(--cell) * 0.7);
+    line-height: 1;
+}
+
+/* Minesweeper */
+
+.neco-games-mines-grid {
+    --cell: 26px;
+    --neconyan-control-radius: 4px;
+    display: grid;
+    grid-auto-rows: var(--cell);
+    justify-content: center;
+    width: fit-content;
+    max-width: 100%;
+    margin: 0 auto;
+    padding: 4px;
+    border: 1px solid var(--neco-border);
+    border-radius: 8px;
+    background: var(--neco-surface);
+}
+
+.neco-games-mines[data-cols="8"] .neco-games-mines-grid {
+    --cell: min(44px, calc((100cqw - 16px) / 8));
+    grid-template-columns: repeat(8, var(--cell));
+}
+
+.neco-games-mines[data-cols="10"] .neco-games-mines-grid {
+    --cell: min(40px, calc((100cqw - 16px) / 10));
+    grid-template-columns: repeat(10, var(--cell));
+}
+
+.neco-games-mines[data-cols="14"] .neco-games-mines-grid {
+    --cell: min(28px, calc((100cqw - 16px) / 14));
+    grid-template-columns: repeat(14, var(--cell));
+}
+
+.neco-games-mines-grid .neco-games-mines-cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--cell);
+    height: var(--cell);
+    margin: 0;
+    padding: 0;
+    border: 1px solid var(--neco-border);
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--neco-ink) 8%, var(--neco-surface));
+    color: var(--neco-ink);
+    font: inherit;
+    cursor: pointer;
+}
+
+.neco-games-mines-grid .neco-games-mines-cell:hover {
+    background: color-mix(in srgb, var(--neco-ginger) 16%, var(--neco-surface));
+}
+
+.neco-games-mines-grid .neco-games-mines-cell:focus-visible {
+    outline: 2px solid var(--neco-ginger);
+    outline-offset: -2px;
+    z-index: 1;
+}
+
+.neco-games-mines-grid .neco-games-mines-cell.is-revealed {
+    background: color-mix(in srgb, var(--neco-ink) 2%, var(--neco-surface));
+    cursor: default;
+}
+
+.neco-games-mines-grid .neco-games-mines-cell.is-flagged {
+    color: var(--neco-ink);
+    background: color-mix(in srgb, var(--neco-ginger) 22%, var(--neco-surface));
+}
+
+.neco-games-mines-grid .neco-games-mines-cell.is-mine {
+    background: color-mix(in srgb, var(--sb-color-danger, #c0392b) 28%, var(--neco-surface));
+    cursor: default;
+}
+
+.neco-games-mines-grid .neco-games-mines-cell.is-exploded {
+    background: var(--sb-color-danger, #c0392b);
+    color: var(--neco-on-accent);
+}
+
+.neco-games-mines-grid .neco-games-mines-cell.is-wrong {
+    background: color-mix(in srgb, var(--sb-color-warning, #d98b00) 30%, var(--neco-surface));
+}
+
+.neco-games-mines-face {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    font-size: max(10px, calc(var(--cell) * 0.56));
+    font-weight: 700;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+}
+
+.neco-games-mines-cell[data-count="1"] .neco-games-mines-face {
+    color: var(--neco-ginger);
+}
+
+.neco-games-mines-cell[data-count="2"] .neco-games-mines-face {
+    color: var(--sb-color-warning, #d98b00);
+}
+
+.neco-games-mines-cell[data-count="3"] .neco-games-mines-face {
+    color: var(--sb-color-danger, #c0392b);
+}
+
+/* Narrow panels: one game per row, tighter frame */
+
+@container games (max-width: 380px) {
+    .neco-games-cards {
+        grid-template-columns: 1fr;
+    }
+
+    .neco-games-body {
+        padding: 10px;
+    }
+
+    .neco-games-head {
+        padding: 10px;
+    }
+
+    .neco-games-choice-detail {
+        max-width: none;
+    }
+}
+
+@media (max-width: 768px) {
+    .neco-games {
+        --neco-games-width: 100%;
+    }
+
+    .neco-games-button,
+    .neco-games-back,
+    .neco-games-icon,
+    .neco-games-picross-tool,
+    .neco-games-mines-tool {
+        min-height: 44px;
+    }
+
+    .neco-games-icon {
+        width: 44px;
+        height: 44px;
+    }
+
+    .neco-games-actions {
+        position: sticky;
+        bottom: 0;
+        padding: 10px 0 0;
+        background: var(--neco-canvas);
+    }
+}

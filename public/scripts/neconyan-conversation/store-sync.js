@@ -136,6 +136,9 @@ async function refreshOnce(account) {
     // contain unsaved local edits; recording those as acknowledged would let the
     // next read treat them as unchanged and replace them with the older value.
     captureConversationStore(serverStore, version);
+    if (changed) {
+        globalThis.window?.dispatchEvent(new CustomEvent('neconyan:conversation-store-refreshed'));
+    }
     return { store: merged, version, conflict: false, changed };
 }
 

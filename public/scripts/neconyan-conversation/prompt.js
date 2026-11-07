@@ -17,6 +17,7 @@ import {
     getCurrentCharName,
     parsePositiveInt,
 } from './context.js';
+import { buildConversationGamesContext } from './games/prompt-context.js';
 import { captureConversationTextBinding } from './generation.js';
 import { requestConversationBinding } from './bindings.js';
 import { observeJob } from '../jobs.js';
@@ -282,6 +283,8 @@ export function buildConversationSystemPrompt(settings, avatar = getCurrentCharA
     const threadCharacter = threadAvatar !== avatar ? getCharacterForAvatar(threadAvatar) : null;
     const partners = getConversationParticipants(threadAvatar, threadSettings, { branchId, groupId, personaId }).filter(participant => participant?.avatar && participant.avatar !== avatar);
     const partnerNames = getParticipantNamesForDisplay(partners);
+    const gamesBranch = getActiveConversationBranch(threadAvatar, { branchId, create: false, groupId, personaId });
+    const gamesContext = buildConversationGamesContext(gamesBranch?.games, { charName, palNames: [charName, ...partnerNames], userName });
     const now = new Date();
     const personaContext = composeConversationPersonaDescription(personaId || user_avatar, {
         avatar: threadAvatar,
@@ -296,7 +299,7 @@ export function buildConversationSystemPrompt(settings, avatar = getCurrentCharA
         lifeContext = `Current life context: It is ${timeLabel} for ${charName}, who is currently ${current.activity} (status: ${current.status}). Let this naturally color your availability, mood, and what you mention. Stay in this moment of your day.`;
     }
     return composeConversationSystemPrompt({
-        settings, character, charName, userName, groupId, partnerNames, threadCharacter, personaContext, lifeContext,
+        settings, character, charName, userName, groupId, partnerNames, threadCharacter, personaContext, lifeContext, gamesContext,
         timeContext: getConversationLocalTimeContext(now),
         authorNote: settings.authors_note || getCharacterAuthorNote(avatar),
         availability: getAvailabilityCopy(getUserStatus()).label.toLowerCase(),

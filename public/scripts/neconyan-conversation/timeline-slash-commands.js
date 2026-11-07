@@ -100,6 +100,11 @@ export async function handleConversationSlashAction(text, { avatar = getCurrentC
             return true;
         case 'summarize':
             return { handled: true, clearDraft: await quickConversationSummarize({ avatar, branchId: capturedBranchId, groupId, personaId }) === true };
+        case 'games': {
+            const { openGames } = await import('./games/index.js');
+            await openGames({ game: parsed.args });
+            return { handled: true, clearDraft: true };
+        }
         case 'ooc':
             if (!parsed.args) {
                 globalThis.toastr?.warning?.('Use /ooc followed by a note for the OOC channel.', '', SAFE_TOAST_OPTIONS);
