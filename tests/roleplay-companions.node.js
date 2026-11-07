@@ -412,6 +412,16 @@ for (const [placement, stripAll] of [['latest', false], ['source', false], ['blo
     });
 }
 
+test('a companion depth insertion moves its kept-notes block, or leaves it on the agent fields', async t => {
+    const agent = (id, companionConfig) => ({ ...companion(id), injection: { position: 0, depth: 2, role: 2, order: 115, scan: true }, companion: companionConfig });
+    const f = prepared(t, [agent('inserted', { includeInChatHistory: true, chatHistoryPlacement: 'block', chatHistoryInsertDepth: 4 }),
+        agent('plain', { includeInChatHistory: true, chatHistoryPlacement: 'block' })]);
+    await f.run({ generate: paid('main', 'Main reply'), generateAgent: paid('agent', 'Kept note') });
+    const results = f.rows().at(-1).extra.inChatAgentCompanionResults;
+    assert.deepEqual(results.inserted.chatHistoryInjection, { position: 1, depth: 4, role: 2, scan: true });
+    assert.deepEqual(results.plain.chatHistoryInjection, { position: 0, depth: 2, role: 2, scan: true });
+});
+
 test('kept notes stay on their own reply or travel as one labelled block when their Companion asks for it', async t => {
     const note = (content, placement, extra = {}) => ({ status: 'done', content, agentName: placement === 'block' ? 'Keeper' : 'Lens',
         includeInChatHistory: true, includeAllChatHistory: true, chatHistoryDepth: 1, chatHistoryPlacement: placement, ...extra });

@@ -69,6 +69,7 @@ Companion cards also show these controls right on the card, and each change save
 | --- | --- |
 | **Keep in chat history** | Sends this companion's saved notes with later replies. |
 | **notes** box | How many of its most recent notes to keep. Leave it blank to keep all of them. Typing a number also switches **Keep in chat history** on. |
+| **at depth** box | Depth Insertion: how many messages up from the newest reply the kept-notes block sits. Setting a depth switches the kept notes to **One labelled block** and switches **Keep in chat history** on. Leave it blank to use the agent's Position and Depth fields under What it changes. |
 | **Connections** | Opens tick boxes for the other companions: **Runs after** (reads their latest notes first and runs again when they change), **Sends notes to** (they get this companion's latest note as extra context) and **Shares one request with** (runs with them in one request when their connections and models match). The line beside it sums up the current links. **More connection options** opens the full list with search. |
 
 ### Changing Several Agents
@@ -219,7 +220,9 @@ Tick **Include character card**, **Include persona**, **Include World Info**, **
 
 **Notes to keep when not keeping all**: how many recent notes stay in history. **Keep all saved notes** keeps every one, which adds up fast in long chats.
 
-**Where kept notes go**: **Newest reply** attaches the kept notes to the latest reply, **Each note's own reply** leaves each note with the reply it came from, and **One labelled block** gathers them under `[<Name> - kept notes]`, placed with this agent's Position, Depth, Sent as and World Info fields under What it changes. Also in **Quick settings**.
+**Where kept notes go**: **Newest reply** attaches the kept notes to the latest reply, **Each note's own reply** leaves each note with the reply it came from, and **One labelled block** gathers them under `[<Name> - kept notes]`, placed with this agent's Position, Depth, Sent as and World Info fields under What it changes, or at its own depth with **Insert the block at depth**. Also in **Quick settings**.
+
+**Insert the block at depth** (Depth Insertion): gives the labelled block its own depth instead of borrowing the agent's, counted as messages up from the newest reply. It only applies to **One labelled block**; setting a depth also switches the kept notes to a block and switches **Keep in chat history** on. Leave it blank to use the agent's Position and Depth fields under What it changes. Also in **Quick settings** and, as the **at depth** box, on the companion card and in the Companion panel.
 
 **Keep notes when the reply is hidden**: keeps a note even after you hide the message it's attached to.
 
@@ -295,7 +298,7 @@ You can drag the floating button to any edge. **Hide the floating button** hides
 | **Open full editor** (gear) | Opens its full editor. |
 | **Scroll to source message** | Jumps to the message the note belongs to. |
 
-Under each companion's note sit the same **Keep in chat history**, **notes** and **Connections** controls as on its card in the Agents list.
+Under each companion's note sit the same **Keep in chat history**, **notes**, **at depth** and **Connections** controls as on its card in the Agents list.
 
 Each companion also shows its message number, estimated **Input** and **Output** tokens and **Previous states** (every earlier note it wrote in this chat, 20 at a time: **Show older notes** loads the next 20). **Absorbed** means its message is hidden but the note still counts.
 

@@ -456,6 +456,7 @@ describe('in-chat agent scoped enabled state', () => {
             chatHistoryDepth: 1,
             includeAllChatHistory: true,
             chatHistoryPlacement: 'latest',
+            chatHistoryInsertDepth: null,
             keepInChatHistoryWhenHostHidden: false,
             historyDepth: 3,
             feedback: {
@@ -752,6 +753,18 @@ describe('in-chat agent scoped enabled state', () => {
         expect(store.normalizeCompanionConfig({ chatHistoryPlacement: 'source' }).chatHistoryPlacement).toBe('source');
         expect(store.normalizeCompanionConfig({ chatHistoryPlacement: 'block' }).chatHistoryPlacement).toBe('block');
         expect(store.normalizeCompanionConfig({ chatHistoryPlacement: 'sideways' }).chatHistoryPlacement).toBe('latest');
+    });
+
+    test('keeps kept-note depth insertion blank unless a whole number is saved', async () => {
+        const store = await importStore();
+
+        expect(store.normalizeCompanionConfig({}).chatHistoryInsertDepth).toBeNull();
+        expect(store.normalizeCompanionConfig({ chatHistoryInsertDepth: '5' }).chatHistoryInsertDepth).toBe(5);
+        expect(store.normalizeCompanionConfig({ chatHistoryInsertDepth: 200 }).chatHistoryInsertDepth).toBe(99);
+        expect(store.normalizeCompanionConfig({ chatHistoryInsertDepth: -1 }).chatHistoryInsertDepth).toBe(0);
+        expect(store.normalizeCompanionConfig({ chatHistoryInsertDepth: 'abc' }).chatHistoryInsertDepth).toBeNull();
+        expect(store.normalizeCompanionConfig({ chatHistoryInsertDepth: '' }).chatHistoryInsertDepth).toBeNull();
+        expect(store.normalizeCompanionConfig({ chatHistoryInsertDepth: 3.7 }).chatHistoryInsertDepth).toBe(3);
     });
 
     test('grants context access defaults to companions while honoring explicit choices', async () => {

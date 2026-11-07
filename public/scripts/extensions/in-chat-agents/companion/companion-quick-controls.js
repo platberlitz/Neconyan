@@ -67,7 +67,7 @@ export function describeCompanionLinks(agent, companions = getOtherCompanions(ag
 /**
  * Returns a changed copy of a companion for one quick control.
  * @param {object} agent
- * @param {{ kind: 'keep', checked: boolean } | { kind: 'depth', value: string } | { kind: 'link', field: string, candidate: object, checked: boolean }} change
+ * @param {{ kind: 'keep', checked: boolean } | { kind: 'depth', value: string } | { kind: 'insertDepth', value: string } | { kind: 'link', field: string, candidate: object, checked: boolean }} change
  */
 export function applyCompanionQuickChange(agent, change) {
     const draft = structuredClone(agent);
@@ -86,6 +86,18 @@ export function applyCompanionQuickChange(agent, change) {
             return null;
         }
         config.includeInChatHistory = true;
+    } else if (change.kind === 'insertDepth') {
+        const value = String(change.value ?? '').trim();
+        const depth = Number(value);
+        if (!value) {
+            config.chatHistoryInsertDepth = null;
+        } else if (Number.isInteger(depth) && depth >= 0 && depth <= 99) {
+            config.chatHistoryInsertDepth = depth;
+            config.chatHistoryPlacement = 'block';
+            config.includeInChatHistory = true;
+        } else {
+            return null;
+        }
     } else if (change.kind === 'link') {
         const link = COMPANION_QUICK_LINKS.find(item => item.field === change.field);
         if (!link || !change.candidate) return null;
@@ -222,6 +234,7 @@ export function buildCompanionQuickControlsHtml(agent, { scope = 'card' } = {}) 
     const id = escapeHtml(agent.id);
     const name = escapeHtml(agent.name);
     const depth = config.includeAllChatHistory ? '' : String(config.chatHistoryDepth);
+    const insertDepth = config.chatHistoryInsertDepth === null || config.chatHistoryInsertDepth === undefined ? '' : String(config.chatHistoryInsertDepth);
     const open = isCompanionLinksOpen(scope, agent.id);
     const summaryText = describeCompanionLinks(agent, companions);
     const isConnected = summaryText !== 'Not connected' && summaryText !== 'No other companions yet';
@@ -238,6 +251,10 @@ export function buildCompanionQuickControlsHtml(agent, { scope = 'card' } = {}) 
                 <label class="ica--companion-quick-depth" title="How many recent notes stay in chat history. Leave blank to keep all of them.">
                     <input type="number" class="text_pole" min="1" step="1" inputmode="numeric" placeholder="All" value="${depth}" data-quick-depth aria-label="Notes to keep in chat history for ${name} (blank keeps all)">
                     <span>notes</span>
+                </label>
+                <label class="ica--companion-quick-depth ica--companion-quick-insert" title="Depth Insertion: how many messages up from the newest reply the kept-notes block sits. Setting a depth switches kept notes to one labelled block. Leave blank to use the agent's Position and Depth fields.">
+                    <input type="number" class="text_pole" min="0" max="99" step="1" inputmode="numeric" placeholder="Auto" value="${insertDepth}" data-quick-insert-depth aria-label="Depth to insert kept notes for ${name} (blank uses the agent's fields)">
+                    <span>at depth</span>
                 </label>
             </div>
             <details class="ica--companion-quick-links"${open ? ' open' : ''}${isConnected ? ' data-connected="true"' : ''}>
@@ -259,6 +276,13 @@ export function readCompanionQuickChange(target) {
         }
         return { kind: 'depth', value: target.value };
     }
+    if (target.matches('[data-quick-insert-depth]')) {
+        if (!target.checkValidity()) {
+            target.reportValidity();
+            return null;
+        }
+        return { kind: 'insertDepth', value: target.value };
+    }
     if (target.matches('[data-quick-link]')) {
         const candidate = getAgents().find(agent => agent.id === target.dataset.candidateId);
         return candidate ? { kind: 'link', field: target.dataset.quickLink, candidate, checked: target.checked } : null;
@@ -270,6 +294,7 @@ export function readCompanionQuickChange(target) {
 export function getCompanionQuickControlSelector(target) {
     if (target.matches('[data-quick-keep]')) return '[data-quick-keep]';
     if (target.matches('[data-quick-depth]')) return '[data-quick-depth]';
+    if (target.matches('[data-quick-insert-depth]')) return '[data-quick-insert-depth]';
     if (target.matches('[data-quick-search]')) return '[data-quick-search]';
     if (target.matches('[data-quick-selected-only]')) return '[data-quick-selected-only]';
     if (target.matches('[data-quick-tab]')) return `[data-quick-tab="${target.dataset.quickTab}"]`;
@@ -373,7 +398,7 @@ export function bindCompanionQuickControls(root, { scope, save, openMore, getRoo
         const change = readCompanionQuickChange(target);
         const draft = agent && change ? applyCompanionQuickChange(agent, change) : null;
         if (!draft) {
-            if (change?.kind === 'depth') target.reportValidity?.();
+            if (change?.kind === 'depth' || change?.kind === 'insertDepth') target.reportValidity?.();
             return;
         }
         const selector = getCompanionQuickControlSelector(target);

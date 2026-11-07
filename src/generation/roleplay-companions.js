@@ -10,7 +10,7 @@ import { isNativeCompanion } from './agent-definition.js';
 import { runAgentModelStep } from './agent-model-step.js';
 import { runRoleplayAgentPostprocessing } from './roleplay-agent-processing.js';
 import { companionEnvironment, companionMessageTokens, previousCompanionNotes, resolveCompanionText, singleCompanionPrompt, batchCompanionPrompt } from './companion-context.js';
-import { classifyCompanionFailureMessage, getActiveCompanionResults, isDiceRollerAgent, isEmptyOutputSentinel, MEMORY_SHARD_TEMPLATE_ID, normalizeCompanionChatHistoryInjection } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
+import { classifyCompanionFailureMessage, getActiveCompanionResults, isDiceRollerAgent, isEmptyOutputSentinel, MEMORY_SHARD_TEMPLATE_ID, resolveCompanionChatHistoryInjection } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
 import { getCompanionTrackerAutoRepairPayload, inspectCompanionTrackerOutput, normalizeCompanionTrackerRepairPayload } from '../../public/scripts/extensions/in-chat-agents/tracker-state.js';
 import { captureCompanionCapacity, MAX_COMPANION_RESULT_BYTES } from './companion-capacity.js';
 import { isRoleplayAgentStop, roleplayAgentsStopped } from './roleplay-agent-stop.js';
@@ -145,7 +145,7 @@ function baseRecord(agent, model) {
         modelLabel: model?.model ?? agent.modelOverride, format: agent.companion.format, displayMode: agent.companion.displayMode,
         includeInChatHistory: agent.companion.includeInChatHistory, chatHistoryDepth: agent.companion.chatHistoryDepth,
         includeAllChatHistory: agent.companion.includeAllChatHistory, keepInChatHistoryWhenHostHidden: agent.companion.keepInChatHistoryWhenHostHidden,
-        chatHistoryPlacement: agent.companion.chatHistoryPlacement, chatHistoryInjection: normalizeCompanionChatHistoryInjection(agent.injection) };
+        chatHistoryPlacement: agent.companion.chatHistoryPlacement, chatHistoryInjection: resolveCompanionChatHistoryInjection(agent.injection, agent.companion) };
 }
 
 /**

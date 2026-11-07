@@ -296,6 +296,12 @@
                 </select>
             </label>
             <div class="ica--regex-note" id="ica--companion-chat-history-placement-note">A labelled block uses the agent's Position, Depth, Role, and World Info scan fields under What it changes.</div>
+            <div id="ica--companion-chat-history-insert-depth">
+                <label>Insert the block at depth
+                    <input type="number" id="ica--editor-companion-chatHistoryInsertDepth" class="text_pole" min="0" max="99" placeholder="Use the agent's Depth" />
+                </label>
+                <div class="ica--regex-note">Depth Insertion counts messages up from the newest reply, so the labelled block lands there in the chat. Leave blank to use the agent's Position and Depth fields under What it changes.</div>
+            </div>
             <label class="checkbox_label"><input type="checkbox" id="ica--editor-companion-includeAllChatHistory" /><span>Keep all saved notes</span></label>
             <label class="checkbox_label"><input type="checkbox" id="ica--editor-companion-keepInChatHistoryWhenHostHidden" /><span>Keep notes when the reply is hidden</span></label>
         </div>

@@ -378,6 +378,10 @@ describe('in-chat agents generation UI wiring', () => {
         for (const value of ['latest', 'source', 'block']) expect(editorTemplateSource).toContain(`<option value="${value}">`);
         expect(getFunctionSource('readCompanionConfigFromEditor')).toContain('chatHistoryPlacement: root.find(\'#ica--editor-companion-chatHistoryPlacement\')');
         expect(getFunctionSource('writeCompanionConfigToEditor')).toContain('find(\'#ica--editor-companion-chatHistoryPlacement\').val(');
+        expect(editorTemplateSource).toContain('id="ica--editor-companion-chatHistoryInsertDepth"');
+        expect(getFunctionSource('readCompanionConfigFromEditor')).toContain('chatHistoryInsertDepth: parseCompanionChatHistoryInsertDepth(root.find(\'#ica--editor-companion-chatHistoryInsertDepth\')');
+        expect(getFunctionSource('writeCompanionConfigToEditor')).toContain('find(\'#ica--editor-companion-chatHistoryInsertDepth\').val(');
+        expect(indexSource).toContain('chatHistoryInsertDepth: currentCompanion.chatHistoryInsertDepth');
         expect(getFunctionSource('updatePhaseVisibility')).toContain('isEditorKeptNotesBlock()');
         expect(getFunctionSource('isEditorKeptNotesBlock')).toContain('=== \'block\'');
     });

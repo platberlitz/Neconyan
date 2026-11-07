@@ -45,6 +45,7 @@ import {
  * @property {boolean} includeAllChatHistory
  * @property {boolean} keepInChatHistoryWhenHostHidden
  * @property {'latest'|'source'|'block'} chatHistoryPlacement - Where kept notes go: the newest reply, the reply each note was written for, or one labelled block at the agent's Position, Depth and Role
+ * @property {number|null} chatHistoryInsertDepth - Depth Insertion for the kept-notes block: messages up from the newest reply, or null to follow the agent's Position and Depth fields
  * @property {number} historyDepth
  * @property {AgentCompanionFeedback} feedback
  * @property {boolean} batch
@@ -1043,6 +1044,18 @@ export function normalizeStringIdList(value = [], limit = AGENT_STORAGE_LIMITS.a
 }
 
 /**
+ * Normalizes the kept-notes Depth Insertion: null follows the agent's own Position and Depth
+ * fields; a number is a whole depth from 0 (newest reply) to 99.
+ * @param {unknown} value
+ * @returns {number|null}
+ */
+function normalizeCompanionChatHistoryInsertDepth(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const depth = Number(value);
+    return Number.isFinite(depth) ? Math.min(99, Math.max(0, Math.floor(depth))) : null;
+}
+
+/**
  * Creates the default Companion execution config.
  * @returns {AgentCompanionConfig}
  */
@@ -1067,6 +1080,7 @@ export function createDefaultCompanionConfig() {
         includeAllChatHistory: true,
         keepInChatHistoryWhenHostHidden: false,
         chatHistoryPlacement: 'latest',
+        chatHistoryInsertDepth: null,
         historyDepth: 3,
         feedback: {
             enabled: false,
@@ -1125,6 +1139,7 @@ export function normalizeCompanionConfig(raw = {}) {
         chatHistoryPlacement: ['latest', 'source', 'block'].includes(rawConfig.chatHistoryPlacement)
             ? rawConfig.chatHistoryPlacement
             : defaults.chatHistoryPlacement,
+        chatHistoryInsertDepth: normalizeCompanionChatHistoryInsertDepth(rawConfig.chatHistoryInsertDepth),
         historyDepth: clampNumber(rawConfig.historyDepth, defaults.historyDepth, 1, 10),
         feedback: {
             ...rawFeedback,
