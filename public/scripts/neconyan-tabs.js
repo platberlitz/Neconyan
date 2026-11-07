@@ -530,7 +530,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261107-prompt-list-shape';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261107-prefill-section';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -14813,6 +14813,9 @@ function groupAdvancedFormattingIntoDrawers() {
     $reasoning.attr('id', 'FormattingReasoning');
     const $reply = $('<div>', { id: 'FormattingReplyControls', class: 'flex-container flexFlowColumn' });
     $system.children().filter((_, element) => element.querySelector('#custom_stopping_strings, #tokenizer, #start_reply_with')).appendTo($reply);
+    // Structured Prefill is its own section, not a fold hidden inside Reply controls.
+    const $prefill = $reply.find('#structured-prefill-settings').first();
+    $prefill.attr('open', 'open');
     const sections = [
         {
             id: 'sb-af-context',
@@ -14849,6 +14852,13 @@ function groupAdvancedFormattingIntoDrawers() {
             icon: 'fa-comment-dots',
             node: $reply,
         },
+        {
+            id: 'sb-af-prefill',
+            title: t`Structured Prefill`,
+            description: t`Shape the first words of a reply.`,
+            icon: 'fa-wand-magic-sparkles',
+            node: $prefill,
+        },
     ];
 
     const $drawersContainer = $('<div>', { class: 'sb-af-drawers flex-container flexFlowColumn gap10' });
@@ -14873,6 +14883,11 @@ function groupAdvancedFormattingIntoDrawers() {
 
     // Replace the columns container with the stacked drawers
     $columnsContainer.replaceWith($drawersContainer);
+
+    // The prefill controls refresh themselves when their panel opens, as they did in their old fold.
+    $drawersContainer.children('#sb-af-prefill').on('inline-drawer-toggle', () => {
+        $prefill[0]?.dispatchEvent(new Event('toggle'));
+    });
 
     // Label the original preset actions rather than replacing their bound controls.
     const actions = {

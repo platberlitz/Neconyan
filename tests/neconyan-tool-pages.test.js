@@ -23,9 +23,10 @@ describe('full-page tools', () => {
     test('Formatting tours reasoning and reply controls independently of the Text Completion system prompt', () => {
         const hidden = new Set(['#sb-af-instruct', '#sb-af-sysprompt']);
         const steps = getToolTourSteps('formatting', { isShown: step => step.targets.some(selector => !hidden.has(selector)) });
-        expect(steps.map(step => step.id)).toEqual(['welcome', 'notice', 'context', 'reasoning', 'replies', 'done']);
+        expect(steps.map(step => step.id)).toEqual(['welcome', 'notice', 'context', 'reasoning', 'replies', 'prefill', 'done']);
         expect(steps.find(step => step.id === 'reasoning').targets).toEqual(['#sb-af-reasoning']);
         expect(steps.find(step => step.id === 'replies').targets).toEqual(['#sb-af-replies']);
+        expect(steps.find(step => step.id === 'prefill').targets).toEqual(['#sb-af-prefill']);
     });
 
     test('Pawthfinder has a page led by Taro', () => {

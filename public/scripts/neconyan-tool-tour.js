@@ -683,6 +683,14 @@ const TOOL_PAGES = Object.freeze({
                 hint: 'A clear beginning. A sensible place to stop.',
             },
             {
+                id: 'prefill',
+                targets: ['#sb-af-prefill'],
+                optional: true,
+                title: 'Structured Prefill',
+                body: 'On Chat Completion connections, decide how a reply begins. Choose an output method, then write a **starter template** with slots such as **[[opt:calm|curious]]** or **[[keep]]**, and a second model can fill a slot for you.',
+                hint: 'Give them the first line. They will do the rest.',
+            },
+            {
                 id: 'done',
                 targets: ['.neconyan-tool-tour-button'],
                 title: 'That is the whole page',

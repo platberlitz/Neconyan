@@ -89,6 +89,7 @@ export const refreshedKnowledgeCases = [
     ['Can STscript /wait-generation and /stop run during a reply?', 'tools.stscript-generation', 'positive timeout is milliseconds'],
     ['Does STscript /getinput preserve my composer draft?', 'tools.stscript-drafts', 'without changing it'],
     ['Where are Context & cleanup and Reply controls in Formatting?', 'connections.formatting', 'Fine-tuning'],
+    ['Where is Structured Prefill in Formatting?', 'connections.formatting', 'the starter text a Chat Completion reply begins with'],
     ['Does global Search tolerate a typo?', 'navigation.search', 'notebok finds Notebooks'],
     ['Can I search all chats and saved notebook notes?', 'navigation.saved-search', 'Unsaved drafts are not searched'],
     ['Where is the official documentation handbook?', 'navigation.handbook', 'https://platberlitz.github.io/neconyan-docs/'],
