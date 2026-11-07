@@ -1559,7 +1559,8 @@ async function firstLoadInit() {
         scheduleStartupLoaderCleanup('app ready');
     } catch (error) {
         console.error('Application initialization failed.', error);
-        toastr.error(t`Neconyan couldn't finish starting. Please refresh the page.`, t`Startup Error`, { timeOut: 0, extendedTimeOut: 0, preventDuplicates: true });
+        await releaseStartupLoader('startup failed');
+        window.NeconyanBootGuard?.showStartupFailure(error);
         throw error;
     } finally {
         await releaseStartupLoader('startup finally');
@@ -14472,16 +14473,6 @@ export function setUserName(value, { toastPersonaNameChange = true } = {}) {
     saveSettingsDebounced();
 }
 
-function reloadLoop() {
-    const MAX_RELOADS = 5;
-    let reloads = Number(sessionStorage.getItem('reloads') || 0);
-    if (reloads < MAX_RELOADS) {
-        reloads++;
-        sessionStorage.setItem('reloads', String(reloads));
-        window.location.reload();
-    }
-}
-
 function normalizeSettingsVersion(version) {
     version = Number(version);
     return Number.isSafeInteger(version) && version >= 0 ? version : 0;
@@ -14537,9 +14528,7 @@ async function requestSettingsData() {
     });
 
     if (!response.ok) {
-        reloadLoop();
-        toastr.error(t`Settings could not be loaded after multiple attempts. Please try again later.`);
-        throw new Error('Error getting settings');
+        throw new Error(`POST /api/settings/get failed (HTTP ${response.status}).`);
     }
 
     return response.json();

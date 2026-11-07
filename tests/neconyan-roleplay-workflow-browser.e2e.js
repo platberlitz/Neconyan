@@ -81,6 +81,41 @@ async function terminal(account, id) {
 for (const phone of [false, true]) {
     const viewport = phone ? 'phone' : 'desktop';
 
+    test(`${viewport} a completed reply and Agent edit survive closing and reopening the page`, async ({ app }) => {
+        app.provider.mode.streamReply = { first: 'The server ', rest: 'wrote this reply.' };
+        const account = await app.account({ phone, activeConnection: true,
+            contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {}, configureSettings(settings) {
+                settings.oai_settings.stream_openai = true;
+                settings.extension_settings.inChatAgents = { globalSettings: { enabled: true, separateRecentChats: false,
+                    connectionProfile: 'durable' } };
+            } });
+        if (phone) await installIPhoneSafari(account.context);
+        const native = owned(app);
+        await fs.mkdir(native.directories.inChatAgents, { recursive: true });
+        await fs.writeFile(path.join(native.directories.inChatAgents, 'closed-edit.json'), JSON.stringify({
+            id: 'closed-edit', name: 'Closed edit', enabled: true, phase: 'post',
+            postProcess: { enabled: true, type: 'append', appendText: '\n\nThe Agent finished while the page was closed.' },
+        }));
+        const locator = await savedChat(account, `Closed completion ${viewport}`);
+        let page = await account.open({ workspace: false, readyTimeout: 120000 });
+        await openChat(page, locator);
+        const submitted = page.waitForResponse(acceptedSubmission);
+        await page.locator('#send_textarea').fill('Finish this reply after I close the page.');
+        await startNativeReply(page);
+        const { jobId } = await (await submitted).json();
+        await expect(page.locator('#neconyan-roleplay-preview')).toContainText('The server');
+        await page.close();
+        app.provider.mode.finishStream();
+        await account.settled(jobId);
+        await account.post('/api/settings/get');
+        page = await account.open({ workspace: false, readyTimeout: 120000 });
+        await openChat(page, locator);
+        await expect(page.locator('#chat .mes').last()).toContainText(ANSWER);
+        await expect(page.locator('#chat .mes').last()).toContainText('The Agent finished while the page was closed.');
+        expect(readRoleplayChat(native.scope, locator).records.filter(row => row.mes?.includes(ANSWER))).toHaveLength(1);
+        expect(app.provider.calls).toHaveLength(1);
+    });
+
     test(`${viewport} returning through a failed saved reply read keeps the chat until recovery`, async ({ app }) => {
         app.provider.mode.streamReply = { first: 'The server ', rest: 'wrote this reply.' };
         const account = await app.account({ phone, activeConnection: true,
@@ -390,6 +425,7 @@ for (const phone of [false, true]) {
                 expect(pageSaves, 'No page saves an incomplete copy after cancellation').toHaveLength(0);
                 expect(app.provider.calls).toHaveLength(1);
             } catch (error) {
+                await info.attach('away-stop-error', { body: String(error.stack || error), contentType: 'text/plain' });
                 const diagnosticPath = info.outputPath('away-stop-diagnostics.json');
                 await fs.writeFile(diagnosticPath, JSON.stringify({
                     job: await account.job(jobId),
