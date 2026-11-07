@@ -1,6 +1,4 @@
-/* =============================================================================
-   Neconyan Theme Overhaul
-   ============================================================================= */
+/* Neconyan Theme Overhaul */
 
 :root {
     --sb-radius-sm: 10px;
@@ -999,12 +997,19 @@ input.text_pole {
     min-width: 0;
     background-color: var(--sb-input-bg);
     border-color: var(--sb-input-border);
-    border-radius: var(--sb-radius-button);
+    border-radius: min(var(--sb-radius-button), 18px);
     color: var(--SmartThemeBodyColor);
     caret-color: var(--color-primary, var(--sb-accent));
     font-size: var(--sb-type-control);
     line-height: var(--sb-line-body);
     transition: border-color var(--sb-transition-fast), box-shadow var(--sb-transition-fast), background-color var(--sb-transition-fast);
+}
+
+/* Keep single-line pills. */
+input.text_pole,
+select.text_pole:not([multiple]):not([size]),
+select.text_pole[size='1']:not([multiple]) {
+    border-radius: var(--sb-radius-button);
 }
 
 .text_pole::placeholder,
@@ -1583,7 +1588,7 @@ body.bubblechat #chat .mes[is_user='true']:has(.reasoning_edit_textarea)::before
     margin: 0;
     padding: 12px 14px;
     border: 1px solid var(--sb-editing-border);
-    border-radius: var(--sb-radius-button);
+    border-radius: min(var(--sb-radius-button), 18px);
     background: color-mix(in srgb, var(--color-primary, var(--sb-accent)) 8%, var(--sb-input-bg));
     color: var(--SmartThemeBodyColor);
     caret-color: var(--color-primary, var(--sb-accent));
@@ -2155,16 +2160,14 @@ input[type='range']::-moz-range-thumb {
         color-mix(in srgb, var(--SmartThemeBlurTintColor) 94%, var(--SmartThemeBodyColor) 6%),
         color-mix(in srgb, var(--SmartThemeBlurTintColor) 98%, black 2%)
     );
-    border-radius: var(--sb-radius-button);
+    border-radius: min(var(--sb-radius-button), 18px);
     border: 1px solid color-mix(in srgb, var(--sb-shell-border) 88%, transparent);
     box-shadow: 0 18px 32px color-mix(in srgb, var(--SmartThemeShadowColor) 18%, transparent);
     max-width: 100%;
     overflow: hidden;
 }
 
-/* No cap on the .select2-results wrapper: .select2-results__options is the one
-   scroll container (300px base, 320px for World Info). Capping both nests two
-   scrollbars and cuts the option list off mid-row. */
+/* Only .select2-results__options scrolls; capping its wrapper clips rows. */
 
 .select2-container--default .select2-results__options {
     background-color: #11151c;
@@ -3853,7 +3856,7 @@ input[type='range']::-moz-range-thumb {
     padding: 8px var(--sb-field-padding-x);
     background: var(--sb-input-bg);
     border-color: var(--sb-input-border);
-    border-radius: var(--sb-radius-button);
+    border-radius: min(var(--sb-radius-button), 18px);
 }
 
 #nanogpt_form .select2-search--inline .select2-search__field {
