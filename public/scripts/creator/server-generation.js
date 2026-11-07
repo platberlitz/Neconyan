@@ -107,50 +107,80 @@ export async function continueCreatorServerWriting(workspace, id, signal, revise
 }
 
 export function renderCreatorServerRequests(workspace, actions) {
-    actions.append(button('Server requests', () => workspace.run(async () => {
-        const id = workspace.session.draft.id;
-        const { jobs } = await workspace.session.request('generation', { id });
-        if (workspace.session.draft.id !== id) return;
+    const panelId = `creator-server-requests-${crypto.randomUUID()}`;
+    const toggle = button('Server requests', () => {
         const main = workspace.host.querySelector('.creator-content');
-        main.querySelector('[data-creator-server-requests]')?.remove();
-        const panel = element('section', 'creator-review-item');
-        panel.dataset.creatorServerRequests = '';
-        panel.append(element('h3', '', 'Server requests'), element('p', 'creator-muted', 'Saved writing keeps running when this page closes. Review returned proposals before accepting them.'));
-        if (!jobs.length) panel.append(element('p', 'creator-muted', 'No saved requests for this draft. Choose On the server in Where replies are written to use server generation.'));
-        for (const job of jobs.toReversed()) {
-            const row = element('section', 'creator-review-item');
-            row.append(element('h4', '', `${job.label}: ${job.state}`));
-            row.append(button('Check result', () => workspace.run(async () => {
-                const state = await workspace.session.request('generation', { id, jobId: job.id });
-                if (workspace.session.draft.id !== id || !row.isConnected) return;
-                row.querySelector('[data-creator-server-result]')?.remove();
-                const result = element('div'); result.dataset.creatorServerResult = '';
-                result.append(element('p', 'creator-muted', state.job.error?.message || state.job.stage || state.job.state));
-                const text = state.result?.text ?? (state.result?.proposal ? JSON.stringify(state.result.proposal, null, 2) : state.preview?.text);
-                if (text) {
-                    const field = textField('Saved server output', text, () => {}, { rows: 8 });
-                    field.querySelector('textarea').readOnly = true;
-                    result.append(field);
-                }
-                if (state.result?.proposal && finished(state.job)) result.append(button('Recover proposal for review', () => workspace.run(async () => {
-                    if (!workspace.edit(next => importCreatorServerProposal(next, state.result))) return;
-                    clearTimeout(workspace.timer); await workspace.session.save();
-                    workspace.proposal(state.result.proposal);
-                }), true));
-                if (state.result?.recovery && state.result.complete) result.append(button(state.result.recovery.kind === 'field' ? 'Use saved suggestion' : 'Recover saved reply', () => workspace.run(async () => {
-                    if (!workspace.change(next => recoverCreatorServerReply(next, state.result))) return;
-                    clearTimeout(workspace.timer); await workspace.session.save();
-                    workspace.render();
-                    workspace.status('Saved reply recovered. Your library has not changed.');
-                }), true));
-                row.append(result);
-            }), false, 'creator-chip-btn'));
-            if (!finished(job)) row.append(button('Cancel server request', () => workspace.run(async () => {
-                await workspace.session.request('generation', { id, jobId: job.id, cancel: true });
-                workspace.status('Cancellation requested. Finished work stays available.');
-            }), false, 'creator-chip-btn'));
-            panel.append(row);
+        const opened = main?.querySelector('[data-creator-server-requests]');
+        // Closing is local, including while the list request is still running.
+        if (opened) {
+            opened.remove();
+            toggle.setAttribute('aria-expanded', 'false');
+            return;
         }
-        main.prepend(panel);
-    }), false, 'creator-chip-btn'));
+        if (!main || workspace.busy) return;
+        return workspace.run(async () => {
+            const id = workspace.session.draft.id;
+            const panel = element('section', 'creator-review-item');
+            panel.id = panelId;
+            panel.dataset.creatorServerRequests = '';
+            panel.setAttribute('aria-busy', 'true');
+            panel.append(element('h3', '', 'Server requests'), element('p', 'creator-muted', 'Saved writing keeps running when this page closes. Review returned proposals before accepting them.'));
+            main.prepend(panel);
+            toggle.setAttribute('aria-expanded', 'true');
+            let jobs;
+            try {
+                ({ jobs } = await workspace.session.request('generation', { id }));
+            } catch (error) {
+                if (!panel.isConnected) return;
+                panel.remove();
+                toggle.setAttribute('aria-expanded', 'false');
+                throw error;
+            }
+            if (!panel.isConnected) return;
+            if (workspace.session.draft.id !== id) {
+                panel.remove();
+                toggle.setAttribute('aria-expanded', 'false');
+                return;
+            }
+            panel.removeAttribute('aria-busy');
+            if (!jobs.length) panel.append(element('p', 'creator-muted', 'No saved requests for this draft. Choose On the server in Where replies are written to use server generation.'));
+            for (const job of jobs.toReversed()) {
+                const row = element('section', 'creator-review-item');
+                row.append(element('h4', '', `${job.label}: ${job.state}`));
+                row.append(button('Check result', () => workspace.run(async () => {
+                    const state = await workspace.session.request('generation', { id, jobId: job.id });
+                    if (workspace.session.draft.id !== id || !row.isConnected) return;
+                    row.querySelector('[data-creator-server-result]')?.remove();
+                    const result = element('div'); result.dataset.creatorServerResult = '';
+                    result.append(element('p', 'creator-muted', state.job.error?.message || state.job.stage || state.job.state));
+                    const text = state.result?.text ?? (state.result?.proposal ? JSON.stringify(state.result.proposal, null, 2) : state.preview?.text);
+                    if (text) {
+                        const field = textField('Saved server output', text, () => {}, { rows: 8 });
+                        field.querySelector('textarea').readOnly = true;
+                        result.append(field);
+                    }
+                    if (state.result?.proposal && finished(state.job)) result.append(button('Recover proposal for review', () => workspace.run(async () => {
+                        if (!workspace.edit(next => importCreatorServerProposal(next, state.result))) return;
+                        clearTimeout(workspace.timer); await workspace.session.save();
+                        workspace.proposal(state.result.proposal);
+                    }), true));
+                    if (state.result?.recovery && state.result.complete) result.append(button(state.result.recovery.kind === 'field' ? 'Use saved suggestion' : 'Recover saved reply', () => workspace.run(async () => {
+                        if (!workspace.change(next => recoverCreatorServerReply(next, state.result), false, { shareCreator: true })) return;
+                        clearTimeout(workspace.timer); await workspace.session.save();
+                        workspace.render();
+                        workspace.status('Saved reply recovered. Your library has not changed.');
+                    }), true));
+                    row.append(result);
+                }), false, 'creator-chip-btn'));
+                if (!finished(job)) row.append(button('Cancel server request', () => workspace.run(async () => {
+                    await workspace.session.request('generation', { id, jobId: job.id, cancel: true });
+                    workspace.status('Cancellation requested. Finished work stays available.');
+                }), false, 'creator-chip-btn'));
+                panel.append(row);
+            }
+        });
+    }, false, 'creator-chip-btn');
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.setAttribute('aria-controls', panelId);
+    actions.append(toggle);
 }
