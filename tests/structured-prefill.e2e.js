@@ -103,6 +103,13 @@ for (const [location, stream, phone] of [['browser', false, false], ['browser', 
         }
         await controls.locator('[data-sp-name]').fill('My starter');
         await controls.locator('[data-sp-action="save"]').click();
+        await expect(controls.locator('[data-sp-bundled] option')).toHaveCount(6);
+        await controls.locator('[data-sp="enabled"]').uncheck();
+        await controls.locator('[data-sp-bundled]').selectOption({ label: 'Action first' });
+        await expect(controls.locator('[data-sp="enabled"]')).not.toBeChecked();
+        await expect(controls.locator('[data-sp="override_prefill_text"]')).toHaveValue('*[[action]]*');
+        await expect(controls.locator('[data-sp-presets] option[value="My starter"]')).toHaveCount(1);
+        await controls.locator('[data-sp="enabled"]').check();
         await controls.locator('[data-sp="override_prefill_text"]').fill('Changed');
         await controls.locator('[data-sp-presets]').selectOption('');
         await controls.locator('[data-sp-presets]').selectOption('My starter');
@@ -136,6 +143,7 @@ for (const [location, stream, phone] of [['browser', false, false], ['browser', 
         expect(sent.response_format.json_schema.schema.properties.response.pattern).toContain('Private starter');
         expect(sent.messages.some(item => item.role === 'assistant' && item.content === prefix)).toBe(false);
         await expect.poll(() => page.evaluate(async () => (await import('/script.js')).chat.at(-1)?.extra?.structured_prefill?.hidden_prefix)).toBe(prefix);
+        await expect(controls.locator('[data-sp-verification]')).toHaveAttribute('data-verification', 'matched');
         await page.evaluate(async () => {
             const { power_user } = await import('/scripts/power-user.js');
             power_user.structured_prefill.enabled = false;
@@ -150,6 +158,7 @@ for (const [location, stream, phone] of [['browser', false, false], ['browser', 
             await core.selectCharacterById(core.characters.findIndex(character => character.avatar === avatar), { switchMenu: false });
         }, account.avatar);
         await expect(page.locator('#chat .mes').last().locator('.mes_text')).toHaveText(prose, { timeout: 30000 });
+        await expect(page.locator('[data-sp-verification]')).toHaveAttribute('data-verification', 'matched');
         await page.close();
     });
 }
@@ -180,7 +189,80 @@ test('the browser reads native Claude, Gemini, Cohere and Responses streams with
         expect(result.text, source).toBe(prefix + prose);
         expect(result.reasoning, source).toBe('Thinking');
         expect(result.metadata.hidden_prefix, source).toBe(prefix);
+        expect(result.metadata.verification, source).toBe('matched');
         expect(result.outcome, source).toBeNull();
     }
+    const continued = await page.evaluate(async ({ avatar, prefix, prose }) => {
+        const core = await import('/script.js');
+        await core.getCharacters();
+        await core.selectCharacterById(core.characters.findIndex(character => character.avatar === avatar), { switchMenu: false });
+        const message = core.chat.at(-1);
+        message.mes = prefix + prose;
+        message.extra ??= {};
+        message.extra.structured_prefill = { applied: true, hidden_prefix: prefix, verification: 'matched' };
+        await core.saveReply({ type: 'continue', getMessage: ' More.', structuredPrefill: {
+            applied: true, accepted: true, verification: 'mismatch', hidden_prefix: '', continuation: true,
+        } });
+        return { text: message.mes, metadata: message.extra.structured_prefill };
+    }, { avatar: account.avatar, prefix, prose });
+    expect(continued.text).toBe(prefix + prose + ' More.');
+    expect(continued.metadata.hidden_prefix).toBe(prefix);
+    expect(continued.metadata.verification).toBe('mismatch');
+    await expect(page.locator('[data-sp-verification]')).toHaveAttribute('data-verification', 'mismatch');
+    await page.close();
+});
+
+for (const phone of [false, true]) {
+    test(`Formatting tour follows prefill controls on ${phone ? 'phone' : 'desktop'}`, async ({ app }) => {
+        const account = await app.account({ phone });
+        const page = await account.open({ workspace: false });
+        await openControls(page);
+        await page.locator('#left-nav-panel .sb-shell-header .neconyan-tool-tour-button').click();
+        const tour = page.locator('#neconyan-tool-tour');
+        await expect(tour).toBeVisible();
+        await page.locator('[data-sp-bundled]').click();
+        await page.keyboard.press('Tab');
+        await expect(tour).toHaveAttribute('data-step', 'prefill-presets');
+        for (const step of ['prefill-template', 'prefill-history', 'prefill-verification', 'prefill-generator']) {
+            await tour.locator('[data-tool-tour-next]').click();
+            await expect(tour).toHaveAttribute('data-step', step);
+        }
+        await expect(page.locator('[data-sp="enabled"]')).not.toBeChecked();
+        if (screenshots) await capture(page, `prefill-${phone ? 'phone' : 'desktop'}-tour.png`);
+        await page.close();
+    });
+}
+
+test('a successful provider response that ignores the pattern reports a mismatch', async ({ app }) => {
+    const account = await app.account({ activeConnection: true, configureSettings: saved => {
+        saved.power_user.user_prompt_bias = prefix;
+        saved.power_user.structured_prefill = { enabled: true, min_chars_after_prefix: 80 };
+        saved.oai_settings.stream_openai = false;
+    } });
+    app.provider.mode.reply = { choices: [{ message: { content: JSON.stringify({ response: 'Different opening.' }) }, finish_reason: 'stop' }] };
+    const page = await account.open({ workspace: false });
+    await page.evaluate(async avatar => {
+        const core = await import('/script.js');
+        await core.getCharacters();
+        await core.selectCharacterById(core.characters.findIndex(character => character.avatar === avatar), { switchMenu: false });
+    }, account.avatar);
+    await acknowledgeActiveSettings(page);
+    await page.locator('#send_textarea').fill('Hello.');
+    await page.locator('#send_but').click();
+    await expect(page.locator('#chat .mes').last().locator('.mes_text')).toHaveText('Different opening.', { timeout: 60000 });
+    await openControls(page);
+    await expect(page.locator('[data-sp-verification]')).toHaveAttribute('data-verification', 'mismatch');
+    await expect(page.locator('[data-sp-verification]')).toContainText('does not match');
+    if (screenshots) await capture(page, 'prefill-desktop-mismatch.png');
+    await page.route('**/api/backends/chat-completions/generate', route => route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: { message: 'Schema unsupported' } }) }));
+    const rejected = await page.evaluate(async () => {
+        try {
+            await (await import('/scripts/openai.js')).sendOpenAIRequest('normal', [{ role: 'assistant', content: 'Start ' }]);
+            return false;
+        } catch { return true; }
+    });
+    expect(rejected).toBe(true);
+    await expect(page.locator('[data-sp-verification]')).toHaveAttribute('data-verification', 'failed');
+    await expect(page.locator('[data-sp-verification]')).toContainText('not confirmed');
     await page.close();
 });

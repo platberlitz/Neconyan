@@ -1,19 +1,58 @@
-import { structuredPrefillSettings } from './structured-prefill.js';
+import { structuredPrefillSettings, STRUCTURED_PREFILL_PRESETS, structuredPrefillStatus } from './structured-prefill.js';
 import { SlashCommandParser } from './slash-commands/SlashCommandParser.js';
 import { SlashCommand } from './slash-commands/SlashCommand.js';
 import { SlashCommandArgument, ARGUMENT_TYPE } from './slash-commands/SlashCommandArgument.js';
 import { t } from './i18n.js';
 
 let commandActions;
+let cleanupStatus;
 
-/** One native settings owner; no generation listeners or message DOM rewriting. */
-export function initialiseStructuredPrefillUI(power, save, profiles) {
+/** Native settings and recorded request status; never rewrites message content. */
+export function initialiseStructuredPrefillUI(power, save, profiles, observe = null) {
     const root = document.querySelector('#structured-prefill-settings');
     if (!root) return;
     const status = root.querySelector('[data-sp-status]');
     const presets = root.querySelector('[data-sp-presets]');
     const name = root.querySelector('[data-sp-name]');
     const current = () => power.structured_prefill;
+    const indicator = root.querySelector('[data-sp-verification]');
+    let latest = observe?.read();
+    const showStatus = () => {
+        if (!indicator) return;
+        indicator.textContent = structuredPrefillStatus(latest);
+        indicator.dataset.verification = latest?.verification ?? 'none';
+    };
+    cleanupStatus?.();
+    const receive = event => { latest = event.detail; showStatus(); };
+    window.addEventListener('neconyan:prefill-status', receive);
+    let recorded = latest;
+    const unsubscribe = observe?.subscribe(reset => {
+        const next = observe.read();
+        if (!reset && !next && latest?.verification === 'waiting') return;
+        if (!reset && next === recorded) return;
+        recorded = next; latest = next; showStatus();
+    }, phase => {
+        if (phase === 'waiting') latest = { verification: 'waiting' };
+        else if (latest?.verification === 'waiting') latest = { verification: 'failed' };
+        else if (latest?.verification === 'streaming') latest = { ...latest, verification: 'incomplete' };
+        showStatus();
+    });
+    cleanupStatus = () => { window.removeEventListener('neconyan:prefill-status', receive); unsubscribe?.(); };
+    const bundled = root.querySelector('[data-sp-bundled]');
+    const clearStartingPoint = () => {
+        if (bundled) bundled.value = '';
+        const description = root.querySelector('[data-sp-description]');
+        if (description) description.textContent = '';
+    };
+    if (bundled) bundled.replaceChildren(new Option(t`Choose a starting point`, ''), ...STRUCTURED_PREFILL_PRESETS.map(preset => new Option(preset.name, preset.name)));
+    if (bundled) bundled.onchange = () => {
+        const preset = STRUCTURED_PREFILL_PRESETS.find(item => item.name === bundled.value);
+        if (!preset) return;
+        power.structured_prefill = structuredPrefillSettings({ ...preset, enabled: current().enabled,
+            prefill_gen_profile_id: current().prefill_gen_profile_id });
+        root.querySelector('[data-sp-description]').textContent = preset.description;
+        name.value = ''; refresh(); save();
+    };
     const options = (select, entries, selected, empty) => {
         select.replaceChildren(new Option(empty, ''), ...entries.map(entry => new Option(entry.name, entry.id ?? entry.name)));
         select.value = selected;
@@ -36,6 +75,7 @@ export function initialiseStructuredPrefillUI(power, save, profiles) {
     root.oninput = event => {
         const input = event.target;
         if (!input.dataset.sp) return;
+        clearStartingPoint();
         const value = input.type === 'checkbox' ? input.checked : input.type === 'number' ? input.valueAsNumber : input.value;
         power.structured_prefill = structuredPrefillSettings({ ...current(), [input.dataset.sp]: value });
         save();
@@ -44,6 +84,7 @@ export function initialiseStructuredPrefillUI(power, save, profiles) {
     const applyPreset = label => {
         const preset = power.structured_prefill_presets.find(item => item.name === label);
         if (!preset) throw new Error(t`Prefill preset not found.`);
+        clearStartingPoint();
         power.structured_prefill = structuredPrefillSettings({ ...preset, enabled: current().enabled });
         name.value = preset.name; refresh(); save();
         return preset.name;
@@ -92,4 +133,5 @@ export function initialiseStructuredPrefillUI(power, save, profiles) {
         } catch (error) { status.textContent = error.message; } finally { event.target.value = ''; }
     };
     refresh();
+    showStatus();
 }

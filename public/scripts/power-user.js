@@ -3076,7 +3076,22 @@ export async function loadPowerUserSettings(settings, data) {
     power_user.structured_prefill_presets = Array.isArray(settings.power_user?.structured_prefill_presets)
         ? settings.power_user.structured_prefill_presets.filter(item => item && typeof item.name === 'string').map(item => ({ ...structuredPrefillSettings(item), name: item.name })) : [];
     const { extension_settings } = await import('./extensions.js');
-    initialiseStructuredPrefillUI(power_user, saveSettingsDebounced, () => extension_settings.connectionManager?.profiles ?? []);
+    initialiseStructuredPrefillUI(power_user, saveSettingsDebounced, () => extension_settings.connectionManager?.profiles ?? [], {
+        read: () => chat.findLast(message => !message.is_user && !message.is_system)?.extra?.structured_prefill,
+        subscribe: (update, phase) => {
+            const changed = () => update(true);
+            const rendered = () => update(false);
+            const started = (type, _options, dryRun) => {
+                if (!dryRun && power_user.structured_prefill.enabled && ['normal', 'swipe', 'regenerate', 'continue'].includes(type)) phase('waiting');
+            };
+            const ended = () => phase('finished');
+            const listeners = [[event_types.CHAT_CHANGED, changed], [event_types.MESSAGE_SWIPED, changed],
+                [event_types.MESSAGE_RECEIVED, rendered], [event_types.CHARACTER_MESSAGE_RENDERED, rendered],
+                [event_types.GENERATION_STARTED, started], [event_types.GENERATION_ENDED, ended], [event_types.GENERATION_STOPPED, ended]];
+            for (const [event, listener] of listeners) eventSource.on(event, listener);
+            return () => { for (const [event, listener] of listeners) eventSource.removeListener(event, listener); };
+        },
+    });
     $('#auto_continue_enabled').prop('checked', power_user.auto_continue.enabled);
     $('#auto_continue_allow_chat_completions').prop('checked', power_user.auto_continue.allow_chat_completions);
     $('#auto_continue_target_length').val(power_user.auto_continue.target_length);

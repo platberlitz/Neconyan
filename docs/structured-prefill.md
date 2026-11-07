@@ -1,8 +1,10 @@
 # Structured Prefill
 
-I brought the template approach from [StructuredPrefill, Cheesedozer Edition](https://github.com/hatredofmusic/StructuredPrefill-Cheesedozer-Edition) into Neconyan's reply handling. You don't need the extension. It starts switched off.
+I brought the template approach from [StructuredPrefill, Cheesedozer Edition](https://github.com/Cheesedozer/StructuredPrefill-Cheesedozer-Edition) into Neconyan's reply handling. You don't need the extension. It starts switched off.
 
 Open **Fine-tuning → Formatting → Structured Prefill**, the last section on that page. Enable it to turn the last assistant prefill into a reply pattern. You can also choose **Use a separate starter template**.
+
+For a first try, choose **Dialogue first** or **Action first** under **Ready-to-use preset**, review the filled controls, then enable the feature. **Choose a mood** offers three possible openings. **Private scene note** removes its generated note from the saved reply. **Starter model** needs a separate saved connection. These five examples don't overwrite your own presets or change whether the feature is enabled. The Formatting **Tour** explains the controls and follows the ones you select.
 
 Choose an **Output method**:
 
@@ -19,7 +21,7 @@ For example:
 I feel [[opt:calm|curious]]. [[keep]]
 ```
 
-The model chooses 'calm' or 'curious', then writes its reply. With **Hide the starter in chat** enabled, everything before `[[keep]]` is hidden. Without that marker, the whole starter is hidden. The full text stays in saved history and future prompts. Changing presets later doesn't change what an older reply hides.
+The model chooses 'calm' or 'curious', then writes its reply. With **Hide the starter in chat** enabled, everything before `[[keep]]` is hidden. Without that marker, the whole starter is hidden. Hiding alone keeps the full text in saved history and future prompts. **Also remove the starter from saved chat** removes that generated prefix from new replies instead. Later edits aren't stripped again. Neither option rewrites older replies, and changing presets doesn't change what an older reply hides.
 
 - `[[w:2-5]]` or `[[words:2-5]]`: two to five words.
 - `[[opt:yes|no]]` or `[[options:yes,no]]`: a listed choice.
@@ -28,12 +30,18 @@ The model chooses 'calm' or 'curious', then writes its reply. With **Hide the st
 - `[[name]]`: a name from the chat, or a capitalised name when none are supplied.
 - `[[emotion]]` or `[[mood]]`: an emotion word.
 - `[[action]]` and `[[thought]]`: short word groups.
-- `[[line:2]]` or `[[lines:2-4]]`: a number of lines.
+- `[[line]]`: one line. `[[line:2]]` or `[[lines:2-4]]`: a number of lines.
 - `[[num]]`: an integer. `[[num:-2-10]]` or `[[number:1-5]]`: an inclusive range, up to 1,001 possible integers.
 - `[[end]]`, `[[stop]]` or `[[eos]]`: end the reply there.
 - `[[pg]]`: insert text from a separate starter model.
 
-Unknown slots and invalid ranges return an error. Banned phrases are case-insensitive for Latin letters, one phrase per line. Their pattern uses a negative lookahead, which some providers reject. Remove the list or choose Instructions if your provider doesn't support that regex feature.
+Unknown slots and invalid ranges return an error. Banned phrases are case-insensitive for Latin letters, one phrase per line. Entries starting with a letter or digit match the start of a word: 'gaze' blocks 'gazed', but not 'stargaze'. Entries starting with punctuation match anywhere. Keep the list short. Its pattern uses a negative lookahead, which some providers reject. Remove the list or choose Instructions if your provider doesn't support that regex feature.
+
+## Check the result
+
+The status records the provider, model and output method. **Request accepted; reply matches the pattern** means a successful provider response passed Neconyan's complete pattern check, including the starter, minimum length and banned phrases. It does not prove that the provider enforced those rules internally.
+
+A mismatch keeps the reply and reports that it did not match. Rejected requests, skipped requests, incomplete replies, invalid JSON and checks too costly to finish have separate statuses. Starter-model warnings appear with the result. Saved replies retain their recorded check when you change settings or reopen the chat.
 
 ## Streaming and Continue
 
@@ -45,7 +53,7 @@ If a provider stops with malformed JSON, already decoded reply text is retained 
 
 ## Starter model and presets
 
-Choose a saved Chat Completion connection profile under **Starter model** to use `[[pg]]`. Its own request runs first, with the conversation and optional starter instructions. You can set its token limit, timeout and stop strings. Generated text is inserted literally, so a starter containing `[[keep]]` doesn't become a template command. A failed starter request stops the main request with an error.
+Choose a saved Chat Completion connection profile under **Starter model** to use `[[pg]]`. Its own request runs first, with the conversation and optional starter instructions. You can set its token limit, timeout and stop strings. Generated text is inserted literally, so a starter containing `[[keep]]` doesn't become a template command. If that request fails or times out, the main request continues with an empty slot and a recorded warning. Pressing Stop still cancels the request.
 
 Save named presets, export them as JSON, or import native exports and named StructuredPrefill extension exports. Importing adds presets; it doesn't enable the feature. Selecting a preset keeps your current enabled/disabled choice.
 

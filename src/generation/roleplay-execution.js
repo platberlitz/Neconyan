@@ -246,6 +246,11 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
         }
         if (thinkingOnly) throw roleplayError('GENERATION_NO_ANSWER', thinkingOnly.message, 502);
         let output = replyOutput(result, effect, request.characterName, result.generation);
+        if (effect === 'continue' && result.response?.choices?.[0]?.structured_prefill) {
+            const { continuedPrefillMetadata } = await import('../../public/scripts/structured-prefill.js');
+            const previous = assertSource().records.findLast(record => !record.is_user && !record.is_system && typeof record.mes === 'string');
+            output.extra.structured_prefill = continuedPrefillMetadata(previous?.extra?.structured_prefill, result.response.choices[0].structured_prefill);
+        }
         let reply = output.message ?? output.messages?.[0] ?? output;
         if (blocked) reply.extra.generation_outcome = blocked;
         if (thinkingRecovery) reply.extra[THINKING_RECOVERY_RUN_EXTRA_KEY] = thinkingRecovery;
@@ -1283,6 +1288,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
         onStream: preview.publish,
         maxTokens: request.maxTokens, userName, characterName: request.characterName,
         generationType: request.serverPrompt ? request.worldInfo.global.trigger : 'quiet',
+        lastAssistant: request.serverPrompt ? initialRecords.findLast(record => !record.is_user && !record.is_system && typeof record.mes === 'string')?.mes ?? null : null,
         groupNames, macroEnvironment, preparedText, cfgValues, preparedMessages: Boolean(request.serverPrompt && countChat), functionTools,
         captureMacroState: request.worldInfo?.macroPolicyVersion === 1,
         rawOptions: request.rawOptions || {}, ephemeralStops: request.ephemeralStops || [],

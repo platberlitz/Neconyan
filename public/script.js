@@ -386,7 +386,7 @@ import { fetchResumable, setGenerationContext, releaseGenerationContext, listRec
 import { captureRecoveryAnchor, getHeldReplyTarget } from './scripts/held-generation-recovery.js';
 import { applyGenerationRequestControls, isGenerationLengthFinish, limitGenerationProse, reasoningOnlyWarningKind } from './scripts/generation-request-controls.js';
 import { cleanGeneratedText, createRawPrompt as createRawPromptPure, normalizeContentText as normalizeContentTextPure, extractMessageFromData as extractMessageFromDataPure, extractJsonFromData as extractJsonFromDataPure } from './scripts/generation-format.js';
-import { structuredPrefillDisplay } from './scripts/structured-prefill.js';
+import { structuredPrefillDisplay, continuedPrefillMetadata } from './scripts/structured-prefill.js';
 import { collectGenerationStream } from './scripts/generation-stream-result.js';
 import { generationSettingsSnapshot } from './scripts/generation-settings.js';
 import {
@@ -8269,7 +8269,9 @@ class StreamingProcessor {
                 delete chat[messageId].extra[IN_CHAT_AGENT_PRE_GENERATION_INTERCEPT_HISTORY_KEY];
             }
             chat[messageId].extra.time_to_first_token = this.timeToFirstToken;
-            if (!isContinue) {
+            if (isContinue && this.structuredPrefill) {
+                chat[messageId].extra.structured_prefill = continuedPrefillMetadata(chat[messageId].extra.structured_prefill, this.structuredPrefill);
+            } else if (!isContinue) {
                 if (this.structuredPrefill) chat[messageId].extra.structured_prefill = isFinal ? { ...this.structuredPrefill, pending: false } : this.structuredPrefill;
                 else delete chat[messageId].extra.structured_prefill;
             }
@@ -12555,7 +12557,9 @@ export async function saveReply({ type, getMessage, fromStreaming = false, title
     const generationFinished = new Date();
     const syncReplySwipeBeforeEvents = (item) => {
         if (!item) return;
-        if (!['continue', 'append', 'appendFinal'].includes(type) && !fromStreaming) {
+        if (['continue', 'append', 'appendFinal'].includes(type) && structuredPrefill && !fromStreaming) {
+            item.extra.structured_prefill = continuedPrefillMetadata(item.extra.structured_prefill, structuredPrefill);
+        } else if (!['continue', 'append', 'appendFinal'].includes(type) && !fromStreaming) {
             if (structuredPrefill) item.extra.structured_prefill = { ...structuredPrefill, pending: false };
             else delete item.extra.structured_prefill;
         }

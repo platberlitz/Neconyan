@@ -10,12 +10,15 @@ import { normalisePrefillReply } from './structured-prefill-formats.js';
 export function createPrefillDecoder(compiled, overlap = '') {
     let header = ''; let stage = 'header'; let escape = ''; let tail = ''; let pending = ''; let content = '';
     let emitted = ''; let hiddenPrefix = ''; let prefixComplete = !compiled.hidden;
+    let rawContent = ''; let verification = 'streaming';
+    const validator = new Script(`new RegExp(${JSON.stringify(compiled.pattern)}).test(text)`);
     const matcher = compiled.hidden ? new Script(`(() => {
         const match = new RegExp(${JSON.stringify(`^(?:${compiled.prefix})`)}).exec(text);
         return match && { length: match[0].length, hidden: new RegExp(${JSON.stringify(`^(?:${compiled.hidden})`)}).exec(match[0])?.[0] ?? '' };
     })()`) : null;
     let lastMatchLength = -1;
     const decode = value => {
+        rawContent += value;
         pending += value;
         let result = '';
         while (pending) {
@@ -39,13 +42,19 @@ export function createPrefillDecoder(compiled, overlap = '') {
             } else if (final || start.length === 32000) prefixComplete = true;
         }
         let text = content;
+        if (compiled.config.remove_prefill_from_history && !overlap) {
+            text = prefixComplete ? content.slice(hiddenPrefix.length) : '';
+        }
         if (overlap) {
             if (content.length < overlap.length && overlap.startsWith(content)) text = '';
             else if (content.startsWith(overlap)) text = content.slice(overlap.length);
             else throw new Error('The provider did not return the requested Continue overlap. The saved reply was not changed.');
         }
         const delta = text.slice(emitted.length); emitted = text;
-        return { text: delta, metadata: { applied: true, hidden_prefix: overlap ? '' : hiddenPrefix, pending: !prefixComplete, continuation: Boolean(overlap) } };
+        return { text: delta, metadata: { ...compiled.context, applied: true, accepted: true, verification,
+            hidden_prefix: overlap || compiled.config.remove_prefill_from_history ? '' : hiddenPrefix,
+            history_removed: Boolean(compiled.config.remove_prefill_from_history && hiddenPrefix && !overlap),
+            pending: !prefixComplete, continuation: Boolean(overlap) } };
     };
     return {
         push(value) {
@@ -71,9 +80,14 @@ export function createPrefillDecoder(compiled, overlap = '') {
         },
         finish({ partial = false } = {}) {
             if (!partial && (stage !== 'tail' || !/^\s*}\s*$/.test(tail))) throw new Error('The provider ended an incomplete Structured Prefill response.');
+            verification = 'incomplete';
+            if (!partial) {
+                try { verification = validator.runInNewContext({ text: rawContent }, { timeout: 25 }) ? 'matched' : 'mismatch'; } catch { verification = 'unchecked'; }
+            }
             return snapshot(true);
         },
-        partial() {
+        partial({ invalid = false } = {}) {
+            verification = invalid ? 'invalid' : 'incomplete';
             prefixComplete = true;
             return snapshot(true);
         },
@@ -85,7 +99,8 @@ async function generatedStarter(request, config, messages) {
     const [{ captureChatProfile }, { runChatProfile }] = await Promise.all([import('./generation/profiles.js'), import('./generation/service.js')]);
     const controller = new AbortController();
     const cancel = abortOnRequestClose(request, controller);
-    const timer = setTimeout(() => controller.abort(new Error('The starter model timed out.')), config.prefill_gen_timeout_ms);
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; controller.abort(new Error('The starter model timed out.')); }, config.prefill_gen_timeout_ms);
     try {
         const prompt = structuredClone(messages);
         if (config.prefill_gen_extra_prompt) prompt.push({ role: config.prefill_gen_extra_prompt_role === 'user' ? 'user' : 'system', content: config.prefill_gen_extra_prompt });
@@ -96,6 +111,9 @@ async function generatedStarter(request, config, messages) {
         if (result.outcome || !result.text) throw new Error('The starter model returned no usable text.');
         const matched = result.response?.matched_stop ?? result.response?.choices?.[0]?.matched_stop;
         return result.text + (config.prefill_gen_keep_matched_stop_string && typeof matched === 'string' ? matched : '');
+    } catch (error) {
+        if (cancel.isAborted && !timedOut) throw Object.assign(new Error('The starter request was cancelled.'), { code: 'PREFILL_CANCELLED' });
+        throw error;
     } finally { clearTimeout(timer); cancel.cleanup(); }
 }
 
@@ -110,19 +128,37 @@ export async function prepareStructuredPrefill(request) {
     while (index >= 0 && messages[index].role === 'system') index--;
     const last = messages[index];
     const continuing = config.type === 'continue';
+    const historyTail = last?.role === 'assistant' && config.last_assistant !== null && last.content === config.last_assistant && last.content !== config.original_prefill;
+    const fieldPrefill = typeof body.assistant_prefill === 'string' ? body.assistant_prefill : '';
     let template = config.override_prefill_enabled && !continuing ? config.override_prefill_text
-        : last?.role === 'assistant' && typeof last.content === 'string' ? last.content : '';
+        : !historyTail && last?.role === 'assistant' && typeof last.content === 'string' ? last.content : fieldPrefill;
+    if (continuing && last?.role === 'assistant') template = last.content;
     if (!template) return;
     let overlap = '';
     if (continuing) {
         if (last?.role !== 'assistant' || typeof last.content !== 'string') return;
         overlap = config.continue_overlap_chars ? [...last.content].slice(-config.continue_overlap_chars).join('') : '';
         template = overlap;
-    } else if (last?.role === 'assistant' && (!config.override_prefill_enabled || last.content === config.original_prefill)) messages.splice(index, 1);
-    const generated = !continuing && template.includes('[[pg]]') ? await generatedStarter(request, config, messages) : '';
-    const compiled = compileStructuredPrefill(template, { ...config, ...(continuing ? { hide_prefill_in_display: false } : {}) },
+    } else {
+        if (!historyTail && last?.role === 'assistant' && (!config.override_prefill_enabled || last.content === config.original_prefill)) messages.splice(index, 1);
+        for (const name of [body.char_name, ...(Array.isArray(body.group_names) ? body.group_names : [])]) {
+            if (name && template.startsWith(`${name}: `)) { template = template.slice(name.length + 2); break; }
+        }
+    }
+    const warnings = [];
+    let generated = '';
+    if (!continuing && template.includes('[[pg]]')) {
+        try { generated = await generatedStarter(request, config, messages); } catch (error) {
+            if (error.code === 'PREFILL_CANCELLED' || request.aborted || request.generationSignal?.aborted) throw error;
+            warnings.push('The starter model failed. The main reply continued with an empty [[pg]] slot.');
+        }
+    }
+    const compiled = compileStructuredPrefill(template, { ...config, ...(continuing ? { hide_prefill_in_display: false, remove_prefill_from_history: false } : {}) },
         [body.user_name, body.char_name, ...(Array.isArray(body.group_names) ? body.group_names : [])], { literal: continuing, generated });
+    compiled.context = { source: body.chat_completion_source, model: body.model, method: config.output_method,
+        prefill_source: continuing ? 'continue' : config.override_prefill_enabled ? 'template' : fieldPrefill === template ? 'assistant_prefill' : 'assistant message', warnings };
     body.messages = messages;
+    if (fieldPrefill && !continuing) delete body.assistant_prefill;
     request.structuredPrefill = true;
     if (config.output_method === 'instructions') {
         messages.push({ role: 'system', content: 'Return only a JSON object with one string field named "response", without markdown fences. '
@@ -144,7 +180,7 @@ export async function prepareStructuredPrefill(request) {
         if (!body.stream) {
             const data = normalisePrefillReply(await response.json());
             for (const choice of data.choices ?? []) {
-                choice.structured_prefill = { applied: true, pending: false, hidden_prefix: '' };
+                choice.structured_prefill = { ...compiled.context, applied: true, accepted: true, verification: 'incomplete', pending: false, hidden_prefix: '' };
                 if (!choice.message?.content || choice.message.refusal || choice.finish_reason === 'error') continue;
                 if (choice.finish_reason === 'content_filter' && !/^\s*\{\s*"response"\s*:/.test(choice.message.content)) continue;
                 const decoder = createPrefillDecoder(compiled, overlap);
@@ -156,7 +192,7 @@ export async function prepareStructuredPrefill(request) {
                     choice.structured_prefill = last.metadata;
                 } catch (error) {
                     let partial;
-                    try { partial = decoder.partial(); } catch { /* A mismatched Continue overlap cannot be appended. */ }
+                    try { partial = decoder.partial({ invalid: true }); } catch { /* A mismatched Continue overlap cannot be appended. */ }
                     choice.message.content = text + (partial?.text ?? '');
                     choice.structured_prefill = partial?.metadata ?? { applied: true, pending: false, hidden_prefix: '' };
                     choice.finish_reason = 'error';
@@ -202,7 +238,7 @@ export async function* decodePrefillStream(body, compiled, overlap = '') {
                     state.metadata = last.metadata;
                 }
                 state.finished = true;
-                choice.structured_prefill = { ...(state.metadata ?? { applied: true, hidden_prefix: '' }), pending: false };
+                choice.structured_prefill = { ...compiled.context, ...(state.metadata ?? { applied: true, hidden_prefix: '' }), accepted: true, verification: 'incomplete', pending: false };
                 continue;
             }
             if (field?.content) {
@@ -244,7 +280,7 @@ export async function* decodePrefillStream(body, compiled, overlap = '') {
         for (const [index, state] of choices) {
             let partial;
             if (!state.finished) {
-                try { partial = state.decoder.partial(); } catch { /* Do not append a mismatched overlap. */ }
+                try { partial = state.decoder.partial({ invalid: true }); } catch { /* Do not append a mismatched overlap. */ }
                 failed.push({ index, delta: {}, finish_reason: 'error' });
             }
             fragments.push({ index, delta: { content: (state.unsent ?? '') + (partial?.text ?? '') },
