@@ -55,6 +55,7 @@ test('manual keys are scoped to agent and endpoint, kept out of settings and rem
     const reference = { agentId: 'agent-a', endpoint: settings.modelEndpoint };
     assert.deepEqual(pathfinderKey(directories, { ...reference, key: 'test-secret' }), { hasKey: true });
     const resolved = resolvePathfinderModel(directories, settings, { agentId: 'agent-a' });
+    assert.deepEqual(resolved.cacheScope, [directories.root, 'agent-a']);
     assert.equal(resolved.threshold, 0.1);
     assert.equal(resolved.key, 'test-secret');
     assert.equal(resolved.url, 'http://127.0.0.1:8080/v1/systemone');
@@ -104,4 +105,52 @@ test('real HTTP requests use decision payloads, propagate cancellation and never
     const count = requests.length;
     assert.deepEqual((await requestPathfinderModel(model, { messages, candidates: [] })).selected, []);
     assert.equal(requests.length, count);
+});
+
+test('Pawthfinder caches valid decisions across raw and parsed callers with account and connection isolation', async t => {
+    let calls = 0;
+    let response = { answers: { q_0: 0.9, q_1: 0.2 } };
+    let status = 200;
+    const server = http.createServer(async (req, res) => {
+        for await (const chunk of req) { void chunk; }
+        calls++;
+        res.writeHead(status, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(response));
+    });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    t.after(() => { server.closeAllConnections(); server.close(); });
+    const model = { url: `http://127.0.0.1:${server.address().port}/decisions`, model: 'jev-latest',
+        protocol: 'decision', threshold: 0.5, key: 'test-key', cacheScope: ['account-a', 'agent-a'] };
+    const call = (overrides = {}, input = {}) => requestPathfinderModel({ ...model, ...overrides }, { messages, candidates, ...input });
+    const first = await call({}, { raw: true });
+    first.data.answers.q_0 = 0;
+    assert.deepEqual((await call()).selected, [candidates[0].id]);
+    assert.deepEqual((await call({ threshold: 0.95 })).selected, []);
+    assert.equal(calls, 1);
+    for (const override of [
+        { cacheScope: ['account-b', 'agent-a'] }, { cacheScope: ['account-a', 'agent-b'] },
+        { key: 'new-key' }, { model: 'other-jev' }, { url: model.url + '/other' },
+    ]) await call(override);
+    assert.equal(calls, 6);
+    await call({}, { messages: [{ role: 'user', content: 'We enter the forest.' }] });
+    await call({}, { candidates: [{ ...candidates[0], text: 'A ruined lighthouse' }, candidates[1]] });
+    assert.equal(calls, 8);
+    await assert.rejects(call({}, { signal: AbortSignal.abort() }), /abort/i);
+    assert.equal(calls, 8);
+    response = { answers: { q_0: 0.9 } };
+    const malformed = await call({ model: 'malformed' }, { raw: true });
+    assert.throws(() => parsePathfinderDecisions(malformed.data, candidates, 0.5), /invalid.*score/i);
+    response = { answers: { q_0: 0.9, q_1: 0.2 } };
+    await call({ model: 'malformed' });
+    await call({ model: 'malformed' });
+    assert.equal(calls, 10);
+    status = 503;
+    await assert.rejects(call({ model: 'failed' }), /503/);
+    status = 200;
+    await call({ model: 'failed' });
+    assert.equal(calls, 12);
+    response = { choices: [{ message: { content: 'A chat reply' } }] };
+    await call({ protocol: 'chat' });
+    await call({ protocol: 'chat' });
+    assert.equal(calls, 14, 'ordinary chat generation is never cached');
 });

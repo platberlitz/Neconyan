@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import net from 'node:net';
 import ipaddr from 'ipaddr.js';
 import fetch from 'node-fetch';
+import { decisionCache } from '../decision-cache.js';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
 import { readSecret, writeSecret, SecretManager, SECRETS_FILE } from '../endpoints/secrets.js';
 import { withChatFileLocks } from '../chat-file-lock.js';
@@ -533,7 +534,7 @@ export function parseDecisionOutput(data, input, threshold = 0.5) {
 }
 
 /** `connectionRole` swaps in a fallback connection while the saved role still guards against mid-run setting changes. */
-async function requestModel(directories, config, name, payload, dataTypes, signal, connectionRole = null, { decision = false } = {}) {
+async function requestModel(directories, config, name, payload, dataTypes, signal, connectionRole = null, { decision = false, validateDecision } = {}) {
     if (signal?.aborted) fail('Mewmory request cancelled.', 499);
     const checkCurrent = () => {
         const current = readConfig(directories);
@@ -563,7 +564,16 @@ async function requestModel(directories, config, name, payload, dataTypes, signa
     const started = Date.now();
     try {
         let data;
-        if (role.nativePolicy && name === 'embedding') {
+        let cached = false;
+        const cacheKey = decision ? decisionCache.key(['mewmory', directories.root, name, url, key || '', role.modelRevision,
+            { model: role.model, ...payload }]) : null;
+        if (cacheKey) {
+            data = decisionCache.get(cacheKey);
+            cached = data !== undefined;
+        }
+        if (cached) {
+            controller.signal.throwIfAborted();
+        } else if (role.nativePolicy && name === 'embedding') {
             const result = await requestVectorEmbedding(directories, role.nativePolicy, payload.input, {
                 isQuery: payload.query, signal: controller.signal, fetchImpl: send, beforeDispatch: checkCurrent,
             });
@@ -590,13 +600,20 @@ async function requestModel(directories, config, name, payload, dataTypes, signa
             if (!response.ok) fail('The model for ' + ROLE_LABELS[name] + ' returned error code ' + response.status + '. Check its model connection in Mewmory settings and try again.', 502);
             data = await response.json();
         }
+        if (decision) {
+            controller.signal.throwIfAborted();
+            checkCurrent();
+            validateDecision(data);
+            if (!cached) decisionCache.set(cacheKey, data);
+        }
         return {
             data,
             usage: {
                 role: name, model: role.model, modelRevision: role.modelRevision,
                 ...(connectionRole ? { fallbackProfileId: connectionRole.profileId } : {}),
-                input: Number(data.usage?.prompt_tokens ?? data.usage?.input_tokens) || 0,
-                output: Number(data.usage?.completion_tokens ?? data.usage?.output_tokens) || 0,
+                ...(decision ? { cached } : {}),
+                input: cached ? 0 : Number(data.usage?.prompt_tokens ?? data.usage?.input_tokens) || 0,
+                output: cached ? 0 : Number(data.usage?.completion_tokens ?? data.usage?.output_tokens) || 0,
                 milliseconds: Date.now() - started,
             },
         };
@@ -678,15 +695,19 @@ export async function callJsonRole(directories, config, name, contract, input, {
             const threshold = typeof activeRole.decisionThreshold === 'number' && Number.isFinite(activeRole.decisionThreshold)
                 ? activeRole.decisionThreshold
                 : defaultDecisionThreshold(activeRole.model);
-            const result = await requestModel(directories, config, name, decisionPayload, dataTypes, signal, connectionRole, { decision: true });
             let value;
-            try {
-                value = parseDecisionOutput(result.data, input, threshold);
-                object(value, 'Model output');
-            } catch {
-                fail('The ' + ROLE_LABELS[name] + ' model replied in a format Mewmory cannot read, so nothing was saved. Try again; if it keeps happening, choose a different model for ' + ROLE_LABELS[name] + ' in Mewmory settings.', 502);
-            }
-            return { value, usage: { ...result.usage, input: result.usage.input || decisionTokens, tokenizer: counter.name, decision: true } };
+            const result = await requestModel(directories, config, name, decisionPayload, dataTypes, signal, connectionRole, {
+                decision: true,
+                validateDecision: data => {
+                    try {
+                        value = parseDecisionOutput(data, input, threshold);
+                        object(value, 'Model output');
+                    } catch {
+                        fail('The ' + ROLE_LABELS[name] + ' model replied in a format Mewmory cannot read, so nothing was saved. Try again; if it keeps happening, choose a different model for ' + ROLE_LABELS[name] + ' in Mewmory settings.', 502);
+                    }
+                },
+            });
+            return { value, usage: { ...result.usage, input: result.usage.cached ? 0 : result.usage.input || decisionTokens, tokenizer: counter.name, decision: true } };
         }
         const inputTokens = counter.count(JSON.stringify(messages)) + 16;
         checkBudget(inputTokens, activeRole.maxOutputTokens);

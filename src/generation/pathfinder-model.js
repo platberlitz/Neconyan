@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import fetch from 'node-fetch';
+import { decisionCache } from '../decision-cache.js';
 import { readJsonShared } from '../mewmory/store.js';
 import { resolveModelProfile } from '../mewmory/connection-profiles.js';
 import { extractDecisionScore, resolveDecisionUrl, validateDecisionModel, validateEndpoint } from '../mewmory/models.js';
@@ -66,7 +67,7 @@ export function resolvePathfinderModel(directories, settings = {}, { agentId, pr
     let url = protocol === 'decision' ? resolveDecisionUrl(connection.endpoint, connection) : connection.endpoint;
     if (protocol === 'chat' && !url.endsWith('/chat/completions')) url = url.replace(/\/$/, '') + '/chat/completions';
     url = validateEndpoint(url, { allowRemote: true, localOnly: false });
-    return { url, model: connection.model, key, protocol, threshold };
+    return { url, model: connection.model, key, protocol, threshold, cacheScope: [directories.root, agentId || ''] };
 }
 
 export function buildPathfinderDecisions(messages, candidates) {
@@ -108,11 +109,26 @@ export async function requestPathfinderModel(model, { messages, candidates, maxT
     const body = model.protocol === 'decision' ? { model: model.model, ...decisions }
         : { model: model.model, messages, max_tokens: Math.min(64000, Math.max(1, Number(maxTokens) || 2048)), stream: false,
             ...(Number.isFinite(temperature) ? { temperature } : {}) };
+    const cacheKey = model.protocol === 'decision' && model.cacheScope
+        ? decisionCache.key(['pathfinder', model.cacheScope, model.url, model.key || '', body]) : null;
+    const cached = cacheKey ? decisionCache.get(cacheKey) : undefined;
+    if (cached !== undefined) return raw ? { data: cached } : parsePathfinderResponse(model, cached, candidates);
     const response = await fetch(model.url, { method: 'POST', redirect: 'error', size: 4 * 1024 * 1024,
         signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(120000)]) : AbortSignal.timeout(120000),
         headers: { 'Content-Type': 'application/json', ...(model.key ? { Authorization: `Bearer ${model.key}` } : {}) }, body: JSON.stringify(body) });
     if (!response.ok) throw Object.assign(new Error(`Pawthfinder model returned HTTP ${response.status}.`), { status: response.status, providerStatus: response.status });
     const data = await response.json();
+    signal?.throwIfAborted();
+    if (cacheKey) {
+        try {
+            parsePathfinderResponse(model, data, candidates);
+        } catch (error) {
+            // Durable jobs still save the raw provider outcome before parsing it.
+            if (raw) return { data };
+            throw error;
+        }
+        decisionCache.set(cacheKey, data);
+    }
     return raw ? { data } : parsePathfinderResponse(model, data, candidates);
 }
 
