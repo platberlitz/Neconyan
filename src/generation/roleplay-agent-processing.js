@@ -190,8 +190,10 @@ function displaySnapshot(pre, agents, generationType) {
 /** Use the accepted activation and bound scripts while the main reply is still streaming. */
 export function roleplayAgentDisplaySnapshot(context, { base, snapshot, generationType, agentCache }) {
     if (!snapshot?.agents) return undefined;
+    const identity = roleplayHash({ intent: context.job.intent, generationType });
     const { pre, agents } = activeAgents(context, base, snapshot, agentCache);
-    return displaySnapshot(pre, agents, generationType);
+    return savePhase(context, snapshot.account, 'roleplay-agent-display', { identity, intentHash: roleplayHash(context.job.intent),
+        display: displaySnapshot(pre, agents, generationType) }).display;
 }
 
 function unwrap(value) {

@@ -277,13 +277,15 @@ test('a roleplay preview opens full and then sends only appended deltas', async 
         assert.equal(third.delta.set.stage, 'agents', 'a stage change bypasses the write limit');
         // The finished job writes its final frame against this connection's
         // baseline, then the terminal state, and closes.
-        setJobState(aliceDirs, job.id, 'completed');
+        const result = { generationOutcome: { version: 1, status: 'error', reason: 'error' } };
+        updateJob(aliceDirs, job.id, { state: 'completed', result });
         notifyJobsChanged({ owner: 'alice', id: job.id });
         const finalFrame = await stream.nextFrame();
         assert.equal(finalFrame.state, undefined, 'the retained preview is written before the state');
         assert.deepEqual(finalFrame.delta, {}, 'the final frame carries nothing the reader is missing');
         const stateFrame = await stream.nextFrame();
         assert.equal(stateFrame.state, 'completed');
+        assert.deepEqual(stateFrame.result, result, 'the stream must report the outcome before it wins the race with polling');
     } finally { controller.abort(); stream.reader.releaseLock(); }
 });
 

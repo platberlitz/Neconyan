@@ -242,7 +242,7 @@ router.get('/:id/preview', (request, response) => {
                         if (conversation) send({ preview: nextPreview });
                         else { clearTimeout(previewTimer); previewTimer = null; queued = null; writePreview(nextPreview); }
                     }
-                    send({ state: current?.state ?? 'missing', error: current?.error?.message ?? null });
+                    send({ state: current?.state ?? 'missing', error: current?.error ?? null, result: current?.result ?? null });
                     response.end();
                 } else response.write(': keepalive\n\n');
             } catch { response.end(); }
