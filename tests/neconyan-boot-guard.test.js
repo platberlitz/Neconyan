@@ -218,6 +218,27 @@ function addPreloader(document) {
 }
 
 describe('Neconyan boot guard', () => {
+    test.each([IOS_WEBKIT_USER_AGENT, DESKTOP_CHROME_USER_AGENT])('shows fatal startup failures after the loader has gone on %s', userAgent => {
+        const diagnostics = { redact: value => value, capture: jest.fn(() => ({ id: 'startup' })), openReports: jest.fn() };
+        const { document, window } = createBootGuardHarness({ userAgent, diagnostics });
+        window.NeconyanBootGuard.bootCompleted();
+        const failure = new Error('POST /api/settings/get failed (HTTP 500).');
+        failure.stack = 'requestSettingsData@http://localhost/script.js:100:24';
+        window.NeconyanBootGuard.showStartupFailure(failure);
+
+        const surface = document.getElementById('neconyan-startup-failure');
+        expect(surface.querySelector('h1').textContent).toBe('Neconyan could not finish loading');
+        expect(surface.querySelector('pre').textContent).toContain('HTTP 500');
+        expect(surface.style.cssText).toContain('--neco-ink:');
+        expect(surface.querySelectorAll('button').map(button => button.textContent)).toEqual(['Retry startup', 'Read report']);
+        surface.querySelector('button').listeners.get('click')();
+        expect(window.location.reload).toHaveBeenCalledTimes(1);
+        surface.querySelectorAll('button')[1].listeners.get('click')();
+        expect(diagnostics.openReports).toHaveBeenCalledWith('startup');
+        window.NeconyanBootGuard.showStartupFailure('second error');
+        expect(document.querySelectorAll('#neconyan-startup-failure')).toHaveLength(1);
+    });
+
     test('stays hidden when the browser is not iOS WebKit', () => {
         const { document, listeners, timers, window } = createBootGuardHarness({
             maxTouchPoints: 0,

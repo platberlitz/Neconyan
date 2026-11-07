@@ -1,4 +1,4 @@
-// Neconyan: surface iOS/WebKit boot failures that otherwise leave the preloader up forever.
+// Neconyan: surface fatal startup failures, with an additional iOS/WebKit module timeout guard.
 (function () {
     'use strict';
 
@@ -139,7 +139,10 @@
             }
 
             if (error.stack) {
-                return String(error.stack);
+                var stack = String(error.stack);
+                // WebKit's stack lists frames without the error message.
+                var message = error.message ? String(error.message) : '';
+                return message && !stack.includes(message) ? message + '\n' + stack : stack;
             }
 
             if (error.message) {
@@ -392,14 +395,22 @@
         showFailure(lastFailure || 'Startup timed out before Neconyan removed the loading screen.');
     }
 
-    function showFailure(details) {
-        if (!isBootGuardApplicable || bootCompleted || failureShown || failureDismissed || isStartupHoldActive()) {
+    function showFailure(details, fatal = false) {
+        if (!fatal && (!isBootGuardApplicable || bootCompleted || failureShown || failureDismissed || isStartupHoldActive())) {
             return;
         }
 
-        var preloader = document.getElementById('preloader');
+        if (fatal && document.getElementById('neconyan-startup-failure')) return;
+        var preloader = fatal ? document.createElement('div') : document.getElementById('preloader');
         if (!preloader) {
             return;
+        }
+        if (fatal) {
+            // Loader cleanup runs again on the next frame. Keep a fatal error outside
+            // that lifecycle, including failures after the ordinary loader was hidden.
+            preloader.id = 'neconyan-startup-failure';
+            document.body.appendChild(preloader);
+            removeElement(document.getElementById('preloader'));
         }
 
         failureShown = true;
@@ -418,31 +429,39 @@
         preloader.hidden = false;
         preloader.innerHTML = '';
         preloader.removeAttribute('aria-hidden');
-        preloader.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;background:#141514;color:#f4ebdb;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;backdrop-filter:none;-webkit-backdrop-filter:none;';
+        // Settings may not have loaded, so inherited theme tokens can still be black.
+        preloader.style.cssText = '--neco-canvas:#141514;--neco-surface:#222220;--neco-ink:#f4ebdb;--neco-ink-muted:#beb1a1;--neco-ginger:#d69270;--neco-on-accent:#141514;position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;background:var(--neco-canvas);color:var(--neco-ink);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;backdrop-filter:none;-webkit-backdrop-filter:none;';
+        preloader.setAttribute('role', 'alertdialog');
+        preloader.setAttribute('aria-modal', 'true');
+        preloader.setAttribute('aria-labelledby', 'neconyan-startup-failure-title');
 
         var panel = document.createElement('div');
         panel.style.cssText = 'width:min(100%,520px);max-height:calc(100vh - 48px);overflow:auto;border:1px solid rgba(247,190,122,.35);border-radius:18px;background:#222220;box-shadow:0 20px 60px rgba(0,0,0,.55);padding:22px;line-height:1.45;';
 
         var title = document.createElement('h1');
+        title.id = 'neconyan-startup-failure-title';
         title.textContent = 'Neconyan could not finish loading';
         title.style.cssText = 'margin:0 0 10px;font-size:22px;line-height:1.2;color:#f4ebdb;';
 
         var message = document.createElement('p');
-        message.textContent = 'Your browser stopped during startup. This can happen on iOS WebKit when stale cached files or blocked storage prevent the app modules from loading.';
+        message.textContent = fatal
+            ? 'Neconyan could not load your workspace. Retry startup to reconnect. If the error returns, the server may need attention.'
+            : 'Your browser stopped during startup. Cached files or blocked storage can prevent the app from loading.';
         message.style.cssText = 'margin:0 0 16px;color:#beb1a1;';
 
         var button = document.createElement('button');
         button.type = 'button';
-        button.textContent = 'Clear frontend cache and reload';
-        button.style.cssText = 'width:100%;border:0;border-radius:12px;background:#e5894b;color:#141514;font-weight:700;font-size:16px;padding:12px 14px;cursor:pointer;';
+        button.textContent = fatal ? 'Retry startup' : 'Clear frontend cache and reload';
+        button.style.cssText = 'width:100%;border:0;border-radius:12px;background:var(--neco-ginger);color:var(--neco-on-accent);font-weight:700;font-size:16px;padding:12px 14px;cursor:pointer;';
         button.addEventListener('click', function () {
-            reloadAfterCacheClear(button);
+            if (fatal) window.location.reload();
+            else reloadAfterCacheClear(button);
         });
 
         var dismissButton = document.createElement('button');
         dismissButton.type = 'button';
         dismissButton.textContent = 'Continue anyway';
-        dismissButton.style.cssText = 'width:100%;margin-top:10px;border:1px solid rgba(247,190,122,.45);border-radius:12px;background:transparent;color:#f4ebdb;font-weight:600;font-size:15px;padding:11px 14px;cursor:pointer;';
+        dismissButton.style.cssText = 'width:100%;margin-top:10px;border:1px solid var(--neco-ginger);border-radius:12px;background:transparent;color:var(--neco-ink);font-weight:600;font-size:15px;padding:11px 14px;cursor:pointer;';
         dismissButton.addEventListener('click', function () {
             failureDismissed = true;
             if (timeoutId) {
@@ -466,7 +485,9 @@
         }
 
         var hint = document.createElement('p');
-        hint.textContent = 'If this keeps happening, clear this site\'s Safari/Chrome website data and reload.';
+        hint.textContent = fatal
+            ? 'Your saved data has not been cleared. Error details are available below.'
+            : 'If this keeps happening, read the report before changing your browser storage.';
         hint.style.cssText = 'margin:14px 0 0;color:#beb1a1;font-size:14px;';
 
         var summary = document.createElement('details');
@@ -484,13 +505,14 @@
         panel.appendChild(title);
         panel.appendChild(message);
         panel.appendChild(button);
-        panel.appendChild(dismissButton);
+        if (!fatal) panel.appendChild(dismissButton);
         if (reportButton) {
             panel.appendChild(reportButton);
         }
         panel.appendChild(hint);
         panel.appendChild(summary);
         preloader.appendChild(panel);
+        if (fatal) button.focus?.();
     }
 
     const neconyanBootGuard = {
@@ -507,6 +529,9 @@
             }
         },
         showFailure: showFailure,
+        showStartupFailure: function (error) {
+            showFailure(describeError(error), true);
+        },
         resumeAfterStartupHold: function () {
             bootStartedAt = Date.now();
             if (timeoutId) {
