@@ -207,7 +207,7 @@ describe('Neconyan Home', () => {
         expect(image.src).toContain('neconyan-pixel-cat-rest.webp');
     });
 
-    test('startup overlay setup failure leaves the early cat for the boot guard', async () => {
+    test('startup overlay setup failure reaches the fatal boot guard without a toast', async () => {
         const early = { hidden: false, isConnected: true };
         const cleanups = [];
         const errors = [];
@@ -222,13 +222,15 @@ describe('Neconyan Home', () => {
             toastr: { error: message => errors.push(message) }, console: { error() {} }, t: parts => parts.join(''),
             cleanupActionLoaderArtifacts: options => { cleanups.push(options); if (options.removePreloader) early.isConnected = false; },
             requestAnimationFrame: callback => callback(),
-            window: { setTimeout: callback => callback() },
+            window: { setTimeout: callback => callback(), NeconyanBootGuard: { showStartupFailure: jest.fn() } },
         });
         vm.runInContext(read('script.js').match(/^async function firstLoadInit\(\) {[\s\S]*?^}/m)[0], context);
         await expect(context.firstLoadInit()).rejects.toThrow('popup setup failed');
         expect(context.setChatNavigationBlocked).toHaveBeenCalledWith(true);
         expect(early.hidden).toBe(false);
-        expect(errors).toHaveLength(1);
+        expect(errors).toHaveLength(0);
+        expect(context.window.NeconyanBootGuard.showStartupFailure).toHaveBeenCalledTimes(1);
+        expect(context.window.NeconyanBootGuard.showStartupFailure.mock.calls[0][0].message).toBe('popup setup failed');
         expect(early.isConnected).toBe(true);
         expect(cleanups).toHaveLength(0);
     });

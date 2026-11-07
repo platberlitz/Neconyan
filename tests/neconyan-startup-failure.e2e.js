@@ -11,7 +11,11 @@ for (const browserType of [chromium, webkit]) {
     for (const phone of [false, true]) {
         test(`${browserType.name()} ${phone ? 'phone' : 'desktop'} settings failure stays readable and retries without a reload loop`, async () => {
             const browser = await browserType.launch();
-            const context = await browser.newContext(phone ? IPHONE_SAFARI_CONTEXT : { viewport: { width: 1280, height: 900 } });
+            const context = await browser.newContext({
+                ...(phone ? IPHONE_SAFARI_CONTEXT : { viewport: { width: 1280, height: 900 } }),
+                // Keep both attempts on the mocked route, including after reload.
+                serviceWorkers: 'block',
+            });
             if (phone) await installIPhoneSafari(context, { standalone: false });
             await context.addInitScript(() => {
                 window.__startupReady = false;
