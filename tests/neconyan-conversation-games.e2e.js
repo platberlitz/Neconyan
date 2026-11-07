@@ -58,6 +58,8 @@ test('desktop Connect Four plays against the pal seat and comes back after a rel
     const page = await account.open();
     const panel = await openPanel(page);
     await expect(panel.locator('.neco-games-card')).toHaveCount(4);
+    await expect.poll(() => page.locator('#sb_conversation_header .sb-conversation-header-name')
+        .evaluate(element => element.clientWidth > 120 && element.scrollWidth <= element.clientWidth)).toBe(true);
 
     await panel.locator('.neco-games-card[data-game="connect-four"]').click();
     await expect(panel.locator('.neco-games-setup')).toBeVisible();

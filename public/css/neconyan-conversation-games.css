@@ -37,6 +37,19 @@ body.neconyan.neconyan-games-beside #sheld {
     right: var(--neco-games-width, 480px);
 }
 
+@media (min-width: 769px) and (max-width: 1400px) {
+    body.neconyan.neconyan-games-beside #sheld[data-sb-conversation-mode='on'] #sb_conversation_header {
+        grid-template-columns: 64px minmax(0, 1fr);
+        grid-template-areas: 'avatar copy' 'pals actions';
+    }
+
+    body.neconyan.neconyan-games-beside #sb_conversation_header .sb-conversation-header-actions {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 4px;
+    }
+}
+
 /* A pinned character panel keeps the right edge, so Games sits to its left. */
 @media (min-width: 769px) {
     body.neconyan #top-settings-holder:has(> * > #right-nav-panel.openDrawer.pinnedOpen:not(.sb-character-editor-fullscreen)) ~ .neco-games {
