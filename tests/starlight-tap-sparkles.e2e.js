@@ -29,10 +29,31 @@ test('Starlight taps create the desktop burst without blocking controls or leavi
     });
     const snapshot = () => page.evaluate(() => window.NeconyanStarlightConservatory.snapshot());
     const target = page.locator('#sparkle-tap-target');
+    await page.clock.install();
     await target.tap();
     await expect(target).toHaveAttribute('data-tapped', 'true');
-    expect((await snapshot()).trail).toBe(8);
+    expect((await snapshot()).trail).toBe(5);
     expect((await snapshot()).companion).toBe(false);
+    await page.clock.runFor(200);
+    const burst = await page.evaluate(() => {
+        const canvas = document.getElementById('sb-starlight-conservatory-trail');
+        const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+        const scale = canvas.width / window.innerWidth;
+        let visible = 0;
+        let outside = 0;
+        for (let y = 0; y < canvas.height; y += 1) {
+            for (let x = 0; x < canvas.width; x += 1) {
+                if (pixels[(y * canvas.width + x) * 4 + 3] <= 2) continue;
+                visible += 1;
+                if (Math.hypot(x / scale - 150, y / scale - 330) > 60) outside += 1;
+            }
+        }
+        return { visible, outside };
+    });
+    expect(burst.visible).toBeGreaterThan(0);
+    expect(burst.outside).toBe(0);
+    await page.clock.runFor(1000);
+    await page.clock.resume();
     // The animation caps elapsed time per frame; software-rendered WebKit needs longer.
     await expect.poll(async () => (await snapshot()).trail, { timeout: 60000 }).toBe(0);
 

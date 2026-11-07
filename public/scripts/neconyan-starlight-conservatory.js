@@ -12,7 +12,7 @@ const SKY_ID = 'sb-starlight-conservatory-sky';
 const OVERLAY_ID = 'sb-starlight-conservatory-overlay';
 const TRAIL_ID = 'sb-starlight-conservatory-trail';
 const MOTION_QUERY = '(prefers-reduced-motion: reduce)';
-const TRAIL_IDLE_MS = 1400;
+const TRAIL_IDLE_MS = 900;
 const SPARKLE_REFRESH_MS = 2600;
 
 const state = {
@@ -372,10 +372,10 @@ function seedSky() {
             x: Math.random(),
             y: Math.random(),
             radius: randomBetween(0.5, 1.3),
-            base: randomBetween(0.14, 0.42),
+            base: randomBetween(0.18, 0.5),
             phase: randomBetween(0, Math.PI * 2),
             speed: randomBetween(0.3, 1.2),
-            glint: Math.random() < 0.12,
+            glint: Math.random() < 0.18,
             drift: randomBetween(-0.0009, 0.0009),
         });
     }
@@ -751,7 +751,7 @@ function drawSparkles(delta, context, drifting) {
         const y = sparkle.normalized ? sparkle.y * state.height : sparkle.y;
 
         context.save();
-        context.globalAlpha = clamp(flare * 0.8, 0, 1);
+        context.globalAlpha = clamp(flare * (drifting ? 0.8 : 0.95), 0, 1);
         context.translate(x, y);
         context.rotate(sparkle.rotation);
         context.drawImage(sprite, -size / 2, -size / 2, size, size);
@@ -803,9 +803,9 @@ function spawnTrailStar(x, y, options = {}) {
         y,
         vx: options.vx ?? randomBetween(-26, 26),
         vy: options.vy ?? randomBetween(-30, 6),
-        life: options.life ?? randomBetween(0.9, 1.7),
+        life: options.life ?? randomBetween(0.55, 1),
         lifeMax: 0,
-        size: options.size ?? randomBetween(12, 28),
+        size: options.size ?? randomBetween(8, 17),
         rotation: randomBetween(0, Math.PI * 2),
         spin: randomBetween(-2.4, 2.4),
         tone,
@@ -819,15 +819,15 @@ function spawnTrailStar(x, y, options = {}) {
 }
 
 function spawnNova(x, y) {
-    state.novae.push({ x, y, life: 1, lifeMax: 1, rays: 8, rotation: randomBetween(0, Math.PI) });
-    for (let index = 0; index < 8; index += 1) {
-        const angle = (Math.PI * 2 * index) / 8 + randomBetween(-0.16, 0.16);
-        const speed = randomBetween(60, 180);
+    state.novae.push({ x, y, life: 1, lifeMax: 1, rays: 6, rotation: randomBetween(0, Math.PI) });
+    for (let index = 0; index < 5; index += 1) {
+        const angle = (Math.PI * 2 * index) / 5 + randomBetween(-0.16, 0.16);
+        const speed = randomBetween(30, 80);
         spawnTrailStar(x, y, {
             vx: Math.cos(angle) * speed,
             vy: Math.sin(angle) * speed,
-            life: randomBetween(0.6, 1.3),
-            size: randomBetween(10, 22),
+            life: randomBetween(0.4, 0.8),
+            size: randomBetween(7, 14),
             kind: index % 4 === 0 ? 'eight' : 'four',
             anchor: true,
         });
@@ -864,23 +864,23 @@ function drawTrail(delta) {
     const height = state.height;
     context.clearRect(0, 0, width, height);
 
-    // A bright companion star glides after the pointer and keeps it company while it rests.
+    // A small companion star follows the pointer without competing with the foreground.
     if (state.companion?.visible) {
         const companion = state.companion;
         const ease = 1 - Math.pow(0.001, delta);
         companion.x = lerp(companion.x, companion.targetX, ease);
         companion.y = lerp(companion.y, companion.targetY, ease);
         const bob = Math.sin(state.elapsed * 1.8) * 3;
-        const size = 32;
+        const size = 20;
         context.save();
-        context.globalAlpha = 0.8;
+        context.globalAlpha = 0.45;
         context.translate(companion.x, companion.y + bob);
         context.rotate(state.elapsed * 0.35);
         context.drawImage(state.sprites.accent8, -size / 2, -size / 2, size, size);
         context.restore();
         const orbit = state.elapsed * 1.5;
-        const moteSize = 11;
-        context.globalAlpha = 0.65;
+        const moteSize = 7;
+        context.globalAlpha = 0.35;
         context.drawImage(
             state.sprites.brass4,
             companion.x + Math.cos(orbit) * 18 - moteSize / 2,
@@ -901,7 +901,7 @@ function drawTrail(delta) {
         for (let index = 1; index < anchors.length; index += 1) {
             const from = anchors[index - 1];
             const to = anchors[index];
-            const alpha = 0.28 * (1 - index / anchors.length);
+            const alpha = 0.14 * (1 - index / anchors.length);
             context.strokeStyle = rgba(state.palette.celeste, alpha);
             context.beginPath();
             context.moveTo(from.x, from.y);
@@ -927,7 +927,7 @@ function drawTrail(delta) {
         star.rotation += star.spin * delta;
 
         const age = 1 - star.life / star.lifeMax;
-        const alpha = (Math.sin(Math.PI * clamp(age, 0, 1)) ** 0.8) * 0.75;
+        const alpha = (Math.sin(Math.PI * clamp(age, 0, 1)) ** 0.8) * 0.45;
         if (star.kind === 'paw') {
             drawPaw(context, star, alpha);
             continue;
@@ -946,17 +946,17 @@ function drawTrail(delta) {
 
     for (let index = state.novae.length - 1; index >= 0; index -= 1) {
         const nova = state.novae[index];
-        nova.life -= delta * 1.5;
+        nova.life -= delta * 2.2;
         if (nova.life <= 0) {
             state.novae.splice(index, 1);
             continue;
         }
         const progress = 1 - nova.life / nova.lifeMax;
-        const alpha = Math.sin(Math.PI * progress) * 0.6;
-        const radius = 10 + progress * 80;
+        const alpha = Math.sin(Math.PI * progress) * 0.3;
+        const radius = 6 + progress * 36;
         context.save();
         context.strokeStyle = rgba(state.palette.secondary, alpha * 0.7);
-        context.lineWidth = 1.4;
+        context.lineWidth = 1;
         context.beginPath();
         context.arc(nova.x, nova.y, radius, 0, Math.PI * 2);
         context.stroke();
@@ -1094,15 +1094,15 @@ function onPointerMove(event) {
     state.companion.targetY = y;
 
     const now = performance.now();
-    if (now - state.lastTrailAt < 16) return;
+    if (now - state.lastTrailAt < 32) return;
     state.lastTrailAt = now;
     const distance = state.lastSpawn
         ? Math.hypot(x - state.lastSpawn.x, y - state.lastSpawn.y)
         : Infinity;
-    if (distance < 14) return;
+    if (distance < 22) return;
     state.lastSpawn = { x, y };
     spawnTrailStar(x, y, { anchor: true, vx: randomBetween(-12, 12), vy: randomBetween(-8, 8) });
-    if (Math.random() < 0.35) {
+    if (Math.random() < 0.2) {
         spawnTrailStar(x + randomBetween(-10, 10), y + randomBetween(-10, 10), {
             life: randomBetween(0.5, 1),
             size: randomBetween(7, 13),
