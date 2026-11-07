@@ -23,6 +23,7 @@
 - PR #528 (2026-11-07) `fix(tour): stop the phone card panning sideways`
 - PR #529 (2026-11-07) `fix(prefill): send starter requests with captured stopping strings`
 - PR #530 (2026-11-07) `perf(retrieval): cache jev decisions for mewmory and pawthfinder`
+- PR #531 (2026-11-07) `feat(starlight): add sparkle bursts to mobile taps`
 
 ## v1.5.1
 
