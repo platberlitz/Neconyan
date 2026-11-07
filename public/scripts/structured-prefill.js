@@ -21,7 +21,8 @@ export function structuredPrefillStatus(metadata) {
     if (!metadata) return 'No Structured Prefill reply checked yet.';
     const labels = { waiting: 'Waiting for the provider.', failed: 'Request failed. Structured Prefill acceptance was not confirmed.', skipped: 'Structured Prefill was not used for this request.', streaming: 'Provider accepted the request. Checking the reply…', matched: 'Provider accepted the request. Reply matches the full pattern.', mismatch: 'Provider accepted the request, but the reply does not match the pattern.', incomplete: 'Provider accepted the request. The reply is incomplete; the pattern was not confirmed.', invalid: 'Provider accepted the request, but did not return the requested JSON format.', unchecked: 'Provider accepted the request. Pattern checking exceeded its time limit.' };
     const result = labels[metadata.verification] ?? 'This older reply has no recorded pattern check.';
-    return [result, metadata.method === 'instructions' ? 'Instructions are best effort.' : '', metadata.source ? `${metadata.source}${metadata.model ? ' · ' + metadata.model : ''}` : '', ...(metadata.warnings ?? [])].filter(Boolean).join(' ');
+    return [result, metadata.method === 'instructions' ? 'Instructions are best effort.' : '', metadata.source ? `${metadata.source}${metadata.model ? ' · ' + metadata.model : ''}` : '',
+        metadata.starter === 'generated' ? 'Starter model supplied the opening.' : '', ...(metadata.warnings ?? [])].filter(Boolean).join(' ');
 }
 
 export function reportStructuredPrefillStatus(metadata) {
@@ -62,7 +63,12 @@ export function structuredPrefillRequest(payload, settings, type, substitute = v
         || payload.tools?.length || payload.request_images || payload.enable_web_search || payload.use_web_search) return null;
     if (config.override_prefill_enabled) config.override_prefill_text = substitute(config.override_prefill_text);
     config.prefill_gen_extra_prompt = substitute(config.prefill_gen_extra_prompt);
-    return { ...config, type, original_prefill: typeof settings?.original_prefill === 'string' ? settings.original_prefill : '', last_assistant: typeof settings?.last_assistant === 'string' ? settings.last_assistant : null };
+    config.prefill_gen_stop = substitute(config.prefill_gen_stop);
+    // Capture expanded stops while the caller still owns the chat's macro context.
+    // Older clients can supply the already-expanded stops on the main request.
+    const stops = settings?.starter_stopping_strings ?? payload.stop ?? [];
+    return { ...config, type, starter_stopping_strings: Array.isArray(stops) ? stops.filter(value => typeof value === 'string' && value.length > 0) : [],
+        original_prefill: typeof settings?.original_prefill === 'string' ? settings.original_prefill : '', last_assistant: typeof settings?.last_assistant === 'string' ? settings.last_assistant : null };
 }
 
 function range(value, maximum) {

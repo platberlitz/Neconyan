@@ -5482,6 +5482,7 @@ async function sendOpenAIRequest(type, messages, signal, { jsonSchema = null, ca
     if (power_user.structured_prefill?.enabled) {
         const { structuredPrefillRequest, reportStructuredPrefillStatus } = await import('./structured-prefill.js');
         generate_data.structured_prefill = structuredPrefillRequest(generate_data, { ...power_user.structured_prefill,
+            starter_stopping_strings: getCustomStoppingStrings(),
             last_assistant: chat.findLast(message => !message.is_user && !message.is_system)?.mes,
             original_prefill: substituteParams(getEffectivePromptBias()) }, type, substituteParams);
         if (type !== 'quiet') reportStructuredPrefillStatus({ verification: generate_data.structured_prefill ? 'waiting' : 'skipped' });
