@@ -406,6 +406,12 @@ async function prepareChatRequest({ context, binding, messages, maxTokens, macro
     if (captureCleanupStops) captureCleanupStops(getStoppingStrings());
     // Quiet requests on profiles without a preset skip the request builder that registers tools.
     if (functionTools.length && !payload.tools) Object.assign(payload, { tools: structuredClone(functionTools), tool_choice: 'auto' });
+    if (power.structured_prefill?.enabled) {
+        const { structuredPrefillRequest } = await import('../../public/scripts/structured-prefill.js');
+        payload.structured_prefill = structuredPrefillRequest(payload, { ...power.structured_prefill,
+            original_prefill: macroEnvironment?.evaluate(power.user_prompt_bias || '', { strictCapabilities: true }) ?? power.user_prompt_bias ?? '' }, generationType,
+        value => macroEnvironment?.evaluate(value, { strictCapabilities: true }) ?? value);
+    }
     if (payload.chat_completion_source === 'nanogpt' && ['flex', 'priority'].includes(payload.service_tier)) {
         payload.service_tier = serviceTier({ ...payload, nanogpt_service_tier: payload.service_tier }, payload.model, await getCatalog('nanogpt'));
     }

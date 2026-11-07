@@ -386,6 +386,7 @@ import { fetchResumable, setGenerationContext, releaseGenerationContext, listRec
 import { captureRecoveryAnchor, getHeldReplyTarget } from './scripts/held-generation-recovery.js';
 import { applyGenerationRequestControls, isGenerationLengthFinish, limitGenerationProse, reasoningOnlyWarningKind } from './scripts/generation-request-controls.js';
 import { cleanGeneratedText, createRawPrompt as createRawPromptPure, normalizeContentText as normalizeContentTextPure, extractMessageFromData as extractMessageFromDataPure, extractJsonFromData as extractJsonFromDataPure } from './scripts/generation-format.js';
+import { structuredPrefillDisplay } from './scripts/structured-prefill.js';
 import { collectGenerationStream } from './scripts/generation-stream-result.js';
 import { generationSettingsSnapshot } from './scripts/generation-settings.js';
 import {
@@ -5262,6 +5263,7 @@ function prepareMessageDisplayText(mes, ch_name, isSystem, isUser, messageId, is
     }
 
     const showdownSource = mes;
+    if (!isReasoning && !isUser && !isSystem) mes = structuredPrefillDisplay(mes, chatMessage?.extra?.structured_prefill);
 
     // Force isSystem = false on comment messages so they get formatted properly
     if (ch_name === COMMENT_NAME_DEFAULT && isSystem && !isUser) {
@@ -5277,7 +5279,7 @@ function prepareMessageDisplayText(mes, ch_name, isSystem, isUser, messageId, is
     // Neconyan: read the prefill actually in effect, which is Kimi K3's own field on K3.
     const promptBiasSource = getEffectivePromptBias();
     const replacedPromptBias = promptBiasSource && substituteParams(promptBiasSource);
-    if (!power_user.show_user_prompt_bias && ch_name && !isUser && !isSystem && replacedPromptBias) {
+    if (!chatMessage?.extra?.structured_prefill?.applied && !power_user.show_user_prompt_bias && ch_name && !isUser && !isSystem && replacedPromptBias) {
         // Older replies carry the whole K3 <think> prefill; newer ones only its reply part.
         const shownPrefix = [replacedPromptBias, getPromptBiasReplyText(replacedPromptBias)]
             .find(prefix => prefix && mes.startsWith(prefix));
@@ -8233,6 +8235,7 @@ class StreamingProcessor {
                     isContinue: false,
                     displayIncompleteSentences: true,
                     stoppingStrings: this.stoppingStrings,
+                    includeUserPromptBias: !this.structuredPrefills?.[i + 1],
                 });
             }
         }
@@ -8243,6 +8246,7 @@ class StreamingProcessor {
             isContinue: isContinue,
             displayIncompleteSentences: !isFinal || this.finishReason === 'length' || Boolean(this.outcome),
             stoppingStrings: this.stoppingStrings,
+            includeUserPromptBias: !this.structuredPrefill,
         });
 
         if (isImpersonate) {
@@ -8265,6 +8269,10 @@ class StreamingProcessor {
                 delete chat[messageId].extra[IN_CHAT_AGENT_PRE_GENERATION_INTERCEPT_HISTORY_KEY];
             }
             chat[messageId].extra.time_to_first_token = this.timeToFirstToken;
+            if (!isContinue) {
+                if (this.structuredPrefill) chat[messageId].extra.structured_prefill = isFinal ? { ...this.structuredPrefill, pending: false } : this.structuredPrefill;
+                else delete chat[messageId].extra.structured_prefill;
+            }
 
             // Update reasoning
             this.#applyPendingReasoning();
@@ -8455,7 +8463,10 @@ class StreamingProcessor {
                 extra: swipeInfoExtra,
             };
             const swipeInfoArray = Array(this.swipes.length).fill().map((_, index) => {
+                const prefill = this.structuredPrefills?.[index + 1];
                 const info = structuredClone(swipeInfo);
+                if (prefill) info.extra.structured_prefill = { ...prefill, pending: false };
+                else delete info.extra.structured_prefill;
                 applyGenerationOutcome(info, this.outcomes?.[index + 1]);
                 return info;
             });
@@ -8604,6 +8615,9 @@ class StreamingProcessor {
                 this.images = state?.images ?? [];
                 this.reasoningSignature = state?.signature ?? null;
                 this.reasoningTokens = state?.reasoning_tokens ?? 0;
+                this.structuredPrefill = state?.structuredPrefill ?? this.structuredPrefill;
+                this.structuredPrefills = state?.structuredPrefills ?? this.structuredPrefills;
+                if (this.swipes) this.swipes.structuredPrefills = this.structuredPrefills;
                 if (reachedLimit) {
                     this.finishReason = 'length';
                     this.requestAbortController.abort();
@@ -8689,6 +8703,9 @@ class StreamingProcessor {
                 this.images = state?.images ?? [];
                 this.reasoningSignature = state?.signature ?? null;
                 this.reasoningTokens = state?.reasoning_tokens ?? 0;
+                this.structuredPrefill = state?.structuredPrefill ?? this.structuredPrefill;
+                this.structuredPrefills = state?.structuredPrefills ?? this.structuredPrefills;
+                if (this.swipes) this.swipes.structuredPrefills = this.structuredPrefills;
                 await eventSource.emit(event_types.STREAM_TOKEN_RECEIVED, this.result);
                 if (!this.#isCurrent()) { this.isFinished = true; return this.result; }
                 const hasText = /\S/.test(this.result);
@@ -10872,7 +10889,9 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                         if (!partial.trim() && activeStreamingProcessor.outcome.status !== 'truncated') await restoreBlockedAttempt();
                         else if (shouldBufferOutput) {
                             await saveReply({ type: isContinue ? 'appendFinal' : type,
-                                getMessage: cleanUpMessage({ getMessage: (isContinue ? continue_mag : '') + partial, isContinue, displayIncompleteSentences: true }),
+                                getMessage: cleanUpMessage({ getMessage: (isContinue ? continue_mag : '') + partial, isContinue, displayIncompleteSentences: true,
+                                    includeUserPromptBias: !activeStreamingProcessor.structuredPrefill }),
+                                structuredPrefill: activeStreamingProcessor.structuredPrefill,
                                 reasoning: activeStreamingProcessor.reasoningHandler.reasoning,
                                 reasoningUnclosed: activeStreamingProcessor.reasoningHandler.hasUnclosedInlineReasoning,
                                 finishReason: activeStreamingProcessor.finishReason,
@@ -10891,6 +10910,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                         isImpersonate: isImpersonate,
                         isContinue: isContinue,
                         displayIncompleteSentences: activeStreamingProcessor.finishReason === 'length',
+                        includeUserPromptBias: !activeStreamingProcessor.structuredPrefill,
                     });
 
                     const isReasoningOnlyStream = !getMessage.trim() && !!(activeStreamingProcessor.reasoningHandler.reasoning || activeStreamingProcessor.pendingReasoning);
@@ -10967,6 +10987,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                                 isImpersonate: isImpersonate,
                                 isContinue: isContinue,
                                 displayIncompleteSentences: activeStreamingProcessor.finishReason === 'length',
+                                includeUserPromptBias: !activeStreamingProcessor.structuredPrefill,
                             });
 
                             const saveReplyType = originalType !== 'continue' ? type : 'appendFinal';
@@ -10975,6 +10996,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                                 isCurrent,
                                 generationContext: agentGenerationContext,
                                 choiceOutcomes: activeStreamingProcessor.outcomes,
+                                structuredPrefill: activeStreamingProcessor.structuredPrefill,
                                 getMessage,
                                 swipes: activeStreamingProcessor.swipes,
                                 reasoning: activeStreamingProcessor.lastReasoningPrefix
@@ -11076,6 +11098,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
 
             //const getData = await response.json();
             let getMessage = extractMessageFromData(data);
+            const structuredPrefill = data.choices?.[0]?.structured_prefill;
             let title = extractTitleFromData(data);
             let reasoning = extractReasoningFromData(data);
             let imageUrls = extractImagesFromData(data);
@@ -11086,7 +11109,8 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                 if (!getMessage.trim()) await restoreBlockedAttempt();
                 else if (type !== 'quiet' && !isImpersonate) {
                     await saveReply({ type: originalType === 'continue' ? 'appendFinal' : type,
-                        getMessage: cleanUpMessage({ getMessage: (isContinue ? continue_mag : '') + getMessage, isContinue, displayIncompleteSentences: true }),
+                        getMessage: cleanUpMessage({ getMessage: (isContinue ? continue_mag : '') + getMessage, isContinue, displayIncompleteSentences: true, includeUserPromptBias: !structuredPrefill }),
+                        structuredPrefill,
                         title, reasoning, generationContext: agentGenerationContext, generationOutcome, isCurrent,
                         swipes: extractMultiSwipes(data, type), choiceOutcomes: Object.fromEntries((data.choices ?? []).map((choice, index) => [choice.index ?? index, classifyGenerationOutcome(data, choice.index ?? index)])) });
                     await saveChatWithHeldReply(recoveryContext, isCurrent);
@@ -11113,6 +11137,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                 isImpersonate: isImpersonate,
                 isContinue: isContinue,
                 displayIncompleteSentences: limitedOutput.limited,
+                includeUserPromptBias: !structuredPrefill,
             });
 
 
@@ -11143,6 +11168,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                 isImpersonate: isImpersonate,
                 isContinue: isContinue,
                 displayIncompleteSentences: displayIncomplete || limitedOutput.limited,
+                includeUserPromptBias: !structuredPrefill,
             });
 
             const interceptResult = await applyMainGenerationOutputInterceptors({
@@ -11166,6 +11192,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                 isImpersonate: isImpersonate,
                 isContinue: isContinue,
                 displayIncompleteSentences: limitedOutput.limited,
+                includeUserPromptBias: !structuredPrefill,
             });
 
             if (isImpersonate) {
@@ -11177,7 +11204,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
             } else {
             // Without streaming we'll be having a full message on continuation. Treat it as a last chunk.
                 if (originalType !== 'continue') {
-                    ({ type, getMessage } = await saveReply({ type, getMessage, title, swipes, reasoning, imageUrls, reasoningSignature, reasoningTokens: data.reasoningTokens, finishReason: isGenerationLengthFinish(data) ? 'length' : null, reasoningUnclosed: limitedOutput.unclosed === true, toolTurn: ToolManager.hasToolCalls(data), isCurrent, generationContext: agentGenerationContext, choiceOutcomes: Object.fromEntries((data.choices ?? []).map((choice, index) => [choice.index ?? index, classifyGenerationOutcome(data, choice.index ?? index)])) }));
+                    ({ type, getMessage } = await saveReply({ type, getMessage, title, swipes, reasoning, imageUrls, reasoningSignature, structuredPrefill, reasoningTokens: data.reasoningTokens, finishReason: isGenerationLengthFinish(data) ? 'length' : null, reasoningUnclosed: limitedOutput.unclosed === true, toolTurn: ToolManager.hasToolCalls(data), isCurrent, generationContext: agentGenerationContext, choiceOutcomes: Object.fromEntries((data.choices ?? []).map((choice, index) => [choice.index ?? index, classifyGenerationOutcome(data, choice.index ?? index)])) }));
                 } else {
                     ({ type, getMessage } = await saveReply({ type: 'appendFinal', getMessage, title, swipes, reasoning, imageUrls, reasoningSignature, reasoningTokens: data.reasoningTokens, finishReason: isGenerationLengthFinish(data) ? 'length' : null, continuationEmpty: continuationChunkEmpty, reasoningUnclosed: limitedOutput.unclosed === true, toolTurn: ToolManager.hasToolCalls(data), isCurrent, generationContext: agentGenerationContext, choiceOutcomes: Object.fromEntries((data.choices ?? []).map((choice, index) => [choice.index ?? index, classifyGenerationOutcome(data, choice.index ?? index)])) }));
                 }
@@ -12067,6 +12094,7 @@ async function applyHeldGeneration(job, headers, isCurrent) {
     let generationOutcome = null;
     let choiceOutcomes = {};
     let providerLengthStop = false;
+    let structuredPrefill = null;
     if (ctx.streaming) {
         let last = null;
         const read = {
@@ -12084,9 +12112,11 @@ async function applyHeldGeneration(job, headers, isCurrent) {
         imageUrls = last?.state?.images ?? [];
         reasoningSignature = last?.state?.signature || null;
         swipes = last?.swipes ?? [];
+        swipes.structuredPrefills = last?.state?.structuredPrefills;
         generationOutcome = last?.state?.outcome ?? null;
         choiceOutcomes = last?.state?.outcomes ?? {};
         providerLengthStop = last?.state?.finishReason === 'length';
+        structuredPrefill = last?.state?.structuredPrefill;
     } else {
         let data = await response.json();
         if (ctx.api === 'koboldhorde' && data.id) {
@@ -12101,6 +12131,7 @@ async function applyHeldGeneration(job, headers, isCurrent) {
             return discard();
         }
         getMessage = extractMessageFromData(data, ctx.api);
+        structuredPrefill = data.choices?.[0]?.structured_prefill;
         title = ctx.api === 'koboldhorde' ? data.workerName : '';
         const extractionOptions = { mainApi: ctx.api, chatCompletionSource: ctx.source, textGenType: ctx.textGenType };
         reasoning = extractReasoningFromData(data, extractionOptions);
@@ -12117,7 +12148,7 @@ async function applyHeldGeneration(job, headers, isCurrent) {
         toastr.warning(generationBlockedNotice(Boolean(getMessage.trim()), generationOutcome));
         if (!getMessage.trim()) return discard();
     }
-    getMessage = cleanUpMessage({ getMessage, isImpersonate: false, isContinue, displayIncompleteSentences: providerLengthStop || Boolean(generationOutcome) });
+    getMessage = cleanUpMessage({ getMessage, isImpersonate: false, isContinue, includeUserPromptBias: !structuredPrefill, displayIncompleteSentences: providerLengthStop || Boolean(generationOutcome) });
     reasoning = getRegexedString(reasoning, regex_placement.REASONING);
     if (!getMessage.trim() && !reasoning.trim() && !imageUrls.length) {
         toastr.warning(t`A reply that finished in the background had no text to restore.`);
@@ -12135,7 +12166,7 @@ async function applyHeldGeneration(job, headers, isCurrent) {
         chat.at(-1).extra.reasoning = target.reasoningPrefix ?? '';
         getMessage = (target.prefix ?? '') + getMessage;
     }
-    await saveReply({ type: target.type, getMessage, title, swipes, reasoning, imageUrls, reasoningSignature, isCurrent, generationOutcome, choiceOutcomes });
+    await saveReply({ type: target.type, getMessage, title, swipes, reasoning, imageUrls, reasoningSignature, isCurrent, generationOutcome, choiceOutcomes, structuredPrefill });
     if (!isCurrent()) return;
     if (!await saveChatWithHeldReply({ id: job.id }, isCurrent)) {
         scheduleHeldGenerationRecovery();
@@ -12354,12 +12385,14 @@ function extractMultiSwipes(data, type, { mainApi = main_api, textGenType = text
         }
     }
 
-    const cleanedSwipes = swipes.map(text => cleanUpMessage({
+    const cleanedSwipes = swipes.map((text, index) => cleanUpMessage({
         getMessage: text,
+        includeUserPromptBias: !data.choices?.[index + 1]?.structured_prefill,
         isImpersonate: false,
         isContinue: false,
         displayIncompleteSentences: false,
     }));
+    cleanedSwipes.structuredPrefills = Object.fromEntries((data.choices ?? []).map((choice, index) => [choice.index ?? index, choice.structured_prefill]));
 
     return cleanedSwipes;
 }
@@ -12486,7 +12519,7 @@ function setGenerationFinishMarker(extra, finishReason) {
     else delete extra.generation_finish_reason;
 }
 
-export async function saveReply({ type, getMessage, fromStreaming = false, title = '', swipes = [], reasoning = '', imageUrls = [], reasoningSignature = null, reasoningTokens = 0, reasoningUnclosed = false, finishReason = null, continuationEmpty = false, toolTurn = false, isCurrent = () => true, generationContext = null, generationOutcome = null, choiceOutcomes = {} }) {
+export async function saveReply({ type, getMessage, fromStreaming = false, title = '', swipes = [], reasoning = '', imageUrls = [], reasoningSignature = null, reasoningTokens = 0, reasoningUnclosed = false, finishReason = null, continuationEmpty = false, toolTurn = false, isCurrent = () => true, generationContext = null, generationOutcome = null, choiceOutcomes = {}, structuredPrefill = null }) {
     // Backward compatibility
     if (arguments.length > 1 && typeof arguments[0] !== 'object') {
         console.trace('saveReply called with positional arguments. Please use an object instead.');
@@ -12522,6 +12555,10 @@ export async function saveReply({ type, getMessage, fromStreaming = false, title
     const generationFinished = new Date();
     const syncReplySwipeBeforeEvents = (item) => {
         if (!item) return;
+        if (!['continue', 'append', 'appendFinal'].includes(type) && !fromStreaming) {
+            if (structuredPrefill) item.extra.structured_prefill = { ...structuredPrefill, pending: false };
+            else delete item.extra.structured_prefill;
+        }
         if (item.swipe_info === undefined) {
             item.swipe_info = [];
         }
@@ -12740,6 +12777,9 @@ export async function saveReply({ type, getMessage, fromStreaming = false, title
         };
         const swipeInfoArray = Array(swipes.length).fill().map((_, index) => {
             const info = structuredClone(swipeInfo);
+            const prefill = swipes.structuredPrefills?.[index + 1];
+            if (prefill) info.extra.structured_prefill = { ...prefill, pending: false };
+            else delete info.extra.structured_prefill;
             applyGenerationOutcome(info, choiceOutcomes[index + 1]);
             return info;
         });

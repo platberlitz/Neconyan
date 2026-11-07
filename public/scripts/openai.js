@@ -728,7 +728,7 @@ function setOpenAIMessages(chat) {
 
     for (let i = chat.length - 1; i >= 0; i--) {
         let role = chat[j].is_user ? 'user' : 'assistant';
-        let content = role === 'assistant' ? stripStoredKimiK3ThinkPrefill(chat[j].mes) : chat[j].mes;
+        let content = role === 'assistant' && !chat[j].extra?.structured_prefill?.applied ? stripStoredKimiK3ThinkPrefill(chat[j].mes) : chat[j].mes;
 
         // If this symbol flag is set, completely ignore the message.
         // This can be used to hide messages without affecting the number of messages in the chat.
@@ -5478,6 +5478,10 @@ async function sendOpenAIRequest(type, messages, signal, { jsonSchema = null, ca
     let { generate_data, stream, canMultiSwipe } = await createGenerationParameters(settings, model, type, messages, { jsonSchema, cacheScope });
 
     await eventSource.emit(event_types.CHAT_COMPLETION_SETTINGS_READY, generate_data, { type, isAuxiliaryGeneration: type === 'quiet', generationContext });
+    if (power_user.structured_prefill?.enabled) {
+        const { structuredPrefillRequest } = await import('./structured-prefill.js');
+        generate_data.structured_prefill = structuredPrefillRequest(generate_data, { ...power_user.structured_prefill, original_prefill: substituteParams(getEffectivePromptBias()) }, type, substituteParams);
+    }
     if (typeof streamOverride === 'boolean') generate_data.stream = stream = streamOverride;
 
     const requestControls = { maxOutputTokens, responseLength, preserveReasoningBudget };
@@ -5578,6 +5582,11 @@ export function readChatCompletionStream(response, { canMultiSwipe = false, chat
             const frames = choices?.length ? choices.map((choice, index) => ({ ...parsed, choices: [{ ...choice, index: choice.index ?? index }] })) : [parsed];
             for (const frame of frames) {
                 const index = frame.choices?.[0]?.index ?? 0;
+                if (frame.choices?.[0]?.structured_prefill) {
+                    state.structuredPrefills ??= {};
+                    state.structuredPrefills[index] = frame.choices[0].structured_prefill;
+                    if (index === 0) state.structuredPrefill = frame.choices[0].structured_prefill;
+                }
                 const previous = state.outcomes[index];
                 state.outcomes[index] ??= classifyGenerationOutcome(frame, index);
                 if (index === 0) state.outcome = state.outcomes[0];
@@ -5617,6 +5626,15 @@ export function readChatCompletionStream(response, { canMultiSwipe = false, chat
 export function getStreamingReply(data, state, { chatCompletionSource = null, overrideShowThoughts = null } = {}) {
     const chat_completion_source = chatCompletionSource ?? oai_settings.chat_completion_source;
     const show_thoughts = overrideShowThoughts ?? shouldRequestReasoning(oai_settings);
+
+    if (data?.structured_prefill_wire || data?.choices?.some(choice => choice.structured_prefill)) {
+        const delta = data.choices?.[0]?.delta ?? data.choices?.[0]?.message ?? {};
+        if (show_thoughts) state.reasoning += delta.reasoning_content ?? delta.reasoning ?? '';
+        for (const detail of delta.reasoning_details ?? []) {
+            if (detail.type === 'reasoning.encrypted' && detail.data) state.signature = detail.data;
+        }
+        return delta.content ?? '';
+    }
 
     if (chat_completion_source === chat_completion_sources.LINKAPI) {
         // LinkAPI relays Anthropic, Gemini, or OpenAI SSE depending on the model's routing leg,

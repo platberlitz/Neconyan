@@ -143,7 +143,7 @@ describe('Kimi K3 <think> prefill split', () => {
         expect(strip(`${USER_PREFILL}The sentence comes out of Kris in pieces.`)).toBe('The sentence comes out of Kris in pieces.');
         expect(strip('<think>other</think> Kris')).toBe('<think>other</think> Kris');
         expect(strip('Kris waits.')).toBe('Kris waits.');
-        expect(openAiSource).toContain('let content = role === \'assistant\' ? stripStoredKimiK3ThinkPrefill(chat[j].mes) : chat[j].mes;');
+        expect(openAiSource).toContain('let content = role === \'assistant\' && !chat[j].extra?.structured_prefill?.applied ? stripStoredKimiK3ThinkPrefill(chat[j].mes) : chat[j].mes;');
     });
 
     test('display strips both the old full prefill and the new reply part', () => {

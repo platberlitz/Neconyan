@@ -121,7 +121,7 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
             mes: latest.text || '', send_date: startedAt, gen_started: latest.gen_started || startedAt, gen_finished: finishedAt,
             original_avatar: latest.avatar,
             force_avatar: latest.avatar ? getThumbnailUrl('avatar', latest.avatar) : undefined,
-            extra: { reasoning: latest.reasoning || '', inChatAgents: latest.inChatAgents,
+            extra: { reasoning: latest.reasoning || '', structured_prefill: latest.structured_prefill, inChatAgents: latest.inChatAgents,
                 inChatAgentCompanionResults: latest.inChatAgentCompanionResults,
                 inChatAgentTransformHistory: latest.inChatAgentTransformHistory,
                 inChatAgentPreGenerationInterceptHistory: latest.inChatAgentPreGenerationInterceptHistory,
@@ -159,7 +159,8 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
         const canUpdateInPlace = node?.isConnected && !thinking && !hasUnfinishedReasoning(rendered)
             && renderedMessageId === messageId && hasSamePreviewStructure(rendered, latest);
         if (canUpdateInPlace
-            && updatePreviewMessageText(node, message, { messageId, updateText: rendered?.text !== latest.text })) {
+            && updatePreviewMessageText(node, message, { messageId, updateText: rendered?.text !== latest.text
+                || rendered?.structured_prefill !== latest.structured_prefill })) {
             finishDraw();
             return;
         }

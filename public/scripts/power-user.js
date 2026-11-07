@@ -84,6 +84,8 @@ import { IMAGE_OVERSWIPE, MEDIA_DISPLAY } from './constants.js';
 import { t, translate } from './i18n.js';
 import { getBackgroundPath, isCustomBackgroundUrl } from './backgrounds.js';
 import { setSlashCommandParserSettingsGetter } from './slash-commands/SlashCommandParserConfig.js';
+import { structuredPrefillSettings } from './structured-prefill.js';
+import { initialiseStructuredPrefillUI } from './structured-prefill-ui.js';
 import { persona_description_positions as _persona_description_positions } from './personas.js';
 import { generateCustomCssWithAI, resolveCustomCssAIProfile } from './neconyan-custom-css-ai.js';
 import { populateConnectionProfileSelect } from './extensions/in-chat-agents/profile-utils.js';
@@ -3070,6 +3072,11 @@ export async function loadPowerUserSettings(settings, data) {
     $('#noShadowsmode').prop('checked', power_user.noShadows);
     $('.start-reply-with-input').val(power_user.user_prompt_bias);
     $('#chat-show-reply-prefix-checkbox').prop('checked', power_user.show_user_prompt_bias);
+    power_user.structured_prefill = structuredPrefillSettings(settings.power_user?.structured_prefill);
+    power_user.structured_prefill_presets = Array.isArray(settings.power_user?.structured_prefill_presets)
+        ? settings.power_user.structured_prefill_presets.filter(item => item && typeof item.name === 'string').map(item => ({ ...structuredPrefillSettings(item), name: item.name })) : [];
+    const { extension_settings } = await import('./extensions.js');
+    initialiseStructuredPrefillUI(power_user, saveSettingsDebounced, () => extension_settings.connectionManager?.profiles ?? []);
     $('#auto_continue_enabled').prop('checked', power_user.auto_continue.enabled);
     $('#auto_continue_allow_chat_completions').prop('checked', power_user.auto_continue.allow_chat_completions);
     $('#auto_continue_target_length').val(power_user.auto_continue.target_length);
