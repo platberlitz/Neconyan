@@ -21,6 +21,7 @@
 - PR #526 (2026-11-07) `fix(quick-image-gen): surface provider refusals during prompt rewrites`
 - PR #527 (2026-11-07) `fix(shell): cap panel rounding in pill styles`
 - PR #528 (2026-11-07) `fix(tour): stop the phone card panning sideways`
+- PR #529 (2026-11-07) `fix(prefill): send starter requests with captured stopping strings`
 - PR #530 (2026-11-07) `perf(retrieval): cache jev decisions for mewmory and pawthfinder`
 
 ## v1.5.1
