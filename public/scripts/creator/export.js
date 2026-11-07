@@ -2,12 +2,7 @@ import { creatorPublicationCard } from './embedded-book.js';
 import { element, button } from './fields.js';
 
 export function creatorCardExport(draft) {
-    const card = creatorPublicationCard(draft);
-    for (const field of ['name', 'description', 'personality', 'scenario', 'first_mes', 'mes_example', 'tags']) {
-        if (Object.hasOwn(card, field)) card[field] = structuredClone(card.data[field]);
-    }
-    if (Object.hasOwn(card, 'creatorcomment')) card.creatorcomment = card.data.creator_notes;
-    return card;
+    return creatorPublicationCard(draft, { ccv3: true });
 }
 
 export function downloadCreatorJson(value, filename) {
