@@ -1,11 +1,37 @@
 /** Native Structured Prefill. This module has no browser or server dependencies. */
 export const STRUCTURED_PREFILL_DEFAULTS = Object.freeze({
-    enabled: false, output_method: 'schema', hide_prefill_in_display: true, newline_token: '<NL>', min_chars_after_prefix: 80,
+    enabled: false, output_method: 'schema', hide_prefill_in_display: true, remove_prefill_from_history: false, newline_token: '<NL>', min_chars_after_prefix: 80,
     continue_overlap_chars: 14, anti_slop_ban_list: '', override_prefill_enabled: false, override_prefill_text: '',
     prefill_gen_enabled: false, prefill_gen_profile_id: '', prefill_gen_extra_prompt: '',
     prefill_gen_extra_prompt_role: 'system', prefill_gen_max_tokens: 15, prefill_gen_stop: '',
     prefill_gen_keep_matched_stop_string: false, prefill_gen_timeout_ms: 120000,
 });
+
+/** Bundled examples stay separate from the user's saved presets. */
+export const STRUCTURED_PREFILL_PRESETS = Object.freeze([
+    { name: 'Dialogue first', description: 'Begin with a spoken line, then continue the scene.', override_prefill_text: '"[[words:3-12]]"', hide_prefill_in_display: false },
+    { name: 'Action first', description: 'Begin with a short action in italics.', override_prefill_text: '*[[action]]*', hide_prefill_in_display: false },
+    { name: 'Choose a mood', description: 'Show a calm, curious or playful opening before the reply.', override_prefill_text: '[[opt:Calm|Curious|Playful]]: ', hide_prefill_in_display: false },
+    { name: 'Private scene note', description: 'Generate a short scene note, then remove it from both the visible reply and saved chat. Text after [[keep]] stays.', override_prefill_text: 'Scene note: [[thought]]\n[[keep]]', hide_prefill_in_display: true, remove_prefill_from_history: true },
+    { name: 'Starter model', description: 'Choose a saved starter connection first. It writes a short opening in [[pg]]; this adds one model request.', override_prefill_text: '[[pg]]', hide_prefill_in_display: false, prefill_gen_enabled: true, prefill_gen_extra_prompt: 'Write only a short opening action for the character’s next reply. Stay in the current scene. Use at most six words. Do not explain your choice.' },
+].map(preset => Object.freeze({ ...STRUCTURED_PREFILL_DEFAULTS, override_prefill_enabled: true, ...preset })));
+
+/** A successful request is evidence of acceptance, not proof of internal enforcement. */
+export function structuredPrefillStatus(metadata) {
+    if (!metadata) return 'No Structured Prefill reply checked yet.';
+    const labels = { waiting: 'Waiting for the provider.', failed: 'Request failed. Structured Prefill acceptance was not confirmed.', skipped: 'Structured Prefill was not used for this request.', streaming: 'Provider accepted the request. Checking the reply…', matched: 'Provider accepted the request. Reply matches the full pattern.', mismatch: 'Provider accepted the request, but the reply does not match the pattern.', incomplete: 'Provider accepted the request. The reply is incomplete; the pattern was not confirmed.', invalid: 'Provider accepted the request, but did not return the requested JSON format.', unchecked: 'Provider accepted the request. Pattern checking exceeded its time limit.' };
+    const result = labels[metadata.verification] ?? 'This older reply has no recorded pattern check.';
+    return [result, metadata.method === 'instructions' ? 'Instructions are best effort.' : '', metadata.source ? `${metadata.source}${metadata.model ? ' · ' + metadata.model : ''}` : '', ...(metadata.warnings ?? [])].filter(Boolean).join(' ');
+}
+
+export function reportStructuredPrefillStatus(metadata) {
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('neconyan:prefill-status', { detail: metadata }));
+}
+
+/** A continuation updates the check without changing the original reply's display prefix. */
+export function continuedPrefillMetadata(previous, next) {
+    return { ...next, hidden_prefix: previous?.hidden_prefix ?? '', history_removed: previous?.history_removed ?? false, pending: false };
+}
 
 const SOURCES = new Set(['openai', 'openai_responses', 'claude', 'makersuite', 'vertexai', 'cohere', 'ai21', 'deepseek',
     'custom', 'openrouter', 'nanogpt', 'groq', 'fireworks', 'mistralai', 'xai', 'chutes', 'aimlapi', 'electronhub', 'azure_openai',
@@ -36,7 +62,7 @@ export function structuredPrefillRequest(payload, settings, type, substitute = v
         || payload.tools?.length || payload.request_images || payload.enable_web_search || payload.use_web_search) return null;
     if (config.override_prefill_enabled) config.override_prefill_text = substitute(config.override_prefill_text);
     config.prefill_gen_extra_prompt = substitute(config.prefill_gen_extra_prompt);
-    return { ...config, type, original_prefill: typeof settings?.original_prefill === 'string' ? settings.original_prefill : '' };
+    return { ...config, type, original_prefill: typeof settings?.original_prefill === 'string' ? settings.original_prefill : '', last_assistant: typeof settings?.last_assistant === 'string' ? settings.last_assistant : null };
 }
 
 function range(value, maximum) {
@@ -74,7 +100,7 @@ function slotPattern(slot, names, newline) {
         case 'thought': return words(1, 10, '[^\\s"<>]+');
         case 'emotion': case 'mood': return '(?:happy|sad|angry|afraid|nervous|excited|scared|confused|amused|annoyed|anxious|bored|calm|curious|desperate|disgusted|embarrassed|frustrated|grateful|guilty|hopeful|hurt|jealous|lonely|nostalgic|panicked|playful|proud|relieved|shy|smug|surprised|suspicious|tender|terrified|thoughtful|tired|uncomfortable|worried|flustered|melancholic|determined|fearful|content|bitter|affectionate|giddy|resigned|defiant|wistful|somber)';
         case 'line': case 'lines': {
-            const [low, high] = range(value, 50);
+            const [low, high] = range(value || '1', 50);
             const line = `(?:(?!${newline})[^\\r\\n])+?`;
             return `${line}(?:${newline}${line}){${low - 1},${high - 1}}`;
         }
@@ -134,10 +160,12 @@ export function compileStructuredPrefill(template, settings, names = [], { liter
     }
     const banned = [...new Set(normalise(config.anti_slop_ban_list).split('\n').map(value => value.trim()).filter(Boolean))];
     const folded = value => [...value].map(char => /[a-z]/i.test(char) ? `[${char.toLowerCase()}${char.toUpperCase()}]` : escape(char)).join('');
-    const guard = banned.length ? `(?!(?:[\\s\\S])*(?:${banned.map(folded).join('|')}))` : '';
+    // Alphanumeric entries match at a word start, including across the starter boundary.
+    const alternatives = banned.map(value => /^[\p{L}\p{N}]/u.test(value) ? `(?:^|[^A-Za-z0-9_])${folded(value)}` : folded(value));
+    const guard = banned.length ? `(?!(?:[\\s\\S])*(?:${alternatives.join('|')}))` : '';
     const pattern = `^${guard}(?:${prefix})${ended ? '\\s*' : `[\\s\\S]{${config.min_chars_after_prefix},}`}$`;
     if (pattern.length > 32000) throw new Error('The compiled prefill pattern is too long.');
-    const displayPattern = config.hide_prefill_in_display ? hidden ?? prefix : '';
+    const displayPattern = config.hide_prefill_in_display || config.remove_prefill_from_history ? hidden ?? prefix : '';
     const hiddenTemplate = displayPattern ? displayPattern : null;
     return { token, pattern, prefix, hidden: hiddenTemplate, config };
 }

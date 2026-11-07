@@ -18,6 +18,7 @@ import {
     abortStatusCheck,
     cancelStatusCheck,
     characters,
+    chat,
     event_types,
     eventSource,
     extension_prompt_roles,
@@ -5479,8 +5480,11 @@ async function sendOpenAIRequest(type, messages, signal, { jsonSchema = null, ca
 
     await eventSource.emit(event_types.CHAT_COMPLETION_SETTINGS_READY, generate_data, { type, isAuxiliaryGeneration: type === 'quiet', generationContext });
     if (power_user.structured_prefill?.enabled) {
-        const { structuredPrefillRequest } = await import('./structured-prefill.js');
-        generate_data.structured_prefill = structuredPrefillRequest(generate_data, { ...power_user.structured_prefill, original_prefill: substituteParams(getEffectivePromptBias()) }, type, substituteParams);
+        const { structuredPrefillRequest, reportStructuredPrefillStatus } = await import('./structured-prefill.js');
+        generate_data.structured_prefill = structuredPrefillRequest(generate_data, { ...power_user.structured_prefill,
+            last_assistant: chat.findLast(message => !message.is_user && !message.is_system)?.mes,
+            original_prefill: substituteParams(getEffectivePromptBias()) }, type, substituteParams);
+        if (type !== 'quiet') reportStructuredPrefillStatus({ verification: generate_data.structured_prefill ? 'waiting' : 'skipped' });
     }
     if (typeof streamOverride === 'boolean') generate_data.stream = stream = streamOverride;
 
@@ -5507,16 +5511,21 @@ async function sendOpenAIRequest(type, messages, signal, { jsonSchema = null, ca
         body: JSON.stringify(generate_data),
         headers: getRequestHeaders(),
         signal: signal,
+    }).catch(async error => {
+        if (generate_data.structured_prefill) (await import('./structured-prefill.js')).reportStructuredPrefillStatus({ verification: 'failed' });
+        throw error;
     });
 
     if (!response.ok) {
+        if (generate_data.structured_prefill) (await import('./structured-prefill.js')).reportStructuredPrefillStatus({ verification: 'failed' });
         tryParseStreamingError(response, await response.text());
         throw new Error(`Got response status ${response.status}`);
     }
     if (stream) {
-        return readChatCompletionStream(response, { canMultiSwipe, overrideShowThoughts: type === 'quiet' && streamOverride === true ? true : null });
+        return readChatCompletionStream(response, { canMultiSwipe, expectedPrefill: Boolean(generate_data.structured_prefill), overrideShowThoughts: type === 'quiet' && streamOverride === true ? true : null });
     } else {
         const data = await response.json();
+        if (generate_data.structured_prefill) (await import('./structured-prefill.js')).reportStructuredPrefillStatus(data.choices?.[0]?.structured_prefill ?? { verification: data.error ? 'failed' : 'skipped' });
         if (classifyGenerationOutcome(data)) return data;
 
         checkQuotaError(data);
@@ -5549,11 +5558,12 @@ async function sendOpenAIRequest(type, messages, signal, { jsonSchema = null, ca
  * @param {Response} response Fetch response with a text/event-stream body
  * @param {object} [options]
  * @param {boolean} [options.canMultiSwipe] Whether extra choices should be treated as swipes
+ * @param {boolean} [options.expectedPrefill] Report when a requested prefill was skipped or failed.
  * @param {string?} [options.chatCompletionSource] Source override (defaults to the current setting)
  * @param {boolean?} [options.overrideShowThoughts] Read any reasoning supplied for an auxiliary viewer.
  * @returns {() => AsyncGenerator<{text: string, swipes: string[], logprobs: any, toolCalls: any[], state: object}>}
  */
-export function readChatCompletionStream(response, { canMultiSwipe = false, chatCompletionSource = null, overrideShowThoughts = null } = {}) {
+export function readChatCompletionStream(response, { canMultiSwipe = false, expectedPrefill = false, chatCompletionSource = null, overrideShowThoughts = null } = {}) {
     const eventStream = getEventSourceStream();
     response.body.pipeThrough(eventStream);
     const reader = eventStream.readable.getReader();
@@ -5563,9 +5573,15 @@ export function readChatCompletionStream(response, { canMultiSwipe = false, chat
         const toolCalls = [];
         const state = { reasoning: '', reasoning_tokens: 0, images: [], signature: '', toolSignatures: {} };
         let completed = false;
+        const reportUnused = async () => {
+            if (expectedPrefill && !state.structuredPrefill) {
+                (await import('./structured-prefill.js')).reportStructuredPrefillStatus({ verification: completed && !state.outcome ? 'skipped' : 'failed' });
+            }
+        };
         while (true) {
-            const { done, value } = await reader.read();
+            const { done, value } = await reader.read().catch(async error => { await reportUnused(); throw error; });
             if (done) {
+                await reportUnused();
                 // Neconyan: a body that ends without the provider's finish signal was cut short. Say so once.
                 if (completed || state.outcome) return;
                 state.outcomes ??= {};
@@ -5574,7 +5590,7 @@ export function readChatCompletionStream(response, { canMultiSwipe = false, chat
                 return;
             }
             const rawData = value.data;
-            if (rawData === '[DONE]') return;
+            if (rawData === '[DONE]') { await reportUnused(); return; }
             const parsed = JSON.parse(rawData);
             completed ||= streamCompletionSignal(parsed);
             state.outcomes ??= {};
@@ -5585,7 +5601,13 @@ export function readChatCompletionStream(response, { canMultiSwipe = false, chat
                 if (frame.choices?.[0]?.structured_prefill) {
                     state.structuredPrefills ??= {};
                     state.structuredPrefills[index] = frame.choices[0].structured_prefill;
-                    if (index === 0) state.structuredPrefill = frame.choices[0].structured_prefill;
+                    if (index === 0) {
+                        const metadata = frame.choices[0].structured_prefill;
+                        if (metadata.verification !== state.structuredPrefill?.verification) {
+                            (await import('./structured-prefill.js')).reportStructuredPrefillStatus(metadata);
+                        }
+                        state.structuredPrefill = metadata;
+                    }
                 }
                 const previous = state.outcomes[index];
                 state.outcomes[index] ??= classifyGenerationOutcome(frame, index);

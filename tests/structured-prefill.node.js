@@ -5,13 +5,106 @@ import path from 'node:path';
 import test from 'node:test';
 import { Response } from 'node-fetch';
 import { fixture } from './roleplay-transactions-fixture.js';
-import { compileStructuredPrefill, structuredPrefillDisplay, structuredPrefillRequest } from '../public/scripts/structured-prefill.js';
+import { compileStructuredPrefill, continuedPrefillMetadata, structuredPrefillDisplay, structuredPrefillRequest, structuredPrefillStatus, STRUCTURED_PREFILL_PRESETS } from '../public/scripts/structured-prefill.js';
 import { extractProviderReasoning } from '../public/scripts/generation-format.js';
 const { createPrefillDecoder, decodePrefillStream, prepareStructuredPrefill } = await import('../src/structured-prefill.js');
 const { runTextGeneration } = await import('../src/generation/service.js');
 const { writeSecret, SECRET_KEYS } = await import('../src/endpoints/secrets.js');
 const settings = { enabled: true, min_chars_after_prefix: 0 };
 const wire = text => JSON.stringify({ response: text });
+
+test('Continue records its new check without exposing the original hidden prefix', () => {
+    const previous = { hidden_prefix: 'Private. ', verification: 'matched', history_removed: false };
+    const next = { hidden_prefix: '', verification: 'mismatch', source: 'custom', continuation: true, pending: true };
+    const merged = continuedPrefillMetadata(previous, next);
+    assert.equal(merged.verification, 'mismatch');
+    assert.equal(merged.pending, false);
+    assert.equal(structuredPrefillDisplay('Private. Visible continuation.', merged), 'Visible continuation.');
+    assert.equal(continuedPrefillMetadata({ history_removed: true }, next).history_removed, true);
+    assert.equal(previous.verification, 'matched');
+});
+
+test('recorded checks validate the whole reply, not merely a JSON envelope or opening', () => {
+    for (const [reply, expected] of [['Start enough', 'matched'], ['Start no', 'mismatch'], ['Wrong enough', 'mismatch'], ['Start gazed', 'mismatch'], ['Start stargaze', 'matched']]) {
+        const decoder = createPrefillDecoder(compileStructuredPrefill('Start ', { ...settings, min_chars_after_prefix: 5, anti_slop_ban_list: 'gaze' }));
+        const first = decoder.push(wire(reply));
+        const last = decoder.finish();
+        assert.equal(first.text + last.text, reply);
+        assert.equal(last.metadata.verification, expected);
+        assert.equal(last.metadata.accepted, true);
+    }
+    const decoder = createPrefillDecoder(compileStructuredPrefill('Start\n', settings));
+    decoder.push(wire('Start<NL>reply'));
+    assert.equal(decoder.finish().metadata.verification, 'matched');
+    assert.match(structuredPrefillStatus({ verification: 'mismatch', method: 'instructions' }), /does not match.*best effort/);
+    assert.match(structuredPrefillStatus({ verification: 'failed' }), /not confirmed/);
+});
+
+test('word-start bans span the prefix boundary and line slots default to one', () => {
+    const pattern = new RegExp(compileStructuredPrefill('A ga', { ...settings, anti_slop_ban_list: 'gaze\n...' }).pattern);
+    assert.equal(pattern.test('A gazed'), false);
+    assert.equal(pattern.test('A garden stargaze'), true);
+    assert.equal(pattern.test('A garden...'), false);
+    const line = new RegExp(compileStructuredPrefill('[[line]][[end]]', settings).pattern);
+    assert.equal(line.test('one line'), true);
+    assert.equal(line.test('one<NL>two'), false);
+});
+
+test('bundled presets contain working examples without enabling themselves', () => {
+    const openings = ['"Let us go"', '*opens the window*', 'Curious: ', 'Scene note: checks the weather<NL>', 'Opens the window'];
+    assert.equal(STRUCTURED_PREFILL_PRESETS.length, 5);
+    STRUCTURED_PREFILL_PRESETS.forEach((preset, index) => {
+        const compiled = compileStructuredPrefill(preset.override_prefill_text, preset, [], { generated: 'Opens the window' });
+        assert.equal(preset.enabled, false);
+        assert.ok(new RegExp(compiled.pattern).test(openings[index] + 'The scene continues. '.repeat(8)), preset.name);
+    });
+});
+
+test('history removal strips only the generated prefix once and preserves later edits', () => {
+    const compiled = compileStructuredPrefill('Scene note: [[thought]]\n[[keep]]', { ...settings, remove_prefill_from_history: true });
+    const decoder = createPrefillDecoder(compiled);
+    let text = '';
+    for (const chunk of ['{"response":"Scene note: watches', ' the rain<NL>', 'Hello there"}']) text += decoder.push(chunk).text;
+    const last = decoder.finish(); text += last.text;
+    assert.equal(text, 'Hello there');
+    assert.equal(last.metadata.history_removed, true);
+    assert.equal(last.metadata.hidden_prefix, '');
+    assert.equal(last.metadata.verification, 'matched');
+    assert.equal(structuredPrefillDisplay('Scene note: my later edit', last.metadata), 'Scene note: my later edit');
+});
+
+test('chat history is not consumed as a prefill; Claude field fallback is transactional', async () => {
+    const messages = [{ role: 'assistant', content: 'Real chat reply' }];
+    const request = { body: { chat_completion_source: 'claude', messages, assistant_prefill: 'Nova: Start ', char_name: 'Nova',
+        structured_prefill: { ...settings, type: 'normal', last_assistant: 'Real chat reply' } } };
+    await prepareStructuredPrefill(request);
+    assert.deepEqual(request.body.messages, messages);
+    assert.equal(request.body.assistant_prefill, undefined);
+    assert.ok(new RegExp(request.body.json_schema.value.properties.response.pattern).test('Start reply'));
+    const skipped = { body: { chat_completion_source: 'claude', messages, structured_prefill: { ...settings, type: 'normal', last_assistant: 'Real chat reply' } } };
+    await prepareStructuredPrefill(skipped);
+    assert.equal(skipped.body.json_schema, undefined);
+    assert.deepEqual(skipped.body.messages, messages);
+    const invalid = { body: { chat_completion_source: 'claude', messages, assistant_prefill: '[[bad]]',
+        structured_prefill: { ...settings, type: 'normal', last_assistant: 'Real chat reply' } } };
+    await assert.rejects(prepareStructuredPrefill(invalid), /Unknown/);
+    assert.equal(invalid.body.assistant_prefill, '[[bad]]');
+    assert.deepEqual(invalid.body.messages, messages);
+});
+
+test('a failed starter continues with an empty slot and records a warning', async t => {
+    const f = fixture(t);
+    const result = await runTextGeneration({ context: f.scope, backend: 'chat', payload: {
+        chat_completion_source: 'custom', custom_url: 'http://main.invalid/v1', model: 'main-model', stream: false,
+        messages: [{ role: 'assistant', content: '[[pg]]Start ' }],
+        structured_prefill: { ...settings, type: 'normal', prefill_gen_enabled: true },
+    }, fetch: async () => new Response(JSON.stringify({ choices: [{ message: { content: wire('Start reply') }, finish_reason: 'stop' }] })) });
+    assert.equal(result.text, 'Start reply');
+    const metadata = result.response.choices[0].structured_prefill;
+    assert.equal(metadata.verification, 'matched');
+    assert.match(metadata.warnings[0], /starter model failed/);
+    assert.equal(metadata.model, 'main-model');
+});
 
 test('templates constrain slots, newlines, banned phrases and end markers', () => {
     const compiled = compileStructuredPrefill('[[name]]: [[opt:calm|curious]]\n[[re:[A-Z]+]][[keep]][[num:-2-2]][[end]]ignored', {
@@ -56,6 +149,9 @@ test('Continue overlap is literal, removed exactly once, and mismatch is rejecte
 test('raw regex matching has a bounded execution time', () => {
     const decoder = createPrefillDecoder(compileStructuredPrefill('[[re:(a+)+b]]', settings));
     assert.throws(() => decoder.push(wire('a'.repeat(500) + '!')), /too costly/);
+    const checked = createPrefillDecoder(compileStructuredPrefill('[[re:(a+)+b]]', { ...settings, hide_prefill_in_display: false }));
+    checked.push(wire('a'.repeat(500) + '!'));
+    assert.equal(checked.finish().metadata.verification, 'unchecked');
 });
 
 test('quiet requests, unsupported providers, tools and existing schemas retain their format', () => {
@@ -172,6 +268,21 @@ test('starter model uses its saved profile once and treats generated slot-lookin
     assert.equal(calls.length, 2);
     assert.equal(result.text, '[[keep]]<NL>: reply');
     assert.equal(result.response.choices[0].structured_prefill.hidden_prefix, '[[keep]]<NL>: ');
+});
+
+test('cancelling the starter does not fall back to a main request', async t => {
+    const f = fixture(t);
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({ oai_settings: {},
+        extension_settings: { connectionManager: { profiles: [{ id: 'starter', mode: 'cc', api: 'custom', model: 'starter-model', 'api-url': 'http://starter.invalid/v1' }] } } }));
+    const controller = new AbortController();
+    let calls = 0;
+    const request = { generationSignal: controller.signal, user: { profile: { handle: f.scope.owner }, directories: f.scope.directories },
+        body: { chat_completion_source: 'custom', messages: [{ role: 'assistant', content: '[[pg]]Start ' }],
+            structured_prefill: { ...settings, type: 'normal', prefill_gen_enabled: true, prefill_gen_profile_id: 'starter' } },
+        fetch: async () => { calls++; controller.abort(); throw Object.assign(new Error('Cancelled'), { name: 'AbortError' }); } };
+    await assert.rejects(prepareStructuredPrefill(request), error => error.code === 'PREFILL_CANCELLED');
+    assert.equal(calls, 1);
+    assert.equal(request.body.json_schema, undefined);
 });
 
 const nativeCases = {

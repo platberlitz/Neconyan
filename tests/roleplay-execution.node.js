@@ -59,6 +59,17 @@ test('a bound server reply retains its reasoning and commits a single recorded a
     assert.equal(readRoleplayChat(f.scope, f.locator).revision, saved.revision);
 });
 
+test('a continued server reply saves the latest Structured Prefill check', async t => {
+    const { f, context } = accepted(t, 'continue', { message: 1 });
+    await runRoleplayReplyJob(context, { generate: async () => ({ text: ' continued', response: {
+        choices: [{ structured_prefill: { applied: true, accepted: true, verification: 'mismatch', continuation: true, hidden_prefix: '' } }],
+    } }) });
+    const saved = readRoleplayChat(f.scope, f.locator).records.at(-1);
+    assert.equal(saved.mes, 'Answer continued');
+    assert.equal(saved.extra.structured_prefill.verification, 'mismatch');
+    assert.equal(saved.extra.structured_prefill.hidden_prefix, '');
+});
+
 test('a server reply clears the older history once the Mewmory trigger is reached in its single recorded write', async t => {
     const f = fixture(t);
     const history = Array.from({ length: 40 }, (_, index) => ({

@@ -160,7 +160,7 @@ export async function fetchChatProfileModels({ context, material, signal, fetch:
 /** Execute a bound Chat Completion profile without browser globals or credential persistence. */
 export async function runChatProfile({ context, binding, messages, maxTokens, macroEnvironment,
     ephemeralStops = [], userName = 'User', characterName = 'Character', groupNames = [],
-    signal, fetch: fetchImpl, jobContext, modelOverride = '', overridePayload = {}, rawOptions = {}, beforeDispatch, validatePrompt, stream = false, preparedText, cfgValues, preparedMessages = false, onProviderStep, onStream, functionTools = [], generationType = 'quiet', stepNamespace = '', captureMacroState = false, parseInlineReasoning = false,
+    signal, fetch: fetchImpl, jobContext, modelOverride = '', overridePayload = {}, rawOptions = {}, beforeDispatch, validatePrompt, stream = false, preparedText, cfgValues, preparedMessages = false, onProviderStep, onStream, functionTools = [], generationType = 'quiet', lastAssistant = null, stepNamespace = '', captureMacroState = false, parseInlineReasoning = false,
 } = {}) {
     if (!context?.directories) fail('A generation context is required.', 400);
     if (typeof stepNamespace !== 'string' || stepNamespace.length > 512) fail('The saved generation step identity is invalid.', 400);
@@ -192,10 +192,10 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
         fail('Structured request controls require a Chat Completion connection.', 409);
     }
     if (binding?.backend === 'text' || raw) {
-        const options = { context, binding, macroEnvironment, ephemeralStops, userName, characterName, groupNames, signal, fetch: fetchImpl, modelOverride, overridePayload, rawOptions, maxTokens, preparedText, cfgValues, functionTools, generationType };
+        const options = { context, binding, macroEnvironment, ephemeralStops, userName, characterName, groupNames, signal, fetch: fetchImpl, modelOverride, overridePayload, rawOptions, maxTokens, preparedText, cfgValues, functionTools, generationType, lastAssistant };
         const key = hash({ binding, messages, maxTokens, ephemeralStops, userName, characterName, groupNames, modelOverride, overridePayload, ...(generationType !== 'quiet' ? { generationType } : {}),
             ...(stream ? { stream: true } : {}), ...(raw || Object.keys(rawOptions).length ? { rawOptions } : {}), ...(preparedText !== undefined ? { preparedText } : {}), ...(cfgValues ? { cfgValues } : {}),
-            ...(preparedMessages ? { preparedMessages: true } : {}), ...(functionTools.length ? { functionTools } : {}), ...(stepNamespace ? { stepNamespace } : {}) });
+            ...(preparedMessages ? { preparedMessages: true } : {}), ...(functionTools.length ? { functionTools } : {}), ...(lastAssistant !== null ? { lastAssistant } : {}), ...(stepNamespace ? { stepNamespace } : {}) });
         if (jobContext) {
             const retained = readArtifact(context.directories, jobContext.job.id, 'provider:' + key);
             if (retained !== undefined) return retained;
@@ -296,7 +296,7 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
         return jobContext ? providerStep(jobContext, key, call) : call();
     }
     const key = hash({ binding, messages, maxTokens, ephemeralStops, userName, characterName, groupNames,
-        modelOverride, overridePayload, rawOptions, functionTools, stream, generationType, ...(stepNamespace ? { stepNamespace } : {}) });
+        modelOverride, overridePayload, rawOptions, functionTools, stream, generationType, ...(lastAssistant !== null ? { lastAssistant } : {}), ...(stepNamespace ? { stepNamespace } : {}) });
     if (jobContext) {
         const result = readArtifact(context.directories, jobContext.job.id, 'provider:' + key);
         if (result !== undefined) return result;
@@ -309,7 +309,7 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
     if (prepared && captureMacroState && !macroState) fail('The saved request has lost its macro state. Recover this Roleplay job before retrying.', 409);
     if (!payload) {
         payload = await prepareChatRequest({ context, binding, messages, maxTokens, macroEnvironment, ephemeralStops,
-            userName, characterName, groupNames, signal, fetch: fetchImpl, modelOverride, overridePayload, rawOptions, functionTools, generationType }, material);
+            userName, characterName, groupNames, signal, fetch: fetchImpl, modelOverride, overridePayload, rawOptions, functionTools, generationType, lastAssistant }, material);
         if (captureMacroState) macroState = macroEnvironment.captureState();
         if (jobContext) writeArtifact(context.directories, jobContext.job.id, preparedName, captureMacroState
             ? { payload: withoutTransport(payload), macroState } : withoutTransport(payload));
@@ -341,7 +341,7 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
 }
 
 async function prepareChatRequest({ context, binding, messages, maxTokens, macroEnvironment, ephemeralStops,
-    userName, characterName, groupNames, signal, fetch: fetchImpl, modelOverride, overridePayload, rawOptions = {}, functionTools = [], generationType = 'quiet', captureCleanupStops }, material) {
+    userName, characterName, groupNames, signal, fetch: fetchImpl, modelOverride, overridePayload, rawOptions = {}, functionTools = [], generationType = 'quiet', lastAssistant = null, captureCleanupStops }, material) {
     const saved = readJsonShared(path.join(context.directories.root, 'settings.json'), {});
     const power = { ...saved.power_user, ...material?.power };
     if (power.custom_stopping_strings_macro && !macroEnvironment?.evaluate) fail('This profile requires the captured chat macro context.', 400);
@@ -408,7 +408,7 @@ async function prepareChatRequest({ context, binding, messages, maxTokens, macro
     if (functionTools.length && !payload.tools) Object.assign(payload, { tools: structuredClone(functionTools), tool_choice: 'auto' });
     if (power.structured_prefill?.enabled) {
         const { structuredPrefillRequest } = await import('../../public/scripts/structured-prefill.js');
-        payload.structured_prefill = structuredPrefillRequest(payload, { ...power.structured_prefill,
+        payload.structured_prefill = structuredPrefillRequest(payload, { ...power.structured_prefill, last_assistant: lastAssistant,
             original_prefill: macroEnvironment?.evaluate(power.user_prompt_bias || '', { strictCapabilities: true }) ?? power.user_prompt_bias ?? '' }, generationType,
         value => macroEnvironment?.evaluate(value, { strictCapabilities: true }) ?? value);
     }
