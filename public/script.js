@@ -335,7 +335,6 @@ import { appendFileContent, hasPendingFileAttachment, populateFileAttachment, de
 import { getPresetManager, initPresetManager } from './scripts/preset-manager.js';
 import { evaluateMacros, getLastMessageId, initMacros } from './scripts/macros.js';
 import { getCurrentUserHandle, isAdmin, setUserControls } from './scripts/user.js';
-import { initPushNotifications, mirrorToastNotification } from './scripts/push-notifications.js';
 import { POPUP_RESULT, POPUP_TYPE, Popup, callGenericPopup, fixToastrForDialogs } from './scripts/popup.js';
 import { renderTemplate, renderTemplateAsync } from './scripts/templates.js';
 import { initScrapers } from './scripts/scrapers.js';
@@ -526,9 +525,54 @@ toastr.options = {
 };
 installToastMinimumDuration(toastr);
 
+// Notifications are optional: one lazy attempt after startup, never from a toast.
+let pushNotificationsModule = null;
+let pushNotificationsLoad = null;
+
+function markPushNotificationsUnavailable(message) {
+    const toggle = document.getElementById('push_notifications');
+    const status = document.getElementById('push_notifications_status');
+    if (!toggle || !status) {
+        return;
+    }
+
+    toggle.checked = false;
+    toggle.disabled = true;
+    status.textContent = message;
+}
+
+function loadOptionalPushNotifications() {
+    if (!pushNotificationsLoad) {
+        pushNotificationsLoad = import('./scripts/push-notifications.js')
+            .then(module => {
+                pushNotificationsModule = module;
+                return module;
+            })
+            .catch(error => {
+                console.warn('Notifications are unavailable.', error);
+                markPushNotificationsUnavailable(t`Notifications are unavailable because the notifications module was blocked or did not load.`);
+                return null;
+            });
+    }
+
+    return pushNotificationsLoad;
+}
+
+function mirrorOptionalToastNotification(args) {
+    if (!pushNotificationsModule || typeof pushNotificationsModule.mirrorToastNotification !== 'function') {
+        return;
+    }
+
+    try {
+        pushNotificationsModule.mirrorToastNotification(args);
+    } catch (error) {
+        console.warn('Notifications are unavailable.', error);
+    }
+}
+
 // Run once during startup
 toastr.subscribe(function (args) {
-    mirrorToastNotification(args);
+    mirrorOptionalToastNotification(args);
     if (args.state !== 'visible') {
         return;
     }
@@ -1553,7 +1597,15 @@ async function firstLoadInit() {
         await fixViewport();
         initPromptMediaControls();
         await eventSource.emit(event_types.APP_READY);
-        void initPushNotifications({ owner: getCurrentUserHandle(), headers: getRequestHeaders }).catch(error => console.warn('Notifications are unavailable.', error));
+        void loadOptionalPushNotifications()
+            .then(module => module?.initPushNotifications({
+                owner: getCurrentUserHandle(),
+                headers: getRequestHeaders,
+            }))
+            .catch(error => {
+                console.warn('Notifications are unavailable.', error);
+                markPushNotificationsUnavailable(t`Notifications are unavailable on this page. Reload Neconyan to try again.`);
+            });
         void showLanguageChoicePrompt().catch(error => console.warn('Language choice unavailable.', error));
         const { initChatNavigation } = await import('./scripts/chat-navigation.js');
         await initChatNavigation();

@@ -46,6 +46,14 @@ class FakeElement {
         this.attributes.delete(name);
     }
 
+    hasAttribute(name) {
+        return this.attributes.has(name);
+    }
+
+    getAttribute(name) {
+        return this.attributes.has(name) ? this.attributes.get(name) : null;
+    }
+
     setAttribute(name, value) {
         this.attributes.set(name, String(value));
     }
@@ -168,7 +176,7 @@ function createFakeXMLHttpRequest() {
     };
 }
 
-function createBootGuardHarness({ userAgent = IOS_WEBKIT_USER_AGENT, platform = 'iPhone', maxTouchPoints = 5, diagnostics } = {}) {
+function createBootGuardHarness({ userAgent = IOS_WEBKIT_USER_AGENT, platform = 'iPhone', maxTouchPoints = 5, diagnostics, importModuleDynamically } = {}) {
     const document = new FakeDocument();
     const timers = [];
     const listeners = new Map();
@@ -178,7 +186,7 @@ function createBootGuardHarness({ userAgent = IOS_WEBKIT_USER_AGENT, platform = 
     const window = {
         addEventListener: (type, listener) => listeners.set(type, listener),
         clearTimeout: jest.fn(),
-        location: { reload: jest.fn() },
+        location: { href: 'https://neconyan.test/', origin: 'https://neconyan.test', reload: jest.fn() },
         navigator: fakeNavigator,
         setTimeout: (callback, delay) => {
             timers.push({ callback, delay });
@@ -190,14 +198,16 @@ function createBootGuardHarness({ userAgent = IOS_WEBKIT_USER_AGENT, platform = 
         window.NeconyanCrashDiagnostics = diagnostics;
     }
 
+    const options = importModuleDynamically ? { importModuleDynamically } : {};
     vm.runInNewContext(bootGuardSource, {
         console,
         Date: { now: () => now },
         document,
         navigator: fakeNavigator,
         Promise,
+        URL,
         window,
-    });
+    }, options);
 
     return {
         document,
@@ -215,6 +225,18 @@ function addPreloader(document) {
     preloader.setAttribute('aria-hidden', 'true');
     document.appendChild(preloader);
     return preloader;
+}
+
+function coreModuleTarget(src = 'https://neconyan.test/scripts/i18n.js') {
+    const target = new FakeElement('script');
+    target.type = 'module';
+    target.src = src;
+    target.setAttribute('data-neconyan-core-script', '');
+    return target;
+}
+
+function flushPromises() {
+    return new Promise(resolve => setImmediate(resolve));
 }
 
 describe('Neconyan boot guard', () => {
@@ -347,6 +369,215 @@ describe('Neconyan boot guard', () => {
         timers.slice(initialTimerCount).forEach(timer => timer.callback());
 
         expect(preloader.querySelector('button').textContent).toBe('Clear frontend cache and reload');
+    });
+
+    test('retries a marked core module error and reports the real rejection', async () => {
+        const imports = [];
+        const diagnostics = { redact: value => value, capture: jest.fn(() => ({ id: 'saved-1' })), openReports: jest.fn() };
+        const { document, listeners, timers } = createBootGuardHarness({
+            diagnostics,
+            importModuleDynamically: async specifier => {
+                imports.push(specifier);
+                const error = new Error('Unexpected token in dependency');
+                error.stack = 'SyntaxError: Unexpected token\n    at /scripts/i18n.js:10:2';
+                throw error;
+            },
+        });
+        const preloader = addPreloader(document);
+        const initialTimerCount = timers.length;
+        const target = coreModuleTarget();
+
+        listeners.get('error')({ target });
+        listeners.get('error')({ target });
+        await flushPromises();
+
+        expect(imports).toEqual(['https://neconyan.test/scripts/i18n.js']);
+
+        timers.slice(initialTimerCount).forEach(timer => timer.callback());
+
+        const details = preloader.querySelector('pre').textContent;
+        expect(details).toContain('Failed to load startup resource: https://neconyan.test/scripts/i18n.js');
+        expect(details).toContain('Retried module import and received:');
+        expect(details).toContain('Unexpected token in dependency');
+        expect(details).toContain('at /scripts/i18n.js:10:2');
+        expect(diagnostics.capture).toHaveBeenCalledWith(
+            'startup-failure',
+            expect.stringContaining('Unexpected token in dependency'),
+        );
+    });
+
+    test('keeps the generic resource error when a core module retry does not settle', async () => {
+        const imports = [];
+        const { document, listeners, timers } = createBootGuardHarness({
+            importModuleDynamically: specifier => {
+                imports.push(specifier);
+                return new Promise(() => {});
+            },
+        });
+        const preloader = addPreloader(document);
+        const initialTimerCount = timers.length;
+
+        listeners.get('error')({ target: coreModuleTarget() });
+        await flushPromises();
+
+        expect(imports).toEqual(['https://neconyan.test/scripts/i18n.js']);
+
+        timers.find(timer => timer.delay === 4000).callback();
+        timers.slice(initialTimerCount).forEach(timer => timer.callback());
+
+        const details = preloader.querySelector('pre').textContent;
+        expect(details).toContain('Failed to load startup resource: https://neconyan.test/scripts/i18n.js');
+        expect(details).toContain('Unknown startup error.');
+        expect(details).not.toContain('Retried module import');
+    });
+
+    test('enriches an already shown nonfatal panel when a later core module diagnostic arrives', async () => {
+        let rejectImport;
+        const diagnostics = {
+            redact: value => value,
+            capture: jest.fn(() => ({ id: 'saved-generic' })),
+            updateReport: jest.fn(() => ({ id: 'saved-generic' })),
+            openReports: jest.fn(),
+        };
+        const { document, listeners, timers } = createBootGuardHarness({
+            diagnostics,
+            importModuleDynamically: specifier => {
+                expect(specifier).toBe('https://neconyan.test/scripts/i18n.js');
+                return new Promise((_resolve, reject) => {
+                    rejectImport = reject;
+                });
+            },
+        });
+        const preloader = addPreloader(document);
+        const initialTimerCount = timers.length;
+        const genericTarget = new FakeElement('script');
+        genericTarget.type = 'module';
+        genericTarget.src = 'https://neconyan.test/scripts/neconyan-conversation.js';
+
+        listeners.get('error')({ target: genericTarget });
+        timers.slice(initialTimerCount).find(timer => timer.delay === 0).callback();
+        expect(preloader.querySelector('pre').textContent).toContain('conversation.js');
+
+        listeners.get('error')({ target: coreModuleTarget() });
+        await flushPromises();
+        rejectImport(new Error('Importing a module script failed.'));
+        await flushPromises();
+
+        const details = preloader.querySelector('pre').textContent;
+        expect(details).toContain('conversation.js');
+        expect(details).toContain('scripts/i18n.js');
+        expect(details).toContain('Retried module import and received:');
+        expect(details).toContain('Importing a module script failed.');
+        expect(diagnostics.updateReport).toHaveBeenCalledWith(
+            'saved-generic',
+            expect.stringContaining('Importing a module script failed.'),
+        );
+        expect(diagnostics.capture).toHaveBeenCalledTimes(1);
+    });
+
+    test('does not enrich a fatal startup failure panel', async () => {
+        let rejectImport;
+        const diagnostics = {
+            redact: value => value,
+            capture: jest.fn(() => ({ id: 'saved-fatal' })),
+            updateReport: jest.fn(),
+            openReports: jest.fn(),
+        };
+        const { document, listeners, window } = createBootGuardHarness({
+            diagnostics,
+            importModuleDynamically: specifier => {
+                expect(specifier).toBe('https://neconyan.test/scripts/i18n.js');
+                return new Promise((_resolve, reject) => {
+                    rejectImport = reject;
+                });
+            },
+        });
+        const fatal = new Error('POST /api/settings/get failed (HTTP 500).');
+        fatal.stack = 'requestSettingsData@https://neconyan.test/script.js:100:24';
+        window.NeconyanBootGuard.showStartupFailure(fatal);
+        const surface = document.getElementById('neconyan-startup-failure');
+        const before = surface.querySelector('pre').textContent;
+
+        listeners.get('error')({ target: coreModuleTarget() });
+        await flushPromises();
+        rejectImport(new Error('Importing a module script failed.'));
+        await flushPromises();
+
+        expect(surface.querySelector('pre').textContent).toBe(before);
+        expect(diagnostics.updateReport).not.toHaveBeenCalled();
+        expect(diagnostics.capture).toHaveBeenCalledTimes(1);
+    });
+
+    test('does not enrich a dismissed startup failure panel', async () => {
+        let rejectImport;
+        const diagnostics = {
+            redact: value => value,
+            capture: jest.fn(() => ({ id: 'saved-generic' })),
+            updateReport: jest.fn(),
+            openReports: jest.fn(),
+        };
+        const { document, listeners, timers } = createBootGuardHarness({
+            diagnostics,
+            importModuleDynamically: specifier => {
+                expect(specifier).toBe('https://neconyan.test/scripts/i18n.js');
+                return new Promise((_resolve, reject) => {
+                    rejectImport = reject;
+                });
+            },
+        });
+        addPreloader(document);
+        const initialTimerCount = timers.length;
+        listeners.get('error')({ filename: 'https://neconyan.test/script.js', message: 'generic boom', lineno: 1, colno: 1 });
+        timers.slice(initialTimerCount).find(timer => timer.delay === 0).callback();
+        const preloader = document.getElementById('preloader');
+        preloader.querySelectorAll('button').find(button => button.textContent === 'Continue anyway').listeners.get('click')();
+
+        listeners.get('error')({ target: coreModuleTarget() });
+        await flushPromises();
+        rejectImport(new Error('Importing a module script failed.'));
+        await flushPromises();
+
+        expect(document.getElementById('preloader')).toBeNull();
+        expect(diagnostics.updateReport).not.toHaveBeenCalled();
+        expect(diagnostics.capture).toHaveBeenCalledTimes(1);
+    });
+
+    test('does not retry unmarked, unknown, non-module or cross-origin script errors', async () => {
+        const imports = [];
+        const { document, listeners, timers } = createBootGuardHarness({
+            importModuleDynamically: specifier => {
+                imports.push(specifier);
+                return Promise.reject(new Error('should not run'));
+            },
+        });
+        addPreloader(document);
+        const initialTimerCount = timers.length;
+        const unmarked = coreModuleTarget();
+        unmarked.removeAttribute('data-neconyan-core-script');
+        const classic = coreModuleTarget();
+        classic.type = 'text/javascript';
+        const link = new FakeElement('link');
+        link.rel = 'modulepreload';
+        link.href = 'https://neconyan.test/scripts/i18n.js';
+
+        for (const target of [
+            unmarked,
+            coreModuleTarget('https://neconyan.test/scripts/other.js'),
+            coreModuleTarget('https://elsewhere.test/scripts/i18n.js'),
+            classic,
+            link,
+        ]) {
+            listeners.get('error')({ target });
+        }
+        await flushPromises();
+
+        expect(imports).toEqual([]);
+
+        timers.slice(initialTimerCount).forEach(timer => timer.callback());
+
+        const details = document.getElementById('preloader').querySelector('pre').textContent;
+        expect(details).toContain('Failed to load startup resource:');
+        expect(details).not.toContain('Retried module import');
     });
 
     test('describes message-less thrown objects instead of showing [object Object]', () => {

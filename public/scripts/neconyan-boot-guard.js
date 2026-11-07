@@ -5,15 +5,24 @@
     var bootCompleted = false;
     var failureShown = false;
     var failureDismissed = false;
+    var failureReportId = '';
     var lastFailure = null;
     var timeoutId = null;
     var BOOT_TIMEOUT_MS = 25000;
     var BOOT_TIMEOUT_RETRY_MS = 10000;
     var MAX_BOOT_TIMEOUT_MS = 90000;
+    var MODULE_DIAGNOSTIC_TIMEOUT_MS = 4000;
     var bootStartedAt = Date.now();
 
     // Neconyan: matched without a leading slash so relative extension URLs are recognised too.
     var THIRD_PARTY_EXTENSION_PATH = 'scripts/extensions/third-party/';
+    // Only the marked entry modules are retried. A page or extension cannot choose another URL.
+    var CORE_MODULE_PATHS = {
+        '/script.js': true,
+        '/scripts/i18n.js': true,
+        '/scripts/neconyan-tabs.js': true,
+    };
+    var moduleDiagnosticsStarted = Object.create(null);
     var isBootGuardApplicable = isIOSWebKitBrowser();
 
     // Neconyan: jQuery rethrows whatever an async ready callback rejected with,
@@ -54,6 +63,47 @@
             return String(value || '').indexOf(THIRD_PARTY_EXTENSION_PATH) !== -1;
         } catch (_error) {
             return false;
+        }
+    }
+
+    function hasAttribute(element, name) {
+        try {
+            if (typeof element.hasAttribute === 'function') {
+                return element.hasAttribute(name);
+            }
+
+            return Boolean(element.attributes && typeof element.attributes.has === 'function' && element.attributes.has(name));
+        } catch (_error) {
+            return false;
+        }
+    }
+
+    // Returns the exact URL a core module failed from, or an empty string for anything else.
+    function coreModuleDiagnosticUrl(target) {
+        try {
+            if (!target || String(target.tagName || '').toUpperCase() !== 'SCRIPT') {
+                return '';
+            }
+
+            if (String(target.type || '').toLowerCase() !== 'module' || !hasAttribute(target, 'data-neconyan-core-script')) {
+                return '';
+            }
+
+            var source = String(target.src || '');
+
+            if (!source) {
+                return '';
+            }
+
+            var parsed = new URL(source, window.location.href);
+
+            if ((parsed.protocol !== 'http:' && parsed.protocol !== 'https:') || parsed.origin !== window.location.origin) {
+                return '';
+            }
+
+            return CORE_MODULE_PATHS[parsed.pathname] ? parsed.href : '';
+        } catch (_error) {
+            return '';
         }
     }
 
@@ -247,11 +297,7 @@
         }
     }
 
-    function recordFailure(message, error) {
-        if (!isBootGuardApplicable) {
-            return;
-        }
-
+    function failureDetails(message, error) {
         var details = message || 'Neconyan startup failed.';
         var errorDetails = describeError(error);
 
@@ -265,10 +311,142 @@
             details += '\n' + requestDetails;
         }
 
+        return details;
+    }
+
+    function queueFailure(details) {
         lastFailure = details;
         window.setTimeout(function () {
             showFailure(details);
         }, 0);
+    }
+
+    function recordFailure(message, error) {
+        if (!isBootGuardApplicable) {
+            return;
+        }
+
+        queueFailure(failureDetails(message, error));
+    }
+
+    function redactFailureDetails(details) {
+        try {
+            if (window.NeconyanCrashDiagnostics?.redact) {
+                return window.NeconyanCrashDiagnostics.redact(details);
+            }
+        } catch (_error) { /* The unredacted text is still shown when redaction fails. */ }
+
+        return details;
+    }
+
+    // A nonfatal panel is still useful when a later module diagnostic names the cause.
+    // Fatal panels and dismissed panels never change.
+    function enrichFailure(details) {
+        if (!details || bootCompleted || failureDismissed || !failureShown) {
+            return false;
+        }
+
+        if (document.getElementById('neconyan-startup-failure')) {
+            return false;
+        }
+
+        var preloader = document.getElementById('preloader');
+        var pre = preloader && preloader.querySelector('pre');
+
+        if (!pre) {
+            return false;
+        }
+
+        var recordedDetails = redactFailureDetails(details);
+        var previousDetails = pre.textContent || '';
+
+        if (previousDetails && recordedDetails.indexOf(previousDetails) === -1) {
+            recordedDetails = previousDetails + '\n\n' + recordedDetails;
+        }
+
+        pre.textContent = recordedDetails;
+        lastFailure = recordedDetails;
+
+        try {
+            var diagnostics = window.NeconyanCrashDiagnostics;
+            var updated = failureReportId && typeof diagnostics?.updateReport === 'function'
+                ? Boolean(diagnostics.updateReport(failureReportId, recordedDetails))
+                : false;
+
+            if (!updated && diagnostics?.capture) {
+                var report = diagnostics.capture('startup-failure', recordedDetails);
+                if (report?.id) {
+                    failureReportId = report.id;
+                }
+            }
+        } catch (_error) { /* The visible details are still updated. */ }
+
+        return true;
+    }
+
+    function recordOrEnrichFailure(message, error) {
+        if (!isBootGuardApplicable || bootCompleted || failureDismissed || document.getElementById('neconyan-startup-failure')) {
+            return;
+        }
+
+        var details = failureDetails(message, error);
+
+        if (enrichFailure(details)) {
+            return;
+        }
+
+        queueFailure(details);
+    }
+
+    // WebKit often reports a module load failure with no Error object. Importing the
+    // same URL uses the module map, so an evaluated module is not run twice, while a
+    // failed module can reject with the parser or dependency error behind the event.
+    function diagnoseCoreModuleFailure(url, target, eventError) {
+        var base = 'Failed to load startup resource: ' + url;
+        var moduleUrl = coreModuleDiagnosticUrl(target);
+
+        if (!moduleUrl) {
+            recordFailure(base, eventError);
+            return;
+        }
+
+        if (moduleDiagnosticsStarted[moduleUrl]) {
+            return;
+        }
+
+        moduleDiagnosticsStarted[moduleUrl] = true;
+        var settled = false;
+        var timer = window.setTimeout(function () {
+            finish(null);
+        }, MODULE_DIAGNOSTIC_TIMEOUT_MS);
+
+        function finish(reason) {
+            if (settled) {
+                return;
+            }
+
+            settled = true;
+
+            if (timer) {
+                window.clearTimeout(timer);
+            }
+
+            if (reason) {
+                recordOrEnrichFailure(base + '\nRetried module import and received:', reason);
+            } else {
+                recordFailure(base, eventError);
+            }
+        }
+
+        try {
+            import(moduleUrl).then(function () {
+                finish(null);
+            }, function (reason) {
+                finish(reason || new Error('Module import rejected without details.'));
+            });
+        } catch (error) {
+            finish(error);
+        }
     }
 
     function clearBrowserCaches() {
@@ -417,12 +595,12 @@
         // A blocked core script can leave the browser recovery notice sitting above this
         // panel on a phone. This panel carries its own Read report, so remove the notice.
         try { document.getElementById('neconyan-crash-notice')?.remove(); } catch (_error) { /* The panel still follows. */ }
-        var savedReport = null;
         var recordedDetails = details || lastFailure || 'Startup timed out before Neconyan removed the loading screen.';
         try {
             if (window.NeconyanCrashDiagnostics?.openReports) {
                 recordedDetails = window.NeconyanCrashDiagnostics.redact(recordedDetails);
-                savedReport = window.NeconyanCrashDiagnostics.capture('startup-failure', recordedDetails);
+                var savedReport = window.NeconyanCrashDiagnostics.capture('startup-failure', recordedDetails);
+                failureReportId = savedReport?.id || '';
             }
         } catch (_error) { /* The existing failure screen remains available. */ }
         removeStartupLoaderArtifacts();
@@ -480,7 +658,7 @@
             // Outlined and accent-aware like 'Continue anyway', so the panel is not two filled primary buttons.
             reportButton.style.cssText = 'width:100%;margin-top:10px;border:1px solid var(--neco-ginger, currentColor);border-radius:12px;background:transparent;color:var(--neco-ink, inherit);font-weight:600;font-size:15px;padding:11px 14px;min-height:44px;cursor:pointer;';
             reportButton.addEventListener('click', function () {
-                window.NeconyanCrashDiagnostics?.openReports?.(savedReport?.id || window.NeconyanCrashDiagnostics.fatalReportId);
+                window.NeconyanCrashDiagnostics?.openReports?.(failureReportId || window.NeconyanCrashDiagnostics.fatalReportId);
             });
         }
 
@@ -568,7 +746,13 @@
             }
 
             if (tagName === 'SCRIPT' || (tagName === 'LINK' && rel.indexOf('modulepreload') !== -1)) {
-                recordFailure('Failed to load startup resource: ' + url, event.error);
+                // A module script's error event often carries no Error object on WebKit.
+                // Retry only the marked core entry modules and only when no detail exists.
+                if (tagName === 'SCRIPT' && !event.error && coreModuleDiagnosticUrl(target)) {
+                    diagnoseCoreModuleFailure(url, target, event.error);
+                } else {
+                    recordFailure('Failed to load startup resource: ' + url, event.error);
+                }
             }
 
             return;

@@ -157,6 +157,26 @@ test('browser exceptions persist across reload, bounded and independent of the d
     assert.equal(browser(storage).api.getReports().reports.length, 0);
 });
 
+test('a browser startup report can be enriched in place and persists', () => {
+    const storage = new Map();
+    const first = browser(storage);
+    const report = first.api.capture('startup-failure', 'Failed to load startup resource: https://host/scripts/i18n.js');
+    const updated = first.api.updateReport(
+        report.id,
+        'Failed to load startup resource: https://host/scripts/i18n.js\nRetried module import and received: Importing a module script failed password=private-value',
+    );
+
+    assert.equal(updated.id, report.id);
+    assert.match(updated.error.message, /Retried module import and received/);
+    assert.doesNotMatch(JSON.stringify(updated), /private-value/);
+    assert.equal(first.api.getReports().reports.length, 1);
+
+    const restored = browser(storage).api.getReports().reports[0];
+    assert.equal(restored.id, report.id);
+    assert.match(restored.error.message, /Importing a module script failed/);
+    assert.equal(first.api.updateReport('missing', 'later detail'), null);
+});
+
 test('a repeating browser error is counted on one report instead of evicting earlier ones', () => {
     const storage = new Map();
     const first = browser(storage);
