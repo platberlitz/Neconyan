@@ -15,6 +15,7 @@
 - PR #520 (2026-11-07) `fix(presets): stop pill shells clipping the prompt list`
 - PR #521 (2026-11-07) `feat(prefill): add presets, guided setup and reply checks`
 - PR #522 (2026-11-07) `fix(catelier): share settings across drafts and export ccv3 cards`
+- PR #523 (2026-11-07) `feat(conversation): play games with the current chat characters`
 - PR #524 (2026-11-07) `fix: recover saved replies and show readable startup failures`
 
 ## v1.5.1
