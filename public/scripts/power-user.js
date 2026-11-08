@@ -85,7 +85,6 @@ import { t, translate } from './i18n.js';
 import { getBackgroundPath, isCustomBackgroundUrl } from './backgrounds.js';
 import { setSlashCommandParserSettingsGetter } from './slash-commands/SlashCommandParserConfig.js';
 import { structuredPrefillSettings } from './structured-prefill.js';
-import { initialiseStructuredPrefillUI } from './structured-prefill-ui.js';
 import { persona_description_positions as _persona_description_positions } from './personas.js';
 import { generateCustomCssWithAI, resolveCustomCssAIProfile } from './neconyan-custom-css-ai.js';
 import { populateConnectionProfileSelect } from './extensions/in-chat-agents/profile-utils.js';
@@ -2878,6 +2877,119 @@ function getExampleMessagesBehavior() {
     return 'normal';
 }
 
+let structuredPrefillUiLoading = null;
+let structuredPrefillUiInitialiser = null;
+let structuredPrefillExtensionSettings = null;
+let structuredPrefillUiLoaded = false;
+let structuredPrefillUiRequested = false;
+let structuredPrefillPendingPreset = '';
+
+function structuredPrefillObserver() {
+    return {
+        read: () => chat.findLast(message => !message.is_user && !message.is_system)?.extra?.structured_prefill,
+        subscribe: (update, phase) => {
+            const changed = () => update(true);
+            const rendered = () => update(false);
+            const started = (type, _options, dryRun) => {
+                if (!dryRun && power_user.structured_prefill.enabled && ['normal', 'swipe', 'regenerate', 'continue'].includes(type)) phase('waiting');
+            };
+            const ended = () => phase('finished');
+            const listeners = [[event_types.CHAT_CHANGED, changed], [event_types.MESSAGE_SWIPED, changed],
+                [event_types.MESSAGE_RECEIVED, rendered], [event_types.CHARACTER_MESSAGE_RENDERED, rendered],
+                [event_types.GENERATION_STARTED, started], [event_types.GENERATION_ENDED, ended], [event_types.GENERATION_STOPPED, ended]];
+            for (const [event, listener] of listeners) eventSource.on(event, listener);
+            return () => { for (const [event, listener] of listeners) eventSource.removeListener(event, listener); };
+        },
+    };
+}
+
+function mountStructuredPrefillUi() {
+    structuredPrefillUiInitialiser(power_user, saveSettingsDebounced, () => structuredPrefillExtensionSettings?.connectionManager?.profiles ?? [], structuredPrefillObserver());
+    if (structuredPrefillPendingPreset) {
+        window.dispatchEvent(new CustomEvent('neconyan:structured-prefill-preset-applied', { detail: { name: structuredPrefillPendingPreset } }));
+        structuredPrefillPendingPreset = '';
+    }
+}
+
+async function loadStructuredPrefillUiModule() {
+    if (!structuredPrefillUiLoading) {
+        structuredPrefillUiLoading = Promise.all([
+            import('./structured-prefill-ui.js'),
+            import('./extensions.js'),
+        ]).then(([{ initialiseStructuredPrefillUI }, { extension_settings }]) => {
+            structuredPrefillUiInitialiser = initialiseStructuredPrefillUI;
+            structuredPrefillExtensionSettings = extension_settings;
+            structuredPrefillUiLoaded = true;
+        }).catch(error => {
+            console.warn('Structured Prefill settings could not be loaded', error);
+        }).finally(() => {
+            structuredPrefillUiLoading = null;
+        });
+    }
+    return structuredPrefillUiLoading;
+}
+
+/**
+ * The Structured Prefill controls live in the Formatting tab. Load their module
+ * when that tab opens, not on every startup. Once loaded, remount them whenever
+ * settings hydrate or the panel opens again so the controls use the new values.
+ */
+async function ensureStructuredPrefillUi({ force = false } = {}) {
+    if (!structuredPrefillUiLoaded) {
+        await loadStructuredPrefillUiModule();
+        if (!structuredPrefillUiLoaded) {
+            return;
+        }
+    } else if (!force) {
+        return;
+    }
+    mountStructuredPrefillUi();
+}
+
+function requestStructuredPrefillUi() {
+    if (!settingsReady) {
+        structuredPrefillUiRequested = true;
+        eventSource.once(event_types.SETTINGS_LOADED, () => {
+            if (!structuredPrefillUiRequested) {
+                return;
+            }
+            structuredPrefillUiRequested = false;
+            void ensureStructuredPrefillUi({ force: true });
+        });
+        return Promise.resolve();
+    }
+    structuredPrefillUiRequested = false;
+    return ensureStructuredPrefillUi({ force: true });
+}
+
+function refreshStructuredPrefillUiAfterHydration() {
+    if (structuredPrefillUiLoaded || structuredPrefillUiRequested) {
+        structuredPrefillUiRequested = false;
+        return ensureStructuredPrefillUi({ force: true });
+    }
+    return Promise.resolve();
+}
+
+function applyStructuredPrefillPreset(label) {
+    const presets = Array.isArray(power_user.structured_prefill_presets) ? power_user.structured_prefill_presets : [];
+    const preset = presets.find(item => item.name === label);
+    if (!preset) {
+        throw new Error(t`Prefill preset not found.`);
+    }
+    const current = structuredPrefillSettings(power_user.structured_prefill);
+    power_user.structured_prefill = structuredPrefillSettings({ ...preset, enabled: current.enabled });
+    saveSettingsDebounced();
+    if (!structuredPrefillUiLoaded) {
+        structuredPrefillPendingPreset = preset.name;
+    }
+    window.dispatchEvent(new CustomEvent('neconyan:structured-prefill-preset-applied', { detail: { name: preset.name } }));
+    return preset.name;
+}
+
+function listStructuredPrefillPresets() {
+    return (Array.isArray(power_user.structured_prefill_presets) ? power_user.structured_prefill_presets : []).map(item => item.name);
+}
+
 //MARK: loadPowerUser
 export async function loadPowerUserSettings(settings, data) {
     // An absent preference must not retain a previously loaded account's style.
@@ -3075,23 +3187,7 @@ export async function loadPowerUserSettings(settings, data) {
     power_user.structured_prefill = structuredPrefillSettings(settings.power_user?.structured_prefill);
     power_user.structured_prefill_presets = Array.isArray(settings.power_user?.structured_prefill_presets)
         ? settings.power_user.structured_prefill_presets.filter(item => item && typeof item.name === 'string').map(item => ({ ...structuredPrefillSettings(item), name: item.name })) : [];
-    const { extension_settings } = await import('./extensions.js');
-    initialiseStructuredPrefillUI(power_user, saveSettingsDebounced, () => extension_settings.connectionManager?.profiles ?? [], {
-        read: () => chat.findLast(message => !message.is_user && !message.is_system)?.extra?.structured_prefill,
-        subscribe: (update, phase) => {
-            const changed = () => update(true);
-            const rendered = () => update(false);
-            const started = (type, _options, dryRun) => {
-                if (!dryRun && power_user.structured_prefill.enabled && ['normal', 'swipe', 'regenerate', 'continue'].includes(type)) phase('waiting');
-            };
-            const ended = () => phase('finished');
-            const listeners = [[event_types.CHAT_CHANGED, changed], [event_types.MESSAGE_SWIPED, changed],
-                [event_types.MESSAGE_RECEIVED, rendered], [event_types.CHARACTER_MESSAGE_RENDERED, rendered],
-                [event_types.GENERATION_STARTED, started], [event_types.GENERATION_ENDED, ended], [event_types.GENERATION_STOPPED, ended]];
-            for (const [event, listener] of listeners) eventSource.on(event, listener);
-            return () => { for (const [event, listener] of listeners) eventSource.removeListener(event, listener); };
-        },
-    });
+    void refreshStructuredPrefillUiAfterHydration();
     $('#auto_continue_enabled').prop('checked', power_user.auto_continue.enabled);
     $('#auto_continue_allow_chat_completions').prop('checked', power_user.auto_continue.allow_chat_completions);
     $('#auto_continue_target_length').val(power_user.auto_continue.target_length);
@@ -4646,6 +4742,12 @@ export function forceCharacterEditorTokenize() {
 }
 
 jQuery(async () => {
+    document.addEventListener('sb:shell-tab-activated', event => {
+        if (event instanceof CustomEvent && event.detail?.shellKey === 'left' && event.detail?.tabId === 'advanced-formatting') {
+            void requestStructuredPrefillUi();
+        }
+    });
+
     const adjustAutocompleteDebounced = debounce(() => {
         $('.ui-autocomplete-input').each(function () {
             const isOpen = $(this).autocomplete('widget')[0].style.display !== 'none';
@@ -5937,6 +6039,13 @@ jQuery(async () => {
     });
 
     const { SlashCommandParser } = await import('./slash-commands/SlashCommandParser.js');
+
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({ name: 'structuredprefill-preset', aliases: ['sp-preset'],
+        callback: (_, label) => applyStructuredPrefillPreset(String(label)),
+        unnamedArgumentList: [SlashCommandArgument.fromProps({ description: 'Prefill preset name', typeList: [ARGUMENT_TYPE.STRING], isRequired: true })],
+        helpString: 'Apply a saved Structured Prefill preset by name.' }));
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({ name: 'structuredprefill-preset-list', aliases: ['sp-preset-list'],
+        callback: () => JSON.stringify(listStructuredPrefillPresets()), helpString: 'List saved Structured Prefill preset names.' }));
 
     SlashCommandParser.addCommandObject(SlashCommand.fromProps({
         name: 'vn',
