@@ -134,6 +134,65 @@ for (const phone of [true, false]) {
         const page = await account.open({ workspace: false });
         await openFromRail(page, phone);
         if (phone) await applyIOSOnlyCss(page);
+        const scratchpad = page.locator('#neconyan-scratchpad');
+        const composeMenu = page.locator('#scratchpad-compose-menu');
+        const composeToggle = scratchpad.locator('.scratchpad-plus');
+        const readControls = () => scratchpad.evaluate(async element => {
+            await Promise.all(document.getAnimations().filter(animation => animation instanceof window.CSSTransition).map(animation => animation.finished.catch(() => {})));
+            const { contrastRatio } = await import('/scripts/theme-contrast.js');
+            const canvas = document.createElement('canvas').getContext('2d');
+            const channels = colour => {
+                canvas.clearRect(0, 0, 1, 1);
+                canvas.fillStyle = colour;
+                canvas.fillRect(0, 0, 1, 1);
+                return [...canvas.getImageData(0, 0, 1, 1).data];
+            };
+            const composite = (over, under) => over.slice(0, 3).map((channel, index) => Math.round(channel * over[3] / 255 + under[index] * (1 - over[3] / 255)));
+            return { width: document.documentElement.scrollWidth,
+                buttons: [...element.querySelectorAll('.scratchpad-chip, .scratchpad-send, .scratchpad-web-toggle, .scratchpad-close, #scratchpad-compose-menu .scratchpad-button')].map(button => {
+                    const css = getComputedStyle(button);
+                    const label = getComputedStyle(button.querySelector('span') || button.querySelector('i'));
+                    const rect = button.getBoundingClientRect();
+                    const visible = button.getClientRects().length > 0 && css.visibility !== 'hidden' && css.display !== 'none';
+                    let backdrop = [255, 255, 255];
+                    const ancestors = [];
+                    for (let parent = button.parentElement; parent; parent = parent.parentElement) ancestors.unshift(parent);
+                    for (const parent of ancestors) backdrop = composite(channels(getComputedStyle(parent).backgroundColor), backdrop);
+                    const base = composite(channels(css.backgroundColor), backdrop);
+                    // Match the shared shell-button audit: the upper fill covers a border-only gradient.
+                    const image = css.backgroundClip === 'padding-box, border-box' ? css.backgroundImage.split(/, (?=linear-gradient)/)[0] : css.backgroundImage;
+                    const stops = image.match(/(?:rgba?|color)\([^)]+\)/g) || [];
+                    const backgrounds = stops.length ? stops.map(stop => composite(channels(stop), base)) : [base];
+                    const brightness = Number(css.filter.match(/brightness\(([\d.]+)\)/)?.[1] || 1);
+                    const filtered = values => values.slice(0, 3).map(channel => Math.min(255, Math.round(channel * brightness)));
+                    const ink = filtered(channels(label.color));
+                    return { label: button.getAttribute('aria-label') || button.textContent, prompt: button.classList.contains('scratchpad-chip'), visible,
+                        composerAction: button.matches('.scratchpad-send, .scratchpad-web-toggle'), menuItem: Boolean(button.closest('#scratchpad-compose-menu')),
+                        width: rect.width, height: rect.height, right: rect.right,
+                        ink, backgrounds, image, contrast: Math.min(...backgrounds.map(background => contrastRatio(ink, filtered(background)))) };
+                }) };
+        });
+        const assertControls = (phase, result) => {
+            expect(result.width).toBe(phone ? 393 : 1280);
+            const hidden = result.buttons.filter(button => !button.visible).map(button => button.label).sort();
+            expect(hidden, `${phase} hidden controls`).toEqual(phase === 'closed'
+                ? ['Attach files', 'Set up web search in Context']
+                : []);
+            for (const button of result.buttons) {
+                if (!button.visible) continue;
+                expect(button.contrast, JSON.stringify({ phase, button })).toBeGreaterThanOrEqual(4.5);
+                if (!button.prompt) expect(button.right).toBeLessThanOrEqual(phone ? 393 : 1280);
+                if (phone) expect(button.height).toBeGreaterThanOrEqual(44);
+            }
+            for (const button of result.buttons.filter(button => button.visible && button.composerAction && !button.menuItem)) {
+                expect(button.width, JSON.stringify({ phase, button })).toBe(44);
+                expect(button.height, JSON.stringify({ phase, button })).toBe(44);
+            }
+            for (const button of result.buttons.filter(button => button.visible && button.menuItem)) {
+                expect(button.width, JSON.stringify({ phase, button })).toBeGreaterThan(0);
+                expect(button.height, JSON.stringify({ phase, button })).toBeGreaterThanOrEqual(44);
+            }
+        };
         const measured = [];
         for (const theme of ['Neconyan Calico Dark', 'Neconyan Calico']) {
             await page.locator('#themes').selectOption({ label: theme }, { force: true });
@@ -143,50 +202,27 @@ for (const phone of [true, false]) {
                     await page.evaluate(id => window.NeconyanShell.applyTheme(id), style);
                     await page.waitForFunction(id => id === 'calico' || document.querySelector(`link[data-sb-shell-style="${id}"]`)?.sheet, style);
                     if (phone) await applyIOSOnlyCss(page);
-                    const result = await page.locator('#neconyan-scratchpad').evaluate(async element => {
-                        await Promise.all(document.getAnimations().filter(animation => animation instanceof window.CSSTransition).map(animation => animation.finished.catch(() => {})));
-                        const { contrastRatio } = await import('/scripts/theme-contrast.js');
-                        const canvas = document.createElement('canvas').getContext('2d');
-                        const channels = colour => {
-                            canvas.clearRect(0, 0, 1, 1);
-                            canvas.fillStyle = colour;
-                            canvas.fillRect(0, 0, 1, 1);
-                            return [...canvas.getImageData(0, 0, 1, 1).data];
-                        };
-                        const composite = (over, under) => over.slice(0, 3).map((channel, index) => Math.round(channel * over[3] / 255 + under[index] * (1 - over[3] / 255)));
-                        return { width: document.documentElement.scrollWidth,
-                            buttons: [...element.querySelectorAll('.scratchpad-chip, .scratchpad-send, .scratchpad-web-toggle, .scratchpad-close')].map(button => {
-                                const css = getComputedStyle(button);
-                                const label = getComputedStyle(button.querySelector('span') || button.querySelector('i'));
-                                const rect = button.getBoundingClientRect();
-                                let backdrop = [255, 255, 255];
-                                const ancestors = [];
-                                for (let parent = button.parentElement; parent; parent = parent.parentElement) ancestors.unshift(parent);
-                                for (const parent of ancestors) backdrop = composite(channels(getComputedStyle(parent).backgroundColor), backdrop);
-                                const base = composite(channels(css.backgroundColor), backdrop);
-                                // Match the shared shell-button audit: the upper fill covers a border-only gradient.
-                                const image = css.backgroundClip === 'padding-box, border-box' ? css.backgroundImage.split(/, (?=linear-gradient)/)[0] : css.backgroundImage;
-                                const stops = image.match(/(?:rgba?|color)\([^)]+\)/g) || [];
-                                const backgrounds = stops.length ? stops.map(stop => composite(channels(stop), base)) : [base];
-                                const brightness = Number(css.filter.match(/brightness\(([\d.]+)\)/)?.[1] || 1);
-                                const filtered = values => values.slice(0, 3).map(channel => Math.min(255, Math.round(channel * brightness)));
-                                const ink = filtered(channels(label.color));
-                                return { label: button.getAttribute('aria-label') || button.textContent, prompt: button.classList.contains('scratchpad-chip'),
-                                    composerAction: button.matches('.scratchpad-send, .scratchpad-web-toggle'), width: rect.width, height: rect.height, right: rect.right,
-                                    ink, backgrounds, image, contrast: Math.min(...backgrounds.map(background => contrastRatio(ink, filtered(background)))) };
-                            }) };
-                    });
-                    measured.push({ theme, accent, style, ...result });
-                    expect(result.width).toBe(phone ? 393 : 1280);
-                    for (const button of result.buttons) {
-                        expect(button.contrast, JSON.stringify({ theme, accent, style, button })).toBeGreaterThanOrEqual(4.5);
-                        if (!button.prompt) expect(button.right).toBeLessThanOrEqual(phone ? 393 : 1280);
-                        if (phone) expect(button.height).toBeGreaterThanOrEqual(44);
+                    const closed = await readControls();
+                    measured.push({ theme, accent, style, phase: 'closed', ...closed });
+                    assertControls('closed', closed);
+
+                    await composeToggle.click();
+                    await expect(composeToggle).toHaveAttribute('aria-expanded', 'true');
+                    await expect(composeMenu).toBeVisible();
+                    const opened = await readControls();
+                    measured.push({ theme, accent, style, phase: 'open', ...opened });
+                    assertControls('open', opened);
+                    for (const label of ['Set up web search in Context', 'Attach files']) {
+                        const button = opened.buttons.find(item => item.label === label);
+                        expect(button, `${label} is measurable with the menu open`).toBeTruthy();
+                        expect(button.visible, `${label} is visible with the menu open`).toBe(true);
+                        expect(button.width, `${label} width with the menu open`).toBeGreaterThan(0);
+                        expect(button.height, `${label} height with the menu open`).toBeGreaterThanOrEqual(44);
+                        expect(button.right, `${label} right edge with the menu open`).toBeLessThanOrEqual(phone ? 393 : 1280);
                     }
-                    for (const button of result.buttons.filter(button => button.composerAction)) {
-                        expect(button.width, JSON.stringify({ theme, accent, style, button })).toBe(44);
-                        expect(button.height, JSON.stringify({ theme, accent, style, button })).toBe(44);
-                    }
+                    await composeToggle.click();
+                    await expect(composeToggle).toHaveAttribute('aria-expanded', 'false');
+                    await expect(composeMenu).toBeHidden();
                 }
             }
         }

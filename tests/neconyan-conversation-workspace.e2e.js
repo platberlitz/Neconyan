@@ -63,9 +63,28 @@ for (const width of [1280, 390, 320]) {
                 await page.locator('#neconyan-workspace-rail [data-neconyan-chat-mode="conversation"]').click();
                 await expect(page.locator('#sb_conversation_stage')).toBeVisible();
                 const header = page.locator('#sb_conversation_header');
+                const connectionNotice = header.locator('[data-sb-conversation-connection-notice]');
+                // Earlier connection suites share this account. Establish both
+                // conditions explicitly instead of inheriting their provider state.
+                const setConnectionState = async status => {
+                    await page.evaluate(async status => {
+                        const { setOnlineStatus } = await import('/script.js');
+                        const { updateConversationHeader } = await import('/scripts/neconyan-conversation/interface.js');
+                        setOnlineStatus(status);
+                        updateConversationHeader();
+                    }, status);
+                };
+                expect(await page.evaluate(async () => {
+                    const { getCurrentCharAvatar } = await import('/scripts/neconyan-conversation/context.js');
+                    const { getSettings } = await import('/scripts/neconyan-conversation/settings-store.js');
+                    return String(getSettings(getCurrentCharAvatar()).connection_profile || '');
+                })).toBe('');
+                await setConnectionState('openai');
+                await expect(connectionNotice).toBeHidden();
                 await header.getByRole('button', { name: 'New branch', exact: true }).click();
                 await expect(page.locator('.sb-conversation-thread-empty')).toBeVisible();
-                await expect(header.locator('[data-sb-conversation-connection-notice]')).toBeVisible();
+                await setConnectionState('no_connection');
+                await expect(connectionNotice).toBeVisible();
                 for (const id of ['sb_conversation_send', 'sb_conversation_toggle_tools', 'sb_conversation_attach']) {
                     await expect(page.locator(`#${id} span`)).toBeVisible();
                     if (width < 1000) expect((await page.locator(`#${id}`).boundingBox()).height).toBeGreaterThanOrEqual(44);

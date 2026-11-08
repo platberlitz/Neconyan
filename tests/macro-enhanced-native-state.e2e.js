@@ -6,6 +6,19 @@ import { openMacros, savedMacroState, selectMacroCharacter } from './macro-enhan
 test.skip(process.env.NECONYAN_CONVERSATION_TEST_DISPOSABLE !== '1', 'Requires an owned disposable server.');
 test.setTimeout(180000);
 
+/** Finish legitimate settings and chat writes without filtering the preview window. */
+async function settlePersistence(page) {
+    expect(await page.evaluate(async () => {
+        const core = await import('/script.js');
+        const { cancelDebounce } = await import('/scripts/utils.js');
+        // Chat/character saves can schedule a settings write; finish them first,
+        // then cancel that debounce and save the settled settings last.
+        if (!await core.flushPendingChatSavesForNavigation()) return false;
+        cancelDebounce(core.saveSettingsDebounced);
+        return core.saveSettings(0, { returnResult: true });
+    })).toBe(true);
+}
+
 test('A dirty pronoun draft cannot overwrite the newly selected persona', async ({ app }) => {
     const { page, workbench } = await openMacros(app, false, { configureSettings: settings => {
         settings.power_user.personas[settings.user_avatar] = 'First persona';
@@ -47,16 +60,14 @@ test('Shorthand and frozen previews produce real results without leaving saved s
         return eventSource.autoFireLastArgs.has(event_types.APP_READY);
     }, undefined, { timeout: 60000 });
     await selectMacroCharacter(page, account.avatar);
-    // Flush startup settings before measuring sandbox writes, and cancel any save
-    // still waiting on its debounce: the immediate save carries the same state.
-    expect(await page.evaluate(async () => {
-        const core = await import('/script.js');
-        const { cancelDebounce } = await import('/scripts/utils.js');
-        cancelDebounce(core.saveSettingsDebounced);
-        return core.saveSettings(0, { returnResult: true });
-    })).toBe(true);
+    // Settle settings and chat writes caused by opening the workbench and selecting
+    // the character. These are legitimate startup writes, not preview writes.
+    await settlePersistence(page);
     await page.clock.install();
     await page.clock.fastForward(2000);
+    // A delayed legitimate write can be released by the clock. Settle it before
+    // attaching the observer, so the no-save assertion only covers the preview.
+    await settlePersistence(page);
     const saves = [];
     page.on('request', request => {
         if (request.method() === 'POST' && /\/api\/(?:(?:chats|groups)\/.*save|settings\/save)$/.test(new URL(request.url()).pathname)) {

@@ -1,5 +1,6 @@
 /* global document, window, getComputedStyle */
 import { expect, test } from '@playwright/test';
+import { acknowledgeSettingsSave } from './chat-scroll-regression-helpers.js';
 import { IPHONE_SAFARI_CONTEXT, installIPhoneSafari, applyIOSOnlyCss } from './ios-safari-emulation.js';
 
 test.use({ serviceWorkers: 'block', reducedMotion: 'reduce' });
@@ -14,6 +15,9 @@ for (const phone of [true, false]) {
         if (phone) await installIPhoneSafari(context, { standalone: true });
         const page = await context.newPage();
         try {
+            // This is a layout check, not a settings mutation. Keep main_api and the
+            // custom source out of the shared account so later suites start clean.
+            await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
             await page.goto(process.env.NECONYAN_TEST_BASE_URL || 'http://127.0.0.1:4433');
             await page.waitForFunction(() => window.NeconyanShell && document.body.classList.contains('neconyan-rail-ready'));
             await page.locator('#neconyan-home-skeleton').waitFor({ state: 'hidden' });
@@ -24,11 +28,20 @@ for (const phone of [true, false]) {
             await page.locator('#chat_completion_source').selectOption('custom');
             const tools = page.locator('.neconyan-connection-tools');
             const status = page.locator('#openai_api .online_status');
+            const indicator = status.locator('.online_status_indicator');
             const connect = page.locator('#api_button_openai');
             await tools.locator('summary').click();
             if (phone) await applyIOSOnlyCss(page);
             await page.evaluate(async () => {
                 (await import('/script.js')).startStatusLoading();
+            });
+            // Establish both status conditions ourselves instead of inheriting
+            // whichever provider state an earlier test left behind.
+            await page.evaluate(async () => (await import('/script.js')).setOnlineStatus('no_connection'));
+            await expect(indicator).not.toHaveClass(/success/);
+            await page.evaluate(async () => (await import('/script.js')).setOnlineStatus('openai'));
+            await expect(indicator).toHaveClass(/success/);
+            await page.evaluate(() => {
                 document.querySelector('#openai_api .online_status_text').textContent = 'Status check bypassed';
             });
             for (const width of phone ? [393, 320, 768] : [1280, 997]) {

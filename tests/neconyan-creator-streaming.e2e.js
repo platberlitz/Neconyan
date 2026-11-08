@@ -1,7 +1,18 @@
 /* global globalThis, document, getComputedStyle */
 import { expect } from '@playwright/test';
-import { test } from './neconyan-conversation-durable-fixture.js';
+import { acknowledgeActiveSettings, test } from './neconyan-conversation-durable-fixture.js';
 import { settleCssTransitions } from './chat-scroll-regression-helpers.js';
+
+async function waitForAppReady(page) {
+    // The shell API appears before settings finish. A reload can stay on the
+    // workspace skeleton longer than the acknowledgement helper's own window.
+    // Poll the async import: waitForFunction treats an async predicate's Promise
+    // as truthy and would return before APP_READY exists.
+    await expect.poll(async () => page.evaluate(async () => {
+        const { eventSource, event_types } = await import('/scripts/events.js');
+        return eventSource.autoFireLastArgs.has(event_types.APP_READY);
+    }), { timeout: 60000, message: 'The app completes startup after reload' }).toBe(true);
+}
 
 for (const phone of [false, true]) {
     test(`Catelier prefills and streams a real provider reply on ${phone ? 'phone' : 'desktop'}`, async ({ app }) => {
@@ -26,12 +37,27 @@ for (const phone of [false, true]) {
         if (phone) await creator.getByLabel('Connection profile', { exact: true }).selectOption('');
         await creator.getByRole('button', { name: 'Drafts', exact: true }).click();
         const stored = (await account.post('/api/creator/list')).drafts[0];
+        // Drafts renders before the queued save reaches the account. The phone
+        // branch also clears the profile here, which queues another save. Wait
+        // for the exact three saved choices before asserting them.
+        await expect.poll(async () => {
+            const draft = (await account.post('/api/creator/get', { id: stored.id })).draft;
+            const connection = draft.writing?.connection;
+            return connection?.prefill === '{'
+                && typeof connection.partialPrefill === 'string'
+                && connection.partialPrefill.includes('<think>')
+                && connection.stream === true;
+        }, { message: 'Catelier saved the prefill, partial prefill and live stream choices' }).toBe(true);
         const saved = (await account.post('/api/creator/get', { id: stored.id })).draft;
         expect(saved.writing.connection.prefill).toBe('{');
         expect(saved.writing.connection.partialPrefill).toContain('<think>');
         expect(saved.writing.connection.stream).toBe(true);
         await page.reload();
         await page.waitForFunction(() => typeof globalThis.NeconyanShell?.openCreator === 'function');
+        // The shell API exists before startup settings finish loading. Wait for the
+        // app's complete event, then for a real server acknowledgement.
+        await waitForAppReady(page);
+        await acknowledgeActiveSettings(page);
         await page.evaluate(async id => globalThis.NeconyanShell.openCreator({ draftId: id }), stored.id);
         await creator.getByRole('button', { name: 'Writing partner', exact: true }).click();
         await creator.getByLabel('What would you like to work on?', { exact: true }).fill('Describe a patient shipwright.');
