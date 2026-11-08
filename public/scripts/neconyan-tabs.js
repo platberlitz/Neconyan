@@ -1,7 +1,7 @@
 import { createBubblesBottomBoundary } from './bubbles-bottom-boundary.js';
 import { initChatWidgets } from './neconyan-chat-widgets.js';
 import { initMobileSwipeRails } from './mobile-swipe-rails.js';
-import { finishUiMotion, getUiDrawerEdge, getUiSlideOptions, isUiClosing, revealChat, revealUi, setUiVisibility } from './ui-motion.js';
+import { finishUiMotion, getUiDrawerEdge, getUiSlideOptions, isUiClosing, revealUi, setUiVisibility } from './ui-motion.js';
 import { DEFAULT_SCROLL_EDGE_SETTLE_DELAYS, jumpScrollElementToEdge } from './chat-scroll-edges.js';
 import { getChatPickerTitle } from './chat-picker-model.js';
 import { createChatPicker } from './chat-picker.js';
@@ -21828,7 +21828,6 @@ function initAll() {
     nnState.initObserver?.disconnect();
     nnState.initObserver = null;
     nnState.initialized = true;
-    eventSource.on(event_types.CHAT_CHANGED, () => revealChat(document.getElementById('chat')));
 
     restorePersistedTopbarState();
     seedTopbarScaleDefaults();

@@ -86,6 +86,7 @@ export const test = base.extend({
         const app = {
             url: `http://127.0.0.1:${port}`, provider, directory, dataRoot: config.dataRoot, processes,
             get serverOutput() { return output; },
+            get navigationErrors() { return navigationErrors.flat(); },
             async images() {
                 imageProvider = await createMewmoryProvider();
                 imageProvider.mode.reply = { images: ['iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC'] };
