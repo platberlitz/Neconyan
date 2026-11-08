@@ -63,6 +63,7 @@
 - PR #543 (2026-11-08) `fix(custom-css): update the assistant styling guidance`
 - PR #544 (2026-11-08) `docs(changelog): record the remaining release highlights`
 - PR #545 (2026-11-08) `fix(roleplay): prevent chat flicker after messages appear`
+- PR #546 (2026-11-08) `test(e2e): correct conversation and scratchpad checks`
 
 ## v1.5.1
 
