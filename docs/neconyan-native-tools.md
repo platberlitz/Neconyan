@@ -16,6 +16,10 @@ Story Mode, Meower and the tools below ship with Neconyan. Open **Extensions →
 
 Meower and Story Mode switch views without clearing the chat draft. Generated Neconyan cat artwork appears in their controls and empty states. Dark mode keeps its black sidebar, and light mode keeps light content surfaces.
 
+## Catelier
+
+Catelier is part of the Characters workspace rather than an extension. **Writing instructions** and **Image prompt guidelines** are shared across your Catelier drafts. **Review & save** and JSON export write a version 3 character card (CCv3), including the portable lorebook when one is embedded.
+
 ## Saved data and compatibility
 
 The included BotSearcher and Meower services load with Neconyan even when optional server plugins are disabled. An older installed server copy cannot replace them or load alongside them.
