@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from '@jest/globals';
+import { imageSize } from 'image-size';
 import { SLEEPER_COATS } from '../public/scripts/neconyan-sleeper-coats.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -76,20 +77,29 @@ describe('Neconyan generated UI artwork', () => {
             }
         }
     });
-    test('ships 58 distinct backgrounds at the browser dimensions, with both requested models', () => {
+    test('ships distinct backgrounds at the browser dimensions, with both requested models', () => {
         const provenance = readJson('default/content/backgrounds/artwork-provenance.json');
         const index = readJson('default/content/index.json');
-        expect(provenance.backgrounds).toHaveLength(58);
-        expect(new Set(provenance.backgrounds.map(item => item.id)).size).toBe(58);
-        expect(new Set(provenance.backgrounds.map(item => item.finalSha256)).size).toBe(58);
+        expect(provenance.backgrounds).toHaveLength(240);
+        expect(new Set(provenance.backgrounds.map(item => item.id)).size).toBe(240);
+        expect(new Set(provenance.backgrounds.map(item => item.finalSha256)).size).toBe(240);
         const darkBackgrounds = provenance.backgrounds.filter(item => item.batch === 'darkModeBatch');
         expect(darkBackgrounds).toHaveLength(6);
         expect(new Set(darkBackgrounds.map(item => item.model))).toEqual(new Set(['gpt-image-2.5-sunburst', 'gpt-image-2.5-flare']));
+        const themeBackgrounds = provenance.backgrounds.filter(item => item.batch === 'themeMatchedBatch');
+        const themes = fs.readdirSync(path.join(root, 'default/content/themes'))
+            .filter(file => file.endsWith('.json'))
+            .map(file => readJson(`default/content/themes/${file}`).name);
+        expect(themeBackgrounds).toHaveLength(themes.length);
+        expect(new Set(themeBackgrounds.map(item => item.theme))).toEqual(new Set(themes));
+        expect(new Set(themeBackgrounds.map(item => item.model))).toEqual(new Set(['gpt-image-2.6-sunburst', 'gpt-image-2.6-flare']));
         for (const item of provenance.backgrounds) {
             expect(item.width).toBe(1536);
             expect(item.height).toBe(1024);
             expect(fs.existsSync(path.join(root, item.finalFile))).toBe(true);
-            expect(createHash('sha256').update(fs.readFileSync(path.join(root, item.finalFile))).digest('hex')).toBe(item.finalSha256);
+            const bytes = fs.readFileSync(path.join(root, item.finalFile));
+            expect(createHash('sha256').update(bytes).digest('hex')).toBe(item.finalSha256);
+            expect(imageSize(bytes)).toMatchObject({ width: 1536, height: 1024, type: 'jpg' });
             expect(index).toContainEqual({ filename: item.finalFile.replace('default/content/', ''), type: 'background' });
         }
     });
