@@ -34,12 +34,17 @@ jobs:
           export TMPDIR="$(node -p 'require("node:fs").realpathSync(require("node:os").tmpdir())')"
           node --max-old-space-size=512 --test tests/application-import-large.node.js > ios/large-import-test.log 2>&1 || { cat ios/large-import-test.log; exit 1; }
           cat ios/large-import-test.log
-      - name: Prepare the standalone server and pinned iOS runtime
+      - name: Prepare the standalone server payload
         run: |
           node scripts/build-ios-payload.js
           node --test ios/tools/*.test.mjs
           sips -z 1024 1024 ios/generated/Assets.xcassets/AppIcon.appiconset/icon.png
-          bash ios/prepare-runtime.sh
+      - name: Prepare the pinned iOS runtime
+        env:
+          NECONYAN_GITHUB_TOKEN: ${{ github.token }}
+        run: bash ios/prepare-runtime.sh
+      - name: Generate the Xcode project
+        run: |
           brew install xcodegen
           cd ios
           xcodegen generate
