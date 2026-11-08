@@ -124,6 +124,36 @@ for (const phone of [true, false]) {
         await page.evaluate(() => window.stopLivePreview());
     });
 
+    test(`a preview that arrives before saved messages render stays after them on ${viewport}`, async ({ app }) => {
+        const page = await openPreview(app, phone);
+        await page.evaluate(async text => {
+            document.querySelector('#chat').replaceChildren();
+            const core = await import('/script.js');
+            core.chat.splice(0, core.chat.length);
+            window.sendLivePreview({ childId: 'reply', stage: 'generating', text, gen_started: new Date().toISOString() });
+        }, reply);
+        await expect(page.locator('#neconyan-roleplay-preview')).toContainText(reply);
+
+        // A reload draws the saved chat after the resumed preview is already on
+        // screen. The greeting must stay first and the draft must follow the last row.
+        await page.evaluate(async () => {
+            const core = await import('/script.js');
+            core.chat.splice(0, core.chat.length,
+                { name: 'Durable Nova', is_user: false, mes: 'Retained answer.', extra: {}, send_date: new Date().toISOString() },
+                { name: 'User', is_user: true, mes: 'Retained question.', extra: {}, send_date: new Date().toISOString() });
+            await core.printMessages();
+        });
+        await expect.poll(() => page.evaluate(() => {
+            const rows = [...document.querySelectorAll('#chat .mes')];
+            const preview = document.querySelector('#neconyan-roleplay-preview');
+            return rows.length === 3 && rows[0].textContent.includes('Retained answer.')
+                && rows[1].textContent.includes('Retained question.') && rows[2] === preview;
+        })).toBe(true);
+        await expect(page.locator('#neconyan-roleplay-preview')).toBeVisible();
+        await page.screenshot({ path: test.info().outputPath(`preview-order-${viewport}.png`), scale: 'css' });
+        await page.evaluate(() => window.stopLivePreview());
+    });
+
     test(`a delta without a base reconnects for a full snapshot on ${viewport}`, async ({ app }) => {
         const page = await openPreview(app, phone);
         await page.evaluate(() => {

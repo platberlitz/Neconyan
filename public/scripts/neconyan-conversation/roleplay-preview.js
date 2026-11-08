@@ -66,6 +66,8 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
     let reportedStage = null;
     const diagnostic = phase => { try { globalThis.NeconyanCrashDiagnostics?.observePhase?.(diagnosticHandle, phase); } catch { /* Optional diagnostics. */ } };
     let restoreReplacement = () => {};
+    let placementObserver = null;
+    let placementChat = null;
     const remove = () => {
         if (node) {
             thinkingIndicator.clear();
@@ -73,6 +75,31 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
             document.dispatchEvent(new CustomEvent('neconyan:roleplay-preview-removed', { detail: { element: node } }));
         }
         node = null; rendered = null; renderedMessageId = null;
+    };
+    // A resumed preview can arrive while the saved chat is still drawing. Saved
+    // rows are appended without knowing about the draft, so keep it after the
+    // last saved row instead of leaving it above the greeting. A replacement
+    // marker keeps its own position; a preview removed by navigation stays gone
+    // until the next frame builds a current one.
+    const place = (chat = document.querySelector('#chat')) => {
+        if (!chat || !node?.isConnected || stopped || frozen || !isCurrent()) return;
+        const replacement = chat.querySelector('[data-roleplay-replacement]');
+        if (replacement) {
+            if (node.nextElementSibling !== replacement) chat.insertBefore(node, replacement);
+            return;
+        }
+        const saved = chat.querySelectorAll('.mes[mesid]');
+        const lastSaved = saved.length ? saved[saved.length - 1] : null;
+        if (!lastSaved || lastSaved.nextElementSibling === node) return;
+        chat.insertBefore(node, lastSaved.nextElementSibling);
+    };
+    const observePlacement = chat => {
+        if (placementChat === chat) return;
+        placementObserver?.disconnect();
+        placementChat = chat;
+        if (typeof MutationObserver !== 'function') return;
+        placementObserver = new MutationObserver(() => place(chat));
+        placementObserver.observe(chat, { childList: true });
     };
     const render = () => {
         if (frozen) return;
@@ -177,6 +204,10 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
             node.querySelector('.name_text').parentElement.append(status);
             if (replacement) replacement.before(node);
             else chat.append(node);
+            // The first frame can race the saved chat's own draw. Put the draft
+            // after rows already on screen, then watch the chat for later batches.
+            observePlacement(chat);
+            place(chat);
         }
         finishDraw();
     };
@@ -342,6 +373,7 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
         document.removeEventListener('visibilitychange', onVisible);
         globalThis.removeEventListener?.('pageshow', reconnect);
         globalThis.removeEventListener?.('online', reconnect);
+        placementObserver?.disconnect(); placementObserver = null; placementChat = null;
         clearInterval(timer); remove(); restoreReplacement();
     };
     // The finished reply is about to be saved and the chat rebuilt. Stop redrawing,

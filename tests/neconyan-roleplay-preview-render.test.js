@@ -58,6 +58,38 @@ jest.unstable_mockModule('../public/scripts/mobile-streaming.js', () => ({
     getStreamingUpdateInterval: interval => interval,
 }));
 
+const mutationObservers = new Set();
+
+function notifyMutation(element) {
+    for (const observer of mutationObservers) {
+        if (observer.target !== element) continue;
+        queueMicrotask(() => {
+            if (observer.target === element) observer.callback([{ type: 'childList', target: element }]);
+        });
+    }
+}
+
+class FakeMutationObserver {
+    constructor(callback) {
+        this.callback = callback;
+        this.target = null;
+    }
+
+    observe(target) {
+        this.target = target;
+        mutationObservers.add(this);
+    }
+
+    disconnect() {
+        mutationObservers.delete(this);
+        this.target = null;
+    }
+
+    takeRecords() {
+        return [];
+    }
+}
+
 class FakeElement {
     constructor(tagName = 'div') {
         this.tagName = tagName.toUpperCase();
@@ -72,6 +104,16 @@ class FakeElement {
         this.classList = { contains: () => false, toggle: jest.fn() };
     }
 
+    get nextElementSibling() {
+        if (!this.parentElement) return null;
+        return this.parentElement.children[this.parentElement.children.indexOf(this) + 1] ?? null;
+    }
+
+    get previousElementSibling() {
+        if (!this.parentElement) return null;
+        return this.parentElement.children[this.parentElement.children.indexOf(this) - 1] ?? null;
+    }
+
     setAttribute(name, value) {
         this.attributes.set(name, String(value));
     }
@@ -81,17 +123,37 @@ class FakeElement {
     }
 
     append(child) {
+        const previousParent = child.parentElement;
+        if (previousParent) {
+            const previousIndex = previousParent.children.indexOf(child);
+            if (previousIndex >= 0) previousParent.children.splice(previousIndex, 1);
+        }
         this.children.push(child);
         child.parentElement = this;
-        if (this.isConnected !== false) child.isConnected = this.isConnected;
+        child.isConnected = this.isConnected;
+        notifyMutation(this);
+    }
+
+    insertBefore(child, reference) {
+        if (reference === null || reference === undefined) {
+            this.append(child);
+            return;
+        }
+        const index = this.children.indexOf(reference);
+        if (index < 0) throw new Error('The reference element is not a child.');
+        const previousParent = child.parentElement;
+        if (previousParent) {
+            const previousIndex = previousParent.children.indexOf(child);
+            if (previousIndex >= 0) previousParent.children.splice(previousIndex, 1);
+        }
+        this.children.splice(this.children.indexOf(reference), 0, child);
+        child.parentElement = this;
+        child.isConnected = this.isConnected;
+        notifyMutation(this);
     }
 
     before(reference) {
-        const parent = this.parentElement;
-        const index = parent.children.indexOf(this);
-        parent.children.splice(index, 0, reference);
-        reference.parentElement = parent;
-        reference.isConnected = true;
+        this.parentElement?.insertBefore(reference, this);
     }
 
     remove() {
@@ -109,6 +171,11 @@ class FakeElement {
         if (selector === '.mes_reasoning_details') return null;
         if (selector === '.mes_timer') return this.timer;
         return null;
+    }
+
+    querySelectorAll(selector) {
+        if (selector === '.mes[mesid]') return this.children.filter(child => child.attributes.has('mesid'));
+        return [];
     }
 }
 
@@ -129,17 +196,29 @@ function createPreviewNode() {
 }
 
 function createChat(replacementId = '1') {
-    const replacement = new FakeElement('div');
-    replacement.dataset.roleplayReplacement = replacementId;
     const root = new FakeElement('div');
+    root.isConnected = true;
     root.scrollHeight = 1000;
     root.scrollTop = 900;
     root.clientHeight = 100;
-    root.children.push(replacement);
-    replacement.parentElement = root;
-    replacement.isConnected = true;
+    let replacement = null;
+    if (replacementId !== null) {
+        replacement = new FakeElement('div');
+        replacement.dataset.roleplayReplacement = replacementId;
+        root.children.push(replacement);
+        replacement.parentElement = root;
+        replacement.isConnected = true;
+    }
     root.querySelector = selector => selector === '[data-roleplay-replacement]' ? replacement : null;
     return { root, replacement };
+}
+
+function appendSavedMessage(root, id, text) {
+    const row = new FakeElement('div');
+    row.setAttribute('mesid', String(id));
+    row.textContent = text;
+    root.append(row);
+    return row;
 }
 
 let drawFrame = 0;
@@ -152,6 +231,8 @@ function installDom() {
     document.createElement = tagName => new FakeElement(tagName);
     globalThis.document = document;
     document.addEventListener('neconyan:roleplay-preview-rendered', event => renderedEvents.push(event.detail));
+    mutationObservers.clear();
+    globalThis.MutationObserver = FakeMutationObserver;
     globalThis.requestAnimationFrame = callback => {
         const id = ++drawFrame;
         queuedFrames.set(id, realSetTimeout(() => {
@@ -438,6 +519,35 @@ describe('Roleplay preview rendering', () => {
         expect(updateMessageElement).toHaveBeenCalledTimes(3);
         expect(updatePreviewMessageText.mock.calls[0][1]).toMatchObject({ mes: ' Answer' });
 
+        stop();
+    });
+
+    test('a preview that arrives before saved messages render stays after them', async () => {
+        chatFixture = createChat(null);
+        document.querySelector = selector => selector === '#chat' ? chatFixture.root : null;
+        const stop = startPreview();
+        stream.send({ preview: {
+            childId: 'reply-1',
+            stage: 'generating',
+            name: 'Nova',
+            avatar: 'nova.png',
+            reasoning: '',
+            text: 'Live reply.',
+        } });
+        await waitForFirstDraw();
+        const preview = renderedEvents.at(-1).element;
+        expect(chatFixture.root.children).toContain(preview);
+
+        // A reopened page writes the saved greeting and question while the preview
+        // is already on screen. They must stay first, with the draft below them.
+        const greeting = appendSavedMessage(chatFixture.root, 0, 'Retained answer.');
+        const question = appendSavedMessage(chatFixture.root, 1, 'Retained question.');
+        await waitFor(() => chatFixture.root.children.indexOf(preview) > chatFixture.root.children.indexOf(question));
+
+        expect(chatFixture.root.children[0]).toBe(greeting);
+        expect(chatFixture.root.children[1]).toBe(question);
+        expect(preview.previousElementSibling).toBe(question);
+        expect(preview.isConnected).toBe(true);
         stop();
     });
 
