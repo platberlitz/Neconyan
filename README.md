@@ -1,6 +1,6 @@
 # Neconyan~
 
-The latest version is [1.5.1](https://github.com/platberlitz/Neconyan/releases/latest).
+The latest version is [1.5.2](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.2).
 
 **Read in your language:** [Deutsch](.github/readme-de_de.md) · [Español](.github/readme-es_es.md) · [Français](.github/readme-fr_fr.md) · [Italiano](.github/readme-it_it.md) · [Nederlands](.github/readme-nl_nl.md) · [Português](.github/readme-pt_pt.md) · [Íslenska](.github/readme-is_is.md) · [Русский](.github/readme-ru_ru.md) · [Українська](.github/readme-uk_ua.md) · [العربية](.github/readme-ar_sa.md) · [ไทย](.github/readme-th_th.md) · [Tiếng Việt](.github/readme-vi_vn.md) · [日本語](.github/readme-ja_jp.md) · [한국어](.github/readme-ko_kr.md) · [简体中文](.github/readme-zh_cn.md) · [繁體中文](.github/readme-zh_tw.md)
 
