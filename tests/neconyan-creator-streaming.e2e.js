@@ -37,6 +37,17 @@ for (const phone of [false, true]) {
         if (phone) await creator.getByLabel('Connection profile', { exact: true }).selectOption('');
         await creator.getByRole('button', { name: 'Drafts', exact: true }).click();
         const stored = (await account.post('/api/creator/list')).drafts[0];
+        // Drafts renders before the queued save reaches the account. The phone
+        // branch also clears the profile here, which queues another save. Wait
+        // for the exact three saved choices before asserting them.
+        await expect.poll(async () => {
+            const draft = (await account.post('/api/creator/get', { id: stored.id })).draft;
+            const connection = draft.writing?.connection;
+            return connection?.prefill === '{'
+                && typeof connection.partialPrefill === 'string'
+                && connection.partialPrefill.includes('<think>')
+                && connection.stream === true;
+        }, { message: 'Catelier saved the prefill, partial prefill and live stream choices' }).toBe(true);
         const saved = (await account.post('/api/creator/get', { id: stored.id })).draft;
         expect(saved.writing.connection.prefill).toBe('{');
         expect(saved.writing.connection.partialPrefill).toContain('<think>');
