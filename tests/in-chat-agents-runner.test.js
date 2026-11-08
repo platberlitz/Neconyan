@@ -113,7 +113,7 @@ describe('in-chat agent post-processing runner', () => {
             MESSAGE_UPDATED: 'message_updated',
         };
         saveChatDebounced = jest.fn();
-        saveChat = jest.fn();
+        saveChat = jest.fn(async () => true);
         reloadCurrentChat = jest.fn();
         updateMessageBlock = jest.fn();
         generateQuietPrompt = jest.fn(async () => 'quiet result');
@@ -3018,6 +3018,79 @@ describe('in-chat agent post-processing runner', () => {
         const messages = await companionRunner.buildCompanionPromptMessages(plotCompass, 0);
 
         expect(messages[0].content).toContain('[Plot Compass Objective]\nGuide Assistant after I step through the gate.');
+    });
+
+    test('runs an opening plan without adding a chat message and feeds it into the first reply', async () => {
+        const agent = createCompanionAgent({ id: 'plot', sourceTemplateId: 'tpl-plot-compass-companion',
+            companion: { trigger: 'manual', includeInChatHistory: true, feedback: { enabled: true, depth: 1 } } });
+        enabledAgents = [agent];
+        generateQuietPrompt.mockResolvedValue('Open with a mystery.');
+        const runner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        const result = await runner.runPlotCompassBeforeConversation(agent.id);
+        expect(result.content).toBe('Open with a mystery.');
+        expect(chat).toHaveLength(0);
+        expect(chatMetadata.inChatAgentPlotCompassOpeningNotes.plot.content).toBe('Open with a mystery.');
+        expect(saveChat).toHaveBeenCalledWith({ deferBackup: false, throwOnError: true });
+        chat.push({ mes: 'I enter.', name: 'Traveler', is_user: true, extra: {} });
+        runner.injectCompanionFeedbackPrompts([agent]);
+        expect(extensionPrompts.inchat_agent_companion_plot.value).toContain('Open with a mystery.');
+    });
+
+    test('discards an opening plan if the chat changes during generation', async () => {
+        const agent = createCompanionAgent({ id: 'plot', sourceTemplateId: 'tpl-plot-compass-companion' });
+        enabledAgents = [agent];
+        let finish;
+        generateQuietPrompt.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+        const runner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        const running = runner.runPlotCompassBeforeConversation(agent.id);
+        await waitFor(() => typeof finish === 'function');
+        currentChatId = 'another-chat';
+        finish('A stale plan');
+        await expect(running).rejects.toThrow();
+        expect(chatMetadata.inChatAgentPlotCompassOpeningNotes).toBeUndefined();
+    });
+
+    test('discards an opening plan if its objective changes while it is running', async () => {
+        const agent = createCompanionAgent({ id: 'plot', sourceTemplateId: 'tpl-plot-compass-companion', settings: { plotCompassObjective: 'First' } });
+        enabledAgents = [agent];
+        let finish;
+        generateQuietPrompt.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+        const runner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        const running = runner.runPlotCompassBeforeConversation(agent.id);
+        await waitFor(() => typeof finish === 'function');
+        agent.settings.plotCompassObjective = 'Changed';
+        finish('A stale plan');
+        await expect(running).rejects.toThrow();
+        expect(chatMetadata.inChatAgentPlotCompassOpeningNotes).toBeUndefined();
+    });
+
+    test('shares simultaneous opening requests and rolls back a failed save', async () => {
+        const agent = createCompanionAgent({ id: 'plot', sourceTemplateId: 'tpl-plot-compass-companion' });
+        enabledAgents = [agent];
+        let finish;
+        generateQuietPrompt.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+        saveChat.mockRejectedValue(new Error('Save failed'));
+        const runner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        const first = runner.runPlotCompassBeforeConversation(agent.id);
+        const second = runner.runPlotCompassBeforeConversation(agent.id);
+        expect(second).toBe(first);
+        await waitFor(() => typeof finish === 'function');
+        finish('A plan');
+        await expect(first).rejects.toThrow('Save failed');
+        expect(chatMetadata.inChatAgentPlotCompassOpeningNotes).toBeUndefined();
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+    });
+
+    test('feeds a Plot Compass note on a user message into the next reply', async () => {
+        const agent = createCompanionAgent({ id: 'plot', sourceTemplateId: 'tpl-plot-compass-companion',
+            companion: { trigger: 'manual', feedback: { enabled: true, depth: 1 } } });
+        enabledAgents = [agent];
+        const runner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        chat.push({ mes: 'I enter.', name: 'Traveler', is_user: true, extra: {} });
+        generateQuietPrompt.mockResolvedValue('A door opens.');
+        await runner.runCompanionAgentOnMessage(agent.id, 0);
+        runner.injectCompanionFeedbackPrompts([agent]);
+        expect(extensionPrompts.inchat_agent_companion_plot.value).toContain('A door opens.');
     });
 
     test('includes the system prompt and authors note sections when toggled on', async () => {

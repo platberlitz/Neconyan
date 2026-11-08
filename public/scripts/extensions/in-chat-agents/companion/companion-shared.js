@@ -158,6 +158,49 @@ export function normalizePlotCompassObjective(value = '') {
     return String(value ?? '').replaceAll(/\r\n?/g, '\n').trim().slice(0, PLOT_COMPASS_OBJECTIVE_MAX_CHARS);
 }
 
+export const PLOT_COMPASS_OPENING_NOTES_KEY = 'inChatAgentPlotCompassOpeningNotes';
+
+export function getPlotCompassOpeningNote(metadata, agentId) {
+    const note = metadata?.[PLOT_COMPASS_OPENING_NOTES_KEY]?.[agentId];
+    return note && typeof note === 'object' && note.status === 'done' && String(note.content ?? '').trim() ? note : null;
+}
+
+export function normalizePlotCompassScope(value) {
+    return ['chat', 'character', 'global'].includes(value) ? value : 'global';
+}
+
+// The same keys are used by browser runs and server-side companion runs. A group is
+// its own character-level scope, never the currently speaking member of that group.
+export function getPlotCompassScopeKey(scope, { avatar = '', groupId = '', chatId = '' } = {}) {
+    scope = normalizePlotCompassScope(scope);
+    if (scope === 'global') return 'global';
+    const owner = groupId ? ['group', String(groupId)] : avatar ? ['character', String(avatar)] : null;
+    if (!owner || (scope === 'chat' && !chatId)) return '';
+    return JSON.stringify(scope === 'chat' ? [...owner, String(chatId)] : owner);
+}
+
+export function getPlotCompassObjective(settings = {}, identity = {}, scope = settings.plotCompassScope) {
+    const key = getPlotCompassScopeKey(scope, identity);
+    if (!key) return '';
+    if (key === 'global') return normalizePlotCompassObjective(settings.plotCompassObjective);
+    return normalizePlotCompassObjective(settings.plotCompassObjectives?.[key]);
+}
+
+export function setPlotCompassObjective(settings = {}, identity = {}, scope, objective) {
+    scope = normalizePlotCompassScope(scope);
+    const key = getPlotCompassScopeKey(scope, identity);
+    if (!key) throw new Error('Choose an active chat before using this objective scope.');
+    const next = { ...settings, plotCompassScope: scope };
+    if (key === 'global') next.plotCompassObjective = normalizePlotCompassObjective(objective);
+    else {
+        next.plotCompassObjectives = { ...settings.plotCompassObjectives };
+        const value = normalizePlotCompassObjective(objective);
+        if (value) next.plotCompassObjectives[key] = value;
+        else delete next.plotCompassObjectives[key];
+    }
+    return next;
+}
+
 export function normalizeChatroomReply(value = '') {
     return String(value ?? '').replaceAll(/\r\n?/g, '\n').trim().slice(0, CHATROOM_REPLY_MAX_CHARS);
 }

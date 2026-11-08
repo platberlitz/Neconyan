@@ -7,6 +7,27 @@ function controlKey(element) {
     return JSON.stringify([agent, entry, element.tagName, element.dataset.role || element.dataset.action || element.classList[0] || '']);
 }
 
+// Keep edits through a redraw, but refresh an untouched objective when the agent editor saves it.
+function reconcilePlotObjective(previous, fresh) {
+    if (previous.dataset.role !== 'plot-compass-objective') return;
+    const select = previous.closest('.ica--plot-objective-composer')?.querySelector('[data-role="plot-compass-scope"]');
+    const freshScope = fresh.dataset.plotSavedScope;
+    const sameAsSaved = previous.dataset.plotScope === freshScope && previous.value === fresh.value;
+    const untouched = previous.dataset.plotScope === previous.dataset.plotSavedScope
+        && previous.value === previous.dataset.plotSavedValue && select?.value === previous.dataset.plotSavedScope
+        && !Object.keys(previous.plotCompassDrafts ?? {}).length;
+    if (untouched && !sameAsSaved) {
+        previous.value = fresh.value;
+        previous.dataset.plotScope = freshScope;
+        if (select) select.value = freshScope;
+    }
+    if (untouched || sameAsSaved) {
+        previous.dataset.plotSavedScope = freshScope;
+        previous.dataset.plotSavedValue = fresh.value;
+        if (previous.plotCompassDrafts) delete previous.plotCompassDrafts[freshScope];
+    }
+}
+
 /** Keep live form nodes: pending handlers still own the same inputs and buttons after a refresh. */
 export function replaceCompanionView(root, html, isCurrent) {
     const element = root[0];
@@ -22,7 +43,7 @@ export function replaceCompanionView(root, html, isCurrent) {
     const focusKey = focused && controlKey(focused);
     const selection = focused && [focused.selectionStart, focused.selectionEnd];
     if (sameScope) {
-        for (const control of element.querySelectorAll('input[data-role], textarea[data-role], [data-ica-busy]')) {
+        for (const control of element.querySelectorAll('input[data-role], textarea[data-role], select[data-role], [data-ica-busy]')) {
             if (!control.closest(contentSelector)) controls.set(controlKey(control), control);
         }
         for (const details of element.querySelectorAll('details')) {
@@ -33,9 +54,12 @@ export function replaceCompanionView(root, html, isCurrent) {
     root.html(html);
     renderedScopes.set(element, isCurrent);
     if (!sameScope) return;
-    for (const control of element.querySelectorAll('input[data-role], textarea[data-role], [data-action]')) {
+    for (const control of element.querySelectorAll('input[data-role], textarea[data-role], select[data-role], [data-action]')) {
         const previous = controls.get(controlKey(control));
-        if (previous && !control.closest(contentSelector)) control.replaceWith(previous);
+        if (previous && !control.closest(contentSelector)) {
+            reconcilePlotObjective(previous, control);
+            control.replaceWith(previous);
+        }
     }
     for (const details of element.querySelectorAll('details')) {
         const open = expanded.get(controlKey(details));

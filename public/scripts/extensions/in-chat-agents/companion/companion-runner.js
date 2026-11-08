@@ -62,14 +62,18 @@ import {
     COMPANION_FAILURE_MESSAGES,
     MEMORY_SHARD_TEMPLATE_ID,
     PLOT_COMPASS_TEMPLATE_ID,
+    PLOT_COMPASS_OPENING_NOTES_KEY,
     classifyCompanionFailureMessage,
     getCompanionReferenceIds,
+    getPlotCompassObjective,
+    getPlotCompassOpeningNote,
     holdsReadableCompanionResults,
     isAssistantMessage,
     isEmptyOutputSentinel,
     isDiceRollerAgent,
     isExpressionsAgent,
     isLocalCompanionAgent,
+    isPlotCompassAgent,
     isRetryableCompanionFailure,
     isSuppressedCompanionResult,
     isValidCompanionMessage,
@@ -80,6 +84,7 @@ import {
     TRACKER_EMPTY_OUTPUT_INSTRUCTION,
 } from './companion-shared.js';
 import { resolveCompanionContentMacros } from './companion-macros.js';
+import { getPlotCompassIdentity } from './plot-compass-context.js';
 import { buildDiceDirective, findDiceRollsForGeneration } from './dice.js';
 import { runDiceCompanionLocally } from './dice-companion-local.js';
 import { getExpressionsAgentCastPrompt } from '../../expressions/expression-sets.js';
@@ -489,7 +494,7 @@ function getTemplateSettingsPromptBlock(agent = {}, message = null) {
     }
 
     if (sourceTemplateId === PLOT_COMPASS_TEMPLATE_ID) {
-        const objective = normalizePlotCompassObjective(resolveCompanionContentMacros(agent.settings?.plotCompassObjective ?? '', message));
+        const objective = normalizePlotCompassObjective(resolveCompanionContentMacros(getPlotCompassObjective(agent.settings, getPlotCompassIdentity()), message));
         return `[Plot Compass Objective]\n${objective || 'none set'}`;
     }
 
@@ -973,7 +978,7 @@ export function collectRecentCompanionResults(agentId, { beforeMessageIndex = ch
         // Hidden hosts still count: "hide story above this shard" turns every earlier shard's
         // message into a system note, and dropping those here left the shard with no prior
         // shards to consolidate and trackers with no last known state.
-        if (!holdsReadableCompanionResults(message, { allowUserMessage: false }) || !canGroupTargetSee(message, chat[beforeMessageIndex])) {
+        if (!holdsReadableCompanionResults(message, { allowUserMessage: isPlotCompassAgent(getAgentById(agentId)) }) || !canGroupTargetSee(message, chat[beforeMessageIndex])) {
             continue;
         }
 
@@ -981,12 +986,20 @@ export function collectRecentCompanionResults(agentId, { beforeMessageIndex = ch
         // last turn that carried real content. A tracker that reported no change therefore keeps
         // feeding its previous block forward instead of dropping out of the feedback window.
         const result = getCompanionResults(message)[agentId];
-        if (result?.status === 'done' && normalizeText(result.content) && !isEmptyOutputSentinel(result.content) && !(excludeChatHistory && result.includeInChatHistory === true)) {
+        // User messages are not projected into retained companion history, so a Plot Compass
+        // note on one must still be fed back even when its saved policy requests retention.
+        if (result?.status === 'done' && normalizeText(result.content) && !isEmptyOutputSentinel(result.content) && !(excludeChatHistory && result.includeInChatHistory === true && !message.is_user)) {
             results.push({
                 messageIndex: index,
                 ...result,
             });
         }
+    }
+
+    const opening = isPlotCompassAgent(getAgentById(agentId)) && getPlotCompassOpeningNote(chat_metadata, agentId);
+    // Opening notes have no message host, so they cannot be inserted as chat history.
+    if (opening && results.length < maxDepth) {
+        results.push({ messageIndex: -1, ...opening });
     }
 
     return results;
@@ -1000,7 +1013,7 @@ function getPreviousNotesSection(agent, messageIndex, companion) {
     return collectRecentCompanionResults(agent.id, {
         beforeMessageIndex: messageIndex,
         depth: companion.historyDepth,
-    }).map(result => `Message ${result.messageIndex}:\n${getResolvedCompanionResultContent(result, result.messageIndex)}`).join('\n\n');
+    }).map(result => `${result.messageIndex < 0 ? 'Before the conversation' : `Message ${result.messageIndex}`}:\n${getResolvedCompanionResultContent(result, result.messageIndex)}`).join('\n\n');
 }
 
 function getResolvedCompanionResultContent(result = {}, messageIndex = -1) {
@@ -2561,6 +2574,62 @@ async function runCompanionsOnServer(agents, messageIndex, { repair = false } = 
 }
 
 const companionAgentRunsInFlight = new Map();
+const openingPlansInFlight = new Map();
+
+/** An opening plan belongs to the chat metadata, not to an invented chat message. */
+export function runPlotCompassBeforeConversation(agentId) {
+    const key = JSON.stringify([getPlotCompassIdentity(), agentId]);
+    if (openingPlansInFlight.has(key)) return openingPlansInFlight.get(key);
+    const run = runPlotCompassBeforeConversationInternal(agentId).finally(() => openingPlansInFlight.delete(key));
+    openingPlansInFlight.set(key, run);
+    return run;
+}
+
+async function runPlotCompassBeforeConversationInternal(agentId) {
+    const agent = getAgentById(agentId);
+    const agentSnapshot = JSON.stringify(agent);
+    const identity = JSON.stringify(getPlotCompassIdentity());
+    const chatId = getCurrentChatId();
+    const generation = getChatGeneration();
+    const cancelRevision = getAgentGenerationCancelRevision();
+    const snapshot = JSON.stringify(chat.map(message => [message?.is_user, message?.is_system, message?.mes]));
+    const isCurrent = () => chatId && getCurrentChatId() === chatId && JSON.stringify(getPlotCompassIdentity()) === identity
+        && getChatGeneration() === generation && getAgentGenerationCancelRevision() === cancelRevision
+        && JSON.stringify(chat.map(message => [message?.is_user, message?.is_system, message?.mes])) === snapshot
+        && areAgentsGloballyEnabled() && JSON.stringify(getAgentById(agentId)) === agentSnapshot
+        && isAgentRuntimeAllowed(getAgentById(agentId));
+    if (!agent || !isPlotCompassAgent(agent) || chat.some(isValidCompanionMessage) || !isCurrent()) return null;
+
+    const promptMessages = await buildCompanionPromptMessages(agent, chat.length, 'normal');
+    if (!isCurrent()) throw new Error('The chat changed before Plot Compass could run.');
+    const response = await requestPromptTransform(agent, promptMessages, getCompanionConfig(agent).maxTokens, {
+        isEmptyOutput: isEmptyCompanionOutput, cancelRevision, isCurrent,
+    });
+    if (!isCurrent()) throw new Error('The chat changed while Plot Compass was running.');
+    if (response.lengthLimited) throw new Error('The reply reached its output limit. Increase the limit and try again.');
+    const content = capResultContent(response.output);
+    if (!content) throw new Error('Plot Compass returned no output.');
+    const tokenUsage = await buildCompanionTokenUsage(promptMessages, content);
+    if (!isCurrent()) throw new Error('The chat changed while Plot Compass was running.');
+    const holder = {};
+    const result = setCompanionResult(holder, agent, { status: 'done', content, error: '', tokenUsage,
+        profileId: response.profileId, profileLabel: getProfileLabel(agent, response.profileId),
+        modelLabel: getModelLabel(agent), model: String(response.model ?? '').trim() });
+    const previousNotes = chat_metadata[PLOT_COMPASS_OPENING_NOTES_KEY];
+    chat_metadata[PLOT_COMPASS_OPENING_NOTES_KEY] = { ...previousNotes, [agentId]: result };
+    try {
+        // The server needs this note before it builds the first reply's prompt.
+        if (!await getContext().saveChat({ deferBackup: false, throwOnError: true })) throw new Error('Chat was not saved');
+    } catch (error) {
+        if (getCurrentChatId() === chatId && chat_metadata[PLOT_COMPASS_OPENING_NOTES_KEY]?.[agentId] === result) {
+            if (previousNotes) chat_metadata[PLOT_COMPASS_OPENING_NOTES_KEY] = previousNotes;
+            else delete chat_metadata[PLOT_COMPASS_OPENING_NOTES_KEY];
+        }
+        throw error;
+    }
+    await emitCompanionResultsUpdated(-1, agentId);
+    return result;
+}
 
 /**
  * Every per-agent manual run, from cards, the panel, the dashboard or a floating window,
