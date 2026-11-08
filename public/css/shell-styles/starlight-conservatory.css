@@ -269,6 +269,20 @@
     border: 1px solid color-mix(in srgb, var(--starlight-brass) 28%, var(--neco-border));
 }
 
+/* Conversation: the message pane is another conservatory glass panel, so the
+   night sky stays visible behind the bubbles through the same blue-black tint. */
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) #sheld[data-sb-conversation-mode='on'] .sb-conversation-timeline {
+    border-color: color-mix(in srgb, var(--starlight-filigree) 78%, transparent);
+    background: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--starlight-glass-top) 88%, transparent),
+        color-mix(in srgb, var(--starlight-glass-bottom) 94%, transparent)
+    );
+    box-shadow:
+        inset 0 1px 0 rgb(255 246 220 / 0.14),
+        0 0 24px color-mix(in srgb, var(--starlight-celeste) 8%, transparent);
+}
+
 /* Composer: conservatory glass frame with double brass inlay and animated starlight pulse. */
 :root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) #sb-bottom-chat-bar {
     --neco-surface: var(--starlight-surface);

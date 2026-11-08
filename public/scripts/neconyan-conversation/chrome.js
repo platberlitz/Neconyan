@@ -97,7 +97,7 @@ import {
 } from './timeline-render.js';
 import { setLastConversationPreview } from './typing.js';
 
-const CONVERSATION_STYLESHEET_HREF = 'css/neconyan-conversation.css?v=20261011-conversation-messenger';
+const CONVERSATION_STYLESHEET_HREF = 'css/neconyan-conversation.css?v=20261108-conversation-panels';
 const CONVERSATION_STYLESHEET_ID = 'sb-conversation-css';
 
 export function ensureConversationStylesheet() {
