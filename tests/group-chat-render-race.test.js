@@ -31,6 +31,7 @@ for (const lifecycle of [false, true]) for (const peek of [false, true]) {
         const no = () => {};
         const scroll = jest.fn();
         const tags = jest.fn();
+        const revealChat = jest.fn();
         const runtime = vm.createContext({
             console: { info: no, warn: no, error: no }, performance, groups, selected_group: 'A', chat: [], chat_metadata: {}, this_chid: undefined,
             roleplayAccountStamp, rememberRoleplayRead, getCurrentUserHandle: () => owner,
@@ -40,6 +41,7 @@ for (const lifecycle of [false, true]) for (const peek of [false, true]) {
                 ...Array.from({ length: 17 }, (_, i) => ({ mes: id + i }))],
             evidence: { account, source: { instanceId: randomUUID(), revision: 1, rawHash: 'a'.repeat(64) } } }),
             chatElement: { 0: { appendChild: fragment => rows.push(...fragment.children) }, find: () => chain },
+            revealChat,
             ensureMessageMediaIsArray: no, updateChatMetadata: value => { runtime.chat_metadata = value; },
             eventSource: { emit: async () => {} }, event_types: {}, getCurrentChatId: () => runtime.selected_group,
             toastr: { error: no }, t: strings => strings.join(''), power_user: {},
@@ -75,6 +77,8 @@ for (const lifecycle of [false, true]) for (const peek of [false, true]) {
         expect(new Set(rows.map(row => row.id)).size).toBe(17);
         expect(runtime.chat[0].mes).toBe(peek ? 'A0' : 'B0');
         expect(runtime.chat_metadata.integrity).toBe(peek ? 'A' : 'B');
+        expect(revealChat).toHaveBeenCalled();
+        expect(revealChat.mock.calls.every(([element]) => element === runtime.chatElement[0])).toBe(true);
         expect(scroll.mock.calls.length > BScroll).toBe(peek);
         expect(tags.mock.calls.length > BTags).toBe(peek);
     });

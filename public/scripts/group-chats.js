@@ -1297,13 +1297,13 @@ export async function getGroupChat(groupId, reload = false, { switchMenu = true,
         if (savedFreshGroupChat && chat_metadata.integrity) {
             metadata.integrity = chat_metadata.integrity;
         }
-        await printMessages();
+        await printMessages({ reveal: true });
         if (!stillCurrent(chat_id)) return;
     } else if (Array.isArray(data) && data.length) {
         chat.splice(0, chat.length, ...data);
         chat.forEach(ensureMessageMediaIsArray);
         chatElement.find('.mes').remove();
-        await printMessages();
+        await printMessages({ reveal: true });
         if (!stillCurrent(chat_id)) return;
     }
 

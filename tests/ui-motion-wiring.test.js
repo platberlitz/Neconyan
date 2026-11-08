@@ -8,6 +8,7 @@ const read = file => readFileSync(path.join(repoRoot, file), 'utf8').replace(/\r
 
 const scriptJs = read('public/script.js');
 const tabsJs = read('public/scripts/neconyan-tabs.js');
+const groupChatsJs = read('public/scripts/group-chats.js');
 const inputHistoryJs = read('public/scripts/extensions/input-history/index.js');
 const quickImageGenJs = read('public/scripts/extensions/quick-image-gen/index.js');
 const welcomeJs = read('public/scripts/welcome-screen.js');
@@ -33,8 +34,20 @@ describe('surfaces that used to appear without motion', () => {
         expect(welcomeJs).toMatch(/const homeArriving = !document\.body\.classList\.contains\('neconyan-home-visible'\);\n\s+document\.body\.classList\.add\('neconyan-home-visible'\);\n\s+if \(homeArriving\) revealUi\(welcomeHost\);/);
     });
 
-    test('switching chats lets the new chat rise into place', () => {
-        expect(tabsJs).toContain('eventSource.on(event_types.CHAT_CHANGED, () => revealChat(document.getElementById(\'chat\')));');
+    test('a chat open reveals after clearing the old messages, not after the new chat is painted', () => {
+        const print = functionBody(scriptJs, 'export async function printMessages(');
+        expect(print).toContain('if (reveal) revealChat(chatElement[0]);');
+        expect(print.indexOf('removeRenderedChatMessages()')).toBeLessThan(print.indexOf('if (reveal) revealChat('));
+        expect(print.indexOf('if (reveal) revealChat(')).toBeLessThan(print.indexOf('await redisplayChat('));
+        expect(print).toContain('requestAnimationFrame(() => requestAnimationFrame(resolve))');
+
+        const result = functionBody(scriptJs, 'async function getChatResult(');
+        expect(result).toContain('await printMessages({ reveal: true });');
+        expect(result.indexOf('await printMessages({ reveal: true });')).toBeLessThan(result.indexOf('await eventSource.emit(event_types.CHAT_CHANGED'));
+        expect(functionBody(scriptJs, 'export async function reloadCurrentChatUnsafe(')).toContain('await printMessages({ reveal: true });');
+        const groupLoad = functionBody(groupChatsJs, 'export async function getGroupChat(');
+        expect(groupLoad.match(/await printMessages\(\{ reveal: true \}\);/g)).toHaveLength(2);
+        expect(tabsJs).not.toContain('eventSource.on(event_types.CHAT_CHANGED, () => revealChat');
     });
 
     test('a swipe slides the reply in from the side it was swiped towards without holding up the next swipe', () => {

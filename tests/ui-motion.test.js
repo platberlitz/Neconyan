@@ -31,11 +31,12 @@ afterEach(() => {
     for (const key of ['document', 'window', 'getComputedStyle', 'MutationObserver', 'requestAnimationFrame']) delete globalThis[key];
 });
 
-function surface(visible = true) {
+function surface(visible = true, text = '') {
     const animations = [];
     const declarations = new Map();
     const element = {
         isConnected: true, visible, inert: false, dataset: {},
+        querySelector: selector => selector === '.mes_text' && text ? { textContent: text } : null,
         style: {
             getPropertyValue: name => declarations.get(name)?.[0] ?? '',
             getPropertyPriority: name => declarations.get(name)?.[1] ?? '',
@@ -458,6 +459,20 @@ describe('chat and swipe motion', () => {
         expect(animations[0].frames).toEqual([{ opacity: 0, translate: '0 16px' }, { opacity: 1, translate: '0 0' }]);
         expect(animations[0].options.duration).toBe(motion.UI_MOTION_TIMING.chatRevealMs);
         expect(motion.UI_MOTION_TIMING.chatRevealMs).toBeGreaterThan(motion.UI_MOTION_TIMING.revealMs);
+    });
+
+    test('a readable chat is not rewound to transparent when its first frame arrives late', () => {
+        bodyClasses.add('safari');
+        pendingFrames = [];
+        const { element, animations } = surface(true, 'Hello.');
+        motion.revealChat(element);
+        const animation = animations[0];
+        animation.currentTime = 300;
+        element.opacity = '0.99';
+        pendingFrames.shift()(1000);
+        expect(animation.pause).not.toHaveBeenCalled();
+        expect(animation.currentTime).toBe(300);
+        expect(element.opacity).toBe('0.99');
     });
 
     test('an opened chat waits on its first frame in Safari while the page is still busy, then rises', () => {

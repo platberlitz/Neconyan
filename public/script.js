@@ -5,7 +5,7 @@ import { promptMediaText, promptImageCopyDescriptor } from './scripts/prompt-med
 import { formatRoleplayTextMessage, combineRoleplayTextPrompt } from './scripts/roleplay-text-format.js';
 import { roleplayLoadErrorMessage } from './scripts/roleplay-load-error.js';
 import { withAbortSignal } from './scripts/abort.js';
-import { finishUiMotion, getUiDrawerEdge, getUiSlideOptions, isUiClosing, revealUi, setUiVisibility, slideSwipe } from './scripts/ui-motion.js';
+import { finishUiMotion, getUiDrawerEdge, getUiSlideOptions, isUiClosing, revealChat, revealUi, setUiVisibility, slideSwipe } from './scripts/ui-motion.js';
 import {
     showdown,
     moment,
@@ -4046,13 +4046,16 @@ function captureChatRenderValidity() {
     };
 }
 
-export async function printMessages() {
+export async function printMessages({ reveal = false } = {}) {
     const isCurrent = captureChatRenderValidity();
     const readingAnchor = takeChatReloadReadingAnchor();
     const count = getChatRenderWindowSize(power_user.chat_truncation);
     const startIndex = getChatRenderWindowStartIndex(chat.length, count);
 
     removeRenderedChatMessages();
+    // Start the arrival before the new messages are painted. Starting it on CHAT_CHANGED
+    // put the first transparent keyframe after readable content, blanking the whole chat.
+    if (reveal) revealChat(chatElement[0]);
     beginChatLoadBottomLock();
     await redisplayChat({ startIndex, fade: false, pinBottomDuringRender: true, isCurrent });
     if (!isCurrent()) return;
@@ -5120,7 +5123,7 @@ export async function reloadCurrentChatUnsafe() {
         resetChatState();
         restoreNeutralChat();
         await getCharacters();
-        await printMessages();
+        await printMessages({ reveal: true });
         await eventSource.emit(event_types.CHAT_CHANGED, getCurrentChatId());
     }
 
@@ -14305,7 +14308,7 @@ async function getChatResult({ emitCreated = false, switchMenu = true, readOnlyR
     }
     await loadItemizedPrompts(getCurrentChatId());
     if (!navigationGuard()) return;
-    await printMessages();
+    await printMessages({ reveal: true });
     if (!navigationGuard()) return;
     select_selected_character(this_chid, { switchMenu });
 

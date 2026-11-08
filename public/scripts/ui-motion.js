@@ -106,6 +106,13 @@ function isVisible(element) {
         && getComputedStyle(element).visibility !== 'hidden';
 }
 
+function isVisiblyPainted(element) {
+    if (!element?.isConnected) return false;
+    const opacity = Number.parseFloat(getComputedStyle(element).opacity);
+    if (!(opacity >= 0.9)) return false;
+    return Boolean(element.querySelector?.('.mes_text')?.textContent?.trim());
+}
+
 function play(element, frames, { duration, easing = easeOut, closing = false, linked = [], complete = () => {}, restore = () => {}, holdWhileBusy = false }) {
     bindPreferences();
     const options = { duration, easing, fill: 'both' };
@@ -162,6 +169,9 @@ function play(element, frames, { duration, easing = easeOut, closing = false, li
     requestAnimationFrame(now => {
         if (settled) return;
         started = true;
+        // A late first frame can arrive after the chat already rendered and became
+        // readable. Rewinding then would blank visible content; let that motion finish.
+        if (holdWhileBusy && isVisiblyPainted(element)) return;
         rewind();
         if (holdWhileBusy && document.body?.classList.contains('safari')) hold(now);
     });
