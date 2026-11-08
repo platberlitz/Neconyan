@@ -11,4 +11,4 @@ import creator from './creator.js';
 // Knowledge revisions are independent of the assistant cards and artwork.
 export const KNOWLEDGE_REVISION = 65;
 export const topics = Object.freeze([...core, ...appearance, ...modes, ...memory, ...tools, ...connections, ...notes, ...scratchpad, ...creator]
-    .map(topic => Object.freeze({ ...topic, verification: 'source' })));
+    .map(topic => Object.freeze({ ...topic, keys: Object.freeze([...topic.keys]), verification: 'source' })));
