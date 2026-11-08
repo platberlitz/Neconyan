@@ -61,6 +61,7 @@
 - PR #541 (2026-11-08) `perf(startup): defer optional prefill controls and game rules`
 - PR #542 (2026-11-08) `fix(conversation): centre controls and add a translucent message pane`
 - PR #543 (2026-11-08) `fix(custom-css): update the assistant styling guidance`
+- PR #544 (2026-11-08) `docs(changelog): record the remaining release highlights`
 
 ## v1.5.1
 
