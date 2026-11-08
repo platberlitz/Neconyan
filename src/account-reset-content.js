@@ -3,7 +3,8 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { tryWriteFileSync } from './util.js';
 
-const LIMIT = 64 * 1024 * 1024;
+// The frozen defaults include base64-encoded artwork as well as the other bundled content.
+const LIMIT = 128 * 1024 * 1024;
 const TOTAL = 512 * 1024 * 1024;
 const hash = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 const validPath = value => typeof value === 'string' && value && value.length <= 1000 && !path.isAbsolute(value)

@@ -4,6 +4,734 @@
         "type": "character"
     },
     {
+        "filename": "backgrounds/Neconyan Theme - AMOLED Black.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Amber Dusk.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Arcade Cabinet.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Atomic Diner.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Aurora Drift.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Azure.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Bauhaus Poster.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Bioluminescent Tide.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Biometric Lab.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Black Orange.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Blueprint.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Botanical Plate.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Bubble Tea.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Burnt Orange.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Campfire Flicker.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Candlelit Page.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Candy Gloss.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Cappuccino.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Carbon Fibre.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Cassette Future.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Catppuccin Latte.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Catppuccin Mocha.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Celestial Chart.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Celestial Macaron.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Cerulean.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Cherry Cola.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Chrome 98.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Chrome HUD.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Cinder.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Circuitry.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Clean Room.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Comet Trail.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Comic Panel.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Construction Paper.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Cottagecore Linen.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - DOS Cobalt.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Dark Lite.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Dark V 1.0.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Datastream.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Dawn Glow.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Deep Sea Sonar.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Delft Porcelain.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Dracula Light.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Dracula.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Dungeon Slate.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - E-Ink Reader.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Editorial Hairline.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Eldritch Deep.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Elven Gilt.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Ember Hearth.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Espresso Bar.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Everforest Dark.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Everforest Light.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Firefly Glow.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Frost Rune.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Game Boy DMG.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Glacier.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Glass Frost.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Glitchwave.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Greenhouse Grid.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Grimoire.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Gruvbox Dark.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Gruvbox Light.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Hacker-Terminal-Light.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Hacker-Terminal.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Hazard Console.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Heat Haze.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Herbarium.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Holo Foil.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Hydrangea.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Ice Station.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Ink & Vellum.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Koi Pond Night.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Lantern Warmth.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Lava Lamp.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Lavender.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Legal Pad.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Lemon Sorbet.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Lime.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Magenta.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Marshmallow.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Meadow Sway.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Memphis Pop.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Miami Deco.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Midnight Kawaii.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Midnight Library.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Mint Chip.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Mint.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Monochrome Slate.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Monochrome.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Moonlit Garden.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Moss Hollow.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Nebula Swirl.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Neconyan Calico Dark.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Neconyan Calico.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Neo-Brutalist.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Neon Abyss.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Neon Grid.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Neon Heartbeat.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Neon Yellow.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Newsprint.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Night Orchid.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Nord Light.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Nord.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Nordic Frost.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Obsidian Ink.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Ocean Breath.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Paper Minimal.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Paper Tape.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Peach Fuzz.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Petal Breeze.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Phosphor Green.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Photocopy Zine.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Plasma Ring.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Plum.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Plushie Felt.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Pressed Lavender.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Prism Haze.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Radar Sweep.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Rain on Glass.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Raygun Poster.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Riso Print.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Rose Gold Bloom.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Rose.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Rosé Pine Dawn.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Rosé Pine.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Sage.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Sakura Drift.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Signal Pulse.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Slate.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Soap Bubble.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Soft Clay.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Solarized Dark.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Solarized Light.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Sonokai Andromeda Light.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Sonokai Andromeda.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Sonokai Atlantis Light.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Sonokai Atlantis.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Sonokai Default Light.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Sonokai Default.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Sonokai Espresso Light.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Sonokai Espresso.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Sonokai Maia Light.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Sonokai Maia.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Sonokai Shusia Light.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Sonokai Shusia.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Stealth Ops.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Steampunk Brass.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Sticker Book.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Storm Charge.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Strawberry Milk.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Sunbeam Dust.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Sunflower Field.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Sunlit Mosaic.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Sunny Bento.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Swiss Grid.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Synthwave Drive.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Teletext.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Terminal Amber.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Terracotta Sun.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Tidepool Shimmer.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Tokyo Night Day.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Tokyo Night.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Ultraviolet Rave.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - VFD Cyan.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Vaporwave Sunset.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Velvet Noir.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Verdant Light.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Verdant.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Volcanic Glass.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Wildflower Press.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Windows 98.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Windows Aero Light.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Windows Aero.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Windows XP Blue.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Windows XP Olive Green Dark.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Windows XP Olive Green.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Windows XP Royale Noir.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Windows XP Royale.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Windows XP Silver.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Windows XP Zune.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan Theme - Witching Hour.jpg",
+        "type": "background"
+    },
+    {
         "filename": "backgrounds/Neconyan - Velvet Moon.jpg",
         "type": "background"
     },

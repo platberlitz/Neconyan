@@ -1,0 +1,48 @@
+#Backgrounds .bg_example .bg-delete-button {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    z-index: 4;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    align-items: flex-start;
+    justify-content: flex-start;
+    border: 0;
+    background: transparent;
+}
+
+#Backgrounds .bg_example .bg-delete-button i {
+    display: flex;
+    width: 28px;
+    height: 28px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--neco-ginger);
+    border-radius: 5px;
+    background: var(--neco-ginger);
+    color: var(--neco-on-accent);
+}
+
+#Backgrounds .bg_example .bg-delete-button:hover {
+    background: transparent;
+}
+
+#Backgrounds .bg_example .bg-delete-button:hover i {
+    border-color: var(--neco-ginger-hover);
+    box-shadow: inset 0 0 0 2px var(--neco-ginger-hover);
+}
+
+#Backgrounds .bg_example .bg-delete-button:focus-visible i {
+    outline: 2px solid var(--neco-on-accent);
+    outline-offset: -4px;
+}
+
+#Backgrounds .bg_example.selected-background::before {
+    top: auto;
+    bottom: 5px;
+}
+
+#Backgrounds.bg-selection-mode #bg_menu_content .bg-delete-button {
+    display: none;
+}

@@ -3773,3 +3773,8 @@ body.neconyan #rm_extensions_block .sb-extensions-tool:last-child:nth-child(odd)
         grid-template-columns: minmax(0, 1fr);
     }
 }
+/* Keep the individual background delete control usable on touch screens. */
+#Backgrounds.bg-drawer-layout .bg_example .bg-delete-button {
+    width: 44px;
+    height: 44px;
+}

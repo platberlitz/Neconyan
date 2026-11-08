@@ -175,10 +175,15 @@ test('the real bundled reset manifest maps user content and creates working defa
     for (const [name, relative] of Object.entries(USER_DIRECTORY_TEMPLATE)) f.base.directories[name] = path.join(f.base.directories.root, relative);
     const content = captureUserResetContent(f.base.directories);
     assert.ok(content.files.some(file => file.relative === 'settings.json'));
+    const themeBackgrounds = content.files.filter(file => file.relative.startsWith('backgrounds/Neconyan Theme - '));
+    assert.equal(themeBackgrounds.length, 182);
     const contentHash = prepareRoleplayResetContent(f.base, f.account, content);
     resetRoleplayAccount(f.base, f.account, 'reset', { operationKey: 'real-defaults', contentHash });
     const settings = JSON.parse(fs.readFileSync(path.join(f.base.directories.root, 'settings.json'), 'utf8'));
     assert.equal(typeof settings.extension_settings, 'object');
     assert.ok(fs.existsSync(f.base.directories.characters));
     assert.ok(fs.existsSync(path.join(f.base.directories.root, 'content.log')));
+    for (const background of themeBackgrounds) {
+        assert.deepEqual(fs.readFileSync(path.join(f.base.directories.root, background.relative)), Buffer.from(background.data, 'base64'));
+    }
 });
