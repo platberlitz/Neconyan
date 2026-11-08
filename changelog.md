@@ -4,6 +4,8 @@
 
 ### Merged Staging PRs
 - PR #552 (2026-11-08) `fix(chat): preserve spaces in saved card filenames`
+- PR #555 (2026-11-08) `feat(backgrounds): add theme-matched backgrounds and controls`
+- PR #558 (2026-11-08) `feat(agents): let plot compass co-direct scoped stories`
 
 ## v1.5.2
 
