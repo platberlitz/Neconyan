@@ -3,9 +3,12 @@
 ## v1.5.2
 
 ### Highlights
+- **Bun 1.4.0 or later** is now required when you run Neconyan with Bun, and prereleases of 1.4.0 such as `1.4.0-canary.1` are refused. Older Bun versions stop before the server starts, explain the known crash in Structured Prefill, and point to Node 24, which is still supported.
 - **Structured Prefill** in Formatting turns your assistant prefill or a separate starter template into a reply pattern. **Ready-to-use preset** holds five built-in starting points; your saved **Prefill presets** list starts empty. For a first try, tick **Use a separate starter template**, put `I feel [[opt:calm|curious]]. [[keep]]` in **Starter template**, and turn on **Use Structured Prefill**.
 - **Structured Prefill** can enforce the pattern with **Provider schema** where the provider supports it, or use **Instructions (best effort)** elsewhere. The status says whether the reply matched, and **Continue overlap** stops a continuation repeating the join. A mismatch keeps the reply and reports it.
 - **Conversation games** adds Chess and Connect Four against the characters in the current DM, plus Minesweeper and Picross when you want to puzzle alone. Each branch keeps its own board, and the characters can see the seats, turn and board.
+- **Conversation** branch controls now sit centred under their chat card, and the empty Pals list puts its cat above a centred caption instead of wrapping the caption beside it.
+- The Conversation message area now sits in a translucent, inset panel, so the wallpaper shows through while messages keep their own bubbles. Starlight Conservatory uses a flat tint instead of a gradient, which avoids stripes in WebKit.
 - **Push notifications** are opt-in per device and account. Pick **Push notifications** under Settings → System & Device → Notifications to show toasts and new Conversation DMs on the lock screen or in the notification shade. Browser notifications need HTTPS or localhost; on iPhone and iPad, add Neconyan to the Home Screen first. The Android and iPhone apps use local notifications and need their local server running.
 - Blocking the optional notifications module no longer stops Neconyan from loading. If a content blocker blocks it, the app still starts, the notification control is unchecked and disabled, and its status says why. Logging out while the module is blocked still turns off the local and cached notification record.
 - **Scratchpad** can attach up to eight text files, PDFs or images to a message from the composer. PDFs share their selectable text, images need an image-capable model, and prepared content is capped at 2 MiB per message.
@@ -15,10 +18,12 @@
 - Companions that keep notes in later replies can use **Insert the block at depth** to place one labelled notes block a chosen number of messages from the newest reply. Setting a depth switches kept notes to **One labelled block**; leaving it blank uses the agent's Position and Depth fields.
 - A failed settings load now shows a readable **Neconyan could not finish loading** panel with the actual error, **Retry startup** and **Read report**, instead of reloading the page in a loop. The older WebKit cache and module panel still offers **Clear frontend cache and reload** and **Continue anyway**.
 - Saved server replies recover more reliably. A completed Mewmory-prepared reply interrupted after the provider result can finish saving, including its after-reply Agents, without another paid request.
+- A resumed Roleplay preview now stays below the last saved message after a reload, or keeps its existing position for a replacement reply, instead of appearing above the greeting when it arrives before the saved chat has drawn.
 - A server reply that ends with a provider error or content filter keeps the text that arrived and its display Regex formatting, marks the outcome, and skips automatic after-reply Agents rather than throwing the reply away.
 - Old server-side job records no longer block new server Roleplay or image work after their jobs have left the ledger. Neconyan stops reserving their full media slot once the job is gone, while the saved history and proofs stay untouched. This fixes the stuck reservation case; a genuinely full media budget can still refuse new work.
 - **Jev** reuses an identical completed decision for up to 24 hours in one bounded server cache, with separate Mewmory and Pawthfinder keys. Changing the scene, candidates, model or connection asks again; changing the threshold reuses the stored scores.
 - **Starlight Conservatory** now adds a small sparkle burst when you tap, with a softer cursor trail and foreground twinkles. Reduced Motion still keeps the overlay still.
+- The **Custom CSS** assistant's guidance now covers the current shell styles, the Conversation layout and the phone layout rules. It is told to preserve your existing shell, palette, wallpaper, fonts and cat visibility unless you ask for a change.
 - Pill shell styles keep their panel corners inside the window, so rounded panels no longer clip at the edge.
 - The phone tour card no longer pans sideways when you drag it.
 
