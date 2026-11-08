@@ -51,6 +51,7 @@
 - PR #536 (2026-11-07) `fix(generation): release unusable media reservations`
 - PR #537 (2026-11-08) `chore(release): prepare the 1.5.2 help and release notes`
 - PR #538 (2026-11-08) `fix(runtime)!: require Bun with safe timed pattern checks`
+- PR #539 (2026-11-08) `fix(roleplay): keep resumed previews after saved messages`
 
 ## v1.5.1
 
