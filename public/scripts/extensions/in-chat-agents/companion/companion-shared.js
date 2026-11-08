@@ -52,7 +52,7 @@ export function isEmptyOutputSentinel(content = '') {
 // Neconyan: tracker prompts teach the empty-output sentinel, and the same prompt is injected into
 // the MAIN generation when the tracker runs inline. Only a line that is nothing but the sentinel is
 // removed; prose that merely contains the word is left alone.
-export const EMPTY_OUTPUT_SENTINEL_LINE_SOURCE = String.raw`^[^\S\n]*(?:phone-none|tracker-none)[^\S\n]*$`;
+export const EMPTY_OUTPUT_SENTINEL_LINE_SOURCE = String.raw`^[^\S\n]*(?:phone[-_]none|tracker[-_]none)[^\S\n]*$`;
 export const EMPTY_OUTPUT_SENTINEL_LINE_PROBE = new RegExp(EMPTY_OUTPUT_SENTINEL_LINE_SOURCE, 'im');
 export const EMPTY_OUTPUT_SENTINEL_LINE_PATTERN = new RegExp(EMPTY_OUTPUT_SENTINEL_LINE_SOURCE, 'gim');
 

@@ -42,6 +42,30 @@ async function openPreview(app, phone) {
 
 for (const phone of [true, false]) {
     const viewport = phone ? 'phone' : 'desktop';
+    test(`server preview strips empty tracker lines before balancing Markdown on ${viewport}`, async ({ app }) => {
+        const page = await openPreview(app, phone);
+        const raw = '*The reply is still arriving.\ntracker-none\nPHONE_NONE';
+        await page.evaluate(text => window.sendLivePreview({ childId: 'reply', stage: 'generating', text }), raw);
+        const body = page.locator('#neconyan-roleplay-preview .mes_text');
+        await expect(body).toContainText('The reply is still arriving.');
+        await page.screenshot({ path: `../screenshots/server-sentinel-${viewport}-${process.env.NECONYAN_SCREENSHOT_PHASE || 'after'}.png`, scale: 'css' });
+        await expect(body).not.toContainText(/tracker-none|PHONE_NONE/);
+        expect(await page.evaluate(() => window.stopLivePreview.reply().text)).toBe(raw);
+        await page.evaluate(() => window.sendLivePreviewDelta({ text: '\nThe words tracker-none remain in ordinary prose.' }));
+        await expect(body).toContainText('The words tracker-none remain in ordinary prose.');
+        await page.evaluate(async () => {
+            const { buildRegexScriptRefsForAgent } = await import('/scripts/extensions/in-chat-agents/regex-snapshot-store.js');
+            const scripts = [{ id: 'live-display', findRegex: '/^CUSTOM_EMPTY$/gm', replaceString: '', placement: [2], markdownOnly: true }];
+            window.sendLivePreview({ childId: 'reply', stage: 'agents', text: '*An unfinished sentence.\nCUSTOM_EMPTY',
+                inChatAgents: { activeAgentIds: ['tracker'], edited: false, generationType: 'normal',
+                    regexScriptRefs: buildRegexScriptRefsForAgent('tracker', scripts),
+                    nativeRegexScripts: scripts.map(script => ({ agentId: 'tracker', script })) } });
+        });
+        await expect(body).toContainText('An unfinished sentence.');
+        await expect(body).not.toContainText('CUSTOM_EMPTY');
+        await page.evaluate(() => window.stopLivePreview());
+    });
+
     test(`Agent preview updates do not take over an active scroll near the bottom on ${viewport}`, async ({ app }) => {
         const page = await openPreview(app, phone);
         await installSyntheticLongChat(page, { messageCount: 12 });
@@ -164,13 +188,18 @@ for (const phone of [true, false]) {
         const page = await openPreview(app, phone);
         await page.evaluate(() => {
             window.drawCount = 0;
-            document.addEventListener('neconyan:roleplay-preview-rendered', () => { window.drawCount++; });
+            window.previewDrawTimes = [];
+            document.addEventListener('neconyan:roleplay-preview-rendered', () => {
+                window.drawCount++;
+                window.previewDrawTimes.push(performance.now());
+            });
             window.sendLivePreview({ childId: 'reply', stage: 'generating', text: 'Start', gen_started: new Date().toISOString() });
         });
         const preview = page.locator('#neconyan-roleplay-preview');
         await expect(preview).toContainText('Start');
         // Two seconds of 100ms appends, delivered as the server's delta frames.
         await page.evaluate(async () => {
+            window.previewAppendsStartedAt = performance.now();
             for (let index = 0; index < 20; index++) {
                 await new Promise(resolve => setTimeout(resolve, 100));
                 window.sendLivePreviewDelta({ text: ` token${index}`, set: { updatedAt: Date.now() } });
@@ -178,11 +207,12 @@ for (const phone of [true, false]) {
         });
         await expect(preview).toContainText('token19');
         await expect(preview).toContainText('token9 token10', { timeout: 2000 });
-        const draws = await page.evaluate(() => window.drawCount);
+        const { draws, times, elapsed } = await page.evaluate(() => ({ draws: window.drawCount,
+            times: window.previewDrawTimes, elapsed: performance.now() - window.previewAppendsStartedAt }));
         expect(draws, `full redraws over 2s of 100ms updates: ${draws}`).toBeGreaterThanOrEqual(phone ? 5 : 8);
         // The phone's conservative streaming floor must hold: deltas redraw on the
         // cadence, not once per arriving append.
-        expect(draws, `full redraws over 2s of 100ms updates: ${draws}`).toBeLessThanOrEqual(phone ? 14 : Infinity);
+        expect(draws, `full redraws: ${draws}, elapsed: ${elapsed}ms, times: ${JSON.stringify(times)}`).toBeLessThanOrEqual(phone ? 14 : Infinity);
         const connections = await page.evaluate(() => window.previewConnections);
         expect(connections, 'appended deltas never force a reconnect').toBe(1);
         expect(await page.evaluate(() => window.previewFramesQuery), 'the observer opts into delta frames').toBe('delta');

@@ -299,7 +299,7 @@ import { AGENT_REGEX_PLACEMENT, applyRegexScriptList } from './scripts/extension
 import { stripTrackerMandatoryMarkers } from './scripts/tracker-mandatory-marker.js';
 import { resolveRegexScriptsForSnapshot } from './scripts/extensions/in-chat-agents/regex-snapshot-store.js';
 import { isAgentWorkPending, waitForAgentWorkIdle } from './scripts/extensions/in-chat-agents/agent-work-state.js';
-import { buildCompanionChatHistoryBlocks, COMPANION_HISTORY_PROMPT_KEY_PREFIX, consolidateCompanionChatHistory, hasCompanionChatHistoryForHiddenHost, selectCompanionChatHistory } from './scripts/extensions/in-chat-agents/companion/companion-shared.js';
+import { buildCompanionChatHistoryBlocks, COMPANION_HISTORY_PROMPT_KEY_PREFIX, consolidateCompanionChatHistory, hasCompanionChatHistoryForHiddenHost, selectCompanionChatHistory, stripEmptyOutputSentinelLines } from './scripts/extensions/in-chat-agents/companion/companion-shared.js';
 import { IN_CHAT_AGENT_PROMPT_KEY_PREFIX, instrumentInChatAgentPromptValue, trimOldestRetainedContribution } from './scripts/in-chat-agent-inspection.js';
 import { initLogprobs, saveLogprobsForActiveMessage } from './scripts/logprobs.js';
 import { FILTER_STATES, FILTER_TYPES, FilterHelper, isFilterState } from './scripts/filters.js';
@@ -5434,9 +5434,10 @@ export function sanitizeMessageHtml(mes, sanitizerOverrides = {}, character = ch
  * @param {boolean} [isReasoning] If the message is reasoning output
  * @param {boolean} [updateGreeting=true] Persist greeting substitutions during normal message rendering
  * @param {ChatMessage|null} [messageContext=null] Display-only draft, outside the saved chat array
+ * @param {boolean} [isPreview=false] Clean and balance a live draft after its display rules run
  * @returns {string} HTML string
  */
-export function messageFormatting(mes, ch_name, isSystem, isUser, messageId, sanitizerOverrides = {}, isReasoning = false, updateGreeting = true, messageContext = null) {
+export function messageFormatting(mes, ch_name, isSystem, isUser, messageId, sanitizerOverrides = {}, isReasoning = false, updateGreeting = true, messageContext = null, isPreview = false) {
     const captureCardScripts = !isReasoning && !messageContext && updateGreeting && !power_user.encode_tags;
     if (!mes) {
         if (captureCardScripts) forgetCardScript(messageId);
@@ -5444,8 +5445,11 @@ export function messageFormatting(mes, ch_name, isSystem, isUser, messageId, san
     }
 
     const oocBlocks = [];
+    // Match browser-side live Agent cleanup without changing the recoverable reply.
+    if (isPreview && !isUser && !isSystem && !isReasoning) mes = stripEmptyOutputSentinelLines(mes);
     const preparedMessage = prepareMessageDisplayText(mes, ch_name, isSystem, isUser, messageId, isReasoning, updateGreeting, messageContext);
-    mes = preparedMessage.mes;
+    // Synthetic Markdown closers must not become part of line-anchored regex input.
+    mes = isPreview ? balanceStreamingMarkdown(preparedMessage.mes) : preparedMessage.mes;
     isSystem = preparedMessage.isSystem;
     mesForShowdownParse = preparedMessage.showdownSource;
     const protectedScripts = captureCardScripts ? protectCardScriptBlocks(mes) : null;
@@ -6358,7 +6362,7 @@ function getMessageTextHTML(message, { messageId = chat.indexOf(message), update
     const text = message.extra?.display_text || message.mes;
 
     return messageFormatting(
-        isPreview ? balanceStreamingMarkdown(text) : text,
+        text,
         message.name,
         message.is_system,
         message.is_user,
@@ -6367,6 +6371,7 @@ function getMessageTextHTML(message, { messageId = chat.indexOf(message), update
         false,
         updateGreeting,
         messageContext,
+        isPreview,
     );
 }
 
