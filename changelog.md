@@ -68,6 +68,7 @@
 - PR #546 (2026-11-08) `test(e2e): correct conversation and scratchpad checks`
 - PR #547 (2026-11-08) `fix(scratchpad): keep the narrow header readable`
 - PR #548 (2026-11-08) `docs(assistants): clarify accent button contrast`
+- PR #549 (2026-11-08) `docs(changelog): record the final layout fixes`
 
 ## v1.5.1
 
