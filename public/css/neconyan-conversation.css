@@ -502,12 +502,13 @@
 }
 
 .sb-conversation-branch-list {
-    grid-column: 1 / -1;
+    /* Keep the branch stack under the chat card, not indented past its right edge. */
+    grid-column: 1;
     display: flex;
     flex-direction: column;
     gap: 4px;
     min-inline-size: 0;
-    margin-inline-start: 48px;
+    margin-inline-start: 0;
     padding-block: 2px 4px;
 }
 
