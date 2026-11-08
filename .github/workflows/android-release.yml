@@ -22,12 +22,17 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@cdca7365b2dadb8aad0a33bc7601856ffabcc48e # v4.3.0
+        with:
+          node-version: 24
       - name: Download the published comparison APK
         env:
           GH_TOKEN: ${{ github.token }}
           PROBE_RELEASE: ${{ inputs.probe_release }}
         run: gh release download "$PROBE_RELEASE" --pattern '*-android-x86_64.apk' --dir baseline
       - name: Fetch the unstripped Node runtime to name crashing functions
+        env:
+          NECONYAN_GITHUB_TOKEN: ${{ github.token }}
         run: bash android/prepare-runtime.sh
       - name: Enable emulator acceleration
         run: |
@@ -60,13 +65,22 @@ jobs:
       - name: Install dependencies
         run: npm ci --ignore-scripts
       - name: Build committed server and frontend
+        env:
+          NECONYAN_GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/build-android-payload.js --release
       - name: Prepare Android toolchain
         run: |
           echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
           echo "$JAVA_HOME_21_X64/bin" >> "$GITHUB_PATH"
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
-          bash android/prepare-runtime.sh
+      - name: Prepare the Android Node runtime
+        env:
+          NECONYAN_GITHUB_TOKEN: ${{ github.token }}
+        run: bash android/prepare-runtime.sh
+      - name: Prime the pinned Gradle distribution
+        env:
+          NECONYAN_GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/prime-gradle-distribution.js
       - name: Build signed APKs
         env:
           SIGNING_KEY: ${{ secrets.NECONYAN_ANDROID_KEYSTORE }}

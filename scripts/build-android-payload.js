@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import archiver from 'archiver';
+import { downloadPinnedAsset } from './lib/release-download.js';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const release = process.argv.includes('--release');
@@ -41,10 +42,12 @@ const icuCache = path.join(root, '.local-runtime/icu');
 const icuZip = path.join(icuCache, path.basename(icu.url));
 fs.mkdirSync(icuCache, { recursive: true });
 if (!fs.existsSync(icuZip) || sha256(icuZip) !== icu.zipSha256) {
-    const response = await fetch(icu.url);
-    if (!response.ok) throw new Error(`Could not download ICU data: HTTP ${response.status}`);
-    fs.writeFileSync(icuZip, Buffer.from(await response.arrayBuffer()));
-    if (sha256(icuZip) !== icu.zipSha256) throw new Error('The downloaded ICU data does not match its pinned checksum.');
+    await downloadPinnedAsset({
+        url: icu.url,
+        sha256: icu.zipSha256,
+        destination: icuZip,
+        logger: message => console.log(`ICU data: ${message}`),
+    });
 }
 fs.mkdirSync(path.join(staging, 'icu'));
 fs.writeFileSync(path.join(staging, 'icu', icu.file), execFileSync('unzip', ['-p', icuZip, icu.file], { maxBuffer: 64 * 1024 * 1024 }));
