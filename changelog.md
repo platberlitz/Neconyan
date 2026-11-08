@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.5.3
+
+### Merged Staging PRs
+- PR #552 (2026-11-08) `fix(chat): preserve spaces in saved card filenames`
+
 ## v1.5.2
 
 ### Highlights
