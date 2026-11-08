@@ -31,9 +31,9 @@ describe('core message transparency wiring', () => {
 
     test('paints default and document message blocks without double-painting bubble or native styles', () => {
         expect(chatStylesSource).toContain('body:not(.bubblechat):not(.echostyle):not(.whisperstyle):not(.hushstyle):not(.ripplestyle):not(.tidestyle):not(.nnchat) #chat .mes:not(.smallSysMes) .mes_block');
-        expect(chatStylesSource).toContain('background-color: var(--SmartThemeBotMesBlurTintColor);');
+        expect(chatStylesSource).toContain('background-color: var(--nn-flat-inner-background, var(--moonlit-sb-bot-message-bg));');
         expect(chatStylesSource).toContain('body:not(.bubblechat):not(.echostyle):not(.whisperstyle):not(.hushstyle):not(.ripplestyle):not(.tidestyle):not(.nnchat) #chat .mes[is_user="true"]:not(.smallSysMes) .mes_block');
-        expect(chatStylesSource).toContain('background-color: var(--SmartThemeUserMesBlurTintColor);');
+        expect(chatStylesSource).toContain('background-color: var(--nn-flat-inner-background, var(--moonlit-sb-user-message-bg));');
     });
 
     test('migrates background and sheld transparency variables with no-op defaults', () => {

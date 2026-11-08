@@ -43,8 +43,8 @@
     --moonlit-sb-swipe-edge-offset: 8px;
     --moonlit-sb-swipe-gap: 4px;
     --moonlit-sb-swipe-inline-offset: 24px;
-    --moonlit-sb-user-message-bg: color-mix(in srgb, var(--SmartThemeUserMesBlurTintColor) var(--sb-shell-surface-opacity-percent, 100%), transparent);
-    --moonlit-sb-bot-message-bg: color-mix(in srgb, var(--SmartThemeBotMesBlurTintColor) var(--sb-shell-surface-opacity-percent, 100%), transparent);
+    --moonlit-sb-user-message-bg: color-mix(in srgb, var(--SmartThemeUserMesBlurTintColor) var(--sb-message-surface-opacity-percent, 100%), transparent);
+    --moonlit-sb-bot-message-bg: color-mix(in srgb, var(--SmartThemeBotMesBlurTintColor) var(--sb-message-surface-opacity-percent, 100%), transparent);
     --customCSS-bg-opacity: 1;
     --customCSS-bg-blur: 0;
     --sheldBackgroundColor: transparent;
@@ -69,11 +69,11 @@ body.sb-sheld-blur #sheld::before {
 }
 
 body:not(.bubblechat):not(.echostyle):not(.whisperstyle):not(.hushstyle):not(.ripplestyle):not(.tidestyle):not(.nnchat) #chat .mes:not(.smallSysMes) .mes_block {
-    background-color: var(--SmartThemeBotMesBlurTintColor);
+    background-color: var(--nn-flat-inner-background, var(--moonlit-sb-bot-message-bg));
 }
 
 body:not(.bubblechat):not(.echostyle):not(.whisperstyle):not(.hushstyle):not(.ripplestyle):not(.tidestyle):not(.nnchat) #chat .mes[is_user="true"]:not(.smallSysMes) .mes_block {
-    background-color: var(--SmartThemeUserMesBlurTintColor);
+    background-color: var(--nn-flat-inner-background, var(--moonlit-sb-user-message-bg));
 }
 
 @media screen and (max-width: 1000px) {

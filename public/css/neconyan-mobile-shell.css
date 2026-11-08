@@ -2033,6 +2033,18 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
         box-shadow: 0 24px 70px color-mix(in srgb, var(--SmartThemeShadowColor) 28%, transparent);
     }
 
+    /* On phones, keep the avatar and swipe controls inside one Flat message surface. */
+    :root[data-sb-surface-transparent='true'] body.neconyan.flatchat:not(.nnchat):not(.sbterm) #chat .mes {
+        --nn-phone-message-background: var(--moonlit-sb-bot-message-bg);
+        --nn-flat-inner-background: transparent;
+    }
+    :root[data-sb-surface-transparent='true'] body.neconyan.flatchat:not(.nnchat):not(.sbterm) #chat .mes[is_user='true'] {
+        --nn-phone-message-background: var(--moonlit-sb-user-message-bg);
+    }
+    :root[data-sb-surface-transparent='true'] body.neconyan.flatchat:not(.nnchat):not(.sbterm) #chat .mes .mes_block {
+        border-color: transparent;
+    }
+
     #sb-mobile-nav-content::before {
         content: '';
         position: absolute;

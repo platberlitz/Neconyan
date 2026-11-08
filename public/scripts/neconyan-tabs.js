@@ -530,7 +530,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261108-scratchpad-narrow-header';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261109-background-visibility';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -5746,6 +5746,8 @@ function setFrontendIconPreference(iconId, { persist = true } = {}) {
 function setSurfaceTransparency(value, { persist = true } = {}) {
     const nextTransparency = normalizeSurfaceTransparency(value);
     const surfaceOpacity = Math.max(0, 1 - (nextTransparency / 100));
+    // Keep message text readable even when the surrounding canvas is fully transparent.
+    const messageOpacity = 0.8 + (surfaceOpacity * 0.2);
     const cardOpacity = Math.min(1, surfaceOpacity + 0.12);
     const controlOpacity = Math.min(1, surfaceOpacity + 0.22);
     const overlayOpacity = Math.min(1, surfaceOpacity + 0.08);
@@ -5753,6 +5755,9 @@ function setSurfaceTransparency(value, { persist = true } = {}) {
 
     document.documentElement.style.setProperty('--sb-shell-surface-opacity', surfaceOpacity.toFixed(2));
     document.documentElement.style.setProperty('--sb-shell-surface-opacity-percent', `${(surfaceOpacity * 100).toFixed(0)}%`);
+    document.documentElement.style.setProperty('--sb-message-surface-opacity', messageOpacity.toFixed(3));
+    document.documentElement.style.setProperty('--sb-message-surface-opacity-percent', `${(messageOpacity * 100).toFixed(1)}%`);
+    document.documentElement.dataset.sbSurfaceTransparent = String(nextTransparency > 0);
     document.documentElement.style.setProperty('--sb-shell-card-opacity', '1');
     document.documentElement.style.setProperty('--sb-shell-control-opacity', '1');
     document.documentElement.style.setProperty('--sb-shell-overlay-opacity', '1');

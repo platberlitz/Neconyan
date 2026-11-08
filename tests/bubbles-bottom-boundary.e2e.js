@@ -54,7 +54,7 @@ test('desktop Bubbles follows stationary paint, native edits and the real lower 
     });
     await expect.poll(() => row.evaluate(element => getComputedStyle(element).backgroundColor === getComputedStyle(document.querySelector('#neconyan-bubbles-bottom-boundary')).backgroundColor)).toBe(true);
     expect(await cap.evaluate(element => getComputedStyle(element).backgroundColor)).not.toBe(ordinaryPaint);
-    await page.evaluate(() => document.documentElement.style.setProperty('--sb-page-card-opacity', '0.37'));
+    await page.evaluate(() => document.documentElement.style.setProperty('--sb-message-surface-opacity', '0.37'));
     await expect.poll(() => cap.locator('div').evaluate(element => getComputedStyle(element).opacity)).toBe('0.37');
     await row.evaluate(element => element.classList.remove('selected'));
     await row.locator('.mes_edit').click({ force: true });
