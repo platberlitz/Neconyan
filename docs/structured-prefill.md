@@ -39,7 +39,7 @@ Unknown slots and invalid ranges return an error. Banned phrases are case-insens
 
 ## Check the result
 
-The status records the provider, model and output method. **Request accepted; reply matches the pattern** means a successful provider response passed Neconyan's complete pattern check, including the starter, minimum length and banned phrases. It does not prove that the provider enforced those rules internally.
+The status records the provider, model and output method. A status of **Provider accepted the request. Reply matches the full pattern.** means a successful provider response passed Neconyan's complete pattern check, including the starter, minimum length and banned phrases. It does not prove that the provider enforced those rules internally.
 
 A mismatch keeps the reply and reports that it did not match. Rejected requests, skipped requests, incomplete replies, invalid JSON and checks too costly to finish have separate statuses. Starter-model warnings appear with the result. Saved replies retain their recorded check when you change settings or reopen the chat.
 
@@ -55,7 +55,7 @@ If a provider stops with malformed JSON, already decoded reply text is retained 
 
 Choose a saved Chat Completion connection profile under **Starter model** to use `[[pg]]`. Its own request runs first, with the conversation and optional starter instructions. You can set its token limit, timeout and stop strings. Generated text is inserted literally, so a starter containing `[[keep]]` doesn't become a template command. If that request fails or times out, the main request continues with an empty slot and a recorded warning. Pressing Stop still cancels the request.
 
-Save named presets, export them as JSON, or import native exports and named StructuredPrefill extension exports. Importing adds presets; it doesn't enable the feature. Selecting a preset keeps your current enabled/disabled choice.
+Save named presets, export them as JSON, or import native exports and named StructuredPrefill extension exports. Importing adds them to the preset list and replaces a saved preset with the same name; it doesn't enable the feature. Selecting a preset keeps your current enabled/disabled choice.
 
 Slash commands:
 

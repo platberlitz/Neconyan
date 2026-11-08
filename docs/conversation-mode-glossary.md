@@ -135,6 +135,18 @@ Search checks message names, roles, text, attachment descriptions, and reply-ref
 | **Schedule**  | Opens the weekly character routine editor.                                              |
 | **Summarize** | Manually refreshes Conversation memory.                                                 |
 | **Force**     | Queues a reply even when normal availability rules would prevent one.                   |
+| **Scratchpad** | Opens Scratchpad beside the current DM.                                                |
+| **Games**     | Opens the Games panel for the current branch.                                          |
+
+## Games
+
+Open **Chat tools** and choose **Games** in the quick actions row, or send `/games`. Add a game name (`/games chess`, `/games connect-four`, `/games picross` or `/games minesweeper`) to open its setup directly.
+
+The panel opens beside the chat on desktop and fills the screen on a phone. One game is saved per Conversation branch. Switching branches loads that branch's game; closing the panel or reloading the page does not lose the saved game, so open **Games** again to resume. **All games** returns to the picker without ending the current game, **End game** discards it, and **New game** or **Play again** replaces it with a fresh one.
+
+Chess and Connect Four are played against the chat's characters. Choose **How hard** (used when the board has to play a move itself) and who moves first, then press **Start**. Each pal turn can make one model request through the chat's connection profile, or through the main API when the chat has none. If the model's answer is missing or not a legal move, the board plays its own move instead. Picross and Minesweeper are solo puzzles with size choices and make no model request. **Hint** suggests a move or square for Chess, Picross and Minesweeper.
+
+Starting and finishing a game adds a short OOC note to the branch. Later replies are told about the game, the board, whose turn it is and the result; for a solo puzzle, characters are told it is yours and not to solve it for you. Game moves themselves stay on the board and are not posted as chat messages.
 
 ## Attachments
 
@@ -192,6 +204,12 @@ Conversation Mode tracks unread messages separately for each persona and thread.
 **Quiet start** and **Quiet end** use `HH:MM` values. During that period, sound and popup notifications can be suppressed while unread indicators continue updating.
 
 Pressing **Mark All Read** in the Pals panel clears unread counts for the active persona.
+
+### Notifications on this device
+
+**Settings → System & Device → Notifications → Push notifications** is off by default and belongs to this device and account. Permission is requested only when you switch it on. When it is on, Neconyan sends visible toasts and new Conversation DMs as device notifications. Conversation DMs still follow **Mute this DM**, **Priority** and quiet hours; other toasts keep their normal visibility. Message previews can appear on the lock screen.
+
+Browser notifications need HTTPS or localhost, browser push support and a service worker, plus the Neconyan server running to produce background DMs. On iPhone and iPad, add Neconyan to the Home Screen and enable notifications from that app. The Android and iPhone apps use native notifications and also need their local server running. If the browser or device blocks notifications, the switch stays off and shows the reason; allow them in the browser or device settings, then turn the switch on again. A blocked notifications module doesn't stop the rest of Neconyan from starting. A device notification opens or focuses Neconyan; it doesn't jump straight to the Conversation thread. Turning it off removes this device's subscription, and logging out turns it off.
 
 ## Character Schedule
 
@@ -388,4 +406,4 @@ Quick Image Gen has its own specific settings on its own extension menu. Selecti
 
 ## Notifications and Unread Counts
 
-A Conversation message increments unread state when it arrives outside the active thread. Opening the relevant thread clears or updates its unread state according to the normal Conversation notification flow. Unread counts can be displayed in several places, including the Pals toggle, Conversation mode tab, browser title, favicon, and Characters controls. Muted threads and quiet hours still retain unread counts. They mainly suppress the message sound and popup notification. A Conversation notification popup can be clicked to open the thread and branch that produced the message.
+A Conversation message increments unread state when it arrives outside the active thread. Opening the relevant thread clears or updates its unread state according to the normal Conversation notification flow. Unread counts can be displayed in several places, including the Pals toggle, Conversation mode tab, browser title, favicon, and Characters controls. Muted threads and quiet hours still retain unread counts. They mainly suppress the message sound and popup notification. An in-app Conversation notification popup can be clicked to open the thread and branch that produced the message. A device notification only opens or focuses Neconyan.

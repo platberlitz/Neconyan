@@ -25,7 +25,11 @@ function searchable(text) {
 function prepareTopics(topics) {
     let cached = preparedTopicsCache.get(topics);
     if (!cached) {
-        cached = topics.map(topic => {
+        // A frozen topic is shallow: its keys array must be frozen too before its
+        // prepared terms can be reused. Caller-owned lists may change between searches.
+        const cacheable = Object.isFrozen(topics)
+            && topics.every(topic => Object.isFrozen(topic) && Array.isArray(topic.keys) && Object.isFrozen(topic.keys));
+        const documents = topics.map(topic => {
             const searchText = searchable([topic.title, ...topic.keys].join(' '));
             return {
                 topic,
@@ -35,8 +39,13 @@ function prepareTopics(topics) {
                 keyPhrases: topic.keys.map(key => ' ' + words(key).join(' ') + ' '),
             };
         });
-        // Shipped references are immutable; caller-owned lists may change between searches.
-        if (Object.isFrozen(topics)) preparedTopicsCache.set(topics, cached);
+        cached = {
+            documents,
+            tokenSets: cacheable
+                ? documents.map(document => new Set(terms(document.text + '\n' + document.searchText)))
+                : null,
+        };
+        if (cacheable) preparedTopicsCache.set(topics, cached);
     }
     return cached;
 }
@@ -62,14 +71,14 @@ export function selectAssistantKnowledge(topics, messages) {
     if (/\b(it|that|this|those|these|same|also|only|instead|both|second|first)\b/i.test(latest)) {
         turns.slice(0, -1).reverse().forEach((text, index) => queries.push({ text, weight: 0.65 / (index + 1) }));
     }
-    const documents = prepareTopics(topics);
+    const { documents, tokenSets } = prepareTopics(topics);
     const scores = new Map();
     for (const { text, weight } of queries) {
         const query = searchable(text);
         if (!query) continue;
         const queryWords = new Set(query.split(' '));
         const phrase = ' ' + words(text).join(' ') + ' ';
-        for (const { document, score } of lexicalSearch(documents, query, documents.length)) {
+        for (const { document, score } of lexicalSearch(documents, query, documents.length, tokenSets)) {
             const topic = document.topic;
             const anchorMatches = document.searchWords.filter(word => queryWords.has(word));
             if (!anchorMatches.length) continue;
