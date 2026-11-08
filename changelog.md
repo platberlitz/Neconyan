@@ -70,6 +70,7 @@
 - PR #548 (2026-11-08) `docs(assistants): clarify accent button contrast`
 - PR #549 (2026-11-08) `docs(changelog): record the final layout fixes`
 - PR #550 (2026-11-08) `docs(assistants): cover final release changes`
+- PR #551 (2026-11-08) `fix(release): fall back for pinned native downloads`
 
 ## v1.5.1
 
