@@ -136,6 +136,7 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
 
 .scratchpad-header {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 10px;
     padding: 10px 14px;
@@ -153,12 +154,14 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
 }
 
 .scratchpad-title {
-    flex: 1 1 auto;
+    /* Keep the heading's width before the actions; below that the actions wrap to their own row. */
+    flex: 1 1 7rem;
     min-width: 0;
 }
 
 .scratchpad-heading {
     margin: 0;
+    overflow-wrap: anywhere;
     font-family: var(--sb-font-display, 'Fredoka One', sans-serif);
     font-size: 1.25rem;
     font-weight: 400;
@@ -178,6 +181,7 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     display: flex;
     flex: none;
     gap: 6px;
+    margin-inline-start: auto;
 }
 
 .scratchpad-app .scratchpad-button {

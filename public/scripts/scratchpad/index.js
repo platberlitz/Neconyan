@@ -48,7 +48,7 @@ import { renderWebSearchSettings, renderWebSearchSources, setWebSearchToggle } f
 import { prepareAttachment } from './attachments.js';
 import { MAX_ATTACHMENTS, normaliseAttachments } from './attachment-data.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261107-scratchpad-attachments';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261108-scratchpad-narrow-header';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
