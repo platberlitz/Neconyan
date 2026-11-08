@@ -1330,6 +1330,19 @@ async function sendWelcomePanel(chats, expand, requestId, assistantPersonalities
             console.error('Neconyan Home host not found');
             return;
         }
+        // DOMPurify trims attribute values. Restore saved identifiers after sanitisation
+        // using DOM setters, so spaces remain significant without inserting HTML.
+        fragment.querySelectorAll('.recentChat').forEach((item, index) => {
+            const chat = chats[index];
+            if (!chat) {
+                return;
+            }
+            item.setAttribute('data-avatar', chat.avatar || '');
+            item.setAttribute('data-file', chat.chat_name || '');
+            item.setAttribute('data-group', String(chat.group || ''));
+            item.setAttribute('data-conversation-branch-id', chat.conversation_branch_id || '');
+            item.setAttribute('data-conversation-branch-name', chat.conversation_branch_name || '');
+        });
         fragment.querySelectorAll('.welcomePanel').forEach((root) => {
             initializeNeconyanHome(root);
             initializeAssistantPicker(root);

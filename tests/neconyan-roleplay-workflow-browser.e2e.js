@@ -82,6 +82,65 @@ async function terminal(account, id) {
 for (const phone of [false, true]) {
     const viewport = phone ? 'phone' : 'desktop';
 
+    test(`${viewport} Home recent chats preserve spaces in card filenames`, async ({ app }) => {
+        const account = await app.account({ phone, contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {}, configureSettings(settings) {
+            settings.accountStorage.WelcomePage_PanelMode = 'list';
+        } });
+        if (phone) await installIPhoneSafari(account.context);
+        const native = owned(app);
+        const avatar = ' ' + account.avatar;
+        await fs.copyFile(path.join(native.directories.characters, account.avatar), path.join(native.directories.characters, avatar));
+        // A distinct unspaced card and chat must never be selected instead.
+        await savedChat(account, 'Exact Home chat');
+        const locator = await savedChat({ ...account, avatar }, 'Exact Home chat');
+        const page = await account.open({ workspace: false, readyTimeout: 120000 });
+        const showHome = async () => {
+            await page.evaluate(async () => { await window.NeconyanShell.showHome(); });
+            await expect(page.locator('body')).toHaveClass(/neconyan-home-visible/);
+            if (phone) await applyIOSOnlyCss(page);
+        };
+        const exactChat = () => page.evaluate(() => {
+            const context = window.SillyTavern.getContext();
+            return { avatar: context.characters[context.characterId]?.avatar, chat: context.chatId };
+        });
+        await showHome();
+        // Confirm the user's working entry point before exercising Home.
+        if (phone) await page.locator('#sb-hamburger').click();
+        await page.locator(`[data-neconyan-recent-key=${JSON.stringify(`char_${avatar}_${locator.chat}.jsonl`)}]`).click();
+        await expect.poll(exactChat).toEqual({ avatar, chat: locator.chat });
+        await expect(page.locator('body')).not.toHaveClass(/neconyan-home-visible/);
+        await expect(page.locator('#chat .mes').first()).toContainText('Retained answer.');
+        await showHome();
+        const homeChat = page.locator('.welcomePanel .recentChat[data-file="Exact Home chat"]').filter({
+            has: page.locator(`.avatar img[src*=${JSON.stringify('file=' + encodeURIComponent(avatar))}]`),
+        });
+        await homeChat.locator('.recentChatOpen').click({ trial: true });
+        await fs.mkdir(path.join('..', 'screenshots'), { recursive: true });
+        const phase = process.env.NECONYAN_HOME_SCREENSHOT_PHASE || 'after';
+        await page.screenshot({ path: path.join('..', 'screenshots', `home-recent-${viewport}-${phase}-home.png`) });
+        await homeChat.locator('.recentChatOpen').click();
+        // Even when that chat is already active, Home must close after the click.
+        try {
+            await expect(page.locator('body')).not.toHaveClass(/neconyan-home-visible/);
+        } finally {
+            await page.screenshot({ path: path.join('..', 'screenshots', `home-recent-${viewport}-${phase}-clicked.png`) });
+        }
+        await expect.poll(exactChat).toEqual({ avatar, chat: locator.chat });
+        await expect(page.locator('#chat .mes').first()).toContainText('Retained answer.');
+        // Also switch from the unspaced card, rather than only resuming an active chat.
+        await openChat(page, { avatar: account.avatar, chat: locator.chat });
+        await showHome();
+        await expect(homeChat).toHaveAttribute('data-avatar', avatar);
+        await expect(homeChat).toHaveAttribute('data-file', locator.chat);
+        await homeChat.locator('.recentChatOpen').click();
+        await expect.poll(exactChat).toEqual({ avatar, chat: locator.chat });
+        await expect(page.locator('body')).not.toHaveClass(/neconyan-home-visible/);
+        const bounds = await page.locator('#chat .mes').first().boundingBox();
+        expect(bounds.width).toBeGreaterThan(0);
+        expect(bounds.width).toBeLessThanOrEqual(phone ? 393 : 1280);
+        await expect(page.locator('.toast-error')).toHaveCount(0);
+    });
+
     test(`${viewport} browser and server replies find a card filename with a leading space`, async ({ app }) => {
         const account = await app.account({ phone, activeConnection: true });
         const native = owned(app);

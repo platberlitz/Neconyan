@@ -432,3 +432,81 @@ describe('recent chat rename failures', () => {
         });
     });
 });
+
+describe('Home recent chat identifiers after template sanitisation', () => {
+    test.each([
+        { avatar: ' Nova.png', chat_name: ' Chat ', group: '', recent_chat_type: 'individual' },
+        { avatar: 'Nova.png', chat_name: 'Chat', group: '', recent_chat_type: 'individual' },
+        { avatar: '', chat_name: ' Group chat ', group: ' group ', is_group: true, recent_chat_type: 'group' },
+        { avatar: ' Nova.png', group: ' group ', chat_name: ' Direct chat ', is_conversation: true,
+            conversation_branch_id: ' branch ', conversation_branch_name: ' Branch name ', recent_chat_type: 'conversation' },
+        { avatar: ' <Nova> & "Kit".png', chat_name: ' <Chat> & "name" ', recent_chat_type: 'individual' },
+    ])('uses the exact saved identity for $recent_chat_type: $chat_name', async recentChat => {
+        const calls = [];
+        class Element {
+            constructor(attributes = {}) { this.attributes = attributes; }
+            getAttribute(name) { return this.attributes[name] ?? null; }
+            setAttribute(name, value) { this.attributes[name] = String(value); }
+            querySelector() { return null; }
+            querySelectorAll() { return []; }
+            replaceChildren() {}
+        }
+        const attributes = {
+            'data-avatar': recentChat.avatar ?? '', 'data-file': recentChat.chat_name,
+            'data-group': recentChat.group ?? '', 'data-recent-chat-type': recentChat.recent_chat_type,
+            'data-conversation-branch-id': recentChat.conversation_branch_id ?? '',
+            'data-conversation-branch-name': recentChat.conversation_branch_name ?? '',
+        };
+        // DOMPurify trims attributes in the rendered HTML, but not the source records.
+        const item = new Element(Object.fromEntries(Object.entries(attributes).map(([key, value]) => [key, value.trim()])));
+        const button = () => ({ handlers: {}, closest: () => item,
+            addEventListener(event, handler) { this.handlers[event] = handler; } });
+        const open = button();
+        const rename = button();
+        const remove = button();
+        const pin = button();
+        const selectors = { '.recentChat': [item], '.recentChatOpen': [open],
+            '.recentChat .renameChat': [rename], '.recentChat .deleteChat': [remove], '.recentChat .pinChat': [pin] };
+        const fragment = { querySelector: () => new Element(), querySelectorAll: selector => selectors[selector] ?? [] };
+        const capture = action => (...args) => { calls.push([action, ...args]); };
+        const context = vm.createContext({
+            console, HTMLElement: Element, welcomeRequestId: 1,
+            document: { getElementById: () => new Element(), createRange: () => ({ createContextualFragment: () => fragment }),
+                body: { classList: { contains: () => true, add() {} } } },
+            window: {}, getWelcomeHost: () => new Element(),
+            buildWelcomeTemplateData: () => ({}), renderTemplateAsync: async () => '',
+            openNeconyanRecentChat: capture('open'),
+            renameRecentCharacterChat: capture('rename-character'), deleteRecentCharacterChat: capture('delete-character'),
+            renameRecentGroupChat: capture('rename-group'), deleteRecentGroupChat: capture('delete-group'),
+            renameRecentConversationChat: capture('rename-conversation'), deleteRecentConversationChat: capture('delete-conversation'),
+            PinnedChatsManager: { isPinned: () => false, toggle: capture('pin') }, refreshWelcomeScreen: async () => {},
+        });
+        vm.runInContext(functionSource('sendWelcomePanel'), context);
+        await context.sendWelcomePanel([recentChat], false, 1);
+        expect(item.attributes).toEqual(attributes);
+        open.handlers.click();
+        rename.handlers.click({ stopPropagation() {} });
+        remove.handlers.click({ stopPropagation() {} });
+        await pin.handlers.click({ stopPropagation() {} });
+        let expected;
+        if (recentChat.is_conversation) {
+            expected = [
+                ['open', { avatar: recentChat.avatar, group: recentChat.group, conversation_branch_id: recentChat.conversation_branch_id, is_conversation: true }],
+                ['rename-conversation', recentChat.avatar, recentChat.group, recentChat.conversation_branch_id, recentChat.conversation_branch_name, recentChat],
+                ['delete-conversation', recentChat.avatar, recentChat.group, recentChat.conversation_branch_id, recentChat],
+                ['pin', recentChat, true],
+            ];
+        } else if (recentChat.is_group) {
+            expected = [
+                ['open', { group: recentChat.group, chat_name: recentChat.chat_name, is_group: true }],
+                ['rename-group', recentChat.group, recentChat.chat_name], ['delete-group', recentChat.group, recentChat.chat_name], ['pin', recentChat, true],
+            ];
+        } else {
+            expected = [
+                ['open', { avatar: recentChat.avatar, chat_name: recentChat.chat_name }],
+                ['rename-character', recentChat.avatar, recentChat.chat_name], ['delete-character', recentChat.avatar, recentChat.chat_name], ['pin', recentChat, true],
+            ];
+        }
+        expect(calls).toEqual(expected);
+    });
+});
