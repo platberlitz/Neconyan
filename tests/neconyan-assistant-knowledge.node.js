@@ -71,6 +71,9 @@ test('real help questions retrieve the appropriate topic', () => {
         ['What are Scenario Notes?', 'personas.scenario-notes'],
         ['Make text bigger', 'appearance.chat-style'],
         ['I closed the tab while the reply was still generating', 'chat.server-replies'],
+        ['Where does a resumed Roleplay preview appear after a reload?', 'chat.resumed-preview'],
+        ['Why did my Roleplay chat go blank after opening?', 'chat.reveal'],
+        ['Does the live reply bubble disappear before the saved reply is ready?', 'chat.live-replies'],
         ['Why does the send paw say nya?', 'chat.paw-send'],
         ['What happens when I pet the sleeping cat?', 'chat.sleepers'],
         ['How do I import a persona card?', 'personas.cards'],
@@ -84,6 +87,7 @@ test('real help questions retrieve the appropriate topic', () => {
         ['Is my backup still running after I closed the page?', 'recovery.account-jobs'],
         ['Why did the clouds disappear after I picked a background?', 'appearance.background-visibility'],
         ['Can characters react to the current roleplay in Conversation?', 'conversation.roleplay-asides'],
+        ['Is the Conversation message timeline translucent?', 'conversation.layout'],
         ['Does Meower keep refreshing after I close it?', 'meower.server-jobs'],
         ['Why are there fewer sleeping cats in the Story Mode manuscript?', 'story.manuscript'],
         ['Where is the Story Mode edit button on my phone?', 'story.manuscript'],
@@ -91,6 +95,7 @@ test('real help questions retrieve the appropriate topic', () => {
         ['How do I change Shell Style to Windows Aero?', 'appearance.shell-style'],
         ['How do I get the black Windows XP colours?', 'appearance.windows-xp'],
         ['Android updater says it could not read the update signature', 'start.android'],
+        ['What Bun version does Neconyan need?', 'start.desktop-install'],
         ['Where do I save an accent profile?', 'appearance.accent'],
         ['How do I start the Nori lorebook tour?', 'lorebooks.tour'],
         ['Where is the ICA glossary with Taro?', 'agents.glossary'],
@@ -100,12 +105,14 @@ test('real help questions retrieve the appropriate topic', () => {
         ['Why do Square and Rounded avatars look the same?', 'appearance.avatar-style'],
         ['What does the Storybook chat style look like?', 'appearance.chat-style'],
         ['The Page Width slider does nothing', 'appearance.page-size'],
+        ['Which CSS variable colours active tabs and selected rows?', 'appearance.custom-css-design'],
         ['Windows 98 header is unreadable with bright text', 'appearance.windows-98'],
         ['Does a Regex Agent Themes change restyle companion note cards?', 'tools.tracker-themes'],
         ['Is there a Pawthfinder tour with Taro?', 'pathfinder.setup'],
         ['How do I open Quick Image Gen?', 'images.quick'],
         ['How do I add saved notes to Scratchpad?', 'scratchpad.notebooks'],
         ['How do I use Scratchpad on Home without an open chat?', 'scratchpad.start'],
+        ['Why are the Scratchpad header buttons below the title?', 'scratchpad.start'],
         ['How do I generate an image with Scratchpad Quick Image Gen?', 'scratchpad.images'],
         ['Can Scratchpad change a portrait with Review avatar?', 'scratchpad.images'],
         ['Can Scratchpad see my preset?', 'scratchpad.preset'],
@@ -116,6 +123,11 @@ test('real help questions retrieve the appropriate topic', () => {
         ['Who leads the Sampling tour?', 'navigation.page-tours'],
         ['Is there a walkthrough for the Persona page?', 'navigation.page-tours'],
     ]) assert.ok(ids(question).includes(expected), `${question}: ${ids(question)}`);
+});
+
+test('Roleplay opening blank-flicker stays separate from the live reply bubble', () => {
+    assert.equal(ids('Why did my Roleplay chat go blank after opening?')[0], 'chat.reveal');
+    assert.equal(ids('Does the live reply bubble disappear before the saved reply is ready?')[0], 'chat.live-replies');
 });
 
 test('prepared references preserve cold-search ordering across different questions and follow-ups', () => {
