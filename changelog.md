@@ -29,6 +29,7 @@
 - PR #534 (2026-11-07) `fix(starlight): soften cursor effects and lift foreground twinkles`
 - PR #535 (2026-11-07) `fix(startup): tolerate blocked optional notifications`
 - PR #536 (2026-11-07) `fix(generation): release unusable media reservations`
+- PR #538 (2026-11-08) `fix(runtime)!: require Bun with safe timed pattern checks`
 
 ## v1.5.1
 
