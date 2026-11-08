@@ -2,6 +2,15 @@
 import { expect } from '@playwright/test';
 import { acknowledgeActiveSettings, test } from './neconyan-conversation-durable-fixture.js';
 
+async function waitForAppReady(page) {
+    // The shell API appears before settings finish. A reload can stay on the
+    // workspace skeleton longer than the acknowledgement helper's own window.
+    await page.waitForFunction(async () => {
+        const { eventSource, event_types } = await import('/scripts/events.js');
+        return eventSource.autoFireLastArgs.has(event_types.APP_READY);
+    }, undefined, { timeout: 60000 });
+}
+
 for (const phone of [false, true]) {
     test(`Creator saves choices and generates several greetings with fallback on ${phone ? 'phone' : 'desktop'}`, async ({ app }) => {
         test.setTimeout(180000);
@@ -45,8 +54,9 @@ for (const phone of [false, true]) {
         expect(saved.writing.connection).toEqual({ profile: 'broken', fallbacks: ['durable'], maxTokens: 1234 });
         await page.reload();
         await page.waitForFunction(() => typeof globalThis.NeconyanShell?.openCreator === 'function');
-        // The shell API exists before startup settings finish loading. Wait for a
-        // real server acknowledgement, or Catelier's global settings save fails.
+        // The shell API exists before startup settings finish loading. Wait for the
+        // app's complete event, then for a real server acknowledgement.
+        await waitForAppReady(page);
         await acknowledgeActiveSettings(page);
         await page.evaluate(async id => globalThis.NeconyanShell.openCreator({ draftId: id }), stored.id);
         await creator.getByRole('button', { name: 'Dossier', exact: true }).click();
