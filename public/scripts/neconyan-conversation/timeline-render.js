@@ -1487,16 +1487,17 @@ export async function regenerateConversationMessage(messageId) {
             speakerName,
             { groupId: context.groupId, personaId: context.personaId },
         );
+        const systemPrompt = await buildConversationSystemPrompt(settings, speakerAvatar, {
+            threadAvatar: context.avatar,
+            branchId: context.branchId,
+            groupId: context.groupId,
+            personaId: context.personaId,
+        });
         const outcome = await withTypingParticipant(
             { avatar: speakerAvatar, name: speakerName },
             () => submitConversationRewrite('regenerate', messageId, {
                 prompt,
-                systemPrompt: buildConversationSystemPrompt(settings, speakerAvatar, {
-                    threadAvatar: context.avatar,
-                    branchId: context.branchId,
-                    groupId: context.groupId,
-                    personaId: context.personaId,
-                }),
+                systemPrompt,
                 responseLength: getConversationReplyMaxTokens(settings),
                 trimNames: true,
                 cacheScope: 'conversation-mode',

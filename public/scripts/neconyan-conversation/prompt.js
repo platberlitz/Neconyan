@@ -17,7 +17,6 @@ import {
     getCurrentCharName,
     parsePositiveInt,
 } from './context.js';
-import { buildConversationGamesContext } from './games/prompt-context.js';
 import { captureConversationTextBinding } from './generation.js';
 import { requestConversationBinding } from './bindings.js';
 import { observeJob } from '../jobs.js';
@@ -284,7 +283,7 @@ export function buildConversationSystemPrompt(settings, avatar = getCurrentCharA
     const partners = getConversationParticipants(threadAvatar, threadSettings, { branchId, groupId, personaId }).filter(participant => participant?.avatar && participant.avatar !== avatar);
     const partnerNames = getParticipantNamesForDisplay(partners);
     const gamesBranch = getActiveConversationBranch(threadAvatar, { branchId, create: false, groupId, personaId });
-    const gamesContext = buildConversationGamesContext(gamesBranch?.games, { charName, palNames: [charName, ...partnerNames], userName });
+    const savedGames = gamesBranch?.games;
     const now = new Date();
     const personaContext = composeConversationPersonaDescription(personaId || user_avatar, {
         avatar: threadAvatar,
@@ -298,8 +297,8 @@ export function buildConversationSystemPrompt(settings, avatar = getCurrentCharA
         const timeLabel = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         lifeContext = `Current life context: It is ${timeLabel} for ${charName}, who is currently ${current.activity} (status: ${current.status}). Let this naturally color your availability, mood, and what you mention. Stay in this moment of your day.`;
     }
-    return composeConversationSystemPrompt({
-        settings, character, charName, userName, groupId, partnerNames, threadCharacter, personaContext, lifeContext, gamesContext,
+    const promptContext = {
+        settings, character, charName, userName, groupId, partnerNames, threadCharacter, personaContext, lifeContext,
         timeContext: getConversationLocalTimeContext(now),
         authorNote: settings.authors_note || getCharacterAuthorNote(avatar),
         availability: getAvailabilityCopy(getUserStatus()).label.toLowerCase(),
@@ -307,5 +306,20 @@ export function buildConversationSystemPrompt(settings, avatar = getCurrentCharA
         memorySummary: getConversationMemorySummary(threadAvatar, { branchId, groupId, personaId }),
         soloMemory: settings.include_related_memory && groupId ? getConversationSoloMemorySummary(avatar, { personaId }) : null,
         groupMemories: settings.include_related_memory && !groupId ? getConversationGroupMemorySummaries(avatar, { max: 4, personaId }) : [],
-    });
+    };
+    const compose = gamesContext => composeConversationSystemPrompt({ ...promptContext, gamesContext });
+    if (!savedGames || typeof savedGames !== 'object' || Object.keys(savedGames).length === 0) {
+        return compose('');
+    }
+    // Freeze the saved game before the import can yield. A move made while the
+    // module loads must not pair a newer board with the captured prompt state.
+    const gamesSnapshot = typeof structuredClone === 'function'
+        ? structuredClone(savedGames)
+        : JSON.parse(JSON.stringify(savedGames));
+    // The games rules are only needed while a saved game exists. Loading them
+    // here keeps a game-free startup free of the board and puzzle modules.
+    return import('./games/prompt-context.js')
+        .then(({ buildConversationGamesContext }) => compose(buildConversationGamesContext(gamesSnapshot, {
+            charName, palNames: [charName, ...partnerNames], userName,
+        })));
 }

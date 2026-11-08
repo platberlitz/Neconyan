@@ -4,6 +4,7 @@ import { buildConversationGamesContext, testExports } from '../public/scripts/ne
 import { RULES as CHESS, CHESS_INTERNALS } from '../public/scripts/neconyan-conversation/games/rules/chess.js';
 import { RULES as CONNECT_FOUR } from '../public/scripts/neconyan-conversation/games/rules/connect-four.js';
 import { RULES as PICROSS } from '../public/scripts/neconyan-conversation/games/rules/picross.js';
+import { RULES as MINESWEEPER } from '../public/scripts/neconyan-conversation/games/rules/minesweeper.js';
 
 const { squareIndex } = CHESS_INTERNALS;
 const { joinNames } = testExports;
@@ -117,6 +118,16 @@ test('a solo puzzle is framed as the user’s own game, board unseen', () => {
     assert.equal(PICROSS.status(state).over, false, 'a seeded puzzle starts unsolved');
     const context = buildConversationGamesContext(record(PICROSS, state), NAMES);
     assert.match(context, /Kris is playing a solo game of Picross beside this DM\./);
+    assert.match(context, /Where it stands:/);
+    assert.match(context, /do not claim to see or solve the board yourself/);
+    assert.ok(!context.includes('Current board'), 'the character never sees the solo board');
+});
+
+test('a minesweeper puzzle is framed as the user’s own game, board unseen', () => {
+    const state = MINESWEEPER.createState({ options: { size: 'easy' }, random: seeded(21) });
+    assert.equal(MINESWEEPER.status(state).over, false, 'a seeded puzzle starts unsolved');
+    const context = buildConversationGamesContext(record(MINESWEEPER, state), NAMES);
+    assert.match(context, /Kris is playing a solo game of Minesweeper beside this DM\./);
     assert.match(context, /Where it stands:/);
     assert.match(context, /do not claim to see or solve the board yourself/);
     assert.ok(!context.includes('Current board'), 'the character never sees the solo board');

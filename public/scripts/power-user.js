@@ -84,10 +84,8 @@ import { IMAGE_OVERSWIPE, MEDIA_DISPLAY } from './constants.js';
 import { t, translate } from './i18n.js';
 import { getBackgroundPath, isCustomBackgroundUrl } from './backgrounds.js';
 import { setSlashCommandParserSettingsGetter } from './slash-commands/SlashCommandParserConfig.js';
-import { structuredPrefillSettings } from './structured-prefill.js';
-import { initialiseStructuredPrefillUI } from './structured-prefill-ui.js';
+import { structuredPrefillSettings, structuredPrefillStatus } from './structured-prefill.js';
 import { persona_description_positions as _persona_description_positions } from './personas.js';
-import { generateCustomCssWithAI, resolveCustomCssAIProfile } from './neconyan-custom-css-ai.js';
 import { populateConnectionProfileSelect } from './extensions/in-chat-agents/profile-utils.js';
 import { resolveMovingUIViewportState, matchesMovingUIViewport, readMovingUIDevice } from './moving-ui-viewport.js';
 import { ANDROID_STREAMING_SETTING_DEFAULTS, ANDROID_STREAMING_SETTINGS_INITIALIZED_KEY, initializeAndroidStreamingSettings } from './mobile-streaming.js';
@@ -2342,7 +2340,18 @@ function applyCustomCSS() {
     applyCustomThemeStyleEntries();
 }
 
-function buildCustomCssAiPopup(currentCss) {
+let customCssAiModulePromise = null;
+let customCssAiOpening = false;
+
+function loadCustomCssAiModule() {
+    customCssAiModulePromise ??= import('./neconyan-custom-css-ai.js').catch(error => {
+        customCssAiModulePromise = null;
+        throw error;
+    });
+    return customCssAiModulePromise;
+}
+
+function buildCustomCssAiPopup(currentCss, resolveCustomCssAIProfile) {
     const content = $(`
         <div class="flex-container flexFlowColumn flexGap5">
             <h3>Generate Custom CSS</h3>
@@ -2381,12 +2390,27 @@ function setCustomCssAiWandBusy(isBusy) {
 
 async function handleCustomCssAiWandClick() {
     const button = $('#custom_css_ai_wand');
-    if (button.hasClass('is-busy')) {
+    if (button.hasClass('is-busy') || customCssAiOpening) {
+        return;
+    }
+
+    customCssAiOpening = true;
+    let customCssAi;
+    try {
+        customCssAi = await loadCustomCssAiModule();
+    } catch (error) {
+        customCssAiOpening = false;
+        globalThis.toastr?.error?.(`Custom CSS generation could not open: ${error?.message ?? error}.`);
         return;
     }
 
     const currentCss = String($('#customCSS').val() ?? '');
-    const content = buildCustomCssAiPopup(currentCss);
+    let content;
+    try {
+        content = buildCustomCssAiPopup(currentCss, customCssAi.resolveCustomCssAIProfile);
+    } finally {
+        customCssAiOpening = false;
+    }
     const result = await callGenericPopup(content, POPUP_TYPE.CONFIRM, '', {
         okButton: 'Generate CSS',
         cancelButton: 'Cancel',
@@ -2414,7 +2438,7 @@ async function handleCustomCssAiWandClick() {
 
     const instruction = String(content.find('#custom_css_ai_instruction').val() ?? '').trim();
     const selectedProfileId = String(content.find('#custom_css_ai_profile').val() ?? '').trim();
-    const effectiveProfileId = resolveCustomCssAIProfile(selectedProfileId);
+    const effectiveProfileId = customCssAi.resolveCustomCssAIProfile(selectedProfileId);
     const applyMode = String(content.find('input[name="custom_css_ai_apply_mode"]:checked').val() ?? 'replace');
 
     if (!effectiveProfileId && online_status === 'no_connection') {
@@ -2427,7 +2451,7 @@ async function handleCustomCssAiWandClick() {
     deactivateSendButtons({ markBodyGenerating: false });
 
     try {
-        const result = await generateCustomCssWithAI({
+        const result = await customCssAi.generateCustomCssWithAI({
             instruction,
             profileId: effectiveProfileId,
             mode: applyMode,
@@ -2878,6 +2902,172 @@ function getExampleMessagesBehavior() {
     return 'normal';
 }
 
+let structuredPrefillUiLoading = null;
+let structuredPrefillUiInitialiser = null;
+let structuredPrefillExtensionSettings = null;
+let structuredPrefillUiLoaded = false;
+let structuredPrefillUiRequested = false;
+let structuredPrefillPendingPreset = '';
+
+let structuredPrefillStatusValue;
+let structuredPrefillStatusRecorded;
+let structuredPrefillStatusBound = false;
+
+function readStructuredPrefillStatus() {
+    return chat.findLast(message => !message.is_user && !message.is_system)?.extra?.structured_prefill;
+}
+
+function renderStructuredPrefillStatus() {
+    const indicator = document.querySelector('[data-sp-verification]');
+    if (!indicator) {
+        return;
+    }
+    indicator.textContent = structuredPrefillStatus(structuredPrefillStatusValue);
+    indicator.dataset.verification = structuredPrefillStatusValue?.verification ?? 'none';
+}
+
+function updateStructuredPrefillStatus(reset) {
+    const next = readStructuredPrefillStatus();
+    if (!reset && !next && structuredPrefillStatusValue?.verification === 'waiting') {
+        return;
+    }
+    if (!reset && next === structuredPrefillStatusRecorded) {
+        return;
+    }
+    structuredPrefillStatusRecorded = next;
+    structuredPrefillStatusValue = next;
+    renderStructuredPrefillStatus();
+}
+
+function setStructuredPrefillStatusPhase(phase) {
+    if (phase === 'waiting') {
+        structuredPrefillStatusValue = { verification: 'waiting' };
+    } else if (structuredPrefillStatusValue?.verification === 'waiting') {
+        structuredPrefillStatusValue = { verification: 'failed' };
+    } else if (structuredPrefillStatusValue?.verification === 'streaming') {
+        structuredPrefillStatusValue = { ...structuredPrefillStatusValue, verification: 'incomplete' };
+    }
+    renderStructuredPrefillStatus();
+}
+
+function bindStructuredPrefillStatus() {
+    if (structuredPrefillStatusBound) {
+        return;
+    }
+    structuredPrefillStatusBound = true;
+    structuredPrefillStatusValue = readStructuredPrefillStatus();
+    structuredPrefillStatusRecorded = structuredPrefillStatusValue;
+    const receive = event => {
+        structuredPrefillStatusValue = event.detail;
+        renderStructuredPrefillStatus();
+    };
+    window.addEventListener('neconyan:prefill-status', receive);
+    const changed = () => updateStructuredPrefillStatus(true);
+    const rendered = () => updateStructuredPrefillStatus(false);
+    const started = (type, _options, dryRun) => {
+        if (!dryRun && power_user.structured_prefill.enabled && ['normal', 'swipe', 'regenerate', 'continue'].includes(type)) {
+            setStructuredPrefillStatusPhase('waiting');
+        }
+    };
+    const ended = () => setStructuredPrefillStatusPhase('finished');
+    eventSource.on(event_types.CHAT_CHANGED, changed);
+    eventSource.on(event_types.MESSAGE_SWIPED, changed);
+    eventSource.on(event_types.MESSAGE_RECEIVED, rendered);
+    eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, rendered);
+    eventSource.on(event_types.GENERATION_STARTED, started);
+    eventSource.on(event_types.GENERATION_ENDED, ended);
+    eventSource.on(event_types.GENERATION_STOPPED, ended);
+    renderStructuredPrefillStatus();
+}
+
+function mountStructuredPrefillUi() {
+    structuredPrefillUiInitialiser(power_user, saveSettingsDebounced, () => structuredPrefillExtensionSettings?.connectionManager?.profiles ?? []);
+    renderStructuredPrefillStatus();
+    if (structuredPrefillPendingPreset) {
+        window.dispatchEvent(new CustomEvent('neconyan:structured-prefill-preset-applied', { detail: { name: structuredPrefillPendingPreset } }));
+        structuredPrefillPendingPreset = '';
+    }
+}
+
+async function loadStructuredPrefillUiModule() {
+    if (!structuredPrefillUiLoading) {
+        structuredPrefillUiLoading = Promise.all([
+            import('./structured-prefill-ui.js'),
+            import('./extensions.js'),
+        ]).then(([{ initialiseStructuredPrefillUI }, { extension_settings }]) => {
+            structuredPrefillUiInitialiser = initialiseStructuredPrefillUI;
+            structuredPrefillExtensionSettings = extension_settings;
+            structuredPrefillUiLoaded = true;
+        }).catch(error => {
+            console.warn('Structured Prefill settings could not be loaded', error);
+        }).finally(() => {
+            structuredPrefillUiLoading = null;
+        });
+    }
+    return structuredPrefillUiLoading;
+}
+
+/**
+ * The Structured Prefill controls live in the Formatting tab. Load their module
+ * when that tab opens, not on every startup. Once loaded, remount them whenever
+ * settings hydrate or the panel opens again so the controls use the new values.
+ */
+async function ensureStructuredPrefillUi({ force = false } = {}) {
+    if (!structuredPrefillUiLoaded) {
+        await loadStructuredPrefillUiModule();
+        if (!structuredPrefillUiLoaded) {
+            return;
+        }
+    } else if (!force) {
+        return;
+    }
+    mountStructuredPrefillUi();
+}
+
+function requestStructuredPrefillUi() {
+    if (!settingsReady) {
+        structuredPrefillUiRequested = true;
+        eventSource.once(event_types.SETTINGS_LOADED, () => {
+            if (!structuredPrefillUiRequested) {
+                return;
+            }
+            structuredPrefillUiRequested = false;
+            void ensureStructuredPrefillUi({ force: true });
+        });
+        return Promise.resolve();
+    }
+    structuredPrefillUiRequested = false;
+    return ensureStructuredPrefillUi({ force: true });
+}
+
+function refreshStructuredPrefillUiAfterHydration() {
+    if (structuredPrefillUiLoaded || structuredPrefillUiRequested) {
+        structuredPrefillUiRequested = false;
+        return ensureStructuredPrefillUi({ force: true });
+    }
+    return Promise.resolve();
+}
+
+function applyStructuredPrefillPreset(label) {
+    const presets = Array.isArray(power_user.structured_prefill_presets) ? power_user.structured_prefill_presets : [];
+    const preset = presets.find(item => item.name === label);
+    if (!preset) {
+        throw new Error(t`Prefill preset not found.`);
+    }
+    const current = structuredPrefillSettings(power_user.structured_prefill);
+    power_user.structured_prefill = structuredPrefillSettings({ ...preset, enabled: current.enabled });
+    saveSettingsDebounced();
+    if (!structuredPrefillUiLoaded) {
+        structuredPrefillPendingPreset = preset.name;
+    }
+    window.dispatchEvent(new CustomEvent('neconyan:structured-prefill-preset-applied', { detail: { name: preset.name } }));
+    return preset.name;
+}
+
+function listStructuredPrefillPresets() {
+    return (Array.isArray(power_user.structured_prefill_presets) ? power_user.structured_prefill_presets : []).map(item => item.name);
+}
+
 //MARK: loadPowerUser
 export async function loadPowerUserSettings(settings, data) {
     // An absent preference must not retain a previously loaded account's style.
@@ -3075,23 +3265,8 @@ export async function loadPowerUserSettings(settings, data) {
     power_user.structured_prefill = structuredPrefillSettings(settings.power_user?.structured_prefill);
     power_user.structured_prefill_presets = Array.isArray(settings.power_user?.structured_prefill_presets)
         ? settings.power_user.structured_prefill_presets.filter(item => item && typeof item.name === 'string').map(item => ({ ...structuredPrefillSettings(item), name: item.name })) : [];
-    const { extension_settings } = await import('./extensions.js');
-    initialiseStructuredPrefillUI(power_user, saveSettingsDebounced, () => extension_settings.connectionManager?.profiles ?? [], {
-        read: () => chat.findLast(message => !message.is_user && !message.is_system)?.extra?.structured_prefill,
-        subscribe: (update, phase) => {
-            const changed = () => update(true);
-            const rendered = () => update(false);
-            const started = (type, _options, dryRun) => {
-                if (!dryRun && power_user.structured_prefill.enabled && ['normal', 'swipe', 'regenerate', 'continue'].includes(type)) phase('waiting');
-            };
-            const ended = () => phase('finished');
-            const listeners = [[event_types.CHAT_CHANGED, changed], [event_types.MESSAGE_SWIPED, changed],
-                [event_types.MESSAGE_RECEIVED, rendered], [event_types.CHARACTER_MESSAGE_RENDERED, rendered],
-                [event_types.GENERATION_STARTED, started], [event_types.GENERATION_ENDED, ended], [event_types.GENERATION_STOPPED, ended]];
-            for (const [event, listener] of listeners) eventSource.on(event, listener);
-            return () => { for (const [event, listener] of listeners) eventSource.removeListener(event, listener); };
-        },
-    });
+    bindStructuredPrefillStatus();
+    void refreshStructuredPrefillUiAfterHydration();
     $('#auto_continue_enabled').prop('checked', power_user.auto_continue.enabled);
     $('#auto_continue_allow_chat_completions').prop('checked', power_user.auto_continue.allow_chat_completions);
     $('#auto_continue_target_length').val(power_user.auto_continue.target_length);
@@ -4646,6 +4821,12 @@ export function forceCharacterEditorTokenize() {
 }
 
 jQuery(async () => {
+    document.addEventListener('sb:shell-tab-activated', event => {
+        if (event instanceof CustomEvent && event.detail?.shellKey === 'left' && event.detail?.tabId === 'advanced-formatting') {
+            void requestStructuredPrefillUi();
+        }
+    });
+
     const adjustAutocompleteDebounced = debounce(() => {
         $('.ui-autocomplete-input').each(function () {
             const isOpen = $(this).autocomplete('widget')[0].style.display !== 'none';
@@ -5937,6 +6118,13 @@ jQuery(async () => {
     });
 
     const { SlashCommandParser } = await import('./slash-commands/SlashCommandParser.js');
+
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({ name: 'structuredprefill-preset', aliases: ['sp-preset'],
+        callback: (_, label) => applyStructuredPrefillPreset(String(label)),
+        unnamedArgumentList: [SlashCommandArgument.fromProps({ description: 'Prefill preset name', typeList: [ARGUMENT_TYPE.STRING], isRequired: true })],
+        helpString: 'Apply a saved Structured Prefill preset by name.' }));
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({ name: 'structuredprefill-preset-list', aliases: ['sp-preset-list'],
+        callback: () => JSON.stringify(listStructuredPrefillPresets()), helpString: 'List saved Structured Prefill preset names.' }));
 
     SlashCommandParser.addCommandObject(SlashCommand.fromProps({
         name: 'vn',

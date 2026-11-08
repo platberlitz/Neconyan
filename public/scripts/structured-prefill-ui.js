@@ -1,43 +1,17 @@
-import { structuredPrefillSettings, STRUCTURED_PREFILL_PRESETS, structuredPrefillStatus } from './structured-prefill.js';
-import { SlashCommandParser } from './slash-commands/SlashCommandParser.js';
-import { SlashCommand } from './slash-commands/SlashCommand.js';
-import { SlashCommandArgument, ARGUMENT_TYPE } from './slash-commands/SlashCommandArgument.js';
+import { structuredPrefillSettings, STRUCTURED_PREFILL_PRESETS } from './structured-prefill.js';
 import { t } from './i18n.js';
 
-let commandActions;
-let cleanupStatus;
+let cleanupPreset;
 
-/** Native settings and recorded request status; never rewrites message content. */
-export function initialiseStructuredPrefillUI(power, save, profiles, observe = null) {
+/** Native settings controls; the recorded request status is painted eagerly by power-user. */
+export function initialiseStructuredPrefillUI(power, save, profiles) {
     const root = document.querySelector('#structured-prefill-settings');
     if (!root) return;
     const status = root.querySelector('[data-sp-status]');
     const presets = root.querySelector('[data-sp-presets]');
     const name = root.querySelector('[data-sp-name]');
     const current = () => power.structured_prefill;
-    const indicator = root.querySelector('[data-sp-verification]');
-    let latest = observe?.read();
-    const showStatus = () => {
-        if (!indicator) return;
-        indicator.textContent = structuredPrefillStatus(latest);
-        indicator.dataset.verification = latest?.verification ?? 'none';
-    };
-    cleanupStatus?.();
-    const receive = event => { latest = event.detail; showStatus(); };
-    window.addEventListener('neconyan:prefill-status', receive);
-    let recorded = latest;
-    const unsubscribe = observe?.subscribe(reset => {
-        const next = observe.read();
-        if (!reset && !next && latest?.verification === 'waiting') return;
-        if (!reset && next === recorded) return;
-        recorded = next; latest = next; showStatus();
-    }, phase => {
-        if (phase === 'waiting') latest = { verification: 'waiting' };
-        else if (latest?.verification === 'waiting') latest = { verification: 'failed' };
-        else if (latest?.verification === 'streaming') latest = { ...latest, verification: 'incomplete' };
-        showStatus();
-    });
-    cleanupStatus = () => { window.removeEventListener('neconyan:prefill-status', receive); unsubscribe?.(); };
+    cleanupPreset?.();
     const bundled = root.querySelector('[data-sp-bundled]');
     const clearStartingPoint = () => {
         if (bundled) bundled.value = '';
@@ -90,15 +64,15 @@ export function initialiseStructuredPrefillUI(power, save, profiles, observe = n
         return preset.name;
     };
     presets.onchange = () => { if (presets.value) applyPreset(presets.value); };
-    if (!commandActions) {
-        SlashCommandParser.addCommandObject(SlashCommand.fromProps({ name: 'structuredprefill-preset', aliases: ['sp-preset'],
-            callback: (_, label) => commandActions.apply(String(label)),
-            unnamedArgumentList: [SlashCommandArgument.fromProps({ description: 'Prefill preset name', typeList: [ARGUMENT_TYPE.STRING], isRequired: true })],
-            helpString: 'Apply a saved Structured Prefill preset by name.' }));
-        SlashCommandParser.addCommandObject(SlashCommand.fromProps({ name: 'structuredprefill-preset-list', aliases: ['sp-preset-list'],
-            callback: () => JSON.stringify(commandActions.list()), helpString: 'List saved Structured Prefill preset names.' }));
-    }
-    commandActions = { apply: applyPreset, list: () => power.structured_prefill_presets.map(item => item.name) };
+    const receivePreset = event => {
+        const presetName = String(event.detail?.name ?? '');
+        if (!presetName) return;
+        clearStartingPoint();
+        name.value = presetName;
+        refresh();
+    };
+    window.addEventListener('neconyan:structured-prefill-preset-applied', receivePreset);
+    cleanupPreset = () => window.removeEventListener('neconyan:structured-prefill-preset-applied', receivePreset);
     root.onclick = event => {
         const action = event.target.closest('[data-sp-action]')?.dataset.spAction;
         if (!action) return;
@@ -133,5 +107,4 @@ export function initialiseStructuredPrefillUI(power, save, profiles, observe = n
         } catch (error) { status.textContent = error.message; } finally { event.target.value = ''; }
     };
     refresh();
-    showStatus();
 }
