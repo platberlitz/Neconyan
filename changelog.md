@@ -52,6 +52,7 @@
 - PR #537 (2026-11-08) `chore(release): prepare the 1.5.2 help and release notes`
 - PR #538 (2026-11-08) `fix(runtime)!: require Bun with safe timed pattern checks`
 - PR #539 (2026-11-08) `fix(roleplay): keep resumed previews after saved messages`
+- PR #540 (2026-11-08) `test(e2e): settle settings and inspect visible controls`
 - PR #541 (2026-11-08) `perf(startup): defer optional prefill controls and game rules`
 - PR #542 (2026-11-08) `fix(conversation): centre controls and add a translucent message pane`
 - PR #543 (2026-11-08) `fix(custom-css): update the assistant styling guidance`
