@@ -1425,6 +1425,766 @@ export const STOCK = [
         "promptOnly": false,
         "minDepth": null,
         "maxDepth": null
+    },
+    {
+        "templateId": "tpl-position-tracker-companion",
+        "scriptId": "position-tracker-fence-cleanup",
+        "scriptName": "Position Tracker - code fence cleanup",
+        "family": "companion",
+        "source": "position-tracker-companion.json",
+        "findRegex": "/^[ \\t]*```[\\w-]*[ \\t]*$\\n?/gm",
+        "groups": 0,
+        "flags": "gm",
+        "delimited": true,
+        "replaceString": "",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-position-tracker-companion",
+        "scriptId": "position-tracker-map-open",
+        "scriptName": "Position Tracker - map open",
+        "family": "companion",
+        "source": "position-tracker-companion.json",
+        "findRegex": "/^[ \\t]*(?:MAP_START|map-start)\\|([^|\\n]*)\\|?([^|\\n]*?)[ \\t]*$/gm",
+        "groups": 2,
+        "flags": "gm",
+        "delimited": true,
+        "replaceString": "<div style=\"margin:10px auto;max-width:520px;padding:12px;border-radius:20px;border:1px solid color-mix(in srgb,var(--SmartThemeQuoteColor) 24%, transparent);background:radial-gradient(circle at 12% 0%,color-mix(in srgb,var(--SmartThemeQuoteColor) 14%, transparent),transparent 55%),repeating-linear-gradient(0deg,color-mix(in srgb,var(--SmartThemeBodyColor) 5%, transparent) 0 1px,transparent 1px 22px),repeating-linear-gradient(90deg,color-mix(in srgb,var(--SmartThemeBodyColor) 5%, transparent) 0 1px,transparent 1px 22px),color-mix(in srgb,var(--SmartThemeBlurTintColor) 82%, transparent);box-shadow:0 14px 34px color-mix(in srgb,var(--SmartThemeShadowColor) 24%, transparent);font-family:var(--mainFontFamily, system-ui, sans-serif);color:var(--SmartThemeBodyColor);line-height:1.4\"><div style=\"display:flex;align-items:center;gap:10px;margin-bottom:10px;padding-bottom:9px;border-bottom:1px dashed color-mix(in srgb,var(--SmartThemeQuoteColor) 28%, transparent)\"><span style=\"flex:none;display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:color-mix(in srgb,var(--SmartThemeQuoteColor) 20%, transparent);border:1px solid color-mix(in srgb,var(--SmartThemeQuoteColor) 38%, transparent);color:var(--SmartThemeQuoteColor)\"><i class=\"fa-solid fa-compass\"></i></span><div style=\"min-width:0;flex:1\"><div style=\"font-size:.68em;letter-spacing:.14em;text-transform:uppercase;opacity:.62\">Position map</div><div style=\"font-weight:800;font-size:1.04em;overflow-wrap:anywhere\">$1</div></div><small style=\"flex:none;max-width:42%;text-align:right;opacity:.75;font-size:.76em;overflow-wrap:anywhere\">$2</small></div><div style=\"display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,220px),1fr));gap:9px\"><div style=\"display:none\"><div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-position-tracker-companion",
+        "scriptId": "position-tracker-place",
+        "scriptName": "Position Tracker - place card",
+        "family": "companion",
+        "source": "position-tracker-companion.json",
+        "findRegex": "/^[ \\t]*(?:PLACE|place)\\|([^|\\n]+?)[ \\t]*(?:\\|([^|\\n]*?))?[ \\t]*$/gm",
+        "groups": 2,
+        "flags": "gm",
+        "delimited": true,
+        "replaceString": "</div></div><div style=\"padding:9px 10px 10px;border-radius:14px;background:color-mix(in srgb,var(--SmartThemeBlurTintColor) 70%, color-mix(in srgb,var(--SmartThemeBodyColor) 6%, transparent));border:1px solid color-mix(in srgb,var(--SmartThemeBodyColor) 12%, transparent);box-shadow:inset 0 1px 0 color-mix(in srgb,var(--SmartThemeBodyColor) 8%, transparent)\"><div style=\"display:flex;align-items:flex-start;gap:8px;margin-bottom:8px\"><i class=\"fa-solid fa-location-dot\" style=\"margin-top:3px;color:var(--SmartThemeQuoteColor)\"></i><div style=\"min-width:0\"><div style=\"font-weight:750;overflow-wrap:anywhere\">$1</div><div style=\"font-size:.76em;opacity:.66;overflow-wrap:anywhere\">$2</div></div></div><div style=\"display:flex;flex-direction:column;gap:6px\">",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-position-tracker-companion",
+        "scriptId": "position-tracker-who-here",
+        "scriptName": "Position Tracker - in scene character",
+        "family": "companion",
+        "source": "position-tracker-companion.json",
+        "findRegex": "/^[ \\t]*who\\|\\s*((?:\\{\\{)?([^|\\n\\s{])[^|\\n]*?)\\s*\\|\\s*here\\s*\\|([^|\\n]*)(?:\\|([^\\n]*))?$/gim",
+        "groups": 4,
+        "flags": "gim",
+        "delimited": true,
+        "replaceString": "<div style=\"display:flex;align-items:flex-start;gap:9px;padding:7px 8px;border-radius:11px;background:color-mix(in srgb,oklch(74% .15 152) 9%, transparent);border-left:3px solid oklch(74% .15 152)\"><span style=\"flex:none;display:grid;place-items:center;width:28px;height:28px;border-radius:50%;font-weight:800;font-size:.86em;text-transform:uppercase;color:var(--SmartThemeBodyColor);background:color-mix(in srgb,oklch(74% .15 152) 30%, transparent);box-shadow:0 0 0 2px color-mix(in srgb,oklch(74% .15 152) 60%, transparent)\">$2</span><div style=\"min-width:0;flex:1\"><div style=\"display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 7px\"><b style=\"overflow-wrap:anywhere\">$1</b><small style=\"font-size:.66em;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:1px 7px;border-radius:999px;opacity:1;color:color-mix(in oklch,oklch(74% .15 152) 45%, var(--SmartThemeBodyColor));background:color-mix(in srgb,oklch(74% .15 152) 20%, transparent);border:1px solid color-mix(in srgb,oklch(74% .15 152) 45%, transparent)\">In scene</small></div><div style=\"font-size:.8em;opacity:.86;overflow-wrap:anywhere\"><i class=\"fa-solid fa-location-crosshairs\" style=\"opacity:.6;margin-right:4px\"></i>$3</div><div style=\"font-size:.78em;opacity:.7;font-style:italic;overflow-wrap:anywhere\">$4</div></div></div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-position-tracker-companion",
+        "scriptId": "position-tracker-who-near",
+        "scriptName": "Position Tracker - nearby character",
+        "family": "companion",
+        "source": "position-tracker-companion.json",
+        "findRegex": "/^[ \\t]*who\\|\\s*((?:\\{\\{)?([^|\\n\\s{])[^|\\n]*?)\\s*\\|\\s*near\\s*\\|([^|\\n]*)(?:\\|([^\\n]*))?$/gim",
+        "groups": 4,
+        "flags": "gim",
+        "delimited": true,
+        "replaceString": "<div style=\"display:flex;align-items:flex-start;gap:9px;padding:7px 8px;border-radius:11px;background:color-mix(in srgb,oklch(80% .14 78) 9%, transparent);border-left:3px solid oklch(80% .14 78)\"><span style=\"flex:none;display:grid;place-items:center;width:28px;height:28px;border-radius:50%;font-weight:800;font-size:.86em;text-transform:uppercase;color:var(--SmartThemeBodyColor);background:color-mix(in srgb,oklch(80% .14 78) 30%, transparent);box-shadow:0 0 0 2px color-mix(in srgb,oklch(80% .14 78) 60%, transparent)\">$2</span><div style=\"min-width:0;flex:1\"><div style=\"display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 7px\"><b style=\"overflow-wrap:anywhere\">$1</b><small style=\"font-size:.66em;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:1px 7px;border-radius:999px;opacity:1;color:color-mix(in oklch,oklch(80% .14 78) 45%, var(--SmartThemeBodyColor));background:color-mix(in srgb,oklch(80% .14 78) 20%, transparent);border:1px solid color-mix(in srgb,oklch(80% .14 78) 45%, transparent)\">Nearby</small></div><div style=\"font-size:.8em;opacity:.86;overflow-wrap:anywhere\"><i class=\"fa-solid fa-location-crosshairs\" style=\"opacity:.6;margin-right:4px\"></i>$3</div><div style=\"font-size:.78em;opacity:.7;font-style:italic;overflow-wrap:anywhere\">$4</div></div></div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-position-tracker-companion",
+        "scriptId": "position-tracker-who-far",
+        "scriptName": "Position Tracker - away character",
+        "family": "companion",
+        "source": "position-tracker-companion.json",
+        "findRegex": "/^[ \\t]*who\\|\\s*((?:\\{\\{)?([^|\\n\\s{])[^|\\n]*?)\\s*\\|\\s*far\\s*\\|([^|\\n]*)(?:\\|([^\\n]*))?$/gim",
+        "groups": 4,
+        "flags": "gim",
+        "delimited": true,
+        "replaceString": "<div style=\"display:flex;align-items:flex-start;gap:9px;padding:7px 8px;border-radius:11px;background:color-mix(in srgb,oklch(72% .12 245) 9%, transparent);border-left:3px solid oklch(72% .12 245)\"><span style=\"flex:none;display:grid;place-items:center;width:28px;height:28px;border-radius:50%;font-weight:800;font-size:.86em;text-transform:uppercase;color:var(--SmartThemeBodyColor);background:color-mix(in srgb,oklch(72% .12 245) 30%, transparent);box-shadow:0 0 0 2px color-mix(in srgb,oklch(72% .12 245) 60%, transparent)\">$2</span><div style=\"min-width:0;flex:1\"><div style=\"display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 7px\"><b style=\"overflow-wrap:anywhere\">$1</b><small style=\"font-size:.66em;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:1px 7px;border-radius:999px;opacity:1;color:color-mix(in oklch,oklch(72% .12 245) 45%, var(--SmartThemeBodyColor));background:color-mix(in srgb,oklch(72% .12 245) 20%, transparent);border:1px solid color-mix(in srgb,oklch(72% .12 245) 45%, transparent)\">Away</small></div><div style=\"font-size:.8em;opacity:.86;overflow-wrap:anywhere\"><i class=\"fa-solid fa-location-crosshairs\" style=\"opacity:.6;margin-right:4px\"></i>$3</div><div style=\"font-size:.78em;opacity:.7;font-style:italic;overflow-wrap:anywhere\">$4</div></div></div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-position-tracker-companion",
+        "scriptId": "position-tracker-who-other",
+        "scriptName": "Position Tracker - unknown character",
+        "family": "companion",
+        "source": "position-tracker-companion.json",
+        "findRegex": "/^[ \\t]*who\\|\\s*((?:\\{\\{)?([^|\\n\\s{])[^|\\n]*?)\\s*\\|([^|\\n]*)\\|([^|\\n]*)(?:\\|([^\\n]*))?$/gim",
+        "groups": 5,
+        "flags": "gim",
+        "delimited": true,
+        "replaceString": "<div style=\"display:flex;align-items:flex-start;gap:9px;padding:7px 8px;border-radius:11px;background:color-mix(in srgb,color-mix(in srgb,var(--SmartThemeBodyColor) 55%, transparent) 9%, transparent);border-left:3px solid color-mix(in srgb,var(--SmartThemeBodyColor) 55%, transparent)\"><span style=\"flex:none;display:grid;place-items:center;width:28px;height:28px;border-radius:50%;font-weight:800;font-size:.86em;text-transform:uppercase;color:var(--SmartThemeBodyColor);background:color-mix(in srgb,color-mix(in srgb,var(--SmartThemeBodyColor) 55%, transparent) 30%, transparent);box-shadow:0 0 0 2px color-mix(in srgb,color-mix(in srgb,var(--SmartThemeBodyColor) 55%, transparent) 60%, transparent)\">$2</span><div style=\"min-width:0;flex:1\"><div style=\"display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 7px\"><b style=\"overflow-wrap:anywhere\">$1</b><small style=\"font-size:.66em;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:1px 7px;border-radius:999px;opacity:1;color:color-mix(in oklch,color-mix(in srgb,var(--SmartThemeBodyColor) 55%, transparent) 45%, var(--SmartThemeBodyColor));background:color-mix(in srgb,color-mix(in srgb,var(--SmartThemeBodyColor) 55%, transparent) 20%, transparent);border:1px solid color-mix(in srgb,color-mix(in srgb,var(--SmartThemeBodyColor) 55%, transparent) 45%, transparent)\">$3</small></div><div style=\"font-size:.8em;opacity:.86;overflow-wrap:anywhere\"><i class=\"fa-solid fa-location-crosshairs\" style=\"opacity:.6;margin-right:4px\"></i>$4</div><div style=\"font-size:.78em;opacity:.7;font-style:italic;overflow-wrap:anywhere\">$5</div></div></div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-position-tracker-companion",
+        "scriptId": "position-tracker-moves-open",
+        "scriptName": "Position Tracker - recent moves card",
+        "family": "companion",
+        "source": "position-tracker-companion.json",
+        "findRegex": "/^(?:[ \\t]*(?:MOVE|move)\\|[^\\n]*(?:\\n|$))+/gm",
+        "groups": 0,
+        "flags": "gm",
+        "delimited": true,
+        "replaceString": "</div></div><div style=\"padding:9px 10px 10px;border-radius:14px;background:color-mix(in srgb,var(--SmartThemeBlurTintColor) 80%, color-mix(in srgb,var(--SmartThemeQuoteColor) 5%, transparent));border:1px dashed color-mix(in srgb,var(--SmartThemeQuoteColor) 35%, transparent)\"><div style=\"display:flex;align-items:center;gap:8px;margin-bottom:7px;font-size:.72em;letter-spacing:.1em;text-transform:uppercase;opacity:.75\"><i class=\"fa-solid fa-route\" style=\"color:var(--SmartThemeQuoteColor)\"></i>Recent moves</div><div style=\"display:flex;flex-direction:column;gap:5px\">\n$0",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-position-tracker-companion",
+        "scriptId": "position-tracker-move",
+        "scriptName": "Position Tracker - movement trail",
+        "family": "companion",
+        "source": "position-tracker-companion.json",
+        "findRegex": "/^[ \\t]*(?:MOVE|move)\\|([^|\\n]+)\\|([^|\\n]*)\\|([^\\n]*)$/gm",
+        "groups": 3,
+        "flags": "gm",
+        "delimited": true,
+        "replaceString": "<div style=\"display:flex;align-items:center;flex-wrap:wrap;gap:4px 7px;font-size:.8em;padding:4px 8px;border-radius:9px;background:color-mix(in srgb,var(--SmartThemeBodyColor) 5%, transparent)\"><b style=\"overflow-wrap:anywhere\">$1</b><span style=\"opacity:.7;overflow-wrap:anywhere\">$2</span><i class=\"fa-solid fa-arrow-right-long\" style=\"color:var(--SmartThemeQuoteColor);opacity:.8\"></i><span style=\"overflow-wrap:anywhere\">$3</span></div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-position-tracker-companion",
+        "scriptId": "position-tracker-map-close",
+        "scriptName": "Position Tracker - map close",
+        "family": "companion",
+        "source": "position-tracker-companion.json",
+        "findRegex": "/^[ \\t]*(?:MAP_END|map-end)[ \\t]*$/gm",
+        "groups": 0,
+        "flags": "gm",
+        "delimited": true,
+        "replaceString": "</div></div></div><div style=\"display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:10px;padding-top:8px;border-top:1px dashed color-mix(in srgb,var(--SmartThemeQuoteColor) 22%, transparent);font-size:.68em;opacity:.72\"><span style=\"display:inline-flex;align-items:center;gap:5px\"><span style=\"width:8px;height:8px;border-radius:50%;background:oklch(74% .15 152)\"></span>In scene</span><span style=\"display:inline-flex;align-items:center;gap:5px\"><span style=\"width:8px;height:8px;border-radius:50%;background:oklch(80% .14 78)\"></span>Nearby</span><span style=\"display:inline-flex;align-items:center;gap:5px\"><span style=\"width:8px;height:8px;border-radius:50%;background:oklch(72% .12 245)\"></span>Away</span><span style=\"display:inline-flex;align-items:center;gap:5px\"><span style=\"width:8px;height:8px;border-radius:50%;background:color-mix(in srgb,var(--SmartThemeBodyColor) 55%, transparent)\"></span>Unknown</span></div></div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-visual-map-companion",
+        "scriptId": "visual-map-fence-cleanup",
+        "scriptName": "Visual Map - code fence cleanup",
+        "family": "companion",
+        "source": "visual-map-companion.json",
+        "findRegex": "/^[ \\t]*```[\\w-]*[ \\t]*$\\n?/gm",
+        "groups": 0,
+        "flags": "gm",
+        "delimited": true,
+        "replaceString": "",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-visual-map-companion",
+        "scriptId": "visual-map-lead-cleanup",
+        "scriptName": "Visual Map - text before the map",
+        "family": "companion",
+        "source": "visual-map-companion.json",
+        "findRegex": "/^[\\s\\S]*?(?=^[ \\t]*(?:[-*\\u2022][ \\t]*)?map[-_ ]?start\\b)/im",
+        "groups": 0,
+        "flags": "im",
+        "delimited": true,
+        "replaceString": "",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-visual-map-companion",
+        "scriptId": "visual-map-tail-cleanup",
+        "scriptName": "Visual Map - text after the map",
+        "family": "companion",
+        "source": "visual-map-companion.json",
+        "findRegex": "/(^[ \\t]*(?:[-*\\u2022][ \\t]*)?map[-_ ]?end\\b[^\\n]*)[\\s\\S]*$/im",
+        "groups": 1,
+        "flags": "im",
+        "delimited": true,
+        "replaceString": "$1",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-visual-map-companion",
+        "scriptId": "visual-map-map-open",
+        "scriptName": "Visual Map - map open",
+        "family": "companion",
+        "source": "visual-map-companion.json",
+        "findRegex": "/^[ \\t]*(?:[-*\\u2022][ \\t]*)?map[-_ ]?start[ \\t]*(?:\\|[ \\t]*([^|\\n]*?)[ \\t]*)?(?:\\|[ \\t]*([^|\\n]*?)[ \\t]*)?(?:\\|[^\\n]*)?$/gim",
+        "groups": 2,
+        "flags": "gim",
+        "delimited": true,
+        "replaceString": "<style>.vm{--vm-paper:color-mix(in oklab,oklch(80% .075 80) 16%,var(--SmartThemeBlurTintColor));--vm-card:color-mix(in srgb,var(--SmartThemeBlurTintColor) 74%,transparent);--vm-serif:'Iowan Old Style','Palatino Linotype',Palatino,'Book Antiqua',Georgia,serif;margin:12px auto 10px;max-width:560px;color:var(--SmartThemeBodyColor);font-family:var(--mainFontFamily,system-ui,sans-serif);line-height:1.35}.vm-head{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;gap:1px;width:fit-content;max-width:84%;margin:0 auto -15px;padding:6px 18px 7px;text-align:center;border-radius:4px;background:var(--vm-paper);border:1px solid color-mix(in srgb,var(--SmartThemeQuoteColor) 55%,transparent);outline:1px solid color-mix(in srgb,var(--SmartThemeQuoteColor) 28%,transparent);outline-offset:3px;box-shadow:0 6px 16px color-mix(in srgb,var(--SmartThemeShadowColor) 28%,transparent)}.vm-kicker{font-size:.6em;font-weight:700;letter-spacing:.26em;text-transform:uppercase;color:var(--SmartThemeQuoteColor)}.vm-title{font-family:var(--vm-serif);font-weight:700;font-size:1.14em;letter-spacing:.02em;overflow-wrap:anywhere}.vm-time{font-size:.72em;font-style:italic;opacity:.78;overflow-wrap:anywhere}.vm-sheet{position:relative;overflow:hidden;padding:30px 10px 8px;border-radius:14px;border:1px solid color-mix(in srgb,var(--SmartThemeQuoteColor) 34%,transparent);background:radial-gradient(ellipse at 50% 45%,transparent 52%,color-mix(in srgb,var(--SmartThemeShadowColor) 26%,transparent) 100%),repeating-linear-gradient(0deg,color-mix(in srgb,var(--SmartThemeBodyColor) 5%,transparent) 0 1px,transparent 1px 46px),repeating-linear-gradient(90deg,color-mix(in srgb,var(--SmartThemeBodyColor) 5%,transparent) 0 1px,transparent 1px 46px),var(--vm-paper);box-shadow:inset 0 0 0 5px color-mix(in srgb,var(--SmartThemeBlurTintColor) 40%,transparent),inset 0 0 0 6px color-mix(in srgb,var(--SmartThemeQuoteColor) 22%,transparent),0 14px 34px color-mix(in srgb,var(--SmartThemeShadowColor) 24%,transparent)}.vm-terrain{position:absolute;inset:0;width:100%;height:100%;color:var(--SmartThemeQuoteColor);opacity:.2;pointer-events:none}.vm-grid{position:relative;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-auto-flow:row;gap:16px 8px;align-items:start}.vm-place{--vm-tint:color-mix(in srgb,var(--SmartThemeBodyColor) 45%,transparent);position:relative;order:10;display:var(--vm-display,block);flex-wrap:wrap;align-items:center;gap:4px 14px;min-width:0;padding:7px 8px 8px;border-radius:12px;background:var(--vm-bg,color-mix(in oklab,var(--vm-tint) 15%,var(--vm-card)));border:var(--vm-border,1px solid color-mix(in oklab,var(--vm-tint) 50%,transparent));box-shadow:var(--vm-glow,0 3px 10px color-mix(in srgb,var(--SmartThemeShadowColor) 18%,transparent));opacity:var(--vm-fade,1)}.vm-place::before{content:var(--vm-badge,none);position:absolute;top:-9px;left:var(--vm-badge-left,50%);transform:var(--vm-badge-shift,translateX(-50%));white-space:nowrap;padding:1px 8px;border-radius:999px;font-size:.58em;font-weight:800;letter-spacing:.12em;text-transform:uppercase;line-height:1.5;color:var(--SmartThemeBodyColor);background:var(--vm-paper);border:var(--vm-badge-border,1px solid var(--SmartThemeQuoteColor))}.vm-place-head{display:flex;flex-wrap:var(--vm-head-wrap,wrap);align-items:flex-start;gap:4px 6px;min-width:0}.vm-ico{flex:none;display:grid;place-items:center;width:24px;height:24px;border-radius:50%;font-size:.7em;color:var(--SmartThemeBodyColor);background:color-mix(in oklab,var(--vm-tint) 40%,transparent);box-shadow:0 0 0 1px color-mix(in oklab,var(--vm-tint) 70%,transparent)}.vm-ico::before{content:var(--vm-icon,\"\\f3c5\")}.vm-place-text{min-width:0;flex:1 1 5.6em}.vm-name{font-family:var(--vm-serif);font-weight:700;font-size:.92em;line-height:1.2;overflow-wrap:anywhere}.vm-detail{font-size:.7em;opacity:.7;overflow-wrap:anywhere}.vm-pins{display:flex;flex-direction:var(--vm-flow,column);flex-wrap:wrap;gap:5px 14px;margin-top:var(--vm-pins-gap,6px)}.vm-pin{display:flex;align-items:flex-start;gap:6px;min-width:0;font-size:.78em}.vm-marker{flex:none;display:grid;place-items:center;width:19px;height:19px;margin:1px 2px 0 1px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:color-mix(in srgb,var(--SmartThemeQuoteColor) 30%,transparent);border:2px solid var(--SmartThemeQuoteColor);box-shadow:1px 2px 4px color-mix(in srgb,var(--SmartThemeShadowColor) 30%,transparent)}.vm-marker>span{transform:rotate(45deg);font-size:.82em;font-weight:800;text-transform:uppercase;line-height:1}.vm-pin-text{min-width:0;flex:1}.vm-who{font-weight:700;overflow-wrap:anywhere}.vm-spot{font-size:.92em;opacity:.84;overflow-wrap:anywhere}.vm-doing{font-size:.9em;font-style:italic;opacity:.66;overflow-wrap:anywhere}[data-vm-d=\"nw\" i],[data-vm-d=\"northwest\" i]{grid-column:1;order:1}[data-vm-d=\"north\" i],[data-vm-d=\"n\" i],[data-vm-d=\"up\" i],[data-vm-d=\"above\" i],[data-vm-d=\"upstairs\" i],[data-vm-d=\"upper\" i]{grid-column:2;order:2}[data-vm-d=\"ne\" i],[data-vm-d=\"northeast\" i]{grid-column:3;order:3}[data-vm-d=\"west\" i],[data-vm-d=\"w\" i],[data-vm-d=\"left\" i]{grid-column:1;order:4}[data-vm-d=\"here\" i],[data-vm-d=\"centre\" i],[data-vm-d=\"center\" i],[data-vm-d=\"middle\" i]{grid-column:2;order:5;--vm-badge:\"You are here\";--vm-border:2px solid var(--SmartThemeQuoteColor);--vm-glow:0 0 0 4px color-mix(in srgb,var(--SmartThemeQuoteColor) 16%,transparent),0 6px 16px color-mix(in srgb,var(--SmartThemeShadowColor) 26%,transparent)}[data-vm-d=\"east\" i],[data-vm-d=\"e\" i],[data-vm-d=\"right\" i]{grid-column:3;order:6}[data-vm-d=\"sw\" i],[data-vm-d=\"southwest\" i]{grid-column:1;order:7}[data-vm-d=\"south\" i],[data-vm-d=\"s\" i],[data-vm-d=\"down\" i],[data-vm-d=\"below\" i],[data-vm-d=\"downstairs\" i],[data-vm-d=\"lower\" i],[data-vm-d=\"under\" i]{grid-column:2;order:8}[data-vm-d=\"se\" i],[data-vm-d=\"southeast\" i]{grid-column:3;order:9}[data-vm-d=\"far\" i],[data-vm-d=\"faraway\" i],[data-vm-d=\"faroff\" i],[data-vm-d=\"away\" i],[data-vm-d=\"distant\" i],[data-vm-d=\"elsewhere\" i],[data-vm-d=\"offmap\" i],[data-vm-d=\"remote\" i]{grid-column:1/-1;order:20;--vm-display:flex;--vm-head-wrap:nowrap;--vm-flow:row;--vm-pins-gap:0;--vm-bg:color-mix(in srgb,var(--SmartThemeBlurTintColor) 55%,transparent);--vm-badge-left:16px;--vm-badge-shift:none;--vm-badge-border:1px dashed color-mix(in srgb,var(--SmartThemeBodyColor) 40%,transparent);border-style:dashed;--vm-badge:\"Beyond the map\"}[data-vm-d=\"unknown\" i],[data-vm-d=\"unclear\" i],[data-vm-d=\"lost\" i],[data-vm-d=\"hidden\" i]{grid-column:1/-1;order:30;--vm-display:flex;--vm-head-wrap:nowrap;--vm-flow:row;--vm-pins-gap:0;--vm-bg:color-mix(in srgb,var(--SmartThemeBlurTintColor) 55%,transparent);--vm-badge-left:16px;--vm-badge-shift:none;--vm-badge-border:1px dashed color-mix(in srgb,var(--SmartThemeBodyColor) 40%,transparent);border-style:dashed;--vm-badge:\"Whereabouts unknown\";--vm-fade:.78}[data-vm-k=\"room\" i],[data-vm-k=\"hall\" i],[data-vm-k=\"chamber\" i],[data-vm-k=\"office\" i],[data-vm-k=\"bedroom\" i],[data-vm-k=\"kitchen\" i]{--vm-tint:oklch(76% .11 70);--vm-icon:\"\\f52b\"}[data-vm-k=\"building\" i],[data-vm-k=\"house\" i],[data-vm-k=\"home\" i],[data-vm-k=\"manor\" i],[data-vm-k=\"mansion\" i],[data-vm-k=\"apartment\" i]{--vm-tint:oklch(66% .12 40);--vm-icon:\"\\f015\"}[data-vm-k=\"shop\" i],[data-vm-k=\"store\" i],[data-vm-k=\"inn\" i],[data-vm-k=\"tavern\" i],[data-vm-k=\"bar\" i],[data-vm-k=\"market\" i],[data-vm-k=\"cafe\" i]{--vm-tint:oklch(72% .12 55);--vm-icon:\"\\f54e\"}[data-vm-k=\"street\" i],[data-vm-k=\"road\" i],[data-vm-k=\"path\" i],[data-vm-k=\"alley\" i],[data-vm-k=\"bridge\" i],[data-vm-k=\"square\" i]{--vm-tint:oklch(68% .03 250);--vm-icon:\"\\f018\"}[data-vm-k=\"town\" i],[data-vm-k=\"city\" i],[data-vm-k=\"village\" i],[data-vm-k=\"district\" i]{--vm-tint:oklch(74% .1 85);--vm-icon:\"\\f64f\"}[data-vm-k=\"forest\" i],[data-vm-k=\"woods\" i],[data-vm-k=\"wood\" i],[data-vm-k=\"park\" i],[data-vm-k=\"garden\" i],[data-vm-k=\"jungle\" i]{--vm-tint:oklch(68% .13 145);--vm-icon:\"\\f1bb\"}[data-vm-k=\"field\" i],[data-vm-k=\"fields\" i],[data-vm-k=\"plains\" i],[data-vm-k=\"meadow\" i],[data-vm-k=\"farm\" i],[data-vm-k=\"desert\" i]{--vm-tint:oklch(76% .12 115);--vm-icon:\"\\f4d8\"}[data-vm-k=\"mountain\" i],[data-vm-k=\"hill\" i],[data-vm-k=\"hills\" i],[data-vm-k=\"cliff\" i],[data-vm-k=\"peak\" i],[data-vm-k=\"ridge\" i]{--vm-tint:oklch(62% .05 50);--vm-icon:\"\\f6fc\"}[data-vm-k=\"water\" i],[data-vm-k=\"river\" i],[data-vm-k=\"lake\" i],[data-vm-k=\"sea\" i],[data-vm-k=\"ocean\" i],[data-vm-k=\"beach\" i],[data-vm-k=\"coast\" i],[data-vm-k=\"harbour\" i],[data-vm-k=\"harbor\" i],[data-vm-k=\"docks\" i],[data-vm-k=\"port\" i]{--vm-tint:oklch(68% .12 235);--vm-icon:\"\\f773\"}[data-vm-k=\"ship\" i],[data-vm-k=\"boat\" i]{--vm-tint:oklch(66% .1 205);--vm-icon:\"\\f21a\"}[data-vm-k=\"vehicle\" i],[data-vm-k=\"car\" i],[data-vm-k=\"train\" i],[data-vm-k=\"carriage\" i],[data-vm-k=\"cart\" i],[data-vm-k=\"wagon\" i],[data-vm-k=\"bus\" i]{--vm-tint:oklch(70% .09 185);--vm-icon:\"\\f5e4\"}[data-vm-k=\"castle\" i],[data-vm-k=\"palace\" i],[data-vm-k=\"fort\" i],[data-vm-k=\"fortress\" i],[data-vm-k=\"keep\" i],[data-vm-k=\"tower\" i]{--vm-tint:oklch(64% .13 300);--vm-icon:\"\\f447\"}[data-vm-k=\"temple\" i],[data-vm-k=\"church\" i],[data-vm-k=\"shrine\" i],[data-vm-k=\"chapel\" i],[data-vm-k=\"cathedral\" i]{--vm-tint:oklch(78% .11 95);--vm-icon:\"\\f67f\"}[data-vm-k=\"cave\" i],[data-vm-k=\"dungeon\" i],[data-vm-k=\"underground\" i],[data-vm-k=\"tunnel\" i],[data-vm-k=\"mine\" i],[data-vm-k=\"cellar\" i],[data-vm-k=\"crypt\" i]{--vm-tint:oklch(54% .04 270);--vm-icon:\"\\f6d9\"}[data-vm-k=\"camp\" i],[data-vm-k=\"tent\" i],[data-vm-k=\"campsite\" i],[data-vm-k=\"ruins\" i]{--vm-tint:oklch(70% .13 50);--vm-icon:\"\\f6bb\"}.vm-trail{grid-column:1/-1;order:40;padding:7px 9px 8px;border-radius:12px;border:1px dashed color-mix(in srgb,var(--SmartThemeQuoteColor) 45%,transparent);background:color-mix(in srgb,var(--SmartThemeBlurTintColor) 50%,transparent)}.vm-trail-head{display:flex;align-items:center;gap:6px;margin-bottom:5px;font-size:.62em;font-weight:800;letter-spacing:.16em;text-transform:uppercase;opacity:.78}.vm-trail-head i{color:var(--SmartThemeQuoteColor)}.vm-steps{display:flex;flex-direction:column;gap:4px}.vm-step{display:flex;align-items:center;flex-wrap:wrap;gap:3px 7px;font-size:.78em}.vm-from{opacity:.68;overflow-wrap:anywhere}.vm-path{flex:1 1 22px;min-width:22px;max-width:90px;display:flex;align-items:center;color:var(--SmartThemeQuoteColor)}.vm-path::before{content:\"\";flex:1;border-top:2px dashed var(--SmartThemeQuoteColor)}.vm-to{font-weight:600;overflow-wrap:anywhere}.vm-foot{position:relative;display:flex;align-items:center;gap:10px;margin-top:10px;padding-top:8px;border-top:1px solid color-mix(in srgb,var(--SmartThemeQuoteColor) 22%,transparent)}.vm-rose{flex:none;width:42px;height:42px;color:var(--SmartThemeQuoteColor)}.vm-legend{display:flex;flex-wrap:wrap;gap:4px 12px;flex:1;min-width:0;font-size:.66em;opacity:.78}.vm-legend>span{display:inline-flex;align-items:center;gap:5px}.vm-key-here{width:12px;height:9px;border-radius:3px;border:2px solid var(--SmartThemeQuoteColor)}.vm-key-pin{width:9px;height:9px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2px solid var(--SmartThemeQuoteColor);background:color-mix(in srgb,var(--SmartThemeQuoteColor) 30%,transparent)}.vm-key-trail{width:16px;border-top:2px dashed var(--SmartThemeQuoteColor)}.vm-key-far{width:12px;height:9px;border-radius:3px;border:1px dashed color-mix(in srgb,var(--SmartThemeBodyColor) 55%,transparent)}@media (max-width:480px){.vm-sheet{padding:28px 7px 7px}.vm-grid{gap:15px 6px}.vm-place{padding:6px 6px 7px}.vm-pin{font-size:.74em}}</style><div class=\"vm\"><div class=\"vm-head\"><span class=\"vm-kicker\">Visual map</span><span class=\"vm-title\">$1</span><span class=\"vm-time\">$2</span></div><div class=\"vm-sheet\"><svg class=\"vm-terrain\" viewBox=\"0 0 400 300\" preserveAspectRatio=\"none\" aria-hidden=\"true\"><g fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.2\" vector-effect=\"non-scaling-stroke\"><path vector-effect=\"non-scaling-stroke\" d=\"M-10 70 C60 40 110 90 170 64 S290 20 410 58\"/><path vector-effect=\"non-scaling-stroke\" d=\"M-10 92 C70 62 120 112 180 86 S300 44 410 80\"/><path vector-effect=\"non-scaling-stroke\" d=\"M300 190 c30-22 78-14 84 14 s-26 50-62 44 s-50-36-22-58z\"/><path vector-effect=\"non-scaling-stroke\" d=\"M312 196 c20-12 52-8 56 10 s-18 32-42 28 s-32-24-14-38z\"/><path vector-effect=\"non-scaling-stroke\" d=\"M40 200 c24-18 70-10 74 14 s-30 40-58 34 s-38-30-16-48z\"/><path vector-effect=\"non-scaling-stroke\" stroke-width=\"3\" opacity=\".7\" d=\"M-10 250 C50 230 90 268 150 246 S250 214 300 236 S370 270 410 252\"/><path vector-effect=\"non-scaling-stroke\" stroke-dasharray=\"6 6\" d=\"M20 -10 C40 60 120 120 200 150 S330 210 380 310\"/></g></svg><div class=\"vm-grid\"><div style=\"display:none\"><div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-visual-map-companion",
+        "scriptId": "visual-map-place",
+        "scriptName": "Visual Map - place region",
+        "family": "companion",
+        "source": "visual-map-companion.json",
+        "findRegex": "/^[ \\t]*(?:[-*\\u2022][ \\t]*)?place[ \\t]*\\|[ \\t]*([^|\\n]+?)[ \\t]*(?:\\|[ \\t]*([A-Za-z]*)[ \\t_-]?([A-Za-z]*)[^|\\n]*?)?(?:\\|[ \\t]*([A-Za-z]*)[^|\\n]*?)?(?:\\|[ \\t]*([^\\n]*?))?[ \\t]*$/gim",
+        "groups": 5,
+        "flags": "gim",
+        "delimited": true,
+        "replaceString": "</div></div><div class=\"vm-place\" data-vm-d=\"$2$3\" data-vm-k=\"$4\"><div class=\"vm-place-head\"><i class=\"fa-solid vm-ico\"></i><div class=\"vm-place-text\"><div class=\"vm-name\">$1</div><div class=\"vm-detail\">$5</div></div></div><div class=\"vm-pins\">",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-visual-map-companion",
+        "scriptId": "visual-map-pin",
+        "scriptName": "Visual Map - character pin",
+        "family": "companion",
+        "source": "visual-map-companion.json",
+        "findRegex": "/^[ \\t]*(?:[-*\\u2022][ \\t]*)?(?:pin|who)[ \\t]*\\|[ \\t]*((?:\\{\\{)?([^|\\n\\s{])[^|\\n]*?)[ \\t]*(?:\\|[ \\t]*([^|\\n]*?)[ \\t]*)?(?:\\|[ \\t]*([^\\n]*?))?[ \\t]*$/gim",
+        "groups": 4,
+        "flags": "gim",
+        "delimited": true,
+        "replaceString": "<div class=\"vm-pin\"><span class=\"vm-marker\"><span>$2</span></span><div class=\"vm-pin-text\"><div class=\"vm-who\">$1</div><div class=\"vm-spot\">$3</div><div class=\"vm-doing\">$4</div></div></div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-visual-map-companion",
+        "scriptId": "visual-map-trail-open",
+        "scriptName": "Visual Map - travel trail",
+        "family": "companion",
+        "source": "visual-map-companion.json",
+        "findRegex": "/(?:^[ \\t]*(?:[-*\\u2022][ \\t]*)?move[ \\t]*\\|[^\\n]*(?:\\n|$))+/gim",
+        "groups": 0,
+        "flags": "gim",
+        "delimited": true,
+        "replaceString": "</div></div><div class=\"vm-trail\"><div class=\"vm-trail-head\"><i class=\"fa-solid fa-route\"></i>Trail</div><div class=\"vm-steps\">\n$0",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-visual-map-companion",
+        "scriptId": "visual-map-move",
+        "scriptName": "Visual Map - travel step",
+        "family": "companion",
+        "source": "visual-map-companion.json",
+        "findRegex": "/^[ \\t]*(?:[-*\\u2022][ \\t]*)?move[ \\t]*\\|[ \\t]*([^|\\n]+?)[ \\t]*\\|[ \\t]*([^|\\n]*?)[ \\t]*(?:\\|[ \\t]*([^\\n]*?))?[ \\t]*$/gim",
+        "groups": 3,
+        "flags": "gim",
+        "delimited": true,
+        "replaceString": "<div class=\"vm-step\"><b>$1</b><span class=\"vm-from\">$2</span><span class=\"vm-path\"><i class=\"fa-solid fa-caret-right\"></i></span><span class=\"vm-to\">$3</span></div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-visual-map-companion",
+        "scriptId": "visual-map-map-close",
+        "scriptName": "Visual Map - map close",
+        "family": "companion",
+        "source": "visual-map-companion.json",
+        "findRegex": "/^[ \\t]*(?:[-*\\u2022][ \\t]*)?map[-_ ]?end\\b[^\\n]*$/gim",
+        "groups": 0,
+        "flags": "gim",
+        "delimited": true,
+        "replaceString": "</div></div></div><div class=\"vm-foot\"><svg class=\"vm-rose\" viewBox=\"0 0 48 48\" aria-hidden=\"true\"><circle cx=\"24\" cy=\"24\" r=\"21\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1\" opacity=\".55\"/><circle cx=\"24\" cy=\"24\" r=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\".6\" stroke-dasharray=\"2 2\" opacity=\".55\"/><path d=\"M24 4 L27 21 L44 24 L27 27 L24 44 L21 27 L4 24 L21 21 Z\" fill=\"currentColor\" opacity=\".35\"/><path d=\"M24 4 L27 21 L24 24 L21 21 Z M24 44 L21 27 L24 24 L27 27 Z\" fill=\"currentColor\"/><path d=\"M33 15 L26 22 L24 24 L33 15 Z M15 33 L22 26 L24 24 Z M33 33 L26 26 L24 24 Z M15 15 L22 22 L24 24 Z\" stroke=\"currentColor\" stroke-width=\"1\" opacity=\".55\"/><circle cx=\"24\" cy=\"24\" r=\"2\" fill=\"currentColor\"/><text x=\"24\" y=\"3.6\" text-anchor=\"middle\" font-size=\"6\" font-weight=\"700\" fill=\"currentColor\" font-family=\"Georgia,serif\">N</text></svg><div class=\"vm-legend\"><span><span class=\"vm-key-here\"></span>You are here</span><span><span class=\"vm-key-pin\"></span>Character</span><span><span class=\"vm-key-trail\"></span>Trail</span><span><span class=\"vm-key-far\"></span>Far away</span></div></div></div></div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-vitals-companion",
+        "scriptId": "vitals-fence-cleanup",
+        "scriptName": "Vitals - code fence cleanup",
+        "family": "companion",
+        "source": "vitals-companion.json",
+        "findRegex": "/^[ \\t]*```[\\w-]*[ \\t]*$\\n?/gm",
+        "groups": 0,
+        "flags": "gm",
+        "delimited": true,
+        "replaceString": "",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-vitals-companion",
+        "scriptId": "vitals-open",
+        "scriptName": "Vitals - card open",
+        "family": "companion",
+        "source": "vitals-companion.json",
+        "findRegex": "/^[ \\t]*(?:VITALS|vitals)\\|([^|\\n]*)\\|?([^|\\n]*?)[ \\t]*$/gm",
+        "groups": 2,
+        "flags": "gm",
+        "delimited": true,
+        "replaceString": "<div style=\"margin:10px auto;max-width:520px;padding:12px;border-radius:20px;border:1px solid color-mix(in srgb,var(--SmartThemeQuoteColor) 24%, transparent);background:radial-gradient(circle at 88% 0%,color-mix(in srgb,var(--SmartThemeQuoteColor) 14%, transparent),transparent 55%),color-mix(in srgb,var(--SmartThemeBlurTintColor) 84%, transparent);box-shadow:0 14px 34px color-mix(in srgb,var(--SmartThemeShadowColor) 24%, transparent);font-family:var(--mainFontFamily, system-ui, sans-serif);color:var(--SmartThemeBodyColor);line-height:1.4\"><div style=\"display:flex;align-items:center;gap:10px;margin-bottom:10px;padding-bottom:9px;border-bottom:1px dashed color-mix(in srgb,var(--SmartThemeQuoteColor) 28%, transparent)\"><span style=\"flex:none;display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:color-mix(in srgb,var(--SmartThemeQuoteColor) 20%, transparent);border:1px solid color-mix(in srgb,var(--SmartThemeQuoteColor) 38%, transparent);color:var(--SmartThemeQuoteColor)\"><i class=\"fa-solid fa-user-shield\"></i></span><div style=\"min-width:0;flex:1\"><div style=\"font-size:.68em;letter-spacing:.14em;text-transform:uppercase;opacity:.62\">Vitals</div><div style=\"font-weight:800;font-size:1.04em;overflow-wrap:anywhere\">$1</div><div style=\"font-size:.8em;opacity:.78;font-style:italic;overflow-wrap:anywhere\">$2</div></div></div><div style=\"display:flex;flex-wrap:wrap;gap:6px\">",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-vitals-companion",
+        "scriptId": "vitals-icon-health",
+        "scriptName": "Vitals - health icon",
+        "family": "companion",
+        "source": "vitals-companion.json",
+        "findRegex": "/^([ \\t]*)bar\\|(\\s*(?:health|hp|life|hit points)\\s*\\|)/gim",
+        "groups": 2,
+        "flags": "gim",
+        "delimited": true,
+        "replaceString": "$1bar~fa-heart-pulse|$2",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-vitals-companion",
+        "scriptId": "vitals-icon-satiety",
+        "scriptName": "Vitals - satiety icon",
+        "family": "companion",
+        "source": "vitals-companion.json",
+        "findRegex": "/^([ \\t]*)bar\\|(\\s*(?:satiety|hunger|food|fullness|nourishment)\\s*\\|)/gim",
+        "groups": 2,
+        "flags": "gim",
+        "delimited": true,
+        "replaceString": "$1bar~fa-drumstick-bite|$2",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-vitals-companion",
+        "scriptId": "vitals-icon-hydration",
+        "scriptName": "Vitals - hydration icon",
+        "family": "companion",
+        "source": "vitals-companion.json",
+        "findRegex": "/^([ \\t]*)bar\\|(\\s*(?:hydration|thirst|water)\\s*\\|)/gim",
+        "groups": 2,
+        "flags": "gim",
+        "delimited": true,
+        "replaceString": "$1bar~fa-droplet|$2",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-vitals-companion",
+        "scriptId": "vitals-icon-energy",
+        "scriptName": "Vitals - energy icon",
+        "family": "companion",
+        "source": "vitals-companion.json",
+        "findRegex": "/^([ \\t]*)bar\\|(\\s*(?:energy|stamina|fatigue|rest)\\s*\\|)/gim",
+        "groups": 2,
+        "flags": "gim",
+        "delimited": true,
+        "replaceString": "$1bar~fa-bolt|$2",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-vitals-companion",
+        "scriptId": "vitals-icon-morale",
+        "scriptName": "Vitals - morale icon",
+        "family": "companion",
+        "source": "vitals-companion.json",
+        "findRegex": "/^([ \\t]*)bar\\|(\\s*(?:morale|mood|spirit|sanity|composure)\\s*\\|)/gim",
+        "groups": 2,
+        "flags": "gim",
+        "delimited": true,
+        "replaceString": "$1bar~fa-face-smile|$2",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-vitals-companion",
+        "scriptId": "vitals-icon-other",
+        "scriptName": "Vitals - other stat icon",
+        "family": "companion",
+        "source": "vitals-companion.json",
+        "findRegex": "/^([ \\t]*)bar\\|/gim",
+        "groups": 1,
+        "flags": "gim",
+        "delimited": true,
+        "replaceString": "$1bar~fa-circle-half-stroke|",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-vitals-companion",
+        "scriptId": "vitals-bar-critical",
+        "scriptName": "Vitals - critical bar",
+        "family": "companion",
+        "source": "vitals-companion.json",
+        "findRegex": "/^[ \\t]*bar~(fa-[\\w-]+)\\|\\s*([^|\\n]+?)\\s*\\|\\s*(\\d|1\\d|2[0-4])(?:\\s*(?:%|\\/\\s*100))?\\s*(?:\\|\\s*([^|\\n]*?)\\s*)?(?:\\|\\s*([^\\n]*?)\\s*)?$/gim",
+        "groups": 5,
+        "flags": "gim",
+        "delimited": true,
+        "replaceString": "<div style=\"flex:1 1 100%;display:grid;grid-template-columns:30px minmax(0,1fr) auto;align-items:center;gap:3px 9px;padding:7px 9px;border-radius:12px;background:color-mix(in srgb,oklch(64% .2 25) 8%, transparent);border-left:3px solid oklch(64% .2 25)\"><span style=\"grid-row:span 3;align-self:start;display:grid;place-items:center;width:30px;height:30px;border-radius:50%;color:oklch(64% .2 25);background:color-mix(in srgb,oklch(64% .2 25) 18%, transparent);box-shadow:0 0 0 1px color-mix(in srgb,oklch(64% .2 25) 45%, transparent)\"><i class=\"fa-solid $1\"></i></span><div style=\"display:flex;flex-wrap:wrap;align-items:center;gap:3px 7px;min-width:0\"><b style=\"overflow-wrap:anywhere\">$2</b><small style=\"font-size:.64em;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:1px 7px;border-radius:999px;color:color-mix(in oklch,oklch(64% .2 25) 50%, var(--SmartThemeBodyColor));background:color-mix(in srgb,oklch(64% .2 25) 18%, transparent);border:1px solid color-mix(in srgb,oklch(64% .2 25) 42%, transparent)\">Critical</small>[[vitals-change:$4]]</div><b style=\"font-variant-numeric:tabular-nums;font-size:1.05em;color:color-mix(in oklch,oklch(64% .2 25) 55%, var(--SmartThemeBodyColor))\">$3</b><div style=\"grid-column:2 / 4;height:9px;border-radius:999px;background:color-mix(in srgb,var(--SmartThemeBodyColor) 11%, transparent);overflow:hidden\"><div style=\"width:$3%;height:100%;border-radius:inherit;background:linear-gradient(90deg,color-mix(in srgb,oklch(64% .2 25) 62%, transparent),oklch(64% .2 25));box-shadow:0 0 8px color-mix(in srgb,oklch(64% .2 25) 55%, transparent)\"></div></div><div style=\"grid-column:2 / 4;font-size:.76em;opacity:.72;font-style:italic;overflow-wrap:anywhere\">$5</div></div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-vitals-companion",
+        "scriptId": "vitals-bar-low",
+        "scriptName": "Vitals - low bar",
+        "family": "companion",
+        "source": "vitals-companion.json",
+        "findRegex": "/^[ \\t]*bar~(fa-[\\w-]+)\\|\\s*([^|\\n]+?)\\s*\\|\\s*(2[5-9]|[34]\\d)(?:\\s*(?:%|\\/\\s*100))?\\s*(?:\\|\\s*([^|\\n]*?)\\s*)?(?:\\|\\s*([^\\n]*?)\\s*)?$/gim",
+        "groups": 5,
+        "flags": "gim",
+        "delimited": true,
+        "replaceString": "<div style=\"flex:1 1 100%;display:grid;grid-template-columns:30px minmax(0,1fr) auto;align-items:center;gap:3px 9px;padding:7px 9px;border-radius:12px;background:color-mix(in srgb,oklch(76% .15 62) 8%, transparent);border-left:3px solid oklch(76% .15 62)\"><span style=\"grid-row:span 3;align-self:start;display:grid;place-items:center;width:30px;height:30px;border-radius:50%;color:oklch(76% .15 62);background:color-mix(in srgb,oklch(76% .15 62) 18%, transparent);box-shadow:0 0 0 1px color-mix(in srgb,oklch(76% .15 62) 45%, transparent)\"><i class=\"fa-solid $1\"></i></span><div style=\"display:flex;flex-wrap:wrap;align-items:center;gap:3px 7px;min-width:0\"><b style=\"overflow-wrap:anywhere\">$2</b><small style=\"font-size:.64em;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:1px 7px;border-radius:999px;color:color-mix(in oklch,oklch(76% .15 62) 50%, var(--SmartThemeBodyColor));background:color-mix(in srgb,oklch(76% .15 62) 18%, transparent);border:1px solid color-mix(in srgb,oklch(76% .15 62) 42%, transparent)\">Low</small>[[vitals-change:$4]]</div><b style=\"font-variant-numeric:tabular-nums;font-size:1.05em;color:color-mix(in oklch,oklch(76% .15 62) 55%, var(--SmartThemeBodyColor))\">$3</b><div style=\"grid-column:2 / 4;height:9px;border-radius:999px;background:color-mix(in srgb,var(--SmartThemeBodyColor) 11%, transparent);overflow:hidden\"><div style=\"width:$3%;height:100%;border-radius:inherit;background:linear-gradient(90deg,color-mix(in srgb,oklch(76% .15 62) 62%, transparent),oklch(76% .15 62));box-shadow:0 0 8px color-mix(in srgb,oklch(76% .15 62) 55%, transparent)\"></div></div><div style=\"grid-column:2 / 4;font-size:.76em;opacity:.72;font-style:italic;overflow-wrap:anywhere\">$5</div></div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-vitals-companion",
+        "scriptId": "vitals-bar-fair",
+        "scriptName": "Vitals - fair bar",
+        "family": "companion",
+        "source": "vitals-companion.json",
+        "findRegex": "/^[ \\t]*bar~(fa-[\\w-]+)\\|\\s*([^|\\n]+?)\\s*\\|\\s*(5\\d|6\\d|7[0-4])(?:\\s*(?:%|\\/\\s*100))?\\s*(?:\\|\\s*([^|\\n]*?)\\s*)?(?:\\|\\s*([^\\n]*?)\\s*)?$/gim",
+        "groups": 5,
+        "flags": "gim",
+        "delimited": true,
+        "replaceString": "<div style=\"flex:1 1 100%;display:grid;grid-template-columns:30px minmax(0,1fr) auto;align-items:center;gap:3px 9px;padding:7px 9px;border-radius:12px;background:color-mix(in srgb,oklch(80% .14 100) 8%, transparent);border-left:3px solid oklch(80% .14 100)\"><span style=\"grid-row:span 3;align-self:start;display:grid;place-items:center;width:30px;height:30px;border-radius:50%;color:oklch(80% .14 100);background:color-mix(in srgb,oklch(80% .14 100) 18%, transparent);box-shadow:0 0 0 1px color-mix(in srgb,oklch(80% .14 100) 45%, transparent)\"><i class=\"fa-solid $1\"></i></span><div style=\"display:flex;flex-wrap:wrap;align-items:center;gap:3px 7px;min-width:0\"><b style=\"overflow-wrap:anywhere\">$2</b><small style=\"font-size:.64em;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:1px 7px;border-radius:999px;color:color-mix(in oklch,oklch(80% .14 100) 50%, var(--SmartThemeBodyColor));background:color-mix(in srgb,oklch(80% .14 100) 18%, transparent);border:1px solid color-mix(in srgb,oklch(80% .14 100) 42%, transparent)\">Fair</small>[[vitals-change:$4]]</div><b style=\"font-variant-numeric:tabular-nums;font-size:1.05em;color:color-mix(in oklch,oklch(80% .14 100) 55%, var(--SmartThemeBodyColor))\">$3</b><div style=\"grid-column:2 / 4;height:9px;border-radius:999px;background:color-mix(in srgb,var(--SmartThemeBodyColor) 11%, transparent);overflow:hidden\"><div style=\"width:$3%;height:100%;border-radius:inherit;background:linear-gradient(90deg,color-mix(in srgb,oklch(80% .14 100) 62%, transparent),oklch(80% .14 100));box-shadow:0 0 8px color-mix(in srgb,oklch(80% .14 100) 55%, transparent)\"></div></div><div style=\"grid-column:2 / 4;font-size:.76em;opacity:.72;font-style:italic;overflow-wrap:anywhere\">$5</div></div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-vitals-companion",
+        "scriptId": "vitals-bar-good",
+        "scriptName": "Vitals - good bar",
+        "family": "companion",
+        "source": "vitals-companion.json",
+        "findRegex": "/^[ \\t]*bar~(fa-[\\w-]+)\\|\\s*([^|\\n]+?)\\s*\\|\\s*(100|[89]\\d|7[5-9])(?:\\s*(?:%|\\/\\s*100))?\\s*(?:\\|\\s*([^|\\n]*?)\\s*)?(?:\\|\\s*([^\\n]*?)\\s*)?$/gim",
+        "groups": 5,
+        "flags": "gim",
+        "delimited": true,
+        "replaceString": "<div style=\"flex:1 1 100%;display:grid;grid-template-columns:30px minmax(0,1fr) auto;align-items:center;gap:3px 9px;padding:7px 9px;border-radius:12px;background:color-mix(in srgb,oklch(74% .15 152) 8%, transparent);border-left:3px solid oklch(74% .15 152)\"><span style=\"grid-row:span 3;align-self:start;display:grid;place-items:center;width:30px;height:30px;border-radius:50%;color:oklch(74% .15 152);background:color-mix(in srgb,oklch(74% .15 152) 18%, transparent);box-shadow:0 0 0 1px color-mix(in srgb,oklch(74% .15 152) 45%, transparent)\"><i class=\"fa-solid $1\"></i></span><div style=\"display:flex;flex-wrap:wrap;align-items:center;gap:3px 7px;min-width:0\"><b style=\"overflow-wrap:anywhere\">$2</b><small style=\"font-size:.64em;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:1px 7px;border-radius:999px;color:color-mix(in oklch,oklch(74% .15 152) 50%, var(--SmartThemeBodyColor));background:color-mix(in srgb,oklch(74% .15 152) 18%, transparent);border:1px solid color-mix(in srgb,oklch(74% .15 152) 42%, transparent)\">Good</small>[[vitals-change:$4]]</div><b style=\"font-variant-numeric:tabular-nums;font-size:1.05em;color:color-mix(in oklch,oklch(74% .15 152) 55%, var(--SmartThemeBodyColor))\">$3</b><div style=\"grid-column:2 / 4;height:9px;border-radius:999px;background:color-mix(in srgb,var(--SmartThemeBodyColor) 11%, transparent);overflow:hidden\"><div style=\"width:$3%;height:100%;border-radius:inherit;background:linear-gradient(90deg,color-mix(in srgb,oklch(74% .15 152) 62%, transparent),oklch(74% .15 152));box-shadow:0 0 8px color-mix(in srgb,oklch(74% .15 152) 55%, transparent)\"></div></div><div style=\"grid-column:2 / 4;font-size:.76em;opacity:.72;font-style:italic;overflow-wrap:anywhere\">$5</div></div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-vitals-companion",
+        "scriptId": "vitals-bar-other",
+        "scriptName": "Vitals - unrated bar",
+        "family": "companion",
+        "source": "vitals-companion.json",
+        "findRegex": "/^[ \\t]*bar~(fa-[\\w-]+)\\|\\s*([^|\\n]+?)\\s*(?:\\|\\s*([^|\\n]*?)\\s*)?(?:\\|\\s*([^|\\n]*?)\\s*)?(?:\\|\\s*([^\\n]*?)\\s*)?$/gim",
+        "groups": 5,
+        "flags": "gim",
+        "delimited": true,
+        "replaceString": "<div style=\"flex:1 1 100%;display:grid;grid-template-columns:30px minmax(0,1fr) auto;align-items:center;gap:3px 9px;padding:7px 9px;border-radius:12px;background:color-mix(in srgb,var(--SmartThemeBodyColor) 5%, transparent);border-left:3px solid color-mix(in srgb,var(--SmartThemeBodyColor) 35%, transparent)\"><span style=\"grid-row:span 2;align-self:start;display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:color-mix(in srgb,var(--SmartThemeBodyColor) 10%, transparent)\"><i class=\"fa-solid $1\"></i></span><div style=\"display:flex;flex-wrap:wrap;align-items:center;gap:3px 7px;min-width:0\"><b style=\"overflow-wrap:anywhere\">$2</b>[[vitals-change:$4]]</div><b style=\"font-variant-numeric:tabular-nums;overflow-wrap:anywhere\">$3</b><div style=\"grid-column:2 / 4;font-size:.76em;opacity:.72;font-style:italic;overflow-wrap:anywhere\">$5</div></div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-vitals-companion",
+        "scriptId": "vitals-change-up",
+        "scriptName": "Vitals - rising change",
+        "family": "companion",
+        "source": "vitals-companion.json",
+        "findRegex": "/\\[\\[vitals-change:\\s*\\+\\s*(\\d+)\\s*%?\\s*\\]\\]/g",
+        "groups": 1,
+        "flags": "g",
+        "delimited": true,
+        "replaceString": "<small style=\"display:inline-flex;align-items:center;gap:3px;font-size:.7em;font-weight:700;font-variant-numeric:tabular-nums;padding:1px 6px;border-radius:999px;color:color-mix(in oklch,oklch(74% .15 152) 55%, var(--SmartThemeBodyColor));background:color-mix(in srgb,oklch(74% .15 152) 16%, transparent)\"><i class=\"fa-solid fa-caret-up\"></i>$1</small>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-vitals-companion",
+        "scriptId": "vitals-change-down",
+        "scriptName": "Vitals - falling change",
+        "family": "companion",
+        "source": "vitals-companion.json",
+        "findRegex": "/\\[\\[vitals-change:\\s*[-\\u2212\\u2013]\\s*(\\d+)\\s*%?\\s*\\]\\]/g",
+        "groups": 1,
+        "flags": "g",
+        "delimited": true,
+        "replaceString": "<small style=\"display:inline-flex;align-items:center;gap:3px;font-size:.7em;font-weight:700;font-variant-numeric:tabular-nums;padding:1px 6px;border-radius:999px;color:color-mix(in oklch,oklch(64% .2 25) 55%, var(--SmartThemeBodyColor));background:color-mix(in srgb,oklch(64% .2 25) 16%, transparent)\"><i class=\"fa-solid fa-caret-down\"></i>$1</small>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-vitals-companion",
+        "scriptId": "vitals-change-steady",
+        "scriptName": "Vitals - steady change",
+        "family": "companion",
+        "source": "vitals-companion.json",
+        "findRegex": "/\\[\\[vitals-change:[^\\]\\n]*\\]\\]/g",
+        "groups": 0,
+        "flags": "g",
+        "delimited": true,
+        "replaceString": "",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-vitals-companion",
+        "scriptId": "vitals-status-bad",
+        "scriptName": "Vitals - bad status",
+        "family": "companion",
+        "source": "vitals-companion.json",
+        "findRegex": "/^[ \\t]*(?:STATUS|status)\\|\\s*([^|\\n]+?)\\s*\\|\\s*(?:bad|negative|debuff|harmful)\\s*$/gim",
+        "groups": 1,
+        "flags": "gim",
+        "delimited": true,
+        "replaceString": "<span style=\"flex:none;display:inline-flex;align-items:center;gap:5px;margin-top:2px;font-size:.76em;font-weight:600;padding:3px 9px;border-radius:999px;color:color-mix(in oklch,oklch(64% .2 25) 50%, var(--SmartThemeBodyColor));background:color-mix(in srgb,oklch(64% .2 25) 14%, transparent);border:1px solid color-mix(in srgb,oklch(64% .2 25) 40%, transparent)\"><i class=\"fa-solid fa-triangle-exclamation\" style=\"font-size:.9em\"></i>$1</span>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-vitals-companion",
+        "scriptId": "vitals-status-good",
+        "scriptName": "Vitals - good status",
+        "family": "companion",
+        "source": "vitals-companion.json",
+        "findRegex": "/^[ \\t]*(?:STATUS|status)\\|\\s*([^|\\n]+?)\\s*\\|\\s*(?:good|positive|buff|helpful)\\s*$/gim",
+        "groups": 1,
+        "flags": "gim",
+        "delimited": true,
+        "replaceString": "<span style=\"flex:none;display:inline-flex;align-items:center;gap:5px;margin-top:2px;font-size:.76em;font-weight:600;padding:3px 9px;border-radius:999px;color:color-mix(in oklch,oklch(74% .15 152) 50%, var(--SmartThemeBodyColor));background:color-mix(in srgb,oklch(74% .15 152) 14%, transparent);border:1px solid color-mix(in srgb,oklch(74% .15 152) 40%, transparent)\"><i class=\"fa-solid fa-circle-check\" style=\"font-size:.9em\"></i>$1</span>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-vitals-companion",
+        "scriptId": "vitals-status-other",
+        "scriptName": "Vitals - other status",
+        "family": "companion",
+        "source": "vitals-companion.json",
+        "findRegex": "/^[ \\t]*(?:STATUS|status)\\|\\s*([^|\\n]+?)\\s*(?:\\|[^\\n]*)?$/gim",
+        "groups": 1,
+        "flags": "gim",
+        "delimited": true,
+        "replaceString": "<span style=\"flex:none;display:inline-flex;align-items:center;gap:5px;margin-top:2px;font-size:.76em;font-weight:600;padding:3px 9px;border-radius:999px;color:color-mix(in oklch,var(--SmartThemeQuoteColor) 50%, var(--SmartThemeBodyColor));background:color-mix(in srgb,var(--SmartThemeQuoteColor) 14%, transparent);border:1px solid color-mix(in srgb,var(--SmartThemeQuoteColor) 40%, transparent)\"><i class=\"fa-solid fa-circle-info\" style=\"font-size:.9em\"></i>$1</span>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-vitals-companion",
+        "scriptId": "vitals-close",
+        "scriptName": "Vitals - card close",
+        "family": "companion",
+        "source": "vitals-companion.json",
+        "findRegex": "/^[ \\t]*(?:VITALS_END|vitals-end)[ \\t]*$/gm",
+        "groups": 0,
+        "flags": "gm",
+        "delimited": true,
+        "replaceString": "</div></div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-vitals-companion",
+        "scriptId": "vitals-none",
+        "scriptName": "Vitals - nothing to track",
+        "family": "companion",
+        "source": "vitals-companion.json",
+        "findRegex": "/^[ \\t]*tracker-none[ \\t]*$/gm",
+        "groups": 0,
+        "flags": "gm",
+        "delimited": true,
+        "replaceString": "<div style=\"margin:8px auto;max-width:520px;padding:8px 12px;border-radius:14px;border:1px dashed color-mix(in srgb,var(--SmartThemeQuoteColor) 30%, transparent);font-size:.82em;opacity:.7;text-align:center\"><i class=\"fa-solid fa-user-shield\" style=\"margin-right:6px\"></i>No vitals to show yet</div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
     }
 ];
 

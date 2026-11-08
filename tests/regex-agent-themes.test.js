@@ -137,6 +137,66 @@ describe('bundled tracker contracts', () => {
             }
         }
     });
+
+    test('every theme keeps companion map, movement and vital data intact', () => {
+        for (const selected of THEMES) {
+            for (const [id, key, values] of [
+                ['tpl-position-tracker-companion', 'position', ['Harbour at dusk', 'Tavern', 'Mira', 'Nearby', 'Ezra', 'Away', 'Recent moves']],
+                ['tpl-visual-map-companion', 'visual-map', ['Harbour at dusk', 'Tavern', 'Docks', 'Mira', 'Beside the boat', 'Trail']],
+                ['tpl-vitals-companion', 'vitals', ['Tired but safe', 'Health', 'Critical', 'Low', 'Fair', 'Good', 'Bruised ribs', 'Sheltered']],
+            ]) {
+                const built = buildAgentScripts(id, scriptsFor(id), selected);
+                const rendered = applyList(SAMPLES[key].full, built.scripts);
+                expect(rendered).toContain(`data-rat="${selected.slug}@`);
+                for (const value of values) expect(rendered).toContain(value);
+                expect(rendered).not.toMatch(/^(?:map-start|place|pin|who|move|map-end|vitals|bar|status)[-|]/im);
+                expect(rendered).not.toContain('[[vitals-change:');
+            }
+        }
+    }, 30000);
+
+    test('every theme keeps vital bar widths and changes', () => {
+        const id = 'tpl-vitals-companion';
+        for (const selected of THEMES) {
+            const rendered = applyList(SAMPLES.vitals.full, buildAgentScripts(id, scriptsFor(id), selected).scripts);
+            for (const width of [23, 41, 57, 78, 90]) expect(rendered).toContain(`width:${width}%`);
+            expect(rendered).toContain('fa-caret-up');
+            expect(rendered).toContain('fa-caret-down');
+        }
+    }, 30000);
+
+    test('companion cards handle unknown values and maps without movement', () => {
+        const position = buildAgentScripts('tpl-position-tracker-companion', scriptsFor('tpl-position-tracker-companion'), theme);
+        const positionHtml = applyList('map-start|Market|Morning\nplace|Stall|Open\nwho|Mira|hidden|Behind boxes|Waiting\nmap-end', position.scripts);
+        for (const value of ['Mira', 'hidden', 'Behind boxes', 'Waiting']) expect(positionHtml).toContain(value);
+        expect(positionHtml).not.toContain('Recent moves');
+
+        const map = buildAgentScripts('tpl-visual-map-companion', scriptsFor('tpl-visual-map-companion'), theme);
+        const mapHtml = applyList('map-start|Market|Morning\nplace|Stall|unknown|shop|Open\npin|Mira|Behind boxes|Waiting\nmap-end', map.scripts);
+        expect(mapHtml).toContain('data-vm-d="unknown"');
+        expect(mapHtml).toContain('data-vm-k="shop"');
+        expect(mapHtml).toContain('Behind boxes');
+        expect(mapHtml).not.toContain('class="ratvm-' + theme.slug + '-trail"');
+
+        const vitals = buildAgentScripts('tpl-vitals-companion', scriptsFor('tpl-vitals-companion'), theme);
+        const vitalsHtml = applyList('vitals|Mira|Resting\nbar|Magic|Unknown|0|Not measured\nstatus|Curious|other\nvitals-end', vitals.scripts);
+        for (const value of ['Magic', 'Unknown', 'Not measured', 'Curious']) expect(vitalsHtml).toContain(value);
+        expect(vitalsHtml).not.toContain('[[vitals-change:');
+        expect(applyList('tracker-none', vitals.scripts)).toContain('No vitals to show yet');
+    });
+
+    test('visual map styles are scoped to their theme while direction attributes remain unchanged', () => {
+        const id = 'tpl-visual-map-companion';
+        const first = applyList(SAMPLES['visual-map'].full, buildAgentScripts(id, scriptsFor(id), THEMES[0]).scripts);
+        const second = applyList(SAMPLES['visual-map'].full, buildAgentScripts(id, scriptsFor(id), THEMES[1]).scripts);
+        for (const [html, selected] of [[first, THEMES[0]], [second, THEMES[1]]]) {
+            expect(html).toContain(`.ratvm-${selected.slug}-place[data-vm-d="here" i]`);
+            expect(html).toContain('data-vm-d="here"');
+            expect(html).toContain('data-vm-d="east"');
+        }
+        expect(first).not.toContain(`.ratvm-${THEMES[1].slug}-place`);
+        expect(second).not.toContain(`.ratvm-${THEMES[0].slug}-place`);
+    });
 });
 
 describe('tracker-family selection through the real apply path', () => {
@@ -174,7 +234,7 @@ describe('tracker-family selection through the real apply path', () => {
     test('applies both, restores excluded trackers exactly, resumes overrides and persists scope', async () => {
         const original = structuredClone(agents);
         updateSettings({ overrides: { 'tpl-the-ledger': THEMES[1].slug } });
-        expect(await applyAll()).toMatchObject({ ok: true, applied: 40, blocked: [], failed: [] });
+        expect(await applyAll()).toMatchObject({ ok: true, applied: 43, blocked: [], failed: [] });
         for (const agent of agents) expect(inspectAgent(agent).status).toBe('pristine');
         saveAgent.mockClear();
         expect(await reconcile()).toMatchObject({ repaired: 0, reverted: 0, needsAttention: [] });
@@ -200,7 +260,7 @@ describe('tracker-family selection through the real apply path', () => {
         }
         expect(resolveThemeSlug('tpl-the-ledger')).toBe(THEMES[1].slug);
         updateSettings({ theme: STOCK_THEME, overrides: {} });
-        expect(await applyAll()).toMatchObject({ reverted: 40, blocked: [], failed: [] });
+        expect(await applyAll()).toMatchObject({ reverted: 43, blocked: [], failed: [] });
         expect(agents).toEqual(original);
     });
 

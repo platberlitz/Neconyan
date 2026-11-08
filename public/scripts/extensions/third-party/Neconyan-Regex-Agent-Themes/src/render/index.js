@@ -10,6 +10,7 @@ import { pairSlot, section, slot } from './parts.js';
 import { renderChip, renderPanel, renderProfile, renderSlots, renderStatcard } from './trackers.js';
 import { censusSection, windSlot } from './ethereality.js';
 import { renderBold, renderStream, renderTerminal, renderTranscript } from './companions.js';
+import { renderTrackerCompanion } from './tracker-companions.js';
 
 const RENDERERS = Object.freeze({
     [ARCHETYPES.PANEL]: renderPanel,
@@ -20,6 +21,9 @@ const RENDERERS = Object.freeze({
     [ARCHETYPES.TERMINAL]: renderTerminal,
     [ARCHETYPES.STREAM]: renderStream,
     [ARCHETYPES.TRANSCRIPT]: renderTranscript,
+    [ARCHETYPES.POSITION]: renderTrackerCompanion,
+    [ARCHETYPES.VISUAL_MAP]: renderTrackerCompanion,
+    [ARCHETYPES.VITALS]: renderTrackerCompanion,
     [ARCHETYPES.BOLD]: renderBold,
 });
 

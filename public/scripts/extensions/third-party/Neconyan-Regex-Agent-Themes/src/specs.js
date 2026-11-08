@@ -23,6 +23,9 @@ export const ARCHETYPES = Object.freeze({
     TERMINAL: 'terminal',
     STREAM: 'stream',
     TRANSCRIPT: 'transcript',
+    POSITION: 'position',
+    VISUAL_MAP: 'visual-map',
+    VITALS: 'vitals',
     BOLD: 'bold',
     CLEANUP: 'cleanup',
     PASSTHROUGH: 'passthrough',
@@ -447,6 +450,36 @@ const SPEC_LIST = [
         key: 'directions', archetype: ARCHETYPES.PASSTHROUGH, groups: 0,
     },
 ];
+
+// These companions assemble one card from several scripts. Keep the original structure
+// and the preprocessing scripts: the renderer only repaints the display fragments.
+for (const [templateId, key, archetype, entries] of [
+    ['tpl-position-tracker-companion', 'position', ARCHETYPES.POSITION, [
+        ['fence-cleanup', 0, true], ['map-open', 2], ['place', 2], ['who-here', 4],
+        ['who-near', 4], ['who-far', 4], ['who-other', 5], ['moves-open', 0],
+        ['move', 3], ['map-close', 0],
+    ]],
+    ['tpl-visual-map-companion', 'visual-map', ARCHETYPES.VISUAL_MAP, [
+        ['fence-cleanup', 0, true], ['lead-cleanup', 0, true], ['tail-cleanup', 1, true],
+        ['map-open', 2], ['place', 5], ['pin', 4], ['trail-open', 0], ['move', 3], ['map-close', 0],
+    ]],
+    ['tpl-vitals-companion', 'vitals', ARCHETYPES.VITALS, [
+        ['fence-cleanup', 0, true], ['open', 2], ['icon-health', 2, true],
+        ['icon-satiety', 2, true], ['icon-hydration', 2, true], ['icon-energy', 2, true],
+        ['icon-morale', 2, true], ['icon-other', 1, true], ['bar-critical', 5], ['bar-low', 5],
+        ['bar-fair', 5], ['bar-good', 5], ['bar-other', 5], ['change-up', 1], ['change-down', 1],
+        ['change-steady', 0, true], ['status-bad', 1], ['status-good', 1], ['status-other', 1],
+        ['close', 0], ['none', 0],
+    ]],
+]) {
+    for (const [suffix, groups, passthrough] of entries) {
+        SPEC_LIST.push({
+            templateId, scriptId: `${key === 'position' ? 'position-tracker' : key}-${suffix}`,
+            scriptName: `${key}: ${suffix}`, key, family: 'companion', groups,
+            archetype: passthrough ? ARCHETYPES.PASSTHROUGH : archetype,
+        });
+    }
+}
 
 // The skill-check variant uses the same numbered choices and cleanup contract.
 SPEC_LIST.push(...SPEC_LIST.filter(spec => spec.templateId === 'tpl-cyoa-choices')
@@ -1099,4 +1132,7 @@ export const PREVIEWABLE_ARCHETYPES = Object.freeze([
     ARCHETYPES.CHIP,
     ARCHETYPES.STREAM,
     ARCHETYPES.TRANSCRIPT,
+    ARCHETYPES.POSITION,
+    ARCHETYPES.VISUAL_MAP,
+    ARCHETYPES.VITALS,
 ]);
