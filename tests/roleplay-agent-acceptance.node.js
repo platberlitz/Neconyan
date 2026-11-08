@@ -4,7 +4,7 @@ import path from 'node:path';
 import { after, test } from 'node:test';
 import { fixture } from './roleplay-transactions-fixture.js';
 
-const { acceptRoleplayAgentAction } = await import('../src/generation/roleplay-acceptance.js');
+const { acceptRoleplayAgentAction, normalizeRoleplayAgentSubmission } = await import('../src/generation/roleplay-acceptance.js');
 const { runAgentJob } = await import('../src/generation/agent-jobs.js');
 const { getJob, setJobState } = await import('../src/jobs/store.js');
 const { providerStep } = await import('../src/jobs/artifacts.js');
@@ -45,8 +45,20 @@ function prepared(t, agents = [{ id: 'edit', enabled: true, phase: 'post', promp
         messageRevision: getRoleplaySourceMessageRevision(saved().slice(1)[messageIndex]),
         account, acknowledgement: { account: f.scope.owner, settingsRevision: 7 }, ...rest,
     });
-    return { ...f, dirs, saved, accept: options => acceptRoleplayAgentAction(request(), body(options)) };
+    return { ...f, dirs, saved, body, accept: options => acceptRoleplayAgentAction(request(), body(options)) };
 }
+
+test('manual Agent submissions preserve exact saved filenames without accepting unsafe paths', t => {
+    const f = prepared(t);
+    const locator = { avatar: ' Nova.png', chat: ' Source', group: false };
+    assert.deepEqual(normalizeRoleplayAgentSubmission(f.body({ source: { locator } })).locator, locator);
+    for (const invalid of ['', ' ', '../Source', 'a\\b', 'Source ', '.jsonl', '\u00a0.jsonl']) {
+        assert.throws(() => normalizeRoleplayAgentSubmission(f.body({ source: { locator: { ...locator, chat: invalid } } })));
+    }
+    for (const avatar of ['', ' ', '../Nova.png', 'a\\b.png', 'Nova.png ']) {
+        assert.throws(() => normalizeRoleplayAgentSubmission(f.body({ source: { locator: { ...locator, avatar } } })));
+    }
+});
 
 test('a manual Agent action is accepted as one server job and finishes without the page', async t => {
     const f = prepared(t);

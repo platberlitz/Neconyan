@@ -14,6 +14,7 @@ import { IPHONE_SAFARI_CONTEXT, installIPhoneSafari, applyIOSOnlyCss } from './i
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
 const { roleplayAccountStamp } = await import('../src/roleplay-store.js');
 const { readRoleplayChat } = await import('../src/generation/roleplay-source.js');
+const { enableMewmoryHiding } = await import('./mewmory-hiding-fixture.js');
 
 test.skip(process.env.NECONYAN_CONVERSATION_TEST_DISPOSABLE !== '1', 'Requires an owned disposable server.');
 test.setTimeout(240000);
@@ -80,6 +81,63 @@ async function terminal(account, id) {
 
 for (const phone of [false, true]) {
     const viewport = phone ? 'phone' : 'desktop';
+
+    test(`${viewport} browser and server replies find a card filename with a leading space`, async ({ app }) => {
+        const account = await app.account({ phone, activeConnection: true });
+        const native = owned(app);
+        const avatar = ' ' + account.avatar;
+        await fs.copyFile(path.join(native.directories.characters, account.avatar), path.join(native.directories.characters, avatar));
+        const locator = await savedChat({ ...account, avatar }, 'Exact filename chat');
+        enableMewmoryHiding(native.directories, locator, { remembered: false });
+        const page = await account.open({ workspace: false, readyTimeout: 120000 });
+        await openChat(page, locator);
+        await fs.mkdir(path.join('..', 'screenshots'), { recursive: true });
+        await page.screenshot({ path: path.join('..', 'screenshots', `exact-chat-${viewport}-initial.png`) });
+        const errors = [];
+        page.on('response', response => {
+            if (response.url().includes('/api/mewmory/') && !response.ok()) errors.push(response.status() + ' ' + response.url());
+        });
+        await page.evaluate(async () => {
+            const memory = await import('/scripts/mewmory/index.js');
+            await memory.hideOverflowAutomatically();
+        });
+        await page.screenshot({ path: path.join('..', 'screenshots', `exact-chat-${viewport}-memory.png`) });
+        expect(errors).toEqual([]);
+        const memory = await page.evaluate(async () => {
+            const { mewmory } = await import('/scripts/mewmory/index.js');
+            return { error: mewmory.error, locator: mewmory.view?.locator, enabled: mewmory.view?.enabled };
+        });
+        expect(memory.error).toBeFalsy();
+        expect(memory.locator).toEqual(locator);
+        expect(memory.enabled).toBe(true);
+        for (const server of [false, true]) {
+            const answer = server ? 'A server reply to the exact chat.' : 'A browser reply to the exact chat.';
+            app.provider.mode.reply = { choices: [{ message: { content: answer }, finish_reason: 'stop' }] };
+            await page.locator('#send_textarea').fill(server ? 'Reply on the server.' : 'Reply in the browser.');
+            if (server) {
+                const submitted = page.waitForResponse(acceptedSubmission);
+                await startNativeReply(page);
+                const response = await submitted;
+                expect(response.ok(), await response.text()).toBe(true);
+                await account.settled((await response.json()).jobId);
+            } else {
+                await page.evaluate(async () => { void (await import('/script.js')).Generate('normal', { skipNativeRoleplay: true }); });
+            }
+            await expect(page.locator('#chat .mes').last()).toContainText(answer, { timeout: 60000 });
+            expect(readRoleplayChat(native.scope, locator).records.at(-1).mes).toContain(answer);
+        }
+        expect(errors).toEqual([]);
+        await expect(page.locator('.toast-error')).toHaveCount(0);
+        // A saved reply preserves the reader's place until they scroll the chat.
+        await page.locator('#chat').hover();
+        await page.mouse.wheel(0, 2000);
+        await page.locator('[title="Go to bottom of chat"]').click();
+        await expect(page.locator('#chat .mes').last()).toBeInViewport({ ratio: 1 });
+        const bounds = await page.locator('#chat .mes').last().boundingBox();
+        expect(bounds.width).toBeGreaterThan(0);
+        expect(bounds.width).toBeLessThanOrEqual(phone ? 393 : 1280);
+        await page.screenshot({ path: path.join('..', 'screenshots', `exact-chat-${viewport}-after.png`) });
+    });
 
     test(`${viewport} a completed reply and Agent edit survive closing and reopening the page`, async ({ app }) => {
         app.provider.mode.streamReply = { first: 'The server ', rest: 'wrote this reply.' };

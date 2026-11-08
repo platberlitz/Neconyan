@@ -15,9 +15,12 @@ export const MAX_ARCHIVE_BYTES = 256 * 1024 * 1024;
 
 export function normalizeLocator(value) {
     object(value, 'Chat');
-    const chat = text(value.chat, 'Chat name', 255).replace(/\.jsonl$/, '');
-    const avatar = value.group ? '' : text(value.avatar, 'Character file', 255);
-    if (!chat || sanitize(chat) !== chat || (avatar && sanitize(avatar) !== avatar)) fail('Invalid chat path: Mewmory could not work out which chat this is.');
+    // Validate filenames as text, but do not trim them into a different saved chat.
+    text(value.chat, 'Chat name', 255);
+    if (!value.group) text(value.avatar, 'Character file', 255);
+    const chat = value.chat.replace(/\.jsonl$/, '');
+    const avatar = value.group ? '' : value.avatar;
+    if (!chat.trim() || sanitize(chat) !== chat || (avatar && sanitize(avatar) !== avatar)) fail('Invalid chat path: Mewmory could not work out which chat this is.');
     return { chat, avatar, group: value.group === true };
 }
 

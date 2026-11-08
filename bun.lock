@@ -5,7 +5,7 @@
     "": {
       "name": "neconyan",
       "dependencies": {
-        "@adobe/css-tools": "^4.4.4",
+        "@adobe/css-tools": "^4.5.0",
         "@agnai/sentencepiece-js": "^1.1.1",
         "@agnai/web-tokenizers": "^0.1.3",
         "@anthropic-ai/tokenizer": "^0.0.4",
@@ -164,7 +164,7 @@
   "packages": {
     "@aashutoshrathi/word-wrap": ["@aashutoshrathi/word-wrap@1.2.6", "", {}, "sha512-1Yjs2SvM8TflER/OD3cOjhWWOZb58A2t7wpE2S9XfBYTiIl+XFhQG2bjy4Pu1I+EAlCNUzRDYDdFwFYUKvXcIA=="],
 
-    "@adobe/css-tools": ["@adobe/css-tools@4.4.4", "", {}, "sha512-Elp+iwUx5rN5+Y8xLt5/GRoG20WGoDCQ/1Fb+1LiGtvwbDavuSk0jhD/eZdckHAuzcDzccnkv+rEjyWfRx18gg=="],
+    "@adobe/css-tools": ["@adobe/css-tools@4.5.0", "", {}, "sha512-6OzddxPio9UiWTCemp4N8cYLV2ZN1ncRnV1cVGtve7dhPOtRkleRyx32GQCYSwDYgaHU3USMm84tNsvKzRCa1Q=="],
 
     "@agnai/sentencepiece-js": ["@agnai/sentencepiece-js@1.1.1", "", { "dependencies": { "app-root-path": "^3.1.0" } }, "sha512-h2+XPrJVLuVLl+2+3iZPWcTw6Fs2NNulnxyh7LoI1hzHHib1wDC6KTmTrDJlLq7/lr5QFYpeMz2rlTFQrS0C0g=="],
 
