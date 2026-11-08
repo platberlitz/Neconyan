@@ -155,7 +155,10 @@ test('kitty clouds remain visible behind Home and Conversation, while Characters
     await page.evaluate(() => window.NeconyanShell.closeWorkspace());
     await expect(page.locator('#sb_conversation_stage')).toBeVisible();
     await expect(page.locator('.sb-conversation-composer')).toHaveClass(/neconyan-cat-panel/);
-    await expect(page.locator('#sb_conversation_stage')).toHaveCSS('background-color', /(?:,\s*|\/\s*)0\.9\)$/);
+    // The stage is intentionally transparent so the clouds read through it. The
+    // translucent message surface lives on the timeline pane at 82% opacity.
+    await expect(page.locator('#sb_conversation_stage')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+    await expect(page.locator('.sb-conversation-timeline')).toHaveCSS('background-color', /(?:,\s*|\/\s*)0\.82\)$/);
     await checkCanvas('conversation', '#sheld');
     await expect(page.locator('#send_textarea')).toHaveValue('Keep this draft while checking the background.');
     expect(modelRequests).toEqual([]);
