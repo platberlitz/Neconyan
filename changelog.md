@@ -62,6 +62,7 @@
 - PR #542 (2026-11-08) `fix(conversation): centre controls and add a translucent message pane`
 - PR #543 (2026-11-08) `fix(custom-css): update the assistant styling guidance`
 - PR #544 (2026-11-08) `docs(changelog): record the remaining release highlights`
+- PR #545 (2026-11-08) `fix(roleplay): prevent chat flicker after messages appear`
 
 ## v1.5.1
 
