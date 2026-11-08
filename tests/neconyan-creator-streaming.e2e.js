@@ -6,10 +6,12 @@ import { settleCssTransitions } from './chat-scroll-regression-helpers.js';
 async function waitForAppReady(page) {
     // The shell API appears before settings finish. A reload can stay on the
     // workspace skeleton longer than the acknowledgement helper's own window.
-    await page.waitForFunction(async () => {
+    // Poll the async import: waitForFunction treats an async predicate's Promise
+    // as truthy and would return before APP_READY exists.
+    await expect.poll(async () => page.evaluate(async () => {
         const { eventSource, event_types } = await import('/scripts/events.js');
         return eventSource.autoFireLastArgs.has(event_types.APP_READY);
-    }, undefined, { timeout: 60000 });
+    }), { timeout: 60000, message: 'The app completes startup after reload' }).toBe(true);
 }
 
 for (const phone of [false, true]) {
