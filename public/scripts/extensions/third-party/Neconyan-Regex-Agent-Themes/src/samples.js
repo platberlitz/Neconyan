@@ -89,6 +89,15 @@ export const SAMPLES = Object.freeze({
     'chat-only': {
         full: 'Mira: You are late.\nEzra: The bells were early.',
     },
+    position: {
+        full: 'map-start|Harbour at dusk|Rain easing\nplace|Tavern|Warm and crowded\nwho|{{user}}|here|By the hearth|Drying a coat\nwho|Mira|near|At the door|Watching the street\nplace|Docks|Quiet after sunset\nwho|Ezra|far|Beside the boat|Checking the ropes\nmove|Mira|Docks|Tavern\nmap-end',
+    },
+    'visual-map': {
+        full: 'map-start|Harbour at dusk|Rain easing\nplace|Tavern|here|building|Warm and crowded\npin|{{user}}|By the hearth|Drying a coat\nplace|Docks|east|water|Quiet after sunset\npin|Mira|Beside the boat|Checking the ropes\nmove|Mira|Tavern|Docks\nmap-end',
+    },
+    vitals: {
+        full: 'vitals|{{user}}|Tired but safe\nbar|Health|23|-12|Bruised ribs\nbar|Satiety|41|-6|Missed lunch\nbar|Hydration|57|+15|Drank water\nbar|Energy|78|0|Steady\nbar|Morale|90|+4|Found a friend\nstatus|Bruised ribs|bad\nstatus|Sheltered|good\nvitals-end',
+    },
     bold: {
         full: 'The seal was **already broken** when you found it.',
     },

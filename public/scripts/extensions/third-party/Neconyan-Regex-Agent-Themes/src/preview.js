@@ -27,6 +27,9 @@ export const PREVIEW_KEYS = Object.freeze({
     [ARCHETYPES.CHIP]: 'npc-ref',
     [ARCHETYPES.STREAM]: 'chatroom',
     [ARCHETYPES.TRANSCRIPT]: 'chat-only',
+    [ARCHETYPES.POSITION]: 'position',
+    [ARCHETYPES.VISUAL_MAP]: 'visual-map',
+    [ARCHETYPES.VITALS]: 'vitals',
 });
 
 /** Reconstructs a live-shaped `regexScripts` array from the stock baseline. */

@@ -40,7 +40,10 @@ export const TEMPLATE_LABELS = Object.freeze({
     "tpl-the-turning": "The Turning",
     "tpl-chat-only-companion": "Chat Only",
     "tpl-chatroom-companion": "Chatroom",
-    "tpl-message-inbox-companion": "Message Inbox"
+    "tpl-message-inbox-companion": "Message Inbox",
+    "tpl-position-tracker-companion": "Position Tracker",
+    "tpl-visual-map-companion": "Visual Map",
+    "tpl-vitals-companion": "Vitals"
 });
 
 export const TRACKER_FAMILIES = Object.freeze({

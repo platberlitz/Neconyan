@@ -46,6 +46,9 @@ const ARCHETYPE_LABELS = Object.freeze({
     [ARCHETYPES.CHIP]: 'Inline chip',
     [ARCHETYPES.STREAM]: 'Chatroom stream',
     [ARCHETYPES.TRANSCRIPT]: 'Transcript row',
+    [ARCHETYPES.POSITION]: 'Position Tracker',
+    [ARCHETYPES.VISUAL_MAP]: 'Visual Map',
+    [ARCHETYPES.VITALS]: 'Vitals',
 });
 
 const STATUS_LABELS = Object.freeze({
