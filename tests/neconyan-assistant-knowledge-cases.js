@@ -56,6 +56,8 @@ export const refreshedKnowledgeCases = [
     ['Can Fix trackers use a different connection and time limit?', 'agents.tracker-repair', 'default 180 seconds'],
     ['Does Meower Add all invite my whole library?', 'meower.cast', 'Add all invites the whole library'],
     ['Which Neconyan CSS variables keep button contrast correct?', 'appearance.custom-css-design', '--neco-on-accent'],
+    ['In accent-aware CSS, how should a primary button look on hover?', 'appearance.custom-css-design', 'keep that --neco-ginger fill and --neco-on-accent label on hover and active'],
+    ['Which variable should accent-aware CSS use for a button edge on hover?', 'appearance.custom-css-design', 'use --neco-ginger-hover for the edge or an inset shadow'],
     ['Why is my custom message HTML class not working?', 'appearance.message-css', 'becomes custom-example'],
     ['Is there a Windows XP Olive Green Dark theme?', 'appearance.windows-xp', 'Windows XP Olive Green Dark'],
     ['Where is the CSS Snippets button?', 'tools.css-snippets', 'Settings → Appearance'],
