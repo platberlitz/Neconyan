@@ -23,6 +23,7 @@
 - Old server-side job records no longer block new server Roleplay or image work after their jobs have left the ledger. Neconyan stops reserving their full media slot once the job is gone, while the saved history and proofs stay untouched. This fixes the stuck reservation case; a genuinely full media budget can still refuse new work.
 - **Jev** reuses an identical completed decision for up to 24 hours in one bounded server cache, with separate Mewmory and Pawthfinder keys. Changing the scene, candidates, model or connection asks again; changing the threshold reuses the stored scores.
 - **Starlight Conservatory** now adds a small sparkle burst when you tap, with a softer cursor trail and foreground twinkles. Reduced Motion still keeps the overlay still.
+- The **Custom CSS** assistant's guidance now covers the current shell styles, the Conversation layout and the phone layout rules. It is told to preserve your existing shell, palette, wallpaper, fonts and cat visibility unless you ask for a change.
 - Pill shell styles keep their panel corners inside the window, so rounded panels no longer clip at the edge.
 - The phone tour card no longer pans sideways when you drag it.
 
