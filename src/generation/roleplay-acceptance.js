@@ -53,6 +53,12 @@ function identifier(value, label) {
     return parsed;
 }
 
+function savedFilename(value, label) {
+    // Keep the exact disk name after validation, not the trimmed identifier.
+    identifier(value, label);
+    return value;
+}
+
 function revision(value, label) {
     if (typeof value !== 'string' || !value) throw invalid(`Invalid ${label}.`);
     if (Buffer.byteLength(value, 'utf8') > MAX_REVISION_BYTES) throw invalid(`Oversized ${label}.`);
@@ -97,9 +103,9 @@ function browserMacros(value) {
 }
 
 function chatName(value) {
-    let chat = identifier(value, 'chat name');
+    let chat = savedFilename(value, 'chat name');
     while (/\.jsonl$/i.test(chat)) chat = chat.replace(/\.jsonl$/i, '');
-    if (!chat || sanitize(chat) !== chat) throw invalid('Invalid chat name.');
+    if (!chat.trim() || sanitize(chat) !== chat) throw invalid('Invalid chat name.');
     return chat;
 }
 
@@ -131,7 +137,7 @@ export function normalizeRoleplayWorkflowSubmission(body = {}) {
     if (typeof body.source.locator.group !== 'boolean') throw invalid('Invalid workflow locator group flag.');
     if (body.source.locator.group) throw invalid('A named workflow answers one speaker, not a group turn.');
     const avatar = body.source.locator.avatar === undefined || body.source.locator.avatar === ''
-        ? '' : identifier(body.source.locator.avatar, 'character file');
+        ? '' : savedFilename(body.source.locator.avatar, 'character file');
     if (!avatar || sanitize(avatar) !== avatar) throw invalid('A chat workflow needs a character file.');
     const named = captureRoleplayNamedWorkflow(name, body.intent ?? {});
     assertKeys(body.anchor, ANCHOR_FIELDS, 'workflow anchor');
@@ -375,7 +381,7 @@ export function normalizeRoleplayAgentSubmission(body = {}) {
     const key = identifier(body.key, 'Agent key');
     if (key.length > MAX_KEY_LENGTH) throw invalid('The Agent key is too long.');
     if (body.source.locator.group !== false) throw invalid('Server Agent actions answer one character chat.');
-    const avatar = identifier(body.source.locator.avatar, 'character file');
+    const avatar = savedFilename(body.source.locator.avatar, 'character file');
     if (sanitize(avatar) !== avatar) throw invalid('Invalid character file.');
     const mode = identifier(body.mode, 'Agent mode');
     const agentIds = body.agentIds ?? [];

@@ -24,12 +24,19 @@ prompt_order: [{ character_id: 100001, order: [{ identifier: 'main', enabled: tr
 function_calling: true };
 
 /** Every named workflow here uses a saved active connection, because that is what a browser names. */
-function saved(t, { settingsRevision = 7, powerUser = null, mutate = null, description = null, extensionSettings = null } = {}) {
+function saved(t, { settingsRevision = 7, powerUser = null, mutate = null, description = null, extensionSettings = null,
+    avatar = 'Nova.png', chat = 'Source' } = {}) {
     const f = fixture(t);
     const dirs = f.scope.directories;
     if (description !== null) {
         fs.writeFileSync(path.join(dirs.characters, 'Nova.png'), writeCard(png, JSON.stringify({ name: 'Nova', description })));
     }
+    if (avatar !== f.locator.avatar) fs.renameSync(path.join(dirs.characters, f.locator.avatar), path.join(dirs.characters, avatar));
+    const filename = path.join(dirs.chats, avatar.replace('.png', ''), chat + '.jsonl');
+    fs.mkdirSync(path.dirname(filename), { recursive: true });
+    if (filename !== f.filename) fs.renameSync(f.filename, filename);
+    Object.assign(f.locator, { avatar, chat });
+    f.filename = filename;
     f.records[1].extra = {};
     mutate?.(f.records);
     fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
@@ -165,6 +172,24 @@ test('a named reply appends one message, keeps the old chat until it is durable 
     assert.equal(f.records().length, 4);
     assert.equal(f.records().at(-1).mes, 'A named reply.');
 });
+
+for (const names of [
+    { avatar: ' Nova.png' },
+    { chat: ' Source' },
+    { avatar: ' Nova.png', chat: ' Source' },
+]) {
+    test(`a server reply uses exact saved filenames ${JSON.stringify(names)}`, async t => {
+        const f = saved(t, names);
+        const { accepted, calls, result } = await f.run('roleplay.reply', { text: 'A reply to the exact saved chat.' });
+        assert.equal(accepted.created, true);
+        assert.equal(result.status, 'completed');
+        assert.deepEqual(result.named, { appended: true });
+        assert.equal(f.records().length, 4);
+        assert.equal(f.records().at(-1).mes, 'A reply to the exact saved chat.');
+        assert.equal(calls.count, 1);
+        assert.equal(f.readback(accepted.key).state, 'closed');
+    });
+}
 
 test('a repeated submission of the identical key is answered by the first acceptance, not a new job', async t => {
     const f = saved(t);
