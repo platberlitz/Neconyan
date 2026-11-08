@@ -36,6 +36,49 @@ const THUMBNAIL_COLUMNS_MAX_MOBILE = 3;
 const THUMBNAIL_COLUMNS_DEFAULT_DESKTOP = 5;
 const THUMBNAIL_COLUMNS_DEFAULT_MOBILE = 3;
 const THUMBNAIL_COLUMNS_MOBILE_QUERY = '(max-width: 768px)';
+const MOBILE_BACKGROUND_QUERY = '(max-width: 768px) and (orientation: portrait)';
+
+// Keep the saved URL unchanged; only the displayed image may have a phone composition.
+let displayedBackgroundUrl = null;
+let displayedBackgroundRevision = 0;
+let lastRenderedBackgroundImage = null;
+
+function renderDisplayedBackground() {
+    // Extensions can set #bg1 directly, including temporary generated images.
+    // Keep those changes rather than replacing them on a fit or viewport change.
+    const currentImage = document.getElementById('bg1')?.style.backgroundImage;
+    if (lastRenderedBackgroundImage !== null && currentImage !== undefined && currentImage !== lastRenderedBackgroundImage) {
+        displayedBackgroundUrl = currentImage;
+    }
+    applyDisplayedBackground();
+}
+
+function applyDisplayedBackground() {
+    if (displayedBackgroundUrl === null) return;
+    let url = displayedBackgroundUrl;
+    if (window.matchMedia?.(MOBILE_BACKGROUND_QUERY).matches
+        && ['classic', 'cover'].includes(background_settings.fitting)
+        && background_settings.position === 'auto') {
+        const match = /^url\("backgrounds\/(.*)"\)$/.exec(url);
+        if (match) {
+            try {
+                const filename = decodeURIComponent(match[1]);
+                if (filename.startsWith('Neconyan Theme - ') && filename.endsWith('.jpg')) {
+                    url = `url("/api/backgrounds/mobile/${encodeURIComponent(filename)}?v=${displayedBackgroundRevision}")`;
+                }
+            } catch {
+                // A malformed saved URL keeps its original display behaviour.
+            }
+        }
+    }
+    $('#bg1').css('background-image', url);
+    lastRenderedBackgroundImage = document.getElementById('bg1')?.style.backgroundImage ?? null;
+}
+
+function setDisplayedBackground(url) {
+    displayedBackgroundUrl = url;
+    applyDisplayedBackground();
+}
 
 /**
  * Storage for frontend-generated background thumbnails.
@@ -290,7 +333,7 @@ export function loadBackgroundSettings(settings) {
  */
 async function forceSetBackground(backgroundInfo) {
     saveBackgroundMetadata(backgroundInfo.url);
-    $('#bg1').css('background-image', backgroundInfo.url);
+    setDisplayedBackground(backgroundInfo.url);
 
     const list = chat_metadata[LIST_METADATA_KEY] || [];
     const bg = backgroundInfo.path;
@@ -306,7 +349,7 @@ async function onChatChanged() {
     const lockedUrl = chat_metadata[BG_METADATA_KEY];
     const allowLockedUrl = Boolean(lockedUrl) && (isExternalMediaAllowed() || !hasExternalCssUrl(lockedUrl));
 
-    $('#bg1').css('background-image', allowLockedUrl ? lockedUrl : background_settings.url);
+    setDisplayedBackground(allowLockedUrl ? lockedUrl : background_settings.url);
 
     renderChatBackgrounds();
     highlightLockedBackground();
@@ -368,7 +411,7 @@ function onLockBackgroundClick(event = null) {
     // Take the global background's URL and save it to the chat's metadata.
     const urlToLock = event ? $(event.target).closest('.bg_example').data('url') : background_settings.url;
     saveBackgroundMetadata(urlToLock);
-    $('#bg1').css('background-image', urlToLock);
+    setDisplayedBackground(urlToLock);
 
     // Update UI states to reflect the new lock.
     highlightLockedBackground();
@@ -384,7 +427,7 @@ function onUnlockBackgroundClick(_event = null) {
     removeBackgroundMetadata();
 
     // Revert the view to the current global background.
-    $('#bg1').css('background-image', background_settings.url);
+    setDisplayedBackground(background_settings.url);
 
     // Update UI states to reflect the removal of the lock.
     highlightLockedBackground();
@@ -423,7 +466,7 @@ function onSelectBackgroundClick(e) {
     if ((isChatBackgroundLocked() || isCustom) && !bypassGlobalLock) {
         // If a background is locked, update the locked background directly
         saveBackgroundMetadata(backgroundCssUrl);
-        $('#bg1').css('background-image', backgroundCssUrl);
+        setDisplayedBackground(backgroundCssUrl);
     } else {
         // Otherwise, update the global background setting
         setBackground(bgFile, backgroundCssUrl);
@@ -603,7 +646,7 @@ async function onDeleteBackgroundClick(e) {
     if (index !== -1) list.splice(index, 1);
     if (url === chat_metadata[BG_METADATA_KEY]) {
         removeBackgroundMetadata();
-        $('#bg1').css('background-image', background_settings.url);
+        setDisplayedBackground(background_settings.url);
     }
     if (deleteFromServer) await deleteMediaFromServer(bg);
     renderChatBackgrounds();
@@ -639,7 +682,7 @@ async function deleteSystemBackgrounds(files) {
     }
     if (deleted.some(file => generateUrlParameter(file, false) === chat_metadata[BG_METADATA_KEY])) {
         removeBackgroundMetadata();
-        $('#bg1').css('background-image', background_settings.url);
+        setDisplayedBackground(background_settings.url);
     }
     renderFolderGrid();
     renderSystemBackgrounds(getFilteredImages());
@@ -1581,7 +1624,7 @@ async function resolveImageUrl(bg, isCustom, isAnimated = null) {
 async function setBackground(bg, url) {
     // Only change the visual background if one is not locked for the current chat.
     if (!isChatBackgroundLocked()) {
-        $('#bg1').css('background-image', url);
+        setDisplayedBackground(url);
     }
     background_settings.name = bg;
     background_settings.url = url;
@@ -1712,7 +1755,10 @@ async function uploadBackground(formData) {
         }
 
         const bg = await response.text();
+        // A replacement can have the same name as the currently displayed file.
+        displayedBackgroundRevision++;
         setBackground(bg, generateUrlParameter(bg, false));
+        renderDisplayedBackground();
         await getBackgrounds();
         highlightNewBackground(bg);
     } catch (error) {
@@ -1784,6 +1830,7 @@ function setFittingClass(fitting) {
         backgrounds.toggleClass(option, option === fitting);
     }
     background_settings.fitting = fitting;
+    renderDisplayedBackground();
 }
 
 /**
@@ -1802,6 +1849,7 @@ export function setBackgroundPosition(position) {
         root.style.removeProperty('--sb-bg-position');
     }
     background_settings.position = value ? position : 'auto';
+    renderDisplayedBackground();
 }
 
 function highlightSelectedBackground() {
@@ -1875,6 +1923,7 @@ export function initBackgrounds() {
     eventSource.on(event_types.FORCE_SET_BACKGROUND, forceSetBackground);
 
     getMobileThumbnailColumnsQuery()?.addEventListener?.('change', updateThumbnailColumnsControls);
+    window.matchMedia?.(MOBILE_BACKGROUND_QUERY)?.addEventListener?.('change', renderDisplayedBackground);
 
     // Folder event handlers
     $(document)

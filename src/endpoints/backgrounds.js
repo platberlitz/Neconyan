@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 
 import express from 'express';
@@ -14,6 +15,9 @@ import { serverDirectory } from '../server-directory.js';
 
 export const router = express.Router();
 
+const mobileBackgroundDirectory = path.join(serverDirectory, 'default/content/backgrounds-mobile');
+const mobileBackgroundManifest = path.join(mobileBackgroundDirectory, 'artwork-provenance.json');
+
 function isAllowedBackgroundFileName(filename) {
     if (typeof filename !== 'string' || !filename || filename !== sanitize(filename)) {
         return false;
@@ -25,6 +29,57 @@ function isAllowedBackgroundFileName(filename) {
     const mimeType = String(mime.lookup(filename) || '');
     return (mimeType.startsWith('image/') || mimeType.startsWith('video/')) && mimeType !== 'image/svg+xml';
 }
+
+/** Finds a phone composition only when this account still has the exact bundled original. */
+export async function findMobileBackground(directories, filename, manifestFile = mobileBackgroundManifest) {
+    if (!isAllowedBackgroundFileName(filename) || path.basename(filename) !== filename || filename.includes('\\')) return null;
+    try {
+        const manifest = JSON.parse(await fs.promises.readFile(manifestFile, 'utf8'));
+        const item = manifest.backgrounds?.find(entry => entry.filename === filename);
+        if (!item || !isAllowedBackgroundFileName(item.mobileFile)
+            || path.basename(item.mobileFile) !== item.mobileFile || item.mobileFile.includes('\\')
+            || !Number.isSafeInteger(item.originalBytes) || item.originalBytes < 1
+            || !/^[a-f0-9]{64}$/.test(item.originalSha256)) return null;
+
+        const original = path.join(directories.backgrounds, filename);
+        const stat = await fs.promises.lstat(original);
+        if (!stat.isFile() || stat.isSymbolicLink() || stat.size !== item.originalBytes) return null;
+        const handle = await fs.promises.open(original, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+        try {
+            const openedStat = await handle.stat();
+            if (!openedStat.isFile() || openedStat.size !== item.originalBytes) return null;
+            const bytes = await handle.readFile();
+            if (createHash('sha256').update(bytes).digest('hex') !== item.originalSha256) return null;
+        } finally {
+            await handle.close();
+        }
+
+        const portrait = path.join(path.dirname(manifestFile), item.mobileFile);
+        const portraitStat = await fs.promises.lstat(portrait);
+        return portraitStat.isFile() && !portraitStat.isSymbolicLink() ? portrait : null;
+    } catch {
+        // Missing or changed files keep the ordinary background behaviour.
+        return null;
+    }
+}
+
+router.get('/mobile/:filename', async function (request, response) {
+    const filename = request.params.filename;
+    if (!isAllowedBackgroundFileName(filename) || path.basename(filename) !== filename || filename.includes('\\')) {
+        return response.sendStatus(400);
+    }
+    response.set({
+        'Cache-Control': 'private, no-store',
+        'X-Content-Type-Options': 'nosniff',
+        'Content-Security-Policy': 'default-src \'none\'; media-src \'self\'; img-src \'self\'; style-src \'unsafe-inline\'; sandbox',
+    });
+    const originalUrl = `/backgrounds/${encodeURIComponent(filename)}`;
+    const portrait = await findMobileBackground(request.user.directories, filename);
+    if (!portrait) return response.redirect(originalUrl);
+    return response.sendFile(portrait, error => {
+        if (error && !response.headersSent) response.redirect(originalUrl);
+    });
+});
 
 /** Restores missing indexed backgrounds without replacing existing files. */
 export async function restoreBundledBackgrounds(directories, sources = [

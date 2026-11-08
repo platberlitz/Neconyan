@@ -104,6 +104,30 @@ describe('Neconyan generated UI artwork', () => {
         }
     });
 
+    test('ships a distinct phone composition for every theme background', () => {
+        const originals = readJson('default/content/backgrounds/artwork-provenance.json').backgrounds
+            .filter(item => item.batch === 'themeMatchedBatch');
+        const mobile = readJson('default/content/backgrounds-mobile/artwork-provenance.json').backgrounds;
+        expect(mobile).toHaveLength(182);
+        expect(new Set(mobile.map(item => item.theme))).toEqual(new Set(originals.map(item => item.theme)));
+        expect(new Set(mobile.map(item => item.mobileFile)).size).toBe(182);
+        expect(new Set(mobile.map(item => item.mobileSha256)).size).toBe(182);
+        expect(new Set(mobile.map(item => item.model))).toEqual(new Set(['gpt-image-2.6-sunburst', 'gpt-image-2.6-flare']));
+        for (const item of mobile) {
+            const original = originals.find(entry => entry.theme === item.theme);
+            const source = fs.readFileSync(path.join(root, original.finalFile));
+            const portrait = fs.readFileSync(path.join(root, 'default/content/backgrounds-mobile', item.mobileFile));
+            expect(item.filename).toBe(path.basename(original.finalFile));
+            expect(item.reference).toBe(original.finalFile);
+            expect(item.model).toBe(original.model);
+            expect(item.originalBytes).toBe(source.length);
+            expect(item.originalSha256).toBe(original.finalSha256);
+            expect(item.mobileBytes).toBe(portrait.length);
+            expect(createHash('sha256').update(portrait).digest('hex')).toBe(item.mobileSha256);
+            expect(imageSize(portrait)).toMatchObject({ width: 1024, height: 1536, type: 'jpg' });
+        }
+    });
+
     test('ships all eight tour scenes in three distinct gender variants', () => {
         const provenance = readJson('public/img/neconyan/tour/artwork-provenance.json');
         expect(provenance.tour).toHaveLength(24);
