@@ -171,6 +171,12 @@ export function compileStructuredPrefill(template, settings, names = [], { liter
     const guard = banned.length ? `(?!(?:[\\s\\S])*(?:${alternatives.join('|')}))` : '';
     const pattern = `^${guard}(?:${prefix})${ended ? '\\s*' : `[\\s\\S]{${config.min_chars_after_prefix},}`}$`;
     if (pattern.length > 32000) throw new Error('The compiled prefill pattern is too long.');
+    // Slots can be valid alone and clash when combined, such as duplicate named groups.
+    try {
+        new RegExp(pattern);
+    } catch (error) {
+        throw new Error('This prefill template creates an invalid combined pattern. Check the regex slots, especially duplicate named groups.', { cause: error });
+    }
     const displayPattern = config.hide_prefill_in_display || config.remove_prefill_from_history ? hidden ?? prefix : '';
     const hiddenTemplate = displayPattern ? displayPattern : null;
     return { token, pattern, prefix, hidden: hiddenTemplate, config };

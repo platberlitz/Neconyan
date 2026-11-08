@@ -5,9 +5,12 @@ import fetch, { Response } from 'node-fetch';
 import { compileStructuredPrefill, structuredPrefillRequest, structuredPrefillSchema } from '../public/scripts/structured-prefill.js';
 import { abortOnRequestClose } from './util.js';
 import { normalisePrefillReply } from './structured-prefill-formats.js';
+import { assertStructuredPrefillRuntime } from './runtime-support.js';
 
 /** Decode a JSON string incrementally, including escapes split across network frames. */
 export function createPrefillDecoder(compiled, overlap = '') {
+    // Neconyan: Bun before 1.4.0 can terminate the process from a node:vm timeout.
+    assertStructuredPrefillRuntime();
     let header = ''; let stage = 'header'; let escape = ''; let tail = ''; let pending = ''; let content = '';
     let emitted = ''; let hiddenPrefix = ''; let prefixComplete = !compiled.hidden;
     let rawContent = ''; let verification = 'streaming';
@@ -130,8 +133,11 @@ async function generatedStarter(request, config, messages) {
 export async function prepareStructuredPrefill(request) {
     const body = request.body;
     const config = structuredPrefillRequest(body, body.structured_prefill, body.structured_prefill?.type);
+    if (!config || !Array.isArray(body.messages)) { delete body.structured_prefill; return; }
+    // Fail before the provider request, and leave the request body untouched,
+    // when the runtime cannot safely run the bounded regex checks.
+    assertStructuredPrefillRuntime();
     delete body.structured_prefill;
-    if (!config || !Array.isArray(body.messages)) return;
     const messages = structuredClone(body.messages);
     let index = messages.length - 1;
     while (index >= 0 && messages[index].role === 'system') index--;
