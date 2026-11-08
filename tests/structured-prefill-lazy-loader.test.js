@@ -8,7 +8,7 @@ await jest.unstable_mockModule('../public/scripts/i18n.js', () => ({
 }));
 
 const { initialiseStructuredPrefillUI } = await import('../public/scripts/structured-prefill-ui.js');
-const { structuredPrefillSettings, STRUCTURED_PREFILL_DEFAULTS } = await import('../public/scripts/structured-prefill.js');
+const { structuredPrefillSettings, structuredPrefillStatus, STRUCTURED_PREFILL_DEFAULTS } = await import('../public/scripts/structured-prefill.js');
 
 const powerUserSource = readFileSync(new URL('../public/scripts/power-user.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const blockStart = powerUserSource.indexOf('let structuredPrefillUiLoading');
@@ -104,7 +104,9 @@ function createWorld({ settingsReady = true } = {}) {
     root.all.set('[data-sp]', [...fieldElements.values()]);
 
     const documentTarget = {
-        querySelector: selector => selector === '#structured-prefill-settings' ? root : null,
+        querySelector: selector => selector === '#structured-prefill-settings'
+            ? root
+            : selector === '[data-sp-verification]' ? elements.verification : null,
     };
     const windowTarget = createEventTarget();
     globalThis.window = windowTarget;
@@ -118,11 +120,22 @@ function createWorld({ settingsReady = true } = {}) {
             preset('Second', { override_prefill_text: 'Second text', hide_prefill_in_display: false }),
         ],
     };
+    const eventListeners = new Map();
     const eventSource = {
         active: 0,
-        on() { this.active += 1; },
+        on(type, listener) {
+            this.active += 1;
+            if (!eventListeners.has(type)) eventListeners.set(type, new Set());
+            eventListeners.get(type).add(listener);
+        },
         once() {},
-        removeListener() { this.active -= 1; },
+        removeListener(type, listener) {
+            this.active -= 1;
+            eventListeners.get(type)?.delete(listener);
+        },
+        emit(type) {
+            for (const listener of [...(eventListeners.get(type) ?? [])]) listener();
+        },
     };
     const eventTypes = {
         CHAT_CHANGED: 'chat-changed',
@@ -133,13 +146,20 @@ function createWorld({ settingsReady = true } = {}) {
         GENERATION_ENDED: 'generation-ended',
         GENERATION_STOPPED: 'generation-stopped',
     };
+    const chat = {
+        last: null,
+        findLast() {
+            return this.last;
+        },
+    };
     const importCalls = [];
     const context = vm.createContext({
         power_user: power,
         structuredPrefillSettings,
+        structuredPrefillStatus,
         saveSettingsDebounced: jest.fn(),
         t: (strings, ...values) => strings.reduce((out, part, index) => out + part + (index < values.length ? String(values[index]) : ''), ''),
-        chat: { findLast: () => null },
+        chat,
         eventSource,
         event_types: eventTypes,
         settingsReady,
@@ -166,12 +186,13 @@ function createWorld({ settingsReady = true } = {}) {
     });
     script.runInContext(context);
 
-    return { context, power, root, elements, fieldElements, windowTarget, eventSource, importCalls };
+    return { context, power, root, elements, fieldElements, windowTarget, eventSource, importCalls, chat };
 }
 
 describe('Structured Prefill lazy panel loader', () => {
     test('does not request the panel at startup and replays a preset applied before first open', async () => {
         const world = createWorld();
+        world.context.bindStructuredPrefillStatus();
         expect(world.importCalls).toEqual([]);
 
         await world.context.refreshStructuredPrefillUiAfterHydration();
@@ -190,6 +211,7 @@ describe('Structured Prefill lazy panel loader', () => {
 
     test('applies a preset to visible fields after the panel is loaded', async () => {
         const world = createWorld();
+        world.context.bindStructuredPrefillStatus();
         await world.context.requestStructuredPrefillUi();
         expect(world.fieldElements.get('override_prefill_text').value).toBe('Initial text');
 
@@ -201,6 +223,7 @@ describe('Structured Prefill lazy panel loader', () => {
 
     test('remounts loaded controls after settings hydration without duplicate subscriptions', async () => {
         const world = createWorld();
+        world.context.bindStructuredPrefillStatus();
         await world.context.requestStructuredPrefillUi();
         expect(world.eventSource.active).toBe(7);
         expect(world.windowTarget.count('neconyan:prefill-status')).toBe(1);
@@ -220,6 +243,7 @@ describe('Structured Prefill lazy panel loader', () => {
 
     test('refreshes visible fields when the Formatting panel opens again', async () => {
         const world = createWorld();
+        world.context.bindStructuredPrefillStatus();
         await world.context.requestStructuredPrefillUi();
 
         world.power.structured_prefill = structuredPrefillSettings({ enabled: false, override_prefill_text: 'Reopened text' });
@@ -239,10 +263,42 @@ describe('Structured Prefill lazy panel loader', () => {
 
         world.context.settingsReady = true;
         world.power.structured_prefill = structuredPrefillSettings({ enabled: true, override_prefill_text: 'Ready text' });
+        world.context.bindStructuredPrefillStatus();
         await world.context.refreshStructuredPrefillUiAfterHydration();
 
         expect(world.importCalls).toHaveLength(2);
         expect(world.fieldElements.get('override_prefill_text').value).toBe('Ready text');
         expect(world.fieldElements.get('enabled').checked).toBe(true);
+    });
+
+    test('paints a status recorded before the panel loads and keeps it across remount and settings refresh', async () => {
+        const world = createWorld();
+        world.chat.last = { extra: { structured_prefill: { verification: 'matched' } } };
+        world.context.bindStructuredPrefillStatus();
+        expect(world.importCalls).toEqual([]);
+        expect(world.elements.verification.dataset.verification).toBe('matched');
+        expect(world.elements.verification.textContent).toContain('Reply matches the full pattern');
+
+        // Native stream reads report a mismatch before the Formatting panel is ever opened.
+        world.windowTarget.dispatchEvent(new CustomEvent('neconyan:prefill-status', {
+            detail: { verification: 'mismatch' },
+        }));
+        expect(world.elements.verification.dataset.verification).toBe('mismatch');
+        expect(world.elements.verification.textContent).toContain('does not match the pattern');
+
+        await world.context.requestStructuredPrefillUi();
+        expect(world.elements.verification.dataset.verification).toBe('mismatch');
+
+        // The chat-load path after a reload reads the saved reply's own status.
+        world.chat.last = { extra: { structured_prefill: { verification: 'matched' } } };
+        world.eventSource.emit('chat-changed');
+        expect(world.elements.verification.dataset.verification).toBe('matched');
+
+        world.power.structured_prefill = structuredPrefillSettings({ enabled: false, override_prefill_text: 'Refreshed' });
+        await world.context.refreshStructuredPrefillUiAfterHydration();
+        expect(world.elements.verification.dataset.verification).toBe('matched');
+        expect(world.eventSource.active).toBe(7);
+        expect(world.windowTarget.count('neconyan:prefill-status')).toBe(1);
+        expect(world.windowTarget.count('neconyan:structured-prefill-preset-applied')).toBe(1);
     });
 });

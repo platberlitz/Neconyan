@@ -1,40 +1,17 @@
-import { structuredPrefillSettings, STRUCTURED_PREFILL_PRESETS, structuredPrefillStatus } from './structured-prefill.js';
+import { structuredPrefillSettings, STRUCTURED_PREFILL_PRESETS } from './structured-prefill.js';
 import { t } from './i18n.js';
 
-let cleanupStatus;
+let cleanupPreset;
 
-/** Native settings and recorded request status; never rewrites message content. */
-export function initialiseStructuredPrefillUI(power, save, profiles, observe = null) {
+/** Native settings controls; the recorded request status is painted eagerly by power-user. */
+export function initialiseStructuredPrefillUI(power, save, profiles) {
     const root = document.querySelector('#structured-prefill-settings');
     if (!root) return;
     const status = root.querySelector('[data-sp-status]');
     const presets = root.querySelector('[data-sp-presets]');
     const name = root.querySelector('[data-sp-name]');
     const current = () => power.structured_prefill;
-    const indicator = root.querySelector('[data-sp-verification]');
-    let latest = observe?.read();
-    const showStatus = () => {
-        if (!indicator) return;
-        indicator.textContent = structuredPrefillStatus(latest);
-        indicator.dataset.verification = latest?.verification ?? 'none';
-    };
-    let cleanupPreset = () => {};
-    cleanupStatus?.();
-    const receive = event => { latest = event.detail; showStatus(); };
-    window.addEventListener('neconyan:prefill-status', receive);
-    let recorded = latest;
-    const unsubscribe = observe?.subscribe(reset => {
-        const next = observe.read();
-        if (!reset && !next && latest?.verification === 'waiting') return;
-        if (!reset && next === recorded) return;
-        recorded = next; latest = next; showStatus();
-    }, phase => {
-        if (phase === 'waiting') latest = { verification: 'waiting' };
-        else if (latest?.verification === 'waiting') latest = { verification: 'failed' };
-        else if (latest?.verification === 'streaming') latest = { ...latest, verification: 'incomplete' };
-        showStatus();
-    });
-    cleanupStatus = () => { window.removeEventListener('neconyan:prefill-status', receive); unsubscribe?.(); cleanupPreset(); };
+    cleanupPreset?.();
     const bundled = root.querySelector('[data-sp-bundled]');
     const clearStartingPoint = () => {
         if (bundled) bundled.value = '';
@@ -130,5 +107,4 @@ export function initialiseStructuredPrefillUI(power, save, profiles, observe = n
         } catch (error) { status.textContent = error.message; } finally { event.target.value = ''; }
     };
     refresh();
-    showStatus();
 }
