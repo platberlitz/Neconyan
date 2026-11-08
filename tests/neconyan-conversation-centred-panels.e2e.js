@@ -93,6 +93,21 @@ async function readLayout(page) {
                 textAlign: computed.textAlign,
             };
         };
+        const colorAlpha = color => {
+            const probe = document.createElement('span');
+            probe.style.color = color;
+            document.body.appendChild(probe);
+            const normalized = getComputedStyle(probe).color;
+            probe.remove();
+            const canvas = document.createElement('canvas');
+            canvas.width = canvas.height = 1;
+            const context = canvas.getContext('2d', { willReadFrequently: true });
+            if (!context) return NaN;
+            context.clearRect(0, 0, 1, 1);
+            context.fillStyle = normalized;
+            context.fillRect(0, 0, 1, 1);
+            return context.getImageData(0, 0, 1, 1).data[3] / 255;
+        };
         const timeline = document.querySelector('.sb-conversation-timeline');
         const stage = document.querySelector('#sb_conversation_stage');
         const composer = document.querySelector('.sb-conversation-composer');
@@ -108,6 +123,7 @@ async function readLayout(page) {
             viewport: { width: innerWidth, height: innerHeight },
             timeline: rect(timeline),
             timelineStyle: style(timeline),
+            timelineSurfaceAlpha: colorAlpha(getComputedStyle(timeline).backgroundColor),
             timelineScrollHeight: timeline.scrollHeight,
             timelineClientHeight: timeline.clientHeight,
             stage: rect(stage),
@@ -162,8 +178,8 @@ for (const viewport of [
 
             if (viewport.phone) await page.locator('#sb_conversation_pals_rail [data-sb-conversation-action="close-pals"]').click();
             const pane = await readLayout(page);
-            expect(pane.timelineStyle.backgroundImage, 'message area has a translucent surface').toContain('linear-gradient');
-            expect(pane.timelineStyle.backgroundColor, 'message area does not paint an opaque colour').toBe('rgba(0, 0, 0, 0)');
+            expect(pane.timelineSurfaceAlpha, 'message area has a tint').toBeGreaterThan(0);
+            expect(pane.timelineSurfaceAlpha, 'message area is translucent, not opaque').toBeLessThan(1);
             expect(pane.timelineStyle.borderTopWidth, 'message area has a visible edge').toBe('1px');
             expect(pane.timelineStyle.borderRadius, 'message area keeps the shell radius').toBeGreaterThanOrEqual(10);
             expect(pane.timelineStyle.overflowY, 'message area still scrolls').toBe('auto');
@@ -213,7 +229,8 @@ for (const viewport of [
             expect(emptyPane.empty.x, 'empty card sits inside the pane').toBeGreaterThanOrEqual(emptyPane.timeline.x);
             expect(emptyPane.empty.right, 'empty card sits inside the pane').toBeLessThanOrEqual(emptyPane.timeline.right);
             expect(emptyPane.empty.bottom, 'empty card sits inside the pane').toBeLessThanOrEqual(emptyPane.timeline.bottom);
-            expect(emptyPane.timelineStyle.backgroundImage, 'empty message area keeps the pane').toContain('linear-gradient');
+            expect(emptyPane.timelineSurfaceAlpha, 'empty message area has a tint').toBeGreaterThan(0);
+            expect(emptyPane.timelineSurfaceAlpha, 'empty message area is translucent, not opaque').toBeLessThan(1);
             expect(emptyPane.composer.bottom, 'composer stays reachable in the empty state').toBeLessThanOrEqual(emptyPane.viewport.height + 1);
             expect(errors).toEqual([]);
             await page.screenshot({ path: info.outputPath(`centred-panels-${viewport.label}-empty.png`) });
