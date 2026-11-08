@@ -10,6 +10,7 @@ import { thumbnailDimensions, readMetadataIndex, renameMetadata, removeMetadata,
 import { getImages } from '../util.js';
 import { MEDIA_EXTENSIONS, MEDIA_REQUEST_TYPE } from '../constants.js';
 import { getFileNameValidationFunction } from '../middleware/validateFileName.js';
+import { serverDirectory } from '../server-directory.js';
 
 export const router = express.Router();
 
@@ -24,6 +25,65 @@ function isAllowedBackgroundFileName(filename) {
     const mimeType = String(mime.lookup(filename) || '');
     return (mimeType.startsWith('image/') || mimeType.startsWith('video/')) && mimeType !== 'image/svg+xml';
 }
+
+/** Restores missing indexed backgrounds without replacing existing files. */
+export async function restoreBundledBackgrounds(directories, sources = [
+    { directory: path.join(serverDirectory, 'default/scaffold'), optional: true },
+    { directory: path.join(serverDirectory, 'default/content'), optional: false },
+]) {
+    const restored = [];
+    const failed = [];
+    const seen = new Set();
+
+    for (const source of sources) {
+        let index;
+        try {
+            index = JSON.parse(await fs.promises.readFile(path.join(source.directory, 'index.json'), 'utf8'));
+            if (!Array.isArray(index)) throw new Error('Invalid content index');
+        } catch (error) {
+            if (source.optional && error.code === 'ENOENT') continue;
+            throw error;
+        }
+
+        for (const item of index) {
+            if (item?.type !== 'background') continue;
+            const relative = item.filename;
+            const filename = typeof relative === 'string' && relative.startsWith('backgrounds/') ? relative.slice('backgrounds/'.length) : '';
+            if (!filename || !isAllowedBackgroundFileName(filename) || path.basename(filename) !== filename || filename.includes('\\')) {
+                failed.push(String(relative || '(invalid background)'));
+                continue;
+            }
+            if (seen.has(filename)) continue;
+            seen.add(filename);
+
+            try {
+                await fs.promises.copyFile(path.join(source.directory, 'backgrounds', filename), path.join(directories.backgrounds, filename), fs.constants.COPYFILE_EXCL);
+                restored.push(filename);
+            } catch (error) {
+                if (error.code !== 'EEXIST') {
+                    console.warn('[Backgrounds] Could not restore background:', filename, error.message);
+                    failed.push(filename);
+                }
+                continue;
+            }
+            try {
+                invalidateThumbnail(directories, 'bg', filename);
+            } catch (error) {
+                console.warn('[Backgrounds] Could not clear restored thumbnail:', filename, error.message);
+            }
+        }
+    }
+    return { restored, failed };
+}
+
+router.post('/restore-defaults', async function (request, response) {
+    try {
+        response.json(await restoreBundledBackgrounds(request.user.directories));
+    } catch (error) {
+        console.error('[Backgrounds] Could not read bundled backgrounds:', error);
+        response.status(500).json({ error: 'Could not restore the default backgrounds. Try again.' });
+    }
+});
 
 router.post('/all', async function (request, response) {
     try {
@@ -100,7 +160,11 @@ router.post('/delete', getFileNameValidationFunction('bg'), async function (requ
         }
 
         fs.unlinkSync(fileName);
-        invalidateThumbnail(request.user.directories, 'bg', request.body.bg);
+        try {
+            invalidateThumbnail(request.user.directories, 'bg', request.body.bg);
+        } catch (error) {
+            console.warn('[Backgrounds] Could not clear deleted thumbnail:', request.body.bg, error.message);
+        }
 
         // Remove metadata for deleted image
         const relativePath = path.join('backgrounds', request.body.bg);
