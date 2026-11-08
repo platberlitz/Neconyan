@@ -853,7 +853,7 @@ let lastChatScrollInputAt = 0;
 let lastChatScrollEventAt = 0;
 
 // A finger on the chat, or momentum still running from one, counts as moving.
-function isChatScrollInMotion(now = Date.now()) {
+export function isChatScrollInMotion(now = Date.now()) {
     if (chatScrollTouchActive) return true;
     return now - lastChatScrollInputAt < CHAT_SCROLL_SETTLE_INPUT_WINDOW_MS
         && now - lastChatScrollEventAt < CHAT_SCROLL_SETTLE_QUIET_MS;

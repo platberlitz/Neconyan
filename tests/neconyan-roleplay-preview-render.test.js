@@ -9,6 +9,7 @@ const chat = [];
 const updateMessageElement = jest.fn();
 const updatePreviewMessageText = jest.fn(() => true);
 const scrollChatToBottom = jest.fn();
+const isChatScrollInMotion = jest.fn(() => false);
 const refreshChatViewportBaseline = jest.fn();
 const renderedEvents = [];
 const thinking = { update: jest.fn(), clear: jest.fn() };
@@ -22,6 +23,7 @@ jest.unstable_mockModule('../public/script.js', () => ({
     formatGenerationTimer: () => ({ timerValue: '1.0s', timerTitle: '1 second' }),
     getRequestHeaders: () => ({}),
     getThumbnailUrl: () => '/thumbnails/nova.png',
+    isChatScrollInMotion,
     refreshChatViewportBaseline,
     scrollChatToBottom,
     updateMessageElement,
@@ -29,6 +31,7 @@ jest.unstable_mockModule('../public/script.js', () => ({
 }));
 jest.unstable_mockModule('../public/scripts/neconyan-conversation/roleplay-replacement.js', () => ({
     beginRoleplayReplacement: () => () => {},
+    commitRoleplayReplacement: jest.fn(),
 }));
 jest.unstable_mockModule('../public/scripts/abort.js', () => ({
     withAbortSignal: (promise, signal) => new Promise((resolve, reject) => {
@@ -286,6 +289,7 @@ describe('Roleplay preview rendering', () => {
         updateMessageElement.mockReset();
         updatePreviewMessageText.mockClear();
         scrollChatToBottom.mockClear();
+        isChatScrollInMotion.mockReturnValue(false);
         refreshChatViewportBaseline.mockClear();
         thinking.update.mockClear();
         thinking.clear.mockClear();
@@ -325,6 +329,20 @@ describe('Roleplay preview rendering', () => {
     async function waitForFirstDraw() {
         await waitFor(() => updateMessageElement.mock.calls.length >= 1);
     }
+
+    test('Agent frames render without following an active reader, then resume at rest', async () => {
+        isChatScrollInMotion.mockReturnValue(true);
+        startPreview();
+        stream.send({ preview: { childId: 'reply', stage: 'agents', text: 'First Agent output' } });
+        await waitForFirstDraw();
+        expect(scrollChatToBottom).not.toHaveBeenCalled();
+        expect(refreshChatViewportBaseline).toHaveBeenCalled();
+        expect(renderedEvents.at(-1).message.mes).toBe('First Agent output');
+        isChatScrollInMotion.mockReturnValue(false);
+        stream.send({ delta: { text: '. Next output' } });
+        await waitFor(() => renderedEvents.length >= 2);
+        expect(scrollChatToBottom).toHaveBeenCalledWith({ isNearBottom: true });
+    });
 
     test.each(['medium', undefined])('preview and recovery retain the accepted reasoning effort: %s', async effort => {
         const stop = startPreview();

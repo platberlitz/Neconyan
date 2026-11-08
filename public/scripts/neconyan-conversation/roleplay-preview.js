@@ -1,5 +1,5 @@
-import { chat as messages, formatGenerationTimer, getRequestHeaders, getThumbnailUrl, refreshChatViewportBaseline, scrollChatToBottom, updateMessageElement, updatePreviewMessageText } from '../../script.js';
-import { beginRoleplayReplacement } from './roleplay-replacement.js';
+import { chat as messages, formatGenerationTimer, getRequestHeaders, getThumbnailUrl, isChatScrollInMotion, refreshChatViewportBaseline, scrollChatToBottom, updateMessageElement, updatePreviewMessageText } from '../../script.js';
+import { beginRoleplayReplacement, commitRoleplayReplacement } from './roleplay-replacement.js';
 import { withAbortSignal } from '../abort.js';
 import { power_user } from '../power-user.js';
 import { getStreamingUpdateInterval } from '../mobile-streaming.js';
@@ -136,6 +136,7 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
         const hasCompanionResults = Boolean(companionResults) && typeof companionResults === 'object'
             && Object.keys(companionResults).length > 0;
         const nearBottom = !hasCompanionResults
+            && !isChatScrollInMotion()
             && FOLLOWED_STAGES.has(latest.stage || 'preparing')
             && chat.scrollHeight - chat.scrollTop - chat.clientHeight < 120;
         if (childId !== latest.childId) {
@@ -202,8 +203,11 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
             status.className = 'timestamp';
             status.setAttribute('role', 'status');
             node.querySelector('.name_text').parentElement.append(status);
-            if (replacement) replacement.before(node);
-            else chat.append(node);
+            if (replacement) {
+                // Keep the old reply's geometry until this complete frame is ready.
+                commitRoleplayReplacement(replacement);
+                replacement.before(node);
+            } else chat.append(node);
             // The first frame can race the saved chat's own draw. Put the draft
             // after rows already on screen, then watch the chat for later batches.
             observePlacement(chat);

@@ -1,4 +1,4 @@
-/* global window, document, requestAnimationFrame, getComputedStyle */
+/* global window, document, requestAnimationFrame, getComputedStyle, WheelEvent */
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { installSyntheticLongChat } from './chat-scroll-regression-helpers.js';
@@ -42,6 +42,71 @@ async function openPreview(app, phone) {
 
 for (const phone of [true, false]) {
     const viewport = phone ? 'phone' : 'desktop';
+    test(`Agent preview updates do not take over an active scroll near the bottom on ${viewport}`, async ({ app }) => {
+        const page = await openPreview(app, phone);
+        await installSyntheticLongChat(page, { messageCount: 12 });
+        await page.evaluate(() => window.sendLivePreview({ childId: 'reply', stage: 'agents', text: 'The reply.\n'.repeat(60) }));
+        await expect(page.locator('#neconyan-roleplay-preview')).toContainText('The reply.');
+        // Let the synthetic chat's initial-load bottom lock expire.
+        // eslint-disable-next-line playwright/no-wait-for-timeout
+        await page.waitForTimeout(2800);
+        const shifts = await page.evaluate(async () => {
+            const chat = document.querySelector('#chat');
+            const shifts = [];
+            for (let index = 0; index < 8; index++) {
+                chat.scrollTop = chat.scrollHeight - chat.clientHeight - 70;
+                chat.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -12 }));
+                chat.dispatchEvent(new Event('scroll', { bubbles: true }));
+                const before = chat.scrollTop;
+                window.sendLivePreview({ childId: 'reply', stage: 'agents', text: `${'The reply.\n'.repeat(60)}Agent progress ${index}` });
+                await new Promise(resolve => setTimeout(resolve, 250));
+                shifts.push(chat.scrollTop - before);
+            }
+            return shifts;
+        });
+        expect(Math.max(...shifts.map(Math.abs)), JSON.stringify(shifts)).toBeLessThan(3);
+        await page.evaluate(() => window.stopLivePreview());
+    });
+
+    test(`server swipe reserves the old reply while the new reply starts on ${viewport}`, async ({ app }) => {
+        const page = await openPreview(app, phone);
+        await installSyntheticLongChat(page, { messageCount: 12 });
+        await page.evaluate(async () => {
+            const core = await import('/script.js');
+            core.chat[11].mes = 'The previous long reply.\n'.repeat(100);
+            core.updateMessageBlock(11, core.chat[11]);
+        });
+        await expect(page.locator('#chat .mes[mesid="11"] .mes_text')).toContainText('The previous long reply.');
+        // eslint-disable-next-line playwright/no-wait-for-timeout
+        await page.waitForTimeout(2800);
+        const before = await page.evaluate(async () => {
+            const chat = document.querySelector('#chat');
+            chat.scrollTop = chat.scrollHeight;
+            await new Promise(resolve => requestAnimationFrame(resolve));
+            return chat.scrollTop;
+        });
+        await page.evaluate(async () => {
+            window.stopLivePreview();
+            const { beginRoleplayReplacement } = await import('/scripts/neconyan-conversation/roleplay-replacement.js');
+            window.restoreSwipeSource = beginRoleplayReplacement('roleplay.swipe', 11, () => true);
+            const { observeRoleplayPreview } = await import('/scripts/neconyan-conversation/roleplay-preview.js');
+            window.stopLivePreview = observeRoleplayPreview('live-preview-fixture', {
+                account: 'test', isCurrent: () => true, onTerminal() {}, name: 'roleplay.swipe', messageIndex: 11,
+            });
+        });
+        const waiting = await page.locator('#chat').evaluate(chat => chat.scrollTop);
+        await page.evaluate(() => window.sendLivePreview({ childId: 'swipe', stage: 'generating', text: 'The new swipe starts here.' }));
+        const body = page.locator('#neconyan-roleplay-preview .mes_text');
+        await expect(body).toHaveText('The new swipe starts here.');
+        await page.screenshot({ path: `../screenshots/server-swipe-${viewport}-${process.env.NECONYAN_SCREENSHOT_PHASE || 'after'}.png`, scale: 'css' });
+        const bottomGap = await page.locator('#chat').evaluate(chat => chat.scrollHeight - chat.clientHeight - chat.scrollTop);
+        expect(Math.abs(waiting - before), 'waiting must not collapse the old reply').toBeLessThan(3);
+        expect(bottomGap, 'first tokens must stay at the bottom, not above the new reply').toBeLessThan(3);
+        await expect(page.locator('#chat .mes[mesid="11"]')).toHaveCount(0);
+        await expect(body).toBeInViewport();
+        await page.evaluate(() => { window.stopLivePreview(); window.restoreSwipeSource(); });
+    });
+
     test(`server preview shows Thinking without traces and clears it on ${viewport}`, async ({ app }) => {
         const page = await openPreview(app, phone);
         await page.evaluate(() => window.sendLivePreview({ childId: 'reply', stage: 'generating', text: '' }));
