@@ -116,11 +116,11 @@ button:not(.ica--tpanel-handle):not(.gg-action-button):not(.neconyan-edit-action
 }
 
 :where(body:not(.nnchat)) .mes[is_user='true'] {
-    background-color: var(--SmartThemeUserMesBlurTintColor) !important;
+    background-color: var(--nn-phone-message-background, var(--SmartThemeUserMesBlurTintColor)) !important;
 }
 
 :where(body:not(.nnchat)) .mes[is_user='false'] {
-    background-color: var(--SmartThemeBotMesBlurTintColor) !important;
+    background-color: var(--nn-phone-message-background, var(--SmartThemeBotMesBlurTintColor)) !important;
 }
 
 /* A weaker layer of the same grain on bubbles, controlled by the same slider. */
