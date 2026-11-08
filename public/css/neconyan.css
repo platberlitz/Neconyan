@@ -638,7 +638,9 @@ body.neconyan #sheld #sb_conversation_pals_rail {
 }
 body.neconyan #sheld #sb_conversation_pals_rail[data-open='true'] { visibility: visible; pointer-events: auto; }
 body.neconyan #sheld #sb_conversation_pals_rail .sb-conversation-rail-close { display: inline-flex; }
-body.neconyan .sb-conversation-timeline { padding: 24px max(var(--neco-gutter), calc((100% - var(--neco-reading-width)) / 2)); gap: 24px; }
+body.neconyan .sb-conversation-timeline { padding: 24px max(var(--neco-gutter), calc((100% - var(--neco-reading-width)) / 2)); gap: 24px; margin: 8px 10px 4px; border: 1px solid var(--neco-border); border-radius: var(--sb-radius-lg, 18px); background: color-mix(in srgb, var(--neco-surface) 82%, transparent); }
+.sb-conversation-pals-list > .sb-conversation-empty { display: grid; place-items: center; gap: 12px; text-align: center; }
+.sb-conversation-pals-list > .sb-conversation-empty > span { max-inline-size: 24ch; }
 body.neconyan .sb-conversation-message-bubble { padding: 8px 0; background: transparent; color: var(--neco-ink); border: 0; border-radius: 0; box-shadow: none; }
 body.neconyan .sb-conversation-message[data-role='user'] .sb-conversation-message-bubble { padding: 12px var(--neco-bubble-pad); background: var(--neco-user); border-radius: 8px; }
 body.neconyan .sb-conversation-message-name,

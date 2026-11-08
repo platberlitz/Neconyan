@@ -350,11 +350,6 @@ body.neconyan:not(.sbterm) :is(#send_form, #sb-bottom-chat-bar) {
 body.neconyan:not(.sbterm) :is(#chat, #sb_conversation_stage) {
     background-color: transparent !important;
 }
-/* Conversation mode gets a theme-aware translucent surface instead of floating straight
-   on the wallpaper. Still translucent so the clouds read through it. */
-body.neconyan:not(.sbterm) #sheld[data-sb-conversation-mode='on'] #sb_conversation_stage {
-    background-color: var(--neco-panel-gradient) !important;
-}
 body.neconyan.neconyan-home-visible:not(.sbterm) #neconyan-home-host {
     background-color: transparent !important;
 }
