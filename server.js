@@ -3,6 +3,11 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { runSupervisor, shouldSupervise } from './src/server-supervisor.js';
 import { writeStartupNote } from './src/startup-note.js';
+import { enforceSupportedBun } from './src/runtime-support.js';
+
+// Neconyan: Bun before 1.4.0 can terminate the server from a node:vm timeout.
+// Refuse to start it, before the supervisor or any data setup runs.
+enforceSupportedBun();
 
 // Supervise a child copy so restarts and transactional plugin replacement are
 // owned by one process. Launcher scripts may wrap this supervisor so host-code

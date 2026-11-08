@@ -6,6 +6,7 @@ import test from 'node:test';
 import { Response } from 'node-fetch';
 import { fixture } from './roleplay-transactions-fixture.js';
 import { compileStructuredPrefill, continuedPrefillMetadata, structuredPrefillDisplay, structuredPrefillRequest, structuredPrefillStatus, STRUCTURED_PREFILL_PRESETS } from '../public/scripts/structured-prefill.js';
+import { assertStructuredPrefillRuntime, compareVersions, assertSupportedBun, unsupportedBunMessage, bunVersionSupportsStructuredPrefill } from '../src/runtime-support.js';
 import { extractProviderReasoning } from '../public/scripts/generation-format.js';
 import { resolveCustomStoppingStrings } from '../public/scripts/chat-request-controls.js';
 const { createPrefillDecoder, decodePrefillStream, prepareStructuredPrefill } = await import('../src/structured-prefill.js');
@@ -168,6 +169,59 @@ test('raw regex matching has a bounded execution time', () => {
     const checked = createPrefillDecoder(compileStructuredPrefill('[[re:(a+)+b]]', { ...settings, hide_prefill_in_display: false }));
     checked.push(wire('a'.repeat(500) + '!'));
     assert.equal(checked.finish().metadata.verification, 'unchecked');
+});
+
+test('the fully combined prefill pattern is validated before use', () => {
+    assert.throws(
+        () => compileStructuredPrefill('[[re:(?<x>a)]] [[re:(?<x>b)]]', settings),
+        /invalid combined pattern.*duplicate named groups/i,
+    );
+    assert.doesNotThrow(() => compileStructuredPrefill('[[re:(?<x>a)]] [[re:(?<y>b)]]', settings));
+});
+
+test('Bun before 1.4.0 is refused with an actionable Structured Prefill error', () => {
+    assert.equal(compareVersions('1.3.14', '1.4.0'), -1);
+    assert.equal(compareVersions('1.4.0', '1.4.0'), 0);
+    assert.equal(compareVersions('1.4.0+build.7', '1.4.0'), 0);
+    assert.equal(compareVersions('1.10.0', '1.4.0'), 1);
+    assert.equal(compareVersions('1.4.0-canary.1', '1.4.0'), -1);
+    assert.equal(compareVersions('1.4.0-rc.1', '1.4.0'), -1);
+    assert.equal(compareVersions('1.4.0-canary.1+build.7', '1.4.0'), -1);
+    assert.equal(compareVersions('1.5.0-canary.1', '1.4.0'), 1);
+    assert.equal(compareVersions('1.4.0-canary.1', '1.4.0-canary.2'), -1);
+    assert.equal(compareVersions('1.4.0-alpha', '1.4.0-alpha.1'), -1);
+    assert.equal(compareVersions('1.4.0-1', '1.4.0-alpha'), -1);
+    assert.equal(compareVersions('broken', '1.4.0'), null);
+    assert.equal(compareVersions('1.4', '1.4.0'), null);
+    assert.equal(compareVersions('1.4.0.1', '1.4.0'), null);
+    assert.equal(compareVersions('01.4.0', '1.4.0'), null);
+    assert.equal(compareVersions('1.4.0-', '1.4.0'), null);
+    assert.equal(compareVersions('1.4.0+', '1.4.0'), null);
+    assert.equal(compareVersions('1.4.0-canary..1', '1.4.0'), null);
+    assert.equal(compareVersions('1.4.0-01', '1.4.0'), null);
+    assert.equal(compareVersions('Infinity.4.0', '1.4.0'), null);
+    assert.equal(compareVersions('999999999999999999999999.0.0', '1.4.0'), null);
+    assert.equal(compareVersions('1.4.999999999999999999999', '1.4.0'), null);
+    assert.equal(bunVersionSupportsStructuredPrefill('1.4.0-canary.1'), false);
+    assert.equal(bunVersionSupportsStructuredPrefill('1.4.0+build.7'), true);
+    assert.equal(bunVersionSupportsStructuredPrefill('1.5.0-canary.1'), true);
+    assert.equal(bunVersionSupportsStructuredPrefill(undefined), true);
+    assert.throws(() => assertStructuredPrefillRuntime('1.3.14'), error => {
+        assert.equal(error.code, 'STRUCTURED_PREFILL_UNSUPPORTED_RUNTIME');
+        assert.match(error.message, /Node 24 or Bun 1\.4\.0 or later/);
+        assert.match(error.message, /settings and chat were not changed/);
+        return true;
+    });
+    assert.throws(() => assertStructuredPrefillRuntime('1.4.0-canary.1'), { code: 'STRUCTURED_PREFILL_UNSUPPORTED_RUNTIME' });
+    assert.doesNotThrow(() => assertStructuredPrefillRuntime('1.4.0'));
+    assert.doesNotThrow(() => assertStructuredPrefillRuntime('1.4.0+build.7'));
+    assert.doesNotThrow(() => assertStructuredPrefillRuntime(undefined));
+    assert.match(unsupportedBunMessage('1.3.14'), /Neconyan needs Node 24 or Bun 1\.4\.0 or later/);
+    assert.throws(() => assertSupportedBun('1.3.14'), { code: 'UNSUPPORTED_BUN_RUNTIME' });
+    assert.throws(() => assertSupportedBun('1.4.0-canary.1'), { code: 'UNSUPPORTED_BUN_RUNTIME' });
+    assert.doesNotThrow(() => assertSupportedBun('1.4.0'));
+    assert.doesNotThrow(() => assertSupportedBun('1.5.0-canary.1'));
+    assert.doesNotThrow(() => assertSupportedBun(undefined));
 });
 
 test('quiet requests, unsupported providers, tools and existing schemas retain their format', () => {
