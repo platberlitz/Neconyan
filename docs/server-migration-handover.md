@@ -1,5 +1,75 @@
 # Full server migration: continuation
 
+### 8 November 2026: 1.5.2 published, staging starts 1.5.3
+
+Published [Neconyan 1.5.2](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.2)
+with annotated tag `v1.5.2` on `5450796acac7f3fd9bbfd3cf09adfa0a97f9148a`.
+Main was fast-forwarded from the 1.5.1 release to staging, then to the native
+download fix. No personal instance was deployed as part of the release. The
+README update `469f0b75` was fast-forwarded to both main and staging; mirror
+run `42475082837` passed without adding another commit.
+
+The handbook review, PRs #7 to #10 in `platberlitz/neconyan-docs`, was
+published in Pages runs `42432585004`, `42433233113`, `42458935878` and
+`42464813858`. PR #11 then marked 1.5.2 as published; its checks and Pages run
+`42475379733` passed, and the live About page was verified. Strict build, site
+checks and desktop/phone browser checks passed; the changed live pages and
+starter download were verified. Its review at `e0ed8b95` retained the actual
+screenshot capture provenance. Assistant
+knowledge revision 67 passed source, budget and retrieval checks; phone and
+desktop runs checked 4,077 questions per viewport across all nine assistants.
+
+Verification and retained scope:
+
+- Browser run `42451067093` at `da5229b2` passed groups 1-12, 14-15 and
+  17-20. Groups 13 and 16 had one failure each: a stale Conversation surface
+  assertion and Scratchpad theme setup. Both corrected groups passed in
+  `42455387289` at `7ce828f5`. The narrow Scratchpad header fix was checked
+  in groups 1, 7, 8, 16 and 20 of `42457310867` at `721f5836`. Later changes
+  affected assistant knowledge, changelog and native build tooling, not the
+  previously covered browser behaviour; the assistant change had its own
+  phone and desktop checks. Existing skips remained. Duplicate main browser
+  runs `42465081537` and `42472861081` were cancelled after retaining the
+  applicable passing coverage, not while needed runs were pending.
+- Earlier browser fixture and startup-resource failures were corrected and
+  checked in scoped runs `42445529699`, `42442956414` and `42439759975`.
+  The Roleplay flicker regression passed Chromium and Linux WebKit checks;
+  those were not physical-iPhone tests. No assertion was weakened or skip
+  added to make the release pass.
+- At `a2f371c0`, the full Jest suite passed 643 suites and 9,438 tests with
+  three existing skips; the full Node suite passed 3,964 tests with no skips.
+  The separate Mewmory suite passed 113 tests at `8f48ea47`. Root and test
+  lint, frontend budgets and the production build passed; the changed native
+  tooling and its tests passed matching-head PR checks `42470864762`.
+- Android run `42472864072` at the release commit passed signed packaging,
+  the WebView fixture and Android 11, 13 and 15 emulator checks. The optional
+  older-release comparison wasn't requested. Earlier run `42465089202` at
+  `e0ed8b95` failed three attempts while downloading Gradle or ICU; it did not
+  reach the emulator jobs. PR #551 added a checksum-preserving download
+  fallback and passed Android verification run `42470913064` before the final
+  build. This was a corrected download path, not an unchanged passing retry.
+- iPhone run `42472864113` at the release commit passed storage checks, the
+  real 13 GiB import, unsigned device IPA verification and simulator startup
+  and relaunch. Earlier run `42465088908` at `e0ed8b95` passed unchanged on
+  its third attempt after two runtime-download failures, but its IPA belongs
+  to that older commit. Android and iPhone checks used emulators and a
+  simulator, not physical phones.
+
+All twelve release assets were independently verified before publication.
+The eight Android and two iPhone listed checksums passed; both APK signatures
+match the official certificate SHA-256
+`49ed1e770b8a5269a008ed0d4763dd19a499377e35c85eec798c554178c4826c`.
+ZIP offsets and all native ELF segments passed the applicable 16 KiB checks.
+Android provenance matched the independent verifier; all 5,120 source ZIP
+entries matched `git archive` of the release commit. The unsigned IPA's ARM64
+device binaries, commit, version, 2,053 frontend assets and embedded
+provenance passed independent checks. All twelve published assets were
+downloaded again; their bytes and GitHub SHA-256 digests match the verified
+files. The release is public and marked latest.
+
+Staging starts 1.5.3 with matching package metadata and boundary expectations.
+All four current boundary tests and lint on that test passed.
+
 ### 6 November 2026: 1.5.1 published, staging starts 1.5.2
 
 Published [Neconyan 1.5.1](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.1)
