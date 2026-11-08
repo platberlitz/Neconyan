@@ -45,6 +45,10 @@ describe('companion card ui', () => {
     async function importCompanionUi() {
         jest.resetModules();
 
+        await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/companion/plot-compass-context.js', () => ({
+            getPlotCompassIdentity: () => ({ avatar: 'character.png', chatId: 'chat-1' }),
+        }));
+
         sanitize = jest.fn(html => String(html));
         encodeStyleTags = jest.fn(text => String(text).replaceAll(/<style>(.+?)<\/style>/gims, (_, match) => {
             return `<custom-style>${encodeURIComponent(match)}</custom-style>`;

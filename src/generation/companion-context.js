@@ -1,6 +1,6 @@
 import { createMacroEnvironment } from '../macros/index.js';
 import { getStringHash } from '../../public/scripts/macro-primitives.js';
-import { getActiveCompanionResults, isEmptyOutputSentinel, MEMORY_SHARD_TEMPLATE_ID, TRACKER_EMPTY_OUTPUT_INSTRUCTION } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
+import { getActiveCompanionResults, getPlotCompassOpeningNote, isEmptyOutputSentinel, isPlotCompassAgent, MEMORY_SHARD_TEMPLATE_ID, TRACKER_EMPTY_OUTPUT_INSTRUCTION } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
 import { TRACKER_REPAIR_INSTRUCTION } from '../../public/scripts/extensions/in-chat-agents/tracker-state.js';
 import { buildTrackerStateText, captureSecretsTrackerState, SECRETS_TRACKER_MACRO } from '../../public/scripts/extensions/in-chat-agents/agent-context-macros.js';
 import { buildContinuityCorrectionsText, CONTINUITY_CORRECTIONS_MACRO, continuityCorrectionsFromRuns } from '../../public/scripts/extensions/in-chat-agents/continuity-link.js';
@@ -18,7 +18,7 @@ export function companionMessageTokens(message) {
 export function companionEnvironment(options, agent, message = options.messages.at(-1)) {
     const environment = createMacroEnvironment(options.macros, {}, { readOnly: true });
     // Speaker overrides belong to this prompt, not the immutable accepted job.
-    environment.names = { ...environment.names, char: clean(message?.name) || options.assistantName || environment.names.char };
+    environment.names = { ...environment.names, char: (!message?.is_user && clean(message?.name)) || options.assistantName || environment.names.char };
     const text = clean(message?.mes);
     for (const name of ['currentMessage', 'lastMessage', 'latestMessage', 'response', 'currentResponse', 'latestResponse', 'assistantMessage']) {
         environment.dynamicMacros[name.toLowerCase()] = text;
@@ -40,14 +40,20 @@ export function previousCompanionNotes(options, agent, { depth = agent.companion
     const result = [];
     for (let index = Math.min(before - 1, options.messages.length - 1); index >= 0 && result.length < depth; index--) {
         const message = options.messages[index];
-        if (message.is_user) continue;
+        if (message.is_user && !isPlotCompassAgent(agent)) continue;
         const stored = getActiveCompanionResults(message);
         const note = Object.hasOwn(stored, agent.id) ? stored[agent.id] : null;
         if (note?.status !== 'done' || !clean(note.content) || isEmptyOutputSentinel(note.content)) continue;
         result.push({ index, note, content: resolveCompanionText(options, agent, note.content, message) });
     }
+    const opening = isPlotCompassAgent(agent) && getPlotCompassOpeningNote(options.records?.[0]?.chat_metadata, agent.id);
+    if (opening && result.length < depth && !isEmptyOutputSentinel(opening.content)) {
+        result.push({ index: -1, note: opening, content: resolveCompanionText(options, agent, opening.content, { is_system: true, mes: '' }) });
+    }
     return result;
 }
+
+const formatPreviousNote = note => `${note.index < 0 ? 'Before the conversation' : `Message ${note.index}`}:\n${note.content}`;
 
 export function recentCompanionContext(options, agent) {
     const selected = [];
@@ -90,7 +96,7 @@ export function companionContextSections(options, agent, { previous = true, link
     const settings = agent.companion;
     const recent = recentCompanionContext(options, agent);
     const notes = previous && settings.includeHistory
-        ? previousCompanionNotes(options, agent).map(note => `Message ${note.index}:\n${note.content}`).join('\n\n') : '';
+        ? previousCompanionNotes(options, agent).map(formatPreviousNote).join('\n\n') : '';
     const sections = [
         ['System Prompt', settings.includeSystemPrompt ? resolveCompanionText(options, agent, options.systemPrompt) : ''],
         ['Character', characterSection(options, agent)],
@@ -106,7 +112,9 @@ export function expandedCompanionPrompt(options, agent) {
     const prompt = resolveCompanionText(options, agent, agent.prompt);
     const resolve = value => resolveCompanionText(options, agent, value);
     const extraCharacterCards = (agent.extraCharacterCards ?? []).map(card => formatCompanionExtraCharacterCard(card, resolve)).join('\n\n');
-    const settings = getCompanionTemplateSettings(agent, { resolve, extraCharacterCards });
+    const source = options.snapshot.source;
+    const plotCompassIdentity = { avatar: source?.locator?.avatar, groupId: source?.groupId, chatId: source?.locator?.chat };
+    const settings = getCompanionTemplateSettings(agent, { resolve, extraCharacterCards, plotCompassIdentity });
     return [prompt, settings, !options.repair && agent.category === 'tracker' && !prompt.toLowerCase().includes('tracker-none') ? TRACKER_EMPTY_OUTPUT_INSTRUCTION : '']
         .filter(Boolean).join('\n\n').trim();
 }
@@ -123,7 +131,7 @@ export function singleCompanionPrompt(options, agent, linked = []) {
 export function batchCompanionPrompt(options, agents, linked = []) {
     const context = companionContextSections(options, agents[0], { previous: false, linked });
     const tasks = agents.map(agent => {
-        const notes = agent.companion.includeHistory ? previousCompanionNotes(options, agent).map(note => `Message ${note.index}:\n${note.content}`).join('\n\n') : '';
+        const notes = agent.companion.includeHistory ? previousCompanionNotes(options, agent).map(formatPreviousNote).join('\n\n') : '';
         return { agentId: agent.id, content: [`<<<companion:${agent.id}>>>`, `Agent: ${agent.name || agent.id}`, COMPANION_GUARD_INSTRUCTION,
             'Instruction:', expandedCompanionPrompt(options, agent), ...(notes ? [`[Your previous notes]\n${notes}`] : []),
             ...(agent.companion.rawPrompt ? [] : ['Output format:', getCompanionFormatInstruction(agent.companion.format)]), COMPANION_FINAL_BOUNDARY, `<<<end:${agent.id}>>>`].join('\n') };

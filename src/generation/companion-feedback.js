@@ -1,11 +1,11 @@
-import { getActiveCompanionResults, isDiceRollerAgent, isEmptyOutputSentinel, normalizeCompanionMacroSyntax, selectCompanionChatHistory } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
+import { getActiveCompanionResults, getPlotCompassOpeningNote, isDiceRollerAgent, isEmptyOutputSentinel, isPlotCompassAgent, normalizeCompanionMacroSyntax, selectCompanionChatHistory } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
 import { buildDiceDirective, findDiceRollsForGeneration } from '../../public/scripts/extensions/in-chat-agents/companion/dice.js';
 import { buildTrackerEchoGuard, getActiveInlineTrackerTags, getOwnedCompanionTrackerShape } from '../../public/scripts/extensions/in-chat-agents/companion/companion-tracker-context.js';
 import { isNativeCompanion } from './agent-definition.js';
 
 export function resolveSavedCompanionText(content, host, snapshot, environment) {
     const names = environment.names;
-    environment.names = { ...names, char: String(host.name ?? '').trim() || names.char };
+    environment.names = { ...names, char: (!host.is_user && String(host.name ?? '').trim()) || names.char };
     try {
         return String(environment.evaluate(normalizeCompanionMacroSyntax(content), {
             legacy: !snapshot.experimentalMacroEngine, strictCapabilities: true, original: host.is_system ? '' : host.mes,
@@ -44,8 +44,12 @@ export function prepareCompanionFeedback(active, historyAgents, records, snapsho
         const selected = [];
         for (let index = messages.length - 1; index >= 0 && selected.length < agent.companion.feedback.depth; index--) {
             const host = messages[index], result = getActiveCompanionResults(host)[agent.id];
-            if (host.is_user || result?.status !== 'done' || result.includeInChatHistory === true || !result.content?.trim() || isEmptyOutputSentinel(result.content)) continue;
+            if ((host.is_user && !isPlotCompassAgent(agent)) || result?.status !== 'done' || (result.includeInChatHistory === true && !host.is_user) || !result.content?.trim() || isEmptyOutputSentinel(result.content)) continue;
             selected.unshift(resolveSavedCompanionText(result.content, host, snapshot, environment));
+        }
+        const opening = isPlotCompassAgent(agent) && getPlotCompassOpeningNote(records[0]?.chat_metadata, agent.id);
+        if (opening && selected.length < agent.companion.feedback.depth && !isEmptyOutputSentinel(opening.content)) {
+            selected.unshift(resolveSavedCompanionText(opening.content, { is_system: true }, snapshot, environment));
         }
         const body = selected.filter(Boolean).join('\n\n');
         if (body) feedback.push({ agent, body, tag: rememberShape(agent, body) });

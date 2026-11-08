@@ -1,4 +1,4 @@
-import { chat } from '../../../../script.js';
+import { chat, chat_metadata } from '../../../../script.js';
 import { hideChatMessageRange } from '../../../chats.js';
 import { t } from '../../../i18n.js';
 import { captureVisibleMessageAnchor, restoreVisibleMessageAnchor } from '../../../chat-render-lifecycle/anchor.js';
@@ -37,10 +37,13 @@ import {
     retryFailedCompanionsOnMessage,
     runAutomaticCompanionsOnMessage,
     runCompanionAgentOnMessage,
+    runPlotCompassBeforeConversation,
     runCompanionsOnMessage,
 } from './companion-runner.js';
 import { isLorebookAgent, sendCompanionResultToLorebook } from './lorebook-sender.js';
 import { bindCompanionQuickControls, buildCompanionQuickControlsHtml } from './companion-quick-controls.js';
+import { buildPlotCompassControls, changePlotCompassScope, submitPlotCompassOnEnter } from './plot-compass-controls.js';
+import { getPlotCompassIdentity } from './plot-compass-context.js';
 import {
     buildLastRunErrorNotice,
     cleanCompanionAgentName,
@@ -55,7 +58,6 @@ import {
     CHAT_ONLY_INPUT_MAX_CHARS,
     CHATROOM_REPLY_MAX_CHARS,
     MEMORY_SHARD_TEMPLATE_ID,
-    PLOT_COMPASS_OBJECTIVE_MAX_CHARS,
     appendChatOnlyUserMessage,
     holdsReadableCompanionResults,
     isAssistantMessage,
@@ -63,9 +65,11 @@ import {
     isChatroomAgent,
     isDiceRollerAgent,
     isPlotCompassAgent,
+    getPlotCompassOpeningNote,
     normalizeChatOnlyInput,
     normalizeChatroomReply,
     normalizePlotCompassObjective,
+    setPlotCompassObjective,
 } from './companion-shared.js';
 import {
     buildDiceCompanionHostHtml,
@@ -531,14 +535,14 @@ function getLatestValidCompanionIndex() {
     return getLatestValidCompanionMessageIndex();
 }
 
-async function savePlotCompassObjective(agent, objective) {
+async function savePlotCompassObjective(agent, objective, scope, identity) {
     if (!agent || !isPlotCompassAgent(agent)) {
         return;
     }
 
     await saveAgent(agent.id, { update: draft => {
         if (!draft) return null;
-        draft.settings = { ...draft.settings, plotCompassObjective: normalizePlotCompassObjective(objective) };
+        draft.settings = setPlotCompassObjective(draft.settings, identity, scope, objective);
         return draft;
     } });
 }
@@ -599,6 +603,15 @@ export function collectPanelAgentStates() {
                 state.history.push(entry);
             }
         }
+    }
+
+    for (const state of byAgentId.values()) {
+        if (!isPlotCompassAgent(state.agent)) continue;
+        const result = getPlotCompassOpeningNote(chat_metadata, state.agentId);
+        if (!result || isSuppressedCompanionResult(state.agentId, result)) continue;
+        const entry = { messageIndex: -1, result, opening: true };
+        if (state.latest) state.history.push(entry);
+        else state.latest = entry;
     }
 
     // Mirror the agents page: order by injection.order; orphaned results sink to the bottom.
@@ -700,18 +713,7 @@ function buildPlotCompassObjectiveComposer(state) {
         return '';
     }
 
-    const objective = normalizePlotCompassObjective(state.agent?.settings?.plotCompassObjective);
-    return `
-        <div class="ica--plot-objective-composer ica--tpanel-plot-objective">
-            <label>
-                <span>Plot Objective</span>
-                <input type="text" class="text_pole ica--plot-objective-input" data-role="plot-compass-objective" maxlength="${PLOT_COMPASS_OBJECTIVE_MAX_CHARS}" placeholder="Where should the story go?" value="${escapeHtml(objective)}" aria-label="Plot Objective">
-            </label>
-            <button type="button" class="menu_button menu_button_icon ica--plot-objective-save" data-action="panel-plot-compass-save" title="Save objective and rerun Plot Compass" aria-label="Save Plot Objective">
-                <i class="fa-solid fa-compass"></i>
-            </button>
-        </div>
-    `;
+    return buildPlotCompassControls(state.agent, { panel: true });
 }
 
 function buildChatroomReplyComposer(state) {
@@ -805,7 +807,7 @@ function buildPanelAgentSection(state) {
                     <span class="ica--tpanel-agent-name"><i class="fa-solid ${escapeHtml(icon)}"></i><span>${escapeHtml(name)}</span></span>
                     <span class="ica--tpanel-agent-actions">${dragHandleButton}${hiddenButton}${runLatestButton}${windowButton}${settingsButton}</span>
                 </div>
-                <div class="ica--cdash-empty">No state yet. It will appear after the next reply${getCompanionConfig(state.agent).trigger === 'manual' ? ' you run it on' : ''}.</div>
+                <div class="ica--cdash-empty">${isPlotCompassAgent(state.agent) ? 'Press Enter or the compass to start planning.' : `No state yet. It will appear after the next reply${getCompanionConfig(state.agent).trigger === 'manual' ? ' you run it on' : ''}.`}</div>
                 ${buildPanelEntryControls(state)}
                 ${buildCompanionQuickControlsHtml(state.agent, { scope: 'panel' })}
             </section>
@@ -821,12 +823,12 @@ function buildPanelAgentSection(state) {
                 ${shownHistory.map(entry => `
                     <div class="ica--tpanel-history-entry" data-message-index="${entry.messageIndex}" data-host-hidden="${Boolean(entry.hostHidden)}">
                         <div class="ica--tpanel-history-head">
-                            <span>Message #${entry.messageIndex}</span>
+                            <span>${entry.opening ? 'Before the conversation' : `Message #${entry.messageIndex}`}</span>
                             ${buildAbsorbedPillHtml(entry)}
                             ${buildModelPillHtml(entry.result)}
                             ${buildCompanionTokenUsagePillsHtml(entry.result)}
                             ${canSendToLorebook && String(entry.result?.status ?? 'done') === 'done' ? '<button type="button" class="ica--cdash-action" data-action="panel-send-to-lorebook" title="Send this state to the attached lorebook" aria-label="Send history entry to lorebook"><i class="fa-solid fa-book-medical"></i></button>' : ''}
-                            <button type="button" class="ica--cdash-action" data-action="panel-edit-note" title="Edit this state's text" aria-label="Edit history entry"><i class="fa-solid fa-pen-to-square"></i></button>
+                            ${entry.opening ? '' : '<button type="button" class="ica--cdash-action" data-action="panel-edit-note" title="Edit this state\'s text" aria-label="Edit history entry"><i class="fa-solid fa-pen-to-square"></i></button>'}
                         </div>
                         <div class="ica--tpanel-agent-body">${buildPanelEntryBody(agentId, entry)}</div>
                     </div>
@@ -842,7 +844,7 @@ function buildPanelAgentSection(state) {
 
     // A hidden host cannot be re-run: runSingleCompanionAgent rejects system messages, so the
     // rerun controls would silently do nothing. Editing the stored text and jumping still work.
-    const rerunButtons = latest.preview || latest.hostHidden || !state.agent
+    const rerunButtons = latest.preview || latest.opening || latest.hostHidden || !state.agent
         ? ''
         : `
                     <button type="button" class="ica--cdash-action" data-action="panel-regenerate" title="Write this note again from the message it came from" aria-label="Write note again"${runDisabled}><i class="fa-solid fa-rotate-right"></i></button>
@@ -852,7 +854,7 @@ function buildPanelAgentSection(state) {
         <section class="ica--tpanel-agent" data-agent-id="${escapeHtml(agentId)}" ${latest.preview ? 'data-roleplay-draft="true"' : `data-message-index="${latest.messageIndex}"`} data-hidden="${isHidden}" data-host-hidden="${Boolean(latest.hostHidden)}" data-search-text="${searchText}">
             <div class="ica--tpanel-agent-head">
                 <span class="ica--tpanel-agent-name"><i class="fa-solid ${escapeHtml(icon)}"></i><span>${escapeHtml(name)}</span></span>
-                <span class="ica--tpanel-agent-when">${latest.preview ? 'Live reply' : `#${latest.messageIndex}`}</span>
+                <span class="ica--tpanel-agent-when">${latest.preview ? 'Live reply' : latest.opening ? 'Before the conversation' : `#${latest.messageIndex}`}</span>
                 ${buildAbsorbedPillHtml(latest)}
                 ${buildModelPillHtml(latest.result)}
                 ${buildCompanionTokenUsagePillsHtml(latest.result)}
@@ -861,10 +863,10 @@ function buildPanelAgentSection(state) {
                     ${hiddenButton}
                     ${runLatestButton}${rerunButtons}
                     ${!latest.preview && canSendToLorebook && String(latest.result?.status ?? 'done') === 'done' ? '<button type="button" class="ica--cdash-action" data-action="panel-send-to-lorebook" title="Send this state to the attached lorebook" aria-label="Send state to lorebook"><i class="fa-solid fa-book-medical"></i></button>' : ''}
-                    ${latest.preview ? '' : '<button type="button" class="ica--cdash-action" data-action="panel-edit-note" title="Edit this note by hand (for example, type your Plot Compass objective)" aria-label="Edit note"><i class="fa-solid fa-pen-to-square"></i></button>'}
+                    ${latest.preview || latest.opening ? '' : '<button type="button" class="ica--cdash-action" data-action="panel-edit-note" title="Edit this note by hand (for example, type your Plot Compass objective)" aria-label="Edit note"><i class="fa-solid fa-pen-to-square"></i></button>'}
                     ${windowButton}
                     ${settingsButton}
-                    ${latest.preview ? '' : '<button type="button" class="ica--cdash-action" data-action="panel-jump" title="Scroll to the source message" aria-label="Scroll to source message"><i class="fa-solid fa-comment-dots"></i></button>'}
+                    ${latest.preview || latest.opening ? '' : '<button type="button" class="ica--cdash-action" data-action="panel-jump" title="Scroll to the source message" aria-label="Scroll to source message"><i class="fa-solid fa-comment-dots"></i></button>'}
                 </span>
             </div>
             <div class="ica--tpanel-agent-body">${buildPanelEntryBody(agentId, latest)}</div>
@@ -1468,21 +1470,26 @@ async function handlePanelAction(event) {
 
         const inputField = section.find('[data-role="plot-compass-objective"]');
         const objective = normalizePlotCompassObjective(inputField.val());
-        // The section can be anchored to a hidden host now that hidden hosts keep their notes;
-        // a companion cannot run on one, so fall back to the newest visible reply.
-        const canRunOnSection = Number.isInteger(messageIndex) && !chat[messageIndex]?.is_system;
-        const runIndex = canRunOnSection ? messageIndex : getLatestAssistantIndex();
-        if (runIndex < 0) {
-            toastr.warning('No assistant reply yet to plan from.');
-            return;
-        }
+        const scope = inputField[0]?.dataset?.plotScope || agent.settings?.plotCompassScope || 'global';
+        const identity = getPlotCompassIdentity();
+        const runIndex = getLatestValidCompanionIndex();
 
         const runTarget = chat[runIndex];
-        const target = captureMessageTargetState(runTarget);
+        const target = runTarget ? captureMessageTargetState(runTarget) : null;
         button.prop('disabled', true);
         inputField.prop('disabled', true);
         try {
-            await savePlotCompassObjective(agent, objective);
+            await savePlotCompassObjective(agent, objective, scope, identity);
+            if (!runTarget) {
+                if (JSON.stringify(identity) !== JSON.stringify(getPlotCompassIdentity()) || getLatestValidCompanionIndex() >= 0) {
+                    toastr.warning('The chat changed while saving, so the objective was saved but not run.');
+                    return;
+                }
+                const result = await runPlotCompassBeforeConversation(agentId);
+                if (!result) toastr.warning('Objective saved, but Plot Compass could not run in this chat.');
+                else toastr.success(objective ? 'Plot Objective saved.' : 'Plot Objective cleared.');
+                return;
+            }
             if (!isMessageTargetCurrent(runTarget, target, runIndex)) {
                 toastr.warning('The chat changed while saving, so the objective was saved but not run.');
                 return;
@@ -1657,6 +1664,11 @@ export function initCompanionPanel() {
         panelSearchQuery = event.currentTarget.value;
         applyPanelSearch();
     });
+    $('#ica--tracker-panel').on('change', '[data-role="plot-compass-scope"]', event => {
+        const agentId = event.currentTarget.closest('[data-agent-id]')?.dataset.agentId;
+        changePlotCompassScope(event.currentTarget, getAgentById(agentId));
+    });
+    $('#ica--tracker-panel').on('keydown', '[data-role="plot-compass-objective"]', submitPlotCompassOnEnter);
     $('#ica--tracker-panel').on('keydown', event => {
         if (event.key === 'Escape') {
             event.preventDefault();

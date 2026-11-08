@@ -23,6 +23,8 @@ import {
 } from '../agent-store.js';
 import { AGENT_REGEX_PLACEMENT, applyRegexScriptList } from '../regex-scripts.js';
 import { resolveCompanionContentMacros } from './companion-macros.js';
+import { buildPlotCompassControls, changePlotCompassScope, submitPlotCompassOnEnter } from './plot-compass-controls.js';
+import { getPlotCompassIdentity } from './plot-compass-context.js';
 import { CHATROOM_FEED_PROBE_RE, buildChatroomReplyRunOptions, normalizeChatroomField, normalizeChatroomGeneratedLine } from './chatroom-feed.js';
 import { isLorebookAgent, sendCompanionResultToLorebook } from './lorebook-sender.js';
 import {
@@ -41,7 +43,6 @@ import {
     CHAT_ONLY_INPUT_MAX_CHARS,
     CHATROOM_REPLY_MAX_CHARS,
     CHATROOM_STYLE_VALUES,
-    PLOT_COMPASS_OBJECTIVE_MAX_CHARS,
     appendChatOnlyUserMessage,
     holdsReadableCompanionResults,
     isAssistantMessage,
@@ -55,6 +56,7 @@ import {
     normalizeChatOnlyInput,
     normalizeChatroomReply,
     normalizePlotCompassObjective,
+    setPlotCompassObjective,
 } from './companion-shared.js';
 import {
     buildDiceCompanionCardHtml,
@@ -122,15 +124,6 @@ function normalizeChatroomContent(content = '') {
     }
 
     return ['chatroom-style|' + style, ...rows, 'chatroom-end'].join('\n');
-}
-
-async function setAgentSetting(agent, key, value) {
-    if (!agent) return;
-    await saveAgent(agent.id, { update: draft => {
-        if (!draft) return null;
-        draft.settings = { ...draft.settings, [key]: value };
-        return draft;
-    } });
 }
 
 function getMarkdownConverter() {
@@ -333,18 +326,7 @@ function buildPlotCompassObjectiveComposer(agentId) {
         return '';
     }
 
-    const objective = normalizePlotCompassObjective(agent.settings?.plotCompassObjective);
-    return `
-        <div class="ica--plot-objective-composer ica--companion-plot-objective">
-            <label>
-                <span>Plot Objective</span>
-                <input type="text" class="text_pole ica--plot-objective-input" data-role="plot-compass-objective" maxlength="${PLOT_COMPASS_OBJECTIVE_MAX_CHARS}" placeholder="Where should the story go?" value="${escapeHtml(objective)}" aria-label="Plot Objective">
-            </label>
-            <button type="button" class="menu_button menu_button_icon ica--plot-objective-save ica--companion-control-action" data-action="plot-compass-save" title="Save objective and rerun Plot Compass" aria-label="Save Plot Objective">
-                <i class="fa-solid fa-compass"></i>
-            </button>
-        </div>
-    `;
+    return buildPlotCompassControls(agent);
 }
 
 function buildCompanionCardControls(agentId) {
@@ -907,15 +889,15 @@ async function sendChatroomUserReply({ agentId, messageIndex, userInput = '', bu
     }
 }
 
-async function savePlotCompassObjective({ agentId, messageIndex, objective = '', button = null, inputField = null } = {}) {
+async function savePlotCompassObjective({ agentId, messageIndex, objective = '', scope, button = null, inputField = null } = {}) {
     const agent = getAgentById(agentId);
     if (!agent || !isPlotCompassAgent(agent)) {
         toastr.warning('Plot Compass is not available.');
         return;
     }
 
-    if (!isAssistantMessage(chat[messageIndex])) {
-        toastr.warning('No assistant reply yet to plan from.');
+    if (!isValidCompanionMessage(chat[messageIndex])) {
+        toastr.warning('No message yet to plan from.');
         return;
     }
 
@@ -925,7 +907,12 @@ async function savePlotCompassObjective({ agentId, messageIndex, objective = '',
     inputField?.prop?.('disabled', true);
     try {
         const nextObjective = normalizePlotCompassObjective(objective);
-        await setAgentSetting(agent, 'plotCompassObjective', nextObjective);
+        const identity = getPlotCompassIdentity();
+        await saveAgent(agent.id, { update: draft => {
+            if (!draft) return null;
+            draft.settings = setPlotCompassObjective(draft.settings, identity, scope || draft.settings?.plotCompassScope, nextObjective);
+            return draft;
+        } });
         if (!isMessageTargetCurrent(targetMessage, target, messageIndex)) {
             toastr.warning('The chat changed while saving, so the objective was saved but not run.');
             return;
@@ -1063,6 +1050,7 @@ async function handleCompanionAction(event) {
             agentId,
             messageIndex,
             objective: inputField.val(),
+            scope: inputField[0]?.dataset?.plotScope,
             button: $(event.currentTarget),
             inputField,
         });
@@ -1155,6 +1143,10 @@ export function initCompanionCardUi() {
     });
     $(document).on('click', '.ica--companion-action, .ica--companion-control-action', event =>
         runCompanionViewAction(event.currentTarget, () => handleCompanionAction(event)));
+    $(document).on('change', '.ica--companion-card [data-role="plot-compass-scope"]', event => {
+        changePlotCompassScope(event.currentTarget, getAgentById(event.currentTarget.closest('[data-agent-id]')?.dataset.agentId));
+    });
+    $(document).on('keydown', '.ica--companion-card [data-role="plot-compass-objective"]', submitPlotCompassOnEnter);
     // Document-level catch-all: covers cards and any other surface rendering companion
     // bodies. The panel binds its own element-level handler first (to close itself), and
     // its stopPropagation keeps this one from double-inserting.

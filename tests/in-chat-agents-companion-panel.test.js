@@ -46,8 +46,13 @@ describe('companion tracker panel', () => {
             setUiVisibility: jest.fn((element, open, apply) => apply(open)),
         }));
 
+        await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/companion/plot-compass-context.js', () => ({
+            getPlotCompassIdentity: () => ({ avatar: 'character.png', chatId: 'chat-1' }),
+        }));
+
         await jest.unstable_mockModule('../public/script.js', () => ({
             chat,
+            chat_metadata: {},
             getCurrentChatId: jest.fn(() => 'chat-1'),
             getShortModelName: jest.fn(model => String(model ?? '').split('/').pop()),
         }));
@@ -151,6 +156,7 @@ describe('companion tracker panel', () => {
             retryFailedCompanionsOnMessage: jest.fn(async () => retryableCompanionAgents.map(() => ({ status: 'done' }))),
             runAutomaticCompanionsOnMessage: jest.fn(async () => automaticCompanionAgents.map(() => ({ status: 'done' }))),
             runCompanionAgentOnMessage: jest.fn(async () => ({ status: 'done' })),
+            runPlotCompassBeforeConversation: jest.fn(async () => ({ status: 'done' })),
             runCompanionsOnMessage: jest.fn(async () => ({})),
         }));
 
@@ -1370,7 +1376,7 @@ describe('companion tracker panel', () => {
         expect(button.prop).toHaveBeenCalledWith('disabled', false);
     });
 
-    test('saves Plot Compass objective from the panel before rerunning', async () => {
+    test.each(['assistant', 'user', 'empty'])('saves Plot Compass objective and runs with %s messages', async (kind) => {
         const plotCompass = {
             id: 'plot-compass',
             name: 'Plot Compass',
@@ -1381,10 +1387,8 @@ describe('companion tracker panel', () => {
             companion: { trigger: 'auto', displayMode: 'panel' },
         };
         agents = [plotCompass];
-        chat.push({ is_user: true, mes: 'hello' }, { is_user: false, is_system: false, mes: 'latest reply' });
-        companionResultsByMessage.set(chat[1], {
-            'plot-compass': { status: 'done', content: 'Plan', agentName: 'Plot Compass' },
-        });
+        if (kind !== 'empty') chat.push({ is_user: true, mes: 'hello' });
+        if (kind === 'assistant') chat.push({ is_user: false, is_system: false, mes: 'latest reply' });
         const panel = await importPanel();
         const store = await import('../public/scripts/extensions/in-chat-agents/agent-store.js');
         const runner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
@@ -1431,7 +1435,8 @@ describe('companion tracker panel', () => {
 
         expect(plotCompass.settings.plotCompassObjective).toBe('Reach the tower');
         expect(store.saveAgent).toHaveBeenCalledWith('plot-compass', { update: expect.any(Function) });
-        expect(runner.runCompanionAgentOnMessage).toHaveBeenCalledWith('plot-compass', 1);
+        expect(runner.runPlotCompassBeforeConversation.mock.calls).toEqual(kind === 'empty' ? [['plot-compass']] : []);
+        expect(runner.runCompanionAgentOnMessage.mock.calls).toEqual(kind === 'empty' ? [] : [['plot-compass', kind === 'assistant' ? 1 : 0]]);
         expect(inputField.prop).toHaveBeenCalledWith('disabled', true);
         expect(inputField.prop).toHaveBeenCalledWith('disabled', false);
         expect(button.prop).toHaveBeenCalledWith('disabled', true);
