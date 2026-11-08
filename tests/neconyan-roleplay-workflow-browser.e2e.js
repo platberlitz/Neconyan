@@ -128,7 +128,10 @@ for (const phone of [false, true]) {
         }
         expect(errors).toEqual([]);
         await expect(page.locator('.toast-error')).toHaveCount(0);
-        await page.locator('#chat').evaluate(chat => chat.scrollTo({ top: chat.scrollHeight, behavior: 'instant' }));
+        // A saved reply preserves the reader's place until they scroll the chat.
+        await page.locator('#chat').hover();
+        await page.mouse.wheel(0, 2000);
+        await page.locator('[title="Go to bottom of chat"]').click();
         await expect(page.locator('#chat .mes').last()).toBeInViewport({ ratio: 1 });
         const bounds = await page.locator('#chat .mes').last().boundingBox();
         expect(bounds.width).toBeGreaterThan(0);
