@@ -1,6 +1,6 @@
 /* global globalThis, document, getComputedStyle */
 import { expect } from '@playwright/test';
-import { test } from './neconyan-conversation-durable-fixture.js';
+import { acknowledgeActiveSettings, test } from './neconyan-conversation-durable-fixture.js';
 import { settleCssTransitions } from './chat-scroll-regression-helpers.js';
 
 for (const phone of [false, true]) {
@@ -32,6 +32,9 @@ for (const phone of [false, true]) {
         expect(saved.writing.connection.stream).toBe(true);
         await page.reload();
         await page.waitForFunction(() => typeof globalThis.NeconyanShell?.openCreator === 'function');
+        // The shell API exists before startup settings finish loading. Wait for a
+        // real server acknowledgement, or Catelier's global settings save fails.
+        await acknowledgeActiveSettings(page);
         await page.evaluate(async id => globalThis.NeconyanShell.openCreator({ draftId: id }), stored.id);
         await creator.getByRole('button', { name: 'Writing partner', exact: true }).click();
         await creator.getByLabel('What would you like to work on?', { exact: true }).fill('Describe a patient shipwright.');

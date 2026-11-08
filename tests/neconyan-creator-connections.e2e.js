@@ -1,6 +1,6 @@
 /* global globalThis */
 import { expect } from '@playwright/test';
-import { test } from './neconyan-conversation-durable-fixture.js';
+import { acknowledgeActiveSettings, test } from './neconyan-conversation-durable-fixture.js';
 
 for (const phone of [false, true]) {
     test(`Creator saves choices and generates several greetings with fallback on ${phone ? 'phone' : 'desktop'}`, async ({ app }) => {
@@ -45,6 +45,9 @@ for (const phone of [false, true]) {
         expect(saved.writing.connection).toEqual({ profile: 'broken', fallbacks: ['durable'], maxTokens: 1234 });
         await page.reload();
         await page.waitForFunction(() => typeof globalThis.NeconyanShell?.openCreator === 'function');
+        // The shell API exists before startup settings finish loading. Wait for a
+        // real server acknowledgement, or Catelier's global settings save fails.
+        await acknowledgeActiveSettings(page);
         await page.evaluate(async id => globalThis.NeconyanShell.openCreator({ draftId: id }), stored.id);
         await creator.getByRole('button', { name: 'Dossier', exact: true }).click();
         await expect(choices.getByRole('checkbox', { name: 'Display name', exact: true })).not.toBeChecked();
