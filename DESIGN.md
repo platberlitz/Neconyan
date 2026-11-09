@@ -104,10 +104,15 @@ The accent is the user's choice, not ginger. `--neco-ginger` reads the theme's q
 - Error pages: Unauthorized (401) and Invalid CSRF (403) with the backflipping cat and troubleshooting steps.
 ## Catline icons
 
-I use Catline SVGs for interface icons, with small ears or curled tails around familiar action shapes. The action still needs to read at 16px. Keep the existing control size and accessible label; colour comes from `currentColor`.
+I use Catline SVGs for interface icons. The action comes first and has to read at 16px; the cat is part of the shape, never a mark stuck beside it. Keep the existing control size and accessible label; colour comes from `currentColor`.
+
+- Round things become a cat head with two soft ears: status circles, faces, people, the clock, the globe and the search lens.
+- Boxes grow an ear at each top corner: screens, windows, tables, speech bubbles, calendars and toggles. Folders, books, the bin and the clipboard have a pair of ears peeking over the top edge.
+- Arrows, chevrons, text formatting and other plain glyphs stay undecorated and match their Kittyless counterparts. A tail appears only where it joins the shape, as on the star, the plug and the paper plane.
+- Corners are rounded and every ear comes as a pair. Don't add a lone ear tick or a loose tail to mark something as a cat icon.
 
 - Drawings and compatible `fa-*` names live in `scripts/catline-icons.js`. The class names remain so saved choices, extensions and changing button states keep working without an icon font.
-- Each drawing has a plain counterpart for Kittyless. Keep both on the same 24px grid with rounded, 2px strokes. Stop and the cat paw use solid fills; Stop keeps its square body with ears above it.
+- Each drawing has a plain counterpart for Kittyless. Keep both on the same 24px grid with rounded, 2px strokes. Stop, the cat paw and the plug use solid fills; Stop keeps its square body with ears above it. Keep every drawing inside the 24px artboard, stroke included.
 - The shared mask styling enlarges drawings by 10% around their centre without changing their layout boxes or touch targets.
 - Run `node scripts/build-catline-icons.js` after editing the source. It writes the SVGs, picker catalogue and CSS map, with content-based asset versions. Don't edit those generated files directly.
 - Use `fa-solid fa-<name>` on the existing icon element. CSS-only marks use `--neco-icon: var(--neco-svg-<name>)` and the shared mask rules in `public/css/neconyan-icons.css`.
