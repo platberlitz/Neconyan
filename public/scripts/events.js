@@ -16,6 +16,7 @@ export const event_types = {
     MORE_MESSAGES_LOADED: 'more_messages_loaded',
     IMPERSONATE_READY: 'impersonate_ready',
     CHAT_CHANGED: 'chat_id_changed',
+    CHAT_INJECTIONS_CHANGED: 'chat_injections_changed',
     // TODO: Naming convention is inconsistent with other events
     CHAT_LOADED: 'chatLoaded',
     GENERATION_AFTER_COMMANDS: 'GENERATION_AFTER_COMMANDS',

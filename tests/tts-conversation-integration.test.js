@@ -116,6 +116,41 @@ afterEach(() => {
 });
 
 describe('TTS Conversation integration', () => {
+    test('the speech queue worker starts once when enabled and stops when disabled', () => {
+        const context = createTtsContext({
+            extension_settings: { tts: { enabled: false }, disabledExtensions: [] },
+            ttsWorkerTimer: null,
+            UPDATE_INTERVAL: 1000,
+            setInterval: jest.fn().mockReturnValue(0),
+            clearInterval: jest.fn(),
+            wrapper: { update: jest.fn() },
+        });
+        evaluateInContext('stopTtsWorker', context);
+        evaluateInContext('syncTtsWorker', context);
+        context.syncTtsWorker();
+        expect(context.setInterval).not.toHaveBeenCalled();
+        context.extension_settings.tts.enabled = true;
+        context.syncTtsWorker();
+        context.syncTtsWorker();
+        expect(context.setInterval).toHaveBeenCalledTimes(1);
+        const [tick, interval] = context.setInterval.mock.calls[0];
+        expect(interval).toBe(1000);
+        tick();
+        expect(context.wrapper.update).toHaveBeenCalledTimes(1);
+        context.extension_settings.tts.enabled = false;
+        context.syncTtsWorker();
+        expect(context.clearInterval).toHaveBeenCalledWith(0);
+        expect(context.ttsWorkerTimer).toBeNull();
+        context.extension_settings.tts.enabled = true;
+        context.syncTtsWorker();
+        expect(context.setInterval).toHaveBeenCalledTimes(2);
+        context.extension_settings.disabledExtensions.push('tts');
+        context.syncTtsWorker();
+        context.syncTtsWorker();
+        expect(context.clearInterval).toHaveBeenCalledTimes(2);
+        expect(context.ttsWorkerTimer).toBeNull();
+    });
+
     test('saved narration queues every part in order at its admitted playback speed', async () => {
         const conversationTts = await importConversationTts();
         const { context, listeners } = preparedPlaybackContext();
@@ -867,6 +902,7 @@ describe('TTS Conversation integration', () => {
             extension_settings: { tts: { enabled: false } },
             saveSettingsDebounced: jest.fn(),
             updateUiAudioPlayState: jest.fn(),
+            syncTtsWorker: jest.fn(),
         });
         evaluateInContext('onEnableClick', context);
 
