@@ -108,7 +108,7 @@ I use Catline SVGs for interface icons. The action comes first and has to read a
 
 - Round things become a cat head with two soft ears: status circles, faces, people, the clock, the globe and the search lens.
 - Boxes grow an ear at each top corner: screens, windows, tables, speech bubbles, calendars and toggles. Folders, books, the bin and the clipboard have a pair of ears peeking over the top edge.
-- Arrows, chevrons, text formatting and other plain glyphs stay undecorated and match their Kittyless counterparts. A tail appears only where it joins the shape, as on the star, the plug and the paper plane.
+- Arrows, chevrons, text formatting and other plain glyphs stay undecorated and match their Kittyless counterparts. A tail appears only where it joins the shape, as on the star, the plug, the paper plane and the bug.
 - Corners are rounded and every ear comes as a pair. Don't add a lone ear tick or a loose tail to mark something as a cat icon.
 
 - Drawings and compatible `fa-*` names live in `scripts/catline-icons.js`. The class names remain so saved choices, extensions and changing button states keep working without an icon font.
