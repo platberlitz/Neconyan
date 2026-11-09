@@ -1734,24 +1734,89 @@ body.neconyan .ica--plot-objective-composer {
     display: grid;
     gap: 8px;
     min-width: 0;
+    container-type: inline-size;
 }
-body.neconyan .ica--plot-objective-layer {
-    display: grid;
-    min-width: 0;
-    padding: 6px 8px;
+body.neconyan .ica--plot-objective-list {
     border: 1px solid var(--neco-border);
     border-radius: 8px;
     background: var(--neco-surface);
 }
+body.neconyan .ica--plot-objective-layer {
+    display: grid;
+    min-width: 0;
+    padding: 4px 8px 8px;
+}
+body.neconyan .ica--plot-objective-layer + .ica--plot-objective-layer {
+    border-top: 1px solid var(--neco-border);
+}
 body.neconyan .ica--plot-objective-layer .checkbox_label {
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-start;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
     min-height: 44px;
     margin: 0;
+    line-height: 1.25;
+}
+body.neconyan .ica--plot-objective-layer input[type='checkbox'] {
+    --neconyan-control-radius: 4px;
+    width: 18px;
+    height: 18px;
+    min-width: 18px;
+    min-height: 18px;
+    margin: 0;
+    padding: 0;
+    flex: 0 0 18px;
+    border-radius: 4px;
+}
+body.neconyan .ica--plot-objective-layer input[type='checkbox']::before {
+    width: 8px;
+    height: 4.5px;
+    border: solid var(--neco-on-accent);
+    border-width: 0 0 2px 2px;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    transform: translateY(-0.5px) rotate(-45deg) scale(0);
+}
+body.neconyan .ica--plot-objective-layer input[type='checkbox']:checked {
+    border-color: var(--neco-ginger);
+    background: var(--neco-ginger);
+}
+body.neconyan .ica--plot-objective-layer input[type='checkbox']:checked::before {
+    transform: translateY(-0.5px) rotate(-45deg) scale(1);
 }
 body.neconyan .ica--plot-objective-layer textarea {
+    box-sizing: border-box;
     width: 100%;
     min-width: 0;
     min-height: 44px;
+    max-height: 12rem;
+    height: auto;
+    margin: 0;
+    field-sizing: content;
     resize: vertical;
+}
+body.neconyan .ica--plot-objective-layer .ica--textarea-fullscreen-wrapper textarea {
+    padding-inline-end: 50px;
+}
+body.neconyan .ica--plot-objective-layer .ica--textarea-fullscreen-toggle {
+    --sb-control-icon-physical-size: 44px;
+    top: 0;
+    right: 0;
+    min-width: 44px;
+    min-height: 44px;
+    margin: 0;
+}
+@container (min-width: 480px) {
+    body.neconyan .ica--plot-objective-layer {
+        grid-template-columns: minmax(130px, 0.7fr) minmax(0, 2fr);
+        align-items: start;
+        gap: 8px;
+        padding: 4px 8px;
+    }
 }
 body.neconyan .ica--plot-objective-composer .ica--plot-objective-save {
     min-height: 44px;

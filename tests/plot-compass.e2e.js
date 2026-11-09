@@ -7,6 +7,50 @@ import { startNativeReply } from './native-roleplay-helpers.js';
 
 test.setTimeout(300000);
 
+async function expectCompactObjectives(composer, { wide = false, editor = false } = {}) {
+    const layout = await composer.evaluate(root => {
+        const list = root.querySelector('.ica--plot-objective-list');
+        const bounds = element => {
+            const { x, y, width, height, right, bottom } = element.getBoundingClientRect();
+            return { x, y, width, height, right, bottom };
+        };
+        return {
+            list: bounds(list),
+            layers: [...list.querySelectorAll('.ica--plot-objective-layer')].map(layer => {
+                const label = layer.querySelector('label');
+                const field = layer.querySelector('textarea');
+                const expand = layer.querySelector('.ica--textarea-fullscreen-toggle');
+                return { layer: bounds(layer), label: bounds(label), checkbox: bounds(label.querySelector('input')),
+                    checkboxRadius: getComputedStyle(label.querySelector('input')).borderTopLeftRadius,
+                    text: bounds(label.querySelector('span')), field: bounds(field),
+                    direction: getComputedStyle(label).flexDirection, resize: getComputedStyle(field).resize,
+                    expand: expand ? bounds(expand) : null };
+            }),
+        };
+    });
+    expect(layout.layers).toHaveLength(3);
+    expect(layout.list.height).toBeLessThanOrEqual(wide ? 200 : 315);
+    for (const { layer, label, checkbox, checkboxRadius, text, field, direction, resize, expand } of layout.layers) {
+        expect(direction).toBe('row');
+        expect(label.height).toBeGreaterThanOrEqual(44);
+        expect(checkbox.width).toBe(18);
+        expect(checkbox.height).toBe(18);
+        expect(checkboxRadius).toBe('4px');
+        expect(field.height).toBeGreaterThanOrEqual(44);
+        expect(text.x).toBeGreaterThanOrEqual(checkbox.right);
+        expect(field.x).toBeGreaterThanOrEqual(layer.x);
+        expect(field.right).toBeLessThanOrEqual(layer.right + 1);
+        expect(resize).toBe('vertical');
+        if (wide) expect(field.x).toBeGreaterThanOrEqual(label.right);
+        else expect(field.y).toBeGreaterThanOrEqual(label.bottom - 1);
+        if (editor) {
+            expect(expand.width).toBeGreaterThanOrEqual(44);
+            expect(expand.height).toBeGreaterThanOrEqual(44);
+            expect(expand.bottom).toBeLessThanOrEqual(field.bottom + 1);
+        }
+    }
+}
+
 for (const phone of [true, false]) {
     test(`Plot Compass plans before a reply on ${phone ? 'phone' : 'desktop'}`, async ({ app }) => {
         const baseline = process.env.PLOT_COMPASS_BASELINE_ROOT;
@@ -73,6 +117,27 @@ for (const phone of [true, false]) {
         await expect(field('global')).toHaveValue('Keep a hopeful tone');
         await expect(field('character')).toHaveValue('Reveal the family secret');
         await expect(objective).toHaveValue('Find the missing letter');
+        await expectCompactObjectives(section.locator('.ica--plot-objective-composer'));
+        await toggle('global').focus();
+        await page.keyboard.press('Space');
+        await expect(toggle('global')).not.toBeChecked();
+        await expect(toggle('character')).toBeChecked();
+        await page.keyboard.press('Space');
+        await expect(toggle('global')).toBeChecked();
+        const longObjective = 'Keep developing the characters and their conversations. '.repeat(8);
+        await field('global').fill(longObjective);
+        await expect(field('global')).toHaveValue(longObjective);
+        const longField = await field('global').evaluate(input => ({ client: input.clientHeight, scroll: input.scrollHeight,
+            max: parseFloat(getComputedStyle(input).maxHeight), sizing: getComputedStyle(input).fieldSizing }));
+        if (longField.sizing === 'content') expect(longField.client).toBeGreaterThan(44);
+        expect(longField.client).toBeLessThanOrEqual(longField.max);
+        // Browsers without content sizing keep the long text editable and scrollable.
+        const fixedSizing = await page.addStyleTag({ content: 'body.neconyan .ica--plot-objective-layer textarea { field-sizing: fixed; }' });
+        const fallback = await field('global').evaluate(input => ({ client: input.clientHeight, scroll: input.scrollHeight }));
+        expect(fallback.scroll).toBeGreaterThan(fallback.client);
+        await expect(field('global')).toHaveValue(longObjective);
+        await fixedSizing.evaluate(style => style.remove());
+        await field('global').fill('Keep a hopeful tone');
         await objective.press('Enter');
         await expect(section).toContainText('Bring a sealed letter into the scene.', { timeout: 30000 });
         await expect(section).toContainText('Before the conversation');
@@ -140,7 +205,15 @@ for (const phone of [true, false]) {
         await editor.locator('[data-role="plot-compass-objective"][data-plot-scope="chat"]').fill('Find the secret passage');
         await editor.locator('[data-role="plot-compass-enabled"][data-plot-scope="global"]').uncheck();
         await editor.locator('#ica--plot-compass-objective-row').scrollIntoViewIfNeeded();
+        await expectCompactObjectives(editor.locator('.ica--plot-objective-composer'), { wide: !phone, editor: true });
         await page.screenshot({ path: new URL(`../screenshots/plot-compass-editor-${phone ? 'phone' : 'desktop'}-after.png`, import.meta.url).pathname, scale: 'css' });
+        await editor.locator('.ica--plot-objective-layer').first().locator('.ica--textarea-fullscreen-toggle').click();
+        const expanded = page.locator('dialog.popup:visible').filter({ has: page.locator('.maximized_textarea') });
+        await expect(expanded.locator('.maximized_textarea')).toHaveValue('Keep a hopeful tone');
+        await expanded.locator('.maximized_textarea').fill('Keep a hopeful tone, even here');
+        await expanded.locator('.popup-button-ok').click();
+        await expect(editor.locator('[data-role="plot-compass-objective"][data-plot-scope="global"]')).toHaveValue('Keep a hopeful tone, even here');
+        await editor.locator('[data-role="plot-compass-objective"][data-plot-scope="global"]').fill('Keep a hopeful tone');
         await page.locator('dialog.popup:visible .popup-button-ok').click();
         await expect(editor).toBeHidden();
         await page.evaluate(async () => (await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js')).openCompanionPanel());
@@ -251,6 +324,14 @@ for (const phone of [true, false]) {
                 return contrastRatio(rgb(style.color), rgb(style.backgroundColor));
             });
             expect(ratio, `${accent ?? 'default'} button contrast`).toBeGreaterThanOrEqual(4.5);
+            const checkboxRatio = await toggle('global').evaluate(async input => {
+                const { contrastRatio } = await import('/scripts/theme-contrast.js');
+                const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
+                const context = canvas.getContext('2d');
+                const rgb = colour => { context.fillStyle = colour; context.fillRect(0, 0, 1, 1); return [...context.getImageData(0, 0, 1, 1).data].slice(0, 3); };
+                return contrastRatio(rgb(getComputedStyle(input, '::before').borderLeftColor), rgb(getComputedStyle(input).backgroundColor));
+            });
+            expect(checkboxRatio, `${accent ?? 'default'} checkbox contrast`).toBeGreaterThanOrEqual(4.5);
         }
     });
 }

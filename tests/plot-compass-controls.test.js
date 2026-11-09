@@ -11,6 +11,8 @@ describe('Plot Compass controls', () => {
         const html = buildPlotCompassControls({ settings: { plotCompassObjective: 'Saved global' } });
         expect(html.match(/data-role="plot-compass-objective"/g)).toHaveLength(3);
         expect(html.match(/data-role="plot-compass-enabled"/g)).toHaveLength(3);
+        expect(html).toContain('class="ica--plot-objective-list"');
+        expect(html.match(/rows="1"/g)).toHaveLength(3);
         expect(html).not.toContain('<select');
         expect(html).toContain('Saved global');
         expect(html).toContain('This character card');
