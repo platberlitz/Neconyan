@@ -53,7 +53,11 @@ test.describe('frontend performance smoke', () => {
             const coreAssetBytes = Object.fromEntries(expectedCoreAssetPaths.map(assetPath => [assetPath, 0]));
 
             for (const resource of resources) {
-                const assetPath = new browserGlobal.URL(resource.name).pathname;
+                const resourcePath = new browserGlobal.URL(resource.name).pathname;
+                // Production styles use content-hashed paths; measure the same core assets in both modes.
+                const assetPath = resourcePath.startsWith('/frontend-assets/')
+                    ? resourcePath.replace(/^\/frontend-assets\//, '/').replace(/-[a-f0-9]{8,}(\.[a-z0-9]+)$/i, '$1')
+                    : resourcePath;
                 if (Object.prototype.hasOwnProperty.call(coreAssetBytes, assetPath)) {
                     coreAssetBytes[assetPath] = Math.max(
                         coreAssetBytes[assetPath],

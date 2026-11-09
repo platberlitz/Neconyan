@@ -112,7 +112,7 @@ async function assertSwitchAppearance(page) {
         expect(value.background).toBe('rgba(0, 0, 0, 0)');
         expect(value.border).toBe('0px');
         expect(value.padding).toBe('0px');
-        expect(value.mask).toContain('/img/icons/catline/toggle-');
+        expect(value.mask).toMatch(/\/img\/icons\/catline\/sprite\.svg\?v=[a-f0-9]+#toggle-(?:on|off)"\)$/);
     });
     expect(measured[1].opacity).toBeLessThan(1);
     console.log('PROMPT_SWITCH_APPEARANCE ' + JSON.stringify(measured));
