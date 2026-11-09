@@ -27,7 +27,7 @@ body.neconyan:not(.sbterm) #right-nav-panel.openDrawer #rm_print_characters_bloc
 }
 
 body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block.group_overlay_mode_select > :is(.character_select, .group_select).flex-container.character_selected::after {
-    content: '\f00c' / '';
+    --neco-icon: var(--neco-svg-square-check);
     position: absolute;
     inset: auto 8px 8px auto;
     width: 24px;
@@ -35,9 +35,10 @@ body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block.group_ove
     display: grid;
     place-items: center;
     border-radius: var(--sb-radius-sm);
-    background: var(--neco-ink);
-    color: var(--neco-canvas);
-    font: 900 16px 'Font Awesome 6 Free';
+    background: currentColor;
+    color: var(--neco-ink);
+    filter: drop-shadow(0 1px 2px var(--neco-canvas));
+    font-size: 16px;
     pointer-events: none;
 }
 
@@ -2755,7 +2756,7 @@ body.neconyan #chat .mes_reasoning {
 }
 
 /* Toasts wear the Neconyan panel look: solid surface, ink text, one accent stripe per type
-   and a Font Awesome glyph instead of the vendor data-URI icons. */
+   and a Catline SVG instead of the vendor data-URI icons. */
 body.neconyan #toast-container > div {
     position: relative;
     padding: 10px 12px 10px 44px;
@@ -2770,22 +2771,21 @@ body.neconyan #toast-container > div {
     opacity: 1;
 }
 body.neconyan #toast-container > div::before {
-    content: '\f05a';
+    --neco-icon: var(--neco-svg-circle-info);
     position: absolute;
     top: 12px;
     left: 14px;
-    font-family: 'Font Awesome 6 Free';
     font-weight: 900;
     font-size: 16px;
     line-height: 1;
     color: var(--neco-ginger);
 }
 body.neconyan #toast-container > .toast-success { border-left-color: var(--toast-success-accent); }
-body.neconyan #toast-container > .toast-success::before { content: '\f058'; color: var(--toast-success-accent); }
+body.neconyan #toast-container > .toast-success::before { --neco-icon: var(--neco-svg-circle-check); color: var(--toast-success-accent); }
 body.neconyan #toast-container > .toast-error { border-left-color: var(--toast-error-accent); }
-body.neconyan #toast-container > .toast-error::before { content: '\f057'; color: var(--toast-error-accent); }
+body.neconyan #toast-container > .toast-error::before { --neco-icon: var(--neco-svg-circle-xmark); color: var(--toast-error-accent); }
 body.neconyan #toast-container > .toast-warning { border-left-color: var(--toast-warning-accent); }
-body.neconyan #toast-container > .toast-warning::before { content: '\f071'; color: var(--toast-warning-accent); }
+body.neconyan #toast-container > .toast-warning::before { --neco-icon: var(--neco-svg-triangle-exclamation); color: var(--toast-warning-accent); }
 body.neconyan #toast-container .toast-title { color: var(--neco-ink); font-weight: 700; }
 body.neconyan #toast-container .toast-message { color: var(--neco-ink); }
 body.neconyan #toast-container .toast-close-button { color: var(--neco-muted); opacity: 1; }
@@ -3017,7 +3017,7 @@ body.neconyan #right-nav-panel[data-menu-type='world-info'] .neconyan-character-
 body.neconyan .neconyan-character-filters { min-width: 0; }
 body.neconyan .neconyan-character-filters > summary { cursor: pointer; min-height: 44px; padding: 10px 0; display: flex; align-items: center; gap: 8px; color: var(--neco-ink); list-style: none; }
 body.neconyan .neconyan-character-filters > summary::-webkit-details-marker { display: none; }
-body.neconyan .neconyan-character-filters > summary::after { content: '\f078'; margin-left: auto; font-family: 'Font Awesome 6 Free'; font-weight: 900; color: var(--neco-muted); }
+body.neconyan .neconyan-character-filters > summary::after { --neco-icon: var(--neco-svg-chevron-down); margin-left: auto; color: var(--neco-muted); }
 body.neconyan .neconyan-character-filters[open] { padding-bottom: 8px; }
 body.neconyan .neconyan-character-filters #character_sort_order { width: auto; max-width: 100%; min-width: 160px; }
 

@@ -99,7 +99,7 @@ describe('tooling UI hydration wiring', () => {
         expect(source).toContain('element.style.gridTemplateRows = \'auto\'');
         expect(source).toContain('.mes_reasoning_header_title, .ica--companion-title, .ica--companion-title > span, .ica--companion-meta, .ica--companion-summary-spacer');
         expect(source).toContain('element.style.width = \'auto\'');
-        expect(source).toContain('style.textContent = iconFontStyle');
+        expect(source).toContain('await inlineMessageScreenshotImages(surface)');
         expect(source).toContain('const maxCanvasSide = mobileCapture ? 16_384 : 32_767');
         expect(source).toContain('maxCanvasSide / Math.max(1, clonedSurface.scrollWidth)');
         expect(source).toContain('maxCanvasSide / Math.max(1, clonedSurface.scrollHeight)');
@@ -152,18 +152,17 @@ describe('tooling UI hydration wiring', () => {
         expect(source).toContain('await getBase64Async(await response.blob())');
         expect(source).toContain('image.srcset = \'\'');
         expect(source).toContain('image.removeAttribute(\'src\')');
-        expect(source).toContain('pseudoImages.push({ content, element, pseudoElement, sources })');
+        expect(source).toContain('pseudoImages.push({ content, element, pseudoElement, sources, property })');
         expect(source).toContain('inlineContent = \'none\'');
         expect(source).toContain('data-sb-screenshot-pseudo-${pseudoName}');
         expect(source).toContain('clearTimeout(abortTimer)');
     });
 
-    test('embeds the local icon font for foreign-object rendering', () => {
-        const source = getFunctionSource('getMessageScreenshotIconFontStyle');
-
-        expect(source).toContain('fetch(\'/webfonts/fa-solid-900.woff2\', { signal: abortController.signal })');
-        expect(source).toContain('font-family: \'Font Awesome 6 Free\'');
-        expect(source).toContain('getBase64Async');
+    test('embeds SVG masks for foreign-object rendering', () => {
+        const source = getFunctionSource('inlineMessageScreenshotImages');
+        expect(source).toContain('[\'content\', \'mask-image\']');
+        expect(source).toContain('-webkit-mask-image: ${inlineContent}');
+        expect(source).toContain('await fetchInlineSource(source)');
     });
 
     test('renders message screenshots inside the chat layout context', () => {

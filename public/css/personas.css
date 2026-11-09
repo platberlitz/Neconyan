@@ -919,15 +919,14 @@ body.neconyan #PersonaManagement #persona-management-block {
 }
 
 #PersonaManagement .persona-appendices-block > summary::after {
-    content: '\f078';
-    font-family: 'Font Awesome 6 Free';
+    --neco-icon: var(--neco-svg-chevron-down);
     font-weight: 900;
     font-size: 11px;
     color: var(--neco-muted);
 }
 
 #PersonaManagement .persona-appendices-block[open] > summary::after {
-    content: '\f077';
+    --neco-icon: var(--neco-svg-chevron-up);
     color: var(--neco-ginger);
 }
 

@@ -104,7 +104,7 @@ async function assertSwitchAppearance(page) {
             const button = document.querySelector(`[data-pm-identifier="${id}"] .prompt-manager-toggle-action`);
             const style = getComputedStyle(button);
             return { id, colour: rgb(style.color), expected: rgb(id === 'pin-a' ? getComputedStyle(document.documentElement).getPropertyValue('--SmartThemeQuoteColor') : getComputedStyle(button.parentElement).color),
-                background: style.backgroundColor, border: style.borderTopWidth, padding: style.padding, opacity: Number(style.opacity), font: style.fontFamily };
+                background: style.backgroundColor, border: style.borderTopWidth, padding: style.padding, opacity: Number(style.opacity), mask: getComputedStyle(button, '::before').maskImage };
         });
     });
     measured.forEach(value => {
@@ -112,7 +112,7 @@ async function assertSwitchAppearance(page) {
         expect(value.background).toBe('rgba(0, 0, 0, 0)');
         expect(value.border).toBe('0px');
         expect(value.padding).toBe('0px');
-        expect(value.font).toContain('Font Awesome');
+        expect(value.mask).toContain('/img/icons/catline/toggle-');
     });
     expect(measured[1].opacity).toBeLessThan(1);
     console.log('PROMPT_SWITCH_APPEARANCE ' + JSON.stringify(measured));

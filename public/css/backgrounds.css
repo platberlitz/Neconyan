@@ -215,7 +215,6 @@ body.sb-bg-blur #bg_custom {
 .bg_example.locked-background::after,
 .bg_example.selected-background::before,
 #Backgrounds.bg-selection-mode #bg_menu_content .bg_example.folder-group-selected::before {
-    font-family: 'Font Awesome 6 Free';
     font-weight: 900;
     position: absolute;
     z-index: 4;
@@ -225,14 +224,14 @@ body.sb-bg-blur #bg_custom {
 
 .bg_example.selected-background::before,
 #Backgrounds.bg-selection-mode #bg_menu_content .bg_example.folder-group-selected::before {
-    content: '\f00c';
+    --neco-icon: var(--neco-svg-check);
     top: 5px;
     color: var(--white100);
     font-size: calc(var(--mainFontSize) * 0.9);
 }
 
 .bg_example.locked-background::after {
-    content: '\f023';
+    --neco-icon: var(--neco-svg-lock);
     bottom: 5px;
     right: 5px;
     color: var(--golden);

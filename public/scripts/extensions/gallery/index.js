@@ -222,6 +222,7 @@ async function initGallery(items, url) {
     const gallery = $('#dragGallery');
     gallery.addClass(nonce);
     gallery.nanogallery2({
+        icons: (await import('./icons.js')).galleryIcons,
         'items': items,
         thumbnailWidth: 'auto',
         thumbnailHeight: thumbnailHeight,

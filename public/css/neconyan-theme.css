@@ -509,8 +509,7 @@ h3:not(.popup h3):not(#chat h3) {
 }
 
 .prompt_order.is-sampler-order-locked > div::after {
-    content: "\f023";
-    font-family: "Font Awesome 6 Free";
+    --neco-icon: var(--neco-svg-lock);
     font-weight: 900;
 }
 

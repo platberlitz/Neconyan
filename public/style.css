@@ -587,9 +587,9 @@ input[type='checkbox']:focus-visible {
     top: 50%;
     right: 7px;
     transform: translateY(-50%);
-    font-size: calc(var(--mainFontSize) * 0.7);
-    width: calc(var(--mainFontSize) * 0.7);
-    height: calc(var(--mainFontSize) * 0.7);
+    font-size: max(16px, calc(var(--mainFontSize) * 0.7));
+    width: 1em;
+    height: 1em;
 }
 
 .mes_reasoning_details:not([open]) .mes_reasoning_arrow {
@@ -3326,19 +3326,18 @@ select option[disabled]:not(:checked) {
 }
 
 .menu_button.toggleable::before {
-    font-family: "Font Awesome 6 Free";
     margin-left: 10px;
     position: absolute;
     left: 0;
 }
 
 .menu_button.toggleable.toggled::before {
-    content: "\f00c";
+    --neco-icon: var(--neco-svg-check);
     color: var(--active);
 }
 
 .menu_button.toggleable:not(.toggled)::before {
-    content: "\f00d";
+    --neco-icon: var(--neco-svg-xmark);
     color: var(--fullred);
 }
 
@@ -6540,7 +6539,7 @@ body:not(.movingUI) .drawer-content.maximized {
 
 .paginationjs-pages ul li a {
     padding: 0.25em;
-    font-family: 'Font Awesome 6 Free';
+    font-family: inherit;
     text-decoration: none;
     color: var(--SmartThemeBodyColor);
     border: 1px solid var(--SmartThemeBorderColor);

@@ -639,11 +639,10 @@ img.expression.default {
 }
 
 #expressions_container details > summary::after {
-    content: '\f078';
+    --neco-icon: var(--neco-svg-chevron-down);
     margin-left: auto;
-    padding-left: 12px;
+    margin-inline-start: 12px;
     color: var(--neco-muted, var(--SmartThemeBodyColor));
-    font-family: 'Font Awesome 6 Free';
     font-size: 12px;
     font-weight: 900;
     transition: rotate 160ms ease;

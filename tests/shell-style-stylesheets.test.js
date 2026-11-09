@@ -367,9 +367,12 @@ describe('Hide cats works with every shell style', () => {
     });
 
     test('it hides the cats, and swaps only Calico\'s wallpaper for the railway', () => {
-        for (const piece of ['.neconyan-whiskers', '.neconyan-home-cat', '.neconyan-message-sleeper', '.neconyan-startup-cat', '.neconyan-cat-panel, .neconyan-assistant-row', '#options::before', 'content: \'\\f544\'']) {
+        for (const piece of ['.neconyan-whiskers', '.neconyan-home-cat', '.neconyan-message-sleeper', '.neconyan-startup-cat', '.neconyan-cat-panel, .neconyan-assistant-row', '#options::before']) {
             expect(stripped).toContain(piece);
         }
+        const iconMap = readSource('public', 'css', 'neconyan-icons-map.css');
+        expect(iconMap).toMatch(/:root\[data-sb-kittyless='true'\][\s\S]*?--neco-svg-cat: url\('[^']*\/cat-plain\.svg/);
+        expect(iconMap).toMatch(/:root\[data-sb-kittyless='true'\][\s\S]*?--neco-svg-paw: url\('[^']*\/paw-plain\.svg/);
         expect(stripped).toContain(':root[data-sb-kittyless=\'true\']:is(:not([data-sb-theme]), [data-sb-theme=\'calico\'], [data-sb-theme=\'kittyless\']) body.neconyan::before');
         expect(stripped).toContain('shell-kittyless.webp');
         expect(readSource('public', 'css', 'shell-styles', 'kittyless.css')).not.toContain('shell-kittyless.webp');

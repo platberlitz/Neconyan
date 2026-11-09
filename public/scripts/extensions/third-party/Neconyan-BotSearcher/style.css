@@ -751,8 +751,7 @@ body.neconyan .sbbs-root :is(.sbbs-file-actions, .sbbs-named-searches, .sbbs-sho
 }
 
 .sbbs-root :is(.sbbs-file-actions, .sbbs-named-searches, .sbbs-shortlist, .sbbs-inside, .sbbs-detail-tags) > summary::after {
-    content: '\f078';
-    font-family: 'Font Awesome 6 Free';
+    --neco-icon: var(--neco-svg-chevron-down);
     font-weight: 900;
     font-size: 0.72rem;
     color: var(--sbbs-muted);
@@ -1099,16 +1098,16 @@ body.neconyan .sbbs-root .sbbs-card button.sbbs-card-open:focus-visible,
 }
 
 .sbbs-root[data-selecting="true"] .sbbs-card-open[aria-pressed="true"]::after {
-    content: '\f00c';
-    font-family: 'Font Awesome 6 Free';
+    --neco-icon: var(--neco-svg-square-check);
     font-weight: 900;
     font-size: 0.72rem;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--sbbs-accent);
-    border-color: var(--sbbs-accent);
-    color: var(--sbbs-on-accent);
+    background: currentColor;
+    border: 0;
+    color: var(--sbbs-accent);
+    filter: drop-shadow(0 1px 2px var(--sbbs-surface));
 }
 
 .sbbs-card-img {
@@ -1961,8 +1960,7 @@ p.sbbs-intake-warn,
 }
 
 .sbbs-account-details > summary::after {
-    content: '\f078';
-    font-family: 'Font Awesome 6 Free';
+    --neco-icon: var(--neco-svg-chevron-down);
     font-weight: 900;
     font-size: 0.72rem;
     color: var(--sbbs-muted);

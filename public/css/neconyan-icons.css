@@ -1,0 +1,71 @@
+/* Catline SVG masks. fa-* is a compatibility API, not an icon font. */
+.fa, .fa-solid, .fa-regular, .fa-light, .fa-brands, .fas, .far, .fal, .fab {
+    display: var(--fa-display, inline-block);
+    font-style: normal;
+    font-variant: normal;
+    line-height: 1;
+    text-rendering: auto;
+}
+
+:is(.fa, .fa-solid, .fa-regular, .fa-light, .fa-brands, .fas, .far, .fal, .fab)::before,
+.menu_button.toggleable::before,
+.rm_tag_bogus_drilldown .tag:not(:first-child)::before,
+#PersonaManagement .persona-appendices-block > summary::after,
+body.neconyan #toast-container > div::before,
+body.neconyan .neconyan-character-filters > summary::after,
+body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block.group_overlay_mode_select > :is(.character_select, .group_select).flex-container.character_selected::after,
+.prompt_order.is-sampler-order-locked > div::after,
+.neco-lore-keytest-warning::before,
+.neco-lore-keytest-verdict[data-outlook='probabilistic']::before,
+.bg_example.locked-background::after,
+.bg_example.selected-background::before,
+#Backgrounds.bg-selection-mode #bg_menu_content .bg_example.folder-group-selected::before,
+#tag_view_list .neconyan-tag-disclosure-summary::after,
+#expressions_container details > summary::after,
+.ica--more-tools summary::after,
+.ica--companion-quick-links > summary::after,
+.sbbs-root :is(.sbbs-file-actions, .sbbs-named-searches, .sbbs-shortlist, .sbbs-inside, .sbbs-detail-tags) > summary::after,
+.sbbs-root[data-selecting='true'] .sbbs-card-open[aria-pressed='true']::after,
+.sbbs-account-details > summary::after {
+    content: '';
+    display: inline-block;
+    width: 1em;
+    height: 1em;
+    flex: 0 0 1em;
+    vertical-align: -.125em;
+    background-color: currentColor;
+    -webkit-mask: var(--neco-icon, var(--neco-svg-circle-question)) center / contain no-repeat;
+    mask: var(--neco-icon, var(--neco-svg-circle-question)) center / contain no-repeat;
+}
+
+.fa-fw { width: 1.25em; text-align: center; }
+.fa-1x { font-size: 1em; }
+.fa-2x { font-size: 2em; }
+.fa-3x { font-size: 3em; }
+.fa-4x { font-size: 4em; }
+.fa-5x { font-size: 5em; }
+.fa-2xs { font-size: .625em; }
+.fa-xs { font-size: .75em; }
+.fa-sm { font-size: .875em; }
+.fa-lg { font-size: 1.25em; }
+.fa-xl { font-size: 1.5em; }
+.fa-2xl { font-size: 2em; }
+.fa-flip-horizontal { scale: -1 1; }
+.fa-flip-vertical { scale: 1 -1; }
+.fa-rotate-90 { rotate: 90deg; }
+.fa-rotate-180 { rotate: 180deg; }
+.fa-rotate-270 { rotate: 270deg; }
+.fa-spin { animation: neco-icon-spin var(--fa-animation-duration, 2s) linear infinite; }
+.fa-spin-reverse { animation-direction: reverse; }
+.fa-pulse, .fa-spin-pulse { animation: neco-icon-spin 1s steps(8) infinite; }
+.fa-fade { animation: neco-icon-fade var(--fa-animation-duration, 1s) ease-in-out infinite; }
+.fa-ul { list-style: none; margin-left: 2.5em; padding-left: 0; }
+.fa-ul > li { position: relative; }
+.fa-li { position: absolute; left: -2em; width: 2em; text-align: center; }
+.fa-sr-only, .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+@keyframes neco-icon-spin { to { transform: rotate(360deg); } }
+@keyframes neco-icon-fade { 50% { opacity: .4; } }
+@media (prefers-reduced-motion: reduce) {
+    .fa-spin, .fa-spin-reverse, .fa-pulse, .fa-spin-pulse, .fa-fade { animation: none; }
+}

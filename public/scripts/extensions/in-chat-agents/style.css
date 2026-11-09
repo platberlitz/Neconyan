@@ -3482,15 +3482,14 @@ body.neconyan .ica--standalone-title { display: none; }
 }
 
 .ica--more-tools summary::after {
-    content: '\f078';
-    font-family: 'Font Awesome 6 Free';
+    --neco-icon: var(--neco-svg-chevron-down);
     font-size: 0.74em;
     font-weight: 900;
     opacity: 0.62;
 }
 
 .ica--more-tools[open] summary::after {
-    content: '\f077';
+    --neco-icon: var(--neco-svg-chevron-up);
 }
 
 .ica--more-tools-menu {
@@ -3901,8 +3900,7 @@ body.neconyan .ica--standalone-title { display: none; }
 }
 
 .ica--companion-quick-links > summary::after {
-    content: '\f078';
-    font-family: 'Font Awesome 6 Free';
+    --neco-icon: var(--neco-svg-chevron-down);
     font-weight: 900;
     font-size: 0.76em;
     color: var(--ica-muted, var(--SmartThemeEmColor));
@@ -3911,7 +3909,7 @@ body.neconyan .ica--standalone-title { display: none; }
 }
 
 .ica--companion-quick-links[open] > summary::after {
-    content: '\f077';
+    --neco-icon: var(--neco-svg-chevron-up);
 }
 
 .ica--companion-quick-groups {

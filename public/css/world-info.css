@@ -390,8 +390,7 @@
 }
 
 .neco-lore-keytest-warning::before {
-    content: '\f071';
-    font-family: 'Font Awesome 6 Free';
+    --neco-icon: var(--neco-svg-triangle-exclamation);
     font-weight: 900;
     margin-inline-end: 4px;
 }
@@ -412,8 +411,7 @@
 }
 
 .neco-lore-keytest-verdict[data-outlook='probabilistic']::before {
-    content: '\f522';
-    font-family: 'Font Awesome 6 Free';
+    --neco-icon: var(--neco-svg-dice);
     font-weight: 900;
     margin-inline-end: 6px;
 }

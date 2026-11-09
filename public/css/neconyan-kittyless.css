@@ -77,9 +77,7 @@
     background: var(--neco-border);
 }
 
-/* Keep useful navigation icons, with neutral symbols in place of animal glyphs. */
-:root[data-sb-kittyless='true'] body.neconyan .fa-cat::before { content: '\f544'; }
-:root[data-sb-kittyless='true'] body.neconyan .fa-paw::before { content: '\f1d8'; }
+/* Catline's neutral drawings follow data-sb-kittyless in neconyan-icons-map.css. */
 :root[data-sb-kittyless='true'] body.neconyan :is(.sbtw-bunny img, img[src*='user-default.png']) {
     content: url('../img/neconyan/kittyless-avatar.svg');
 }

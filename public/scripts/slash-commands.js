@@ -2874,7 +2874,7 @@ export function initDefaultSlashCommands() {
             ${t`Returns the clicked button label into the pipe or empty string if canceled.`}
         </div>
         <div>
-            ${t`Labels can be simple strings or objects with <code>text</code>, <code>tooltip</code>, and <code>icon</code> (Font Awesome class) properties.`}
+            ${t`Labels can be simple strings or objects with <code>text</code>, <code>tooltip</code>, and <code>icon</code> (Catline icon class, such as <code>fa-check</code>) properties.`}
         </div>
         <div>
             <strong>${t`Example:`}</strong>
@@ -3181,7 +3181,7 @@ export function initDefaultSlashCommands() {
         callback: async () => ((await showFontAwesomePicker()) ?? false).toString(),
         returns: t`The chosen icon name or false if cancelled.`,
         helpString: `
-                <div>${t`Opens a popup with all the available Font Awesome icons and returns the selected icon's name.`}</div>
+                <div>${t`Opens a popup with all the available Catline SVG icons and returns the selected icon's name.`}</div>
                 <div>
                     <strong>${t`Example:`}</strong>
                     <ul>
