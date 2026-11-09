@@ -2744,6 +2744,7 @@ body.neconyan #chat .mes_reasoning_details[open] .mes_reasoning_header {
 body.neconyan #chat .mes_reasoning_summary > span,
 body.neconyan #chat .mes_reasoning_header > .icon-svg { color: var(--neco-muted); }
 body.neconyan #chat .mes_reasoning_details .mes_reasoning_arrow { right: 10px; color: var(--neco-ginger); }
+body.neconyan #chat .mes_reasoning_arrow::before { display: block; }
 body.neconyan #chat .mes_reasoning {
     margin: 0 0 8px;
     padding: 8px 12px;
