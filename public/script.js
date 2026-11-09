@@ -15480,10 +15480,14 @@ async function inlineMessageScreenshotImages(container) {
         // SB: html2canvas materializes generated-content images after its normal image wait.
         [container, ...container.querySelectorAll('*')].forEach(element => {
             ['::before', '::after'].forEach(pseudoElement => {
-                const content = getComputedStyle(element, pseudoElement).content;
-                const sources = Array.from(content.matchAll(/url\((?:"([^"]*)"|'([^']*)'|([^)]*))\)/g));
-                if (sources.length > 0) {
-                    pseudoImages.push({ content, element, pseudoElement, sources });
+                const style = getComputedStyle(element, pseudoElement);
+                // SVG masks must be self-contained inside the exported foreign object too.
+                for (const property of ['content', 'mask-image']) {
+                    const content = style.getPropertyValue(property);
+                    const sources = Array.from(content.matchAll(/url\((?:"([^"]*)"|'([^']*)'|([^)]*))\)/g));
+                    if (sources.length > 0) {
+                        pseudoImages.push({ content, element, pseudoElement, sources, property });
+                    }
                 }
             });
         });
@@ -15506,7 +15510,7 @@ async function inlineMessageScreenshotImages(container) {
                     image.removeAttribute('src');
                 }
             }),
-            ...pseudoImages.map(async ({ content, element, pseudoElement, sources }, index) => {
+            ...pseudoImages.map(async ({ content, element, pseudoElement, sources, property }, index) => {
                 let inlineContent = content;
                 try {
                     for (const sourceMatch of sources) {
@@ -15522,9 +15526,10 @@ async function inlineMessageScreenshotImages(container) {
                 }
 
                 const pseudoName = pseudoElement.slice(2);
-                const attribute = `data-sb-screenshot-pseudo-${pseudoName}`;
+                const attribute = `data-sb-screenshot-pseudo-${pseudoName}-${property}`;
                 element.setAttribute(attribute, String(index));
-                pseudoStyleRules.push(`[${attribute}="${index}"]${pseudoElement} { content: ${inlineContent} !important; }`);
+                const prefixedMask = property === 'mask-image' ? `-webkit-mask-image: ${inlineContent} !important;` : '';
+                pseudoStyleRules.push(`[${attribute}="${index}"]${pseudoElement} { ${property}: ${inlineContent} !important; ${prefixedMask} }`);
             }),
             ...Array.from(container.querySelectorAll('.mes.nn-echo-layout .mes_text')).map(async (text, index) => {
                 let background = getComputedStyle(text, '::before').backgroundImage;
@@ -15547,23 +15552,6 @@ async function inlineMessageScreenshotImages(container) {
     } finally {
         clearTimeout(abortTimer);
     }
-}
-
-let messageScreenshotIconFontStylePromise = null;
-
-async function getMessageScreenshotIconFontStyle() {
-    if (!messageScreenshotIconFontStylePromise) {
-        const abortController = new AbortController();
-        const abortTimer = setTimeout(() => abortController.abort(), 2000);
-        messageScreenshotIconFontStylePromise = fetch('/webfonts/fa-solid-900.woff2', { signal: abortController.signal })
-            .then(response => response.ok ? response.blob() : Promise.reject())
-            .then(getBase64Async)
-            .then(source => `@font-face { font-family: 'Font Awesome 6 Free'; font-style: normal; font-weight: 900; src: url('${source}') format('woff2'); }`)
-            .catch(() => '')
-            .finally(() => clearTimeout(abortTimer));
-    }
-
-    return await messageScreenshotIconFontStylePromise;
 }
 
 let messageScreenshotLibraryPromise = null;
@@ -15767,7 +15755,6 @@ async function renderMessageScreenshotCanvas(startId, endId) {
         await waitForMessageScreenshotAssets(surface);
         surface.querySelectorAll('.mes').forEach(updateMessageSleeperPosition);
         await inlineMessageScreenshotImages(surface);
-        const iconFontStyle = await getMessageScreenshotIconFontStyle();
         // Preserve which boxes size themselves to their content before html2canvas replaces
         // their natural heights with pixels. Nested wrappers must grow when SVG fonts reflow.
         for (const element of surface.querySelectorAll('*')) {
@@ -15811,11 +15798,16 @@ async function renderMessageScreenshotCanvas(startId, endId) {
                 clonedSurface
                     .querySelectorAll('.mes_reasoning_header_title, .ica--companion-title, .ica--companion-title > span, .ica--companion-meta, .ica--companion-summary-spacer')
                     .forEach(element => element.style.width = 'auto');
-                if (iconFontStyle) {
-                    const style = clonedDocument.createElement('style');
-                    style.textContent = iconFontStyle;
-                    clonedSurface.prepend(style);
-                }
+                // Let reasoning headers follow the capture width instead of clipping their disclosure icon.
+                clonedSurface.querySelectorAll('.mes_reasoning_summary, .mes_reasoning_header_block, .mes_reasoning_header').forEach(element => {
+                    element.style.width = element.style.inlineSize = 'auto';
+                    element.style.minWidth = '0';
+                });
+                clonedSurface.querySelectorAll('.mes_reasoning_arrow').forEach(element => {
+                    element.style.removeProperty('inset-inline');
+                    element.style.removeProperty('inset-block');
+                    Object.assign(element.style, { left: 'auto', bottom: 'auto', top: '50%' });
+                });
                 // Keep html2canvas's pseudo-element suppression inside the serialized subtree.
                 clonedSurface.prepend(...clonedDocument.body.querySelectorAll(':scope > style'));
                 clonedDocument.body.replaceChildren(clonedSurface);

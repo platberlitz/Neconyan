@@ -269,8 +269,7 @@
 }
 
 .rm_tag_bogus_drilldown .tag:not(:first-child)::before {
-    font-family: 'Font Awesome 6 Free';
-    content: "\f054";
+    --neco-icon: var(--neco-svg-chevron-right);
     position: absolute;
     left: -1em;
     top: auto;

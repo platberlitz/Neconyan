@@ -58,7 +58,7 @@ body.neconyan:not(.sbterm) #right-nav-panel #neconyan-character-library .neconya
 }
 
 body.neconyan:not(.sbterm) #right-nav-panel #neconyan-character-library .neconyan-character-filters[open] > summary::after {
-    content: '\f077';
+    --neco-icon: var(--neco-svg-chevron-up);
 }
 
 body.neconyan:not(.sbterm) #right-nav-panel #neconyan-character-library #tagList:empty {
@@ -1428,16 +1428,15 @@ body.neconyan:not(.sbterm) #right-nav-panel #sb_character_import_panel #sb_chara
 }
 
 #tag_view_list .neconyan-tag-disclosure-summary::after {
-    content: '\f078';
+    --neco-icon: var(--neco-svg-chevron-down);
     margin-left: auto;
     color: var(--neco-muted);
-    font-family: 'Font Awesome 6 Free';
     font-size: 11px;
     font-weight: 900;
 }
 
 #tag_view_list details[open] > .neconyan-tag-disclosure-summary::after {
-    content: '\f077';
+    --neco-icon: var(--neco-svg-chevron-up);
 }
 
 #tag_view_list .neconyan-tag-disclosure-summary > i {

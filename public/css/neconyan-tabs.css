@@ -5876,7 +5876,7 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
 }
 
 #right-nav-panel.openDrawer.sb-character-editor-fullscreen:is([data-menu-type="character_edit"], [data-menu-type="create"]) .sb-character-editor-fullscreen-toggle i.fa-maximize::before {
-    content: '\f066';
+    --neco-icon: var(--neco-svg-compress);
 }
 
 #right-nav-panel .sb-character-editor-subtab-panels {

@@ -2437,26 +2437,19 @@ export function setDatasetProperty(element, name, value) {
     }
 }
 
-export async function fetchFaFile(name) {
-    const style = document.createElement('style');
-    style.innerHTML = await (await fetch(`/css/${name}`)).text();
-    document.head.append(style);
-    const sheet = style.sheet;
-    style.remove();
-    return [...sheet.cssRules]
-        .filter(rule => (rule instanceof CSSStyleRule && rule.style?.content))
-        .map(rule => rule['selectorText'].split(/,\s*/).map(selector => selector.split('::').shift().slice(1)))
-    ;
+// Retain the exported helper names for extensions with saved fa-* icon choices.
+export async function fetchFaFile() {
+    const response = await fetch('/img/icons/catline/catalogue.json');
+    if (!response.ok) throw new Error('Could not load the Catline icon catalogue');
+    return await response.json();
 }
 
 export async function fetchFa() {
-    return [...new Set((await Promise.all([
-        fetchFaFile('fontawesome.min.css'),
-    ])).flat())];
+    return await fetchFaFile();
 }
 /**
- * Opens a popup with all the available Font Awesome icons and returns the selected icon's name.
- * @prop {string[]} customList A custom list of Font Awesome icons to use instead of all available icons.
+ * Opens the Catline SVG picker and returns a compatible icon class name.
+ * @param {string[][]} [customList] A custom list of icon alias groups.
  * @returns {Promise<string>} The icon name (fa-pencil) or null if cancelled.
  */
 export async function showFontAwesomePicker(customList = null) {
@@ -2499,12 +2492,14 @@ export async function showFontAwesomePicker(customList = null) {
         const grid = document.createElement('div'); {
             grid.classList.add('faPicker');
             for (const fa of faList) {
-                const opt = document.createElement('div'); {
+                const opt = document.createElement('button'); {
+                    opt.type = 'button';
                     fas[fa] = opt;
                     opt.classList.add('menu_button');
                     opt.classList.add('fa-solid');
                     opt.classList.add(fa[0]);
                     opt.title = fa.map(it => it.slice(3)).join(', ');
+                    opt.setAttribute('aria-label', opt.title);
                     opt.dataset.result = POPUP_RESULT.AFFIRMATIVE.toString();
                     opt.addEventListener('click', () => value = fa[0]);
                     grid.append(opt);
