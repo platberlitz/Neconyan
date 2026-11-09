@@ -14,7 +14,7 @@ const { captureRoleplayWorkflowRequest, admitRoleplayWorkflowJob, runRoleplayWor
 const { getJob, recoverJobs, releaseJob, requestCancellation, setJobState, updateJob } = await import('../src/jobs/store.js');
 const { readArtifact, providerStep } = await import('../src/jobs/artifacts.js');
 const { roleplayHash } = await import('../src/roleplay-store.js');
-const { requestRoleplayAgentStop } = await import('../src/generation/roleplay-agent-stop.js');
+const { markRoleplayAgentsFailed, markRoleplayAgentsRefused, requestRoleplayAgentStop } = await import('../src/generation/roleplay-agent-stop.js');
 const { enableMewmoryHiding, rememberSavedChat } = await import('./mewmory-hiding-fixture.js');
 
 const controls = { prompts: [{ identifier: 'main', role: 'system', content: '', system_prompt: true },
@@ -205,19 +205,25 @@ test('a group speaker refuses a browser-local custom macro before dispatch', asy
     assert.equal(count.value, 0);
 });
 
-test('stopping post-reply work in a group saves the current speaker and never starts the next one after recovery', async t => {
+for (const reason of ['owner', 'failed', 'refused']) test(`a group Agent ${reason} stop saves the current speaker and its warning after recovery`, async t => {
     const f = prepared(t, { pathfinder: true });
     updateJob(f.dirs, f.jobId, { state: 'running' });
     await runRoleplayWorkflowJob(f.context());
     const count = { value: 0 };
     await f.completeCandidate(0, { avatar: 'Nova.png', name: 'Nova', modelOverride: '', reply: 'Keep this completed reply.' }, count);
-    assert.equal(requestRoleplayAgentStop(f.context()), true);
+    if (reason === 'owner') assert.equal(requestRoleplayAgentStop(f.context()), true);
+    else {
+        const child = getJob(f.dirs, getJob(f.dirs, f.jobId).children[0]);
+        const mark = reason === 'failed' ? markRoleplayAgentsFailed : markRoleplayAgentsRefused;
+        assert.equal(mark({ ...f.context(), job: child }), true);
+    }
     await assert.rejects(runRoleplayWorkflowJob(f.context(), { beforePublication: () => {
         throw new Error('Lost acknowledgement after saving');
     } }), /Lost acknowledgement/);
     assert.equal(f.records().at(-1).mes, 'Keep this completed reply.');
     const completed = await runRoleplayWorkflowJob(f.context());
     assert.equal(completed.result.status, 'completed');
+    assert.equal(completed.result.agentsFailed, reason === 'failed' ? true : undefined);
     assert.equal(getJob(f.dirs, f.jobId).children.length, 1);
     assert.equal(f.records().length, 5);
     assert.equal(count.value, 1);

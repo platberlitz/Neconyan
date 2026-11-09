@@ -1794,6 +1794,19 @@ test('a saved scan refuses changed settings or a reset before reading new accoun
     await assert.rejects(prepareRoleplayWorldInfo(f.scope, snapshot), { code: 'ROLEPLAY_ACCOUNT_CHANGED' });
 });
 
+test('a settings change with no lorebooks reports reply settings rather than World Info', t => {
+    const f = fixture(t);
+    const filename = path.join(f.scope.directories.root, 'settings.json');
+    fs.writeFileSync(filename, JSON.stringify({ active_character: 'Nova.png' }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const snapshot = captureRoleplayWorldInfo(f.scope, account, f.source(), { avatar: 'Nova.png', maxContext: 100 });
+    assert.deepEqual(Object.values(snapshot.names).flat(), []);
+    fs.writeFileSync(filename, JSON.stringify({ active_character: 'Another.png' }));
+    assert.throws(() => assertRoleplayWorldInfoCurrent(f.scope, snapshot), {
+        code: 'ROLEPLAY_SOURCE_CHANGED', message: 'The saved reply settings changed after the request was accepted.',
+    });
+});
+
 test('a fabricated scan input cannot replace saved chat or lore controls before dispatch', async t => {
     const f = fixture(t);
     const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };

@@ -32,7 +32,7 @@ const controls = { prompts: [{ identifier: 'main', role: 'system', system_prompt
     { identifier: 'chatHistory', marker: true, system_prompt: true }], prompt_order: [{ character_id: 100001,
     order: [{ identifier: 'main', enabled: true }, { identifier: 'worldInfoBefore', enabled: true }, { identifier: 'chatHistory', enabled: true }] }] };
 
-function prepared(t, agents, { effect = 'append', range = { start: 1, count: 1 }, review = false, translation = false, configure = () => {}, globalSettings = {}, imagePolicy = false, previewParent = null, type = 'roleplay.reply' } = {}) {
+function prepared(t, agents, { effect = 'append', range = { start: 1, count: 1 }, review = false, translation = false, configure = () => {}, globalSettings = {}, imagePolicy = false, previewParent = null, type = 'roleplay.reply', lore = true } = {}) {
     const f = fixture(t);
     const directories = f.scope.directories;
     f.records[1].extra = {};
@@ -47,7 +47,7 @@ function prepared(t, agents, { effect = 'append', range = { start: 1, count: 1 }
     }));
     fs.writeFileSync(path.join(directories.worlds, 'Town.json'), JSON.stringify({ entries: { 1: { uid: 1,
         key: ['secret-signal'], keysecondary: [], comment: 'Agent lore', content: 'BOUND_LORE_FROM_AGENT', position: 0 } } }));
-    const settings = { world_info_settings: { world_info: { globalSelect: ['Town'] }, world_info_budget: 200 },
+    const settings = { world_info_settings: { world_info: { globalSelect: lore ? ['Town'] : [] }, world_info_budget: 200 },
         oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:18000/v1' },
         extension_settings: { connectionManager: { profiles: [{ id: 'main', api: 'custom', model: 'fixture', 'api-url': 'http://127.0.0.1:18000/v1' }] },
             inChatAgents: { globalSettings: { enabled: true, appendAgentsExecutionMode: 'parallel', postMainInterceptShowMessageFirst: review, ...globalSettings } },
@@ -908,18 +908,22 @@ test('a translation failure after Agents keeps the finished rewrite', async t =>
     assert.deepEqual(f.saved(), saved);
 });
 
-test('a restarted reply survives an Agent edit made before finalisation', async t => {
+for (const effect of ['append', 'replace', 'continue', 'swipe']) test(`a restarted ${effect} reply keeps its frozen regex after an Agent edit without any lorebooks`, async t => {
     const f = prepared(t, [{ id: 'rewrite', phase: 'post', prompt: 'REWRITE', postProcess: {
         enabled: true, promptTransformEnabled: true, promptTransformMaxTokens: 64,
-    } }]);
+    }, regexScripts: [{ id: 'display', findRegex: '/Raw answer/g', replaceString: '<strong>Formatted answer</strong>',
+        placement: [2], markdownOnly: true }] }], { effect, lore: false });
+    assert.deepEqual(Object.values(f.request.worldInfo.names).flat(), []);
     const file = path.join(f.directories.inChatAgents, 'rewrite.json');
     const crash = new AbortController();
     await assert.rejects(f.run({ signal: crash.signal, generate: paid('main', () => 'Raw answer'), generateAgent: () => {
         crash.abort(new Error('process stopped'));
         throw new Error('process stopped');
     } }), /process stopped/);
+    const display = readArtifact(f.directories, f.jobId, 'roleplay-agent-display').display;
     const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
     raw.prompt = 'EDITED AFTER RESTART';
+    raw.regexScripts[0].replaceString = 'WRONG NEW FORMAT';
     fs.writeFileSync(file + '.tmp', JSON.stringify(raw));
     fs.renameSync(file + '.tmp', file);
 
@@ -929,8 +933,10 @@ test('a restarted reply survives an Agent edit made before finalisation', async 
     assert.equal(mainCalls, 0);
     assert.equal(agentCalls, 0, 'the changed Agent is never dispatched again');
     const saved = f.saved();
-    assert.equal(saved.length, 4);
-    assert.equal(saved.at(-1).mes, 'Raw answer');
+    assert.equal(saved.length, effect === 'append' ? 4 : 3);
+    assert.equal(saved.at(-1).mes, effect === 'continue' ? 'AnswerRaw answer' : 'Raw answer');
+    assert.deepEqual(saved.at(-1).extra.inChatAgents, display);
+    assert.equal(display.nativeRegexScripts[0].script.replaceString, '<strong>Formatted answer</strong>');
     assert.equal(readArtifact(f.directories, f.jobId, 'roleplay-output').agentProof, undefined);
     assert.deepEqual(readArtifact(f.directories, f.jobId, 'roleplay-agent-stop'),
         { intentHash: roleplayHash(f.context().job.intent), reason: 'failed' });
