@@ -171,6 +171,7 @@ describe('Character note libraries per persona', () => {
     test.each([false, true])('edits, names, new notes and deletion are isolated (group: %s)', async group => {
         const { context, chat } = setup({ group });
         const saved = seed(context, group);
+        expect(context.getNoteView('chara', saved()).profiles.map(note => note.id)).toEqual(['tone']);
         context.onCharaNoteOpened('tone');
         context.onNotePromptInput('chara', 'First tone');
         context.onNotePositionChanged('chara', 1);
@@ -181,10 +182,11 @@ describe('Character note libraries per persona', () => {
         context.onNotePromptInput('chara', 'Extra text');
         expect(profiles.resolveActiveNoteProfiles(saved(), 'first.png').map(note => note.prompt)).toEqual(['First tone', 'Extra text']);
         chat.userAvatar = 'second.png';
-        context.onCharaNoteOpened('tone');
-        expect(context.getNoteView('chara', saved()).profile).toMatchObject({ name: 'Tone', prompt: 'Gentle', position: 2 });
-        context.onNotePromptInput('chara', 'Second tone');
-        context.onCharaNoteMixChanged('tone', true);
+        expect(context.getNoteView('chara', saved()).profiles.map(note => note.id)).toEqual(['setting']);
+        expect(context.getNoteView('chara', saved()).profile).toMatchObject({ name: 'Setting', prompt: 'Garden', position: 1 });
+        context.Popup.show.input.mockResolvedValueOnce('Second extra');
+        await context.onNewNoteProfile('chara');
+        context.onNotePromptInput('chara', 'Second extra text');
         context.Popup.show.confirm.mockResolvedValueOnce(1);
         await context.onDeleteNoteProfile('chara');
         expect(profiles.getNoteProfiles(saved(), 'second.png').map(note => note.id)).toEqual(['setting']);
@@ -192,7 +194,7 @@ describe('Character note libraries per persona', () => {
         chat.userAvatar = 'first.png';
         context.onCharaNoteOpened('tone');
         expect(context.getNoteView('chara', saved()).profile).toMatchObject({ name: 'First only', prompt: 'First tone', position: 1 });
-        expect(profiles.getNoteProfiles(saved(), 'first.png')).toHaveLength(3);
+        expect(profiles.getNoteProfiles(saved(), 'first.png')).toHaveLength(2);
         expect(saved().profiles[0].prompt).toBe('Gentle');
     });
 
@@ -220,6 +222,31 @@ describe('Character note libraries per persona', () => {
         expect(saved().personaNoteLibraries['first.png'].profiles[0].prompt).toBe('First tone');
     });
 
+    test.each([false, true])('repairs saved full-list copies and retains owned unticked notes after reload (group: %s)', async group => {
+        const { context, chat } = setup({ group });
+        const saved = seed(context, group);
+        saved().personaNoteLibraries = {
+            'first.png': { profiles: structuredClone(saved().profiles), activeProfile: 'tone', activeProfiles: ['tone'] },
+            'second.png': { profiles: structuredClone(saved().profiles), activeProfile: 'tone', activeProfiles: ['setting'] },
+        };
+        expect(context.getNoteView('chara', saved()).profiles.map(note => note.id)).toEqual(['tone']);
+        context.onCharaNoteMixChanged('tone', false);
+        context.Popup.show.input.mockResolvedValueOnce('Unticked own note');
+        await context.onNewNoteProfile('chara');
+        context.onNotePromptInput('chara', 'Keep my text');
+        context.onCharaNoteMixChanged('created-note', false);
+        if (group) context.chat_metadata = JSON.parse(JSON.stringify(context.chat_metadata));
+        else context.extension_settings.note = JSON.parse(JSON.stringify(context.extension_settings.note));
+        expect(context.getNoteView('chara', saved()).profiles.map(note => note.id)).toEqual(['tone', 'created-note']);
+        expect(profiles.getActiveNoteProfileIds(saved(), 'first.png')).toEqual([]);
+        expect(saved().personaNoteLibraries['first.png'].inheritedProfiles.map(note => note.id)).toEqual(['setting']);
+        chat.userAvatar = 'second.png';
+        expect(context.getNoteView('chara', saved()).profiles.map(note => note.id)).toEqual(['setting']);
+        context.onNotePromptInput('chara', 'Second setting');
+        expect(profiles.captureScopedAuthorsNotes(saved(), null, 'second.png').scoped.notes).toEqual([{ prompt: 'Second setting', position: 1 }]);
+        expect(profiles.getNoteProfiles(saved(), 'first.png')[1].prompt).toBe('Keep my text');
+    });
+
     test.each([false, true])('deleting a persona clears its library and legacy picks (group: %s)', group => {
         const { context, chat } = setup({ group });
         const saved = seed(context, group);
@@ -242,12 +269,13 @@ describe('Character note libraries per persona', () => {
         context.onCharaPerPersonaChanged(true);
         chat.userAvatar = 'second.png';
         expect(profiles.resolveActiveNoteProfiles(saved(), 'second.png')).toMatchObject([{ prompt: 'Garden' }]);
-        expect(profiles.getNoteProfiles(saved(), 'second.png')[0].prompt).toBe('Gentle');
+        expect(profiles.getNoteProfiles(saved(), 'second.png').map(note => note.prompt)).toEqual(['Garden']);
     });
 
     test.each(['onNewNoteProfile', 'onRenameNoteProfile', 'onDeleteNoteProfile'])('%s ignores a dialog completed after switching personas', async handler => {
         const { context, chat } = setup();
         const saved = seed(context, false);
+        saved().personaActiveProfiles['first.png'].push('setting');
         let finish;
         const answer = new Promise(resolve => { finish = resolve; });
         context.Popup.show.input.mockReturnValue(answer);
@@ -259,5 +287,19 @@ describe('Character note libraries per persona', () => {
         expect(saved().profiles).toHaveLength(2);
         expect(saved().profiles[0]).toMatchObject({ name: 'Tone', prompt: 'Gentle' });
         expect(saved().personaNoteLibraries).toBeUndefined();
+    });
+
+    test('first enabling assigns existing notes once, like Conversation collections', () => {
+        const { context, chat } = setup();
+        const saved = seed(context, false);
+        saved().perPersona = false;
+        delete saved().personaActiveProfiles;
+        context.onCharaPerPersonaChanged(true);
+        expect(context.getNoteView('chara', saved()).profiles.map(note => note.id)).toEqual(['tone', 'setting']);
+        chat.userAvatar = 'new.png';
+        expect(context.getNoteView('chara', saved()).profiles.map(note => note.prompt)).toEqual(['']);
+        context.onNotePromptInput('chara', 'New persona only');
+        expect(profiles.resolveActiveNoteProfiles(saved(), 'new.png').map(note => note.prompt)).toEqual(['New persona only']);
+        expect(profiles.getNoteProfiles(saved(), 'first.png').map(note => note.prompt)).toEqual(['Gentle', 'Garden']);
     });
 });

@@ -21,7 +21,6 @@ import {
     getActiveNoteProfileId,
     getActiveNoteProfileIds,
     getNoteProfiles,
-    getNoteProfileStore,
     getPersonaNoteEntry,
     isValidNotePosition,
     resolveActiveNoteProfiles,
@@ -154,7 +153,7 @@ function inProfileOrder(profiles, ids) {
  * Profile fields for a character or persona note, with notes saved before profiles existed read as
  * one Default profile. Character notes (`perPersona`) can use several profiles at once: the shared
  * mix in `activeProfiles`, or a separate collection and mix in `personaNoteLibraries`. Legacy
- * `personaProfiles` and `personaActiveProfiles` selections survive until a persona's first edit.
+ * `personaProfiles` and `personaActiveProfiles` selections identify legacy persona-owned notes.
  */
 function normalizeNoteProfiles(entry, { perPersona = false } = {}) {
     const profiles = getNoteProfiles(entry ?? {}).map(normalizeNoteProfile);
@@ -179,10 +178,11 @@ function normalizeNoteProfiles(entry, { perPersona = false } = {}) {
             ...Object.fromEntries(personaMixes.map(([avatar, list]) => [avatar, inProfileOrder(profiles, list)])),
         };
         state.personaNoteLibraries = Object.fromEntries(Object.entries(getPlainObject(entry?.personaNoteLibraries))
-            .filter(([avatar, library]) => avatar && getNoteProfileStore({ perPersona: true, personaNoteLibraries: { [avatar]: library } }, avatar) === library)
+            .filter(([avatar, library]) => avatar && library && Array.isArray(library.profiles)
+                && library.profiles.some(profile => profile && typeof profile.id === 'string' && profile.id))
             .map(([avatar, library]) => {
                 const normalized = normalizeNoteProfiles(library);
-                return [avatar, { ...normalized, activeProfiles: Array.isArray(library.activeProfiles)
+                return [avatar, { ...library, ...normalized, activeProfiles: Array.isArray(library.activeProfiles)
                     ? inProfileOrder(normalized.profiles, library.activeProfiles) : [normalized.activeProfile] }];
             }));
     }
@@ -552,12 +552,13 @@ function onCharaNoteOpened(profileId) {
 function onCharaPerPersonaChanged(value) {
     const note = getWritableCharacterNote();
     if (!note) return;
+    const adoptShared = !note.perPersona && value;
     if (note.perPersona && !value) {
-        const avatars = new Set([getPersonaAvatar(), ...Object.keys(note.personaProfiles), ...Object.keys(note.personaActiveProfiles)]);
+        const avatars = new Set([getPersonaAvatar(), ...Object.keys(note.personaProfiles), ...Object.keys(note.personaActiveProfiles), ...Object.keys(note.personaNoteLibraries)]);
         for (const avatar of avatars) ensurePersonaNoteLibrary(note, avatar);
     }
     note.perPersona = value;
-    if (value) ensurePersonaNoteLibrary(note, getPersonaAvatar());
+    if (value) ensurePersonaNoteLibrary(note, getPersonaAvatar(), { adoptShared });
     editingCharaProfileId = '';
     commitCharacterNote(note);
 }
