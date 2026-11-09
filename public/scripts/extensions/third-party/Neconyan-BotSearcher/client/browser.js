@@ -366,7 +366,7 @@ function wireBrowser(popup, health, options) {
         dom.go.disabled = Boolean(intent && (!intent.source || !intent.enabled));
         dom.query.setAttribute('enterkeyhint', intent ? 'go' : 'search');
         dom.go.querySelector('i')?.setAttribute('class', intent ? 'fa-solid fa-file-import' : 'fa-solid fa-magnifying-glass');
-        updateJannyNotice(intent ? intent.source : undefined);
+        updateJannyNotice(intent);
         if (!intent) {
             return false;
         }
@@ -843,22 +843,21 @@ function wireBrowser(popup, health, options) {
     /**
      * JannyAI answers searches, but its card downloads sit behind a Cloudflare
      * check that blocks the server until someone passes it in the browser
-     * bridge. Say so before the first import fails, whenever JannyAI can
-     * supply a card: picked as the source, part of a merged search, or a
-     * pasted JannyAI link. Collapsed, so it costs one line until opened.
+     * bridge. Show the hint only when JannyAI is explicitly picked or an
+     * enabled JannyAI link is pasted, not throughout an all-sources search.
      *
-     * @param {any} [urlSource] the source a pasted URL resolved to; undefined
-     *     when the search box holds no URL, null for an unsupported URL
+     * @param {{ source: any, enabled: boolean } | null} [intent] the current
+     *     URL intent; resolve the input when only the selected source changed
      */
-    function updateJannyNotice(urlSource) {
+    function updateJannyNotice(intent = findUrlImport(dom.query.value)) {
         const janny = sources.find((entry) => entry?.id === 'jannyai');
-        const relevant = urlSource !== undefined
-            ? urlSource?.id === 'jannyai'
-            : state.source?.id === 'jannyai'
-                || (Array.isArray(state.source?.merged) && state.source.merged.some((entry) => entry?.id === 'jannyai'));
+        const relevant = intent
+            ? intent.enabled && intent.source?.id === 'jannyai'
+            : state.source?.id === 'jannyai';
         if (!janny || !relevant) {
             if (state.jannyNotice) {
                 state.jannyNotice.hidden = true;
+                state.jannyNotice.open = false;
             }
             return;
         }

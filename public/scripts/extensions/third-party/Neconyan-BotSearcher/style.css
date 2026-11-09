@@ -951,17 +951,42 @@ body.neconyan .sbbs-root :is(.sbbs-file-actions, .sbbs-named-searches, .sbbs-sho
 
 .sbbs-janny-notice {
     display: block;
+    padding: 0;
 }
 
-.sbbs-janny-notice > summary {
+body.neconyan .sbbs-root .sbbs-janny-notice > summary,
+.sbbs-root .sbbs-janny-notice > summary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 44px;
+    padding: 6px 12px;
+    list-style: none;
     cursor: pointer;
     font-weight: 700;
     color: var(--sbbs-ink);
 }
 
+.sbbs-janny-notice > summary::-webkit-details-marker {
+    display: none;
+}
+
+.sbbs-janny-notice > summary::before {
+    content: '\25b8';
+    flex: 0 0 auto;
+}
+
+.sbbs-janny-notice[open] > summary::before {
+    content: '\25be';
+}
+
 .sbbs-janny-notice-text {
-    margin: 6px 0 8px;
+    margin: 0 12px 8px;
     color: var(--sbbs-muted);
+}
+
+.sbbs-janny-notice > .sbbs-setting-account {
+    margin: 0 12px 10px;
 }
 
 .sbbs-direct-notice-text {
