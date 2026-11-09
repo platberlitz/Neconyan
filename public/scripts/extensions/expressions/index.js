@@ -2048,7 +2048,8 @@ function getLastCharacterMessage() {
 
 function removeExpression() {
     $('img.expression').off('error');
-    $('img.expression').prop('src', '');
+    // This runs on every idle check with no chat open, so an image that is already empty is left alone.
+    $('img.expression').filter((_, image) => Boolean(image.getAttribute('src'))).prop('src', '');
     $('img.expression').removeClass('default');
     if (!getManagedPersona()) {
         $('#open_chat_expressions').hide();
