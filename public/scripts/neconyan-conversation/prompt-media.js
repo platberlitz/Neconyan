@@ -1,5 +1,6 @@
 import { attachmentIdentity, promptImageCopyDescriptor, promptMediaError, selectPromptMedia } from '../prompt-media-policy.js';
 import { getConversationAttachmentSummary } from './thread-store-utils.js';
+import { getConversationReplyPreviewParts } from './preview-utils.js';
 import { uiText } from '../ui-text.js';
 
 export function conversationReplyImageProof(message, reference, authoredText, hash) {
@@ -76,11 +77,25 @@ export function projectConversationImageInput(messages, mediaPolicy, { hash } = 
                 attachmentSummary: projected[sourceIndex].promptAttachmentSummary };
         } else if (reference.text || reference.attachmentSummary) {
             const choice = record.extra.neconyan_image_context;
-            if (!choice || choice.version !== 1 || !['omit', 'replace'].includes(choice.mode) || choice.mode === 'replace' && (typeof choice.text !== 'string' || new TextEncoder().encode(choice.text).length > 16384) || !hash
-                || choice.source_hash !== hash([sources[index].extra.conversation_attachment_context ?? '', reference])) {
-                throw promptMediaError('mixed-reply-context', index, -1, uiText('A reply contains a quote that cannot be checked against its original message. Your image settings require you to review the quote before continuing. Choose what the model receives in Review chat images.'));
+            if (choice !== undefined) {
+                if (choice?.version === 1 && ['omit', 'replace'].includes(choice.mode)
+                    && (choice.mode !== 'replace' || typeof choice.text === 'string' && new TextEncoder().encode(choice.text).length <= 16384)
+                    && hash && choice.source_hash === hash([sources[index].extra.conversation_attachment_context ?? '', reference])) {
+                    record.extra.conversation_reply_to = { ...reference, text: choice.mode === 'replace' ? choice.text : '', attachmentSummary: '' };
+                    continue;
+                }
+            } else if (sourceIndex >= 0) {
+                // Old quotes and remapped imports must match one complete historical preview pair.
+                const source = messages[sourceIndex];
+                const matched = [getConversationReplyPreviewParts(source, { browserPreview: true }), getConversationReplyPreviewParts(source)]
+                    .find(parts => parts.text === (reference.text ?? '') && parts.attachmentSummary === (reference.attachmentSummary ?? ''));
+                if (matched) {
+                    record.extra.conversation_reply_to = { ...reference, text: matched.authoredText,
+                        attachmentSummary: projected[sourceIndex].promptAttachmentSummary };
+                    continue;
+                }
             }
-            record.extra.conversation_reply_to = { ...reference, text: choice.mode === 'replace' ? choice.text : '', attachmentSummary: '' };
+            throw promptMediaError('mixed-reply-context', index, -1, uiText('A reply contains a quote that cannot be checked against its original message. Your image settings require you to review the quote before continuing. Choose what the model receives in Review chat images.'));
         }
     }
     return projected;
