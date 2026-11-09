@@ -1,5 +1,78 @@
 # Full server migration: continuation
 
+### 10 November 2026: 1.5.3 published, staging starts 1.5.4
+
+I published [Neconyan 1.5.3](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.3)
+with annotated tag `v1.5.3` on `39d78676ec96c6e4a1cdc24d922177abf12a9733`.
+PR #580 promoted staging to main by fast-forward, without a merge commit.
+The release includes the refreshed README, thanks to El Topo, thinner Catline
+icons, corrected background controls and the actual passages picked by Mewmory.
+The running personal instance was not deployed as part of this release.
+
+Verification and retained results:
+
+- The final full local Jest run passed 653 suites and 9,564 tests, with three
+  existing skips. The full Node suite passed 4,000 tests; Mewmory passed 114.
+  Root lint, test lint, frontend budgets and the production build passed.
+  Test lint retains its existing warnings. Blocking CSS was 1,022.4 KiB.
+- Assistant knowledge revision 69 passed 18 source, budget and retrieval
+  checks and 11 browser checks covering all nine assistants on phone and
+  desktop. Mewmory's actual recalled text and the fixed-response Proofreader
+  edit, undo and redo were checked in the browser. The demonstration is
+  labelled as a staged response, not a live model conversation.
+- Browser run `42646769385` at `e15eef23` supplied 18 passing groups.
+  Run `42657662352` at the release commit supplied groups 5 and 14. Together
+  they cover all 20 groups: 2,572 passes and 36 existing skips. Between these
+  commits, only the final README images and the cloud test fixture changed.
+  The gallery passed unchanged on retry; the cloud fixture was corrected to
+  select a transparent canvas and an opaque background image before checking
+  the cloud pixels. No assertion was weakened and no skip was added.
+- Earlier runs `42611950737` and `42626975623` led to shared startup download
+  reductions, the SVG fragment export fix and corrected browser fixtures.
+  Settings replay, completed-reply waiting, popup animation completion and
+  hashed-asset lookups were fixed. The Windows caption matrix was split into
+  smaller independent cases without removing coverage. Earlier settings and
+  group-game persistence failures passed unchanged in the final full run;
+  no separate application fix is claimed for those retries. An attempted
+  single-job retry of the first matrix reran all its groups; later validation
+  used explicit group selection. Duplicate runs `42657678407` and
+  `42664584381` were cancelled because retained results covered the candidate.
+- Exact-head PR checks `42657678208`, Windows checks `42657678378`, README
+  sync `42657678813` and metadata `42657798165` passed. Main README sync
+  `42664584552` passed without introducing another commit.
+- Android run `42664576462` passed the signed build, WebView fixture and
+  Android 11, 13 and 15 emulator checks. The optional older-release baseline
+  probe was not requested. iPhone run `42664581125`, attempt 2, passed storage
+  and startup checks, the real 13 GiB import, unsigned device IPA build and
+  simulator startup/relaunch. Attempt 1 never acquired a hosted runner; the
+  unchanged job was retried. These are emulator and simulator results, not
+  physical-phone tests.
+- All twelve build assets were independently checked: eight Android and two
+  iPhone manifest entries, both official APK signatures, ZIP and native 16 KiB
+  alignment, embedded version/commit/frontend contents and supplied provenance.
+  Every source ZIP file matched `git archive` of the release commit, including
+  archive line-ending conversions. Both platform builds match that exact commit.
+  All twelve public downloads were then downloaded again, compared byte for
+  byte with the verified build files and checked against GitHub's SHA-256
+  digests. The public release is marked latest. Interrupted transfers were
+  resumed in verified HTTP ranges; they did not require rebuilding any asset.
+- Handbook commit `f60c44e` was published by Pages run `42647812372`.
+  Strict build, site checks and the full phone/desktop browser check passed.
+  All 22 public default-accent screenshots matched the source files byte for
+  byte; seven updated guides passed live phone and desktop checks. The image
+  provenance retains the actual 9 November capture at `e15eef23`.
+- Handbook commit `1efd4a72` marks 1.5.3 as published. Pages run
+  `42673857811`, attempt 2, passed; the first attempt failed before creating
+  a build job, so the unchanged workflow was retried. Strict build, site and
+  local browser checks passed again. After publication, all 22 screenshot
+  files matched byte for byte and all seven guides passed live phone and
+  desktop checks, including the published version and release link.
+
+I started staging version 1.5.4 by updating the package metadata, both root
+lockfile entries and the version boundary expectations. All four boundary
+tests and their lint check passed. The README continues to name the published
+1.5.3 release; its mirror check passed before promotion.
+
 ### 8 November 2026: 1.5.2 published, staging starts 1.5.3
 
 Published [Neconyan 1.5.2](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.2)
