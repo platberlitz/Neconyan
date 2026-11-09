@@ -2,6 +2,7 @@ import { buildTextDiffMarkup as buildPromptTransformDiffMarkup } from '../../tex
 import { extension_settings, renderExtensionTemplateAsync, getContext } from '../../extensions.js';
 import { Popup, POPUP_TYPE, POPUP_RESULT } from '../../popup.js';
 import { accountStorage } from '../../util/AccountStorage.js';
+import { createAgentUiPreferences, readCollapsedAgentCategories } from './ui-preferences.js';
 import { cancelDebounce, debounce, download, escapeHtml, escapeRegex, getSortableDelay, uuidv4 } from '../../utils.js';
 import { debounce_timeout } from '../../constants.js';
 import { getStringHash } from '../../macro-primitives.js';
@@ -149,6 +150,8 @@ const renderAgentListDebounced = debounce(renderAgentList, debounce_timeout.shor
 let agentListSearchRenderPending = false;
 
 let collapsedCategories = new Set();
+const AGENT_COLLAPSED_CATEGORIES_STORAGE_KEY = 'ica--collapsed-categories';
+const agentUiPreferences = createAgentUiPreferences({ accountStorage, getAccount: getCurrentUserHandle });
 let lastManualRunFeedback = null;
 let templateBrowserSearchValue = '';
 let templateBrowserOpening = false;
@@ -425,7 +428,7 @@ function setAgentWorkspaceView(view = 'manage', { focus = false } = {}) {
     });
 
     try {
-        accountStorage.setItem(AGENT_WORKSPACE_VIEW_STORAGE_KEY, nextView);
+        agentUiPreferences.setItem(AGENT_WORKSPACE_VIEW_STORAGE_KEY, nextView);
     } catch {
         // Workspace view persistence is optional.
     }
@@ -3323,7 +3326,7 @@ const AGENT_LIST_TABS = [...AGENT_LIST_VIEW_TABS, ...Object.keys(AGENT_CATEGORIE
 
 function getActiveAgentListTab() {
     try {
-        const stored = accountStorage.getItem(AGENT_LIST_TAB_STORAGE_KEY);
+        const stored = agentUiPreferences.getItem(AGENT_LIST_TAB_STORAGE_KEY);
         return AGENT_LIST_TABS.includes(stored) ? stored : 'all';
     } catch {
         return 'all';
@@ -3409,7 +3412,7 @@ function syncAgentListKindTabs(agents, activeTab) {
 
 function setActiveAgentListTab(tab) {
     try {
-        accountStorage.setItem(AGENT_LIST_TAB_STORAGE_KEY, tab);
+        agentUiPreferences.setItem(AGENT_LIST_TAB_STORAGE_KEY, tab);
     } catch {
         // Persistence failure does not prevent changing tabs for this session.
     }
@@ -3646,6 +3649,7 @@ function renderAgentList() {
             } else {
                 collapsedCategories.delete(cat);
             }
+            agentUiPreferences.setItem(AGENT_COLLAPSED_CATEGORIES_STORAGE_KEY, JSON.stringify([...collapsedCategories]));
         });
         group.append(header);
 
@@ -6959,12 +6963,13 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
     $('#in_chat_agents_container').append(settingsHtml);
     attachTextareaFullscreen($('#ica--settings'));
     await decorateAgentControls(document.getElementById('ica--settings'));
+    collapsedCategories = readCollapsedAgentCategories(agentUiPreferences, AGENT_COLLAPSED_CATEGORIES_STORAGE_KEY, AGENT_CATEGORIES);
 
     const settingsRoot = document.getElementById('ica--settings');
     if (settingsRoot) {
         let initialWorkspaceView = 'manage';
         try {
-            const storedView = accountStorage.getItem(AGENT_WORKSPACE_VIEW_STORAGE_KEY);
+            const storedView = agentUiPreferences.getItem(AGENT_WORKSPACE_VIEW_STORAGE_KEY);
             if (AGENT_WORKSPACE_VIEWS.includes(storedView)) {
                 initialWorkspaceView = storedView;
             }
