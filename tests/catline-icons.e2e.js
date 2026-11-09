@@ -28,7 +28,7 @@ test('every cat and neutral SVG loads, paints and follows its compatible class',
                     icon.className = `fa-solid ${alias}`; document.body.append(icon);
                     const style = getComputedStyle(icon, '::before');
                     if (!style.maskImage.includes(`#${expected.slice(0, -4)}"`) || parseFloat(style.width) <= 0) failures.push(alias);
-                    if (style.scale !== '1.1') failures.push(`unscaled: ${alias}`);
+                    if (style.scale !== '1.25') failures.push(`unscaled: ${alias}`);
                     icon.remove();
                 }
                 const url = `/img/icons/catline/${expected}`;
@@ -191,7 +191,7 @@ for (const phone of [false, true]) {
             await expect(catelier).toBeVisible();
             expect(await catelier.locator('i').evaluate(node => getComputedStyle(node, '::before').maskImage)).toContain('#pen-nib');
             const boxBefore = await catelier.boundingBox();
-            expect(await catelier.locator('i').evaluate(node => getComputedStyle(node, '::before').scale)).toBe('1.1');
+            expect(await catelier.locator('i').evaluate(node => getComputedStyle(node, '::before').scale)).toBe('1.25');
             const unscaled = await page.addStyleTag({ content: '#sb_character_tab_creator i::before { scale: 1; }' });
             expect(await catelier.boundingBox()).toEqual(boxBefore);
             await unscaled.evaluate(node => node.remove());

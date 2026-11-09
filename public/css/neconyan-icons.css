@@ -34,7 +34,7 @@ body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block.group_ove
     flex: 0 0 1em;
     vertical-align: -.125em;
     /* Enlarge the drawing without changing button or label layout. */
-    scale: 1.1;
+    scale: 1.25;
     background-color: currentColor;
     -webkit-mask: var(--neco-icon, var(--neco-svg-circle-question)) center / contain no-repeat;
     mask: var(--neco-icon, var(--neco-svg-circle-question)) center / contain no-repeat;
