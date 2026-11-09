@@ -61,10 +61,27 @@
     border-bottom: 3px solid var(--neco-ginger);
 }
 
+/* Paint above the inner header surfaces, which otherwise cover the middle of the border. */
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) #top-bar::after {
+    content: '';
+    display: block;
+    position: absolute;
+    inset: auto 0 -3px;
+    height: 0;
+    border-bottom: inherit;
+    z-index: 1;
+    pointer-events: none;
+}
+
 :root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) #sb-topbar-inner :is(button, .sb-proxy-button):is(:hover, [aria-pressed='true']) {
     background: var(--neco-ginger);
     color: var(--neco-on-accent);
     border-radius: 2px;
+}
+
+/* Open and current proxy icons must keep the ink of their solid accent highlight. */
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) #sb-topbar-inner :is(button, .sb-proxy-button):is(:hover, [aria-pressed='true']) i {
+    color: inherit;
 }
 
 /* Rail: a solid slate column; the active item is a solid accent block. */

@@ -1,6 +1,7 @@
 /* global document, window, NeconyanShell, jQuery, getComputedStyle */
 import { test, expect } from '@playwright/test';
 import { readFile, writeFile } from 'node:fs/promises';
+import { PNG } from 'pngjs';
 import { contrastRatio } from '../public/scripts/theme-contrast.js';
 import { acknowledgeSettingsSave } from './chat-scroll-regression-helpers.js';
 
@@ -45,6 +46,102 @@ async function colours(locator) {
 }
 
 for (const phone of [false, true]) {
+    test(`Slate Flat top bar keeps its accent line and readable icons on ${phone ? 'phone' : 'desktop'}`, async ({ browser }, info) => {
+        test.setTimeout(120000);
+        const context = await browser.newContext({
+            baseURL: info.project.use.baseURL,
+            viewport: phone ? { width: 393, height: 852 } : { width: 1280, height: 900 },
+            hasTouch: phone, isMobile: phone, serviceWorkers: 'block', reducedMotion: 'reduce',
+        });
+        try {
+            const page = await context.newPage();
+            await page.route('**/api/characters/all', route => route.fulfill({ json: [] }));
+            await page.route('**/api/server-admin/crash-reports/status', route => route.fulfill({ json: { runId: 'slate-flat-test', latest: null } }));
+            await page.route('**/api/settings/get', async route => {
+                const response = await route.fetch();
+                const data = await response.json();
+                const settings = JSON.parse(data.settings || await readFile(new URL('../default/content/settings.json', import.meta.url), 'utf8'));
+                settings.firstRun = false;
+                settings.power_user.neconyan_shell_style = 'slate-flat';
+                settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped', WelcomePage_PanelMode: 'full' };
+                await route.fulfill({ response, json: { ...data, settings: JSON.stringify(settings) } });
+            });
+            await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
+            await page.goto('/');
+            await page.waitForFunction(() => window.NeconyanShell && !document.querySelector('#preloader'));
+            await expect(page.locator('#neconyan-home-skeleton')).toBeHidden({ timeout: 60000 });
+            await expect(page.locator('html')).toHaveAttribute('data-sb-theme', 'slate-flat');
+            // Accent-profile toast shadows must not tint the pixels being checked below.
+            await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; animation: none !important; } #toast-container { visibility: hidden !important; }' });
+            const control = page.locator(phone ? '#sb-hamburger' : '#sb-shortcut-left');
+            const checkAccentLine = async label => {
+                const bar = page.locator('#top-bar');
+                const rect = await bar.boundingBox();
+                const accent = await bar.evaluate(el => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = canvas.height = 1;
+                    const context = canvas.getContext('2d');
+                    context.fillStyle = getComputedStyle(el).borderBottomColor;
+                    context.fillRect(0, 0, 1, 1);
+                    return [...context.getImageData(0, 0, 1, 1).data];
+                });
+                const image = PNG.sync.read(await page.screenshot({ clip: {
+                    x: rect.x, y: rect.y + rect.height - 3, width: rect.width, height: 3,
+                } }));
+                let covered = 0;
+                for (let pixel = 0; pixel < image.data.length; pixel += 4) {
+                    if (accent.some((channel, index) => image.data[pixel + index] !== channel)) covered++;
+                }
+                expect(covered, `${label}: the full three-pixel accent line stays visible`).toBe(0);
+            };
+            const check = async label => {
+                const value = await colours(control);
+                expect(value.children, `${label}: icons inherit the highlight ink`).toEqual(value.children.map(() => value.ink));
+                for (const ink of [value.ink, ...value.children]) {
+                    expect(Math.min(...value.stops.map(stop => contrastRatio(ink, stop))), `${label}: contrast`).toBeGreaterThanOrEqual(4.5);
+                }
+            };
+            for (const theme of ['Game Boy DMG', 'Neconyan Calico Dark', 'Neconyan Calico']) {
+                for (const profile of theme === 'Game Boy DMG' ? [null] : [null, 'Mint Glass', 'Plum Wine']) {
+                    await page.evaluate(name => jQuery('#themes').val(name).trigger('change'), theme);
+                    if (profile) await page.locator(`.sb-accent-profile-apply[aria-label="Apply ${profile} accent profile"]`).evaluate(el => el.click());
+                    const label = `${theme}/${profile || 'default'}`;
+                    await page.mouse.move(0, 100);
+                    await checkAccentLine(`${label}/at rest`);
+                    await control.hover();
+                    await check(`${label}/closed hover`);
+                    await checkAccentLine(`${label}/hover`);
+                    if (phone) {
+                        await control.click();
+                        await expect(control).toHaveClass(/is-open/);
+                        await check(`${label}/open hover`);
+                        await checkAccentLine(`${label}/open hover`);
+                        await control.click();
+                        await expect(control).not.toHaveClass(/is-open/);
+                    }
+                    // Exercise every shared proxy-icon state, including ones used by other top-bar controls.
+                    for (const state of ['is-open', 'is-active', 'is-current']) {
+                        await control.evaluate((el, state) => el.classList.add(state), state);
+                        await check(`${label}/${state} hover`);
+                        await control.evaluate((el, state) => el.classList.remove(state), state);
+                    }
+                    await page.mouse.move(0, 0);
+                    await control.evaluate(el => {
+                        el.classList.add('is-active');
+                        el.setAttribute('aria-pressed', 'true');
+                    });
+                    await check(`${label}/selected`);
+                    await control.evaluate(el => {
+                        el.classList.remove('is-active');
+                        el.removeAttribute('aria-pressed');
+                    });
+                }
+            }
+        } finally {
+            await context.close();
+        }
+    });
+
     test(`Regex Agent Themes uses accent pairs on every shell on ${phone ? 'phone' : 'desktop'}`, async ({ browser }, info) => {
         test.setTimeout(300000);
         const context = await browser.newContext({
