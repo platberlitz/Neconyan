@@ -18,6 +18,7 @@
 - PR #570 (2026-11-09) `fix(conversation): prevent image review for ordinary text quotes`
 - PR #571 (2026-11-09) `fix(chat): make the global external media setting easy to find`
 - PR #572 (2026-11-09) `fix(botsearcher): compact and scope the jannyai import notice`
+- PR #575 (2026-11-09) `fix(shell): align windows pages and repair caption colours`
 
 ## v1.5.2
 
