@@ -372,7 +372,7 @@ describe('Hide cats works with every shell style', () => {
         }
         const iconMap = readSource('public', 'css', 'neconyan-icons-map.css');
         expect(iconMap).toMatch(/:root\[data-sb-kittyless='true'\][\s\S]*?--neco-svg-cat:\s*url\('[^']*\/sprite\.svg\?v=[a-f0-9]+#cat-plain'\)/);
-        expect(iconMap).toMatch(/:root\[data-sb-kittyless='true'\][\s\S]*?--neco-svg-paw: url\('[^']*\/paw-plain\.svg/);
+        expect(iconMap).toMatch(/:root\[data-sb-kittyless='true'\][\s\S]*?--neco-svg-paw:\s*url\('[^']*\/sprite\.svg\?v=[a-f0-9]+#paw-plain'\)/);
         expect(stripped).toContain(':root[data-sb-kittyless=\'true\']:is(:not([data-sb-theme]), [data-sb-theme=\'calico\'], [data-sb-theme=\'kittyless\']) body.neconyan::before');
         expect(stripped).toContain('shell-kittyless.webp');
         expect(readSource('public', 'css', 'shell-styles', 'kittyless.css')).not.toContain('shell-kittyless.webp');
