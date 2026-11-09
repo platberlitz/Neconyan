@@ -8,6 +8,7 @@
 - PR #556 (2026-11-08) `feat(regex-themes): theme tracker companions`
 - PR #557 (2026-11-08) `fix(chat): improve background visibility on messages`
 - PR #558 (2026-11-08) `feat(agents): let plot compass co-direct scoped stories`
+- PR #559 (2026-11-09) `perf(sunken-reef): reuse resolved colours during animation`
 
 ## v1.5.2
 
