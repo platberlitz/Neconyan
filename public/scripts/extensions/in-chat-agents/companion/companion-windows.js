@@ -917,6 +917,9 @@ export function refreshCompanionWindows({ preserveFocus = true } = {}) {
                 template.innerHTML = html;
                 const next = template.content?.firstElementChild ?? template.firstElementChild;
                 if (next) {
+                    // Make header text a touch target, rather than enlarging adjacent buttons into it.
+                    next.querySelectorAll('.ica--cwin-head, .ica--cwin-heading, .ica--cwin-status')
+                        .forEach(node => node.addEventListener('click', handleWindowClick));
                     // Set the already-sanitised note inside its own node so its markup cannot
                     // close the window body or pretend to be a header or toolbar control.
                     const noteNode = next.querySelector('[data-role="cwin-note"]');
@@ -1234,7 +1237,11 @@ function handleWindowClick(event) {
 
     // Only toolbar and header controls are trusted. Notes are sanitised without data-action,
     // and this second gate keeps any generated markup from ever reaching a runner.
-    const control = target.closest('[data-action]');
+    const header = target.closest('.ica--cwin-head');
+    const headerClick = header?.parentElement === section && !target.closest('button');
+    const control = headerClick
+        ? header.querySelector('[data-action="cwin-collapse"]')
+        : target.closest('[data-action]');
     if (!control || !control.closest('.ica--cwin-head, .ica--cwin-actions')) {
         return;
     }
@@ -1346,6 +1353,8 @@ function beginWindowDrag(mode, clientX, clientY, section) {
     if (dragState) {
         return;
     }
+    // A fresh header press is not the synthetic click left over from a drag.
+    suppressWindowClickUntil = 0;
     const rect = section.getBoundingClientRect();
     dragState = {
         mode,
@@ -1473,7 +1482,8 @@ function bindWindowInteractions() {
         beginWindowDrag('pointer', event.clientX, event.clientY, section);
         if (!dragState) return;
         dragState.pointerId = event.pointerId;
-        layerNode.setPointerCapture?.(event.pointerId);
+        // Keep an unmoved click on its original header target, including the grip.
+        target.setPointerCapture?.(event.pointerId);
     });
 
     layerNode.addEventListener('pointermove', event => {
@@ -1484,7 +1494,7 @@ function bindWindowInteractions() {
 
     const pointerEnd = (event, cancelled) => {
         if (dragState?.mode !== 'pointer' || dragState.pointerId !== event.pointerId) return;
-        layerNode.releasePointerCapture?.(event.pointerId);
+        event.target?.releasePointerCapture?.(event.pointerId);
         finishWindowDrag({ cancelled });
     };
     layerNode.addEventListener('pointerup', event => pointerEnd(event, false));
