@@ -18,7 +18,8 @@ async function prepareAssistantPage(page) {
 }
 
 function clearStoredWindows(settings) {
-    settings.accountStorage = { ...settings.accountStorage };
+    settings.firstRun = false;
+    settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped' };
     delete settings.accountStorage['ica--companion-windows-v1'];
 }
 
@@ -54,9 +55,35 @@ async function openPanel(page) {
     await expect(page.locator('#ica--tracker-panel')).toBeVisible();
 }
 
+async function dragHeader(page, head, touch) {
+    const box = await head.boundingBox();
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height / 2;
+    if (touch) {
+        const session = await page.context().newCDPSession(page);
+        try {
+            await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+            for (let step = 1; step <= 5; step++) {
+                await session.send('Input.dispatchTouchEvent', {
+                    type: 'touchMove', touchPoints: [{ x: x - 32 * step / 5, y: y + 24 * step / 5 }],
+                });
+            }
+            await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        } finally {
+            await session.detach();
+        }
+    } else {
+        await page.mouse.move(x, y);
+        await page.mouse.down();
+        await page.mouse.move(x - 32, y + 24, { steps: 5 });
+        await page.mouse.up();
+    }
+}
+
 for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 }]) {
     test.describe(`Companion windows at ${viewport.width}px`, () => {
         test.use({ viewport, hasTouch: viewport.width < 769, isMobile: viewport.width < 769 });
+        const activate = (locator, options) => viewport.width < 769 ? locator.tap(options) : locator.click(options);
 
         test('floats, collapses, moves and closes without running the companion', async ({ page }, info) => {
             page.setDefaultTimeout(15000);
@@ -69,7 +96,7 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
             await prepareAssistantPage(page);
 
             try {
-                await createAgentFixture(page, id, 'Floating Scene Notes', '<p>The floating note stays visible over the chat.</p>');
+                await createAgentFixture(page, id, 'Floating Scene Notes', '<p>The floating note stays visible over the chat.</p><header class="ica--cwin-head" id="window-note-header">A header inside the note is not a window control.</header>');
                 await openPanel(page);
 
                 const panel = page.locator('#ica--tracker-panel');
@@ -109,6 +136,29 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
                 expect(geometry.layerZ).toBe(1099);
                 expect(geometry.bottom).toBeLessThanOrEqual(geometry.bottomBound);
 
+                const head = windowNode.locator(':scope > .ica--cwin-head');
+                await activate(head.locator('.ica--cwin-name'));
+                await page.screenshot({ path: info.outputPath('header-title-click.png') });
+                await expect(windowNode).toHaveAttribute('data-collapsed', 'true');
+                await expect(windowNode.locator('.ica--cwin-body')).toBeHidden();
+                await expect(windowNode.locator('[data-action="cwin-collapse"]')).toHaveAttribute('aria-expanded', 'false');
+                await activate(head.locator('.ica--cwin-heading > i'));
+                await expect(windowNode).toHaveAttribute('data-collapsed', 'false');
+                await expect(windowNode.locator('.ica--cwin-body')).toBeVisible();
+                await expect(windowNode.locator('[data-action="cwin-collapse"]')).toHaveAttribute('aria-expanded', 'true');
+                await activate(head.locator('.ica--cwin-status'));
+                await expect(windowNode).toHaveAttribute('data-collapsed', 'true');
+                // Click the header's own padding, rather than one of its children.
+                await activate(head, { position: { x: 2, y: (await head.boundingBox()).height / 2 } });
+                await expect(windowNode).toHaveAttribute('data-collapsed', 'false');
+
+                await activate(windowNode.getByRole('button', { name: /Move Floating Scene Notes window/ }));
+                await expect(windowNode).toHaveAttribute('data-collapsed', 'false');
+                await activate(windowNode.locator('.ica--cwin-note'));
+                await expect(windowNode).toHaveAttribute('data-collapsed', 'false');
+                await activate(windowNode.locator('#window-note-header'));
+                await expect(windowNode).toHaveAttribute('data-collapsed', 'false');
+
                 const collapse = windowNode.getByRole('button', { name: 'Collapse Floating Scene Notes window' });
                 await collapse.click();
                 await expect(windowNode).toHaveAttribute('data-collapsed', 'true');
@@ -127,15 +177,20 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
                 await expect(windowNode.getByRole('button', { name: 'Expand Floating Scene Notes window' })).toBeFocused();
 
                 await windowNode.getByRole('button', { name: 'Expand Floating Scene Notes window' }).evaluate(element => element.click());
-                const head = windowNode.locator('.ica--cwin-head');
-                const box = await head.boundingBox();
                 const beforeDrag = await windowNode.boundingBox();
-                await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-                await page.mouse.down();
-                await page.mouse.move(box.x + box.width / 2 - 32, box.y + box.height / 2 + 24, { steps: 5 });
-                await page.mouse.up();
+                await dragHeader(page, head, viewport.width < 769);
                 const afterDrag = await windowNode.boundingBox();
                 expect(afterDrag.y).toBeGreaterThan(beforeDrag.y);
+                await expect(windowNode).toHaveAttribute('data-collapsed', 'false');
+                await head.locator('.ica--cwin-name').evaluate(element => element.click());
+                await expect(windowNode).toHaveAttribute('data-collapsed', 'false');
+                // A fresh press immediately after dragging must still toggle the header.
+                await activate(head.locator('.ica--cwin-name'));
+                await expect(windowNode).toHaveAttribute('data-collapsed', 'true');
+                await dragHeader(page, head, viewport.width < 769);
+                await expect(windowNode).toHaveAttribute('data-collapsed', 'true');
+                await activate(head.locator('.ica--cwin-name'));
+                await expect(windowNode).toHaveAttribute('data-collapsed', 'false');
                 await page.screenshot({ path: info.outputPath('companion-windows.png') });
 
                 await windowNode.getByRole('button', { name: 'Close Floating Scene Notes window' }).click();
