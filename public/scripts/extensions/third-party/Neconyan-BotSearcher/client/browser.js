@@ -207,6 +207,7 @@ function wireBrowser(popup, health, options) {
         bar: root.querySelector('.sbbs-bar'),
         source: root.querySelector('#sbbs_source'),
         query: root.querySelector('#sbbs_query'),
+        queryClear: root.querySelector('#sbbs_query_clear'),
         queryLabel: root.querySelector('label[for="sbbs_query"]'),
         go: root.querySelector('#sbbs_go'),
         sort: root.querySelector('#sbbs_sort'),
@@ -393,6 +394,14 @@ function wireBrowser(popup, health, options) {
             : `Paste a card URL (${urlSourceLabels.join(', ')})`);
     }
 
+    // Use the same input path as typing, including URL-only mode and cancelling
+    // a pending search. Keep the keyboard ready for the next query on phones.
+    dom.queryClear.addEventListener('click', () => {
+        dom.query.value = '';
+        dom.query.dispatchEvent(new Event('input', { bubbles: true }));
+        dom.query.focus({ preventScroll: true });
+    });
+
     dom.inspectFile?.addEventListener('click', () => dom.cardFile?.click());
     dom.cardFile?.addEventListener('change', () => {
         const file = dom.cardFile.files?.[0];
@@ -449,7 +458,9 @@ function wireBrowser(popup, health, options) {
                 }
             });
             dom.query.addEventListener('input', () => {
-                handleUrlIntent(dom.query.value.trim(), { open: false });
+                if (!handleUrlIntent(dom.query.value.trim(), { open: false })) {
+                    setText(dom.state, searchUnavailableMessage(urlSourceLabels));
+                }
             });
             requestAnimationFrame(() => {
                 if (!state.disposed) {

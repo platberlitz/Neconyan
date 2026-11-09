@@ -50,7 +50,12 @@
                 the server and by rememberQuery().
             -->
             <label class="sbbs-visually-hidden" for="sbbs_query">Search character cards</label>
-            <input id="sbbs_query" class="text_pole sbbs-query" type="search" aria-label="Search character cards" aria-keyshortcuts="/" placeholder="Search character cards" maxlength="512" enterkeyhint="search" autocomplete="off" spellcheck="false" list="sbbs_query_history">
+            <div class="sbbs-query-field">
+                <input id="sbbs_query" class="text_pole sbbs-query" type="search" aria-label="Search character cards" aria-keyshortcuts="/" placeholder="Search character cards" maxlength="512" enterkeyhint="search" autocomplete="off" spellcheck="false" list="sbbs_query_history">
+                <button id="sbbs_query_clear" class="sbbs-query-clear" type="button" title="Clear search" aria-label="Clear search" aria-controls="sbbs_query">
+                    <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                </button>
+            </div>
             <!-- Previous searches, offered by the browser's own dropdown. -->
             <datalist id="sbbs_query_history"></datalist>
             <button id="sbbs_go" class="menu_button menu_button_primary sbbs-go" type="submit" title="Search" aria-label="Search">

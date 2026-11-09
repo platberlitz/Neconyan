@@ -351,15 +351,22 @@ body.neconyan .sbbs-root button.menu_button[aria-pressed="true"]:not(.menu_butto
     gap: 8px;
 }
 
+.sbbs-query-field {
+    position: relative;
+    display: flex;
+    flex: 1 1 0%;
+    min-width: 0;
+}
+
 body.neconyan .sbbs-root input.sbbs-query.text_pole,
 .sbbs-query.text_pole {
     --neconyan-control-radius: 999px;
     flex: 1 1 0%;
-    width: auto;
+    width: 100%;
     min-width: 0;
-    height: 40px;
+    height: 44px;
     margin: 0;
-    padding: 0 16px;
+    padding: 0 52px 0 16px;
     font-size: 0.9375rem;
     border-radius: var(--sbbs-radius-pill);
     background: var(--sbbs-canvas);
@@ -370,6 +377,47 @@ body.neconyan .sbbs-root input.sbbs-query.text_pole,
 .sbbs-query.text_pole::placeholder {
     color: var(--sbbs-muted);
     opacity: 0.82;
+}
+
+/* The native search X has a tiny, browser-owned hit area, especially on iOS. */
+.sbbs-query.text_pole::-webkit-search-cancel-button {
+    -webkit-appearance: none;
+    display: none;
+}
+
+.sbbs-root #sbbs_query_clear {
+    position: absolute;
+    inset-inline-end: 0;
+    top: 50%;
+    translate: 0 -50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: var(--sbbs-radius-pill);
+    background: transparent;
+    color: var(--sbbs-ink);
+    font: inherit;
+    font-size: 1.125rem;
+    cursor: pointer;
+}
+
+.sbbs-root #sbbs_query_clear:is(:hover, :active) {
+    background: var(--sbbs-tint);
+}
+
+.sbbs-root #sbbs_query_clear:focus-visible {
+    outline-offset: -3px;
+}
+
+.sbbs-query:placeholder-shown + .sbbs-query-clear {
+    visibility: hidden;
 }
 
 body.neconyan .sbbs-root select.sbbs-source.text_pole,
@@ -2182,4 +2230,3 @@ p.sbbs-intake-warn,
         animation: none !important;
     }
 }
-
