@@ -402,7 +402,7 @@
     background: transparent;
 }
 
-:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) .sb-shell-header {
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(#left-nav-panel, #user-settings-block).openDrawer .sb-shell-header {
     background: var(--w98-caption);
     color: var(--w98-title-ink);
     border: 0;
@@ -413,10 +413,17 @@
     color: var(--w98-title-ink);
 }
 
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) #right-nav-panel.openDrawer > .sb-character-shell-header :is(.sb-shell-subtitle, .sb-shell-description, .sb-shell-subtitle a, .sb-shell-description a) {
+    color: var(--neco-ink);
+}
+
 /* The phone drawer header shows its description in the muted colour, which fades into the title bar. */
 :root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(#left-nav-panel, #user-settings-block).openDrawer .sb-shell-header .sb-shell-description {
     color: var(--w98-title-ink);
-    opacity: .85;
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(#left-nav-panel, #user-settings-block).openDrawer .sb-shell-header :is(.sb-shell-subtitle, .sb-shell-description, .neconyan-tool-page-description) {
+    opacity: 1;
 }
 
 :root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) .sb-shell-close {
@@ -443,6 +450,7 @@
 }
 
 :root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(.sb-shell-tab.is-active, .sb-settings-tab-btn.active, #right-nav-panel .sb-character-editor-subtab.is-active) {
+    --sb-settings-tab-ink: var(--w98-title-ink);
     background: var(--w98-title);
     color: var(--w98-title-ink);
     box-shadow: none;
@@ -593,4 +601,52 @@
 :root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) #chat .mes .mesAvatarWrapper > .mes_stats > .agent-transform-badge:focus-visible {
     outline: 1px dotted var(--neco-ink);
     outline-offset: -4px;
+}
+
+/* Character-family captions follow the full-width desktop tab row. */
+@media (min-width: 769px) {
+    :root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) #right-nav-panel.neconyan-character-workspace.openDrawer > .sb-character-shell-nav-wrapper {
+        order: 0;
+    }
+
+    :root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) #rightNavHolder > #right-nav-panel.neconyan-character-workspace.openDrawer > .sb-character-shell-header.neconyan-cat-panel {
+        order: 1;
+        margin: 0;
+        border-width: 0 0 1px;
+        border-radius: 0;
+        flex-flow: column nowrap;
+        align-items: stretch;
+        gap: 2px;
+        padding: 16px 116px 16px 18px;
+    }
+
+    :root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) #right-nav-panel.neconyan-character-workspace.openDrawer > .sb-character-shell-header::before,
+    :root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) #right-nav-panel.neconyan-character-workspace.openDrawer > .sb-character-shell-header::after {
+        display: none;
+    }
+
+    :root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) #right-nav-panel.neconyan-character-workspace.openDrawer > .sb-character-shell-header > :is(.sb-shell-title, .sb-shell-subtitle) {
+        flex: 0 0 auto;
+        max-width: 100%;
+    }
+
+    :root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) #right-nav-panel.neconyan-character-workspace.openDrawer > .sb-character-shell-header > .sb-shell-title {
+        display: flex;
+        align-items: center;
+        min-height: 34px;
+        font-size: calc(var(--mainFontSize) * 1.12);
+    }
+
+    :root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) #right-nav-panel.neconyan-character-workspace.openDrawer > .sb-character-shell-header > .sb-shell-subtitle {
+        font-size: 12px;
+        line-height: 18px;
+    }
+
+    :root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) #right-nav-panel.neconyan-character-workspace.openDrawer > .sb-character-shell-header > .sb-shell-close {
+        inset: calc(50% - 22px) 18px auto auto;
+    }
+
+    :root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) #right-nav-panel.neconyan-character-workspace.openDrawer > .sb-character-shell-header > #sb_character_dock_toggle {
+        inset: calc(50% - 22px) 72px auto auto;
+    }
 }

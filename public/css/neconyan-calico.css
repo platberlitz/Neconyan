@@ -688,8 +688,6 @@ body.neconyan :is(#world_popup, #SillyTavernImportSection, #sb_character_import_
     color: var(--neco-muted) !important;
 }
 
-/* The inner Settings navigator follows the light surface, including its
-   labels and icons. */
 :root[data-neconyan-palette='calico'][data-neconyan-calico-tone='light'] body.neconyan :is(.sb-settings-nav-column, .sb-settings-tabs-nav) {
     background: color-mix(in srgb, var(--neco-surface) 92%, transparent) !important;
     color: var(--neco-ink) !important;
@@ -697,7 +695,7 @@ body.neconyan :is(#world_popup, #SillyTavernImportSection, #sb_character_import_
 }
 
 :root[data-neconyan-palette='calico'][data-neconyan-calico-tone='light'] body.neconyan .sb-settings-nav-column .sb-settings-tab-btn {
-    color: var(--neco-ink) !important;
+    color: var(--sb-settings-tab-ink, var(--neco-ink)) !important;
 }
 
 body.neconyan #sheld[data-sb-conversation-mode='on'] #sb_conversation_header :is(#sb_conversation_pals_toggle, .sb-conversation-header-actions .menu_button_icon) {
