@@ -1397,6 +1397,7 @@ describe('companion tracker panel', () => {
         const button = { prop: jest.fn() };
         const inputField = { val: jest.fn(value => (value === undefined ? 'Reach the tower' : inputField)), prop: jest.fn(() => inputField) };
         const section = {
+            0: { querySelectorAll: () => ['global', 'character', 'chat'].map(scope => ({ dataset: { plotScope: scope }, value: scope === 'global' ? 'Reach the tower' : `${scope} plan` })), querySelector: selector => ({ checked: !selector.includes('global') }) },
             attr: jest.fn(name => (name === 'data-agent-id' ? 'plot-compass' : '1')),
             find: jest.fn(() => inputField),
         };
@@ -1434,6 +1435,9 @@ describe('companion tracker panel', () => {
         await actionHandler({ preventDefault: jest.fn(), stopPropagation: jest.fn(), currentTarget: actionButton });
 
         expect(plotCompass.settings.plotCompassObjective).toBe('Reach the tower');
+        expect(plotCompass.settings.plotCompassObjectives['["character","character.png"]']).toBe('character plan');
+        expect(plotCompass.settings.plotCompassObjectives['["character","character.png","chat-1"]']).toBe('chat plan');
+        expect(plotCompass.settings.plotCompassObjectiveEnabled.global).toBe(false);
         expect(store.saveAgent).toHaveBeenCalledWith('plot-compass', { update: expect.any(Function) });
         expect(runner.runPlotCompassBeforeConversation.mock.calls).toEqual(kind === 'empty' ? [['plot-compass']] : []);
         expect(runner.runCompanionAgentOnMessage.mock.calls).toEqual(kind === 'empty' ? [] : [['plot-compass', kind === 'assistant' ? 1 : 0]]);
@@ -1441,7 +1445,7 @@ describe('companion tracker panel', () => {
         expect(inputField.prop).toHaveBeenCalledWith('disabled', false);
         expect(button.prop).toHaveBeenCalledWith('disabled', true);
         expect(button.prop).toHaveBeenCalledWith('disabled', false);
-        expect(globalThis.toastr.success).toHaveBeenCalledWith('Plot Objective saved.');
+        expect(globalThis.toastr.success).toHaveBeenCalledWith('Plot Objectives saved.');
     });
 
     test('closes after a panel choice inserts into the message box', async () => {

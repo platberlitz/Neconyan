@@ -4,27 +4,18 @@ const contentSelector = '.ica--companion-body, .ica--tpanel-agent-body';
 function controlKey(element) {
     const agent = element.closest('[data-agent-id]')?.dataset.agentId ?? '';
     const entry = element.closest('.ica--tpanel-history-entry')?.dataset.messageIndex ?? '';
-    return JSON.stringify([agent, entry, element.tagName, element.dataset.role || element.dataset.action || element.classList[0] || '']);
+    return JSON.stringify([agent, entry, element.tagName, element.dataset.role || element.dataset.action || element.classList[0] || '', element.dataset.plotScope || '']);
 }
 
 // Keep edits through a redraw, but refresh an untouched objective when the agent editor saves it.
 function reconcilePlotObjective(previous, fresh) {
-    if (previous.dataset.role !== 'plot-compass-objective') return;
-    const select = previous.closest('.ica--plot-objective-composer')?.querySelector('[data-role="plot-compass-scope"]');
-    const freshScope = fresh.dataset.plotSavedScope;
-    const sameAsSaved = previous.dataset.plotScope === freshScope && previous.value === fresh.value;
-    const untouched = previous.dataset.plotScope === previous.dataset.plotSavedScope
-        && previous.value === previous.dataset.plotSavedValue && select?.value === previous.dataset.plotSavedScope
-        && !Object.keys(previous.plotCompassDrafts ?? {}).length;
-    if (untouched && !sameAsSaved) {
-        previous.value = fresh.value;
-        previous.dataset.plotScope = freshScope;
-        if (select) select.value = freshScope;
-    }
+    if (!['plot-compass-objective', 'plot-compass-enabled'].includes(previous.dataset.role)) return;
+    const property = previous.dataset.role === 'plot-compass-enabled' ? 'checked' : 'value';
+    const sameAsSaved = previous[property] === fresh[property];
+    const untouched = String(previous[property]) === previous.dataset.plotSavedValue;
+    if (untouched && !sameAsSaved) previous[property] = fresh[property];
     if (untouched || sameAsSaved) {
-        previous.dataset.plotSavedScope = freshScope;
-        previous.dataset.plotSavedValue = fresh.value;
-        if (previous.plotCompassDrafts) delete previous.plotCompassDrafts[freshScope];
+        previous.dataset.plotSavedValue = String(fresh[property]);
     }
 }
 

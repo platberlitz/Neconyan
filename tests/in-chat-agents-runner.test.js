@@ -3000,7 +3000,7 @@ describe('in-chat agent post-processing runner', () => {
 
         const messages = await companionRunner.buildCompanionPromptMessages(plotCompass, 1);
 
-        expect(messages[0].content).toContain('[Plot Compass Objective]\nTraveler helps Mira after Assistant reply');
+        expect(messages[0].content).toContain('[Plot Compass Objective]\n[Global objective]\nTraveler helps Mira after Assistant reply');
     });
 
     test('uses the active character for Plot Compass objective macros on user-sourced runs', async () => {
@@ -3017,7 +3017,7 @@ describe('in-chat agent post-processing runner', () => {
 
         const messages = await companionRunner.buildCompanionPromptMessages(plotCompass, 0);
 
-        expect(messages[0].content).toContain('[Plot Compass Objective]\nGuide Assistant after I step through the gate.');
+        expect(messages[0].content).toContain('[Plot Compass Objective]\n[Global objective]\nGuide Assistant after I step through the gate.');
     });
 
     test('runs an opening plan without adding a chat message and feeds it into the first reply', async () => {

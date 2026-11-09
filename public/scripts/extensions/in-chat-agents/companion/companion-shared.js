@@ -166,8 +166,10 @@ export function getPlotCompassOpeningNote(metadata, agentId) {
 }
 
 export function normalizePlotCompassScope(value) {
-    return ['chat', 'character', 'global'].includes(value) ? value : 'global';
+    return PLOT_COMPASS_SCOPES.includes(value) ? value : 'chat';
 }
+
+export const PLOT_COMPASS_SCOPES = Object.freeze(['global', 'character', 'chat']);
 
 // The same keys are used by browser runs and server-side companion runs. A group is
 // its own character-level scope, never the currently speaking member of that group.
@@ -179,7 +181,7 @@ export function getPlotCompassScopeKey(scope, { avatar = '', groupId = '', chatI
     return JSON.stringify(scope === 'chat' ? [...owner, String(chatId)] : owner);
 }
 
-export function getPlotCompassObjective(settings = {}, identity = {}, scope = settings.plotCompassScope) {
+export function getPlotCompassObjective(settings = {}, identity = {}, scope = 'global') {
     const key = getPlotCompassScopeKey(scope, identity);
     if (!key) return '';
     if (key === 'global') return normalizePlotCompassObjective(settings.plotCompassObjective);
@@ -190,7 +192,7 @@ export function setPlotCompassObjective(settings = {}, identity = {}, scope, obj
     scope = normalizePlotCompassScope(scope);
     const key = getPlotCompassScopeKey(scope, identity);
     if (!key) throw new Error('Choose an active chat before using this objective scope.');
-    const next = { ...settings, plotCompassScope: scope };
+    const next = { ...settings };
     if (key === 'global') next.plotCompassObjective = normalizePlotCompassObjective(objective);
     else {
         next.plotCompassObjectives = { ...settings.plotCompassObjectives };
@@ -199,6 +201,34 @@ export function setPlotCompassObjective(settings = {}, identity = {}, scope, obj
         else delete next.plotCompassObjectives[key];
     }
     return next;
+}
+
+export function isPlotCompassObjectiveEnabled(settings = {}, identity = {}, scope) {
+    const key = getPlotCompassScopeKey(scope, identity);
+    return Boolean(key) && settings.plotCompassObjectiveEnabled?.[key] !== false;
+}
+
+export function setPlotCompassObjectives(settings = {}, identity = {}, objectives = []) {
+    let next = settings;
+    for (const { scope, objective, enabled } of objectives) {
+        next = setPlotCompassObjective(next, identity, scope, objective);
+        const key = getPlotCompassScopeKey(scope, identity);
+        next.plotCompassObjectiveEnabled = { ...next.plotCompassObjectiveEnabled, [key]: Boolean(enabled) };
+    }
+    return next;
+}
+
+/** Resolve each enabled layer separately so the combined prompt keeps all three 2,000-character budgets. */
+export function getPlotCompassPrompt(settings = {}, identity = {}, resolve = value => value) {
+    const labels = { global: 'Global objective', character: identity.groupId ? 'This group objective' : 'This character card objective', chat: 'This chat only objective' };
+    const objectives = PLOT_COMPASS_SCOPES.flatMap(scope => {
+        if (!isPlotCompassObjectiveEnabled(settings, identity, scope)) return [];
+        const saved = getPlotCompassObjective(settings, identity, scope);
+        if (!saved) return [];
+        const objective = normalizePlotCompassObjective(resolve(saved));
+        return objective ? [`[${labels[scope]}]\n${objective}`] : [];
+    });
+    return `[Plot Compass Objective]\n${objectives.length ? objectives.join('\n\n') : 'none set'}`;
 }
 
 export function normalizeChatroomReply(value = '') {

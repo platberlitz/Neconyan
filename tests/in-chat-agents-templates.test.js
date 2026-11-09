@@ -780,6 +780,7 @@ describe('in-chat agent bundled templates', () => {
 
         const plotCompass = findCatalogTemplate(catalog, 'tpl-plot-compass-companion');
         expect(plotCompass).toEqual(expect.objectContaining({
+            version: 2,
             category: 'companion',
             execution: 'companion',
             phase: 'post',

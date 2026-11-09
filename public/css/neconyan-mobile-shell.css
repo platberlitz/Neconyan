@@ -3539,7 +3539,7 @@ body.neconyan #ica--tracker-panel :is(.ica--tpanel-header, .ica--tpanel-agent-ac
     flex-wrap: wrap;
     max-width: 100%;
 }
-body.neconyan :is(.ica--chatonly-composer, .ica--plot-objective-composer) {
+body.neconyan .ica--chatonly-composer {
     grid-template-columns: minmax(0, 1fr) 44px;
 }
 body.neconyan .ica--tpanel-history summary { min-height: 44px; }

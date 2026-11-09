@@ -42,7 +42,7 @@ import {
 } from './companion-runner.js';
 import { isLorebookAgent, sendCompanionResultToLorebook } from './lorebook-sender.js';
 import { bindCompanionQuickControls, buildCompanionQuickControlsHtml } from './companion-quick-controls.js';
-import { buildPlotCompassControls, changePlotCompassScope, submitPlotCompassOnEnter } from './plot-compass-controls.js';
+import { buildPlotCompassControls, readPlotCompassControls, submitPlotCompassOnEnter } from './plot-compass-controls.js';
 import { getPlotCompassIdentity } from './plot-compass-context.js';
 import {
     buildLastRunErrorNotice,
@@ -68,8 +68,7 @@ import {
     getPlotCompassOpeningNote,
     normalizeChatOnlyInput,
     normalizeChatroomReply,
-    normalizePlotCompassObjective,
-    setPlotCompassObjective,
+    setPlotCompassObjectives,
 } from './companion-shared.js';
 import {
     buildDiceCompanionHostHtml,
@@ -535,14 +534,14 @@ function getLatestValidCompanionIndex() {
     return getLatestValidCompanionMessageIndex();
 }
 
-async function savePlotCompassObjective(agent, objective, scope, identity) {
+async function savePlotCompassObjective(agent, objectives, identity) {
     if (!agent || !isPlotCompassAgent(agent)) {
         return;
     }
 
     await saveAgent(agent.id, { update: draft => {
         if (!draft) return null;
-        draft.settings = setPlotCompassObjective(draft.settings, identity, scope, objective);
+        draft.settings = setPlotCompassObjectives(draft.settings, identity, objectives);
         return draft;
     } });
 }
@@ -807,7 +806,7 @@ function buildPanelAgentSection(state) {
                     <span class="ica--tpanel-agent-name"><i class="fa-solid ${escapeHtml(icon)}"></i><span>${escapeHtml(name)}</span></span>
                     <span class="ica--tpanel-agent-actions">${dragHandleButton}${hiddenButton}${runLatestButton}${windowButton}${settingsButton}</span>
                 </div>
-                <div class="ica--cdash-empty">${isPlotCompassAgent(state.agent) ? 'Press Enter or the compass to start planning.' : `No state yet. It will appear after the next reply${getCompanionConfig(state.agent).trigger === 'manual' ? ' you run it on' : ''}.`}</div>
+                <div class="ica--cdash-empty">${isPlotCompassAgent(state.agent) ? 'Press Save and run to start planning.' : `No state yet. It will appear after the next reply${getCompanionConfig(state.agent).trigger === 'manual' ? ' you run it on' : ''}.`}</div>
                 ${buildPanelEntryControls(state)}
                 ${buildCompanionQuickControlsHtml(state.agent, { scope: 'panel' })}
             </section>
@@ -1468,9 +1467,8 @@ async function handlePanelAction(event) {
             return;
         }
 
-        const inputField = section.find('[data-role="plot-compass-objective"]');
-        const objective = normalizePlotCompassObjective(inputField.val());
-        const scope = inputField[0]?.dataset?.plotScope || agent.settings?.plotCompassScope || 'global';
+        const objectives = readPlotCompassControls(section[0]);
+        const inputField = section.find('[data-role="plot-compass-objective"]:not(:disabled), [data-role="plot-compass-enabled"]:not(:disabled)');
         const identity = getPlotCompassIdentity();
         const runIndex = getLatestValidCompanionIndex();
 
@@ -1479,7 +1477,7 @@ async function handlePanelAction(event) {
         button.prop('disabled', true);
         inputField.prop('disabled', true);
         try {
-            await savePlotCompassObjective(agent, objective, scope, identity);
+            await savePlotCompassObjective(agent, objectives, identity);
             if (!runTarget) {
                 if (JSON.stringify(identity) !== JSON.stringify(getPlotCompassIdentity()) || getLatestValidCompanionIndex() >= 0) {
                     toastr.warning('The chat changed while saving, so the objective was saved but not run.');
@@ -1487,7 +1485,7 @@ async function handlePanelAction(event) {
                 }
                 const result = await runPlotCompassBeforeConversation(agentId);
                 if (!result) toastr.warning('Objective saved, but Plot Compass could not run in this chat.');
-                else toastr.success(objective ? 'Plot Objective saved.' : 'Plot Objective cleared.');
+                else toastr.success('Plot Objectives saved.');
                 return;
             }
             if (!isMessageTargetCurrent(runTarget, target, runIndex)) {
@@ -1495,7 +1493,7 @@ async function handlePanelAction(event) {
                 return;
             }
             await runCompanionAgentOnMessage(agentId, runIndex);
-            toastr.success(objective ? 'Plot Objective saved.' : 'Plot Objective cleared.');
+            toastr.success('Plot Objectives saved.');
         } finally {
             button.prop('disabled', false);
             inputField.prop('disabled', false);
@@ -1663,10 +1661,6 @@ export function initCompanionPanel() {
     $('#ica--tracker-panel').on('input', '[data-role="panel-search"]', event => {
         panelSearchQuery = event.currentTarget.value;
         applyPanelSearch();
-    });
-    $('#ica--tracker-panel').on('change', '[data-role="plot-compass-scope"]', event => {
-        const agentId = event.currentTarget.closest('[data-agent-id]')?.dataset.agentId;
-        changePlotCompassScope(event.currentTarget, getAgentById(agentId));
     });
     $('#ica--tracker-panel').on('keydown', '[data-role="plot-compass-objective"]', submitPlotCompassOnEnter);
     $('#ica--tracker-panel').on('keydown', event => {

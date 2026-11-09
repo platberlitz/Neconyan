@@ -6,7 +6,8 @@ import { cancelDebounce, debounce, download, escapeHtml, escapeRegex, getSortabl
 import { debounce_timeout } from '../../constants.js';
 import { getStringHash } from '../../macro-primitives.js';
 import { getPlotCompassIdentity } from './companion/plot-compass-context.js';
-import { getPlotCompassObjective, getPlotCompassScopeKey, normalizePlotCompassScope, setPlotCompassObjective } from './companion/companion-shared.js';
+import { setPlotCompassObjectives } from './companion/companion-shared.js';
+import { buildPlotCompassControls, readPlotCompassControls } from './companion/plot-compass-controls.js';
 import { activateSendButtons, CLIENT_VERSION, chat, getChatGeneration, getCurrentChatId, getRequestHeaders, is_send_press, normalizeContentText, saveChatDebounced, saveSettings, saveSettingsDebounced, substituteParams } from '../../../script.js';
 import { getCurrentUserHandle } from '../../user.js';
 import { eventSource, event_types } from '../../events.js';
@@ -4168,10 +4169,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
     const savedDirectorCustomVoiceName = normalizeDirectorCustomVoiceName(agent.settings?.directorCommentaryCustomVoiceName);
     editorEl.find('#ica--editor-director-custom-voices').val(getDirectorCustomVoicesSetting(agent.settings));
     const plotCompassIdentity = getPlotCompassIdentity();
-    const plotCompassScope = normalizePlotCompassScope(agent.settings?.plotCompassScope);
-    const plotCompassScopeAvailable = Boolean(getPlotCompassScopeKey(plotCompassScope, plotCompassIdentity));
-    editorEl.find('#ica--editor-plot-compass-scope-label').text(plotCompassScope === 'global' ? '(all chats)' : plotCompassScope === 'chat' ? '(this chat)' : plotCompassIdentity.groupId ? '(this group)' : '(this character)');
-    editorEl.find('#ica--editor-plot-compass-objective').val(getPlotCompassObjective(agent.settings, plotCompassIdentity, plotCompassScope)).prop('disabled', !plotCompassScopeAvailable);
+    editorEl.find('#ica--plot-compass-objective-row').html(buildPlotCompassControls(agent, { editor: true, identity: plotCompassIdentity }));
     editorEl.find('#ica--editor-length-target').val(typeof agent.settings?.lengthTarget === 'string'
         ? agent.settings.lengthTarget
         : DEFAULT_LENGTH_TARGET);
@@ -5037,8 +5035,8 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
             agent.settings.directorCommentaryCustomVoiceName = normalizeDirectorCustomVoiceName(editorEl.find('#ica--editor-director-custom-voice-name').val());
             delete agent.settings.directorCommentaryCustomVoice;
         }
-        if (sourceTemplateId === PLOT_COMPASS_TEMPLATE_ID && plotCompassScopeAvailable) {
-            agent.settings = setPlotCompassObjective(agent.settings, plotCompassIdentity, plotCompassScope, editorEl.find('#ica--editor-plot-compass-objective').val());
+        if (sourceTemplateId === PLOT_COMPASS_TEMPLATE_ID) {
+            agent.settings = setPlotCompassObjectives(agent.settings, plotCompassIdentity, readPlotCompassControls(editorEl[0]));
         }
         if (sourceTemplateId === LENGTH_TRIMMER_TEMPLATE_ID) {
             agent.settings.lengthTarget = editorEl.find('#ica--editor-length-target').val()?.toString().trim() || DEFAULT_LENGTH_TARGET;

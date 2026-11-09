@@ -904,7 +904,10 @@ describe('companion card ui', () => {
         const docElement = { on: jest.fn(() => docElement) };
         const mesElement = { attr: jest.fn(name => (name === 'mesid' ? '0' : '')) };
         const inputField = { val: jest.fn(value => (value === undefined ? 'Reach the tower' : inputField)), prop: jest.fn(() => inputField) };
-        const cardElement = { attr: jest.fn(name => (name === 'data-agent-id' ? 'plot-compass' : '')), find: jest.fn(() => inputField) };
+        const cardElement = {
+            0: { querySelectorAll: () => ['global', 'character', 'chat'].map(scope => ({ dataset: { plotScope: scope }, value: scope === 'global' ? 'Reach the tower' : `${scope} plan` })), querySelector: selector => ({ checked: !selector.includes('global') }) },
+            attr: jest.fn(name => (name === 'data-agent-id' ? 'plot-compass' : '')), find: jest.fn(() => inputField),
+        };
         const buttonElement = {
             attr: jest.fn(name => (name === 'data-action' ? 'plot-compass-save' : '')),
             closest: jest.fn(selector => (selector === '.mes' ? mesElement : cardElement)),
@@ -922,9 +925,12 @@ describe('companion card ui', () => {
         await actionHandler({ preventDefault: jest.fn(), stopPropagation: jest.fn(), currentTarget: actionButton });
 
         expect(plotCompass.settings.plotCompassObjective).toBe('Reach the tower');
+        expect(plotCompass.settings.plotCompassObjectives['["character","character.png"]']).toBe('character plan');
+        expect(plotCompass.settings.plotCompassObjectives['["character","character.png","chat-1"]']).toBe('chat plan');
+        expect(plotCompass.settings.plotCompassObjectiveEnabled.global).toBe(false);
         expect(store.saveAgent).toHaveBeenCalledWith('plot-compass', { update: expect.any(Function) });
         expect(runner.runCompanionAgentOnMessage).toHaveBeenCalledWith('plot-compass', 0);
-        expect(globalThis.toastr.success).toHaveBeenCalledWith('Plot Objective saved.');
+        expect(globalThis.toastr.success).toHaveBeenCalledWith('Plot Objectives saved.');
     });
 
     test('registers re-render listeners for lazy loads, edits, and deletions', async () => {

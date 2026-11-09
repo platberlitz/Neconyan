@@ -1,7 +1,7 @@
 {
   "id": "tpl-plot-compass-companion",
   "name": "Plot Compass",
-  "description": "Set an objective for this chat, character or all chats, and let Plot Compass co-direct the story with you",
+  "description": "Combine global, character-card and chat objectives, each with its own on/off switch, to co-direct the story",
   "icon": "fa-compass",
   "category": "companion",
   "subcategory": "story-notes",

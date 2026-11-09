@@ -1663,8 +1663,7 @@ button.ica--card-pill--version-update {
     margin-bottom: 0;
 }
 
-.ica--chatonly-composer,
-.ica--plot-objective-composer {
+.ica--chatonly-composer {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 36px;
     gap: 6px;
@@ -1692,8 +1691,7 @@ button.ica--card-pill--version-update {
     color: color-mix(in srgb, var(--SmartThemeQuoteColor, #8b8) 78%, var(--SmartThemeBodyColor, #ddd) 22%);
 }
 
-.ica--chatonly-input,
-.ica--plot-objective-input {
+.ica--chatonly-input {
     box-sizing: border-box;
     width: 100%;
     min-width: 0;
@@ -1707,24 +1705,21 @@ button.ica--card-pill--version-update {
     white-space: nowrap;
 }
 
-.ica--chatonly-composer label,
-.ica--plot-objective-composer label {
+.ica--chatonly-composer label {
     display: flex;
     align-items: center;
     gap: 8px;
     min-width: 0;
 }
 
-.ica--chatonly-composer label > span,
-.ica--plot-objective-composer label span {
+.ica--chatonly-composer label > span {
     flex: 0 0 auto;
     font-size: calc(var(--mainFontSize) * 0.76);
     opacity: 0.72;
     white-space: nowrap;
 }
 
-.ica--chatonly-send,
-.ica--plot-objective-save {
+.ica--chatonly-send {
     width: 36px;
     min-width: 36px;
     min-height: 32px;
@@ -1734,6 +1729,34 @@ button.ica--card-pill--version-update {
     padding-inline: 0;
 }
 
+/* Loaded with Agents so these optional controls do not add blocking CSS. */
+body.neconyan .ica--plot-objective-composer {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+}
+body.neconyan .ica--plot-objective-layer {
+    display: grid;
+    min-width: 0;
+    padding: 6px 8px;
+    border: 1px solid var(--neco-border);
+    border-radius: 8px;
+    background: var(--neco-surface);
+}
+body.neconyan .ica--plot-objective-layer .checkbox_label {
+    min-height: 44px;
+    margin: 0;
+}
+body.neconyan .ica--plot-objective-layer textarea {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    resize: vertical;
+}
+body.neconyan .ica--plot-objective-composer .ica--plot-objective-save {
+    min-height: 44px;
+    justify-self: end;
+}
 .ica--companion-chatonly-composer,
 .ica--companion-plot-objective {
     margin: 0 12px 12px;

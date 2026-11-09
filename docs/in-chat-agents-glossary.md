@@ -251,7 +251,7 @@ Tick **Include character card**, **Include persona**, **Include World Info**, **
 
 **Director Voice** and **Custom Voice Library** (Director's Commentary): the commentary voice, including your own voices.
 
-**Plot Objective** (Plot Compass): where you'd like the story to go, without forcing the current scene.
+**Plot Objective** (Plot Compass): where you'd like the story to go, without forcing the current scene. Global, character-card and chat objectives add together. Each has its own on/off checkbox; card and chat objectives stay with their card and chat.
 
 ## Model
 
@@ -306,7 +306,7 @@ Each companion also shows its message number, estimated **Input** and **Output**
 
 **Send state to lorebook** (Lorebook Scout): sends the found entries to a lorebook attached to the chat.
 
-**Plot Objective** (Plot Compass): type an objective and press **Save Plot Objective** to save it and rerun. Save an empty box to clear it.
+**Plot Objective** (Plot Compass): fill in **Global**, **This character card** and/or **This chat only**, then press **Save and run**. The checked objectives add together. Uncheck one to stop using it without deleting its text, or save an empty box to clear it. Group chats have **This group** in place of the character-card objective. The agent editor has the same fields; save the agent to apply them.
 
 **Private side chat** (Chat Only): press **Send aside** to talk to the companion without touching the main chat.
 

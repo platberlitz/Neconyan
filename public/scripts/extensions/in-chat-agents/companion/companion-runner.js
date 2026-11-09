@@ -65,7 +65,7 @@ import {
     PLOT_COMPASS_OPENING_NOTES_KEY,
     classifyCompanionFailureMessage,
     getCompanionReferenceIds,
-    getPlotCompassObjective,
+    getPlotCompassPrompt,
     getPlotCompassOpeningNote,
     holdsReadableCompanionResults,
     isAssistantMessage,
@@ -78,7 +78,6 @@ import {
     isSuppressedCompanionResult,
     isValidCompanionMessage,
     normalizeCompanionChatHistoryPlacement,
-    normalizePlotCompassObjective,
     planCompanionNoteCleanup,
     resolveCompanionChatHistoryInjection,
     TRACKER_EMPTY_OUTPUT_INSTRUCTION,
@@ -494,8 +493,7 @@ function getTemplateSettingsPromptBlock(agent = {}, message = null) {
     }
 
     if (sourceTemplateId === PLOT_COMPASS_TEMPLATE_ID) {
-        const objective = normalizePlotCompassObjective(resolveCompanionContentMacros(getPlotCompassObjective(agent.settings, getPlotCompassIdentity()), message));
-        return `[Plot Compass Objective]\n${objective || 'none set'}`;
+        return getPlotCompassPrompt(agent.settings, getPlotCompassIdentity(), value => resolveCompanionContentMacros(value, message));
     }
 
     return '';
