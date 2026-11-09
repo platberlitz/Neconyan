@@ -120,9 +120,11 @@
 
 /* --------------------------------------------------------------- per-theme additions */
 
-/* Animated themes keep movement on decorative root glows, never text or layout. */
+/* Animated themes keep movement on decorative root glows, never text or layout.
+   A glow is a box-shadow, which the browser repaints on every frame it changes, so each one
+   moves in about six steps a second rather than sixty. */
 .mes_text [data-rat-motion='aurora-drift'][data-rat-part='root']:not([data-rat-arch='bold']) {
-    animation: rat-aurora-drift 16s ease-in-out infinite;
+    animation: rat-aurora-drift 16s steps(48) infinite;
 }
 
 @keyframes rat-aurora-drift {
@@ -136,7 +138,7 @@
 }
 
 .mes_text [data-rat-motion='signal-pulse'][data-rat-part='root']:not([data-rat-arch='bold']) {
-    animation: rat-signal-pulse 5s ease-in-out infinite;
+    animation: rat-signal-pulse 5s steps(15) infinite;
 }
 
 @keyframes rat-signal-pulse {
@@ -150,7 +152,7 @@
 }
 
 .mes_text [data-rat-motion='moonlit-garden'][data-rat-part='root']:not([data-rat-arch='bold']) {
-    animation: rat-moonlit-garden 22s ease-in-out infinite;
+    animation: rat-moonlit-garden 22s steps(66) infinite;
 }
 
 @keyframes rat-moonlit-garden {
@@ -164,7 +166,7 @@
 }
 
 .mes_text [data-rat-motion='firefly-glow'][data-rat-part='root']:not([data-rat-arch='bold']) {
-    animation: rat-firefly-glow 32s ease-in-out infinite;
+    animation: rat-firefly-glow 32s steps(96) infinite;
 }
 
 @keyframes rat-firefly-glow {
@@ -178,7 +180,7 @@
 }
 
 .mes_text [data-rat-motion='ocean-breath'][data-rat-part='root']:not([data-rat-arch='bold']) {
-    animation: rat-ocean-breath 36s ease-in-out infinite;
+    animation: rat-ocean-breath 36s steps(108) infinite;
 }
 
 @keyframes rat-ocean-breath {
@@ -192,7 +194,7 @@
 }
 
 .mes_text [data-rat-motion='prism-haze'][data-rat-part='root']:not([data-rat-arch='bold']) {
-    animation: rat-prism-haze 30s ease-in-out infinite;
+    animation: rat-prism-haze 30s steps(90) infinite;
 }
 
 @keyframes rat-prism-haze {
@@ -206,7 +208,7 @@
 }
 
 .mes_text [data-rat-motion='lantern-warmth'][data-rat-part='root']:not([data-rat-arch='bold']) {
-    animation: rat-lantern-warmth 38s ease-in-out infinite;
+    animation: rat-lantern-warmth 38s steps(114) infinite;
 }
 
 @keyframes rat-lantern-warmth {
@@ -220,7 +222,7 @@
 }
 
 .mes_text [data-rat-motion='plasma-ring'][data-rat-part='root']:not([data-rat-arch='bold']) {
-    animation: rat-plasma-ring 34s ease-in-out infinite;
+    animation: rat-plasma-ring 34s steps(102) infinite;
 }
 
 @keyframes rat-plasma-ring {
@@ -234,7 +236,7 @@
 }
 
 .mes_text [data-rat-motion='comet-trail'][data-rat-part='root']:not([data-rat-arch='bold']) {
-    animation: rat-comet-trail 40s ease-in-out infinite;
+    animation: rat-comet-trail 40s steps(120) infinite;
 }
 
 @keyframes rat-comet-trail {
@@ -248,7 +250,7 @@
 }
 
 .mes_text [data-rat-motion='tidepool-shimmer'][data-rat-part='root']:not([data-rat-arch='bold']) {
-    animation: rat-tidepool-shimmer 28s ease-in-out infinite;
+    animation: rat-tidepool-shimmer 28s steps(84) infinite;
 }
 
 @keyframes rat-tidepool-shimmer {
@@ -262,7 +264,7 @@
 }
 
 .mes_text [data-rat-motion='candlelit-page'][data-rat-part='root']:not([data-rat-arch='bold']) {
-    animation: rat-candlelit-page 44s ease-in-out infinite;
+    animation: rat-candlelit-page 44s steps(132) infinite;
 }
 
 @keyframes rat-candlelit-page {
@@ -276,7 +278,7 @@
 }
 
 .mes_text [data-rat-motion='storm-charge'][data-rat-part='root']:not([data-rat-arch='bold']) {
-    animation: rat-storm-charge 42s ease-in-out infinite;
+    animation: rat-storm-charge 42s steps(126) infinite;
 }
 
 @keyframes rat-storm-charge {
@@ -290,7 +292,7 @@
 }
 
 .mes_text [data-rat-motion='dawn-glow'][data-rat-part='root']:not([data-rat-arch='bold']) {
-    animation: rat-dawn-glow 46s ease-in-out infinite;
+    animation: rat-dawn-glow 46s steps(138) infinite;
 }
 
 @keyframes rat-dawn-glow {
@@ -305,7 +307,7 @@
 
 /* Second animated set: the same root-glow rule, with box-shadow as the only moving property. */
 .mes_text [data-rat-motion='neon-heartbeat'][data-rat-part='root']:not([data-rat-arch='bold']) {
-    animation: rat-neon-heartbeat 4.8s ease-in-out infinite;
+    animation: rat-neon-heartbeat 4.8s steps(6) infinite;
 }
 
 @keyframes rat-neon-heartbeat {
@@ -327,7 +329,7 @@
 }
 
 .mes_text [data-rat-motion='nebula-swirl'][data-rat-part='root']:not([data-rat-arch='bold']) {
-    animation: rat-nebula-swirl 22s ease-in-out infinite;
+    animation: rat-nebula-swirl 22s steps(44) infinite;
 }
 
 @keyframes rat-nebula-swirl {
@@ -345,7 +347,7 @@
 }
 
 .mes_text [data-rat-motion='lava-lamp'][data-rat-part='root']:not([data-rat-arch='bold']) {
-    animation: rat-lava-lamp 18s ease-in-out infinite;
+    animation: rat-lava-lamp 18s steps(54) infinite;
 }
 
 @keyframes rat-lava-lamp {
@@ -359,7 +361,7 @@
 }
 
 .mes_text [data-rat-motion='rain-on-glass'][data-rat-part='root']:not([data-rat-arch='bold']) {
-    animation: rat-rain-on-glass 12s linear infinite;
+    animation: rat-rain-on-glass 12s steps(36) infinite;
 }
 
 @keyframes rat-rain-on-glass {
@@ -373,7 +375,7 @@
 }
 
 .mes_text [data-rat-motion='campfire-flicker'][data-rat-part='root']:not([data-rat-arch='bold']) {
-    animation: rat-campfire-flicker 3.6s ease-in-out infinite;
+    animation: rat-campfire-flicker 3.6s steps(4) infinite;
 }
 
 @keyframes rat-campfire-flicker {
@@ -399,7 +401,7 @@
 }
 
 .mes_text [data-rat-motion='bioluminescent-tide'][data-rat-part='root']:not([data-rat-arch='bold']) {
-    animation: rat-bioluminescent-tide 14s ease-in-out infinite;
+    animation: rat-bioluminescent-tide 14s steps(28) infinite;
 }
 
 @keyframes rat-bioluminescent-tide {
@@ -417,7 +419,7 @@
 }
 
 .mes_text [data-rat-motion='radar-sweep'][data-rat-part='root']:not([data-rat-arch='bold']) {
-    animation: rat-radar-sweep 6s linear infinite;
+    animation: rat-radar-sweep 6s steps(9) infinite;
 }
 
 @keyframes rat-radar-sweep {
@@ -439,7 +441,7 @@
 }
 
 .mes_text [data-rat-motion='petal-breeze'][data-rat-part='root']:not([data-rat-arch='bold']) {
-    animation: rat-petal-breeze 16s ease-in-out infinite;
+    animation: rat-petal-breeze 16s steps(48) infinite;
 }
 
 @keyframes rat-petal-breeze {
@@ -453,7 +455,7 @@
 }
 
 .mes_text [data-rat-motion='sunbeam-dust'][data-rat-part='root']:not([data-rat-arch='bold']) {
-    animation: rat-sunbeam-dust 24s ease-in-out infinite;
+    animation: rat-sunbeam-dust 24s steps(72) infinite;
 }
 
 @keyframes rat-sunbeam-dust {
@@ -467,7 +469,7 @@
 }
 
 .mes_text [data-rat-motion='soap-bubble'][data-rat-part='root']:not([data-rat-arch='bold']) {
-    animation: rat-soap-bubble 20s ease-in-out infinite;
+    animation: rat-soap-bubble 20s steps(40) infinite;
 }
 
 @keyframes rat-soap-bubble {
@@ -485,7 +487,7 @@
 }
 
 .mes_text [data-rat-motion='meadow-sway'][data-rat-part='root']:not([data-rat-arch='bold']) {
-    animation: rat-meadow-sway 10s ease-in-out infinite;
+    animation: rat-meadow-sway 10s steps(30) infinite;
 }
 
 @keyframes rat-meadow-sway {
@@ -499,7 +501,7 @@
 }
 
 .mes_text [data-rat-motion='holo-foil'][data-rat-part='root']:not([data-rat-arch='bold']) {
-    animation: rat-holo-foil 9s linear infinite;
+    animation: rat-holo-foil 9s steps(18) infinite;
 }
 
 @keyframes rat-holo-foil {
@@ -517,7 +519,7 @@
 }
 
 .mes_text [data-rat-motion='heat-haze'][data-rat-part='root']:not([data-rat-arch='bold']) {
-    animation: rat-heat-haze 7s ease-in-out infinite;
+    animation: rat-heat-haze 7s steps(21) infinite;
 }
 
 @keyframes rat-heat-haze {
