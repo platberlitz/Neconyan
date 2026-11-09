@@ -18,6 +18,7 @@ describe('external media privacy boundary', () => {
     let addDOMPurifyHooks;
     let isExternalMediaUrl;
     let hasExternalCssUrl;
+    let isExternalMediaAllowed;
     let powerUser;
     let hooks;
 
@@ -50,7 +51,7 @@ describe('external media privacy boundary', () => {
             'saveChatConditional', 'chat_metadata', 'neutralCharacterName', 'updateChatMetadata', 'system_message_types',
             'converter', 'substituteParams', 'getSystemMessageByType', 'printMessages', 'clearChat', 'refreshSwipeButtons',
             'getMediaIndex', 'getMediaDisplay', 'chatElement', 'getChatGeneration',
-        ], { this_chid: undefined, characters: [], chat: [], event_types: {}, eventSource: { on: jest.fn() }, getChatGeneration: () => 1 }));
+        ], { this_chid: 0, characters: [{ avatar: 'media-test.png' }], chat: [], event_types: {}, eventSource: { on: jest.fn() }, getChatGeneration: () => 1 }));
 
         const utilNames = [...readSource('../public/scripts/utils.js').matchAll(/^export (?:async function|function|const|let|class) (\w+)/gm)]
             .map(match => match[1]);
@@ -74,8 +75,25 @@ describe('external media privacy boundary', () => {
         globalThis.HTMLMediaElement = class {};
         globalThis.Element = class {};
 
-        ({ decodeStyleTags, addDOMPurifyHooks, isExternalMediaUrl, hasExternalCssUrl } = await import('../public/scripts/chats.js'));
+        ({ decodeStyleTags, addDOMPurifyHooks, isExternalMediaUrl, hasExternalCssUrl, isExternalMediaAllowed } = await import('../public/scripts/chats.js'));
         addDOMPurifyHooks();
+    });
+
+    test('changing the global default allows inherited media without changing character overrides', () => {
+        expect(isExternalMediaAllowed()).toBe(false);
+        powerUser.forbid_external_media = false;
+        expect(isExternalMediaAllowed()).toBe(true);
+
+        powerUser.external_media_forbidden_overrides.push('media-test.png');
+        expect(isExternalMediaAllowed()).toBe(false);
+        powerUser.forbid_external_media = true;
+        expect(isExternalMediaAllowed()).toBe(false);
+
+        powerUser.external_media_forbidden_overrides = [];
+        powerUser.external_media_allowed_overrides.push('media-test.png');
+        expect(isExternalMediaAllowed()).toBe(true);
+        powerUser.forbid_external_media = false;
+        expect(isExternalMediaAllowed()).toBe(true);
     });
 
     test('detects external URLs and CSS escape / protocol-relative variants while allowing local and data URLs', () => {

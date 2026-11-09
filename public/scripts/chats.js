@@ -1385,6 +1385,14 @@ async function openExternalMediaOverridesDialog() {
     const template = $(await renderTemplateAsync('forbidMedia'));
     template.find('.forbid_media_global_state_forbidden').toggle(power_user.forbid_external_media);
     template.find('.forbid_media_global_state_allowed').toggle(!power_user.forbid_external_media);
+    template.find('#forbid_media_global_default')
+        .prop('checked', power_user.forbid_external_media)
+        .on('input', function () {
+            // Use the settings control's existing save and chat-refresh path.
+            $('#forbid_external_media').prop('checked', this.checked).trigger('input');
+            template.find('.forbid_media_global_state_forbidden').toggle(power_user.forbid_external_media);
+            template.find('.forbid_media_global_state_allowed').toggle(!power_user.forbid_external_media);
+        });
 
     if (power_user.external_media_allowed_overrides.includes(entityId)) {
         template.find('#forbid_media_override_allowed').prop('checked', true);
