@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.5.4
+
+### Merged Staging PRs
+- PR #583 (2026-11-09) `feat(icons): draw catline icons 25% larger`
+
 ## v1.5.3
 
 ### Highlights
