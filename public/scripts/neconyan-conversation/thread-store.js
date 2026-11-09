@@ -17,7 +17,7 @@ import { isConversationActiveThread } from './notifications.js';
 import { scheduleTimelineRender } from './render-scheduler.js';
 import { getConversationSessionMarker, resetFollowupCount, setConversationSessionMarker, setLastUserActivity } from './settings-store.js';
 import { stripPreviewText } from './typing.js';
-import { getConversationAttachmentLabels, getConversationAttachmentSummary, safeParseThread } from './thread-store-utils.js';
+import { getConversationAttachmentLabels, safeParseThread } from './thread-store-utils.js';
 import { narrateConversationMessage } from './tts.js';
 import { parseReminderDelayToMs } from './reminder-time.js';
 export { parseReminderDelayToMs } from './reminder-time.js';
@@ -35,7 +35,7 @@ export {
     resolveConversationReminderBranchId,
     safeParseThread,
 } from './thread-store-utils.js';
-import { truncateConversationReplyPreview } from './preview-utils.js';
+import { getConversationReplyPreviewParts } from './preview-utils.js';
 
 export function markConversationSeen(avatar = getCurrentCharAvatar(), timestamp = Date.now(), { branchId = '', groupId = getConversationGroupIdForAvatar(avatar), personaId = getConversationPersonaId() } = {}) {
     if (!avatar) {
@@ -134,8 +134,7 @@ export function buildConversationMessageReplyReference(message) {
         return null;
     }
 
-    const text = truncateConversationReplyPreview(getConversationMessagePreviewText(message));
-    const attachmentSummary = truncateConversationReplyPreview(getConversationAttachmentSummary(message));
+    const { text, attachmentSummary, authoredText } = getConversationReplyPreviewParts(message, { browserPreview: true });
     if (!text && !attachmentSummary) {
         return null;
     }
@@ -146,7 +145,7 @@ export function buildConversationMessageReplyReference(message) {
         role: message.role || 'character',
         text,
         attachmentSummary,
-        neconyan_image_source: conversationReplyImageProof(message, { text, attachmentSummary }, truncateConversationReplyPreview(stripPreviewText(message.mes)), promptAttachmentHash),
+        neconyan_image_source: conversationReplyImageProof(message, { text, attachmentSummary }, authoredText, promptAttachmentHash),
         createdAt: message.created_at || Date.now(),
     };
 }

@@ -5,10 +5,11 @@
  */
 
 import { MAX_THREAD_MESSAGES } from '../../public/scripts/neconyan-conversation/constants.js';
-import { truncateConversationReplyPreview } from '../../public/scripts/neconyan-conversation/preview-utils.js';
+import { getConversationReplyPreviewParts } from '../../public/scripts/neconyan-conversation/preview-utils.js';
+import { conversationReplyImageProof } from '../../public/scripts/neconyan-conversation/prompt-media.js';
+import { roleplayHash } from '../roleplay-store.js';
 import {
     getConversationAttachmentLabels,
-    getConversationAttachmentSummary,
     hasConversationMessageContent,
 } from '../../public/scripts/neconyan-conversation/thread-store-utils.js';
 import {
@@ -103,8 +104,7 @@ export function buildConversationMessageReplyReference(message) {
         return null;
     }
 
-    const text = truncateConversationReplyPreview(getConversationMessagePreviewText(message));
-    const attachmentSummary = truncateConversationReplyPreview(getConversationAttachmentSummary(message));
+    const { text, attachmentSummary, authoredText } = getConversationReplyPreviewParts(message);
     if (!text && !attachmentSummary) {
         return null;
     }
@@ -115,6 +115,7 @@ export function buildConversationMessageReplyReference(message) {
         role: message.role || 'character',
         text,
         attachmentSummary,
+        neconyan_image_source: conversationReplyImageProof(message, { text, attachmentSummary }, authoredText, roleplayHash),
         createdAt: message.created_at || Date.now(),
     };
 }

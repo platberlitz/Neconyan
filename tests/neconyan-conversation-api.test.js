@@ -14,6 +14,8 @@ import { setConfigFilePath } from '../src/util.js';
 import { CONVERSATION_STORE_KEY, DEFAULT_BRANCH_ID } from '../public/scripts/neconyan-conversation/constants.js';
 import { validateStoreStructure } from '../src/endpoints/conversation-utils.js';
 import { resumableGenerationMiddleware } from '../src/resumable-generations.js';
+import { roleplayHash } from '../src/roleplay-store.js';
+import { conversationReplyImageProof } from '../public/scripts/neconyan-conversation/prompt-media.js';
 
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
 
@@ -2030,6 +2032,9 @@ describe('Neconyan Conversation REST API', () => {
             role: 'user',
             text: 'Can you say hi?',
         });
+        expect(json.replyMessage.extra.conversation_reply_to.neconyan_image_source).toEqual(
+            conversationReplyImageProof(json.userMessage, json.replyMessage.extra.conversation_reply_to, 'Can you say hi?', roleplayHash),
+        );
         expect(json.replyMessage.extra.conversation_commands.selfieRequests).toHaveLength(1);
         expect(json.generation.choices[0].message.content).toBe('[selfie] Hello from Nova.');
         expect(json.prompt.systemPrompt).toContain('You are Nova');

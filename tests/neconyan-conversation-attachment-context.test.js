@@ -1,6 +1,7 @@
 import { describe, expect, jest, test } from '@jest/globals';
 
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/thread-store-utils.js', () => ({
+    getConversationAttachmentLabels: () => ['notes.txt'],
     getConversationAttachmentSummary: () => 'Attachment: notes.txt',
     getConversationMediaDisplay: () => '',
     getConversationMediaIndex: () => 0,
