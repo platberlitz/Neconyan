@@ -80,8 +80,7 @@ for (const phone of [true, false]) {
             const store = await import('/scripts/extensions/in-chat-agents/agent-store.js');
             const template = await (await fetch('/scripts/extensions/in-chat-agents/templates/plot-compass-companion.json')).json();
             await store.saveAgent({ ...template, id: 'plot-fixture', sourceTemplateId: template.id, enabled: true,
-                version: 2, settings: { plotCompassScope: 'global', plotCompassObjective: 'Keep a hopeful tone',
-                    plotCompassObjectives: { [JSON.stringify(['character', avatar])]: 'Reveal the family secret', [JSON.stringify(['character', avatar, chatName])]: 'Find the missing letter' } },
+                version: 2, settings: { plotCompassScope: 'global', plotCompassObjective: 'Keep a hopeful tone' },
                 connectionProfile: 'durable', companion: { ...template.companion, trigger: 'manual', displayMode: 'panel' } });
             const openedChat = await (await import('/script.js')).openSavedCharacterChat(avatar, chatName);
             (await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js')).openCompanionPanel();
@@ -113,10 +112,12 @@ for (const phone of [true, false]) {
             return;
         }
 
-        // Existing v2 settings are composed automatically, including a legacy global selection.
+        // Keep the saved v2 global objective and enter both local objectives through the controls.
         await expect(field('global')).toHaveValue('Keep a hopeful tone');
-        await expect(field('character')).toHaveValue('Reveal the family secret');
-        await expect(objective).toHaveValue('Find the missing letter');
+        await expect(field('character')).toHaveValue('');
+        await expect(objective).toHaveValue('');
+        await field('character').fill('Reveal the family secret');
+        await objective.fill('Find the missing letter');
         await expectCompactObjectives(section.locator('.ica--plot-objective-composer'));
         await toggle('global').focus();
         await page.keyboard.press('Space');
@@ -138,9 +139,11 @@ for (const phone of [true, false]) {
         await expect(field('global')).toHaveValue(longObjective);
         await fixedSizing.evaluate(style => style.remove());
         await field('global').fill('Keep a hopeful tone');
-        await objective.press('Enter');
+        await save.click();
         await expect(section).toContainText('Bring a sealed letter into the scene.', { timeout: 30000 });
         await expect(section).toContainText('Before the conversation');
+        await expect(field('character')).toHaveValue('Reveal the family secret');
+        await expect(objective).toHaveValue('Find the missing letter');
         expect(app.provider.calls).toHaveLength(1);
         expect(JSON.stringify(app.provider.calls[0].messages)).toContain('Find the missing letter');
         expect(JSON.stringify(app.provider.calls[0].messages)).toContain('Keep a hopeful tone');
@@ -174,7 +177,7 @@ for (const phone of [true, false]) {
             if (scope === 'chat') expect(prompt).toContain('[Plot Compass Objective]\\nnone set');
             else expect(prompt).toContain('Find the missing letter');
         }
-        // Reload checks both stored switches and the automatic upgrade of a saved v2 agent.
+        // Reload checks stored switches and both local objectives on the same v2 agent.
         await page.reload();
         await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'), undefined, { timeout: 60000 });
         await expect.poll(() => page.evaluate(async () => (await import('/scripts/extensions/in-chat-agents/agent-store.js')).getAgentById('plot-fixture')?.version), { timeout: 30000 }).toBe(2);
@@ -183,6 +186,7 @@ for (const phone of [true, false]) {
             (await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js')).openCompanionPanel();
         }, { avatar, chatName });
         for (const scope of ['global', 'character', 'chat']) await expect(toggle(scope)).not.toBeChecked();
+        await expect(field('character')).toHaveValue('Reveal the family secret');
         await expect(objective).toHaveValue('Find the missing letter');
         for (const scope of ['global', 'character', 'chat']) await toggle(scope).check();
         await save.click();
