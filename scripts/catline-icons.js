@@ -1,5 +1,5 @@
 /** Catline: original 24-unit drawings, with plain counterparts for Kittyless. */
-const strokeWidth = 2.4;
+const strokeWidth = 2;
 const p = d => `<path d="${d}"/>`;
 const c = (x, y, r) => `<circle cx="${x}" cy="${y}" r="${r}"/>`;
 const r = (x, y, w, h, radius = 2) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${radius}"/>`;
@@ -103,7 +103,7 @@ path('ban', 'm5 5 14 14');
 icons.ban = icons.ban.map((d, i) => (i ? c(12, 12, 9) : head) + d);
 path('check-double', 'm2 12 4 4L17 5m-6 11 3 3 9-10', 'M2 10c-3 0 0 4 4 6L17 5m-6 11 3 3 9-10');
 path('asterisk', 'M12 3v18M4 7l16 10M4 17 20 7');
-path('star', 'm12 2 3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1Z', 'm12 2 3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1Z M6 8V3l4 3');
+path('star', 'm12 2 3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1Z', 'M10 2l2.6 5.3 5.9.9-4.2 4.1 1 5.8-5.3-2.8-5.3 2.8 1-5.8L1.5 8.2l5.9-.9ZM14.8 17c2.2 5 8.2 5 7.2 0-.6-3-4-2-3 0');
 path('heart', 'M12 21 3 12C-3 4 8-1 12 6c4-7 15-2 9 6Z', 'M12 21 3 12C-3 4 8-1 12 6c4-7 15-2 9 6Z M3 7V2l4 2m10 0 4-2v5');
 variant('heart-pulse', 'heart', p('M3 12h5l2-3 3 7 2-4h6'));
 badge('clock', p('M12 8v5l4 2'));
@@ -173,8 +173,8 @@ path('at', 'M16 8v7c0 4 6 3 6-3A10 10 0 1 0 17 21M16 12a4 4 0 1 0-8 0 4 4 0 0 0 
 // Media, devices and connections.
 add('play', p('m6 3 16 9-16 9Z'), p('m6 3 16 9-16 9ZM6 3l5-1v4'));
 add('pause', p('M6 3h3v18H6ZM15 3h3v18h-3Z'), p('M6 3l3 2v16H6ZM15 5l3-2v18h-3Z'));
-// Stop keeps its universal filled square, including on the feline controls.
-icons.stop = [filled(r(4, 4, 16, 16)), filled(r(4, 4, 16, 16))];
+// The solid square stays recognisable, with ears outside its top edge.
+icons.stop = [filled(r(4, 4, 16, 16) + p('M4 7V1l6 4ZM14 5l6-4v6Z')), filled(r(4, 4, 16, 16))];
 icons['circle-stop'] = [...icons.stop];
 path('forward', 'm2 4 10 8-10 8Zm10 0 10 8-10 8Z', 'm2 4 10 8-10 8Zm10 0 10 8-10 8ZM2 4V1l4 2');
 variant('forward-fast', 'forward', p('M22 3v18'));
@@ -203,6 +203,8 @@ path('memory', 'M2 6h20v12H2ZM5 10h4v4H5ZM15 10h4v4h-4ZM5 18v4m4-4v4m6-4v4m4-4v4
 path('sd-card', 'M8 2h12v20H4V6ZM9 3v5m4-5v5m4-5v5', 'M8 2l4 2 4-2h4v20H4V6ZM9 3v5m4-5v5m4-5v5');
 path('hard-drive', 'M5 4h14l3 11v6H2v-6ZM2 15h20M16 18h.01M19 18h.01', 'M5 4l4 2 5-2h5l3 11v6H2v-6ZM2 15h20M16 18h.01M19 18h.01');
 path('plug', 'M6 2v6m12-6v6M3 8h18M5 8v6a7 7 0 0 0 14 0V8M12 21v2', 'M6 2v6m12-6v6M3 8h18M5 8l4 3 3-3 3 3 4-3v6a7 7 0 0 1-14 0M12 21v2');
+icons.plug[0] = filled(p('M4 7h12v6a6 6 0 0 1-12 0Z'))
+    + p('M6 2v5m8-5v5M10 19c0 4 12 5 12-1 0-4-4-4-4-1');
 variant('plug-circle-check', 'plug', p('m9 15 2 2 4-4'));
 variant('plug-circle-exclamation', 'plug', p('M12 12v3m0 3h.01'));
 path('power-off', 'M12 2v10M6 5a9 9 0 1 0 12 0', 'M12 2v10M6 5a9 9 0 1 0 12 0M4 8V2l4 3');
@@ -215,6 +217,8 @@ path('cloud-arrow-down', 'M7 17H5C-1 17 0 8 6 8c1-9 14-8 14 1 5 0 5 8 0 8M12 12v
 for (const [role, mark] of Object.entries({ plus: p('M15 17h8m-4-4v8'), check: p('m15 17 3 3 5-6'), pen: p('m15 22 1-4 5-5 2 2-5 5Z'), shield: p('m19 12 4 2v5l-4 3-4-3v-5Z'), slash: p('m2 2 20 20'), tie: p('m10 14 2 2 2-2m-2 2-2 5h4Z'), graduate: p('m12 1 10 4-10 4L2 5Zm10 4v6'), astronaut: c(12, 7, 6) + p('M16 17h5v5h-5'), secret: p('M4 7h16M7 7l2-5h6l2 5M8 9h3m2 0h3') })) {
     icons[`user-${role}`] = icons.user.map(d => (['plus', 'check', 'pen', 'shield'].includes(role) ? small(d) : d) + mark);
 }
+// The ears belong to the helmet silhouette, not inside a second round helmet.
+icons['user-astronaut'][0] = p('M6 6V2l4 2h4l4-2v4c3 8-15 8-12 0ZM8 7h8M4 22v-3c0-4 3-6 8-6s8 2 8 6v3M8 18h3m-3 3h3');
 icons['user-gear'] = icons.user.map((d, i) => small(d) + `<g transform="translate(13 13) scale(.43)">${icons.gear[i]}</g>`);
 icons['users-gear'] = icons.users.map((d, i) => small(d) + `<g transform="translate(13 13) scale(.43)">${icons.gear[i]}</g>`);
 add('address-card', r(2, 4, 20, 16) + c(8, 10, 2) + p('M4 17q4-6 8 0m3-7h4m-4 4h4'), p('M2 4l4 2 4-2h12v16H2ZM6 10V7l2 1 2-1v3a2 2 0 0 1-4 0M4 17q4-6 8 0m3-7h4m-4 4h4'));
@@ -309,6 +313,9 @@ path('chess', 'M7 22h14l-2-5v-6c4-9-8-12-9-8L3 10l4 4 6-4-4 7ZM10 7h.01M9 17h10'
 add('dice', r(2, 2, 20, 20) + c(7, 7, 1) + c(17, 7, 1) + c(12, 12, 1) + c(7, 17, 1) + c(17, 17, 1), p('M2 2l5 3 5-3 5 3 5-3v20H2Z') + c(7, 8, 1) + c(17, 8, 1) + c(12, 13, 1) + c(7, 18, 1) + c(17, 18, 1));
 path('dice-d20', 'm12 1 10 6v11l-10 5-10-5V7ZM2 7h20L12 1 5 18h14L12 1M2 18l3 0 7 5 7-5h3', 'm12 1 10 6v11l-10 5-10-5V7ZM2 7h20L12 1 5 18h14L12 1M2 18l3 0 7 5 7-5h3M4 6V1l4 3');
 path('masks-theater', 'M2 2q5 4 10 0v9c0 6-10 8-10 0ZM5 7h.01M9 7h.01M5 12q2-2 4 0M14 8q4 3 8 0v9c0 6-10 7-10 0M15 13h.01M19 13h.01M15 17q2 3 4 0', 'M2 2l5 3 5-3v9c0 6-10 8-10 0ZM5 7h.01M9 7h.01M5 12q2-2 4 0M14 8q4 3 8 0v9c0 6-10 7-10 0M15 13h.01M19 13h.01M15 17q2 3 4 0');
+icons['masks-theater'][0] = p('M2 6V2l3 2h5l3-2v4c3 7-14 7-11 0ZM11 17v-4l3 2h5l3-2v4c3 7-14 7-11 0Z')
+    + filled(c(5, 6, .7) + c(10, 6, .7) + c(14, 17, .7) + c(19, 17, .7))
+    + '<path stroke-width="1.5" d="M5 8q1.25 2 2.5 0 1.25 2 2.5 0M14 20q1.25-2 2.5 0 1.25-2 2.5 0"/>';
 path('flask', 'M8 2h8M9 2v7L2 21h20L15 9V2M6 15h12', 'M8 2h8M9 2v7L2 21h20L15 9V2M6 15h12M6 15v-4l4 2');
 path('vial', 'm15 2 7 7M17 4 3 18c-4 4 1 9 5 5L22 9M9 12l5 5', 'm15 2 7 7M17 4 3 18c-4 4 1 9 5 5L22 9M9 12l5 5M3 18v-5l4 2');
 add('vials', `<g transform="scale(.65)">${icons.vial[1]}</g><g transform="translate(9 7) scale(.65)">${icons.vial[1]}</g>`, `<g transform="scale(.65)">${icons.vial[0]}</g><g transform="translate(9 7) scale(.65)">${icons.vial[0]}</g>`);
