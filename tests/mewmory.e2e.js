@@ -207,13 +207,19 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
         expect((await post('/api/mewmory/config/get')).config.roles.extractor.tokenizer).toBe('auto');
         expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width + 1);
         const inputs = workspace.locator('input:not([type="checkbox"]):visible');
-        for (let index = 0; index < await inputs.count(); index++) {
-            const box = await inputs.nth(index).boundingBox();
+        // Saving can rebuild Settings between separate locator calls. Measure the
+        // visible controls together so a detached input cannot lose its box.
+        const inputBoxes = await inputs.evaluateAll(elements => elements.map(element => {
+            const { x, width } = element.getBoundingClientRect();
+            return { x, width };
+        }));
+        expect(inputBoxes.length).toBeGreaterThan(0);
+        for (const box of inputBoxes) {
             expect(box.x).toBeGreaterThanOrEqual(-1);
             expect(box.x + box.width).toBeLessThanOrEqual(width + 1);
         }
         const tokenizer = workspace.getByLabel('Tokenizer for this role');
-        expect((await tokenizer.boundingBox()).height).toBeGreaterThanOrEqual(44);
+        expect(await tokenizer.evaluate(element => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
         await info.attach('mewmory-controls-' + width, {
             body: Buffer.from(JSON.stringify(await tokenizer.evaluate(element => ({
                 fontSize: window.getComputedStyle(element).fontSize,
