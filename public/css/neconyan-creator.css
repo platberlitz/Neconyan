@@ -1,5 +1,19 @@
 /* Neconyan Creator Studio - deferred stylesheet */
 
+/* Imported notes share this node in the card panel and fullscreen popup.
+   Override imported inline dimensions without hiding or changing the saved notes. */
+#creator_notes_spoiler,
+#creator_notes_spoiler * {
+    box-sizing: border-box;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    overflow-wrap: anywhere;
+    white-space: normal !important;
+}
+#creator_notes_spoiler :is(img, video, svg, canvas) { height: auto !important; }
+#creator_notes_spoiler :is(pre, pre code) { white-space: pre-wrap !important; }
+#creator_notes_spoiler table { width: 100% !important; table-layout: fixed; }
+
 body.neconyan #right-nav-panel.openDrawer[data-menu-type="creator"] #rm_PinAndTabs,
 body.neconyan #right-nav-panel.openDrawer[data-menu-type="creator"] #CharListButtonAndHotSwaps,
 body.neconyan #right-nav-panel.openDrawer[data-menu-type="creator"] > .sb-character-editor-subtabs-wrapper,
