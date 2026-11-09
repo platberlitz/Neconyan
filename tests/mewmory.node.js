@@ -289,6 +289,34 @@ test('ranked recall works without a selector and local replies never dispatch mo
     assert.equal(local.inspection.status, 'local');
 });
 
+test('recall inspection retains the exact selected text and neighbouring passages', async t => {
+    const { directories } = disk(t);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; event(state); });
+    const config = defaultConfig();
+    config.writerTokenizer = 'cl100k_base';
+    config.retrieval.resultLimit = 1;
+    config.retrieval.neighbourChunks = 1;
+    saveConfig(directories, config);
+    const documents = searchDocuments(readState(directories, locator), Infinity, config);
+    const result = await recall(directories, locator, { query: 'gift' }, { scheduleBackground: false });
+    assert.ok(result.inspection.retrieval.selected.length > 0);
+    for (const id of result.inspection.retrieval.selected) {
+        const candidate = result.inspection.candidates.find(item => item.id === id);
+        assert.ok(candidate, 'included passages must be inspectable');
+        assert.equal(candidate.text, documents.find(item => item.id === id).text);
+        assert.ok(candidate.text.length > 0);
+    }
+    const remembered = result.inspection.candidates.find(item => item.id === 'event:gift');
+    assert.ok(remembered?.text);
+    mutateState(directories, locator, state => {
+        state.records.find(record => record.id === 'event:gift').text = 'A later correction.';
+    });
+    const view = inspectState(readState(directories, locator), config);
+    assert.equal(view.recalls.at(-1).candidates.find(item => item.id === 'event:gift').text, remembered.text);
+    assert.notEqual(remembered.text, 'A later correction.');
+});
+
 test('forks remove future file copies and continuations retain the original attachment parent', () => {
     const messages = structuredClone(fixture.messages);
     const state = newState(locator);

@@ -288,9 +288,12 @@ export async function recall(directories, locator, {
         id: operationId || hash([Date.now(), fingerprint, scene]), at: Date.now(), asOf: Number.isFinite(asOf) ? asOf : state.timeline.length - 1,
         status: selection.status.status, fallbackUsed: selection.fallbackUsed,
         error: selection.error, indexError, ...selection.status,
-        candidates: selection.documents.map(document => ({ id: document.id, kind: document.kind, refs: document.refs,
-            dataType: document.dataType, ...(document.kind === 'source' ? { sourceName: document.sourceName, start: document.start, end: document.end } : {}),
-            ...document.retrieval })),
+        // Keep the exact recalled wording, including automatically added neighbours, for inspection.
+        candidates: [...new Map([...currentDocuments, ...selection.documents].map(document => [document.id, document])).values()]
+            .map(document => ({ id: document.id, kind: document.kind, refs: document.refs, text: document.text,
+                ...(document.version === undefined ? {} : { version: document.version }),
+                dataType: document.dataType, ...(document.kind === 'source' ? { sourceName: document.sourceName, start: document.start, end: document.end } : {}),
+                ...document.retrieval })),
         retrieval: { requestedMode: retrieval.mode, usedMode: vector ? retrieval.mode : 'keyword',
             keywordFallback: retrieval.mode !== 'keyword' && !vector, aiSelection: !local && config.roles.selector.enabled,
             documents: allDocuments.length, indexed: Object.keys(state.index.vectors).length, selected: assembly.selected,

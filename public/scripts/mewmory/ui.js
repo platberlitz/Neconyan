@@ -697,6 +697,12 @@ function renderArchive(root) {
     if (!ui.matches && view.sources.length) root.append(sources);
 }
 
+function recallPassage(candidate) {
+    return node('p', typeof candidate?.text === 'string' ? 'mewmory-prose' : 'mewmory-caption',
+        typeof candidate?.text === 'string' ? candidate.text
+            : 'This older recall did not save the passage text. Preview memories again to see the current selection.');
+}
+
 function renderRecall(root) {
     root.append(button('Preview which memories would be picked', () => act(() => requestMewmory('recall', { tokenizer: getFriendlyTokenizerName() })),
         { primary: true, disabled: !mewmory.view?.enabled }));
@@ -729,8 +735,9 @@ function renderRecall(root) {
         for (const entry of entries) {
             const item = node('article', 'mewmory-record');
             const candidate = run.candidates.find(candidate => candidate.id === entry.recordId);
-            item.append(node('strong', '', (entry.relevanceType || candidate?.kind || 'Candidate').replaceAll('_', ' ')),
-                node('p', 'mewmory-prose', entry.justification));
+            item.append(node('strong', '', candidate?.sourceName || kinds[candidate?.kind] || 'Memory or passage'),
+                recallPassage(candidate),
+                node('p', 'mewmory-caption', [(entry.relevanceType || '').replaceAll('_', ' '), entry.justification].filter(Boolean).join(' · ')));
             if (title === 'Picked' && run.retrieval) item.append(node('p', 'mewmory-caption', run.retrieval.selected.includes(entry.recordId)
                 ? 'Included in the prompt.' : run.retrieval.limited.includes(entry.recordId) ? 'Outside the result limit.'
                     : run.omitted.includes(entry.recordId) ? 'Did not fit the memory budget.' : 'Already covered or no longer eligible.'));
@@ -748,7 +755,8 @@ function renderRecall(root) {
         for (const id of run.retrieval.selected) {
             const candidate = run.candidates.find(item => item.id === id);
             const row = node('article', 'mewmory-record');
-            row.append(node('strong', '', candidate?.sourceName || candidate?.kind || 'Neighbouring passage'), node('p', 'mewmory-caption', id));
+            row.append(node('strong', '', candidate?.sourceName || kinds[candidate?.kind] || 'Neighbouring passage'),
+                recallPassage(candidate), node('p', 'mewmory-caption', id));
             if (candidate?.score !== undefined) row.append(node('p', 'mewmory-caption', 'Rank score: ' + candidate.score.toFixed(4)
                 + (candidate.similarity === null ? '' : ' · Meaning similarity: ' + candidate.similarity.toFixed(3))));
             if (candidate) row.append(sourceButtons(candidate.refs));

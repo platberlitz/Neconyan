@@ -176,7 +176,22 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
     await expect(workspace.locator('.mewmory-prompt')).not.toContainText('SEARCH ONLY');
     await workspace.getByRole('tab', { name: 'Recall', exact: true }).click();
     await expect(workspace.getByText(/INSPECT ONLY:/)).toBeVisible();
-    await page.screenshot({ path: info.outputPath('mewmory-desktop.png') });
+    const recalled = (await post('/api/mewmory/inspect', { locator })).recalls.at(-1);
+    const picked = workspace.locator('.mewmory-section').filter({ has: page.getByRole('heading', { name: 'Picked', exact: true }) });
+    expect(recalled.selections.length).toBeGreaterThan(0);
+    for (const entry of recalled.selections) {
+        const candidate = recalled.candidates.find(candidate => candidate.id === entry.recordId);
+        expect(candidate.text.length).toBeGreaterThan(0);
+        await expect(picked.locator('.mewmory-prose').filter({ hasText: candidate.text }).first()).toBeVisible();
+    }
+    await picked.getByRole('heading', { name: 'Picked', exact: true }).scrollIntoViewIfNeeded();
+    await page.screenshot({ path: info.outputPath('mewmory-recall-desktop.png') });
+    await page.setViewportSize({ width: 393, height: 852 });
+    await expect(picked.locator('.mewmory-prose').first()).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(394);
+    await picked.getByRole('heading', { name: 'Picked', exact: true }).scrollIntoViewIfNeeded();
+    await page.screenshot({ path: info.outputPath('mewmory-recall-phone.png') });
+    await page.setViewportSize({ width: 1280, height: 900 });
     await workspace.getByRole('tab', { name: 'Archive', exact: true }).click();
     await workspace.getByLabel('Search memories and original messages').fill('true name');
     await workspace.getByRole('button', { name: 'Search archive', exact: true }).click();
