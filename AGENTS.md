@@ -73,6 +73,7 @@ UI work, in short:
 ## Worktrees
 
 - Give every new worktree its own root `node_modules`. A symlink to another checkout's `node_modules` makes 3 tests fail (`persona-card.test.js` x2, `character-card-metadata-preservation.test.js` x1, 'Requested file path is outside of the server directory') because the PNG library loads its WASM file from outside the checkout and `src/fetch-patch.js` rejects it. Use a hardlinked copy: `cp -al <main checkout>/node_modules node_modules`. `tests/node_modules` may stay a symlink.
+- A hardlinked copy is only as current as the checkout it came from. If the server stops at startup with `ERR_MODULE_NOT_FOUND` (seen with `web-push` after it was added to `package.json`), that checkout's packages are older than `package.json`: run `npm ci --no-audit --no-fund` with Node 24 in the worktree, and in the main checkout too so the next copy is complete.
 - Those 3 failures always mean the worktree setup is wrong. They are never pre-existing app bugs, so do not report them as a baseline, and do not weaken `fetch-patch.js`. Check `ls -ld node_modules` before running tests.
 
 ## Reporting changes
