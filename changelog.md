@@ -14,6 +14,7 @@
 - PR #566 (2026-11-09) `fix(roleplay): preserve regex formatting after server agent failures`
 - PR #567 (2026-11-09) `fix(purrks): expand the connection profile dropdown`
 - PR #568 (2026-11-09) `fix(slate-flat): keep the top-bar accent and icons visible`
+- PR #569 (2026-11-09) `fix(agents): remember page and collapsed category preferences`
 - PR #570 (2026-11-09) `fix(conversation): prevent image review for ordinary text quotes`
 - PR #571 (2026-11-09) `fix(chat): make the global external media setting easy to find`
 
