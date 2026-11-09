@@ -2608,7 +2608,7 @@ test('server replies use the saved character profile and persona Author\'s Note'
 
     const alex = capture({ user_avatar: 'alex.png', extension_settings: { note: { ...note, default: 'Chat note' } } });
     assert.equal(alex.persona, null);
-    assert.equal(activeRoleplayAuthorNote(alex), 'Calm pacing.\nChat note');
+    assert.equal(activeRoleplayAuthorNote(alex), 'Chat note');
 
     // Several ticked notes are all sent, in list order, around the chat note.
     const [chara] = note.chara;
@@ -2629,7 +2629,7 @@ test('server replies use the saved character profile and persona Author\'s Note'
         extension_settings: { note: { ...note, chara: [characterNote], default: 'Chat note' } } });
     const samLibrary = capture(settingsFor('sam.png'));
     assert.equal(activeRoleplayAuthorNote(samLibrary), 'Sam stays curious.\nSam speaks formally.\nChat note\nSam lives by the sea.');
-    assert.equal(activeRoleplayAuthorNote(capture(settingsFor('alex.png'))), 'Calm pacing.\nChat note');
+    assert.equal(activeRoleplayAuthorNote(capture(settingsFor('alex.png'))), 'Chat note');
     assert.equal(activeRoleplayAuthorNote(capture(settingsFor('sam.png', { ...libraries, perPersona: false }))),
         'Calm pacing.\nSam speaks formally.\nChat note');
     libraries.personaNoteLibraries['sam.png'].activeProfiles = [];

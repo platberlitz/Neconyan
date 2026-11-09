@@ -17,32 +17,69 @@ function isNoteProfile(profile) {
     return profile && typeof profile === 'object' && typeof profile.id === 'string' && profile.id;
 }
 
-// A persona library owns both the saved text and the mix. Until its first edit, an older note
-// keeps using the shared profiles and that persona's legacy selection without changing the save.
-export function getNoteProfileStore(entry, personaAvatar = '') {
+function getSavedPersonaLibrary(entry, avatar) {
     const libraries = entry?.personaNoteLibraries;
-    if (entry?.perPersona && personaAvatar && libraries && !Array.isArray(libraries) && Object.hasOwn(libraries, personaAvatar)) {
-        const library = libraries[personaAvatar];
-        if (library && Array.isArray(library.profiles) && library.profiles.some(isNoteProfile)) {
-            return library;
-        }
-    }
-    return entry;
+    const library = libraries && !Array.isArray(libraries) && Object.hasOwn(libraries, avatar) ? libraries[avatar] : null;
+    return library && Array.isArray(library.profiles) && library.profiles.some(isNoteProfile) ? library : null;
 }
 
-export function ensurePersonaNoteLibrary(entry, personaAvatar) {
+function getLegacyPersonaSelection(entry, avatar) {
+    const mix = entry.personaActiveProfiles && Object.hasOwn(entry.personaActiveProfiles, avatar)
+        ? entry.personaActiveProfiles[avatar] : undefined;
+    const pick = entry.personaProfiles && Object.hasOwn(entry.personaProfiles, avatar)
+        ? entry.personaProfiles[avatar] : undefined;
+    return { mix: Array.isArray(mix) ? mix : undefined, pick };
+}
+
+// Old libraries were full copies of the shared list. Retain explicit persona assignments and
+// anything created or edited in that library, rather than treating every inherited row as owned.
+// Read-time scoping is pure: the browser and server see the same collection before the next save.
+export function getNoteProfileStore(entry, personaAvatar = '') {
+    if (!entry?.perPersona || !personaAvatar) return entry;
+    const saved = getSavedPersonaLibrary(entry, personaAvatar);
+    if (saved?.scopeVersion === 1) return saved;
+
+    const shared = getNoteProfiles(entry);
+    const { mix, pick } = getLegacyPersonaSelection(entry, personaAvatar);
+    const selected = saved ? getActiveNoteProfileIds(saved) : mix ?? (pick ? [pick] : []);
+    const assigned = new Set([...(mix ?? []), pick, ...selected]);
+    const source = saved ? getNoteProfiles(saved) : shared;
+    let profiles = source.filter(profile => {
+        if (assigned.has(profile.id)) return true;
+        if (!saved) return false;
+        const original = shared.find(item => item.id === profile.id);
+        return !original || ['name', 'prompt', 'position'].some(key => profile[key] !== original[key]);
+    });
+    // A new persona gets an empty editor, never another persona's text or names.
+    if (!profiles.length) profiles = getNoteProfiles({ position: NOTE_POSITION.after });
+    const activeProfiles = profiles.filter(profile => selected.includes(profile.id)).map(profile => profile.id);
+    if (!saved && mix === undefined && !pick && profiles[0].id === DEFAULT_NOTE_PROFILE_ID) {
+        activeProfiles.push(DEFAULT_NOTE_PROFILE_ID);
+    }
+    return {
+        ...saved,
+        scopeVersion: 1,
+        profiles: profiles.map(profile => ({ ...profile })),
+        activeProfile: profiles.find(profile => profile.id === saved?.activeProfile)?.id ?? activeProfiles[0] ?? profiles[0].id,
+        activeProfiles,
+        // Preserve the exact old copied rows, even if the shared originals are edited later.
+        ...(saved ? { inheritedProfiles: saved.inheritedProfiles ?? source.filter(profile => !profiles.includes(profile)) } : {}),
+    };
+}
+
+export function ensurePersonaNoteLibrary(entry, personaAvatar, { adoptShared = false } = {}) {
     if (!entry?.perPersona || !personaAvatar) {
         return entry;
     }
-    const saved = getNoteProfileStore(entry, personaAvatar);
-    if (saved !== entry) {
-        return saved;
-    }
-    const library = {
+    const hasAssignments = ['personaNoteLibraries', 'personaProfiles', 'personaActiveProfiles']
+        .some(key => Object.keys(entry[key] ?? {}).length);
+    // Like Conversation's unscoped-data migration, first opt-in adopts existing notes once.
+    const library = adoptShared && !hasAssignments ? {
+        scopeVersion: 1,
         profiles: getNoteProfiles(entry).map(profile => ({ ...profile })),
-        activeProfile: getActiveNoteProfileId(entry, personaAvatar),
-        activeProfiles: getActiveNoteProfileIds(entry, personaAvatar),
-    };
+        activeProfile: getActiveNoteProfileId(entry),
+        activeProfiles: getActiveNoteProfileIds(entry),
+    } : getNoteProfileStore(entry, personaAvatar);
     entry.personaNoteLibraries = { ...entry.personaNoteLibraries, [personaAvatar]: library };
     return library;
 }
@@ -74,8 +111,8 @@ export function getNoteProfiles(entry, personaAvatar = '') {
 }
 
 /**
- * The profile id in effect. With `perPersona` on, the pick saved for the persona wins; otherwise,
- * or when that persona has no pick yet, the note's shared active profile is used.
+ * The profile id in the selected collection. A persona without saved notes has an empty Default
+ * profile, not the shared collection's active note.
  */
 export function getActiveNoteProfileId(entry, personaAvatar = '') {
     entry = getNoteProfileStore(entry, personaAvatar);
@@ -84,17 +121,7 @@ export function getActiveNoteProfileId(entry, personaAvatar = '') {
         return null;
     }
 
-    const personaPick = entry.perPersona && personaAvatar && entry.personaProfiles && typeof entry.personaProfiles === 'object'
-        ? entry.personaProfiles[personaAvatar]
-        : undefined;
-
-    for (const id of [personaPick, entry.activeProfile]) {
-        if (id && profiles.some(profile => profile.id === id)) {
-            return id;
-        }
-    }
-
-    return profiles[0].id;
+    return profiles.some(profile => profile.id === entry.activeProfile) ? entry.activeProfile : profiles[0].id;
 }
 
 export function resolveNoteProfile(entry, personaAvatar = '') {
@@ -103,10 +130,8 @@ export function resolveNoteProfile(entry, personaAvatar = '') {
 }
 
 /**
- * The character notes switched on together, in the order they are listed. With `perPersona` on,
- * the persona's own mix wins, then the single note picked for that persona before mixes existed.
- * Otherwise the shared mix is used. Notes saved before mixes existed have one note in use. An
- * empty saved mix means none is in use.
+ * The character notes switched on together, in collection order. Persona scoping and legacy
+ * selections are resolved by getNoteProfileStore. An empty saved mix means none is in use.
  */
 export function getActiveNoteProfileIds(entry, personaAvatar = '') {
     entry = getNoteProfileStore(entry, personaAvatar);
@@ -116,22 +141,6 @@ export function getActiveNoteProfileIds(entry, personaAvatar = '') {
     }
 
     const inListOrder = ids => profiles.filter(profile => ids.includes(profile.id)).map(profile => profile.id);
-
-    if (entry.perPersona && personaAvatar) {
-        const personaMix = entry.personaActiveProfiles && typeof entry.personaActiveProfiles === 'object'
-            ? entry.personaActiveProfiles[personaAvatar]
-            : undefined;
-        if (Array.isArray(personaMix)) {
-            return inListOrder(personaMix);
-        }
-
-        const legacyPick = entry.personaProfiles && typeof entry.personaProfiles === 'object'
-            ? entry.personaProfiles[personaAvatar]
-            : undefined;
-        if (legacyPick && profiles.some(profile => profile.id === legacyPick)) {
-            return [legacyPick];
-        }
-    }
 
     if (Array.isArray(entry.activeProfiles)) {
         return inListOrder(entry.activeProfiles);

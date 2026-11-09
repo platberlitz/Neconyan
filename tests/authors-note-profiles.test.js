@@ -6,6 +6,7 @@ import {
     DEFAULT_NOTE_PROFILE_ID,
     captureScopedAuthorsNotes,
     composeAuthorsNote,
+    ensurePersonaNoteLibrary,
     findCharacterNoteEntry,
     getActiveNoteProfileId,
     getActiveNoteProfileIds,
@@ -43,11 +44,11 @@ describe('Author\'s Note profiles', () => {
 
     test('the persona pick wins only while the note remembers profiles per persona', () => {
         expect(resolveNoteProfile(profiled, 'sam.png').id).toBe('chaos');
-        expect(resolveNoteProfile(profiled, 'alex.png').id).toBe('calm');
-        expect(resolveNoteProfile(profiled, 'gone.png').id).toBe('calm');
+        expect(resolveNoteProfile(profiled, 'alex.png').prompt).toBe('');
+        expect(resolveNoteProfile(profiled, 'gone.png').prompt).toBe('');
         expect(resolveNoteProfile({ ...profiled, perPersona: false }, 'sam.png').id).toBe('calm');
-        expect(resolveNoteProfile({ ...profiled, activeProfile: 'missing' }, 'alex.png').id).toBe('calm');
-        expect(resolveNoteProfile({ ...profiled, activeProfile: 'missing', profiles: [...profiled.profiles].reverse() }, 'alex.png').id).toBe('chaos');
+        expect(resolveNoteProfile({ ...profiled, activeProfile: 'missing' }, 'alex.png').prompt).toBe('');
+        expect(resolveNoteProfile({ ...profiled, activeProfile: 'missing', profiles: [...profiled.profiles].reverse() }, 'alex.png').prompt).toBe('');
     });
 
     test('finds the character note under the key the browser saves', () => {
@@ -95,8 +96,8 @@ describe('mixing character notes', () => {
 
     test('notes saved before mixing keep the single note they had in use', () => {
         expect(getActiveNoteProfileIds(profiled, 'sam.png')).toEqual(['chaos']);
-        expect(getActiveNoteProfileIds(profiled, 'alex.png')).toEqual(['calm']);
-        expect(getActiveNoteProfileIds(profiled, 'gone.png')).toEqual(['calm']);
+        expect(getActiveNoteProfileIds(profiled, 'alex.png')).toEqual([DEFAULT_NOTE_PROFILE_ID]);
+        expect(getActiveNoteProfileIds(profiled, 'gone.png')).toEqual([]);
         expect(getActiveNoteProfileIds({ name: 'individual:Nova', prompt: 'Old note', position: 2 })).toEqual([DEFAULT_NOTE_PROFILE_ID]);
         expect(getActiveNoteProfileIds(null)).toEqual([]);
     });
@@ -108,7 +109,7 @@ describe('mixing character notes', () => {
         expect(resolveActiveNoteProfiles(entry, 'sam.png').map(profile => profile.name)).toEqual(['Calm', 'Rain']);
     });
 
-    test('each persona can keep its own mix, and others fall back to the shared one', () => {
+    test('each persona keeps its own mix without inheriting the shared one', () => {
         const entry = {
             ...mixed,
             activeProfiles: ['calm'],
@@ -117,7 +118,9 @@ describe('mixing character notes', () => {
 
         expect(getActiveNoteProfileIds(entry, 'sam.png')).toEqual(['chaos', 'rain']);
         expect(getActiveNoteProfileIds(entry, 'mo.png')).toEqual([]);
-        expect(getActiveNoteProfileIds(entry, 'alex.png')).toEqual(['calm']);
+        expect(getNoteProfiles(entry, 'alex.png').map(note => note.prompt)).toEqual(['']);
+        const empty = captureScopedAuthorsNotes({ ...entry, useChara: true }, null, 'alex.png');
+        expect(composeAuthorsNote('Chat note', empty.scoped.notes.map(note => ({ ...note, enabled: true })))).toBe('Chat note');
         expect(getActiveNoteProfileIds({ ...entry, perPersona: false }, 'sam.png')).toEqual(['calm']);
     });
 
@@ -152,7 +155,7 @@ describe('saved character note libraries', () => {
         expect(getNoteProfiles(entry, 'sam.png')).toEqual(library.profiles);
         expect(resolveNoteProfile(entry, 'sam.png').prompt).toBe('Persona tone');
         expect(getActiveNoteProfileIds(entry, 'sam.png')).toEqual(['own', 'extra']);
-        expect(getNoteProfiles(entry, 'alex.png')).toEqual(profiled.profiles);
+        expect(getNoteProfiles(entry, 'alex.png').map(note => note.prompt)).toEqual(['']);
         expect(resolveNoteProfile({ ...entry, perPersona: false }, 'sam.png').id).toBe('calm');
     });
 
@@ -172,6 +175,44 @@ describe('saved character note libraries', () => {
     test('inherited properties are not treated as a persona library', () => {
         const inherited = { ...entry, personaNoteLibraries: Object.create({ 'sam.png': library }) };
         expect(resolveNoteProfile(inherited, 'sam.png').id).toBe('chaos');
+    });
+
+    test('legacy selections scope the visible collection before its first edit', () => {
+        expect(getNoteProfiles(profiled, 'sam.png').map(note => note.id)).toEqual(['chaos']);
+        const saved = structuredClone(profiled);
+        expect(ensurePersonaNoteLibrary(saved, 'sam.png').profiles.map(note => note.id)).toEqual(['chaos']);
+        expect(saved.profiles).toEqual(profiled.profiles);
+        expect(ensurePersonaNoteLibrary(saved, 'alex.png').profiles.map(note => note.prompt)).toEqual(['']);
+    });
+
+    test('repairs full-list copies without losing edits or new inactive notes', () => {
+        const saved = structuredClone(profiled);
+        saved.personaNoteLibraries = { 'sam.png': {
+            profiles: [...saved.profiles, { id: 'new', name: 'Unticked', prompt: 'My saved note', position: 1 }],
+            activeProfile: 'chaos', activeProfiles: ['chaos'],
+        } };
+        expect(getNoteProfiles(saved, 'sam.png').map(note => note.id)).toEqual(['chaos', 'new']);
+        const owned = ensurePersonaNoteLibrary(saved, 'sam.png');
+        expect(owned.inheritedProfiles).toEqual([profiled.profiles[0]]);
+        owned.activeProfiles = [];
+        expect(getNoteProfiles(JSON.parse(JSON.stringify(saved)), 'sam.png').map(note => note.id)).toEqual(['chaos', 'new']);
+        expect(captureScopedAuthorsNotes(saved, null, 'sam.png').scoped.notes).toEqual([]);
+        expect(getNoteProfiles({ ...saved, perPersona: false }).map(note => note.id)).toEqual(['calm', 'chaos']);
+    });
+
+    test('keeps renamed, rewritten and repositioned inactive profiles from old copies', () => {
+        for (const change of [{ name: 'Renamed' }, { prompt: 'Edited' }, { position: 0 }]) {
+            const saved = structuredClone(profiled);
+            saved.personaNoteLibraries = { 'sam.png': { profiles: [{ ...saved.profiles[0], ...change }, saved.profiles[1]], activeProfiles: [] } };
+            expect(getNoteProfiles(saved, 'sam.png').map(note => note.id)).toEqual(['calm', 'chaos']);
+        }
+    });
+
+    test('a first opt-in assigns the shared collection once, never to later personas', () => {
+        const saved = { ...structuredClone(profiled), personaProfiles: {}, perPersona: true };
+        ensurePersonaNoteLibrary(saved, 'first.png', { adoptShared: true });
+        expect(getNoteProfiles(saved, 'first.png')).toEqual(profiled.profiles);
+        expect(ensurePersonaNoteLibrary(saved, 'second.png', { adoptShared: true }).profiles.map(note => note.prompt)).toEqual(['']);
     });
 });
 
