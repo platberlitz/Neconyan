@@ -1,5 +1,14 @@
 // Questions and distinguishing facts shared by Node and real-browser retrieval checks.
 export const refreshedKnowledgeCases = [
+    ['Where is Block external media by default?', 'privacy.external', 'Settings → Chat & Writing → Chat & messages → Messages'],
+    ['Does Separate notes for each persona give me separate Author\'s Note libraries?', 'chat.authors-note', 'own note library for that character, not just separate ticks'],
+    ['How do Scratchpad reply versions work?', 'scratchpad.reply-versions', 'up to 50 versions per reply'],
+    ['Where are Scratchpad prefills?', 'scratchpad.reply-versions', 'Context → Reply prefills'],
+    ['Can Scratchpad preview HTML and CSS?', 'scratchpad.html-preview', 'scripts, external resources and links are blocked'],
+    ['How do Plot Compass objectives combine?', 'agents.plot-compass', 'Enabled objectives add together'],
+    ['Can I disable a Plot Compass objective without deleting it?', 'agents.plot-compass', 'without deleting its text'],
+    ['Does Agents remember its page and collapsed categories?', 'agents.start', 'remembers the selected page and collapsed categories'],
+    ['How do I restore deleted bundled backgrounds?', 'appearance.background-library', 'Restore defaults brings back missing bundled backgrounds'],
     ['Can I pin Catelier in Quick Actions?', 'navigation.quick-actions', 'Every page from the main search can be pinned'],
     ['Can I edit Quick Actions in Simple Mode?', 'navigation.quick-actions', 'including the phone menu and Simple Mode'],
     ['How do I start a private character draft in Catelier?', 'catelier.start', 'Save to library publishes it'],
@@ -352,7 +361,7 @@ export const refreshedKnowledgeCases = [
     ['How do I vote in a Chatroom poll or reply to the chatroom?', 'agents.chatroom-companion', 'puts \'I vote <option>\' into that Chatroom\'s Respond to the chatroom box without sending it'],
     ['Does Send reply in Chatroom add a message to the main story chat?', 'agents.chatroom-companion', 'without adding a message to the main story chat'],
     ['What are the four tabs in Author\'s Note?', 'chat.authors-note', 'This chat, Character, Persona and New chats'],
-    ['Can I mix several Character Author\'s Notes per persona?', 'chat.authors-note', 'Separate notes for each persona lets each persona keep its own set of ticked notes'],
+    ['Can I mix several Character Author\'s Notes per persona?', 'chat.authors-note', 'create named notes with New note and tick several to mix them'],
     ['What happens when a model does not expose a Reasoning Effort setting?', 'generation.reasoning-effort', 'the Connections dropdown is disabled and the bottom-bar brain button is hidden, while your saved choice is kept'],
     ['Why is None unavailable in Reasoning Effort for this model?', 'generation.reasoning-effort', 'When a model requires reasoning (mandatory reasoning), None is unavailable'],
     ['What happens if a reply runs out of Max Response Length while still reasoning?', 'generation.context', 'the thinking is preserved, automatic after-reply Agents do not run on it'],

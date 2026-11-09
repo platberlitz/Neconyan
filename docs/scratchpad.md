@@ -65,10 +65,16 @@ Each message also has an actions menu:
 - **Save selection or message to note** saves a selected passage or the message to a new Inbox note or an existing note. Replies omit change cards; reasoning is never copied. The quotation keeps its Scratchpad speaker and date.
 - **Edit message** lets you correct either side of the conversation. The assistant sees the edited text next time.
 - **Use as draft in the chat box**, only with a visible Roleplay or Conversation chat, copies an assistant reply (without any change cards) into the story's message box. Nothing is sent; you decide what to do with it. General never writes into a chat hidden beneath Home.
-- **Try again** asks that assistant for a new version of its answer to your latest message. In a round table it keeps the other assistants' answers.
+- **Try again** saves a new version of that assistant's answer to your latest message, keeping the previous versions and the other round-table answers. Use the arrows and version counter below the reply to choose an alternative, up to 50 versions per reply.
 - **Delete** removes the message from Scratchpad. The story is not affected.
 
 When you ask how something in Neconyan works, the assistant also gets the same help reference that assistant chats use.
+
+### Reply prefills and previews
+
+**Context → Reply prefills → Reply prefill** starts the answer with text the model continues from. It applies to every assistant in the session, including new reply versions, and requires a connection that supports prefills. Leave it empty for ordinary replies. **Kimi K3 / K3.1 partial prefill** takes precedence for those models; an unclosed `<think>` seeds thinking only and isn't added to the saved reply.
+
+**Preview HTML/CSS** beside a code block shows its HTML with the CSS blocks in that reply. Supported proposed-text reviews offer it too. CSS without HTML uses sample content. Scripts, external resources and links are blocked, macros stay as written, and nothing is saved. Close the preview to return to the discussion or review.
 
 ## Attachments
 
