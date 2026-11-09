@@ -505,7 +505,7 @@ test('a round table searches once, cites numbered sources and saves compact meta
     const a = account(t);
     braveKey(a, 'round-table-secret');
     updateConfig(a, { provider: 'brave', results: 2 });
-    const session = startSession(a, { webSearch: true, roundTable: true });
+    const session = startSession(a, { webSearch: true, roundTable: true, prefill: '{{char}}: ' });
     let searchCalls = 0;
     const seen = [];
     const searchFetch = async () => {
@@ -534,7 +534,8 @@ test('a round table searches once, cites numbered sources and saves compact meta
         assert.match(options.messages[searchIndex].content, /\[1\] One/);
         assert.match(options.messages[searchIndex].content, /\[2\] Two/);
         assert.match(options.messages[searchIndex + 1].content, /untrusted evidence/);
-        assert.equal(options.messages.at(-1).content, '  What   is\nNova hiding?  ');
+        assert.equal(options.messages.at(-2).content, '  What   is\nNova hiding?  ');
+        assert.deepEqual(options.messages.at(-1), { role: 'assistant', content: `${options.characterName}: ` });
         assert.match(options.macroEnvironment.evaluate(options.messages[searchIndex].content), /\[1\] One/);
     }
     const reply = a.read(SOURCE).sessions[0].messages.at(-1);

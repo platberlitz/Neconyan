@@ -72,6 +72,7 @@ export const activateSession = (source, sessionId) => post('/session/activate', 
 export const updateCleanup = (source, cleanup) => post('/cleanup', { source, cleanup });
 export const clearSession = (source, sessionId) => post('/session/clear', { source, sessionId });
 export const updateMessage = (source, sessionId, messageId, text) => post('/message/update', { source, sessionId, messageId, text });
+export const swipeMessage = (source, sessionId, messageId, index) => post('/message/swipe', { source, sessionId, messageId, index });
 export const deleteMessage = (source, sessionId, messageId) => post('/message/delete', { source, sessionId, messageId });
 export const markProposal = (source, sessionId, messageId, index, state) => post('/proposal/mark', { source, sessionId, messageId, index, state });
 /** Retry an uncertain acceptance with its original identity and context. */

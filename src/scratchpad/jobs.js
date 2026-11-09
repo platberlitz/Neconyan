@@ -1,6 +1,8 @@
 import { randomInt } from 'node:crypto';
 import { normaliseAttachments } from '../../public/scripts/scratchpad/attachment-data.js';
 import { normalisePresetTargets } from '../../public/scripts/scratchpad/preset-fields.js';
+import { appendReplySwipe, MAX_REPLY_SWIPES, replySwipes } from '../../public/scripts/scratchpad/swipes.js';
+import { scratchpadPrefill, joinScratchpadPrefill } from '../../public/scripts/scratchpad/prefill.js';
 import { runChatProfile, validateActiveGenerationContext } from '../generation/service.js';
 import { createMessageTokenCounter } from '../generation/message-token-counts.js';
 import { captureGenerationBinding, resolveGenerationProfile } from '../generation/profiles.js';
@@ -156,6 +158,7 @@ export function planReply(session, request, chooseIndex = randomInt) {
         throw fail('SCRATCHPAD_REGENERATE_INVALID', 'Only replies to the latest message can be regenerated.', 409);
     }
     const reply = messages[replyIndex];
+    if (replySwipes(reply).length >= MAX_REPLY_SWIPES) throw fail('SCRATCHPAD_SWIPE_LIMIT', `This reply has ${MAX_REPLY_SWIPES} versions. Send a new message to keep talking.`, 409);
     if (hasPendingImages(reply) || Object.keys(reply.images ?? {}).length) throw fail('SCRATCHPAD_REGENERATE_INVALID', 'Keep replies with image work. Send a new message for another suggestion.', 409);
     if ((request.source?.scope || request.source?.kind === 'general') && !sameSourceContext(request.source, reply.contextSource)) {
         throw fail('SCRATCHPAD_REGENERATE_INVALID', request.source.kind === 'general'
@@ -211,6 +214,7 @@ export async function acceptScratchpadReply(request, body = {}) {
         const snapshots = refreshSessionAssistants(session, library);
         writeBucketLocked(lease, bucket);
         return { ...plan, targets, sharedPersona, sharedPreset, imagePersonaId: imagePersonaIdLocked(lease, bucket.source), notebook, webSearch, revision: hash(canonical(session)), maxTokens: session.settings.maxTokens, stream: session.settings.stream !== false,
+            prefill: session.settings.prefill, partialPrefill: session.settings.partialPrefill,
             instructionsRevision: instructions.revision,
             assistantsRevision: library.revision,
             assistantNames: Object.fromEntries(Object.entries(snapshots).map(([id, profile]) => [id, profile.name])),
@@ -230,17 +234,26 @@ export async function acceptScratchpadReply(request, body = {}) {
             capabilities: { ...input.capabilities, persona: planned.sharedPersona, preset: planned.sharedPreset, image: Boolean(images), avatar: Boolean(images && planned.targets.length), notebook: Boolean(planned.notebook.text) }, help: input.help });
         const messages = buildScratchpadMessages({ system: system.text, context: input.context, notebookContext: planned.notebook.text, history: planned.history, text: planned.prompt, attachments: planned.attachments, assistant: speaker.assistant, assistantNames: planned.assistantNames,
             webSearchPlaceholder: planned.webSearch ? WEB_SEARCH_PLACEHOLDER : '' });
+        const searchIndex = planned.webSearch ? messages.length - 2 : -1;
         const rawOptions = binding.kind === 'active' ? { trimNames: false } : {};
         const preparedMessages = !binding.backend || binding.backend === 'chat';
         if (!preparedMessages && messages.some(message => Array.isArray(message.content))) {
             throw fail('SCRATCHPAD_IMAGE_CONNECTION', 'Images need a Chat Completion connection with an image-capable model. Choose one in Context before sending.');
         }
         const names = { user: input.names.user, char: system.persona.name };
-        await validateActiveGenerationContext(resolveGenerationProfile(directories, binding), scratchpadMacroEnvironment(names, messages),
+        const material = resolveGenerationProfile(directories, binding);
+        const environment = scratchpadMacroEnvironment(names, messages);
+        const selectedPrefill = scratchpadPrefill(planned, material.profile?.model || material.active?.model_novel);
+        const prefill = scratchpadPrefill({ prefill: environment.evaluate(selectedPrefill.text) }, selectedPrefill.partial ? 'kimi-k3' : '');
+        if (prefill.text) {
+            if (preparedMessages || binding.kind !== 'active') messages.push({ role: 'assistant', content: prefill.text, ...(prefill.partial ? { partial: true } : {}) });
+            else rawOptions.prefill = prefill.text;
+        }
+        await validateActiveGenerationContext(material, environment,
             messages, rawOptions, { maxTokens: planned.maxTokens, preparedMessages });
         return { replyId: newScratchpadId(), assistant: speaker.assistant, gender: speaker.gender, binding, messages, maxTokens: planned.maxTokens,
             userName: names.user, characterName: names.char, rawOptions, preparedMessages, stream: planned.stream, webSearch: planned.webSearch,
-            searchIndex: planned.webSearch ? messages.length - 2 : -1,
+            searchIndex, prefillReply: prefill.reply,
             functionTools: preparedMessages ? scratchpadCharacterTools() : [] };
     }));
     const savedRequest = { source: input.source, sessionId: input.sessionId, ...(replies.length === 1 ? replies[0] : { replies }) };
@@ -287,8 +300,10 @@ export async function acceptScratchpadReply(request, body = {}) {
             const pending = replies.map(reply => ({ id: reply.replyId, role: 'assistant', text: '', created, contextSource, ...shared,
                 targets: planned.targets, sharedPersona: planned.sharedPersona, sharedPreset: planned.sharedPreset, imageNames: input.names, imagePersonaId: planned.imagePersonaId,
                 state: 'pending', jobId: job.id, assistant: reply.assistant, assistantName: reply.characterName, gender: reply.gender }));
-            if (planned.replace) session.messages.splice(session.messages.findIndex(message => message.id === planned.replace), 1, ...pending);
-            else session.messages.push(...pending);
+            if (planned.replace) {
+                const index = session.messages.findIndex(message => message.id === planned.replace);
+                session.messages[index] = appendReplySwipe(session.messages[index], pending[0]);
+            } else session.messages.push(...pending);
             session.updated = created;
             current.activeSessionId = session.id;
             writeBucketLocked(lease, current);
@@ -454,7 +469,7 @@ async function runParticipant(context, request, { generate, grouped = false, web
                 onStream: value => {
                     if (typeof value?.reasoning === 'string' && value.reasoning) streamedReasoning = value.reasoning;
                     if (request.stream !== false) {
-                        const preview = { stage: 'generating', text: value?.text ?? '', reasoning: streamedReasoning };
+                        const preview = { stage: 'generating', text: joinScratchpadPrefill(value?.text ?? '', request.prefillReply), reasoning: streamedReasoning };
                         publish(preview);
                         counter.publish(preview);
                     }
@@ -466,7 +481,7 @@ async function runParticipant(context, request, { generate, grouped = false, web
             const { text, hasTools } = characterToolReply(response, functionTools);
             if (!text) throw fail('SCRATCHPAD_EMPTY_REPLY', 'The model returned no text. Try again or pick another connection.', 502);
             if (hasTools && bytes(text) > MAX_MESSAGE_BYTES) throw fail('SCRATCHPAD_TEXT_TOO_LARGE', 'The character drafts are too long. Ask for fewer or shorter cards.', 413);
-            reply = { text: clipBytes(text, MAX_MESSAGE_BYTES), reasoning: reasoningFrom(response, streamedReasoning) };
+            reply = { text: clipBytes(joinScratchpadPrefill(text, request.prefillReply), MAX_MESSAGE_BYTES), reasoning: reasoningFrom(response, streamedReasoning) };
             writeArtifact(directories, job.id, artifact, reply);
         }
         requireRunning();

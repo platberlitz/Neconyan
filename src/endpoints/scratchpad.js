@@ -15,6 +15,7 @@ import {
     readBucketLocked,
     requireId,
     scratchpadAccountBase,
+    swipeMessage,
     updateCleanupLocked,
     updateMessage,
     updateSession,
@@ -70,6 +71,11 @@ function change(request, response, operation) {
         sendError(response, error);
     }
 }
+
+router.post('/message/swipe', (request, response) => change(request, response, (bucket, body, lease) => {
+    swipeMessage(bucket, requireId(body.sessionId, 'session'), requireId(body.messageId, 'message'), body.index);
+    projectNotebookProposalsLocked(lease, bucket);
+}));
 
 router.post('/bucket', (request, response) => {
     try {

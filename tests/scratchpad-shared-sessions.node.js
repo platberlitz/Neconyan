@@ -87,10 +87,18 @@ test('permanent Roleplay identities and old filename aliases are included withou
     const f = fixture(t);
     const id = readRoleplayChat(f.scope, f.locator).instanceId;
     const oldId = seed(f, legacy('Source'), 'Legacy ideas');
+    mutate(f, legacy('Source'), current => {
+        const message = { id: 'active-reply', role: 'assistant', state: 'done', text: 'Second answer', swipeIndex: 1,
+            swipes: [{ id: 'saved-reply', role: 'assistant', state: 'done', text: 'First answer' }, null] };
+        current.sessions[0].messages.push(message);
+    });
     const source = { kind: 'roleplay', key: `roleplay:${id}`, legacyKey: legacy('Source').key, scope: shared('').scope };
     const bucket = read(f, source);
     assert.deepEqual(bucket.sessions.map(session => session.id), [oldId]);
     assert.equal(bucket.sessions[0].messages[0].contextSource.key, source.key);
+    assert.equal(bucket.sessions[0].messages[1].swipes[0].contextSource.key, source.key);
+    mutate(f, source, current => store.swipeMessage(current, oldId, 'active-reply', 0));
+    assert.equal(read(f, source).sessions[0].messages[1].contextSource.key, source.key);
     assert.equal(bucket.sessions[0].settings.pickedSource.key, source.key);
     mutate(f, legacy('Source'), current => {
         current.sessions[0].messages.push({ id: 'pending', role: 'assistant', state: 'done', text: 'Finished after switching chats.' });

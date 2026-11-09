@@ -11,6 +11,7 @@ import { hasPendingImages, imagePart, imageChangeHash, normaliseStoredImages } f
 import { normaliseStoredWebSearch } from './web-search-record.js';
 import { normalisePresetTargets } from '../../public/scripts/scratchpad/preset-fields.js';
 import { normaliseAttachments } from '../../public/scripts/scratchpad/attachment-data.js';
+import { MAX_REPLY_SWIPES, replySwipes, selectReplySwipe } from '../../public/scripts/scratchpad/swipes.js';
 
 export const SCRATCHPAD_SCHEMA = 1;
 export const ASSISTANT_IDS = BUILTIN_ASSISTANT_IDS;
@@ -177,6 +178,8 @@ export function defaultSettings() {
         participants: [...ASSISTANT_IDS],
         maxTokens: DEFAULT_MAX_TOKENS,
         stream: true,
+        prefill: '',
+        partialPrefill: '',
         webSearch: false,
     };
 }
@@ -248,6 +251,11 @@ export function normaliseSettings(input, previous = defaultSettings(), { allowIn
         if (maxTokens !== null) settings.maxTokens = Math.min(MAX_MAX_TOKENS, Math.max(MIN_MAX_TOKENS, Math.round(maxTokens)));
     }
     if (typeof source.stream === 'boolean') settings.stream = source.stream;
+    for (const key of ['prefill', 'partialPrefill']) {
+        if (source[key] === undefined) continue;
+        if (typeof source[key] !== 'string' || byteLength(source[key]) > MAX_INPUT_BYTES) throw fail('SCRATCHPAD_PREFILL_INVALID', 'A prefill must be text up to 64 KiB long.');
+        settings[key] = source[key];
+    }
     if (typeof source.webSearch === 'boolean') settings.webSearch = source.webSearch;
     if (isPlainObject(source.assistantPrompts)) {
         settings.assistantPrompts ??= {};
@@ -280,7 +288,7 @@ function normaliseProposals(value) {
     return proposals;
 }
 
-function normaliseMessage(input, { allowInternalKeys = false } = {}) {
+function normaliseMessage(input, { allowInternalKeys = false, allowSwipes = true } = {}) {
     if (!isPlainObject(input)) return null;
     const role = input.role === 'assistant' ? 'assistant' : input.role === 'user' ? 'user' : null;
     if (!role) return null;
@@ -330,6 +338,19 @@ function normaliseMessage(input, { allowInternalKeys = false } = {}) {
     if (input.edited === true) message.edited = true;
     if (input.contextSource) message.contextSource = normaliseSource(input.contextSource, { allowInternalKeys });
     if (message.contextSource?.kind === 'general' && typeof input.sharedAvatar === 'string' && input.sharedAvatar === message.contextSource.avatar) message.sharedAvatar = input.sharedAvatar;
+    if (allowInternalKeys && allowSwipes && role === 'assistant' && Array.isArray(input.swipes)
+        && input.swipes.length > 1 && input.swipes.length <= MAX_REPLY_SWIPES
+        && Number.isSafeInteger(input.swipeIndex) && input.swipeIndex >= 0 && input.swipeIndex < input.swipes.length) {
+        const seen = new Set([message.id]);
+        const swipes = input.swipes.map((item, index) => {
+            if (index === input.swipeIndex) return null;
+            const swipe = normaliseMessage(item, { allowInternalKeys, allowSwipes: false });
+            if (!swipe || swipe.role !== 'assistant' || swipe.state === 'pending' || hasPendingImages(swipe) || seen.has(swipe.id)) return null;
+            seen.add(swipe.id);
+            return swipe;
+        });
+        if (swipes.every((item, index) => index === input.swipeIndex || item)) Object.assign(message, { swipes, swipeIndex: input.swipeIndex });
+    }
     return message;
 }
 
@@ -662,8 +683,17 @@ export function createSession(bucket, input = {}) {
     };
     if (Array.isArray(input.messages)) {
         const contextSource = Object.fromEntries(Object.entries(normaliseSource(bucket.source)).filter(([key]) => key !== 'scope'));
-        session.messages = input.messages.map(item => normaliseMessage({ ...item, id: undefined, state: 'done', jobId: undefined, proposals: undefined, notebookProposals: undefined,
-            sharedAvatar: undefined, sharedPersona: undefined, sharedPreset: undefined, images: undefined, targets: undefined, contextSource }))
+        const imported = item => normaliseMessage({ ...item, id: undefined, state: 'done', jobId: undefined, proposals: undefined, notebookProposals: undefined,
+            sharedAvatar: undefined, sharedPersona: undefined, sharedPreset: undefined, images: undefined, targets: undefined, contextSource });
+        session.messages = input.messages.map(item => {
+            const message = imported(item);
+            if (message?.role === 'assistant' && Array.isArray(item.swipes) && item.swipes.length > 1 && item.swipes.length <= MAX_REPLY_SWIPES
+                && Number.isSafeInteger(item.swipeIndex) && item.swipeIndex >= 0 && item.swipeIndex < item.swipes.length) {
+                const swipes = item.swipes.map((swipe, index) => index === item.swipeIndex ? message : imported(swipe));
+                if (swipes.every(swipe => swipe?.role === 'assistant')) Object.assign(message, { swipes: swipes.map((swipe, index) => index === item.swipeIndex ? null : swipe), swipeIndex: item.swipeIndex });
+            }
+            return message;
+        })
             .filter(Boolean).slice(-MAX_MESSAGES);
     }
     bucket.sessions.unshift(session);
@@ -748,6 +778,18 @@ export function deleteMessage(bucket, sessionId, messageId) {
     if (message.state === 'pending' || hasPendingImages(message)) throw fail('SCRATCHPAD_REPLY_PENDING', 'Stop the reply or image before deleting it.', 409);
     session.messages = session.messages.filter(item => item.id !== messageId);
     touch(session);
+}
+
+export function swipeMessage(bucket, sessionId, messageId, index) {
+    const session = findSession(bucket, sessionId);
+    const message = findMessage(session, messageId);
+    if (session.messages.some(item => item.state === 'pending') || hasPendingImages(message)) throw fail('SCRATCHPAD_REPLY_PENDING', 'Wait for the reply or image to finish before switching replies.', 409);
+    const swipes = replySwipes(message);
+    if (message.role !== 'assistant' || !Number.isSafeInteger(index) || index < 0 || index >= swipes.length) throw fail('SCRATCHPAD_SWIPE_INVALID', 'Choose a saved reply version.');
+    const selected = selectReplySwipe(message, index);
+    session.messages[session.messages.indexOf(message)] = selected;
+    touch(session);
+    return selected;
 }
 
 export function markProposal(bucket, sessionId, messageId, index, state) {

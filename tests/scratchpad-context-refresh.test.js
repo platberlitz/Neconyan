@@ -388,6 +388,8 @@ describe('Scratchpad Context refresh lifecycle', () => {
             updateMessageTokenCounts() {},
             renderReply: (_session, message) => node('div', { class: 'scratchpad-reply', text: message.text }),
             renderWebSearchSources: () => null,
+            renderReplySwipes: () => null,
+            installReplySwipeGesture() {},
             renderAttachments: () => [],
             closeComposeMenu() {},
             renderMessageActions: () => node('div', { class: 'scratchpad-message-actions' }, node('button', { title: 'Try again' })),

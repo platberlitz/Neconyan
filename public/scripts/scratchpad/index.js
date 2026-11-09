@@ -49,8 +49,9 @@ import { prepareAttachment } from './attachments.js';
 import { MAX_ATTACHMENTS, normaliseAttachments } from './attachment-data.js';
 import { previewForBlock, previewFromText, previewLanguage } from './preview-source.js';
 import { showHtmlPreview } from './html-preview.js';
+import { exportReply, MAX_REPLY_SWIPES, replySwipes } from './swipes.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261109-html-preview';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261109-scratchpad-swipes';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -110,6 +111,8 @@ const DEFAULT_SETTINGS = Object.freeze({
     participants: ['miso', 'taro', 'nori'],
     maxTokens: 32000,
     stream: true,
+    prefill: '',
+    partialPrefill: '',
     webSearch: false,
 });
 
@@ -128,6 +131,7 @@ const app = {
     bucket: null,
     ticket: 0,
     sending: false,
+    swiping: false,
     editing: '',
     drafts: new Map(),
     draftKey: '',
@@ -915,7 +919,7 @@ function sessionText(session) {
 }
 
 async function send({ regenerate = '' } = {}) {
-    if (app.sending || app.readingFiles.has(app.attachments)) return;
+    if (app.sending || app.swiping || app.readingFiles.has(app.attachments)) return;
     const source = app.source;
     if (!source) return;
     if (!isCurrentSource(source)) {
@@ -1330,6 +1334,7 @@ function renderMessage(session, message, { latest }) {
                 h('p', { class: 'scratchpad-plain', text: preview?.reasoning ?? '' })),
             h('p', { class: 'scratchpad-plain scratchpad-stream', text: preview?.text ?? '' }),
             iconButton(session.settings.roundTable && !randomReplyEnabled() ? t`Stop all` : t`Stop`, () => void stopReply(), { icon: 'fa-stop', className: 'scratchpad-stop' }));
+        append(article, [renderReplySwipes(session, message, { latest })]);
         return article;
     } else {
         if (message.reasoning) {
@@ -1370,7 +1375,74 @@ function renderMessage(session, message, { latest }) {
         }
     });
     author.append(menu);
+    if (assistant) {
+        append(article, [renderReplySwipes(session, message, { latest })]);
+        installReplySwipeGesture(article, direction => void moveReplySwipe(session, message, direction, { latest }));
+    }
     return article;
+}
+
+function renderReplySwipes(session, message, { latest }) {
+    const count = replySwipes(message).length;
+    if (count === 1 && !latest) return null;
+    const index = message.swipeIndex ?? 0;
+    const canGenerate = latest && count < MAX_REPLY_SWIPES && !Object.keys(message.images ?? {}).length
+        && (!(app.source?.scope || app.source?.kind === 'general') || sameSourceContext(app.source, message.contextSource));
+    const controls = h('div', { class: 'scratchpad-reply-swipes', role: 'group', 'aria-label': t`Reply versions` });
+    for (const direction of [-1, 1]) {
+        if (direction === 1) controls.append(h('span', { class: 'scratchpad-swipe-count', role: 'status', 'aria-live': 'polite', text: t`${index + 1} of ${count}` }));
+        const unavailable = Object.values(message.images ?? {}).some(image => image.state === 'pending')
+            || (direction < 0 ? index === 0 : index === count - 1 && !canGenerate);
+        const button = iconButton('', () => void moveReplySwipe(session, message, direction, { latest }), {
+            icon: direction < 0 ? 'fa-chevron-left' : 'fa-chevron-right',
+            title: direction < 0 ? t`Previous reply` : index < count - 1 ? t`Next reply` : t`Generate another reply`,
+            disabled: unavailable || Boolean(pendingReply(session)) || app.sending || app.swiping,
+        });
+        button.dataset.unavailable = String(unavailable);
+        controls.append(button);
+    }
+    return controls;
+}
+
+async function moveReplySwipe(session, message, direction, { latest }) {
+    if (app.sending || app.swiping || app.editing || pendingReply() || Object.values(message.images ?? {}).some(image => image.state === 'pending')
+        || activeSession()?.id !== session.id || !activeSession().messages.some(item => item.id === message.id)) return;
+    const index = (message.swipeIndex ?? 0) + direction;
+    const count = replySwipes(message).length;
+    if (index < 0) return;
+    if (index >= count) {
+        if (latest && count < MAX_REPLY_SWIPES && !Object.keys(message.images ?? {}).length) await send({ regenerate: message.id });
+        return;
+    }
+    const focus = document.activeElement?.closest('.scratchpad-reply-swipes');
+    app.swiping = true;
+    renderComposer();
+    try {
+        await change(source => api.swipeMessage(source, session.id, message.id, index), t`Scratchpad could not switch reply versions.`);
+    } finally {
+        app.swiping = false;
+        renderComposer();
+        if (focus) app.el.messages.querySelector(`[data-message-id="${replySwipes(message)[index].id}"] .scratchpad-reply-swipes button:not(:disabled)`)?.focus();
+    }
+}
+
+function installReplySwipeGesture(article, move) {
+    let start = null;
+    article.addEventListener('touchstart', event => {
+        const excluded = event.target.closest('button, a, input, textarea, select, summary, pre, code, .scratchpad-change, .scratchpad-html-preview');
+        const touch = event.touches.length === 1 && !excluded ? event.touches[0] : null;
+        start = touch ? { x: touch.clientX, y: touch.clientY, time: Date.now() } : null;
+    }, { passive: true });
+    article.addEventListener('touchcancel', () => { start = null; }, { passive: true });
+    article.addEventListener('touchend', event => {
+        const origin = start;
+        start = null;
+        const touch = event.changedTouches[0];
+        if (!origin || !touch || event.touches.length || Date.now() - origin.time > 700 || !window.getSelection()?.isCollapsed) return;
+        const x = touch.clientX - origin.x;
+        const y = touch.clientY - origin.y;
+        if (Math.abs(x) >= 60 && Math.abs(x) > Math.abs(y) * 1.5) move(x < 0 ? 1 : -1);
+    }, { passive: true });
 }
 
 function renderReply(session, message) {
@@ -1785,8 +1857,11 @@ function renderComposer() {
     fitComposer();
     const el = app.el;
     const pending = pendingReply();
+    for (const button of app.el.messages.querySelectorAll('.scratchpad-reply-swipes button')) {
+        button.disabled = button.dataset.unavailable === 'true' || app.sending || app.swiping || Boolean(pending) || Boolean(app.editing);
+    }
     const readingFiles = app.readingFiles.has(app.attachments);
-    const disabled = !app.source || !app.bucket || app.sending || readingFiles;
+    const disabled = !app.source || !app.bucket || app.sending || app.swiping || readingFiles;
     el.composer.disabled = !app.source || !app.bucket;
     el.send.disabled = disabled && !pending;
     const count = randomReplyEnabled() ? 1 : sessionAssistants().length;
@@ -2015,6 +2090,18 @@ function renderContext({ force = true } = {}) {
             checkbox(t`Stream replies`, settings.stream !== false, value => void updateSettings({ stream: value }),
                 t`Show the reply and any thinking as they arrive. Turn off to wait for the finished reply.`),
             h('div', { class: 'scratchpad-field' }, h('label', { for: 'scratchpad-max-tokens', text: t`Longest reply (tokens)` }), maxTokens)),
+        h('section', { class: 'scratchpad-section' },
+            h('h3', { class: 'scratchpad-section-title', text: t`Reply prefills` }),
+            h('p', { class: 'scratchpad-muted', text: t`A prefill starts the assistant's reply for it. The model continues from that text. These settings apply to every assistant in this session, including new reply versions. Leave them empty for normal replies; your connection must support prefills.` }),
+            h('div', { class: 'scratchpad-field' },
+                h('label', { for: 'scratchpad-prefill', text: t`Reply prefill` }),
+                h('textarea', { id: 'scratchpad-prefill', class: 'text_pole', rows: 3, value: settings.prefill || '', placeholder: t`Here are three ideas:`,
+                    onchange: event => void updateSettings({ prefill: event.currentTarget.value }) })),
+            h('div', { class: 'scratchpad-field' },
+                h('label', { for: 'scratchpad-partial-prefill', text: t`Kimi K3 / K3.1 partial prefill` }),
+                h('textarea', { id: 'scratchpad-partial-prefill', class: 'text_pole', rows: 4, value: settings.partialPrefill || '', placeholder: '<think>Let me consider the scene carefully.',
+                    onchange: event => void updateSettings({ partialPrefill: event.currentTarget.value }) }),
+                h('small', { text: t`Used instead of the reply prefill for Kimi K3 and K3.1. Start with <think> to seed thinking; close it with </think> before any visible reply text. An unclosed <think> seeds only thinking and is not added to the saved reply.` }))),
         notebook || general ? null : renderPicks(settings),
         notebook || general ? null : renderLore(settings),
         renderPreview(),
@@ -2354,7 +2441,7 @@ function exportSession(session) {
             assistant: session.assistant,
             gender: session.gender,
             settings: { ...session.settings, assistants: Object.fromEntries(allAssistants(session).filter(item => item.personality && used.has(item.id)).map(item => [item.id, item])), notes: [], picked: [], pickedSource: undefined },
-            messages: session.messages.filter(item => item.state !== 'pending').map(item => ({ role: item.role, text: item.text, created: item.created, assistant: item.assistant, assistantName: item.assistantName, gender: item.gender })),
+            messages: session.messages.filter(item => item.state !== 'pending').map(exportReply),
         },
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });

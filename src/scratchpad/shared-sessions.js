@@ -177,7 +177,7 @@ export function readSharedBucketLocked(lease, inputSource) {
                 || (session.settings.pickedSource.kind === storage.kind && session.settings.pickedSource.key === storage.key))) {
                 session.settings.pickedSource = origin;
             }
-            for (const message of session.messages) {
+            for (const message of session.messages.flatMap(item => [item, ...(item.swipes ?? []).filter(Boolean)])) {
                 if (!message.contextSource || (message.contextSource.kind === storage.kind && message.contextSource.key === storage.key)) {
                     message.contextSource = origin;
                 }
@@ -212,7 +212,7 @@ function stripOriginTags(bucket, origin) {
     const copy = structuredClone(bucket);
     for (const session of copy.sessions) {
         if (isDeepStrictEqual(session.settings.pickedSource, origin)) delete session.settings.pickedSource;
-        for (const message of session.messages) {
+        for (const message of session.messages.flatMap(item => [item, ...(item.swipes ?? []).filter(Boolean)])) {
             if (isDeepStrictEqual(message.contextSource, origin)) delete message.contextSource;
         }
     }

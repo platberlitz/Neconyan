@@ -30,6 +30,8 @@ const { roleplayNativeHost } = await import('../src/endpoints/chats.js');
 const { splitReply } = await import('../public/scripts/scratchpad/proposals.js');
 const { characterToolReply, scratchpadCharacterTools } = await import('../src/scratchpad/character-tools.js');
 const { runChatProfile } = await import('../src/generation/service.js');
+const { replySwipes, appendReplySwipe, exportReply, MAX_REPLY_SWIPES } = await import('../public/scripts/scratchpad/swipes.js');
+const { scratchpadPrefill, joinScratchpadPrefill } = await import('../public/scripts/scratchpad/prefill.js');
 
 after(() => cancelAutoSaves());
 
@@ -95,6 +97,117 @@ function saveInstructions(a, text, assistants = null) {
 function saveAssistant(a, input, revision) {
     return store.withScratchpad(a.base, lease => saveAssistantLocked(lease, input, revision ?? readAssistantsLocked(lease).revision));
 }
+
+test('reply swipes retain edits, reasoning and proposal decisions across durable selections', async t => {
+    const a = account(t);
+    const session = startSession(a);
+    let answer = 'Original answer';
+    registerScratchpadJobs({ generate: async () => ({ text: answer, response: { choices: [{ message: { reasoning_content: 'Original thinking' } }] } }) });
+    const send = async extra => {
+        const body = sendBody(session, extra);
+        const accepted = await acceptScratchpadReply(a.request(body), body);
+        await runJob(getJob(a.directories, accepted.job.id));
+        return a.read(SOURCE).sessions[0].messages.at(-1);
+    };
+    const original = await send({});
+    a.mutate(SOURCE, bucket => {
+        store.updateMessage(bucket, session.id, original.id, 'Edited original');
+        store.markProposal(bucket, session.id, original.id, 0, 'rejected');
+    });
+    answer = 'Alternative answer';
+    const next = await send({ regenerate: original.id });
+    assert.equal(next.swipeIndex, 1);
+    assert.equal(next.swipes.length, 2);
+    assert.equal(next.swipes[1], null);
+    assert.equal(next.swipes[0].text, 'Edited original');
+    assert.equal(next.swipes[0].edited, true);
+    assert.equal(next.swipes[0].reasoning, 'Original thinking');
+    assert.equal(next.swipes[0].proposals[0], 'rejected');
+    a.mutate(SOURCE, bucket => store.swipeMessage(bucket, session.id, next.id, 0));
+    const selected = a.read(SOURCE).sessions[0].messages.at(-1);
+    assert.equal(selected.id, original.id);
+    assert.equal(selected.swipes[0], null);
+    assert.equal(selected.swipes[1].text, 'Alternative answer');
+    assert.deepEqual(jobs.historyFrom([{ role: 'user', text: 'Question' }, selected]).map(item => item.text), ['Question', 'Edited original']);
+    assert.throws(() => a.mutate(SOURCE, bucket => store.swipeMessage(bucket, session.id, next.id, 1)), error => error.code === 'SCRATCHPAD_MESSAGE_MISSING');
+    assert.throws(() => a.mutate(SOURCE, bucket => store.swipeMessage(bucket, session.id, selected.id, 4)), /version/i);
+    const imported = a.mutate(OTHER, bucket => store.createSession(bucket, { messages: [exportReply(selected)] }));
+    assert.equal(imported.messages[0].swipes.length, 2);
+    for (const version of replySwipes(imported.messages[0])) {
+        assert.ok(![original.id, next.id].includes(version.id));
+        for (const key of ['proposals', 'jobId', 'reasoning', 'images', 'sharedPersona', 'notebookProposals']) assert.equal(version[key], undefined);
+        assert.deepEqual(version.contextSource, OTHER);
+    }
+});
+
+test('failed regeneration retains the original and blocks switching until work settles', async t => {
+    const a = account(t);
+    const session = startSession(a);
+    registerScratchpadJobs({ generate: async () => ({ text: 'Keep this answer' }) });
+    let body = sendBody(session);
+    const first = await acceptScratchpadReply(a.request(body), body);
+    await runJob(getJob(a.directories, first.job.id));
+    const original = a.read(SOURCE).sessions[0].messages.at(-1);
+    registerScratchpadJobs({ generate: async () => { throw new Error('Provider unavailable'); } });
+    body = sendBody(session, { regenerate: original.id });
+    const retry = await acceptScratchpadReply(a.request(body), body);
+    const pending = retry.bucket.sessions[0].messages.at(-1);
+    assert.throws(() => a.mutate(SOURCE, bucket => store.swipeMessage(bucket, session.id, pending.id, 0)), /finish/i);
+    await runJob(getJob(a.directories, retry.job.id));
+    const failed = a.read(SOURCE).sessions[0].messages.at(-1);
+    assert.equal(failed.state, 'failed');
+    a.mutate(SOURCE, bucket => store.swipeMessage(bucket, session.id, failed.id, 0));
+    assert.equal(a.read(SOURCE).sessions[0].messages.at(-1).text, original.text);
+});
+
+test('reply versions have bounded storage and imported alternatives cannot carry permissions', () => {
+    const bucket = store.emptyBucket(SOURCE);
+    const malicious = { role: 'assistant', text: 'Draft', id: 'original', jobId: 'job', state: 'pending', proposals: { 0: 'applied' },
+        sharedAvatar: 'Nova.png', sharedPersona: { avatar: 'User.png', name: 'Kris' }, notebookProposals: { 0: 'proposal' }, targets: [], images: {}, swipes: [] };
+    const session = store.createSession(bucket, { messages: [{ ...malicious, swipes: [malicious, malicious], swipeIndex: 1 }] });
+    for (const version of replySwipes(session.messages[0])) {
+        for (const key of ['jobId', 'proposals', 'sharedAvatar', 'sharedPersona', 'notebookProposals', 'targets', 'images', 'swipes']) assert.equal(version[key], undefined);
+        assert.equal(version.state, 'done');
+    }
+    let reply = { id: 'reply0', role: 'assistant', state: 'done', text: 'One', assistant: 'taro' };
+    for (let i = 1; i < MAX_REPLY_SWIPES; i++) reply = appendReplySwipe(reply, { ...malicious, swipes: undefined, id: `reply${i}`, state: 'done' });
+    assert.throws(() => jobs.planReply({ settings: store.defaultSettings(), messages: [{ role: 'user', text: 'Question' }, reply] }, { regenerate: reply.id }), error => error.code === 'SCRATCHPAD_SWIPE_LIMIT');
+});
+
+test('prefills distinguish Kimi thinking seeds, visible suffixes and ordinary models', () => {
+    const settings = { prefill: 'Answer: ', partialPrefill: '<think>Consider carefully.</think>My answer: ' };
+    for (const model of ['kimi-k3', 'moonshotai/kimi-k3.1', 'kimi-k3.1-pro']) {
+        assert.deepEqual(scratchpadPrefill(settings, model), { text: settings.partialPrefill, partial: true, reply: 'My answer: ' });
+    }
+    assert.equal(scratchpadPrefill(settings, 'gpt-4o').text, settings.prefill);
+    assert.equal(scratchpadPrefill({ partialPrefill: '<think>Keep thinking' }, 'kimi-k3').reply, '');
+    assert.equal(scratchpadPrefill({ prefill: 'Fallback', partialPrefill: '' }, 'kimi-k3').reply, 'Fallback');
+    assert.equal(joinScratchpadPrefill('continued.', 'Answer: '), 'Answer: continued.');
+    assert.equal(joinScratchpadPrefill('Answer: continued.', 'Answer: '), 'Answer: continued.');
+    assert.throws(() => store.normaliseSettings({ prefill: 'x'.repeat(65537) }), /64 KiB/);
+});
+
+test('prefills stay last, expand identity macros once and join both streamed and saved replies', async t => {
+    const a = account(t, { model: 'moonshotai/kimi-k3.1' });
+    const session = startSession(a, { prefill: 'Ordinary: ', partialPrefill: '<think>I am {{char}}, helping {{user}}.</think>Answer: ' });
+    let streamed;
+    registerScratchpadJobs({ generate: async options => {
+        assert.equal(options.messages.at(-1).role, 'assistant');
+        assert.equal(options.messages.at(-1).partial, true);
+        assert.match(options.messages.at(-1).content, /<think>I am Taro, helping Kris\.<\/think>Answer: /);
+        options.onStream({ text: 'continued.', reasoning: 'New reasoning' });
+        streamed = readScratchpadPreview(a.base.owner, options.jobContext.job.id);
+        return { text: 'continued.' };
+    } });
+    const body = sendBody(session);
+    const accepted = await acceptScratchpadReply(a.request(body), body);
+    await runJob(getJob(a.directories, accepted.job.id));
+    const reply = a.read(SOURCE).sessions[0].messages.at(-1);
+    assert.equal(reply.text, 'Answer: continued.');
+    assert.equal(reply.reasoning, 'New reasoning');
+    assert.equal(streamed.text, reply.text);
+    assert.ok(!reply.text.includes('think'));
+});
 
 test('attachments reach the model and survive saved history, regeneration and import', async t => {
     const a = account(t);
@@ -369,7 +482,7 @@ test('General uses a saved Text Completion profile and builds the real provider 
     settings.power_user = { instruct: { enabled: false }, custom_stopping_strings: '[]' };
     settings.max_context = 8192;
     fs.writeFileSync(filename, JSON.stringify(settings));
-    const session = a.mutate(GENERAL, bucket => store.createSession(bucket, { settings: { maxTokens: 256, stream: false, connection: { kind: 'profile', profileId: 'text' } } }));
+    const session = a.mutate(GENERAL, bucket => store.createSession(bucket, { settings: { prefill: 'Answer: ', maxTokens: 256, stream: false, connection: { kind: 'profile', profileId: 'text' } } }));
     let calls = 0;
     registerScratchpadJobs({ generate: options => runChatProfile({ ...options, fetch: async (_url, request) => {
         calls++;
@@ -377,6 +490,7 @@ test('General uses a saved Text Completion profile and builds the real provider 
         assert.match(body.prompt, /General Scratchpad/);
         assert.match(body.prompt, /No story chat is open/);
         assert.match(body.prompt, /TEXT-GENERAL-QUESTION/);
+        assert.ok(body.prompt.endsWith('Answer: '), 'the text connection continues the prefill');
         assert.equal(body.n_predict, 256);
         return new Response(JSON.stringify({ choices: [{ text: 'General TC answer.' }] }));
     } }) });
@@ -385,7 +499,7 @@ test('General uses a saved Text Completion profile and builds the real provider 
     await runJob(getJob(a.directories, accepted.job.id));
     assert.equal(getJob(a.directories, accepted.job.id).state, 'completed', JSON.stringify(getJob(a.directories, accepted.job.id).error));
     assert.equal(calls, 1);
-    assert.equal(a.read(GENERAL).sessions[0].messages.at(-1).text, 'General TC answer.');
+    assert.equal(a.read(GENERAL).sessions[0].messages.at(-1).text, 'Answer: General TC answer.');
 });
 
 test('assistant libraries are account-owned, validate profiles and reject stale saves without losing edits', t => {
@@ -542,6 +656,9 @@ test('global instructions select each round-table speaker and accepted replies k
     await runJob(getJob(a.directories, replacement.job.id));
     assert.equal(prompts.at(-1).name, 'Taro');
     assert.match(prompts.at(-1).text, /TARO-ONLY/);
+    const versions = replySwipes(a.read(SOURCE).sessions[0].messages.filter(message => message.assistant === 'taro').at(-1));
+    assert.deepEqual(versions.map(message => message.assistant), ['taro', 'taro']);
+    assert.equal(versions[0].id, taroReply.id);
 });
 
 test('global instructions reach existing and new sessions across source kinds and blank text disables them', async t => {
@@ -1672,6 +1789,14 @@ test('the endpoint checks the account and answers with the saved Scratchpad', as
     assert.deepEqual((await (await post('/bucket', { source: SOURCE })).json()).bucket.cleanup, { enabled: false, keep: 3 });
     const wrong = await post('/bucket', { source: SOURCE }, 'someone-else');
     assert.equal(wrong.status, 409);
+    const versions = active((await (await post('/session/import', { source: SOURCE, session: { messages: [{ role: 'assistant', text: 'Second', swipeIndex: 1,
+        swipes: [{ role: 'assistant', text: 'First' }, { role: 'assistant', text: 'Second' }] }] } })).json()).bucket);
+    const select = { source: SOURCE, sessionId: versions.id, messageId: versions.messages[0].id, index: 0 };
+    assert.equal((await post('/message/swipe', select, 'someone-else')).status, 409);
+    assert.equal((await post('/message/swipe', { ...select, index: 5 })).status, 400);
+    const switched = await post('/message/swipe', select);
+    assert.equal(switched.status, 200);
+    assert.equal(active((await switched.json()).bucket).messages[0].text, 'First');
     const missing = await post('/session/delete', { source: SOURCE, sessionId: 'nope' });
     assert.equal(missing.status, 404);
     assert.equal((await missing.json()).code, 'SCRATCHPAD_SESSION_MISSING');
