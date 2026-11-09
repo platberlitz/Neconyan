@@ -28,6 +28,7 @@ test('every cat and neutral SVG loads, paints and follows its compatible class',
                     icon.className = `fa-solid ${alias}`; document.body.append(icon);
                     const style = getComputedStyle(icon, '::before');
                     if (!style.maskImage.includes(expected) || parseFloat(style.width) <= 0) failures.push(alias);
+                    if (style.scale !== '1.1') failures.push(`unscaled: ${alias}`);
                     icon.remove();
                 }
                 const url = `/img/icons/catline/${expected}`;
@@ -144,6 +145,11 @@ for (const phone of [false, true]) {
             const catelier = page.locator('#sb_character_tab_creator');
             await expect(catelier).toBeVisible();
             expect(await catelier.locator('i').evaluate(node => getComputedStyle(node, '::before').maskImage)).toContain('/pen-nib.svg');
+            const boxBefore = await catelier.boundingBox();
+            expect(await catelier.locator('i').evaluate(node => getComputedStyle(node, '::before').scale)).toBe('1.1');
+            const unscaled = await page.addStyleTag({ content: '#sb_character_tab_creator i::before { scale: 1; }' });
+            expect(await catelier.boundingBox()).toEqual(boxBefore);
+            await unscaled.evaluate(node => node.remove());
             await page.evaluate(() => window.NeconyanShell.openTab('right', 'settings'));
             const icon = page.locator('#top-settings-holder .sb-shell-tab:visible i').first();
             await expect(icon).toBeVisible();
