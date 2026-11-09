@@ -1,5 +1,5 @@
 /* global document, window, getComputedStyle, DOMParser, Image */
-import { expect, test } from '@playwright/test';
+import { chromium, firefox, webkit, expect, test } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { PNG } from 'pngjs';
 
@@ -27,7 +27,7 @@ test('every cat and neutral SVG loads, paints and follows its compatible class',
                     const icon = document.createElement('i');
                     icon.className = `fa-solid ${alias}`; document.body.append(icon);
                     const style = getComputedStyle(icon, '::before');
-                    if (!style.maskImage.includes(expected) || parseFloat(style.width) <= 0) failures.push(alias);
+                    if (!style.maskImage.includes(`#${expected.slice(0, -4)}"`) || parseFloat(style.width) <= 0) failures.push(alias);
                     if (style.scale !== '1.1') failures.push(`unscaled: ${alias}`);
                     icon.remove();
                 }
@@ -65,6 +65,46 @@ test('every cat and neutral SVG loads, paints and follows its compatible class',
     expect(results).toEqual([]);
 });
 
+for (const browserType of [chromium, firefox, webkit]) {
+    test(`${browserType.name()} bundled masks exactly match every standalone icon`, async ({}, info) => {
+        test.setTimeout(120000);
+        const browser = await browserType.launch();
+        try {
+            const page = await browser.newPage({ baseURL: info.project.use.baseURL, viewport: { width: 768, height: 1800 }, deviceScaleFactor: 1, serviceWorkers: 'block' });
+            const catalogue = JSON.parse(readFileSync(new URL('../public/img/icons/catline/catalogue.json', import.meta.url), 'utf8'));
+            const names = catalogue.flatMap(aliases => [aliases[0].slice(3), `${aliases[0].slice(3)}-plain`]);
+            const pending = new Set([...names.map(id => `/img/icons/catline/${id}.svg`), '/img/icons/catline/sprite.svg']);
+            page.on('requestfinished', request => pending.delete(new URL(request.url()).pathname));
+            const icons = names.map((id, index) => [
+                `${id}.svg`, `sprite.svg#${id}`,
+            ].map((url, column) => `<i style="top:${Math.floor(index / 12) * 32}px;left:${index % 12 * 64 + column * 32}px;mask-image:url('/img/icons/catline/${url}');-webkit-mask-image:url('/img/icons/catline/${url}')"></i>`).join('')).join('');
+            await page.route('**/catline-mask-test', route => route.fulfill({ contentType: 'text/html', body: `<style>body{margin:0;background:white}i{position:absolute;width:24px;height:24px;background:black;mask:center/contain no-repeat;-webkit-mask:center/contain no-repeat}</style>${icons}` }));
+            await page.goto('/catline-mask-test');
+            await expect.poll(() => pending.size, { timeout: 30000 }).toBe(0);
+            const screenshot = await page.screenshot({ fullPage: true });
+            await info.attach('standalone-and-bundled-masks', { body: screenshot, contentType: 'image/png' });
+            const png = PNG.sync.read(screenshot);
+            const failures = [];
+            for (const [index, id] of names.entries()) {
+                let difference = 0;
+                let painted = 0;
+                for (let y = Math.floor(index / 12) * 32; y < Math.floor(index / 12) * 32 + 24; y++) {
+                    for (let x = index % 12 * 64; x < index % 12 * 64 + 24; x++) {
+                        const standalone = png.data[(y * png.width + x) * 4];
+                        const bundled = png.data[(y * png.width + x + 32) * 4];
+                        difference += Math.abs(standalone - bundled);
+                        painted += 255 - standalone;
+                    }
+                }
+                if (difference || !painted) failures.push({ id, difference, painted });
+            }
+            expect(failures).toEqual([]);
+        } finally {
+            await browser.close();
+        }
+    });
+}
+
 test('the selection badge appears only in character group selection', async ({ page }) => {
     await page.route('**/catline-selection-test', route => route.fulfill({
         contentType: 'text/html',
@@ -75,7 +115,7 @@ test('the selection badge appears only in character group selection', async ({ p
     const mask = () => card.evaluate(node => getComputedStyle(node, '::after').maskImage);
     expect(await mask()).toBe('none');
     await page.locator('#rm_print_characters_block').evaluate(node => node.classList.add('group_overlay_mode_select'));
-    expect(await mask()).toContain('/square-check.svg');
+    expect(await mask()).toContain('#square-check');
     await page.locator('#rm_print_characters_block').evaluate(node => node.classList.remove('group_overlay_mode_select'));
     expect(await mask()).toBe('none');
 });
@@ -144,7 +184,7 @@ for (const phone of [false, true]) {
             await page.evaluate(() => window.NeconyanShell.openTab('characters', 'creator'));
             const catelier = page.locator('#sb_character_tab_creator');
             await expect(catelier).toBeVisible();
-            expect(await catelier.locator('i').evaluate(node => getComputedStyle(node, '::before').maskImage)).toContain('/pen-nib.svg');
+            expect(await catelier.locator('i').evaluate(node => getComputedStyle(node, '::before').maskImage)).toContain('#pen-nib');
             const boxBefore = await catelier.boundingBox();
             expect(await catelier.locator('i').evaluate(node => getComputedStyle(node, '::before').scale)).toBe('1.1');
             const unscaled = await page.addStyleTag({ content: '#sb_character_tab_creator i::before { scale: 1; }' });
@@ -179,7 +219,7 @@ for (const phone of [false, true]) {
                 button.remove();
                 return result;
             });
-            ['paper-plane.svg', 'stop.svg', 'spinner.svg', 'check.svg', 'xmark.svg', 'circle-question.svg', 'paper-plane-plain.svg'].forEach((name, index) => expect(states[index]).toContain(name));
+            ['paper-plane', 'stop', 'spinner', 'check', 'xmark', 'circle-question', 'paper-plane-plain'].forEach((name, index) => expect(states[index]).toContain(`#${name}`));
             expect(fontRequests).toEqual([]);
         } finally {
             await context.close();

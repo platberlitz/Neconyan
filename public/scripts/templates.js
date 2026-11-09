@@ -1,5 +1,6 @@
 import { DOMPurify, Handlebars } from '../lib.js';
 import { applyLocale } from './i18n.js';
+import { startupTemplates } from './startup-templates.js';
 
 /**
  * @type {Map<string, function>}
@@ -65,7 +66,10 @@ export async function renderTemplateAsync(templateId, templateData = {}, sanitiz
         if (cached) return cached;
         if (TEMPLATE_REQUESTS.has(pathToTemplate)) return TEMPLATE_REQUESTS.get(pathToTemplate);
 
-        const request = getUrlAsync(pathToTemplate).then(templateContent => {
+        const source = Object.hasOwn(startupTemplates, pathToTemplate)
+            ? Promise.resolve(startupTemplates[pathToTemplate])
+            : getUrlAsync(pathToTemplate);
+        const request = source.then(templateContent => {
             // A legacy synchronous caller may have populated the cache while we waited.
             const template = TEMPLATE_CACHE.get(pathToTemplate) ?? Handlebars.compile(templateContent);
             TEMPLATE_CACHE.set(pathToTemplate, template);
@@ -110,7 +114,9 @@ export function renderTemplate(templateId, templateData = {}, sanitize = true, l
     function fetchTemplateSync(pathToTemplate) {
         let template = TEMPLATE_CACHE.get(pathToTemplate);
         if (!template) {
-            const templateContent = getUrlSync(pathToTemplate);
+            const templateContent = Object.hasOwn(startupTemplates, pathToTemplate)
+                ? startupTemplates[pathToTemplate]
+                : getUrlSync(pathToTemplate);
             template = Handlebars.compile(templateContent);
             TEMPLATE_CACHE.set(pathToTemplate, template);
         }

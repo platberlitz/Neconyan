@@ -1,5 +1,8 @@
 /* global globalThis */
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
+import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 describe('shared template downloads', () => {
     let requests, compile, sanitize, applyLocale, renderTemplateAsync;
@@ -62,5 +65,23 @@ describe('shared template downloads', () => {
         requests.forEach(request => respond(request));
         await Promise.all([first, second]);
         expect(compile).toHaveBeenCalledTimes(2);
+    });
+
+    test('startup templates stay identical to their HTML and keep per-call rendering without downloads', async () => {
+        const root = fileURLToPath(new URL('../', import.meta.url));
+        execFileSync(process.execPath, ['scripts/build-startup-templates.js', '--check'], { cwd: root });
+        const { startupTemplates } = await import('../public/scripts/startup-templates.js');
+        for (const [path, html] of Object.entries(startupTemplates)) {
+            expect(html).toBe(readFileSync(new URL(`../public${path}`, import.meta.url), 'utf8'));
+        }
+        const source = readFileSync(new URL('../public/scripts/templates/welcome.html', import.meta.url), 'utf8');
+        const first = renderTemplateAsync('welcome', { name: 'first' });
+        const second = renderTemplateAsync('/scripts/templates/welcome.html', { name: 'second' }, false, false, true);
+        await expect(first).resolves.toBe(`local(safe(${source}:first))`);
+        await expect(second).resolves.toBe(`${source}:second`);
+        const { renderTemplate } = await import('../public/scripts/templates.js');
+        expect(renderTemplate('welcome', { name: 'third' }, false, false)).toBe(`${source}:third`);
+        expect(compile).toHaveBeenCalledTimes(1);
+        expect(requests).toHaveLength(0);
     });
 });
