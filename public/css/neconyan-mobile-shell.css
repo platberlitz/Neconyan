@@ -3790,3 +3790,9 @@ body.neconyan #rm_extensions_block .sb-extensions-tool:last-child:nth-child(odd)
     width: 44px;
     height: 44px;
 }
+
+/* The selection count may grow, but the icon starts at the other controls' size. */
+#Backgrounds #bg_selection_mode_button {
+    min-width: var(--sb-control-icon-physical-size, 44px);
+    min-height: var(--sb-control-icon-physical-size, 44px);
+}
