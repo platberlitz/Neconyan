@@ -184,12 +184,14 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
         expect(candidate.text.length).toBeGreaterThan(0);
         await expect(picked.locator('.mewmory-prose').filter({ hasText: candidate.text }).first()).toBeVisible();
     }
-    await picked.getByRole('heading', { name: 'Picked', exact: true }).scrollIntoViewIfNeeded();
+    await picked.getByRole('heading', { name: 'Picked', exact: true }).evaluate(element => element.scrollIntoView({ block: 'start' }));
+    await expect(picked.getByRole('heading', { name: 'Picked', exact: true })).toBeInViewport();
     await page.screenshot({ path: info.outputPath('mewmory-recall-desktop.png') });
     await page.setViewportSize({ width: 393, height: 852 });
     await expect(picked.locator('.mewmory-prose').first()).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(394);
-    await picked.getByRole('heading', { name: 'Picked', exact: true }).scrollIntoViewIfNeeded();
+    await picked.getByRole('heading', { name: 'Picked', exact: true }).evaluate(element => element.scrollIntoView({ block: 'start' }));
+    await expect(picked.getByRole('heading', { name: 'Picked', exact: true })).toBeInViewport();
     await page.screenshot({ path: info.outputPath('mewmory-recall-phone.png') });
     await page.setViewportSize({ width: 1280, height: 900 });
     await workspace.getByRole('tab', { name: 'Archive', exact: true }).click();

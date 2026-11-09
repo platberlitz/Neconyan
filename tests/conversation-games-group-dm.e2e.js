@@ -35,7 +35,7 @@ async function savedGroupRecord(account, groupId) {
     return store.characters[key]?.branches?.main?.games || null;
 }
 
-test('a group dm shares one game and every character sees it', async ({ app }) => {
+test('a group dm shares one game and every character sees it', async ({ app }, info) => {
     const account = await app.account({ phone: false });
     app.provider.mode.reply = body => ({ choices: [{ message: { role: 'assistant', content: fixtureReply(body) } }] });
     const created = await account.context.request.post('/api/characters/create', { headers: account.headers,
@@ -72,8 +72,19 @@ test('a group dm shares one game and every character sees it', async ({ app }) =
     // The pal side (both characters) drops first through the fixture model.
     await expect(panel.locator('[data-column="3"] .neco-games-cf-cell[data-row="5"][data-seat="y"]'))
         .toHaveCount(1, { timeout: 60000 });
-    await expect.poll(async () => savedGroupRecord(account, group.id), { timeout: 30000 })
-        .toMatchObject({ id: 'connect-four' });
+    try {
+        await expect.poll(async () => savedGroupRecord(account, group.id), { timeout: 30000 })
+            .toMatchObject({ id: 'connect-four' });
+    } finally {
+        const remote = await account.store();
+        const local = await page.evaluate(async () => {
+            const context = await import('/scripts/neconyan-conversation/context.js');
+            const avatar = context.getCurrentCharAvatar();
+            return { avatar, groupId: context.getConversationGroupIdForAvatar(avatar),
+                store: context.getConversationStore() };
+        });
+        await info.attach('group-game-store', { body: JSON.stringify({ group, remote, local }), contentType: 'application/json' });
+    }
 
     // A normal group message makes the characters reply with the game in their system prompt.
     const sent = await send(page, 'How is the game going, both of you?');

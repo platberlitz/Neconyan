@@ -329,6 +329,8 @@ chromiumTest('Windows desktop routes keep full page rails, exclusions and clicka
 });
 
 chromiumTest('mounted Settings keeps native vertical navigation across style and width', async ({ app }) => {
+    // Fifteen stylesheet changes share this test; individual assertions retain their normal deadline.
+    chromiumTest.setTimeout(180000);
     const { page } = await setup(app, { vertical: true });
     const root = await open(page, 'right', 'settings');
     const nav = page.locator(outerNav(root));
@@ -492,39 +494,41 @@ for (const [browserTest, browser] of [[chromiumTest, 'Chromium'], [webkitTest, '
     });
 }
 
-chromiumTest('Windows desktop displayed captions and category states keep paired paint and ink', async ({ app }) => {
-    chromiumTest.setTimeout(420000);
+for (const theme of ['Neconyan Calico', 'Neconyan Calico Dark']) for (const accent of [null, 'Mint Glass', 'Plum Wine']) chromiumTest(`Windows desktop displayed captions and category states keep paired paint and ink: ${theme}/${accent || 'default'}`, async ({ app }) => {
+    chromiumTest.setTimeout(180000);
     const { page } = await setup(app);
-    for (const theme of ['Neconyan Calico', 'Neconyan Calico Dark']) {
-        await page.evaluate(name => window.jQuery('#themes').val(name).trigger('change'), theme);
-        for (const accent of [null, 'Mint Glass', 'Plum Wine']) {
-            if (accent) await page.evaluate(name => {
-                const button = [...document.querySelectorAll('.sb-accent-profile-apply')].find(node => node.textContent.trim() === name);
-                if (!button) throw new Error('Missing accent profile ' + name);
-                button.click();
-            }, accent);
-            for (const id of windows) {
-                await applyStyle(page, id);
-                const context = `${theme}/${accent || 'theme default'}/${id}`;
-                const root = await open(page, 'right', 'settings');
-                await genericCaptionReadable(page, root, context + '/settings');
-                const category = page.locator(root + ' .sb-settings-nav-column .sb-settings-tab-btn.active');
-                for (const state of ['rest', 'hover', 'focus']) {
-                    if (state === 'hover') await category.hover();
-                    if (state === 'focus') { await page.mouse.move(0, 0); await category.focus(); }
-                    expect(await category.locator('i').evaluate(node => getComputedStyle(node).color), `${context}/settings/selected category/${state}/original icon ink`).toBe(await category.evaluate(node => getComputedStyle(node).color));
-                    await readable(page, root + ' .sb-settings-nav-column .sb-settings-tab-btn.active', `${context}/settings/selected category/${state}`);
-                    expect(await category.locator('i').evaluate(node => getComputedStyle(node).color), `${context}/settings/selected category/${state}/icon ink`).toBe(await category.evaluate(node => getComputedStyle(node).color));
-                }
-                for (const tab of ['characters', 'persona', 'creator']) {
-                    const family = await open(page, 'characters', tab);
-                    await readable(page, family + ' > .sb-character-shell-header .sb-shell-title', `${context}/${tab}/title`);
-                    await readable(page, family + ' > .sb-character-shell-header .sb-shell-subtitle', `${context}/${tab}/help`);
-                }
-                await genericCaptionReadable(page, await open(page, 'left', 'api'), context + '/api');
-            }
+    await page.evaluate(name => window.jQuery('#themes').val(name).trigger('change'), theme);
+    if (accent) await page.evaluate(name => {
+        const button = [...document.querySelectorAll('.sb-accent-profile-apply')].find(node => node.textContent.trim() === name);
+        if (!button) throw new Error('Missing accent profile ' + name);
+        button.click();
+    }, accent);
+    for (const id of windows) {
+        await applyStyle(page, id);
+        const context = `${theme}/${accent || 'theme default'}/${id}`;
+        const root = await open(page, 'right', 'settings');
+        await genericCaptionReadable(page, root, context + '/settings');
+        const category = page.locator(root + ' .sb-settings-nav-column .sb-settings-tab-btn.active');
+        for (const state of ['rest', 'hover', 'focus']) {
+            if (state === 'hover') await category.hover();
+            if (state === 'focus') { await page.mouse.move(0, 0); await category.focus(); }
+            expect(await category.locator('i').evaluate(node => getComputedStyle(node).color), `${context}/settings/selected category/${state}/original icon ink`).toBe(await category.evaluate(node => getComputedStyle(node).color));
+            await readable(page, root + ' .sb-settings-nav-column .sb-settings-tab-btn.active', `${context}/settings/selected category/${state}`);
+            expect(await category.locator('i').evaluate(node => getComputedStyle(node).color), `${context}/settings/selected category/${state}/icon ink`).toBe(await category.evaluate(node => getComputedStyle(node).color));
         }
+        for (const tab of ['characters', 'persona', 'creator']) {
+            const family = await open(page, 'characters', tab);
+            await readable(page, family + ' > .sb-character-shell-header .sb-shell-title', `${context}/${tab}/title`);
+            await readable(page, family + ' > .sb-character-shell-header .sb-shell-subtitle', `${context}/${tab}/help`);
+        }
+        await genericCaptionReadable(page, await open(page, 'left', 'api'), context + '/api');
     }
+    expect(app.provider.calls).toHaveLength(0);
+});
+
+chromiumTest('Windows XP Olive Green desktop captions keep paired paint and ink', async ({ app }) => {
+    chromiumTest.setTimeout(120000);
+    const { page } = await setup(app);
     await page.evaluate(() => window.jQuery('#themes').val('Windows XP Olive Green').trigger('change'));
     await expect(page.locator('html')).toHaveAttribute('data-neconyan-ui-theme', 'windows-xp-olive-green');
     await applyStyle(page, 'windows-xp');
