@@ -2,7 +2,7 @@
 
 # Neconyan~
 
-The latest version is [1.5.2](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.2).
+The latest version is [1.5.3](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.3).
 
 **Read in your language:** [Deutsch](readme-de_de.md) · [Español](readme-es_es.md) · [Français](readme-fr_fr.md) · [Italiano](readme-it_it.md) · [Nederlands](readme-nl_nl.md) · [Português](readme-pt_pt.md) · [Íslenska](readme-is_is.md) · [Русский](readme-ru_ru.md) · [Українська](readme-uk_ua.md) · [العربية](readme-ar_sa.md) · [ไทย](readme-th_th.md) · [Tiếng Việt](readme-vi_vn.md) · [日本語](readme-ja_jp.md) · [한국어](readme-ko_kr.md) · [简体中文](readme-zh_cn.md) · [繁體中文](readme-zh_tw.md)
 
@@ -39,7 +39,7 @@ Your character cards, chats, lorebooks and presets use familiar SillyTavern form
   <img src="../docs/readme/banner-modes.webp" alt="Modes">
 </p>
 
-Fresh desktop and phone screenshots, using demo chats and notes with the bundled assistants.
+Desktop and phone screenshots from 1.5.3, using demo chats and notes with the bundled assistants.
 
 ### Home
 
@@ -67,6 +67,26 @@ Work on a character draft, ask for writing help and review changes before saving
   <td width="72%"><img src="../docs/readme/desktop-catelier.webp" alt="Catelier on desktop"></td>
   <td width="28%"><img src="../docs/readme/phone-catelier.webp" alt="Catelier on a phone"></td>
 </tr></table>
+
+### Agents
+
+Pick a helper, decide when it runs and give it a connection. I would start with one rather than turning on half the library at once.
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-agents.webp" alt="Agents on desktop, with reply helpers and their controls"></td>
+  <td width="28%"><img src="../docs/readme/phone-agents.webp" alt="Agents on a phone"></td>
+</tr></table>
+
+### Post-gen Proofreader
+
+Proofreader checks a reply after it arrives. It can tidy prose and formatting without asking the main model to write the scene again. Open **Agent changes** to compare the edit and undo it if you prefer the original.
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-proofreader.webp" alt="Proofreader change history on desktop, comparing the original reply with its edited version"></td>
+  <td width="28%"><img src="../docs/readme/phone-proofreader.webp" alt="Proofreader change history on a phone"></td>
+</tr></table>
+
+This staged example runs the real Agent workflow with a fixed sample response. Your connected model writes the edits in normal use, and each pass can cost another request. [Agents and Companions in the handbook](https://platberlitz.github.io/neconyan-docs/helpers/agents/).
 
 <details>
 <summary><b>More screenshots: Simple Mode, Conversation, Meower, Story Mode, Notebooks and Scratchpad</b></summary>
@@ -197,3 +217,5 @@ For missing settings, try **Search** in the sidebar. For errors, use the [troubl
 Neconyan is built on the work of everyone behind SillyTavern and SillyBunny; none of this would exist without them. The [included tools list](../docs/neconyan-native-tools.md) credits their original authors.
 
 Made by [Platberlitz](https://github.com/platberlitz). Licensed under [GNU AGPL v3](../LICENSE). Keep the notices and licences if you redistribute it.
+
+Special thanks to **El Topo**, my primary helper and contributor. I really appreciate all the work you've put into Neconyan.
