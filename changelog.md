@@ -3,11 +3,14 @@
 ## v1.5.3
 
 ### Highlights
-- Cat-themed line icons now appear throughout the interface, with clearer alignment in compact controls.
-- **Stop** uses a large solid square, and the Send paw has filled pads so both controls are easier to recognise.
+- Cat-themed line icons now use thinner outlines so their small details stay visible. Companion ears sit outside the head, Expressions has rounder happy and sad cats, and Connections and Stars have curled tails.
+- **Stop** uses a large filled square with cat ears, and the Send paw has filled pads so both controls are easier to recognise.
 - Startup shares icon and common template downloads, keeping the request count below its existing limit.
 - **Backgrounds** adds theme-matched pictures, bulk deletion and **Restore defaults** for missing bundled wallpapers.
 - **Background Visibility** lets the wallpaper show through chat messages on phones as well as desktop.
+- Background transparency controls now change the Home and chat canvas, and **Background Opacity** also fades the theme's own wallpaper.
+- **Mewmory → Recall** shows the actual selected text before the score and selection reason, including neighbouring passages added to the prompt.
+- Exported message screenshots keep their selected Catline icons.
 - **Regex Agent Themes** styles tracker Companion cards as well as trackers in the chat.
 - **Plot Compass** can co-direct a story using global, character or group, and chat objectives. Each objective has its own switch, so you can stop using it without deleting the text.
 - **Scratchpad** keeps alternative replies with arrows to move between versions instead of discarding the previous answer.
