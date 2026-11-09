@@ -572,6 +572,14 @@ describe('Character Purrks UI, CSS, and shell contracts', () => {
         expect(creatorIndexJs).toContain('renderCreatorPurrks(this, main)');
     });
 
+    test('lets the Scene AI profile fill its row without overflowing narrow editors', () => {
+        const rule = purrksCss.match(/\.neconyan-purrks-director-bar select\s*\{([^}]*)\}/);
+        expect(rule).not.toBeNull();
+        expect(rule[1]).toContain('min-width: 0;');
+        expect(rule[1]).toContain('max-width: 100%;');
+        expect(rule[1]).not.toContain('220px');
+    });
+
     test('gives the secondary row vertical headroom so the Purrks badge arc is not clipped', () => {
         const tabsCss = fs.readFileSync(path.join(repoRoot, 'public/css/neconyan-tabs.css'), 'utf8');
         const rules = [...tabsCss.matchAll(/\.sb-bottom-chat-secondary-row\s*\{([^}]*)\}/g)].map(match => match[1]);
