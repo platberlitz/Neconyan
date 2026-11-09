@@ -1,4 +1,5 @@
 /** Catline: original 24-unit drawings, with plain counterparts for Kittyless. */
+const strokeWidth = 2.4;
 const p = d => `<path d="${d}"/>`;
 const c = (x, y, r) => `<circle cx="${x}" cy="${y}" r="${r}"/>`;
 const r = (x, y, w, h, radius = 2) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${radius}"/>`;
@@ -28,7 +29,7 @@ export const icons = {
     plus: [p('M4 12h16M12 3v16c0 4 8 3 7-1'), p('M4 12h16M12 4v16')],
     xmark: [p('m5 5 13 13c3 3 5-1 3-3M19 5 5 19'), p('m5 5 14 14M19 5 5 19')],
     check: [p('M3 10c-3 0-1 4 2 6l3 3L21 5'), p('m3 12 5 6L21 5')],
-    'chevron-down': [p('m5 9 7 7 7-7M5 6V3l3 2m8 0 3-2v3'), p('m5 9 7 7 7-7')],
+    'chevron-down': [p('m5 11.5 7 7 7-7M5 8.5v-3l3 2m8 0 3-2v3'), p('m5 8.5 7 7 7-7')],
     'arrow-left': [p('m9 5-7 7 7 7M2 12h15c5 0 6-7 2-7-2 0-2 2-1 3'), p('m9 5-7 7 7 7M2 12h20')],
     'trash-can': [p('M3 7h18M7 7V2l5 3 5-3v5M5 7l1 14h12l1-14M10 11v6m4-6v6'), p('M3 7h18M8 7V3h8v4M5 7l1 14h12l1-14M10 11v6m4-6v6')],
     'pen-to-square': [p('M10 4H3v17h17v-9M16 4l2-2 4 4-2 2M16 4l-9 9-1 5 5-1 9-9M16 4l4 4M3 7V2l4 2'), p('M10 4H3v17h17v-9M16 4l2-2 4 4-2 2M16 4l-9 9-1 5 5-1 9-9M16 4l4 4')],
@@ -106,7 +107,8 @@ path('heart', 'M12 21 3 12C-3 4 8-1 12 6c4-7 15-2 9 6Z', 'M12 21 3 12C-3 4 8-1 1
 variant('heart-pulse', 'heart', p('M3 12h5l2-3 3 7 2-4h6'));
 badge('clock', p('M12 8v5l4 2'));
 variant('clock-rotate-left', 'clock', p('M2 6v5h5'));
-badge('face-smile', c(9, 11, .5) + c(15, 11, .5) + p('M8 15q4 4 8 0'));
+const smileEyes = c(9, 11, .5) + c(15, 11, .5);
+add('face-smile', c(12, 12, 9) + smileEyes + p('M8 15q4 4 8 0'), head + smileEyes + p('M8 15q2 4 4 0q2 4 4 0'));
 badge('face-smile-beam', p('M7 11q2-3 4 0m2 0q2-3 4 0M8 15q4 4 8 0'));
 add('eye', p('M2 12C7 2 17 2 22 12 17 22 7 22 2 12Z') + c(12, 12, 3), p('M2 12C7 2 17 2 22 12 17 22 7 22 2 12ZM5 8V3l4 3m6 0 4-3v5') + c(12, 12, 3));
 variant('eye-slash', 'eye', p('m2 2 20 20'));
@@ -371,9 +373,9 @@ export const aliases = {
 // Leave room for the rounded stroke at the edge of the 24-unit artboard.
 // These wider silhouettes need a small optical inset, including their plain versions.
 for (const name of ['brain', 'cloud-arrow-down', 'drumstick-bite', 'github', 'highlighter', 'lightbulb', 'link', 'link-slash', 'location-dot', 'map-location-dot', 'paperclip', 'stethoscope', 'vial', 'vials', 'wand-magic-sparkles']) {
-    icons[name] = icons[name].map(d => `<g transform="translate(2.4 1.8) scale(.83)" stroke-width="2.41">${d}</g>`);
+    icons[name] = icons[name].map(d => `<g transform="translate(2.4 1.8) scale(.83)" stroke-width="${(strokeWidth / .83).toFixed(2)}">${d}</g>`);
 }
 
 export function renderIcon(body) {
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${body}</svg>\n`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round">${body}</svg>\n`;
 }

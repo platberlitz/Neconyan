@@ -1138,7 +1138,7 @@ const NN_CHARACTER_PANEL_TABS = Object.freeze([
     { id: 'editor', label: 'Editor', icon: 'fa-pen-to-square' },
     { id: 'world-info', label: 'Lorebooks', icon: 'fa-book-atlas' },
     { id: 'persona', label: 'Persona', icon: 'fa-face-smile' },
-    { id: 'creator', label: 'Catelier', icon: 'fa-wand-magic-sparkles' },
+    { id: 'creator', label: 'Catelier', icon: 'fa-pen-nib' },
     { id: 'import', label: 'Import', icon: 'fa-file-import' },
 ]);
 const NN_CHARACTER_PANEL_DEFAULT_TAB = 'characters';
