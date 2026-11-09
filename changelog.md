@@ -4,6 +4,8 @@
 
 ### Highlights
 - Cat-themed line icons now appear throughout the interface, with clearer alignment in compact controls.
+- **Stop** uses a large solid square, and the Send paw has filled pads so both controls are easier to recognise.
+- Startup shares icon and common template downloads, keeping the request count below its existing limit.
 - **Backgrounds** adds theme-matched pictures, bulk deletion and **Restore defaults** for missing bundled wallpapers.
 - **Background Visibility** lets the wallpaper show through chat messages on phones as well as desktop.
 - **Regex Agent Themes** styles tracker Companion cards as well as trackers in the chat.
