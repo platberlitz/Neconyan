@@ -2,6 +2,27 @@
 
 ## v1.5.3
 
+### Highlights
+- Cat-themed line icons now appear throughout the interface, with clearer alignment in compact controls.
+- **Backgrounds** adds theme-matched pictures, bulk deletion and **Restore defaults** for missing bundled wallpapers.
+- **Background Visibility** lets the wallpaper show through chat messages on phones as well as desktop.
+- **Regex Agent Themes** styles tracker Companion cards as well as trackers in the chat.
+- **Plot Compass** can co-direct a story using global, character or group, and chat objectives. Each objective has its own switch, so you can stop using it without deleting the text.
+- **Scratchpad** keeps alternative replies with arrows to move between versions instead of discarding the previous answer.
+- **Scratchpad → Context → Reply prefills** lets you supply the beginning of an answer, including a separate Kimi K3/K3.1 partial prefill.
+- **Scratchpad** previews HTML and CSS from replies and supported proposed edits before you save anything.
+- **Author's Note** keeps separate character-note libraries for each persona, and only shows the equipped persona's notes.
+- **Agents** remembers its selected page and folded categories when reopened.
+- Popped-out **Companion** windows fold or unfold when you tap their header.
+- Server-run Roleplay replies keep their formatting and reading position when an Agent fails after the main reply finishes.
+- **Conversation** no longer asks for image review when a reply quotes ordinary text.
+- Saved chats reopen correctly when a character's filename contains spaces.
+- **Forbid External Media** is easier to find from the chat settings.
+- Character creator notes fit their window, while the Purrks connection picker and Dialogue Colors gradient picker use their available space correctly.
+- Windows shell pages and Slate Flat keep their captions, accent colours and icons readable.
+- Sunken Reef and idle speech and guide features do less unnecessary work while you're reading.
+- The README and handbook have fresh phone and desktop screenshots, including Agents and a staged Proofreader example with change history.
+
 ### Merged Staging PRs
 - PR #552 (2026-11-08) `fix(chat): preserve spaces in saved card filenames`
 - PR #555 (2026-11-08) `feat(backgrounds): add theme-matched backgrounds and controls`
