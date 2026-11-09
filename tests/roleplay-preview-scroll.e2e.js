@@ -1,4 +1,4 @@
-/* global document, requestAnimationFrame, window */
+/* global document, requestAnimationFrame, window, getComputedStyle */
 import { expect, test } from '@playwright/test';
 import { getChatScrollSnapshot, growMessageBlockAboveViewport, installSyntheticLongChat, markManualMobileScroll, openReadyChat, waitForAnimationFrames } from './chat-scroll-regression-helpers.js';
 import { applyIOSOnlyCss, IPHONE_SAFARI_CONTEXT, installIPhoneSafari } from './ios-safari-emulation.js';
@@ -663,6 +663,17 @@ for (const phone of [false, true]) {
             await finishSavedReply(page, messageId, { clearJob: false });
 
             const after = await getChatScrollSnapshot(page);
+            await test.info().attach('new-send-readback-scroll', {
+                body: JSON.stringify({ after, layout: await page.locator('#chat').evaluate(chat => ({
+                    padding: getComputedStyle(chat).padding,
+                    height: chat.clientHeight,
+                    scrollHeight: chat.scrollHeight,
+                    scrollTop: chat.scrollTop,
+                    lastMessage: chat.querySelector('.mes:last-child')?.getBoundingClientRect().toJSON(),
+                    chat: chat.getBoundingClientRect().toJSON(),
+                })) }),
+                contentType: 'application/json',
+            });
             expect(after.bottomDelta).toBeLessThanOrEqual(16);
         });
     });

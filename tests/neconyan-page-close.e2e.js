@@ -51,7 +51,28 @@ async function openModelPage(page) {
     await page.evaluate(() => window.NeconyanShell.openTab('left', 'api'));
     const panel = page.locator('#left-nav-panel');
     await expect(panel).toBeVisible();
-    await expect.poll(() => panel.evaluate(node => node.getAnimations().length)).toBe(0);
+    const samples = [];
+    try {
+        await expect.poll(async () => {
+            const sample = await panel.evaluate(node => ({
+                now: performance.now(),
+                hidden: document.hidden,
+                animations: node.getAnimations().map(animation => ({
+                    type: animation.constructor.name,
+                    name: animation.animationName,
+                    state: animation.playState,
+                    pending: animation.pending,
+                    time: animation.currentTime,
+                    start: animation.startTime,
+                    timing: animation.effect.getComputedTiming(),
+                })),
+            }));
+            samples.push(sample);
+            return sample.animations.length;
+        }).toBe(0);
+    } finally {
+        await test.info().attach('model-page-opening-animations', { body: JSON.stringify(samples), contentType: 'application/json' });
+    }
     await expect(page.locator('#sheld')).toHaveCSS('visibility', 'hidden');
 }
 
