@@ -629,7 +629,15 @@ export function assertRoleplayWorldInfoCurrent(base, snapshot) {
         delete captured.browserMacroSyntax;
     }
     if (roleplayHash(captured) !== roleplayHash(snapshot)) {
-        throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved World Info selection no longer matches your account data.');
+        // This snapshot binds the whole reply, including settings and Agents,
+        // even when no lorebooks are selected. Name the input that changed.
+        const changed = key => roleplayHash(captured[key] ?? null) !== roleplayHash(snapshot[key] ?? null);
+        const message = ['names', 'settings', 'bookHashes', 'bookEvidence'].some(changed)
+            ? 'The saved World Info selection no longer matches your account data.'
+            : changed('agents') ? 'The accepted Agents or their model connections have changed.'
+                : changed('settingsHash') ? 'The saved reply settings changed after the request was accepted.'
+                    : 'The saved reply inputs no longer match your account data.';
+        throw roleplayError('ROLEPLAY_SOURCE_CHANGED', message);
     }
 }
 
@@ -648,7 +656,7 @@ export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.r
         }
         if (character.changed) saveRoleplayAccount(lease);
         if (roleplaySettingsHash(readJsonShared(path.join(base.directories.root, 'settings.json'), {})) !== snapshot.settingsHash) {
-            throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved World Info settings changed after the request was accepted.');
+            throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved reply settings changed after the request was accepted.');
         }
         return boundBooks(base.directories, snapshot);
     });

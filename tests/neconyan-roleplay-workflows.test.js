@@ -193,7 +193,7 @@ beforeEach(() => {
     activations.length = 0;
     observers.clear();
     previews.clear();
-    globalThis.toastr = { error: jest.fn() };
+    globalThis.toastr = { error: jest.fn(), warning: jest.fn() };
     listJobs.mockClear();
     cancelJob.mockClear();
     serviceVectorBrowserWork.mockClear();
@@ -1222,6 +1222,59 @@ test('an accepted job the page never sees is read back from its receipt after a 
     expect(requests.filter(entry => entry.url.includes('/workflow/receipt'))[0].url).toContain('key=key-7');
     await Promise.all([workflows.resumeNativeRoleplayWorkflowObservation(), workflows.resumeNativeRoleplayWorkflowObservation()]);
     expect(reloads).toEqual([2]);
+});
+
+test.each(['poll', 'preview'])('an Agent failure warns once after the saved reply is read back (%s)', async route => {
+    const key = `agent-failure-${route}`;
+    const locator = { chat: 'roleplay', avatar: 'nova.png', group: false };
+    receiptHandler = () => response(200, { accepted: true, state: 'closed', jobId: key, result: { agentsFailed: true } });
+    workflows.observeRoleplayWorkflowJob(key, { key, name: 'roleplay.reply', locator, account });
+    await waitFor(() => previews.has(key));
+    const done = { state: 'completed', result: { result: { agentsFailed: true } } };
+    if (route === 'poll') await observers.get(key).onSnapshot(done);
+    else previews.get(key).onTerminal(done);
+    await waitFor(() => globalThis.toastr.warning.mock.calls.length === 1);
+    expect(reloads).toEqual([2]);
+    expect(globalThis.toastr.warning).toHaveBeenCalledWith(
+        'Your reply was saved, but some Agents could not finish. Unfinished Agent changes were skipped.', 'Agents did not finish');
+    await observers.get(key).onSnapshot(done);
+    previews.get(key).onTerminal(done);
+    expect(globalThis.toastr.warning).toHaveBeenCalledTimes(1);
+});
+
+test.each([false, true])('a closed-page Agent failure waits for its visible chat and warns once (chat switch: %s)', async attachOnly => {
+    const key = `agent-failure-reopen-${attachOnly}`;
+    const locator = { chat: 'roleplay', avatar: 'nova.png', group: false };
+    listJobs.mockResolvedValue([{ id: key, type: 'media.roleplay-workflow', state: 'completed',
+        result: { result: { agentsFailed: true } },
+        intent: { media: { operationKey: key }, source: { locator }, request: { named: { name: 'roleplay.reply' } } } }]);
+    receiptHandler = () => response(200, { accepted: true, state: 'closed', jobId: key, result: { agentsFailed: true } });
+    globalThis.document.visibilityState = 'hidden';
+    await workflows.resumeNativeRoleplayWorkflowObservation();
+    expect(globalThis.toastr.warning).not.toHaveBeenCalled();
+    globalThis.document.visibilityState = 'visible';
+    currentChatId = 'elsewhere';
+    await workflows.resumeNativeRoleplayWorkflowObservation();
+    expect(globalThis.toastr.warning).not.toHaveBeenCalled();
+    currentChatId = 'roleplay';
+    await workflows.resumeNativeRoleplayWorkflowObservation({ attachOnly });
+    expect(globalThis.toastr.warning).toHaveBeenCalledTimes(1);
+    await workflows.resumeNativeRoleplayWorkflowObservation();
+    expect(globalThis.toastr.warning).toHaveBeenCalledTimes(1);
+});
+
+test('opening a chat does not resurrect an older Agent warning after a newer successful reply', async () => {
+    const locator = { chat: 'roleplay', avatar: 'nova.png', group: false };
+    listJobs.mockResolvedValue([false, true].map(agentsFailed => ({
+        id: `historical-agent-failure-${agentsFailed}`, type: 'media.roleplay-workflow', state: 'completed',
+        result: { result: { agentsFailed } },
+        intent: { media: { operationKey: `historical-agent-failure-${agentsFailed}` }, source: { locator } },
+    })));
+    receiptHandler = () => response(200, { accepted: true, state: 'closed', result: { agentsFailed: true } });
+    await workflows.resumeNativeRoleplayWorkflowObservation({ attachOnly: true });
+    expect(requests.filter(entry => entry.url.includes('/workflow/receipt'))).toHaveLength(0);
+    expect(globalThis.toastr.warning).not.toHaveBeenCalled();
+    expect(reloads).toEqual([]);
 });
 
 test('concurrent tab resumes adopt a completed reply once and leave later generation alone', async () => {

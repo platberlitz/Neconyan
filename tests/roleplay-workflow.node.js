@@ -160,6 +160,7 @@ for (const policy of ['autoSwipe', 'autoContinue']) {
         } });
         const output = await runRoleplayWorkflowJob(f.context());
         assert.equal(output.result.status, 'completed');
+        assert.equal(output.result.agentsFailed, undefined, 'the owner Stop is not an Agent failure');
         assert.equal(f.records().at(-1).mes, 'Short');
         assert.equal(getJob(f.dirs, f.jobId).children.length, 1);
         assert.equal(calls.count, 1);

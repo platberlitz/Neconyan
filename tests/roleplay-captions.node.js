@@ -215,7 +215,9 @@ test('Horde resumes a saved interrogation by polling its ID without repeating it
 test('a changed caption key refuses before a paid request and a damaged completed result cannot be regenerated', async t => {
     const f = prepared(t, { caption: { source: 'multimodal', multimodal_api: 'openai' }, secret: 'OPENAI' });
     writeSecret(f.directories, SECRET_KEYS.OPENAI, 'replacement-key');
-    await assert.rejects(f.run({ captionFetch: () => { throw new Error('Changed key reached a provider.'); } }), /changed|differs|no longer matches/);
+    await assert.rejects(f.run({ captionFetch: () => { throw new Error('Changed key reached a provider.'); } }), {
+        code: 'ROLEPLAY_SOURCE_CHANGED', message: 'The saved reply inputs no longer match your account data.',
+    });
     assert.notEqual(getJob(f.directories, f.jobId).recoverability, 'unknown-outcome');
     writeSecret(f.directories, SECRET_KEYS.OPENAI, 'caption-private-key');
     await assert.rejects(f.run({ captionFetch: async () => json({ choices: [{ message: { content: 'a ruby' } }] }),

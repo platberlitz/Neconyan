@@ -187,10 +187,18 @@ function displaySnapshot(pre, agents, generationType) {
         nativeRegexScripts: regexAgents.flatMap(agent => agent.regexScripts.map(script => ({ agentId: agent.id, script }))) };
 }
 
-/** Use the accepted activation and bound scripts while the main reply is still streaming. */
-export function roleplayAgentDisplaySnapshot(context, { base, snapshot, generationType, agentCache }) {
+/** Reuse the accepted display scripts even when live Agent definitions have since changed. */
+export function roleplayAgentDisplaySnapshot(context, { base, snapshot, generationType, agentCache, savedOnly = false }) {
     if (!snapshot?.agents) return undefined;
     const identity = roleplayHash({ intent: context.job.intent, generationType });
+    const saved = readPhase(context, snapshot.account, 'roleplay-agent-display', identity);
+    if (saved) {
+        if (saved.intentHash !== roleplayHash(context.job.intent)) throw fail('The saved Agent display belongs to a different request.');
+        return saved.display;
+    }
+    // Older paid replies may predate this artifact. Finishing one must not
+    // require the live definitions that its failed postprocessing already refused.
+    if (savedOnly) return undefined;
     const { pre, agents } = activeAgents(context, base, snapshot, agentCache);
     return savePhase(context, snapshot.account, 'roleplay-agent-display', { identity, intentHash: roleplayHash(context.job.intent),
         display: displaySnapshot(pre, agents, generationType) }).display;

@@ -16,7 +16,7 @@ const { cacheAgentRegexScripts, resolveRegexScriptsForSnapshot } = await import(
 const { writeAgentRecordLocked } = await import('../src/in-chat-agent-storage.js');
 const { roleplayAccountStamp, roleplayHash, withRoleplayAccount } = await import('../src/roleplay-store.js');
 const { captureChatProfile } = await import('../src/generation/profiles.js');
-const { createProviderScope, providerStep, readArtifact } = await import('../src/jobs/artifacts.js');
+const { createProviderScope, providerStep, readArtifact, writeArtifact } = await import('../src/jobs/artifacts.js');
 const { acceptJob, getJob, recoverJobs, updateJob } = await import('../src/jobs/store.js');
 const { cancelAutoSaves } = await import('../src/endpoints/settings.js');
 after(() => cancelAutoSaves());
@@ -117,6 +117,7 @@ test('live display scripts use frozen activation before postprocessing and match
         { id: 'companion', enabled: true, category: 'companion', regexScripts },
     ]);
     const options = phases(f);
+    assert.equal(roleplayAgentDisplaySnapshot(f.context, { ...options, savedOnly: true }), undefined);
     assert.throws(() => roleplayAgentDisplaySnapshot(f.context, options), { code: 'ROLEPLAY_AGENT_RECOVERY' });
     prepareRoleplayAgentContributions(f.context, { ...options, random: () => 0.25 });
     const live = roleplayAgentDisplaySnapshot(f.context, options);
@@ -126,7 +127,21 @@ test('live display scripts use frozen activation before postprocessing and match
     assert.deepEqual(result.extra.inChatAgents, live);
     assert.equal(result.text, '[MOOD|Curious]', 'display-only rules do not change the saved text');
     f.locked(lease => writeAgentRecordLocked(lease, 'agent', { id: 'active', enabled: true, regexScripts: [] }));
-    assert.throws(() => roleplayAgentDisplaySnapshot(f.context, options), { code: 'ROLEPLAY_AGENT_SOURCE_CHANGED' });
+    assert.deepEqual(roleplayAgentDisplaySnapshot(f.context, options), live, 'display survives an edit without rereading live definitions');
+    assert.throws(() => options.assertCurrent(), { code: 'ROLEPLAY_AGENT_SOURCE_CHANGED' }, 'frozen display never authorises another paid call');
+});
+
+for (const damage of ['hash', 'identity', 'intent']) test(`saved display recovery rejects a changed ${damage}`, t => {
+    const f = prepared(t, [{ id: 'active', enabled: true, phase: 'post' }]);
+    const options = phases(f);
+    prepareRoleplayAgentContributions(f.context, options);
+    roleplayAgentDisplaySnapshot(f.context, options);
+    const data = readArtifact(f.directories, f.job.id, 'roleplay-agent-display');
+    delete data.hash;
+    if (damage === 'identity') data.identity = roleplayHash('another generation');
+    if (damage === 'intent') data.intentHash = roleplayHash('another request');
+    writeArtifact(f.directories, f.job.id, 'roleplay-agent-display', { ...data, hash: damage === 'hash' ? 'broken' : roleplayHash(data) });
+    assert.throws(() => roleplayAgentDisplaySnapshot(f.context, options), { code: 'ROLEPLAY_AGENT_RECOVERY' });
 });
 
 test('identical parallel Agent requests retain distinct provider receipts and never expose their step identity to the provider', async t => {

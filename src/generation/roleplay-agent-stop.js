@@ -19,6 +19,11 @@ export function roleplayAgentsStopped({ directories, job }) {
     return true;
 }
 
+/** Only an automatic failure needs a warning on the completed reply receipt. */
+export function roleplayAgentsFailed({ directories, job }) {
+    return roleplayAgentsStopped({ directories, job }) && readArtifact(directories, job.id, key)?.reason === 'failed';
+}
+
 /**
  * Keep the paid main reply when its after-reply Agents failed for good. The
  * saved decision makes the next Agent pass skip the remaining work, exactly

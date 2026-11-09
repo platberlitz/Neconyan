@@ -23,6 +23,7 @@ import { MacroRegistry } from '../macros/engine/MacroRegistry.js';
 import { readBrowserMacros } from '../extensions/third-party/MacroEnhanced/src/custom/browser-store.js';
 import { roleplayAccountStamp } from '../roleplay-save-chain.js';
 import { getCurrentUserHandle } from '../user.js';
+import { t } from '../i18n.js';
 import { getCurrentCharAvatar } from './context.js';
 import { getRoleplaySourceMessageRevision } from './roleplay-source.js';
 import { beginRoleplayReplacement } from './roleplay-replacement.js';
@@ -43,6 +44,7 @@ const observed = new Map();
 const pending = new Map();
 const waiters = new Map();
 const adopted = new Map();
+const warnedAgentFailures = new Set();
 const reading = new Map();
 let busyName = null;
 let currentJobId = null;
@@ -503,6 +505,14 @@ function reconnectReading(entry) {
     entry.controller.abort(RECONNECT_REASON);
 }
 
+function warnAgentFailure(receipt, id, { account, locator }) {
+    if (receipt.state !== 'closed' || receipt.result?.agentsFailed !== true || warnedAgentFailures.has(id)
+        || account !== getCurrentUserHandle() || !matchesCurrentWorkflowLocator(locator)
+        || globalThis.document?.visibilityState === 'hidden') return;
+    warnedAgentFailures.add(id);
+    globalThis.toastr?.warning?.(t`Your reply was saved, but some Agents could not finish. Unfinished Agent changes were skipped.`, t`Agents did not finish`);
+}
+
 /**
  * The readback of one accepted workflow: the receipt is the authority, the chat is
  * reloaded from the server that wrote it, and the named control adopts its facts.
@@ -518,6 +528,7 @@ function readback(key, name, options) {
     }
     if (adopted.has(id)) {
         const receipt = adopted.get(id);
+        warnAgentFailure(receipt, id, options);
         settleFinished(key, receipt);
         return Promise.resolve(receipt);
     }
@@ -767,6 +778,7 @@ async function readbackReceipt(key, name, shared, id) {
                 controller.signal.throwIfAborted();
                 if (account === getCurrentUserHandle() && matchesCurrentWorkflowLocator(locator)) adopted.set(id, receipt);
             }
+            if (adopted.has(id)) warnAgentFailure(receipt, id, options);
             shared.settled = true;
             forgetPendingKeptReply(key, account);
             announce({ key, name, state: receipt.state, result: receipt.result ?? null, jobId: receipt.jobId });
@@ -1573,11 +1585,12 @@ export async function resumeNativeRoleplayWorkflowObservation({ reconnect = fals
                     messageIndex: job.intent?.source?.message?.index ?? job.intent?.source?.range?.start });
             } else if (observed.has(job.id)) {
                 observed.get(job.id)?.onTerminal?.(job);
-            } else if (!cycle.attachOnly && !finished) {
-                finished = { key, name, locator };
+            } else if (!finished) {
+                finished = { key, name, locator,
+                    agentsFailed: job.result?.result?.agentsFailed === true || job.result?.agentsFailed === true };
             }
         }
-        if (!cycle.attachOnly && finished && !busyName && !isGenerating() && !isChatSaving && !activeReload) {
+        if (finished && (!cycle.attachOnly || finished.agentsFailed) && !busyName && !isGenerating() && !isChatSaving && !activeReload) {
             await readback(finished.key, finished.name, { locator: finished.locator, account, passive: true }).catch(() => {});
         }
         if (cycle.reconnectedPromises.size) {

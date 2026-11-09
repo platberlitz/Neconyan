@@ -23,7 +23,7 @@ import { assertRoleplayNamedWorkflow, ROLEPLAY_WORKFLOW_NAMES, roleplayWorkflowC
 import { roleplayEffectTrigger } from './roleplay-prompt.js';
 import { registerHandler } from '../jobs/runner.js';
 import { releaseStoppedRoleplayWorkflow } from './roleplay-workflow-cancellation.js';
-import { roleplayAgentsStopped } from './roleplay-agent-stop.js';
+import { roleplayAgentsFailed, roleplayAgentsStopped } from './roleplay-agent-stop.js';
 import { preserveRoleplayWorkflowReply, recordWorkflowReplyText } from './roleplay-kept-reply.js';
 import { applyOverflowHiding, prepareAutomaticHiding } from '../mewmory/hiding.js';
 
@@ -701,6 +701,7 @@ async function runGroupWorkflow(context, job, beforePublication, decideCandidate
     }
     const blockedOutcome = readArtifact(context.directories, completed.at(-1).childJobId, 'roleplay-blocked-output')?.outcome;
     const result = { ...(blockedOutcome ? { generationOutcome: blockedOutcome } : {}), status: 'completed', childJobId: completed.at(-1).childJobId,
+        ...(roleplayAgentsFailed({ ...context, job: getJob(context.directories, completed.at(-1).childJobId) }) ? { agentsFailed: true } : {}),
         candidateHash: completed.at(-1).candidateHash,
         writeId: completed.at(-1).result.writeId, revision: completed.at(-1).result.revision,
         instanceId: completed.at(-1).result.instanceId, speakers: completed.map(entry => ({
@@ -878,6 +879,7 @@ async function executeRoleplayWorkflowJob(context, { beforePublication, beforeCo
     const outcome = publishPlan(context, job, chosen, plan);
     await beforePublication?.();
     const result = { ...(blockedCandidate(chosen) ? { generationOutcome: (chosen.candidate.output.message ?? chosen.candidate.output.messages?.[0] ?? chosen.candidate.output).extra.generation_outcome } : {}), status: 'completed', childJobId: chosen.child.id, candidateHash: chosen.candidate.hash,
+        ...(roleplayAgentsFailed({ ...context, job: chosen.child }) ? { agentsFailed: true } : {}),
         writeId: outcome.writeId, revision: outcome.revision, instanceId: outcome.instanceId,
         ...(plan.named ? { named: plan.named } : {}) };
     finishNativeMediaJob(context, result, { checkSource: false,
