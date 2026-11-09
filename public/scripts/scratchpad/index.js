@@ -47,8 +47,10 @@ import { integerSettingValue, reflectSavedValue, reflectedSettingValue } from '.
 import { renderWebSearchSettings, renderWebSearchSources, setWebSearchToggle } from './web-search.js';
 import { prepareAttachment } from './attachments.js';
 import { MAX_ATTACHMENTS, normaliseAttachments } from './attachment-data.js';
+import { previewForBlock, previewFromText, previewLanguage } from './preview-source.js';
+import { showHtmlPreview } from './html-preview.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261108-scratchpad-narrow-header';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261109-html-preview';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -1378,19 +1380,26 @@ function renderReply(session, message) {
             if (!part.text.trim()) continue;
             const block = h('div', { class: 'scratchpad-text mes_text' });
             block.innerHTML = messageFormatting(part.text, '', false, false, -1, {}, false);
-            for (const code of block.querySelectorAll('pre > code')) {
-                const pre = code.parentElement;
-                const wrapper = h('div', { class: 'scratchpad-code-block' });
-                const text = code.textContent;
-                pre.replaceWith(wrapper);
-                wrapper.append(pre, iconButton('', () => void copyText(text), {
-                    icon: 'fa-copy', title: t`Copy code`, className: 'scratchpad-copy',
-                }));
-            }
             body.append(block);
         } else {
             body.append(renderChangeCard(session, message, part));
         }
+    }
+    const codes = [...body.querySelectorAll('.scratchpad-text pre > code')];
+    const sources = codes.map(code => ({ language: previewLanguage(code.className), text: code.textContent }));
+    for (const [index, code] of codes.entries()) {
+        const pre = code.parentElement;
+        const wrapper = h('div', { class: 'scratchpad-code-block' });
+        const text = code.textContent;
+        pre.replaceWith(wrapper);
+        wrapper.append(pre, iconButton('', () => void copyText(text), {
+            icon: 'fa-copy', title: t`Copy code`, className: 'scratchpad-copy',
+        }));
+        const preview = previewForBlock(sources, index);
+        if (preview) wrapper.append(iconButton(t`Preview HTML/CSS`, () => void showHtmlPreview(preview), {
+            icon: 'fa-eye', className: 'scratchpad-code-preview',
+            title: t`Preview this HTML with the CSS blocks in this reply`,
+        }));
     }
     return body;
 }
@@ -1602,6 +1611,17 @@ async function reviewAndSaveChange(session, message, part, key) {
         editor ? h('strong', { text: plan.afterLabel || t`Proposed` }) : null,
         editor,
         plan.hint ? h('p', { class: 'scratchpad-review-hint', text: plan.hint }) : null);
+    if (editor) {
+        const readPreview = () => previewFromText(plan.getAfterText ? plan.getAfterText(editor.value) : editor.value);
+        const previewButton = iconButton(t`Preview HTML/CSS`, () => {
+            const preview = readPreview();
+            if (preview) void showHtmlPreview(preview);
+        }, { icon: 'fa-eye', className: 'scratchpad-code-preview' });
+        const update = () => { previewButton.hidden = !readPreview(); };
+        editor.addEventListener('input', update);
+        update();
+        editor.after(previewButton);
+    }
     const result = await callGenericPopup(content, POPUP_TYPE.CONFIRM, '', {
         wide: true,
         large: !plan.visual,

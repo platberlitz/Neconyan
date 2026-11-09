@@ -558,6 +558,26 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     padding-top: 52px;
 }
 
+.scratchpad-code-block .scratchpad-code-preview,
+.scratchpad-review .scratchpad-code-preview {
+    min-height: 44px;
+    margin: 6px 0 0;
+}
+
+.scratchpad-html-preview {
+    min-width: 0;
+    text-align: start;
+}
+
+.scratchpad-html-preview-frame {
+    display: block;
+    width: 100%;
+    height: min(480px, 58dvh);
+    border: 1px solid var(--neco-border);
+    border-radius: 10px;
+    background: var(--neco-surface);
+}
+
 .scratchpad-plain {
     margin: 0;
     white-space: pre-wrap;
