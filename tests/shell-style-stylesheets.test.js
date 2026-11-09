@@ -140,6 +140,36 @@ const themeIds = readThemeIds();
 const runtimeIds = themeIds.filter(id => id !== 'calico');
 
 describe('shell style runtime stylesheets', () => {
+    test('Windows page layouts and caption ink stay in their owning styles and roots', () => {
+        for (const id of ['windows-xp', 'windows-98', 'windows-aero']) {
+            const source = readSource('public', 'css', 'shell-styles', `${id}.css`);
+            const desktop = source.slice(source.indexOf('/* Character-family captions'));
+            expect(desktop).toContain('@media (min-width: 769px)');
+            expect(desktop).not.toContain('#user-settings-block.openDrawer');
+            expect(desktop).toContain('#right-nav-panel.neconyan-character-workspace.openDrawer > .sb-character-shell-nav-wrapper');
+            expect(desktop).toContain('#rightNavHolder > #right-nav-panel.neconyan-character-workspace.openDrawer > .sb-character-shell-header.neconyan-cat-panel');
+            expect(desktop).toContain('padding: 16px 116px 16px 18px');
+            expect(desktop).not.toMatch(/!important|\b(?:transition|animation)\s*:/);
+        }
+        const core = readSource('public', 'css', 'neconyan.css');
+        expect(core).toContain('--neco-workspace-nav-width: 208px;');
+        expect(core).toContain('grid-template-columns: var(--neco-workspace-nav-width) minmax(0, 1fr);');
+        expect(core).toMatch(/body\.neconyan \.sb-shell-root\.openDrawer \.sb-shell-nav-wrapper\s*\{[^}]*height: 100%;/);
+        expect(core).toMatch(/body\.neconyan \.sb-shell-root\.openDrawer \.sb-shell-nav\s*\{[^}]*flex-direction: column;[^}]*height: 100%;/);
+        for (const id of ['windows-xp', 'windows-98']) {
+            const source = readSource('public', 'css', 'shell-styles', `${id}.css`);
+            expect(source).toContain(':is(#left-nav-panel, #user-settings-block).openDrawer .sb-shell-header {');
+            expect(source).not.toContain(':is(#left-nav-panel, #user-settings-block, #right-nav-panel).openDrawer .sb-shell-header {');
+        }
+        const classic = readSource('public', 'css', 'shell-styles', 'windows-98.css');
+        expect(classic).toContain('--sb-settings-tab-ink: var(--w98-title-ink)');
+        expect(classic).toContain('#right-nav-panel.openDrawer > .sb-character-shell-header :is(.sb-shell-subtitle');
+        expect(readSource('public', 'css', 'neconyan-calico.css')).toContain('color: var(--sb-settings-tab-ink, var(--neco-ink)) !important');
+        for (const id of runtimeIds.filter(id => id !== 'windows-98')) {
+            expect(readSource('public', 'css', 'shell-styles', `${id}.css`)).not.toContain('--sb-settings-tab-ink:');
+        }
+    });
+
     test('every provider Connect action uses the shared accent-aware primary button', () => {
         for (const id of ['api_button', 'api_button_novel', 'api_button_textgenerationwebui', 'api_button_openai']) {
             const tag = indexHtml.match(new RegExp(`<[^>]+id="${id}"[^>]*>`))?.[0];
