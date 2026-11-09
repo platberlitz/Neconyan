@@ -17,6 +17,7 @@
 - PR #569 (2026-11-09) `fix(agents): remember page and collapsed category preferences`
 - PR #570 (2026-11-09) `fix(conversation): prevent image review for ordinary text quotes`
 - PR #571 (2026-11-09) `fix(chat): make the global external media setting easy to find`
+- PR #572 (2026-11-09) `fix(botsearcher): compact and scope the jannyai import notice`
 
 ## v1.5.2
 
