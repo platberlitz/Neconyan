@@ -85,9 +85,14 @@ test('Document content, cats and detached controls follow both roles and live ro
     await page.locator('#sbterm-enabled').evaluate(el => { el.checked = true; el.dispatchEvent(new Event('change', { bubbles: true })); });
     await expect(page.locator('body')).toHaveClass(/sbterm/);
     const terminal = await page.locator('#chat > .mes').evaluateAll(rows => rows.map(row => {
-        const m = row.getBoundingClientRect(), c = row.querySelector('.neconyan-message-sleeper').getBoundingClientRect();
-        return { pawError: c.top + 41 - m.top, overhang: row.getAttribute('is_user') === 'true' ? c.right - m.right : m.left - c.left };
+        const cat = row.querySelector('.neconyan-message-sleeper');
+        const m = row.getBoundingClientRect(), c = cat.getBoundingClientRect();
+        return { pawError: c.top + 41 - m.top, overhang: row.getAttribute('is_user') === 'true' ? c.right - m.right : m.left - c.left,
+            row: row.className, body: document.body.className, catTop: getComputedStyle(cat).top,
+            catTransform: getComputedStyle(cat).transform, catMargin: getComputedStyle(cat).margin,
+            rowBorder: getComputedStyle(row).borderTopWidth, offsetParent: cat.offsetParent?.className };
     }));
+    await test.info().attach('terminal-cat-geometry', { body: JSON.stringify(terminal, null, 2), contentType: 'application/json' });
     for (const row of terminal) {
         expect(Math.abs(row.pawError)).toBeLessThanOrEqual(1);
         expect(row.overhang).toBeCloseTo(17, 0);
