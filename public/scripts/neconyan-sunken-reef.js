@@ -101,10 +101,9 @@ function isReducedMotionPreferred() {
 }
 
 function createColourProbe(host) {
-    const probe = document.createElement('span');
-    probe.setAttribute('aria-hidden', 'true');
-    probe.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;';
-    host.appendChild(probe);
+    // Keep one stable probe per property. Rewriting its colour for every sample
+    // invalidates styles, and reading the same pixel back stalls canvas drawing.
+    const probes = new Map();
 
     const swatch = document.createElement('canvas');
     swatch.width = 1;
@@ -113,16 +112,27 @@ function createColourProbe(host) {
 
     function resolve(cssValue, fallback) {
         try {
-            probe.style.color = '';
-            probe.style.color = cssValue;
-            const resolved = window.getComputedStyle(probe).color || fallback;
+            let entry = probes.get(cssValue);
+            if (!entry) {
+                const probe = document.createElement('span');
+                probe.setAttribute('aria-hidden', 'true');
+                probe.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;';
+                probe.style.color = cssValue;
+                host.appendChild(probe);
+                entry = { probe, resolved: null, colour: null };
+                probes.set(cssValue, entry);
+            }
+            const resolved = window.getComputedStyle(entry.probe).color || fallback;
+            if (resolved === entry.resolved) return entry.colour;
             if (!swatchCtx) return fallback;
             swatchCtx.clearRect(0, 0, 1, 1);
             swatchCtx.fillStyle = fallback;
             swatchCtx.fillStyle = resolved;
             swatchCtx.fillRect(0, 0, 1, 1);
             const [r, g, b] = swatchCtx.getImageData(0, 0, 1, 1).data;
-            return { r, g, b, css: `rgb(${r}, ${g}, ${b})` };
+            entry.resolved = resolved;
+            entry.colour = { r, g, b, css: `rgb(${r}, ${g}, ${b})` };
+            return entry.colour;
         } catch {
             return { r: 56, g: 232, b: 255, css: fallback };
         }
@@ -131,7 +141,8 @@ function createColourProbe(host) {
     return {
         resolve,
         destroy() {
-            probe.remove();
+            for (const { probe } of probes.values()) probe.remove();
+            probes.clear();
         },
     };
 }
@@ -1024,7 +1035,8 @@ function createStage() {
     }
 
     function updateMotionAttribute(reducedMotion) {
-        stage.dataset.reefMotion = reducedMotion ? 'still' : 'active';
+        const motion = reducedMotion ? 'still' : 'active';
+        if (stage.dataset.reefMotion !== motion) stage.dataset.reefMotion = motion;
     }
 
     function renderFrame(now = performance.now()) {
