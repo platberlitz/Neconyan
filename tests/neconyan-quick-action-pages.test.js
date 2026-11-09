@@ -16,7 +16,6 @@ function harness() {
         } },
         normalizeText: value => String(value ?? '').replace(/\s+/g, ' ').trim().toLowerCase(),
         getShellConfig: key => key === 'left' ? { title: 'Fine-tuning', baseTab: { id: 'sampling', label: 'Sampling' } } : null,
-        getCharacterPanelTabConfig: () => null,
         getNeconyanNativeTools: () => [{ id: 'css-snippets', label: 'CSS Snippets', description: 'Edit CSS snippets.' }],
         NECONYAN_MODE_DEFINITIONS: [{ id: 'conversation', label: 'Conversation' }],
         activateNeconyanRailTool: jest.fn(),
@@ -45,7 +44,7 @@ function harness() {
     vm.runInContext([
         source.match(/^const NN_SEARCH_PAGES = Object\.freeze\(\[[\s\S]*?^\]\.map\(page => Object\.freeze\(page\)\)\);/m)[0],
         source.match(/^const NN_CHARACTER_PANEL_TABS = Object\.freeze\(\[[\s\S]*?^\]\);/m)[0],
-        ...['getSearchPageEntries', 'getQuickActionPageEntry', 'getMobileQuickActionTabConfig', 'getMobileQuickActionContext',
+        ...['getCharacterPanelTabConfig', 'getSearchPageEntries', 'getQuickActionPageEntry', 'getMobileQuickActionTabConfig', 'getMobileQuickActionContext',
             'normalizeMobileQuickAction', 'normalizeMobileQuickActionList', 'getMobileQuickActionKey',
             'createMobileQuickActionFromMatch', 'getMobileQuickActionSearchMatches', 'findMobileQuickActionMatch',
             'activateMobileQuickAction', 'getCharacterPanelSearchEntries', 'migrateLegacyMobileQuickAction', 'parseMobileQuickActionStorage'].map(functionSource),
@@ -78,6 +77,7 @@ describe('Quick Actions shares the searchable page catalogue', () => {
         expect(matches).toHaveLength(12);
         expect(matches[0].dedupeKey).toBe('characters::creator');
         const action = context.createMobileQuickActionFromMatch(matches[0]);
+        expect(context.getMobileQuickActionTabConfig('characters', 'creator').icon).toBe('fa-pen-nib');
         expect(context.normalizeMobileQuickActionList([action, action])).toHaveLength(1);
         expect(context.getMobileQuickActionSearchMatches('c')).toEqual([]);
     });

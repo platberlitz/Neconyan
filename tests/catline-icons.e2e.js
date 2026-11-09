@@ -78,6 +78,10 @@ for (const phone of [false, true]) {
             await page.locator('#preloader').waitFor({ state: 'detached' });
             const skip = page.getByRole('button', { name: 'Skip', exact: true });
             if (await skip.isVisible()) await skip.click();
+            await page.evaluate(() => window.NeconyanShell.openTab('characters', 'creator'));
+            const catelier = page.locator('#sb_character_tab_creator');
+            await expect(catelier).toBeVisible();
+            expect(await catelier.locator('i').evaluate(node => getComputedStyle(node, '::before').maskImage)).toContain('/pen-nib.svg');
             await page.evaluate(() => window.NeconyanShell.openTab('right', 'settings'));
             const icon = page.locator('#top-settings-holder .sb-shell-tab:visible i').first();
             await expect(icon).toBeVisible();
