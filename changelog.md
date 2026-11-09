@@ -9,6 +9,7 @@
 - PR #557 (2026-11-08) `fix(chat): improve background visibility on messages`
 - PR #558 (2026-11-08) `feat(agents): let plot compass co-direct scoped stories`
 - PR #559 (2026-11-09) `perf(sunken-reef): reuse resolved colours during animation`
+- PR #560 (2026-11-09) `feat: preview scratchpad html and fit creator notes`
 
 ## v1.5.2
 
