@@ -20,6 +20,7 @@
 - PR #572 (2026-11-09) `fix(botsearcher): compact and scope the jannyai import notice`
 - PR #574 (2026-11-09) `feat(icons): replace font awesome with cat-themed svgs`
 - PR #575 (2026-11-09) `fix(shell): align windows pages and repair caption colours`
+- PR #577 (2026-11-09) `fix(dialogue-colors): keep the gradient target dropdown compact`
 
 ## v1.5.2
 
