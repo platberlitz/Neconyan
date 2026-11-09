@@ -15474,7 +15474,9 @@ async function inlineMessageScreenshotImages(container) {
                 throw new Error(`Unexpected ${response.status} response for ${source}`);
             }
 
-            return await getBase64Async(await response.blob());
+            // Keep SVG fragment selection when embedding a shared icon sheet.
+            const fragment = new URL(source, document.baseURI).hash;
+            return (await getBase64Async(await response.blob())) + fragment;
         };
         const pseudoImages = [];
         // SB: html2canvas materializes generated-content images after its normal image wait.
