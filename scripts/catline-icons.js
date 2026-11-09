@@ -3,6 +3,7 @@ const strokeWidth = 2.4;
 const p = d => `<path d="${d}"/>`;
 const c = (x, y, r) => `<circle cx="${x}" cy="${y}" r="${r}"/>`;
 const r = (x, y, w, h, radius = 2) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${radius}"/>`;
+const filled = drawing => `<g fill="currentColor" stroke="none">${drawing}</g>`;
 const head = p('M5 9V3l4 3h6l4-3v6c2 2 2 7-1 9-3 2-9 2-12 0-3-2-3-7-1-9Z');
 const tinyHead = p('M8 7V3l3 2h2l3-2v4a4 4 0 0 1-8 0Z');
 const face = c(8.5, 12, 0.5) + c(15.5, 12, 0.5) + p('m11 15 1 1 1-1');
@@ -17,7 +18,7 @@ const tail = p('M17 20c5 3 7-3 4-4');
 // so stored quick replies, extensions and class-based state changes keep working.
 export const icons = {
     cat: [head + face + p('M2 13h3m14 0h3M2 17l3-1m14 0 3 1'), c(12, 8, 4) + p('M4 21v-2a8 8 0 0 1 16 0v2')],
-    paw: [p('M7 15c2-1 2-4 5-4s3 3 5 4c4 4-1 7-5 5-4 2-9-1-5-5Z') + '<ellipse cx="5" cy="9" rx="2" ry="2.5"/><ellipse cx="10" cy="5" rx="2" ry="2.5"/><ellipse cx="16" cy="5.5" rx="2" ry="2.5"/><ellipse cx="20" cy="10" rx="2" ry="2.5"/>', p('m3 11 18-8-8 18-3-8Z M10 13 21 3')],
+    paw: [filled(p('M7 15c2-1 2-4 5-4s3 3 5 4c4 4-1 7-5 5-4 2-9-1-5-5Z') + '<ellipse cx="5" cy="9" rx="2" ry="2.5"/><ellipse cx="10" cy="5" rx="2" ry="2.5"/><ellipse cx="16" cy="5.5" rx="2" ry="2.5"/><ellipse cx="20" cy="10" rx="2" ry="2.5"/>'), p('m3 11 18-8-8 18-3-8Z M10 13 21 3')],
     'paper-plane': [p('m5 9 17-7-7 18-4-7Z M11 13 22 2M9 17c-1 5-7 5-7 1 0-2 3-2 3 0'), p('m2 10 20-8-8 20-4-8Z M10 14 22 2')],
     comment: [bubble, normalBubble],
     comments: [p('M2 9V3l4 2h8l4-2v10a3 3 0 0 1-3 3H8l-5 3v-5a3 3 0 0 1-1-2Z M21 9v10l1 3-5-2h-5'), p('M5 3h10a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3H8l-5 3v-5a3 3 0 0 1-1-2V6a3 3 0 0 1 3-3Z M21 9v10l1 3-5-2h-5')],
@@ -172,7 +173,9 @@ path('at', 'M16 8v7c0 4 6 3 6-3A10 10 0 1 0 17 21M16 12a4 4 0 1 0-8 0 4 4 0 0 0 
 // Media, devices and connections.
 add('play', p('m6 3 16 9-16 9Z'), p('m6 3 16 9-16 9ZM6 3l5-1v4'));
 add('pause', p('M6 3h3v18H6ZM15 3h3v18h-3Z'), p('M6 3l3 2v16H6ZM15 5l3-2v18h-3Z'));
-badge('stop', '', true);
+// Stop keeps its universal filled square, including on the feline controls.
+icons.stop = [filled(r(4, 4, 16, 16)), filled(r(4, 4, 16, 16))];
+icons['circle-stop'] = [...icons.stop];
 path('forward', 'm2 4 10 8-10 8Zm10 0 10 8-10 8Z', 'm2 4 10 8-10 8Zm10 0 10 8-10 8ZM2 4V1l4 2');
 variant('forward-fast', 'forward', p('M22 3v18'));
 variant('forward-step', 'play', p('M22 3v18'));

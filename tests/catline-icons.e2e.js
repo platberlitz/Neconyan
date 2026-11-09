@@ -42,6 +42,11 @@ test('every cat and neutral SVG loads, paints and follows its compatible class',
                     const ctx = canvas.getContext('2d'); ctx.drawImage(image, 0, 0, 24, 24);
                     const pixels = ctx.getImageData(0, 0, 24, 24).data;
                     if (!pixels.some((value, index) => index % 4 === 3 && value > 0)) failures.push(`empty: ${url}`);
+                    const filledPoints = expected === 'paw.svg' ? [[5, 9], [10, 5], [16, 5], [20, 10], [12, 16]]
+                        : /^(circle-)?stop(-plain)?\.svg$/.test(expected) ? [[9, 9], [12, 12], [14, 14]] : [];
+                    for (const [x, y] of filledPoints) {
+                        if (pixels[(y * 24 + x) * 4 + 3] !== 255) failures.push(`unfilled control: ${url} at ${x},${y}`);
+                    }
                     if (/^chevron-(up|down|left|right)(-plain)?\.svg$/.test(expected)) {
                         const painted = [];
                         for (let y = 0; y < 24; y++) for (let x = 0; x < 24; x++) {
