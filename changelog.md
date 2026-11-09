@@ -21,6 +21,7 @@
 - PR #574 (2026-11-09) `feat(icons): replace font awesome with cat-themed svgs`
 - PR #575 (2026-11-09) `fix(shell): align windows pages and repair caption colours`
 - PR #577 (2026-11-09) `fix(dialogue-colors): keep the gradient target dropdown compact`
+- PR #578 (2026-11-09) `fix(authors-note): scope visible notes to the equipped persona`
 
 ## v1.5.2
 
