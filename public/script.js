@@ -24,6 +24,7 @@ import { favsToHotswap, getMessageTimeStamp, dragElement, isMobile, initRossMods
 import { isChatNavigationBlocked, setChatNavigationBlocked } from './scripts/chat-navigation-flight.js';
 import { readMessageExpression, writeMessageExpression, renderMessageExpression } from './scripts/expression-history.js';
 import './scripts/neconyan-message-sleepers.js';
+import './scripts/chat-offscreen-motion.js';
 import { dressSleeper } from './scripts/neconyan-sleeper-coats.js';
 import { measureEchoMessage, measureTideMessage } from './scripts/echo-message-layout.js';
 import './scripts/neconyan-send-nya.js';

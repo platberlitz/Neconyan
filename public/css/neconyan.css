@@ -3395,3 +3395,7 @@ body.neconyan:is(.whisperstyle, .hushstyle)[data-neconyan-chat-mode='roleplay']:
     #chat .sb-message-screenshot-surface .mes.nn-echo-layout :is(.mesAvatarWrapper, .ch_name, .mes_reasoning_details, .nn-echo-header-plate) { visibility: visible; }
     .sb-message-screenshot-surface .nn-echo-header-bottom { display: none; }
 }
+/* Looping animations in messages scrolled out of view rest until they return (chat-offscreen-motion.js). */
+#chat > .mes[data-nn-offscreen] *,
+#chat > .mes[data-nn-offscreen] *::before,
+#chat > .mes[data-nn-offscreen] *::after { animation-play-state: paused !important; }
