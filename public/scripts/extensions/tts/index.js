@@ -16,6 +16,21 @@ import { registerExtensionCapability } from '../../neconyan-conversation/extensi
 
 const UPDATE_INTERVAL = 1000;
 const wrapper = new ModuleWorkerWrapper(moduleWorker);
+let ttsWorkerTimer = null;
+
+function stopTtsWorker() {
+    if (ttsWorkerTimer !== null) clearInterval(ttsWorkerTimer);
+    ttsWorkerTimer = null;
+}
+
+function syncTtsWorker() {
+    if (!extension_settings.tts.enabled || extension_settings.disabledExtensions?.includes('tts')) {
+        stopTtsWorker();
+        return;
+    }
+    // Keep narration moving in the background, but never wake a disabled feature.
+    if (ttsWorkerTimer === null) ttsWorkerTimer = setInterval(() => void wrapper.update(), UPDATE_INTERVAL);
+}
 
 /**
  * Safely clones an object, with fallback for environments without structuredClone.
@@ -626,7 +641,8 @@ function updateUiAudioPlayState() {
         } else {
             img = 'fa-solid fa-circle-play extensionsMenuExtensionButton';
         }
-        $('#tts_media_control').attr('class', img);
+        const control = $('#tts_media_control');
+        if (control.attr('class') !== img) control.attr('class', img);
     } else {
         $('#ttsExtensionMenuItem').hide();
     }
@@ -1160,6 +1176,7 @@ function onEnableClick() {
         ':checked',
     );
     updateUiAudioPlayState();
+    syncTtsWorker();
     saveSettingsDebounced();
     $('body').toggleClass('tts', extension_settings.tts.enabled);
     if (extension_settings.tts.enabled) {
@@ -1809,6 +1826,7 @@ export function init() {
 }
 
 export function deactivate() {
+    stopTtsWorker();
     resetTtsPlayback();
     unregisterTtsCapability?.();
     unregisterTtsCapability = null;
@@ -1902,7 +1920,8 @@ async function initializeTtsExtension() {
         observeTtsSettingsVisibility();
     }
     addAudioControl(); // Depends on Extension Controls
-    setInterval(wrapper.update.bind(wrapper), UPDATE_INTERVAL); // Init depends on all the things
+    syncTtsWorker();
+    eventSource.on(event_types.SETTINGS_UPDATED, syncTtsWorker);
     eventSource.on(event_types.MESSAGE_SWIPED, resetTtsPlayback);
     eventSource.on(event_types.CHAT_CHANGED, onChatChanged);
     eventSource.on(event_types.MESSAGE_DELETED, onMessageDeleted);

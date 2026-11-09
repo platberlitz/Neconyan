@@ -3902,6 +3902,7 @@ function injectCallback(args, value) {
     }
 
     setExtensionPrompt(prefixedId, String(value), position, depth, scan, role, filterFunction);
+    void eventSource.emit(event_types.CHAT_INJECTIONS_CHANGED);
     saveMetadataDebounced();
 
     if (ephemeral) {
@@ -3913,6 +3914,7 @@ function injectCallback(args, value) {
             console.log('Removing ephemeral script injection', id);
             delete chat_metadata.script_injects[id];
             setExtensionPrompt(prefixedId, '', position, depth, scan, role, filterFunction);
+            void eventSource.emit(event_types.CHAT_INJECTIONS_CHANGED);
             saveMetadataDebounced();
             deleted = true;
         };
@@ -3965,6 +3967,7 @@ function flushInjectsCallback(_, value) {
         delete chat_metadata.script_injects[id];
     }
 
+    void eventSource.emit(event_types.CHAT_INJECTIONS_CHANGED);
     saveMetadataDebounced();
     return '';
 }
