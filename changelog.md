@@ -12,6 +12,7 @@
 - PR #560 (2026-11-09) `feat: preview scratchpad html and fit creator notes`
 - PR #565 (2026-11-09) `perf(extensions): stop unnecessary idle speech and guide checks`
 - PR #566 (2026-11-09) `fix(roleplay): preserve regex formatting after server agent failures`
+- PR #567 (2026-11-09) `fix(purrks): expand the connection profile dropdown`
 
 ## v1.5.2
 
