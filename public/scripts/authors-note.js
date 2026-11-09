@@ -17,9 +17,11 @@ import { POPUP_RESULT, Popup } from './popup.js';
 import {
     DEFAULT_NOTE_PROFILE_ID,
     composeAuthorsNote,
+    ensurePersonaNoteLibrary,
     getActiveNoteProfileId,
     getActiveNoteProfileIds,
     getNoteProfiles,
+    getNoteProfileStore,
     getPersonaNoteEntry,
     isValidNotePosition,
     resolveActiveNoteProfiles,
@@ -151,8 +153,8 @@ function inProfileOrder(profiles, ids) {
 /**
  * Profile fields for a character or persona note, with notes saved before profiles existed read as
  * one Default profile. Character notes (`perPersona`) can use several profiles at once: the shared
- * mix in `activeProfiles`, or one mix per persona in `personaActiveProfiles`. Notes saved when only
- * one profile could be in use read as a mix of that one profile.
+ * mix in `activeProfiles`, or a separate collection and mix in `personaNoteLibraries`. Legacy
+ * `personaProfiles` and `personaActiveProfiles` selections survive until a persona's first edit.
  */
 function normalizeNoteProfiles(entry, { perPersona = false } = {}) {
     const profiles = getNoteProfiles(entry ?? {}).map(normalizeNoteProfile);
@@ -176,6 +178,13 @@ function normalizeNoteProfiles(entry, { perPersona = false } = {}) {
             ...Object.fromEntries(personaProfiles.map(([avatar, id]) => [avatar, [id]])),
             ...Object.fromEntries(personaMixes.map(([avatar, list]) => [avatar, inProfileOrder(profiles, list)])),
         };
+        state.personaNoteLibraries = Object.fromEntries(Object.entries(getPlainObject(entry?.personaNoteLibraries))
+            .filter(([avatar, library]) => avatar && getNoteProfileStore({ perPersona: true, personaNoteLibraries: { [avatar]: library } }, avatar) === library)
+            .map(([avatar, library]) => {
+                const normalized = normalizeNoteProfiles(library);
+                return [avatar, { ...normalized, activeProfiles: Array.isArray(library.activeProfiles)
+                    ? inProfileOrder(normalized.profiles, library.activeProfiles) : [normalized.activeProfile] }];
+            }));
     }
 
     return state;
@@ -208,7 +217,8 @@ function getNoteView(slotName, entry) {
     const active = noteSlots[slotName].perPersona
         ? resolveActiveNoteProfiles(merged, persona)
         : state.profiles.filter(profile => profile.id === getActiveNoteProfileId(merged, persona));
-    return { ...state, active, profile: getEditingProfile(slotName, state, active) };
+    const view = { ...state, profiles: getNoteProfiles(merged, persona) };
+    return { ...view, active, profile: getEditingProfile(slotName, view, active) };
 }
 
 function getMixedNoteProfileIds(note) {
@@ -216,13 +226,7 @@ function getMixedNoteProfileIds(note) {
 }
 
 function setMixedNoteProfileIds(note, ids) {
-    const persona = getPersonaAvatar();
-    const ordered = inProfileOrder(note.profiles, ids);
-    if (note.perPersona && persona) {
-        note.personaActiveProfiles[persona] = ordered;
-    } else {
-        note.activeProfiles = ordered;
-    }
+    note.activeProfiles = inProfileOrder(note.profiles, ids);
 }
 
 // The top-level prompt and position, `activeProfile` and `personaProfiles` mirror the first note in
@@ -362,7 +366,8 @@ function getWritableCharacterNote() {
 }
 
 function isUnusedNote(note, enabledKey) {
-    return !note[enabledKey] && !note.perPersona && note.profiles.length === 1 && !note.profiles[0].prompt;
+    return !note[enabledKey] && !note.perPersona && !Object.keys(note.personaNoteLibraries ?? {}).length
+        && note.profiles.length === 1 && !note.profiles[0].prompt;
 }
 
 function commitCharacterNote(note, { deferRender = false } = {}) {
@@ -481,7 +486,11 @@ function editNote(slotName, mutate, options) {
     }
 
     const editingId = getNoteView(slotName, note).profile.id;
-    mutate(note, note.profiles.find(profile => profile.id === editingId) ?? note.profiles[0]);
+    const library = slotName === 'chara' ? ensurePersonaNoteLibrary(note, getPersonaAvatar()) : note;
+    mutate(library, library.profiles.find(profile => profile.id === editingId) ?? library.profiles[0], note);
+    if (Array.isArray(library.activeProfiles)) {
+        library.activeProfile = library.activeProfiles[0] ?? library.activeProfile;
+    }
     slot.commit(note, options);
     return true;
 }
@@ -507,7 +516,7 @@ function onNotePromptInput(slotName, value) {
 }
 
 function onNoteEnabledChanged(slotName, value) {
-    editNote(slotName, (note) => {
+    editNote(slotName, (_library, _profile, note) => {
         note[noteSlots[slotName].enabledKey] = value;
     });
 }
@@ -541,17 +550,30 @@ function onCharaNoteOpened(profileId) {
 }
 
 function onCharaPerPersonaChanged(value) {
-    editNote('chara', (note) => {
-        const persona = getPersonaAvatar();
-        // Start from the notes in use on screen, so switching keeps the current mix.
-        const mixed = getMixedNoteProfileIds(note);
-        note.perPersona = value;
-        if (value && persona) {
-            note.personaActiveProfiles[persona] = mixed;
-        } else if (!value) {
-            note.activeProfiles = mixed;
-        }
-    });
+    const note = getWritableCharacterNote();
+    if (!note) return;
+    if (note.perPersona && !value) {
+        const avatars = new Set([getPersonaAvatar(), ...Object.keys(note.personaProfiles), ...Object.keys(note.personaActiveProfiles)]);
+        for (const avatar of avatars) ensurePersonaNoteLibrary(note, avatar);
+    }
+    note.perPersona = value;
+    if (value) ensurePersonaNoteLibrary(note, getPersonaAvatar());
+    editingCharaProfileId = '';
+    commitCharacterNote(note);
+}
+
+// A persona or chat can change while a naming/confirmation dialog is open. Never apply its
+// result to the newly selected collection or to a different note in the editor.
+function guardNoteEdit(slotName) {
+    const avatar = getPersonaAvatar();
+    const target = getEditableCharacterNoteName();
+    const metadata = chat_metadata;
+    const entry = noteSlots[slotName].getReadable();
+    const perPersona = Boolean(entry?.perPersona);
+    const profileId = getNoteView(slotName, entry).profile.id;
+    return () => avatar === getPersonaAvatar() && target === getEditableCharacterNoteName()
+        && metadata === chat_metadata && perPersona === Boolean(noteSlots[slotName].getReadable()?.perPersona)
+        && profileId === getNoteView(slotName, noteSlots[slotName].getReadable()).profile.id;
 }
 
 async function onNewNoteProfile(slotName) {
@@ -560,6 +582,7 @@ async function onNewNoteProfile(slotName) {
         return;
     }
 
+    const isCurrent = guardNoteEdit(slotName);
     const current = getNoteView(slotName, slot.getReadable());
     const name = slotName === 'chara'
         ? await Popup.show.input(t`New note`, t`Name the new note. It starts empty and is switched on for this mix.`, '')
@@ -568,7 +591,7 @@ async function onNewNoteProfile(slotName) {
             t`Name the new profile. It starts as a copy of the one on screen.`,
             t`${current.profile.name} copy`,
         );
-    if (!String(name ?? '').trim()) {
+    if (!String(name ?? '').trim() || !isCurrent()) {
         return;
     }
 
@@ -597,11 +620,12 @@ async function onRenameNoteProfile(slotName) {
         return;
     }
 
+    const isCurrent = guardNoteEdit(slotName);
     const current = getNoteView(slotName, slot.getReadable());
     const name = slotName === 'chara'
         ? await Popup.show.input(t`Rename note`, t`Enter a new name for this note.`, current.profile.name)
         : await Popup.show.input(t`Rename profile`, t`Enter a new name for this profile.`, current.profile.name);
-    if (!String(name ?? '').trim()) {
+    if (!String(name ?? '').trim() || !isCurrent()) {
         return;
     }
 
@@ -616,6 +640,7 @@ async function onDeleteNoteProfile(slotName) {
         return;
     }
 
+    const isCurrent = guardNoteEdit(slotName);
     const isCharaNote = slotName === 'chara';
     const current = getNoteView(slotName, slot.getReadable());
     if (current.profiles.length <= 1) {
@@ -628,7 +653,7 @@ async function onDeleteNoteProfile(slotName) {
     const confirmed = isCharaNote
         ? await Popup.show.confirm(t`Delete note`, t`Delete the note "${current.profile.name}"? This cannot be undone.`)
         : await Popup.show.confirm(t`Delete profile`, t`Delete the profile "${current.profile.name}"? This cannot be undone.`);
-    if (confirmed !== POPUP_RESULT.AFFIRMATIVE) {
+    if (confirmed !== POPUP_RESULT.AFFIRMATIVE || !isCurrent()) {
         return;
     }
 
@@ -771,17 +796,21 @@ function onPersonaDeleted({ avatarId } = {}) {
         delete personaStore[avatarId];
         changed = true;
     }
-    for (const note of extension_settings.note.chara ?? []) {
-        for (const key of ['personaProfiles', 'personaActiveProfiles']) {
+    const groupNote = getContext().groupId ? chat_metadata[metadata_keys.chara] : null;
+    let metadataChanged = false;
+    for (const note of [...(extension_settings.note.chara ?? []), groupNote]) {
+        for (const key of ['personaProfiles', 'personaActiveProfiles', 'personaNoteLibraries']) {
             if (note?.[key] && Object.hasOwn(note[key], avatarId)) {
                 delete note[key][avatarId];
-                changed = true;
+                if (note === groupNote) metadataChanged = true;
+                else changed = true;
             }
         }
     }
     if (changed) {
         saveSettingsDebounced();
     }
+    if (metadataChanged) saveMetadataDebounced();
 }
 
 function renderPersonaNoteLabel() {
@@ -825,8 +854,8 @@ function renderNoteTargetsAndSummary() {
     $('#an_chara_avatar').attr('src', charThumb).attr('alt', charName).prop('hidden', !charThumb);
 
     const perPersonaHint = personaName
-        ? t`Each persona keeps its own set of ticked notes for this character. Currently choosing the notes for ${personaName}.`
-        : t`Each persona keeps its own set of ticked notes for this character. Switching persona switches the notes.`;
+        ? t`Saved notes and ticked selection for ${personaName}. Other personas keep their own notes. Turn this off to return to the shared notes.`
+        : t`Each persona keeps its own saved notes and ticked selection for this character. Turn this off to return to the shared notes.`;
     $('#an_chara_per_persona_hint').text(perPersonaHint);
 
     const hasChat = Boolean(context.groupId || charAvatar);

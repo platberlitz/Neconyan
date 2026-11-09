@@ -13,18 +13,53 @@ export function isValidNotePosition(value) {
     return Object.values(NOTE_POSITION).includes(Number(value));
 }
 
+function isNoteProfile(profile) {
+    return profile && typeof profile === 'object' && typeof profile.id === 'string' && profile.id;
+}
+
+// A persona library owns both the saved text and the mix. Until its first edit, an older note
+// keeps using the shared profiles and that persona's legacy selection without changing the save.
+export function getNoteProfileStore(entry, personaAvatar = '') {
+    const libraries = entry?.personaNoteLibraries;
+    if (entry?.perPersona && personaAvatar && libraries && !Array.isArray(libraries) && Object.hasOwn(libraries, personaAvatar)) {
+        const library = libraries[personaAvatar];
+        if (library && Array.isArray(library.profiles) && library.profiles.some(isNoteProfile)) {
+            return library;
+        }
+    }
+    return entry;
+}
+
+export function ensurePersonaNoteLibrary(entry, personaAvatar) {
+    if (!entry?.perPersona || !personaAvatar) {
+        return entry;
+    }
+    const saved = getNoteProfileStore(entry, personaAvatar);
+    if (saved !== entry) {
+        return saved;
+    }
+    const library = {
+        profiles: getNoteProfiles(entry).map(profile => ({ ...profile })),
+        activeProfile: getActiveNoteProfileId(entry, personaAvatar),
+        activeProfiles: getActiveNoteProfileIds(entry, personaAvatar),
+    };
+    entry.personaNoteLibraries = { ...entry.personaNoteLibraries, [personaAvatar]: library };
+    return library;
+}
+
 /**
  * Profiles saved on a character or persona note. Notes written before profiles existed keep their
  * text in `prompt` and `position`; they read as a single profile named Default.
  * Values are returned as stored so callers can decide how strictly to validate them.
  */
-export function getNoteProfiles(entry) {
+export function getNoteProfiles(entry, personaAvatar = '') {
+    entry = getNoteProfileStore(entry, personaAvatar);
     if (!entry || typeof entry !== 'object') {
         return [];
     }
 
     if (Array.isArray(entry.profiles)) {
-        const profiles = entry.profiles.filter(profile => profile && typeof profile === 'object' && typeof profile.id === 'string' && profile.id);
+        const profiles = entry.profiles.filter(isNoteProfile);
         if (profiles.length) {
             return profiles;
         }
@@ -43,6 +78,7 @@ export function getNoteProfiles(entry) {
  * or when that persona has no pick yet, the note's shared active profile is used.
  */
 export function getActiveNoteProfileId(entry, personaAvatar = '') {
+    entry = getNoteProfileStore(entry, personaAvatar);
     const profiles = getNoteProfiles(entry);
     if (!profiles.length) {
         return null;
@@ -63,7 +99,7 @@ export function getActiveNoteProfileId(entry, personaAvatar = '') {
 
 export function resolveNoteProfile(entry, personaAvatar = '') {
     const id = getActiveNoteProfileId(entry, personaAvatar);
-    return id ? getNoteProfiles(entry).find(profile => profile.id === id) ?? null : null;
+    return id ? getNoteProfiles(entry, personaAvatar).find(profile => profile.id === id) ?? null : null;
 }
 
 /**
@@ -73,6 +109,7 @@ export function resolveNoteProfile(entry, personaAvatar = '') {
  * empty saved mix means none is in use.
  */
 export function getActiveNoteProfileIds(entry, personaAvatar = '') {
+    entry = getNoteProfileStore(entry, personaAvatar);
     const profiles = getNoteProfiles(entry);
     if (!profiles.length) {
         return [];
@@ -105,7 +142,7 @@ export function getActiveNoteProfileIds(entry, personaAvatar = '') {
 
 export function resolveActiveNoteProfiles(entry, personaAvatar = '') {
     const ids = getActiveNoteProfileIds(entry, personaAvatar);
-    return getNoteProfiles(entry).filter(profile => ids.includes(profile.id));
+    return getNoteProfiles(entry, personaAvatar).filter(profile => ids.includes(profile.id));
 }
 
 /**
