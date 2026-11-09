@@ -10,6 +10,7 @@
 - PR #558 (2026-11-08) `feat(agents): let plot compass co-direct scoped stories`
 - PR #559 (2026-11-09) `perf(sunken-reef): reuse resolved colours during animation`
 - PR #560 (2026-11-09) `feat: preview scratchpad html and fit creator notes`
+- PR #565 (2026-11-09) `perf(extensions): stop unnecessary idle speech and guide checks`
 
 ## v1.5.2
 
