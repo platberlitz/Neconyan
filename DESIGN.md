@@ -107,7 +107,7 @@ The accent is the user's choice, not ginger. `--neco-ginger` reads the theme's q
 I use Catline SVGs for interface icons, with small ears or curled tails around familiar action shapes. The action still needs to read at 16px. Keep the existing control size and accessible label; colour comes from `currentColor`.
 
 - Drawings and compatible `fa-*` names live in `scripts/catline-icons.js`. The class names remain so saved choices, extensions and changing button states keep working without an icon font.
-- Each drawing has a plain counterpart for Kittyless. Keep both on the same 24px grid with rounded, 2px strokes.
+- Each drawing has a plain counterpart for Kittyless. Keep both on the same 24px grid with rounded, 2.4px strokes.
 - Run `node scripts/build-catline-icons.js` after editing the source. It writes the SVGs, picker catalogue and CSS map, with content-based asset versions. Don't edit those generated files directly.
 - Use `fa-solid fa-<name>` on the existing icon element. CSS-only marks use `--neco-icon: var(--neco-svg-<name>)` and the shared mask rules in `public/css/neconyan-icons.css`.
 - Check the catalogue test and phone/desktop browser checks when adding a drawing. Keep a visible label or an accessible name on the control; decorative icons use `aria-hidden="true"`.

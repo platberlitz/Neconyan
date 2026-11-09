@@ -43,6 +43,13 @@ describe('Catline SVG icon replacement', () => {
                 const svg = load(renderIcon(drawing), { xmlMode: true });
                 expect(svg('svg').attr('viewBox')).toBe('0 0 24 24');
                 expect(svg('svg').attr('stroke')).toBe('currentColor');
+                expect(svg('svg').attr('stroke-width')).toBe('2.4');
+                expect(svg('svg').attr('stroke-linecap')).toBe('round');
+                expect(svg('svg').attr('stroke-linejoin')).toBe('round');
+                for (const group of svg('g[stroke-width]').toArray()) {
+                    const scale = Number(svg(group).attr('transform').match(/scale\(([\d.]+)\)/)[1]);
+                    expect(Number(svg(group).attr('stroke-width')) * scale).toBeCloseTo(2.4, 2);
+                }
                 expect(svg('script, foreignObject, image, text, use').length).toBe(0);
                 expect(renderIcon(drawing)).not.toMatch(/(?:href=|style=|on\w+=|#[0-9a-f]{3,8}\b)/i);
             }

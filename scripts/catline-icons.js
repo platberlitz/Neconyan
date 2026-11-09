@@ -1,4 +1,5 @@
 /** Catline: original 24-unit drawings, with plain counterparts for Kittyless. */
+const strokeWidth = 2.4;
 const p = d => `<path d="${d}"/>`;
 const c = (x, y, r) => `<circle cx="${x}" cy="${y}" r="${r}"/>`;
 const r = (x, y, w, h, radius = 2) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${radius}"/>`;
@@ -371,9 +372,9 @@ export const aliases = {
 // Leave room for the rounded stroke at the edge of the 24-unit artboard.
 // These wider silhouettes need a small optical inset, including their plain versions.
 for (const name of ['brain', 'cloud-arrow-down', 'drumstick-bite', 'github', 'highlighter', 'lightbulb', 'link', 'link-slash', 'location-dot', 'map-location-dot', 'paperclip', 'stethoscope', 'vial', 'vials', 'wand-magic-sparkles']) {
-    icons[name] = icons[name].map(d => `<g transform="translate(2.4 1.8) scale(.83)" stroke-width="2.41">${d}</g>`);
+    icons[name] = icons[name].map(d => `<g transform="translate(2.4 1.8) scale(.83)" stroke-width="${(strokeWidth / .83).toFixed(2)}">${d}</g>`);
 }
 
 export function renderIcon(body) {
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${body}</svg>\n`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round">${body}</svg>\n`;
 }
