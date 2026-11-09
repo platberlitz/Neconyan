@@ -33,7 +33,7 @@
     background-image: url('../../img/neconyan/shell-cozy-warm.webp?v=20260929a');
     /* The cat sleeps at the right-hand edge, so narrow screens crop towards it. */
     --neconyan-wallpaper-focus: 100% 50%;
-    opacity: .7;
+    --neco-wallpaper-opacity: .7;
 }
 
 /* Lamplight pooled in the corner of the screen, behind everything. */

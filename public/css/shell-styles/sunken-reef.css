@@ -98,7 +98,7 @@
 :root[data-sb-theme='sunken-reef'] body.neconyan:not(.sbterm)::before {
     background-image: url('../../img/neconyan/shell-sunken-reef.webp?v=20261105-sunken-reef');
     --neconyan-wallpaper-focus: 100% 50%;
-    opacity: 0.78;
+    --neco-wallpaper-opacity: 0.78;
 }
 
 /* Shimmering caustic sunbeams and bioluminescent coral pools behind the workspace. */

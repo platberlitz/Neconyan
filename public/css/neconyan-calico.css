@@ -334,12 +334,14 @@ body.neconyan::before {
     z-index: -2;
     pointer-events: none;
     background: url('../img/neconyan/kitty-clouds.webp?v=20260913g') var(--neconyan-wallpaper-focus, 50% 50%) / cover no-repeat;
-    opacity: .67;
+    opacity: calc(var(--neco-wallpaper-opacity, .67) * var(--customCSS-bg-opacity, 1));
 }
 :root[data-neconyan-calico-tone='dark'] body.neconyan::before {
     background-image: url('../img/neconyan/kitty-clouds-dark.webp?v=20260923a');
 }
-body.neconyan:not(.sbterm) #sheld,
+body.neconyan:not(.sbterm) #sheld {
+    background-color: rgb(from var(--neco-canvas) r g b / var(--sb-shell-surface-opacity, 1)) !important;
+}
 body.neconyan:not(.sbterm) #form_sheld,
 body.neconyan:not(.sbterm) #neconyan-home-host {
     background-color: transparent !important;

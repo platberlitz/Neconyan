@@ -98,7 +98,7 @@
 :root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm)::before {
     background-image: url('../../img/neconyan/shell-starlight-conservatory.webp?v=20261104a');
     --neconyan-wallpaper-focus: 100% 50%;
-    opacity: 0.74;
+    --neco-wallpaper-opacity: 0.74;
 }
 
 /* Drifting golden firefly motes and soft conservatory lantern pools behind the workspace. */

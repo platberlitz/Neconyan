@@ -62,6 +62,36 @@ function composite(over, under, opacity = 1) {
 function colour(channels) { return `rgb(${channels.slice(0, 3).join(', ')})`; }
 
 for (const phone of [false, true]) {
+    test(`Background controls change the Home and chat canvas on ${phone ? 'phone' : 'desktop'}`, async ({ app }, info) => {
+        test.setTimeout(180000);
+        const account = await app.account({ phone });
+        const page = await account.open({ workspace: false, timeout: 60000 });
+        await seedChat(page, account.avatar);
+        for (const home of [false, true]) {
+            if (home) await page.evaluate(() => window.NeconyanShell.showHome());
+            for (const value of [0, 50, 100]) {
+                await setVisibility(page, value);
+                await expect.poll(() => page.locator('#sheld').evaluate(element => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = canvas.height = 1;
+                    const context = canvas.getContext('2d');
+                    context.fillStyle = getComputedStyle(element).backgroundColor;
+                    context.fillRect(0, 0, 1, 1);
+                    return context.getImageData(0, 0, 1, 1).data[3] / 255;
+                })).toBeCloseTo(1 - value / 100, 2);
+            }
+        }
+        for (const value of [1, 0.5, 0]) {
+            await page.locator('#background_opacity').evaluate((slider, value) => {
+                slider.value = value;
+                slider.dispatchEvent(new Event('input', { bubbles: true }));
+            }, value);
+            await expect.poll(() => page.evaluate(() => Number(getComputedStyle(document.body, '::before').opacity))).toBeCloseTo(0.67 * value, 2);
+            await expect(page.locator('#bg1')).toHaveCSS('opacity', String(value));
+            await page.screenshot({ path: info.outputPath(`background-opacity-${value}.png`) });
+        }
+    });
+
     test(`Background Visibility keeps message surfaces readable on ${phone ? 'phone' : 'desktop'}`, async ({ app }) => {
         test.setTimeout(300000);
         const account = await app.account({ phone });

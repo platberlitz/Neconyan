@@ -81,9 +81,9 @@
 :root[data-sb-theme='windows-98'] body.neconyan::before {
     background-image: url('../../img/neconyan/shell-windows-98.webp?v=20260930a');
     background-position: 50% 50%;
-    opacity: .8;
+    --neco-wallpaper-opacity: .8;
 }
-:root[data-sb-theme='windows-98'][data-sb-surface-tone='light'] body.neconyan::before { opacity: .9; }
+:root[data-sb-theme='windows-98'][data-sb-surface-tone='light'] body.neconyan::before { --neco-wallpaper-opacity: .9; }
 
 /* Every cat and assistant picture swaps to its Windows 98 pixel-art redraw. */
 :root[data-sb-theme='windows-98'] body.neconyan img[src*='img/neconyan/cat-head.webp'] { content: url('../../img/neconyan/win98/cat-head.webp?v=20260930a'); }

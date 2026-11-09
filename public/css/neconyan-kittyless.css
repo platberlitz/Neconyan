@@ -50,9 +50,9 @@
 :root[data-sb-kittyless='true']:is(:not([data-sb-theme]), [data-sb-theme='calico'], [data-sb-theme='kittyless']) body.neconyan::before {
     background-image: url('../img/neconyan/shell-kittyless.webp?v=20260930a');
     background-position: 50% 50%;
-    opacity: .8;
+    --neco-wallpaper-opacity: .8;
 }
-:root[data-sb-kittyless='true'][data-neconyan-calico-tone='light']:is(:not([data-sb-theme]), [data-sb-theme='calico'], [data-sb-theme='kittyless']) body.neconyan::before { opacity: .45; }
+:root[data-sb-kittyless='true'][data-neconyan-calico-tone='light']:is(:not([data-sb-theme]), [data-sb-theme='calico'], [data-sb-theme='kittyless']) body.neconyan::before { --neco-wallpaper-opacity: .45; }
 
 :root[data-sb-kittyless='true'] body.neconyan :is(.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel .sb-character-editor-identity)::before,
 :root[data-sb-kittyless='true'] body.neconyan :is(.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel .sb-character-editor-identity)::after,

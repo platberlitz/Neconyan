@@ -29,11 +29,11 @@
     background-image: url('../../img/neconyan/shell-hypr-glow.webp?v=20260929a');
     /* The cat sleeps at the right-hand edge, so narrow screens crop towards it. */
     --neconyan-wallpaper-focus: 100% 50%;
-    opacity: .85;
+    --neco-wallpaper-opacity: .85;
 }
 
 :root[data-sb-theme='hypr-glow'][data-sb-surface-tone='light'] body.neconyan:not(.sbterm)::before {
-    opacity: .5;
+    --neco-wallpaper-opacity: .5;
 }
 
 /* Monospace labels on the window chrome, with the rice-style hash prefix on section titles. */

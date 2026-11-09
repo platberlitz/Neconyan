@@ -32,7 +32,7 @@
     background-image: url('../../img/neconyan/shell-macos-minimal.webp?v=20260929a');
     /* The cat sleeps at the right-hand edge, so narrow screens crop towards it. */
     --neconyan-wallpaper-focus: 100% 50%;
-    opacity: .7;
+    --neco-wallpaper-opacity: .7;
 }
 
 /* Top bar: a plain title bar, no gradient, one hairline underneath. */
