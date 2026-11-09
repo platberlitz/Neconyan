@@ -262,6 +262,8 @@ test('desktop pins, live switches, reload, collapse, preset isolation, requests 
     await expect.poll(() => app.provider.calls.length, { timeout: 60000 }).toBe(2);
     expect(app.provider.calls[1].messages.some(message => message.content.includes('PINNED_FIXTURE_A'))).toBe(false);
     await expect(page.locator('#chat .mes').last()).toContainText('Durable first reply.');
+    // Both fixture replies use the same text; wait for the second generation before switching presets.
+    await expect.poll(() => page.evaluate(async () => (await import('/script.js')).is_send_press), { timeout: 60000 }).toBe(false);
     await openPrompts(page);
     await page.locator('#settings_preset_openai').selectOption({ label: 'Pinned fixture B' });
     await expect(page.locator('#neconyan-chat-widgets')).toHaveCount(0);

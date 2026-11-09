@@ -30,6 +30,8 @@ async function openBrowser(page, { searchable = true, query = '' } = {}) {
         void openBrowser({ query });
     }, { path: extensionPath, query });
     await expect(page.locator('#sbbs_query')).toBeVisible();
+    // Popup arrival scales its contents; measure touch targets after that animation finishes.
+    await expect(page.locator('.popup:has(#sbbs_query)')).not.toHaveAttribute('opening');
     return requests;
 }
 
