@@ -46,6 +46,8 @@ for (const layout of ['phone', 'desktop', 'iphone']) {
                 await page.screenshot({ path: path.join(directory, `${layout}-${process.env.NECONYAN_BACKGROUND_SIZE_PHASE || 'check'}.png`) });
             }
             const sizes = await Promise.all([select, zoomOut, zoomIn].map(control => control.boundingBox()));
+            const tabs = await page.locator('#bg_tabs .bg_tabs_list').boundingBox();
+            expect(Math.abs((sizes[2].x + sizes[2].width) - (tabs.x + tabs.width))).toBeLessThan(1);
             if (isPhone) {
                 for (const zoom of sizes.slice(1)) {
                     expect(Math.abs(sizes[0].width - zoom.width)).toBeLessThan(1);
@@ -81,6 +83,8 @@ for (const layout of ['phone', 'desktop', 'iphone']) {
             await expect(count).toBeVisible();
             const selected = await select.boundingBox();
             const countBox = await count.boundingBox();
+            const selectedZoomIn = await zoomIn.boundingBox();
+            expect(Math.abs((selectedZoomIn.x + selectedZoomIn.width) - (tabs.x + tabs.width))).toBeLessThan(1);
             expect(selected.width).toBeGreaterThanOrEqual(sizes[1].width - 1);
             expect(countBox.x + countBox.width).toBeLessThanOrEqual(selected.x + selected.width + 1);
             expect(countBox.y + countBox.height).toBeLessThanOrEqual(selected.y + selected.height + 1);
