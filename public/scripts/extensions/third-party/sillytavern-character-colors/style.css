@@ -2639,6 +2639,7 @@ body.dc-mark-uncertain [data-dc-colored][data-dc-confidence="low"] {
         flex-direction: column;
     }
 
+    #dc-ext .dc-gradient-gallery-apply > select,
     #dc-ext .dc-gradient-gallery-apply > *,
     #dc-ext .dc-gradient-gallery-custom > *,
     #dc-ext .dc-gradient-gallery-preview > * {
