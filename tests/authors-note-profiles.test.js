@@ -141,6 +141,40 @@ describe('mixing character notes', () => {
     });
 });
 
+describe('saved character note libraries', () => {
+    const library = { profiles: [
+        { id: 'own', name: 'My tone', prompt: 'Persona tone', position: 2 },
+        { id: 'extra', name: 'Extra', prompt: 'Persona setting', position: 1 },
+    ], activeProfile: 'own', activeProfiles: ['extra', 'own', 'missing'] };
+    const entry = { ...profiled, personaNoteLibraries: { 'sam.png': library } };
+
+    test('the persona library wins over shared notes and legacy selections', () => {
+        expect(getNoteProfiles(entry, 'sam.png')).toEqual(library.profiles);
+        expect(resolveNoteProfile(entry, 'sam.png').prompt).toBe('Persona tone');
+        expect(getActiveNoteProfileIds(entry, 'sam.png')).toEqual(['own', 'extra']);
+        expect(getNoteProfiles(entry, 'alex.png')).toEqual(profiled.profiles);
+        expect(resolveNoteProfile({ ...entry, perPersona: false }, 'sam.png').id).toBe('calm');
+    });
+
+    test('reply snapshots use only the selected persona library, including an empty selection', () => {
+        expect(captureScopedAuthorsNotes(entry, null, 'sam.png').scoped).toEqual({ useChara: true, notes: [
+            { prompt: 'Persona tone', position: 2 }, { prompt: 'Persona setting', position: 1 },
+        ] });
+        const empty = { ...entry, personaNoteLibraries: { 'sam.png': { ...library, activeProfiles: [] } } };
+        expect(captureScopedAuthorsNotes(empty, null, 'sam.png').scoped.notes).toEqual([]);
+    });
+
+    test.each([null, [], 'bad', {}, { profiles: [] }, { profiles: [null, { id: '' }] }])('malformed libraries fall back to existing notes: %p', value => {
+        const broken = { ...entry, personaNoteLibraries: { 'sam.png': value } };
+        expect(resolveNoteProfile(broken, 'sam.png').id).toBe('chaos');
+    });
+
+    test('inherited properties are not treated as a persona library', () => {
+        const inherited = { ...entry, personaNoteLibraries: Object.create({ 'sam.png': library }) };
+        expect(resolveNoteProfile(inherited, 'sam.png').id).toBe('chaos');
+    });
+});
+
 describe('combining Author\'s Notes', () => {
     const note = (prompt, position, enabled = true) => ({ enabled, prompt, position });
 

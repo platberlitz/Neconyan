@@ -23,7 +23,7 @@ function setup({ group = false } = {}) {
                 element.value = value;
                 return element;
             });
-            for (const method of ['text', 'prop', 'find', 'attr', 'toggleClass', 'addClass', 'removeClass', 'children', 'empty', 'append']) {
+            for (const method of ['text', 'prop', 'find', 'attr', 'toggleClass', 'addClass', 'removeClass', 'children', 'empty', 'append', 'trigger']) {
                 element[method] = jest.fn(() => element);
             }
             elements.set(selector, element);
@@ -43,6 +43,9 @@ function setup({ group = false } = {}) {
         debounce_timeout: { short: 200, standard: 300 }, setTimeout, clearTimeout,
         t: (strings, ...values) => String.raw({ raw: strings }, ...values),
         console: { debug: jest.fn(), warn: jest.fn() }, Option: function () {},
+        uuidv4: jest.fn(() => 'created-note'),
+        Popup: { show: { input: jest.fn(), confirm: jest.fn() } }, POPUP_RESULT: { AFFIRMATIVE: 1 },
+        toastr: { info: jest.fn(), error: jest.fn() },
     });
     vm.runInContext(`const debounceMap = new Map();\n${timing}\n${source}`, context);
     const loadSettings = context.loadSettings;
@@ -146,5 +149,115 @@ describe('Author\'s Note typing', () => {
         expect(context.chat_metadata.note_prompt).toBe('Second chat note');
         expect($('#extension_floating_prompt').value).toBe('Second chat note');
         expect(context.loadSettings).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('Character note libraries per persona', () => {
+    beforeEach(() => jest.useFakeTimers());
+    afterEach(() => jest.useRealTimers());
+
+    function seed(context, group) {
+        const note = { name: 'individual:Miso', useChara: true, perPersona: true,
+            profiles: [
+                { id: 'tone', name: 'Tone', prompt: 'Gentle', position: 2 },
+                { id: 'setting', name: 'Setting', prompt: 'Garden', position: 1 },
+            ], activeProfile: 'tone', activeProfiles: ['tone'],
+            personaActiveProfiles: { 'first.png': ['tone'], 'second.png': ['setting'] } };
+        if (group) context.chat_metadata.note_chara = note;
+        else context.extension_settings.note.chara = [note];
+        return () => group ? context.chat_metadata.note_chara : context.extension_settings.note.chara[0];
+    }
+
+    test.each([false, true])('edits, names, new notes and deletion are isolated (group: %s)', async group => {
+        const { context, chat } = setup({ group });
+        const saved = seed(context, group);
+        context.onCharaNoteOpened('tone');
+        context.onNotePromptInput('chara', 'First tone');
+        context.onNotePositionChanged('chara', 1);
+        context.Popup.show.input.mockResolvedValueOnce('First only');
+        await context.onRenameNoteProfile('chara');
+        context.Popup.show.input.mockResolvedValueOnce('Extra');
+        await context.onNewNoteProfile('chara');
+        context.onNotePromptInput('chara', 'Extra text');
+        expect(profiles.resolveActiveNoteProfiles(saved(), 'first.png').map(note => note.prompt)).toEqual(['First tone', 'Extra text']);
+        chat.userAvatar = 'second.png';
+        context.onCharaNoteOpened('tone');
+        expect(context.getNoteView('chara', saved()).profile).toMatchObject({ name: 'Tone', prompt: 'Gentle', position: 2 });
+        context.onNotePromptInput('chara', 'Second tone');
+        context.onCharaNoteMixChanged('tone', true);
+        context.Popup.show.confirm.mockResolvedValueOnce(1);
+        await context.onDeleteNoteProfile('chara');
+        expect(profiles.getNoteProfiles(saved(), 'second.png').map(note => note.id)).toEqual(['setting']);
+        expect(profiles.getActiveNoteProfileIds(saved(), 'second.png')).toEqual(['setting']);
+        chat.userAvatar = 'first.png';
+        context.onCharaNoteOpened('tone');
+        expect(context.getNoteView('chara', saved()).profile).toMatchObject({ name: 'First only', prompt: 'First tone', position: 1 });
+        expect(profiles.getNoteProfiles(saved(), 'first.png')).toHaveLength(3);
+        expect(saved().profiles[0].prompt).toBe('Gentle');
+    });
+
+    test('shared mode and persona libraries survive toggling, serialisation and an empty mix', () => {
+        const { context, chat } = setup();
+        const saved = seed(context, false);
+        context.onNotePromptInput('chara', 'First tone');
+        context.onCharaNoteMixChanged('tone', false);
+        context.onCharaPerPersonaChanged(false);
+        expect(context.getNoteView('chara', saved()).profile.prompt).toBe('Gentle');
+        context.onNotePromptInput('chara', 'Shared tone');
+        context.onCharaPerPersonaChanged(true);
+        expect(context.getNoteView('chara', saved()).profile.prompt).toBe('First tone');
+        expect(profiles.getActiveNoteProfileIds(saved(), 'first.png')).toEqual([]);
+        context.extension_settings.note.chara = JSON.parse(JSON.stringify(context.extension_settings.note.chara));
+        chat.userAvatar = 'second.png';
+        context.onCharaNoteOpened('setting');
+        context.onNotePromptInput('chara', 'Second garden');
+        chat.userAvatar = 'first.png';
+        expect(profiles.getActiveNoteProfileIds(saved(), 'first.png')).toEqual([]);
+        expect(profiles.resolveNoteProfile(saved(), 'first.png').prompt).toBe('First tone');
+        context.onNoteEnabledChanged('chara', false);
+        context.onCharaPerPersonaChanged(false);
+        context.onNotePromptInput('chara', '');
+        expect(saved().personaNoteLibraries['first.png'].profiles[0].prompt).toBe('First tone');
+    });
+
+    test.each([false, true])('deleting a persona clears its library and legacy picks (group: %s)', group => {
+        const { context, chat } = setup({ group });
+        const saved = seed(context, group);
+        context.onNotePromptInput('chara', 'First tone');
+        chat.userAvatar = 'second.png';
+        context.onNotePromptInput('chara', 'Second tone');
+        context.onPersonaDeleted({ avatarId: 'first.png' });
+        expect(saved().personaNoteLibraries['first.png']).toBeUndefined();
+        expect(saved().personaActiveProfiles['first.png']).toBeUndefined();
+        expect(saved().personaNoteLibraries['second.png']).toBeDefined();
+    });
+
+    test('switching to shared notes preserves unedited legacy persona collections', () => {
+        const { context, chat } = setup();
+        const saved = seed(context, false);
+        context.onCharaPerPersonaChanged(false);
+        context.onNotePromptInput('chara', 'Changed shared tone');
+        context.onCharaNoteOpened('setting');
+        context.onNotePromptInput('chara', 'Changed shared setting');
+        context.onCharaPerPersonaChanged(true);
+        chat.userAvatar = 'second.png';
+        expect(profiles.resolveActiveNoteProfiles(saved(), 'second.png')).toMatchObject([{ prompt: 'Garden' }]);
+        expect(profiles.getNoteProfiles(saved(), 'second.png')[0].prompt).toBe('Gentle');
+    });
+
+    test.each(['onNewNoteProfile', 'onRenameNoteProfile', 'onDeleteNoteProfile'])('%s ignores a dialog completed after switching personas', async handler => {
+        const { context, chat } = setup();
+        const saved = seed(context, false);
+        let finish;
+        const answer = new Promise(resolve => { finish = resolve; });
+        context.Popup.show.input.mockReturnValue(answer);
+        context.Popup.show.confirm.mockReturnValue(answer);
+        const pending = context[handler]('chara');
+        chat.userAvatar = 'second.png';
+        finish(handler === 'onDeleteNoteProfile' ? 1 : 'Wrong persona');
+        await pending;
+        expect(saved().profiles).toHaveLength(2);
+        expect(saved().profiles[0]).toMatchObject({ name: 'Tone', prompt: 'Gentle' });
+        expect(saved().personaNoteLibraries).toBeUndefined();
     });
 });

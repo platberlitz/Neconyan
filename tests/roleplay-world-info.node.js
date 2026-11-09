@@ -2619,6 +2619,23 @@ test('server replies use the saved character profile and persona Author\'s Note'
     const noneTicked = capture({ user_avatar: 'alex.png', extension_settings: { note: { ...note, chara: [{ ...mixed, activeProfiles: [] }], default: 'Chat note' } } });
     assert.equal(activeRoleplayAuthorNote(noneTicked), 'Chat note');
 
+    const libraries = { ...mixed, personaNoteLibraries: { 'sam.png': {
+        profiles: [
+            { id: 'calm', name: 'Sam tone', prompt: 'Sam stays curious.', position: 1 },
+            { id: 'own', name: 'Sam setting', prompt: 'Sam lives by the sea.', position: 2 },
+        ], activeProfile: 'calm', activeProfiles: ['calm', 'own'],
+    } } };
+    const settingsFor = (avatar, characterNote = libraries) => ({ user_avatar: avatar,
+        extension_settings: { note: { ...note, chara: [characterNote], default: 'Chat note' } } });
+    const samLibrary = capture(settingsFor('sam.png'));
+    assert.equal(activeRoleplayAuthorNote(samLibrary), 'Sam stays curious.\nSam speaks formally.\nChat note\nSam lives by the sea.');
+    assert.equal(activeRoleplayAuthorNote(capture(settingsFor('alex.png'))), 'Calm pacing.\nChat note');
+    assert.equal(activeRoleplayAuthorNote(capture(settingsFor('sam.png', { ...libraries, perPersona: false }))),
+        'Calm pacing.\nSam speaks formally.\nChat note');
+    libraries.personaNoteLibraries['sam.png'].activeProfiles = [];
+    assert.equal(activeRoleplayAuthorNote(capture(settingsFor('sam.png'))), 'Sam speaks formally.\nChat note');
+    assert.equal(activeRoleplayAuthorNote(samLibrary), 'Sam stays curious.\nSam speaks formally.\nChat note\nSam lives by the sea.');
+
     // Replies captured before mixing hold a single character note.
     assert.equal(activeRoleplayAuthorNote({ ...sam, scoped: { useChara: true, prompt: 'Old note', position: 1 } }),
         'Old note\nSam speaks formally.\nChat note');
