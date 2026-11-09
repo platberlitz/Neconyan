@@ -45,6 +45,76 @@ async function colours(locator) {
 }
 
 for (const phone of [false, true]) {
+    test(`Slate Flat top-bar icons contrast with their highlight on ${phone ? 'phone' : 'desktop'}`, async ({ browser }, info) => {
+        test.setTimeout(120000);
+        const context = await browser.newContext({
+            baseURL: info.project.use.baseURL,
+            viewport: phone ? { width: 393, height: 852 } : { width: 1280, height: 900 },
+            hasTouch: phone, isMobile: phone, serviceWorkers: 'block', reducedMotion: 'reduce',
+        });
+        try {
+            const page = await context.newPage();
+            await page.route('**/api/characters/all', route => route.fulfill({ json: [] }));
+            await page.route('**/api/settings/get', async route => {
+                const response = await route.fetch();
+                const data = await response.json();
+                const settings = JSON.parse(data.settings || await readFile(new URL('../default/content/settings.json', import.meta.url), 'utf8'));
+                settings.firstRun = false;
+                settings.power_user.neconyan_shell_style = 'slate-flat';
+                settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped', WelcomePage_PanelMode: 'full' };
+                await route.fulfill({ response, json: { ...data, settings: JSON.stringify(settings) } });
+            });
+            await page.route('**/api/settings/save', acknowledgeSettingsSave);
+            await page.goto('/');
+            await page.waitForFunction(() => window.NeconyanShell && !document.querySelector('#preloader'));
+            await expect(page.locator('#neconyan-home-skeleton')).toBeHidden({ timeout: 60000 });
+            await expect(page.locator('html')).toHaveAttribute('data-sb-theme', 'slate-flat');
+            await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; animation: none !important; }' });
+            const control = page.locator(phone ? '#sb-hamburger' : '#sb-shortcut-left');
+            const check = async label => {
+                const value = await colours(control);
+                expect(value.children, `${label}: icons inherit the highlight ink`).toEqual(value.children.map(() => value.ink));
+                for (const ink of [value.ink, ...value.children]) {
+                    expect(Math.min(...value.stops.map(stop => contrastRatio(ink, stop))), `${label}: contrast`).toBeGreaterThanOrEqual(4.5);
+                }
+            };
+            for (const theme of ['Game Boy DMG', 'Neconyan Calico Dark', 'Neconyan Calico']) {
+                for (const profile of theme === 'Game Boy DMG' ? [null] : [null, 'Mint Glass', 'Plum Wine']) {
+                    await page.evaluate(name => jQuery('#themes').val(name).trigger('change'), theme);
+                    if (profile) await page.locator(`.sb-accent-profile-apply[aria-label="Apply ${profile} accent profile"]`).evaluate(el => el.click());
+                    const label = `${theme}/${profile || 'default'}`;
+                    await control.hover();
+                    await check(`${label}/closed hover`);
+                    if (phone) {
+                        await control.click();
+                        await expect(control).toHaveClass(/is-open/);
+                        await check(`${label}/open hover`);
+                        await control.click();
+                        await expect(control).not.toHaveClass(/is-open/);
+                    }
+                    // Exercise every shared proxy-icon state, including ones used by other top-bar controls.
+                    for (const state of ['is-open', 'is-active', 'is-current']) {
+                        await control.evaluate((el, state) => el.classList.add(state), state);
+                        await check(`${label}/${state} hover`);
+                        await control.evaluate((el, state) => el.classList.remove(state), state);
+                    }
+                    await page.mouse.move(0, 0);
+                    await control.evaluate(el => {
+                        el.classList.add('is-active');
+                        el.setAttribute('aria-pressed', 'true');
+                    });
+                    await check(`${label}/selected`);
+                    await control.evaluate(el => {
+                        el.classList.remove('is-active');
+                        el.removeAttribute('aria-pressed');
+                    });
+                }
+            }
+        } finally {
+            await context.close();
+        }
+    });
+
     test(`Regex Agent Themes uses accent pairs on every shell on ${phone ? 'phone' : 'desktop'}`, async ({ browser }, info) => {
         test.setTimeout(300000);
         const context = await browser.newContext({

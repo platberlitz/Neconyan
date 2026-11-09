@@ -67,6 +67,11 @@
     border-radius: 2px;
 }
 
+/* Open and current proxy icons must keep the ink of their solid accent highlight. */
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) #sb-topbar-inner :is(button, .sb-proxy-button):is(:hover, [aria-pressed='true']) i {
+    color: inherit;
+}
+
 /* Rail: a solid slate column; the active item is a solid accent block. */
 :root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) #neconyan-workspace-rail {
     background: var(--slate-rail);
