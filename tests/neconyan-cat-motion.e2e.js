@@ -102,7 +102,10 @@ test('kitty clouds remain visible behind Home and Conversation, while Characters
         modelRequests.push(route.request().url());
         return route.fulfill({ status: 503, json: { error: 'No model calls during appearance checks.' } });
     });
-    await isolateSettingsSaves(page);
+    await isolateSettingsSaves(page, settings => {
+        settings.power_user ??= {};
+        settings.power_user['customCSS-bg-opacity'] = 1;
+    });
     const asset = await page.request.get('/img/neconyan/kitty-clouds.webp?v=20260913g');
     expect(asset.status()).toBe(200);
     await page.goto('/', { waitUntil: 'domcontentloaded' });
@@ -121,12 +124,34 @@ test('kitty clouds remain visible behind Home and Conversation, while Characters
     await expect(page.locator('[data-neconyan-cat]')).toHaveAttribute('src', /neconyan-pixel-cat-rest\.webp/);
     await expect(page.locator('#qig-input-btn')).toBeAttached();
 
+    // Cloud visibility follows the Background Visibility control rather than
+    // forcing the canvas transparent at every setting.
+    await page.locator('#sb-surface-transparency-input').evaluate(input => {
+        input.value = '100';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await expect.poll(() => page.evaluate(() =>
+        window.getComputedStyle(document.documentElement).getPropertyValue('--sb-shell-surface-opacity').trim(),
+    )).toBe('0.00');
+
     const checkCanvas = async (name, selectors) => {
         const backgrounds = await page.locator(selectors).evaluateAll(elements => elements
             .filter(element => element.getClientRects().length)
-            .map(element => ({ id: element.id, color: window.getComputedStyle(element).backgroundColor })));
+            .map(element => {
+                const canvas = document.createElement('canvas');
+                canvas.width = canvas.height = 1;
+                const context = canvas.getContext('2d');
+                context.fillStyle = window.getComputedStyle(element).backgroundColor;
+                context.fillRect(0, 0, 1, 1);
+                return {
+                    id: element.id, alpha: context.getImageData(0, 0, 1, 1).data[3],
+                    colour: window.getComputedStyle(element).backgroundColor,
+                    shellOpacity: window.getComputedStyle(element).getPropertyValue('--sb-shell-surface-opacity'),
+                    bodyClasses: document.body.className,
+                };
+            }));
         expect(backgrounds.length).toBeGreaterThan(0);
-        for (const background of backgrounds) expect(background.color, background.id).toBe('rgba(0, 0, 0, 0)');
+        for (const background of backgrounds) expect(background.alpha, JSON.stringify(background)).toBe(0);
         const clip = await page.locator(selectors).first().boundingBox();
         expect(clip).not.toBeNull();
         const visible = await page.screenshot({ clip, animations: 'disabled', caret: 'hide' });
