@@ -1,5 +1,7 @@
 // Questions and distinguishing facts shared by Node and real-browser retrieval checks.
 export const refreshedKnowledgeCases = [
+    ['Does Background Opacity fade the theme wallpaper?', 'appearance.background-visibility', 'Background Opacity also fades the theme wallpaper'],
+    ['Where can I read the actual recalled memory in Mewmory?', 'mewmory.recall-text', 'actual recalled text before its selection reason'],
     ['Where is Block external media by default?', 'privacy.external', 'Settings → Chat & Writing → Chat & messages → Messages'],
     ['Does Separate notes for each persona give me separate Author\'s Note libraries?', 'chat.authors-note', 'own note library for that character, not just separate ticks'],
     ['How do Scratchpad reply versions work?', 'scratchpad.reply-versions', 'up to 50 versions per reply'],
