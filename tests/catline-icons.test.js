@@ -65,6 +65,15 @@ describe('Catline SVG icon replacement', () => {
         expect(read('public/css/neconyan-icons-map.css')).toContain(':root[data-sb-kittyless=\'true\']');
     });
 
+    test('the Persona cat face has a :3 mouth while Kittyless keeps its smile', () => {
+        expect(load(read('public/index.html'))('#sb_character_tab_persona i').hasClass('fa-face-smile')).toBe(true);
+        const cat = load(renderIcon(icons['face-smile'][0]), { xmlMode: true });
+        const plain = load(renderIcon(icons['face-smile'][1]), { xmlMode: true });
+        expect(cat('path[d="M8 15q2 4 4 0q2 4 4 0"]').length).toBe(1);
+        expect(cat('path[d="M8 15q4 4 8 0"]').length).toBe(0);
+        expect(plain('path[d="M8 15q4 4 8 0"]').length).toBe(1);
+    });
+
     test('legacy CSS glyphs are replaced at their source', () => {
         const glyphs = sources('public').filter(name => name.endsWith('.css')).flatMap(name => /content:\s*['"]\\[fe][0-9a-f]{3}/i.test(read(name)) ? [name] : []);
         expect(glyphs).toEqual([]);

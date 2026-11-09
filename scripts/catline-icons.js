@@ -107,7 +107,8 @@ path('heart', 'M12 21 3 12C-3 4 8-1 12 6c4-7 15-2 9 6Z', 'M12 21 3 12C-3 4 8-1 1
 variant('heart-pulse', 'heart', p('M3 12h5l2-3 3 7 2-4h6'));
 badge('clock', p('M12 8v5l4 2'));
 variant('clock-rotate-left', 'clock', p('M2 6v5h5'));
-badge('face-smile', c(9, 11, .5) + c(15, 11, .5) + p('M8 15q4 4 8 0'));
+const smileEyes = c(9, 11, .5) + c(15, 11, .5);
+add('face-smile', c(12, 12, 9) + smileEyes + p('M8 15q4 4 8 0'), head + smileEyes + p('M8 15q2 4 4 0q2 4 4 0'));
 badge('face-smile-beam', p('M7 11q2-3 4 0m2 0q2-3 4 0M8 15q4 4 8 0'));
 add('eye', p('M2 12C7 2 17 2 22 12 17 22 7 22 2 12Z') + c(12, 12, 3), p('M2 12C7 2 17 2 22 12 17 22 7 22 2 12ZM5 8V3l4 3m6 0 4-3v5') + c(12, 12, 3));
 variant('eye-slash', 'eye', p('m2 2 20 20'));
