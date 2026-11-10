@@ -5454,7 +5454,7 @@ export async function createGenerationParameters(settings, model, type, messages
         getStoppingStrings: limit => getGroupSpeakerStopStrings(getCustomStoppingStrings(limit), limit, type),
         getAssistantPrefill: () => type === 'impersonate'
             ? getEffectiveAssistantImpersonationPrefill(settings) : substituteParams(settings.assistant_prefill),
-        getServiceTier: () => getNanoGptServiceTier(settings, model),
+        getServiceTier: requestSettings => getNanoGptServiceTier(requestSettings, model),
         getSamplerMetadata: () => getChatCompletionSamplerMetadata(settings, model),
     }, { jsonSchema, cacheScope });
 }

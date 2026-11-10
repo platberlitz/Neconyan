@@ -44,7 +44,8 @@ export async function createChatGenerationParameters(liveSettings, model, type, 
     const getStoppingStrings = limit => (limit > 0 ? stops.slice(0, limit) : [...stops]);
     const groupNames = context.getGroupNames();
     const assistantPrefill = usesAssistantPrefill(settings, model, type) ? context.getAssistantPrefill() : undefined;
-    const serviceTier = source === 'nanogpt' ? await context.getServiceTier() : undefined;
+    // The lookup can await a model list: give it the snapshot so its billing choice matches the fields sent below.
+    const serviceTier = source === 'nanogpt' ? await context.getServiceTier(settings) : undefined;
     let bias = {};
     if (settings.bias_preset_selected && ['openai', 'azure_openai', 'openrouter', 'electronhub', 'chutes', 'custom'].includes(source)
         && Array.isArray(settings.bias_presets[settings.bias_preset_selected]) && settings.bias_presets[settings.bias_preset_selected].length) bias = await context.getLogitBias();
