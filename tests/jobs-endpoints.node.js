@@ -108,6 +108,24 @@ test('native Conversation, Roleplay and media work cannot bypass its own accepta
     }
 });
 
+test('the generic route refuses Mewmory, Creator and every other type that has a handler', async () => {
+    registerHandler('bespoke', async () => ({}));
+    for (const type of ['mewmory.index', 'mewmory.recall', 'creator.reply', 'scratchpad.reply', 'scratchpad.image',
+        'conversation.participant', 'meower.refresh', 'labs.distill', 'operations.vectors', 'bespoke']) {
+        const bypass = await request('POST', '/api/jobs/submit', {
+            account: 'alice', body: { type, submissionKey: `handler-${type}`, intent: {} },
+        });
+        assert.equal(bypass.status, 400, `the generic route refuses ${type}`);
+        assert.equal((await bypass.json()).error, 'This job cannot be accepted this way.');
+    }
+    const listed = await (await request('GET', '/api/jobs/list?includeDismissed=true')).json();
+    assert.equal(listed.jobs.some(job => /^(mewmory|creator)\./.test(job.type) || job.type === 'bespoke'), false);
+    const plain = await request('POST', '/api/jobs/submit', {
+        account: 'alice', body: { type: 'roleplay', submissionKey: 'handler-plain', intent: {} },
+    });
+    assert.equal(plain.status, 202, 'a type without a handler or a native namespace is still accepted');
+});
+
 test('stale browser account headers refuse every job route before accessing the new account', async () => {
     const { job } = await (await submit('bob', { key: 'stale-tab' })).json();
     const before = await (await request('GET', '/api/jobs/list', { account: 'bob' })).json();

@@ -136,6 +136,10 @@ export function registerHandler(type, handler, { allowSiblingConcurrency = false
     handlers.set(type, { handler, allowSiblingConcurrency });
 }
 
+export function hasHandler(type) {
+    return handlers.has(type);
+}
+
 export function setDirectoriesResolver(resolver) {
     directoriesResolver = resolver;
 }

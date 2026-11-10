@@ -1,7 +1,7 @@
 import express from 'express';
 import { randomUUID } from 'node:crypto';
 import { acceptJob, clearFinishedJobs, dismissJob, explicitRetryRecovery, getJob, listJobs, requestCancellation, retryConversationFamily, updateJob, validateOwner } from '../jobs/store.js';
-import { abortJob, capacity, noteOwner, ownerCount } from '../jobs/runner.js';
+import { abortJob, capacity, hasHandler, noteOwner, ownerCount } from '../jobs/runner.js';
 import { readArtifact } from '../jobs/artifacts.js';
 import { readAudioArtifact } from '../jobs/audio-artifacts.js';
 import { roleplayAccountBase, withRoleplayAccount } from '../roleplay-store.js';
@@ -310,14 +310,14 @@ router.post('/:id/approval/:approval', (request, response) => {
 
 // Source-bound work needs native preparation and permanent acceptance receipts.
 // The generic route cannot create that authority from browser-supplied intent.
-const RESERVED_JOB_TYPES = new Set(['conversation.reply', 'conversation.participant', 'conversation.summary', 'conversation.schedule',
-    'conversation.rewrite', 'conversation.selfie', 'meower.refresh', 'meower.profile', 'scratchpad.reply', 'scratchpad.image']);
+// Every native namespace is refused, and so is any type that has a handler.
+const RESERVED_JOB_NAMESPACES = /^(conversation|creator|labs|media|meower|mewmory|operations|roleplay|scratchpad)\./;
 
 router.post('/submit', (request, response) => {
     try {
         const { owner, directories } = directoriesFor(request);
         const body = request.body ?? {};
-        if (RESERVED_JOB_TYPES.has(body.type) || /^(media|roleplay|meower|labs|operations)\./.test(String(body.type))) {
+        if (RESERVED_JOB_NAMESPACES.test(String(body.type)) || hasHandler(body.type)) {
             return response.status(400).json({ error: 'This job cannot be accepted this way.' });
         }
         const accepted = acceptJob(directories, {
