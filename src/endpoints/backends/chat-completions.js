@@ -2852,6 +2852,7 @@ function forwardResponsesApiStream(fetchResponse, expressResponse, request, onDi
 
     fetchResponse.body.on('data', (chunk) => {
         if (done) return;
+        expressResponse.reportStreamActivity?.();
         buffer += decoder.write(chunk);
         const lines = buffer.split('\n');
         buffer = lines.pop() || '';

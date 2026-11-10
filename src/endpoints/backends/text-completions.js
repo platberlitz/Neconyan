@@ -67,6 +67,7 @@ async function parseOllamaStream(jsonStream, request, response, onDisconnect = n
                 return;
             }
 
+            response.reportStreamActivity?.();
             partialData += decoder.write(data);
             if (response.reportStreamError && Buffer.byteLength(partialData) > 2 * 1024 * 1024) {
                 response.reportStreamError(new Error('The Ollama stream exceeded the saved result limit.'));

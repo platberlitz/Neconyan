@@ -372,3 +372,54 @@ test('the native Ollama text backend waits for its converted stream completion',
     }, fetch: async () => ({ ok: true, status: 200, body: Readable.from(['{"response":"Partial","done":false}\n{bad}\n']) }) }),
     /invalid event/);
 });
+
+test('a provider that goes silent with the connection open is abandoned after the idle limit', async () => {
+    const updates = [];
+    let upstreamClosed = false;
+    const silentAfterFirstText = async (request, response) => forwardFetchResponse({ ok: true, status: 200, statusText: 'OK',
+        body: new Readable({
+            read() {
+                if (this.sent) return;
+                this.sent = true;
+                this.push(event({ choices: [{ delta: { content: 'Hel' } }] }));
+            },
+            destroy(error, callback) { upstreamClosed = true; callback(error); },
+        }) }, response, request);
+    await assert.rejects(runBackendRequest({}, silentAfterFirstText, { stream: true }, { idleTimeoutMs: 40, onStream: value => updates.push(value) }),
+        { message: 'The AI service stopped sending the reply.', code: 'PROVIDER_IDLE_TIMEOUT' });
+    assert.equal(updates[0].text, 'Hel');
+    assert.equal(upstreamClosed, true);
+
+    // The same limit covers a provider that never sends a first byte, streamed or not,
+    // and reaches a handler that only listens to the generation signal.
+    for (const stream of [true, false]) {
+        let aborted = false;
+        const controller = new AbortController();
+        const neverAnswers = request => new Promise(() => request.generationSignal.addEventListener('abort', () => { aborted = true; }));
+        await assert.rejects(runBackendRequest({}, neverAnswers, { stream }, { idleTimeoutMs: 40, signal: controller.signal }), /stopped sending the reply/);
+        assert.equal(aborted, true);
+        assert.equal(controller.signal.aborted, false);
+    }
+});
+
+test('a slow reply that keeps arriving outlasts the idle limit', async () => {
+    const chunks = [event({ choices: [{ delta: { reasoning_content: 'Thinking' } }] }), ': keep-alive\n\n', ': keep-alive\n\n',
+        event({ choices: [{ delta: { content: 'Done' }, finish_reason: 'stop' }] }), 'data: [DONE]\n\n'];
+    const handler = async (request, response) => forwardFetchResponse({ ok: true, status: 200, statusText: 'OK',
+        body: Readable.from((async function* () {
+            for (const chunk of chunks) { await new Promise(resolve => setTimeout(resolve, 60)); yield chunk; }
+        })()) }, response, request);
+    const started = Date.now();
+    const response = await runBackendRequest({}, handler, { stream: true }, { idleTimeoutMs: 150 });
+    assert.ok(Date.now() - started > 150);
+    assert.equal(response.choices[0].message.content, 'Done');
+    // A handler that reads provider data without passing it on still counts as activity.
+    const skipping = async (_request, response) => {
+        for (let index = 0; index < 5; index++) {
+            await new Promise(resolve => setTimeout(resolve, 60));
+            response.reportStreamActivity();
+        }
+        response.end(event({ choices: [{ delta: { content: 'Late' }, finish_reason: 'stop' }] }) + 'data: [DONE]\n\n');
+    };
+    assert.equal((await runBackendRequest({}, skipping, { stream: true }, { idleTimeoutMs: 150 })).choices[0].message.content, 'Late');
+});
