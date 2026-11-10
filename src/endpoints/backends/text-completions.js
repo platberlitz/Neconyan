@@ -107,6 +107,7 @@ async function parseOllamaStream(jsonStream, request, response, onDisconnect = n
         });
 
         const resumableGeneration = getResumableGeneration(request);
+        response.once('close', closeStream);
         if (resumableGeneration) {
             // Neconyan: a resumable generation finishes without the client; only an explicit cancel stops it.
             resumableGeneration.onCancel(closeStream);

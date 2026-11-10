@@ -390,16 +390,67 @@ test('a provider that goes silent with the connection open is abandoned after th
     assert.equal(updates[0].text, 'Hel');
     assert.equal(upstreamClosed, true);
 
-    // The same limit covers a provider that never sends a first byte, streamed or not,
-    // and reaches a handler that only listens to the generation signal.
+});
+
+test('slow first bytes and non-streamed replies have no mid-reply idle limit', async () => {
     for (const stream of [true, false]) {
-        let aborted = false;
-        const controller = new AbortController();
-        const neverAnswers = request => new Promise(() => request.generationSignal.addEventListener('abort', () => { aborted = true; }));
-        await assert.rejects(runBackendRequest({}, neverAnswers, { stream }, { idleTimeoutMs: 40, signal: controller.signal }), /stopped sending the reply/);
-        assert.equal(aborted, true);
-        assert.equal(controller.signal.aborted, false);
+        const result = await runBackendRequest({}, async (_request, response) => {
+            await new Promise(resolve => setTimeout(resolve, 80));
+            if (stream) response.end(event({ choices: [{ delta: { content: 'Ready' }, finish_reason: 'stop' }] }));
+            else response.json({ choices: [{ message: { content: 'Ready' } }] });
+        }, { stream }, { idleTimeoutMs: 20 });
+        assert.equal(result.choices[0].message.content, 'Ready');
     }
+});
+
+test('finishing a reply clears its idle timer even while its handler is still returning', async () => {
+    let upstream;
+    const result = await runBackendRequest({}, async (request, response) => {
+        upstream = request.generationSignal;
+        response.end(event({ choices: [{ delta: { content: 'Ready' }, finish_reason: 'stop' }] }));
+        await new Promise(resolve => setTimeout(resolve, 80));
+    }, { stream: true }, { idleTimeoutMs: 20, signal: new AbortController().signal });
+    assert.equal(result.choices[0].message.content, 'Ready');
+    assert.equal(upstream.aborted, false);
+});
+
+test('late parser activity cannot rearm the idle timer after completion', async () => {
+    let capture, upstream;
+    await runBackendRequest({}, (request, response) => {
+        capture = response;
+        upstream = request.generationSignal;
+        response.end(event({ choices: [{ delta: { content: 'Ready' }, finish_reason: 'stop' }] }));
+    }, { stream: true }, { idleTimeoutMs: 20, signal: new AbortController().signal });
+    capture.reportStreamActivity();
+    await new Promise(resolve => setTimeout(resolve, 80));
+    assert.equal(upstream.aborted, false);
+});
+
+test('Stop releases a handler that ignores cancellation without waiting for an idle timeout', async () => {
+    const controller = new AbortController();
+    let capture, upstream;
+    const result = runBackendRequest({}, (request, response) => {
+        capture = response;
+        upstream = request.generationSignal;
+        response.write(': keep-alive\n\n');
+        return new Promise(() => {});
+    }, { stream: true }, { idleTimeoutMs: 500, signal: controller.signal });
+    controller.abort();
+    const outcome = await Promise.race([result.catch(error => error), new Promise(resolve => setTimeout(() => resolve(null), 80))]);
+    assert.equal(outcome?.status, 499);
+    assert.equal(outcome?.code, undefined);
+    assert.equal(capture.writableEnded, true);
+    assert.equal(upstream.aborted, true);
+});
+
+test('an idle timeout reaches a signal-only handler without a caller signal', async () => {
+    let upstream;
+    await assert.rejects(runBackendRequest({}, (request, response) => {
+        upstream = request.generationSignal;
+        response.write(': keep-alive\n\n');
+        return new Promise(() => {});
+    }, { stream: true }, { idleTimeoutMs: 20 }), { code: 'PROVIDER_IDLE_TIMEOUT' });
+    assert.equal(upstream?.aborted, true);
 });
 
 test('a slow reply that keeps arriving outlasts the idle limit', async () => {
@@ -422,4 +473,42 @@ test('a slow reply that keeps arriving outlasts the idle limit', async () => {
         response.end(event({ choices: [{ delta: { content: 'Late' }, finish_reason: 'stop' }] }) + 'data: [DONE]\n\n');
     };
     assert.equal((await runBackendRequest({}, skipping, { stream: true }, { idleTimeoutMs: 150 })).choices[0].message.content, 'Late');
+});
+
+test('Ollama and Responses streams allow slow first bytes and count non-text activity', async () => {
+    const context = { owner: 'fixture', directories: { root: '/tmp/opencode' } };
+    for (const backend of ['text', 'chat']) {
+        const payload = backend === 'text'
+            ? { api_type: 'ollama', api_server: 'http://127.0.0.1:11434', prompt: 'Hi', model: 'fixture', stream: true }
+            : { chat_completion_source: 'openai_responses', model: 'gpt-5.4', messages: [{ role: 'user', content: 'Hi' }],
+                reverse_proxy: 'https://provider.invalid/v1', proxy_password: 'test', stream: true };
+        const chunks = backend === 'text'
+            ? ['\n', '\n', '{"thinking":"Thinking","done":false}\n', '\n', '{"response":"Ready","done":true}\n']
+            : [': ping\n\n', event({ type: 'response.created' }), event({ type: 'response.reasoning_summary_text.delta', delta: 'Thinking' }),
+                ': ping\n\n', event({ type: 'response.output_text.delta', delta: 'Ready' }), event({ type: 'response.completed' })];
+        const result = await runTextGeneration({ context, backend, payload, idleTimeoutMs: 150,
+            fetch: async () => ({ ok: true, status: 200, body: Readable.from((async function* () {
+                await new Promise(resolve => setTimeout(resolve, 250));
+                for (const chunk of chunks) {
+                    yield chunk;
+                    await new Promise(resolve => setTimeout(resolve, 60));
+                }
+            })()) }) });
+        assert.equal(result.text, 'Ready');
+    }
+});
+
+test('an idle Ollama stream destroys its provider body even when fetch ignores abort', async () => {
+    let closed = false;
+    await assert.rejects(runTextGeneration({ context: { owner: 'fixture', directories: { root: '/tmp/opencode' } }, backend: 'text',
+        payload: { api_type: 'ollama', api_server: 'http://127.0.0.1:11434', prompt: 'Hi', model: 'fixture', stream: true },
+        idleTimeoutMs: 20, fetch: async () => ({ ok: true, status: 200, body: new Readable({
+            read() {
+                if (this.sent) return;
+                this.sent = true;
+                this.push('{"thinking":"Thinking","done":false}\n');
+            },
+            destroy(error, callback) { closed = true; callback(error); },
+        }) }) }), { code: 'PROVIDER_IDLE_TIMEOUT' });
+    assert.equal(closed, true);
 });

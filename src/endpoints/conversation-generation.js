@@ -449,7 +449,7 @@ export function createCapturingResponse({ stream = false, onChunk, onActivity } 
         },
         /** For handlers that read provider data without writing it on, such as events they skip. */
         reportStreamActivity() {
-            onActivity?.();
+            if (!writableEnded) onActivity?.();
         },
         get socket() {
             return stream ? inertCaptureSocket : undefined;
@@ -597,8 +597,8 @@ export async function runBackendGeneration(request, backend, payload, { signal, 
 
 /**
  * Invoke an existing provider handler with the same owner and cancellation policy.
- * A provider that sends nothing for `idleTimeoutMs` is abandoned: its request is
- * aborted and the call fails, so a connection left open cannot hold a job forever.
+ * Once a streamed reply starts, `idleTimeoutMs` of silence aborts the request.
+ * Waiting for the first byte and non-streamed replies have no new time limit.
  */
 export async function runBackendRequest(request, handler, payload, { signal, fetch, anonymousCustom = false, boundProfile = false, onStream, idleTimeoutMs = PROVIDER_IDLE_TIMEOUT_MS } = {}) {
     if (!Object.keys(payload).length) {
@@ -627,7 +627,7 @@ export async function runBackendRequest(request, handler, payload, { signal, fet
         anonymousCustom,
         boundProfile,
         resumableGeneration: request.resumableGeneration,
-        generationSignal: signal ? upstream.signal : undefined,
+        generationSignal: upstream.signal,
         socket: request.socket || inertSocket,
         get: typeof request.get === 'function' ? request.get.bind(request) : undefined,
         on: typeof request.on === 'function' ? request.on.bind(request) : undefined,
@@ -652,26 +652,27 @@ export async function runBackendRequest(request, handler, payload, { signal, fet
     const preview = payload.stream === true && onStream ? createGenerationStream(onStream, streamOptions) : null;
     let idleTimer = null;
     let stalled = false;
-    let reportStall;
-    const stall = new Promise(resolve => { reportStall = resolve; });
+    let settled = false;
+    let reportStop;
+    const stopped = new Promise(resolve => { reportStop = resolve; });
     const restartIdleTimer = () => {
         clearTimeout(idleTimer);
-        if (stalled || !(idleTimeoutMs > 0)) return;
+        if (payload.stream !== true || settled || stalled || capture.writableEnded || !(idleTimeoutMs > 0)) return;
         idleTimer = setTimeout(() => {
             stalled = true;
             abort();
-            reportStall();
         }, idleTimeoutMs);
     };
     const capture = createCapturingResponse({ stream: payload.stream === true, onChunk: preview ? chunk => preview.push(chunk) : undefined, onActivity: restartIdleTimer });
+    capture.once('finish', () => clearTimeout(idleTimer));
     const finished = payload.stream === true && new Promise(resolve => capture.once('finish', resolve));
     const abort = () => {
         upstream.abort();
         capture.emit('close');
         if (!capture.writableEnded) capture.end();
+        reportStop();
     };
     signal?.addEventListener('abort', abort, { once: true });
-    restartIdleTimer();
     try {
         const work = (async () => {
             await handler(generationRequest, capture);
@@ -679,8 +680,11 @@ export async function runBackendRequest(request, handler, payload, { signal, fet
         })();
         // A handler that ignores the abort must not keep the caller waiting either.
         work.catch(() => {});
-        await Promise.race([work, stall]);
+        await Promise.race([work, stopped]);
+    } catch (error) {
+        if (!signal?.aborted && !stalled) throw error;
     } finally {
+        settled = true;
         clearTimeout(idleTimer);
         signal?.removeEventListener('abort', abort);
         if (!capture.writableEnded) capture.end();
