@@ -9,6 +9,10 @@
 - The **JannyAI** browser stays inside its BotSearcher panel instead of spilling into the surrounding page.
 - **Prompting Lab** and **World Info Lab** use section buttons on phones, making their pages easier to reach.
 - The chat keeps its reading position while Agents rewrite replies, including Roleplay previews and message redraws.
+- The chat also keeps its reading position on desktop when the reply controls close after a group reply.
+- Background artwork shows through the chat by default on new installations and wherever the setting was never chosen.
+- NanoGPT requests keep the service tier that matches the billing choice sent with the same request.
+- Phone drawers release their saved height after a slow close, so a closed drawer no longer keeps stale sizing.
 - Chat decorations pause when their messages are off screen, and empty expression sprites stop refreshing unnecessarily.
 - **Regex Agent Themes** uses stepped glow animations to reduce continuous animation work.
 - The assistants explain Device sync setup, supported data, conflicts and recovery.
