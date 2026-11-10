@@ -173,14 +173,22 @@ function decodedAudio(value) {
     return Buffer.from(value, 'base64');
 }
 
+const LOOPBACK = ['localhost', '127.0.0.1', '[::1]'];
+
+/** The selected service's own machine may answer under another loopback name; every other host must match exactly. */
+function sameService(url, service) {
+    return url.origin === service.origin || url.protocol === service.protocol && url.port === service.port
+        && LOOPBACK.includes(url.hostname) && LOOPBACK.includes(service.hostname);
+}
+
 export function speechOutputUrl(value, config) {
     if (typeof value !== 'string' || !value.trim() || value.length > 8192) throw speechError('The returned speech address is missing or invalid.');
     let url;
     try { url = new URL(value, config.endpoint || 'https://api.elevenlabs.io'); } catch { throw speechError('The returned speech address is invalid.'); }
-    const origin = config.endpoint ? new URL(config.endpoint).origin : 'https://api.elevenlabs.io';
+    const selected = sameService(url, new URL(config.endpoint || 'https://api.elevenlabs.io'));
     if (url.username || url.password || url.hash || config.key && url.href.includes(config.key)) throw speechError('The speech address contains private credentials.');
-    if (config.provider === 'AllTalk' && url.origin !== origin) throw speechError('The speech output is outside the selected service.');
-    if (url.origin !== origin && !normalizeImageSource(url.href, { allowHttp: false, allowRelative: false, blockPrivateHosts: true })) {
+    if (config.provider === 'AllTalk' && !selected) throw speechError('The speech output is outside the selected service.');
+    if (!selected && !normalizeImageSource(url.href, { allowHttp: false, allowRelative: false, blockPrivateHosts: true })) {
         throw speechError('The speech output address is not a public HTTPS resource.');
     }
     if (!['http:', 'https:'].includes(url.protocol)) throw speechError('The speech output address is invalid.');

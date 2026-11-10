@@ -12,7 +12,7 @@ const { readArtifact } = await import('../src/jobs/artifacts.js');
 const { pcmWave, readAudioArtifact } = await import('../src/jobs/audio-artifacts.js');
 const { writeSecret, SECRET_KEYS } = await import('../src/endpoints/secrets.js');
 const { synthesizeEdgeSpeech } = await import('../src/generation/speech-edge.js');
-const { withSpeechEndpoint } = await import('../src/generation/speech-transports.js');
+const { speechOutputUrl, withSpeechEndpoint } = await import('../src/generation/speech-transports.js');
 const { roleplayHash } = await import('../src/roleplay-store.js');
 const WAVE = pcmWave(Buffer.alloc(480, 1));
 const json = value => new Response(JSON.stringify(value), { headers: { 'Content-Type': 'application/json' } });
@@ -452,4 +452,18 @@ test('a WAV cut short of its declared size is still refused', async t => {
     const f = prepared(t, streamedCases[0]);
     await assert.rejects(runSpeechJob(f.context(), { fetchImpl: streamedFetch(streamedCases[0], WAVE.subarray(0, WAVE.length - 100)) }),
         { message: 'The speech audio container is incomplete.' });
+});
+
+test('AllTalk output on another loopback name of the selected service is accepted, other hosts are not', () => {
+    const config = { provider: 'AllTalk', endpoint: 'http://localhost:7851', key: '' };
+    assert.equal(speechOutputUrl('http://127.0.0.1:7851/audio/x.wav', config), 'http://127.0.0.1:7851/audio/x.wav');
+    assert.equal(speechOutputUrl('http://[::1]:7851/audio/x.wav', config), 'http://[::1]:7851/audio/x.wav');
+    assert.equal(speechOutputUrl('http://localhost:7851/audio/x.wav', { ...config, endpoint: 'http://127.0.0.1:7851' }), 'http://localhost:7851/audio/x.wav');
+    const outside = { message: 'The speech output is outside the selected service.' };
+    for (const address of ['http://127.0.0.1:7852/audio/x.wav', 'https://127.0.0.1:7851/audio/x.wav', 'http://127.0.0.2:7851/audio/x.wav',
+        'http://localhost.example.com:7851/audio/x.wav', 'http://192.168.1.5:7851/audio/x.wav']) {
+        assert.throws(() => speechOutputUrl(address, config), outside, address);
+    }
+    assert.throws(() => speechOutputUrl('http://127.0.0.1:7851/audio/x.wav', { ...config, endpoint: 'http://192.168.1.5:7851' }), outside);
+    assert.throws(() => speechOutputUrl('http://localhost:7851/audio/x.wav', { ...config, endpoint: 'http://tts.example.com:7851' }), outside);
 });
