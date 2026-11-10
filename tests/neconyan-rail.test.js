@@ -870,6 +870,7 @@ describe('Neconyan workspace rail behavior', () => {
 
     test('opening a Neconyan inspector replaces the previous panel without closing extension drawers', () => {
         const closed = [];
+        let boundsSyncs = 0;
         const Element = class {
             constructor(id) { this.id = id; }
             classList = { toggle() {}, contains: () => false };
@@ -885,6 +886,7 @@ describe('Neconyan workspace rail behavior', () => {
             syncDrawerIconState() {},
             queueMobileModalStateSync() {},
             queueTopbarPageStateSync() {},
+            queueMobileShellDrawerBoundsSync: () => { boundsSyncs += 1; },
         });
         vm.runInContext(tabsSource.match(/^function forceDrawerState\([\s\S]*?^}/m)[0], runtime);
         runtime.forceDrawerState(new Element('user-settings-block'), true);
@@ -892,8 +894,10 @@ describe('Neconyan workspace rail behavior', () => {
         closed.length = 0;
         runtime.forceDrawerState(new Element('extension-panel'), true);
         expect(closed).toEqual([]);
+        boundsSyncs = 0;
         runtime.forceDrawerState(new Element('user-settings-block'), false);
         expect(closed).toEqual([]);
+        expect(boundsSyncs).toBe(1);
     });
 
     test('shell Home calls the landing page loader so an active chat cannot leave a blank surface', () => {
