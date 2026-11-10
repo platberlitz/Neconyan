@@ -2,6 +2,17 @@
 
 ## v1.5.4
 
+### Highlights
+- **Device sync** can transfer selected data between separate installations using an encrypted file, WebDAV, a secret GitHub Gist or direct pairing. Each method stays off until enabled, and transfers run only when requested.
+- Device sync shows conflicting copies for review, keeps encrypted recovery copies and can recover an interrupted transfer without silently choosing the newest timestamp.
+- Catline icons have rounder cat shapes and larger drawings while keeping their controls the same size.
+- The **JannyAI** browser stays inside its BotSearcher panel instead of spilling into the surrounding page.
+- **Prompting Lab** and **World Info Lab** use section buttons on phones, making their pages easier to reach.
+- The chat keeps its reading position while Agents rewrite replies, including Roleplay previews and message redraws.
+- Chat decorations pause when their messages are off screen, and empty expression sprites stop refreshing unnecessarily.
+- **Regex Agent Themes** uses stepped glow animations to reduce continuous animation work.
+- The assistants explain Device sync setup, supported data, conflicts and recovery.
+
 ### Merged Staging PRs
 - PR #583 (2026-11-09) `feat(icons): draw catline icons 25% larger`
 - PR #584 (2026-11-10) `fix(botsearcher): contain the jannyai browser panel`
