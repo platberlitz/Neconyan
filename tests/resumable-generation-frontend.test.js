@@ -132,6 +132,54 @@ describe('fetchResumable', () => {
         expect(fetchMock).toHaveBeenCalledTimes(2);
     });
 
+    test('says the reply was cut short when the server forgot it after part of it arrived', async () => {
+        fetchMock
+            .mockResolvedValueOnce(new Response(bodyFrom(['data: a\n\n', 'data: b\n\n'], { errorAfter: 1 }), { status: 200 }))
+            .mockResolvedValueOnce(new Response(null, { status: 404 }));
+
+        const response = await fetchResumable('/generate', { method: 'POST', headers: {}, body: '{}' });
+        await expect(response.text()).rejects.toMatchObject({ code: 'GENERATION_CONNECTION_LOST' });
+    });
+
+    test('tries again when the server says the reply has too many readers', async () => {
+        fetchMock
+            .mockResolvedValueOnce(new Response(bodyFrom(['data: a\n\n', 'data: b\n\n'], { errorAfter: 1 }), { status: 200 }))
+            .mockResolvedValueOnce(new Response(null, { status: 429 }))
+            .mockResolvedValueOnce(resumeResponse(['data: b\n\n']));
+
+        const response = await fetchResumable('/generate', { method: 'POST', headers: {}, body: '{}' });
+        await expect(response.text()).resolves.toBe('data: a\n\ndata: b\n\n');
+        expect(callsTo(RESUME_URL)).toHaveLength(2);
+    });
+
+    test('a Stop that could not reach the server is sent again, and the reply is not offered for recovery meanwhile', async () => {
+        const controller = new AbortController();
+        let cancels = 0;
+        let id;
+        fetchMock.mockImplementation(async (url, init) => {
+            if (url === CANCEL_URL) {
+                if (++cancels === 1) throw new TypeError('Load failed');
+                return new Response(null, { status: 204 });
+            }
+            if (url === '/api/resumable-generations/list') {
+                return Response.json({ jobs: [{ id, status: 'finished', context: { v: 2 } }] });
+            }
+            id = init.headers['X-Generation-Id'];
+            return new Response(bodyFrom(['data: a\n\n'], { hang: true, signal: init.signal }), { status: 200 });
+        });
+
+        const response = await fetchResumable('/generate', { method: 'POST', headers: {}, body: '{}', signal: controller.signal });
+        const text = response.text();
+        await new Promise(resolve => setTimeout(resolve, 10));
+        controller.abort();
+        await expect(text).rejects.toBeDefined();
+
+        await expect(listRecoverableGenerations({})).resolves.toEqual([]);
+        await new Promise(resolve => setTimeout(resolve, 1200));
+        expect(cancels).toBe(2);
+        await expect(listRecoverableGenerations({})).resolves.toHaveLength(1);
+    });
+
     test('aborting cancels the generation server-side instead of reattaching', async () => {
         const controller = new AbortController();
         fetchMock.mockImplementation(async (url, init) => {

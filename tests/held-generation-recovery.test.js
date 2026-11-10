@@ -95,7 +95,7 @@ function recoveryHost() {
     });
     const names = ['scheduleHeldGenerationRecovery', 'saveChatWithHeldReply', 'recoverHeldGenerations', 'recoverHeldGenerationPass', 'applyHeldGeneration'];
     const functions = names.map(name => source.match(new RegExp(`^(?:export )?((?:async )?function ${name}\\([\\s\\S]*?^})`, 'm'))[1]);
-    vm.runInContext('let heldRecoveryTimer; let heldRecoveryPromise;\n' + functions.join('\n'), host);
+    vm.runInContext('let heldRecoveryTimer; let heldRecoveryPromise; const heldRecoveryFailures = new Map();\n' + functions.join('\n'), host);
     return { host, job };
 }
 
@@ -158,6 +158,23 @@ describe('recovery and save acknowledgement', () => {
         await host.recoverHeldGenerations();
         expect(host.saveReply).not.toHaveBeenCalled();
         expect(host.discardGeneration).not.toHaveBeenCalled();
+    });
+
+    test('a held reply that cannot be read is retried twice, then dropped with one notice', async () => {
+        const { host, job } = recoveryHost();
+        job.context.streaming = true;
+        host.readChatCompletionStream = () => async function* () {
+            yield { text: 'Partial' };
+            throw new Error('Stream ended without a finish signal');
+        };
+        await expect(host.recoverHeldGenerations()).rejects.toThrow('finish signal');
+        await expect(host.recoverHeldGenerations()).rejects.toThrow('finish signal');
+        expect(host.discardGeneration).not.toHaveBeenCalled();
+        await host.recoverHeldGenerations();
+        expect(host.discardGeneration).toHaveBeenCalledWith(job.id, {});
+        expect(host.toastr.error).toHaveBeenCalledTimes(1);
+        expect(host.toastr.info).not.toHaveBeenCalled();
+        expect(host.saveReply).not.toHaveBeenCalled();
     });
 
     test('defers recovery while another generation owns the chat', async () => {
