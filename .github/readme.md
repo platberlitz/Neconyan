@@ -2,7 +2,7 @@
 
 # Neconyan~
 
-The latest version is [1.5.3](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.3).
+The latest version is [1.5.4](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.4).
 
 **Read in your language:** [Deutsch](readme-de_de.md) · [Español](readme-es_es.md) · [Français](readme-fr_fr.md) · [Italiano](readme-it_it.md) · [Nederlands](readme-nl_nl.md) · [Português](readme-pt_pt.md) · [Íslenska](readme-is_is.md) · [Русский](readme-ru_ru.md) · [Українська](readme-uk_ua.md) · [العربية](readme-ar_sa.md) · [ไทย](readme-th_th.md) · [Tiếng Việt](readme-vi_vn.md) · [日本語](readme-ja_jp.md) · [한국어](readme-ko_kr.md) · [简体中文](readme-zh_cn.md) · [繁體中文](readme-zh_tw.md)
 
@@ -29,6 +29,7 @@ Neconyan is my cat-themed fork of [SillyTavern](https://github.com/SillyTavern/S
 - **Mewmory** remembers story events and characters. **Agents** can keep trackers, check a reply or write a separate Companion note.
 - **Catelier** helps you write character cards and lorebooks. **Notebooks** keeps your notes nearby, and **Scratchpad** gives you a separate chat to talk through ideas.
 - **Miso, Taro and Nori** help you find things and can make supported edits with your permission.
+- **Device sync** moves selected data between separate installations with encrypted files, WebDAV, secret GitHub Gists or direct pairing. Transfers run when you ask for them.
 - **Themes, accents and cats.** Quite a lot of cats. You can hide them, though I can't imagine why you'd want to.
 
 Your character cards, chats, lorebooks and presets use familiar SillyTavern formats. There's no telemetry. Some upstream features and extensions behave differently here; I only bring across the bits I want. The [included tools list](../docs/neconyan-native-tools.md) credits the projects bundled with Neconyan.
@@ -39,7 +40,7 @@ Your character cards, chats, lorebooks and presets use familiar SillyTavern form
   <img src="../docs/readme/banner-modes.webp" alt="Modes">
 </p>
 
-Desktop and phone screenshots from 1.5.3, using demo chats and notes with the bundled assistants.
+Desktop and phone screenshots from 1.5.4, using demo chats and notes with the bundled assistants.
 
 ### Home
 
@@ -89,7 +90,7 @@ Proofreader checks a reply after it arrives. It can tidy prose and formatting wi
 This staged example runs the real Agent workflow with a fixed sample response. Your connected model writes the edits in normal use, and each pass can cost another request. [Agents and Companions in the handbook](https://platberlitz.github.io/neconyan-docs/helpers/agents/).
 
 <details>
-<summary><b>More screenshots: Simple Mode, Conversation, Meower, Story Mode, Notebooks and Scratchpad</b></summary>
+<summary><b>More screenshots: Simple Mode, Conversation, Meower, Story Mode, Notebooks, Scratchpad and Device sync</b></summary>
 
 ### Simple Mode
 
@@ -143,6 +144,15 @@ Talk the story over with an assistant or a round table of characters, without ad
 <table><tr>
   <td width="72%"><img src="../docs/readme/desktop-scratchpad.webp" alt="Scratchpad on desktop"></td>
   <td width="28%"><img src="../docs/readme/phone-scratchpad.webp" alt="Scratchpad on a phone"></td>
+</tr></table>
+
+### Device sync
+
+Move selected libraries between separate installations. Choose encrypted files, WebDAV, a secret GitHub Gist or direct pairing; transfers start when you ask. [Setup and recovery in the handbook](https://platberlitz.github.io/neconyan-docs/help/device-sync/).
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-device-sync.webp" alt="Device sync settings on desktop"></td>
+  <td width="28%"><img src="../docs/readme/phone-device-sync.webp" alt="Device sync settings on a phone"></td>
 </tr></table>
 
 </details>
