@@ -1345,3 +1345,54 @@ test('an automatic continuation preserves and aligns Agent transform history wit
     assert.equal(history[0].afterText, 'Polished start.');
     assert.equal(history.at(-1).afterText, saved.mes);
 });
+
+test('a reply needing three automatic chunks is saved when an Agent rewrites each chunk', async t => {
+    const f = prepared(t, 'append', { agents: true, autoContinue: true, continueTarget: 20 });
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    const calls = { count: 0 };
+    let agentTurn = 0;
+    const outs = ['Polished start.', ' Polished middle.', ' Polished ending that completes the reply with enough detail to reach the continuation target length easily, surely.'];
+    const generateAgent = async () => ({ text: outs[agentTurn++] });
+    await f.candidate('Raw start.', calls, { generateAgent });
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    await f.candidate(' Raw middle.', calls, { turn: 1, generateAgent });
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    await f.candidate(' Raw ending.', calls, { turn: 2, generateAgent });
+    assert.equal((await runRoleplayWorkflowJob(f.context())).result.status, 'completed');
+    assert.equal(f.records().at(-1).mes, outs.join(''));
+});
+
+test('replaying a continued reply whose Agent changed only the first chunk reaches the same decision', async t => {
+    const f = prepared(t, 'append', { agents: true, autoContinue: true, continueTarget: 20 });
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    const calls = { count: 0 };
+    let agentCalls = 0;
+    const generateAgent = async ({ messages }) => {
+        const unchanged = messages.at(-1).content.match(/<assistant_response>\n([\s\S]*)\n<\/assistant_response>/);
+        return { text: agentCalls++ === 0 ? 'Polished start.' : unchanged[1] };
+    };
+    await f.candidate('Raw start.', calls, { generateAgent });
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    await f.candidate(' Middle.', calls, { turn: 1, generateAgent });
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+});
+
+for (const effect of ['append', 'continue']) {
+    test(`a continued reply that then trips the automatic filter asks for an alternative (${effect})`, async t => {
+        const f = prepared(t, effect, { autoSwipe: true, autoContinue: true, continueTarget: 200 });
+        updateJob(f.dirs, f.jobId, { state: 'running' });
+        await runRoleplayWorkflowJob(f.context());
+        const calls = { count: 0 };
+        await f.candidate(' A perfectly fine opening sentence here.', calls);
+        assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+        assert.equal(readArtifact(f.dirs, f.jobId, 'roleplay-workflow-decision:0').decision.kind, 'continue');
+        await f.candidate(' Then the forbidden thing and another forbidden thing happened.', calls, { turn: 1 });
+        assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+        assert.equal(readArtifact(f.dirs, f.jobId, 'roleplay-workflow-decision:1').decision.kind, 'swipe');
+        assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    });
+}

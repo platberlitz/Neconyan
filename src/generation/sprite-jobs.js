@@ -10,6 +10,7 @@ import { assertRoleplaySourceLocked, readRoleplayEntityLocked } from './roleplay
 import { decodeServerImage, encodeServerImage } from '../media-codecs.js';
 import { generateQuickImageGenJobImage, quickImageGenSettingsFingerprint } from './quick-image-gen-job.js';
 import { captureQuickImageReferenceSources } from './quick-image-gen-reference.js';
+import { detectImageFormat } from '../../public/scripts/extensions/quick-image-gen/lib/image-metadata.js';
 import { resolveCharacterImageSettings } from '../../public/scripts/extensions/quick-image-gen/lib/character-settings.js';
 import { cleanSpriteBitmap, splitSpriteBitmap } from '../../public/scripts/extensions/expressions/sprite-pixels.js';
 import { expressionLabelFromFilename, isExpressionLabel, isExpressionSpriteName, nextExpressionSpriteName } from '../../public/scripts/extensions/expressions/expression-labels.js';
@@ -171,7 +172,10 @@ function readFrozenImage(context, name, input) {
         if (image !== undefined) return image;
         const file = readRoleplayFile(path.join(context.directories.root, input.relative), IMAGE_LIMIT);
         if (roleplayHash(physical(file)) !== roleplayHash(input.before)) throw fail('The source sprite changed after admission.', 'SPRITE_SOURCE_CHANGED');
-        image = { base64: file.bytes.toString('base64'), format: ({ jpeg: 'jpg' })[path.extname(input.relative).slice(1).toLowerCase()] || path.extname(input.relative).slice(1).toLowerCase() };
+        // The contents decide the format; a file can carry another format's extension.
+        const named = path.extname(input.relative).slice(1).toLowerCase();
+        const detected = detectImageFormat(file.bytes)?.ext ?? named;
+        image = { base64: file.bytes.toString('base64'), format: detected === 'jpeg' ? 'jpg' : detected };
         writeImageArtifact(context.directories, context.job.id, name, image);
         return image;
     });

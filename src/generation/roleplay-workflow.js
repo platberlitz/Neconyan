@@ -284,7 +284,8 @@ function mergeCombinedMessageExtra(previous, current, first, second) {
                 mode: 'continue',
                 beforeText: combined.at(-1).afterText,
                 afterText: nextBaseline,
-                timestamp: prefixedCurr[0]?.timestamp ?? Date.now(),
+                // No clock here: the root replays this join on every run and its saved decision hashes the result.
+                timestamp: prefixedCurr[0]?.timestamp ?? combined.at(-1).timestamp,
             });
         }
         combined.push(...prefixedCurr);
@@ -343,11 +344,13 @@ async function savedTextDecision(context, job, chosen, turn, output, fullText, d
     return value;
 }
 
-function rejectedSwipeHistory(history, chosen, decision, turn) {
+function rejectedSwipeHistory(history, chosen, decision, turn, assembled = chosen.candidate.output) {
     if (decision.decision.kind !== 'swipe') throw error('An automatic alternative needs its saved filter decision.');
     const message = chosen.candidate.output.message ?? chosen.candidate.output.messages?.[0];
     const text = message?.mes ?? chosen.candidate.output.continuedText ?? chosen.candidate.output.text;
-    if (typeof text !== 'string' || roleplayHash(text) !== decision.decision.textHash) {
+    // The decision was made on the joined reply, which differs from this chunk after a continuation.
+    const decided = assembled.message?.mes ?? assembled.messages?.[0]?.mes ?? assembled.continuedText ?? assembled.text;
+    if (typeof text !== 'string' || roleplayHash(decided) !== decision.decision.textHash) {
         throw error('The rejected reply differs from its saved model result.');
     }
     const result = [...history, { role: 'assistant', content: text },
@@ -670,7 +673,7 @@ async function runGroupWorkflow(context, job, beforePublication, decideCandidate
                         suffix: nextContinuationSuffix(continuationSuffix, currentSuffix) } } : {
                         chunk: false }) });
                 const alternatives = collectWorkflowAlternatives(context, job, { start: speakerStart, end: turn,
-                    effect: job.intent.request.effect, speakerIndex: index,
+                    effect: job.intent.request.effect, speakerIndex: index, combine: combinedCandidateOutput,
                     candidateAt: previousTurn => selectedCandidate(context, job, savedChild(context, job, previousTurn).child) });
                 const hiding = await prepareWorkflowHiding(context, job, chosen);
                 done = advanceSpeaker(context, job, chosen, index, turn + 1, previous, alternatives, hiding);
@@ -679,7 +682,7 @@ async function runGroupWorkflow(context, job, beforePublication, decideCandidate
             }
             if (turn === MAX_TURNS - 1) throw error('The group speaker needs a reviewed selection.', 'ROLEPLAY_WORKFLOW_CAPACITY');
             if (decision.decision.kind === 'swipe') {
-                history = rejectedSwipeHistory(history, chosen, decision, turn);
+                history = rejectedSwipeHistory(history, chosen, decision, turn, assembled);
                 progressiveOutput = null;
                 continuationSuffix = null;
                 recordWorkflowReplyText(context, job, turn, null, { selected: false, speakerIndex: index });
@@ -845,7 +848,7 @@ async function executeRoleplayWorkflowJob(context, { beforePublication, beforeCo
             }
             if (turn === MAX_TURNS - 1) throw error('The automatic reply limit needs reviewed recovery.', 'ROLEPLAY_WORKFLOW_CAPACITY');
             if (decision.decision.kind === 'swipe') {
-                history = rejectedSwipeHistory(history, chosen, decision, turn);
+                history = rejectedSwipeHistory(history, chosen, decision, turn, assembled);
                 progressiveOutput = null;
                 continuationSuffix = null;
                 recordWorkflowReplyText(context, job, turn, null, { selected: false });
@@ -869,7 +872,7 @@ async function executeRoleplayWorkflowJob(context, { beforePublication, beforeCo
     }
     if (!chosen) throw error('The model did not finish within the saved tool turn limit.', 'ROLEPLAY_WORKFLOW_CAPACITY');
     const alternatives = blockedCandidate(chosen) ? [] : collectWorkflowAlternatives(context, job, { start: 0, end: turn,
-        effect: job.intent.request.effect, candidateAt: previousTurn =>
+        effect: job.intent.request.effect, combine: combinedCandidateOutput, candidateAt: previousTurn =>
             selectedCandidate(context, job, savedChild(context, job, previousTurn).child) });
     const hiding = await prepareWorkflowHiding(context, job, chosen);
     const blocked = blockedCandidate(chosen);

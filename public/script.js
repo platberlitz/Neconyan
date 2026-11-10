@@ -12177,6 +12177,8 @@ function buildRecoveryContext(type, { streaming, skip }) {
 
 let heldRecoveryTimer;
 let heldRecoveryPromise;
+/** @type {Map<string, number>} Failed attempts to read each held reply. */
+const heldRecoveryFailures = new Map();
 
 function scheduleHeldGenerationRecovery() {
     clearTimeout(heldRecoveryTimer);
@@ -12241,7 +12243,20 @@ async function recoverHeldGenerationPass() {
             scheduleHeldGenerationRecovery();
             continue;
         }
-        await applyHeldGeneration(job, headers, () => isCurrent() && isIdle());
+        try {
+            await applyHeldGeneration(job, headers, () => isCurrent() && isIdle());
+            heldRecoveryFailures.delete(job.id);
+        } catch (error) {
+            // Neconyan: a held reply this page cannot read (a provider error inside the stream, a stream
+            // with no end marker) fails the same way every time. Retry a little, then let it go.
+            const failures = (heldRecoveryFailures.get(job.id) ?? 0) + 1;
+            heldRecoveryFailures.set(job.id, failures);
+            if (failures < 3 || !isCurrent()) throw error;
+            heldRecoveryFailures.delete(job.id);
+            console.warn('Held reply could not be restored', error);
+            toastr.error(t`A reply that ran in the background failed.`);
+            await discardGeneration(job.id, headers).catch(() => undefined);
+        }
     }
 }
 
@@ -12262,7 +12277,6 @@ async function applyHeldGeneration(job, headers, isCurrent) {
         return discard();
     }
 
-    toastr.info(t`Restoring a reply that finished in the background...`);
     const response = await openHeldGeneration(job.id, headers);
     if (!isCurrent()) {
         await response.body?.cancel();
@@ -12339,6 +12353,7 @@ async function applyHeldGeneration(job, headers, isCurrent) {
         return discard();
     }
 
+    toastr.info(t`Restoring a reply that finished in the background...`);
     generation_started = new Date(ctx.startedAt);
     if (target.type === 'swipe') {
         const target = chat[chat.length - 1];

@@ -16,7 +16,7 @@ function subscribeJobChanges(base, account, listener) {
     let stream = changeStreams.get(key);
     if (!stream) {
         const controller = new AbortController();
-        stream = { controller, listeners: new Set(), connected: false };
+        stream = { controller, listeners: new Set(), connected: false, droppedAt: 0 };
         changeStreams.set(key, stream);
         const notify = value => {
             for (const callback of stream.listeners) callback(value);
@@ -54,6 +54,12 @@ function subscribeJobChanges(base, account, listener) {
             } catch { /* Polling reads back saved state after a disconnect or unsupported stream. */ } finally {
                 const shouldRefresh = stream.connected && !controller.signal.aborted;
                 stream.connected = false;
+                // A stream that worked and then dropped is replaced by the next
+                // subscriber; one that never opened stays, so polling carries on alone.
+                if (shouldRefresh) {
+                    stream.droppedAt = Date.now();
+                    if (changeStreams.get(key) === stream) changeStreams.delete(key);
+                }
                 controller.abort();
                 reader?.releaseLock();
                 if (shouldRefresh) notify();
@@ -63,11 +69,12 @@ function subscribeJobChanges(base, account, listener) {
     stream.listeners.add(listener);
     return {
         connected: () => stream.connected,
+        droppedAt: () => stream.droppedAt,
         stop: () => {
             stream.listeners.delete(listener);
             if (!stream.listeners.size) {
                 stream.controller.abort();
-                changeStreams.delete(key);
+                if (changeStreams.get(key) === stream) changeStreams.delete(key);
             }
         },
     };
@@ -211,8 +218,9 @@ export function observeJob(id, { onUpdate, onSnapshot, onDone, onStop, base = ''
             if (job) {
                 diagnostic(body?.diagnostics || null);
                 if (JSON.stringify(job) !== JSON.stringify(previous)) {
-                    previous = job;
+                    // Remembered only once applied, so a failed update is offered again.
                     await onUpdate?.(job);
+                    previous = job;
                 }
                 checkAccount(account);
                 if (stopped || signal?.aborted) return;
@@ -222,6 +230,11 @@ export function observeJob(id, { onUpdate, onSnapshot, onDone, onStop, base = ''
                 // A terminal job stops the job poll, but a failed readback must
                 // still be retried, so only stop once the snapshot succeeded.
                 if (TERMINAL.has(job.state)) { stop('done'); await onDone?.(job); return; }
+                // Reopen a dropped stream on a later poll, at most once per interval.
+                if (changes?.droppedAt() && Date.now() - changes.droppedAt() >= intervalMs) {
+                    changes.stop();
+                    changes = null;
+                }
                 changes ??= subscribeJobChanges(base, account, changed);
             }
             delay = changes?.connected() ? MAX_INTERVAL_MS : intervalMs;

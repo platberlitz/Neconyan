@@ -90,6 +90,17 @@ export function resolveQuickImageGenSeed(seed) {
     return Math.floor(Math.random() * 0x7fffffff);
 }
 
+const IMAGE_DOWNLOAD_RETRY_DELAYS_MS = Object.freeze([0, 400, 1200]);
+
+function waitForDownloadRetry(delay, signal) {
+    return new Promise((resolve, reject) => {
+        const stop = () => { clearTimeout(timer); reject(signal.reason ?? new Error('The image download was stopped.')); };
+        const timer = setTimeout(() => { signal?.removeEventListener('abort', stop); resolve(); }, delay);
+        if (signal?.aborted) stop();
+        else signal?.addEventListener('abort', stop, { once: true });
+    });
+}
+
 async function readJson(response) {
     const text = await readResponseText(response);
     try {
@@ -109,7 +120,7 @@ async function describeError(response, label) {
 function finishImage(bytes, source) {
     const buffer = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
     const format = detectImageFormat(buffer);
-    if (!format) throw fail('returned a response that is not a supported image.', { code: 'QIG_BAD_IMAGE' });
+    if (!format) throw fail('The image provider returned a response that is not a supported image.', { code: 'QIG_BAD_IMAGE' });
     void source;
     return { base64: buffer.toString('base64'), format: format.ext === 'jpeg' ? 'jpg' : format.ext };
 }
@@ -117,7 +128,7 @@ function finishImage(bytes, source) {
 async function materializeImage(source, fetchImpl, signal, provider, requestUrl = '', authHeaders = {}) {
     if (typeof source === 'string' && /^data:/i.test(source)) {
         const match = source.match(/^data:([^;,]+);base64,(.+)$/is);
-        if (!match) throw fail('returned malformed inline image data.', { code: 'QIG_BAD_IMAGE' });
+        if (!match) throw fail('The image provider returned malformed inline image data.', { code: 'QIG_BAD_IMAGE' });
         return finishImage(Buffer.from(match[2], 'base64'));
     }
     if (source && typeof source === 'object' && typeof source.url === 'string') {
@@ -133,21 +144,33 @@ async function materializeImage(source, fetchImpl, signal, provider, requestUrl 
             allowRelative: false, blockPrivateHosts: !sameConfiguredProxyOrigin });
         if (!normalized || !isTrustedProviderOutputUrl(provider === 'proxy' ? 'custom' : provider,
             normalized, requestUrl, { allowRequestSubdomains: provider === 'proxy' })) {
-            throw fail('a provider returned an untrusted image URL.', { code: 'QIG_UNSAFE_IMAGE_URL' });
+            throw fail('The image provider returned an untrusted image URL.', { code: 'QIG_UNSAFE_IMAGE_URL' });
         }
         const exactProviderOrigin = requestUrl && new URL(normalized).origin === new URL(requestUrl).origin;
+        // The provider has already been paid for this image and its address is not saved,
+        // so a download that fails for a passing reason is tried again before giving up.
         let response;
-        try {
-            response = await fetchImpl(normalized, { signal, redirect: 'error',
-                ...(exactProviderOrigin ? { headers: authHeaders } : {}) });
-        } catch (error) {
-            if (signal?.aborted) throw error;
-            throw fail('the image provider output could not be downloaded.', { code: 'QIG_PROVIDER_ERROR' });
+        for (const delay of IMAGE_DOWNLOAD_RETRY_DELAYS_MS) {
+            if (delay) await waitForDownloadRetry(delay, signal);
+            try {
+                response = await fetchImpl(normalized, { signal, redirect: 'error',
+                    ...(exactProviderOrigin ? { headers: authHeaders } : {}) });
+            } catch (error) {
+                if (signal?.aborted) throw error;
+                response = null;
+                continue;
+            }
+            if (response.ok || ![408, 425, 429].includes(response.status) && response.status < 500) break;
+            if (delay !== IMAGE_DOWNLOAD_RETRY_DELAYS_MS.at(-1)) void response.body?.cancel?.().catch(() => {});
         }
-        if (!response.ok) throw fail(await describeError(response, 'image download'));
+        if (!response) throw fail('The generated image could not be downloaded. Check your connection and try again.', { code: 'QIG_PROVIDER_ERROR' });
+        if (!response.ok) {
+            void response.body?.cancel?.().catch(() => {});
+            throw fail(await describeError(response, 'image download'));
+        }
         return finishImage(Buffer.from(await readResponseArrayBuffer(response)));
     }
-    throw fail('returned no usable image.', { code: 'QIG_BAD_IMAGE' });
+    throw fail('The image provider returned no usable image.', { code: 'QIG_BAD_IMAGE' });
 }
 
 /** Replicate API output may need its key; allowlisted CDN output never receives it. */

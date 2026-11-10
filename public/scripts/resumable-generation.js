@@ -31,6 +31,9 @@ const SKIPPED_RESPONSE_HEADERS = new Set(['content-encoding', 'content-length', 
 const activeRequests = new Map();
 /** Replies still being parsed or saved by this page, including after the last byte. */
 const ownedReplies = new Map();
+/** Replies this page stopped whose cancel has not reached the server yet. Never offered for recovery. */
+const stoppedReplies = new Set();
+const CANCEL_RETRY_DELAYS_MS = Object.freeze([0, 1000, 3000, 10000, 30000]);
 /** @type {Set<(busy: boolean) => void>} */
 const activityListeners = new Set();
 let generationBusy = false;
@@ -350,11 +353,17 @@ class ResumableRequest {
                     body: response.body,
                 };
             }
-            if (response.status >= 500) {
+            // 429: the server still counts older connections for this reply that it has not seen close yet.
+            if (response.status >= 500 || response.status === 429) {
                 continue;
             }
-            // The reply is gone, or never arrived. Let the original failure surface.
             this.finish();
+            if (this.received > 0) {
+                // Neconyan: part of the reply arrived and the server no longer holds the rest (it
+                // restarted, usually). Say so, instead of leaving a half reply that looks complete.
+                throw Object.assign(new Error('The server no longer holds the rest of this reply.', { cause }), { code: GENERATION_CONNECTION_LOST });
+            }
+            // The reply never arrived. Let the original failure surface.
             throw cause;
         }
 
@@ -380,12 +389,35 @@ class ResumableRequest {
             // saving what arrived. Cancelling would hide the server's copy from recovery for good.
             return;
         }
-        fetch(CANCEL_URL, {
-            method: 'POST',
-            headers: this.controlHeaders,
-            body: JSON.stringify({ id: this.id }),
-            keepalive: true,
-        }).catch(() => undefined);
+        stoppedReplies.add(this.id);
+        void this.sendCancel();
+    }
+
+    /**
+     * Neconyan: Stop is often pressed because the connection is down, which is exactly when one
+     * cancel request fails. Keep trying, so the provider call stops once the server is reachable.
+     * @returns {Promise<void>}
+     */
+    async sendCancel() {
+        for (const delay of CANCEL_RETRY_DELAYS_MS) {
+            if (delay) {
+                await new Promise(resolve => setTimeout(resolve, delay).unref?.());
+            }
+            try {
+                const response = await fetch(CANCEL_URL, {
+                    method: 'POST',
+                    headers: this.controlHeaders,
+                    body: JSON.stringify({ id: this.id }),
+                    keepalive: true,
+                });
+                if (response.status < 500 && response.status !== 429) {
+                    stoppedReplies.delete(this.id);
+                    return;
+                }
+            } catch {
+                // Unreachable: try again.
+            }
+        }
     }
 
     release() {
@@ -527,7 +559,7 @@ export async function listRecoverableGenerations(headers) {
         return [];
     }
     const data = await response.json();
-    return (Array.isArray(data?.jobs) ? data.jobs : []).filter(job => !activeRequests.has(job.id) && !ownedReplies.has(job.id));
+    return (Array.isArray(data?.jobs) ? data.jobs : []).filter(job => !activeRequests.has(job.id) && !ownedReplies.has(job.id) && !stoppedReplies.has(job.id));
 }
 
 /**

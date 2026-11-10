@@ -3,8 +3,11 @@ import { readArtifact } from '../jobs/artifacts.js';
 
 const fail = () => roleplayError('ROLEPLAY_WORKFLOW_RECOVERY', 'The saved automatic alternatives need recovery.', 409);
 
-/** Replay saved decisions, including continued chunks, without generating another reply. */
-export function collectWorkflowAlternatives(context, job, { start, end, effect, speakerIndex, candidateAt }) {
+/**
+ * Replay saved decisions, including continued chunks, without generating another reply.
+ * `combine` must be the join the workflow used when it saved each decision, or the hashes cannot match.
+ */
+export function collectWorkflowAlternatives(context, job, { start, end, effect, speakerIndex, candidateAt, combine }) {
     if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start || end >= 16) throw fail();
     const alternatives = [];
     let progressive = null;
@@ -35,20 +38,6 @@ export function collectWorkflowAlternatives(context, job, { start, end, effect, 
         } else throw fail();
     }
     return alternatives;
-}
-
-function combine(previous, current, effect) {
-    const first = previous.message?.mes ?? previous.messages?.[0]?.mes ?? previous.text;
-    const second = current.message?.mes ?? current.messages?.[0]?.mes ?? current.text;
-    if (typeof first !== 'string' || typeof second !== 'string' || Buffer.byteLength(first + second) > 256 * 1024) throw fail();
-    const result = structuredClone(current);
-    if (effect === 'append') result.message.mes = first + second;
-    else if (effect === 'replace') result.messages[0].mes = first + second;
-    else {
-        result.text = first + second;
-        if (effect === 'continue' && previous.continuedText !== undefined) result.continuedText = previous.continuedText + second;
-    }
-    return result;
 }
 
 /** Include rejected, paid alternatives only in the single protected final chat write. */

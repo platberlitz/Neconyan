@@ -85,7 +85,7 @@ export function createGenerationStream(onUpdate, { allowTools = false } = {}) {
         }
         text += nextText;
         reasoning += nextReasoning;
-        if (chunk.type === 'message_stop' || chunk.type === 'message-end' || chunk.type === 'response.completed' || chunk.done === true || choice?.finish_reason != null
+        if (chunk.type === 'message_stop' || chunk.type === 'message-end' || chunk.type === 'response.completed' || chunk.done === true || chunk.stop === true || choice?.finish_reason != null
             || candidate?.finishReason || chunk.event === 'done') complete = true;
         if (nextText || nextReasoning || choice?.structured_prefill) onUpdate?.({ text, reasoning, ...(structuredPrefill ? { structured_prefill: structuredPrefill } : {}) });
     };

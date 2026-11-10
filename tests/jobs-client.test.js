@@ -243,4 +243,41 @@ describe('browser jobs observer snapshot callbacks', () => {
             expect(jobReads).toBe(2);
         } finally { stop(); feed.close(); }
     });
+
+    test('an update that failed to apply is offered again on the next poll', async () => {
+        globalThis.fetch = jest.fn(async url => url.endsWith('/events') ? jsonResponse(null, 404) : jsonResponse({ job: { id: 'job-1', state: 'completed' } }));
+        const { observeJob } = await import('../public/scripts/jobs.js');
+        const onUpdate = jest.fn().mockRejectedValueOnce(new Error('Could not apply')).mockResolvedValue(undefined);
+        const onDone = jest.fn();
+        const stop = observeJob('job-1', { intervalMs: 1, onUpdate, onDone });
+        try {
+            await wait(40);
+            expect(onUpdate).toHaveBeenCalledTimes(2);
+            expect(onDone).toHaveBeenCalledTimes(1);
+        } finally { stop(); }
+    });
+
+    test('a change stream that dropped is opened again while a job is still watched', async () => {
+        const feeds = [];
+        globalThis.fetch = jest.fn(async url => {
+            if (url.endsWith('/events')) {
+                const body = new ReadableStream({ start(controller) { feeds.push(controller); } });
+                return { ok: true, headers: new Map([['content-type', 'text/event-stream']]), body };
+            }
+            return jsonResponse({ job: { id: 'job-1', state: 'running' } });
+        });
+        const { observeJob } = await import('../public/scripts/jobs.js');
+        const stop = observeJob('job-1', { intervalMs: 20 });
+        try {
+            await wait(15);
+            expect(feeds).toHaveLength(1);
+            feeds[0].close();
+            await wait(80);
+            expect(feeds).toHaveLength(2);
+            const reads = globalThis.fetch.mock.calls.length;
+            await wait(80);
+            // Connected again, so the observer is back on the slow fallback clock.
+            expect(globalThis.fetch.mock.calls.length).toBe(reads);
+        } finally { stop(); feeds.forEach(feed => { try { feed.close(); } catch { /* Already closed. */ } }); }
+    });
 });
