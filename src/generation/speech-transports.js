@@ -230,8 +230,10 @@ export async function sendSpeechTransport(config, descriptor, segment, { signal:
             assertAudioContentType(response);
             let bytes = Buffer.from(await readResponseArrayBuffer(response, MAX_AUDIO_BYTES, { signal }));
             if (descriptor.pcm) bytes = pcmWave(bytes, { sampleRate: descriptor.sampleRate ?? 24000 });
-            if (descriptor.wavStream && bytes.length >= 44 && bytes.toString('ascii', 0, 4) === 'RIFF'
-                && bytes.toString('ascii', 36, 40) === 'data') {
+            // A streaming server writes its header before it knows the length. Sizes smaller than the
+            // body are such placeholders; larger ones mean a cut-off file and are left to fail validation.
+            if (bytes.length >= 44 && bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 36, 40) === 'data'
+                && (descriptor.wavStream || bytes.readUInt32LE(4) < bytes.length - 8 && bytes.readUInt32LE(40) < bytes.length - 44)) {
                 bytes.writeUInt32LE(bytes.length - 8, 4); bytes.writeUInt32LE(bytes.length - 44, 40);
             }
             return receivedAudio(bytes);

@@ -417,3 +417,39 @@ test('a speech request that times out after it was sent stays unretryable', asyn
     await assert.rejects(runSpeechJob(f.context(), { fetchImpl: () => assert.fail('an uncertain synthesis repeated') }), { code: 'TTS_RESULT_RECOVERY' });
     assert.equal(sent, 1);
 });
+
+// The header a streaming server writes before it knows the length: RIFF size 36, data size 0.
+function streamedWave() {
+    const header = Buffer.from(WAVE.subarray(0, 44));
+    header.writeUInt32LE(36, 4);
+    header.writeUInt32LE(0, 40);
+    return Buffer.concat([header, WAVE.subarray(44)]);
+}
+
+const streamedCases = [
+    { provider: 'XTTSv2', controls: { streaming: true }, entry: 'speaker', discovery: { '/speakers': ['speaker'] }, settingsPath: '/set_tts_settings' },
+    { provider: 'GPT-SoVITS-Adapter', controls: { media_type: 'wav' }, entry: 'speaker', discovery: { '/speakers': [{ name: 'speaker', voice_id: 'selected' }] } },
+    { provider: 'CosyVoice (Unofficial)', controls: { streaming: true }, entry: 'speaker', discovery: { '/speakers': ['speaker'] } },
+];
+
+function streamedFetch(example, body) {
+    return async address => {
+        const url = new URL(address);
+        if (Object.hasOwn(example.discovery, url.pathname)) return json(example.discovery[url.pathname]);
+        if (example.settingsPath === url.pathname) return json({ ok: true });
+        return new Response(body, { headers: { 'Content-Type': 'audio/wav' } });
+    };
+}
+
+for (const example of streamedCases) test(`streamed ${example.provider} WAV with placeholder header sizes is saved with its real sizes`, async t => {
+    const f = prepared(t, example);
+    const result = await runSpeechJob(f.context(), { fetchImpl: streamedFetch(example, streamedWave()) });
+    assert.equal(result.result.narration.status, 'ready');
+    assert.deepEqual(fs.readFileSync(path.join(f.directories.root, result.result.files[0].url.slice(1))), WAVE);
+});
+
+test('a WAV cut short of its declared size is still refused', async t => {
+    const f = prepared(t, streamedCases[0]);
+    await assert.rejects(runSpeechJob(f.context(), { fetchImpl: streamedFetch(streamedCases[0], WAVE.subarray(0, WAVE.length - 100)) }),
+        { message: 'The speech audio container is incomplete.' });
+});
