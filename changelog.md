@@ -4,6 +4,7 @@
 
 ### Merged Staging PRs
 - PR #583 (2026-11-09) `feat(icons): draw catline icons 25% larger`
+- PR #585 (2026-11-10) `fix(labs): replace phone page dropdowns with buttons`
 - PR #586 (2026-11-10) `fix(chat): keep the viewport steady during agent rewrites`
 
 ## v1.5.3
