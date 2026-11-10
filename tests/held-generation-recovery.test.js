@@ -72,11 +72,15 @@ describe('retained reply matching', () => {
 function recoveryHost() {
     const chat = [userMessage()];
     const job = { id: 'held-reply', context: contextFor(chat), status: 'finished', attached: false };
+    const timers = new Map();
+    const wakeListeners = new Map();
+    let timerId = 0;
+    const addEventListener = (event, callback) => wakeListeners.set(event, callback);
     const host = vm.createContext({
         ...generationOutcome, isGenerationLengthFinish,
         chat, chatGeneration: 0, chatId: 'chat-a', this_chid: 0, selected_group: null,
         characters: [{ avatar: 'avatar.png' }], is_send_press: false, activeGenerationRun: null,
-        document: { visibilityState: 'visible' }, console, generation_started: null,
+        document: { visibilityState: 'visible', addEventListener }, window: { addEventListener }, console, generation_started: null,
         getCurrentChatId: () => host.chatId, getRequestHeaders: () => ({}),
         listRecoverableGenerations: jest.fn(async () => [job]),
         openHeldGeneration: jest.fn(async () => Response.json({ text: 'Final reply' })),
@@ -91,12 +95,24 @@ function recoveryHost() {
         extractImagesFromData: () => [], extractReasoningSignatureFromData: () => null, extractMultiSwipes: () => [],
         cleanUpMessage: ({ getMessage }) => getMessage, getRegexedString: text => text, regex_placement: {},
         t: strings => strings[0], toastr: { info: jest.fn(), error: jest.fn(), warning: jest.fn() }, playMessageSound: jest.fn(),
-        setTimeout: jest.fn(() => 1), clearTimeout: jest.fn(),
+        setTimeout: jest.fn((callback, delay) => { timers.set(++timerId, { callback, delay }); return timerId; }),
+        clearTimeout: jest.fn(id => timers.delete(id)),
     });
     const names = ['scheduleHeldGenerationRecovery', 'startHeldGenerationRecoveryTimer', 'saveChatWithHeldReply', 'recoverHeldGenerations', 'recoverHeldGenerationPass', 'applyHeldGeneration'];
     const functions = names.map(name => source.match(new RegExp(`^(?:export )?((?:async )?function ${name}\\([\\s\\S]*?^})`, 'm'))[1]);
-    vm.runInContext('let heldRecoveryTimer; let heldRecoveryPromise; const heldRecoveryFailures = new Map(); let heldRecoveryRetries = 0;\n' + functions.join('\n'), host);
-    return { host, job };
+    vm.runInContext('let heldRecoveryTimer; let heldRecoveryPromise; const heldRecoveryFailures = new Map(); let heldRecoveryRetries = 0; let heldRecoveryGeneration = 0;\n' + functions.join('\n'), host);
+    const listeners = [...source.matchAll(/^\s*(?:document|window)\.addEventListener\('(visibilitychange|pageshow|online)', scheduleHeldGenerationRecovery\);$/gm)];
+    vm.runInContext(listeners.map(match => match[0]).join('\n'), host);
+    const runTimer = async () => {
+        expect(timers.size).toBe(1);
+        const [id, { callback, delay }] = timers.entries().next().value;
+        timers.delete(id);
+        callback();
+        await new Promise(resolve => setImmediate(resolve));
+        expect(timers.size).toBeLessThanOrEqual(1);
+        return delay;
+    };
+    return { host, job, timers, runTimer, wake: event => wakeListeners.get(event)() };
 }
 
 describe('recovery and save acknowledgement', () => {
@@ -178,15 +194,9 @@ describe('recovery and save acknowledgement', () => {
     });
 
     test('a lookup that keeps failing is retried less and less often, and promptly again after a success or a wake-up', async () => {
-        const { host } = recoveryHost();
+        const { host, runTimer } = recoveryHost();
         host.console = { warn: jest.fn() };
         host.listRecoverableGenerations.mockRejectedValue(new TypeError('Failed to fetch'));
-        const runTimer = async () => {
-            const [callback, delay] = host.setTimeout.mock.calls.at(-1);
-            callback();
-            await new Promise(resolve => setImmediate(resolve));
-            return delay;
-        };
         host.scheduleHeldGenerationRecovery();
         const delays = [];
         for (let round = 0; round < 9; round++) delays.push(await runTimer());
@@ -206,6 +216,67 @@ describe('recovery and save acknowledgement', () => {
         host.scheduleHeldGenerationRecovery();
         await runTimer();
         expect(host.setTimeout.mock.calls.at(-1)[1]).toBe(2000);
+    });
+
+    test.each(['online', 'pageshow', 'visibilitychange'])('a failed first lookup after %s restarts the short retry delays', async event => {
+        const { host, timers, runTimer, wake } = recoveryHost();
+        host.console = { warn: jest.fn() };
+        host.listRecoverableGenerations.mockRejectedValue(new TypeError('Failed to fetch'));
+        host.scheduleHeldGenerationRecovery();
+        for (let round = 0; round < 7; round++) await runTimer();
+        expect([...timers.values()][0].delay).toBe(60000);
+
+        wake(event);
+        const delays = [];
+        for (let round = 0; round < 4; round++) delays.push(await runTimer());
+        expect(delays).toEqual([2000, 2000, 4000, 8000]);
+        expect(timers.size).toBe(1);
+    });
+
+    test.each(['online', 'pageshow', 'visibilitychange'])('a lookup started before %s cannot replace the wake timer when it fails late', async event => {
+        const { host, timers, runTimer, wake } = recoveryHost();
+        host.console = { warn: jest.fn() };
+        host.listRecoverableGenerations.mockRejectedValue(new TypeError('Failed to fetch'));
+        host.scheduleHeldGenerationRecovery();
+        for (let round = 0; round < 7; round++) await runTimer();
+
+        let rejectLookup;
+        host.listRecoverableGenerations.mockImplementationOnce(() => new Promise((resolve, reject) => { rejectLookup = reject; }));
+        await runTimer();
+        expect(timers.size).toBe(0);
+        wake(event);
+        const [wakeTimerId] = timers.keys();
+        const scheduled = host.setTimeout.mock.calls.length;
+        rejectLookup(new TypeError('Failed to fetch'));
+        await new Promise(resolve => setImmediate(resolve));
+        expect(host.setTimeout).toHaveBeenCalledTimes(scheduled);
+        expect([...timers.keys()]).toEqual([wakeTimerId]);
+        expect(timers.get(wakeTimerId).delay).toBe(2000);
+        expect(await runTimer()).toBe(2000);
+        expect(await runTimer()).toBe(2000);
+        expect(timers.size).toBe(1);
+    });
+
+    test('recovery keeps one short timer when the wake timer fires before an older lookup settles', async () => {
+        const { host, timers, runTimer, wake } = recoveryHost();
+        host.console = { warn: jest.fn() };
+        host.listRecoverableGenerations.mockRejectedValue(new TypeError('Failed to fetch'));
+        host.scheduleHeldGenerationRecovery();
+        for (let round = 0; round < 7; round++) await runTimer();
+        let rejectLookup;
+        host.listRecoverableGenerations.mockImplementationOnce(() => new Promise((resolve, reject) => { rejectLookup = reject; }));
+        await runTimer();
+        wake('online');
+        expect(await runTimer()).toBe(2000);
+        expect(host.listRecoverableGenerations).toHaveBeenCalledTimes(8);
+        const scheduled = host.setTimeout.mock.calls.length;
+        rejectLookup(new TypeError('Failed to fetch'));
+        await new Promise(resolve => setImmediate(resolve));
+        expect(host.setTimeout).toHaveBeenCalledTimes(scheduled);
+        expect(timers.size).toBe(1);
+        expect(await runTimer()).toBe(2000);
+        expect(await runTimer()).toBe(2000);
+        expect(host.listRecoverableGenerations).toHaveBeenCalledTimes(10);
     });
 
     test('defers recovery while another generation owns the chat', async () => {

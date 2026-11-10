@@ -12180,8 +12180,12 @@ let heldRecoveryPromise;
 /** @type {Map<string, number>} Failed attempts to read each held reply. */
 const heldRecoveryFailures = new Map();
 let heldRecoveryRetries = 0;
+let heldRecoveryGeneration = 0;
 
 function scheduleHeldGenerationRecovery() {
+    // A prompt pass (including a wake event) starts a fresh retry cycle.
+    heldRecoveryRetries = 0;
+    heldRecoveryGeneration++;
     startHeldGenerationRecoveryTimer(2000);
 }
 
@@ -12189,8 +12193,13 @@ function startHeldGenerationRecoveryTimer(delay) {
     clearTimeout(heldRecoveryTimer);
     if (document.visibilityState === 'hidden') return;
     heldRecoveryTimer = setTimeout(() => {
-        recoverHeldGenerations().then(() => { heldRecoveryRetries = 0; }, error => {
+        const generation = heldRecoveryGeneration;
+        recoverHeldGenerations().then(() => {
+            if (generation === heldRecoveryGeneration) heldRecoveryRetries = 0;
+        }, error => {
             console.warn('Held generation recovery failed', error);
+            // An older lookup must not replace the short timer scheduled by a wake event.
+            if (generation !== heldRecoveryGeneration) return;
             // Neconyan: a server that stays unreachable is asked less often: 2 s, 4 s, 8 s, up to a minute.
             // Coming back online or into view schedules a prompt pass again.
             startHeldGenerationRecoveryTimer(Math.min(60000, 2000 * 2 ** heldRecoveryRetries++));
