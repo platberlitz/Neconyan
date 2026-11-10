@@ -27,10 +27,13 @@ async function openPanel(page) {
     return page.locator(PANEL);
 }
 
-/** The panel saves onto the group anchor thread, keyed group:<id>:<avatar>. */
+/**
+ * The panel saves onto the group anchor thread, keyed group:<id>:<avatar>.
+ * Every member has a thread under the same group, in no fixed order, so the anchor is matched by its avatar.
+ */
 async function savedGroupRecord(account, groupId) {
     const store = await account.store();
-    const key = Object.keys(store.characters || {}).find(value => value.includes(groupId));
+    const key = Object.keys(store.characters || {}).find(value => value.endsWith(`group:${groupId}:${account.avatar}`));
     if (!key) return null;
     return store.characters[key]?.branches?.main?.games || null;
 }
