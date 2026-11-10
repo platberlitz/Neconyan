@@ -320,7 +320,6 @@
     background: var(--sbwil-bg-alt);
 }
 
-.sbwil-tab-select,
 .sbwil-tab-icon,
 .sbwil-tab-hint {
     display: none;
@@ -1555,23 +1554,6 @@
         overflow: visible;
         border-right: 0;
         background: var(--sbwil-bg);
-    }
-
-    .sbwil-workbench-page .sbwil-tabs {
-        display: none;
-    }
-
-    .sbwil-workbench-page .sbwil-tab-select {
-        display: block;
-        width: 100%;
-        min-height: 44px;
-        margin: 0;
-        padding: 8px 10px;
-        border: 1px solid var(--sbwil-border);
-        border-radius: var(--sbwil-radius-sm);
-        background: var(--sbwil-bg-alt);
-        color: var(--sbwil-text);
-        font: inherit;
     }
 
     .sbwil-workbench-page > .sbwil-main {

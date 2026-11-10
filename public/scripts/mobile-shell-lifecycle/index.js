@@ -1017,6 +1017,8 @@ const MOBILE_DOCUMENT_PAN_HORIZONTAL_SCROLL_SELECTOR = [
     '.img_enlarged_container pre code',
     '.select2-results__options',
     '.notes-property-table-scroll',
+    '.sbpl-tabs',
+    '.sbwil-tabs',
 ].join(', ');
 
 const MOBILE_DOCUMENT_PAN_EDITABLE_SELECTOR = [

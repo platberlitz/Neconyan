@@ -509,11 +509,6 @@
     opacity: 0.85;
 }
 
-.sbpl-tab-select {
-    display: none;
-    width: 100%;
-}
-
 .sbpl-panel {
     display: flex;
     flex-direction: column;
@@ -697,15 +692,7 @@
 /* ---- mobile ---- */
 
 @media (max-width: 620px) {
-    .sbpl-tabs {
-        display: none;
-    }
-
-    .sbpl-tab-select {
-        display: block;
-    }
-
-    /* No room for a rail: one column, one scroller, sections from the select. */
+    /* No room for a side rail: one column and one work surface scroller. */
     .sbpl-workbench-page {
         display: flex;
         flex-direction: column;
