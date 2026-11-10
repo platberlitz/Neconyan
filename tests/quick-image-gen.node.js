@@ -1680,6 +1680,62 @@ test('a paid image whose download fails once is fetched again without a second p
     }
 });
 
+test('a paid image address is saved, so a download that keeps failing is retried without paying again', async () => {
+    const directories = tempRoot();
+    const context = jobContext(directories);
+    updateJob(directories, context.job.id, { state: 'running' });
+    const step = 'provider:quick-image:image:0:0';
+    let paid = 0;
+    let downloads = 0;
+    let cdnWorks = false;
+    const fetchImpl = async url => {
+        if (String(url).startsWith('https://api.together.xyz/')) {
+            paid++;
+            return jsonResponse({ data: [{ url: 'https://cdn.together.xyz/out.png' }] });
+        }
+        assert.equal(url, 'https://cdn.together.xyz/out.png');
+        downloads++;
+        return cdnWorks ? new Response(Buffer.from(PNG_BASE64, 'base64')) : new Response('busy', { status: 503 });
+    };
+    await assert.rejects(generateQuickImageGenJobImage(context, { ...imageRequest, fetch: fetchImpl }),
+        error => error.code === 'QIG_PROVIDER_ERROR' && error.recoverable === true);
+    assert.deepEqual([paid, downloads], [1, 3]);
+    assert.deepEqual(readArtifact(directories, context.job.id, step), { url: 'https://cdn.together.xyz/out.png' });
+    assert.equal(readImageArtifact(directories, context.job.id, step), undefined);
+    assert.notEqual(getJob(directories, context.job.id).recoverability, 'unknown-outcome');
+    const artifacts = path.join(directories.root, 'jobs', 'artifacts');
+    for (const name of fs.readdirSync(artifacts, { recursive: true }).filter(name => name.endsWith('.json'))) {
+        assert.equal(fs.readFileSync(path.join(artifacts, name), 'utf8').includes('private-key'), false);
+    }
+
+    // A restart finds the saved address and still cannot pay again while the download fails.
+    recoverJobs(directories);
+    await assert.rejects(generateQuickImageGenJobImage(context, { ...imageRequest, fetch: fetchImpl }),
+        error => error.code === 'QIG_PROVIDER_ERROR');
+    assert.deepEqual([paid, downloads], [1, 6]);
+
+    cdnWorks = true;
+    const image = await generateQuickImageGenJobImage(context, { ...imageRequest, fetch: fetchImpl });
+    assert.equal(image.base64, PNG_BASE64);
+    assert.deepEqual([paid, downloads], [1, 7]);
+    assert.equal(readImageArtifact(directories, context.job.id, step).base64, PNG_BASE64);
+    await generateQuickImageGenJobImage(context, { ...imageRequest, fetch: () => assert.fail('The saved image must be reused.') });
+});
+
+test('a saved image address is checked again before it is downloaded', async () => {
+    const directories = tempRoot();
+    const context = jobContext(directories);
+    updateJob(directories, context.job.id, { state: 'running' });
+    const step = 'provider:quick-image:image:0:0';
+    await assert.rejects(generateQuickImageGenJobImage(context, { ...imageRequest, fetch: async url => String(url).startsWith('https://api.together.xyz/')
+        ? jsonResponse({ data: [{ url: 'https://cdn.together.xyz/out.png' }] }) : new Response('gone', { status: 404 }) }));
+    for (const url of ['http://127.0.0.1/secret.png', 'https://example.com/out.png']) {
+        writeArtifact(directories, context.job.id, step, { url });
+        await assert.rejects(generateQuickImageGenJobImage(context, { ...imageRequest, fetch: () => assert.fail('An untrusted saved address must not be fetched.') }),
+            error => error.code === 'QIG_UNSAFE_IMAGE_URL');
+    }
+});
+
 test('the seed resolver never returns a negative seed', () => {
     assert.equal(testExports.resolveSeed(42), 42);
     assert.ok(testExports.resolveSeed(-1) >= 0);

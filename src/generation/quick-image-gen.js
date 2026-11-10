@@ -39,7 +39,7 @@ import { MAX_PROVIDER_RESPONSE_BYTES } from '../../public/scripts/extensions/qui
 import { buildQueuedImageRequest } from './quick-image-gen-queued.js';
 import { nanobananaEndpoint } from './quick-image-gen-nanobanana.js';
 import { buildNovelAIRequest, decodeNovelAIOutput, resolveNovelAIProxyImage } from './quick-image-gen-novelai.js';
-import { assertProxyImageConfigured, generateProxyImage } from './quick-image-gen-proxy.js';
+import { assertProxyImageConfigured, generateProxyImage, proxyImageEndpoint } from './quick-image-gen-proxy.js';
 import { assertComfyImageConfigured, comfyImageBaseUrl } from './quick-image-gen-comfy.js';
 import { a1111BaseUrl, buildA1111ImageRequest } from './quick-image-gen-a1111.js';
 
@@ -125,6 +125,32 @@ function finishImage(bytes, source) {
     return { base64: buffer.toString('base64'), format: format.ext === 'jpeg' ? 'jpg' : format.ext };
 }
 
+/** The same host checks run when an address is first returned and when a saved one is read back. */
+function trustedImageUrl(source, provider, requestUrl) {
+    let sameConfiguredProxyOrigin = false;
+    try {
+        sameConfiguredProxyOrigin = provider === 'proxy' && !!requestUrl
+            && new URL(source).origin === new URL(requestUrl).origin;
+    } catch { /* An invalid output URL cannot be used. */ }
+    const normalized = normalizeImageSource(source, { allowHttp: sameConfiguredProxyOrigin,
+        allowRelative: false, blockPrivateHosts: !sameConfiguredProxyOrigin });
+    if (!normalized || !isTrustedProviderOutputUrl(provider === 'proxy' ? 'custom' : provider,
+        normalized, requestUrl, { allowRequestSubdomains: provider === 'proxy' })) {
+        throw fail('The image provider returned an untrusted image URL.', { code: 'QIG_UNSAFE_IMAGE_URL' });
+    }
+    return normalized;
+}
+
+/** An address that may be saved in a job: checked, and never one that carries a configured key. */
+function savableImageUrl(source, provider, requestUrl, settings) {
+    const address = source && typeof source === 'object' && typeof source.url === 'string' ? source.url : source;
+    if (typeof address !== 'string' || !/^https?:/i.test(address)) return '';
+    const url = trustedImageUrl(address, provider, requestUrl);
+    const carriesKey = Object.entries(settings).some(([name, value]) => /key$/i.test(name) && typeof value === 'string'
+        && value.trim().length >= 8 && (url.includes(value.trim()) || url.includes(encodeURIComponent(value.trim()))));
+    return carriesKey ? '' : url;
+}
+
 async function materializeImage(source, fetchImpl, signal, provider, requestUrl = '', authHeaders = {}) {
     if (typeof source === 'string' && /^data:/i.test(source)) {
         const match = source.match(/^data:([^;,]+);base64,(.+)$/is);
@@ -135,20 +161,10 @@ async function materializeImage(source, fetchImpl, signal, provider, requestUrl 
         return materializeImage(source.url, fetchImpl, signal, provider, requestUrl, authHeaders);
     }
     if (typeof source === 'string' && /^https?:/i.test(source)) {
-        let sameConfiguredProxyOrigin = false;
-        try {
-            sameConfiguredProxyOrigin = provider === 'proxy' && !!requestUrl
-                && new URL(source).origin === new URL(requestUrl).origin;
-        } catch { /* An invalid output URL cannot be used. */ }
-        const normalized = normalizeImageSource(source, { allowHttp: sameConfiguredProxyOrigin,
-            allowRelative: false, blockPrivateHosts: !sameConfiguredProxyOrigin });
-        if (!normalized || !isTrustedProviderOutputUrl(provider === 'proxy' ? 'custom' : provider,
-            normalized, requestUrl, { allowRequestSubdomains: provider === 'proxy' })) {
-            throw fail('The image provider returned an untrusted image URL.', { code: 'QIG_UNSAFE_IMAGE_URL' });
-        }
+        const normalized = trustedImageUrl(source, provider, requestUrl);
         const exactProviderOrigin = requestUrl && new URL(normalized).origin === new URL(requestUrl).origin;
-        // The provider has already been paid for this image and its address is not saved,
-        // so a download that fails for a passing reason is tried again before giving up.
+        // The provider has already been paid for this image, so a download that fails
+        // for a passing reason is tried again before giving up.
         let response;
         for (const delay of IMAGE_DOWNLOAD_RETRY_DELAYS_MS) {
             if (delay) await waitForDownloadRetry(delay, signal);
@@ -583,43 +599,34 @@ export function assertQuickImageGenConfigured(settings) {
     return provider;
 }
 
-/**
- * Generate one image with the account's configured Quick Image Gen provider.
- * Returns { base64, format }; never substitutes a different provider.
- */
-export async function generateQuickImageGenImage({ directories, prompt, negative = '', signal, fetch: fetchImpl = globalThis.fetch, settings } = {}) {
-    if (!directories?.root) throw fail('No account directories were provided for image generation.', { status: 500, recoverable: false });
-    if (!String(prompt || '').trim()) throw fail('An image prompt is required.', { status: 400, recoverable: false });
-    const resolvedSettings = settings && typeof settings === 'object' ? settings : readQuickImageGenSettings(directories);
-    const provider = assertQuickImageGenRequestConfigured(resolvedSettings, prompt, negative);
-    const generator = PROVIDER_GENERATORS[provider];
-    if (!generator) throw fail('This queued image provider requires a saved job for safe submission and polling.',
-        { status: 409, code: 'QIG_INPUT_MISSING' });
-    const deadline = createHostedProviderDeadline(signal, provider === 'local' ? 600 : resolvedSettings.hostedTimeout, provider);
-    const safeFetch = (url, init = {}) => fetchImpl(url, { ...init, redirect: 'error' });
+/** The provider address and headers a returned image address is checked against and downloaded with. */
+function imageDownloadAccess(provider, settings, prompt, negative) {
+    let requestUrl = '';
+    let key = '';
+    if (provider === 'gptimage') {
+        requestUrl = getGptImageApiUrl(settings.gptImageProxyUrl, settings.gptImageModel);
+        key = settings.gptImageProxyKey || settings.gptImageKey;
+    } else if (provider === 'proxy') {
+        requestUrl = (settings.__qigProxyRequest ? settings.__qigProxyRequest.request?.url : proxyImageEndpoint(settings).url) || '';
+        key = settings.proxyKey;
+    } else if (provider === 'nanobanana') {
+        requestUrl = getNanobananaApiUrl(settings.nanobananaProxyUrl,
+            settings.nanobananaModel || 'gemini-3-pro-image');
+        key = settings.nanobananaProxyKey || settings.nanobananaKey;
+    } else if (provider === 'novelai') {
+        requestUrl = buildNovelAIRequest({ ...settings,
+            seed: resolveQuickImageGenSeed(settings.seed) }, prompt, negative).url;
+        key = settings.naiProxyKey || settings.naiKey;
+    }
+    const headers = provider === 'nanobanana' ? getNanobananaAuthHeaders(requestUrl, key)
+        : key ? { Authorization: `Bearer ${key}` } : {};
+    return { requestUrl, headers };
+}
+
+async function withProviderDeadline(provider, settings, signal, operation) {
+    const deadline = createHostedProviderDeadline(signal, provider === 'local' ? 600 : settings.hostedTimeout, provider);
     try {
-        const source = await generator(resolvedSettings, prompt, negative, { fetchImpl: safeFetch, signal: deadline.signal });
-        if (source && typeof source === 'object' && typeof source.base64 === 'string') return source;
-        let requestUrl = '';
-        let key = '';
-        if (provider === 'gptimage') {
-            requestUrl = getGptImageApiUrl(resolvedSettings.gptImageProxyUrl, resolvedSettings.gptImageModel);
-            key = resolvedSettings.gptImageProxyKey || resolvedSettings.gptImageKey;
-        } else if (provider === 'proxy') {
-            requestUrl = resolvedSettings.__qigProxyRequest?.request?.url || '';
-            key = resolvedSettings.proxyKey;
-        } else if (provider === 'nanobanana') {
-            requestUrl = getNanobananaApiUrl(resolvedSettings.nanobananaProxyUrl,
-                resolvedSettings.nanobananaModel || 'gemini-3-pro-image');
-            key = resolvedSettings.nanobananaProxyKey || resolvedSettings.nanobananaKey;
-        } else if (provider === 'novelai') {
-            requestUrl = buildNovelAIRequest({ ...resolvedSettings,
-                seed: resolveQuickImageGenSeed(resolvedSettings.seed) }, prompt, negative).url;
-            key = resolvedSettings.naiProxyKey || resolvedSettings.naiKey;
-        }
-        const headers = provider === 'nanobanana' ? getNanobananaAuthHeaders(requestUrl, key)
-            : key ? { Authorization: `Bearer ${key}` } : {};
-        return await materializeImage(source, safeFetch, deadline.signal, provider, requestUrl, headers);
+        return await operation(deadline.signal);
     } catch (error) {
         if (signal?.aborted) throw signal.reason instanceof Error ? signal.reason : Object.assign(new Error('Aborted'), { name: 'AbortError' });
         if (deadline.didTimeOut()) throw fail(`Quick Image Gen provider '${provider}' timed out after ${deadline.seconds} seconds.`, { code: 'QIG_PROVIDER_TIMEOUT' });
@@ -631,6 +638,44 @@ export async function generateQuickImageGenImage({ directories, prompt, negative
     } finally {
         deadline.dispose();
     }
+}
+
+/**
+ * Generate one image with the account's configured Quick Image Gen provider.
+ * Returns { base64, format }; never substitutes a different provider.
+ * With deferDownload, a provider that answers with an image address returns { url }
+ * instead, so the caller can save the address before downloading it.
+ */
+export async function generateQuickImageGenImage({ directories, prompt, negative = '', signal, fetch: fetchImpl = globalThis.fetch, settings, deferDownload = false } = {}) {
+    if (!directories?.root) throw fail('No account directories were provided for image generation.', { status: 500, recoverable: false });
+    if (!String(prompt || '').trim()) throw fail('An image prompt is required.', { status: 400, recoverable: false });
+    const resolvedSettings = settings && typeof settings === 'object' ? settings : readQuickImageGenSettings(directories);
+    const provider = assertQuickImageGenRequestConfigured(resolvedSettings, prompt, negative);
+    const generator = PROVIDER_GENERATORS[provider];
+    if (!generator) throw fail('This queued image provider requires a saved job for safe submission and polling.',
+        { status: 409, code: 'QIG_INPUT_MISSING' });
+    const safeFetch = (url, init = {}) => fetchImpl(url, { ...init, redirect: 'error' });
+    return withProviderDeadline(provider, resolvedSettings, signal, async deadlineSignal => {
+        const source = await generator(resolvedSettings, prompt, negative, { fetchImpl: safeFetch, signal: deadlineSignal });
+        if (source && typeof source === 'object' && typeof source.base64 === 'string') return source;
+        const { requestUrl, headers } = imageDownloadAccess(provider, resolvedSettings, prompt, negative);
+        const url = deferDownload ? savableImageUrl(source, provider, requestUrl, resolvedSettings) : '';
+        if (url) return { url };
+        return await materializeImage(source, safeFetch, deadlineSignal, provider, requestUrl, headers);
+    });
+}
+
+/** Download an image address saved from an earlier provider answer. No provider request is sent. */
+export async function downloadQuickImageGenImage({ url, prompt, negative = '', signal, fetch: fetchImpl = globalThis.fetch, settings } = {}) {
+    const provider = String(settings?.provider || '');
+    if (!Object.hasOwn(PROVIDER_GENERATORS, provider) || typeof url !== 'string' || !/^https?:/i.test(url)) {
+        throw fail('The saved image address cannot be used.', { status: 409, code: 'QIG_RESULT_RECOVERY', recoverable: false });
+    }
+    const safeFetch = (target, init = {}) => fetchImpl(target, { ...init, redirect: 'error' });
+    return withProviderDeadline(provider, settings, signal, async deadlineSignal => {
+        const { requestUrl, headers } = imageDownloadAccess(provider, settings, prompt, negative);
+        return await materializeImage(url, safeFetch, deadlineSignal, provider, requestUrl, headers);
+    });
 }
 
 function unsafeImagePath() {
