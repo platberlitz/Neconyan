@@ -517,3 +517,11 @@ test('AllTalk output on another loopback name of the selected service is accepte
     assert.throws(() => speechOutputUrl('http://127.0.0.1:7851/audio/x.wav', { ...config, endpoint: 'http://192.168.1.5:7851' }), outside);
     assert.throws(() => speechOutputUrl('http://localhost:7851/audio/x.wav', { ...config, endpoint: 'http://tts.example.com:7851' }), outside);
 });
+
+test('a non-AllTalk service cannot use loopback aliases to bypass public output checks', () => {
+    const config = { provider: 'MiniMax', endpoint: 'http://localhost:7851', key: '' };
+    assert.equal(speechOutputUrl('/audio/x.wav', config), 'http://localhost:7851/audio/x.wav');
+    for (const address of ['http://127.0.0.1:7851/audio/x.wav', 'http://[::1]:7851/audio/x.wav']) {
+        assert.throws(() => speechOutputUrl(address, config), { message: 'The speech output address is not a public HTTPS resource.' });
+    }
+});

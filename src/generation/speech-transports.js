@@ -185,7 +185,8 @@ export function speechOutputUrl(value, config) {
     if (typeof value !== 'string' || !value.trim() || value.length > 8192) throw speechError('The returned speech address is missing or invalid.');
     let url;
     try { url = new URL(value, config.endpoint || 'https://api.elevenlabs.io'); } catch { throw speechError('The returned speech address is invalid.'); }
-    const selected = sameService(url, new URL(config.endpoint || 'https://api.elevenlabs.io'));
+    const service = new URL(config.endpoint || 'https://api.elevenlabs.io');
+    const selected = config.provider === 'AllTalk' ? sameService(url, service) : url.origin === service.origin;
     if (url.username || url.password || url.hash || config.key && url.href.includes(config.key)) throw speechError('The speech address contains private credentials.');
     if (config.provider === 'AllTalk' && !selected) throw speechError('The speech output is outside the selected service.');
     if (!selected && !normalizeImageSource(url.href, { allowHttp: false, allowRelative: false, blockPrivateHosts: true })) {
