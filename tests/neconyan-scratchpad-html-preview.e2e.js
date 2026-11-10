@@ -118,6 +118,8 @@ for (const phone of [false, true]) {
         });
         await expect(frame.locator('p')).toHaveText('{{getvar::secret}}');
         await expect(frame.locator('script, iframe, base, a[href], form')).toHaveCount(0);
+        // The accent checks above leave toasts over the link; each click attempt hovers them and restarts their timer.
+        await page.evaluate(() => window.toastr.remove());
         await frame.getByText('Blocked link').click();
         await expect(frame.locator('img')).toHaveJSProperty('complete', true);
         await expect(frame.locator('img')).toHaveJSProperty('naturalWidth', 0);
