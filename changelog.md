@@ -25,6 +25,7 @@
 - PR #587 (2026-11-10) `feat(sync): add four opt-in device sync methods`
 - PR #590 (2026-11-10) `fix(chat): keep the NanoGPT tier with the request's billing choice`
 - PR #591 (2026-11-10) `fix(backgrounds): show artwork by default`
+- PR #592 (2026-11-10) `fix(copy): correct five messages and fill their translations`
 
 ## v1.5.3
 
