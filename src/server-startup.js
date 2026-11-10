@@ -7,6 +7,7 @@ import { color, urlHostnameToIPv6, getHasIP } from './util.js';
 
 // Express routers
 import { router as userDataRouter } from './users.js';
+import { router as deviceSyncRouter } from './endpoints/device-sync.js';
 import { router as usersPrivateRouter } from './endpoints/users-private.js';
 import { router as usersAdminRouter } from './endpoints/users-admin.js';
 import { router as movingUIRouter } from './endpoints/moving-ui.js';
@@ -91,6 +92,7 @@ import { serverWorkMiddleware } from './android-wake.js';
  */
 export function setupPrivateEndpoints(app) {
     app.use(serverWorkMiddleware);
+    app.use('/api/device-sync', deviceSyncRouter);
     app.use('/', userDataRouter);
     // Neconyan: resumable generations. The router is mounted first so its own requests never register as generations.
     app.use('/api/resumable-generations', resumableGenerationsRouter);
