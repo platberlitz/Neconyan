@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
 import test from 'node:test';
+import express from 'express';
 import { fixture, png } from './roleplay-transactions-fixture.js';
 
 const { write: writeCard } = await import('../src/character-card-parser.js');
@@ -26,6 +27,7 @@ const { roleplayHash } = await import('../src/roleplay-store.js');
 const { saveBlockedContinuationProof, verifyBlockedOutputProof } = await import('../src/generation/blocked-output-proof.js');
 const { enableMewmoryHiding } = await import('./mewmory-hiding-fixture.js');
 const { statePath } = await import('../src/mewmory/store.js');
+const { router: jobsRouter } = await import('../src/endpoints/jobs.js');
 
 const controls = { prompts: [{ identifier: 'main', role: 'system', content: '', system_prompt: true },
     { identifier: 'chatHistory', marker: true, system_prompt: true }],
@@ -484,6 +486,53 @@ test('a stopped second automatic turn keeps the completed first turn and the lat
     assert.equal(stopped.state, 'done');
     assert.equal(f.records().at(-1).mes, 'The first completed sentence.  A second part.');
     assert.equal(f.records().filter(record => record.mes === 'The first completed sentence. ').length, 0);
+});
+
+/** Press Stop through the real cancel route, as the page does. */
+async function pressStop(t, f) {
+    const app = express();
+    app.use(express.json());
+    app.use((request, _response, next) => {
+        request.user = { profile: { handle: f.f.scope.owner }, directories: f.dirs };
+        next();
+    });
+    app.use('/api/jobs', jobsRouter);
+    const server = app.listen(0, '127.0.0.1');
+    t.after(() => new Promise(resolve => { server.closeAllConnections?.(); server.close(resolve); }));
+    await new Promise(resolve => server.once('listening', resolve));
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/jobs/${f.jobId}/cancel`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason: 'user_cancelled' }) });
+    assert.equal(response.status, 200);
+    return response.json();
+}
+
+test('pressing Stop while the next automatic chunk is still queued saves the finished first chunk once', async t => {
+    const f = prepared(t, 'append', { autoContinue: true, continueTarget: 200 });
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    await f.candidate('The first completed and paid sentence. ', { count: 0 });
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    assert.equal(f.childJob(1).state, 'queued');
+    assert.equal((await pressStop(t, f)).job.state, 'cancelled');
+    assert.equal(f.childJob(1).state, 'cancelled');
+    assert.equal(f.records().length, 4);
+    assert.equal(f.records().at(-1).mes, 'The first completed and paid sentence. ');
+    assert.equal(readArtifact(f.dirs, f.childJob(0).id, KEPT_REPLY_ARTIFACT).state, 'done');
+    assert.deepEqual(releaseStoppedRoleplayWorkflow({ owner: f.f.scope.owner, directories: f.dirs })(
+        { state: 'accepted', jobId: f.jobId, effects: {} }), { stopped: true, chatChanged: true });
+    // A second press finds the saved keeper record and adds nothing.
+    await pressStop(t, f);
+    assert.equal(f.records().length, 4);
+});
+
+test('pressing Stop before the first reply starts leaves the chat unchanged', async t => {
+    const f = prepared(t);
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    const before = f.records();
+    assert.equal((await pressStop(t, f)).job.state, 'cancelled');
+    assert.deepEqual(f.records(), before);
+    assert.equal(readArtifact(f.dirs, f.childJob(0).id, KEPT_REPLY_ARTIFACT), undefined);
 });
 
 test('an automatic continuation chunk joins literally and keeps its target swipes', async t => {
