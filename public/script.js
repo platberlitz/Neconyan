@@ -27,6 +27,7 @@ import './scripts/neconyan-message-sleepers.js';
 import './scripts/chat-offscreen-motion.js';
 import { dressSleeper } from './scripts/neconyan-sleeper-coats.js';
 import { measureEchoMessage, measureTideMessage } from './scripts/echo-message-layout.js';
+import { refreshDesktopResponseControls } from './scripts/desktop-response-controls.js';
 import './scripts/neconyan-send-nya.js';
 import { userStatsHandler, statMesProcess, initStats } from './scripts/stats.js';
 import {
@@ -395,6 +396,7 @@ import {
     CHAT_RENDER_LIFECYCLE_ROUTE,
     CHAT_SCROLL_ACTION,
     CHAT_SCROLL_INTENT,
+    captureContentAnchor,
     captureVisibleMessageAnchor,
     createDelegatedResizeObserver,
     createMessageUpdateQueue,
@@ -409,6 +411,8 @@ import {
     resolveChatRenderWindowPolicy,
     resolveChatScrollAction,
     resolvePagedChatRenderWindowSize,
+    measureVisibleMessageAnchorShift,
+    restoreContentAnchor,
     restoreVisibleMessageAnchor,
     settleVisibleMessageAnchor,
     shouldApplyChatBottomScrollAction,
@@ -2908,6 +2912,7 @@ function normalizeChatReloadReadingAnchor(anchor) {
         messageId: String(anchor.messageId),
         offsetTop: anchor.offsetTop,
         ...(typeof anchor.part === 'string' && anchor.part ? { part: anchor.part } : {}),
+        ...(Array.isArray(anchor.content?.candidates) && anchor.content.candidates.length ? { content: anchor.content } : {}),
         fallback,
         chatId: getCurrentChatId(),
     };
@@ -2962,8 +2967,9 @@ function holdChatReloadReadingAnchor(anchor, isCurrent) {
     clearChatLoadBottomLock();
     mobileChatBottomPinUntil = 0;
     // Companion cards and media settle after the rebuild; hold the place until the reader moves or sends.
-    const inputs = ['wheel', 'touchstart', 'pointerdown', 'keydown'];
+    const inputs = ['wheel', 'touchstart', 'touchmove', 'pointerdown', 'keydown'];
     const token = chatReloadReadingAnchorHoldToken;
+    let heldScrollTop = chatNode.scrollTop;
     const sendStarted = createChatSendReleaseGuard(chatSendStartRevision);
     let released = false;
     const release = () => {
@@ -2981,7 +2987,20 @@ function holdChatReloadReadingAnchor(anchor, isCurrent) {
         if (released || !chatReloadReadingAnchorHoldActive || token !== chatReloadReadingAnchorHoldToken) return false;
         if (chatReloadReadingAnchorHoldIsCurrent && !chatReloadReadingAnchorHoldIsCurrent()) return false;
         if (sendStarted()) return false;
-        return restoreVisibleChatMessageAnchor(anchor);
+        // Momentum, scrollbar and keyboard scrolling raise none of the inputs above.
+        // When the page moved and the held words moved with it by the same amount,
+        // the reader did that: putting them back would fight the scroll. A shorter
+        // chat clamped to its end looks the same, so the end of the chat is excluded.
+        if (isChatScrollInMotion()) { release(); return false; }
+        const moved = chatNode.scrollTop - heldScrollTop;
+        const atEnd = chatNode.scrollHeight - chatNode.clientHeight - chatNode.scrollTop <= 1;
+        if (Math.abs(moved) > 1 && !atEnd) {
+            const shift = measureVisibleMessageAnchorShift(chatNode, anchor);
+            if (shift !== null && Math.abs(shift + moved) <= 1) { release(); return false; }
+        }
+        const restored = restoreVisibleChatMessageAnchor(anchor);
+        heldScrollTop = chatNode.scrollTop;
+        return restored;
     };
     chatReloadReadingAnchorHoldActive = true;
     chatReloadReadingAnchorHoldRestore = restore;
@@ -3021,10 +3040,29 @@ export function restoreHeldChatReadingPosition() {
 
 async function settleVisibleChatMessageAnchor(anchor, frames = 8, isCurrent = () => true) {
     const scrollVersion = chatScrollVersion;
-    await settleVisibleMessageAnchor(chatElement[0], anchor, {
+    const chatNode = chatElement[0];
+    let settledScrollTop = null;
+    let yielded = false;
+    // Momentum, scrollbar and keyboard scrolling raise no wheel or touch event. When the
+    // chat moved since the last correction and the rows moved with it, the reader is
+    // scrolling: stop correcting, or every frame pulls the chat back against them.
+    const readerIsScrolling = () => {
+        const shift = measureVisibleMessageAnchorShift(chatNode, anchor);
+        if (shift === null) return false;
+        const moved = chatNode.scrollTop - (settledScrollTop ?? chatNode.scrollTop);
+        const atEnd = chatNode.scrollHeight - chatNode.clientHeight - chatNode.scrollTop <= 1;
+        if (Math.abs(moved) > 1 && !atEnd && Math.abs(shift + moved) <= 1) return true;
+        settledScrollTop = chatNode.scrollTop + (Math.abs(shift) >= 0.5 ? shift : 0);
+        return false;
+    };
+    await settleVisibleMessageAnchor(chatNode, anchor, {
         frames,
         requestAnimationFrameRef: requestAnimationFrame,
-        isCurrent: () => isCurrent() && scrollVersion === chatScrollVersion && !isChatLoadBottomLockActive(),
+        isCurrent: () => {
+            if (yielded || !isCurrent() || scrollVersion !== chatScrollVersion || isChatLoadBottomLockActive()) return false;
+            yielded = readerIsScrolling();
+            return !yielded;
+        },
     });
 }
 
@@ -3088,6 +3126,39 @@ export function changeMessagesBelowReader(elements, mutate) {
  */
 export function changeMessageBelowReader(messageElement, mutate) {
     return changeMessagesBelowReader(messageElement, mutate);
+}
+
+/**
+ * Run a synchronous change that rewrites a message's text and keep the words
+ * the reader can see where they are. Falls back to the first visible row when
+ * the rewritten text is not on screen. The matching resize callback refreshes
+ * its state rather than pinning the bottom or reapplying an older position.
+ * @template T
+ * @param {() => Element|null} getTextElement Finds the text element, before and after the change.
+ * @param {() => T} mutate Change to apply.
+ * @returns {{result: T, kept: boolean}} The change's result, and whether visible words were kept in place.
+ */
+export function changeMessageTextForReader(getTextElement, mutate) {
+    const scrollElement = chatElement[0];
+    const textElement = getTextElement();
+    if (!scrollElement || !textElement?.isConnected) return { result: mutate(), kept: false };
+    const contentAnchor = captureContentAnchor(scrollElement, textElement);
+    const rowAnchor = contentAnchor ? null : captureVisibleChatMessageAnchor();
+    const messageBlock = getMessageBlockElement(textElement.closest('.mes'));
+    const height = getObservedElementHeight(messageBlock);
+    let kept = false;
+    let result;
+    try {
+        result = mutate();
+    } finally {
+        kept = restoreContentAnchor(scrollElement, getTextElement(), contentAnchor);
+        if (!kept) restoreVisibleChatMessageAnchor(rowAnchor);
+        if (messageBlock?.isConnected && Math.abs(getObservedElementHeight(messageBlock) - height) > 0.5) {
+            markReaderPreservingResizeBlock(messageBlock);
+            refreshObservedChatMessageResizeViewportStates();
+        }
+    }
+    return { result, kept };
 }
 
 function getMessageUpdateQueue() {
@@ -3250,7 +3321,9 @@ async function applyChatMessageResizeAction(element, entry, metadata) {
             return;
         }
     }
-    if (readerPreserved) {
+    // A queued resize can still carry the position from before the latest wheel
+    // step. Do not start a new correction against a reader already in motion.
+    if (readerPreserved || isChatScrollInMotion()) {
         refreshChatMessageResizeState(element, metadata, entry);
         return;
     }
@@ -4202,10 +4275,11 @@ async function renderRedisplayChatMessages({ messages, startIndex, pinBottomDuri
  * @param {Boolean} [options.pinBottomDuringRender=false] Keep initial chat loads at the newest rendered message while batches append.
  * @param {Boolean} [options.atomic=false] Prepare batches off-screen, then replace the visible messages together.
  * @param {Boolean} [options.replaceRenderedWindow=false] Replace the entire rendered window, including a missing swipe target.
+ * @param {Function} [options.onBeforeCommit] Called just before prepared messages replace the visible rows.
  * @param {Function} [options.onCommit] Called once prepared messages have replaced the visible rows.
  */
 export async function redisplayChat({ targetChat = chat, startIndex = 0, fade = true, pinBottomDuringRender = false,
-    isCurrent = captureChatRenderValidity(), atomic = false, replaceRenderedWindow = false, onCommit } = {}) {
+    isCurrent = captureChatRenderValidity(), atomic = false, replaceRenderedWindow = false, onBeforeCommit, onCommit } = {}) {
     if (!isCurrent()) return;
     const messageElements = chatElement.find('.mes');
     const { renderedMessageCount, firstMessageId, lastMessageId } = getRenderedChatMessageWindow();
@@ -4248,9 +4322,12 @@ export async function redisplayChat({ targetChat = chat, startIndex = 0, fade = 
             // Extension decorators must run before the rows replace the visible
             // chat, so a saved reply and its notes arrive at the same height.
             document.dispatchEvent(new CustomEvent('neconyan:chat-rows-prepared', { detail: { elements: insertedElements } }));
+            onBeforeCommit?.();
             removePreviousMessages();
             removeChatHistoryWindowControls();
             chatElement[0].appendChild(pending);
+            document.dispatchEvent(new CustomEvent('neconyan:chat-rows-committed'));
+            refreshDesktopResponseControls();
             onCommit?.();
             // Earlier batches were detached when their first resize setup ran.
             for (const element of insertedElements) observeChatMessageResize(element);
@@ -4258,6 +4335,12 @@ export async function redisplayChat({ targetChat = chat, startIndex = 0, fade = 
         }
     } finally {
         for (const [element, inert] of previousInert) element.inert = inert;
+    }
+    if (!atomic) {
+        // Full reloads also restore a reading anchor after this call. Finish the
+        // controls before that restoration instead of resizing rows a frame later.
+        document.dispatchEvent(new CustomEvent('neconyan:chat-rows-committed'));
+        refreshDesktopResponseControls();
     }
     if (renderedMessageIds.length) applyCharacterTagsToMessageDivs({ mesIds: renderedMessageIds });
 
@@ -5187,7 +5270,7 @@ async function adoptSavedChatTail(signal) {
     const pendingRedraw = savedChatRedraw?.isCurrent() ? savedChatRedraw : null;
     if (pendingRedraw) first = 0;
 
-    const readingAnchor = takeChatReloadReadingAnchor();
+    let readingAnchor = takeChatReloadReadingAnchor();
     const wasNearBottom = isChatScrolledNearBottom();
     const scrollVersion = chatScrollVersion;
     const { renderedMessageCount, firstMessageId, lastMessageId } = getRenderedChatMessageWindow();
@@ -5218,16 +5301,40 @@ async function adoptSavedChatTail(signal) {
     const adoptedMessages = saved.slice(first);
     adoptedMessages.forEach(ensureMessageMediaIsArray);
     chat.splice(first, chat.length - first, ...adoptedMessages);
+    let remeasured = false;
+    // The place was measured before the saved chat was read. Measure it again
+    // from the preview just before the saved rows replace it, so a reader who
+    // scrolled meanwhile is not put back at the old place.
+    const measureHandover = () => {
+        const previewText = readingAnchor?.part === '.mes_text'
+            ? chatElement.find('#neconyan-roleplay-preview .mes_text')[0] : null;
+        if (!previewText?.isConnected) return;
+        const offsetTop = previewText.getBoundingClientRect().top - chatElement[0].getBoundingClientRect().top;
+        const moved = offsetTop - readingAnchor.offsetTop;
+        const content = captureContentAnchor(chatElement[0], previewText);
+        const anchor = { ...readingAnchor };
+        delete anchor.content;
+        readingAnchor = {
+            ...anchor,
+            offsetTop,
+            ...(content ? { content } : {}),
+            fallback: anchor.fallback ? { ...anchor.fallback, offsetTop: anchor.fallback.offsetTop + moved } : null,
+        };
+        remeasured = true;
+    };
     const finishHandover = () => {
         savedChatRedraw = null;
         // An unchanged read has not replaced the detached original. Its owner
         // still needs the marker to restore it if the replacement is cancelled.
         if (redraw) chatElement.find('[data-roleplay-replacement]').remove();
         chatElement.find('#neconyan-roleplay-preview').remove();
+        // Put the same words back in the task that swapped the rows.
+        if (remeasured) restoreVisibleChatMessageAnchor(readingAnchor);
+        remeasured = false;
     };
     if (redraw) {
         await redisplayChat({ startIndex, fade: false, isCurrent: canRender, atomic: true,
-            replaceRenderedWindow: rebuildWindow, onCommit: finishHandover });
+            replaceRenderedWindow: rebuildWindow, onBeforeCommit: measureHandover, onCommit: finishHandover });
     }
     if (!isCurrent()) return true;
     if (!canRender()) return false;
@@ -5805,21 +5912,25 @@ function applyMessageBlockUpdate(messageId, message, { rerenderMessage = true } 
 
     const shouldPinMobileBottom = shouldPinMobileChatToBottom();
 
-    if (rerenderMessage) {
-        const text = message?.extra?.display_text ?? message.mes;
-        messageElement.find('.mes_text').html(messageFormatting(text, message.name, message.is_system, message.is_user, messageId, {}, false));
-        notifyCardScriptStripped(messageElement, messageId);
-        scheduleCardScriptReconcile(messageId);
-    }
-    updateMessageMetaBadges(messageElement, message);
-    renderGenerationOutcome(messageElement, message);
+    // An Agent rewrite can change the length of text above the line being read.
+    // Keep the visible words in place instead of letting the row's height move them.
+    const { kept: keptReader } = changeMessageTextForReader(() => messageElement.find('.mes_text')[0] ?? null, () => {
+        if (rerenderMessage) {
+            const text = message?.extra?.display_text ?? message.mes;
+            messageElement.find('.mes_text').html(messageFormatting(text, message.name, message.is_system, message.is_user, messageId, {}, false));
+            notifyCardScriptStripped(messageElement, messageId);
+            scheduleCardScriptReconcile(messageId);
+        }
+        updateMessageMetaBadges(messageElement, message);
+        renderGenerationOutcome(messageElement, message);
 
-    updateReasoningUI(messageElement);
+        updateReasoningUI(messageElement);
 
-    addCopyToCodeBlocks(messageElement);
+        addCopyToCodeBlocks(messageElement);
+    });
     appendMediaToMessage(message, messageElement);
 
-    if (shouldPinMobileBottom) {
+    if (shouldPinMobileBottom && !keptReader) {
         pinMobileChatToBottom({ waitForFrame: true, settle: true });
     }
 }
@@ -5841,6 +5952,12 @@ function refreshRenderedCardScriptMessages() {
  * @returns {Promise<void>} Resolves once the message block DOM has been repainted (including the deferred mobile flush).
  */
 export async function updateMessageBlock(messageId, message, { rerenderMessage = true } = {}) {
+    // iOS Safari drops scroll corrections made during a drag or momentum scroll,
+    // so a rewrite waits for the reader's scroll to stop before it changes the text.
+    if (rerenderMessage && isChatScrollInMotion()) {
+        await new Promise(resolve => runWhenChatScrollSettles(resolve));
+    }
+
     if (shouldDeferMobileMessageUpdates()) {
         await queueMobileMessageBlockUpdate(messageId, message, { rerenderMessage });
         return;
@@ -13183,8 +13300,14 @@ export function setRoleplayJobControls(jobId, stop = null, { background = false 
         is_send_press = true;
         deactivateSendButtons();
     } else if (previous) {
-        activateSendButtons({ emitGenerationEnded: false });
-        syncRoleplayBackgroundControls();
+        const release = () => {
+            activateSendButtons({ emitGenerationEnded: false });
+            syncRoleplayBackgroundControls();
+        };
+        // The message controls return above and below the reply's text. A reader
+        // inside the reply keeps the same words; at the bottom the chat follows.
+        if (isChatScrolledNearBottom()) release();
+        else changeMessageTextForReader(() => chatElement.find('.mes[mesid]').last().find('.mes_text')[0] ?? null, release);
     }
 }
 

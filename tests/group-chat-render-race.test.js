@@ -32,6 +32,7 @@ for (const lifecycle of [false, true]) for (const peek of [false, true]) {
         const scroll = jest.fn();
         const tags = jest.fn();
         const revealChat = jest.fn();
+        const responseControls = jest.fn();
         const runtime = vm.createContext({
             console: { info: no, warn: no, error: no }, performance, groups, selected_group: 'A', chat: [], chat_metadata: {}, this_chid: undefined,
             roleplayAccountStamp, rememberRoleplayRead, getCurrentUserHandle: () => owner,
@@ -55,6 +56,8 @@ for (const lifecycle of [false, true]) for (const peek of [false, true]) {
             isChatRenderLifecycleRolloutEnabled: () => lifecycle, CHAT_RENDER_LIFECYCLE_ROUTE: { REDISPLAY_BATCH: 'batch' },
             updateMessageElement: (message, { messageId }) => [{ text: message.mes, id: messageId, classList: { add: no } }],
             document: documentRef, lodash: { range: (a, b) => Array.from({ length: b - a }, (_, i) => a + i) },
+            CustomEvent: class { constructor(type) { this.type = type; } },
+            refreshDesktopResponseControls: responseControls,
             renderMessagesInBatches: options => renderMessagesInBatches({ ...options, documentRef }),
             waitForNextFrame: async () => { if (!held && runtime.selected_group === 'A') { held = true; reached(); await gate; } },
         });
@@ -70,6 +73,7 @@ for (const lifecycle of [false, true]) for (const peek of [false, true]) {
         }
         const BScroll = scroll.mock.calls.length;
         const BTags = tags.mock.calls.length;
+        const BControls = responseControls.mock.calls.length;
         release();
         await old;
         expect(rows).toHaveLength(17);
@@ -81,6 +85,7 @@ for (const lifecycle of [false, true]) for (const peek of [false, true]) {
         expect(revealChat.mock.calls.every(([element]) => element === runtime.chatElement[0])).toBe(true);
         expect(scroll.mock.calls.length > BScroll).toBe(peek);
         expect(tags.mock.calls.length > BTags).toBe(peek);
+        expect(responseControls.mock.calls.length > BControls).toBe(peek);
     });
 }
 
@@ -400,7 +405,9 @@ test('older history rechecks validity after anchor settling before its event', a
 test('anchor settling combines caller validity with scroll version and load lock', async () => {
     let current = true;
     const runtime = vm.createContext({
-        chatElement: { 0: {} }, chatScrollVersion: 1, isChatLoadBottomLockActive: () => false,
+        chatElement: { 0: { scrollTop: 500, scrollHeight: 2000, clientHeight: 400 } }, chatScrollVersion: 1,
+        isChatLoadBottomLockActive: () => false,
+        measureVisibleMessageAnchorShift: () => 0,
         requestAnimationFrame: () => {},
         settleVisibleMessageAnchor: async (_element, _anchor, { isCurrent }) => {
             expect(isCurrent()).toBe(true);
@@ -413,6 +420,30 @@ test('anchor settling combines caller validity with scroll version and load lock
     });
     vm.runInContext(extract(coreSource, ['settleVisibleChatMessageAnchor']), runtime);
     await runtime.settleVisibleChatMessageAnchor({}, 8, () => current);
+});
+
+test('anchor settling stops once the reader scrolls on without wheel or touch', async () => {
+    const chatNode = { scrollTop: 500, scrollHeight: 2000, clientHeight: 400 };
+    let shift = 40;
+    const runtime = vm.createContext({
+        chatElement: { 0: chatNode }, chatScrollVersion: 1, isChatLoadBottomLockActive: () => false,
+        measureVisibleMessageAnchorShift: () => shift,
+        requestAnimationFrame: () => {},
+        settleVisibleMessageAnchor: async (_element, _anchor, { isCurrent }) => {
+            // A block grew by 40px above the reader: the loop corrects it.
+            expect(isCurrent()).toBe(true);
+            chatNode.scrollTop = 540;
+            shift = 0;
+            expect(isCurrent()).toBe(true);
+            // The reader scrolls up by 6px; the content did not change again.
+            chatNode.scrollTop = 534;
+            shift = 6;
+            expect(isCurrent()).toBe(false);
+            expect(isCurrent()).toBe(false);
+        },
+    });
+    vm.runInContext(extract(coreSource, ['settleVisibleChatMessageAnchor']), runtime);
+    await runtime.settleVisibleChatMessageAnchor({}, 8, () => true);
 });
 
 test('delayed load pins and media callbacks leave a newer chat alone', () => {

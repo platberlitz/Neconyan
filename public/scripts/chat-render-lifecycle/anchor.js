@@ -300,23 +300,48 @@ function resolveVisibleMessageAnchor(scrollElement, anchor, messageSelector, key
  * @returns {boolean} Whether an anchor element was found and measured.
  */
 export function restoreVisibleMessageAnchor(scrollElement, anchor, { messageSelector = DEFAULT_MESSAGE_SELECTOR, keyAttribute = 'mesid' } = {}) {
-    if (!canReadElementRect(scrollElement) || !anchor?.messageId || !Number.isFinite(anchor.offsetTop) || typeof scrollElement.scrollTop !== 'number') {
+    const shift = measureVisibleMessageAnchorShift(scrollElement, anchor, { messageSelector, keyAttribute });
+    if (shift === null) {
         return false;
+    }
+
+    // A write that changes nothing still interrupts a scroll in progress on phones.
+    if (Math.abs(shift) >= 0.5) scrollElement.scrollTop += shift;
+    return true;
+}
+
+/**
+ * Measures how far the anchored content sits from its captured place, without
+ * moving anything. An anchor carrying `content` follows the words the reader
+ * saw inside the measured part; otherwise the part's (or row's) top edge.
+ * @param {Element & {scrollTop: number}} scrollElement Scroll container that owns message elements.
+ * @param {{messageId: string, offsetTop: number, part?: string, content?: object|null, fallback?: {messageId: string, offsetTop: number}|null}|null} anchor Anchor captured before mutation.
+ * @param {object} [options] Options.
+ * @param {string} [options.messageSelector] Message selector to anchor against.
+ * @param {string} [options.keyAttribute] Attribute that identifies the anchor element.
+ * @returns {number|null} Pixels to add to `scrollTop`, or null when no anchor element was found.
+ */
+export function measureVisibleMessageAnchorShift(scrollElement, anchor, { messageSelector = DEFAULT_MESSAGE_SELECTOR, keyAttribute = 'mesid' } = {}) {
+    if (!canReadElementRect(scrollElement) || !anchor?.messageId || !Number.isFinite(anchor.offsetTop) || typeof scrollElement.scrollTop !== 'number') {
+        return null;
     }
 
     const resolved = resolveVisibleMessageAnchor(scrollElement, anchor, messageSelector, keyAttribute);
     if (!resolved) {
-        return false;
+        return null;
     }
 
     const partElement = resolved.part && typeof resolved.element.querySelector === 'function'
         ? resolved.element.querySelector(resolved.part)
         : null;
+    if (canReadElementRect(partElement) && anchor.content) {
+        const contentShift = measureContentAnchorShift(scrollElement, partElement, anchor.content);
+        if (contentShift !== null) return contentShift;
+    }
     const measuredElement = canReadElementRect(partElement) ? partElement : resolved.element;
     const scrollRect = scrollElement.getBoundingClientRect();
     const nextOffsetTop = measuredElement.getBoundingClientRect().top - scrollRect.top;
-    scrollElement.scrollTop += nextOffsetTop - resolved.offsetTop;
-    return true;
+    return nextOffsetTop - resolved.offsetTop;
 }
 
 /**
@@ -347,4 +372,101 @@ export async function settleVisibleMessageAnchor(scrollElement, anchor, {
         frames,
         requestAnimationFrameRef,
     });
+}
+
+const CONTENT_ANCHOR_CANDIDATES = 8;
+const CONTENT_ANCHOR_EDGE_LENGTH = 24;
+
+function getContentBlocks(container) {
+    return container && container.children ? Array.from(container.children).filter(canReadElementRect) : [];
+}
+
+function getContentBlockKey(block) {
+    return `${block.tagName ?? ''}\n${String(block.textContent ?? '').trim()}`;
+}
+
+/**
+ * Captures the blocks of rewritten content the reader can see, so the same
+ * words can be put back in the same place when the text around them changes
+ * length. A row anchor cannot do this: the row's top edge does not move when
+ * text inside the row is rewritten.
+ * @param {Element} scrollElement Scroll container that owns the content.
+ * @param {Element|null} container Element whose child blocks are about to be replaced.
+ * @returns {{candidates: {key: string, occurrence: number, offsetTop: number}[]}|null}
+ */
+export function captureContentAnchor(scrollElement, container) {
+    if (!canReadElementRect(scrollElement) || !container) {
+        return null;
+    }
+
+    const scrollRect = scrollElement.getBoundingClientRect();
+    const seen = new Map();
+    const candidates = [];
+
+    for (const block of getContentBlocks(container)) {
+        const key = getContentBlockKey(block);
+        const occurrence = seen.get(key) ?? 0;
+        seen.set(key, occurrence + 1);
+        const rect = block.getBoundingClientRect();
+        if (rect.top >= scrollRect.bottom - 1) break;
+        if (rect.bottom <= scrollRect.top + 1 || rect.height <= 0) continue;
+        candidates.push({ key, occurrence, offsetTop: rect.top - scrollRect.top });
+        if (candidates.length >= CONTENT_ANCHOR_CANDIDATES) break;
+    }
+
+    return candidates.length ? { candidates } : null;
+}
+
+function hasSameContentEdge(key, otherKey) {
+    const [tag, text] = key.split('\n', 2);
+    const [otherTag, otherText] = otherKey.split('\n', 2);
+    if (tag !== otherTag || text.length < CONTENT_ANCHOR_EDGE_LENGTH || otherText.length < CONTENT_ANCHOR_EDGE_LENGTH) {
+        return false;
+    }
+
+    return text.slice(0, CONTENT_ANCHOR_EDGE_LENGTH) === otherText.slice(0, CONTENT_ANCHOR_EDGE_LENGTH)
+        || text.slice(-CONTENT_ANCHOR_EDGE_LENGTH) === otherText.slice(-CONTENT_ANCHOR_EDGE_LENGTH);
+}
+
+/**
+ * Puts a captured content block back at its old place after the content was
+ * rewritten. Unchanged blocks are matched first; a block whose wording changed
+ * is matched by its opening or closing words.
+ * @param {Element & {scrollTop: number}} scrollElement Scroll container that owns the content.
+ * @param {Element|null} container Element whose child blocks were replaced.
+ * @param {{candidates: {key: string, occurrence: number, offsetTop: number}[]}|null} anchor Anchor captured before the change.
+ * @returns {boolean} Whether a captured block was found again.
+ */
+export function restoreContentAnchor(scrollElement, container, anchor) {
+    if (typeof scrollElement?.scrollTop !== 'number') {
+        return false;
+    }
+
+    const shift = measureContentAnchorShift(scrollElement, container, anchor);
+    if (shift === null) {
+        return false;
+    }
+
+    if (Math.abs(shift) >= 0.5) scrollElement.scrollTop += shift;
+    return true;
+}
+
+function measureContentAnchorShift(scrollElement, container, anchor) {
+    if (!canReadElementRect(scrollElement) || !container || !anchor?.candidates?.length) {
+        return null;
+    }
+
+    const blocks = getContentBlocks(container).map(block => ({ block, key: getContentBlockKey(block) }));
+    const findExact = candidate => blocks.filter(entry => entry.key === candidate.key)[candidate.occurrence]?.block;
+    const findSimilar = candidate => blocks.find(entry => hasSameContentEdge(candidate.key, entry.key))?.block;
+
+    for (const find of [findExact, findSimilar]) {
+        for (const candidate of anchor.candidates) {
+            const block = find(candidate);
+            if (!block) continue;
+            return block.getBoundingClientRect().top - scrollElement.getBoundingClientRect().top - candidate.offsetTop;
+        }
+    }
+
+    return null;
 }

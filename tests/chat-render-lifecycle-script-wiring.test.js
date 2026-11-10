@@ -701,6 +701,57 @@ describe('chat render lifecycle script wiring', () => {
             && node.left.type === 'MemberExpression' && node.left.property.name === 'scrollTop')).toBeNull();
     });
 
+    test('a rewritten reply keeps the words on screen in place and waits for scrolling to stop', () => {
+        const sourceOf = name => getSource(findExportedFunction(name) ?? findFunctionDeclaration(name));
+
+        const updateSource = sourceOf('updateMessageBlock');
+        expect(updateSource).toContain('if (rerenderMessage && isChatScrollInMotion())');
+        expect(updateSource).toContain('runWhenChatScrollSettles(resolve)');
+        expect(updateSource.indexOf('runWhenChatScrollSettles(resolve)')).toBeLessThan(updateSource.indexOf('if (shouldDeferMobileMessageUpdates())'));
+
+        const applySource = sourceOf('applyMessageBlockUpdate');
+        expect(applySource).toContain('changeMessageTextForReader(');
+        expect(applySource).toContain('if (shouldPinMobileBottom && !keptReader)');
+
+        const readerSource = sourceOf('changeMessageTextForReader');
+        expect(readerSource).toContain('captureContentAnchor(');
+        expect(readerSource).toContain('restoreContentAnchor(');
+        expect(readerSource).toContain('markReaderPreservingResizeBlock(');
+
+        expect(sourceOf('setRoleplayJobControls')).toContain('changeMessageTextForReader(');
+
+        const previewSource = readFileSync(path.join(repoRoot, 'public/scripts/neconyan-conversation/roleplay-preview.js'), 'utf8');
+        expect(previewSource).toContain('changeMessageTextForReader(() => node?.querySelector(\'.mes_text\') ?? null, draw);');
+        expect(previewSource).toContain('isChatScrollInMotion()');
+        expect(previewSource).toContain('render(true);');
+    });
+
+    test('the saved-reply handover measures the preview before the swap and yields to a scrolling reader', () => {
+        const sourceOf = name => getSource(findExportedFunction(name) ?? findFunctionDeclaration(name));
+
+        expect(sourceOf('normalizeChatReloadReadingAnchor')).toContain('anchor.content');
+
+        const redisplaySource = sourceOf('redisplayChat');
+        expect(redisplaySource).toContain('onBeforeCommit?.();');
+        expect(redisplaySource.indexOf('onBeforeCommit?.();')).toBeLessThan(redisplaySource.indexOf('removePreviousMessages();\n', redisplaySource.indexOf('onBeforeCommit?.();')));
+        expect(redisplaySource.indexOf('neconyan:chat-rows-prepared')).toBeLessThan(redisplaySource.indexOf('onBeforeCommit?.();'));
+
+        const adoptSource = sourceOf('adoptSavedChatTail');
+        expect(adoptSource).toContain('onBeforeCommit: measureHandover');
+        expect(adoptSource).toContain('onCommit: finishHandover');
+
+        const holdSource = sourceOf('holdChatReloadReadingAnchor');
+        expect(holdSource).toContain('\'touchmove\'');
+        expect(holdSource).toContain('measureVisibleMessageAnchorShift(chatNode, anchor)');
+        expect(holdSource).toContain('heldScrollTop = chatNode.scrollTop;');
+        expect(holdSource).toContain('if (isChatScrollInMotion()) { release(); return false; }');
+        expect(sourceOf('applyChatMessageResizeAction')).toContain('if (readerPreserved || isChatScrollInMotion())');
+
+        const settleSource = sourceOf('settleVisibleChatMessageAnchor');
+        expect(settleSource).toContain('measureVisibleMessageAnchorShift(chatNode, anchor)');
+        expect(settleSource).toContain('yielded = readerIsScrolling();');
+    });
+
     test('message resize metadata refreshes viewport anchors on chat scroll', () => {
         const refreshObservedChatMessageResizeViewportStates = findFunctionDeclaration('refreshObservedChatMessageResizeViewportStates');
         const source = getSource(refreshObservedChatMessageResizeViewportStates);

@@ -1,7 +1,10 @@
 import { describe, expect, test } from '@jest/globals';
 
 import {
+    captureContentAnchor,
     captureVisibleMessageAnchor,
+    measureVisibleMessageAnchorShift,
+    restoreContentAnchor,
     restoreVisibleMessageAnchor,
     settleVisibleMessageAnchor,
 } from '../public/scripts/chat-render-lifecycle/anchor.js';
@@ -595,5 +598,106 @@ describe('chat render lifecycle anchor helpers', () => {
         messages[1].parentElement = messages[0];
 
         expect(captureVisibleMessageAnchor(scrollElement)).toEqual({ messageId: '1', offsetTop: 0 });
+    });
+});
+
+describe('chat render lifecycle content anchors', () => {
+    const line = number => `Paragraph ${number} of the reply, long enough to compare.`;
+    const block = (text, top, { tagName = 'P', height = 40 } = {}) => ({
+        tagName,
+        textContent: text,
+        getBoundingClientRect: () => ({ top, bottom: top + height, height }),
+    });
+    const container = blocks => ({ children: blocks, getBoundingClientRect: () => ({ top: blocks[0]?.getBoundingClientRect().top ?? 0, bottom: 0 }) });
+    const scroller = (scrollTop = 500) => {
+        const element = new FakeScrollElement([], { top: 0, bottom: 100 });
+        element.scrollTop = scrollTop;
+        return element;
+    };
+
+    test('captures only the blocks the reader can see, with their offsets', () => {
+        const anchor = captureContentAnchor(scroller(), container([
+            block(line(1), -80),
+            block(line(2), -30),
+            block(line(3), 20),
+            block(line(4), 70),
+            block(line(5), 120),
+        ]));
+
+        expect(anchor).toEqual({ candidates: [
+            { key: `P\n${line(2)}`, occurrence: 0, offsetTop: -30 },
+            { key: `P\n${line(3)}`, occurrence: 0, offsetTop: 20 },
+            { key: `P\n${line(4)}`, occurrence: 0, offsetTop: 70 },
+        ] });
+        expect(captureContentAnchor(scroller(), container([block(line(1), 300)]))).toBeNull();
+        expect(captureContentAnchor(scroller(), null)).toBeNull();
+    });
+
+    test('text removed above the visible block moves the scroll position by the same amount', () => {
+        const scrollElement = scroller();
+        const anchor = captureContentAnchor(scrollElement, container([block(line(1), -60), block(line(2), 20)]));
+
+        expect(restoreContentAnchor(scrollElement, container([block(line(2), -20)]), anchor)).toBe(true);
+        expect(scrollElement.scrollTop).toBe(460);
+    });
+
+    test('repeated blocks are told apart by their position among the repeats', () => {
+        const scrollElement = scroller();
+        const anchor = captureContentAnchor(scrollElement, container([block('Same.', -200), block('Same.', 30)]));
+
+        expect(anchor.candidates).toEqual([{ key: 'P\nSame.', occurrence: 1, offsetTop: 30 }]);
+        expect(restoreContentAnchor(scrollElement, container([block('Same.', -150), block('Same.', 90)]), anchor)).toBe(true);
+        expect(scrollElement.scrollTop).toBe(560);
+    });
+
+    test('a reworded block is found again by its opening words', () => {
+        const scrollElement = scroller();
+        const anchor = captureContentAnchor(scrollElement, container([block(`${line(7)} Old ending.`, 10)]));
+
+        expect(restoreContentAnchor(scrollElement, container([block('Unrelated.', 0), block(`${line(7)} A new ending.`, 50)]), anchor)).toBe(true);
+        expect(scrollElement.scrollTop).toBe(540);
+    });
+
+    test('an unchanged position is not written, and unknown content reports a miss', () => {
+        const scrollElement = scroller();
+        let writes = 0;
+        let scrollTop = 500;
+        Object.defineProperty(scrollElement, 'scrollTop', { get: () => scrollTop, set: value => { writes += 1; scrollTop = value; } });
+        const blocks = container([block(line(1), 10)]);
+        const anchor = captureContentAnchor(scrollElement, blocks);
+
+        expect(restoreContentAnchor(scrollElement, blocks, anchor)).toBe(true);
+        expect(writes).toBe(0);
+        expect(restoreContentAnchor(scrollElement, container([block('Short.', 10)]), anchor)).toBe(false);
+        expect(writes).toBe(0);
+    });
+
+    test('a message anchor that carries visible words follows them, not the top of the text', () => {
+        const text = container([block(line(3), -40), block(line(4), 30)]);
+        const message = new FakeMessageElement(9, { top: -400, bottom: 300 }, { '.mes_text': text });
+        const scrollElement = new FakeScrollElement([message], { top: 0, bottom: 100 });
+        scrollElement.scrollTop = 500;
+        const anchor = {
+            messageId: '9',
+            offsetTop: -300,
+            part: '.mes_text',
+            content: { candidates: [{ key: `P\n${line(4)}`, occurrence: 0, offsetTop: 20 }] },
+        };
+
+        expect(measureVisibleMessageAnchorShift(scrollElement, anchor)).toBe(10);
+        expect(measureVisibleMessageAnchorShift(scrollElement, { ...anchor, content: { candidates: [{ key: 'P\nGone.', occurrence: 0, offsetTop: 20 }] } })).toBe(260);
+        expect(measureVisibleMessageAnchorShift(scrollElement, { ...anchor, messageId: '404' })).toBeNull();
+        expect(restoreVisibleMessageAnchor(scrollElement, anchor)).toBe(true);
+        expect(scrollElement.scrollTop).toBe(510);
+    });
+
+    test('restoring a message anchor that has not moved leaves the scroll position unwritten', () => {
+        const message = new FakeMessageElement(2, { top: 24, bottom: 84 });
+        const scrollElement = new FakeScrollElement([message], { top: 0, bottom: 100 });
+        let writes = 0;
+        Object.defineProperty(scrollElement, 'scrollTop', { get: () => 200, set: () => { writes += 1; } });
+
+        expect(restoreVisibleMessageAnchor(scrollElement, { messageId: '2', offsetTop: 24 })).toBe(true);
+        expect(writes).toBe(0);
     });
 });
