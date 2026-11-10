@@ -456,7 +456,7 @@ const NN_SURFACE_TRANSPARENCY = Object.freeze({
     min: 0,
     max: 100,
     step: 5,
-    defaultValue: 0,
+    defaultValue: 100,
 });
 const NN_TOPBAR_SCALE = Object.freeze({
     min: 70,
@@ -1891,6 +1891,10 @@ function normalizeShellSize(value) {
 }
 
 function normalizeSurfaceTransparency(value) {
+    if (value === null || value === undefined || (typeof value === 'string' && value.trim() === '')) {
+        return NN_SURFACE_TRANSPARENCY.defaultValue;
+    }
+
     const numericValue = Number(value);
 
     if (!Number.isFinite(numericValue)) {
