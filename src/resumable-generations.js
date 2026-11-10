@@ -351,8 +351,23 @@ function getGenerationKey(request, id) {
 }
 
 /**
- * Makes room for a new registration. An over-cap profile gives up its own oldest finished reply,
- * then one it has already cancelled; globally only finished replies are fair game. A reply that is
+ * Picks the reply that costs least to forget, oldest first within each group: a finished one that
+ * no chat is waiting to recover, then one the user already stopped, then a finished one that a chat
+ * could still recover.
+ * @param {ResumableGeneration[]} candidates Replies in registration order
+ * @param {boolean} allowCancelled Whether a stopped reply that is still winding down may be picked
+ * @returns {ResumableGeneration|undefined}
+ */
+function pickDiscardable(candidates, allowCancelled) {
+    return candidates.find(generation => generation.done && !generation.context)
+        ?? (allowCancelled ? candidates.find(generation => generation.cancelled && !generation.done) : undefined)
+        ?? candidates.find(generation => generation.done);
+}
+
+/**
+ * Makes room for a new registration. An over-cap profile gives up its own oldest finished reply
+ * that no chat can recover, then one it has already cancelled, then a recoverable finished one;
+ * globally only finished replies are fair game. A reply that is
  * still being written is never discarded to make room - that would cancel a model call, the
  * profile's own or anyone else's - so the new request is served without resume support instead.
  * @param {string} handle Profile handle of the incoming registration
@@ -362,7 +377,7 @@ function trimRegistry(handle) {
     const prefix = `${handle}:`;
     let owned = [...generations.entries()].filter(([key]) => key.startsWith(prefix));
     while (owned.length >= MAX_GENERATIONS_PER_PROFILE) {
-        const victim = (owned.find(([, generation]) => generation.done) ?? owned.find(([, generation]) => generation.cancelled))?.[1];
+        const victim = pickDiscardable(owned.map(([, generation]) => generation), true);
         if (!victim) {
             return false;
         }
@@ -370,11 +385,11 @@ function trimRegistry(handle) {
         owned = owned.filter(([, generation]) => generation !== victim);
     }
     while (generations.size >= MAX_GENERATIONS) {
-        const oldestFinished = [...generations.values()].find(generation => generation.done);
-        if (!oldestFinished) {
+        const victim = pickDiscardable([...generations.values()], false);
+        if (!victim) {
             return false;
         }
-        oldestFinished.forceDiscard();
+        victim.forceDiscard();
     }
     return true;
 }
@@ -704,13 +719,21 @@ router.post('/resume', async (request, response) => {
     }
     response.flushHeaders();
 
+    // The replay hands over bytes the server already holds, all at once, so it does not count as a
+    // reader falling behind; only what piles up on top of it does.
+    let replaying = true;
+    let replayedBytes = 0;
     const unsub = generation.subscribe(offset, {
         onChunk: chunk => {
             if (disconnected || response.writableEnded || response.destroyed) {
                 return;
             }
             response.write(chunk);
-            if (response.writableLength > MAX_RESUME_BACKLOG_BYTES) {
+            if (replaying) {
+                replayedBytes += chunk.length;
+                return;
+            }
+            if (response.writableLength > MAX_RESUME_BACKLOG_BYTES + replayedBytes) {
                 // This reader stopped draining; drop it instead of buffering the reply into RAM.
                 cleanup();
                 response.destroy();
@@ -723,6 +746,7 @@ router.post('/resume', async (request, response) => {
         },
         onFail: () => response.destroy(),
     });
+    replaying = false;
     if (unsub) {
         unsubscribe = unsub;
         if (disconnected) {

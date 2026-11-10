@@ -510,6 +510,40 @@ describe('registry capacity', () => {
         expect(testExports.generations.size).toBe(testExports.MAX_GENERATIONS_PER_PROFILE);
     });
 
+    test('an over-cap profile gives up a stopped reply before a finished one a chat can still recover', () => {
+        const recoverable = registerGeneration('own-recoverable');
+        recoverable.generation.context = { chatId: 'chat-1' };
+        recoverable.response.end('kept reply');
+        const stopped = registerGeneration('own-stopped');
+        stopped.generation.cancel();
+        for (let index = 2; index < testExports.MAX_GENERATIONS_PER_PROFILE; index++) {
+            registerGeneration(`own-${String(index).padStart(6, '0')}`);
+        }
+
+        expect(registerGeneration('own-after-stopped').generation).toBeDefined();
+        expect(testExports.generations.has('tester:own-stopped')).toBe(false);
+        expect(testExports.generations.has('tester:own-recoverable')).toBe(true);
+
+        expect(registerGeneration('own-after-recoverable').generation).toBeDefined();
+        expect(testExports.generations.has('tester:own-recoverable')).toBe(false);
+    });
+
+    test('global pressure drops a finished reply nobody can recover before a recoverable one', () => {
+        const recoverable = registerGeneration('global-recoverable');
+        recoverable.generation.context = { chatId: 'chat-1' };
+        recoverable.response.end('kept reply');
+        const plain = registerGeneration('global-plain');
+        plain.response.end('cached');
+
+        while (testExports.generations.size < testExports.MAX_GENERATIONS) {
+            addLiveFiller();
+        }
+        addLiveFiller();
+
+        expect(testExports.generations.has('tester:global-plain')).toBe(false);
+        expect(testExports.generations.has('tester:global-recoverable')).toBe(true);
+    });
+
     test('global pressure drops finished replies before touching live ones', () => {
         const finished = registerGeneration('finished-spare');
         finished.response.end('cached');
@@ -769,6 +803,24 @@ describe('resumable generation routes', () => {
 
         const beyond = await postJson('/api/resumable-generations/resume', { id, offset: 999 });
         expect(beyond.status).toBe(416);
+    });
+
+    test('replays a finished reply larger than the slow-reader allowance in full', async () => {
+        const id = 'route-resume-large';
+        const original = await startGeneration(id);
+        const generation = testExports.generations.get(`route-tester:${id}`);
+        const piece = Buffer.alloc(1024 * 1024, 97);
+        for (let index = 0; index < 12; index++) {
+            generation.write(piece);
+        }
+        pendingHandlers.get(id)();
+        await original.body.cancel().catch(() => undefined);
+
+        const resumed = await postJson('/api/resumable-generations/resume', { id, offset: 0 });
+        expect(resumed.status).toBe(200);
+        const bytes = Buffer.from(await resumed.arrayBuffer());
+        expect(bytes.length).toBe(generation.size);
+        expect(bytes.subarray(-11).toString('utf8')).toBe('second-done');
     });
 
     test('a resume that attaches before the reply finishes streams the live tail', async () => {
