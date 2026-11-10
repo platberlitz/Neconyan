@@ -19078,5 +19078,10 @@
   "Older versions of your characters, lorebooks and presets, saved automatically. Compare one with what you have now and put it back if you need it.": "เวอร์ชันก่อนหน้าของตัวละคร Lorebook และพรีเซ็ตของคุณที่บันทึกไว้ให้อัตโนมัติ ลองเปรียบเทียบกับเวอร์ชันปัจจุบัน แล้วนำกลับมาใช้ใหม่ได้ทุกเมื่อที่ต้องการ",
   "Search snapshots": "ค้นหาสแนปชอต",
   "The item changed again, so the restore was stopped. Compare the versions and try again.": "รายการนี้มีการเปลี่ยนแปลงอีกครั้ง การกู้คืนจึงหยุดลง ลองเปรียบเทียบเวอร์ชันแล้วลองใหม่อีกครั้ง",
+  "Cannot swipe while a reply is being written. Stop the reply and try again.": "ไม่สามารถปัดได้ขณะกำลังเขียนการตอบกลับ หยุดการตอบกลับแล้วลองใหม่อีกครั้ง",
+  "Swipe stopped": "หยุดการปัดแล้ว",
+  "Request not sent, because you did not confirm its proxy address. Update or remove the reverse proxy in the connection profile or preset it uses.": "ไม่ได้ส่งคำขอ เพราะคุณไม่ได้ยืนยันที่อยู่พร็อกซีของคำขอนี้ อัปเดตหรือลบ reverse proxy ในโปรไฟล์การเชื่อมต่อหรือพรีเซ็ตที่คำขอนี้ใช้",
+  "This change has already been undone.": "การเปลี่ยนแปลงนี้ถูกเลิกทำไปแล้ว",
+  "An earlier attempt to undo this change may not have finished, so nothing was changed this time. Open Change history again to see whether that attempt finished.": "ความพยายามครั้งก่อนในการเลิกทำการเปลี่ยนแปลงนี้อาจยังไม่เสร็จสิ้น จึงไม่มีการเปลี่ยนแปลงใดในครั้งนี้ เปิด “Change history” อีกครั้งเพื่อดูว่าความพยายามครั้งนั้นเสร็จสิ้นแล้วหรือไม่",
   "This version": "เวอร์ชันนี้"
 }

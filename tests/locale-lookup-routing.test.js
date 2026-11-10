@@ -1,5 +1,8 @@
 /* global globalThis */
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
+import fs from 'node:fs';
+import { load } from 'cheerio';
+import { assembleLocaleData } from '../public/scripts/locale-assembly.js';
 
 // The real public/scripts/i18n.js, run in Node with its imports mocked and the few browser objects it touches replaced
 // by small stand-ins. These tests cover how the two tables are loaded and read: a 'scoped.' key is looked up in the
@@ -461,5 +464,50 @@ describe('scoped key lookups', () => {
 
             expect(reportedKeys()).not.toContain('scoped.x.unknown');
         });
+    });
+});
+
+// A data-i18n value is split on ';' into separate keys, so a caption whose whole sentence is the key must not contain one.
+// The key is read from the real page and the expected text is the merged dictionary value for that key in each language.
+const readLocaleJson = name => JSON.parse(fs.readFileSync(new URL(`../public/locales/${name}`, import.meta.url), 'utf8'));
+const indexHtml = fs.readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+const LOCALES = readLocaleJson('lang.json').map(item => item.lang).filter(lang => lang !== 'en');
+const DEEPSEEK_HINT_KEY = load(indexHtml)('[data-reasoning-legacy-hint][data-source="deepseek"]').attr('data-i18n');
+
+function localeFiles(lang) {
+    return {
+        [`${lang}.json`]: readLocaleJson(`${lang}.json`),
+        [`neconyan/${lang}.json`]: readLocaleJson(`neconyan/${lang}.json`),
+        'neconyan/en.json': readLocaleJson('neconyan/en.json'),
+    };
+}
+
+describe('a data-i18n caption is one key', () => {
+    beforeEach(() => {
+        jest.resetModules();
+        jest.spyOn(console, 'log').mockImplementation(() => {});
+        jest.spyOn(console, 'warn').mockImplementation(() => {});
+        jest.spyOn(console, 'table').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+        jest.restoreAllMocks();
+        for (const name of ['Document', 'Element', 'Node', 'document', 'MutationObserver', '$', 'toastr', 'localStorage', 'fetch']) delete globalThis[name];
+    });
+
+    test.each(LOCALES)('the DeepSeek effort hint is translated as a whole in %s', async lang => {
+        const files = localeFiles(lang);
+        const expected = assembleLocaleData({
+            base: files[`${lang}.json`],
+            supplement: files[`neconyan/${lang}.json`],
+            catalogue: files['neconyan/en.json'],
+        }).dictionary[DEEPSEEK_HINT_KEY];
+        expect(typeof expected === 'string' && expected.length > 0 && expected !== DEEPSEEK_HINT_KEY).toBe(true);
+
+        const { i18n, page } = await loadI18n({ locale: lang, languages: [{ lang, display: lang }], files });
+        const caption = element(DEEPSEEK_HINT_KEY, DEEPSEEK_HINT_KEY);
+        page.elements.push(caption);
+        i18n.applyLocale();
+        expect(caption.textContent).toBe(expected);
     });
 });

@@ -16725,5 +16725,10 @@
   "Older versions of your characters, lorebooks and presets, saved automatically. Compare one with what you have now and put it back if you need it.": "自动保存的角色、世界书和预设的历史版本。你可以随时与当前内容对比，并在需要时恢复。",
   "Search snapshots": "搜索快照",
   "The item changed again, so the restore was stopped. Compare the versions and try again.": "该内容又发生了变动，恢复已中止。请对比版本后再试一次。",
+  "Cannot swipe while a reply is being written. Stop the reply and try again.": "正在撰写回复时无法切换备选回复。请停止回复并重试。",
+  "Swipe stopped": "备选回复切换已停止",
+  "Request not sent, because you did not confirm its proxy address. Update or remove the reverse proxy in the connection profile or preset it uses.": "请求未发送，因为你没有确认该请求的代理地址。请在该请求使用的连接配置或预设中更新或删除反向代理。",
+  "This change has already been undone.": "此更改已经撤销。",
+  "An earlier attempt to undo this change may not have finished, so nothing was changed this time. Open Change history again to see whether that attempt finished.": "之前撤销此更改的尝试可能尚未完成，因此这次没有做任何更改。请再次打开“Change history”，查看那次尝试是否已完成。",
   "This version": "此版本"
 }

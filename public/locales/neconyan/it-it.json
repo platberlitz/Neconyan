@@ -19219,8 +19219,6 @@
   "Cannot create characters while a reply is being written. Stop the reply and try again.": "Impossibile creare personaggi mentre viene scritta una risposta. Interrompi la risposta e riprova.",
   "Creation stopped": "Creazione interrotta",
   "Could not create the character. Try again.": "Impossibile creare il personaggio. Riprova.",
-  "Cannot switch replies while a reply is being written. Stop the reply and try again.": "Impossibile cambiare risposta mentre viene scritta una risposta. Interrompi la risposta e riprova.",
-  "Reply switch stopped": "Cambio di risposta interrotto",
   "Could not switch to that reply on message ${0}. Going back to the previous reply.": "Impossibile passare a quella risposta nel messaggio ${0}. Si torna alla risposta precedente.",
   "The reply number for message #${0} was ${1}, which is not valid. It has been reset to the first reply.": "Il numero di risposta del messaggio #${0} era ${1}, un valore non valido. È stato reimpostato sulla prima risposta.",
   "The reply number for message #${0} was ${1}, which is not valid. It has been reset to ${2}.": "Il numero di risposta del messaggio #${0} era ${1}, un valore non valido. È stato reimpostato su ${2}.",
@@ -20219,5 +20217,10 @@
   "Nothing matches that search.": "Nessun risultato corrisponde a questa ricerca.",
   "Older versions of your characters, lorebooks and presets, saved automatically. Compare one with what you have now and put it back if you need it.": "Le versioni precedenti dei tuoi personaggi, lorebook e preset, salvate automaticamente. Confrontane una con quella attuale e ripristinala se ne hai bisogno.",
   "Search snapshots": "Cerca snapshot",
+  "Cannot swipe while a reply is being written. Stop the reply and try again.": "Impossibile eseguire lo swipe mentre viene scritta una risposta. Interrompi la risposta e riprova.",
+  "Swipe stopped": "Swipe interrotto",
+  "Request not sent, because you did not confirm its proxy address. Update or remove the reverse proxy in the connection profile or preset it uses.": "Richiesta non inviata, perché non hai confermato il suo indirizzo proxy. Aggiorna o rimuovi il reverse proxy nel profilo di connessione o nel preset che usa.",
+  "This change has already been undone.": "Questa modifica è già stata annullata.",
+  "An earlier attempt to undo this change may not have finished, so nothing was changed this time. Open Change history again to see whether that attempt finished.": "Un tentativo precedente di annullare questa modifica potrebbe non essere stato completato, quindi questa volta non è stato modificato nulla. Apri di nuovo «Cronologia modifiche» per vedere se quel tentativo è stato completato.",
   "This version": "Questa versione"
 }

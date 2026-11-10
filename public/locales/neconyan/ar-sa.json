@@ -18892,5 +18892,10 @@
   "Older versions of your characters, lorebooks and presets, saved automatically. Compare one with what you have now and put it back if you need it.": "نسخ سابقة من شخصياتك وكتب المعارف والإعدادات المسبقة، تُحفظ تلقائيًا. قارن أي نسخة بما لديك الآن واستعدها إن احتجت إليها.",
   "Search snapshots": "ابحث في اللقطات",
   "The item changed again, so the restore was stopped. Compare the versions and try again.": "تغير العنصر مجددًا، لذا توقفت عملية الاستعادة. قارن بين النسختين وحاول مرة أخرى.",
+  "Cannot swipe while a reply is being written. Stop the reply and try again.": "لا يمكن السحب أثناء كتابة رد. أوقف الرد وحاول مرة أخرى.",
+  "Swipe stopped": "تم إيقاف السحب",
+  "Request not sent, because you did not confirm its proxy address. Update or remove the reverse proxy in the connection profile or preset it uses.": "لم يُرسل الطلب لأنك لم تؤكد عنوان الوكيل الخاص به. قم بتحديث أو إزالة الوكيل العكسي في ملف تعريف الاتصال أو الإعداد المسبق الذي يستخدمه.",
+  "This change has already been undone.": "تم التراجع عن هذا التغيير بالفعل.",
+  "An earlier attempt to undo this change may not have finished, so nothing was changed this time. Open Change history again to see whether that attempt finished.": "ربما لم تكتمل محاولة سابقة للتراجع عن هذا التغيير، لذا لم يُغيَّر أي شيء هذه المرة. افتح «Change history» مرة أخرى لترى ما إذا كانت تلك المحاولة قد اكتملت.",
   "This version": "هذه النسخة"
 }

@@ -18810,5 +18810,10 @@
   "Older versions of your characters, lorebooks and presets, saved automatically. Compare one with what you have now and put it back if you need it.": "Versiones anteriores de tus personajes, lorebooks y ajustes preestablecidos, guardadas automáticamente. Compara una con lo que tienes ahora y recupérala si te hace falta.",
   "Search snapshots": "Buscar instantáneas",
   "The item changed again, so the restore was stopped. Compare the versions and try again.": "El elemento ha cambiado otra vez, así que se ha detenido la restauración. Compara las versiones e inténtalo de nuevo.",
+  "Cannot swipe while a reply is being written. Stop the reply and try again.": "No se puede hacer swipe mientras se escribe una respuesta. Detén la respuesta e inténtalo de nuevo.",
+  "Swipe stopped": "Swipe detenido",
+  "Request not sent, because you did not confirm its proxy address. Update or remove the reverse proxy in the connection profile or preset it uses.": "Solicitud no enviada, porque no has confirmado su dirección de proxy. Actualiza o elimina el proxy inverso en el perfil de conexión o el preajuste que usa.",
+  "This change has already been undone.": "Este cambio ya se ha deshecho.",
+  "An earlier attempt to undo this change may not have finished, so nothing was changed this time. Open Change history again to see whether that attempt finished.": "Puede que un intento anterior de deshacer este cambio no haya terminado, así que esta vez no se ha cambiado nada. Vuelve a abrir «Change history» para ver si ese intento ha terminado.",
   "This version": "Esta versión"
 }

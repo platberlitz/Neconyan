@@ -349,7 +349,19 @@ describe('Chat Completion reverse proxy validation', () => {
         context.Popup.show.confirm.mockResolvedValueOnce(false);
         await expect(context.validateReverseProxy(undefined, 'https://profile.invalid', { markConnection: false })).rejects.toThrow('Proxy connection denied.');
         expect(context.toastr.error).toHaveBeenCalledTimes(1);
+        expect(context.toastr.error).toHaveBeenCalledWith('Request not sent, because you did not confirm its proxy address. Update or remove the reverse proxy in the connection profile or preset it uses.');
         expect(context.online_status).toBe('Valid');
+    });
+
+    test('a declined main proxy still points at the main settings and marks the connection', async () => {
+        const { context } = createHarness();
+        context.online_status = 'Valid';
+        context.accountStorage.getItem = () => 'false';
+        context.Popup.show.confirm.mockResolvedValueOnce(false);
+        await expect(context.validateReverseProxy(undefined, 'https://main.invalid')).rejects.toThrow('Proxy connection denied.');
+        expect(context.toastr.error).toHaveBeenCalledTimes(1);
+        expect(context.toastr.error).toHaveBeenCalledWith('Update or remove your reverse proxy settings.');
+        expect(context.online_status).toBe('no_connection');
     });
 
     test('an invalid proxy for a side request leaves the main connection status alone', async () => {

@@ -20,10 +20,11 @@ describe('DeepSeek reasoning effort', () => {
         expect(wrapper.find('label[for="openai_reasoning_effort"]')).toHaveLength(1);
         expect(wrapper.attr('data-source').split(',')).toContain('deepseek');
         const hint = wrapper.find('[data-source="deepseek"]');
-        const hintCopy = 'DeepSeek documents none, low, high and max reasoning efforts. Through a reverse proxy None is not sent, so DeepSeek\'s default applies; every other effort is sent exactly as picked, so anything else may be rejected. Minimum is sent as \'minimal\'.';
+        const hintCopy = 'DeepSeek documents none, low, high and max reasoning efforts. Through a reverse proxy None is not sent, so DeepSeek\'s default applies. Every other effort is sent exactly as picked, so anything else may be rejected. Minimum is sent as \'minimal\'.';
         expect(hint.text()).toContain(hintCopy);
         expect(hint.attr('data-i18n')).toBe(hint.text().trim());
         expect(hint.attr('data-i18n')).toBe(hintCopy);
+        expect(hint.attr('data-i18n')).not.toContain(';');
 
         // DeepSeek carries its own hint, so the generic OpenAI-style caption must not claim it.
         const genericCaption = indexSource.match(/data-source="([^"]*)"[^>]*>\s*OpenAI-style options: low, medium, high, xhigh\./);

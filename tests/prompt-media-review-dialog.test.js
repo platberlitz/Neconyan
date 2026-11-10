@@ -650,8 +650,8 @@ describe('change history (HIS)', () => {
     });
 
     test('any other refusal of an undo shows its text and does not reload the change history', async () => {
-        const { status } = await pressUndo({ error: 'This repair ID already has different choices.', code: 'ROLEPLAY_IMAGE_RECOVERY' });
-        expect(status.textContent).toBe('This repair ID already has different choices.');
+        const { status } = await pressUndo({ error: 'An earlier attempt to undo this change may not have finished, so nothing was changed this time. Open Change history again to see whether that attempt finished.', code: 'ROLEPLAY_IMAGE_RECOVERY' });
+        expect(status.textContent).toBe('An earlier attempt to undo this change may not have finished, so nothing was changed this time. Open Change history again to see whether that attempt finished.');
         expect(listRequests()).toEqual(['history', 'apply']);
     });
 });

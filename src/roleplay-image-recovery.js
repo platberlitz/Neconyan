@@ -326,13 +326,13 @@ export function applyRoleplayImageRepair(base, input, host, { checkpoint = () =>
                 if (typeof input.undoOf === 'string' && completedUndoOf(scope, id, reservation) === input.undoOf) {
                     throw Object.assign(repairFailure(uiText('This change has already been undone.')), { code: 'ROLEPLAY_IMAGE_ALREADY_UNDONE' });
                 }
-                throw repairFailure('This repair ID already has different choices.');
+                throw repairFailure(typeof input.undoOf === 'string' ? uiText('An earlier attempt to undo this change may not have finished, so nothing was changed this time. Open Change history again to see whether that attempt finished.') : 'This repair ID already has different choices.');
             }
             if (reservation.phase === 'aborted') throw repairFailure(uiText('This change was discarded. Make the change again if you still want it.'));
         }
         const existing = readRepairJson(repairPath(scope, id, 'plan.json'), REPAIR_LIMIT, true);
         if (existing) {
-            if (existing.value.requestHash !== requestHash) throw repairFailure('This repair ID already has different choices.');
+            if (existing.value.requestHash !== requestHash) throw repairFailure(typeof input.undoOf === 'string' ? uiText('An earlier attempt to undo this change may not have finished, so nothing was changed this time. Open Change history again to see whether that attempt finished.') : 'This repair ID already has different choices.');
             return execute(lease, id, existing.value, host, checkpoint);
         }
         const locator = normaliseRoleplayLocator(input.observation?.locator);

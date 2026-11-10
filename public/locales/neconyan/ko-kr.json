@@ -18733,5 +18733,10 @@
   "Older versions of your characters, lorebooks and presets, saved automatically. Compare one with what you have now and put it back if you need it.": "캐릭터, 로어북, 프리셋의 이전 버전이 자동으로 저장돼요. 현재 내용과 비교해 보고 필요할 때 되돌릴 수 있어요.",
   "Search snapshots": "스냅샷 검색",
   "The item changed again, so the restore was stopped. Compare the versions and try again.": "항목이 다시 변경되어 복원이 중단되었어요. 버전을 비교한 후 다시 시도해 주세요.",
+  "Cannot swipe while a reply is being written. Stop the reply and try again.": "답변이 작성되는 동안에는 스와이프할 수 없습니다. 답변을 중지하고 다시 시도하세요.",
+  "Swipe stopped": "스와이프 중단됨",
+  "Request not sent, because you did not confirm its proxy address. Update or remove the reverse proxy in the connection profile or preset it uses.": "요청의 프록시 주소를 확인하지 않아 요청을 보내지 않았습니다. 요청이 사용하는 연결 프로필 또는 프리셋에서 역방향 프록시를 업데이트하거나 제거하세요.",
+  "This change has already been undone.": "이 변경 사항은 이미 실행 취소되었습니다.",
+  "An earlier attempt to undo this change may not have finished, so nothing was changed this time. Open Change history again to see whether that attempt finished.": "이 변경 사항을 실행 취소하려던 이전 시도가 완료되지 않았을 수 있어서 이번에는 아무것도 변경되지 않았습니다. “Change history”를 다시 열어 그 시도가 완료되었는지 확인하세요.",
   "This version": "이 버전"
 }

@@ -18934,5 +18934,10 @@
   "Older versions of your characters, lorebooks and presets, saved automatically. Compare one with what you have now and put it back if you need it.": "Oudere versies van je personages, lorebooks en presets, automatisch opgeslagen. Vergelijk er eentje met wat je nu hebt en zet hem terug als je hem nodig hebt.",
   "Search snapshots": "Momentopnamen zoeken",
   "The item changed again, so the restore was stopped. Compare the versions and try again.": "Het item is weer veranderd, dus het terugzetten is gestopt. Vergelijk de versies en probeer het opnieuw.",
+  "Cannot swipe while a reply is being written. Stop the reply and try again.": "Kan niet swipen terwijl er een antwoord wordt geschreven. Stop het antwoord en probeer het opnieuw.",
+  "Swipe stopped": "Swipe gestopt",
+  "Request not sent, because you did not confirm its proxy address. Update or remove the reverse proxy in the connection profile or preset it uses.": "Verzoek niet verzonden, omdat je het proxyadres ervan niet hebt bevestigd. Werk de omgekeerde proxy bij of verwijder hem in het verbindingsprofiel of de voorinstelling die dit verzoek gebruikt.",
+  "This change has already been undone.": "Deze wijziging is al ongedaan gemaakt.",
+  "An earlier attempt to undo this change may not have finished, so nothing was changed this time. Open Change history again to see whether that attempt finished.": "Een eerdere poging om deze wijziging ongedaan te maken is misschien niet voltooid, dus deze keer is er niets gewijzigd. Open “Change history” opnieuw om te zien of die poging is voltooid.",
   "This version": "Deze versie"
 }
