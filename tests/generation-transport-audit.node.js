@@ -136,3 +136,34 @@ test('a failed Google AI Studio connection does not write the API key to the ser
     assert.ok(logged.some(line => line.includes('key=[redacted]')));
     assert.ok(logged.every(line => !line.includes('AIzaSECRET')));
 });
+
+test('a held Ollama reply keeps running when the browser connection closes', async () => {
+    const { handleTextCompletionsGenerate } = await import('../src/endpoints/backends/text-completions.js');
+    const body = new Readable({ read() {} });
+    const cancelHooks = [];
+    const request = Object.assign(new EventEmitter(), {
+        body: { api_type: 'ollama', api_server: 'http://127.0.0.1:11434', model: 'm', prompt: 'Hi', stream: true },
+        headers: {}, socket: new EventEmitter(), user: { profile: { handle: 'a' }, directories: { root } },
+        resumableGeneration: { onCancel: hook => { cancelHooks.push(hook); return () => {}; } },
+        fetch: async () => ({ ok: true, status: 200, body }),
+    });
+    const written = [];
+    const response = Object.assign(new EventEmitter(), {
+        writableEnded: false,
+        write: chunk => written.push(String(chunk)),
+        end() { this.writableEnded = true; },
+        status(code) { throw new Error(`unexpected status ${code}`); },
+    });
+    await handleTextCompletionsGenerate(request, response);
+    body.push('{"response":"Hel","done":false}\n');
+    await new Promise(resolve => setImmediate(resolve));
+    response.emit('close');
+    request.socket.emit('close');
+    body.push('{"response":"lo","done":true}\n');
+    body.push(null);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(body.destroyed && !body.readableEnded, false);
+    assert.match(written.join(''), /"text":"lo"/);
+    assert.match(written.join(''), /\[DONE\]/);
+    assert.ok(cancelHooks.length > 0);
+});
