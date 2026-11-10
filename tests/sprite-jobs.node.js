@@ -172,6 +172,12 @@ test('a saved imported sheet is split without any model request', async t => {
     assert.equal(result.result.outputs.length, 2);
 });
 
+test('a sprite whose file extension does not match its contents is still cleaned up', async t => {
+    const f = await prepared(t, { mode: 'cleanup', sprites: { 'joy.png': await encodeServerImage(bitmap(16, 16), 'jpeg') } });
+    const result = await runSpriteJob(f.context(), { fetchImpl: () => assert.fail('cleanup must not generate an image') });
+    assert.equal(result.result.outputs.length, 1);
+});
+
 test('cleanup jobs publish recovered soft edges and remove remaining white without losing white detail', async t => {
     const pixels = bitmap(64, 64, [255, 255, 255, 255]);
     for (let y = 16; y < 48; y++) for (let x = 17; x < 47; x++) pixels.data.set([35, 55, 75, 255], (y * 64 + x) * 4);

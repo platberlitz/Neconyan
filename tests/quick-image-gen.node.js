@@ -1660,6 +1660,26 @@ test('an untrusted image URL from a provider is refused', async () => {
     );
 });
 
+test('a paid image whose download fails once is fetched again without a second provider request', async () => {
+    for (const failure of [() => new Response('busy', { status: 503 }), () => { throw new TypeError('fetch failed'); }]) {
+        let paid = 0;
+        let downloads = 0;
+        const image = await generateQuickImageGenImage({
+            directories: tempRoot(), prompt: 'x',
+            fetch: async url => {
+                if (String(url).startsWith('https://api.together.xyz/')) {
+                    paid++;
+                    return jsonResponse({ data: [{ url: 'https://cdn.together.xyz/out.png' }] });
+                }
+                return ++downloads === 1 ? failure() : new Response(Buffer.from(PNG_BASE64, 'base64'));
+            },
+            settings: { provider: 'together', togetherKey: 'k' },
+        });
+        assert.equal(image.base64, PNG_BASE64);
+        assert.deepEqual([paid, downloads], [1, 2]);
+    }
+});
+
 test('the seed resolver never returns a negative seed', () => {
     assert.equal(testExports.resolveSeed(42), 42);
     assert.ok(testExports.resolveSeed(-1) >= 0);
