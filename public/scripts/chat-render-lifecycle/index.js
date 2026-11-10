@@ -1,5 +1,8 @@
 import {
+    captureContentAnchor,
     captureVisibleMessageAnchor,
+    measureVisibleMessageAnchorShift,
+    restoreContentAnchor,
     restoreVisibleMessageAnchor,
     settleVisibleMessageAnchor,
 } from './anchor.js';
@@ -68,7 +71,10 @@ export {
     CHAT_SCROLL_ACTION,
     CHAT_SCROLL_INTENT,
     CHAT_SCROLL_STATE,
+    captureContentAnchor,
     captureVisibleMessageAnchor,
+    measureVisibleMessageAnchorShift,
+    restoreContentAnchor,
     createMessageUpdateQueue,
     createDelegatedResizeObserver,
     createFrameWriteScheduler,

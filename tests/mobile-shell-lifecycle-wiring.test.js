@@ -430,6 +430,8 @@ describe('mobile shell lifecycle wiring', () => {
             ['#chat', '.mes_text pre code'],
             ['#chat', '.mes_reasoning pre code'],
             ['.notes-table-pane', '.notes-property-table-scroll'],
+            ['#left-nav-panel', '.sbpl-tabs'],
+            ['#left-nav-panel', '.sbwil-tabs'],
             ['.popup', '.img_enlarged_holder'],
             ['.popup', '.img_enlarged_container pre code'],
         ]) {

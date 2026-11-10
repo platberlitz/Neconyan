@@ -605,6 +605,7 @@ export function createWorkbench({
     function buildSession() {
         const sessionController = new AbortController();
         const { signal } = sessionController;
+        const phoneLayout = window.matchMedia('(max-width: 768px)');
         let disposed = false;
         let runController = null;
         let runSequence = 0;
@@ -679,19 +680,15 @@ export function createWorkbench({
             panels.set(tab.id, panel);
         });
 
-        const tabSelect = element('select', {
-            className: 'text_pole sbwil-tab-select',
-            attributes: { 'aria-label': 'World Info Lab tool' },
-        });
-        TABS.forEach(tab => tabSelect.append(element('option', {
-            text: tab.label,
-            attributes: { value: tab.id },
-        })));
         const nav = element('nav', {
             className: 'sbwil-nav',
             attributes: { 'aria-label': 'World Info Lab tools' },
         });
-        nav.append(tabList, tabSelect);
+        nav.append(tabList);
+        function syncTabOrientation() {
+            tabList.setAttribute('aria-orientation', layout === 'page' && !phoneLayout.matches ? 'vertical' : 'horizontal');
+        }
+        phoneLayout.addEventListener('change', syncTabOrientation, { signal });
 
         const panelHost = element('div', { className: 'sbwil-panel-host sbwil-main' });
         TABS.forEach(tab => panelHost.append(panels.get(tab.id)));
@@ -1017,7 +1014,6 @@ export function createWorkbench({
         function setTab(tabId, { focus = false, persist = true } = {}) {
             const next = TABS.some(tab => tab.id === tabId) ? tabId : 'scan';
             activeTab = next;
-            tabSelect.value = next;
             tabButtons.forEach((button, index) => {
                 const selected = TABS[index].id === next;
                 button.setAttribute('aria-selected', String(selected));
@@ -1058,9 +1054,6 @@ export function createWorkbench({
                 setTab(TABS[nextIndex].id, { focus: true });
             }, { signal });
         });
-        tabSelect.addEventListener('change', () => {
-            setTab(tabSelect.value);
-        }, { signal });
 
         modeInputs.forEach((input) => {
             input.addEventListener('change', () => {
@@ -1140,16 +1133,13 @@ export function createWorkbench({
                 const isPage = layout === 'page';
                 root.classList.toggle('sbwil-workbench-page', isPage);
                 root.classList.toggle('sbwil-workbench-drawer', !isPage);
-                tabList.setAttribute('aria-orientation', isPage ? 'vertical' : 'horizontal');
+                syncTabOrientation();
             },
             focusActiveTab() {
                 const button = tabButtons.find(node => node.getAttribute('aria-selected') === 'true');
-                const target = button?.getClientRects().length
-                    ? button
-                    : tabSelect.getClientRects().length
-                        ? tabSelect
-                        : panels.get(activeTab);
+                const target = button?.getClientRects().length ? button : panels.get(activeTab);
                 target?.focus({ preventScroll: true });
+                button?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
             },
             dispose() {
                 if (disposed) {

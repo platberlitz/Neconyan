@@ -321,3 +321,58 @@ test('a failure after navigation never rolls back the newly opened chat', async 
     await expect(runtime.refreshCurrentChatFromSaved()).rejects.toThrow('Stale render failed');
     expect(chat).toEqual([{ mes: 'Another chat.' }]);
 });
+
+test('the reading place is measured again from the preview just before the saved rows replace it', async () => {
+    const { runtime, redraw } = fixture();
+    const steps = [];
+    let previewTop = 300;
+    const previewText = { isConnected: true, getBoundingClientRect: () => ({ top: previewTop }) };
+    runtime.chatElement[0].getBoundingClientRect = () => ({ top: 100 });
+    runtime.chatElement.find = selector => Object.assign(selector === '#neconyan-roleplay-preview .mes_text' ? [previewText] : [],
+        { remove: () => steps.push(`remove ${selector}`) });
+    runtime.takeChatReloadReadingAnchor = () => ({ messageId: '1', offsetTop: 260, part: '.mes_text',
+        content: { candidates: [{ key: 'P\nOld words.', occurrence: 0, offsetTop: 10 }] },
+        fallback: { messageId: '0', offsetTop: 40 } });
+    runtime.captureContentAnchor = (scroller, container) => {
+        steps.push('capture');
+        return container === previewText ? { candidates: [{ key: 'P\nWords on screen.', occurrence: 0, offsetTop: 5 }] } : null;
+    };
+    const restored = [];
+    runtime.restoreVisibleChatMessageAnchor = anchor => { steps.push('restore'); restored.push(anchor); return true; };
+    const held = [];
+    runtime.holdChatReloadReadingAnchor = anchor => { held.push(anchor); return true; };
+    redraw.mockImplementation(async ({ onBeforeCommit, onCommit }) => {
+        // The reader scrolled 60px while the saved chat was being read.
+        previewTop = 240;
+        onBeforeCommit();
+        steps.push('swap');
+        onCommit();
+    });
+
+    await runtime.refreshCurrentChatFromSaved();
+
+    const expected = { messageId: '1', offsetTop: 140, part: '.mes_text',
+        content: { candidates: [{ key: 'P\nWords on screen.', occurrence: 0, offsetTop: 5 }] },
+        fallback: { messageId: '0', offsetTop: -80 } };
+    expect(steps).toEqual(['capture', 'swap', 'remove [data-roleplay-replacement]', 'remove #neconyan-roleplay-preview', 'restore',
+        'remove [data-roleplay-replacement]', 'remove #neconyan-roleplay-preview']);
+    expect(JSON.parse(JSON.stringify(restored))).toEqual([expected]);
+    expect(JSON.parse(JSON.stringify(held))).toEqual([expected]);
+});
+
+test('a saved reply with no preview on screen keeps the place it was given', async () => {
+    const { runtime, redraw } = fixture();
+    const anchor = { messageId: '1', offsetTop: 260, part: null, fallback: null };
+    runtime.takeChatReloadReadingAnchor = () => anchor;
+    runtime.captureContentAnchor = jest.fn();
+    runtime.restoreVisibleChatMessageAnchor = jest.fn();
+    const held = [];
+    runtime.holdChatReloadReadingAnchor = value => { held.push(value); return true; };
+    redraw.mockImplementation(async ({ onBeforeCommit, onCommit }) => { onBeforeCommit(); onCommit(); });
+
+    await runtime.refreshCurrentChatFromSaved();
+
+    expect(runtime.captureContentAnchor).not.toHaveBeenCalled();
+    expect(runtime.restoreVisibleChatMessageAnchor).not.toHaveBeenCalled();
+    expect(held).toEqual([anchor]);
+});

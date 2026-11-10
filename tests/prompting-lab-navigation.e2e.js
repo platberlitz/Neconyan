@@ -28,14 +28,29 @@ for (const [runner, engine, widths] of [[test, 'chromium', [393, 900, 1280]], [w
             if (engine === 'webkit' && width === 393) await applyIOSOnlyCss(page);
             const root = page.locator('#sbpl-page');
             const select = root.locator('.sbpl-tab-select'), tabs = root.locator('.sbpl-tabs');
+            await expect(select).toHaveCount(0);
+            await expect(tabs).toBeVisible();
             if (width === 393) {
-                await expect(select).toBeVisible(); await expect(tabs).toBeHidden();
-                for (const label of ['Compare prompts', 'Compare models']) {
-                    await select.selectOption({ label });
+                await expect(tabs).toHaveAttribute('aria-orientation', 'horizontal');
+                await expect(tabs.getByRole('tab')).toHaveCount(10);
+                const rail = await tabs.evaluate(node => ({ height: node.clientHeight, overflow: node.scrollWidth > node.clientWidth, touch: getComputedStyle(node).touchAction }));
+                expect(rail.overflow).toBe(true);
+                expect(rail.touch).toBe('pan-x');
+                expect(rail.height).toBeLessThan(70);
+                for (const tab of await tabs.getByRole('tab').all()) {
+                    const label = await tab.locator('.sbpl-tab-label').innerText();
+                    await tab.tap();
+                    await expect(tab).toHaveAttribute('aria-selected', 'true');
+                    expect((await tab.boundingBox()).height).toBeGreaterThanOrEqual(44);
                     await expect(root.locator('.sbpl-panel-title').filter({ hasText: label })).toBeVisible();
                 }
+                await tabs.getByRole('tab', { selected: true }).press('End');
+                await expect(tabs.getByRole('tab', { name: 'Settings', exact: true })).toBeFocused();
+                await page.setViewportSize({ width: 1280, height: 900 });
+                await expect(tabs).toHaveAttribute('aria-orientation', 'vertical');
+                await page.setViewportSize({ width: 393, height: 852 });
+                await expect(tabs).toHaveAttribute('aria-orientation', 'horizontal');
             } else {
-                await expect(select).toBeHidden(); await expect(tabs).toBeVisible();
                 const widths = await root.evaluate(node => ({ nav: node.querySelector('.sbpl-nav').getBoundingClientRect().width, main: node.querySelector('.sbpl-main').getBoundingClientRect().width }));
                 expect(widths).toEqual(width === 900 ? { nav: 172.5, main: 727.5 } : { nav: 232.5, main: 1047.5 });
                 const buttons = tabs.locator('.sbpl-tab');

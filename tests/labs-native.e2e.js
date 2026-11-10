@@ -40,9 +40,7 @@ async function openPrompting(account, tab = 'Compare prompts') {
         document.getElementById('sbpl-menu-item').click();
     });
     await expect(page.locator('#sbpl-page')).toBeVisible();
-    const mobileSections = page.locator('.sbpl-tab-select');
-    if (await mobileSections.isVisible()) await mobileSections.selectOption({ label: tab });
-    else await page.getByRole('tab', { name: ['Compare prompts', 'Compare models', 'Compare scenes'].includes(tab) ? `${tab}, uses tokens` : tab, exact: true }).click();
+    await page.getByRole('tab', { name: ['Compare prompts', 'Compare models', 'Compare scenes'].includes(tab) ? `${tab}, uses tokens` : tab, exact: true }).click();
     const geometry = await page.locator('#sbpl-panel').evaluate(element => ({ width: element.getBoundingClientRect().width, display: getComputedStyle(element).display }));
     expect(geometry.width).toBeGreaterThan(250);
     expect(geometry.display).not.toBe('none');
@@ -73,9 +71,7 @@ async function openWorldInfoLab(account, tab = 'scan') {
 }
 
 async function selectWorldInfoTab(page, tab) {
-    const select = page.getByLabel('World Info Lab tool', { exact: true });
-    if (await select.isVisible()) await select.selectOption(tab);
-    else await page.locator(`#sbwil-tab-${tab}`).click();
+    await page.locator(`#sbwil-tab-${tab}`).click();
     const panel = page.locator(`#sbwil-panel-${tab}`);
     await expect(panel).toBeVisible();
     return panel;

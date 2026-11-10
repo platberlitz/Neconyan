@@ -11,6 +11,7 @@ const updatePreviewMessageText = jest.fn(() => true);
 const scrollChatToBottom = jest.fn();
 const isChatScrollInMotion = jest.fn(() => false);
 const refreshChatViewportBaseline = jest.fn();
+const changeMessageTextForReader = jest.fn((getTextElement, mutate) => ({ result: mutate(), kept: true }));
 const renderedEvents = [];
 const thinking = { update: jest.fn(), clear: jest.fn() };
 
@@ -23,6 +24,7 @@ jest.unstable_mockModule('../public/script.js', () => ({
     formatGenerationTimer: () => ({ timerValue: '1.0s', timerTitle: '1 second' }),
     getRequestHeaders: () => ({}),
     getThumbnailUrl: () => '/thumbnails/nova.png',
+    changeMessageTextForReader,
     isChatScrollInMotion,
     refreshChatViewportBaseline,
     scrollChatToBottom,
@@ -291,6 +293,7 @@ describe('Roleplay preview rendering', () => {
         scrollChatToBottom.mockClear();
         isChatScrollInMotion.mockReturnValue(false);
         refreshChatViewportBaseline.mockClear();
+        changeMessageTextForReader.mockClear();
         thinking.update.mockClear();
         thinking.clear.mockClear();
         renderedEvents.length = 0;
@@ -329,6 +332,37 @@ describe('Roleplay preview rendering', () => {
     async function waitForFirstDraw() {
         await waitFor(() => updateMessageElement.mock.calls.length >= 1);
     }
+
+    test('an Agent rewrite waits while the reader scrolls, then lands with the reader kept in place', async () => {
+        startPreview();
+        stream.send({ preview: { childId: 'reply', stage: 'generating', text: 'First line. Second line.' } });
+        await waitForFirstDraw();
+        const drawn = renderedEvents.length;
+        chatFixture.root.scrollTop = 0;
+        scrollChatToBottom.mockClear();
+        isChatScrollInMotion.mockReturnValue(true);
+        stream.send({ preview: { childId: 'reply', stage: 'agents', text: 'Second line.' } });
+        await new Promise(resolve => realSetTimeout(resolve, 150));
+        expect(renderedEvents).toHaveLength(drawn);
+        expect(changeMessageTextForReader).not.toHaveBeenCalled();
+
+        isChatScrollInMotion.mockReturnValue(false);
+        await waitFor(() => renderedEvents.length > drawn);
+        expect(renderedEvents.at(-1).message.mes).toBe('Second line.');
+        expect(changeMessageTextForReader).toHaveBeenCalledTimes(1);
+        expect(scrollChatToBottom).not.toHaveBeenCalledWith({ isNearBottom: true });
+    });
+
+    test('freezing the preview draws a waiting Agent rewrite at once', async () => {
+        const stop = startPreview();
+        stream.send({ preview: { childId: 'reply', stage: 'generating', text: 'First line. Second line.' } });
+        await waitForFirstDraw();
+        isChatScrollInMotion.mockReturnValue(true);
+        stream.send({ preview: { childId: 'reply', stage: 'agents', text: 'Second line.' } });
+        await new Promise(resolve => realSetTimeout(resolve, 150));
+        stop.freeze();
+        expect(renderedEvents.at(-1).message.mes).toBe('Second line.');
+    });
 
     test('Agent frames render without following an active reader, then resume at rest', async () => {
         isChatScrollInMotion.mockReturnValue(true);

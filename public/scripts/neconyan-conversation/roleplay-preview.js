@@ -1,4 +1,4 @@
-import { chat as messages, formatGenerationTimer, getRequestHeaders, getThumbnailUrl, isChatScrollInMotion, refreshChatViewportBaseline, scrollChatToBottom, updateMessageElement, updatePreviewMessageText } from '../../script.js';
+import { changeMessageTextForReader, chat as messages, formatGenerationTimer, getRequestHeaders, getThumbnailUrl, isChatScrollInMotion, refreshChatViewportBaseline, scrollChatToBottom, updateMessageElement, updatePreviewMessageText } from '../../script.js';
 import { beginRoleplayReplacement, commitRoleplayReplacement } from './roleplay-replacement.js';
 import { withAbortSignal } from '../abort.js';
 import { power_user } from '../power-user.js';
@@ -16,6 +16,8 @@ const PREVIEW_SILENCE_MS = 5000;
 // Companion notes share the saved job artifact's 16 MiB limit.
 const MAX_PREVIEW_EVENT_LENGTH = 16 * 1024 * 1024;
 const FOLLOWED_STAGES = new Set(['preparing', 'waiting-memory', 'generating', 'agents']);
+// Longest a rewritten reply waits for the reader to stop scrolling.
+const REWRITE_SCROLL_WAIT_MS = 6000;
 // Everything the full message renderer treats as structure. Frames copy the
 // snapshot and reuse nested metadata references, so an equal reference means
 // that part is unchanged; the growing text is compared separately.
@@ -60,6 +62,7 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
     let startedAt = null;
     let stopped = false;
     let frozen = false;
+    let rewriteWaitingSince = 0;
     const thinkingIndicator = new StreamingThinkingIndicator();
     const diagnosticHandle = {};
     let diagnosticStage = null;
@@ -101,7 +104,7 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
         placementObserver = new MutationObserver(() => place(chat));
         placementObserver.observe(chat, { childList: true });
     };
-    const render = () => {
+    const render = (force = false) => {
         if (frozen) return;
         if (!isCurrent()) { remove(); restoreReplacement(); return; }
         if (!latest) return;
@@ -128,6 +131,17 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
             }
             return;
         }
+        // An Agent rewrite replaces text the reader may be scrolling past. Moving the
+        // page under a scroll in progress is dropped or stutters on phones, so the
+        // rewrite waits for the scroll to stop; text that only grows draws at once.
+        const rewrites = node?.isConnected && rendered && childId === latest.childId
+            && !(latest.text || '').startsWith(rendered.text || '');
+        if (rewrites && !force && isChatScrollInMotion()) {
+            const waitNow = performance.now();
+            rewriteWaitingSince ||= waitNow;
+            if (waitNow - rewriteWaitingSince < REWRITE_SCROLL_WAIT_MS) return;
+        }
+        rewriteWaitingSince = 0;
         // Follow the reply while it is written; Agent and Companion output added after
         // that lands below the reader instead of pulling the page down to it. Once
         // Companion notes exist, even the Agents stage stops following, because its
@@ -175,10 +189,6 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
             document.dispatchEvent(new CustomEvent('neconyan:roleplay-preview-rendered', { detail: { message, element: node } }));
             rendered = latest;
             renderedMessageId = messageId;
-            // A live bottom landing must supersede resize anchors for older positions,
-            // and honour the same automatic/manual scrolling policy as saved replies.
-            if (nearBottom) scrollChatToBottom({ isNearBottom: nearBottom });
-            else refreshChatViewportBaseline();
         };
         // Streaming text, counters and the clock only need the draft body and its
         // metadata rewritten. Starting reasoning, a stage, Agent or Companion
@@ -186,34 +196,44 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
         // renderer, so decorators keep their normal behaviour.
         const canUpdateInPlace = node?.isConnected && !thinking && !hasUnfinishedReasoning(rendered)
             && renderedMessageId === messageId && hasSamePreviewStructure(rendered, latest);
-        if (canUpdateInPlace
-            && updatePreviewMessageText(node, message, { messageId, updateText: rendered?.text !== latest.text
-                || rendered?.structured_prefill !== latest.structured_prefill })) {
+        const draw = () => {
+            if (canUpdateInPlace
+                && updatePreviewMessageText(node, message, { messageId, updateText: rendered?.text !== latest.text
+                    || rendered?.structured_prefill !== latest.structured_prefill })) {
+                finishDraw();
+                return;
+            }
+            const messageElement = updateMessageElement(message, { messageId, isPreview: true,
+                ...(node?.isConnected ? { messageElement: globalThis.jQuery(node) } : {}) });
+            if (!node?.isConnected) {
+                node = messageElement[0];
+                node.id = 'neconyan-roleplay-preview';
+                node.style.flexShrink = '0';
+                node.setAttribute('aria-label', 'Reply in progress');
+                const status = document.createElement('small');
+                status.className = 'timestamp';
+                status.setAttribute('role', 'status');
+                node.querySelector('.name_text').parentElement.append(status);
+                if (replacement) {
+                    // Keep the old reply's geometry until this complete frame is ready.
+                    commitRoleplayReplacement(replacement);
+                    replacement.before(node);
+                } else chat.append(node);
+                // The first frame can race the saved chat's own draw. Put the draft
+                // after rows already on screen, then watch the chat for later batches.
+                observePlacement(chat);
+                place(chat);
+            }
             finishDraw();
-            return;
-        }
-        const messageElement = updateMessageElement(message, { messageId, isPreview: true,
-            ...(node?.isConnected ? { messageElement: globalThis.jQuery(node) } : {}) });
-        if (!node?.isConnected) {
-            node = messageElement[0];
-            node.id = 'neconyan-roleplay-preview';
-            node.style.flexShrink = '0';
-            node.setAttribute('aria-label', 'Reply in progress');
-            const status = document.createElement('small');
-            status.className = 'timestamp';
-            status.setAttribute('role', 'status');
-            node.querySelector('.name_text').parentElement.append(status);
-            if (replacement) {
-                // Keep the old reply's geometry until this complete frame is ready.
-                commitRoleplayReplacement(replacement);
-                replacement.before(node);
-            } else chat.append(node);
-            // The first frame can race the saved chat's own draw. Put the draft
-            // after rows already on screen, then watch the chat for later batches.
-            observePlacement(chat);
-            place(chat);
-        }
-        finishDraw();
+        };
+        // A reader who is not following keeps the words on screen where they are,
+        // whatever the draw adds, removes or rewrites above them.
+        if (!nearBottom && node?.isConnected) changeMessageTextForReader(() => node?.querySelector('.mes_text') ?? null, draw);
+        else draw();
+        // A live bottom landing must supersede resize anchors for older positions,
+        // and honour the same automatic/manual scrolling policy as saved replies.
+        if (nearBottom) scrollChatToBottom({ isNearBottom: nearBottom });
+        else refreshChatViewportBaseline();
     };
     // Draw at the reader's streaming cadence (with the phone's conservative floors)
     // aligned to the next animation frame, instead of rebuilding the growing
@@ -383,7 +403,7 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
     // The finished reply is about to be saved and the chat rebuilt. Stop redrawing,
     // so the preview stays where the reader sees it and cannot reappear in the
     // emptied chat ahead of the saved messages.
-    stop.freeze = () => { cancelPendingDraws(); render(); frozen = true; thinkingIndicator.clear(); clearInterval(timer); timer = null; };
+    stop.freeze = () => { cancelPendingDraws(); render(true); frozen = true; thinkingIndicator.clear(); clearInterval(timer); timer = null; };
     // The last reply text shown, so a reply the server did not save can be kept.
     stop.reply = () => {
         if (!latest || !/\S/.test(latest.text || '')) return null;

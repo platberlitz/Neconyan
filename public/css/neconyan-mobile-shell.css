@@ -1,6 +1,92 @@
 /* Neconyan mobile shell foundation: final sheet contract for modal drawers.
  * Keep this at the end of the shell sheet so it beats older mobile drawer rules. */
 @media screen and (max-width: 768px) {
+    /* Lab pages keep their section buttons in a single, touch-scrollable row. */
+    #sbpl-workbench.sbpl-workbench-page,
+    #sbwil-workbench.sbwil-workbench-page {
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+    }
+
+    #sbpl-workbench > .sbpl-nav,
+    #sbwil-workbench > .sbwil-nav {
+        flex: 0 0 auto;
+        min-width: 0;
+        padding: 12px 12px 0;
+        overflow: visible;
+        border-right: 0;
+    }
+
+    #sbpl-workbench .sbpl-tabs,
+    #sbwil-workbench .sbwil-tabs {
+        display: flex;
+        flex-direction: row;
+        flex-wrap: nowrap;
+        gap: 6px;
+        max-width: 100%;
+        padding: 3px;
+        overflow-x: auto;
+        overscroll-behavior-x: contain;
+        touch-action: pan-x;
+    }
+
+    #sbpl-workbench .sbpl-tab-group { display: contents; }
+
+    #sbpl-workbench .sbpl-tab-group-label,
+    #sbpl-workbench .sbpl-tab-hint,
+    #sbpl-workbench .sbpl-readout,
+    #sbwil-workbench .sbwil-tab-hint { display: none; }
+
+    #sbpl-workbench .sbpl-tab,
+    #sbwil-workbench .sbwil-tab {
+        flex: 0 0 auto;
+        align-items: center;
+        width: auto;
+        min-height: 44px;
+        padding: 8px 12px;
+        border: 1px solid color-mix(in srgb, var(--neco-ginger) 45%, transparent);
+        border-radius: var(--neco-radius-md, 8px);
+        background: transparent;
+        color: var(--neco-ink);
+        white-space: nowrap;
+    }
+
+    #sbpl-workbench .sbpl-tab-line { flex-wrap: nowrap; }
+    #sbpl-workbench .sbpl-tab-icon { margin-top: 0; }
+
+    #sbpl-workbench .sbpl-tab[aria-selected='true'],
+    #sbwil-workbench .sbwil-tab[aria-selected='true'] {
+        background: var(--neco-ginger);
+        border-color: var(--neco-ginger);
+        color: var(--neco-on-accent);
+        box-shadow: none;
+    }
+
+    #sbpl-workbench .sbpl-tab:hover,
+    #sbwil-workbench .sbwil-tab:hover {
+        border-color: var(--neco-ginger-hover);
+    }
+
+    #sbpl-workbench .sbpl-tab:focus-visible,
+    #sbwil-workbench .sbwil-tab:focus-visible {
+        outline: 2px solid var(--neco-ginger);
+        outline-offset: 1px;
+    }
+
+    #sbpl-workbench .sbpl-tab[aria-selected='true'] :is(.sbpl-tab-icon, .sbpl-tab-badge),
+    #sbwil-workbench .sbwil-tab[aria-selected='true'] .sbwil-tab-icon {
+        color: inherit;
+        opacity: 1;
+    }
+
+    #sbpl-workbench.sbpl-workbench-page > .sbpl-main,
+    #sbwil-workbench.sbwil-workbench-page > .sbwil-main {
+        flex: 0 0 auto;
+        overflow: visible;
+    }
+
     body.neconyan #structured-prefill-settings :is(.menu_button, summary) {
         min-height: 44px;
         align-content: center;
