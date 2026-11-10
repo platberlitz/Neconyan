@@ -12,6 +12,8 @@ import { setConfigFilePath } from '../src/util.js';
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
 const { captureChatProfile } = await import('../src/generation/profiles.js');
 const { runChatProfile, runTextGeneration } = await import('../src/generation/service.js');
+const { acceptJob, getJob, updateJob } = await import('../src/jobs/store.js');
+const { providerStep, unresolvedProviderStep } = await import('../src/jobs/artifacts.js');
 const { assembleGenerationStream } = await import('../src/generation/stream-result.js');
 const { runBackendRequest } = await import('../src/endpoints/conversation-generation.js');
 const { handleChatCompletionsGenerate } = await import('../src/endpoints/backends/chat-completions.js');
@@ -101,6 +103,33 @@ test('an Ollama error sent inside the stream is reported with its reason', async
         textRun({ api_type: 'ollama', api_server: 'http://127.0.0.1:11434', model: 'm' }, [Buffer.from('{"response":"Par","done":false}\n{"error":"out of memory"}\n')]),
         /out of memory/,
     );
+});
+
+test('an Ollama stream refused with an HTTP error is a definite refusal that can be retried', async () => {
+    const refusal = '{"error":"model \'missing\' not found"}';
+    let bodyRead = 0;
+    const refused = () => runTextGeneration({
+        context: { owner: 'fixture', directories: { root } }, backend: 'text',
+        payload: { prompt: 'Hi', stream: true, api_type: 'ollama', api_server: 'http://127.0.0.1:11434', model: 'missing' },
+        fetch: async () => ({ ok: false, status: 404, statusText: 'Not Found', body: Readable.from([Buffer.from(refusal)]),
+            text: async () => { bodyRead++; return refusal; } }),
+    });
+    await assert.rejects(refused(), error => {
+        assert.match(error.message, /model 'missing' not found/);
+        assert.equal(error.status, 404);
+        assert.equal(error.providerStatus, 404);
+        return true;
+    });
+    assert.equal(bodyRead, 1, 'the refused upstream body is consumed');
+
+    const directories = { root: fs.mkdtempSync(path.join(root, 'refused-')) };
+    const job = acceptJob(directories, { owner: 'fixture', type: 'transport-test', submissionKey: 'ollama-404', intent: {} }).job;
+    const context = { directories, job, signal: new AbortController().signal };
+    updateJob(directories, job.id, { state: 'running' });
+    await assert.rejects(providerStep(context, 'reply', refused), /model 'missing' not found/);
+    assert.notEqual(getJob(directories, job.id).recoverability, 'unknown-outcome');
+    assert.equal(unresolvedProviderStep(directories, job.id), undefined);
+    assert.deepEqual(await providerStep(context, 'reply', () => ({ text: 'asked again' })), { text: 'asked again' });
 });
 
 test('a Responses API reply keeps a character that arrives split across two chunks', async () => {

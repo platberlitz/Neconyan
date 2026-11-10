@@ -371,6 +371,20 @@ function getSafeCompletionErrorStatus(status) {
     return Number.isInteger(parsed) && parsed >= 400 && parsed < 500 ? parsed : 502;
 }
 
+/**
+ * Answers with the upstream error text and status. Reading the body also releases the upstream connection.
+ * @param {import('node-fetch').Response} upstream Upstream response that is not ok
+ * @param {import('express').Response} response Express response
+ */
+async function sendUpstreamError(upstream, response) {
+    const text = await upstream.text();
+    const errorBody = { error: true, status: upstream.status, response: text };
+
+    return !response.headersSent
+        ? response.status(getSafeCompletionErrorStatus(upstream.status)).send(errorBody)
+        : response.end();
+}
+
 // Neconyan divergence: export the existing handler so Conversation REST can reuse upstream text-generation flow without duplicating provider glue.
 export async function handleTextCompletionsGenerate(request, response) {
     if (!request.body || !request.body.api_server) return response.sendStatus(400);
@@ -510,6 +524,8 @@ export async function handleTextCompletionsGenerate(request, response) {
 
         if (request.body.api_type === TEXTGEN_TYPES.OLLAMA && request.body.stream) {
             const stream = await (request.fetch || fetch)(url, args);
+            // A refused stream carries a JSON error body; report it with its status, as the non-streaming branch does.
+            if (!stream.ok) return await sendUpstreamError(stream, response);
             parseOllamaStream(stream, request, response, () => controller.abort());
         } else if (request.body.stream) {
             const completionsStream = await (request.fetch || fetch)(url, args);
@@ -535,12 +551,7 @@ export async function handleTextCompletionsGenerate(request, response) {
 
                 return response.send(data);
             } else {
-                const text = await completionsReply.text();
-                const errorBody = { error: true, status: completionsReply.status, response: text };
-
-                return !response.headersSent
-                    ? response.status(getSafeCompletionErrorStatus(completionsReply.status)).send(errorBody)
-                    : response.end();
+                return await sendUpstreamError(completionsReply, response);
             }
         }
     } catch (error) {
