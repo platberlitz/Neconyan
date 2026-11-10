@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.5.5
+
+### Merged Staging PRs
+- PR #593 (2026-11-10) `fix(generation): repair defects found auditing server-side generation`
+
 ## v1.5.4
 
 ### Highlights
