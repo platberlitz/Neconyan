@@ -33,7 +33,7 @@ import {
 } from '../../public/scripts/extensions/quick-image-gen/lib/security.js';
 import { createHostedProviderDeadline } from '../../public/scripts/extensions/quick-image-gen/lib/hosted-provider.js';
 import { isTrustedProviderOutputUrl } from '../../public/scripts/extensions/quick-image-gen/lib/hosted-provider.js';
-import { buildCustomBackendRequest, executeCustomBackend, normalizeCustomBackendConfig } from '../../public/scripts/extensions/quick-image-gen/lib/custom-backend.js';
+import { buildCustomBackendRequest, downloadCustomBackendImage, executeCustomBackend, normalizeCustomBackendConfig, normalizeCustomBackendImageSource } from '../../public/scripts/extensions/quick-image-gen/lib/custom-backend.js';
 import { getGeminiCandidateFailure } from '../../public/scripts/extensions/quick-image-gen/lib/generated-image.js';
 import { MAX_PROVIDER_RESPONSE_BYTES } from '../../public/scripts/extensions/quick-image-gen/lib/security.js';
 import { buildQueuedImageRequest } from './quick-image-gen-queued.js';
@@ -127,6 +127,11 @@ function finishImage(bytes, source) {
 
 /** The same host checks run when an address is first returned and when a saved one is read back. */
 function trustedImageUrl(source, provider, requestUrl) {
+    if (provider === 'custom') {
+        try { return normalizeCustomBackendImageSource(source, requestUrl); } catch {
+            throw fail('The image provider returned an untrusted image URL.', { code: 'QIG_UNSAFE_IMAGE_URL' });
+        }
+    }
     let sameConfiguredProxyOrigin = false;
     try {
         sameConfiguredProxyOrigin = provider === 'proxy' && !!requestUrl
@@ -146,9 +151,17 @@ function savableImageUrl(source, provider, requestUrl, settings) {
     const address = source && typeof source === 'object' && typeof source.url === 'string' ? source.url : source;
     if (typeof address !== 'string' || !/^https?:/i.test(address)) return '';
     const url = trustedImageUrl(address, provider, requestUrl);
+    const addresses = [url];
+    if (provider === 'custom') {
+        try { addresses.push(decodeURIComponent(url), decodeURIComponent(url.replace(/\+/g, '%20'))); } catch { /* Keep the original address checks. */ }
+    }
     const carriesKey = Object.entries(settings).some(([name, value]) => /key$/i.test(name) && typeof value === 'string'
-        && value.trim().length >= 8 && (url.includes(value.trim()) || url.includes(encodeURIComponent(value.trim()))));
-    return carriesKey ? '' : url;
+        && value.trim().length >= (provider === 'custom' ? 1 : 8)
+        && addresses.some(candidate => candidate.includes(value.trim()) || candidate.includes(encodeURIComponent(value.trim()))));
+    const basicKey = provider === 'custom' && settings.customApiAuthType === 'basic'
+        ? Buffer.from(String(settings.customApiKey || '')).toString('base64') : '';
+    const carriesBasicKey = basicKey && addresses.some(candidate => candidate.includes(basicKey) || candidate.includes(encodeURIComponent(basicKey)));
+    return carriesKey || carriesBasicKey ? '' : url;
 }
 
 async function materializeImage(source, fetchImpl, signal, provider, requestUrl = '', authHeaders = {}) {
@@ -539,9 +552,10 @@ const PROVIDER_GENERATORS = {
         return finishImage(Buffer.from(encoded, 'base64'));
     },
 
-    async custom(s, prompt, negative, { fetchImpl, signal }) {
+    async custom(s, prompt, negative, { fetchImpl, signal, deferDownload }) {
         if (s.customApiMode === 'async') throw fail('Asynchronous Custom API images require a saved job.', { code: 'QIG_INPUT_MISSING', status: 409 });
-        const result = await executeCustomBackend(customConfig(s), customInput(s, prompt, negative), { signal, fetchImpl });
+        const result = await executeCustomBackend(customConfig(s), customInput(s, prompt, negative), { signal, fetchImpl, deferImage: deferDownload });
+        if (result.imageUrl) return { url: result.imageUrl };
         return finishImage(result.buffer);
     },
 
@@ -617,6 +631,9 @@ function imageDownloadAccess(provider, settings, prompt, negative) {
         requestUrl = buildNovelAIRequest({ ...settings,
             seed: resolveQuickImageGenSeed(settings.seed) }, prompt, negative).url;
         key = settings.naiProxyKey || settings.naiKey;
+    } else if (provider === 'custom') {
+        const request = buildCustomBackendRequest(customConfig(settings), customInput(settings, prompt, negative));
+        return { requestUrl: request.url, headers: {}, custom: request.config };
     }
     const headers = provider === 'nanobanana' ? getNanobananaAuthHeaders(requestUrl, key)
         : key ? { Authorization: `Bearer ${key}` } : {};
@@ -656,11 +673,15 @@ export async function generateQuickImageGenImage({ directories, prompt, negative
         { status: 409, code: 'QIG_INPUT_MISSING' });
     const safeFetch = (url, init = {}) => fetchImpl(url, { ...init, redirect: 'error' });
     return withProviderDeadline(provider, resolvedSettings, signal, async deadlineSignal => {
-        const source = await generator(resolvedSettings, prompt, negative, { fetchImpl: safeFetch, signal: deadlineSignal });
+        const source = await generator(resolvedSettings, prompt, negative, { fetchImpl: safeFetch, signal: deadlineSignal, deferDownload });
         if (source && typeof source === 'object' && typeof source.base64 === 'string') return source;
-        const { requestUrl, headers } = imageDownloadAccess(provider, resolvedSettings, prompt, negative);
+        const { requestUrl, headers, custom } = imageDownloadAccess(provider, resolvedSettings, prompt, negative);
         const url = deferDownload ? savableImageUrl(source, provider, requestUrl, resolvedSettings) : '';
         if (url) return { url };
+        if (provider === 'custom') {
+            return finishImage((await downloadCustomBackendImage(source.url, requestUrl,
+                custom, safeFetch, deadlineSignal)).buffer);
+        }
         return await materializeImage(source, safeFetch, deadlineSignal, provider, requestUrl, headers);
     });
 }
@@ -673,7 +694,12 @@ export async function downloadQuickImageGenImage({ url, prompt, negative = '', s
     }
     const safeFetch = (target, init = {}) => fetchImpl(target, { ...init, redirect: 'error' });
     return withProviderDeadline(provider, settings, signal, async deadlineSignal => {
-        const { requestUrl, headers } = imageDownloadAccess(provider, settings, prompt, negative);
+        const { requestUrl, headers, custom } = imageDownloadAccess(provider, settings, prompt, negative);
+        if (provider === 'custom') {
+            const checkedUrl = trustedImageUrl(url, provider, requestUrl);
+            return finishImage((await downloadCustomBackendImage(checkedUrl, requestUrl,
+                custom, safeFetch, deadlineSignal)).buffer);
+        }
         return await materializeImage(url, safeFetch, deadlineSignal, provider, requestUrl, headers);
     });
 }

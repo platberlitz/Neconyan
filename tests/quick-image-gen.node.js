@@ -1736,6 +1736,152 @@ test('a saved image address is checked again before it is downloaded', async () 
     }
 });
 
+test('synchronous Custom API callers without deferral still receive image bytes', async () => {
+    const directories = tempRoot();
+    const settings = { provider: 'custom', customApiMode: 'json', customApiUrl: 'https://custom.example.com/image',
+        customApiAuthType: 'header', customApiKey: 'custom-private-key',
+        customApiRequestTemplate: '{"prompt":"{{prompt}}"}', customApiResponseType: 'url', seed: 42 };
+    let calls = 0;
+    const image = await generateQuickImageGenImage({ directories, settings, prompt: 'A portrait', fetch: async (url, init) => {
+        calls++;
+        if (init.method === 'POST') return jsonResponse({ image: '/out.png' });
+        assert.equal(url, 'https://custom.example.com/out.png');
+        assert.equal(init.headers['X-API-Key'], settings.customApiKey);
+        assert.equal(init.redirect, 'error');
+        return new Response(Buffer.from(PNG_BASE64, 'base64'));
+    } });
+    assert.deepEqual(image, { base64: PNG_BASE64, format: 'png' });
+    assert.equal(calls, 2);
+});
+
+test('a paid Custom API image address is saved, so a failed download is retried without paying again', async t => {
+    for (const fixture of [
+        { auth: 'bearer', api: 'https://custom.example.com/private-submit', image: './out.png',
+            saved: 'https://custom.example.com/out.png', headers: { Accept: 'image/*', Authorization: 'Bearer custom-private-key' } },
+        { auth: 'query', api: 'http://127.0.0.1:8188/private-submit', image: '/out.png',
+            saved: 'http://127.0.0.1:8188/out.png', headers: { Accept: 'image/*' } },
+        { auth: 'header', api: 'https://custom.example.com/private-submit', image: 'https://cdn.example.net/out.png',
+            saved: 'https://cdn.example.net/out.png', headers: { Accept: 'image/*' } },
+        { auth: 'basic', api: 'https://custom.example.com/private-submit', image: '/out.png',
+            saved: 'https://custom.example.com/out.png', headers: { Accept: 'image/*', Authorization: `Basic ${Buffer.from('user:custom-private-key').toString('base64')}` } },
+    ]) {
+        await t.test(fixture.auth, async () => {
+            const directories = tempRoot();
+            const settings = { provider: 'custom', customApiMode: 'json', customApiUrl: fixture.api,
+                customApiAuthType: fixture.auth, customApiAuthName: 'X-API-Key',
+                customApiKey: fixture.auth === 'basic' ? 'user:custom-private-key' : 'custom-private-key',
+                customApiRequestTemplate: '{"prompt":"{{prompt}}"}', customApiResponsePath: '/image',
+                customApiResponseType: 'url', seed: 42 };
+            saveImageSettings(directories, settings);
+            const context = jobContext(directories);
+            updateJob(directories, context.job.id, { state: 'running' });
+            const input = { ...imageRequest, settingsFingerprint: quickImageGenSettingsFingerprint(settings) };
+            const step = 'provider:quick-image:image:0:0';
+            let paid = 0;
+            let downloads = 0;
+            let downloadWorks = false;
+            const fetchImpl = async (url, init) => {
+                assert.equal(init.redirect, 'error');
+                assert.equal(init.credentials, 'omit');
+                assert.equal(init.referrerPolicy, 'no-referrer');
+                if (init.method === 'POST') {
+                    paid++;
+                    assert.equal(new URL(url).pathname, '/private-submit');
+                    return jsonResponse({ image: fixture.image });
+                }
+                downloads++;
+                const destination = new URL(fixture.saved);
+                if (fixture.auth === 'query') destination.searchParams.set('X-API-Key', settings.customApiKey);
+                assert.equal(url, destination.href);
+                assert.deepEqual(init.headers, fixture.headers);
+                return downloadWorks ? new Response(Buffer.from(PNG_BASE64, 'base64')) : new Response('busy', { status: 503 });
+            };
+            await assert.rejects(generateQuickImageGenJobImage(context, { ...input, fetch: fetchImpl }),
+                error => error.code === 'QIG_PROVIDER_ERROR' && error.recoverable === true);
+            assert.deepEqual([paid, downloads], [1, 1]);
+            assert.deepEqual(readArtifact(directories, context.job.id, step), { url: fixture.saved });
+            assert.equal(readImageArtifact(directories, context.job.id, step), undefined);
+            assert.notEqual(getJob(directories, context.job.id).recoverability, 'unknown-outcome');
+            const artifacts = path.join(directories.root, 'jobs', 'artifacts');
+            for (const name of fs.readdirSync(artifacts, { recursive: true }).filter(name => name.endsWith('.json'))) {
+                const text = fs.readFileSync(path.join(artifacts, name), 'utf8');
+                for (const secret of [settings.customApiKey, encodeURIComponent(settings.customApiKey),
+                    Buffer.from(settings.customApiKey).toString('base64'), fixture.api]) {
+                    assert.equal(text.includes(secret), false);
+                }
+            }
+            recoverJobs(directories);
+            await assert.rejects(generateQuickImageGenJobImage(context, { ...input, fetch: fetchImpl }), { code: 'QIG_PROVIDER_ERROR' });
+            assert.deepEqual([paid, downloads], [1, 2]);
+            downloadWorks = true;
+            const image = await generateQuickImageGenJobImage(context, { ...input, fetch: fetchImpl });
+            assert.equal(image.base64, PNG_BASE64);
+            assert.deepEqual([paid, downloads], [1, 3]);
+            assert.equal(readImageArtifact(directories, context.job.id, step).base64, PNG_BASE64);
+            await generateQuickImageGenJobImage(context, { ...input, fetch: () => assert.fail('The saved Custom API image must be reused.') });
+        });
+    }
+});
+
+test('a tampered saved Custom API image address is refused without a fetch', async () => {
+    const directories = tempRoot();
+    const settings = { provider: 'custom', customApiMode: 'json', customApiUrl: 'https://custom.example.com/image',
+        customApiAuthType: 'bearer', customApiKey: 'custom-private-key',
+        customApiRequestTemplate: '{"prompt":"{{prompt}}"}', customApiResponseType: 'url', seed: 42 };
+    saveImageSettings(directories, settings);
+    const context = jobContext(directories);
+    updateJob(directories, context.job.id, { state: 'running' });
+    const input = { ...imageRequest, settingsFingerprint: quickImageGenSettingsFingerprint(settings) };
+    const step = 'provider:quick-image:image:0:0';
+    await assert.rejects(generateQuickImageGenJobImage(context, { ...input,
+        fetch: async (_url, init) => init.method === 'POST'
+            ? jsonResponse({ image: 'https://cdn.example.net/out.png' }) : new Response('gone', { status: 404 }) }));
+    assert.deepEqual(readArtifact(directories, context.job.id, step), { url: 'https://cdn.example.net/out.png' });
+    for (const url of ['http://127.0.0.1/secret.png', 'https://192.168.1.2/out.png',
+        'http://cdn.example.net/out.png', 'https://user:password@custom.example.com/out.png']) {
+        writeArtifact(directories, context.job.id, step, { url });
+        let fetches = 0;
+        await assert.rejects(generateQuickImageGenJobImage(context, { ...input,
+            fetch: () => { fetches++; assert.fail('An untrusted Custom API image address must not be fetched.'); } }),
+        { code: 'QIG_UNSAFE_IMAGE_URL' });
+        assert.equal(fetches, 0);
+    }
+    const url = 'https://cdn.example.net/out.png';
+    writeArtifact(directories, context.job.id, step, { url });
+    for (const response of [new Response('not an image'),
+        new Response(Buffer.from(PNG_BASE64, 'base64'), { headers: { 'content-length': String(26 * 1024 * 1024) } })]) {
+        await assert.rejects(generateQuickImageGenJobImage(context, { ...input, fetch: async () => response }), { code: 'QIG_PROVIDER_ERROR' });
+        assert.deepEqual(readArtifact(directories, context.job.id, step), { url });
+        assert.equal(readImageArtifact(directories, context.job.id, step), undefined);
+    }
+});
+
+test('Custom API image addresses containing a configured key are downloaded without saving the address', async () => {
+    for (const key of ['custom/private+key', 'custom private key', 'short', 'user:custom-private-key']) {
+        const basic = key.startsWith('user:');
+        const encoded = basic ? Buffer.from(key).toString('base64') : key;
+        const values = [key, encodeURIComponent(key), encodeURIComponent(key).replace(/%20/g, '+'), encoded, encodeURIComponent(encoded)]
+            .filter(value => !/\s/.test(value));
+        for (const value of new Set(values)) {
+            const directories = tempRoot();
+            const settings = { provider: 'custom', customApiMode: 'json', customApiUrl: 'https://custom.example.com/image',
+                customApiAuthType: basic ? 'basic' : 'header', customApiKey: key,
+                customApiRequestTemplate: '{"prompt":"{{prompt}}"}', customApiResponseType: 'url', seed: 42 };
+            saveImageSettings(directories, settings);
+            const context = jobContext(directories);
+            const image = await generateQuickImageGenJobImage(context, { ...imageRequest,
+                settingsFingerprint: quickImageGenSettingsFingerprint(settings), fetch: async (_url, init) => {
+                    if (init.method === 'POST') return jsonResponse({ image: `https://custom.example.com/out.png?key=${value}` });
+                    assert.equal(readArtifact(directories, context.job.id, 'provider:quick-image:image:0:0'), undefined);
+                    assert.equal(basic ? init.headers.Authorization : init.headers['X-API-Key'], basic ? `Basic ${encoded}` : key);
+                    return new Response(Buffer.from(PNG_BASE64, 'base64'));
+                } });
+            assert.equal(image.base64, PNG_BASE64);
+            assert.equal(readImageArtifact(directories, context.job.id, 'provider:quick-image:image:0:0').base64, PNG_BASE64);
+        }
+    }
+});
+
 test('the seed resolver never returns a negative seed', () => {
     assert.equal(testExports.resolveSeed(42), 42);
     assert.ok(testExports.resolveSeed(-1) >= 0);
