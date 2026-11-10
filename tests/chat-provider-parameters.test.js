@@ -254,6 +254,20 @@ test('keeps NanoGPT fields and service tier from before a held tool registration
     expect(data).not.toHaveProperty('middleout');
 });
 
+test('hands the NanoGPT service tier lookup the settings snapshot, not the live object', async () => {
+    const settings = { ...baseSettings, chat_completion_source: 'nanogpt', nanogpt_payg_override: true, nanogpt_service_tier: 'priority' };
+    const getServiceTier = jest.fn(async () => {
+        settings.nanogpt_payg_override = false;
+        return 'priority';
+    });
+    const { generate_data: data } = await createChatGenerationParameters(settings, 'gpt-4o', 'normal', [{ role: 'user', content: 'Hello' }], { ...context, getServiceTier });
+    const [received] = getServiceTier.mock.calls[0];
+    expect(received).not.toBe(settings);
+    expect(received).toMatchObject({ nanogpt_payg_override: true, nanogpt_service_tier: 'priority' });
+    expect(data.nanogpt_payg_override).toBe(true);
+    expect(data.service_tier).toBe('priority');
+});
+
 test('does not throw on settings holding uncloneable nested values', async () => {
     const settings = { ...baseSettings, opaque: { callback() {} } };
     await expect(createChatGenerationParameters(settings, 'gpt-4o', 'normal', [{ role: 'user', content: 'Hello' }], context))
