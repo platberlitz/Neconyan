@@ -93,9 +93,9 @@ function recoveryHost() {
         t: strings => strings[0], toastr: { info: jest.fn(), error: jest.fn(), warning: jest.fn() }, playMessageSound: jest.fn(),
         setTimeout: jest.fn(() => 1), clearTimeout: jest.fn(),
     });
-    const names = ['scheduleHeldGenerationRecovery', 'saveChatWithHeldReply', 'recoverHeldGenerations', 'recoverHeldGenerationPass', 'applyHeldGeneration'];
+    const names = ['scheduleHeldGenerationRecovery', 'startHeldGenerationRecoveryTimer', 'saveChatWithHeldReply', 'recoverHeldGenerations', 'recoverHeldGenerationPass', 'applyHeldGeneration'];
     const functions = names.map(name => source.match(new RegExp(`^(?:export )?((?:async )?function ${name}\\([\\s\\S]*?^})`, 'm'))[1]);
-    vm.runInContext('let heldRecoveryTimer; let heldRecoveryPromise; const heldRecoveryFailures = new Map();\n' + functions.join('\n'), host);
+    vm.runInContext('let heldRecoveryTimer; let heldRecoveryPromise; const heldRecoveryFailures = new Map(); let heldRecoveryRetries = 0;\n' + functions.join('\n'), host);
     return { host, job };
 }
 
@@ -175,6 +175,37 @@ describe('recovery and save acknowledgement', () => {
         expect(host.toastr.error).toHaveBeenCalledTimes(1);
         expect(host.toastr.info).not.toHaveBeenCalled();
         expect(host.saveReply).not.toHaveBeenCalled();
+    });
+
+    test('a lookup that keeps failing is retried less and less often, and promptly again after a success or a wake-up', async () => {
+        const { host } = recoveryHost();
+        host.console = { warn: jest.fn() };
+        host.listRecoverableGenerations.mockRejectedValue(new TypeError('Failed to fetch'));
+        const runTimer = async () => {
+            const [callback, delay] = host.setTimeout.mock.calls.at(-1);
+            callback();
+            await new Promise(resolve => setImmediate(resolve));
+            return delay;
+        };
+        host.scheduleHeldGenerationRecovery();
+        const delays = [];
+        for (let round = 0; round < 9; round++) delays.push(await runTimer());
+        expect(delays).toEqual([2000, 2000, 4000, 8000, 16000, 32000, 60000, 60000, 60000]);
+        expect(host.listRecoverableGenerations).toHaveBeenCalledTimes(9);
+        expect(host.console.warn).toHaveBeenCalledTimes(9);
+
+        // The page's online, pageshow and visibilitychange listeners call this.
+        host.scheduleHeldGenerationRecovery();
+        expect(host.setTimeout.mock.calls.at(-1)[1]).toBe(2000);
+
+        host.listRecoverableGenerations.mockResolvedValueOnce([]);
+        const timers = host.setTimeout.mock.calls.length;
+        await runTimer();
+        expect(host.setTimeout).toHaveBeenCalledTimes(timers);
+        host.listRecoverableGenerations.mockRejectedValue(new TypeError('Failed to fetch'));
+        host.scheduleHeldGenerationRecovery();
+        await runTimer();
+        expect(host.setTimeout.mock.calls.at(-1)[1]).toBe(2000);
     });
 
     test('defers recovery while another generation owns the chat', async () => {

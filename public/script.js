@@ -12179,16 +12179,23 @@ let heldRecoveryTimer;
 let heldRecoveryPromise;
 /** @type {Map<string, number>} Failed attempts to read each held reply. */
 const heldRecoveryFailures = new Map();
+let heldRecoveryRetries = 0;
 
 function scheduleHeldGenerationRecovery() {
+    startHeldGenerationRecoveryTimer(2000);
+}
+
+function startHeldGenerationRecoveryTimer(delay) {
     clearTimeout(heldRecoveryTimer);
     if (document.visibilityState === 'hidden') return;
     heldRecoveryTimer = setTimeout(() => {
-        recoverHeldGenerations().catch(error => {
+        recoverHeldGenerations().then(() => { heldRecoveryRetries = 0; }, error => {
             console.warn('Held generation recovery failed', error);
-            scheduleHeldGenerationRecovery();
+            // Neconyan: a server that stays unreachable is asked less often: 2 s, 4 s, 8 s, up to a minute.
+            // Coming back online or into view schedules a prompt pass again.
+            startHeldGenerationRecoveryTimer(Math.min(60000, 2000 * 2 ** heldRecoveryRetries++));
         });
-    }, 2000);
+    }, delay);
 }
 
 /** A received body is not a saved reply. Acknowledge only after the chat write succeeds. */
