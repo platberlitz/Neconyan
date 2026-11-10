@@ -184,12 +184,14 @@ function visit(directory) {
 }
 visit(root);
 // The server's own code is not scanned for captions. Only a literal passed to uiText() is collected from src/.
-function walkUiText(node) {
+function walkUiText(node, syncErrors = false) {
     if (!node || typeof node !== 'object') return;
     collectUiText(node);
+    // Sync's fail() marks safe, whole messages returned to the page, just like uiText().
+    if (syncErrors && node.type === 'CallExpression' && calleeName(node.callee) === 'fail') add(literalText(node.arguments[0]));
     for (const value of Object.values(node)) {
-        if (Array.isArray(value)) value.forEach(walkUiText);
-        else if (value && typeof value === 'object') walkUiText(value);
+        if (Array.isArray(value)) value.forEach(child => walkUiText(child, syncErrors));
+        else if (value && typeof value === 'object') walkUiText(value, syncErrors);
     }
 }
 function visitServer(directory) {
@@ -198,7 +200,7 @@ function visitServer(directory) {
         const filename = path.join(directory, entry.name);
         if (entry.isDirectory()) { visitServer(filename); continue; }
         if (!filename.endsWith('.js')) continue;
-        try { walkUiText(parse(fs.readFileSync(filename, 'utf8'), { ecmaVersion: 'latest', sourceType: 'module' })); } catch (error) {
+        try { walkUiText(parse(fs.readFileSync(filename, 'utf8'), { ecmaVersion: 'latest', sourceType: 'module' }), /[/\\]device-sync[/\\]|endpoints[/\\]device-sync\.js$/.test(filename)); } catch (error) {
             console.warn(`Skipped ${path.relative(process.cwd(), filename)}: ${error.message}`);
         }
     }

@@ -89,7 +89,8 @@ import { isSimpleModeEnabled, setSimpleModeEnabled } from './neconyan-simple-mod
         #user-settings-block-content:not([data-search-active="true"])[data-active-tab="appearance"] .inline-drawer[data-settings-tab]:not([data-settings-tab="appearance"]),
         #user-settings-block-content:not([data-search-active="true"])[data-active-tab="chat-writing"] .inline-drawer[data-settings-tab]:not([data-settings-tab="chat-writing"]),
         #user-settings-block-content:not([data-search-active="true"])[data-active-tab="system-device"] .inline-drawer[data-settings-tab]:not([data-settings-tab="system-device"]),
-        #user-settings-block-content:not([data-search-active="true"])[data-active-tab="cache-account"] .inline-drawer[data-settings-tab]:not([data-settings-tab="cache-account"]) {
+        #user-settings-block-content:not([data-search-active="true"])[data-active-tab="cache-account"] .inline-drawer[data-settings-tab]:not([data-settings-tab="cache-account"]),
+        #user-settings-block-content:not([data-search-active="true"])[data-active-tab="device-sync"] .inline-drawer[data-settings-tab]:not([data-settings-tab="device-sync"]) {
             display: none !important;
         }
 
@@ -755,6 +756,7 @@ import { isSimpleModeEnabled, setSimpleModeEnabled } from './neconyan-simple-mod
         { id: 'chat-writing', label: 'Chat & Writing', icon: 'fa-comments' },
         { id: 'system-device', label: 'System & Device', icon: 'fa-laptop-code' },
         { id: 'cache-account', label: 'Cache & Account', icon: 'fa-user-shield' },
+        { id: 'device-sync', label: 'Device sync', icon: 'fa-arrows-rotate' },
     ]);
     const settingsControllerState = { controller: null };
     const extensionsControllerState = { controller: null };
@@ -1210,6 +1212,9 @@ import { isSimpleModeEnabled, setSimpleModeEnabled } from './neconyan-simple-mod
                 }
             });
             refs.mobileSelect.value = activeCategory;
+            if (activeCategory === 'device-sync') {
+                void import('./neconyan-device-sync.js').then(({ mountDeviceSync }) => mountDeviceSync(document.getElementById('nn-device-sync')));
+            }
         };
 
         const applySearch = () => {
@@ -1979,6 +1984,15 @@ import { isSimpleModeEnabled, setSimpleModeEnabled } from './neconyan-simple-mod
         ensureSettingsHeaderIcons();
         ensureMovingUIPresetCards();
         promoteCacheAccount();
+        if (!document.getElementById('nn-device-sync')) {
+            const syncDrawer = document.createElement('section');
+            syncDrawer.id = 'nn-device-sync';
+            syncDrawer.className = 'inline-drawer wide100p';
+            syncDrawer.dataset.settingsTab = 'device-sync';
+            syncDrawer.setAttribute('aria-label', t`Device sync`);
+            syncDrawer.textContent = 'Device sync: encrypted files, WebDAV, secret GitHub Gist and direct pairing. Share between separate installations.';
+            content.append(syncDrawer);
+        }
         tagDrawersWithCategories();
         tagUntaggedDrawers();
         settingsControllerState.controller = createSettingsController(content);

@@ -26,6 +26,7 @@ import { createRequestTrace } from './request-trace.js';
 import { getServerBootId } from './server-boot-marker.js';
 import { AGENT_STORAGE_LIMITS } from '../public/scripts/extensions/in-chat-agents/setup-presets.js';
 import { JOB_INTENT_LIMIT_BYTES } from './jobs/store.js';
+import { pairingRouter as deviceSyncPairingRouter } from './endpoints/device-sync.js';
 
 import { serverEvents, EVENT_NAMES } from './server-events.js';
 import { getLoadedServerPlugins, loadPlugins } from './plugin-loader.js';
@@ -191,6 +192,9 @@ if (cliArgs.whitelistMode) {
 }
 
 app.use(hostWhitelistMiddleware);
+
+// Independently authenticated encrypted exchanges only; browser APIs retain normal auth and CSRF.
+app.use('/api/device-sync/pair', deviceSyncPairingRouter);
 
 // Session auth login/logout endpoints (registered after IP/host admission, before basic auth to allow unauthenticated login)
 if (isSessionAuthEnabled()) {
@@ -509,6 +513,8 @@ app.use('/api/auth', authRouter);
 
 // Everything below this line requires authentication
 app.use(requireLoginMiddleware);
+app.use('/api/device-sync/import', express.json({ limit: '60mb', inflate: false }));
+app.use('/api/device-sync', express.json({ limit: '32kb', inflate: false }));
 app.use('/api/in-chat-agents', express.json({ limit: AGENT_STORAGE_LIMITS.presetBytes }), express.urlencoded({ extended: false, limit: AGENT_STORAGE_LIMITS.presetBytes }));
 // A job intent is bounded before the general parser so one account cannot feed
 // the dispatcher a ledger-sized body that would later break the read limit.

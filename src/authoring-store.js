@@ -30,7 +30,7 @@ export function assertAuthoringEvidence(lease, filename, expected, limit = AUTHO
 }
 
 /** The caller saves this physical publication witness before making a durable tool change. */
-export function stageAuthoringFileLocked(lease, filename, data, { expected, limit = AUTHORING_FILE_LIMIT } = {}) {
+export function stageAuthoringFileLocked(lease, filename, data, { expected, limit = AUTHORING_FILE_LIMIT, mode } = {}) {
     const { root, target, relative } = ownedPath(lease, filename);
     const bytes = Buffer.isBuffer(data) ? data : Buffer.from(data, 'utf8');
     if (bytes.length > limit) throw roleplayError('AUTHORING_FILE_TOO_LARGE', 'The authoring file is too large.', 413);
@@ -40,7 +40,7 @@ export function stageAuthoringFileLocked(lease, filename, data, { expected, limi
     createRoleplayDirectory(path.dirname(target), root);
     const temporary = path.join(path.dirname(target), `.author-${randomUUID()}.tmp`);
     ownedPath(lease, temporary);
-    tryWriteFileSync(temporary, bytes, {}, { expectedFileAbsent: true, durable: true });
+    tryWriteFileSync(temporary, bytes, mode === undefined ? {} : { mode }, { expectedFileAbsent: true, durable: true });
     // tryWriteFileSync already flushed these exact bytes. Keep the physical/content proof.
     const prepared = readRoleplayFile(temporary, limit);
     if (!prepared?.bytes.equals(bytes)) throw roleplayError('AUTHORING_RECOVERY_REQUIRED', 'The prepared authoring file could not be verified.', 409);
