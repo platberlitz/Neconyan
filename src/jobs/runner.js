@@ -26,10 +26,32 @@ let ticking = false;
 let cursor = 0;
 let requestDispatch = null;
 let dispatchRequested = false;
+// Owners whose start-up recovery failed, with the time of the next attempt.
+const unrecovered = new Map();
+let recoveryHold = false;
+const RECOVERY_RETRY_MS = 5000;
 
 /** Remember an owner seen by an endpoint so the dispatcher can find their jobs. */
 export function noteOwner(owner) {
     if (owner) knownOwners.add(owner);
+}
+
+/**
+ * A failed start-up recovery would otherwise leave that owner's interrupted
+ * work marked as running until the next restart, where Stop and Retry cannot
+ * reach it. Recovery marks every running record as interrupted, so it only
+ * runs again while none of the owner's jobs is live in this process.
+ */
+function retryRecovery(owner, directories) {
+    const due = unrecovered.get(owner);
+    if (due === undefined || Date.now() < due || userRunningCount(owner) > 0) return;
+    try {
+        recoverJobs(directories, { hold: recoveryHold });
+        unrecovered.delete(owner);
+    } catch (error) {
+        unrecovered.set(owner, Date.now() + RECOVERY_RETRY_MS);
+        serverEvents.emit('job-recovery-failed', { owner, message: error?.message ?? 'Recovery failed.' });
+    }
 }
 
 function targetKey(job) {
@@ -242,14 +264,18 @@ async function tick() {
             } catch {
                 continue;
             }
+            retryRecovery(owner, directories);
             let candidates;
             try {
                 if (waitingResolver) {
                     for (const job of listJobs(directories, { owner, includeDismissed: true })) {
                         if (job.state !== 'waiting' || job.cancellation?.requested) continue;
                         try { await waitingResolver({ job, directories, owner }); } catch (error) {
-                            updateJob(directories, job.id, { state: 'conflict', finishedAt: Date.now(),
-                                error: { message: error?.message || 'The saved review needs recovery.', code: error?.code ?? null, status: error?.status ?? 409 } });
+                            // The resolver can wait, so a Stop saved meanwhile wins. A failed
+                            // write here must not hold back this owner's queued work.
+                            await settleQuietly(() => updateJob(directories, job.id, current => current.state !== 'waiting' || current.cancellation?.requested ? {} : {
+                                state: 'conflict', finishedAt: Date.now(),
+                                error: { message: error?.message || 'The saved review needs recovery.', code: error?.code ?? null, status: error?.status ?? 409 } }));
                         }
                     }
                 }
@@ -294,6 +320,7 @@ export function abortJob(id) {
 export function startJobsRunner({ directoriesFor, owners, recoverWaiting = null, holdRecovered = false }) {
     setDirectoriesResolver(directoriesFor);
     waitingResolver = recoverWaiting;
+    recoveryHold = holdRecovered;
     let stopped = false;
     let ready = false;
     let wake = null;
@@ -321,6 +348,7 @@ export function startJobsRunner({ directoriesFor, owners, recoverWaiting = null,
                 try {
                     recoverJobs(directoriesFor(owner), { hold: holdRecovered });
                 } catch (error) {
+                    unrecovered.set(owner, Date.now() + RECOVERY_RETRY_MS);
                     serverEvents.emit('job-recovery-failed', { owner, message: error?.message ?? 'Recovery failed.' });
                 }
             }
@@ -346,6 +374,7 @@ export function startJobsRunner({ directoriesFor, owners, recoverWaiting = null,
         timer = null;
         for (const controller of controllers.values()) controller.abort();
         knownOwners.clear();
+        unrecovered.clear();
         waitingResolver = null;
         serverEvents.emit('job-runner-stopped');
     };
