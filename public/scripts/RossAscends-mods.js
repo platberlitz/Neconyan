@@ -973,14 +973,14 @@ export function initRossMods() {
                     lastHeight = newHeight;
                     continue;
                 }
-                const deltaHeight = newHeight - lastHeight;
                 const wasScrollAtBottom = Math.abs(chatBlock.scrollHeight - chatBlock.scrollTop - lastHeight) <= threshold;
 
                 if (wasScrollAtBottom) {
                     chatBlock.scrollTop = chatBlock.scrollHeight;
-                } else if (!isMobile() && Math.abs(deltaHeight) > threshold) {
-                    chatBlock.scrollTop -= deltaHeight;
                 }
+                // Away from the bottom, keep the visible text in place. A taller
+                // viewport after reply controls close must not undo the saved
+                // reply's reading anchor by subtracting that extra height.
                 lastHeight = newHeight;
             }
         });

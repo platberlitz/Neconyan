@@ -10,7 +10,7 @@ import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './i
 for (const phone of [false, true]) {
     const viewport = phone ? 'iPhone Safari emulation' : 'desktop';
 
-    test(`two-speaker group saving keeps the final preview position on ${viewport}`, async ({ app }) => {
+    test(`two-speaker group saving keeps the final preview position on ${viewport}`, async ({ app }, info) => {
         test.setTimeout(240000);
         app.provider.mode.hold = ['conversation-fixture', 'unused-named-model'];
         // Each release clears the hold, so every provider response rearms it.
@@ -79,6 +79,14 @@ for (const phone of [false, true]) {
         // eslint-disable-next-line playwright/no-wait-for-timeout
         await page.waitForTimeout(1000);
         const before = await preview.locator('.mes_text').evaluate(element => element.getBoundingClientRect().top);
+        const visibleParagraph = await preview.locator('.mes_text').evaluate(element => {
+            const top = document.querySelector('#chat').getBoundingClientRect().top;
+            const blocks = [...element.children];
+            const index = blocks.findIndex(block => block.getBoundingClientRect().top >= top);
+            return { index, text: blocks[index]?.textContent, top: blocks[index]?.getBoundingClientRect().top };
+        });
+        expect(visibleParagraph.index).toBeGreaterThanOrEqual(0);
+        await info.attach('before-handover', { body: await page.screenshot(), contentType: 'image/png' });
         await app.release();
         await account.settled(jobId);
         await expect(preview).toHaveCount(0);
@@ -94,6 +102,13 @@ for (const phone of [false, true]) {
         expect(rows).toHaveLength(4);
         expect(rows.at(-1)?.name).toBe('Durable Kit');
         expect(rows.at(-1)?.top).not.toBeNull();
+        const savedParagraph = await page.locator('#chat > .mes').last().locator('.mes_text').evaluate((element, index) => ({
+            text: element.children[index]?.textContent, top: element.children[index]?.getBoundingClientRect().top,
+        }), visibleParagraph.index);
+        await info.attach('handover-geometry', { body: JSON.stringify({ before, visibleParagraph, savedParagraph, rows }), contentType: 'application/json' });
+        await info.attach('after-handover', { body: await page.screenshot(), contentType: 'image/png' });
         expect(Math.abs(rows.at(-1).top - before)).toBeLessThanOrEqual(4);
+        expect(savedParagraph.text).toBe(visibleParagraph.text);
+        expect(Math.abs(savedParagraph.top - visibleParagraph.top)).toBeLessThanOrEqual(4);
     });
 }
