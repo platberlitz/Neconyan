@@ -16,6 +16,10 @@
 - Chat decorations pause when their messages are off screen, and empty expression sprites stop refreshing unnecessarily.
 - **Regex Agent Themes** uses stepped glow animations to reduce continuous animation work.
 - The assistants explain Device sync setup, supported data, conflicts and recovery.
+- Declining a connection profile or preset's reverse proxy points to that profile or preset, rather than the main connection settings.
+- DeepSeek's reasoning hint translates as one complete caption instead of being split at a semicolon.
+- Interrupted image-change Undo attempts explain how to check Change history without implying that another change was made.
+- Proxy, Undo and blocked-swipe messages have corrected wording and translations across all 16 languages.
 
 ### Merged Staging PRs
 - PR #583 (2026-11-09) `feat(icons): draw catline icons 25% larger`
