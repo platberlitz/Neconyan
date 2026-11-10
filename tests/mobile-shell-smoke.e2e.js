@@ -260,6 +260,38 @@ test.describe('mobile shell smoke at iPhone 390x844', () => {
         await expectNoDocumentOverflow(page);
     });
 
+    test('left drawer clears its viewport bounds after a slow close motion', async ({ page }) => {
+        await openLeftShell(page);
+        await expect.poll(() => getDrawerBoundsSnapshot(page, 'left-nav-panel')).toMatchObject({
+            isOpen: true,
+            isViewportBound: true,
+        });
+
+        // The drawer keeps its open class until the exit motion ends. Stretch
+        // that motion past every bounds check the close itself schedules.
+        await page.evaluate(() => {
+            const animate = window.Element.prototype.animate;
+            window.Element.prototype.animate = function (keyframes, options) {
+                const slowed = this.id === 'left-nav-panel' && options && typeof options === 'object'
+                    ? { ...options, duration: 1500 }
+                    : options;
+                return animate.call(this, keyframes, slowed);
+            };
+        });
+
+        await closeLeftShellThroughUi(page);
+
+        await expect.poll(() => getDrawerBoundsSnapshot(page, 'left-nav-panel')).toEqual({
+            isOpen: false,
+            isViewportBound: false,
+            top: '',
+            bottom: '',
+            height: '',
+            maxHeight: '',
+            boxSizing: '',
+        });
+    });
+
     test('hamburger rail drawer keeps hidden, aria-hidden, and inert in agreement', async ({ page }, testInfo) => {
         const leftmostControl = await page.evaluate(() => {
             const bar = document.getElementById('sb-topbar-inner');

@@ -9775,6 +9775,9 @@ function forceDrawerState(drawerRootOrId, shouldOpen, drawerIconOrSelector = nul
         el.classList.toggle('closedDrawer', !visible);
         queueMobileModalStateSync();
         queueTopbarPageStateSync();
+        // A closing drawer keeps its open class until the exit motion ends, which
+        // can be after the caller's own bounds checks have already run.
+        queueMobileShellDrawerBoundsSync();
     }, { edge: getUiDrawerEdge(el, Boolean(shouldOpen), el.classList.contains('fillLeft') ? 'left' : 'right') });
     syncDrawerIconState(drawerIconOrSelector, shouldOpen);
     queueMobileModalStateSync();
