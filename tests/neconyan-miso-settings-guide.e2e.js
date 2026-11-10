@@ -115,7 +115,9 @@ test('desktop: four questions apply real settings, undo guards an outside change
         await clearMisoAnswers(page);
         const before = await readSettings(page);
 
-        await expect(page.locator('#sb-settings-tabs .sb-settings-tab-btn')).toHaveCount(4);
+        await expect(page.locator('#sb-settings-tabs .sb-settings-tab-btn')).toHaveText([
+            'Appearance', 'Chat & Writing', 'System & Device', 'Cache & Account', 'Device sync',
+        ]);
         await expect(page.locator('#sb-settings-tabs')).not.toContainText('Help me choose');
         await openGuide(page);
         await closeGuideWithEscape(page);

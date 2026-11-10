@@ -4,6 +4,7 @@ import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { refreshedKnowledgeCases } from './neconyan-assistant-knowledge-cases.js';
 import { fillSource } from './notebooks-browser-fixture.js';
+import { requestJson } from './roleplay-browser-fixture.js';
 
 test.use({ serviceWorkers: 'block', reducedMotion: 'reduce' });
 test.describe.configure({ mode: 'default' });
@@ -50,12 +51,12 @@ async function assistant(page) {
     const opening = await picker.evaluateHandle(row => row.closest('[data-assistant-picker]'));
     await picker.locator('input[value="miso-male"]').check();
     await picker.locator('[data-assistant-open]').click();
+    // Selection publishes the character before its chat and extension events finish.
+    await expect.poll(() => opening.evaluate(root => root.dataset.assistantBusy), { timeout: 30000 }).toBe('false');
     await expect.poll(() => page.evaluate(async () => {
         const app = await import('/script.js');
         return app.this_chid !== undefined && app.chat.length > 0 && !app.is_send_press;
     })).toBe(true);
-    // Selection publishes the character before its chat and extension events finish.
-    await expect.poll(() => opening.evaluate(root => root.dataset.assistantBusy), { timeout: 30000 }).toBe('false');
     await opening.dispose();
     await expect(page.locator('body')).not.toHaveClass(/neconyan-home-visible/, { timeout: 30000 });
 }
@@ -182,7 +183,10 @@ for (const { width, height, tone } of [{ width: 1280, height: 900, tone: 'dark' 
         await quote.getByRole('button', { name: 'Select Color' }).click();
         const expectedQuote = tone === 'dark' ? 'rgba(170, 187, 204, 1)' : 'rgba(102, 51, 85, 1)';
         await quote.locator('input[data-type="hex"]').fill(tone === 'dark' ? 'AABBCC' : '663355');
-        const quoteSaved = page.waitForResponse(response => response.url().endsWith('/api/settings/save') && response.ok());
+        // The accent toggle can still be saving. Reload only after the request
+        // containing this quote colour has been acknowledged by the server.
+        const quoteSaved = page.waitForResponse(response => response.url().endsWith('/api/settings/save')
+            && response.ok() && requestJson(response.request()).power_user?.quote_text_color === expectedQuote);
         await quote.locator('input[data-type="hex"]').press('Tab');
         await quoteSaved;
         await expect.poll(() => page.evaluate(() => window.getComputedStyle(document.documentElement).getPropertyValue('--SmartThemeQuoteColor').trim())).toBe(expectedQuote);

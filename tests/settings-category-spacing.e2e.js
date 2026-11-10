@@ -32,11 +32,13 @@ test('settings categories fit their labels across responsive layouts', async ({ 
                         const rect = button.getBoundingClientRect();
                         const range = document.createRange();
                         range.selectNodeContents(button);
-                        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height, contentWidth: range.getBoundingClientRect().width };
+                        return { category: button.dataset.tab, x: rect.x, y: rect.y, width: rect.width, height: rect.height, contentWidth: range.getBoundingClientRect().width };
                     }),
                 };
             });
-            expect(metrics.buttons).toHaveLength(4);
+            expect(metrics.buttons.map(button => button.category)).toEqual([
+                'appearance', 'chat-writing', 'system-device', 'cache-account', 'device-sync',
+            ]);
             for (const button of metrics.buttons) expect(button.height).toBeGreaterThanOrEqual(44);
 
             if (width > 768 && width <= 1100) {
@@ -51,7 +53,7 @@ test('settings categories fit their labels across responsive layouts', async ({ 
                 expect(metrics.scrollWidth).toBeLessThanOrEqual(Math.ceil(metrics.width));
             } else if (width > 1100) {
                 expect(new Set(metrics.buttons.map(button => button.x)).size).toBe(1);
-                expect(new Set(metrics.buttons.map(button => button.y)).size).toBe(4);
+                expect(new Set(metrics.buttons.map(button => button.y)).size).toBe(5);
             } else {
                 expect(new Set(metrics.buttons.map(button => button.y)).size).toBe(1);
                 expect(metrics.scrollWidth).toBeGreaterThan(metrics.width);
