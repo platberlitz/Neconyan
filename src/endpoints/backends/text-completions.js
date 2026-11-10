@@ -17,6 +17,7 @@ import { getResumableGeneration } from '../../resumable-generations.js';
 import { setAdditionalHeaders, setAdditionalHeadersByType } from '../../additional-headers.js';
 import { isProviderUrlValidationError, parseHttpBaseUrl, validateTextGenServerUrl } from '../provider-url-validation.js';
 import { createHash } from 'node:crypto';
+import { StringDecoder } from 'node:string_decoder';
 
 export const router = express.Router();
 
@@ -57,6 +58,8 @@ async function parseOllamaStream(jsonStream, request, response, onDisconnect = n
             }
         }
         const stopPolling = pollStreamingRequestConnection(request, response, closeStream);
+        // A character can arrive split across two network chunks, so bytes are decoded as one stream.
+        const decoder = new StringDecoder('utf8');
         let partialData = '';
         let completed = false;
         jsonStream.body.on('data', (data) => {
@@ -64,8 +67,7 @@ async function parseOllamaStream(jsonStream, request, response, onDisconnect = n
                 return;
             }
 
-            const chunk = data.toString();
-            partialData += chunk;
+            partialData += decoder.write(data);
             if (response.reportStreamError && Buffer.byteLength(partialData) > 2 * 1024 * 1024) {
                 response.reportStreamError(new Error('The Ollama stream exceeded the saved result limit.'));
                 return closeStream();
@@ -88,6 +90,10 @@ async function parseOllamaStream(jsonStream, request, response, onDisconnect = n
                         }
                     }
                     break;
+                }
+                if (json.error && response.reportStreamError) {
+                    response.reportStreamError(new Error(`Ollama reported an error: ${String(json.error).slice(0, 500)}`));
+                    return closeStream();
                 }
                 const text = json.response || '';
                 const thinking = json.thinking || '';
@@ -114,6 +120,7 @@ async function parseOllamaStream(jsonStream, request, response, onDisconnect = n
 
             done = true;
             stopPolling();
+            partialData += decoder.end();
             if (!completed || partialData.trim()) {
                 response.reportStreamError?.(new Error('The Ollama stream ended before completion.'));
                 return response.end();

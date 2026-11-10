@@ -1,5 +1,6 @@
 import { classifyGenerationOutcome } from '../../public/scripts/generation-outcome.js';
 import { mergeChatPresetSettings } from '../../public/scripts/chat-preset-request.js';
+import { resolveProfileRequestOverrides } from '../../public/scripts/connection-profile-request.js';
 import path from 'node:path';
 import fetch from 'node-fetch';
 import {
@@ -33,11 +34,18 @@ const withoutTransport = payload => Object.fromEntries(Object.entries(payload).f
 // Saved provider results are hashed as plain JSON, so a blank model is left out rather than stored as undefined.
 const modelField = model => (model ? { model } : {});
 function restoreTransport(payload, material) {
+    const active = material.kind === 'active';
     const settings = mergeChatPresetSettings(material.active, material.preset);
+    // A saved profile carries its own headers and body additions. The active connection's
+    // belong to a different server and must never be sent to the profile's.
+    const { overrides } = active ? { overrides: {} } : resolveProfileRequestOverrides(material.profile ?? {}, {}, material.preset);
+    const fromPreset = key => (material.preset && Object.hasOwn(material.preset, key) ? settings[key] : undefined);
     return { ...payload, ...Object.fromEntries(transportFields.flatMap(key => {
         const value = key === 'reverse_proxy' || key === 'proxy_password' ? material.proxy?.[key]
-            : key === 'custom_url' && material.kind !== 'active' ? material.profile?.['api-url']
-                : key === 'api_server' ? material.active?.api_server : settings[key];
+            : key === 'api_server' ? material.active?.api_server
+                : active ? settings[key]
+                    : key === 'custom_url' ? material.profile?.['api-url']
+                        : overrides[key] ?? fromPreset(key);
         return value === undefined ? [] : [[key, value]];
     })) };
 }

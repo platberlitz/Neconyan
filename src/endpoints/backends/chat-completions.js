@@ -5,6 +5,7 @@ import { validateHeaderValue } from 'node:http';
 import https from 'node:https';
 import { text } from 'node:stream/consumers';
 import nodeUtil from 'node:util';
+import { StringDecoder } from 'node:string_decoder';
 import express from 'express';
 import fetch from 'node-fetch';
 import urlJoin from 'url-join';
@@ -1015,7 +1016,8 @@ async function sendMakerSuiteRequest(request, response) {
             return response.send(reply);
         }
     } catch (error) {
-        console.error(`Error communicating with ${apiName} API:`, error);
+        // The key travels in the request URL, which a network failure quotes in its message.
+        console.error(`Error communicating with ${apiName} API:`, String(error?.message ?? error).replace(/([?&]key=)[^&\s]+/g, '$1[redacted]'));
         if (!response.headersSent) {
             return response.status(500).send({ error: true });
         }
@@ -2813,6 +2815,8 @@ function forwardResponsesApiStream(fetchResponse, expressResponse, request, onDi
     expressResponse.setHeader('Connection', 'keep-alive');
 
     let buffer = '';
+    // A character can arrive split across two network chunks, so bytes are decoded as one stream.
+    const decoder = new StringDecoder('utf8');
     let done = false;
     const stopPolling = pollStreamingRequestConnection(request, expressResponse, closeStream);
 
@@ -2848,7 +2852,7 @@ function forwardResponsesApiStream(fetchResponse, expressResponse, request, onDi
 
     fetchResponse.body.on('data', (chunk) => {
         if (done) return;
-        buffer += chunk.toString();
+        buffer += decoder.write(chunk);
         const lines = buffer.split('\n');
         buffer = lines.pop() || '';
 
