@@ -1,5 +1,99 @@
 # Full server migration: continuation
 
+### 11 November 2026: 1.5.4 published, staging starts 1.5.5
+
+I published [Neconyan 1.5.4](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.4)
+with annotated tag `v1.5.4` on `e1f05ec67fc61676178ae8a60b366cf85fbfa577`.
+PR #588 prepared the release; PR #589 promoted staging to main by fast-forward,
+without a merge commit. The final candidate includes PRs #590, #591 and #592.
+The running personal instance was not deployed as part of this release.
+
+Verification and retained results:
+
+- Final local checks at the release commit passed 657 Jest suites and 9,633
+  tests, with three existing skips; 136 focused image, locale and assistant
+  Node checks; and 114 Mewmory checks. Root lint, test lint, frontend budgets,
+  the production build and README mirror passed. Existing test lint warnings
+  remain. The full local Node suite earlier passed all 4,037 tests at `19874db1`.
+- Exact-head PR checks `42825563764` passed without retries. Its server suite
+  passed 4,036 tests with one existing skip: the small-Java-thread Android JNI
+  check had no Node development headers on that runner. Its unit run matched
+  the final local counts. Required native checks ran separately on all three
+  Android emulators. Windows checks `42825563618`, README sync `42825563729`
+  and metadata `42825563604` also passed at the release commit.
+- Browser coverage accounts for all 20 groups: 2,628 passes and 36 existing
+  skips. Run `42811135583` at `5eac597b` supplies groups 1, 4, 5, 7, 8, 9, 10,
+  12, 14, 16, 17, 18, 19 and 20. Unchanged retry `42824361595` at `5eac597b`
+  supplies group 3. Run `42825687406` at the release commit supplies groups
+  2, 6, 11, 13 and 15. The intervening changes were PR #592's messages and
+  translations, the isolated opaque-card setup correction and release copy;
+  the five selected groups cover the affected swipe, reasoning and locale
+  paths. The group plan and test counts did not change.
+- Earlier browser runs `42763361752`, `42773515838` and `42788626664` exposed
+  two application defects: a desktop resize handler moved the reader when
+  reply controls closed, and a slow phone drawer close could leave its saved
+  bounds behind. Both were reproduced before fixing them. The group reading
+  regression keeps its original four-pixel limit and also checks the visible
+  paragraph; the slow-close regression fails without its callback bounds sync.
+- Corrected browser fixtures now expect all five Settings categories, wait for
+  the actual saved quote colour and completed assistant loading, keep synthetic
+  scrolling active throughout its observation window, clear their own accent
+  toasts before pressing the blocked link, read group games from the opened
+  character's thread and explicitly select opaque surfaces for the opaque-card
+  check. No assertion was weakened and no skip was added. Opaque group 15
+  also passed separately in `42824570103` before its final-head verification.
+- Unexpected Roleplay and Expressions navigations passed on unchanged retry
+  `42824361595`; their cause remains unknown after 12 instrumented Roleplay
+  and six Expressions checks passed locally without an application reload.
+  Earlier drawer/startup timing failures and the strict Showdown parser timing
+  check also passed unchanged retries where recorded. The security log-write
+  race passed an unchanged targeted retry in readiness run `42760538640`.
+  Duplicate full runs `42825563622` and `42833328084` were cancelled because
+  the retained and focused results covered the candidate, not to hide failures.
+- Assistant knowledge revision 70 passed source, budget and retrieval checks.
+  All nine assistant variants and phone/desktop routes passed the 11 browser
+  checks at `19874db1`; the final candidate passed the affected source checks
+  again. The 24 README and handbook captures were retaken at `999b46b3` on
+  10 November with the default Calico accent and synthetic data. The real
+  Proofreader workflow used a fixed intercepted response; edit, Undo and Redo
+  passed at both widths. This was not a live model demonstration.
+- Android run `42833350719` passed the signed build, WebView fixture and
+  Android 11, 13 and 15 emulator checks. Every emulator log confirms the
+  1,600-message prompt/token path, streaming regeneration, stack and WebAssembly
+  guards and text segmentation. The optional older-release baseline comparison
+  was not requested. These are emulator results, not physical-phone tests.
+- iPhone run `42833350778`, attempt 2, passed storage and path checks, the real
+  13 GiB import, unsigned device IPA build and simulator startup, relaunch and
+  all explicit recovery scenarios. Attempt 1 hit Node's `open ENOTTY` while
+  creating its error-output stream before the final injected navigation case.
+  Separate diagnostic run `42840515083` at `20990834` passed all five launches
+  with correct log descriptors and did not reproduce the fault. The original
+  release job then passed unchanged; the cause remains unknown, no speculative
+  production fix was shipped and the diagnostic IPA was excluded. These are
+  simulator results, not physical-iPhone tests.
+- All twelve matching build files passed independent verification: eight
+  Android and two iPhone manifest entries, both official APK signatures,
+  package versions, native 16 KiB load alignment, stored ZIP alignment,
+  embedded commit/version/frontend files and supplied provenance. Compressed
+  Android libraries are explicitly extracted at installation; their ELF
+  alignment was checked independently. All 5,944 source files and permissions
+  matched `git archive` of the release commit, including archive line endings.
+- All twelve public downloads were downloaded again and compared byte for
+  byte with the verified build files, including their sizes and GitHub SHA-256
+  digests. The annotated tag resolves to the exact release commit; the release
+  is public and marked latest. No diagnostic artifact was published.
+- Handbook commit `4452af628a20040ce815c6b693636341c9639cd5` marks 1.5.4 as
+  published while keeping the actual screenshot source and historical snapshots.
+  Strict build, link/asset/macro checks and phone/desktop browser checks passed.
+  Pages run `42865685632` passed; seven live pages passed at both widths and all
+  24 live screenshot hashes match the checked files. The previous candidate
+  publication was `d581d04`, Pages `42811380115`.
+- Staging starts 1.5.5 in `87148537`; package metadata and all three version
+  expectations agree. All four project-boundary tests, touched-test lint and
+  the README mirror check passed. Main retains the published 1.5.4 commit;
+  both branches' README links name the published release. No README mirror
+  commit was needed on main.
+
 ### 10 November 2026: 1.5.3 published, staging starts 1.5.4
 
 I published [Neconyan 1.5.3](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.3)
