@@ -238,10 +238,11 @@ export async function sendSpeechTransport(config, descriptor, segment, { signal:
             assertAudioContentType(response);
             let bytes = Buffer.from(await readResponseArrayBuffer(response, MAX_AUDIO_BYTES, { signal }));
             if (descriptor.pcm) bytes = pcmWave(bytes, { sampleRate: descriptor.sampleRate ?? 24000 });
-            // A streaming server writes its header before it knows the length. Sizes smaller than the
-            // body are such placeholders; larger ones mean a cut-off file and are left to fail validation.
-            if (bytes.length >= 44 && bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 36, 40) === 'data'
-                && (descriptor.wavStream || bytes.readUInt32LE(4) < bytes.length - 8 && bytes.readUInt32LE(40) < bytes.length - 44)) {
+            // Only the plain, empty PCM header is a known streaming placeholder. Other declared
+            // sizes and chunk layouts must reach the validator intact, even for streaming providers.
+            if (bytes.length > 44 && bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 16) === 'WAVEfmt '
+                && bytes.readUInt32LE(16) === 16 && [1, 3].includes(bytes.readUInt16LE(20))
+                && bytes.toString('ascii', 36, 40) === 'data' && bytes.readUInt32LE(4) === 36 && bytes.readUInt32LE(40) === 0) {
                 bytes.writeUInt32LE(bytes.length - 8, 4); bytes.writeUInt32LE(bytes.length - 44, 40);
             }
             return receivedAudio(bytes);

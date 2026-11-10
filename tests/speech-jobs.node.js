@@ -9,10 +9,10 @@ const { captureSpeechRequest, admitSpeechJob, runSpeechJob, generateSavedSpeech 
 const { captureRoleplaySource } = await import('../src/generation/roleplay-source.js');
 const { getJob, releaseJob, recoverJobs, updateJob, jobKey } = await import('../src/jobs/store.js');
 const { readArtifact } = await import('../src/jobs/artifacts.js');
-const { pcmWave, readAudioArtifact } = await import('../src/jobs/audio-artifacts.js');
+const { audioResult, pcmWave, readAudioArtifact } = await import('../src/jobs/audio-artifacts.js');
 const { writeSecret, SECRET_KEYS } = await import('../src/endpoints/secrets.js');
 const { synthesizeEdgeSpeech } = await import('../src/generation/speech-edge.js');
-const { speechOutputUrl, withSpeechEndpoint } = await import('../src/generation/speech-transports.js');
+const { sendSpeechTransport, speechOutputUrl, withSpeechEndpoint } = await import('../src/generation/speech-transports.js');
 const { roleplayHash } = await import('../src/roleplay-store.js');
 const WAVE = pcmWave(Buffer.alloc(480, 1));
 const json = value => new Response(JSON.stringify(value), { headers: { 'Content-Type': 'application/json' } });
@@ -452,6 +452,56 @@ test('a WAV cut short of its declared size is still refused', async t => {
     const f = prepared(t, streamedCases[0]);
     await assert.rejects(runSpeechJob(f.context(), { fetchImpl: streamedFetch(streamedCases[0], WAVE.subarray(0, WAVE.length - 100)) }),
         { message: 'The speech audio container is incomplete.' });
+});
+
+const receiveWave = (bytes, wavStream = false) => sendSpeechTransport({}, { url: 'https://speech.example/audio', response: 'audio', wavStream }, {}, {
+    signal: new AbortController().signal,
+    fetchImpl: async () => new Response(bytes, { headers: { 'Content-Type': 'audio/wav' } }),
+});
+
+test('WAV repair refuses inconsistent non-placeholder sizes and truncated WebUI replies', async () => {
+    const inconsistent = Buffer.from(WAVE);
+    inconsistent.writeUInt32LE(100, 4);
+    inconsistent.writeUInt32LE(20, 40);
+    for (const streaming of [false, true]) {
+        await assert.rejects(receiveWave(inconsistent, streaming), { code: 'TTS_INVALID_AUDIO' });
+        await assert.rejects(receiveWave(WAVE.subarray(0, -100), streaming), { code: 'TTS_INVALID_AUDIO' });
+    }
+    assert.throws(() => audioResult(WAVE.subarray(0, -100)), { code: 'TTS_RESULT_RECOVERY' });
+});
+
+test('WAV repair preserves extra chunks and extended formats byte for byte', async () => {
+    const list = Buffer.from('LIST\x04\x00\x00\x00INFO', 'binary');
+    const trailing = Buffer.concat([WAVE, list]);
+    trailing.writeUInt32LE(trailing.length - 8, 4);
+    const leading = Buffer.concat([WAVE.subarray(0, 36), list, WAVE.subarray(36)]);
+    leading.writeUInt32LE(leading.length - 8, 4);
+    const extension = Buffer.alloc(24);
+    extension.writeUInt16LE(22, 0);
+    extension.writeUInt16LE(16, 2);
+    Buffer.from('0100000000001000800000aa00389b71', 'hex').copy(extension, 8);
+    const extended = Buffer.concat([WAVE.subarray(0, 36), extension, WAVE.subarray(36)]);
+    extended.writeUInt32LE(extended.length - 8, 4);
+    extended.writeUInt32LE(40, 16);
+    extended.writeUInt16LE(0xfffe, 20);
+    for (const bytes of [trailing, leading, extended]) {
+        for (const streaming of [false, true]) {
+            assert.deepEqual(Buffer.from((await receiveWave(bytes, streaming)).base64, 'base64'), bytes);
+        }
+    }
+});
+
+test('WAV repair retains explicit streaming sentinels and rejects incomplete samples or padding', async () => {
+    const sentinel = Buffer.from(WAVE);
+    sentinel.writeUInt32LE(0xffffffff, 4);
+    sentinel.writeUInt32LE(0xffffffff, 40);
+    for (const streaming of [false, true]) {
+        assert.deepEqual(Buffer.from((await receiveWave(sentinel, streaming)).base64, 'base64'), sentinel);
+        await assert.rejects(receiveWave(streamedWave().subarray(0, -1), streaming), { code: 'TTS_INVALID_AUDIO' });
+        const missingPadding = Buffer.concat([WAVE, Buffer.from('LIST\x01\x00\x00\x00x', 'binary')]);
+        missingPadding.writeUInt32LE(missingPadding.length - 8, 4);
+        await assert.rejects(receiveWave(missingPadding, streaming), { code: 'TTS_INVALID_AUDIO' });
+    }
 });
 
 test('AllTalk output on another loopback name of the selected service is accepted, other hosts are not', () => {
