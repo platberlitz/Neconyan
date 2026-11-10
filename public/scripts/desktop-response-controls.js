@@ -28,7 +28,9 @@ function restore(message, state) {
     managed.delete(message);
 }
 
-function refresh() {
+/** Finish footer placement before an atomic saved-reply swap restores the reading position. */
+export function refreshDesktopResponseControls() {
+    if (!desktop) return;
     pending = false;
     const chat = document.getElementById('chat');
     const wide = desktop.matches, tabletNow = tablet.matches;
@@ -97,7 +99,7 @@ function refresh() {
 function queueRefresh() {
     if (pending) return;
     pending = true;
-    requestAnimationFrame(refresh);
+    requestAnimationFrame(refreshDesktopResponseControls);
 }
 
 export function applyDesktopResponseControls(value) {

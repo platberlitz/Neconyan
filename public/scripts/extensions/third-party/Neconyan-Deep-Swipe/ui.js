@@ -87,6 +87,12 @@ const navigationQueue = createPendingNavigationQueue({
 
 let chatChangedBinding = null;
 
+function onChatRowsCommitted() {
+    // The saved rows and their navigation must have their final height before
+    // the handover restores the reader, rather than after the next paint.
+    addUiToAllMessages();
+}
+
 function scheduleSwipeNavigation(messageId, element = null) {
     navigationQueue.schedule(messageId, element);
 }
@@ -903,6 +909,7 @@ export function onMessageUpdated(messageId) {
 export function setupMutationObservers(context, onDeleteClick) {
     const chatElement = document.getElementById('chat');
     if (!chatElement) return;
+    document.addEventListener('neconyan:chat-rows-committed', onChatRowsCommitted);
 
     if (context?.eventSource && context?.eventTypes?.CHAT_CHANGED) {
         if (chatChangedBinding) {

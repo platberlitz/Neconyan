@@ -28,7 +28,10 @@ for (const lifecycle of [false, true]) for (const outcome of ['complete', 'navig
         const removed = jest.fn();
         const controls = jest.fn();
         const observed = jest.fn(element => { expect(rows).toContain(element); });
-        const committed = jest.fn();
+        const responseControls = jest.fn(() => {
+            expect(dispatched.at(-1).type).toBe('neconyan:chat-rows-committed');
+        });
+        const committed = jest.fn(() => { expect(responseControls).toHaveBeenCalledTimes(1); });
         const runtime = vm.createContext({
             console: { info: no }, performance, document: documentRef,
             CustomEvent: class { constructor(type, options = {}) { this.type = type; this.detail = options.detail; } },
@@ -43,7 +46,7 @@ for (const lifecycle of [false, true]) for (const outcome of ['complete', 'navig
             isChatRenderLifecycleRolloutEnabled: () => lifecycle, CHAT_RENDER_LIFECYCLE_ROUTE: { REDISPLAY_BATCH: 'batch' },
             unobserveChatMessageResize: no, observeChatMessageResize: observed, removeChatHistoryWindowControls: controls,
             applyCharacterTagsToMessageDivs: tags,
-            syncChatHistoryWindowControls: no, refreshSwipeButtons: no, applyStylePins: no, updateEditArrowClasses: no,
+            syncChatHistoryWindowControls: no, refreshSwipeButtons: no, refreshDesktopResponseControls: responseControls, applyStylePins: no, updateEditArrowClasses: no,
             updateMessageElement: (message, { messageId }) => {
                 if (outcome === 'failure' && messageId === 8) throw new Error('Interrupted render');
                 return [{ text: message.mes, classList: { add: no } }];
@@ -53,7 +56,8 @@ for (const lifecycle of [false, true]) for (const outcome of ['complete', 'navig
             waitForNextFrame: async () => { reached(); await gate; },
         });
         vm.runInContext(functions, runtime);
-        const rendering = runtime.redisplayChat({ atomic: true, replaceRenderedWindow: true, onCommit: committed });
+        const beforeCommit = jest.fn(() => rows.map(row => row.text));
+        const rendering = runtime.redisplayChat({ atomic: true, replaceRenderedWindow: true, onBeforeCommit: beforeCommit, onCommit: committed });
         await paused;
         expect(rows.map(row => row.text)).toEqual(['Visible preview', 'Already disabled']);
         expect(original.map(row => row.inert)).toEqual([true, true]);
@@ -71,11 +75,15 @@ for (const lifecycle of [false, true]) for (const outcome of ['complete', 'navig
             : outcome === 'navigation' ? ['Another chat'] : ['Visible preview', 'Already disabled']);
         expect(original.map(row => row.inert)).toEqual([false, true]);
         expect(removed).toHaveBeenCalledTimes(outcome === 'complete' ? 1 : 0);
+        // The reading place is measured while the rows being replaced are still on screen.
+        expect(beforeCommit.mock.results.map(result => result.value)).toEqual(outcome === 'complete'
+            ? [['Visible preview', 'Already disabled']] : []);
         expect(tags).toHaveBeenCalledTimes(outcome === 'complete' ? 1 : 0);
         expect(controls).toHaveBeenCalledTimes(outcome === 'complete' ? 1 : 0);
         expect(observed).toHaveBeenCalledTimes(outcome === 'complete' ? 17 : 0);
         expect(committed).toHaveBeenCalledTimes(outcome === 'complete' ? 1 : 0);
-        expect(dispatched.map(event => event.type)).toEqual(outcome === 'complete' ? ['neconyan:chat-rows-prepared'] : []);
+        expect(responseControls).toHaveBeenCalledTimes(outcome === 'complete' ? 1 : 0);
+        expect(dispatched.map(event => event.type)).toEqual(outcome === 'complete' ? ['neconyan:chat-rows-prepared', 'neconyan:chat-rows-committed'] : []);
         expect(dispatched[0]?.detail.elements.length ?? 0).toBe(outcome === 'complete' ? 17 : 0);
     });
 }

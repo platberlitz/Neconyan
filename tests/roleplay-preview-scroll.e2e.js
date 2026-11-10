@@ -538,11 +538,19 @@ for (const phone of [false, true]) {
             await waitForAnimationFrames(page, 4);
             const following = await getChatScrollSnapshot(page);
             expect(following.bottomDelta).toBeLessThanOrEqual(3);
+            const textBefore = await previewMarkerTop(page, '#neconyan-roleplay-preview .mes_text');
             for (const stage of ['companions', 'saving']) {
                 await updatePreview(page, { stage, lines: 18, agentLines: 14 });
                 await waitForAnimationFrames(page, 12);
                 const after = await getChatScrollSnapshot(page);
-                expect(Math.abs(after.scrollTop - following.scrollTop)).toBeLessThanOrEqual(3);
+                const textAfter = await previewMarkerTop(page, '#neconyan-roleplay-preview .mes_text');
+                await test.info().attach(`agent-output-${stage}`, {
+                    body: JSON.stringify({ following, after, textBefore, textAfter }),
+                    contentType: 'application/json',
+                });
+                // A wrapped phone status can change the header height. The scroll
+                // correction must keep the reply still, not keep the raw scrollTop.
+                expect(Math.abs(textAfter - textBefore)).toBeLessThanOrEqual(3);
                 expect(after.bottomDelta).toBeGreaterThan(120);
             }
             const finished = await finishReply(page, replyText(18, 14));

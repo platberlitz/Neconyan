@@ -27,6 +27,7 @@ import { t } from '../i18n.js';
 import { getCurrentCharAvatar } from './context.js';
 import { getRoleplaySourceMessageRevision } from './roleplay-source.js';
 import { beginRoleplayReplacement } from './roleplay-replacement.js';
+import { captureContentAnchor } from '../chat-render-lifecycle/anchor.js';
 import { withAbortSignal } from '../abort.js';
 import { imageInputIssueDetail, isImageInputIssue, markImageRefusalShown, roleplayImageOrigin } from '../prompt-media-policy.js';
 import { callGenericPopup, POPUP_RESULT, POPUP_TYPE } from '../popup.js';
@@ -558,6 +559,9 @@ export function finishedReplyReadingAnchor(receipt = null) {
     const previewTop = preview.getBoundingClientRect().top - chatTop;
     const offsetTop = previewText ? previewText.getBoundingClientRect().top - chatTop : previewTop;
     const part = previewText ? '.mes_text' : null;
+    // The saved copy can differ from the preview above the reader's line, so
+    // the visible paragraphs are carried along with the top of the text.
+    const content = previewText ? captureContentAnchor(chatNode, previewText) ?? undefined : undefined;
     let above = preview.previousElementSibling;
     while (above && !above.matches('.mes[mesid]')) above = above.previousElementSibling;
     const fallback = above
@@ -566,7 +570,7 @@ export function finishedReplyReadingAnchor(receipt = null) {
     // Recovery may append thinking beside the unchanged swipe source. The
     // receipt identifies that new row even though it has not been drawn yet.
     const keptIndex = receipt?.keptReply?.messageIndex;
-    if (Number.isSafeInteger(keptIndex) && keptIndex >= 0) return { messageId: keptIndex, offsetTop, part, fallback };
+    if (Number.isSafeInteger(keptIndex) && keptIndex >= 0) return { messageId: keptIndex, offsetTop, part, content, fallback };
     const replacement = chatNode.querySelector('[data-roleplay-replacement]');
     const speakers = receipt?.result?.speakers;
     if (!replacement && Array.isArray(speakers) && speakers.length > 0) {
@@ -574,12 +578,12 @@ export function finishedReplyReadingAnchor(receipt = null) {
         const previewChild = preview.dataset?.roleplayChild;
         if (previewChild && savedChild !== null && savedChild !== undefined
             && String(previewChild) === String(savedChild)) {
-            return { messageId: chat.length + speakers.length - 1, offsetTop, part, fallback };
+            return { messageId: chat.length + speakers.length - 1, offsetTop, part, content, fallback };
         }
         return fallback ? { ...fallback, part: null, fallback: null } : null;
     }
     const messageId = replacement ? Number(replacement.dataset.roleplayReplacement) : chat.length;
-    return { messageId, offsetTop, part, fallback };
+    return { messageId, offsetTop, part, content, fallback };
 }
 
 /**

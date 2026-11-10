@@ -83,6 +83,7 @@ function createHost({ agentsExtension = false } = {}) {
     const context = vm.createContext({
         ...generationOutcome,
         isChatNavigationBlocked, isSlashCommandText,
+        isChatScrolledNearBottom: () => true,
         getPendingChatNameCommit,
         captureRecoveryAnchor, releaseGenerationContext: jest.fn(), scheduleHeldGenerationRecovery: jest.fn(),
         saveChatWithHeldReply: jest.fn(async () => true), textgen_settings: {},
