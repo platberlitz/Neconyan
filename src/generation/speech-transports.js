@@ -14,17 +14,29 @@ const request = (url, body, headers = {}, response = 'audio') => ({ url, method:
     headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) });
 const escapeXml = text => String(text).replace(/[<>&"']/g, value => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', '\'': '&apos;' })[value]);
 
-/** Serialise native callers sharing mutable local synthesis controls, without holding the account lock. */
-export async function withSpeechEndpoint(endpoint, operation) {
-    const previous = endpointQueues.get(endpoint) ?? Promise.resolve();
-    let release;
+/**
+ * Serialise native callers sharing mutable local synthesis controls, without holding the account lock.
+ * A caller stopped while waiting leaves without running; later callers still wait for the one in front.
+ */
+export async function withSpeechEndpoint(endpoint, operation, { signal } = {}) {
+    const previous = (endpointQueues.get(endpoint) ?? Promise.resolve()).catch(() => {});
+    let release, stop;
     const current = new Promise(resolve => { release = resolve; });
     endpointQueues.set(endpoint, current);
-    await previous.catch(() => {});
-    try { return await operation(); } finally {
+    const leave = () => {
         release();
         if (endpointQueues.get(endpoint) === current) endpointQueues.delete(endpoint);
-    }
+    };
+    try {
+        await (signal ? Promise.race([previous, new Promise((_, reject) => {
+            stop = () => reject(signal.reason);
+            if (signal.aborted) stop(); else signal.addEventListener('abort', stop, { once: true });
+        })]) : previous);
+    } catch (error) {
+        previous.then(leave);
+        throw error;
+    } finally { signal?.removeEventListener('abort', stop); }
+    try { return await operation(); } finally { leave(); }
 }
 
 function languageMiniMax(lang) {
@@ -175,8 +187,18 @@ export function speechOutputUrl(value, config) {
     return url.href;
 }
 
-/** Called only inside a recorded provider step. A returned URL is saved before downloading its audio. */
-export async function sendSpeechTransport(config, descriptor, segment, { signal, fetchImpl = fetch, localSynthesis, systemSynthesis, edgeSynthesis } = {}) {
+/**
+ * Called only inside a recorded provider step. A returned URL is saved before downloading its audio.
+ * The time limit starts, and `onDispatch` runs, only once the request holds its place in the endpoint queue.
+ */
+export async function sendSpeechTransport(config, descriptor, segment, { signal: stopSignal, timeout, onDispatch, fetchImpl = fetch, localSynthesis, systemSynthesis, edgeSynthesis } = {}) {
+    let signal = stopSignal;
+    const begin = () => {
+        stopSignal?.throwIfAborted();
+        if (timeout) signal = AbortSignal.any([stopSignal, AbortSignal.timeout(timeout)].filter(Boolean));
+        onDispatch?.();
+    };
+    if (descriptor.native) begin();
     if (descriptor.native === 'SpeechT5') {
         const run = localSynthesis ?? (async input => {
             const { runPipeline } = await import('../transformers.js');
@@ -198,6 +220,7 @@ export async function sendSpeechTransport(config, descriptor, segment, { signal,
         return audioResult(await (edgeSynthesis ?? synthesizeEdgeSpeech)(config, segment, signal));
     }
     const run = async () => {
+        begin();
         if (descriptor.settingsRequest) {
             const changed = await fetchAudioResponse(descriptor.settingsRequest, { signal, fetchImpl });
             await readResponseText(changed, 64 * 1024, { signal });
@@ -257,7 +280,7 @@ export async function sendSpeechTransport(config, descriptor, segment, { signal,
         }
         return { url: speechOutputUrl(data.output_file_url, config) };
     };
-    return descriptor.serial ? withSpeechEndpoint(descriptor.serial, run) : run();
+    return descriptor.serial ? withSpeechEndpoint(descriptor.serial, run, { signal: stopSignal }) : run();
 }
 
 export async function downloadSpeechOutput(config, output, { signal, fetchImpl = fetch } = {}) {

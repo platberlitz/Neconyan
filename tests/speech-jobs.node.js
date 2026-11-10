@@ -12,6 +12,7 @@ const { readArtifact } = await import('../src/jobs/artifacts.js');
 const { pcmWave, readAudioArtifact } = await import('../src/jobs/audio-artifacts.js');
 const { writeSecret, SECRET_KEYS } = await import('../src/endpoints/secrets.js');
 const { synthesizeEdgeSpeech } = await import('../src/generation/speech-edge.js');
+const { withSpeechEndpoint } = await import('../src/generation/speech-transports.js');
 const { roleplayHash } = await import('../src/roleplay-store.js');
 const WAVE = pcmWave(Buffer.alloc(480, 1));
 const json = value => new Response(JSON.stringify(value), { headers: { 'Content-Type': 'application/json' } });
@@ -344,4 +345,75 @@ test('a truncated speech stream remains unknown rather than producing a playable
     recoverJobs(f.directories);
     await assert.rejects(runSpeechJob(f.context(), { fetchImpl: () => assert.fail('incomplete stream repeated') }), { code: 'TTS_RESULT_RECOVERY' });
     assert.equal(readArtifact(f.directories, f.admission.jobId, 'result'), undefined);
+});
+
+function shortSpeechLimit(t, milliseconds) {
+    const original = AbortSignal.timeout;
+    AbortSignal.timeout = value => original.call(AbortSignal, value === 180000 ? milliseconds : value);
+    t.after(() => { AbortSignal.timeout = original; });
+}
+
+function queuedSpeech(t) {
+    const f = prepared(t, { provider: 'XTTSv2', entry: 'speaker' });
+    updateJob(f.directories, f.admission.jobId, { state: 'running' });
+    const sent = [];
+    const fetchImpl = async (address, init) => {
+        const url = new URL(address);
+        if (url.pathname === '/speakers') return json(['speaker']);
+        init.signal?.throwIfAborted();
+        sent.push(url.pathname);
+        return url.pathname === '/set_tts_settings' ? json({ ok: true }) : audio();
+    };
+    return { ...f, sent, fetchImpl };
+}
+
+test('the speech time limit starts when the request reaches the front of its local server queue', async t => {
+    const f = queuedSpeech(t);
+    shortSpeechLimit(t, 100);
+    const busy = withSpeechEndpoint('http://localhost:8020', () => new Promise(resolve => setTimeout(resolve, 400)));
+    const result = await runSpeechJob(f.context(), { fetchImpl: f.fetchImpl });
+    await busy;
+    assert.equal(result.result.narration.status, 'ready');
+    assert.deepEqual(f.sent, ['/set_tts_settings', '/tts_to_audio/']);
+});
+
+test('a Stop while waiting in the local server queue sends nothing and leaves the narration retryable', async t => {
+    const f = queuedSpeech(t);
+    let finish;
+    const busy = withSpeechEndpoint('http://localhost:8020', () => new Promise(resolve => { finish = resolve; }));
+    const controller = new AbortController();
+    const started = Date.now();
+    setTimeout(() => controller.abort(new Error('stopped by the user')), 50);
+    const guard = setTimeout(() => finish(), 3000);
+    await assert.rejects(runSpeechJob({ ...f.context(), signal: controller.signal }, { fetchImpl: f.fetchImpl }));
+    clearTimeout(guard);
+    assert.ok(Date.now() - started < 2500, 'the stopped narration left the queue without waiting for the one in front');
+    assert.deepEqual(f.sent, []);
+    assert.notEqual(getJob(f.directories, f.admission.jobId).recoverability, 'unknown-outcome');
+    let ahead = true;
+    const later = withSpeechEndpoint('http://localhost:8020', async () => ahead);
+    await new Promise(resolve => setTimeout(resolve, 20));
+    ahead = false;
+    finish();
+    await busy;
+    assert.equal(await later, false, 'a later narration still waits for the one in front');
+    recoverJobs(f.directories);
+    const result = await runSpeechJob(f.context(), { fetchImpl: f.fetchImpl });
+    assert.equal(result.result.narration.status, 'ready');
+    assert.deepEqual(f.sent, ['/set_tts_settings', '/tts_to_audio/']);
+});
+
+test('a speech request that times out after it was sent stays unretryable', async t => {
+    const f = queuedSpeech(t);
+    shortSpeechLimit(t, 100);
+    let sent = 0;
+    const fetchImpl = async (address, init) => {
+        if (new URL(address).pathname === '/speakers') return json(['speaker']);
+        sent++;
+        return new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(init.signal.reason), { once: true }));
+    };
+    await assert.rejects(runSpeechJob(f.context(), { fetchImpl }), { code: 'TTS_PROVIDER' });
+    recoverJobs(f.directories);
+    await assert.rejects(runSpeechJob(f.context(), { fetchImpl: () => assert.fail('an uncertain synthesis repeated') }), { code: 'TTS_RESULT_RECOVERY' });
+    assert.equal(sent, 1);
 });
