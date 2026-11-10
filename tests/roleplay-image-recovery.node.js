@@ -134,7 +134,7 @@ test('an undo interrupted after the native write, pressed again with a fresh sca
     const f = setup(t);
     const result = applyOnce(f, f.input);
     assert.throws(() => applyOnce(f, undoInput(f, result), { checkpoint(value) { if (value === 'native-committed') throw new Error('crash'); } }), /crash/);
-    assert.throws(() => applyOnce(f, undoInput(f, result)), /different choices/);
+    assert.throws(() => applyOnce(f, undoInput(f, result)), { message: 'An earlier attempt to undo this change may not have finished, so nothing was changed this time. Open Change history again to see whether that attempt finished.' });
 });
 test('an undo discarded before it started, then a changed chat, keeps the general refusal and the change is not undone', t => {
     const f = setup(t);
@@ -146,14 +146,14 @@ test('an undo discarded before it started, then a changed chat, keeps the genera
     const records = fs.readFileSync(f.filename, 'utf8').split('\n').map(JSON.parse);
     records[1].mes = 'Later edit';
     commitSingleChatWrite(f.scope, { operationKey: 'later-0', mode: 'update', source: f.source(), records }, roleplayNativeHost);
-    assert.throws(() => applyOnce(f, undoInput(f, result)), /different choices/);
+    assert.throws(() => applyOnce(f, undoInput(f, result)), /earlier attempt to undo/);
     assert.equal(historyOf(f).find(operation => operation.id === result.id).undone, false);
 });
 test('a different or missing undoOf under the key of a completed undo keeps the general refusal', t => {
     const f = setup(t);
     const result = applyOnce(f, f.input);
     applyOnce(f, undoInput(f, result));
-    assert.throws(() => applyOnce(f, undoInput(f, result, { undoOf: 'f'.repeat(64) })), /different choices/);
+    assert.throws(() => applyOnce(f, undoInput(f, result, { undoOf: 'f'.repeat(64) })), /earlier attempt to undo/);
     const { undoOf, ...withoutUndoOf } = undoInput(f, result);
     assert.equal(undoOf, result.id);
     assert.throws(() => applyOnce(f, withoutUndoOf), /different choices/);

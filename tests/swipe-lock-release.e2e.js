@@ -4,7 +4,8 @@ import { expect } from '@playwright/test';
 import { test, MODEL } from './neconyan-conversation-durable-fixture.js';
 
 const reply = 'A reply that can be switched.';
-const refusal = 'Cannot switch replies while a reply is being written. Stop the reply and try again.';
+const refusal = 'Cannot swipe while a reply is being written. Stop the reply and try again.';
+const refusalTitle = 'Swipe stopped';
 
 async function openChat(account) {
     const page = await account.open({ workspace: false });
@@ -64,6 +65,7 @@ for (const phone of [false, true]) {
         const shown = await page.locator('#toast-container').getByText(refusal).waitFor({ timeout: 5000 }).then(() => true, () => false);
         await page.screenshot({ path: `../screenshots/swipe-refusal-${viewport}-${process.env.NECONYAN_SCREENSHOT_PHASE || 'after'}.png`, scale: 'css' });
         expect(shown).toBe(true);
+        await expect(page.locator('#toast-container .toast-title').filter({ hasText: refusalTitle })).toBeVisible();
 
         await app.release();
         await page.evaluate(() => window.fixtureSwipe);

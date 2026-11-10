@@ -19195,8 +19195,6 @@
   "Cannot create characters while a reply is being written. Stop the reply and try again.": "Während eine Antwort geschrieben wird, können keine Charaktere erstellt werden. Stoppe die Antwort und versuche es erneut.",
   "Creation stopped": "Erstellung abgebrochen",
   "Could not create the character. Try again.": "Der Charakter konnte nicht erstellt werden. Versuche es erneut.",
-  "Cannot switch replies while a reply is being written. Stop the reply and try again.": "Während eine Antwort geschrieben wird, kann nicht zwischen Antwortvarianten gewechselt werden. Stoppe die Antwort und versuche es erneut.",
-  "Reply switch stopped": "Wechsel der Antwortvariante abgebrochen",
   "Could not switch to that reply on message ${0}. Going back to the previous reply.": "Bei Nachricht ${0} konnte nicht zu dieser Antwortvariante gewechselt werden. Zurück zur vorherigen Antwortvariante.",
   "The reply number for message #${0} was ${1}, which is not valid. It has been reset to the first reply.": "Die Nummer der Antwortvariante für Nachricht #${0} war ${1} und damit ungültig. Sie wurde auf die erste Antwortvariante zurückgesetzt.",
   "The reply number for message #${0} was ${1}, which is not valid. It has been reset to ${2}.": "Die Nummer der Antwortvariante für Nachricht #${0} war ${1} und damit ungültig. Sie wurde auf ${2} zurückgesetzt.",
@@ -20194,5 +20192,10 @@
   "Nothing matches that search.": "Dazu wurde nichts gefunden.",
   "Older versions of your characters, lorebooks and presets, saved automatically. Compare one with what you have now and put it back if you need it.": "Ältere Versionen deiner Charaktere, Lorebooks und Presets, automatisch gespeichert. Vergleiche eine davon mit deinem aktuellen Stand und stelle sie wieder her, wenn du sie brauchst.",
   "Search snapshots": "Snapshots durchsuchen",
+  "Cannot swipe while a reply is being written. Stop the reply and try again.": "Während eine Antwort geschrieben wird, ist kein Swipe möglich. Stoppe die Antwort und versuche es erneut.",
+  "Swipe stopped": "Swipe abgebrochen",
+  "Request not sent, because you did not confirm its proxy address. Update or remove the reverse proxy in the connection profile or preset it uses.": "Anfrage nicht gesendet, weil du ihre Proxy-Adresse nicht bestätigt hast. Aktualisiere oder entferne den Reverse-Proxy im dafür verwendeten Verbindungsprofil oder in der dafür verwendeten Voreinstellung.",
+  "This change has already been undone.": "Diese Änderung wurde bereits rückgängig gemacht.",
+  "An earlier attempt to undo this change may not have finished, so nothing was changed this time. Open Change history again to see whether that attempt finished.": "Ein früherer Versuch, diese Änderung rückgängig zu machen, wurde möglicherweise nicht abgeschlossen, daher wurde diesmal nichts geändert. Öffne den „Änderungsverlauf“ erneut, um zu sehen, ob der frühere Versuch abgeschlossen wurde.",
   "This version": "Diese Version"
 }

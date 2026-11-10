@@ -18890,5 +18890,10 @@
   "Older versions of your characters, lorebooks and presets, saved automatically. Compare one with what you have now and put it back if you need it.": "キャラクター、ローアブック、プリセットの過去のバージョンが自動で保存されています。現在の内容と見比べて、必要なら元に戻すことができます。",
   "Search snapshots": "スナップショットを検索",
   "The item changed again, so the restore was stopped. Compare the versions and try again.": "アイテムが変更されたため、復元を中断しました。バージョンを見比べて、もう一度お試しください。",
+  "Cannot swipe while a reply is being written. Stop the reply and try again.": "返信の作成中はスワイプできません。返信を停止して再試行してください。",
+  "Swipe stopped": "スワイプを中止しました",
+  "Request not sent, because you did not confirm its proxy address. Update or remove the reverse proxy in the connection profile or preset it uses.": "このリクエストのプロキシアドレスを確認しなかったため、リクエストは送信されませんでした。リクエストが使用する接続プロファイルまたはプリセットで、リバースプロキシを更新または削除してください。",
+  "This change has already been undone.": "この変更はすでに元に戻されています。",
+  "An earlier attempt to undo this change may not have finished, so nothing was changed this time. Open Change history again to see whether that attempt finished.": "以前にこの変更を元に戻そうとした操作が完了していない可能性があるため、今回は何も変更されていません。「Change history」をもう一度開いて、その操作が完了したかどうかを確認してください。",
   "This version": "このバージョン"
 }

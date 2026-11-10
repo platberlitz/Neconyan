@@ -19238,7 +19238,7 @@ export async function swipe(event, direction, { source, repeated, message = chat
         // Neconyan: a switch refused while a reply is being written says why. Generate() hides the swipe
         // buttons for the whole reply, so hidden swipes are no reason to stay silent.
         if (isGenerating() && swipes) {
-            toastr.warning(t`Cannot switch replies while a reply is being written. Stop the reply and try again.`, t`Reply switch stopped`, { preventDuplicates: true });
+            toastr.warning(t`Cannot swipe while a reply is being written. Stop the reply and try again.`, t`Swipe stopped`, { preventDuplicates: true });
             return;
         }
         //Only allow one concurrent swipe.

@@ -18343,5 +18343,10 @@
   "Older versions of your characters, lorebooks and presets, saved automatically. Compare one with what you have now and put it back if you need it.": "Les anciennes versions de vos personnages, lorebooks et préréglages, sauvegardées automatiquement. Comparez-en une avec ce que vous avez actuellement et rétablissez-la si besoin.",
   "Search snapshots": "Rechercher dans les instantanés",
   "The item changed again, so the restore was stopped. Compare the versions and try again.": "L'élément a de nouveau changé, la restauration a donc été interrompue. Comparez les versions et réessayez.",
+  "Cannot swipe while a reply is being written. Stop the reply and try again.": "Impossible de balayer pendant l'écriture d'une réponse. Arrêtez la réponse et réessayez.",
+  "Swipe stopped": "Balayage arrêté",
+  "Request not sent, because you did not confirm its proxy address. Update or remove the reverse proxy in the connection profile or preset it uses.": "Requête non envoyée, car vous n'avez pas confirmé son adresse de proxy. Mettez à jour ou supprimez le proxy inverse dans le profil de connexion ou le préréglage qu'elle utilise.",
+  "This change has already been undone.": "Cette modification a déjà été annulée.",
+  "An earlier attempt to undo this change may not have finished, so nothing was changed this time. Open Change history again to see whether that attempt finished.": "Une tentative précédente d'annuler cette modification ne s'est peut-être pas terminée, donc rien n'a été modifié cette fois-ci. Rouvrez « Change history » pour voir si cette tentative s'est terminée.",
   "This version": "Cette version"
 }

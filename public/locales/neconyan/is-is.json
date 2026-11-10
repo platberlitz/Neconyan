@@ -18914,5 +18914,10 @@
   "Older versions of your characters, lorebooks and presets, saved automatically. Compare one with what you have now and put it back if you need it.": "Eldri útgáfur af persónunum þínum, fróðleiksbókum og forstillingum, vistaðar sjálfkrafa. Berðu útgáfu saman við það sem þú ert með núna og settu hana aftur inn ef þú þarft.",
   "Search snapshots": "Leita í skyndimyndum",
   "The item changed again, so the restore was stopped. Compare the versions and try again.": "Hluturinn breyttist aftur, svo hætt var við endurheimtina. Berðu útgáfurnar saman og reyndu aftur.",
+  "Cannot swipe while a reply is being written. Stop the reply and try again.": "Ekki er hægt að strjúka á meðan verið er að skrifa svar. Stöðvaðu svarið og reyndu aftur.",
+  "Swipe stopped": "Strjúkun stöðvuð",
+  "Request not sent, because you did not confirm its proxy address. Update or remove the reverse proxy in the connection profile or preset it uses.": "Beiðni ekki send, því að þú hefur ekki staðfest proxy-vistfang hennar. Uppfærðu eða fjarlægðu reverse proxy í tengingarsniðinu eða forstillingunni sem hún notar.",
+  "This change has already been undone.": "Þessi breyting hefur þegar verið afturkölluð.",
+  "An earlier attempt to undo this change may not have finished, so nothing was changed this time. Open Change history again to see whether that attempt finished.": "Fyrri tilraun til að afturkalla þessa breytingu kláraðist hugsanlega ekki, svo engu var breytt í þetta sinn. Opnaðu „Change history“ aftur til að sjá hvort sú tilraun kláraðist.",
   "This version": "Þessi útgáfa"
 }

@@ -17624,5 +17624,10 @@
   "Older versions of your characters, lorebooks and presets, saved automatically. Compare one with what you have now and put it back if you need it.": "系統會自動為你儲存角色、世界書與預設集先前的版本。你可以拿來和現在的內容比對，需要的話隨時都能還原回去。",
   "Search snapshots": "搜尋快照",
   "The item changed again, so the restore was stopped. Compare the versions and try again.": "內容又有了新的變更，因此已停止還原。請先比對版本後再試一次。",
+  "Cannot swipe while a reply is being written. Stop the reply and try again.": "正在撰寫回覆時無法滑動。請停止回覆並重試。",
+  "Swipe stopped": "滑動已停止",
+  "Request not sent, because you did not confirm its proxy address. Update or remove the reverse proxy in the connection profile or preset it uses.": "請求未送出，因為你沒有確認該請求的代理位址。請在該請求使用的連線設定檔或預設集中更新或移除反向代理伺服器。",
+  "This change has already been undone.": "此變更已經復原。",
+  "An earlier attempt to undo this change may not have finished, so nothing was changed this time. Open Change history again to see whether that attempt finished.": "先前復原此變更的嘗試可能尚未完成，因此這次沒有做任何變更。請再次開啟「Change history」，查看那次嘗試是否已完成。",
   "This version": "此版本"
 }

@@ -650,7 +650,8 @@ export async function validateReverseProxy(signal, proxy = oai_settings.reverse_
     }
 
     if (!confirmation) {
-        toastr.error(t`Update or remove your reverse proxy settings.`);
+        // A profile's or preset's proxy (markConnection false) is declined for that request; the message names where to change it.
+        toastr.error(markConnection ? t`Update or remove your reverse proxy settings.` : t`Request not sent, because you did not confirm its proxy address. Update or remove the reverse proxy in the connection profile or preset it uses.`);
         if (markConnection) {
             setOnlineStatus('no_connection');
             resultCheckStatus();

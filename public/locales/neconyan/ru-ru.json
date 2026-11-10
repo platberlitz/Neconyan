@@ -17839,5 +17839,10 @@
   "Older versions of your characters, lorebooks and presets, saved automatically. Compare one with what you have now and put it back if you need it.": "Прежние версии ваших персонажей, лорбуков и пресетов, сохранённые автоматически. Сравните любую с тем, что у вас есть сейчас, и верните её, если понадобится.",
   "Search snapshots": "Поиск по снимкам",
   "The item changed again, so the restore was stopped. Compare the versions and try again.": "Элемент снова изменился, поэтому восстановление было прервано. Сравните версии и попробуйте ещё раз.",
+  "Cannot swipe while a reply is being written. Stop the reply and try again.": "Невозможно выполнить свайп, пока пишется ответ. Остановите ответ и попробуйте снова.",
+  "Swipe stopped": "Свайп остановлен",
+  "Request not sent, because you did not confirm its proxy address. Update or remove the reverse proxy in the connection profile or preset it uses.": "Запрос не отправлен, потому что вы не подтвердили его адрес прокси. Измените или удалите прокси в профиле подключения или пресете, который он использует.",
+  "This change has already been undone.": "Это изменение уже отменено.",
+  "An earlier attempt to undo this change may not have finished, so nothing was changed this time. Open Change history again to see whether that attempt finished.": "Предыдущая попытка отменить это изменение, возможно, не завершилась, поэтому на этот раз ничего не изменено. Снова откройте «Change history», чтобы проверить, завершилась ли та попытка.",
   "This version": "Эта версия"
 }
