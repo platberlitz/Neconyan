@@ -1,5 +1,17 @@
 // Questions and distinguishing facts shared by Node and real-browser retrieval checks.
 export const refreshedKnowledgeCases = [
+    ['Is Device sync automatic between my phone and desktop?', 'sync.start', 'there are no background timers'],
+    ['What passphrase does Device sync need?', 'sync.start', 'at least 12 characters'],
+    ['Can Device sync transfer Conversation chats and API keys?', 'sync.categories', 'Conversation and group chats'],
+    ['Do Device sync solo chats need their character cards?', 'sync.categories', 'Chats require their character cards'],
+    ['How do I transfer an encrypted sync file?', 'sync.file', 'export another package in the other direction'],
+    ['Why does WebDAV require an ETag and conditional PUT?', 'sync.webdav', 'refuses services without that protection'],
+    ['Is a secret GitHub Gist private?', 'sync.gist', 'unlisted, not private'],
+    ['What is the Gist sync size limit?', 'sync.gist', '900 KiB'],
+    ['Why is my direct pairing receiver unreachable?', 'sync.pairing', 'a code does not make a private server reachable'],
+    ['How long does a pairing code last?', 'sync.pairing', '30 days'],
+    ['How do I resolve a Device sync conflict?', 'sync.conflicts', 'known content history, not dates'],
+    ['How do I Recover interrupted sync?', 'sync.conflicts', 'keep its original method enabled'],
     ['Does Background Opacity fade the theme wallpaper?', 'appearance.background-visibility', 'Background Opacity also fades the theme wallpaper'],
     ['Where can I read the actual recalled memory in Mewmory?', 'mewmory.recall-text', 'actual recalled text before its selection reason'],
     ['Where is Block external media by default?', 'privacy.external', 'Settings → Chat & Writing → Chat & messages → Messages'],
