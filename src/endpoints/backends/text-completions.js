@@ -372,12 +372,24 @@ function getSafeCompletionErrorStatus(status) {
 }
 
 /**
- * Answers with the upstream error text and status. Reading the body also releases the upstream connection.
+ * Answers with the upstream error status and text, optionally limited to a safe reason.
+ * Reading the body also releases the upstream connection.
  * @param {import('node-fetch').Response} upstream Upstream response that is not ok
  * @param {import('express').Response} response Express response
+ * @param {boolean} boundedReason Only send a bounded reason for a refused Ollama stream
  */
-async function sendUpstreamError(upstream, response) {
-    const text = await upstream.text();
+async function sendUpstreamError(upstream, response, boundedReason = false) {
+    let text = await upstream.text();
+    if (boundedReason) {
+        try {
+            const body = JSON.parse(text);
+            // Never expose other JSON fields, even when the provider omits its error string.
+            text = typeof body?.error === 'string' ? body.error : '';
+        } catch {
+            // Non-JSON replies can be plain text or an intermediary's HTML error page.
+        }
+        text = text.replace(/<[^>]*>/g, ' ').replace(/[\p{Cc}\s]+/gu, ' ').trim().slice(0, 500);
+    }
     const errorBody = { error: true, status: upstream.status, response: text };
 
     return !response.headersSent
@@ -524,8 +536,8 @@ export async function handleTextCompletionsGenerate(request, response) {
 
         if (request.body.api_type === TEXTGEN_TYPES.OLLAMA && request.body.stream) {
             const stream = await (request.fetch || fetch)(url, args);
-            // A refused stream carries a JSON error body; report it with its status, as the non-streaming branch does.
-            if (!stream.ok) return await sendUpstreamError(stream, response);
+            // Report a refused stream's status and bounded reason without exposing other upstream fields.
+            if (!stream.ok) return await sendUpstreamError(stream, response, true);
             parseOllamaStream(stream, request, response, () => controller.abort());
         } else if (request.body.stream) {
             const completionsStream = await (request.fetch || fetch)(url, args);
