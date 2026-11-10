@@ -46,7 +46,7 @@ import { applyCaptionRecords } from './caption-records.js';
 import { prepareRoleplayAgentContributions, runRoleplayAgentInterceptors, runRoleplayAgentPostprocessing, runRoleplayThinkingRecovery, roleplayAgentLoreText, roleplayAgentOutputBaseline, roleplayAgentDisplaySnapshot } from './roleplay-agent-processing.js';
 import { formatToolResults, THINKING_RECOVERY_RUN_EXTRA_KEY } from '../../public/scripts/extensions/in-chat-agents/thinking-recovery.js';
 import { readRoleplayPromptContributions } from './roleplay-contributions.js';
-import { readWorkflowContinuationPrefix } from './roleplay-kept-reply.js';
+import { readWorkflowContinuationPrefix, readWorkflowContinuedText } from './roleplay-kept-reply.js';
 import { runRoleplayCompanions, planRoleplayCompanionStart, roleplayCompanionPlaceholders } from './roleplay-companions.js';
 import { readRoleplayAgents } from './roleplay-agents-source.js';
 import { createFreshnessGate } from './roleplay-freshness-gate.js';
@@ -393,7 +393,9 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
                     record.extra = { ...record.extra, display_text: output.inputTranslation.displayText };
                 }
                 const message = output.message ?? output.messages?.[0] ?? output;
-                const value = effect === 'continue' ? String(current.records[source.message.index + 1].mes ?? '') + output.text : message.mes ?? output.text;
+                // Continue rewrites the whole message, including every earlier automatic chunk and Agent rewrite.
+                const continued = effect === 'continue' && request.workflowCandidate ? readWorkflowContinuedText({ directories, job }) : null;
+                const value = effect === 'continue' ? (continued ?? String(current.records[source.message.index + 1].mes ?? '')) + output.text : message.mes ?? output.text;
                 const baseData = { intentHash: roleplayHash(job.intent), recordsHash: roleplayHash(records), value };
                 const baseProof = { ...baseData, hash: roleplayHash(baseData) };
                 withRoleplayAccount(base, account, () => {
@@ -401,7 +403,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
                     if (previous !== undefined && roleplayHash(previous) !== roleplayHash(baseProof)) throw roleplayError('ROLEPLAY_AGENT_RECOVERY', 'The saved Agent response source changed.', 409);
                     if (previous === undefined) writeArtifact(directories, job.id, 'roleplay-agent-output-base', baseProof);
                 });
-                const options = { base, snapshot: request.worldInfo, records, metadataRecords: current.records, binding: request.binding, mewmory: readAgentMewmory(), continuationChunk: workflowChunk,
+                const options = { base, snapshot: request.worldInfo, records, metadataRecords: current.records, binding: request.binding, mewmory: readAgentMewmory(), continuationChunk: workflowChunk && effect !== 'continue',
                     activeLore: roleplayAgentLoreText(selection), agentCache: cache,
                     macros: savedRoleplayMacroSnapshot(request.worldInfo, records), generationType: request.worldInfo.global.trigger,
                     assistantName: request.characterName, assertCurrent: () => freshness(), generate: generateAgent,

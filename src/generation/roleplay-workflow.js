@@ -254,7 +254,7 @@ function messageContainerOf(output) {
     return output?.message ?? output?.messages?.[0] ?? output;
 }
 
-function mergeCombinedMessageExtra(previous, current, first, second) {
+function mergeCombinedMessageExtra(previous, current, first, second, wholeMessage = false) {
     const prevMsg = messageContainerOf(previous);
     const currMsg = messageContainerOf(current);
     const prevExtra = prevMsg?.extra ?? previous?.extra ?? {};
@@ -271,7 +271,8 @@ function mergeCombinedMessageExtra(previous, current, first, second) {
     const currHistory = Array.isArray(currExtra.inChatAgentTransformHistory)
         ? currExtra.inChatAgentTransformHistory.filter(entry => entry && typeof entry === 'object') : [];
     if (prevHistory.length || currHistory.length) {
-        const prefixedCurr = currHistory.map(entry => ({
+        // Continue Agents already record the whole message, and may rewrite its earlier text completely.
+        const prefixedCurr = wholeMessage ? currHistory : currHistory.map(entry => ({
             ...entry,
             beforeText: typeof entry.beforeText === 'string' && !entry.beforeText.startsWith(first) ? first + entry.beforeText : entry.beforeText,
             afterText: typeof entry.afterText === 'string' && !entry.afterText.startsWith(first) ? first + entry.afterText : entry.afterText,
@@ -300,7 +301,8 @@ function combinedCandidateOutput(previous, current, effect) {
     if (Buffer.byteLength(first + second) > 256 * 1024) throw error('The combined reply exceeds its saved capacity.', 'ROLEPLAY_WORKFLOW_CAPACITY');
     const output = structuredClone(current);
     const effectiveFirst = effect === 'continue' && typeof previous.continuedText === 'string' ? previous.continuedText : first;
-    if (!current.blockedProof) mergeCombinedMessageExtra(previous, output, effectiveFirst, second);
+    if (!current.blockedProof) mergeCombinedMessageExtra(previous, output, effectiveFirst, second,
+        effect === 'continue' && typeof current.continuedText === 'string');
     if (effect === 'append') {
         if (previous.message?.name !== output.message?.name || previous.message?.is_user !== false
             || output.message?.is_user !== false) throw error('The saved speaker changed during a continuation.');
@@ -311,7 +313,8 @@ function combinedCandidateOutput(previous, current, effect) {
         output.messages[0].mes = first + second;
     } else {
         output.text = first + second;
-        if (effect === 'continue' && previous.continuedText !== undefined) {
+        // This turn's Agent continuedText already contains the whole rewritten message.
+        if (effect === 'continue' && typeof current.continuedText !== 'string' && previous.continuedText !== undefined) {
             if (typeof previous.continuedText !== 'string' || previous.continuedText.length > 256 * 1024) {
                 throw error('The saved continued reply changed.');
             }

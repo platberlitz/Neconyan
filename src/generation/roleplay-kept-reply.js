@@ -114,6 +114,17 @@ function readWorkflowDecisionRecord({ directories, rootJobId, turn }) {
  * turn (including a new group speaker) is an ordinary reply and returns null.
  */
 export function readWorkflowContinuationPrefix({ directories, job }) {
+    return readWorkflowContinuationStep({ directories, job })?.text ?? null;
+}
+
+/** The whole continued message, including earlier Agent rewrites, for the next automatic turn. */
+export function readWorkflowContinuedText({ directories, job }) {
+    const step = readWorkflowContinuationStep({ directories, job });
+    if (!step) return null;
+    return typeof step.output?.continuedText === 'string' ? step.output.continuedText : step.text;
+}
+
+function readWorkflowContinuationStep({ directories, job }) {
     const candidate = job?.intent?.request?.workflowCandidate;
     if (!candidate || typeof candidate.parentJobId !== 'string' || !Number.isSafeInteger(candidate.turn) || candidate.turn < 1) return null;
     // A tool turn writes no text decision of its own, so the walk skips turns with neither a decision nor selected text.
@@ -124,7 +135,7 @@ export function readWorkflowContinuationPrefix({ directories, job }) {
         if (!decision && !(previous?.selected && typeof previous.text === 'string' && previous.text.trim())) continue;
         if (decision?.decision?.kind !== 'continue' || !previous?.selected || typeof previous.text !== 'string' || !previous.text.trim()) return null;
         if (Number.isSafeInteger(candidate.speakerIndex) && previous.speakerIndex !== candidate.speakerIndex) return null;
-        return previous.text;
+        return previous;
     }
     return null;
 }

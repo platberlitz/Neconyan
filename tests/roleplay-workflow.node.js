@@ -1401,6 +1401,107 @@ for (const changesPrefix of [false, true]) test(`a filtered automatic continuati
         { code: 'ROLEPLAY_BLOCKED_RECOVERY' });
 });
 
+test('a continued message needing two automatic chunks gives the Agent the whole text and saves its rewrite', async t => {
+    const f = prepared(t, 'continue', { agents: true, autoContinue: true, continueTarget: 20 });
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    const calls = { count: 0 };
+    const inputs = [];
+    const firstRewrite = 'ANSWER SMILED.';
+    const secondChunk = ' Then she waved at the whole crowd for a long while, grinning widely at everyone there.';
+    const secondRewrite = 'She smiled warmly, then waved to everyone in the crowd for a long while, delighted to see so many familiar faces.';
+    const generateAgent = async ({ messages }) => {
+        inputs.push(messages.at(-1).content.match(/<assistant_response>\n([\s\S]*)\n<\/assistant_response>/)[1]);
+        return { text: inputs.length === 1 ? firstRewrite : secondRewrite };
+    };
+    await f.candidate(' smiled.', calls, { generateAgent });
+    const waiting = await runRoleplayWorkflowJob(f.context());
+    assert.equal(waiting.waiting, true);
+    assert.deepEqual(await runRoleplayWorkflowJob(f.context()), waiting);
+    await f.candidate(secondChunk, calls, { turn: 1, generateAgent });
+    assert.deepEqual(inputs, ['Answer smiled.', firstRewrite + secondChunk]);
+    const done = await runRoleplayWorkflowJob(f.context());
+    assert.equal(done.result.status, 'completed');
+    const records = f.records();
+    assert.equal(records.length, 3);
+    const saved = records.at(-1);
+    assert.equal(saved.mes, secondRewrite);
+    assert.deepEqual(saved.swipes, [saved.mes, 'Other']);
+    assert.equal(saved.swipe_id, 0);
+    assert.deepEqual(saved.extra.inChatAgentTransformHistory.map(({ beforeText, afterText }) => ({ beforeText, afterText })), [
+        { beforeText: 'Answer smiled.', afterText: firstRewrite },
+        { beforeText: firstRewrite, afterText: firstRewrite + secondChunk },
+        { beforeText: firstRewrite + secondChunk, afterText: secondRewrite },
+    ]);
+    assert.deepEqual(saved.extra.inChatAgentTransformRedo, []);
+    assert.deepEqual(await runRoleplayWorkflowJob(f.context()), done);
+    assert.deepEqual(f.records(), records);
+    assert.equal(calls.count, 2);
+    assert.equal(inputs.length, 2);
+});
+
+test('a continued message keeps the earlier Agent rewrite when the Agent is stopped on a later chunk', async t => {
+    const f = prepared(t, 'continue', { agents: true, autoContinue: true, continueTarget: 20 });
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    const calls = { count: 0 };
+    const firstRewrite = 'ANSWER SMILED.';
+    await f.candidate(' smiled.', calls, { generateAgent: async () => ({ text: firstRewrite }) });
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    const secondChunk = ' Then she waved.';
+    await f.candidate(secondChunk, calls, { turn: 1, generateAgent: async ({ messages, signal }) => {
+        const input = messages.at(-1).content.match(/<assistant_response>\n([\s\S]*)\n<\/assistant_response>/)[1];
+        assert.equal(input, firstRewrite + secondChunk);
+        assert.equal(requestRoleplayAgentStop(f.context()), true);
+        signal.throwIfAborted();
+    } });
+    const done = await runRoleplayWorkflowJob(f.context());
+    assert.equal(done.result.status, 'completed');
+    assert.equal(done.result.agentsFailed, undefined);
+    const records = f.records();
+    assert.equal(records.length, 3);
+    assert.equal(records.at(-1).mes, firstRewrite + secondChunk);
+    assert.deepEqual(records.at(-1).swipes, [firstRewrite + secondChunk, 'Other']);
+    assert.equal(records.at(-1).extra.inChatAgentTransformHistory.at(-1).afterText, records.at(-1).mes);
+    assert.equal(getJob(f.dirs, f.jobId).children.length, 2);
+    assert.equal(calls.count, 2);
+    assert.deepEqual(await runRoleplayWorkflowJob(f.context()), done);
+    assert.deepEqual(f.records(), records);
+});
+
+test('replaying two whole-message Agent rewrites keeps the saved decision before a third continued chunk', async t => {
+    const f = prepared(t, 'continue', { agents: true, autoContinue: true, continueTarget: 20 });
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    const calls = { count: 0 };
+    const inputs = [];
+    const rewrites = ['ANSWER SMILED.', 'She greeted everyone.',
+        'She greeted everyone warmly and stayed to talk for a long while, delighted to see so many familiar faces gathered together.'];
+    const generateAgent = async ({ messages }) => {
+        inputs.push(messages.at(-1).content.match(/<assistant_response>\n([\s\S]*)\n<\/assistant_response>/)[1]);
+        return { text: rewrites[inputs.length - 1] };
+    };
+    await f.candidate(' smiled.', calls, { generateAgent });
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    await f.candidate(' Then she waved.', calls, { turn: 1, generateAgent });
+    const waiting = await runRoleplayWorkflowJob(f.context());
+    assert.equal(waiting.waiting, true);
+    const decision = readArtifact(f.dirs, f.jobId, 'roleplay-workflow-decision:1');
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.deepEqual(await runRoleplayWorkflowJob(f.context()), waiting);
+    assert.deepEqual(readArtifact(f.dirs, f.jobId, 'roleplay-workflow-decision:1'), decision);
+    const thirdChunk = ' Then she stayed to talk for a long while, delighted to see so many familiar faces gathered together.';
+    await f.candidate(thirdChunk, calls, { turn: 2, generateAgent });
+    assert.deepEqual(inputs, ['Answer smiled.', rewrites[0] + ' Then she waved.', rewrites[1] + thirdChunk]);
+    const done = await runRoleplayWorkflowJob(f.context());
+    assert.equal(done.result.status, 'completed');
+    assert.equal(f.records().length, 3);
+    assert.equal(f.records().at(-1).mes, rewrites[2]);
+    assert.equal(f.records().at(-1).extra.inChatAgentTransformHistory.at(-1).afterText, rewrites[2]);
+    assert.deepEqual(await runRoleplayWorkflowJob(f.context()), done);
+    assert.equal(calls.count, 3);
+});
+
 test('an automatic continuation preserves and aligns Agent transform history with the combined reply text', async t => {
     const f = prepared(t, 'append', { agents: true, autoContinue: true, continueTarget: 20 });
     updateJob(f.dirs, f.jobId, { state: 'running' });
