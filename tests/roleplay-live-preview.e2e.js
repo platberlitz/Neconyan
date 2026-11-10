@@ -79,12 +79,19 @@ for (const phone of [true, false]) {
             const shifts = [];
             for (let index = 0; index < 8; index++) {
                 chat.scrollTop = chat.scrollHeight - chat.clientHeight - 70;
-                chat.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -12 }));
-                chat.dispatchEvent(new Event('scroll', { bubbles: true }));
+                const scrollInput = () => {
+                    chat.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -12 }));
+                    chat.dispatchEvent(new Event('scroll', { bubbles: true }));
+                };
+                scrollInput();
                 const before = chat.scrollTop;
                 window.sendLivePreview({ childId: 'reply', stage: 'agents', text: `${'The reply.\n'.repeat(60)}Agent progress ${index}` });
+                // A scroll counts as active for 180ms after its last event, so keep
+                // the input coming for the whole window this test measures.
+                const activeScroll = setInterval(scrollInput, 40);
                 await new Promise(resolve => setTimeout(resolve, 250));
                 shifts.push(chat.scrollTop - before);
+                clearInterval(activeScroll);
             }
             return shifts;
         });
