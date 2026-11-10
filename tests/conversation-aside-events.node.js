@@ -11,8 +11,8 @@ setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.ur
 const { SETTINGS_FILE } = await import('../src/constants.js');
 const CONVERSATION_STORE_KEY = 'neconyan_conversation';
 const { registerConversationReplyJob } = await import('../src/generation/conversation-jobs.js');
-const { acceptConversationAsideEvent } = await import('../src/generation/conversation-aside-events.js');
-const { getJob } = await import('../src/jobs/store.js');
+const { acceptConversationAsideEvent, drawConversationAsideEvent, normalizeConversationAsideEvent } = await import('../src/generation/conversation-aside-events.js');
+const { getJob, listJobs } = await import('../src/jobs/store.js');
 const { testExports: { runJob }, setDirectoriesResolver } = await import('../src/jobs/runner.js');
 const { testExports: { reconcileConversationJob } } = await import('../src/generation/conversation-worker.js');
 const { cancelAutoSaves } = await import('../src/endpoints/settings.js');
@@ -94,8 +94,20 @@ function setup() {
     return { directories, request: { user: { profile: { handle: 'tester' }, directories } } };
 }
 
-const always = () => true;
-const never = () => false;
+/** The chance draw the server makes for one event, from 0 to 99; below 18 earns an aside. */
+const drawOf = (event, purpose = 'chance', bound = 100) => drawConversationAsideEvent('tester', normalizeConversationAsideEvent(event), purpose, bound);
+
+/**
+ * The draw is fixed by the event, so a test cannot ask for a result: it looks
+ * for the wording of a saved line whose event draws the way the test needs.
+ */
+function lineThatDraws(eventFor, wanted) {
+    for (let attempt = 0; attempt < 2000; attempt += 1) {
+        const mes = `Hold the line, attempt ${attempt}.`;
+        if (wanted(eventFor(mes))) return mes;
+    }
+    throw new Error('No line drew the wanted result.');
+}
 
 function groupEvent(directories, { group, messages, messageIndex = 0, kind = 'mention', speakerAvatar = '', personaId = '' }) {
     const message = messages[messageIndex];
@@ -147,60 +159,137 @@ test('a rendered group event is sampled by the server, answers for the only memb
     const { directories, request } = setup();
     const group = { id: 'g2', name: 'Crew', members: ['nova.png', 'lyra.png'], disabled_members: ['lyra.png'], chats: ['crew'] };
     fs.writeFileSync(path.join(directories.groups, 'g2.json'), JSON.stringify(group));
+    const line = (index, mes) => ({ id: `m${index}`, role: 'character', name: 'Nova', mes, original_avatar: 'nova.png' });
+    const eventAt = (index, mes) => groupEvent(directories, { group, messages: { [index]: line(index, mes) }, messageIndex: index, kind: 'rendered', speakerAvatar: 'nova.png' });
     const messages = [
         { id: 'm0', role: 'user', name: 'User', mes: 'The bridge creaks.' },
-        { id: 'm1', role: 'character', name: 'Nova', mes: 'Hold the line.', original_avatar: 'nova.png' },
+        line(1, lineThatDraws(mes => eventAt(1, mes), event => drawOf(event) >= 18)),
+        line(2, lineThatDraws(mes => eventAt(2, mes), event => drawOf(event) < 18)),
     ];
     writeChat(path.join(directories.groupChats, 'crew.jsonl'), messages);
-    const event = groupEvent(directories, { group, messages, messageIndex: 1, kind: 'rendered', speakerAvatar: 'nova.png' });
 
-    const sampledOut = await acceptConversationAsideEvent(request, event, { rollPercent: never });
-    assert.deepEqual(
-        { accepted: sampledOut.accepted, skipped: sampledOut.skipped, jobId: sampledOut.jobId },
-        { accepted: false, skipped: 'sampled_out', jobId: null });
+    // This used to expect a second submission of a sampled-out event to roll again
+    // and be answered. That re-roll was the defect: every tab, device and reload
+    // got a fresh chance at the same message. A sampled-out event now stays out.
+    for (let submission = 0; submission < 3; submission += 1) {
+        const sampledOut = await acceptConversationAsideEvent(request, eventAt(1, messages[1].mes));
+        assert.deepEqual(
+            { accepted: sampledOut.accepted, skipped: sampledOut.skipped, jobId: sampledOut.jobId },
+            { accepted: false, skipped: 'sampled_out', jobId: null });
+    }
 
     // The only member left is the speaker, and the server answers for them as a
     // reaction, the reason the page used when the speaker was chosen.
-    const spoken = await acceptConversationAsideEvent(request, event, { rollPercent: always });
+    const event = eventAt(2, messages[2].mes);
+    const spoken = await acceptConversationAsideEvent(request, event);
     assert.equal(spoken.accepted, true);
     assert.equal(spoken.avatar, 'nova.png');
     assert.equal(spoken.reason, 'reaction');
     assert.equal(getJob(directories, spoken.jobId).intent.automation.delayMs, 2000);
 
     // A second render of the same message is the same event, not a second call.
-    const again = await acceptConversationAsideEvent(request, event, { rollPercent: always });
+    const again = await acceptConversationAsideEvent(request, event);
     assert.equal(again.accepted, false);
     assert.equal(again.jobId, spoken.jobId);
 });
 
+test('the same rendered event submitted again never pays a second group member', async () => {
+    const { directories, request } = setup();
+    const group = { id: 'g9', name: 'Crew', members: ['nova.png', 'lyra.png'], disabled_members: [], chats: ['crew'] };
+    fs.writeFileSync(path.join(directories.groups, 'g9.json'), JSON.stringify(group));
+    const line = mes => ({ id: 'm1', role: 'character', name: 'Nova', mes, original_avatar: 'nova.png' });
+    const eventFor = mes => groupEvent(directories, { group, messages: { 1: line(mes) }, messageIndex: 1, kind: 'rendered', speakerAvatar: 'nova.png' });
+    // Sampled in, and the speaker is not preferred, so the other member is chosen.
+    const mes = lineThatDraws(eventFor, event => drawOf(event) < 18 && drawOf(event, 'speaker') >= 65);
+    writeChat(path.join(directories.groupChats, 'crew.jsonl'), [{ id: 'm0', role: 'user', name: 'User', mes: 'The bridge creaks.' }, line(mes)]);
+
+    const first = await acceptConversationAsideEvent(request, eventFor(mes));
+    assert.deepEqual({ accepted: first.accepted, avatar: first.avatar, reason: first.reason }, { accepted: true, avatar: 'lyra.png', reason: 'random' });
+    // Another tab, another device and a reloaded page each submit the same event.
+    for (let submission = 0; submission < 5; submission += 1) {
+        const repeated = await acceptConversationAsideEvent(request, { ...eventFor(mes), eventKey: `another-tab:${submission}` });
+        assert.deepEqual({ accepted: repeated.accepted, avatar: repeated.avatar, jobId: repeated.jobId }, { accepted: false, avatar: 'lyra.png', jobId: first.jobId });
+    }
+    assert.equal(listJobs(directories, { owner: 'tester', includeDismissed: true }).filter(job => !job.parentId).length, 1);
+});
+
+test('the aside draw keeps the old odds and spreads the choice evenly across members', () => {
+    const total = 30000;
+    const event = index => ({ personaId: '', kind: 'rendered', messageIndex: index, messageRevision: `revision-${index}`,
+        source: { groupId: 'g1', locator: { chat: 'crew', avatar: '', group: true } } });
+    let sampled = 0;
+    let speaker = 0;
+    const members = [0, 0, 0];
+    const membersWhenSampled = [0, 0, 0];
+    for (let index = 0; index < total; index += 1) {
+        const chance = drawConversationAsideEvent('tester', event(index), 'chance', 100);
+        assert.equal(drawConversationAsideEvent('tester', event(index), 'chance', 100), chance);
+        const member = drawConversationAsideEvent('tester', event(index), 'member', 3);
+        members[member] += 1;
+        if (drawConversationAsideEvent('tester', event(index), 'speaker', 100) < 65) speaker += 1;
+        if (chance < 18) {
+            sampled += 1;
+            membersWhenSampled[member] += 1;
+        }
+    }
+    const near = (count, of, share) => Math.abs(count / of - share) < 0.02;
+    assert.ok(near(sampled, total, 0.18), `sampled in ${sampled} of ${total}`);
+    assert.ok(near(speaker, total, 0.65), `speaker preferred ${speaker} of ${total}`);
+    for (const count of members) assert.ok(near(count, total, 1 / 3), `member chosen ${count} of ${total}`);
+    // The member draw does not lean on the chance draw: the spread holds among events that earn an aside.
+    for (const count of membersWhenSampled) assert.ok(near(count, sampled, 1 / 3), `member chosen ${count} of ${sampled} sampled`);
+    // The owner, the persona and the kind are part of the event, so they change the draw.
+    const differs = change => Array.from({ length: 200 }, (_, index) => drawConversationAsideEvent(change.owner ?? 'tester', { ...event(index), ...change.event }, 'chance', 1000)
+        !== drawConversationAsideEvent('tester', event(index), 'chance', 1000)).filter(Boolean).length > 150;
+    assert.ok(differs({ owner: 'other' }));
+    assert.ok(differs({ event: { personaId: 'persona.png' } }));
+    assert.ok(differs({ event: { kind: 'mention' } }));
+    assert.ok(differs({ event: { messageIndex: 30001 } }));
+    assert.ok(differs({ event: { messageRevision: 'changed text' } }));
+    for (const purpose of ['chance', 'speaker', 'member']) {
+        assert.equal(drawConversationAsideEvent('tester', { ...event(0), eventKey: 'another page', groupRevision: 'changed group' }, purpose, 100),
+            drawConversationAsideEvent('tester', event(0), purpose, 100));
+    }
+});
+
 test('a rendered solo event is opt-in and sampled, then answers for the chat\'s own character without a group cooldown', async () => {
     const { directories, request } = setup();
-    const messages = [
-        { id: 'r0', role: 'user', name: 'User', mes: 'The dragon roars.' },
-        { id: 'r1', role: 'character', name: 'Nova', mes: 'I draw my blade.', original_avatar: 'nova.png' },
-    ];
-    writeChat(path.join(directories.chats, 'nova', 'roleplay.jsonl'), messages);
-    const event = {
-        eventKey: 'event:rendered:roleplay:r1',
+    const line = (index, mes) => ({ id: `r${index}`, role: 'character', name: 'Nova', mes, original_avatar: 'nova.png' });
+    const eventAt = (index, mes) => ({
+        eventKey: `event:rendered:roleplay:r${index}`,
         personaId: '',
         kind: 'rendered',
         source: { locator: { chat: 'roleplay', avatar: 'nova.png', group: false } },
-        messageIndex: 1,
-        messageRevision: getRoleplaySourceMessageRevision(messages[1]),
+        messageIndex: index,
+        messageRevision: getRoleplaySourceMessageRevision(line(index, mes)),
         groupRevision: '',
         speakerAvatar: '',
-    };
+    });
+    const messages = [
+        { id: 'r0', role: 'user', name: 'User', mes: 'The dragon roars.' },
+        line(1, lineThatDraws(mes => eventAt(1, mes), event => drawOf(event) >= 18)),
+        line(2, lineThatDraws(mes => eventAt(2, mes), event => drawOf(event) < 18)),
+    ];
+    writeChat(path.join(directories.chats, 'nova', 'roleplay.jsonl'), messages);
+    const event = eventAt(2, messages[2].mes);
 
     // Solo reactions stay off until the character's own thread opts in.
     conversationSettings(directories, 'nova.png', { roleplay_reactions: false });
-    assert.equal((await acceptConversationAsideEvent(request, event, { rollPercent: always })).skipped, 'disabled');
+    assert.equal((await acceptConversationAsideEvent(request, event)).skipped, 'disabled');
     conversationSettings(directories, 'nova.png', { roleplay_reactions: true });
-    assert.equal((await acceptConversationAsideEvent(request, event, { rollPercent: never })).skipped, 'sampled_out');
+    for (let submission = 0; submission < 3; submission += 1) {
+        const sampledOut = await acceptConversationAsideEvent(request, eventAt(1, messages[1].mes));
+        assert.equal(sampledOut.skipped, 'sampled_out');
+        assert.equal(sampledOut.jobId, null);
+    }
 
-    const decided = await acceptConversationAsideEvent(request, event, { rollPercent: always });
+    const decided = await acceptConversationAsideEvent(request, event);
     assert.equal(decided.accepted, true);
     assert.equal(decided.avatar, 'nova.png');
     assert.equal(decided.reason, 'reaction');
+    const repeated = await acceptConversationAsideEvent(request, event);
+    assert.equal(repeated.accepted, false);
+    assert.equal(repeated.jobId, decided.jobId);
     await runFamily(directories, decided.jobId);
     assert.equal(getJob(directories, decided.jobId).state, 'completed');
     assert.equal(readStore(directories).groupAsideLastSent, undefined);
