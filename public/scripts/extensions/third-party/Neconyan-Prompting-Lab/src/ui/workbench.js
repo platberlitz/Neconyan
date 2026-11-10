@@ -51,13 +51,14 @@ export function createWorkbench({ lifetimeSignal = null, onStateChange = null } 
     const panels = new Map();
     const tabButtons = new Map();
     const dirtyTabs = new Set();
+    const phoneLayout = window.matchMedia('(max-width: 768px)');
+    phoneLayout.addEventListener('change', applyLayout);
 
     let root = null;
     let tabList = null;
     let panelHost = null;
     let panelHead = null;
     let readout = null;
-    let selectMobile = null;
     let disposed = false;
     let readoutPending = false;
     let readoutStale = false;
@@ -159,9 +160,6 @@ export function createWorkbench({ lifetimeSignal = null, onStateChange = null } 
             node.setAttribute('aria-selected', String(selected));
             node.tabIndex = selected ? 0 : -1;
         }
-        if (selectMobile && selectMobile.value !== state.activeTab) {
-            selectMobile.value = state.activeTab;
-        }
         // The panel is named after the selected tab, so a screen reader
         // announces which section it has landed in.
         panelHost?.setAttribute('aria-labelledby', `sbpl-tab-${state.activeTab}`);
@@ -169,12 +167,9 @@ export function createWorkbench({ lifetimeSignal = null, onStateChange = null } 
 
     function focusActiveControl() {
         const tab = tabButtons.get(state.activeTab);
-        const target = tab?.getClientRects().length
-            ? tab
-            : selectMobile?.getClientRects().length
-                ? selectMobile
-                : panelHost;
+        const target = tab?.getClientRects().length ? tab : panelHost;
         target?.focus({ preventScroll: true });
+        tab?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     }
 
     function setActiveTab(id, { focus = false } = {}) {
@@ -283,21 +278,12 @@ export function createWorkbench({ lifetimeSignal = null, onStateChange = null } 
             tabList.append(wrapper);
         }
 
-        selectMobile = element('select', {
-            className: 'text_pole sbpl-tab-select',
-            attributes: { 'aria-label': `${EXTENSION_LABEL} section` },
-        });
-        for (const id of TAB_ORDER) {
-            selectMobile.append(element('option', { text: TAB_LABEL[id], attributes: { value: id } }));
-        }
-        selectMobile.addEventListener('change', () => setActiveTab(selectMobile.value));
-
         readout = element('div', {
             className: 'sbpl-readout',
             attributes: { role: 'status', 'aria-live': 'off' },
         });
 
-        nav.append(tabList, selectMobile, readout);
+        nav.append(tabList, readout);
         return nav;
     }
 
@@ -344,7 +330,7 @@ export function createWorkbench({ lifetimeSignal = null, onStateChange = null } 
         const isPage = state.layout === 'page';
         root.classList.toggle('sbpl-workbench-page', isPage);
         root.classList.toggle('sbpl-workbench-drawer', !isPage);
-        tabList?.setAttribute('aria-orientation', isPage ? 'vertical' : 'horizontal');
+        tabList?.setAttribute('aria-orientation', isPage && !phoneLayout.matches ? 'vertical' : 'horizontal');
         void refreshReadout();
     }
 
@@ -452,6 +438,7 @@ export function createWorkbench({ lifetimeSignal = null, onStateChange = null } 
                 return;
             }
             disposed = true;
+            phoneLayout.removeEventListener('change', applyLayout);
             for (const panel of panels.values()) {
                 panel.dispose?.();
             }
@@ -464,7 +451,6 @@ export function createWorkbench({ lifetimeSignal = null, onStateChange = null } 
             panelHost = null;
             panelHead = null;
             readout = null;
-            selectMobile = null;
             lastFocused = null;
             state.open = false;
         },
