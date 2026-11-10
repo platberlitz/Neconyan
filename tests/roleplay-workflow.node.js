@@ -488,6 +488,37 @@ test('a stopped second automatic turn keeps the completed first turn and the lat
     assert.equal(f.records().filter(record => record.mes === 'The first completed sentence. ').length, 0);
 });
 
+test('a Stop after a tool turn in the middle of a continuation keeps the earlier finished chunk', async t => {
+    const f = prepared(t, 'append', { assistant: true, autoContinue: true, continueTarget: 200 });
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    const calls = { count: 0 };
+    await f.candidate('The first completed sentence. ', calls);
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    assert.equal(readArtifact(f.dirs, f.jobId, 'roleplay-workflow-decision:0').decision.kind, 'continue');
+    await f.candidate('', calls, { turn: 1, response: { choices: [{ message: { tool_calls: [{ id: 'call-roster', type: 'function',
+        function: { name: 'Neconyan_Assistant_ListCharacters', arguments: '{}' } }] } }] } });
+    const toolJobId = (await runRoleplayWorkflowJob(f.context())).childJobId;
+    setJobState(f.dirs, toolJobId, 'running');
+    await runAssistantToolJob({ owner: f.f.scope.owner, directories: f.dirs, job: getJob(f.dirs, toolJobId),
+        signal: new AbortController().signal });
+    setJobState(f.dirs, toolJobId, 'completed');
+    recoverWaitingRoleplayWorkflow({ directories: f.dirs, owner: f.f.scope.owner, job: getJob(f.dirs, f.jobId) });
+    setJobState(f.dirs, f.jobId, 'running');
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    const child = f.childJob(2);
+    updateJob(f.dirs, child.id, { state: 'running' });
+    publishRoleplayPreview({ owner: f.f.scope.owner, directories: f.dirs, job: child },
+        { stage: 'generating', text: ' A third part.', gen_started: '2026-10-29T10:00:00.000Z' });
+    requestCancellation(f.dirs, f.jobId, { reason: 'user_cancelled' });
+    const stopped = preserveInterruptedRoleplayReply({ owner: f.f.scope.owner, directories: f.dirs,
+        job: getJob(f.dirs, child.id), signal: AbortSignal.abort() },
+    Object.assign(new Error('The reply was stopped.'), { name: 'AbortError' }));
+    assert.equal(stopped.state, 'done');
+    assert.equal(f.records().length, 4);
+    assert.equal(f.records().at(-1).mes, 'The first completed sentence.  A third part.');
+});
+
 /** Press Stop through the real cancel route, as the page does. */
 async function pressStop(t, f) {
     const app = express();

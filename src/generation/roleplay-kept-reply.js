@@ -129,6 +129,19 @@ export function readWorkflowContinuationPrefix({ directories, job }) {
     return null;
 }
 
+/**
+ * The saved step of the latest earlier turn that produced text or a decision.
+ * A tool turn saves neither, so the walk passes over it, as the prefix walk above does.
+ */
+function readWorkflowPriorReplyText({ directories, rootJobId, turn }) {
+    if (!Number.isSafeInteger(turn)) return null;
+    for (let earlier = turn - 1; earlier >= 0; earlier--) {
+        const saved = readWorkflowReplyText({ directories, rootJobId, turn: earlier });
+        if (saved || readWorkflowDecisionRecord({ directories, rootJobId, turn: earlier })) return saved;
+    }
+    return null;
+}
+
 /** Read the saved automatic choice for one turn. Only a matching swipe decision can be trusted. */
 function readWorkflowDecision({ directories, rootJobId, turn }) {
     if (typeof rootJobId !== 'string' || !rootJobId || !Number.isSafeInteger(turn) || turn < 0) return null;
@@ -451,8 +464,7 @@ export function collectRoleplayKeptReply({ directories, job, rootJobId = null })
     const speakerIndex = marker?.speakerIndex;
     const currentAssembled = Number.isSafeInteger(turn)
         ? readWorkflowReplyText({ directories, rootJobId, turn }) : null;
-    const priorAssembled = Number.isSafeInteger(turn) && turn > 0
-        ? readWorkflowReplyText({ directories, rootJobId, turn: turn - 1 }) : null;
+    const priorAssembled = readWorkflowPriorReplyText({ directories, rootJobId, turn });
     const usable = value => value?.selected && sameSpeaker(value, speakerIndex) && isText(value.text)
         && !outputWasRefused(value.output);
     const continuationOf = value => {
@@ -1038,8 +1050,7 @@ function workflowPriorText({ directories, job, rootJobId }) {
     const marker = job.intent?.request?.workflowCandidate;
     const turn = marker?.turn;
     const speakerIndex = marker?.speakerIndex;
-    if (!Number.isSafeInteger(turn) || turn < 1) return null;
-    const prior = readWorkflowReplyText({ directories, rootJobId, turn: turn - 1 });
+    const prior = readWorkflowPriorReplyText({ directories, rootJobId, turn });
     if (!prior?.selected || !sameSpeaker(prior, speakerIndex) || !isText(prior.text)) return null;
     return prior;
 }
