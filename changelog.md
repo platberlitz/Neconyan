@@ -7,6 +7,7 @@
 - PR #584 (2026-11-10) `fix(botsearcher): contain the jannyai browser panel`
 - PR #585 (2026-11-10) `fix(labs): replace phone page dropdowns with buttons`
 - PR #586 (2026-11-10) `fix(chat): keep the viewport steady during agent rewrites`
+- PR #587 (2026-11-10) `feat(sync): add four opt-in device sync methods`
 
 ## v1.5.3
 
