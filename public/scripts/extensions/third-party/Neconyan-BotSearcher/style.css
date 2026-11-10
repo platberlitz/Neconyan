@@ -985,6 +985,7 @@ body.neconyan .sbbs-root .sbbs-janny-notice > summary,
 }
 
 .sbbs-janny-notice > .sbbs-setting-account {
+    width: auto;
     margin: 0 12px 10px;
 }
 

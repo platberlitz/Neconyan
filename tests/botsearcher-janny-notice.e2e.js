@@ -27,7 +27,7 @@ async function openBrowser(page, { enabled = true, searchable = true } = {}) {
     await page.route(`**${pluginBase}/search`, route => route.fulfill({ json: { items: [], nextCursor: null, total: 0 } }));
     await page.route(`**${pluginBase}/janny/**`, route => {
         browserRequests.push(route.request().url());
-        return route.fulfill({ json: { available: true, running: false } });
+        return route.fulfill({ json: { available: true, ready: false, loggedIn: false } });
     });
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('body')).toHaveClass(/neconyan-rail-ready/, { timeout: 120_000 });
@@ -132,6 +132,25 @@ for (const [name, options] of [
             await expect(notice).toHaveAttribute('open');
             await expect(notice.locator('.sbbs-setting-account')).toBeVisible();
             await expect.poll(() => browserRequests.length).toBeGreaterThan(requestsBeforeExpansion);
+            const account = notice.locator('.sbbs-setting-account');
+            await expect(account.getByRole('status')).toHaveText('The JannyAI browser window is not open. Open the login window to continue.');
+            await account.scrollIntoViewIfNeeded();
+            if (process.env.NECONYAN_JANNY_SCREENSHOTS) {
+                await page.screenshot({ path: `../screenshots/janny-expanded-${name}-${process.env.NECONYAN_JANNY_SCREENSHOTS}.png` });
+            }
+            const bounds = await account.evaluate(element => {
+                const panel = element.getBoundingClientRect();
+                const notice = element.parentElement.getBoundingClientRect();
+                return {
+                    leftInset: panel.left - notice.left,
+                    rightInset: notice.right - panel.right,
+                    overflow: element.scrollWidth - element.clientWidth,
+                };
+            });
+            expect(bounds.leftInset).toBeGreaterThanOrEqual(12);
+            expect(bounds.rightInset).toBeGreaterThanOrEqual(12);
+            expect(Math.abs(bounds.leftInset - bounds.rightInset)).toBeLessThanOrEqual(1);
+            expect(bounds.overflow).toBeLessThanOrEqual(1);
 
             await picker.selectOption('chub');
             await expect(notice).toBeHidden();
