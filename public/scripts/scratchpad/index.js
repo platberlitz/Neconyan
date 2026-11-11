@@ -16,7 +16,7 @@ import { buildTextDiffMarkup } from '../text-diff.js';
 import { accountStorage } from '../util/AccountStorage.js';
 import { getCurrentUserHandle } from '../user.js';
 import * as api from './api.js';
-import { prepareChange } from './changes.js';
+import { addReplyVersion, prepareChange, replyVersionTarget } from './changes.js';
 import { needsSavedPersonaSelection, saveSelectedPersona } from './persona-changes.js';
 import {
     buildContext,
@@ -1828,6 +1828,24 @@ function useAsDraft(message) {
     target.focus();
 }
 
+async function addAsReplyVersion(session, message) {
+    const source = app.source;
+    if (source?.kind !== 'roleplay') return;
+    const text = replyDraft(message.text);
+    if (!text) return;
+    try {
+        requireScope(source, session.id);
+        const target = replyVersionTarget(source);
+        const ok = await callGenericPopup(t`Add this as another version of the last story reply, from ${target.name}? The story shows it straight away. The earlier versions stay, so you can swipe back to them.`,
+            POPUP_TYPE.CONFIRM, '', { okButton: t`Add version`, cancelButton: t`Not now` });
+        if (ok !== POPUP_RESULT.AFFIRMATIVE) return;
+        requireScope(source, session.id);
+        await addReplyVersion(source, target, text);
+        toastr.success(t`Added as a new version of the last story reply.`);
+        if (isPhone()) hideScratchpad();
+    } catch (error) { reportError(error, t`That reply could not be added to the story.`); }
+}
+
 async function copyText(text) {
     try {
         await navigator.clipboard.writeText(text);
@@ -1859,6 +1877,9 @@ function renderMessageActions(session, message, { latest }) {
     }, { icon: 'fa-pen', title: t`Edit`, disabled: busy }));
     if (message.role === 'assistant' && message.text && ['roleplay', 'conversation'].includes(app.source?.kind)) {
         actions.append(iconButton('', () => useAsDraft(message), { icon: 'fa-reply', title: t`Use as draft in the chat box` }));
+        if (app.source.kind === 'roleplay') {
+            actions.append(iconButton('', () => void addAsReplyVersion(session, message), { icon: 'fa-layer-group', title: t`Add as another version of the last story reply`, disabled: busy }));
+        }
     }
     if (latest && message.role === 'assistant') {
         actions.append(iconButton('', () => void send({ regenerate: message.id }), { icon: 'fa-rotate-right', title: t`Try again`, disabled: busy || app.sending }));
