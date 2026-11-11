@@ -1163,10 +1163,13 @@ for (const phone of [false, true]) {
             await startNativeReply(page, action);
             try {
                 await expect(page.locator('#chat [data-roleplay-replacement]')).toHaveCount(1);
-                // The saved row stays visible but cannot be edited until a prepared
-                // replacement can take its place without collapsing the chat.
-                const waitingReply = page.locator('#chat .mes').filter({ hasText: ANSWER });
+                // The saved row empties at once and cannot be edited; it keeps its place until a
+                // prepared replacement can take it without collapsing the chat.
+                const marker = page.locator('#chat [data-roleplay-replacement]');
+                const waitingReply = page.locator('#chat .mes').nth(await marker.evaluate(node =>
+                    [...document.querySelectorAll('#chat .mes')].indexOf(node.nextElementSibling)));
                 await expect(waitingReply).toBeVisible();
+                await expect(waitingReply.locator('.mes_text')).toHaveText('...');
                 await expect(waitingReply).toHaveJSProperty('inert', true);
                 expect(await page.evaluate(() => window.SillyTavern.getContext().chat.at(-1).mes)).toBe(ANSWER);
             } finally {
