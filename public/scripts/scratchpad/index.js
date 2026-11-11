@@ -55,7 +55,7 @@ import { buildSessionExport, chooseSessionExport, exportFileName, MAX_IMPORT_BYT
 import { canReadAloud, isReadingAloud, stopReadAloud, toggleReadAloud } from './read-aloud.js';
 import { editQuickPrompts } from './quick-prompts.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261111-scratchpad-read-aloud';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261111-scratchpad-review-all';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -1496,6 +1496,13 @@ function renderReply(session, message) {
             body.append(renderChangeCard(session, message, part));
         }
     }
+    const open = batchParts(message);
+    if (open.length > 1) {
+        body.append(h('div', { class: 'scratchpad-change-batch' },
+            iconButton(t`Review all ${open.length} changes`, () => void reviewAllChanges(session, message), {
+                icon: 'fa-list-check', primary: true, className: 'scratchpad-review-all',
+            })));
+    }
     const codes = [...body.querySelectorAll('.scratchpad-text pre > code')];
     const sources = codes.map(code => ({ language: previewLanguage(code.className), text: code.textContent }));
     for (const [index, code] of codes.entries()) {
@@ -1682,31 +1689,46 @@ function changeDiff(plan, editor = null) {
         h('strong', { text: t`Changes` }), diff);
 }
 
+/** Reads the live target of one suggestion and builds its review. Throws when it cannot be reviewed now. */
+async function prepareReviewPlan(source, session, message, part) {
+    await app.queue;
+    requireScope(source, session.id);
+    if (part.change.type === 'chat' && source.scope && !sameChat(message.contextSource, source)) {
+        throw new Error(t`Open the original chat before reviewing this message change.`);
+    }
+    if (source.kind === 'general' && part.change.type === 'character' && part.change.action !== 'create'
+        && (!sameChat(message.contextSource, source) || !currentSettings().include.card)) {
+        throw new Error(t`Return to the original context and share the selected card before reviewing this change.`);
+    }
+    const plan = part.change.type === 'image' ? await images.prepareAvatarChange({ source: wireSource(source), personaSource: source, session, message, part,
+        guard: () => imageGuard(source, session, message, part) }) : await prepareChange(part.change, source, { sharedAvatar: message.sharedAvatar,
+        sharedPersona: message.sharedPersona, personaGuard: () => personaGuard(source, session, message, part),
+        sharedPreset: message.sharedPreset, presetGuard: () => {
+            requireScope(source, session.id);
+            if (source.kind !== 'roleplay' || !currentSettings().include.preset || !sameChat(message.contextSource, source)) {
+                throw new Error(t`Share the original preset in this chat before saving its changes.`);
+            }
+        },
+        creationGuard: () => requireScope(source, session.id), creatorKey: JSON.stringify([source.key, session.id, message.id, part.index]) });
+    requireScope(source, session.id);
+    if (plan.bucket) applyBucket(plan.bucket);
+    return plan;
+}
+
+async function commitReviewPlan(source, session, part, plan, text) {
+    await app.queue;
+    requireScope(source, session.id);
+    if (source.kind === 'general' && part.change.type === 'character' && part.change.action !== 'create' && !currentSettings().include.card) {
+        throw new Error(t`Share the selected character card before saving this change.`);
+    }
+    return plan.commit(text);
+}
+
 async function reviewAndSaveChange(session, message, part, key) {
     const source = app.source;
     let plan;
     try {
-        await app.queue;
-        requireScope(source, session.id);
-        if (part.change.type === 'chat' && source.scope && !sameChat(message.contextSource, source)) {
-            throw new Error(t`Open the original chat before reviewing this message change.`);
-        }
-        if (source.kind === 'general' && part.change.type === 'character' && part.change.action !== 'create'
-            && (!sameChat(message.contextSource, source) || !currentSettings().include.card)) {
-            throw new Error(t`Return to the original context and share the selected card before reviewing this change.`);
-        }
-        plan = part.change.type === 'image' ? await images.prepareAvatarChange({ source: wireSource(source), personaSource: source, session, message, part,
-            guard: () => imageGuard(source, session, message, part) }) : await prepareChange(part.change, source, { sharedAvatar: message.sharedAvatar,
-            sharedPersona: message.sharedPersona, personaGuard: () => personaGuard(source, session, message, part),
-            sharedPreset: message.sharedPreset, presetGuard: () => {
-                requireScope(source, session.id);
-                if (source.kind !== 'roleplay' || !currentSettings().include.preset || !sameChat(message.contextSource, source)) {
-                    throw new Error(t`Share the original preset in this chat before saving its changes.`);
-                }
-            },
-            creationGuard: () => requireScope(source, session.id), creatorKey: JSON.stringify([source.key, session.id, message.id, part.index]) });
-        requireScope(source, session.id);
-        if (plan.bucket) applyBucket(plan.bucket);
+        plan = await prepareReviewPlan(source, session, message, part);
     } catch (error) {
         reportError(error, t`That change cannot be reviewed right now.`);
         return;
@@ -1742,12 +1764,7 @@ async function reviewAndSaveChange(session, message, part, key) {
     if (result !== POPUP_RESULT.AFFIRMATIVE) return;
     let creatorDraftId = null;
     try {
-        await app.queue;
-        requireScope(source, session.id);
-        if (source.kind === 'general' && part.change.type === 'character' && part.change.action !== 'create' && !currentSettings().include.card) {
-            throw new Error(t`Share the selected character card before saving this change.`);
-        }
-        const saved = await plan.commit(editor ? editor.value : plan.after);
+        const saved = await commitReviewPlan(source, session, part, plan, editor ? editor.value : plan.after);
         creatorDraftId = saved?.creatorDraftId;
         if (saved?.refreshFailed) toastr.info(t`The change was saved. Refresh this view to see it.`);
     } catch (error) {
@@ -1760,6 +1777,101 @@ async function reviewAndSaveChange(session, message, part, key) {
     if (creatorDraftId) {
         hideScratchpad();
         globalThis.NeconyanShell?.openCreator?.({ draftId: creatorDraftId });
+    }
+}
+
+/** Open suggestions of one reply that can be reviewed together: edits to things that already exist. */
+function batchParts(message) {
+    return splitReply(message.text).filter(part => part.type === 'change' && part.change
+        && !['image', 'notebook', 'creator'].includes(part.change.type) && part.change.action !== 'create'
+        && !message.proposals?.[String(part.index)]);
+}
+
+async function reviewAllChanges(session, message) {
+    const source = app.source;
+    const parts = batchParts(message).filter(part => !busyChanges.has(changeKey(session, message, part)));
+    if (parts.length < 2) return;
+    const keys = parts.map(part => changeKey(session, message, part));
+    for (const key of keys) setChangeBusy(key, true);
+    try {
+        const items = [];
+        for (const [index, part] of parts.entries()) {
+            const item = { part, key: keys[index], title: describeChange(part.change) };
+            if (committedChanges.has(item.key)) item.committed = true;
+            else {
+                try {
+                    item.plan = await prepareReviewPlan(source, session, message, part);
+                } catch (error) {
+                    item.error = error?.message || t`That change cannot be reviewed right now.`;
+                }
+            }
+            items.push(item);
+        }
+        const ready = items.filter(item => item.plan || item.committed);
+        const content = h('div', { class: 'neconyan-assistant-review scratchpad-review scratchpad-batch' },
+            h('h3', { text: t`Review ${parts.length} changes` }),
+            h('p', { text: t`Untick anything you do not want. Each ticked change is checked against what is saved now before it is written, so one that no longer fits is left alone.` }),
+            items.map((item, index) => {
+                const heading = h('span', { text: item.title });
+                if (item.error) {
+                    return h('section', { class: 'scratchpad-batch-item is-unavailable', 'aria-label': t`Change ${index + 1}` },
+                        h('p', { class: 'scratchpad-batch-title' }, heading),
+                        h('p', { class: 'scratchpad-change-reason', role: 'note', text: item.error }));
+                }
+                item.box = h('input', { type: 'checkbox', checked: true });
+                if (item.committed) {
+                    return h('section', { class: 'scratchpad-batch-item', 'aria-label': t`Change ${index + 1}` },
+                        h('label', { class: 'scratchpad-check scratchpad-batch-title' }, item.box, heading),
+                        h('p', { class: 'scratchpad-muted', text: t`Already saved. Ticking it only records that on the card.` }));
+                }
+                const { plan } = item;
+                item.editor = plan.editable
+                    ? h('textarea', { class: 'text_pole scratchpad-review-editor', rows: '6', value: plan.after, 'aria-label': plan.afterLabel || t`Proposed text` })
+                    : null;
+                return h('section', { class: 'scratchpad-batch-item', 'aria-label': t`Change ${index + 1}` },
+                    h('label', { class: 'scratchpad-check scratchpad-batch-title' }, item.box, heading),
+                    h('p', {}, h('strong', { text: t`Where: ` }), plan.target),
+                    h('p', {}, h('strong', { text: t`What: ` }), plan.field),
+                    plan.visual || changeDiff(plan, item.editor),
+                    item.editor ? h('details', { class: 'scratchpad-batch-edit' }, h('summary', { text: t`Edit the proposed text` }), item.editor) : null,
+                    plan.hint ? h('p', { class: 'scratchpad-review-hint', text: plan.hint }) : null);
+            }));
+        const result = await callGenericPopup(content, POPUP_TYPE.CONFIRM, '', {
+            wide: true, large: true, okButton: ready.length ? t`Save ticked changes` : t`Close`, cancelButton: t`Not now`,
+        });
+        if (result !== POPUP_RESULT.AFFIRMATIVE) return;
+        let saved = 0;
+        const failed = [];
+        for (const item of ready) {
+            if (!item.box.checked) continue;
+            try {
+                if (!item.committed) {
+                    // Earlier saves in this batch may have moved the target, so each change is read again first.
+                    const fresh = await prepareReviewPlan(source, session, message, item.part);
+                    if (fresh.before !== item.plan.before || fresh.after !== item.plan.after) {
+                        throw new Error(t`This changed after you reviewed it, so it was not saved. Review it again on its own.`);
+                    }
+                    const outcome = await commitReviewPlan(source, session, item.part, fresh, item.editor ? item.editor.value : fresh.after);
+                    if (outcome?.refreshFailed) toastr.info(t`The change was saved. Refresh this view to see it.`);
+                    committedChanges.add(item.key);
+                }
+                saved++;
+                if (await markChange(session, message, item.part.index, 'applied', source)) committedChanges.delete(item.key);
+            } catch (error) {
+                failed.push({ title: item.title, reason: error?.message || t`That change could not be saved.` });
+            }
+        }
+        if (saved) toastr.success(saved === 1 ? t`1 change saved.` : t`${saved} changes saved.`);
+        if (failed.length) {
+            for (const key of keys) setChangeBusy(key, false);
+            await callGenericPopup(h('div', { class: 'scratchpad-review scratchpad-batch' },
+                h('h3', { text: failed.length === 1 ? t`1 change was not saved` : t`${failed.length} changes were not saved` }),
+                h('p', { text: t`Their cards are still open, so you can review each one again.` }),
+                h('ul', {}, failed.map(item => h('li', {}, h('strong', { text: item.title }), h('br'), h('span', { text: item.reason }))))),
+            POPUP_TYPE.TEXT, '', { okButton: t`Close` });
+        }
+    } finally {
+        for (const key of keys) setChangeBusy(key, false);
     }
 }
 
