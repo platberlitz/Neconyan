@@ -12,6 +12,9 @@ let selectedAvatar = 'Nova.png';
 const saveChatConditional = jest.fn(async () => true);
 const updateMessageBlock = jest.fn();
 const emit = jest.fn();
+const reloadCurrentChat = jest.fn();
+const syncMesToSwipe = jest.fn();
+let generating = false;
 const hideChatMessageRange = jest.fn(async () => true);
 const deleteMessage = jest.fn(async index => { chat.splice(index, 1); });
 const loadWorldInfo = jest.fn(async () => structuredClone(book));
@@ -19,8 +22,9 @@ const saveWorldInfo = jest.fn(async () => 'Garden');
 
 jest.unstable_mockModule('../public/script.js', () => ({
     chat, chat_metadata: {}, characters: [], deleteMessage, getOneCharacter: jest.fn(), getRequestHeaders: () => ({}),
-    getThumbnailUrl: jest.fn(), name1: 'User', reloadCurrentChat: jest.fn(), saveChatConditional,
-    select_selected_character: jest.fn(), syncMesToSwipe: jest.fn(), this_chid: 0, updateMessageBlock, printCharactersDebounced: jest.fn(),
+    getThumbnailUrl: jest.fn(), name1: 'User', reloadCurrentChat, saveChatConditional,
+    extractMessageBias: () => '', isGenerating: () => generating,
+    select_selected_character: jest.fn(), syncMesToSwipe, this_chid: 0, updateMessageBlock, printCharactersDebounced: jest.fn(),
 }));
 jest.unstable_mockModule('../public/scripts/chats.js', () => ({ hideChatMessageRange }));
 jest.unstable_mockModule('../public/scripts/events.js', () => ({ event_types: { MESSAGE_EDITED: 'edited', MESSAGE_UPDATED: 'updated' }, eventSource: { emit } }));
@@ -39,7 +43,7 @@ jest.unstable_mockModule('../public/scripts/scratchpad/context.js', () => ({
     sourceCharacters: () => [{ name: 'Nova', avatar: selectedAvatar }],
 }));
 
-const { prepareChange } = await import('../public/scripts/scratchpad/changes.js');
+const { addReplyVersion, prepareChange, replyVersionTarget } = await import('../public/scripts/scratchpad/changes.js');
 const panelSource = fs.readFileSync(new URL('../public/scripts/scratchpad/index.js', import.meta.url), 'utf8');
 
 beforeEach(() => {
@@ -47,6 +51,7 @@ beforeEach(() => {
     saveChatConditional.mockReset().mockResolvedValue(true);
     hideChatMessageRange.mockReset().mockResolvedValue(true);
     current = true;
+    generating = false;
     selectedAvatar = 'Nova.png';
     chat.splice(0, chat.length, { name: 'Nova', mes: 'Original message.', is_system: false });
     book = { entries: { 0: { uid: 0, comment: 'Flower', key: ['flower'], content: 'Original lore.' } } };
@@ -285,5 +290,52 @@ describe('Scratchpad reviewed saves', () => {
         await expect(plan.commit(plan.after)).rejects.toThrow('changed');
         expect(updateMessageBlock).not.toHaveBeenCalled();
         expect(saveChatConditional).not.toHaveBeenCalled();
+    });
+
+    test('adds a Scratchpad reply as a new shown version of the last story reply and keeps the earlier ones', async () => {
+        chat.splice(0, chat.length, { name: 'User', is_user: true, mes: 'Hello.' },
+            { name: 'Nova', mes: 'Second version.', is_system: false, swipe_id: 1, swipes: ['First version.', 'Second version.'], swipe_info: [{}, {}], extra: { model: 'story' } });
+        const target = replyVersionTarget(source);
+        expect(target).toMatchObject({ index: 1, name: 'Nova' });
+        expect(saveChatConditional).not.toHaveBeenCalled();
+        await addReplyVersion(source, target, 'From Scratchpad.');
+        expect(chat[1]).toMatchObject({ mes: 'From Scratchpad.', swipe_id: 2, swipes: ['First version.', 'Second version.', 'From Scratchpad.'], extra: { api: 'manual', model: 'Scratchpad' } });
+        expect(chat[1].swipe_info).toHaveLength(3);
+        expect(syncMesToSwipe).toHaveBeenCalledWith(1);
+        expect(syncMesToSwipe.mock.invocationCallOrder[0]).toBeLessThan(saveChatConditional.mock.invocationCallOrder[0]);
+        expect(saveChatConditional).toHaveBeenCalledWith({ throwOnError: true });
+        expect(reloadCurrentChat).toHaveBeenCalledTimes(1);
+    });
+    test('gives a reply without versions its first version list', async () => {
+        await addReplyVersion(source, replyVersionTarget(source), 'From Scratchpad.');
+        expect(chat[0]).toMatchObject({ mes: 'From Scratchpad.', swipe_id: 1, swipes: ['Original message.', 'From Scratchpad.'] });
+    });
+    test.each([
+        ['outside Roleplay', () => {}, { kind: 'conversation', key: 'original' }, 'Roleplay'],
+        ['in an empty chat', () => chat.splice(0, chat.length), source, 'no reply'],
+        ['when the last message is the user\'s', () => chat.push({ name: 'User', is_user: true, mes: 'Mine.' }), source, 'yours'],
+        ['when the last message is hidden', () => { chat[0].is_system = true; }, source, 'hidden'],
+        ['after the chat changed', () => { current = false; }, source, 'chat changed'],
+    ])('refuses a reply version %s', (_, arrange, from, message) => {
+        arrange();
+        expect(() => replyVersionTarget(from)).toThrow(message);
+    });
+    test.each([
+        ['the last reply was edited', () => { chat[0].mes = 'Edited.'; }, 'story changed'],
+        ['a new message arrived', () => chat.push({ name: 'Nova', mes: 'Newer.' }), 'story changed'],
+        ['another chat was opened', () => { current = false; }, 'story changed'],
+        ['a story reply is being written', () => { generating = true; }, 'still being written'],
+    ])('adds nothing when %s after the confirmation opened', async (_, arrange, message) => {
+        const target = replyVersionTarget(source);
+        arrange();
+        await expect(addReplyVersion(source, target, 'From Scratchpad.')).rejects.toThrow(message);
+        expect(chat.every(item => !item.swipes)).toBe(true);
+        expect(saveChatConditional).not.toHaveBeenCalled();
+        expect(reloadCurrentChat).not.toHaveBeenCalled();
+    });
+    test('reports a refused save and does not redraw the chat', async () => {
+        saveChatConditional.mockResolvedValue(false);
+        await expect(addReplyVersion(source, replyVersionTarget(source), 'From Scratchpad.')).rejects.toThrow('not saved');
+        expect(reloadCurrentChat).not.toHaveBeenCalled();
     });
 });

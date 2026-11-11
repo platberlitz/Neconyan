@@ -72,6 +72,7 @@ import { SlashCommandParser } from './slash-commands/SlashCommandParser.js';
 import { SlashCommandParserError } from './slash-commands/SlashCommandParserError.js';
 import { getMessageTimeStamp, isMobile } from './RossAscends-mods.js';
 import { hideChatMessageRange } from './chats.js';
+import { appendManualSwipe, selectManualSwipe } from './manual-swipe.js';
 import { getContext, saveMetadataDebounced } from './extensions.js';
 import { getRegexedString, regex_placement } from './extensions/regex/engine.js';
 import { findGroupMemberId, groups, is_group_generating, openGroupById, regenerateGroup, resetSelectedGroup, saveGroupChat, selected_group, getGroupMembers } from './group-chats.js';
@@ -4719,36 +4720,15 @@ async function addSwipeCallback(args, value) {
         return '';
     }
 
-    if (!Array.isArray(lastMessage.swipes)) {
-        lastMessage.swipes = [lastMessage.mes];
-        lastMessage.swipe_info = [{}];
-        lastMessage.swipe_id = 0;
-    }
-    if (!Array.isArray(lastMessage.swipe_info)) {
-        lastMessage.swipe_info = lastMessage.swipes.map(() => ({}));
-    }
-
-    lastMessage.swipes.push(value);
-    lastMessage.swipe_info.push({
-        send_date: getMessageTimeStamp(),
-        gen_started: null,
-        gen_finished: null,
-        extra: {
-            bias: extractMessageBias(value),
-            gen_id: Date.now(),
-            api: 'manual',
-            model: 'slash command',
-        },
+    const newSwipeId = appendManualSwipe(lastMessage, value, {
+        sendDate: getMessageTimeStamp(),
+        bias: extractMessageBias(value),
     });
-
-    const newSwipeId = lastMessage.swipes.length - 1;
 
     if (isTrueBoolean(args.switch)) {
         // Make sure ad-hoc changes to extras are saved before swiping away
         syncMesToSwipe();
-        lastMessage.swipe_id = newSwipeId;
-        lastMessage.mes = lastMessage.swipes[newSwipeId];
-        lastMessage.extra = structuredClone(lastMessage.swipe_info?.[newSwipeId]?.extra ?? lastMessage.extra ?? {});
+        selectManualSwipe(lastMessage, newSwipeId);
     }
 
     await saveChatConditional();

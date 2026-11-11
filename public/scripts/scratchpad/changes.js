@@ -5,7 +5,9 @@ import {
     deleteMessage,
     getOneCharacter,
     getRequestHeaders,
+    extractMessageBias,
     getThumbnailUrl,
+    isGenerating,
     name1,
     reloadCurrentChat,
     saveChatConditional,
@@ -21,6 +23,7 @@ import { saveCharacterDraft } from '../neconyan-character-create.js';
 import { normaliseCharacterDraft } from '../neconyan-character-draft.js';
 import { user_avatar } from '../personas.js';
 import { power_user } from '../power-user.js';
+import { appendManualSwipe, selectManualSwipe } from '../manual-swipe.js';
 import { getMessageTimeStamp } from '../RossAscends-mods.js';
 import { getNameAndAvatarForMessage } from '../slash-commands.js';
 import { createWorldInfoEntry, deleteWorldInfoEntry, loadWorldInfo, saveWorldInfo, updateWorldInfoList, world_names } from '../world-info.js';
@@ -316,6 +319,35 @@ function chatPlan(change, source) {
             await saveMessages(source, { allowShrink: true });
         },
     };
+}
+
+/**
+ * Finds the story reply that a Scratchpad reply can become another version of.
+ * Nothing is written until addReplyVersion() is called.
+ */
+export function replyVersionTarget(source) {
+    if (source?.kind !== 'roleplay') fail('Scratchpad can only add reply versions in Roleplay chats.');
+    if (!isCurrentSource(source)) fail('The chat changed, so nothing was added. Return to it and try again.');
+    const index = chat.length - 1;
+    const message = chat[index];
+    if (!message) fail('This chat has no reply to add a version to yet.');
+    if (message.is_user) fail('The last message in this chat is yours. A version can only be added to a character\'s reply.');
+    if (message.is_system) fail('The last message in this chat is hidden, so a version cannot be added to it.');
+    return { index, name: String(message.name ?? ''), snapshot: messageSnapshot(index) };
+}
+
+export async function addReplyVersion(source, target, text) {
+    if (!isCurrentSource(source) || chat.length - 1 !== target.index || messageSnapshot(target.index) !== target.snapshot) {
+        fail('The story changed while you were deciding, so nothing was added. Try again.');
+    }
+    if (isGenerating()) fail('A story reply is still being written. Wait for it to finish, then try again.');
+    const message = chat[target.index];
+    const index = appendManualSwipe(message, text, { sendDate: getMessageTimeStamp(), bias: extractMessageBias(text), model: 'Scratchpad' });
+    syncMesToSwipe(target.index);
+    selectManualSwipe(message, index);
+    await saveMessages(source);
+    requireSource(source);
+    await reloadCurrentChat();
 }
 
 /**

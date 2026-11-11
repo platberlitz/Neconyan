@@ -67,6 +67,7 @@ Each message also has an actions menu:
 - **Save selection or message to note** saves a selected passage or the message to a new Inbox note or an existing note. Replies omit change cards; reasoning is never copied. The quotation keeps its Scratchpad speaker and date.
 - **Edit message** lets you correct either side of the conversation. The assistant sees the edited text next time.
 - **Use as draft in the chat box**, only with a visible Roleplay or Conversation chat, copies an assistant reply (without any change cards) into the story's message box. Nothing is sent; you decide what to do with it. General never writes into a chat hidden beneath Home.
+- **Add as another version of the last story reply**, only in a Roleplay chat, turns an assistant reply (without any change cards) into a new swipe of the character's last reply in the story. Scratchpad asks first; after **Add version** the story shows the new version straight away and the earlier versions stay, so you can swipe back. It is refused when the last story message is yours or hidden, while a story reply is still being written, or if the story changed while the question was open.
 - **Try again** saves a new version of that assistant's answer to your latest message, keeping the previous versions and the other round-table answers. Use the arrows and version counter below the reply to choose an alternative, up to 50 versions per reply.
 - **Delete** removes the message from Scratchpad. The story is not affected.
 

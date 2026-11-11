@@ -38,6 +38,11 @@ export default [
         sources: [guide, panel, 'src/scratchpad/jobs.js', 'public/scripts/message-token-counts.js'], anchors: ['Use as draft in the chat box', 'Plot ideas', 'Continuity check', 'Only replies to the latest message can be regenerated.', 'Output tokens', 'Thought tokens', 'Copy code', 'scratchpad-copy'],
     },
     {
+        id: 'scratchpad.reply-version', title: 'Adding a Scratchpad reply as another version of the last story reply', keys: ['Scratchpad reply as swipe', 'add as another version of the last story reply', 'Scratchpad reply become a swipe', 'send Scratchpad reply to the story as a swipe', 'Add version'],
+        content: 'In a Roleplay chat, open the message actions of a Scratchpad assistant reply and press Add as another version of the last story reply. Scratchpad asks first; Add version adds the reply, without its change cards, as a new version (swipe) of the character\'s last story reply and shows it straight away. Not now adds nothing. The earlier versions stay, so you can swipe back to them. It is refused when the chat has no reply yet, when the last story message is yours or hidden, when the story changed while you were deciding, or while a story reply is being written. The button is not offered in Conversation chats, notes or General Scratchpad; Use as draft in the chat box remains available in Conversation chats.',
+        sources: [guide, panel, 'public/scripts/scratchpad/changes.js'], anchors: ['Add as another version of the last story reply', 'Add version', 'Scratchpad can only add reply versions in Roleplay chats.'],
+    },
+    {
         id: 'scratchpad.attachments', title: 'Attaching files and images in Scratchpad', keys: ['Scratchpad attachments', 'Attach files', 'Scratchpad file', 'Scratchpad PDF', 'Scratchpad image', 'attach image to Scratchpad', 'Scratchpad 32 MiB', 'Scratchpad attachments export'],
         sources: [guide, panel, 'public/scripts/scratchpad/attachments.js', 'public/scripts/scratchpad/attachment-data.js'],
         anchors: ['Attach files', 'Message options', 'Attach up to eight files per message.', 'Choose files up to 32 MiB each.', 'PDFs share extracted text. Images are resized and need an image-capable model.', 'Attached file:'],
