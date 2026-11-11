@@ -33,6 +33,7 @@
 - PR #623 (2026-11-11) `feat(scratchpad): dictate a message with the microphone`
 - PR #624 (2026-11-11) `feat(scratchpad): suggest changes to agents`
 - PR #625 (2026-11-11) `feat(scratchpad): suggest changes to the author's note`
+- PR #626 (2026-11-11) `feat(scratchpad): suggest changes to regex scripts`
 
 ## v1.5.4
 
