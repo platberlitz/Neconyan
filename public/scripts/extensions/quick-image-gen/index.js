@@ -222,6 +222,7 @@ import {
     DEFAULT_TAGS_INSTRUCTION_TEMPLATE,
     DEFAULT_TWO_STEP_INSTRUCTION_TEMPLATE,
 } from "./lib/prompt-defaults.js";
+import { buildImagePromptInstruction, buildSceneDescriptionInstruction, QIG_ARTISTS } from "./lib/prompt-instructions.js";
 import {
     buildWorldInfoScanChat,
     composeWorldInfoScanChat,
@@ -249,14 +250,8 @@ import { registerExtensionCapability } from "../../neconyan-conversation/extensi
 import { t, translate } from "../../i18n.js";
 import { bindImageInputRefreshEvents, bindImageInputRefreshPage } from "./lib/image-input-refresh.js";
 
-// Artist lists for random selection
-const ARTISTS_NATURAL = ["a1 (initial-g)", "abubu", "afrobull", "aiue oka", "akairiot", "akamatsu ken", "alex ahad", "alzi xiaomi", "amazuyu tatsuki", "aoi nagisa (metalder)", "ask (askzy)", "atdan", "awa", "ayami kojima", "azasuke", "azto dio", "bkub", "blade (galaxist)", "boris (noborhys)", "bow (bhp)", "butcha-u", "chouzuki maryou", "ciloranko", "circle anco", "crote", "dagasi", "dairi", "dino (dinoartforame)", "dishwasher1910", "drawfag", "dsmile", "ebifurya", "eroquis", "fkey", "fuzichoco", "gomennasai", "hammer (sunset beach)", "hana kazari", "hara (harayutaka)", "haruyama kazunori", "hews", "hiroki (yyqw7151)", "hiten", "hoshi (snacherubi)", "inoino", "itomugi-kun", "ixy", "kagami hirotaka", "kanon (kurogane knights)", "kantoku", "kawacy", "ke-ta", "kou hiyoyo", "kouji (campus life)", "kuavera", "kuon (kwonchan)", "lack", "lm7", "lolita channel", "m-da s-tarou", "matsunaga kouyou", "mika pikazo", "mikeinel", "mizuki hitoshi", "mizumizuni", "morikura en", "naga u", "nardack", "neco", "nel-zel formula", "neocoill", "nian", "nixeu", "nyamota", "nyantcha", "ojipon", "onikobe rin", "piromizu", "pochi (pochi-goya)", "qp:flapper", "rebecca (keinelove)", "redjuice", "rei (sanbonzakura)", "rurudo", "ruu (tksymkw)", "shirataki", "sincos", "sky-freedom", "tofuubear", "tony taka", "tukiwani", "wanke", "yaegashi nan", "yamakaze", "yoko juusuke", "yoshiaki", "yuuki tatsuya"];
-
-const ARTISTS_TAGS = ["a1_(initial-g)", "abubu", "afrobull", "aiue_oka", "akairiot", "akamatsu_ken", "alex_ahad", "alzi_xiaomi", "amazuyu_tatsuki", "aoi_nagisa_(metalder)", "ask_(askzy)", "atdan", "awa", "ayami_kojima", "azasuke", "azto_dio", "bkub", "blade_(galaxist)", "boris_(noborhys)", "bow_(bhp)", "butcha-u", "chouzuki_maryou", "ciloranko", "circle_anco", "crote", "dagasi", "dairi", "dino_(dinoartforame)", "dishwasher1910", "drawfag", "dsmile", "ebifurya", "eroquis", "fkey", "fuzichoco", "gomennasai", "hammer_(sunset_beach)", "hana_kazari", "hara_(harayutaka)", "haruyama_kazunori", "hews", "hiroki_(yyqw7151)", "hiten", "hoshi_(snacherubi)", "inoino", "itomugi-kun", "ixy", "kagami_hirotaka", "kanon_(kurogane_knights)", "kantoku", "kawacy", "ke-ta", "kou_hiyoyo", "kouji_(campus_life)", "kuavera", "kuon_(kwonchan)", "lack", "lm7", "lolita_channel", "m-da_s-tarou", "matsunaga_kouyou", "mika_pikazo", "mikeinel", "mizuki_hitoshi", "mizumizuni", "morikura_en", "naga_u", "nardack", "neco", "nel-zel_formula", "neocoill", "nian", "nixeu", "nyamota", "nyantcha", "ojipon", "onikobe_rin", "piromizu", "pochi_(pochi-goya)", "qp:flapper", "rebecca_(keinelove)", "redjuice", "rei_(sanbonzakura)", "rurudo", "ruu_(tksymkw)", "shirataki", "sincos", "sky-freedom", "tofuubear", "tony_taka", "tukiwani", "wanke", "yaegashi_nan", "yamakaze", "yoko_juusuke", "yoshiaki", "yuuki_tatsuya"];
-
-function getRandomArtist(useTagFormat = false) {
-    const artists = useTagFormat ? ARTISTS_TAGS : ARTISTS_NATURAL;
-    return artists[Math.floor(Math.random() * artists.length)];
+function getRandomArtist() {
+    return QIG_ARTISTS[Math.floor(Math.random() * QIG_ARTISTS.length)];
 }
 
 const extensionName = "quick-image-gen";
@@ -2254,14 +2249,6 @@ function isSceneTranscriptPrompt(text) {
         .filter(Boolean);
     if (blocks.length < 2) return false;
     return blocks.every(block => /^[^:\n]{1,80}:\s+\S/.test(block));
-}
-
-function customInstructionHasMacro(template, macroName) {
-    const source = String(template || "");
-    const macro = String(macroName || "").trim();
-    if (!macro) return false;
-    const escaped = macro.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    return new RegExp(`\\{\\{\\s*${escaped}\\s*\\}\\}`, "i").test(source);
 }
 
 const PROXY_RECIPE_KEYS = [
@@ -6815,8 +6802,6 @@ ${conceptList}`;
     return matched;
 }
 
-const skinPattern = /\b(dark[- ]?skin(?:ned)?|brown[- ]?skin(?:ned)?|black[- ]?skin(?:ned)?|tan(?:ned)?[- ]?skin|ebony|melanin|mocha|chocolate[- ]?skin|caramel[- ]?skin)\b/gi;
-
 function summarizeLLMValueShape(value, depth = 0) {
     if (value === null) return "null";
     if (value === undefined) return "undefined";
@@ -7203,57 +7188,11 @@ async function generateSceneDescription(s, sceneText, signal, options = {}) {
     try {
         const ctx = getContext();
         const profile = resolveLLMPromptProfileContext(ctx, selectedScene);
-        const charName = profile.charNameJoined || "character";
-        const userName = profile.userName || "user";
-        const charDesc = profile.charDescResolved || "";
-        const userPersona = profile.userDescResolved || "";
-        const scenario = profile.charScenarioResolved || "";
-        const tags = profile.charTagsResolved || "";
-        const activeCharacterNames = uniqueStringList(profile.charNames || []);
-        const activeCharacterList = activeCharacterNames.join(", ");
-        const preserveCharacterIdentity = s.preserveCharacterIdentity !== false;
         const forcedMultiMessage = options?.isMultiMessageScene;
         const isMultiMessage = forcedMultiMessage === true
             ? true
             : (forcedMultiMessage === false ? false : isSceneTranscriptPrompt(selectedScene));
-
-        const referenceSections = [];
-        if (charDesc) referenceSections.push(`${charName}'s appearance/profile: ${charDesc.substring(0, 1500)}`);
-        if (userPersona) referenceSections.push(`${userName}'s persona/appearance: ${userPersona.substring(0, 800)}`);
-        if (tags) referenceSections.push(`Source/Tags: ${tags}`);
-        if (scenario) referenceSections.push(`Setting: ${scenario.substring(0, 400)}`);
-        if (preserveCharacterIdentity && activeCharacterList) referenceSections.push(`Active character names to preserve when visible: ${activeCharacterList}`);
-        const referenceBlock = referenceSections.length ? `\nREFERENCE CONTEXT:\n${referenceSections.join("\n")}` : "";
-
-        const customInstruction = String(s.twoStepInstruction || "").trim();
-        let instruction;
-        if (customInstruction) {
-            instruction = customInstruction
-                .replace(/\{\{scene\}\}/gi, selectedScene)
-                .replace(/\{\{charDesc\}\}/gi, charDesc.substring(0, 1500))
-                .replace(/\{\{userDesc\}\}/gi, userPersona.substring(0, 800))
-                .replace(/\{\{char\}\}/gi, charName)
-                .replace(/\{\{user\}\}/gi, userName);
-            if (!customInstructionHasMacro(customInstruction, "scene")) {
-                instruction += `\n\nSELECTED SCENE${isMultiMessage ? " CONTEXT" : ""}:\n${selectedScene}`;
-            }
-        } else {
-            instruction = `[STANDALONE VISUAL SCENE DESCRIPTION TASK]
-
-Convert the selected chat scene into one concise plain-language visual description for an image generator.
-
-Rules:
-- Output ONLY the plain description. No commentary, no markdown, no speaker labels, no tags, no bullet list.
-- Describe one coherent visible moment: subjects, identities, poses, expressions, clothing, setting, lighting, mood, and camera framing.
-${preserveCharacterIdentity ? "- Preserve explicit species, ages, body traits, names, and non-human details from the scene or reference context." : ""}
-- Do not continue the roleplay and do not quote dialogue.
-${isMultiMessage ? "- The selected scene is a multi-message transcript. Infer the best single visual moment from it." : ""}${referenceBlock}
-
-SELECTED SCENE${isMultiMessage ? " CONTEXT" : ""}:
-${selectedScene}
-
-Plain visual description:`;
-        }
+        const instruction = buildSceneDescriptionInstruction(s, selectedScene, profile, { isMultiMessage });
 
         const timestamp = Date.now();
         const randomPart = Math.random().toString(36).substring(2, 11);
@@ -7325,256 +7264,22 @@ async function generateLLMPrompt(s, basePrompt, signal, options = {}) {
     try {
         const ctx = getContext();
         const profile = resolveLLMPromptProfileContext(ctx, basePrompt);
-        const charName = profile.charNameJoined || "character";
-        const userName = profile.userName || "user";
-        const charDesc = profile.charDescResolved || "";
-        const userPersona = profile.userDescResolved || "";
-        const scenario = profile.charScenarioResolved || "";
-        const tags = profile.charTagsResolved || "";
-        const activeCharacterNames = uniqueStringList(profile.charNames || []);
-        const activeCharacterList = activeCharacterNames.join(", ");
-        const preserveCharacterIdentity = s.preserveCharacterIdentity !== false;
         const resolvedPrefill = getResolvedLLMPrefill(s);
-        const sceneUsesFirstPersonUser = /\b(i|me|my|mine|myself)\b/i.test(basePrompt);
-        const sceneMentionsUserByName = promptIncludesName(basePrompt, userName);
-        const sceneMentionedCharacterNames = activeCharacterNames.filter(name => promptIncludesName(basePrompt, name));
-        const sceneCentersUserAppearance = /\b(reflection|mirror|mirrored|view(?:ing)?\s+my\s+reflection|look(?:ing)?\s+at\s+myself|my\s+(?:face|body|figure|appearance|skin|eyes|reflection))\b/i.test(basePrompt);
-        const sceneIncludesUserPersona = !!userPersona && (sceneUsesFirstPersonUser || sceneMentionsUserByName);
-        const shouldDeprioritizeUnmentionedCharacters = sceneIncludesUserPersona && !sceneMentionedCharacterNames.length;
-        const userLikelyPrimarySubject = sceneIncludesUserPersona && sceneCentersUserAppearance;
-
-        const skinTones = [];
-        const charSkin = preserveCharacterIdentity ? charDesc.match(skinPattern) : null;
-        const userSkin = preserveCharacterIdentity ? userPersona.match(skinPattern) : null;
-        if (charSkin) skinTones.push(`${charName}: ${charSkin[0]}`);
-        if (userSkin) skinTones.push(`${userName}: ${userSkin[0]}`);
-
-        let appearanceContext = "";
-        if (profile.usesCurrentCardContext) {
-            if (charDesc) appearanceContext += `${charName}'s appearance: ${charDesc.substring(0, 1500)}\n`;
-            if (userPersona) appearanceContext += `${userName}'s appearance: ${userPersona.substring(0, 800)}\n`;
-            if (tags) appearanceContext += `Source/Tags: ${tags}\n`;
-            if (scenario) appearanceContext += `Setting: ${scenario.substring(0, 400)}\n`;
-        } else {
-            const appearanceSections = [];
-            if (sceneIncludesUserPersona && userPersona) {
-                appearanceSections.push(`User persona (${userName}; applies to first-person references like I/me/my): ${userPersona.substring(0, 800)}`);
-            }
-            if (charDesc) {
-                const charProfileLabel = shouldDeprioritizeUnmentionedCharacters
-                    ? "Secondary active character profiles (only use if the scene clearly includes them):"
-                    : "Character profiles:";
-                appearanceSections.push(`${charProfileLabel}\n${charDesc.substring(0, 1500)}`);
-            }
-            if (!sceneIncludesUserPersona && userPersona) {
-                appearanceSections.push(`User persona (${userName}; applies to first-person references like I/me/my): ${userPersona.substring(0, 800)}`);
-            }
-            if (tags) appearanceSections.push(`Source/Tags: ${tags}`);
-            if (scenario) appearanceSections.push(`Setting: ${scenario.substring(0, 400)}`);
-            appearanceContext = appearanceSections.join("\n");
-            if (appearanceContext) appearanceContext += "\n";
-        }
-
-        const skinEnforce = preserveCharacterIdentity && skinTones.length ? `\nCRITICAL - You MUST include these skin tones: ${skinTones.join(", ")}` : "";
-        const shouldUseExactNameRequirements = preserveCharacterIdentity && !!profile.useExactNameRequirements && activeCharacterNames.length > 0;
-        const exactNameRequirement = shouldUseExactNameRequirements
-            ? `\n- Preserve and include these exact character name${activeCharacterNames.length === 1 ? "" : "s"} when the scene/card identifies them${shouldDeprioritizeUnmentionedCharacters ? "; otherwise do not force them into the prompt just because they are the active chat character" : ""}: ${activeCharacterList}`
-            : "";
-        const exactUserRequirement = preserveCharacterIdentity && userPersona
-            ? `\n- If the scene refers to the user in first person or by name, preserve and include the exact user persona name when applicable: ${userName}`
-            : "";
-        const exactNameBlock = shouldUseExactNameRequirements
-            ? `\n${shouldDeprioritizeUnmentionedCharacters ? "ACTIVE CHARACTER NAMES (only use if the scene explicitly includes them):" : "CHARACTER NAMES TO PRESERVE (use these exact spellings when applicable):"} ${activeCharacterList}`
-            : "";
-        const userNameBlock = preserveCharacterIdentity && userPersona
-            ? `\nUSER PERSONA NAME (use when the scene refers to the user / I / me / my): ${userName}`
-            : "";
-        const identityRequirements = [
-            "- Preserve any explicit age, age range, species, creature type, race, or persona/body traits from the scene or profile.",
-            "- Do NOT flatten specific identities into generic labels like man, woman, person, human, teen, adult, boy, or girl when more specific information is available.",
-            "- If a subject is non-human or from a known fantasy/franchise species, keep that identity in the prompt instead of humanizing it.",
-        ];
-        if (userPersona) {
-            identityRequirements.push(`- If the scene uses first-person references like I/me/my or mentions ${userName}, that subject is the user persona described below. Use that persona's age, species, body type, and nonhuman traits.`);
-        }
-        const identityRequirementBlock = preserveCharacterIdentity
-            ? `\nIDENTITY REQUIREMENTS:\n${identityRequirements.join("\n")}`
-            : "";
-        const subjectPriorityRequirements = [];
-        if (sceneIncludesUserPersona) {
-            subjectPriorityRequirements.push(`- The user persona (${userName}) is visually involved in this scene whenever the scene uses first-person references or the user name.`);
-            subjectPriorityRequirements.push("- Do NOT replace the user persona with a generic human label or with the active chat character's profile.");
-            subjectPriorityRequirements.push("- If the user persona is acting in the scene, depict them as a full subject when relevant instead of reducing them to a hand, claw, limb, silhouette, or other partial-body placeholder unless the scene explicitly calls for an off-screen POV framing.");
-        }
-        if (userLikelyPrimarySubject) {
-            subjectPriorityRequirements.push(`- Reflection/self-view scenes should treat the user persona (${userName}) as the primary visual subject and describe their full appearance.`);
-        }
-        if (shouldDeprioritizeUnmentionedCharacters) {
-            subjectPriorityRequirements.push("- Do not center the active chat character or inject their full profile unless the scene clearly includes them.");
-        }
-        if (sceneIncludesUserPersona && sceneMentionedCharacterNames.length) {
-            subjectPriorityRequirements.push(`- If both the user persona and another subject are present, preserve both identities accurately and do not let ${sceneMentionedCharacterNames.join(", ")} overshadow the user persona.`);
-        }
-        const subjectPriorityBlock = preserveCharacterIdentity && subjectPriorityRequirements.length
-            ? `\nSCENE SUBJECT PRIORITY:\n${subjectPriorityRequirements.join("\n")}`
-            : "";
-        const userSceneRequirementBullet = preserveCharacterIdentity && userPersona
-            ? `\n- If the scene refers to the user in first person or by name, use the user persona reference below for that subject (${userName})`
-            : "";
-
-        const isNatural = s.llmPromptStyle === "natural";
-        const wantsCustom = s.llmPromptStyle === "custom";
-        const isCustom = wantsCustom && !!s.llmCustomInstruction?.trim();
         const forcedMultiMessage = options?.isMultiMessageScene;
         const isMultiMessage = forcedMultiMessage === true
             ? true
             : (forcedMultiMessage === false ? false : isSceneTranscriptPrompt(basePrompt));
-        const multiMessageContextBlock = isMultiMessage
-            ? `\nMULTI-MESSAGE SCENE CONTEXT:\n- The selected scene below is speaker-tagged context from the chosen chat messages.\n- Use it to infer one coherent visual moment.\n- Do NOT copy speaker labels, quote dialogue, or echo transcript lines in the output.\n- Convert the exchange into visual details only: subjects, actions, expressions, setting, camera framing, lighting, and mood.`
-            : "";
 
         log(`LLM scene mode: ${isMultiMessage ? "multi-message transcript" : "single-message scene"} (${basePrompt.length} chars)`);
-
-        let instruction;
-        if (isCustom) {
-            debugLog(`Custom macros: scene=${basePrompt.length}ch, char="${charName}", user="${userName}", charDesc=${charDesc.length}ch, userDesc=${userPersona.length}ch`);
-            debugLog(`Using custom instruction: ${s.llmCustomInstruction.substring(0, 100)}...`);
-            instruction = s.llmCustomInstruction
-                .replace(/\{\{scene\}\}/gi, basePrompt)
-                .replace(/\{\{charDesc\}\}/gi, charDesc.substring(0, 1500))
-                .replace(/\{\{userDesc\}\}/gi, userPersona.substring(0, 800))
-                .replace(/\{\{char\}\}/gi, charName)
-                .replace(/\{\{user\}\}/gi, userName);
-
-            // Add enhancement options to custom instruction
-            let customEnhancements = "";
-            if (s.llmAddQuality) customEnhancements += "\n- Include quality tags (masterpiece, best quality, highly detailed, sharp focus, etc.)";
-            if (s.llmAddLighting) customEnhancements += "\n- Include lighting descriptions (dramatic lighting, soft lighting, rim lighting, etc.)";
-            if (s.llmAddArtist) {
-                const randomArtist = getRandomArtist(true);
-                customEnhancements += `\n- Include artist tags (e.g., ${randomArtist}, etc.)`;
-            }
-            if (customEnhancements) {
-                instruction += `\n\nADDITIONAL REQUIREMENTS:${customEnhancements}`;
-            }
-            if (skinEnforce) {
-                instruction += skinEnforce;
-            }
-            instruction += `${identityRequirementBlock}${subjectPriorityBlock}`;
-            if (exactNameRequirement || exactUserRequirement) {
-                instruction += `\n\nNAME REQUIREMENTS:${exactNameRequirement}${exactUserRequirement}`;
-            }
-            if (!customInstructionHasMacro(s.llmCustomInstruction, "scene")) {
-                log("Custom instruction missing {{scene}} placeholder; appending selected scene automatically");
-                instruction += `\n\n${isMultiMessage ? "SELECTED SCENE CONTEXT" : "SELECTED SCENE"}:\n${basePrompt}`;
-            }
-        } else if (wantsCustom) {
+        const isCustom = s.llmPromptStyle === "custom" && !!s.llmCustomInstruction?.trim();
+        if (s.llmPromptStyle === "custom" && !isCustom) {
             log("Custom instruction selected but empty, falling back to tags style");
-            // Fall through to default tags style below
         }
 
-        if (!instruction && isNatural) {
-            let enhancements = "";
-            let restrictions = "";
-            if (s.llmAddQuality) enhancements += "\n- Enhanced quality descriptors (masterpiece, highly detailed, sharp focus, etc.)";
-            if (s.llmAddLighting) enhancements += "\n- Professional lighting descriptions (dramatic lighting, soft lighting, rim lighting, etc.)";
-            if (s.llmAddArtist) {
-                const randomArtist = getRandomArtist(false);
-                enhancements += `\n- Art style references from well-known artists (e.g., ${randomArtist}, etc.)`;
-            }
-            else restrictions += "\n- DO NOT include artist names or art style references";
-
-            instruction = `[STANDALONE IMAGE PROMPT GENERATION TASK]${skinEnforce}
-
-CRITICAL INSTRUCTIONS:
-- IGNORE any ambient chat history outside the selected scene below
-- Generate ONLY a new image prompt based on the selected scene below
-- DO NOT repeat or paraphrase the scene text verbatim
-- This is a standalone task, not a continuation of chat
-${multiMessageContextBlock}
-
-[Output ONLY an image generation prompt. No commentary or explanation.]${skinEnforce}
-
-CHARACTER REFERENCE:
-${appearanceContext}${exactNameBlock}${userNameBlock}${identityRequirementBlock}${subjectPriorityBlock}
-${isMultiMessage ? "SCENE CONTEXT (multiple messages):\n" : "CURRENT SCENE: "}${basePrompt}
-
-Write a detailed image prompt describing:
-- The characters involved with their defining visual traits (hair color, eye color, outfit, distinguishing features)
-${shouldUseExactNameRequirements ? `- Use the exact active character names when the scene/card identifies them${activeCharacterNames.length ? ` (${activeCharacterList})` : ""}` : ""}
-${userSceneRequirementBullet}
-${preserveCharacterIdentity ? "- Preserve explicit ages, species, creature types, and nonhuman identities from the scene/profile instead of replacing them with generic human labels" : ""}
-${preserveCharacterIdentity ? "- If from known media/franchise, include the series name and character's canonical appearance" : ""}
-- Their poses, expressions, and body language
-- The setting/background
-- Lighting and atmosphere
-- High quality visual details (sharp focus, detailed rendering, etc.)${enhancements ? `
-
-YOU MUST ALSO INCLUDE:${enhancements}` : ""}${restrictions}
-
-Prompt:`;
-        }
-
-        if (!instruction) {
-            // Only generate default instruction if no custom instruction was set
-            let enhancements = "";
-            let restrictions = "";
-
-            // Critical restrictions - ALWAYS apply these regardless of settings
-            restrictions += "\nCRITICAL RESTRICTIONS (MUST FOLLOW):";
-            restrictions += "\n- NEVER use realistic style tags (e.g., realistic, photorealistic, hyperrealistic, photography, etc.)";
-            restrictions += "\n- NEVER use realistic artists (e.g., wlop, artgerm, rossdraws, etc.)";
-            restrictions += "\n- NEVER use common/overused artists (e.g., sakimichan, greg rutkowski, alphonse mucha, etc.)";
-
-            if (s.llmAddQuality) enhancements += "\n- Enhanced quality tags (masterpiece, best quality, highly detailed, sharp focus, etc.)";
-            if (s.llmAddLighting) enhancements += "\n- Professional lighting descriptions (dramatic lighting, soft lighting, rim lighting, etc.)";
-            if (s.llmAddArtist) {
-                const randomArtist = getRandomArtist(true); // Use tag format for Danbooru style
-                enhancements += `\n- Include artist tags from anime/manga artists (e.g., ${randomArtist}, etc.)`;
-            } else {
-                restrictions += "\n- DO NOT include any artist names";
-            }
-
-            instruction = `### STANDALONE IMAGE GENERATION TASK ###${skinEnforce}
-
-CRITICAL - THIS IS NOT A CONTINUATION OF CHAT:
-- IGNORE any ambient chat history outside the selected scene below
-- Generate a FRESH image prompt based ONLY on the selected scene below
-- DO NOT repeat or paraphrase the scene text verbatim
-- This is a standalone generation task
-${multiMessageContextBlock}
-
-### OUTPUT FORMAT (MANDATORY) ###
-Output ONLY comma-separated Danbooru/Booru-style tags. No sentences. No descriptions. No paragraphs. No prose. No explanations.
-If you write a sentence instead of tags, you have FAILED the task.
-
-CORRECT example output:
-1girl, hatsune_miku, vocaloid, long_hair, twintails, blue_hair, blue_eyes, detached_sleeves, thighhighs, sitting, smile, looking_at_viewer, classroom, window, sunlight, masterpiece, best_quality
-
-WRONG (DO NOT do this):
-"A girl with long blue twintails sits in a classroom by the window, smiling at the viewer."
-
-### IMAGE GENERATION TASK ###
-
-Create Danbooru/Booru-style tags for this ${isMultiMessage ? "scene context:\n" : "scene: "}${basePrompt}
-
-Character info: ${appearanceContext}${exactNameBlock}${userNameBlock}${identityRequirementBlock}${subjectPriorityBlock}
-
-Required tag categories:
-${preserveCharacterIdentity ? `- Character name + series name (CRITICAL: Use recognizable fictional media character tags whenever recognized${shouldUseExactNameRequirements ? `, and keep exact active names like ${activeCharacterList || "the named character"} when no canonical tag exists` : ""})` : "- Subjects and visible traits relevant to the selected scene"}
-${userSceneRequirementBullet}
-${preserveCharacterIdentity ? "- Preserve explicit ages, species, creature types, and nonhuman identities from the scene/profile instead of replacing them with generic human tags" : ""}
-- Physical traits (hair, eyes, body, skin)
-- Clothing and accessories
-- Pose and expression
-- Background/setting
-- Quality tags (masterpiece, best quality, etc.)${enhancements ? `
-
-MUST INCLUDE these additional elements:${enhancements}` : ""}
-${restrictions}
-
-Tags:`;
-        }
+        const instruction = buildImagePromptInstruction(s, basePrompt, profile, {
+            isMultiMessage,
+            artist: s.llmAddArtist ? getRandomArtist() : "",
+        });
 
         log(`Sending instruction to LLM (length: ${instruction.length} chars)`);
 
@@ -19567,7 +19272,7 @@ function createUI() {
                             <label>Prompt Style</label>
                             <select id="qig-llm-style">
                                 <option value="tags" ${s.llmPromptStyle === "tags" ? "selected" : ""}>Danbooru Tags (anime)</option>
-                                <option value="natural" ${s.llmPromptStyle === "natural" ? "selected" : ""}>Natural Description (realistic)</option>
+                                <option value="natural" ${s.llmPromptStyle === "natural" ? "selected" : ""}>Natural Description</option>
                                 <option value="custom" ${s.llmPromptStyle === "custom" ? "selected" : ""}>Custom Instruction</option>
                             </select>
                             <small>How the AI formats the image prompt.</small>
