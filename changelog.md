@@ -27,6 +27,7 @@
 - PR #616 (2026-11-11) `feat(scratchpad): review all change cards of a reply together`
 - PR #617 (2026-11-11) `feat(scratchpad): let round-table assistants discuss their answers`
 - PR #618 (2026-11-11) `feat(scratchpad): read the web pages linked in a message`
+- PR #619 (2026-11-11) `feat(scratchpad): search the sessions of every list`
 
 ## v1.5.4
 
