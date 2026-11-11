@@ -626,7 +626,7 @@ async function moveRegexScript(script, toType, fromType = null, saveSettings = t
     await saveRegexScript(script, -1, toType, saveSettings);
 }
 
-async function loadRegexScripts() {
+export async function loadRegexScripts() {
     $('#saved_regex_scripts').empty();
     $('#saved_scoped_scripts').empty();
     $('#saved_preset_scripts').empty();
