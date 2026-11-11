@@ -10,6 +10,7 @@
 - PR #599 (2026-11-11) `fix(roleplay): honour a Stop made during the automatic decision`
 - PR #600 (2026-11-11) `fix(roleplay): empty a server reply at once on regenerate or swipe`
 - PR #601 (2026-11-11) `fix(slate-flat): fill hovered Guided Gen buttons with the accent on phones`
+- PR #602 (2026-11-11) `fix(quick-image-gen): route prefixed image models through responses`
 
 ## v1.5.4
 
