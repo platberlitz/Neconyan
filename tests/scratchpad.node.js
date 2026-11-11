@@ -15,6 +15,7 @@ const { testExports: { runJob }, setDirectoriesResolver } = await import('../src
 const { acceptScratchpadReply, finalizeScratchpadSubmission, registerScratchpadJobs, normaliseCapabilities, testExports: jobs } = await import('../src/scratchpad/jobs.js');
 const store = await import('../src/scratchpad/store.js');
 const { readInstructionsLocked, updateInstructionsLocked } = await import('../src/scratchpad/instructions.js');
+const { readQuickPromptsLocked, updateQuickPromptsLocked, MAX_QUICK_PROMPTS } = await import('../src/scratchpad/quick-prompts.js');
 const { readAssistantsLocked, saveAssistantLocked, deleteAssistantLocked, readAssistantCardLocked, assistantPortrait, resolveAssistant } = await import('../src/scratchpad/assistants.js');
 const { write: writeCard } = await import('../src/character-card-parser.js');
 const { buildScratchpadMessages, buildScratchpadSystemPrompt } = await import('../src/scratchpad/prompt.js');
@@ -684,6 +685,36 @@ test('global instructions are account-owned, bounded and protected against stale
     const filename = path.join(a.directories.root, 'scratchpad', 'global-instructions.json');
     fs.writeFileSync(filename, '{broken');
     assert.throws(() => saveInstructions(a, 'Do not overwrite'), error => error.code === 'SCRATCHPAD_INSTRUCTIONS_DAMAGED');
+    assert.equal(fs.readFileSync(filename, 'utf8'), '{broken');
+});
+
+test('saved quick prompts are account-owned, ordered, bounded and protected against stale saves or damaged files', t => {
+    const a = account(t);
+    const b = account(t);
+    const read = who => store.withScratchpad(who.base, readQuickPromptsLocked);
+    const update = (prompts, revision) => store.withScratchpad(a.base, lease => updateQuickPromptsLocked(lease, prompts, revision));
+    assert.deepEqual(read(a), { version: 1, revision: 0, prompts: [] });
+    const saved = update([{ label: '  Recap   the scene ', text: 'Recap.\r\nKeep names.', extra: 'dropped' }, { label: 'Next beat', text: 'Suggest the next beat.' }], 0);
+    assert.deepEqual(saved.prompts, [{ label: 'Recap the scene', text: 'Recap.\r\nKeep names.' }, { label: 'Next beat', text: 'Suggest the next beat.' }]);
+    assert.deepEqual(read(a), saved);
+    assert.deepEqual(read(b).prompts, [], 'another account sees none of them');
+    const reordered = update([...saved.prompts].reverse(), saved.revision);
+    assert.deepEqual(reordered.prompts.map(prompt => prompt.label), ['Next beat', 'Recap the scene']);
+    assert.equal(reordered.revision, 2);
+    assert.throws(() => update([], saved.revision), error => error.code === 'SCRATCHPAD_QUICK_PROMPTS_CHANGED' && error.status === 409);
+    const prompt = { label: 'One', text: 'Text' };
+    assert.throws(() => update(Array(MAX_QUICK_PROMPTS + 1).fill(prompt), 2), error => error.code === 'SCRATCHPAD_QUICK_PROMPTS_FULL');
+    assert.throws(() => update([{ label: '字'.repeat(41), text: 'Text' }], 2), /no longer than 40 characters/);
+    assert.throws(() => update([{ label: 'One', text: '字'.repeat(2700) }], 2), error => error.status === 413);
+    for (const invalid of [null, 'text', [null], [{ label: 'One' }], [{ label: ' ', text: 'Text' }], [{ label: 'One', text: ' \n' }]]) {
+        assert.throws(() => update(invalid, 2), error => error.code === 'SCRATCHPAD_QUICK_PROMPTS_INVALID');
+    }
+    assert.deepEqual(read(a), reordered);
+    assert.equal(update(Array(MAX_QUICK_PROMPTS).fill({ label: '字'.repeat(40), text: 'Text' }), 2).prompts.length, MAX_QUICK_PROMPTS);
+    assert.deepEqual(update([], 3).prompts, []);
+    const filename = path.join(a.directories.root, 'scratchpad', 'quick-prompts.json');
+    fs.writeFileSync(filename, '{broken');
+    assert.throws(() => update([prompt], 4), error => error.code === 'SCRATCHPAD_QUICK_PROMPTS_DAMAGED');
     assert.equal(fs.readFileSync(filename, 'utf8'), '{broken');
 });
 
@@ -1779,6 +1810,15 @@ test('the endpoint checks the account and answers with the saved Scratchpad', as
     assert.equal((await post('/instructions/update', payload)).status, 409);
     assert.equal((await post('/instructions', {}, 'someone-else')).status, 409);
     assert.equal((await post('/instructions/update', payload, 'someone-else')).status, 409);
+    const quick = await post('/quick-prompts', {});
+    assert.equal(quick.status, 200, 'quick prompts do not need an open chat');
+    assert.deepEqual((await quick.json()).quickPrompts, { version: 1, revision: 0, prompts: [] });
+    const quickPayload = { prompts: [{ label: 'Recap', text: 'ENDPOINT-QUICK' }], expectedRevision: 0 };
+    assert.equal((await post('/quick-prompts/update', quickPayload)).status, 200);
+    assert.equal((await (await post('/quick-prompts', {})).json()).quickPrompts.prompts[0].text, 'ENDPOINT-QUICK');
+    assert.equal((await post('/quick-prompts/update', quickPayload)).status, 409);
+    assert.equal((await post('/quick-prompts', {}, 'someone-else')).status, 409);
+    assert.equal((await post('/quick-prompts/update', { ...quickPayload, expectedRevision: 1 }, 'someone-else')).status, 409);
     const initialWebSearch = await post('/web-search', {});
     assert.equal(initialWebSearch.status, 200);
     const webState = await initialWebSearch.json();

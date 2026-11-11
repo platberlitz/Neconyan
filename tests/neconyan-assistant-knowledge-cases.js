@@ -16,6 +16,7 @@ export const refreshedKnowledgeCases = [
     ['Where can I read the actual recalled memory in Mewmory?', 'mewmory.recall-text', 'actual recalled text before its selection reason'],
     ['Where is Block external media by default?', 'privacy.external', 'Settings → Chat & Writing → Chat & messages → Messages'],
     ['Does Separate notes for each persona give me separate Author\'s Note libraries?', 'chat.authors-note', 'own note library for that character, not just separate ticks'],
+    ['How do I add my own quick prompts to Scratchpad?', 'scratchpad.quick-prompts', 'Add a prompt creates a row'],
     ['How do Scratchpad reply versions work?', 'scratchpad.reply-versions', 'up to 50 versions per reply'],
     ['Where are Scratchpad prefills?', 'scratchpad.reply-versions', 'Context → Reply prefills'],
     ['Can Scratchpad preview HTML and CSS?', 'scratchpad.html-preview', 'scripts, external resources and links are blocked'],

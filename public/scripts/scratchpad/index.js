@@ -51,8 +51,9 @@ import { MAX_ATTACHMENTS, normaliseAttachments } from './attachment-data.js';
 import { previewForBlock, previewFromText, previewLanguage } from './preview-source.js';
 import { showHtmlPreview } from './html-preview.js';
 import { exportReply, MAX_REPLY_SWIPES, replySwipes } from './swipes.js';
+import { editQuickPrompts } from './quick-prompts.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261109-scratchpad-swipes';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261111-scratchpad-quick-prompts';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -161,6 +162,7 @@ const app = {
     webSearchDraft: null,
     webSearchLoad: null,
     webSearchOwner: '',
+    quickPrompts: { prompts: [], revision: 0 },
     pickLimit: PICK_PAGE,
     sessionQuery: '',
     contextKey: '',
@@ -458,7 +460,7 @@ function buildChatPanel() {
     el.summary = h('div', { class: 'scratchpad-summary' });
     el.messages = h('div', { class: 'scratchpad-messages', role: 'log', 'aria-live': 'polite', 'aria-relevant': 'additions' });
     el.quick = h('div', { class: 'scratchpad-quick', role: 'group', 'aria-label': t`Quick prompts` },
-        quickPrompts().map(prompt => iconButton(prompt.label, () => usePrompt(prompt.text), { className: 'scratchpad-chip' })));
+        quickPromptChips());
     el.composer = h('textarea', {
         class: 'text_pole scratchpad-composer',
         rows: '1',
@@ -1090,6 +1092,31 @@ function usePrompt(text) {
     app.el.composer.focus();
 }
 
+/** The user's own prompts come first, then the built-in ones for this kind of Scratchpad, then the editor button. */
+function quickPromptChips() {
+    const chip = prompt => iconButton(prompt.label, () => usePrompt(prompt.text), { className: 'scratchpad-chip' });
+    const saved = app.quickPrompts.prompts.map(prompt => {
+        const element = chip(prompt);
+        element.classList.add('scratchpad-chip-saved');
+        element.setAttribute('data-i18n-ignore', '');
+        return element;
+    });
+    return [...saved, ...quickPrompts().map(chip),
+        iconButton('', () => void openQuickPromptEditor(), { icon: 'fa-pen', title: t`Edit quick prompts`, className: 'scratchpad-chip scratchpad-chip-edit' })];
+}
+
+async function openQuickPromptEditor() {
+    const owner = getCurrentUserHandle();
+    try {
+        const saved = await editQuickPrompts();
+        if (!saved || owner !== getCurrentUserHandle()) return;
+        app.quickPrompts = saved;
+        render();
+    } catch (error) {
+        reportError(error, t`Your quick prompts could not be loaded.`);
+    }
+}
+
 /* Rendering */
 
 function render() {
@@ -1102,10 +1129,13 @@ function render() {
 
 function renderHeader() {
     const sourceKind = app.source?.kind || '';
-    if (app.el.quick.dataset.sourceKind !== sourceKind || app.el.quick.dataset.imagesAvailable !== String(app.imageAvailability.image)) {
+    const savedPrompts = `${getCurrentUserHandle()}:${app.quickPrompts.revision}`;
+    if (app.el.quick.dataset.sourceKind !== sourceKind || app.el.quick.dataset.imagesAvailable !== String(app.imageAvailability.image)
+        || app.el.quick.dataset.savedPrompts !== savedPrompts) {
         app.el.quick.dataset.sourceKind = sourceKind;
         app.el.quick.dataset.imagesAvailable = String(app.imageAvailability.image);
-        app.el.quick.replaceChildren(...quickPrompts().map(prompt => iconButton(prompt.label, () => usePrompt(prompt.text), { className: 'scratchpad-chip' })));
+        app.el.quick.dataset.savedPrompts = savedPrompts;
+        app.el.quick.replaceChildren(...quickPromptChips());
     }
     const session = activeSession();
     const assistant = session?.assistant ?? app.assistant;
@@ -1885,7 +1915,7 @@ function renderComposer() {
     el.attachments.hidden = !app.attachments.length;
     el.fileStatus.hidden = !readingFiles && !app.attachments.length;
     el.fileStatus.textContent = readingFiles ? t`Reading files...` : t`PDFs share extracted text. Images are resized and need an image-capable model.`;
-    for (const chip of el.quick.querySelectorAll('button')) chip.disabled = !app.source;
+    for (const chip of el.quick.querySelectorAll('button:not(.scratchpad-chip-edit)')) chip.disabled = !app.source;
 }
 
 /* Context tab */
@@ -2559,15 +2589,21 @@ export async function openScratchpad({ tab = '', note = null } = {}) {
     }
     app.webSearchOwner = owner;
     // A library that cannot be read only hides saved assistants; Scratchpad still opens with the included ones.
-    const [library] = await Promise.all([
+    // Saved quick prompts that cannot be read only hide those chips; the built-in ones stay.
+    const [library, quickPrompts] = await Promise.all([
         api.readAssistants().then(result => result.library, error => {
             reportError(error, t`Your assistants could not be loaded.`);
+            return null;
+        }),
+        api.readQuickPrompts().then(result => result.quickPrompts, error => {
+            console.warn('[Scratchpad]', error);
             return null;
         }),
         loadStylesheetAsync(STYLESHEET, { id: 'neconyan-scratchpad-css' }).catch(() => null),
     ]);
     if (owner !== getCurrentUserHandle()) return;
     app.library = library ?? { assistants: [], revision: 0 };
+    app.quickPrompts = quickPrompts ?? { prompts: [], revision: 0 };
     build();
     readPrefs();
     globalThis.NeconyanNotes?.hide?.();

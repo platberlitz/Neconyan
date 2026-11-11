@@ -41,6 +41,8 @@ Under **Context → Assistant prompts**, choose an assistant's **View or edit** 
 
 Pick who you are talking to under **Talking with**, type in the box at the bottom and press **Send** (or Enter on desktop; Shift+Enter adds a new line). **Quick prompts** fill the box with a request you can edit before sending. General offers **Brainstorm**, **Help me decide** and **Create a character**. Chat sessions offer **Read the scene**, **Plot ideas**, **Catch me up**, **Continuity check** and **Lore gaps**.
 
+You can add your own. Press the pencil at the end of the row (**Edit quick prompts**), choose **Add a prompt**, give it a **Name on the button** and the **Text it fills in**, then press **Save quick prompts**. **Move up**, **Move down** and **Delete prompt** rearrange the list. Your prompts are saved for your account, so they show in every Scratchpad and on your other devices, ahead of the built-in ones. You can keep up to 24.
+
 The input starts one line high and grows as you add lines, up to a few lines, so the whole message stays readable. Longer drafts scroll inside it, and pasted text keeps its line breaks.
 
 Press **New session** at the top of Scratchpad to start a fresh conversation in the current list, including General.
