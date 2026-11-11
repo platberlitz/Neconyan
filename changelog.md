@@ -8,6 +8,7 @@
 - PR #597 (2026-11-11) `fix(roleplay): keep continued chunks on Stop and Agent rewrites`
 - PR #598 (2026-11-11) `fix(conversation): time out silent providers and stop duplicate asides`
 - PR #599 (2026-11-11) `fix(roleplay): honour a Stop made during the automatic decision`
+- PR #600 (2026-11-11) `fix(roleplay): empty a server reply at once on regenerate or swipe`
 
 ## v1.5.4
 
