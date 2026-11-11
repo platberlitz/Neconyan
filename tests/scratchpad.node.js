@@ -1110,6 +1110,56 @@ test('automatic cleanup never deletes a session with a reply in progress', t => 
     assert.deepEqual(a.read(SOURCE).sessions.map(session => session.id).sort(), [ids[0], ids[2]].sort());
 });
 
+test('pinned sessions survive automatic cleanup, temporary sessions cannot be pinned and pinning is not use', t => {
+    const a = account(t);
+    const ids = datedSessions(a, 4);
+    const before = a.read(SOURCE).sessions.find(session => session.id === ids[0]).updated;
+    a.mutate(SOURCE, bucket => store.updateSession(bucket, ids[0], { pinned: true }));
+    const pinned = a.read(SOURCE).sessions.find(session => session.id === ids[0]);
+    assert.equal(pinned.pinned, true);
+    assert.equal(pinned.updated, before, 'pinning does not make an old session look recent');
+    a.mutate(SOURCE, bucket => store.activateSession(bucket, ids[3]));
+    a.mutate(SOURCE, (bucket, lease) => store.updateCleanupLocked(lease, { enabled: true, keep: 1 }));
+    assert.deepEqual(a.read(SOURCE).sessions.map(session => session.id).sort(), [ids[0], ids[3]].sort());
+    a.mutate(SOURCE, bucket => store.updateSession(bucket, ids[0], { pinned: false }));
+    assert.deepEqual(a.read(SOURCE).sessions.map(session => session.id), [ids[3]], 'an unpinned session is ordinary again');
+
+    const temporary = a.mutate(SOURCE, bucket => store.createSession(bucket, { temporary: true, pinned: true }));
+    assert.equal(temporary.pinned, false, 'new and imported sessions start unpinned');
+    assert.throws(() => a.mutate(SOURCE, bucket => store.updateSession(bucket, temporary.id, { pinned: true })), error => error.code === 'SCRATCHPAD_PIN_TEMPORARY');
+    const kept = a.mutate(SOURCE, bucket => store.createSession(bucket));
+    a.mutate(SOURCE, bucket => store.updateSession(bucket, kept.id, { pinned: true }));
+    a.mutate(SOURCE, bucket => store.updateSession(bucket, kept.id, { temporary: true }));
+    assert.equal(a.read(SOURCE).sessions.find(session => session.id === kept.id).pinned, false, 'a session made temporary loses its pin');
+    assert.equal(store.normaliseBucket({ version: 1, sessions: [{ id: 'old', messages: [] }] }, SOURCE).sessions[0].pinned, false);
+});
+
+test('a session takes its name from the first message unless the owner named it', async t => {
+    const a = account(t);
+    assert.equal(store.titleFromMessage('  \n**Why** does   the _lighthouse_ keeper lie?\nSecond line'), 'Why does the lighthouse keeper lie?');
+    assert.equal(store.titleFromMessage('Compare the three endings we discussed for the harbour chapter and pick one'), 'Compare the three endings we discussed for the…');
+    assert.equal(store.titleFromMessage('x'.repeat(80)), `${'x'.repeat(48)}…`);
+    assert.equal(store.titleFromMessage('```js\nconst a = 1;\n```'), 'const a = 1;');
+    assert.equal(store.titleFromMessage('  \n '), '');
+
+    const session = startSession(a);
+    const first = sendBody(session, { text: 'Who knows about the letter?' });
+    await acceptScratchpadReply(a.request(first), first);
+    assert.equal(a.read(SOURCE).sessions.find(item => item.id === session.id).name, 'Who knows about the letter?');
+    assert.equal(a.read(SOURCE).sessions.find(item => item.id === session.id).automaticName, true);
+
+    const named = a.mutate(SOURCE, bucket => store.createSession(bucket, { name: 'My plan' }));
+    const second = sendBody(named, { text: 'This must not rename it.' });
+    await acceptScratchpadReply(a.request(second), second);
+    assert.equal(a.read(SOURCE).sessions.find(item => item.id === named.id).name, 'My plan');
+
+    const bucket = store.emptyBucket(SOURCE);
+    const later = store.createSession(bucket);
+    later.messages.push({ id: 'q', role: 'user', text: 'Earlier question' });
+    store.nameFromFirstMessage(later, 'A later message');
+    assert.equal(later.name, 'Miso\'s notes', 'only the first message names a session');
+});
+
 test('automatic cleanup makes room for a new session at the session limit', t => {
     const a = account(t);
     datedSessions(a, store.MAX_SESSIONS);

@@ -2436,6 +2436,12 @@ async function renameSession(session) {
     await change(source => api.updateSession(source, session.id, { name: String(name).trim() }), t`Scratchpad could not rename that session.`, scope);
 }
 
+async function pinSession(session, pinned) {
+    await change(source => api.updateSession(source, session.id, { pinned }),
+        pinned ? t`Scratchpad could not pin that session.` : t`Scratchpad could not unpin that session.`, app.source);
+    app.el.panels.sessions.querySelector(`[data-session="${session.id}"] .scratchpad-session-pin`)?.focus();
+}
+
 async function clearSessionMessages(session) {
     const scope = app.source;
     const ok = await callGenericPopup(t`Clear every message in '${session.name}'? Its context settings stay.`, POPUP_TYPE.CONFIRM, '', { okButton: t`Clear`, cancelButton: t`Keep` });
@@ -2462,7 +2468,7 @@ async function updateCleanup(patch) {
     const previous = app.bucket?.cleanup ?? { enabled: false, keep: 10 };
     const next = { ...previous, ...patch };
     if (next.enabled && (!previous.enabled || next.keep < previous.keep)) {
-        const ok = await callGenericPopup(t`This sets automatic cleanup for your account. Older sessions are deleted from this list now, and from other lists when their Scratchpad is next saved. Open sessions and replies in progress stay. Deletions cannot be undone.`,
+        const ok = await callGenericPopup(t`This sets automatic cleanup for your account. Older sessions are deleted from this list now, and from other lists when their Scratchpad is next saved. Open sessions, pinned sessions and replies in progress stay. Deletions cannot be undone.`,
             POPUP_TYPE.CONFIRM, '', { okButton: t`Apply to all session lists`, cancelButton: t`Cancel` });
         if (ok !== POPUP_RESULT.AFFIRMATIVE) {
             renderSessions();
@@ -2482,7 +2488,7 @@ function renderCleanup() {
     });
     return h('section', { class: 'scratchpad-section scratchpad-cleanup' },
         checkbox(t`Delete old sessions automatically`, cleanup.enabled, value => void updateCleanup({ enabled: value }),
-            t`Shared across your account. Keeps the newest sessions per list, including General, and deletes older ones for good when its Scratchpad is saved. The open session and replies in progress are never deleted.`),
+            t`Shared across your account. Keeps the newest sessions per list, including General, and deletes older ones for good when its Scratchpad is saved. The open session, pinned sessions and replies in progress are never deleted.`),
         h('div', { class: 'scratchpad-field' }, h('label', { for: 'scratchpad-cleanup-keep', text: t`Sessions to keep per list` }), keep));
 }
 
@@ -2565,18 +2571,19 @@ function renderSessions() {
         search,
     ]);
     const list = h('ul', { class: 'scratchpad-sessions' });
-    const visible = sessions.filter(session => sessionMatches(session, app.sessionQuery.trim()));
+    const visible = sessions.filter(session => sessionMatches(session, app.sessionQuery.trim()))
+        .sort((a, b) => Number(b.pinned === true) - Number(a.pinned === true));
     if (!visible.length) {
         list.append(h('li', { class: 'scratchpad-muted', text: sessions.length ? t`No sessions match that search.` : t`No sessions yet. Send a message to start one.` }));
     }
     for (const session of visible) {
         const active = session.id === current?.id;
         const assistant = assistantInfo(session.assistant, session);
-        list.append(h('li', { class: `scratchpad-session${active ? ' is-active' : ''}` },
+        list.append(h('li', { class: `scratchpad-session${active ? ' is-active' : ''}`, 'data-session': session.id },
             h('img', { src: assistantPortrait(assistant.id, session), alt: '', width: 32, height: 32 }),
             h('div', { class: 'scratchpad-session-info' },
                 h('strong', { text: session.name }),
-                h('small', { text: [assistant.name, t`${session.messages.length} messages`, formatDate(session.updated), session.temporary ? t`Temporary` : ''].filter(Boolean).join(' · ') })),
+                h('small', { text: [assistant.name, t`${session.messages.length} messages`, formatDate(session.updated), session.temporary ? t`Temporary` : '', session.pinned ? t`Pinned` : ''].filter(Boolean).join(' · ') })),
             h('div', { class: 'scratchpad-session-actions' },
                 active
                     ? h('span', { class: 'scratchpad-badge', text: t`Open` })
@@ -2584,6 +2591,9 @@ function renderSessions() {
                         await change(source => api.activateSession(source, session.id), t`Scratchpad could not open that session.`);
                         selectTab('chat');
                     }, { icon: 'fa-folder-open' }),
+                session.temporary ? null : iconButton('', () => void pinSession(session, !session.pinned), {
+                    icon: 'fa-thumbtack', title: session.pinned ? t`Unpin session` : t`Pin session`, pressed: session.pinned === true, className: 'scratchpad-session-pin',
+                }),
                 iconButton('', () => void renameSession(session), { icon: 'fa-i-cursor', title: t`Rename` }),
                 iconButton('', () => void clearSessionMessages(session), { icon: 'fa-broom', title: t`Clear messages` }),
                 iconButton('', () => void removeSession(session), { icon: 'fa-trash', title: t`Delete session` }))));
