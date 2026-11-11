@@ -367,6 +367,7 @@ function normaliseSession(input, { allowInternalKeys = false } = {}) {
         assistant: normaliseAssistant(input.assistant),
         gender: normaliseGender(input.gender),
         temporary: input.temporary === true,
+        pinned: input.pinned === true && input.temporary !== true,
         created: typeof input.created === 'string' ? input.created.slice(0, 40) : now(),
         updated: typeof input.updated === 'string' ? input.updated.slice(0, 40) : now(),
         settings: normaliseSettings(input.settings, defaultSettings(), { allowInternalKeys }),
@@ -429,13 +430,14 @@ export function normaliseBucket(input, source, { allowInternalKeys = false } = {
 
 /**
  * Sessions automatic cleanup may delete, least recently used first. The open
- * session, the most recently used one and any with a reply in progress stay.
+ * session, the most recently used one, pinned ones and any with a reply in
+ * progress stay.
  */
 export function cleanupCandidates(bucket) {
     const byUpdated = (a, b) => String(a.updated).localeCompare(String(b.updated));
     const newest = [...bucket.sessions].sort(byUpdated).at(-1)?.id;
     return bucket.sessions
-        .filter(session => session.id !== bucket.activeSessionId && session.id !== newest
+        .filter(session => session.id !== bucket.activeSessionId && session.id !== newest && !session.pinned
             && !session.messages.some(message => message.state === 'pending' || hasPendingImages(message)))
         .sort(byUpdated);
 }
@@ -650,6 +652,25 @@ function dropTemporary(bucket, keepId) {
         || session.messages.some(message => message.state === 'pending' || hasPendingImages(message)));
 }
 
+const TITLE_LENGTH = 48;
+
+/** A short session name taken from the owner's first message; no model is asked. */
+export function titleFromMessage(text) {
+    const line = String(text ?? '').split('\n').map(part => part.replace(/```.*$/, '').replace(/[*_#>`~]+/g, '').replace(/\s+/g, ' ').trim()).find(Boolean) ?? '';
+    const characters = Array.from(line);
+    if (characters.length <= TITLE_LENGTH) return line;
+    const cut = characters.slice(0, TITLE_LENGTH).join('');
+    const space = cut.lastIndexOf(' ');
+    return `${(space >= TITLE_LENGTH / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:.!?-]+$/, '')}…`;
+}
+
+/** Names a session after its first message, unless the owner has named it. */
+export function nameFromFirstMessage(session, text) {
+    if (!session.automaticName || session.messages.some(message => message.role === 'user')) return;
+    const title = titleFromMessage(text);
+    if (title) session.name = title;
+}
+
 function nextName(bucket, assistant, excludeId, settings) {
     const label = (settings?.assistants?.[assistant]?.name || assistant.charAt(0).toUpperCase() + assistant.slice(1)).slice(0, 65);
     const used = new Set(bucket.sessions.filter(session => session.id !== excludeId).map(session => session.name));
@@ -676,6 +697,7 @@ export function createSession(bucket, input = {}) {
         assistant,
         gender: normaliseGender(input.gender),
         temporary: input.temporary === true,
+        pinned: false,
         created: now(),
         updated: now(),
         settings,
@@ -720,7 +742,15 @@ export function updateSession(bucket, sessionId, input = {}) {
     }
     if (input.gender !== undefined) session.gender = normaliseGender(input.gender);
     if (typeof input.temporary === 'boolean') session.temporary = input.temporary;
-    touch(session);
+    if (typeof input.pinned === 'boolean') {
+        if (input.pinned && session.temporary) {
+            throw fail('SCRATCHPAD_PIN_TEMPORARY', 'A temporary session cannot be pinned. Start a regular session to keep it.');
+        }
+        session.pinned = input.pinned;
+    }
+    if (session.temporary) session.pinned = false;
+    // Pinning alone is not use: it must not make an old session look recent.
+    if (Object.keys(input).some(key => key !== 'pinned')) touch(session);
     return session;
 }
 

@@ -21,6 +21,7 @@ import {
     ScratchpadError,
     assistantConnection,
     findSession,
+    nameFromFirstMessage,
     newScratchpadId,
     normaliseGender,
     normaliseSource,
@@ -296,6 +297,7 @@ export async function acceptScratchpadReply(request, body = {}) {
             const created = new Date().toISOString();
             const contextSource = Object.fromEntries(Object.entries(input.source).filter(([key]) => key !== 'scope'));
             const shared = input.source.kind === 'general' && input.capabilities.character ? { sharedAvatar: input.source.avatar } : {};
+            if (!input.regenerate) nameFromFirstMessage(session, input.text);
             if (!input.regenerate) session.messages.push({ id: newScratchpadId(), role: 'user', text: input.text, ...(input.attachments.length ? { attachments: input.attachments } : {}), created, contextSource });
             const pending = replies.map(reply => ({ id: reply.replyId, role: 'assistant', text: '', created, contextSource, ...shared,
                 targets: planned.targets, sharedPersona: planned.sharedPersona, sharedPreset: planned.sharedPreset, imageNames: input.names, imagePersonaId: planned.imagePersonaId,
