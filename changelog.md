@@ -18,6 +18,7 @@
 - PR #607 (2026-11-11) `fix(roleplay): clear notes and the blank space on a server swipe`
 - PR #608 (2026-11-11) `fix(scratchpad): share Home persona picks and retry image replies`
 - PR #609 (2026-11-11) `fix(chat): keep the viewport steady through server swipes and rewrites`
+- PR #610 (2026-11-11) `feat(scratchpad): add your own quick prompts`
 
 ## v1.5.4
 
