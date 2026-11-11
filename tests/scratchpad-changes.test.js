@@ -43,6 +43,16 @@ jest.unstable_mockModule('../public/scripts/scratchpad/context.js', () => ({
     sourceCharacters: () => [{ name: 'Nova', avatar: selectedAvatar }],
 }));
 
+let agents = [];
+const saveAgent = jest.fn(async (id, { update }) => {
+    const index = agents.findIndex(item => item.id === id);
+    const next = update(structuredClone(agents[index]));
+    if (next) agents[index] = next;
+});
+jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/agent-store.js', () => ({
+    getAgentById: id => agents.find(item => item.id === id), saveAgent,
+}));
+
 const { addReplyVersion, prepareChange, replyVersionTarget } = await import('../public/scripts/scratchpad/changes.js');
 const panelSource = fs.readFileSync(new URL('../public/scripts/scratchpad/index.js', import.meta.url), 'utf8');
 
@@ -62,6 +72,32 @@ beforeEach(() => {
 afterEach(() => jest.restoreAllMocks());
 
 describe('Scratchpad reviewed saves', () => {
+    test('saves a reviewed Agent text only while Agents are shared and the text is unchanged', async () => {
+        agents = [{ id: 'a-1', name: 'Scene Keeper', description: 'Keeps scenes.', prompt: 'Old prompt.', enabled: true }];
+        const change = { type: 'agent', action: 'replace', agent: 'a-1', field: 'prompt', value: 'New prompt.' };
+        await expect(prepareChange(change, source)).rejects.toThrow('Share Agents under Context');
+        await expect(prepareChange({ ...change, agent: 'gone' }, source, { agentsShared: true })).rejects.toThrow('no saved Agent');
+        const plan = await prepareChange(change, { kind: 'general', key: 'general', avatar: 'Nova.png' }, { agentsShared: true });
+        expect(plan).toMatchObject({ target: 'Agent: Scene Keeper', field: 'Prompt', before: 'Old prompt.', after: 'New prompt.', editable: true });
+        await plan.commit('Edited prompt.');
+        expect(agents[0]).toEqual({ id: 'a-1', name: 'Scene Keeper', description: 'Keeps scenes.', prompt: 'Edited prompt.', enabled: true });
+
+        const stale = await prepareChange({ ...change, value: 'Third.' }, source, { agentsShared: true });
+        agents[0].prompt = 'Changed elsewhere.';
+        await expect(stale.commit('Third.')).rejects.toThrow('changed while the review was open');
+        expect(saveAgent).toHaveBeenCalledTimes(1);
+
+        const refused = await prepareChange({ ...change, value: 'Fourth.' }, source, { agentsShared: true });
+        saveAgent.mockRejectedValueOnce(Object.assign(new Error('Reload it'), { status: 409 }));
+        await expect(refused.commit('Fourth.')).rejects.toThrow('changed while the review was open');
+        expect(agents[0].prompt).toBe('Changed elsewhere.');
+
+        const name = await prepareChange({ ...change, field: 'name', value: 'Keeper' }, source, { agentsShared: true });
+        await expect(name.commit('   ')).rejects.toThrow('needs a name');
+        await name.commit('  Night   Keeper ');
+        expect(agents[0].name).toBe('Night Keeper');
+    });
+
     test.each([
         ['depth_prompt_prompt', 'New note', { data: { extensions: { depth_prompt: { prompt: 'New note' } } } }],
         ['depth_prompt_depth', 0, { data: { extensions: { depth_prompt: { depth: 0 } } } }],

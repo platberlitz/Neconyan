@@ -134,6 +134,45 @@ async function lorebookPlan(change, source) {
     };
 }
 
+async function agentPlan(change) {
+    const store = await import('../extensions/in-chat-agents/agent-store.js');
+    const read = () => {
+        const agent = store.getAgentById(change.agent);
+        if (!agent) fail(t`There is no saved Agent with that ID any more.`);
+        return agent;
+    };
+    const agent = read();
+    const before = String(agent[change.field] ?? '');
+    return {
+        target: t`Agent: ${agent.name || change.agent}`,
+        field: { name: t`Name`, description: t`Description`, prompt: t`Prompt` }[change.field],
+        before,
+        after: change.value,
+        editable: true,
+        async commit(edited) {
+            const value = change.field === 'name' ? String(edited ?? '').replace(/\s+/g, ' ').trim() : String(edited ?? '');
+            if (change.field === 'name' && !value) fail(t`An Agent needs a name.`);
+            if (String(read()[change.field] ?? '') !== before) conflict();
+            let stale = false;
+            try {
+                await store.saveAgent(change.agent, {
+                    update: current => {
+                        if (String(current?.[change.field] ?? '') !== before) {
+                            stale = true;
+                            return null;
+                        }
+                        return { ...current, [change.field]: value };
+                    },
+                });
+            } catch (error) {
+                if (error?.status === 409) conflict();
+                throw error;
+            }
+            if (stale) conflict();
+        },
+    };
+}
+
 function findCharacter(source, name) {
     const wanted = name.trim().toLowerCase();
     const matches = sourceCharacters(source).filter(item => String(item?.name ?? '').trim().toLowerCase() === wanted);
@@ -354,7 +393,7 @@ export async function addReplyVersion(source, target, text) {
  * Reads the live value a change would replace and returns everything the
  * review needs. Nothing is written until commit() is called.
  */
-export async function prepareChange(change, source, { sharedAvatar = '', sharedPersona, personaGuard, sharedPreset, presetGuard, creationGuard, creatorKey = '' } = {}) {
+export async function prepareChange(change, source, { sharedAvatar = '', sharedPersona, personaGuard, sharedPreset, presetGuard, creationGuard, creatorKey = '', agentsShared = false } = {}) {
     if (!isCurrentSource(source)) fail(t`Return to this Scratchpad context before applying changes.`);
     change = normaliseChange(change);
     if (change.type === 'preset') {
@@ -421,6 +460,10 @@ export async function prepareChange(change, source, { sharedAvatar = '', sharedP
                 return committed;
             },
         };
+    }
+    if (change.type === 'agent') {
+        if (!agentsShared) fail(t`Share Agents under Context before saving a change to one.`);
+        return agentPlan(change);
     }
     if (change.type === 'lorebook') {
         if (source.kind === 'general') fail(t`General Scratchpad does not share lorebooks, so lorebook changes are unavailable.`);
