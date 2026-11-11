@@ -17,6 +17,7 @@ export const refreshedKnowledgeCases = [
     ['Where is Block external media by default?', 'privacy.external', 'Settings → Chat & Writing → Chat & messages → Messages'],
     ['Does Separate notes for each persona give me separate Author\'s Note libraries?', 'chat.authors-note', 'own note library for that character, not just separate ticks'],
     ['How do I add my own quick prompts to Scratchpad?', 'scratchpad.quick-prompts', 'Add a prompt creates a row'],
+    ['How do I find a Scratchpad session that belongs to another chat?', 'scratchpad.search-all', 'press Copy here to copy it into the open list'],
     ['Can I review all the Scratchpad change cards in a reply at once?', 'scratchpad.review-all', 'press Save ticked changes'],
     ['Can Scratchpad read a web page I link in my message?', 'scratchpad.read-links', 'open Message options (plus) → Read links'],
     ['Can the round table assistants in Scratchpad discuss each other\'s answers?', 'scratchpad.discuss', 'press Discuss these answers'],

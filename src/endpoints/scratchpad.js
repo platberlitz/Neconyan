@@ -26,6 +26,7 @@ import { readScratchpadPreview, subscribeScratchpadPreview } from '../scratchpad
 import { buildScratchpadSystemPrompt } from '../scratchpad/prompt.js';
 import { readInstructionsLocked, updateInstructionsLocked } from '../scratchpad/instructions.js';
 import { readQuickPromptsLocked, updateQuickPromptsLocked } from '../scratchpad/quick-prompts.js';
+import { readFoundSessionLocked, searchSessionsLocked } from '../scratchpad/search.js';
 import { assistantPortrait, deleteAssistantLocked, readAssistantCardLocked, readAssistantsLocked, refreshSessionAssistants, resolveAssistant, saveAssistantLocked } from '../scratchpad/assistants.js';
 import { normaliseAssistantProfile } from '../scratchpad/assistant-profiles.js';
 import { notebookContextLocked, withNotebookPreparation, prepareNotebookProposalLocked, decideNotebookProposalLocked,
@@ -238,6 +239,20 @@ router.post('/session/import', (request, response) => change(request, response, 
     const imported = createSession(bucket, { assistant: session.assistant, gender: session.gender, name: session.name, settings,
         messages: Array.isArray(session.messages) ? session.messages : [] });
     refreshSessionAssistants(imported, readAssistantsLocked(lease));
+}));
+
+router.post('/search', (request, response) => {
+    try {
+        response.json(withScratchpad(scratchpadAccountBase(request), lease => searchSessionsLocked(lease, request.body?.query)));
+    } catch (error) {
+        sendError(response, error);
+    }
+});
+
+router.post('/search/copy', (request, response) => change(request, response, (bucket, body, lease) => {
+    const found = readFoundSessionLocked(lease, body.list, requireId(body.sessionId, 'session'));
+    const copied = createSession(bucket, { ...found, settings: { ...found.settings, notes: [], picked: [], pickedSource: null } });
+    refreshSessionAssistants(copied, readAssistantsLocked(lease));
 }));
 
 router.post('/session/update', (request, response) => change(request, response, (bucket, body, lease) => {

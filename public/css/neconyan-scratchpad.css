@@ -1439,6 +1439,30 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     margin: 0;
 }
 
+.scratchpad-every-list {
+    display: grid;
+    gap: 8px;
+}
+
+.scratchpad-every-list-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+}
+
+.scratchpad-every-list-head p,
+.scratchpad-every-list > p {
+    margin: 0;
+}
+
+.scratchpad-found-snippet {
+    margin: 4px 0 0;
+    color: var(--neco-muted);
+    font-size: 0.9em;
+    overflow-wrap: anywhere;
+}
+
 .scratchpad-review pre {
     max-height: 30vh;
     overflow: auto;
