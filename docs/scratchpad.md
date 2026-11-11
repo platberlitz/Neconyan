@@ -43,6 +43,15 @@ Pick who you are talking to under **Talking with**, type in the box at the botto
 
 You can add your own. Press the pencil at the end of the row (**Edit quick prompts**), choose **Add a prompt**, give it a **Name on the button** and the **Text it fills in**, then press **Save quick prompts**. **Move up**, **Move down** and **Delete prompt** rearrange the list. Your prompts are saved for your account, so they show in every Scratchpad and on your other devices, ahead of the built-in ones. You can keep up to 24.
 
+**Typed tools** work out small things before the message is sent, so the assistant reads a settled result. Start a line with one of these:
+
+- `/roll 2d6+1` rolls dice and shows every die. Add dice together (`/roll 1d20+1d4`), and put a note after the dice (`/roll d20 for stealth`). Up to 100 dice with 2 to 1,000 sides.
+- `/calc 12*(3+4)` works out a sum with `+ - * / % ^` and brackets.
+- `/pick tea | coffee | cocoa` chooses one at random. Commas work too when there's no `|`.
+- `/now` writes today's date and time.
+
+The line is swapped for its result in your message; the rest of the message is sent as typed. If a line can't be worked out, a notice headed **Nothing was sent** says why and your text stays in the box. Lines inside a code block are left alone. Send `/tools` on its own to see the list.
+
 The input starts one line high and grows as you add lines, up to a few lines, so the whole message stays readable. Longer drafts scroll inside it, and pasted text keeps its line breaks.
 
 Press **New session** at the top of Scratchpad to start a fresh conversation in the current list, including General.

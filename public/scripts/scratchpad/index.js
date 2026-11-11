@@ -53,6 +53,7 @@ import { showHtmlPreview } from './html-preview.js';
 import { MAX_REPLY_SWIPES, replySwipes } from './swipes.js';
 import { buildSessionExport, chooseSessionExport, exportFileName, MAX_IMPORT_BYTES, sessionMarkdown, withoutAttachments } from './export.js';
 import { roundToDiscuss } from './discuss.js';
+import { expandTypedTools, MAX_ROLL_DICE, MAX_ROLL_SIDES, TypedToolError } from './typed-tools.js';
 import { canReadAloud, isReadingAloud, stopReadAloud, toggleReadAloud } from './read-aloud.js';
 import { editQuickPrompts } from './quick-prompts.js';
 
@@ -938,6 +939,17 @@ function sessionText(session) {
     return (session?.messages ?? []).slice(-SESSION_TEXT_MESSAGES).map(item => item.text).join('\n');
 }
 
+function typedToolProblem(error) {
+    const line = error.line.trim();
+    switch (error.code) {
+        case 'roll': return t`'${line}' is not a dice roll. Try /roll 2d6+1.`;
+        case 'roll-limit': return t`'${line}' asks for too much. Roll up to ${MAX_ROLL_DICE} dice with 2 to ${MAX_ROLL_SIDES} sides.`;
+        case 'calc-result': return t`'${line}' has no usable answer, such as a division by zero.`;
+        case 'pick': return t`'${line}' needs at least two choices. Try /pick tea | coffee | cocoa.`;
+        default: return t`'${line}' is not a sum Scratchpad can work out. Use numbers with + - * / % ^ and brackets.`;
+    }
+}
+
 async function send({ regenerate = '', discuss = false } = {}) {
     if (app.sending || app.swiping || app.readingFiles.has(app.attachments)) return;
     const source = app.source;
@@ -950,7 +962,24 @@ async function send({ regenerate = '', discuss = false } = {}) {
     const initialSessionId = activeSession()?.id;
     // A discussion round sends its own request; anything typed in the box rides along as the point to focus on.
     const request = t`Read each other's answers to my last message. Say where you agree, where you disagree and why, and what you would now change in your own answer.`;
-    const text = regenerate ? '' : discuss ? [request, draft.trim()].filter(Boolean).join('\n\n') : draft.trim();
+    let typed = draft.trim();
+    if (!regenerate && !discuss) {
+        try {
+            const expanded = expandTypedTools(typed, { labels: { picked: t`Picked`, from: t`from`, now: t`Now` } });
+            if (expanded.help) {
+                toastr.info(t`Start a line with /roll 2d6+1, /calc 12*(3+4), /pick tea | coffee | cocoa or /now. Scratchpad swaps the line for its result before sending.`, t`Typed tools`, { timeOut: 12000 });
+                app.el.composer.focus();
+                return;
+            }
+            typed = expanded.text;
+        } catch (error) {
+            if (!(error instanceof TypedToolError)) throw error;
+            toastr.warning(typedToolProblem(error), t`Nothing was sent`);
+            app.el.composer.focus();
+            return;
+        }
+    }
+    const text = regenerate ? '' : discuss ? [request, typed].filter(Boolean).join('\n\n') : typed;
     const attachedDraft = app.attachments;
     const attachments = regenerate || discuss ? [] : [...attachedDraft];
     if (!regenerate && !text && !attachments.length) {
