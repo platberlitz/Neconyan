@@ -22,6 +22,7 @@
 - PR #611 (2026-11-11) `feat(scratchpad): add a reply as a version of the last story reply`
 - PR #612 (2026-11-11) `feat(scratchpad): pin sessions and name them from the first message`
 - PR #613 (2026-11-11) `feat(scratchpad): let try again redo any reply`
+- PR #614 (2026-11-11) `feat(scratchpad): choose what a session export includes`
 
 ## v1.5.4
 
