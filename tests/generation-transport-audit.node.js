@@ -12,9 +12,12 @@ import { setConfigFilePath } from '../src/util.js';
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
 const { captureChatProfile } = await import('../src/generation/profiles.js');
 const { runChatProfile, runTextGeneration } = await import('../src/generation/service.js');
+const { acceptJob, getJob, updateJob } = await import('../src/jobs/store.js');
+const { providerStep, unresolvedProviderStep } = await import('../src/jobs/artifacts.js');
 const { assembleGenerationStream } = await import('../src/generation/stream-result.js');
 const { runBackendRequest } = await import('../src/endpoints/conversation-generation.js');
 const { handleChatCompletionsGenerate } = await import('../src/endpoints/backends/chat-completions.js');
+const { handleTextCompletionsGenerate } = await import('../src/endpoints/backends/text-completions.js');
 
 let root;
 const quiet = {};
@@ -101,6 +104,73 @@ test('an Ollama error sent inside the stream is reported with its reason', async
         textRun({ api_type: 'ollama', api_server: 'http://127.0.0.1:11434', model: 'm' }, [Buffer.from('{"response":"Par","done":false}\n{"error":"out of memory"}\n')]),
         /out of memory/,
     );
+});
+
+test('an Ollama stream refused with an HTTP error is a definite refusal that can be retried', async () => {
+    const refusal = '{"error":"model \'missing\' not found"}';
+    let bodyRead = 0;
+    const refused = () => runTextGeneration({
+        context: { owner: 'fixture', directories: { root } }, backend: 'text',
+        payload: { prompt: 'Hi', stream: true, api_type: 'ollama', api_server: 'http://127.0.0.1:11434', model: 'missing' },
+        fetch: async () => ({ ok: false, status: 404, statusText: 'Not Found', body: Readable.from([Buffer.from(refusal)]),
+            text: async () => { bodyRead++; return refusal; } }),
+    });
+    await assert.rejects(refused(), error => {
+        assert.match(error.message, /model 'missing' not found/);
+        assert.equal(error.status, 404);
+        assert.equal(error.providerStatus, 404);
+        return true;
+    });
+    assert.equal(bodyRead, 1, 'the refused upstream body is consumed');
+
+    const directories = { root: fs.mkdtempSync(path.join(root, 'refused-')) };
+    const job = acceptJob(directories, { owner: 'fixture', type: 'transport-test', submissionKey: 'ollama-404', intent: {} }).job;
+    const context = { directories, job, signal: new AbortController().signal };
+    updateJob(directories, job.id, { state: 'running' });
+    await assert.rejects(providerStep(context, 'reply', refused), /model 'missing' not found/);
+    assert.notEqual(getJob(directories, job.id).recoverability, 'unknown-outcome');
+    assert.equal(unresolvedProviderStep(directories, job.id), undefined);
+    assert.deepEqual(await providerStep(context, 'reply', () => ({ text: 'asked again' })), { text: 'asked again' });
+});
+
+for (const { name, body, reason } of [
+    { name: 'JSON with private fields', body: JSON.stringify({ error: 'model \'missing\' not found', secret: 'PRIVATE-UPSTREAM-KEY' }), reason: 'model \'missing\' not found' },
+    { name: 'JSON without an error string', body: JSON.stringify({ error: { secret: 'PRIVATE-UPSTREAM-KEY' }, secret: 'PRIVATE-UPSTREAM-KEY' }), reason: '' },
+    { name: 'an HTML error page', body: '<html><body><h1 data-secret="PRIVATE-UPSTREAM-KEY">Not Found</h1>\n<p>Model\t unavailable\u0000\u007f</p></body></html>', reason: 'Not Found Model unavailable' },
+    { name: 'plain text', body: '  Model\t unavailable\ntry \u0000 again\u007f  ', reason: 'Model unavailable try again' },
+    { name: 'a long reason', body: JSON.stringify({ error: 'x'.repeat(1000), secret: 'PRIVATE-UPSTREAM-KEY' }), reason: 'x'.repeat(500) },
+]) {
+    test(`a refused Ollama stream exposes only a bounded reason from ${name}`, async () => {
+        const upstream = new Response(body, { status: 404 });
+        let sent;
+        const response = {
+            statusCode: 200,
+            status(status) { this.statusCode = status; return this; },
+            send(value) { sent = value; },
+        };
+        await handleTextCompletionsGenerate({
+            body: { prompt: 'Hi', stream: true, api_type: 'ollama', api_server: 'http://127.0.0.1:11434', model: 'missing' },
+            headers: {}, socket: new EventEmitter(), user: { directories: { root } },
+            fetch: async () => upstream,
+        }, response);
+        assert.equal(response.statusCode, 404);
+        assert.deepEqual(sent, { error: true, status: 404, response: reason });
+        assert.doesNotMatch(JSON.stringify(sent), /PRIVATE-UPSTREAM-KEY|<html>|<body>|<h1|<p>/);
+        assert.ok(sent.response.length <= 500);
+        assert.ok(upstream.bodyUsed, 'the refused upstream body is consumed');
+    });
+}
+
+test('a non-streaming Ollama refusal keeps its existing response body', async () => {
+    const body = JSON.stringify({ error: 'model unavailable', detail: 'existing detail' });
+    let sent;
+    const response = { status() { return this; }, send(value) { sent = value; } };
+    await handleTextCompletionsGenerate({
+        body: { prompt: 'Hi', stream: false, api_type: 'ollama', api_server: 'http://127.0.0.1:11434', model: 'missing' },
+        headers: {}, socket: new EventEmitter(), user: { directories: { root } },
+        fetch: async () => new Response(body, { status: 404 }),
+    }, response);
+    assert.deepEqual(sent, { error: true, status: 404, response: body });
 });
 
 test('a Responses API reply keeps a character that arrives split across two chunks', async () => {

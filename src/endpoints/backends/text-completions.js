@@ -371,6 +371,32 @@ function getSafeCompletionErrorStatus(status) {
     return Number.isInteger(parsed) && parsed >= 400 && parsed < 500 ? parsed : 502;
 }
 
+/**
+ * Answers with the upstream error status and text, optionally limited to a safe reason.
+ * Reading the body also releases the upstream connection.
+ * @param {import('node-fetch').Response} upstream Upstream response that is not ok
+ * @param {import('express').Response} response Express response
+ * @param {boolean} boundedReason Only send a bounded reason for a refused Ollama stream
+ */
+async function sendUpstreamError(upstream, response, boundedReason = false) {
+    let text = await upstream.text();
+    if (boundedReason) {
+        try {
+            const body = JSON.parse(text);
+            // Never expose other JSON fields, even when the provider omits its error string.
+            text = typeof body?.error === 'string' ? body.error : '';
+        } catch {
+            // Non-JSON replies can be plain text or an intermediary's HTML error page.
+        }
+        text = text.replace(/<[^>]*>/g, ' ').replace(/[\p{Cc}\s]+/gu, ' ').trim().slice(0, 500);
+    }
+    const errorBody = { error: true, status: upstream.status, response: text };
+
+    return !response.headersSent
+        ? response.status(getSafeCompletionErrorStatus(upstream.status)).send(errorBody)
+        : response.end();
+}
+
 // Neconyan divergence: export the existing handler so Conversation REST can reuse upstream text-generation flow without duplicating provider glue.
 export async function handleTextCompletionsGenerate(request, response) {
     if (!request.body || !request.body.api_server) return response.sendStatus(400);
@@ -510,6 +536,8 @@ export async function handleTextCompletionsGenerate(request, response) {
 
         if (request.body.api_type === TEXTGEN_TYPES.OLLAMA && request.body.stream) {
             const stream = await (request.fetch || fetch)(url, args);
+            // Report a refused stream's status and bounded reason without exposing other upstream fields.
+            if (!stream.ok) return await sendUpstreamError(stream, response, true);
             parseOllamaStream(stream, request, response, () => controller.abort());
         } else if (request.body.stream) {
             const completionsStream = await (request.fetch || fetch)(url, args);
@@ -535,12 +563,7 @@ export async function handleTextCompletionsGenerate(request, response) {
 
                 return response.send(data);
             } else {
-                const text = await completionsReply.text();
-                const errorBody = { error: true, status: completionsReply.status, response: text };
-
-                return !response.headersSent
-                    ? response.status(getSafeCompletionErrorStatus(completionsReply.status)).send(errorBody)
-                    : response.end();
+                return await sendUpstreamError(completionsReply, response);
             }
         }
     } catch (error) {
