@@ -1577,3 +1577,27 @@ for (const effect of ['append', 'continue']) {
         assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
     });
 }
+
+for (const [name, policy, first] of [
+    ['continue', { autoContinue: true, continueTarget: 200 }, 'The first completed sentence. '],
+    ['swipe', { autoSwipe: true }, 'Short'],
+]) {
+    test(`a Stop accepted while the automatic ${name} decision is made keeps the reply and asks for nothing more`, async t => {
+        const f = prepared(t, 'append', policy);
+        updateJob(f.dirs, f.jobId, { state: 'running' });
+        await runRoleplayWorkflowJob(f.context());
+        const calls = { count: 0 };
+        await f.candidate(first, calls);
+        const { decideRoleplayWorkflowCandidate } = await import('../src/generation/roleplay-workflow-policy.js');
+        let stopAccepted;
+        const done = await runRoleplayWorkflowJob(f.context(), { decideCandidate: async (...args) => {
+            stopAccepted = requestRoleplayAgentStop(f.context());
+            return decideRoleplayWorkflowCandidate(...args);
+        } });
+        assert.equal(stopAccepted, true);
+        assert.notEqual(done.waiting, true);
+        assert.equal(getJob(f.dirs, f.jobId).children.length, 1);
+        assert.equal(calls.count, 1);
+        assert.equal(f.records().at(-1).mes, first);
+    });
+}
