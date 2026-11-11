@@ -1,5 +1,5 @@
 import { changeMessageTextForReader, chat as messages, formatGenerationTimer, getRequestHeaders, getThumbnailUrl, isChatScrollInMotion, refreshChatViewportBaseline, scrollChatToBottom, updateMessageElement, updatePreviewMessageText } from '../../script.js';
-import { beginRoleplayReplacement, commitRoleplayReplacement } from './roleplay-replacement.js';
+import { beginRoleplayReplacement, commitRoleplayReplacement, releaseRoleplayReplacementReserve } from './roleplay-replacement.js';
 import { withAbortSignal } from '../abort.js';
 import { power_user } from '../power-user.js';
 import { getStreamingUpdateInterval } from '../mobile-streaming.js';
@@ -69,11 +69,13 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
     let reportedStage = null;
     const diagnostic = phase => { try { globalThis.NeconyanCrashDiagnostics?.observePhase?.(diagnosticHandle, phase); } catch { /* Optional diagnostics. */ } };
     let restoreReplacement = () => {};
+    let isReplacementPreview = false;
     let placementObserver = null;
     let placementChat = null;
     const remove = () => {
         if (node) {
             thinkingIndicator.clear();
+            releaseRoleplayReplacementReserve(node);
             node.remove();
             document.dispatchEvent(new CustomEvent('neconyan:roleplay-preview-removed', { detail: { element: node } }));
         }
@@ -142,14 +144,16 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
             if (waitNow - rewriteWaitingSince < REWRITE_SCROLL_WAIT_MS) return;
         }
         rewriteWaitingSince = 0;
-        // Follow the reply while it is written; Agent and Companion output added after
-        // that lands below the reader instead of pulling the page down to it. Once
-        // Companion notes exist, even the Agents stage stops following, because its
-        // concurrent notes can grow the same reply while it is still streaming.
+        const replacement = chat.querySelector('[data-roleplay-replacement]');
+        if (!node?.isConnected && replacement) isReplacementPreview = true;
+        // Follow an ordinary new reply while it is written; swipe replacements start at
+        // the top of the screen and stay put, and Agent/Companion output added after
+        // the reply lands below the reader instead of pulling the page down to it.
         const companionResults = latest.inChatAgentCompanionResults;
         const hasCompanionResults = Boolean(companionResults) && typeof companionResults === 'object'
             && Object.keys(companionResults).length > 0;
-        const nearBottom = !hasCompanionResults
+        const nearBottom = !isReplacementPreview
+            && !hasCompanionResults
             && !isChatScrollInMotion()
             && FOLLOWED_STAGES.has(latest.stage || 'preparing')
             && chat.scrollHeight - chat.scrollTop - chat.clientHeight < 120;
@@ -172,7 +176,6 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
                 token_count: latest.token_count, reasoning_tokens: latest.reasoning_tokens,
                 time_to_first_token: latest.time_to_first_token, reasoning_duration: reasoningDuration,
                 ...(reasoningDetails && node.classList.contains('reasoning') ? { reasoning_collapsed: !reasoningDetails.open } : {}) } };
-        const replacement = chat.querySelector('[data-roleplay-replacement]');
         const messageId = replacement ? Number(replacement.dataset.roleplayReplacement) : messages.length;
         const finishDraw = () => {
             const status = node.querySelector('[role="status"]');
@@ -216,8 +219,8 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
                 node.querySelector('.name_text').parentElement.append(status);
                 if (replacement) {
                     // Keep the old reply's geometry until this complete frame is ready.
-                    commitRoleplayReplacement(replacement);
-                    replacement.before(node);
+                    commitRoleplayReplacement(replacement, node, chat);
+                    if (!node.isConnected) replacement.before(node);
                 } else chat.append(node);
                 // The first frame can race the saved chat's own draw. Put the draft
                 // after rows already on screen, then watch the chat for later batches.
@@ -226,10 +229,13 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
             }
             finishDraw();
         };
-        // A reader who is not following keeps the words on screen where they are,
-        // whatever the draw adds, removes or rewrites above them.
-        if (!nearBottom && node?.isConnected) changeMessageTextForReader(() => node?.querySelector('.mes_text') ?? null, draw);
-        else draw();
+        // A reader inside the reply keeps the words on screen where they are; when
+        // the row's top is visible, keep the row top steady so headers grow downwards.
+        const previewTop = node?.isConnected && typeof node.getBoundingClientRect === 'function' && typeof chat.getBoundingClientRect === 'function'
+            ? node.getBoundingClientRect().top - chat.getBoundingClientRect().top : -1;
+        if (!nearBottom && node?.isConnected && previewTop < -0.5) {
+            changeMessageTextForReader(() => node?.querySelector('.mes_text') ?? null, draw);
+        } else draw();
         // A live bottom landing must supersede resize anchors for older positions,
         // and honour the same automatic/manual scrolling policy as saved replies.
         if (nearBottom) scrollChatToBottom({ isNearBottom: nearBottom });

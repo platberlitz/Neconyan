@@ -541,14 +541,15 @@ function readback(key, name, options) {
 
 /**
  * Where the live reply sits on screen, so saving it does not move the page.
- * The saved reply's own text keeps its place, so a taller saved header cannot
- * shift it; the row above remains a fallback for a window that does not render
- * the reply yet. A group receipt names the final saved speaker, so its last
- * row is anchored only when the preview still shows that same child. An
- * incomplete group preview falls back to the preceding row instead of
- * applying unsaved preview text to the first saved speaker.
+ * When the preview row's top is at or below the chat viewport top (`previewTop >= 0`),
+ * the row itself is anchored so earlier messages and the row's top edge stay put
+ * while the taller saved header grows downwards; when the row's top is above the
+ * viewport, the reply's own text is anchored instead. The row above remains a
+ * fallback for a window that does not render the reply yet. A group receipt names
+ * the final saved speaker, so its last row is anchored only when the preview still
+ * shows that same child; an incomplete group preview falls back to the preceding row.
  * @param {{result?: {childJobId?: string, speakers?: Array<object>}|null, keptReply?: {messageIndex?: number}}|null} [receipt] Saved workflow receipt, when one is available.
- * @returns {{messageId: string|number, offsetTop: number, part: string|null, fallback: {messageId: string|number, offsetTop: number}|null}|null}
+ * @returns {{messageId: string|number, offsetTop: number, part: string|null, content?: object, fallback: {messageId: string|number, offsetTop: number}|null}|null}
  */
 export function finishedReplyReadingAnchor(receipt = null) {
     const chatNode = globalThis.document?.querySelector?.('#chat');
@@ -557,20 +558,28 @@ export function finishedReplyReadingAnchor(receipt = null) {
     const chatTop = chatNode.getBoundingClientRect().top;
     const previewText = preview.querySelector?.('.mes_text');
     const previewTop = preview.getBoundingClientRect().top - chatTop;
-    const offsetTop = previewText ? previewText.getBoundingClientRect().top - chatTop : previewTop;
-    const part = previewText ? '.mes_text' : null;
+    const anchorText = Boolean(previewText) && previewTop < -1;
+    const offsetTop = anchorText ? previewText.getBoundingClientRect().top - chatTop : previewTop;
+    const part = anchorText ? '.mes_text' : null;
     // The saved copy can differ from the preview above the reader's line, so
     // the visible paragraphs are carried along with the top of the text.
-    const content = previewText ? captureContentAnchor(chatNode, previewText) ?? undefined : undefined;
+    const content = anchorText ? captureContentAnchor(chatNode, previewText) : null;
     let above = preview.previousElementSibling;
     while (above && !above.matches('.mes[mesid]')) above = above.previousElementSibling;
     const fallback = above
         ? { messageId: above.getAttribute('mesid'), offsetTop: above.getBoundingClientRect().top - chatTop }
         : null;
+    const anchorFor = messageId => ({
+        messageId,
+        offsetTop,
+        part,
+        ...(content ? { content } : {}),
+        fallback,
+    });
     // Recovery may append thinking beside the unchanged swipe source. The
     // receipt identifies that new row even though it has not been drawn yet.
     const keptIndex = receipt?.keptReply?.messageIndex;
-    if (Number.isSafeInteger(keptIndex) && keptIndex >= 0) return { messageId: keptIndex, offsetTop, part, content, fallback };
+    if (Number.isSafeInteger(keptIndex) && keptIndex >= 0) return anchorFor(keptIndex);
     const replacement = chatNode.querySelector('[data-roleplay-replacement]');
     const speakers = receipt?.result?.speakers;
     if (!replacement && Array.isArray(speakers) && speakers.length > 0) {
@@ -578,12 +587,12 @@ export function finishedReplyReadingAnchor(receipt = null) {
         const previewChild = preview.dataset?.roleplayChild;
         if (previewChild && savedChild !== null && savedChild !== undefined
             && String(previewChild) === String(savedChild)) {
-            return { messageId: chat.length + speakers.length - 1, offsetTop, part, content, fallback };
+            return anchorFor(chat.length + speakers.length - 1);
         }
         return fallback ? { ...fallback, part: null, fallback: null } : null;
     }
     const messageId = replacement ? Number(replacement.dataset.roleplayReplacement) : chat.length;
-    return { messageId, offsetTop, part, content, fallback };
+    return anchorFor(messageId);
 }
 
 /**

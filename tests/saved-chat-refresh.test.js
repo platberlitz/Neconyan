@@ -31,7 +31,9 @@ function fixture() {
         takeChatReloadReadingAnchor: () => null, isChatScrolledNearBottom: () => true,
         redisplayChat: redraw, pruneRenderedChatMessagesToWindow: no, syncRenderedChatLastMessageClass: no,
         syncChatHistoryWindowControls: no, refreshSwipeButtons: no, scrollLoadedChatToBottomThroughLifecycle: no,
-        holdChatReloadReadingAnchor: no, event_types: {}, eventSource: { emit: async () => {} },
+        holdChatReloadReadingAnchor: no, stopChatReloadReadingAnchorHold: no,
+        transferRoleplayReplacementReserve: no, syncRoleplayReplacementReserve: no,
+        event_types: {}, eventSource: { emit: async () => {} },
     });
     vm.runInContext(functions, runtime);
     return { runtime, read, reload, redraw, remove, chat };
@@ -375,4 +377,74 @@ test('a saved reply with no preview on screen keeps the place it was given', asy
     expect(runtime.captureContentAnchor).not.toHaveBeenCalled();
     expect(runtime.restoreVisibleChatMessageAnchor).not.toHaveBeenCalled();
     expect(held).toEqual([anchor]);
+});
+
+test('a row-level reply anchor re-measures the preview row top and transfers any reserve before restoring', async () => {
+    const { runtime, redraw } = fixture();
+    const steps = [];
+    let previewRowTop = 320;
+    const previewRow = { isConnected: true, getBoundingClientRect: () => ({ top: previewRowTop }) };
+    const savedRow = { id: 'saved-row' };
+    runtime.chatElement[0].getBoundingClientRect = () => ({ top: 100 });
+    runtime.chatElement[0].querySelector = selector => selector === '.mes[mesid="1"]' ? savedRow : selector.startsWith('.mes') ? {} : null;
+    runtime.chatElement.find = selector => Object.assign(selector === '#neconyan-roleplay-preview' ? [previewRow] : [],
+        { remove: () => steps.push(`remove ${selector}`) });
+    runtime.takeChatReloadReadingAnchor = () => ({
+        messageId: '1',
+        offsetTop: 220,
+        fallback: { messageId: '0', offsetTop: 60 },
+    });
+    runtime.captureContentAnchor = jest.fn();
+    runtime.transferRoleplayReplacementReserve = (from, to) => {
+        steps.push(`transfer:${from === previewRow}:${to === savedRow}`);
+    };
+    runtime.syncRoleplayReplacementReserve = target => {
+        steps.push(`sync:${target === savedRow}`);
+    };
+    const restored = [];
+    runtime.restoreVisibleChatMessageAnchor = anchor => {
+        steps.push('restore');
+        restored.push(anchor);
+        return true;
+    };
+    runtime.holdChatReloadReadingAnchor = () => true;
+    redraw.mockImplementation(async ({ onBeforeCommit, onCommit }) => {
+        previewRowTop = 280;
+        onBeforeCommit();
+        steps.push('swap');
+        onCommit();
+    });
+
+    await runtime.refreshCurrentChatFromSaved();
+
+    expect(runtime.captureContentAnchor).not.toHaveBeenCalled();
+    expect(restored).toEqual([{
+        messageId: '1',
+        offsetTop: 180,
+        fallback: { messageId: '0', offsetTop: 20 },
+    }]);
+    expect(steps.indexOf('transfer:true:true')).toBeLessThan(steps.indexOf('restore'));
+    expect(steps.indexOf('restore')).toBeLessThan(steps.indexOf('sync:true'));
+});
+
+test('a preceding-row fallback anchor does not re-measure the unsaved preview row', async () => {
+    const { runtime, read, redraw } = fixture();
+    const previewRow = { isConnected: true, getBoundingClientRect: () => ({ top: 320 }) };
+    runtime.chatElement[0].getBoundingClientRect = () => ({ top: 100 });
+    runtime.chatElement.find = selector => Object.assign(selector === '#neconyan-roleplay-preview' ? [previewRow] : [], { remove: () => {} });
+    const fallbackAnchor = { messageId: '0', offsetTop: 80, fallback: null };
+    runtime.takeChatReloadReadingAnchor = () => fallbackAnchor;
+    runtime.restoreVisibleChatMessageAnchor = jest.fn();
+    const held = [];
+    runtime.holdChatReloadReadingAnchor = value => { held.push(value); return true; };
+    read.mockResolvedValue({
+        records: [{ chat_metadata: { stylePins: ['kept'] } }, { mes: 'Keep this reply.', extra: {} }, { mes: 'Speaker 1.', extra: {} }, { mes: 'Speaker 2.', extra: {} }],
+        evidence: {},
+    });
+    redraw.mockImplementation(async ({ onBeforeCommit, onCommit }) => { onBeforeCommit(); onCommit(); });
+
+    await runtime.refreshCurrentChatFromSaved();
+
+    expect(runtime.restoreVisibleChatMessageAnchor).not.toHaveBeenCalled();
+    expect(held).toEqual([fallbackAnchor]);
 });

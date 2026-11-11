@@ -265,6 +265,7 @@ import { debounce_timeout, GENERATION_TYPE_TRIGGERS, IGNORE_SYMBOL, inject_ids, 
 import { areExtensionIdsEqual, cancelDebouncedMetadataSave, doDailyExtensionUpdatesCheck, extension_settings, extensionNames, initExtensions, loadExtensionSettings, runGenerationInterceptors } from './scripts/extensions.js';
 import { initialiseCrashActivity } from './scripts/crash-diagnostics-context.js';
 import { CONVERSATION_STORE_KEY } from './scripts/neconyan-conversation/constants.js';
+import { releaseRoleplayReplacementReserve, syncRoleplayReplacementReserve, transferRoleplayReplacementReserve } from './scripts/neconyan-conversation/roleplay-replacement.js';
 import { COMMENT_NAME_DEFAULT, CONNECT_API_MAP, executeSlashCommandsOnChatInput, executeSlashCommandsWithOptions, initDefaultSlashCommands, initSlashCommandAutoComplete, isExecutingCommandsFromChatInput, pauseScriptExecution, stopScriptExecution, UNIQUE_APIS } from './scripts/slash-commands.js';
 import { isSlashCommandText } from './scripts/slash-commands/SlashCommandRuntimeUtils.js';
 import { initMacroAutoComplete } from './scripts/autocomplete/MacroAutoComplete.js';
@@ -4467,6 +4468,7 @@ export async function clearChat({ clearData = false, navigationGuard = () => tru
     cancelDebouncedMetadataSave();
     closeMessageEditor();
     clearChatLoadBottomLock();
+    releaseRoleplayReplacementReserve();
     disposeChatMessageResizeObserver();
     resetMobileChatViewportLifecycle();
     extension_prompts = {};
@@ -5302,16 +5304,23 @@ async function adoptSavedChatTail(signal) {
     adoptedMessages.forEach(ensureMessageMediaIsArray);
     chat.splice(first, chat.length - first, ...adoptedMessages);
     let remeasured = false;
+    let handoverPreview = null;
     // The place was measured before the saved chat was read. Measure it again
     // from the preview just before the saved rows replace it, so a reader who
     // scrolled meanwhile is not put back at the old place.
     const measureHandover = () => {
-        const previewText = readingAnchor?.part === '.mes_text'
-            ? chatElement.find('#neconyan-roleplay-preview .mes_text')[0] : null;
-        if (!previewText?.isConnected) return;
-        const offsetTop = previewText.getBoundingClientRect().top - chatElement[0].getBoundingClientRect().top;
+        handoverPreview = chatElement.find('#neconyan-roleplay-preview')[0] ?? null;
+        if (!readingAnchor) return;
+        const anchorMessageId = Number(readingAnchor.messageId);
+        const targetsReply = anchorMessageId === saved.length - 1
+            || (hasReplacement && anchorMessageId === replacementIndex);
+        const measured = readingAnchor.part === '.mes_text'
+            ? chatElement.find('#neconyan-roleplay-preview .mes_text')[0]
+            : !readingAnchor.part && targetsReply ? handoverPreview : null;
+        if (!measured?.isConnected) return;
+        const offsetTop = measured.getBoundingClientRect().top - chatElement[0].getBoundingClientRect().top;
         const moved = offsetTop - readingAnchor.offsetTop;
-        const content = captureContentAnchor(chatElement[0], previewText);
+        const content = readingAnchor.part === '.mes_text' ? captureContentAnchor(chatElement[0], measured) : null;
         const anchor = { ...readingAnchor };
         delete anchor.content;
         readingAnchor = {
@@ -5324,12 +5333,24 @@ async function adoptSavedChatTail(signal) {
     };
     const finishHandover = () => {
         savedChatRedraw = null;
+        const preview = handoverPreview;
+        handoverPreview = null;
         // An unchanged read has not replaced the detached original. Its owner
         // still needs the marker to restore it if the replacement is cancelled.
         if (redraw) chatElement.find('[data-roleplay-replacement]').remove();
         chatElement.find('#neconyan-roleplay-preview').remove();
+        if (redraw && preview) syncRenderedChatLastMessageClass();
+        const targetId = readingAnchor?.messageId ?? (hasReplacement ? replacementIndex : chat.length - 1);
+        const savedRow = redraw && preview
+            ? chatElement[0]?.querySelector?.(`.mes[mesid="${targetId}"]`) ?? null : null;
+        if (preview) {
+            transferRoleplayReplacementReserve(preview, savedRow, chatElement[0], {
+                onUserScroll: stopChatReloadReadingAnchorHold,
+            });
+        }
         // Put the same words back in the task that swapped the rows.
         if (remeasured) restoreVisibleChatMessageAnchor(readingAnchor);
+        if (savedRow) syncRoleplayReplacementReserve(savedRow);
         remeasured = false;
     };
     if (redraw) {
@@ -13336,8 +13357,14 @@ export function setRoleplayJobControls(jobId, stop = null, { background = false 
             syncRoleplayBackgroundControls();
         };
         // The message controls return above and below the reply's text. A reader
-        // inside the reply keeps the same words; at the bottom the chat follows.
-        if (isChatScrolledNearBottom()) release();
+        // inside the reply keeps the same words; when the reply's top is visible or
+        // the chat is at the bottom, the header grows downwards without shifting rows above.
+        const isLastRowTopVisible = () => {
+            const lastRow = chatElement.find('.mes[mesid]').last()[0] ?? null;
+            return Boolean(lastRow && chatElement[0])
+                && lastRow.getBoundingClientRect().top - chatElement[0].getBoundingClientRect().top >= -1;
+        };
+        if (isChatScrolledNearBottom() || isLastRowTopVisible()) release();
         else changeMessageTextForReader(() => chatElement.find('.mes[mesid]').last().find('.mes_text')[0] ?? null, release);
     }
 }

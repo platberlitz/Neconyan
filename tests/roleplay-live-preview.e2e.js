@@ -135,11 +135,27 @@ for (const phone of [true, false]) {
         const body = page.locator('#neconyan-roleplay-preview .mes_text');
         await expect(body).toHaveText('The new swipe starts here.');
         await page.screenshot({ path: `../screenshots/server-swipe-${viewport}-${process.env.NECONYAN_SCREENSHOT_PHASE || 'after'}.png`, scale: 'css' });
-        const bottomGap = await page.locator('#chat').evaluate(chat => chat.scrollHeight - chat.clientHeight - chat.scrollTop);
+        const landed = await page.locator('#chat').evaluate(chat => {
+            const chatTop = chat.getBoundingClientRect().top;
+            const preview = document.querySelector('#neconyan-roleplay-preview');
+            const previous = chat.querySelector('.mes[mesid="10"]');
+            return {
+                bottomGap: chat.scrollHeight - chat.clientHeight - chat.scrollTop,
+                previewTop: preview.getBoundingClientRect().top - chatTop,
+                previousBottom: previous.getBoundingClientRect().bottom - chatTop,
+            };
+        });
         expect(Math.abs(waiting - before), 'waiting must not collapse the old reply').toBeLessThan(3);
-        expect(bottomGap, 'first tokens must stay at the bottom, not above the new reply').toBeLessThan(3);
+        expect(Math.abs(landed.previewTop), 'new swipe starts at the top of the chat viewport').toBeLessThanOrEqual(2);
+        expect(landed.previousBottom, 'older messages stay above the viewport on swipe start').toBeLessThanOrEqual(0.5);
+        expect(landed.bottomGap, 'reserved height leaves no blank space beyond the viewport bottom').toBeLessThan(3);
         await expect(page.locator('#chat .mes[mesid="11"]')).toHaveCount(0);
         await expect(body).toBeInViewport();
+        await page.evaluate(() => window.sendLivePreviewDelta({ text: `\n\n${'A later streamed paragraph.\n\n'.repeat(40)}` }));
+        await expect(body).toContainText('A later streamed paragraph.');
+        const streamedTop = await page.locator('#chat').evaluate(chat =>
+            document.querySelector('#neconyan-roleplay-preview').getBoundingClientRect().top - chat.getBoundingClientRect().top);
+        expect(Math.abs(streamedTop), 'streaming a swipe replacement never drags the reader down').toBeLessThanOrEqual(2);
         await page.evaluate(() => { window.stopLivePreview(); window.restoreSwipeSource(); });
     });
 
