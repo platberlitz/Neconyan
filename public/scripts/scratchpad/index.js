@@ -56,7 +56,7 @@ import { roundToDiscuss } from './discuss.js';
 import { canReadAloud, isReadingAloud, stopReadAloud, toggleReadAloud } from './read-aloud.js';
 import { editQuickPrompts } from './quick-prompts.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261112-scratchpad-read-links';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261112-scratchpad-search-all';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -169,6 +169,7 @@ const app = {
     quickPrompts: { prompts: [], revision: 0 },
     pickLimit: PICK_PAGE,
     sessionQuery: '',
+    everyList: { query: '', loading: false, results: [], more: false, error: '' },
     contextKey: '',
     timer: 0,
     queue: Promise.resolve(),
@@ -2708,6 +2709,76 @@ function importSessionFile() {
     input.click();
 }
 
+function listKindLabel(kind) {
+    if (kind === 'general') return t`General Scratchpad`;
+    if (kind === 'notebook') return t`Note`;
+    return kind === 'conversation' ? t`Conversation` : t`Roleplay`;
+}
+
+async function searchEveryList() {
+    const query = app.sessionQuery.trim();
+    if (query.length < 2 || app.everyList.loading) return;
+    app.everyList = { query, loading: true, results: [], more: false, error: '' };
+    renderSessions();
+    try {
+        const found = await api.searchSessions(query);
+        if (app.everyList.query !== query) return;
+        app.everyList = { query, loading: false, results: Array.isArray(found?.results) ? found.results : [], more: found?.more === true, error: '' };
+    } catch (error) {
+        if (app.everyList.query !== query) return;
+        app.everyList = { query, loading: false, results: [], more: false, error: error?.message || t`Scratchpad could not search your other lists.` };
+    }
+    if (app.open && app.tab === 'sessions') {
+        renderSessions();
+        app.el.panels.sessions.querySelector('.scratchpad-every-list-button')?.focus();
+    }
+}
+
+async function copyFoundSession(result) {
+    const saved = await change(source => api.copySession(source, result.list, result.sessionId), t`Scratchpad could not copy that session.`);
+    if (!saved) return;
+    toastr.success(t`Copied here. The original stays where it was.`);
+    selectTab('chat');
+}
+
+/** Sessions found in the account's other lists. They belong elsewhere, so they can be copied here, never opened in place. */
+function renderEveryList() {
+    const query = app.sessionQuery.trim();
+    if (query.length < 2) return null;
+    const state = app.everyList.query === query ? app.everyList : null;
+    const section = h('section', { class: 'scratchpad-every-list', 'aria-label': t`Other lists` },
+        h('div', { class: 'scratchpad-every-list-head' },
+            iconButton(state?.loading ? t`Searching…` : t`Search every list`, () => void searchEveryList(), {
+                icon: 'fa-magnifying-glass', className: 'scratchpad-every-list-button', disabled: state?.loading === true,
+            }),
+            h('p', { class: 'scratchpad-muted', text: t`Looks through the sessions of your other chats, notes and General Scratchpad.` })));
+    if (!state || state.loading) return section;
+    if (state.error) {
+        section.append(h('p', { class: 'scratchpad-muted', role: 'alert', text: state.error }));
+        return section;
+    }
+    const here = new Set((app.bucket?.sessions ?? []).map(session => session.id));
+    const results = state.results.filter(result => !here.has(result.sessionId));
+    section.append(h('p', { class: 'scratchpad-muted', role: 'status', text: results.length
+        ? (state.more ? t`Showing the ${results.length} most recent matches in your other lists. Narrow the search to see the rest.` : results.length === 1 ? t`1 match in your other lists.` : t`${results.length} matches in your other lists.`)
+        : t`Nothing in your other lists matches that search.` }));
+    if (!results.length) return section;
+    const list = h('ul', { class: 'scratchpad-sessions scratchpad-found' });
+    for (const result of results) {
+        const kind = listKindLabel(result.kind);
+        const where = [kind, result.where === kind ? '' : result.where].filter(Boolean).join(': ');
+        list.append(h('li', { class: 'scratchpad-session' },
+            h('div', { class: 'scratchpad-session-info' },
+                h('strong', { text: result.name, 'data-i18n-ignore': '' }),
+                h('small', { text: [where, t`${result.messages} messages`, formatDate(result.updated)].filter(Boolean).join(' · '), 'data-i18n-ignore': '' }),
+                result.snippet ? h('p', { class: 'scratchpad-found-snippet', text: result.snippet, 'data-i18n-ignore': '' }) : null),
+            h('div', { class: 'scratchpad-session-actions' },
+                iconButton(t`Copy here`, () => void copyFoundSession(result), { icon: 'fa-copy', title: t`Copy this session into the list you have open` }))));
+    }
+    section.append(list);
+    return section;
+}
+
 function renderSessions() {
     const panel = app.el.panels.sessions;
     const focused = document.activeElement?.classList?.contains('scratchpad-session-search');
@@ -2727,6 +2798,9 @@ function renderSessions() {
         oninput: event => {
             app.sessionQuery = event.currentTarget.value;
             renderSessions();
+        },
+        onkeydown: event => {
+            if (event.key === 'Enter' && !event.isComposing) void searchEveryList();
         },
     });
     append(panel, [
@@ -2771,7 +2845,7 @@ function renderSessions() {
                 iconButton('', () => void clearSessionMessages(session), { icon: 'fa-broom', title: t`Clear messages` }),
                 iconButton('', () => void removeSession(session), { icon: 'fa-trash', title: t`Delete session` }))));
     }
-    panel.append(list);
+    panel.append(...[list, renderEveryList()].filter(Boolean));
     if (focused) {
         search.focus();
         search.setSelectionRange(search.value.length, search.value.length);
