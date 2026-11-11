@@ -40,6 +40,21 @@ after(() => cancelAutoSaves());
 const SOURCE = { kind: 'roleplay', key: 'Nova.png::Source', label: 'Nova' };
 const OTHER = { kind: 'conversation', key: 'Nova.png::main', label: 'Nova' };
 const GENERAL = { kind: 'general', key: 'general', label: 'General Scratchpad', contextMode: 'roleplay', personaId: 'User.png' };
+test('Agent changes are offered only when Agents are shared, and never for a note', () => {
+    assert.equal(store.normaliseSettings({}).include.agents, false);
+    assert.equal(store.normaliseSettings({ include: { agents: true } }).include.agents, true);
+    for (const kind of ['roleplay', 'conversation', 'general']) assert.equal(normaliseCapabilities({ agents: true }, kind).agents, true);
+    assert.equal(normaliseCapabilities({ agents: true }, 'notebook').agents, undefined);
+    assert.equal(normaliseCapabilities({ agents: 'yes' }).agents, undefined);
+    for (const customPrompt of ['', 'Be helpful.']) {
+        const shared = buildScratchpadSystemPrompt({ assistant: 'miso', capabilities: { agents: true }, customPrompt }).text;
+        assert.match(shared, /"type":"agent"/);
+        assert.match(shared, /You cannot create, delete, turn on or turn off an Agent/);
+        assert.doesNotMatch(buildScratchpadSystemPrompt({ assistant: 'miso', capabilities: {}, customPrompt }).text, /"type":"agent"/);
+    }
+    assert.match(buildScratchpadSystemPrompt({ assistant: 'miso', sourceKind: 'general', capabilities: { agents: true } }).text, /"type":"agent"/);
+});
+
 test('preset capabilities stay in Roleplay and remain available in custom assistant prompts', () => {
     const preset = [{ api: 'openai', name: 'Lantern' }];
     assert.deepEqual(normaliseCapabilities({ preset }).preset, preset);
@@ -301,6 +316,19 @@ test('prefills stay last, expand identity macros once and join both streamed and
     assert.equal(reply.reasoning, 'New reasoning');
     assert.equal(streamed.text, reply.text);
     assert.ok(!reply.text.includes('think'));
+});
+
+test('a sent message offers Agent changes only while the session shares Agents', async t => {
+    const a = account(t);
+    const calls = [];
+    registerScratchpadJobs({ generate: async options => { calls.push(options); return { text: 'Done.' }; } });
+    for (const [include, offered] of [[{ agents: true }, true], [{ agents: false }, false]]) {
+        const session = startSession(a, { include });
+        const body = sendBody(session, { capabilities: { agents: true } });
+        const accepted = await acceptScratchpadReply(a.request(body), body);
+        await runJob(getJob(a.directories, accepted.job.id));
+        assert.equal(calls.at(-1).messages[0].content.includes('"type":"agent"'), offered);
+    }
 });
 
 test('attachments reach the model and survive saved history, regeneration and import', async t => {
@@ -828,7 +856,7 @@ test('saved context setups keep only portable choices, are account-owned and pro
     assert.deepEqual(saved.setups, [{
         name: 'Lean read',
         settings: {
-            depth: 4, include: { card: false, persona: true, authorsNote: true, lore: true, preset: true, hidden: false },
+            depth: 4, include: { card: false, persona: true, authorsNote: true, lore: true, preset: true, hidden: false, agents: false },
             maxTokens: 512, stream: false, webSearch: true, readLinks: true, prefill: 'Ideas:', partialPrefill: '',
         },
     }]);

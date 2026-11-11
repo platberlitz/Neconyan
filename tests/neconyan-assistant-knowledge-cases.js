@@ -20,6 +20,7 @@ export const refreshedKnowledgeCases = [
     ['How do I reuse my Scratchpad Context choices in another session?', 'scratchpad.context-setups', 'Press Save current choices and name the setup'],
     ['What do the typed tools /roll, /calc and /pick do in a Scratchpad message?', 'scratchpad.typed-tools', '/roll 2d6+1 rolls dice and shows every die'],
     ['How do I dictate a Scratchpad message with the microphone instead of typing?', 'scratchpad.dictation', 'speak, then press Stop and transcribe'],
+    ['Can a Scratchpad assistant suggest an edit to the prompt of one of my saved Agents?', 'scratchpad.agent-changes', 'tick Agents (off by default, also offered in General)'],
     ['How do I branch a Scratchpad session from an earlier message?', 'scratchpad.branch', 'press Branch into a new session from here'],
     ['How do I find a Scratchpad session that belongs to another chat?', 'scratchpad.search-all', 'press Copy here to copy it into the open list'],
     ['Can I review all the Scratchpad change cards in a reply at once?', 'scratchpad.review-all', 'press Save ticked changes'],

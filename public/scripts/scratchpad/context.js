@@ -506,6 +506,54 @@ function swipeNote(messages) {
         : '';
 }
 
+export const MAX_AGENT_CONTEXT_BYTES = 160 * 1024;
+
+async function loadSavedAgents() {
+    try {
+        const store = await import('../extensions/in-chat-agents/agent-store.js');
+        return store.getAgents();
+    } catch (error) {
+        console.warn('Scratchpad could not read the saved Agents.', error);
+        return [];
+    }
+}
+
+/**
+ * Agents are listed with their exact saved text. Once the allowance is spent,
+ * the remaining Agents keep their ID and name but lose their prompt, and the
+ * section says so, so the model never edits a prompt it did not see.
+ */
+export function formatAgents(agents) {
+    const list = (Array.isArray(agents) ? agents : []).filter(agent => agent && typeof agent.id === 'string' && agent.id);
+    if (!list.length) return '';
+    const blocks = [];
+    let used = 0;
+    let withheld = 0;
+    for (const agent of list) {
+        const head = [
+            `### ${String(agent.name ?? '').trim() || 'Unnamed Agent'}`,
+            `ID: ${agent.id}`,
+            `Status: ${agent.enabled ? 'on' : 'off'}`,
+            `[description]\n${String(agent.description ?? '')}`,
+        ].join('\n');
+        const full = `${head}\n[prompt]\n${String(agent.prompt ?? '')}`;
+        const bytes = byteLength(full);
+        if (used + bytes <= MAX_AGENT_CONTEXT_BYTES) {
+            blocks.push(full);
+            used += bytes;
+        } else {
+            blocks.push(`${head}\n[prompt]\nNot shared: there was no room left. Do not propose a change to this prompt.`);
+            withheld++;
+        }
+    }
+    return [
+        '## Agents (saved for this account, exactly as written)',
+        'Agents add instructions to story replies. Field keys are shown in [brackets]. Macros such as {{char}} and {{user}} are left in place.',
+        ...(withheld ? [`${withheld} Agent prompt${withheld === 1 ? ' was' : 's were'} left out to save room.`] : []),
+        ...blocks,
+    ].join('\n\n');
+}
+
 /**
  * Builds the reference material for a message from the visible workspace.
  * Nothing here is saved; General never borrows a hidden story. Messages are
@@ -565,6 +613,15 @@ export async function buildContext({ source, settings, pendingText = '', session
         if (note) sections.push(`## Author's Note\n${note}`);
     }
 
+    let agentsShared = false;
+    if (include.agents) {
+        const text = formatAgents(await loadSavedAgents());
+        if (text) {
+            sections.push(text);
+            agentsShared = true;
+        }
+    }
+
     let lore = { books: [], entries: [] };
     if (include.lore && !general) {
         const scanText = loreScanText({ source, settings, sessionText, pendingText });
@@ -591,7 +648,7 @@ export async function buildContext({ source, settings, pendingText = '', session
     const scaffold = general ? 0 : 2 + byteLength(scaffoldHeading) + (scaffoldNote ? 2 + byteLength(scaffoldNote) : 0);
     requireCurrentSource(source);
     if (headBytes + scaffold > MAX_CONTEXT_BYTES) {
-        throw new Error(t`The shared context is too large to send. Turn off the persona, character cards, Author's Note, lorebooks or preset you do not need, then try again.`);
+        throw new Error(t`The shared context is too large to send. Turn off the persona, character cards, Author's Note, Agents, lorebooks or preset you do not need, then try again.`);
     }
 
     const lines = selection.messages.map(item => ({ item, bytes: byteLength(messageLine(item)) }));
@@ -649,6 +706,7 @@ export async function buildContext({ source, settings, pendingText = '', session
             character: people.length > 0 && (!general || include.card === true),
             chat: source.kind === 'roleplay',
             members: source.groupId ? people.map(item => item.name).filter(Boolean) : [],
+            ...(agentsShared ? { agents: true } : {}),
         },
     };
 }

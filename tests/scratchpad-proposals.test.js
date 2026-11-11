@@ -133,6 +133,19 @@ describe('Scratchpad reply parsing', () => {
         expect(describeChange({ type: 'chat', action: 'insert', after: 2 })).toBe('Add a message after #2');
     });
 
+    test('accepts an Agent text change and refuses anything else about an Agent', () => {
+        expect(normaliseChange({ type: 'agent', agent: ' a-1 ', name: ' Scene   Keeper ', field: 'prompt', value: 'Keep {{char}} calm.', reason: 'Shorter', enabled: true }))
+            .toEqual({ type: 'agent', action: 'replace', agent: 'a-1', field: 'prompt', value: 'Keep {{char}} calm.', reason: 'Shorter', name: 'Scene Keeper' });
+        expect(normaliseChange({ type: 'agent', action: 'edit', agent: 'a-1', field: 'name', value: '  New   name ' })).toMatchObject({ action: 'replace', value: 'New name' });
+        expect(() => normaliseChange({ type: 'agent', action: 'delete', agent: 'a-1', field: 'prompt', value: 'x' })).toThrow('can only replace');
+        expect(() => normaliseChange({ type: 'agent', field: 'prompt', value: 'x' })).toThrow('exact ID');
+        expect(() => normaliseChange({ type: 'agent', agent: 'a-1', field: 'enabled', value: 'x' })).toThrow('name, description or prompt');
+        expect(() => normaliseChange({ type: 'agent', agent: 'a-1', field: 'prompt' })).toThrow('no new text');
+        expect(() => normaliseChange({ type: 'agent', agent: 'a-1', field: 'name', value: '  ' })).toThrow('needs a name');
+        expect(describeChange({ type: 'agent', agent: 'a-1', name: 'Scene Keeper', field: 'prompt' })).toBe('Change Agent \'Scene Keeper\': prompt');
+        expect(describeChange({ type: 'agent', agent: 'a-1', field: 'description' })).toBe('Change Agent \'a-1\': description');
+    });
+
     test('accepts all six Notebook mutations and strips model-supplied approvals and unrelated fields', () => {
         const common = { notebookId: 'nb', noteId: 'note', expectedRevision: 'revision', grantId: 'grant', userConfirmed: true, canEdit: true };
         for (const [action, extra] of [

@@ -109,7 +109,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     depth: 15,
     picked: [],
     notes: [],
-    include: { card: true, persona: true, authorsNote: true, lore: true, preset: false, hidden: false },
+    include: { card: true, persona: true, authorsNote: true, lore: true, preset: false, hidden: false, agents: false },
     loreOverrides: {},
     connection: { kind: 'current' },
     assistantConnections: {},
@@ -1772,6 +1772,7 @@ async function prepareReviewPlan(source, session, message, part) {
                 throw new Error(t`Share the original preset in this chat before saving its changes.`);
             }
         },
+        agentsShared: currentSettings().include.agents === true,
         creationGuard: () => requireScope(source, session.id), creatorKey: JSON.stringify([source.key, session.id, message.id, part.index]) });
     requireScope(source, session.id);
     if (plan.bucket) applyBucket(plan.bucket);
@@ -2469,7 +2470,8 @@ function renderContext({ force = true } = {}) {
             checkbox(t`Your persona and Scenario Notes`, include.persona, value => setInclude('persona', value)),
             roleplay ? checkbox(t`Author's Note`, include.authorsNote, value => setInclude('authorsNote', value)) : null,
             general ? null : checkbox(t`Lorebook entries`, include.lore, value => setInclude('lore', value), t`Entries are shared when their keywords appear, or when you set them to Always below.`),
-            roleplay ? presetCheckbox(include.preset, value => setInclude('preset', value)) : null),
+            roleplay ? presetCheckbox(include.preset, value => setInclude('preset', value)) : null,
+            checkbox(t`Agents`, include.agents === true, value => setInclude('agents', value), t`Shares the name, description and prompt of every saved Agent, so an assistant can suggest edits to them.`)),
         h('section', { class: 'scratchpad-section' },
             h('h3', { class: 'scratchpad-section-title', text: t`Assistant connections` }),
             h('p', { class: 'scratchpad-muted', text: t`Choose a saved profile for each assistant. Profiles include the model and connection settings.` }),

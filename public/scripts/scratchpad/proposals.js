@@ -39,6 +39,8 @@ function messageNumber(value) {
     return Number.isSafeInteger(number) && number >= 0 ? number : null;
 }
 
+export const AGENT_FIELDS = Object.freeze(['name', 'description', 'prompt']);
+
 export function stringList(value) {
     if (Array.isArray(value)) return value.map(item => String(item ?? '').trim()).filter(Boolean);
     if (typeof value === 'string') return value.split(',').map(item => item.trim()).filter(Boolean);
@@ -170,6 +172,16 @@ export function normaliseChange(value) {
         }
         fail('Scratchpad cannot change that character field.');
     }
+    if (value.type === 'agent') {
+        if (![undefined, 'replace', 'edit'].includes(value.action)) fail('Scratchpad can only replace an Agent\'s name, description or prompt.');
+        if (typeof value.agent !== 'string' || !value.agent.trim() || value.agent.length > 200) fail('This Agent change needs the exact ID of a shared Agent.');
+        if (!AGENT_FIELDS.includes(value.field)) fail('Scratchpad can only change an Agent\'s name, description or prompt.');
+        if (typeof value.value !== 'string') fail('This Agent change has no new text.');
+        const next = value.field === 'name' ? text(value.value, 200).replace(/\s+/g, ' ').trim() : text(value.value);
+        if (value.field === 'name' && !next) fail('An Agent needs a name.');
+        return { type: 'agent', action: 'replace', agent: value.agent.trim(), field: value.field, value: next, reason,
+            ...(typeof value.name === 'string' && value.name.trim() ? { name: text(value.name, 200).replace(/\s+/g, ' ').trim() } : {}) };
+    }
     if (value.type === 'chat') {
         if (value.action === 'insert') {
             const after = messageNumber(value.after);
@@ -247,6 +259,7 @@ export function describeChange(change) {
         const label = characterField(change.field)?.label;
         return `Change ${change.character}'s ${label}`;
     }
+    if (change.type === 'agent') return `Change Agent '${change.name || change.agent}': ${change.field}`;
     switch (change.action) {
         case 'edit': return `Rewrite message #${change.message}`;
         case 'insert': return `Add a message after #${change.after}`;

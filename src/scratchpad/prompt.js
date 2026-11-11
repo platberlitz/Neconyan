@@ -102,8 +102,13 @@ function imageInstructions({ image, avatar, persona }) {
     ].join('\n');
 }
 
-function changeInstructions({ lore, character, chat, members, notebook, persona, preset }) {
+function changeInstructions({ lore, character, chat, members, notebook, persona, preset, agents }) {
     const kinds = [];
+    if (agents) kinds.push([
+        'Saved Agents (only the ones listed under Agents in the context):',
+        '{"type":"agent","action":"replace","agent":"<exact Agent ID>","name":"<that Agent\'s current name>","field":"prompt","value":"<complete new text>","reason":"<why>"}',
+        'Supported fields: name, description, prompt. Copy the ID exactly as listed. The value replaces the whole field, so include every part that should stay and preserve literal macros. Never change a prompt marked as not shared. You cannot create, delete, turn on or turn off an Agent, or change its other settings; tell the user to do that in Agents.',
+    ].join('\n'));
     if (preset?.length) kinds.push([
         `Shared preset targets: ${JSON.stringify(preset)}. Use their exact api and name; do not edit an unshared preset.`,
         '{"type":"preset","action":"replace","api":"openai","preset":"<shared preset name>","module":"<exact Module ID>","field":"content","value":"<complete replacement text>","reason":"<why>"}',
@@ -198,7 +203,7 @@ export function buildScratchpadSystemPrompt({ assistant, gender, persona: savedP
     ];
     const instructions = typeof customPrompt === 'string' && customPrompt.trim()
         ? [customPrompt, contextNotice && !customPrompt.includes(contextNotice) ? contextNotice : '', webSearch ? WEB_SEARCH_INSTRUCTIONS : '', webPages ? WEB_PAGES_INSTRUCTIONS : '',
-            capabilities.notebook || capabilities.persona || capabilities.preset?.length ? changeInstructions({ notebook: capabilities.notebook, persona: capabilities.persona, preset: capabilities.preset }) : ''].filter(Boolean).join('\n\n')
+            capabilities.notebook || capabilities.persona || capabilities.preset?.length || capabilities.agents ? changeInstructions({ notebook: capabilities.notebook, persona: capabilities.persona, preset: capabilities.preset, agents: capabilities.agents }) : ''].filter(Boolean).join('\n\n')
         : sections.filter(Boolean).join('\n\n');
     const reference = help ? `Neconyan reference for app questions (use it only when ${names.user} asks how something in Neconyan works):\n${help}` : '';
     const preferences = userInstructions.trim() ? `The user's global Scratchpad instructions for you:\n${userInstructions}` : '';
