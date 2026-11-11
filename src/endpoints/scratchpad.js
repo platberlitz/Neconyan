@@ -25,6 +25,7 @@ import { SCRATCHPAD_JOB_TYPE, acceptScratchpadReply, normaliseCapabilities } fro
 import { readScratchpadPreview, subscribeScratchpadPreview } from '../scratchpad/preview.js';
 import { buildScratchpadSystemPrompt } from '../scratchpad/prompt.js';
 import { readInstructionsLocked, updateInstructionsLocked } from '../scratchpad/instructions.js';
+import { readQuickPromptsLocked, updateQuickPromptsLocked } from '../scratchpad/quick-prompts.js';
 import { assistantPortrait, deleteAssistantLocked, readAssistantCardLocked, readAssistantsLocked, refreshSessionAssistants, resolveAssistant, saveAssistantLocked } from '../scratchpad/assistants.js';
 import { normaliseAssistantProfile } from '../scratchpad/assistant-profiles.js';
 import { notebookContextLocked, withNotebookPreparation, prepareNotebookProposalLocked, decideNotebookProposalLocked,
@@ -153,6 +154,25 @@ router.post('/instructions/update', (request, response) => {
         const instructions = withScratchpad(scratchpadAccountBase(request), lease =>
             updateInstructionsLocked(lease, request.body?.instructions, request.body?.expectedRevision));
         response.json({ instructions });
+    } catch (error) {
+        sendError(response, error);
+    }
+});
+
+router.post('/quick-prompts', (request, response) => {
+    try {
+        const quickPrompts = withScratchpad(scratchpadAccountBase(request), readQuickPromptsLocked);
+        response.json({ quickPrompts });
+    } catch (error) {
+        sendError(response, error);
+    }
+});
+
+router.post('/quick-prompts/update', (request, response) => {
+    try {
+        const quickPrompts = withScratchpad(scratchpadAccountBase(request), lease =>
+            updateQuickPromptsLocked(lease, request.body?.prompts, request.body?.expectedRevision));
+        response.json({ quickPrompts });
     } catch (error) {
         sendError(response, error);
     }

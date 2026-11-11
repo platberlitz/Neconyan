@@ -802,6 +802,60 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     font-size: 0.82rem;
 }
 
+.scratchpad-app .scratchpad-chip-edit {
+    justify-content: center;
+    min-width: 32px;
+    padding-inline: 8px;
+}
+
+.scratchpad-quick-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.scratchpad-quick-row {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    border: 1px solid var(--neco-border);
+    border-radius: 12px;
+    text-align: start;
+}
+
+.scratchpad-quick-editor .text_pole {
+    width: 100%;
+    min-height: 44px;
+    font-size: 16px;
+}
+
+.scratchpad-quick-editor textarea.text_pole {
+    resize: vertical;
+}
+
+.scratchpad-quick-row-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+}
+
+.scratchpad-quick-editor .scratchpad-quick-row-button {
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+    margin: 0;
+}
+
+.scratchpad-quick-editor .scratchpad-quick-add {
+    display: inline-flex;
+    align-items: center;
+    align-self: flex-start;
+    gap: 6px;
+    min-height: 44px;
+    margin: 12px 0 0;
+}
+
 .scratchpad-compose-row {
     display: flex;
     align-items: flex-end;
@@ -1605,6 +1659,10 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
 
     .scratchpad-app .scratchpad-quick .scratchpad-chip {
         flex: 0 0 auto;
+    }
+
+    .scratchpad-app .scratchpad-quick .scratchpad-chip-edit {
+        min-width: 44px;
     }
 }
 
