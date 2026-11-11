@@ -100,7 +100,9 @@ describe('Scratchpad reviewed saves', () => {
             committedChanges: new Set(), toastr: { success: jest.fn() }, markChange: async () => true,
             t: (parts, ...values) => parts.reduce((text, part, index) => text + part + (values[index] ?? ''), ''),
         });
-        vm.runInContext(panelSource.match(/^async function reviewAndSaveChange\([\s\S]*?^}/m)[0], runtime);
+        for (const name of ['prepareReviewPlan', 'commitReviewPlan', 'reviewAndSaveChange']) {
+            vm.runInContext(panelSource.match(new RegExp(`^async function ${name}\\([\\s\\S]*?^}`, 'm'))[0], runtime);
+        }
         const pending = runtime.reviewAndSaveChange({ id: 'session' }, { sharedAvatar: selectedAvatar }, { change: { type: 'character', action: 'replace' } }, 'change');
         for (let i = 0; i < 6; i++) await Promise.resolve();
         expect(commit).not.toHaveBeenCalled();

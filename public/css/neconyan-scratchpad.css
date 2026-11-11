@@ -1455,6 +1455,49 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     opacity: 0.85;
 }
 
+.scratchpad-change-batch {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.scratchpad-batch {
+    text-align: start;
+}
+
+.scratchpad-batch-item {
+    display: grid;
+    gap: 6px;
+    margin-top: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--neco-border);
+    border-radius: 12px;
+}
+
+.scratchpad-batch-item > p {
+    margin: 0;
+}
+
+.scratchpad-batch-title {
+    font-weight: 700;
+}
+
+.scratchpad-batch-item.is-unavailable .scratchpad-batch-title {
+    color: var(--neco-muted);
+}
+
+.scratchpad-batch-edit > summary {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+}
+
+.scratchpad-batch-edit .scratchpad-review-editor {
+    min-height: 8em;
+}
+
 :root body.neconyan dialog.popup.wide_dialogue_popup:has(.scratchpad-library) {
     background: var(--neco-surface);
     min-inline-size: 0;

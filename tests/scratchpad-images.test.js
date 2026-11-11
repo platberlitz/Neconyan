@@ -174,7 +174,9 @@ describe('Scratchpad images and avatar reviews', () => {
             images: { prepareAvatarChange: jest.fn(async () => stubPlan) },
             toastr: { success: jest.fn(), info: jest.fn() },
         });
-        vm.runInContext(indexSource.match(/^async function reviewAndSaveChange\([\s\S]*?^}/m)[0], runtime);
+        for (const name of ['prepareReviewPlan', 'commitReviewPlan', 'reviewAndSaveChange']) {
+            vm.runInContext(indexSource.match(new RegExp(`^async function ${name}\\([\\s\\S]*?^}`, 'm'))[0], runtime);
+        }
         await runtime.reviewAndSaveChange(session, message(), part, 'review-key');
         expect(popup).toHaveBeenCalledTimes(1);
         expect(applied).toEqual([plan.bucket]);
