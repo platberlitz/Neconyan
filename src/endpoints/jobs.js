@@ -10,6 +10,7 @@ import { retryConversationRoot } from '../generation/conversation-jobs.js';
 import { retainConversationAutomaticAcceptance } from '../generation/conversation-effects.js';
 import { decideJobApproval, readJobApproval } from '../generation/job-approvals.js';
 import { closeUnstartedRoleplayWorkflow } from '../generation/roleplay-workflow-cancellation.js';
+import { preserveRoleplayWorkflowReply } from '../generation/roleplay-kept-reply.js';
 import { requestRoleplayAgentStop } from '../generation/roleplay-agent-stop.js';
 import { readRoleplayPreview, subscribeRoleplayPreview } from '../generation/roleplay-preview.js';
 import { readConversationPreview, subscribeConversationPreview } from '../generation/conversation-preview.js';
@@ -372,6 +373,14 @@ router.post('/:id/cancel', async (request, response) => {
             if (!current || current.owner !== owner) continue;
             pending.push(...(current.children ?? []));
             abortJob(id);
+        }
+        // A root that became terminal in this request has no running reply
+        // child left to keep its text. Save the chunks that already finished.
+        const stopped = getJob(directories, job.id);
+        if (stopped?.type === 'media.roleplay-workflow' && stopped.state === 'cancelled' && !stopped.parentId) {
+            try { preserveRoleplayWorkflowReply({ owner, directories, job: stopped }, { code: 'JOB_CANCELLED' }); } catch (keepError) {
+                console.warn('[Roleplay] The finished part of a stopped reply could not be preserved.', keepError?.message ?? keepError);
+            }
         }
         closeUnstartedRoleplayWorkflow({ owner, directories, job: getJob(directories, job.id) });
         return response.json({ job: requested.job });

@@ -114,6 +114,17 @@ function readWorkflowDecisionRecord({ directories, rootJobId, turn }) {
  * turn (including a new group speaker) is an ordinary reply and returns null.
  */
 export function readWorkflowContinuationPrefix({ directories, job }) {
+    return readWorkflowContinuationStep({ directories, job })?.text ?? null;
+}
+
+/** The whole continued message, including earlier Agent rewrites, for the next automatic turn. */
+export function readWorkflowContinuedText({ directories, job }) {
+    const step = readWorkflowContinuationStep({ directories, job });
+    if (!step) return null;
+    return typeof step.output?.continuedText === 'string' ? step.output.continuedText : step.text;
+}
+
+function readWorkflowContinuationStep({ directories, job }) {
     const candidate = job?.intent?.request?.workflowCandidate;
     if (!candidate || typeof candidate.parentJobId !== 'string' || !Number.isSafeInteger(candidate.turn) || candidate.turn < 1) return null;
     // A tool turn writes no text decision of its own, so the walk skips turns with neither a decision nor selected text.
@@ -124,7 +135,20 @@ export function readWorkflowContinuationPrefix({ directories, job }) {
         if (!decision && !(previous?.selected && typeof previous.text === 'string' && previous.text.trim())) continue;
         if (decision?.decision?.kind !== 'continue' || !previous?.selected || typeof previous.text !== 'string' || !previous.text.trim()) return null;
         if (Number.isSafeInteger(candidate.speakerIndex) && previous.speakerIndex !== candidate.speakerIndex) return null;
-        return previous.text;
+        return previous;
+    }
+    return null;
+}
+
+/**
+ * The saved step of the latest earlier turn that produced text or a decision.
+ * A tool turn saves neither, so the walk passes over it, as the prefix walk above does.
+ */
+function readWorkflowPriorReplyText({ directories, rootJobId, turn }) {
+    if (!Number.isSafeInteger(turn)) return null;
+    for (let earlier = turn - 1; earlier >= 0; earlier--) {
+        const saved = readWorkflowReplyText({ directories, rootJobId, turn: earlier });
+        if (saved || readWorkflowDecisionRecord({ directories, rootJobId, turn: earlier })) return saved;
     }
     return null;
 }
@@ -451,8 +475,7 @@ export function collectRoleplayKeptReply({ directories, job, rootJobId = null })
     const speakerIndex = marker?.speakerIndex;
     const currentAssembled = Number.isSafeInteger(turn)
         ? readWorkflowReplyText({ directories, rootJobId, turn }) : null;
-    const priorAssembled = Number.isSafeInteger(turn) && turn > 0
-        ? readWorkflowReplyText({ directories, rootJobId, turn: turn - 1 }) : null;
+    const priorAssembled = readWorkflowPriorReplyText({ directories, rootJobId, turn });
     const usable = value => value?.selected && sameSpeaker(value, speakerIndex) && isText(value.text)
         && !outputWasRefused(value.output);
     const continuationOf = value => {
@@ -1038,8 +1061,7 @@ function workflowPriorText({ directories, job, rootJobId }) {
     const marker = job.intent?.request?.workflowCandidate;
     const turn = marker?.turn;
     const speakerIndex = marker?.speakerIndex;
-    if (!Number.isSafeInteger(turn) || turn < 1) return null;
-    const prior = readWorkflowReplyText({ directories, rootJobId, turn: turn - 1 });
+    const prior = readWorkflowPriorReplyText({ directories, rootJobId, turn });
     if (!prior?.selected || !sameSpeaker(prior, speakerIndex) || !isText(prior.text)) return null;
     return prior;
 }
