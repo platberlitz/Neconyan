@@ -774,6 +774,17 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     color: var(--neco-ink);
 }
 
+#neconyan-scratchpad .scratchpad-message-actions .scratchpad-read-aloud[aria-pressed="true"] {
+    background: var(--neco-ginger);
+    border-color: var(--neco-ginger);
+    color: var(--neco-on-accent);
+}
+
+#neconyan-scratchpad .scratchpad-message-actions .scratchpad-read-aloud[aria-pressed="true"]:hover:not(:disabled) {
+    background: var(--neco-ginger-hover);
+    color: var(--neco-on-accent);
+}
+
 .scratchpad-editor {
     display: flex;
     flex-direction: column;

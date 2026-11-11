@@ -1979,6 +1979,8 @@ function registerTtsCapability() {
         narrateTtsMessage,
         playPreparedAudio,
         beginPlayback,
+        stopPlayback: resetTtsPlayback,
+        isPlaying: () => !audioElement.paused || isTtsProcessing(),
     }));
 }
 
