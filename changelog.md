@@ -24,6 +24,7 @@
 - PR #613 (2026-11-11) `feat(scratchpad): let try again redo any reply`
 - PR #614 (2026-11-11) `feat(scratchpad): choose what a session export includes`
 - PR #615 (2026-11-11) `feat(scratchpad): read a reply aloud`
+- PR #616 (2026-11-11) `feat(scratchpad): review all change cards of a reply together`
 
 ## v1.5.4
 
