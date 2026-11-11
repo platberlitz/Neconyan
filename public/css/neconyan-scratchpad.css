@@ -905,6 +905,7 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
 }
 
 .scratchpad-app .scratchpad-send,
+.scratchpad-app .scratchpad-dictate,
 .scratchpad-app .scratchpad-plus,
 .scratchpad-app .scratchpad-file-remove {
     --sb-control-icon-physical-size: 44px;
@@ -1020,6 +1021,7 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
 }
 
 #neconyan-scratchpad .scratchpad-web-toggle[aria-pressed="true"],
+#neconyan-scratchpad .scratchpad-dictate[aria-pressed="true"],
 #neconyan-scratchpad .scratchpad-read-links[aria-pressed="true"] {
     background: var(--neco-ginger);
     border-color: var(--neco-ginger);
@@ -1027,6 +1029,7 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
 }
 
 #neconyan-scratchpad .scratchpad-web-toggle[aria-pressed="true"]:hover:not(:disabled),
+#neconyan-scratchpad .scratchpad-dictate[aria-pressed="true"]:hover:not(:disabled),
 #neconyan-scratchpad .scratchpad-read-links[aria-pressed="true"]:hover:not(:disabled) {
     background: var(--neco-ginger-hover);
 }
