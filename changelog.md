@@ -31,6 +31,7 @@
 - PR #620 (2026-11-11) `feat(scratchpad): branch a session from an earlier message`
 - PR #621 (2026-11-11) `feat(scratchpad): save context choices as reusable setups`
 - PR #623 (2026-11-11) `feat(scratchpad): dictate a message with the microphone`
+- PR #624 (2026-11-11) `feat(scratchpad): suggest changes to agents`
 
 ## v1.5.4
 
