@@ -43,6 +43,8 @@ Pick who you are talking to under **Talking with**, type in the box at the botto
 
 You can add your own. Press the pencil at the end of the row (**Edit quick prompts**), choose **Add a prompt**, give it a **Name on the button** and the **Text it fills in**, then press **Save quick prompts**. **Move up**, **Move down** and **Delete prompt** rearrange the list. Your prompts are saved for your account, so they show in every Scratchpad and on your other devices, ahead of the built-in ones. You can keep up to 24.
 
+**Dictate**, the microphone button beside **Send**, records you and puts what you said into the message box as text. Press it, speak, then press **Stop and transcribe**; the words are added after anything already in the box, and nothing is sent until you press **Send**. A recording stops by itself after 2 minutes. Under **Context → Dictation**, **Transcription service** chooses who turns the recording into text: **This server (Whisper, no key needed)**, which is slow the first time while it fetches its speech model, or OpenAI, Groq or Mistral, which use the API key saved for that service and receive your recording. The button only appears in browsers that can record from a microphone, and the browser asks for microphone permission the first time.
+
 **Typed tools** work out small things before the message is sent, so the assistant reads a settled result. Start a line with one of these:
 
 - `/roll 2d6+1` rolls dice and shows every die. Add dice together (`/roll 1d20+1d4`), and put a note after the dice (`/roll d20 for stealth`). Up to 100 dice with 2 to 1,000 sides.

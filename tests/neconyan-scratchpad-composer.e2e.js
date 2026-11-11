@@ -42,7 +42,8 @@ for (const phone of [false, true]) {
         await expect(plus).toBeFocused();
         await expect(web).toHaveAttribute('aria-pressed', 'false');
         const row = await page.locator('.scratchpad-compose-row').boundingBox();
-        expect((await composer.boundingBox()).width, 'The message gets all space beyond two 44px buttons and two 8px gaps').toBeCloseTo(row.width - 104, 1);
+        await expect(page.locator('.scratchpad-compose-row .scratchpad-dictate')).toBeVisible();
+        expect((await composer.boundingBox()).width, 'The message gets all space beyond three 44px buttons and three 8px gaps').toBeCloseTo(row.width - 156, 1);
         await expect(composer).toHaveAttribute('rows', '1');
         const measure = () => composer.evaluate(input => {
             const style = getComputedStyle(input);

@@ -53,11 +53,12 @@ import { showHtmlPreview } from './html-preview.js';
 import { MAX_REPLY_SWIPES, replySwipes } from './swipes.js';
 import { buildSessionExport, chooseSessionExport, exportFileName, MAX_IMPORT_BYTES, sessionMarkdown, withoutAttachments } from './export.js';
 import { roundToDiscuss } from './discuss.js';
+import { canDictate, DICTATION_SERVICES, DictationError, dictationService, MAX_DICTATION_SECONDS, recordingToWav, startRecording, transcribeWav } from './dictation.js';
 import { expandTypedTools, MAX_ROLL_DICE, MAX_ROLL_SIDES, TypedToolError } from './typed-tools.js';
 import { canReadAloud, isReadingAloud, stopReadAloud, toggleReadAloud } from './read-aloud.js';
 import { editQuickPrompts } from './quick-prompts.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261112-scratchpad-branch';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261112-scratchpad-dictation';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -170,6 +171,8 @@ const app = {
     quickPrompts: { prompts: [], revision: 0 },
     contextSetups: { setups: [], revision: 0 },
     contextSetup: '',
+    dictation: 'local',
+    dictating: null,
     pickLimit: PICK_PAGE,
     sessionQuery: '',
     everyList: { query: '', loading: false, results: [], more: false, error: '' },
@@ -190,6 +193,7 @@ function readPrefs() {
         if (Number.isFinite(saved.width)) app.width = saved.width;
         if (allAssistants().some(item => item.id === saved.assistant)) app.assistant = saved.assistant;
         if (typeof saved.collapsed === 'boolean') app.overviewCollapsed = saved.collapsed;
+        if (DICTATION_SERVICES.some(service => service.id === saved.dictation)) app.dictation = saved.dictation;
         for (const { id } of allAssistants()) {
             const connection = saved.connections?.[id];
             if (connection?.kind === 'current') app.connections[id] = { kind: 'current' };
@@ -209,6 +213,7 @@ function writePrefs() {
         assistant: app.assistant,
         collapsed: app.overviewCollapsed,
         connections: app.connections,
+        dictation: app.dictation,
     }));
 }
 
@@ -497,6 +502,7 @@ function buildChatPanel() {
     }, { icon: 'fa-plus', className: 'scratchpad-plus', title: t`Message options` });
     el.plus.setAttribute('aria-controls', 'scratchpad-compose-menu');
     el.plus.setAttribute('aria-expanded', 'false');
+    el.dictate = canDictate() ? iconButton('', () => void toggleDictation(), { icon: 'fa-microphone-lines', className: 'scratchpad-dictate', title: t`Dictate`, pressed: false }) : null;
     el.composeActions = h('div', { class: 'scratchpad-compose-actions', onkeydown: event => {
         if (event.key === 'Escape') { event.stopPropagation(); closeComposeMenu(); el.plus.focus(); }
     }, onfocusout: event => {
@@ -531,7 +537,7 @@ function buildChatPanel() {
         el.overviewBar,
         el.overview,
         el.messages,
-        h('div', { class: 'scratchpad-compose' }, el.quick, el.attachments, el.fileStatus, h('div', { class: 'scratchpad-compose-row' }, el.composeActions, el.composer, el.send)),
+        h('div', { class: 'scratchpad-compose' }, el.quick, el.attachments, el.fileStatus, h('div', { class: 'scratchpad-compose-row' }, el.composeActions, el.composer, el.dictate, el.send)),
     ]);
 }
 
@@ -2117,6 +2123,115 @@ function renderEditor(session, message) {
             iconButton(t`Cancel`, done, { icon: 'fa-xmark' })));
 }
 
+/* Dictation */
+
+function dictationServiceLabel(id) {
+    return {
+        local: t`This server (Whisper, no key needed)`,
+        openai: t`OpenAI`,
+        groq: t`Groq`,
+        mistral: t`Mistral`,
+    }[id];
+}
+
+function dictationProblem(error) {
+    const service = dictationServiceLabel(dictationService(app.dictation).id);
+    switch (error instanceof DictationError ? error.code : '') {
+        case 'unsupported': return t`This browser cannot record from the microphone here.`;
+        case 'microphone': return t`The microphone could not be used. Allow microphone access for this site, then try again.`;
+        case 'audio': return t`That recording could not be read. Try again.`;
+        case 'key': return t`No API key is saved for ${service}. Add one in API Connections, or pick another service under Context → Dictation.`;
+        case 'empty': return t`No speech was heard. Try again, a little closer to the microphone.`;
+        default: return t`${service} could not transcribe that recording. Try again, or pick another service under Context → Dictation.`;
+    }
+}
+
+function renderDictate(disabled) {
+    const button = app.el.dictate;
+    if (!button) return;
+    const state = app.dictating?.state ?? 'idle';
+    const label = state === 'recording' ? t`Stop and transcribe` : state === 'transcribing' ? t`Transcribing…` : t`Dictate`;
+    button.setAttribute('aria-label', label);
+    button.title = label;
+    button.setAttribute('aria-pressed', String(state === 'recording'));
+    button.classList.toggle('is-busy', state === 'transcribing');
+    button.querySelector('i').className = `fa-solid ${state === 'recording' ? 'fa-stop' : state === 'transcribing' ? 'fa-spinner' : 'fa-microphone-lines'}`;
+    button.disabled = state === 'transcribing' || state === 'starting' || (state === 'idle' && disabled);
+}
+
+function cancelDictation() {
+    const dictating = app.dictating;
+    if (!dictating) return;
+    app.dictating = null;
+    dictating.recorder?.cancel();
+    dictating.abort.abort();
+    if (app.el.dictate) renderDictate(app.el.composer.disabled);
+}
+
+async function finishDictation(dictating) {
+    if (app.dictating !== dictating || dictating.state !== 'recording') return;
+    dictating.state = 'transcribing';
+    renderDictate(false);
+    try {
+        const text = await transcribeWav(await recordingToWav(await dictating.recorder.stop()), app.dictation, { signal: dictating.abort.signal });
+        if (app.dictating !== dictating) return;
+        const composer = app.el.composer;
+        const before = composer.value;
+        composer.value = before && !/\s$/.test(before) ? `${before} ${text}` : `${before}${text}`;
+        composer.dispatchEvent(new Event('input', { bubbles: true }));
+        composer.focus();
+        composer.setSelectionRange(composer.value.length, composer.value.length);
+    } catch (error) {
+        if (app.dictating !== dictating) return;
+        console.warn('[Scratchpad] Dictation failed', error);
+        toastr.warning(dictationProblem(error), t`Dictation`);
+    } finally {
+        if (app.dictating === dictating) {
+            app.dictating = null;
+            renderDictate(app.el.composer.disabled);
+            if (document.activeElement === document.body) app.el.dictate.focus();
+        }
+    }
+}
+
+async function toggleDictation() {
+    if (app.dictating) return finishDictation(app.dictating);
+    const dictating = { state: 'starting', recorder: null, abort: new AbortController() };
+    app.dictating = dictating;
+    app.el.dictate.disabled = true;
+    try {
+        const recorder = await startRecording({ onLimit: () => {
+            toastr.info(t`Dictation stops after ${MAX_DICTATION_SECONDS / 60} minutes, so this recording is being transcribed now.`, t`Dictation`);
+            void finishDictation(dictating);
+        } });
+        if (app.dictating !== dictating) return recorder.cancel();
+        dictating.recorder = recorder;
+        dictating.state = 'recording';
+    } catch (error) {
+        if (app.dictating !== dictating) return;
+        app.dictating = null;
+        console.warn('[Scratchpad] Dictation could not start', error);
+        toastr.warning(dictationProblem(error), t`Dictation`);
+    }
+    renderDictate(app.el.composer.disabled);
+    app.el.dictate.focus();
+}
+
+function renderDictationSettings() {
+    if (!app.el.dictate) return null;
+    const select = h('select', { id: 'scratchpad-dictation-service', class: 'text_pole', onchange: () => {
+        app.dictation = dictationService(select.value).id;
+        writePrefs();
+    } }, DICTATION_SERVICES.map(service => h('option', { value: service.id, text: dictationServiceLabel(service.id) })));
+    select.value = app.dictation;
+    return h('section', { class: 'scratchpad-section scratchpad-dictation' },
+        h('h3', { class: 'scratchpad-section-title', text: t`Dictation` }),
+        h('p', { class: 'scratchpad-muted', text: t`The microphone button beside Send records you, and the service below turns the recording into text in the message box. Nothing is sent until you press Send.` }),
+        h('div', { class: 'scratchpad-field' },
+            h('label', { for: 'scratchpad-dictation-service', text: t`Transcription service` }), select),
+        h('p', { class: 'scratchpad-muted', text: t`This server needs no key, but it is slow the first time while it fetches its speech model. The others use the API key saved for that service, and your recording is sent to them.` }));
+}
+
 function renderComposer() {
     syncDraft();
     fitComposer();
@@ -2146,6 +2261,7 @@ function renderComposer() {
     el.readLinks.disabled = !app.source || !app.bucket || app.sending || Boolean(pending);
     el.plus.classList.toggle('menu_button_primary', currentSettings().webSearch === true || readLinks);
     el.attach.disabled = disabled;
+    renderDictate(el.composer.disabled);
     clear(el.attachments);
     append(el.attachments, renderAttachments(app.attachments, { draft: true }));
     el.attachments.hidden = !app.attachments.length;
@@ -2287,6 +2403,7 @@ function renderContext({ force = true } = {}) {
         onRefresh: () => void refreshWebSearchConfig({ quiet: false }),
         onDraft: draft => { app.webSearchDraft = draft; },
     }));
+    panel.append(...[renderDictationSettings()].filter(Boolean));
     if (!app.source) {
         panel.append(h('p', { class: 'scratchpad-empty', text: t`Open a chat to choose what Scratchpad reads.` }));
         return;
@@ -3056,6 +3173,7 @@ export function hideScratchpad() {
     if (!app.open) return;
     app.open = false;
     stopReadAloud();
+    cancelDictation();
     app.openMenus.clear();
     app.openMenusSessionId = '';
     clearInterval(app.timer);
