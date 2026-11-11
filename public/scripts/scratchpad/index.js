@@ -56,7 +56,7 @@ import { roundToDiscuss } from './discuss.js';
 import { canReadAloud, isReadingAloud, stopReadAloud, toggleReadAloud } from './read-aloud.js';
 import { editQuickPrompts } from './quick-prompts.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261112-scratchpad-search-all';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261112-scratchpad-branch';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -2024,6 +2024,20 @@ async function removeMessage(session, message) {
     await change(source => api.deleteMessage(source, session.id, message.id), t`Scratchpad could not delete that message.`, scope);
 }
 
+/** The original session stays as it is; the copy ends at this message, or just before it when it is the user's own. */
+async function branchFrom(session, message) {
+    const own = message.role === 'user';
+    const saved = await change(source => api.branchSession(source, session.id, message.id), t`Scratchpad could not branch from that message.`);
+    if (!saved) return;
+    if (own) {
+        usePrompt(message.text);
+        toastr.success(t`Branched into a new session. Your message is in the box to reword and send; the original session is unchanged.`);
+    } else {
+        toastr.success(t`Branched into a new session. The original session is unchanged.`);
+        app.el.composer.focus();
+    }
+}
+
 function renderMessageActions(session, message, { retry }) {
     const busy = Boolean(pendingReply(session));
     const actions = h('div', { class: 'scratchpad-message-actions' });
@@ -2046,6 +2060,8 @@ function renderMessageActions(session, message, { retry }) {
     if (retry) {
         actions.append(iconButton('', () => void send({ regenerate: message.id }), { icon: 'fa-rotate-right', title: t`Try again`, disabled: busy || app.sending }));
     }
+    actions.append(iconButton('', () => void branchFrom(session, message), { icon: 'fa-code-branch', className: 'scratchpad-branch',
+        title: message.role === 'user' ? t`Reword in a new session` : t`Branch into a new session from here`, disabled: busy || app.sending }));
     actions.append(iconButton('', () => void removeMessage(session, message), { icon: 'fa-trash', title: t`Delete`, disabled: busy }));
     return actions;
 }

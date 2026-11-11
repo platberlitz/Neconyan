@@ -141,6 +141,57 @@ test('reply swipes retain edits, reasoning and proposal decisions across durable
     }
 });
 
+test('a branch copies a session up to one message, keeps its own records and leaves the original alone', t => {
+    const a = account(t);
+    const attachments = [{ name: 'notes.txt', size: 5, kind: 'text', mimeType: 'text/plain', text: 'Hello' }];
+    const webSearch = { provider: 'brave', query: 'lantern festival', sources: [{ title: 'Lanterns', url: 'https://example.com/lanterns' }] };
+    const webPages = [{ url: 'https://example.com/guide', title: 'Guide' }];
+    const original = a.mutate(OTHER, bucket => {
+        const session = store.createSession(bucket, { name: 'Harbour plan', settings: { depth: 7, picked: [3] } });
+        session.pinned = true;
+        session.messages.push(
+            { id: 'a'.repeat(24), role: 'user', text: 'First question', created: '2026-11-11T00:00:00.000Z', attachments },
+            { id: 'b'.repeat(24), role: 'assistant', state: 'done', text: 'First answer', created: '2026-11-11T00:00:01.000Z', assistant: 'taro',
+                reasoning: 'Thinking', webSearch, webPages, proposals: { 0: 'applied' } },
+            { id: 'c'.repeat(24), role: 'user', text: 'Second question', created: '2026-11-11T00:00:02.000Z' },
+            { id: 'd'.repeat(24), role: 'assistant', state: 'pending', text: '', created: '2026-11-11T00:00:03.000Z', assistant: 'taro', jobId: 'job' },
+        );
+        return session;
+    });
+    const before = JSON.stringify(a.read(OTHER).sessions.find(item => item.id === original.id));
+
+    const reply = a.mutate(OTHER, bucket => store.branchSession(bucket, original.id, 'b'.repeat(24)));
+    assert.equal(reply.draft, '');
+    assert.equal(reply.session.name, 'Harbour plan (branch)');
+    assert.equal(reply.session.pinned, false);
+    assert.equal(reply.session.settings.depth, 7);
+    assert.deepEqual(reply.session.messages.map(item => [item.role, item.text]), [['user', 'First question'], ['assistant', 'First answer']]);
+    assert.deepEqual(reply.session.messages[0].attachments, attachments);
+    assert.equal(reply.session.messages[1].reasoning, 'Thinking');
+    assert.deepEqual(reply.session.messages[1].webSearch, webSearch);
+    assert.deepEqual(reply.session.messages[1].webPages, webPages);
+    assert.equal(reply.session.messages[1].proposals, undefined);
+    assert.ok(reply.session.messages.every(item => !['a'.repeat(24), 'b'.repeat(24)].includes(item.id)));
+
+    const own = a.mutate(OTHER, bucket => store.branchSession(bucket, original.id, 'c'.repeat(24)));
+    assert.equal(own.draft, 'Second question');
+    assert.deepEqual(own.session.messages.map(item => item.text), ['First question', 'First answer']);
+
+    const first = a.mutate(OTHER, bucket => store.branchSession(bucket, original.id, 'a'.repeat(24)));
+    assert.equal(first.draft, 'First question');
+    assert.deepEqual(first.session.messages, []);
+
+    const bucket = a.read(OTHER);
+    assert.equal(bucket.activeSessionId, first.session.id);
+    assert.equal(JSON.stringify(bucket.sessions.find(item => item.id === original.id)), before);
+    assert.throws(() => a.mutate(OTHER, list => store.branchSession(list, original.id, 'd'.repeat(24))), { code: 'SCRATCHPAD_REPLY_PENDING' });
+    assert.throws(() => a.mutate(OTHER, list => store.branchSession(list, original.id, 'e'.repeat(24))), { code: 'SCRATCHPAD_MESSAGE_MISSING' });
+
+    const long = a.mutate(OTHER, list => store.createSession(list, { name: 'N'.repeat(80), messages: [{ role: 'user', text: 'Hi' }, { role: 'assistant', text: 'Yo' }] }));
+    const named = a.mutate(OTHER, list => store.branchSession(list, long.id, long.messages[1].id));
+    assert.equal(named.session.name, `${'N'.repeat(71)} (branch)`);
+});
+
 test('chosen export extras survive import, and imported web sources are marked as not searched here', t => {
     const a = account(t);
     const attachments = [{ name: 'notes.txt', size: 5, kind: 'text', mimeType: 'text/plain', text: 'Hello' }];

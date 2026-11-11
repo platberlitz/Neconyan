@@ -735,6 +735,37 @@ export function createSession(bucket, input = {}) {
     return session;
 }
 
+const BRANCH_SUFFIX = ' (branch)';
+
+/**
+ * Copies a session up to one message into a new session of the same list.
+ * A reply is the last message of the copy; one of the owner's own messages is
+ * left out and returned as a draft, so it can be reworded and sent again.
+ */
+export function branchSession(bucket, sessionId, messageId) {
+    const original = findSession(bucket, sessionId);
+    const message = findMessage(original, messageId);
+    if (message.state === 'pending' || hasPendingImages(message)) {
+        throw fail('SCRATCHPAD_REPLY_PENDING', 'Wait for the reply or image to finish before branching from it.', 409);
+    }
+    const index = original.messages.indexOf(message);
+    const kept = original.messages.slice(0, message.role === 'user' ? index : index + 1).filter(item => item.state !== 'pending');
+    const name = `${original.name.slice(0, MAX_NAME_LENGTH - BRANCH_SUFFIX.length).trimEnd()}${BRANCH_SUFFIX}`;
+    const session = createSession(bucket, { assistant: original.assistant, gender: original.gender, name,
+        settings: { ...structuredClone(original.settings), notes: original.settings.notes.filter(ref => !ref.grantId) }, messages: structuredClone(kept) });
+    // These records were made by this server for these very replies, so the copy keeps them as they are.
+    if (session.messages.length === kept.length) {
+        session.messages.forEach((copy, position) => {
+            const source = kept[position];
+            if (copy.role !== 'assistant' || source.role !== 'assistant') return;
+            if (source.webSearch) copy.webSearch = structuredClone(source.webSearch);
+            else delete copy.webSearch;
+            if (source.webPages) copy.webPages = structuredClone(source.webPages);
+        });
+    }
+    return { session, draft: message.role === 'user' ? message.text : '' };
+}
+
 export function updateSession(bucket, sessionId, input = {}) {
     const session = findSession(bucket, sessionId);
     if (input.settings !== undefined) session.settings = normaliseSettings(input.settings, session.settings);

@@ -756,6 +756,7 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     top: 100%;
     z-index: 2;
     width: max-content;
+    max-width: calc(100cqi - 48px);
     padding: 6px;
     border: 1px solid var(--neco-border);
     border-radius: 12px;
