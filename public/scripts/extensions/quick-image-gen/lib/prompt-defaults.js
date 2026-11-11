@@ -1,85 +1,61 @@
 // Editable starting points for the built-in Text AI instructions.
-// Keep these in sync with the adaptive builders in index.js: they mirror the
-// standard single-message case, while toggle-driven blocks (identity rules,
-// quality/lighting/artist additions, name requirements) are appended at
-// request time by the custom-instruction path.
+// Keep these in sync with the adaptive builders in prompt-instructions.js: they
+// mirror the standard single-message case, while toggle-driven blocks (identity
+// rules, quality/lighting/artist additions) are appended at request time by the
+// custom-instruction path.
 
 export const DEFAULT_TAGS_INSTRUCTION_TEMPLATE = `### STANDALONE IMAGE GENERATION TASK ###
+Turn the scene below into Danbooru-style tags. This is a separate task, not a chat reply: use only the scene and character info given here.
 
-CRITICAL - THIS IS NOT A CONTINUATION OF CHAT:
-- IGNORE any ambient chat history outside the selected scene below
-- Generate a FRESH image prompt based ONLY on the selected scene below
-- DO NOT repeat or paraphrase the scene text verbatim
-- This is a standalone generation task
+Output ONLY comma-separated tags on one line. No sentences, no explanations.
+Example: 1girl, hatsune_miku, vocaloid, long_hair, twintails, blue_hair, blue_eyes, detached_sleeves, sitting, smile, looking_at_viewer, classroom, window, sunlight, masterpiece, best_quality
 
-### OUTPUT FORMAT (MANDATORY) ###
-Output ONLY comma-separated Danbooru/Booru-style tags. No sentences. No descriptions. No paragraphs. No prose. No explanations.
-If you write a sentence instead of tags, you have FAILED the task.
+Create Danbooru-style tags for this scene: {{scene}}
 
-CORRECT example output:
-1girl, hatsune_miku, vocaloid, long_hair, twintails, blue_hair, blue_eyes, detached_sleeves, thighhighs, sitting, smile, looking_at_viewer, classroom, window, sunlight, masterpiece, best_quality
-
-WRONG (DO NOT do this):
-"A girl with long blue twintails sits in a classroom by the window, smiling at the viewer."
-
-### IMAGE GENERATION TASK ###
-
-Create Danbooru/Booru-style tags for this scene: {{scene}}
-
-Character info: {{charDesc}}
-
+CHARACTER INFO:
+{{char}}'s appearance: {{charDesc}}
 {{user}}'s persona: {{userDesc}}
 
-Required tag categories:
-- Character name + series name (use recognizable fictional media character tags whenever recognized)
+Tag categories to cover:
+- Character name + series (use the recognised character and series tags)
 - Physical traits (hair, eyes, body, skin)
 - Clothing and accessories
 - Pose and expression
 - Background/setting
-- Quality tags (masterpiece, best quality, etc.)
+- Quality tags (masterpiece, best quality)
 
-CRITICAL RESTRICTIONS (MUST FOLLOW):
-- NEVER use realistic style tags (e.g., realistic, photorealistic, hyperrealistic, photography, etc.)
-- NEVER use realistic artists (e.g., wlop, artgerm, rossdraws, etc.)
-- NEVER use common/overused artists (e.g., sakimichan, greg rutkowski, alphonse mucha, etc.)
+Never use:
+- Realism tags (realistic, photorealistic, photography)
+- Realistic or overused artists (wlop, artgerm, sakimichan, greg rutkowski)
 
 Tags:`;
 
 export const DEFAULT_NATURAL_INSTRUCTION_TEMPLATE = `[STANDALONE IMAGE PROMPT GENERATION TASK]
-
-CRITICAL INSTRUCTIONS:
-- IGNORE any ambient chat history outside the selected scene below
-- Generate ONLY a new image prompt based on the selected scene below
-- DO NOT repeat or paraphrase the scene text verbatim
-- This is a standalone task, not a continuation of chat
-
-[Output ONLY an image generation prompt. No commentary or explanation.]
+Write one image prompt for the scene below. This is a separate task, not a chat reply: use only the scene and reference given here, and describe what is seen instead of repeating the scene text.
 
 CHARACTER REFERENCE:
-{{charDesc}}
-
+{{char}}'s appearance: {{charDesc}}
 {{user}}'s persona: {{userDesc}}
 
 CURRENT SCENE: {{scene}}
 
-Write a detailed image prompt describing:
-- The characters involved with their defining visual traits (hair color, eye color, outfit, distinguishing features)
-- Their poses, expressions, and body language
-- The setting/background
+Describe in flowing natural language, no tags or lists:
+- Who is present and their defining visual traits (hair, eyes, build, outfit, distinguishing features)
+- Pose, expression and body language
+- Setting and background
 - Lighting and atmosphere
-- High quality visual details (sharp focus, detailed rendering, etc.)
+- Art style only where the scene or reference implies one (anime, illustration, painting, 3D, photo). Stay style-neutral otherwise; realism is never the default
+
+Output only the image prompt, no commentary.
 
 Prompt:`;
 
 export const DEFAULT_TWO_STEP_INSTRUCTION_TEMPLATE = `[STANDALONE VISUAL SCENE DESCRIPTION TASK]
+Turn the selected chat scene into one concise plain-language visual description for an image generator. This is a separate task, not a roleplay reply.
 
-Convert the selected chat scene into one concise plain-language visual description for an image generator.
-
-Rules:
-- Output ONLY the plain description. No commentary, no markdown, no speaker labels, no tags, no bullet list.
-- Describe one coherent visible moment: subjects, identities, poses, expressions, clothing, setting, lighting, mood, and camera framing.
-- Preserve explicit species, ages, body traits, names, and non-human details from the scene or reference context.
-- Do not continue the roleplay and do not quote dialogue.
+- Describe one coherent visible moment: subjects, identities, poses, expressions, clothing, setting, lighting, mood and framing.
+- Keep stated species, ages, body traits, names and non-human details from the scene or reference context.
+- Output only the description: no dialogue, speaker labels, tags, lists, markdown or commentary.
 
 REFERENCE CONTEXT:
 {{char}}'s appearance/profile: {{charDesc}}
