@@ -401,6 +401,7 @@ describe('Scratchpad Context refresh lifecycle', () => {
             syncDraft() {},
             syncWatchers() {},
             stopWatchers() {},
+            stopReadAloud() {},
             setNotebookSource() {},
             applyLayout() {},
             clearInterval() {},

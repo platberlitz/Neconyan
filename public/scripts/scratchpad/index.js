@@ -52,9 +52,10 @@ import { previewForBlock, previewFromText, previewLanguage } from './preview-sou
 import { showHtmlPreview } from './html-preview.js';
 import { MAX_REPLY_SWIPES, replySwipes } from './swipes.js';
 import { buildSessionExport, chooseSessionExport, exportFileName, MAX_IMPORT_BYTES, sessionMarkdown, withoutAttachments } from './export.js';
+import { canReadAloud, isReadingAloud, stopReadAloud, toggleReadAloud } from './read-aloud.js';
 import { editQuickPrompts } from './quick-prompts.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261111-scratchpad-export';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261111-scratchpad-read-aloud';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -1849,6 +1850,22 @@ async function addAsReplyVersion(session, message) {
     } catch (error) { reportError(error, t`That reply could not be added to the story.`); }
 }
 
+async function readAloud(session, message) {
+    const refresh = () => {
+        if (!app.open) return;
+        renderMessages();
+        app.el.messages.querySelector(`[data-message-id="${CSS.escape(message.id)}"] .scratchpad-read-aloud`)?.focus({ preventScroll: true });
+    };
+    try {
+        const speaker = message.assistantName || assistantInfo(message.assistant, session).name;
+        const result = await toggleReadAloud(message, speaker, refresh);
+        if (result === 'empty') toastr.info(t`This reply has no text to read aloud.`);
+    } catch (error) {
+        console.warn('[Scratchpad]', error);
+        toastr.warning(t`That reply could not be read aloud. Check the text to speech settings.`);
+    }
+}
+
 async function copyText(text) {
     try {
         await navigator.clipboard.writeText(text);
@@ -1883,6 +1900,10 @@ function renderMessageActions(session, message, { retry }) {
         if (app.source.kind === 'roleplay') {
             actions.append(iconButton('', () => void addAsReplyVersion(session, message), { icon: 'fa-layer-group', title: t`Add as another version of the last story reply`, disabled: busy }));
         }
+    }
+    if (message.role === 'assistant' && message.text && canReadAloud()) {
+        const reading = isReadingAloud(message.id);
+        actions.append(iconButton('', () => void readAloud(session, message), { icon: reading ? 'fa-stop' : 'fa-volume-high', title: reading ? t`Stop reading` : t`Read aloud`, pressed: reading, className: 'scratchpad-read-aloud' }));
     }
     if (retry) {
         actions.append(iconButton('', () => void send({ regenerate: message.id }), { icon: 'fa-rotate-right', title: t`Try again`, disabled: busy || app.sending }));
@@ -2684,6 +2705,7 @@ export function hideScratchpad() {
     closeComposeMenu();
     if (!app.open) return;
     app.open = false;
+    stopReadAloud();
     app.openMenus.clear();
     app.openMenusSessionId = '';
     clearInterval(app.timer);
