@@ -16,6 +16,7 @@ const { acceptScratchpadReply, finalizeScratchpadSubmission, registerScratchpadJ
 const store = await import('../src/scratchpad/store.js');
 const { readInstructionsLocked, updateInstructionsLocked } = await import('../src/scratchpad/instructions.js');
 const { readQuickPromptsLocked, updateQuickPromptsLocked, MAX_QUICK_PROMPTS } = await import('../src/scratchpad/quick-prompts.js');
+const { readContextSetupsLocked, updateContextSetupsLocked, MAX_CONTEXT_SETUPS, CONTEXT_SETUP_KEYS } = await import('../src/scratchpad/context-setups.js');
 const { readAssistantsLocked, saveAssistantLocked, deleteAssistantLocked, readAssistantCardLocked, assistantPortrait, resolveAssistant } = await import('../src/scratchpad/assistants.js');
 const { write: writeCard } = await import('../src/character-card-parser.js');
 const { buildScratchpadMessages, buildScratchpadSystemPrompt } = await import('../src/scratchpad/prompt.js');
@@ -807,6 +808,54 @@ test('saved quick prompts are account-owned, ordered, bounded and protected agai
     const filename = path.join(a.directories.root, 'scratchpad', 'quick-prompts.json');
     fs.writeFileSync(filename, '{broken');
     assert.throws(() => update([prompt], 4), error => error.code === 'SCRATCHPAD_QUICK_PROMPTS_DAMAGED');
+    assert.equal(fs.readFileSync(filename, 'utf8'), '{broken');
+});
+
+test('saved context setups keep only portable choices, are account-owned and protected against stale saves or damaged files', t => {
+    const a = account(t);
+    const b = account(t);
+    const read = who => store.withScratchpad(who.base, readContextSetupsLocked);
+    const update = (setups, revision) => store.withScratchpad(a.base, lease => updateContextSetupsLocked(lease, setups, revision));
+    assert.deepEqual(read(a), { version: 1, revision: 0, setups: [] });
+    const saved = update([{
+        name: '  Lean   read ',
+        extra: 'dropped',
+        settings: {
+            depth: 4, include: { card: false, preset: true, unknown: true }, maxTokens: 512, stream: false, webSearch: true, readLinks: true, prefill: 'Ideas:',
+            picked: ['m1'], loreOverrides: { 'Book:1': 'always' }, connection: { kind: 'profile', profileId: 'saved' }, roundTable: true, notes: [],
+        },
+    }], 0);
+    assert.deepEqual(saved.setups, [{
+        name: 'Lean read',
+        settings: {
+            depth: 4, include: { card: false, persona: true, authorsNote: true, lore: true, preset: true, hidden: false },
+            maxTokens: 512, stream: false, webSearch: true, readLinks: true, prefill: 'Ideas:', partialPrefill: '',
+        },
+    }]);
+    assert.deepEqual(Object.keys(saved.setups[0].settings), [...CONTEXT_SETUP_KEYS]);
+    assert.deepEqual(read(a), saved);
+    assert.deepEqual(read(b).setups, [], 'another account sees none of them');
+    assert.throws(() => update([], 0), error => error.code === 'SCRATCHPAD_CONTEXT_SETUPS_CHANGED' && error.status === 409);
+    const setup = { name: 'One', settings: {} };
+    assert.throws(() => update(Array.from({ length: MAX_CONTEXT_SETUPS + 1 }, (_, index) => ({ ...setup, name: `Setup ${index}` })), 1),
+        error => error.code === 'SCRATCHPAD_CONTEXT_SETUPS_FULL');
+    assert.throws(() => update([{ name: '字'.repeat(41), settings: {} }], 1), /no longer than 40 characters/);
+    assert.throws(() => update([setup, { name: ' one ', settings: {} }], 1), /cannot share a name/);
+    for (const invalid of [null, 'text', [null], [{ name: 'One' }], [{ name: ' ', settings: {} }], [{ name: 'One', settings: [] }]]) {
+        assert.throws(() => update(invalid, 1), error => error.code === 'SCRATCHPAD_CONTEXT_SETUPS_INVALID');
+    }
+    assert.throws(() => update([{ name: 'One', settings: { prefill: 5 } }], 1), error => error.code === 'SCRATCHPAD_PREFILL_INVALID');
+    assert.deepEqual(read(a), saved);
+    const session = startSession(a, { picked: ['keep'], roundTable: true });
+    const applied = store.mutateBucket(a.base, SOURCE, bucket => store.updateSession(bucket, session.id, { settings: saved.setups[0].settings }));
+    assert.equal(applied.settings.depth, 4);
+    assert.equal(applied.settings.include.card, false);
+    assert.deepEqual(applied.settings.picked, ['keep'], 'applying a setup leaves the session\'s own picks alone');
+    assert.equal(applied.settings.roundTable, true);
+    assert.deepEqual(update([], 1).setups, []);
+    const filename = path.join(a.directories.root, 'scratchpad', 'context-setups.json');
+    fs.writeFileSync(filename, '{broken');
+    assert.throws(() => update([setup], 2), error => error.code === 'SCRATCHPAD_CONTEXT_SETUPS_DAMAGED');
     assert.equal(fs.readFileSync(filename, 'utf8'), '{broken');
 });
 
@@ -2010,6 +2059,14 @@ test('the endpoint checks the account and answers with the saved Scratchpad', as
     assert.equal((await post('/quick-prompts/update', quickPayload)).status, 409);
     assert.equal((await post('/quick-prompts', {}, 'someone-else')).status, 409);
     assert.equal((await post('/quick-prompts/update', { ...quickPayload, expectedRevision: 1 }, 'someone-else')).status, 409);
+    const setups = await post('/context-setups', {});
+    assert.equal(setups.status, 200, 'saved setups do not need an open chat');
+    assert.deepEqual((await setups.json()).contextSetups, { version: 1, revision: 0, setups: [] });
+    const setupPayload = { setups: [{ name: 'Lean', settings: { depth: 3 } }], expectedRevision: 0 };
+    assert.equal((await post('/context-setups/update', setupPayload)).status, 200);
+    assert.equal((await (await post('/context-setups', {})).json()).contextSetups.setups[0].settings.depth, 3);
+    assert.equal((await post('/context-setups/update', setupPayload)).status, 409);
+    assert.equal((await post('/context-setups', {}, 'someone-else')).status, 409);
     const initialWebSearch = await post('/web-search', {});
     assert.equal(initialWebSearch.status, 200);
     const webState = await initialWebSearch.json();

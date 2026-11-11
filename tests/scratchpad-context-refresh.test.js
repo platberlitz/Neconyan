@@ -57,6 +57,7 @@ function fixture() {
         currentPresetName: () => preset.name, renderPicks: () => h('section'), renderLore: () => h('section'), renderPreview: () => h('section'),
         iconButton: (text, onclick) => h('button', { text, onclick }), wireSource: value => value,
         renderWebSearchSettings: () => h('section', { class: 'scratchpad-web-settings' }),
+        renderContextSetups: () => h('section', { class: 'scratchpad-setups' }),
         sameSourceBucket, sameSourceContext, currentSource: () => app.source, stopWatchers() {},
         isCurrentSource: value => sameSourceContext(value, app.source),
         api: { readNotebookContext: (_source, sessionId) => new Promise((resolve, reject) => requests.push({ sessionId, resolve, reject })) },

@@ -23,7 +23,8 @@ for (const phone of [false, true]) {
         const texts = page.getByRole('textbox', { name: 'Text it fills in', exact: true });
         const composer = page.locator('.scratchpad-composer');
         const prefix = `../screenshots/scratchpad-quick-prompts/${phone ? 'phone' : 'desktop'}`;
-        const chipLabels = () => quick.locator('button:not(.scratchpad-chip-edit)').allTextContents();
+        // 'Image idea' joins the row once image availability has been checked, which can land at any point in the test.
+        const chipLabels = async () => (await quick.locator('button:not(.scratchpad-chip-edit)').allTextContents()).filter(label => label !== 'Image idea');
         const savePrompts = async () => {
             const response = page.waitForResponse('**/api/scratchpad/quick-prompts/update');
             await save.click();

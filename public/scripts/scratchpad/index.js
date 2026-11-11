@@ -167,6 +167,8 @@ const app = {
     webSearchLoad: null,
     webSearchOwner: '',
     quickPrompts: { prompts: [], revision: 0 },
+    contextSetups: { setups: [], revision: 0 },
+    contextSetup: '',
     pickLimit: PICK_PAGE,
     sessionQuery: '',
     everyList: { query: '', loading: false, results: [], more: false, error: '' },
@@ -2302,6 +2304,7 @@ function renderContext({ force = true } = {}) {
     const setInclude = (name, value) => void updateSettings({ include: { [name]: value } });
 
     append(panel, [
+        renderContextSetups(),
         renderNotes(settings),
         general ? h('section', { class: 'scratchpad-section' },
             h('h3', { class: 'scratchpad-section-title', text: t`General Scratchpad` }),
@@ -2346,6 +2349,85 @@ function renderContext({ force = true } = {}) {
         notebook || general ? null : renderLore(settings),
         renderPreview(),
     ]);
+}
+
+/* Mirrors CONTEXT_SETUP_KEYS on the server: only choices that mean the same in every chat are saved. */
+const CONTEXT_SETUP_KEYS = ['depth', 'include', 'maxTokens', 'stream', 'webSearch', 'readLinks', 'prefill', 'partialPrefill'];
+
+function findContextSetup(name) {
+    const key = String(name ?? '').trim().toLowerCase();
+    return app.contextSetups.setups.find(setup => setup.name.toLowerCase() === key);
+}
+
+function showContextSetups(focus) {
+    if (!app.open) return;
+    renderContext();
+    app.el.panels.context.querySelector(focus)?.focus();
+}
+
+async function writeContextSetups(setups, fallback) {
+    try {
+        app.contextSetups = (await api.updateContextSetups(setups, app.contextSetups.revision)).contextSetups;
+        return true;
+    } catch (error) {
+        reportError(error, fallback);
+        return false;
+    }
+}
+
+async function saveContextSetup() {
+    const settings = structuredClone(currentSettings());
+    const typed = await callGenericPopup(`<h3>${t`Name this setup:`}</h3><p>${t`A setup with the same name is replaced.`}</p>`, POPUP_TYPE.INPUT, app.contextSetup || '');
+    const name = String(typed ?? '').replace(/\s+/g, ' ').trim();
+    if (!typed || !name) return;
+    const setup = { name, settings: Object.fromEntries(CONTEXT_SETUP_KEYS.map(key => [key, settings[key]])) };
+    const existing = findContextSetup(name);
+    const setups = existing
+        ? app.contextSetups.setups.map(item => item === existing ? setup : item)
+        : [...app.contextSetups.setups, setup];
+    if (!await writeContextSetups(setups, t`Scratchpad could not save that setup.`)) return;
+    app.contextSetup = findContextSetup(name)?.name ?? '';
+    toastr.success(t`Setup saved. You can apply it in any Scratchpad session.`);
+    showContextSetups('.scratchpad-setup-save');
+}
+
+async function applyContextSetup() {
+    const setup = findContextSetup(app.contextSetup);
+    if (!setup) return;
+    try {
+        await updateSettings(structuredClone(setup.settings), { rerenderContext: true });
+        toastr.success(t`Setup applied to this session.`);
+        app.el.panels.context.querySelector('.scratchpad-setup-apply')?.focus();
+    } catch { /* updateSettings already reported the failure. */ }
+}
+
+async function deleteContextSetup() {
+    const setup = findContextSetup(app.contextSetup);
+    if (!setup) return;
+    const confirmed = await callGenericPopup(t`Delete the saved setup '${setup.name}'? Sessions that already use its choices keep them.`, POPUP_TYPE.CONFIRM, '', { okButton: t`Delete setup`, cancelButton: t`Cancel` });
+    if (confirmed !== POPUP_RESULT.AFFIRMATIVE) return;
+    if (!await writeContextSetups(app.contextSetups.setups.filter(item => item !== setup), t`Scratchpad could not delete that setup.`)) return;
+    app.contextSetup = '';
+    showContextSetups('.scratchpad-setup-save');
+}
+
+function renderContextSetups() {
+    const setups = app.contextSetups.setups;
+    if (!findContextSetup(app.contextSetup)) app.contextSetup = setups[0]?.name ?? '';
+    const select = h('select', {
+        class: 'text_pole', id: 'scratchpad-setup', 'data-i18n-ignore': '',
+        onchange: event => { app.contextSetup = event.currentTarget.value; },
+    }, setups.map(setup => h('option', { value: setup.name, text: setup.name })));
+    select.value = app.contextSetup;
+    return h('section', { class: 'scratchpad-section scratchpad-setups' },
+        h('h3', { class: 'scratchpad-section-title', text: t`Saved setups` }),
+        h('p', { class: 'scratchpad-muted', text: t`Keep the choices on this tab under a name and apply them to any session: how many messages to read, what else to share, reply length, streaming, web search, reading links and prefills. Picked messages, lorebook entry choices, saved notes and connections belong to one chat, so they are not saved.` }),
+        setups.length ? h('div', { class: 'scratchpad-field' }, h('label', { for: 'scratchpad-setup', text: t`Saved setup` }), select)
+            : h('p', { class: 'scratchpad-muted', text: t`You have no saved setups yet.` }),
+        h('div', { class: 'scratchpad-note-actions' },
+            setups.length ? iconButton(t`Apply setup`, () => void applyContextSetup(), { icon: 'fa-check', className: 'scratchpad-setup-apply', title: t`Use the chosen setup's choices in this session` }) : null,
+            iconButton(t`Save current choices`, () => void saveContextSetup(), { icon: 'fa-floppy-disk', className: 'scratchpad-setup-save', title: t`Save this session's Context choices as a setup` }),
+            setups.length ? iconButton(t`Delete setup`, () => void deleteContextSetup(), { icon: 'fa-trash', className: 'scratchpad-setup-delete' }) : null));
 }
 
 function renderNotes(settings) {
@@ -2884,7 +2966,8 @@ export async function openScratchpad({ tab = '', note = null } = {}) {
     app.webSearchOwner = owner;
     // A library that cannot be read only hides saved assistants; Scratchpad still opens with the included ones.
     // Saved quick prompts that cannot be read only hide those chips; the built-in ones stay.
-    const [library, quickPrompts] = await Promise.all([
+    // Saved setups that cannot be read only empty that list; the session's own choices still work.
+    const [library, quickPrompts, contextSetups] = await Promise.all([
         api.readAssistants().then(result => result.library, error => {
             reportError(error, t`Your assistants could not be loaded.`);
             return null;
@@ -2893,11 +2976,16 @@ export async function openScratchpad({ tab = '', note = null } = {}) {
             console.warn('[Scratchpad]', error);
             return null;
         }),
+        api.readContextSetups().then(result => result.contextSetups, error => {
+            console.warn('[Scratchpad]', error);
+            return null;
+        }),
         loadStylesheetAsync(STYLESHEET, { id: 'neconyan-scratchpad-css' }).catch(() => null),
     ]);
     if (owner !== getCurrentUserHandle()) return;
     app.library = library ?? { assistants: [], revision: 0 };
     app.quickPrompts = quickPrompts ?? { prompts: [], revision: 0 };
+    app.contextSetups = contextSetups ?? { setups: [], revision: 0 };
     build();
     readPrefs();
     globalThis.NeconyanNotes?.hide?.();
