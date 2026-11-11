@@ -12,7 +12,7 @@ jest.unstable_mockModule('../public/scripts/notebooks/dom.js', () => ({ h: (tag,
 jest.unstable_mockModule('../public/scripts/events.js', () => ({ event_types: { PERSONA_UPDATED: 'updated' }, eventSource: { emit: jest.fn() } }));
 jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHandle: () => owner }));
 jest.unstable_mockModule('../public/scripts/scratchpad/context.js', () => ({ sourcePersona: () => current, isCurrentSource: () => true }));
-const { preparePersonaChange } = await import('../public/scripts/scratchpad/persona-changes.js');
+const { needsSavedPersonaSelection, preparePersonaChange, saveSelectedPersona } = await import('../public/scripts/scratchpad/persona-changes.js');
 const { preparePersonaCreation } = await import('../public/scripts/scratchpad/persona-create.js');
 const { normaliseChange } = await import('../public/scripts/scratchpad/proposals.js');
 const shared = { avatar: 'User.png', name: 'Kris' };
@@ -29,6 +29,23 @@ beforeEach(() => {
     power_user.persona_descriptions = { 'User.png': { description: 'Base', title: 'Traveller', connections: [{ id: 'chat' }],
         appendices: [{ id: 'au', name: 'Modern AU', description: 'Original note' }, { id: 'other', name: 'Other', description: 'Keep' }] } };
     saveSettings.mockResolvedValue(true);
+});
+
+test('the persona save retries temporary refusals and reports failure without throwing', async () => {
+    saveSettings.mockResolvedValueOnce(false).mockRejectedValueOnce(new Error('busy')).mockResolvedValueOnce(true);
+    await expect(saveSelectedPersona()).resolves.toBe(true);
+    expect(saveSettings).toHaveBeenCalledTimes(3);
+    expect(saveSettings).toHaveBeenLastCalledWith(0, { returnResult: true });
+    saveSettings.mockResolvedValue(false);
+    await expect(saveSelectedPersona()).resolves.toBe(false);
+    expect(saveSettings).toHaveBeenCalledTimes(3 + 4);
+});
+
+test('only a Roleplay chat whose connections were not just saved needs the persona saved', () => {
+    expect(needsSavedPersonaSelection({ kind: 'roleplay' }, false)).toBe(true);
+    expect(needsSavedPersonaSelection({ kind: 'roleplay' }, true)).toBe(false);
+    expect(needsSavedPersonaSelection({ kind: 'general' }, false)).toBe(false);
+    expect(needsSavedPersonaSelection({ kind: 'conversation' }, false)).toBe(false);
 });
 
 test('base edit waits for save and keeps notes and connections', async () => {

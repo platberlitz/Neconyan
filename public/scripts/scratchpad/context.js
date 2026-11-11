@@ -19,6 +19,9 @@ import { getTokenCountAsync } from '../tokenizers.js';
 import { loadWorldInfo, selected_world_info, world_info } from '../world-info.js';
 import { readCurrentPreset } from './preset.js';
 import { sameSourceContext } from './source.js';
+import { homePersonaChoice } from './home-persona.js';
+
+export { clearHomePersonaChoice, noteHomePersonaChoice } from './home-persona.js';
 
 export const MAX_CONTEXT_BYTES = 1_400_000;
 const MAX_LORE_ENTRIES = 40;
@@ -124,8 +127,12 @@ function generalSource({ avatar = '', contextMode = 'roleplay', personaId = user
         ...(characterByAvatar(avatar) ? { avatar } : {}) };
 }
 
+function homeChatOpen() {
+    return Boolean(globalThis.document?.body?.classList.contains('neconyan-home-visible') && (getCurrentChatId() || chat.length));
+}
+
 function homePersonaIsLocked() {
-    if (!globalThis.document?.body?.classList.contains('neconyan-home-visible') || !user_avatar || (!getCurrentChatId() && !chat.length)) return false;
+    if (!homeChatOpen() || !user_avatar || homePersonaChoice() === user_avatar) return false;
     if (chat_metadata.persona === user_avatar) return true;
     const character = characters[this_chid]?.avatar;
     return power_user.persona_descriptions?.[user_avatar]?.connections?.some(connection =>
@@ -163,7 +170,7 @@ function sourcePersonaDescription(source) {
     if (source.kind === 'conversation' || source.contextMode === 'conversation') return composeConversationPersonaDescription(source.personaId, source);
     if (source.kind !== 'general') return power_user.persona_description;
     const descriptor = power_user.persona_descriptions?.[source.personaId];
-    if (homePersonaIsLocked()) return descriptor?.description || '';
+    if (homePersonaIsLocked() || (homeChatOpen() && Boolean(source.personaId) && source.personaId === homePersonaChoice())) return descriptor?.description || '';
     return descriptor ? descriptor.description ?? '' : power_user.persona_description;
 }
 
