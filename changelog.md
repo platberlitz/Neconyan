@@ -28,6 +28,7 @@
 - PR #617 (2026-11-11) `feat(scratchpad): let round-table assistants discuss their answers`
 - PR #618 (2026-11-11) `feat(scratchpad): read the web pages linked in a message`
 - PR #619 (2026-11-11) `feat(scratchpad): search the sessions of every list`
+- PR #620 (2026-11-11) `feat(scratchpad): branch a session from an earlier message`
 
 ## v1.5.4
 
