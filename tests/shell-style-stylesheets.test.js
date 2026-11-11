@@ -335,6 +335,14 @@ describe('shell style runtime stylesheets', () => {
         expect(auditImportantDeclarations('/* !important */', 'windows-xp')).toEqual([]);
     });
 
+    test('Windows XP dark faces tint raised cards and tabs with the scheme colour', () => {
+        const source = stripCssBlockComments(readSource('public', 'css', 'shell-styles', 'windows-xp.css'));
+        const dark = source.match(/\[data-sb-surface-tone='dark'\] body\.neconyan:not\(\.sbterm\) \{([^}]*)\}/);
+        expect(dark).not.toBeNull();
+        expect(dark[1]).toContain('--neco-raised: color-mix(in srgb, var(--xp-hue) 10%, color-mix(in srgb, var(--xp-face) 94%, #fff));');
+        expect(dark[1]).toContain('--xp-tab: linear-gradient(180deg, var(--neco-raised) 0, var(--xp-face) 100%);');
+    });
+
     test('every style, Calico included, follows the chosen accent colour', () => {
         const signatureHues = { kittyless: '--kittyless-primary:', 'windows-aero': '--aero-hue:', 'windows-xp': '--xp-hue:', 'windows-98': '--w98-title:', 'cozy-warm': '--cozy-amber:', 'hypr-glow': '--hypr-b:', 'slate-flat': '--slate-cool:', 'clean-minimal': '--clean-line-strong:', 'starlight-conservatory': '--starlight-brass:', 'sunken-reef': '--reef-coral:' };
         for (const [id, hueVar] of Object.entries(signatureHues)) {

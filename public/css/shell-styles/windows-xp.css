@@ -38,8 +38,10 @@
     --xp-button-down: linear-gradient(180deg, color-mix(in srgb, var(--xp-face) 80%, #000) 0, var(--xp-face) 100%);
     --xp-button-edge: color-mix(in srgb, var(--xp-face) 35%, #000);
     --xp-group-edge: color-mix(in srgb, var(--xp-face) 70%, #fff);
-    --xp-tab: linear-gradient(180deg, color-mix(in srgb, var(--xp-face) 72%, #fff) 0, var(--xp-face) 100%);
+    --xp-tab: linear-gradient(180deg, var(--neco-raised) 0, var(--xp-face) 100%);
     --xp-tab-edge: color-mix(in srgb, var(--xp-face) 50%, #000);
+    /* Raised cards take a little of the scheme colour; mixing in white turns them flat grey. */
+    --neco-raised: color-mix(in srgb, var(--xp-hue) 10%, color-mix(in srgb, var(--xp-face) 94%, #fff));
     --xp-scroll-thumb: color-mix(in srgb, var(--xp-face) 65%, #fff);
     --xp-scroll-track: color-mix(in srgb, var(--xp-face) 80%, #000);
     --xp-pane: linear-gradient(180deg, color-mix(in srgb, var(--xp-face) 82%, var(--xp-pane-top)) 0, color-mix(in srgb, var(--xp-face) 82%, var(--xp-pane-bottom)) 100%);
