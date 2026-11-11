@@ -170,8 +170,8 @@ export async function generateSavedSpeech(context, { effectId, policy, account, 
                 else {
                     if (unresolvedProviderStep(context.directories, context.job.id)) throw recover();
                     config = check();
-                    const signal = AbortSignal.any([context.signal, AbortSignal.timeout(180000)]);
-                    const descriptor = await prepareSpeechTransport(config, segment, { ...deps, signal });
+                    const descriptor = await prepareSpeechTransport(config, segment, { ...deps,
+                        signal: AbortSignal.any([context.signal, AbortSignal.timeout(180000)]) });
                     // Expiring OAuth headers are reconstructed from the same bound credential; never save them.
                     const digest = roleplayHash({ ...descriptor, headers: null,
                         ...(descriptor.settingsRequest ? { settingsRequest: { ...descriptor.settingsRequest, headers: null } } : {}) });
@@ -184,7 +184,16 @@ export async function generateSavedSpeech(context, { effectId, policy, account, 
                     });
                     const run = async () => {
                         try { check(); } catch (error) { throw providerNotDispatched(error); }
-                        try { return await sendSpeechTransport(config, descriptor, segment, { ...deps, signal }); } catch (error) {
+                        let dispatched = false;
+                        try {
+                            return await sendSpeechTransport(config, descriptor, segment, { ...deps, signal: context.signal,
+                                timeout: 180000, onDispatch: () => { dispatched = true; } });
+                        } catch (error) {
+                            // Stopped while still waiting for the local server: nothing was sent, so a retry may ask.
+                            if (!dispatched) {
+                                throw providerNotDispatched(context.signal.aborted
+                                    ? speechError('The speech request was stopped before it was sent.', 'TTS_NOT_SENT', 503) : error);
+                            }
                             if (context.signal.aborted) throw context.signal.reason;
                             if (error?.speechRefused) throw providerRefused(error);
                             throw speechError('The speech request has no verified complete result.', 'TTS_PROVIDER', error.status ?? 502);
@@ -193,7 +202,7 @@ export async function generateSavedSpeech(context, { effectId, policy, account, 
                     if (['SpeechT5', 'System'].includes(descriptor.native)) {
                         // Pure local calculation may restart from its saved input without another paid or mutating request.
                         setJobResume(context.directories, context.job.id, `input:${step}:request`);
-                        result = await withSpeechEndpoint(`native:${descriptor.native}`, run);
+                        result = await withSpeechEndpoint(`native:${descriptor.native}`, run, { signal: context.signal });
                         resultStore.writeResult(context.directories, context.job.id, `provider:${step}`, result);
                     } else result = await providerStep(context, step, run, resultStore);
                 }

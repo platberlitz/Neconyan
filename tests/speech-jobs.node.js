@@ -9,9 +9,10 @@ const { captureSpeechRequest, admitSpeechJob, runSpeechJob, generateSavedSpeech 
 const { captureRoleplaySource } = await import('../src/generation/roleplay-source.js');
 const { getJob, releaseJob, recoverJobs, updateJob, jobKey } = await import('../src/jobs/store.js');
 const { readArtifact } = await import('../src/jobs/artifacts.js');
-const { pcmWave, readAudioArtifact } = await import('../src/jobs/audio-artifacts.js');
+const { audioResult, pcmWave, readAudioArtifact } = await import('../src/jobs/audio-artifacts.js');
 const { writeSecret, SECRET_KEYS } = await import('../src/endpoints/secrets.js');
 const { synthesizeEdgeSpeech } = await import('../src/generation/speech-edge.js');
+const { sendSpeechTransport, speechOutputUrl, withSpeechEndpoint } = await import('../src/generation/speech-transports.js');
 const { roleplayHash } = await import('../src/roleplay-store.js');
 const WAVE = pcmWave(Buffer.alloc(480, 1));
 const json = value => new Response(JSON.stringify(value), { headers: { 'Content-Type': 'application/json' } });
@@ -344,4 +345,183 @@ test('a truncated speech stream remains unknown rather than producing a playable
     recoverJobs(f.directories);
     await assert.rejects(runSpeechJob(f.context(), { fetchImpl: () => assert.fail('incomplete stream repeated') }), { code: 'TTS_RESULT_RECOVERY' });
     assert.equal(readArtifact(f.directories, f.admission.jobId, 'result'), undefined);
+});
+
+function shortSpeechLimit(t, milliseconds) {
+    const original = AbortSignal.timeout;
+    AbortSignal.timeout = value => original.call(AbortSignal, value === 180000 ? milliseconds : value);
+    t.after(() => { AbortSignal.timeout = original; });
+}
+
+function queuedSpeech(t) {
+    const f = prepared(t, { provider: 'XTTSv2', entry: 'speaker' });
+    updateJob(f.directories, f.admission.jobId, { state: 'running' });
+    const sent = [];
+    const fetchImpl = async (address, init) => {
+        const url = new URL(address);
+        if (url.pathname === '/speakers') return json(['speaker']);
+        init.signal?.throwIfAborted();
+        sent.push(url.pathname);
+        return url.pathname === '/set_tts_settings' ? json({ ok: true }) : audio();
+    };
+    return { ...f, sent, fetchImpl };
+}
+
+test('the speech time limit starts when the request reaches the front of its local server queue', async t => {
+    const f = queuedSpeech(t);
+    shortSpeechLimit(t, 100);
+    const busy = withSpeechEndpoint('http://localhost:8020', () => new Promise(resolve => setTimeout(resolve, 400)));
+    const result = await runSpeechJob(f.context(), { fetchImpl: f.fetchImpl });
+    await busy;
+    assert.equal(result.result.narration.status, 'ready');
+    assert.deepEqual(f.sent, ['/set_tts_settings', '/tts_to_audio/']);
+});
+
+test('a Stop while waiting in the local server queue sends nothing and leaves the narration retryable', async t => {
+    const f = queuedSpeech(t);
+    let finish;
+    const busy = withSpeechEndpoint('http://localhost:8020', () => new Promise(resolve => { finish = resolve; }));
+    const controller = new AbortController();
+    const started = Date.now();
+    setTimeout(() => controller.abort(new Error('stopped by the user')), 50);
+    const guard = setTimeout(() => finish(), 3000);
+    await assert.rejects(runSpeechJob({ ...f.context(), signal: controller.signal }, { fetchImpl: f.fetchImpl }));
+    clearTimeout(guard);
+    assert.ok(Date.now() - started < 2500, 'the stopped narration left the queue without waiting for the one in front');
+    assert.deepEqual(f.sent, []);
+    assert.notEqual(getJob(f.directories, f.admission.jobId).recoverability, 'unknown-outcome');
+    let ahead = true;
+    const later = withSpeechEndpoint('http://localhost:8020', async () => ahead);
+    await new Promise(resolve => setTimeout(resolve, 20));
+    ahead = false;
+    finish();
+    await busy;
+    assert.equal(await later, false, 'a later narration still waits for the one in front');
+    recoverJobs(f.directories);
+    const result = await runSpeechJob(f.context(), { fetchImpl: f.fetchImpl });
+    assert.equal(result.result.narration.status, 'ready');
+    assert.deepEqual(f.sent, ['/set_tts_settings', '/tts_to_audio/']);
+});
+
+test('a speech request that times out after it was sent stays unretryable', async t => {
+    const f = queuedSpeech(t);
+    shortSpeechLimit(t, 100);
+    let sent = 0;
+    const fetchImpl = async (address, init) => {
+        if (new URL(address).pathname === '/speakers') return json(['speaker']);
+        sent++;
+        return new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(init.signal.reason), { once: true }));
+    };
+    await assert.rejects(runSpeechJob(f.context(), { fetchImpl }), { code: 'TTS_PROVIDER' });
+    recoverJobs(f.directories);
+    await assert.rejects(runSpeechJob(f.context(), { fetchImpl: () => assert.fail('an uncertain synthesis repeated') }), { code: 'TTS_RESULT_RECOVERY' });
+    assert.equal(sent, 1);
+});
+
+// The header a streaming server writes before it knows the length: RIFF size 36, data size 0.
+function streamedWave() {
+    const header = Buffer.from(WAVE.subarray(0, 44));
+    header.writeUInt32LE(36, 4);
+    header.writeUInt32LE(0, 40);
+    return Buffer.concat([header, WAVE.subarray(44)]);
+}
+
+const streamedCases = [
+    { provider: 'XTTSv2', controls: { streaming: true }, entry: 'speaker', discovery: { '/speakers': ['speaker'] }, settingsPath: '/set_tts_settings' },
+    { provider: 'GPT-SoVITS-Adapter', controls: { media_type: 'wav' }, entry: 'speaker', discovery: { '/speakers': [{ name: 'speaker', voice_id: 'selected' }] } },
+    { provider: 'CosyVoice (Unofficial)', controls: { streaming: true }, entry: 'speaker', discovery: { '/speakers': ['speaker'] } },
+];
+
+function streamedFetch(example, body) {
+    return async address => {
+        const url = new URL(address);
+        if (Object.hasOwn(example.discovery, url.pathname)) return json(example.discovery[url.pathname]);
+        if (example.settingsPath === url.pathname) return json({ ok: true });
+        return new Response(body, { headers: { 'Content-Type': 'audio/wav' } });
+    };
+}
+
+for (const example of streamedCases) test(`streamed ${example.provider} WAV with placeholder header sizes is saved with its real sizes`, async t => {
+    const f = prepared(t, example);
+    const result = await runSpeechJob(f.context(), { fetchImpl: streamedFetch(example, streamedWave()) });
+    assert.equal(result.result.narration.status, 'ready');
+    assert.deepEqual(fs.readFileSync(path.join(f.directories.root, result.result.files[0].url.slice(1))), WAVE);
+});
+
+test('a WAV cut short of its declared size is still refused', async t => {
+    const f = prepared(t, streamedCases[0]);
+    await assert.rejects(runSpeechJob(f.context(), { fetchImpl: streamedFetch(streamedCases[0], WAVE.subarray(0, WAVE.length - 100)) }),
+        { message: 'The speech audio container is incomplete.' });
+});
+
+const receiveWave = (bytes, wavStream = false) => sendSpeechTransport({}, { url: 'https://speech.example/audio', response: 'audio', wavStream }, {}, {
+    signal: new AbortController().signal,
+    fetchImpl: async () => new Response(bytes, { headers: { 'Content-Type': 'audio/wav' } }),
+});
+
+test('WAV repair refuses inconsistent non-placeholder sizes and truncated WebUI replies', async () => {
+    const inconsistent = Buffer.from(WAVE);
+    inconsistent.writeUInt32LE(100, 4);
+    inconsistent.writeUInt32LE(20, 40);
+    for (const streaming of [false, true]) {
+        await assert.rejects(receiveWave(inconsistent, streaming), { code: 'TTS_INVALID_AUDIO' });
+        await assert.rejects(receiveWave(WAVE.subarray(0, -100), streaming), { code: 'TTS_INVALID_AUDIO' });
+    }
+    assert.throws(() => audioResult(WAVE.subarray(0, -100)), { code: 'TTS_RESULT_RECOVERY' });
+});
+
+test('WAV repair preserves extra chunks and extended formats byte for byte', async () => {
+    const list = Buffer.from('LIST\x04\x00\x00\x00INFO', 'binary');
+    const trailing = Buffer.concat([WAVE, list]);
+    trailing.writeUInt32LE(trailing.length - 8, 4);
+    const leading = Buffer.concat([WAVE.subarray(0, 36), list, WAVE.subarray(36)]);
+    leading.writeUInt32LE(leading.length - 8, 4);
+    const extension = Buffer.alloc(24);
+    extension.writeUInt16LE(22, 0);
+    extension.writeUInt16LE(16, 2);
+    Buffer.from('0100000000001000800000aa00389b71', 'hex').copy(extension, 8);
+    const extended = Buffer.concat([WAVE.subarray(0, 36), extension, WAVE.subarray(36)]);
+    extended.writeUInt32LE(extended.length - 8, 4);
+    extended.writeUInt32LE(40, 16);
+    extended.writeUInt16LE(0xfffe, 20);
+    for (const bytes of [trailing, leading, extended]) {
+        for (const streaming of [false, true]) {
+            assert.deepEqual(Buffer.from((await receiveWave(bytes, streaming)).base64, 'base64'), bytes);
+        }
+    }
+});
+
+test('WAV repair retains explicit streaming sentinels and rejects incomplete samples or padding', async () => {
+    const sentinel = Buffer.from(WAVE);
+    sentinel.writeUInt32LE(0xffffffff, 4);
+    sentinel.writeUInt32LE(0xffffffff, 40);
+    for (const streaming of [false, true]) {
+        assert.deepEqual(Buffer.from((await receiveWave(sentinel, streaming)).base64, 'base64'), sentinel);
+        await assert.rejects(receiveWave(streamedWave().subarray(0, -1), streaming), { code: 'TTS_INVALID_AUDIO' });
+        const missingPadding = Buffer.concat([WAVE, Buffer.from('LIST\x01\x00\x00\x00x', 'binary')]);
+        missingPadding.writeUInt32LE(missingPadding.length - 8, 4);
+        await assert.rejects(receiveWave(missingPadding, streaming), { code: 'TTS_INVALID_AUDIO' });
+    }
+});
+
+test('AllTalk output on another loopback name of the selected service is accepted, other hosts are not', () => {
+    const config = { provider: 'AllTalk', endpoint: 'http://localhost:7851', key: '' };
+    assert.equal(speechOutputUrl('http://127.0.0.1:7851/audio/x.wav', config), 'http://127.0.0.1:7851/audio/x.wav');
+    assert.equal(speechOutputUrl('http://[::1]:7851/audio/x.wav', config), 'http://[::1]:7851/audio/x.wav');
+    assert.equal(speechOutputUrl('http://localhost:7851/audio/x.wav', { ...config, endpoint: 'http://127.0.0.1:7851' }), 'http://localhost:7851/audio/x.wav');
+    const outside = { message: 'The speech output is outside the selected service.' };
+    for (const address of ['http://127.0.0.1:7852/audio/x.wav', 'https://127.0.0.1:7851/audio/x.wav', 'http://127.0.0.2:7851/audio/x.wav',
+        'http://localhost.example.com:7851/audio/x.wav', 'http://192.168.1.5:7851/audio/x.wav']) {
+        assert.throws(() => speechOutputUrl(address, config), outside, address);
+    }
+    assert.throws(() => speechOutputUrl('http://127.0.0.1:7851/audio/x.wav', { ...config, endpoint: 'http://192.168.1.5:7851' }), outside);
+    assert.throws(() => speechOutputUrl('http://localhost:7851/audio/x.wav', { ...config, endpoint: 'http://tts.example.com:7851' }), outside);
+});
+
+test('a non-AllTalk service cannot use loopback aliases to bypass public output checks', () => {
+    const config = { provider: 'MiniMax', endpoint: 'http://localhost:7851', key: '' };
+    assert.equal(speechOutputUrl('/audio/x.wav', config), 'http://localhost:7851/audio/x.wav');
+    for (const address of ['http://127.0.0.1:7851/audio/x.wav', 'http://[::1]:7851/audio/x.wav']) {
+        assert.throws(() => speechOutputUrl(address, config), { message: 'The speech output address is not a public HTTPS resource.' });
+    }
 });

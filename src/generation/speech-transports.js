@@ -14,17 +14,29 @@ const request = (url, body, headers = {}, response = 'audio') => ({ url, method:
     headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) });
 const escapeXml = text => String(text).replace(/[<>&"']/g, value => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', '\'': '&apos;' })[value]);
 
-/** Serialise native callers sharing mutable local synthesis controls, without holding the account lock. */
-export async function withSpeechEndpoint(endpoint, operation) {
-    const previous = endpointQueues.get(endpoint) ?? Promise.resolve();
-    let release;
+/**
+ * Serialise native callers sharing mutable local synthesis controls, without holding the account lock.
+ * A caller stopped while waiting leaves without running; later callers still wait for the one in front.
+ */
+export async function withSpeechEndpoint(endpoint, operation, { signal } = {}) {
+    const previous = (endpointQueues.get(endpoint) ?? Promise.resolve()).catch(() => {});
+    let release, stop;
     const current = new Promise(resolve => { release = resolve; });
     endpointQueues.set(endpoint, current);
-    await previous.catch(() => {});
-    try { return await operation(); } finally {
+    const leave = () => {
         release();
         if (endpointQueues.get(endpoint) === current) endpointQueues.delete(endpoint);
-    }
+    };
+    try {
+        await (signal ? Promise.race([previous, new Promise((_, reject) => {
+            stop = () => reject(signal.reason);
+            if (signal.aborted) stop(); else signal.addEventListener('abort', stop, { once: true });
+        })]) : previous);
+    } catch (error) {
+        previous.then(leave);
+        throw error;
+    } finally { signal?.removeEventListener('abort', stop); }
+    try { return await operation(); } finally { leave(); }
 }
 
 function languageMiniMax(lang) {
@@ -161,22 +173,41 @@ function decodedAudio(value) {
     return Buffer.from(value, 'base64');
 }
 
+const LOOPBACK = ['localhost', '127.0.0.1', '[::1]'];
+
+/** The selected service's own machine may answer under another loopback name; every other host must match exactly. */
+function sameService(url, service) {
+    return url.origin === service.origin || url.protocol === service.protocol && url.port === service.port
+        && LOOPBACK.includes(url.hostname) && LOOPBACK.includes(service.hostname);
+}
+
 export function speechOutputUrl(value, config) {
     if (typeof value !== 'string' || !value.trim() || value.length > 8192) throw speechError('The returned speech address is missing or invalid.');
     let url;
     try { url = new URL(value, config.endpoint || 'https://api.elevenlabs.io'); } catch { throw speechError('The returned speech address is invalid.'); }
-    const origin = config.endpoint ? new URL(config.endpoint).origin : 'https://api.elevenlabs.io';
+    const service = new URL(config.endpoint || 'https://api.elevenlabs.io');
+    const selected = config.provider === 'AllTalk' ? sameService(url, service) : url.origin === service.origin;
     if (url.username || url.password || url.hash || config.key && url.href.includes(config.key)) throw speechError('The speech address contains private credentials.');
-    if (config.provider === 'AllTalk' && url.origin !== origin) throw speechError('The speech output is outside the selected service.');
-    if (url.origin !== origin && !normalizeImageSource(url.href, { allowHttp: false, allowRelative: false, blockPrivateHosts: true })) {
+    if (config.provider === 'AllTalk' && !selected) throw speechError('The speech output is outside the selected service.');
+    if (!selected && !normalizeImageSource(url.href, { allowHttp: false, allowRelative: false, blockPrivateHosts: true })) {
         throw speechError('The speech output address is not a public HTTPS resource.');
     }
     if (!['http:', 'https:'].includes(url.protocol)) throw speechError('The speech output address is invalid.');
     return url.href;
 }
 
-/** Called only inside a recorded provider step. A returned URL is saved before downloading its audio. */
-export async function sendSpeechTransport(config, descriptor, segment, { signal, fetchImpl = fetch, localSynthesis, systemSynthesis, edgeSynthesis } = {}) {
+/**
+ * Called only inside a recorded provider step. A returned URL is saved before downloading its audio.
+ * The time limit starts, and `onDispatch` runs, only once the request holds its place in the endpoint queue.
+ */
+export async function sendSpeechTransport(config, descriptor, segment, { signal: stopSignal, timeout, onDispatch, fetchImpl = fetch, localSynthesis, systemSynthesis, edgeSynthesis } = {}) {
+    let signal = stopSignal;
+    const begin = () => {
+        stopSignal?.throwIfAborted();
+        if (timeout) signal = AbortSignal.any([stopSignal, AbortSignal.timeout(timeout)].filter(Boolean));
+        onDispatch?.();
+    };
+    if (descriptor.native) begin();
     if (descriptor.native === 'SpeechT5') {
         const run = localSynthesis ?? (async input => {
             const { runPipeline } = await import('../transformers.js');
@@ -198,6 +229,7 @@ export async function sendSpeechTransport(config, descriptor, segment, { signal,
         return audioResult(await (edgeSynthesis ?? synthesizeEdgeSpeech)(config, segment, signal));
     }
     const run = async () => {
+        begin();
         if (descriptor.settingsRequest) {
             const changed = await fetchAudioResponse(descriptor.settingsRequest, { signal, fetchImpl });
             await readResponseText(changed, 64 * 1024, { signal });
@@ -207,8 +239,11 @@ export async function sendSpeechTransport(config, descriptor, segment, { signal,
             assertAudioContentType(response);
             let bytes = Buffer.from(await readResponseArrayBuffer(response, MAX_AUDIO_BYTES, { signal }));
             if (descriptor.pcm) bytes = pcmWave(bytes, { sampleRate: descriptor.sampleRate ?? 24000 });
-            if (descriptor.wavStream && bytes.length >= 44 && bytes.toString('ascii', 0, 4) === 'RIFF'
-                && bytes.toString('ascii', 36, 40) === 'data') {
+            // Only the plain, empty PCM header is a known streaming placeholder. Other declared
+            // sizes and chunk layouts must reach the validator intact, even for streaming providers.
+            if (bytes.length > 44 && bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 16) === 'WAVEfmt '
+                && bytes.readUInt32LE(16) === 16 && [1, 3].includes(bytes.readUInt16LE(20))
+                && bytes.toString('ascii', 36, 40) === 'data' && bytes.readUInt32LE(4) === 36 && bytes.readUInt32LE(40) === 0) {
                 bytes.writeUInt32LE(bytes.length - 8, 4); bytes.writeUInt32LE(bytes.length - 44, 40);
             }
             return receivedAudio(bytes);
@@ -257,7 +292,7 @@ export async function sendSpeechTransport(config, descriptor, segment, { signal,
         }
         return { url: speechOutputUrl(data.output_file_url, config) };
     };
-    return descriptor.serial ? withSpeechEndpoint(descriptor.serial, run) : run();
+    return descriptor.serial ? withSpeechEndpoint(descriptor.serial, run, { signal: stopSignal }) : run();
 }
 
 export async function downloadSpeechOutput(config, output, { signal, fetchImpl = fetch } = {}) {
