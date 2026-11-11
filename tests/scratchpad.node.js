@@ -1434,10 +1434,10 @@ test('custom assistant prompts persist independently, reach the provider and res
     assert.throws(() => store.normaliseSettings({ assistantPrompts: { miso: '字'.repeat(22000) } }), /Write a prompt/);
 });
 
-test('regenerating replaces only the latest reply and keeps earlier turns as history', async t => {
+test('any reply to one of your messages can be regenerated, seeing only the turns before it', async t => {
     const a = account(t);
     const session = startSession(a);
-    const replies = ['First answer.', 'Second answer.', 'Better second answer.'];
+    const replies = ['First answer.', 'Second answer.', 'Better second answer.', 'Better first answer.'];
     const prompts = [];
     registerScratchpadJobs({ generate: async options => {
         prompts.push(options.messages.slice(3).map(message => `${message.role}:${message.content}`));
@@ -1449,15 +1449,29 @@ test('regenerating replaces only the latest reply and keeps earlier turns as his
         await runJob(getJob(a.directories, accepted.job.id));
     }
     const before = a.read(SOURCE).sessions[0].messages;
-    await assert.rejects(acceptScratchpadReply(a.request(sendBody(session, { regenerate: before[1].id })), sendBody(session, { regenerate: before[1].id })),
-        error => error.code === 'SCRATCHPAD_REGENERATE_INVALID');
-    const body = sendBody(session, { text: undefined, regenerate: before[3].id });
-    const accepted = await acceptScratchpadReply(a.request(body), body);
-    await runJob(getJob(a.directories, accepted.job.id));
-    const after = a.read(SOURCE).sessions[0].messages;
+    const retry = async id => {
+        const body = sendBody(session, { text: undefined, regenerate: id });
+        const accepted = await acceptScratchpadReply(a.request(body), body);
+        await runJob(getJob(a.directories, accepted.job.id));
+        return a.read(SOURCE).sessions[0].messages;
+    };
+    let after = await retry(before[3].id);
     assert.deepEqual(after.map(message => message.text), ['One?', 'First answer.', 'Two?', 'Better second answer.']);
     assert.equal(after[3].id === before[3].id, false);
     assert.deepEqual(prompts.at(-1), ['user:One?', 'assistant:First answer.', 'user:Two?']);
+
+    after = await retry(before[1].id);
+    assert.deepEqual(after.map(message => message.text), ['One?', 'Better first answer.', 'Two?', 'Better second answer.']);
+    assert.deepEqual(after[1].swipes.map(swipe => swipe?.text ?? null), ['First answer.', null]);
+    assert.deepEqual(after.slice(2), a.read(SOURCE).sessions[0].messages.slice(2));
+    assert.equal(after[2].id, before[2].id);
+    assert.deepEqual(prompts.at(-1), ['user:One?']);
+
+    const orphan = { id: 'orphan', role: 'assistant', state: 'done', text: 'No question came first.' };
+    assert.throws(() => jobs.planReply({ settings: store.defaultSettings(), messages: [orphan, { id: 'q', role: 'user', text: 'Later?' }] }, { regenerate: 'orphan' }),
+        error => error.code === 'SCRATCHPAD_REGENERATE_INVALID');
+    assert.throws(() => jobs.planReply({ settings: store.defaultSettings(), messages: [{ id: 'q', role: 'user', text: 'Later?' }] }, { regenerate: 'q' }),
+        error => error.code === 'SCRATCHPAD_REGENERATE_INVALID');
 });
 
 test('shared sessions keep pending replies and retries tied to their original chat', async t => {

@@ -19,6 +19,7 @@ export const refreshedKnowledgeCases = [
     ['How do I add my own quick prompts to Scratchpad?', 'scratchpad.quick-prompts', 'Add a prompt creates a row'],
     ['Can a Scratchpad reply become a swipe of the last story reply?', 'scratchpad.reply-version', 'Add as another version of the last story reply'],
     ['How do I pin a Scratchpad session so cleanup keeps it?', 'scratchpad.session-pins', 'never deleted by automatic cleanup'],
+    ['Can Try again redo an older Scratchpad reply, not only the latest?', 'scratchpad.replies', 'on any reply, not only the latest'],
     ['How do Scratchpad reply versions work?', 'scratchpad.reply-versions', 'up to 50 versions per reply'],
     ['Where are Scratchpad prefills?', 'scratchpad.reply-versions', 'Context → Reply prefills'],
     ['Can Scratchpad preview HTML and CSS?', 'scratchpad.html-preview', 'scripts, external resources and links are blocked'],
