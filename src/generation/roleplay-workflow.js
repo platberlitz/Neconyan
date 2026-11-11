@@ -342,6 +342,8 @@ async function savedTextDecision(context, job, chosen, turn, output, fullText, d
         return saved;
     }
     const decided = await decide(policy, output, { tokenizer: job.intent.request.worldInfo.tokenizer, fullText });
+    // A Stop accepted while the decision was being made wins: the reply is kept as it stands.
+    if (roleplayAgentsStopped({ ...context, job: chosen.child })) return { kind: 'final' };
     const value = { ...record, decision: decided, hash: roleplayHash({ ...record, decision: decided }) };
     writeArtifact(context.directories, job.id, decisionKey(turn), value);
     return value;
