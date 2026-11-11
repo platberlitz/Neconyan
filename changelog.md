@@ -19,6 +19,7 @@
 - PR #608 (2026-11-11) `fix(scratchpad): share Home persona picks and retry image replies`
 - PR #609 (2026-11-11) `fix(chat): keep the viewport steady through server swipes and rewrites`
 - PR #610 (2026-11-11) `feat(scratchpad): add your own quick prompts`
+- PR #611 (2026-11-11) `feat(scratchpad): add a reply as a version of the last story reply`
 
 ## v1.5.4
 
