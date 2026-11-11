@@ -2,6 +2,7 @@ import express from 'express';
 import { getJob } from '../jobs/store.js';
 import {
     activateSession,
+    branchSession,
     clearSession,
     createSession,
     findSession,
@@ -253,6 +254,11 @@ router.post('/search/copy', (request, response) => change(request, response, (bu
     const found = readFoundSessionLocked(lease, body.list, requireId(body.sessionId, 'session'));
     const copied = createSession(bucket, { ...found, settings: { ...found.settings, notes: [], picked: [], pickedSource: null } });
     refreshSessionAssistants(copied, readAssistantsLocked(lease));
+}));
+
+router.post('/session/branch', (request, response) => change(request, response, (bucket, body, lease) => {
+    const { session } = branchSession(bucket, requireId(body.sessionId, 'session'), requireId(body.messageId, 'message'));
+    refreshSessionAssistants(session, readAssistantsLocked(lease));
 }));
 
 router.post('/session/update', (request, response) => change(request, response, (bucket, body, lease) => {

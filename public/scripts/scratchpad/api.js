@@ -69,6 +69,7 @@ export const updateWebSearch = (webSearch, expectedRevision) => post('/web-searc
 export const createSession = (source, input) => post('/session/create', { source, ...input });
 export const importSession = (source, session) => post('/session/import', { source, session });
 export const searchSessions = query => post('/search', { query });
+export const branchSession = (source, sessionId, messageId) => post('/session/branch', { source, sessionId, messageId });
 export const copySession = (source, list, sessionId) => post('/search/copy', { source, list, sessionId });
 export const updateSession = (source, sessionId, changes) => post('/session/update', { source, sessionId, changes });
 export const deleteSession = (source, sessionId) => post('/session/delete', { source, sessionId });
