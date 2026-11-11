@@ -3451,7 +3451,8 @@ function updateAgentTokenCounter() {
     }
 
     const tokenCount = getInChatAgentTokenUsage();
-    tokenValue.textContent = String(tokenCount);
+    const text = String(tokenCount);
+    if (tokenValue.textContent !== text) tokenValue.textContent = text;
     tokenCounter.classList.toggle('is-empty', tokenCount <= 0);
 }
 
@@ -3525,8 +3526,10 @@ function updateAgentOverview(agentList = getVisibleInChatAgents()) {
         button.dataset.runTitle ||= button.title;
         const reason = blocked ? 'Resolve the saved setup or library recovery before running this action.' : !enabled ? 'Enable Agents to run this action.'
             : !hasReply && button.classList.contains('ica--btn-run') ? 'Open a chat with an assistant reply first.' : '';
-        button.disabled = Boolean(reason);
-        button.title = reason || button.dataset.runTitle;
+        const disabled = Boolean(reason);
+        if (button.disabled !== disabled) button.disabled = disabled;
+        const title = reason || button.dataset.runTitle;
+        if (button.title !== title) button.title = title;
     }
 }
 
