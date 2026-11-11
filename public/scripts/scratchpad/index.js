@@ -50,10 +50,11 @@ import { prepareAttachment } from './attachments.js';
 import { MAX_ATTACHMENTS, normaliseAttachments } from './attachment-data.js';
 import { previewForBlock, previewFromText, previewLanguage } from './preview-source.js';
 import { showHtmlPreview } from './html-preview.js';
-import { exportReply, MAX_REPLY_SWIPES, replySwipes } from './swipes.js';
+import { MAX_REPLY_SWIPES, replySwipes } from './swipes.js';
+import { buildSessionExport, chooseSessionExport, exportFileName, MAX_IMPORT_BYTES, sessionMarkdown, withoutAttachments } from './export.js';
 import { editQuickPrompts } from './quick-prompts.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261111-scratchpad-quick-prompts';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261111-scratchpad-export';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -2494,27 +2495,29 @@ function renderCleanup() {
         h('div', { class: 'scratchpad-field' }, h('label', { for: 'scratchpad-cleanup-keep', text: t`Sessions to keep per list` }), keep));
 }
 
-function exportSession(session) {
-    const used = new Set([session.assistant, ...session.settings.participants, ...session.messages.map(item => item.assistant)]);
-    const payload = {
-        format: 'neconyan-scratchpad',
-        version: 1,
-        exported: new Date().toISOString(),
-        session: {
-            name: session.name,
-            assistant: session.assistant,
-            gender: session.gender,
-            settings: { ...session.settings, assistants: Object.fromEntries(allAssistants(session).filter(item => item.personality && used.has(item.id)).map(item => [item.id, item])), notes: [], picked: [], pickedSource: undefined },
-            messages: session.messages.filter(item => item.state !== 'pending').map(exportReply),
-        },
-    };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = h('a', { href: url, download: `${session.name.replace(/[^\w.-]+/g, '_').slice(0, 60) || 'scratchpad'}.json` });
-    document.body.append(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+let exportOpen = false;
+
+async function exportSession(session) {
+    if (exportOpen) return;
+    exportOpen = true;
+    try {
+        const options = await chooseSessionExport();
+        if (!options) return;
+        const markdown = options.format === 'markdown';
+        const text = markdown
+            ? sessionMarkdown(session, { ...options, nameOf: message => message.assistantName || assistantInfo(message.assistant, session).name })
+            : JSON.stringify(buildSessionExport(session, allAssistants(session), options), null, 2);
+        const url = URL.createObjectURL(new Blob([text], { type: markdown ? 'text/markdown' : 'application/json' }));
+        const link = h('a', { href: url, download: exportFileName(session.name, markdown ? 'md' : 'json') });
+        document.body.append(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+        reportError(error, t`Scratchpad could not export that session.`);
+    } finally {
+        exportOpen = false;
+    }
 }
 
 function importSessionFile() {
@@ -2527,8 +2530,12 @@ function importSessionFile() {
         try {
             const parsed = JSON.parse(await file.text());
             if (parsed?.format !== 'neconyan-scratchpad' || !parsed.session) throw new Error(t`That file is not a Scratchpad export.`);
-            await change(source => api.importSession(source, parsed.session), t`Scratchpad could not import that session.`, scope);
+            // The request has a size limit, so a file carrying large attachments is imported without them.
+            const tooLarge = new Blob([JSON.stringify(parsed.session)]).size > MAX_IMPORT_BYTES;
+            const session = tooLarge ? withoutAttachments(parsed.session) : parsed.session;
+            await change(source => api.importSession(source, session), t`Scratchpad could not import that session.`, scope);
             selectTab('chat');
+            if (tooLarge) toastr.info(t`That file was too large to import whole, so its attached files and images were left out.`);
         } catch (error) {
             reportError(error, t`That file could not be imported.`);
         }
@@ -2566,9 +2573,9 @@ function renderSessions() {
             iconButton(t`New session`, () => void newSession(false), { icon: 'fa-plus', primary: true }),
             iconButton(t`Temporary session`, () => void newSession(true), { icon: 'fa-hourglass-half' }),
             iconButton(t`Import`, importSessionFile, { icon: 'fa-file-import' }),
-            current ? iconButton(t`Export current`, () => exportSession(current), { icon: 'fa-file-export' }) : null,
+            current ? iconButton(t`Export current`, () => void exportSession(current), { icon: 'fa-file-export' }) : null,
             current ? iconButton(t`Save session to note`, () => void saveToNote(current), { icon: 'fa-book-bookmark', disabled: !current.messages.length }) : null),
-        h('p', { class: 'scratchpad-muted', text: t`Exports keep the conversation but leave out message picks and saved-note sharing. Add these again after importing.` }),
+        h('p', { class: 'scratchpad-muted', text: t`Exports keep the conversation but leave out message picks and saved-note sharing. Add these again after importing. Thinking, web search sources and attached files are included only when you tick them.` }),
         renderCleanup(),
         search,
     ]);

@@ -705,8 +705,14 @@ export function createSession(bucket, input = {}) {
     };
     if (Array.isArray(input.messages)) {
         const contextSource = Object.fromEntries(Object.entries(normaliseSource(bucket.source)).filter(([key]) => key !== 'scope'));
-        const imported = item => normaliseMessage({ ...item, id: undefined, state: 'done', jobId: undefined, proposals: undefined, notebookProposals: undefined,
-            sharedAvatar: undefined, sharedPersona: undefined, sharedPreset: undefined, images: undefined, targets: undefined, contextSource });
+        const imported = item => {
+            const message = normaliseMessage({ ...item, id: undefined, state: 'done', jobId: undefined, proposals: undefined, notebookProposals: undefined,
+                sharedAvatar: undefined, sharedPersona: undefined, sharedPreset: undefined, images: undefined, targets: undefined, contextSource });
+            // A file can carry source links, but they are marked: this server never ran that search.
+            const webSearch = message?.role === 'assistant' ? normaliseStoredWebSearch(item?.webSearch) : undefined;
+            if (webSearch) message.webSearch = { ...webSearch, imported: true };
+            return message;
+        };
         session.messages = input.messages.map(item => {
             const message = imported(item);
             if (message?.role === 'assistant' && Array.isArray(item.swipes) && item.swipes.length > 1 && item.swipes.length <= MAX_REPLY_SWIPES

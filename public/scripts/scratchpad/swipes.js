@@ -17,9 +17,21 @@ export function appendReplySwipe(message, next) {
     return { ...next, swipeIndex: swipes.length, swipes: [...swipes, null] };
 }
 
-/** Exports contain text alternatives, never saved permissions or executable proposal identities. */
-export function exportReply(message) {
-    const plain = item => Object.fromEntries(['role', 'text', 'created', 'assistant', 'assistantName', 'gender'].map(key => [key, item[key]]));
+/**
+ * Exports contain text alternatives, never saved permissions or executable proposal identities.
+ * Thinking, web sources and attachments travel only when the user asks for them.
+ */
+export function exportReply(message, { reasoning = false, sources = false, attachments = false } = {}) {
+    const plain = item => {
+        const exported = Object.fromEntries(['role', 'text', 'created', 'assistant', 'assistantName', 'gender'].map(key => [key, item[key]]));
+        if (reasoning && item.role === 'assistant' && item.reasoning) exported.reasoning = item.reasoning;
+        if (sources && item.role === 'assistant' && item.webSearch) {
+            const { provider, query, sources: links, error } = item.webSearch;
+            exported.webSearch = { provider, query, sources: links, ...(error ? { error } : {}) };
+        }
+        if (attachments && item.role === 'user' && item.attachments?.length) exported.attachments = item.attachments;
+        return exported;
+    };
     const exported = plain(message);
     if (message.role === 'assistant' && message.swipes?.length > 1) {
         exported.swipeIndex = message.swipeIndex;

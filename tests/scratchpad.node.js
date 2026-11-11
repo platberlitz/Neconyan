@@ -141,6 +141,47 @@ test('reply swipes retain edits, reasoning and proposal decisions across durable
     }
 });
 
+test('chosen export extras survive import, and imported web sources are marked as not searched here', t => {
+    const a = account(t);
+    const attachments = [{ name: 'notes.txt', size: 5, kind: 'text', mimeType: 'text/plain', text: 'Hello' }];
+    const webSearch = { provider: 'brave', query: 'lantern festival', sources: [{ title: 'Lanterns', url: 'https://example.com/lanterns' }] };
+    const question = { role: 'user', text: 'Question', created: '2026-11-11T00:00:00.000Z', attachments };
+    const first = { role: 'assistant', text: 'First', created: '2026-11-11T00:00:01.000Z', assistant: 'taro', reasoning: 'First thinking', webSearch };
+    const answer = { role: 'assistant', text: 'Second', created: '2026-11-11T00:00:02.000Z', assistant: 'taro', reasoning: 'Second thinking',
+        webSearch: { ...webSearch, imported: true, error: 'Partial' }, sharedPersona: { avatar: 'User.png', name: 'Kris' }, swipeIndex: 1, swipes: [first, null] };
+
+    const plain = [question, answer].map(item => exportReply(item));
+    assert.deepEqual(Object.keys(plain[0]), ['role', 'text', 'created', 'assistant', 'assistantName', 'gender']);
+    assert.deepEqual(Object.keys(plain[1].swipes[0]), ['role', 'text', 'created', 'assistant', 'assistantName', 'gender']);
+
+    const full = [question, answer].map(item => exportReply(item, { reasoning: true, sources: true, attachments: true }));
+    assert.deepEqual(full[0].attachments, attachments);
+    assert.equal(full[1].reasoning, 'Second thinking');
+    assert.deepEqual(full[1].webSearch, { provider: 'brave', query: 'lantern festival', sources: webSearch.sources, error: 'Partial' });
+    assert.equal(full[1].sharedPersona, undefined);
+    assert.equal(full[1].swipes[0].reasoning, 'First thinking');
+    assert.deepEqual(full[1].swipes[0].webSearch, webSearch);
+    assert.deepEqual(exportReply(answer, { reasoning: true }).webSearch, undefined);
+
+    const session = a.mutate(OTHER, bucket => store.createSession(bucket, { messages: JSON.parse(JSON.stringify(full)) }));
+    const saved = a.read(OTHER).sessions.find(item => item.id === session.id).messages;
+    assert.deepEqual(saved[0].attachments, attachments);
+    assert.equal(saved[0].webSearch, undefined);
+    assert.equal(saved[1].reasoning, 'Second thinking');
+    assert.deepEqual(saved[1].webSearch, { provider: 'brave', query: 'lantern festival', sources: webSearch.sources, error: 'Partial', imported: true });
+    assert.equal(saved[1].swipes[0].reasoning, 'First thinking');
+    assert.equal(saved[1].swipes[0].webSearch.imported, true);
+
+    const forged = a.mutate(OTHER, bucket => store.createSession(bucket, { messages: [
+        { role: 'user', text: 'Mine', webSearch },
+        { role: 'assistant', text: 'Bad', webSearch: { provider: 'brave', query: 'x', sources: [{ title: 'No', url: 'javascript:alert(1)' }] } },
+        { role: 'assistant', text: 'Off', webSearch: { provider: 'off', query: 'x', sources: webSearch.sources } },
+    ] }));
+    assert.equal(forged.messages[0].webSearch, undefined);
+    assert.deepEqual(forged.messages[1].webSearch, { provider: 'brave', query: 'x', sources: [], imported: true });
+    assert.equal(forged.messages[2].webSearch, undefined);
+});
+
 test('failed regeneration retains the original and blocks switching until work settles', async t => {
     const a = account(t);
     const session = startSession(a);

@@ -85,7 +85,7 @@ Press **+** (Message options) beside the message box and choose **Attach files**
 
 Images are resized to at most 2048 pixels on the longest side and sent as pictures. Choose PNG, JPEG, WebP, GIF or another image your browser can open; Neconyan converts it to PNG or JPEG before sending. A picture that stays too large or detailed after resizing is refused, so choose a smaller one. Image attachments need a Chat Completion connection with a model that accepts images. Text files, JSON, CSV and Markdown are read as text up to 1 MiB. PDFs use selectable text, up to 300 pages and 1 MiB of extracted text; a scanned PDF needs its pages attached as images. Other binary files are refused rather than sent as broken text.
 
-Press the **X** beside an attachment to remove it before sending. Attachments stay with their message and are included as earlier conversation later in the session. Draft attachments follow the same draft rules as typed text: they survive switching sessions while the page stays open, but not a browser reload. Session exports keep message text only, so attached files and images are not included; keep the originals separately.
+Press the **X** beside an attachment to remove it before sending. Attachments stay with their message and are included as earlier conversation later in the session. Draft attachments follow the same draft rules as typed text: they survive switching sessions while the page stays open, but not a browser reload. Session exports include attached files and images only when you tick **Attached files and images**, so keep the originals separately.
 
 ## Web search
 
@@ -104,7 +104,7 @@ Set the account-wide provider under **Context → Web search**:
 
 Scratchpad searches once per message, or once for a whole round table, and waits up to 20 seconds. The assistant is told to cite the numbered results it uses as `[n]` and treat their contents as reference material. If search fails, the assistant can still answer, with a visible failure note and no sources. **Stop** cancels the reply, including while it's searching.
 
-Finished replies keep a collapsible **Sources** list with the exact query and numbered links. Links open in a new tab without sending the page your Scratchpad address. The saved reply keeps the provider, query, source titles and addresses, but doesn't retain the result snippets. Session exports remain text-only and don't include these search records, so imported text can't become a verified source list.
+Finished replies keep a collapsible **Sources** list with the exact query and numbered links. Links open in a new tab without sending the page your Scratchpad address. The saved reply keeps the provider, query, source titles and addresses, but doesn't retain the result snippets. Session exports include these search records only when you tick **Web search sources**. After an import they are labelled as coming with an imported file, because Scratchpad didn't run that search itself.
 
 ## What Scratchpad reads
 
@@ -173,7 +173,8 @@ The **Sessions** tab lists General sessions or the sessions for the current char
 - **Pin session** (the pin on a session's row) keeps a session at the top of the list and out of automatic cleanup. Press it again to unpin. Pinned sessions still count towards the 40, you can still delete them by hand, and temporary sessions can't be pinned.
 - A new session is named after its assistant, such as 'Miso's notes'. Your first message renames it to the opening words of that message (up to 48 characters, without asking a model). A name you set with **Rename** is never replaced.
 - **Search sessions** filters by session name and message text.
-- **Export current** downloads the open session as a file. **Import** adds a session from one of those files to the current character, group or note.
+- **Export current** opens **Export this session**. Under **File type**, **Scratchpad file** can be imported again and keeps every version of each reply; **Markdown** is a transcript for reading or sharing, shows the chosen version of each reply and can't be imported again. Under **Also include**, tick **Thinking**, **Web search sources** or **Attached files and images**. All three are off to begin with, so an untouched export holds the conversation text only.
+- **Import** adds a session from a Scratchpad file to the current character, group or note. A file too large to import whole is imported without its attached files and images, and Scratchpad tells you so.
 - **Save session to note** saves the completed conversation as a quotation in a new or existing note. It leaves out reasoning, unfinished replies and change-card instructions.
 - **Delete old sessions automatically** is one setting shared across your account, off by default. Set **Sessions to keep per list** (1 to 40, 10 by default) to keep the most recently used sessions in each list, including General. Changing it here changes it everywhere. Cleanup runs in the current list when you save the setting, and in other lists when their Scratchpad is next saved, including when a reply finishes. Older sessions are deleted for good. The open session, the one that just got a reply, pinned sessions and any session with a reply in progress are never deleted. Enabling cleanup or lowering the limit while it is on asks you to confirm the account-wide change.
 
@@ -203,7 +204,7 @@ For a portrait, generating the image leaves the character card unchanged. Press 
 
 Before replacement, the complete original PNG is preserved in user images. **Previous avatar** opens that saved picture/card copy, including its embedded card data. It isn't a one-click undo action. If the previous picture can't be preserved, the replacement isn't offered.
 
-Session exports remain text-only: conversation text and image prompts travel, but pictures, attached files, local image addresses, jobs, approvals and target permissions don't. Download pictures separately. Imported image proposals haven't been generated or approved. Ordinary prose edits keep saved image references; the generated blocks must keep their wording and order. Deleting a message/session or using cleanup removes references, not the separate user-image files. Dismissing a proposal also keeps its saved picture.
+Session exports never carry generated pictures: conversation text and image prompts travel, but pictures, local image addresses, jobs, approvals and target permissions don't. Download pictures separately. Imported image proposals haven't been generated or approved. Ordinary prose edits keep saved image references; the generated blocks must keep their wording and order. Deleting a message/session or using cleanup removes references, not the separate user-image files. Dismissing a proposal also keeps its saved picture.
 
 ## Limits and known gaps
 
