@@ -9,6 +9,7 @@
 - PR #598 (2026-11-11) `fix(conversation): time out silent providers and stop duplicate asides`
 - PR #599 (2026-11-11) `fix(roleplay): honour a Stop made during the automatic decision`
 - PR #600 (2026-11-11) `fix(roleplay): empty a server reply at once on regenerate or swipe`
+- PR #601 (2026-11-11) `fix(slate-flat): fill hovered Guided Gen buttons with the accent on phones`
 
 ## v1.5.4
 
