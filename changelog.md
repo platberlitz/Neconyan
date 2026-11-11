@@ -11,6 +11,7 @@
 - PR #600 (2026-11-11) `fix(roleplay): empty a server reply at once on regenerate or swipe`
 - PR #601 (2026-11-11) `fix(slate-flat): fill hovered Guided Gen buttons with the accent on phones`
 - PR #602 (2026-11-11) `fix(quick-image-gen): route prefixed image models through responses`
+- PR #603 (2026-11-11) `fix(windows-xp): tint dark raised cards instead of greying them`
 
 ## v1.5.4
 
