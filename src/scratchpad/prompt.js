@@ -102,8 +102,13 @@ function imageInstructions({ image, avatar, persona }) {
     ].join('\n');
 }
 
-function changeInstructions({ lore, character, chat, members, notebook, persona, preset, agents }) {
+function changeInstructions({ lore, character, chat, members, notebook, persona, preset, agents, authorsNote }) {
     const kinds = [];
+    if (authorsNote) kinds.push([
+        'This chat\'s Author\'s Note (the text under Author\'s Note in the context; when that heading is absent, the note is empty):',
+        '{"type":"authors-note","action":"replace","value":"<complete new note text>","reason":"<why>"}',
+        'The value replaces the whole note, so include every part that should stay; an empty value clears it. The context shows the note with macros already filled in, so a name you see may be saved as {{char}} or {{user}}; write those macros where the names belong. You cannot change where or how often the note is inserted, or the default, character or persona notes; tell the user to do that in Author\'s Note.',
+    ].join('\n'));
     if (agents) kinds.push([
         'Saved Agents (only the ones listed under Agents in the context):',
         '{"type":"agent","action":"replace","agent":"<exact Agent ID>","name":"<that Agent\'s current name>","field":"prompt","value":"<complete new text>","reason":"<why>"}',
@@ -185,7 +190,7 @@ export function buildScratchpadSystemPrompt({ assistant, gender, persona: savedP
     const story = characterName ? `the story chat with ${characterName}` : 'the story chat';
     const general = sourceKind === 'general';
     const contextNotice = general ? `You are talking directly with ${names.user} in General Scratchpad. No story chat is open and no story messages or lorebooks are shared. Any supplied character card is reference material, not evidence of a live story. Only selected, shared cards and the shared persona (including its Scenario Notes) may receive field-change suggestions. Never propose story message or lorebook edits here.` : '';
-    if (general) capabilities = { ...capabilities, chat: false, lore: false, members: [], preset: [] };
+    if (general) capabilities = { ...capabilities, chat: false, lore: false, members: [], preset: [], authorsNote: false };
     const sections = [
         `You are ${persona.name}, ${savedPersona ? 'the user\'s chosen assistant' : 'one of the three Neconyan assistants (Miso, Taro and Nori)'}. ${general ? contextNotice : `You are working in Scratchpad, a private side discussion beside ${names.user}'s ${story.replace(/^the /, '')}.`}`,
         `Stay fully in character as ${persona.name} in every reply. Scratchpad is separate from the user's story, not separate from your personality. Your temperament, humour, reactions and relationship with ${names.user} shape how you explain, question, disagree, comfort and joke, including during practical help.`,
@@ -203,7 +208,7 @@ export function buildScratchpadSystemPrompt({ assistant, gender, persona: savedP
     ];
     const instructions = typeof customPrompt === 'string' && customPrompt.trim()
         ? [customPrompt, contextNotice && !customPrompt.includes(contextNotice) ? contextNotice : '', webSearch ? WEB_SEARCH_INSTRUCTIONS : '', webPages ? WEB_PAGES_INSTRUCTIONS : '',
-            capabilities.notebook || capabilities.persona || capabilities.preset?.length || capabilities.agents ? changeInstructions({ notebook: capabilities.notebook, persona: capabilities.persona, preset: capabilities.preset, agents: capabilities.agents }) : ''].filter(Boolean).join('\n\n')
+            capabilities.notebook || capabilities.persona || capabilities.preset?.length || capabilities.agents || capabilities.authorsNote ? changeInstructions({ notebook: capabilities.notebook, persona: capabilities.persona, preset: capabilities.preset, agents: capabilities.agents, authorsNote: capabilities.authorsNote }) : ''].filter(Boolean).join('\n\n')
         : sections.filter(Boolean).join('\n\n');
     const reference = help ? `Neconyan reference for app questions (use it only when ${names.user} asks how something in Neconyan works):\n${help}` : '';
     const preferences = userInstructions.trim() ? `The user's global Scratchpad instructions for you:\n${userInstructions}` : '';

@@ -182,6 +182,11 @@ export function normaliseChange(value) {
         return { type: 'agent', action: 'replace', agent: value.agent.trim(), field: value.field, value: next, reason,
             ...(typeof value.name === 'string' && value.name.trim() ? { name: text(value.name, 200).replace(/\s+/g, ' ').trim() } : {}) };
     }
+    if (value.type === 'authors-note') {
+        if (![undefined, 'replace', 'edit'].includes(value.action)) fail('Scratchpad can only replace the text of this chat\'s Author\'s Note.');
+        if (typeof value.value !== 'string') fail('This Author\'s Note change has no new text.');
+        return { type: 'authors-note', action: 'replace', value: text(value.value), reason };
+    }
     if (value.type === 'chat') {
         if (value.action === 'insert') {
             const after = messageNumber(value.after);
@@ -260,6 +265,7 @@ export function describeChange(change) {
         return `Change ${change.character}'s ${label}`;
     }
     if (change.type === 'agent') return `Change Agent '${change.name || change.agent}': ${change.field}`;
+    if (change.type === 'authors-note') return change.value.trim() ? 'Change the Author\'s Note' : 'Clear the Author\'s Note';
     switch (change.action) {
         case 'edit': return `Rewrite message #${change.message}`;
         case 'insert': return `Add a message after #${change.after}`;

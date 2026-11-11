@@ -707,6 +707,7 @@ export async function buildContext({ source, settings, pendingText = '', session
             chat: source.kind === 'roleplay',
             members: source.groupId ? people.map(item => item.name).filter(Boolean) : [],
             ...(agentsShared ? { agents: true } : {}),
+            ...(include.authorsNote && source.kind === 'roleplay' ? { authorsNote: true } : {}),
         },
     };
 }

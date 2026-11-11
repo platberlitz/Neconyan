@@ -1772,7 +1772,7 @@ async function prepareReviewPlan(source, session, message, part) {
                 throw new Error(t`Share the original preset in this chat before saving its changes.`);
             }
         },
-        agentsShared: currentSettings().include.agents === true,
+        agentsShared: currentSettings().include.agents === true, authorsNoteShared: currentSettings().include.authorsNote === true,
         creationGuard: () => requireScope(source, session.id), creatorKey: JSON.stringify([source.key, session.id, message.id, part.index]) });
     requireScope(source, session.id);
     if (plan.bucket) applyBucket(plan.bucket);

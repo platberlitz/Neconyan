@@ -146,6 +146,16 @@ describe('Scratchpad reply parsing', () => {
         expect(describeChange({ type: 'agent', agent: 'a-1', field: 'description' })).toBe('Change Agent \'a-1\': description');
     });
 
+    test('accepts a replacement of the Author\'s Note text and nothing else about it', () => {
+        expect(normaliseChange({ type: 'authors-note', value: 'Keep {{char}} calm.', reason: 'Shorter', depth: 2 }))
+            .toEqual({ type: 'authors-note', action: 'replace', value: 'Keep {{char}} calm.', reason: 'Shorter' });
+        expect(normaliseChange({ type: 'authors-note', action: 'edit', value: '' })).toMatchObject({ action: 'replace', value: '' });
+        expect(() => normaliseChange({ type: 'authors-note', action: 'delete', value: 'x' })).toThrow('can only replace the text');
+        expect(() => normaliseChange({ type: 'authors-note' })).toThrow('no new text');
+        expect(describeChange({ type: 'authors-note', value: 'Keep calm.' })).toBe('Change the Author\'s Note');
+        expect(describeChange({ type: 'authors-note', value: '  ' })).toBe('Clear the Author\'s Note');
+    });
+
     test('accepts all six Notebook mutations and strips model-supplied approvals and unrelated fields', () => {
         const common = { notebookId: 'nb', noteId: 'note', expectedRevision: 'revision', grantId: 'grant', userConfirmed: true, canEdit: true };
         for (const [action, extra] of [
