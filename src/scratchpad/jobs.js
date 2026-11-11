@@ -3,6 +3,7 @@ import { normaliseAttachments } from '../../public/scripts/scratchpad/attachment
 import { normalisePresetTargets } from '../../public/scripts/scratchpad/preset-fields.js';
 import { appendReplySwipe, MAX_REPLY_SWIPES, replySwipes } from '../../public/scripts/scratchpad/swipes.js';
 import { scratchpadPrefill, joinScratchpadPrefill } from '../../public/scripts/scratchpad/prefill.js';
+import { roundToDiscuss } from '../../public/scripts/scratchpad/discuss.js';
 import { runChatProfile, validateActiveGenerationContext } from '../generation/service.js';
 import { createMessageTokenCounter } from '../generation/message-token-counts.js';
 import { captureGenerationBinding, resolveGenerationProfile } from '../generation/profiles.js';
@@ -104,6 +105,7 @@ export function normaliseReplyRequest(body = {}) {
         source,
         sessionId,
         regenerate,
+        discuss: !regenerate && body.discuss === true,
         text,
         attachments,
         context: boundedText(body.context, MAX_CONTEXT_BYTES, 'The shared context'),
@@ -148,6 +150,9 @@ export function planReply(session, request, chooseIndex = randomInt) {
     const messages = session.messages;
     if (!request.regenerate) {
         const participants = sessionAssistants(session);
+        if (request.discuss && !roundToDiscuss(session).length) {
+            throw fail('SCRATCHPAD_DISCUSS_INVALID', 'A discussion needs a round table and finished answers from at least two assistants to your latest message.', 409);
+        }
         const assistants = session.settings.roundTable && session.settings.randomReply
             ? [participants[chooseIndex(participants.length)]] : participants;
         if (messages.length + 1 + assistants.length > MAX_MESSAGES) throw fail('SCRATCHPAD_SESSION_FULL', 'This session is full. Start a new session to keep talking.', 409);
@@ -190,7 +195,7 @@ export async function acceptScratchpadReply(request, body = {}) {
     const base = scratchpadAccountBase(request);
     const { directories, owner } = base;
     const input = normaliseReplyRequest(body);
-    const requestHash = hash({ source: input.source, sessionId: input.sessionId, regenerate: input.regenerate, text: input.text,
+    const requestHash = hash({ source: input.source, sessionId: input.sessionId, regenerate: input.regenerate, text: input.text, ...(input.discuss ? { discuss: true } : {}),
         ...(input.attachments.length ? { attachments: input.attachments } : {}),
         context: input.context, help: input.help, capabilities: input.capabilities, names: input.names, chatProfileId: input.chatProfileId, genders: input.genders,
         ...(input.targets !== undefined ? { targets: input.targets } : {}) });
@@ -205,7 +210,8 @@ export async function acceptScratchpadReply(request, body = {}) {
         const plan = planReply(session, input);
         // Web search uses only the current message. Its settings and selected key
         // id are snapshotted here; the key value is read only when the job runs.
-        const webSearch = session.settings.webSearch ? planWebSearch(base.directories, readWebSearchLocked(lease), plan.prompt) : null;
+        // A discussion round has no question of its own to search for.
+        const webSearch = session.settings.webSearch && !input.discuss ? planWebSearch(base.directories, readWebSearchLocked(lease), plan.prompt) : null;
         // Target checking only runs when images are available, so a stale or renamed shared card cannot fail a text reply.
         const targets = images ? captureImageTargetsLocked(lease, bucket.source, input.targets, { shared: session.settings.include.card }) : [];
         const sharedPersona = capturePersonaTargetLocked(lease, bucket.source, input.capabilities.persona, session.settings.include.persona);

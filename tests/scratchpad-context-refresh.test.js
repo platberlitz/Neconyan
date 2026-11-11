@@ -402,6 +402,7 @@ describe('Scratchpad Context refresh lifecycle', () => {
             syncWatchers() {},
             stopWatchers() {},
             stopReadAloud() {},
+            roundToDiscuss: () => [],
             setNotebookSource() {},
             applyLayout() {},
             clearInterval() {},

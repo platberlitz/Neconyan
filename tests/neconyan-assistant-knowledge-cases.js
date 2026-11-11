@@ -18,6 +18,7 @@ export const refreshedKnowledgeCases = [
     ['Does Separate notes for each persona give me separate Author\'s Note libraries?', 'chat.authors-note', 'own note library for that character, not just separate ticks'],
     ['How do I add my own quick prompts to Scratchpad?', 'scratchpad.quick-prompts', 'Add a prompt creates a row'],
     ['Can I review all the Scratchpad change cards in a reply at once?', 'scratchpad.review-all', 'press Save ticked changes'],
+    ['Can the round table assistants in Scratchpad discuss each other\'s answers?', 'scratchpad.discuss', 'press Discuss these answers'],
     ['Can Scratchpad read a reply aloud with text to speech?', 'scratchpad.read-aloud', 'press Read aloud'],
     ['Can a Scratchpad reply become a swipe of the last story reply?', 'scratchpad.reply-version', 'Add as another version of the last story reply'],
     ['How do I pin a Scratchpad session so cleanup keeps it?', 'scratchpad.session-pins', 'never deleted by automatic cleanup'],
