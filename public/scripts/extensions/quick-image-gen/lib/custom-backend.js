@@ -551,7 +551,7 @@ async function readCustomResponse(response, config, fallbackUrl) {
     return { data: await readResponseJson(response, MAX_PROVIDER_RESPONSE_BYTES), responseUrl: response.url || fallbackUrl };
 }
 
-async function materializeImage(image, baseUrl, config, fetchImpl, signal) {
+export function normalizeCustomBackendImageSource(image, baseUrl) {
     const source = normalizeImageSource(image, {
         baseUrl,
         allowHttp: true,
@@ -559,13 +559,7 @@ async function materializeImage(image, baseUrl, config, fetchImpl, signal) {
         blockPrivateHosts: false,
     });
     if (!source) throw new Error("Custom API returned an invalid image source");
-    if (source.startsWith("data:")) {
-        const response = await fetchImpl(source, { signal, credentials: "omit" });
-        const buffer = await readResponseArrayBuffer(response, MAX_IMAGE_BYTES);
-        const format = await validateImageData(buffer);
-        if (!format) throw new Error("Custom API output is not a supported image format");
-        return { buffer, contentType: format.mime };
-    }
+    if (source.startsWith('data:')) return source;
     const parsed = new URL(source);
     if (parsed.username || parsed.password) throw new Error("Custom API image URL must not contain credentials");
     const apiUrl = new URL(baseUrl);
@@ -577,6 +571,19 @@ async function materializeImage(image, baseUrl, config, fetchImpl, signal) {
     if (parsed.origin !== apiUrl.origin && !safePublicSource) {
         throw new Error("Custom API image URL is not a safe public HTTPS URL");
     }
+    return source;
+}
+
+async function materializeImage(image, baseUrl, config, fetchImpl, signal) {
+    const source = normalizeCustomBackendImageSource(image, baseUrl);
+    if (source.startsWith('data:')) {
+        const response = await fetchImpl(source, { signal, credentials: 'omit' });
+        const buffer = await readResponseArrayBuffer(response, MAX_IMAGE_BYTES);
+        const format = await validateImageData(buffer);
+        if (!format) throw new Error('Custom API output is not a supported image format');
+        return { buffer, contentType: format.mime };
+    }
+    const parsed = new URL(source);
     const headers = { Accept: "image/*" };
     if (/^https?:$/.test(parsed.protocol) && parsed.origin === new URL(config.url).origin) {
         buildAuth(config, parsed, headers);
@@ -594,6 +601,8 @@ async function materializeImage(image, baseUrl, config, fetchImpl, signal) {
     if (!format) throw new Error("Custom API output is not a supported image format");
     return { buffer, contentType: format.mime };
 }
+
+export { materializeImage as downloadCustomBackendImage };
 
 function normalizeJobId(value) {
     if (typeof value !== "string" && !(typeof value === "number" && Number.isFinite(value))) {
@@ -678,6 +687,10 @@ export async function executeCustomBackend(config, input, options = {}) {
         if (request.config.mode === "json") {
             const image = extractCustomBackendImage(submitted.data, request.config.responsePath, request.config.responseType);
             if (!image) throw new Error("No image found at the configured response path");
+            if (options.deferImage) {
+                const imageUrl = normalizeCustomBackendImageSource(image, submitted.responseUrl);
+                if (!imageUrl.startsWith('data:')) return { imageUrl };
+            }
             return await materializeImage(image, submitted.responseUrl, request.config, fetchImpl, controller.signal);
         }
 

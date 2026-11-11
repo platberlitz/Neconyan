@@ -1,12 +1,12 @@
 import { Buffer } from 'node:buffer';
 
 import { providerNotDispatched, readArtifact, providerStep, writeArtifact } from '../jobs/artifacts.js';
-import { readImageArtifact, writeImageArtifact } from '../jobs/image-artifacts.js';
+import { isImageAddressArtifact, readImageArtifact, writeImageArtifact } from '../jobs/image-artifacts.js';
 import { getJob } from '../jobs/store.js';
 import { roleplayAccountBase, roleplayHash, withRoleplayAccount } from '../roleplay-store.js';
 import { detectImageFormat } from '../../public/scripts/extensions/quick-image-gen/lib/image-metadata.js';
 import { resolveCharacterImageSettings } from '../../public/scripts/extensions/quick-image-gen/lib/character-settings.js';
-import { assertQuickImageGenRequestConfigured, generateQuickImageGenImage, materializeQueuedImage,
+import { assertQuickImageGenRequestConfigured, downloadQuickImageGenImage, generateQuickImageGenImage, materializeQueuedImage,
     readQuickImageGenSettings, resolveQuickImageGenSeed } from './quick-image-gen.js';
 import { prepareNanoGptPayload } from './quick-image-gen-nanogpt.js';
 import { prepareNanobananaPayload } from './quick-image-gen-nanobanana.js';
@@ -104,7 +104,10 @@ export async function generateQuickImageGenJobImage(context, { effectId, prompt,
     };
     withAccount(() => {});
     const step = `provider:${name}`;
-    const savedResult = withAccount(() => readImageArtifact(context.directories, context.job.id, step));
+    // A provider that answers with an image address has that address saved here until its download succeeds.
+    const readSaved = () => withAccount(() => readImageArtifact(context.directories, context.job.id, step)
+        ?? readArtifact(context.directories, context.job.id, step));
+    const savedResult = readSaved();
     if (savedResult === undefined && getJob(context.directories, context.job.id)?.resume === step) {
         throw recovery('The image provider outcome is unknown and cannot be repeated automatically.');
     }
@@ -176,12 +179,24 @@ export async function generateQuickImageGenJobImage(context, { effectId, prompt,
                         ...(input.provider === 'custom' ? { __qigCustomReferences: providerInput } : {}),
                         ...(input.provider === 'proxy' ? { proxySeed: input.proxySeed, __qigProxyRequest: providerInput,
                             __qigProxyContext: proxyContext, __qigProxyReferences: proxyReferences } : {}) },
-                    signal: context.signal, fetch });
+                    signal: context.signal, fetch, deferDownload: true });
             }, {
-                readResult: () => withAccount(() => readImageArtifact(context.directories, context.job.id, step)),
-                writeResult: (_directories, _id, _name, result) => withAccount(() => writeImageArtifact(context.directories, context.job.id, step, result)),
+                readResult: readSaved,
+                writeResult: (_directories, _id, _name, result) => withAccount(() => isImageAddressArtifact(result)
+                    ? writeArtifact(context.directories, context.job.id, step, { url: result.url })
+                    : writeImageArtifact(context.directories, context.job.id, step, result)),
             });
         }
+    }
+    if (isImageAddressArtifact(image)) {
+        // The paid request is settled; a failed download leaves the address saved for the next attempt.
+        const current = readSettings();
+        if (quickImageGenSettingsFingerprint(current) !== input.settingsFingerprint || current.provider !== input.provider) throw sourceChanged();
+        image = await downloadQuickImageGenImage({ url: image.url, prompt: input.prompt, negative: input.negative,
+            settings: { ...current, seed: input.seed,
+                ...(input.provider === 'proxy' ? { proxySeed: input.proxySeed, __qigProxyContext: proxyContext } : {}) },
+            signal: context.signal, fetch });
+        withAccount(() => writeImageArtifact(context.directories, context.job.id, step, image));
     }
     const bytes = typeof image?.base64 === 'string' ? Buffer.from(image.base64, 'base64') : null;
     const format = bytes && detectImageFormat(bytes);

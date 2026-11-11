@@ -26,13 +26,18 @@ function imagePath(directories, id, name, create = false) {
     return path.join(parent, `${jobKey(name)}.bin`);
 }
 
+/** A provider address saved before its image was downloaded; the image itself is not saved yet. */
+export function isImageAddressArtifact(saved) {
+    return typeof saved?.url === 'string' && saved.imageArtifact === undefined && saved.base64 === undefined;
+}
+
 /** A small JSON receipt points at a bounded binary result, not a base64 string over the JSON budget. */
 export function writeImageArtifact(directories, id, name, value) {
     const bytes = imageResult(value);
     const digest = crypto.createHash('sha256').update(bytes).digest('hex');
     const receipt = { imageArtifact: 1, byteLength: bytes.length, digest, format: value.format };
     const previous = readArtifact(directories, id, name);
-    if (previous !== undefined) {
+    if (previous !== undefined && !isImageAddressArtifact(previous)) {
         const recorded = readImageArtifact(directories, id, name);
         if (!imageResult(recorded).equals(bytes) || recorded.format !== value.format) throw fail('The saved image record does not match this result.');
         return value;
@@ -54,7 +59,7 @@ export function writeImageArtifact(directories, id, name, value) {
 
 export function readImageArtifact(directories, id, name) {
     const saved = readArtifact(directories, id, name);
-    if (saved === undefined) return undefined;
+    if (saved === undefined || isImageAddressArtifact(saved)) return undefined;
     if (saved?.imageArtifact !== 1) {
         imageResult(saved); // Older saved image results stored their bytes in the JSON artifact.
         return saved;
