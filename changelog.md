@@ -21,6 +21,7 @@
 - PR #610 (2026-11-11) `feat(scratchpad): add your own quick prompts`
 - PR #611 (2026-11-11) `feat(scratchpad): add a reply as a version of the last story reply`
 - PR #612 (2026-11-11) `feat(scratchpad): pin sessions and name them from the first message`
+- PR #613 (2026-11-11) `feat(scratchpad): let try again redo any reply`
 
 ## v1.5.4
 
