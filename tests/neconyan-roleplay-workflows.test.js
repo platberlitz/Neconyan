@@ -706,7 +706,7 @@ test('a finished reply hands the reader\'s place to the reload and clears it aft
     expect(reloads).toEqual([2]);
 });
 
-test.each([null, 2])('a finished reply anchors its own text, using the kept message index when supplied: %s', keptIndex => {
+test.each([null, 2])('a finished reply whose top is visible anchors the row, using the kept message index when supplied: %s', keptIndex => {
     const previewText = { getBoundingClientRect: () => ({ top: 360, bottom: 520 }) };
     const preview = {
         getBoundingClientRect: () => ({ top: 320, bottom: 640 }),
@@ -735,8 +735,8 @@ test.each([null, 2])('a finished reply anchors its own text, using the kept mess
     try {
         expect(workflows.finishedReplyReadingAnchor(keptIndex === null ? null : { keptReply: { messageIndex: keptIndex } })).toEqual({
             messageId: keptIndex ?? 1,
-            offsetTop: 260,
-            part: '.mes_text',
+            offsetTop: 220,
+            part: null,
             fallback: { messageId: '0', offsetTop: 80 },
         });
     } finally {
@@ -744,8 +744,22 @@ test.each([null, 2])('a finished reply anchors its own text, using the kept mess
     }
 });
 
-function installFinishedReplyDom({ previewChild = 'last-speaker-child', withFallback = true } = {}) {
-    const previewText = { getBoundingClientRect: () => ({ top: 360, bottom: 520 }) };
+test('a finished reply whose top is above the viewport anchors its own text', () => {
+    const dom = installFinishedReplyDom({ previewTop: 40, textTop: 80 });
+    try {
+        expect(workflows.finishedReplyReadingAnchor()).toEqual({
+            messageId: 2,
+            offsetTop: -20,
+            part: '.mes_text',
+            fallback: { messageId: '0', offsetTop: 80 },
+        });
+    } finally {
+        dom.restore();
+    }
+});
+
+function installFinishedReplyDom({ previewChild = 'last-speaker-child', withFallback = true, previewTop = 320, textTop = 360 } = {}) {
+    const previewText = { getBoundingClientRect: () => ({ top: textTop, bottom: textTop + 160 }) };
     const above = withFallback ? {
         matches: selector => selector === '.mes[mesid]',
         getAttribute: () => '0',
@@ -754,7 +768,7 @@ function installFinishedReplyDom({ previewChild = 'last-speaker-child', withFall
     } : null;
     const preview = {
         dataset: previewChild ? { roleplayChild: previewChild } : {},
-        getBoundingClientRect: () => ({ top: 320, bottom: 640 }),
+        getBoundingClientRect: () => ({ top: previewTop, bottom: previewTop + 320 }),
         querySelector: selector => selector === '.mes_text' ? previewText : null,
         previousElementSibling: above,
     };
@@ -778,8 +792,8 @@ test('a finished group reply anchors its final saved speaker when the preview ch
     try {
         expect(workflows.finishedReplyReadingAnchor(twoSpeakerReceipt)).toEqual({
             messageId: 3,
-            offsetTop: 260,
-            part: '.mes_text',
+            offsetTop: 220,
+            part: null,
             fallback: { messageId: '0', offsetTop: 80 },
         });
     } finally {
@@ -824,14 +838,14 @@ test('a solo reply keeps the reply anchor without group speakers', () => {
     try {
         expect(workflows.finishedReplyReadingAnchor({ result: { childJobId: 'single-child' } })).toEqual({
             messageId: 2,
-            offsetTop: 260,
-            part: '.mes_text',
+            offsetTop: 220,
+            part: null,
             fallback: { messageId: '0', offsetTop: 80 },
         });
         expect(workflows.finishedReplyReadingAnchor()).toEqual({
             messageId: 2,
-            offsetTop: 260,
-            part: '.mes_text',
+            offsetTop: 220,
+            part: null,
             fallback: { messageId: '0', offsetTop: 80 },
         });
     } finally {

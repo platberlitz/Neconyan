@@ -281,7 +281,12 @@ async function finishReply(page, text) {
     const finished = await page.evaluate(async (text) => {
         const chat = document.querySelector('#chat');
         const preview = chat.querySelector('#neconyan-roleplay-preview');
-        const previewTop = (preview.querySelector('.mes_text') || preview).getBoundingClientRect().top - chat.getBoundingClientRect().top;
+        const chatTop = chat.getBoundingClientRect().top;
+        const rowTop = preview.getBoundingClientRect().top - chatTop;
+        const anchorRow = rowTop >= -1 || !preview.querySelector('.mes_text');
+        const previewTop = anchorRow
+            ? rowTop
+            : preview.querySelector('.mes_text').getBoundingClientRect().top - chatTop;
         const { keepChatReadingPositionOnNextLoad, printMessages } = await import('/script.js');
         const { finishedReplyReadingAnchor } = await import('/scripts/neconyan-conversation/roleplay-workflows.js');
         window.scrollPreviewStop.freeze();
@@ -291,16 +296,17 @@ async function finishReply(page, text) {
         window.jQuery(chat).children().remove();
         await printMessages();
         window.stopScrollPreview();
-        return { previewTop, messageId: String(context.chat.length - 1) };
+        return { previewTop, anchorRow, messageId: String(context.chat.length - 1) };
     }, text);
     // Outlast every chat-load settle pin.
     // eslint-disable-next-line playwright/no-wait-for-timeout
     await page.waitForTimeout(2800);
-    const savedTop = await page.evaluate((messageId) => {
+    const savedTop = await page.evaluate(({ messageId, anchorRow }) => {
         const chat = document.querySelector('#chat');
         const message = chat.querySelector(`.mes[mesid="${messageId}"]`);
-        return (message.querySelector('.mes_text') || message).getBoundingClientRect().top - chat.getBoundingClientRect().top;
-    }, finished.messageId);
+        const target = anchorRow ? message : (message.querySelector('.mes_text') || message);
+        return target.getBoundingClientRect().top - chat.getBoundingClientRect().top;
+    }, finished);
     return { ...finished, savedTop };
 }
 
@@ -561,13 +567,13 @@ for (const phone of [false, true]) {
         test('saving a reply through the server handover keeps its text and notes in place', async ({ page }) => {
             const deferredNavigation = await deferSwipeNavigation(page);
             await startActiveSavedReply(page);
-            await updatePreview(page, { stage: 'agents', lines: 12 });
-            await updatePreview(page, { stage: 'agents', lines: 18, companionResults: companionNote('pending') });
+            await updatePreview(page, { stage: 'agents', lines: 28 });
+            await updatePreview(page, { stage: 'agents', lines: 34, companionResults: companionNote('pending') });
             await expect(page.locator('#neconyan-roleplay-preview .ica--companion-ledger')).toHaveCount(1);
-            await updatePreview(page, { stage: 'agents', lines: 18, companionResults: companionNote('done', 30) });
+            await updatePreview(page, { stage: 'agents', lines: 34, companionResults: companionNote('done', 30) });
             await waitForAnimationFrames(page, 8);
             const messageId = await installSavedReplyRoute(page, {
-                text: replyText(18),
+                text: replyText(34),
                 extra: { inChatAgentCompanionResults: companionNote('done', 30) },
             });
             await recordScrollFrames(page);
@@ -585,6 +591,31 @@ for (const phone of [false, true]) {
             expect(Math.abs(finished.savedTextTop - finished.previewTextTop)).toBeLessThanOrEqual(4);
             expectMarkerStable(marker);
             await expect(page.locator(`.mes[mesid="${messageId}"] .ica--companion-ledger`)).toHaveCount(1);
+        });
+
+        test('saving a short reply whose top is visible keeps the row top and earlier messages in place', async ({ page }) => {
+            await startActiveSavedReply(page);
+            await updatePreview(page, { stage: 'agents', lines: 6 });
+            await updatePreview(page, { stage: 'agents', lines: 6, companionResults: companionNote('done', 10) });
+            await waitForAnimationFrames(page, 6);
+            const messageId = await installSavedReplyRoute(page, {
+                text: replyText(6),
+                extra: { inChatAgentCompanionResults: companionNote('done', 10) },
+            });
+            const beforeRowTop = await previewMarkerTop(page, '#neconyan-roleplay-preview');
+            const beforeAboveBottom = await page.evaluate(id => {
+                const chat = document.querySelector('#chat');
+                return Math.round(chat.querySelector(`.mes[mesid="${id}"]`).getBoundingClientRect().bottom - chat.getBoundingClientRect().top);
+            }, messageId - 1);
+            expect(beforeRowTop).toBeGreaterThan(20);
+            await finishSavedReply(page, messageId);
+            const afterRowTop = await previewMarkerTop(page, `.mes[mesid="${messageId}"]`);
+            const afterAboveBottom = await page.evaluate(id => {
+                const chat = document.querySelector('#chat');
+                return Math.round(chat.querySelector(`.mes[mesid="${id}"]`).getBoundingClientRect().bottom - chat.getBoundingClientRect().top);
+            }, messageId - 1);
+            expect(Math.abs(afterRowTop - beforeRowTop)).toBeLessThanOrEqual(2);
+            expect(Math.abs(afterAboveBottom - beforeAboveBottom)).toBeLessThanOrEqual(2);
         });
 
         test('scrolling into the notes before the server handover does not jump back', async ({ page }) => {

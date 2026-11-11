@@ -1,6 +1,13 @@
 /* global globalThis */
 import { afterEach, beforeEach, expect, test } from '@jest/globals';
-import { beginRoleplayReplacement, commitRoleplayReplacement } from '../public/scripts/neconyan-conversation/roleplay-replacement.js';
+import {
+    beginRoleplayReplacement,
+    commitRoleplayReplacement,
+    holdRoleplayReplacementReserve,
+    releaseRoleplayReplacementReserve,
+    syncRoleplayReplacementReserve,
+    transferRoleplayReplacementReserve,
+} from '../public/scripts/neconyan-conversation/roleplay-replacement.js';
 
 let rows;
 let original;
@@ -138,4 +145,122 @@ test('restoring never overwrites a message that was redrawn while waiting', () =
     text.childNodes = redrawn;
     restore();
     expect(text.childNodes).toBe(redrawn);
+});
+
+function createScrollableChat({ historyHeight = 5000, oldHeight = 2500, previewNaturalHeight = 130, clientHeight = 700, scrollTop = 6800 }) {
+    const listeners = new Set();
+    const chat = {
+        clientHeight,
+        scrollTop,
+        get scrollHeight() {
+            const active = rows.find(row => row === original || row.id === 'preview' || row.id === 'saved');
+            const tailHeight = active === original ? oldHeight : active?.renderedHeight ?? 0;
+            return historyHeight + tailHeight;
+        },
+        getBoundingClientRect: () => ({ top: 100 }),
+        addEventListener: (type, handler) => { if (type === 'scroll') listeners.add(handler); },
+        removeEventListener: (type, handler) => { if (type === 'scroll') listeners.delete(handler); },
+        emitScroll: () => { for (const handler of [...listeners]) handler(); },
+        querySelector: selector => selector === '[data-roleplay-replacement]'
+            ? rows.find(row => row.dataset.roleplayReplacement !== undefined)
+            : rows.find(row => row === original),
+    };
+    const makeRow = (id, naturalHeight) => {
+        const node = element();
+        node.id = id;
+        node.style = { minHeight: '', flexShrink: '' };
+        Object.defineProperty(node, 'parentElement', { get: () => connected(node) ? chat : null });
+        Object.defineProperty(node, 'nextElementSibling', {
+            get: () => connected(node) ? rows[rows.indexOf(node) + 1] ?? null : null,
+        });
+        Object.defineProperty(node, 'renderedHeight', {
+            get: () => Math.max(naturalHeight, Number.parseFloat(node.style.minHeight) || 0),
+        });
+        node.getBoundingClientRect = () => ({
+            top: 100 + historyHeight - chat.scrollTop,
+            height: node.renderedHeight,
+        });
+        return node;
+    };
+    withReply();
+    original.getBoundingClientRect = () => ({
+        top: 100 + historyHeight - chat.scrollTop,
+        height: oldHeight,
+    });
+    globalThis.document.querySelector = () => chat;
+    const preview = makeRow('preview', previewNaturalHeight);
+    return { chat, preview, makeRow, listeners };
+}
+
+test('swapping a long reply places the preview at the top of the viewport with only the needed reserve', () => {
+    const { chat, preview } = createScrollableChat({ historyHeight: 5000, oldHeight: 2500, clientHeight: 700, scrollTop: 6800 });
+    const restore = beginRoleplayReplacement('roleplay.swipe', 1, () => true);
+    const marker = rows[0];
+    commitRoleplayReplacement(marker, preview, chat);
+
+    expect(chat.scrollTop).toBe(5000);
+    expect(preview.getBoundingClientRect().top - chat.getBoundingClientRect().top).toBe(0);
+    expect(preview.style.minHeight).toBe('700px');
+    expect(chat.scrollHeight - chat.scrollTop - chat.clientHeight).toBe(0);
+    expect(preview.style.flexShrink).toBe('0');
+
+    releaseRoleplayReplacementReserve(preview);
+    preview.remove();
+    restore();
+    expect(rows).toEqual([original]);
+});
+
+test('swapping a short reply whose top is visible keeps the row top in place', () => {
+    const { chat, preview } = createScrollableChat({ historyHeight: 5000, oldHeight: 240, clientHeight: 700, scrollTop: 4540 });
+    beginRoleplayReplacement('roleplay.swipe', 1, () => true);
+    commitRoleplayReplacement(rows[0], preview, chat);
+
+    expect(chat.scrollTop).toBe(4540);
+    expect(preview.getBoundingClientRect().top - chat.getBoundingClientRect().top).toBe(460);
+    expect(preview.style.minHeight).toBe('240px');
+    expect(chat.scrollHeight - chat.scrollTop - chat.clientHeight).toBe(0);
+    releaseRoleplayReplacementReserve(preview);
+});
+
+test('transferring the reserve to the saved row shrinks on scroll and clears at natural height', () => {
+    const { chat, preview, makeRow, listeners } = createScrollableChat({ historyHeight: 5000, oldHeight: 2500, clientHeight: 700, scrollTop: 6800 });
+    beginRoleplayReplacement('roleplay.swipe', 1, () => true);
+    commitRoleplayReplacement(rows[0], preview, chat);
+
+    let holdReleased = 0;
+    const saved = makeRow('saved', 280);
+    rows = [saved];
+    expect(transferRoleplayReplacementReserve(preview, saved, chat, { onUserScroll: () => { holdReleased += 1; } })).toBe(true);
+    expect(preview.style.minHeight).toBe('');
+    expect(saved.style.minHeight).toBe('700px');
+    syncRoleplayReplacementReserve(saved);
+    expect(saved.style.minHeight).toBe('700px');
+
+    chat.scrollTop = 4800;
+    chat.emitScroll();
+    expect(holdReleased).toBe(1);
+    expect(saved.style.minHeight).toBe('500px');
+    expect(chat.scrollHeight - chat.scrollTop - chat.clientHeight).toBe(0);
+
+    // Scrolling past natural height (500 - 250 = 250 < 280) removes the style and listener.
+    chat.scrollTop = 4550;
+    chat.emitScroll();
+    expect(saved.style.minHeight).toBe('');
+    expect(saved.style.flexShrink).toBe('');
+    expect(listeners.size).toBe(0);
+});
+
+test('appending a newer message after a reserved row drops the reserve at once', () => {
+    const { chat, makeRow, listeners } = createScrollableChat({ historyHeight: 5000, oldHeight: 2500, clientHeight: 700, scrollTop: 5000 });
+    const saved = makeRow('saved', 260);
+    rows = [saved];
+    holdRoleplayReplacementReserve(saved, chat, 700);
+    expect(saved.style.minHeight).toBe('700px');
+
+    const newer = makeRow('next', 120);
+    newer.classList = { contains: name => name === 'mes' };
+    rows.push(newer);
+    chat.emitScroll();
+    expect(saved.style.minHeight).toBe('');
+    expect(listeners.size).toBe(0);
 });

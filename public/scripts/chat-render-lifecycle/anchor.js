@@ -392,7 +392,7 @@ function getContentBlockKey(block) {
  * text inside the row is rewritten.
  * @param {Element} scrollElement Scroll container that owns the content.
  * @param {Element|null} container Element whose child blocks are about to be replaced.
- * @returns {{candidates: {key: string, occurrence: number, offsetTop: number}[]}|null}
+ * @returns {{candidates: {key: string, occurrence: number, offsetTop: number, index: number}[], count: number}|null}
  */
 export function captureContentAnchor(scrollElement, container) {
     if (!canReadElementRect(scrollElement) || !container) {
@@ -400,21 +400,23 @@ export function captureContentAnchor(scrollElement, container) {
     }
 
     const scrollRect = scrollElement.getBoundingClientRect();
+    const blocks = getContentBlocks(container);
     const seen = new Map();
     const candidates = [];
 
-    for (const block of getContentBlocks(container)) {
+    for (let index = 0; index < blocks.length; index++) {
+        const block = blocks[index];
         const key = getContentBlockKey(block);
         const occurrence = seen.get(key) ?? 0;
         seen.set(key, occurrence + 1);
         const rect = block.getBoundingClientRect();
         if (rect.top >= scrollRect.bottom - 1) break;
         if (rect.bottom <= scrollRect.top + 1 || rect.height <= 0) continue;
-        candidates.push({ key, occurrence, offsetTop: rect.top - scrollRect.top });
+        candidates.push({ key, occurrence, offsetTop: rect.top - scrollRect.top, index });
         if (candidates.length >= CONTENT_ANCHOR_CANDIDATES) break;
     }
 
-    return candidates.length ? { candidates } : null;
+    return candidates.length ? { candidates, count: blocks.length } : null;
 }
 
 function hasSameContentEdge(key, otherKey) {
@@ -431,10 +433,11 @@ function hasSameContentEdge(key, otherKey) {
 /**
  * Puts a captured content block back at its old place after the content was
  * rewritten. Unchanged blocks are matched first; a block whose wording changed
- * is matched by its opening or closing words.
+ * is matched by its opening or closing words, and a full rewrite falls back to
+ * the block at the same relative position.
  * @param {Element & {scrollTop: number}} scrollElement Scroll container that owns the content.
  * @param {Element|null} container Element whose child blocks were replaced.
- * @param {{candidates: {key: string, occurrence: number, offsetTop: number}[]}|null} anchor Anchor captured before the change.
+ * @param {{candidates: {key: string, occurrence: number, offsetTop: number, index?: number}[], count?: number}|null} anchor Anchor captured before the change.
  * @returns {boolean} Whether a captured block was found again.
  */
 export function restoreContentAnchor(scrollElement, container, anchor) {
@@ -465,6 +468,19 @@ function measureContentAnchorShift(scrollElement, container, anchor) {
             const block = find(candidate);
             if (!block) continue;
             return block.getBoundingClientRect().top - scrollElement.getBoundingClientRect().top - candidate.offsetTop;
+        }
+    }
+
+    const first = anchor.candidates[0];
+    if (blocks.length > 0 && Number.isInteger(first?.index) && first.index >= 0) {
+        const count = Number.isInteger(anchor.count) && anchor.count > 0 ? anchor.count : blocks.length;
+        const scaled = blocks.length === count
+            ? first.index
+            : count <= 1 ? 0 : Math.round((first.index * (blocks.length - 1)) / (count - 1));
+        const targetIndex = Math.max(0, Math.min(blocks.length - 1, scaled));
+        const block = blocks[targetIndex]?.block;
+        if (block) {
+            return block.getBoundingClientRect().top - scrollElement.getBoundingClientRect().top - first.offsetTop;
         }
     }
 

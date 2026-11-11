@@ -624,11 +624,14 @@ describe('chat render lifecycle content anchors', () => {
             block(line(5), 120),
         ]));
 
-        expect(anchor).toEqual({ candidates: [
-            { key: `P\n${line(2)}`, occurrence: 0, offsetTop: -30 },
-            { key: `P\n${line(3)}`, occurrence: 0, offsetTop: 20 },
-            { key: `P\n${line(4)}`, occurrence: 0, offsetTop: 70 },
-        ] });
+        expect(anchor).toEqual({
+            candidates: [
+                { key: `P\n${line(2)}`, occurrence: 0, offsetTop: -30, index: 1 },
+                { key: `P\n${line(3)}`, occurrence: 0, offsetTop: 20, index: 2 },
+                { key: `P\n${line(4)}`, occurrence: 0, offsetTop: 70, index: 3 },
+            ],
+            count: 5,
+        });
         expect(captureContentAnchor(scroller(), container([block(line(1), 300)]))).toBeNull();
         expect(captureContentAnchor(scroller(), null)).toBeNull();
     });
@@ -645,7 +648,7 @@ describe('chat render lifecycle content anchors', () => {
         const scrollElement = scroller();
         const anchor = captureContentAnchor(scrollElement, container([block('Same.', -200), block('Same.', 30)]));
 
-        expect(anchor.candidates).toEqual([{ key: 'P\nSame.', occurrence: 1, offsetTop: 30 }]);
+        expect(anchor.candidates).toEqual([{ key: 'P\nSame.', occurrence: 1, offsetTop: 30, index: 1 }]);
         expect(restoreContentAnchor(scrollElement, container([block('Same.', -150), block('Same.', 90)]), anchor)).toBe(true);
         expect(scrollElement.scrollTop).toBe(560);
     });
@@ -658,7 +661,7 @@ describe('chat render lifecycle content anchors', () => {
         expect(scrollElement.scrollTop).toBe(540);
     });
 
-    test('an unchanged position is not written, and unknown content reports a miss', () => {
+    test('an unchanged position is not written, and an empty container or legacy unknown content reports a miss', () => {
         const scrollElement = scroller();
         let writes = 0;
         let scrollTop = 500;
@@ -668,8 +671,51 @@ describe('chat render lifecycle content anchors', () => {
 
         expect(restoreContentAnchor(scrollElement, blocks, anchor)).toBe(true);
         expect(writes).toBe(0);
-        expect(restoreContentAnchor(scrollElement, container([block('Short.', 10)]), anchor)).toBe(false);
+        expect(restoreContentAnchor(scrollElement, container([]), anchor)).toBe(false);
+        expect(restoreContentAnchor(scrollElement, container([block('Short.', 10)]), {
+            candidates: [{ key: `P\n${line(1)}`, occurrence: 0, offsetTop: 10 }],
+        })).toBe(false);
         expect(writes).toBe(0);
+    });
+
+    test('falls back to the same or proportionally scaled block index when every paragraph is rewritten', () => {
+        const scrollElement = scroller(500);
+        const original = container([
+            block('First original sentence.', -140),
+            block('Second original sentence.', -80),
+            block('Third original sentence.', 15),
+            block('Fourth original sentence.', 70),
+            block('Fifth original sentence.', 130),
+        ]);
+        const anchor = captureContentAnchor(scrollElement, original);
+        expect(anchor.candidates[0]).toMatchObject({ index: 2, offsetTop: 15 });
+        expect(anchor.count).toBe(5);
+
+        // Same block count (5 -> 5): index 2 keeps its offsetTop of 15.
+        const sameCount = container([
+            block('Completely rewritten alpha.', -220),
+            block('Completely rewritten beta.', -90),
+            block('Completely rewritten gamma.', 65),
+            block('Completely rewritten delta.', 140),
+            block('Completely rewritten epsilon.', 210),
+        ]);
+        expect(restoreContentAnchor(scrollElement, sameCount, anchor)).toBe(true);
+        expect(scrollElement.scrollTop).toBe(550);
+
+        // Scaled block count (5 -> 9): index 2 * (9 - 1) / (5 - 1) = index 4.
+        scrollElement.scrollTop = 500;
+        const expanded = container(Array.from(
+            { length: 9 },
+            (_, index) => block(`Expanded rewrite ${index}.`, index === 4 ? 55 : index * 40 - 120),
+        ));
+        expect(restoreContentAnchor(scrollElement, expanded, anchor)).toBe(true);
+        expect(scrollElement.scrollTop).toBe(540);
+
+        // Single-block source (count <= 1) guards division by zero and uses index 0.
+        const singleAnchor = captureContentAnchor(scroller(500), container([block('Sole original.', 25)]));
+        const multiTarget = scroller(500);
+        expect(restoreContentAnchor(multiTarget, container([block('New first.', 45), block('New second.', 95)]), singleAnchor)).toBe(true);
+        expect(multiTarget.scrollTop).toBe(520);
     });
 
     test('a message anchor that carries visible words follows them, not the top of the text', () => {

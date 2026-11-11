@@ -34,6 +34,7 @@ jest.unstable_mockModule('../public/script.js', () => ({
 jest.unstable_mockModule('../public/scripts/neconyan-conversation/roleplay-replacement.js', () => ({
     beginRoleplayReplacement: () => () => {},
     commitRoleplayReplacement: jest.fn(),
+    releaseRoleplayReplacementReserve: jest.fn(),
 }));
 jest.unstable_mockModule('../public/scripts/abort.js', () => ({
     withAbortSignal: (promise, signal) => new Promise((resolve, reject) => {
@@ -365,6 +366,8 @@ describe('Roleplay preview rendering', () => {
     });
 
     test('Agent frames render without following an active reader, then resume at rest', async () => {
+        chatFixture = createChat(null);
+        document.querySelector = selector => selector === '#chat' ? chatFixture.root : null;
         isChatScrollInMotion.mockReturnValue(true);
         startPreview();
         stream.send({ preview: { childId: 'reply', stage: 'agents', text: 'First Agent output' } });
@@ -376,6 +379,17 @@ describe('Roleplay preview rendering', () => {
         stream.send({ delta: { text: '. Next output' } });
         await waitFor(() => renderedEvents.length >= 2);
         expect(scrollChatToBottom).toHaveBeenCalledWith({ isNearBottom: true });
+    });
+
+    test('a swipe replacement preview never bottom-follows across any stage', async () => {
+        const stop = startPreview();
+        for (const stage of ['preparing', 'generating', 'agents']) {
+            stream.send({ preview: { childId: 'reply', stage, text: `Stage ${stage}` } });
+            await waitFor(() => renderedEvents.at(-1)?.message.mes === `Stage ${stage}`);
+        }
+        expect(scrollChatToBottom).not.toHaveBeenCalled();
+        expect(refreshChatViewportBaseline).toHaveBeenCalled();
+        stop();
     });
 
     test.each(['medium', undefined])('preview and recovery retain the accepted reasoning effort: %s', async effort => {
@@ -482,6 +496,9 @@ describe('Roleplay preview rendering', () => {
     });
 
     test('streaming text updates in place, while stage, name, model and Companion changes rebuild', async () => {
+        chatFixture = createChat(null);
+        document.querySelector = selector => selector === '#chat' ? chatFixture.root : null;
+        chat.push({ mes: 'Prompt' });
         const stop = startPreview();
         const base = {
             childId: 'reply-1',
@@ -540,7 +557,7 @@ describe('Roleplay preview rendering', () => {
         await waitFor(() => updateMessageElement.mock.calls.length >= 5);
         expect(updatePreviewMessageText).toHaveBeenCalledTimes(2);
 
-        expect(chat).toEqual([]);
+        expect(chat).toEqual([{ mes: 'Prompt' }]);
         stop();
     });
 
