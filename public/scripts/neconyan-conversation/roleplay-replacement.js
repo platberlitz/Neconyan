@@ -2,30 +2,34 @@ const replacements = new Set(['roleplay.swipe', 'roleplay.correct', 'guided.swip
 const sources = new WeakMap();
 
 /**
- * Empty the old reply on screen at once, as a browser-side swipe does, while its row keeps its height
- * so the chat does not jump. Display only: the saved chat is untouched, and the returned function puts
- * the old reply back unless something else has redrawn the message meanwhile.
+ * Empty the old reply and its Companion notes on screen at once, as a browser-side swipe does. The row
+ * shrinks with them: holding its old height left a blank page. Display only: the saved chat is untouched,
+ * and the returned function puts the old reply back unless something else has redrawn the message meanwhile.
  */
 function blankReply(row) {
     const text = row.querySelector?.('.mes_text');
     if (!text) return () => {};
-    const height = row.getBoundingClientRect?.().height;
-    const minHeight = row.style.minHeight;
-    if (height > 0) row.style.minHeight = `${height}px`;
     const kept = [...text.childNodes];
     const placeholder = document.createTextNode('...');
     text.replaceChildren(placeholder);
     const hidden = [...row.querySelectorAll('.mes_reasoning_details, .mes_timer, .tokenCounterDisplay')]
         .filter(node => !node.hidden);
     for (const node of hidden) node.hidden = true;
+    // The notes belong to the reply being replaced. Their stylesheet sets a display, so the hidden
+    // attribute would not hide them: take them out and put them back where they were.
+    const notes = [...row.querySelectorAll('.ica--companion-ledger')]
+        .map(node => ({ node, parent: node.parentNode, next: node.nextSibling }));
+    for (const { node } of notes) node.remove();
     return () => {
-        row.style.minHeight = minHeight;
         for (const node of hidden) node.hidden = false;
+        if (!row.querySelector('.ica--companion-ledger')) {
+            for (const { node, parent, next } of notes) parent?.insertBefore(node, next?.parentNode === parent ? next : null);
+        }
         if (text.childNodes.length === 1 && text.firstChild === placeholder) text.replaceChildren(...kept);
     };
 }
 
-/** Reserve the displayed reply's place, emptied, until its prepared preview can replace it. */
+/** Keep the displayed reply's row, emptied, until its prepared preview can replace it. */
 export function beginRoleplayReplacement(name, messageIndex, isCurrent) {
     if (!replacements.has(name) || !Number.isSafeInteger(messageIndex) || !isCurrent()) return () => {};
     const chat = document.querySelector('#chat');
