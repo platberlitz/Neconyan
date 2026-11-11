@@ -17,6 +17,7 @@
 - PR #606 (2026-11-11) `perf(motion): stop reduced motion slowing replies and chat opening`
 - PR #607 (2026-11-11) `fix(roleplay): clear notes and the blank space on a server swipe`
 - PR #608 (2026-11-11) `fix(scratchpad): share Home persona picks and retry image replies`
+- PR #609 (2026-11-11) `fix(chat): keep the viewport steady through server swipes and rewrites`
 
 ## v1.5.4
 
