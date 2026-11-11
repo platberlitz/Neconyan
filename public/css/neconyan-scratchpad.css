@@ -1018,13 +1018,15 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     overflow-wrap: anywhere;
 }
 
-#neconyan-scratchpad .scratchpad-web-toggle[aria-pressed="true"] {
+#neconyan-scratchpad .scratchpad-web-toggle[aria-pressed="true"],
+#neconyan-scratchpad .scratchpad-read-links[aria-pressed="true"] {
     background: var(--neco-ginger);
     border-color: var(--neco-ginger);
     color: var(--neco-on-accent);
 }
 
-#neconyan-scratchpad .scratchpad-web-toggle[aria-pressed="true"]:hover:not(:disabled) {
+#neconyan-scratchpad .scratchpad-web-toggle[aria-pressed="true"]:hover:not(:disabled),
+#neconyan-scratchpad .scratchpad-read-links[aria-pressed="true"]:hover:not(:disabled) {
     background: var(--neco-ginger-hover);
 }
 

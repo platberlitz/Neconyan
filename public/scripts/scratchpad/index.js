@@ -45,7 +45,7 @@ import { sameSourceBucket, sameSourceContext } from './source.js';
 import { observeJob, TERMINAL } from '../jobs.js';
 import * as images from './images.js';
 import { integerSettingValue, reflectSavedValue, reflectedSettingValue } from './setting-input.js';
-import { renderWebSearchSettings, renderWebSearchSources, setWebSearchToggle } from './web-search.js';
+import { renderWebPages, renderWebSearchSettings, renderWebSearchSources, setWebSearchToggle } from './web-search.js';
 import { prepareAttachment } from './attachments.js';
 import { MAX_ATTACHMENTS, normaliseAttachments } from './attachment-data.js';
 import { previewForBlock, previewFromText, previewLanguage } from './preview-source.js';
@@ -56,7 +56,7 @@ import { roundToDiscuss } from './discuss.js';
 import { canReadAloud, isReadingAloud, stopReadAloud, toggleReadAloud } from './read-aloud.js';
 import { editQuickPrompts } from './quick-prompts.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261112-scratchpad-discuss';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261112-scratchpad-read-links';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -119,6 +119,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     prefill: '',
     partialPrefill: '',
     webSearch: false,
+    readLinks: false,
 });
 
 const app = {
@@ -475,13 +476,15 @@ function buildChatPanel() {
     el.send = iconButton('', () => onSendButton(), { icon: 'fa-paper-plane', className: 'scratchpad-send', title: t`Send`, primary: true });
     el.webSearch = iconButton(t`Web search`, () => { closeComposeMenu(); void toggleWebSearch(); },
         { icon: 'fa-globe', className: 'scratchpad-web-toggle', title: t`Search the web for this message`, pressed: false });
+    el.readLinks = iconButton(t`Read links`, () => { closeComposeMenu(); void toggleReadLinks(); },
+        { icon: 'fa-link', className: 'scratchpad-read-links', title: t`Read the web pages linked in this message`, pressed: false });
     el.fileInput = h('input', { type: 'file', multiple: true, hidden: true, 'aria-label': t`Attach files`, onchange: () => {
         const files = [...el.fileInput.files];
         el.fileInput.value = '';
         void addAttachments(files);
     } });
     el.attach = iconButton(t`Attach files`, () => { closeComposeMenu(); el.fileInput.click(); }, { icon: 'fa-paperclip' });
-    el.composeMenu = h('div', { id: 'scratchpad-compose-menu', class: 'scratchpad-compose-menu', hidden: true, role: 'group', 'aria-label': t`Message options` }, el.webSearch, el.attach);
+    el.composeMenu = h('div', { id: 'scratchpad-compose-menu', class: 'scratchpad-compose-menu', hidden: true, role: 'group', 'aria-label': t`Message options` }, el.webSearch, el.readLinks, el.attach);
     el.plus = iconButton('', () => {
         const open = el.composeMenu.hidden;
         el.composeMenu.hidden = !open;
@@ -830,6 +833,14 @@ function openWebSearchSettings(message = '') {
     section?.scrollIntoView?.({ block: 'nearest' });
     document.getElementById('scratchpad-web-search-provider')?.focus?.({ preventScroll: true });
     if (message) toastr.info(message);
+}
+
+async function toggleReadLinks() {
+    if (!app.source || app.sending || pendingReply()) return;
+    const enabled = currentSettings().readLinks === true;
+    await updateSettings({ readLinks: !enabled });
+    if (!enabled) toastr.info(t`Scratchpad will read up to 3 web pages linked in each message of this session.`);
+    if (app.open) renderComposer();
 }
 
 async function toggleWebSearch() {
@@ -1325,6 +1336,7 @@ function stageLabel(preview) {
     if (preview?.stage === 'done') return t`Reply saved`;
     if (preview?.stage === 'failed') return preview.error || t`This reply did not finish.`;
     if (preview?.stage === 'searching') return t`Searching the web…`;
+    if (preview?.stage === 'reading') return t`Reading the linked pages…`;
     if (!preview || preview.stage === 'queued') return t`Waiting for the model...`;
     if (!preview.text && preview.reasoning) return t`Thinking...`;
     return t`Writing...`;
@@ -1395,6 +1407,8 @@ function renderMessage(session, message, { latest, retry }) {
         if (message.text) article.append(renderReply(session, message));
         const sources = message.role === 'assistant' ? renderWebSearchSources(message) : null;
         if (sources) article.append(sources);
+        const pages = message.role === 'assistant' ? renderWebPages(message) : null;
+        if (pages) article.append(pages);
         if (message.state === 'failed') {
             article.append(h('p', { class: 'scratchpad-error', role: 'status', text: message.error || t`This reply did not finish.` }));
         }
@@ -2077,7 +2091,12 @@ function renderComposer() {
     el.webSearch.disabled = !app.source || !app.bucket || app.sending || Boolean(pending);
     el.plus.disabled = disabled;
     for (const button of el.messages.querySelectorAll('.scratchpad-discuss')) button.disabled = disabled || Boolean(pending) || Boolean(app.editing);
-    el.plus.classList.toggle('menu_button_primary', currentSettings().webSearch === true);
+    const readLinks = currentSettings().readLinks === true;
+    el.readLinks.setAttribute('aria-pressed', String(readLinks));
+    el.readLinks.classList.toggle('menu_button_primary', readLinks);
+    el.readLinks.title = readLinks ? t`Reading linked pages is on for this session` : t`Read the web pages linked in this message`;
+    el.readLinks.disabled = !app.source || !app.bucket || app.sending || Boolean(pending);
+    el.plus.classList.toggle('menu_button_primary', currentSettings().webSearch === true || readLinks);
     el.attach.disabled = disabled;
     clear(el.attachments);
     append(el.attachments, renderAttachments(app.attachments, { draft: true }));

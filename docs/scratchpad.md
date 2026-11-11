@@ -88,6 +88,10 @@ Images are resized to at most 2048 pixels on the longest side and sent as pictur
 
 Press the **X** beside an attachment to remove it before sending. Attachments stay with their message and are included as earlier conversation later in the session. Draft attachments follow the same draft rules as typed text: they survive switching sessions while the page stays open, but not a browser reload. Session exports include attached files and images only when you tick **Attached files and images**, so keep the originals separately.
 
+## Read links
+
+Open **+** (Message options) and turn on **Read links** to have Scratchpad read the web pages you link in a message before the assistant answers. It's off by default and saved per session, and it needs no provider or key. Scratchpad reads up to 3 links per message - only the ones you typed, never links found inside a page - and passes the assistant each page's text, up to about 12 KiB per page. Private and local addresses are always refused, and a page gets 15 seconds to answer. While it works the reply says **Reading the linked pages…**. Finished replies keep a collapsible **Pages read** list, with the reason beside any page that couldn't be read. I haven't built a reader mode: a page drawn entirely by scripts gives little or no text, and a discussion round doesn't read links.
+
 ## Web search
 
 Open **+** (Message options) beside the message box and turn on **Web search** to search the web before the assistant answers. I've kept it off by default; your choice is saved per session. The search service receives only the message you're sending, with extra whitespace removed and a limit of 400 characters. It doesn't receive your chat, character cards, persona, saved notes or earlier Scratchpad messages. Scratchpad uses your message directly as the search query.

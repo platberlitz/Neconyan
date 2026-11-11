@@ -67,7 +67,7 @@ async function checkAccents(page, phone) {
                             foreground: label.color, background: style.backgroundColor, pageWidth: document.documentElement.scrollWidth };
                     });
                 });
-                expect(controls).toHaveLength(4);
+                expect(controls).toHaveLength(5);
                 for (const measured of controls) {
                     measurements.push({ theme, accent, enabled, ...measured });
                     expect(measured.contrast, JSON.stringify(measurements)).toBeGreaterThanOrEqual(4.5);
