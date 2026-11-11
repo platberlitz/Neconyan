@@ -64,7 +64,9 @@ import {
     mountNeconyanLorebookWorkspace,
     mountNeconyanModelWorkspace,
 } from './neconyan-native-workspaces.js';
+import { wireHomePersonaChoice } from './scratchpad/home-persona.js';
 
+wireHomePersonaChoice();
 const nnMobileShellLifecycle = createMobileShellLifecycle();
 const nnPresetApiSyncLifecycle = createPresetApiSyncLifecycle();
 const NN_SHELL_SUBTITLE_PLACEHOLDER = 'Lorem ipsum dolor sit amet, consectetur adipiscing elit.';

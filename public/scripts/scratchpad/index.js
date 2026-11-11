@@ -17,6 +17,7 @@ import { accountStorage } from '../util/AccountStorage.js';
 import { getCurrentUserHandle } from '../user.js';
 import * as api from './api.js';
 import { prepareChange } from './changes.js';
+import { needsSavedPersonaSelection, saveSelectedPersona } from './persona-changes.js';
 import {
     buildContext,
     buildHelp,
@@ -958,7 +959,11 @@ async function send({ regenerate = '' } = {}) {
         await refreshImageAvailability();
         const help = [...new Set(await Promise.all(assistants.map(assistant => buildHelp({ assistant, gender: genders[assistant], text: query }))))].filter(Boolean).join('\n\n');
         requireScope(source, session.id);
-        const acknowledgement = chatProfileId || assistants.every(assistant => assistantConnection(settings, assistant).kind === 'profile') ? undefined : await acknowledge();
+        const connectionsSaved = !(chatProfileId || assistants.every(assistant => assistantConnection(settings, assistant).kind === 'profile'));
+        const acknowledgement = connectionsSaved ? await acknowledge() : undefined;
+        const personaSaved = !context.capabilities.persona || !needsSavedPersonaSelection(source, connectionsSaved) || await saveSelectedPersona();
+        if (!personaSaved) toastr.warning(t`Scratchpad could not save your persona, so Scenario Note suggestions for it are left out of this reply.`);
+        const capabilities = personaSaved ? context.capabilities : Object.fromEntries(Object.entries(context.capabilities).filter(([key]) => key !== 'persona'));
         await app.queue;
         requireScope(source, session.id);
         if (JSON.stringify(activeSession()) !== snapshot || sourceConnectionProfile(source) !== chatProfileId) {
@@ -973,7 +978,7 @@ async function send({ regenerate = '' } = {}) {
             attachments,
             context: context.text,
             help,
-            capabilities: { ...context.capabilities, image: app.imageAvailability.image },
+            capabilities: { ...capabilities, image: app.imageAvailability.image },
             targets: context.targets,
             names: context.names,
             chatProfileId,
@@ -1386,7 +1391,7 @@ function renderReplySwipes(session, message, { latest }) {
     const count = replySwipes(message).length;
     if (count === 1 && !latest) return null;
     const index = message.swipeIndex ?? 0;
-    const canGenerate = latest && count < MAX_REPLY_SWIPES && !Object.keys(message.images ?? {}).length
+    const canGenerate = latest && count < MAX_REPLY_SWIPES
         && (!(app.source?.scope || app.source?.kind === 'general') || sameSourceContext(app.source, message.contextSource));
     const controls = h('div', { class: 'scratchpad-reply-swipes', role: 'group', 'aria-label': t`Reply versions` });
     for (const direction of [-1, 1]) {
@@ -1411,7 +1416,7 @@ async function moveReplySwipe(session, message, direction, { latest }) {
     const count = replySwipes(message).length;
     if (index < 0) return;
     if (index >= count) {
-        if (latest && count < MAX_REPLY_SWIPES && !Object.keys(message.images ?? {}).length) await send({ regenerate: message.id });
+        if (latest && count < MAX_REPLY_SWIPES) await send({ regenerate: message.id });
         return;
     }
     const focus = document.activeElement?.closest('.scratchpad-reply-swipes');

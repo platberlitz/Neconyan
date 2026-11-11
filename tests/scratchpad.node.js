@@ -285,6 +285,69 @@ test('persona edit authority is captured from saved settings without image confi
     assert.equal(a.read(GENERAL).sessions[0].messages.at(-1).sharedPersona, undefined);
 });
 
+test('a persona switch is shared only once the saved selection matches it', async t => {
+    const a = account(t);
+    const first = { avatar: 'User.png', name: 'Kris' };
+    const second = { avatar: 'Other.png', name: 'Rowan' };
+    a.directories.avatars = path.join(a.directories.root, 'User Avatars');
+    fs.mkdirSync(a.directories.avatars, { recursive: true });
+    for (const persona of [first, second]) fs.writeFileSync(path.join(a.directories.avatars, persona.avatar), png);
+    const settingsPath = path.join(a.directories.root, SETTINGS_FILE);
+    const select = persona => {
+        const saved = JSON.parse(fs.readFileSync(settingsPath));
+        saved.user_avatar = persona.avatar;
+        saved.power_user = { personas: { [first.avatar]: first.name, [second.avatar]: second.name } };
+        fs.writeFileSync(settingsPath, JSON.stringify(saved));
+    };
+    select(first);
+    const session = startSession(a);
+    registerScratchpadJobs({ generate: async () => ({ text: 'A persona reply.' }) });
+    const send = async persona => {
+        const body = sendBody(session, { capabilities: { lore: true, character: true, chat: true, persona } });
+        const accepted = await acceptScratchpadReply(a.request(body), body);
+        await runJob(getJob(a.directories, accepted.job.id));
+        return a.read(SOURCE).sessions[0].messages.at(-1);
+    };
+    assert.deepEqual((await send(first)).sharedPersona, first);
+    assert.equal((await send(second)).sharedPersona, undefined);
+    select(second);
+    assert.deepEqual((await send(second)).sharedPersona, second);
+});
+
+test('a reply with image work can be regenerated once its image settles, and each version keeps its own images', async t => {
+    const a = account(t);
+    const session = startSession(a);
+    let answer = 'First version.';
+    registerScratchpadJobs({ generate: async () => ({ text: answer }) });
+    const send = async extra => {
+        const body = sendBody(session, extra);
+        const accepted = await acceptScratchpadReply(a.request(body), body);
+        await runJob(getJob(a.directories, accepted.job.id));
+        return a.read(SOURCE).sessions[0].messages.at(-1);
+    };
+    const original = await send({});
+    const image = { id: 'image-one', state: 'done', target: 'image', changeHash: 'a'.repeat(64), url: '/user/images/Scratchpad/scratchpad-one.png' };
+    a.mutate(SOURCE, bucket => { bucket.sessions[0].messages.at(-1).images = { 0: image }; });
+    for (const state of ['failed', 'cancelled', 'done']) {
+        const settled = { ...image, state, url: state === 'done' ? image.url : undefined };
+        a.mutate(SOURCE, bucket => { bucket.sessions[0].messages.at(-1).images = { 0: settled }; });
+        assert.equal(jobs.planReply(a.read(SOURCE).sessions[0], { regenerate: original.id }).replace, original.id, state);
+    }
+    answer = 'Second version.';
+    const regenerated = await send({ regenerate: original.id });
+    assert.equal(regenerated.swipeIndex, 1);
+    assert.equal(regenerated.images, undefined);
+    assert.deepEqual(regenerated.swipes[0].images, { 0: image });
+    a.mutate(SOURCE, bucket => store.swipeMessage(bucket, session.id, regenerated.id, 0));
+    const back = a.read(SOURCE).sessions[0].messages.at(-1);
+    assert.equal(back.id, original.id);
+    assert.deepEqual(back.images, { 0: image });
+    assert.equal(back.swipes[1].text, 'Second version.');
+    assert.throws(() => store.findMessage(a.read(SOURCE).sessions[0], regenerated.id), error => error.code === 'SCRATCHPAD_MESSAGE_MISSING');
+    a.mutate(SOURCE, bucket => { bucket.sessions[0].messages.at(-1).images = { 0: { ...image, state: 'pending', url: undefined } }; });
+    assert.throws(() => jobs.planReply(a.read(SOURCE).sessions[0], { regenerate: back.id }), error => error.code === 'SCRATCHPAD_REGENERATE_INVALID');
+});
+
 test('preset edit authority requires saved sharing and is stripped on import', async t => {
     const a = account(t);
     const source = { kind: 'roleplay', key: 'character:Nova.png:Source', label: 'Nova', scope: { kind: 'character', id: 'Nova.png' } };

@@ -96,6 +96,7 @@ import {
     updateConversationSearchQuery,
 } from './timeline-render.js';
 import { setLastConversationPreview } from './typing.js';
+import { noteHomePersonaChoice } from '../scratchpad/home-persona.js';
 
 const CONVERSATION_STYLESHEET_HREF = 'css/neconyan-conversation.css?v=20261108-scratchpad-narrow-header';
 const CONVERSATION_STYLESHEET_ID = 'sb-conversation-css';
@@ -374,7 +375,7 @@ export async function selectConversationThread(avatar, { branchId = '', groupId 
         // Persona events must not refresh the old workspace under the new persona.
         conversationState.conversationWorkspaceOpen = false;
     }
-    if (personaId && !await switchConversationPersona(personaId, { readOnlyRoute: savedOnly, navigationGuard })) {
+    if (personaId && !await switchConversationPersona(personaId, { readOnlyRoute: savedOnly, navigationGuard, automatic: true })) {
         return false;
     }
 
@@ -867,6 +868,7 @@ export function bindConversationChromeControls(sheld) {
             case 'pick-persona': {
                 const avatarId = target.dataset.personaAvatar;
                 if (avatarId) {
+                    noteHomePersonaChoice(avatarId);
                     if (!await switchConversationPersona(avatarId)) {
                         break;
                     }

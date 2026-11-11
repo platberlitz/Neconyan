@@ -69,7 +69,7 @@ const presetSnapshot = {
 const readCurrentPreset = jest.fn(() => presetSnapshot);
 jest.unstable_mockModule('../public/scripts/scratchpad/preset.js', () => ({ readCurrentPreset, currentPresetName: () => presetSnapshot.name }));
 
-const { buildContext, collectLore, currentSource, formatPreset, isCurrentSource, wireSource, sameChat, sourceMessages, sourceCharacters, setNotebookSource, MAX_CONTEXT_BYTES } = await import('../public/scripts/scratchpad/context.js');
+const { buildContext, clearHomePersonaChoice, collectLore, currentSource, formatPreset, isCurrentSource, noteHomePersonaChoice, wireSource, sameChat, sourceMessages, sourceCharacters, setNotebookSource, MAX_CONTEXT_BYTES } = await import('../public/scripts/scratchpad/context.js');
 const settings = { depth: 15, include: { lore: true, card: true, persona: true } };
 
 beforeEach(() => {
@@ -79,6 +79,8 @@ beforeEach(() => {
     avatar = 'Nova.png';
     Object.defineProperty(conversationState, 'conversationSelectedAvatar', { configurable: true, get: () => avatar });
     home.visible = false;
+    clearHomePersonaChoice();
+    persona.id = 'User.png';
     power_user.persona_description = 'Roleplay persona';
     delete power_user.persona_descriptions;
     delete power_user.default_persona;
@@ -381,6 +383,91 @@ describe('General Scratchpad context', () => {
         expect(inChat.names.user).toBe('Roleplay user');
         expect(inChat.text).toContain('HIDDEN-LOCKED-PERSONA');
     });
+    describe.each(['chat', 'character'])('a persona picked on Home with a %s lock', lock => {
+        const setup = () => {
+            home.visible = true;
+            power_user.personas = { 'User.png': 'Kris', 'Default.png': 'Account default' };
+            power_user.persona_descriptions = {
+                'User.png': { description: '{{user}} keeps notes.', title: 'Traveller', appendices: [{ id: 'harbour', name: 'Harbour', description: 'Wait for {{char}}.' }],
+                    connections: lock === 'character' ? [{ type: 'character', id: 'Roleplay.png' }] : [] },
+                'Default.png': { description: 'ACCOUNT-DEFAULT-PERSONA' },
+            };
+            power_user.persona_description = 'Kris keeps notes.\nHIDDEN-APPENDIX';
+            if (lock === 'chat') chatMetadata.persona = 'User.png';
+        };
+
+        test('is shared once the user picks it, and stays hidden without that choice', async () => {
+            setup();
+            expect(currentSource().personaId).toBe('');
+            noteHomePersonaChoice('User.png');
+            const source = currentSource();
+            expect(source.personaId).toBe('User.png');
+            const shared = await buildContext({ source, settings });
+            expect(shared.text).toContain('"name":"Kris"');
+            expect(shared.text).toContain('Roleplay user keeps notes.');
+            expect(shared.text).toContain('## Editable persona fields');
+            expect(shared.text).toContain('"id":"harbour"');
+            expect(shared.capabilities.persona).toEqual({ avatar: 'User.png', name: 'Kris' });
+            expect(shared.text).not.toContain('HIDDEN-APPENDIX');
+        });
+
+        test('an automatic change does not unlock it: the account default is used instead', async () => {
+            setup();
+            power_user.default_persona = 'Default.png';
+            noteHomePersonaChoice('User.png', { automatic: true });
+            const source = currentSource();
+            expect(source.personaId).toBe('Default.png');
+            const shared = await buildContext({ source, settings });
+            expect(shared.text).toContain('ACCOUNT-DEFAULT-PERSONA');
+            expect(shared.text).not.toContain('Kris keeps notes');
+            expect(shared.capabilities.persona).toEqual({ avatar: 'Default.png', name: 'Account default' });
+        });
+
+        test('a chat change ends the choice, so the hidden persona is withheld again', async () => {
+            setup();
+            noteHomePersonaChoice('User.png');
+            expect(currentSource().personaId).toBe('User.png');
+            clearHomePersonaChoice();
+            const hidden = await buildContext({ source: currentSource(), settings });
+            expect(currentSource().personaId).toBe('');
+            expect(hidden.capabilities.persona).toBeUndefined();
+            expect(hidden.text).not.toContain('Kris keeps notes');
+        });
+
+        test('a choice made while Home is hidden is not recorded', () => {
+            setup();
+            home.visible = false;
+            noteHomePersonaChoice('User.png');
+            home.visible = true;
+            expect(currentSource().personaId).toBe('');
+        });
+
+        test('keeps base-only sharing: no hidden appendix and no chat macro is read, even without a saved description', async () => {
+            setup();
+            delete power_user.persona_descriptions['User.png'];
+            chat.push({ mes: 'HIDDEN-MACRO-STORY' });
+            power_user.persona_description = 'Kris base\nHIDDEN-APPENDIX {{lastMessage}}';
+            noteHomePersonaChoice('User.png');
+            const shared = await buildContext({ source: currentSource(), settings });
+            expect(shared.text).not.toContain('HIDDEN-APPENDIX');
+            expect(shared.text).not.toContain('HIDDEN-MACRO-STORY');
+            power_user.persona_descriptions = { 'User.png': { description: 'Keeps {{lastMessage}} literal.' } };
+            const literal = await buildContext({ source: currentSource(), settings });
+            expect(literal.text).toContain('Keeps {{lastMessage}} literal.');
+            expect(literal.text).not.toContain('HIDDEN-MACRO-STORY');
+        });
+
+        test('with persona sharing off nothing about the picked persona is shared', async () => {
+            setup();
+            noteHomePersonaChoice('User.png');
+            const off = await buildContext({ source: currentSource(), settings: { ...settings, include: { ...settings.include, persona: false } } });
+            expect(off.capabilities.persona).toBeUndefined();
+            expect(off.text).not.toContain('Kris keeps notes');
+            expect(off.text).not.toContain('Editable persona fields');
+            expect(off.text).not.toContain('harbour');
+        });
+    });
+
     test.each(['ACCOUNT-PERSONA', undefined])('General uses only the base persona, description=%s, without hidden chat appendices', async description => {
         home.visible = true;
         power_user.persona_descriptions = { 'User.png': { description } };
