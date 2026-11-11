@@ -8766,6 +8766,12 @@ class StreamingProcessor {
         throw new Error('Generation function for streaming is not hooked up');
     }
 
+    /** Neconyan: the provider finished without text, reasoning, images, tool calls or alternative replies. */
+    isEmptyReply() {
+        return !['continue', 'impersonate'].includes(this.type) && !/\S/.test(this.result ?? '') && !this.reasoningHandler.reasoning
+            && !this.pendingReasoning && !this.toolCalls?.length && !this.images?.length && !this.swipes?.some(swipe => /\S/.test(swipe ?? ''));
+    }
+
     async generateBuffered() {
         const isImpersonate = this.type == 'impersonate';
         const isContinue = this.type == 'continue';
@@ -8917,6 +8923,9 @@ class StreamingProcessor {
             }
             const seconds = (timestamps[timestamps.length - 1] - timestamps[0]) / 1000;
             console.warn(`Stream stats: ${timestamps.length} tokens, ${seconds.toFixed(2)} seconds, rate: ${Number(timestamps.length / seconds).toFixed(2)} TPS`);
+            // Neconyan: say so before this stream counts as finished, or the Agents' recovery check
+            // sees a finished reply and starts work on the empty swipe.
+            if (this.isEmptyReply()) suppressAutomaticGeneration(this.agentGenerationContext);
         } catch (err) {
             if (this.finishReason === 'length' && err === this.requestAbortController.signal.reason && !this.abortController.signal.aborted) {
                 this.isFinished = true;
@@ -9531,11 +9540,22 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
         if (priorReply) chat.splice(priorReplyIndex, chat.length - priorReplyIndex, priorReply);
         else if (activeStream?.message && chat.at(-1) === activeStream.message) chat.pop();
         await printMessages();
+        // A plain reprint draws no Companion notes; hand the rows to the decorators that draw them.
+        if (isCurrent()) document.dispatchEvent(new CustomEvent('neconyan:chat-rows-prepared', { detail: { elements: [...chatElement[0].querySelectorAll(':scope > .mes[mesid]')] } }));
         if (await saveChatConditional() && recoveryContext?.id && isCurrent()) await discardGeneration(recoveryContext.id, getRequestHeaders());
     };
     const notifyBlocked = (hasText, outcome) => {
         suppressAutomaticGeneration(agentGenerationContext);
         toastr.warning(generationBlockedNotice(hasText, outcome));
+    };
+
+    // Neconyan: a reply with nothing in it is a failed attempt, not a message. Saving it used to hand
+    // the Agents and Companions an empty swipe to work on.
+    const discardEmptyReply = async () => {
+        suppressAutomaticGeneration(agentGenerationContext);
+        toastr.error(t`The AI sent back an empty reply, so nothing was changed. Try again.`, t`Reply failed`, { timeOut: 10000, extendedTimeOut: 20000 });
+        await restoreBlockedAttempt();
+        unblockGeneration(type);
     };
 
     let activeStream = null;
@@ -11089,6 +11109,12 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                         clearStreamingProcessorIfCurrent(activeStreamingProcessor);
                         return Object.defineProperties(new String(partial), { fromStream: { value: true }, generationOutcome: { value: activeStreamingProcessor.outcome } });
                     }
+                    if (activeStreamingProcessor.isEmptyReply() && !activeStreamingProcessor.isStopped && !activeStreamingProcessor.isCancelled
+                        && !activeStreamingProcessor.abortController.signal.aborted) {
+                        await discardEmptyReply();
+                        clearStreamingProcessorIfCurrent(activeStreamingProcessor);
+                        return Object.defineProperties(new String(''), { fromStream: { value: true } });
+                    }
                     let messageChunk = cleanUpMessage({
                         getMessage: getMessage,
                         isImpersonate: isImpersonate,
@@ -11305,6 +11331,13 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
 
 
             const swipes = extractMultiSwipes(data, type);
+
+            if (type !== 'quiet' && !isContinue && !isImpersonate && !getMessage.trim() && !reasoning && !imageUrls?.length
+                && !ToolManager.hasToolCalls(data) && !swipes.some(swipe => String(swipe ?? '').trim())) {
+                await discardEmptyReply();
+                streamingProcessor = null;
+                return new String('');
+            }
 
             // Neconyan: non-streaming reasoners keep their preset allowance; only separated prose is capped locally.
             const reasoningPrefix = promptReasoning.prefixIncomplete && !reasoning ? promptReasoning.prefixReasoningFormatted : '';
