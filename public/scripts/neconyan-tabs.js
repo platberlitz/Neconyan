@@ -64,7 +64,9 @@ import {
     mountNeconyanLorebookWorkspace,
     mountNeconyanModelWorkspace,
 } from './neconyan-native-workspaces.js';
+import { wireHomePersonaChoice } from './scratchpad/home-persona.js';
 
+wireHomePersonaChoice();
 const nnMobileShellLifecycle = createMobileShellLifecycle();
 const nnPresetApiSyncLifecycle = createPresetApiSyncLifecycle();
 const NN_SHELL_SUBTITLE_PLACEHOLDER = 'Lorem ipsum dolor sit amet, consectetur adipiscing elit.';
@@ -530,7 +532,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261111-xp-dark-raised';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261111-reduced-motion-128';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',

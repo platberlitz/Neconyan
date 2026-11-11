@@ -16,6 +16,26 @@ export function requireSharedPersona(source, shared, name) {
     }
 }
 
+const SAVE_ATTEMPTS = 4;
+
+/** Only a Roleplay chat reads its persona from the saved settings; General and Conversation send it with the request. */
+export function needsSavedPersonaSelection(source, connectionsSaved) {
+    return source?.kind === 'roleplay' && !connectionsSaved;
+}
+
+/** Retries like the connection save: a temporary state such as a settings conflict or response-length override clears. */
+export async function saveSelectedPersona() {
+    for (let attempt = 1; attempt <= SAVE_ATTEMPTS; attempt += 1) {
+        try {
+            if (await saveSettings(0, { returnResult: true })) return true;
+        } catch {
+            // A failed attempt is retried below.
+        }
+        if (attempt < SAVE_ATTEMPTS) await new Promise(resolve => setTimeout(resolve, Math.min(1500, 250 * attempt)));
+    }
+    return false;
+}
+
 export async function preparePersonaChange(change, source, shared, guard) {
     const owner = getCurrentUserHandle();
     const check = () => {

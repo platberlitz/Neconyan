@@ -15,25 +15,29 @@ function hasFollowingMessage(row) {
 }
 
 /**
- * Empty the old reply on screen at once, as a browser-side swipe does, while its row keeps its height
- * so the chat does not jump. Display only: the saved chat is untouched, and the returned function puts
- * the old reply back unless something else has redrawn the message meanwhile.
+ * Empty the old reply and its Companion notes on screen at once, as a browser-side swipe does. The row
+ * shrinks with them: holding its old height left a blank page. Display only: the saved chat is untouched,
+ * and the returned function puts the old reply back unless something else has redrawn the message meanwhile.
  */
-function blankReply(row, priorMinHeight = undefined) {
+function blankReply(row) {
     const text = row.querySelector?.('.mes_text');
     if (!text) return () => {};
-    const height = row.getBoundingClientRect?.().height;
-    const minHeight = priorMinHeight ?? row.style.minHeight;
-    if (height > 0) row.style.minHeight = `${height}px`;
     const kept = [...text.childNodes];
     const placeholder = document.createTextNode('...');
     text.replaceChildren(placeholder);
     const hidden = [...row.querySelectorAll('.mes_reasoning_details, .mes_timer, .tokenCounterDisplay')]
         .filter(node => !node.hidden);
     for (const node of hidden) node.hidden = true;
+    // The notes belong to the reply being replaced. Their stylesheet sets a display, so the hidden
+    // attribute would not hide them: take them out and put them back where they were.
+    const notes = [...row.querySelectorAll('.ica--companion-ledger')]
+        .map(node => ({ node, parent: node.parentNode, next: node.nextSibling }));
+    for (const { node } of notes) node.remove();
     return () => {
-        row.style.minHeight = minHeight;
         for (const node of hidden) node.hidden = false;
+        if (!row.querySelector('.ica--companion-ledger')) {
+            for (const { node, parent, next } of notes) parent?.insertBefore(node, next?.parentNode === parent ? next : null);
+        }
         if (text.childNodes.length === 1 && text.firstChild === placeholder) text.replaceChildren(...kept);
     };
 }
@@ -185,29 +189,51 @@ export function syncRoleplayReplacementReserve(row) {
     }
 }
 
-/** Reserve the displayed reply's place, emptied, until its prepared preview can replace it. */
+/**
+ * Keep the displayed reply's row, emptied, until its prepared preview can replace it. A row that
+ * started above the screen moves to the top of it, and holds only enough height that the chat cannot
+ * fall back into older messages.
+ */
 export function beginRoleplayReplacement(name, messageIndex, isCurrent) {
     if (!replacements.has(name) || !Number.isSafeInteger(messageIndex) || !isCurrent()) return () => {};
     const chat = document.querySelector('#chat');
     if (!chat || chat.querySelector('[data-roleplay-replacement]')) return () => {};
     const original = chat.querySelector(`.mes[mesid="${messageIndex}"]`);
     if (!original) return () => {};
-    const priorMinHeight = releaseRoleplayReplacementReserve(original, { restoreStyle: false });
+    releaseRoleplayReplacementReserve(original);
     const marker = document.createElement('span');
     marker.hidden = true;
     marker.dataset.roleplayReplacement = String(messageIndex);
     const wasInert = original.inert;
     sources.set(marker, original);
     original.inert = true;
-    const refill = blankReply(original, priorMinHeight);
+    const measurable = typeof original.getBoundingClientRect === 'function'
+        && typeof chat.getBoundingClientRect === 'function' && typeof chat.scrollTop === 'number';
+    const oldRect = measurable ? original.getBoundingClientRect() : null;
+    const oldTop = oldRect ? oldRect.top - chat.getBoundingClientRect().top : 0;
+    const startScrollTop = measurable ? chat.scrollTop : 0;
+    const previousMinHeight = original.style?.minHeight ?? '';
+    if (oldRect?.height > 0) original.style.minHeight = `${oldRect.height}px`;
+    const refill = blankReply(original);
     original.before(marker);
+    let landedScrollTop = null;
+    if (oldRect?.height > 0) {
+        const delta = original.getBoundingClientRect().top - chat.getBoundingClientRect().top - Math.max(0, oldTop);
+        if (Math.abs(delta) >= 0.5) chat.scrollTop += delta;
+        landedScrollTop = chat.scrollTop;
+        const gap = Math.max(0, chat.scrollHeight - chat.scrollTop - chat.clientHeight);
+        holdRoleplayReplacementReserve(original, chat, oldRect.height - gap, { previousMinHeight });
+    }
     return () => {
         if (!marker.isConnected) return;
         original.inert = wasInert;
         if (isCurrent()) {
+            releaseRoleplayReplacementReserve(original);
             refill();
             if (original.isConnected) marker.remove();
             else marker.replaceWith(original);
+            // A reader who has not scrolled since goes back to where the old reply was being read.
+            if (landedScrollTop !== null && Math.abs(chat.scrollTop - landedScrollTop) < 1) chat.scrollTop = startScrollTop;
         } else {
             original.remove();
             marker.remove();

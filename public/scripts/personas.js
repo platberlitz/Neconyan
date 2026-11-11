@@ -75,6 +75,7 @@ import { isFirefox } from './browser-fixes.js';
 import { isMobile } from './RossAscends-mods.js';
 import { getScenarioAvatar, normalizeScenarioAvatar, SCENARIO_AVATAR_FOLDER } from './persona-appendix-avatar.js';
 import { slashCommandReturnHelper } from './slash-commands/SlashCommandReturnHelper.js';
+import { noteHomePersonaChoice } from './scratchpad/home-persona.js';
 
 /**
  * @typedef {object} PersonaConnection A connection between a character and a character or group entity
@@ -402,7 +403,7 @@ export function initUserAvatar(avatar) {
  * @param {boolean} [options.toastPersonaNameChange=true] Whether to show a toast when the persona name is changed
  * @param {boolean} [options.navigateToCurrent=false] Whether to navigate to the current persona after setting the avatar
  */
-export async function setUserAvatar(imgfile, { toastPersonaNameChange = true, navigateToCurrent = false, readOnlyRoute = false, navigationGuard = () => true } = {}) {
+export async function setUserAvatar(imgfile, { toastPersonaNameChange = true, navigateToCurrent = false, readOnlyRoute = false, navigationGuard = () => true, automatic = false } = {}) {
     if (!navigationGuard()) return;
     const currentUserAvatar = user_avatar;
     user_avatar = imgfile && typeof imgfile === 'string' ? imgfile : $(this).attr('data-avatar-id');
@@ -418,7 +419,7 @@ export async function setUserAvatar(imgfile, { toastPersonaNameChange = true, na
         saveSettingsDebounced();
     }
     $('.zoomed_avatar[forchar]').remove();
-    await eventSource.emit(event_types.PERSONA_CHANGED, user_avatar);
+    await eventSource.emit(event_types.PERSONA_CHANGED, user_avatar, { automatic });
 }
 
 // Neconyan: Added avatar source tracking functions for mobile thumbnail optimization.
@@ -1774,7 +1775,7 @@ export async function autoSelectPersona(name, { personaKey = null } = {}) {
     const persona = findPersona({ name: personaKey ?? name, allowAvatar: !!personaKey });
     if (persona) {
         console.log(`Auto-selecting persona ${persona.avatar} for name ${name}`);
-        await setUserAvatar(persona.avatar);
+        await setUserAvatar(persona.avatar, { automatic: true });
         return true;
     }
     return false;
@@ -2588,7 +2589,7 @@ async function loadPersonaForCurrentChat({ doRender = false } = {}) {
     // Check if the user avatar is set and exists in the list of user avatars
     if (userAvatars.length && !userAvatars.includes(user_avatar)) {
         console.log(`User avatar ${user_avatar} not found in user avatars list, pick the first available one`);
-        await setUserAvatar(userAvatars[0], { toastPersonaNameChange: false, navigateToCurrent: true });
+        await setUserAvatar(userAvatars[0], { toastPersonaNameChange: false, navigateToCurrent: true, automatic: true });
     }
 
     // Define a persona for this chat
@@ -2683,7 +2684,7 @@ async function loadPersonaForCurrentChat({ doRender = false } = {}) {
     // Persona avatar found, select it
     if (chatPersona && user_avatar !== chatPersona) {
         const willAutoLock = power_user.persona_auto_lock && user_avatar !== chat_metadata.persona;
-        await setUserAvatar(chatPersona, { toastPersonaNameChange: false, navigateToCurrent: true });
+        await setUserAvatar(chatPersona, { toastPersonaNameChange: false, navigateToCurrent: true, automatic: true });
 
         if (power_user.persona_show_notifications) {
             let message = t`Auto-selected persona based on ${connectType} connection.<br />Your messages will now be sent as ${power_user.personas[chatPersona]}.`;
@@ -3475,7 +3476,7 @@ async function setNameCallback({ mode = 'all' }, name) {
         const avatarMatch = Object.entries(power_user.personas).find(([avatar, _]) => avatar === name);
         if (avatarMatch) {
             // Found by avatar ID - use the avatar ID directly to avoid duplicate name issues
-            await setUserAvatar(avatarMatch[0]);
+            await setUserAvatar(avatarMatch[0], { automatic: true });
             return '';
         }
 
@@ -4061,6 +4062,7 @@ export async function initPersonas() {
 
     $(document).on('click', '#user_avatar_block .avatar-container', async function () {
         const imgfile = $(this).attr('data-avatar-id');
+        noteHomePersonaChoice(imgfile);
         await setUserAvatar(imgfile);
         setPersonaWorkspaceTab('edit');
     });

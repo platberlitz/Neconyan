@@ -27,27 +27,27 @@ export function buildSceneDescriptionInstruction(settings, scene, profile, { isM
     const charName = profile.charNameJoined || 'character';
     const userName = profile.userName || 'user';
     const preserve = settings.preserveCharacterIdentity !== false;
+    const names = unique(profile.charNames || []);
     const context = [];
     if (profile.charDescResolved) context.push(`${charName}'s appearance/profile: ${profile.charDescResolved.slice(0, 1500)}`);
     if (profile.userDescResolved) context.push(`${userName}'s persona/appearance: ${profile.userDescResolved.slice(0, 800)}`);
     if (profile.charTagsResolved) context.push(`Source/Tags: ${profile.charTagsResolved}`);
     if (profile.charScenarioResolved) context.push(`Setting: ${profile.charScenarioResolved.slice(0, 400)}`);
-    if (preserve && profile.charNames.length) context.push(`Active character names to preserve when visible: ${profile.charNames.join(', ')}`);
+    if (preserve && names.length) context.push(`Active character names to preserve when visible: ${names.join(', ')}`);
+    const sceneLabel = `SELECTED SCENE${isMultiMessage ? ' CONTEXT' : ''}`;
     const custom = String(settings.twoStepInstruction || '').trim();
     if (custom) return replaceCustom(custom, scene, profile)
-        + (/\{\{\s*scene\s*\}\}/i.test(custom) ? '' : `\n\nSELECTED SCENE${isMultiMessage ? ' CONTEXT' : ''}:\n${scene}`);
+        + (/\{\{\s*scene\s*\}\}/i.test(custom) ? '' : `\n\n${sceneLabel}:\n${scene}`);
+    const rules = ['- Describe one coherent visible moment: subjects, identities, poses, expressions, clothing, setting, lighting, mood and framing.'];
+    if (preserve) rules.push('- Keep stated species, ages, body traits, names and non-human details from the scene or reference context.');
+    if (isMultiMessage) rules.push('- The scene is a multi-message transcript: pick the best single visual moment from it.');
+    rules.push('- Output only the description: no dialogue, speaker labels, tags, lists, markdown or commentary.');
     return `[STANDALONE VISUAL SCENE DESCRIPTION TASK]
+Turn the selected chat scene into one concise plain-language visual description for an image generator. This is a separate task, not a roleplay reply.
 
-Convert the selected chat scene into one concise plain-language visual description for an image generator.
-
-Rules:
-- Output ONLY the plain description. No commentary, no markdown, no speaker labels, no tags, no bullet list.
-- Describe one coherent visible moment: subjects, identities, poses, expressions, clothing, setting, lighting, mood, and camera framing.
-${preserve ? '- Preserve explicit species, ages, body traits, names, and non-human details from the scene or reference context.' : ''}
-- Do not continue the roleplay and do not quote dialogue.
-${isMultiMessage ? '- The selected scene is a multi-message transcript. Infer the best single visual moment from it.' : ''}${context.length ? `\nREFERENCE CONTEXT:\n${context.join('\n')}` : ''}
-
-SELECTED SCENE${isMultiMessage ? ' CONTEXT' : ''}:
+${rules.join('\n')}
+${context.length ? `\nREFERENCE CONTEXT:\n${context.join('\n')}\n` : ''}
+${sceneLabel}:
 ${scene}
 
 Plain visual description:`;
@@ -71,130 +71,88 @@ export function buildImagePromptInstruction(settings, scene, profile, { isMultiM
     const skins = [];
     if (preserve && charDesc.match(skinPattern)) skins.push(`${charName}: ${charDesc.match(skinPattern)[0]}`);
     if (preserve && userPersona.match(skinPattern)) skins.push(`${userName}: ${userPersona.match(skinPattern)[0]}`);
-    const skin = skins.length ? `\nCRITICAL - You MUST include these skin tones: ${skins.join(', ')}` : '';
-    let appearance = '';
+    const sections = [];
     if (profile.usesCurrentCardContext) {
-        if (charDesc) appearance += `${charName}'s appearance: ${charDesc.slice(0, 1500)}\n`;
-        if (userPersona) appearance += `${userName}'s appearance: ${userPersona.slice(0, 800)}\n`;
-        if (tags) appearance += `Source/Tags: ${tags}\n`;
-        if (scenario) appearance += `Setting: ${scenario.slice(0, 400)}\n`;
+        if (charDesc) sections.push(`${charName}'s appearance: ${charDesc.slice(0, 1500)}`);
+        if (userPersona) sections.push(`${userName}'s appearance: ${userPersona.slice(0, 800)}`);
     } else {
-        const sections = [];
         const persona = `User persona (${userName}; applies to first-person references like I/me/my): ${userPersona.slice(0, 800)}`;
         if (userInScene) sections.push(persona);
         if (charDesc) sections.push(`${secondary ? 'Secondary active character profiles (only use if the scene clearly includes them):' : 'Character profiles:'}\n${charDesc.slice(0, 1500)}`);
         if (!userInScene && userPersona) sections.push(persona);
-        if (tags) sections.push(`Source/Tags: ${tags}`);
-        if (scenario) sections.push(`Setting: ${scenario.slice(0, 400)}`);
-        appearance = sections.length ? `${sections.join('\n')}\n` : '';
     }
+    if (tags) sections.push(`Source/Tags: ${tags}`);
+    if (scenario) sections.push(`Setting: ${scenario.slice(0, 400)}`);
     const exactNames = preserve && profile.useExactNameRequirements && names.length > 0;
-    const nameRequirement = exactNames ? `\n- Preserve and include these exact character name${names.length === 1 ? '' : 's'} when the scene/card identifies them${secondary ? '; otherwise do not force them into the prompt just because they are the active chat character' : ''}: ${nameList}` : '';
-    const userRequirement = preserve && userPersona ? `\n- If the scene refers to the user in first person or by name, preserve and include the exact user persona name when applicable: ${userName}` : '';
-    const nameBlock = exactNames ? `\n${secondary ? 'ACTIVE CHARACTER NAMES (only use if the scene explicitly includes them):' : 'CHARACTER NAMES TO PRESERVE (use these exact spellings when applicable):'} ${nameList}` : '';
-    const userBlock = preserve && userPersona ? `\nUSER PERSONA NAME (use when the scene refers to the user / I / me / my): ${userName}` : '';
-    const identityRules = ['- Preserve any explicit age, age range, species, creature type, race, or persona/body traits from the scene or profile.',
-        '- Do NOT flatten specific identities into generic labels like man, woman, person, human, teen, adult, boy, or girl when more specific information is available.',
-        '- If a subject is non-human or from a known fantasy/franchise species, keep that identity in the prompt instead of humanizing it.'];
-    if (userPersona) identityRules.push(`- If the scene uses first-person references like I/me/my or mentions ${userName}, that subject is the user persona described below. Use that persona's age, species, body type, and nonhuman traits.`);
-    const identity = preserve ? `\nIDENTITY REQUIREMENTS:\n${identityRules.join('\n')}` : '';
-    const subjectRules = [];
-    if (userInScene) subjectRules.push(`- The user persona (${userName}) is visually involved in this scene whenever the scene uses first-person references or the user name.`,
-        '- Do NOT replace the user persona with a generic human label or with the active chat character\'s profile.',
-        '- If the user persona is acting in the scene, depict them as a full subject when relevant instead of reducing them to a hand, claw, limb, silhouette, or other partial-body placeholder unless the scene explicitly calls for an off-screen POV framing.');
-    if (userPrimary) subjectRules.push(`- Reflection/self-view scenes should treat the user persona (${userName}) as the primary visual subject and describe their full appearance.`);
-    if (secondary) subjectRules.push('- Do not center the active chat character or inject their full profile unless the scene clearly includes them.');
-    if (userInScene && mentioned.length) subjectRules.push(`- If both the user persona and another subject are present, preserve both identities accurately and do not let ${mentioned.join(', ')} overshadow the user persona.`);
-    const subject = preserve && subjectRules.length ? `\nSCENE SUBJECT PRIORITY:\n${subjectRules.join('\n')}` : '';
-    const userBullet = preserve && userPersona ? `\n- If the scene refers to the user in first person or by name, use the user persona reference below for that subject (${userName})` : '';
-    const multi = isMultiMessage ? '\nMULTI-MESSAGE SCENE CONTEXT:\n- The selected scene below is speaker-tagged context from the chosen chat messages.\n- Use it to infer one coherent visual moment.\n- Do NOT copy speaker labels, quote dialogue, or echo transcript lines in the output.\n- Convert the exchange into visual details only: subjects, actions, expressions, setting, camera framing, lighting, and mood.' : '';
+    const identityRules = [];
+    if (preserve) {
+        identityRules.push('- Keep every stated age, species, creature type, race and body trait. Use the specific identity over generic labels (man, woman, person, girl), and keep non-humans non-human.');
+        if (skins.length) identityRules.push(`- Skin tones to keep: ${skins.join(', ')}`);
+        if (exactNames) identityRules.push(secondary
+            ? `- Active character names, only when the scene explicitly includes them: ${nameList}`
+            : `- Use these exact character names when the scene or card identifies them: ${nameList}`);
+        if (userPersona) identityRules.push(`- I/me/my or the name ${userName} in the scene is the user persona ${userName}: give that subject the persona's name, age, species and body.`);
+        if (userInScene) identityRules.push(`- ${userName} is visibly part of this scene: show them as a full subject with their own traits, never as a generic human, a copy of the active character, or a stray hand or silhouette (unless the scene is an off-screen POV).`);
+        if (userPrimary) identityRules.push(`- Reflection or self-view: ${userName} is the main subject, so describe their full appearance.`);
+        if (secondary) identityRules.push('- Leave the active chat character out unless the scene clearly includes them.');
+        if (userInScene && mentioned.length) identityRules.push(`- Keep ${userName} and ${mentioned.join(', ')} equally accurate; neither replaces the other.`);
+    }
+    if (identityRules.length) sections.push(`IDENTITY:\n${identityRules.join('\n')}`);
+    const multi = isMultiMessage ? '\nThe scene is a speaker-tagged transcript: pick one coherent visual moment from it, and leave out speaker labels and dialogue.' : '';
+    const sceneGap = isMultiMessage ? '\n' : ' ';
     if (s.llmPromptStyle === 'custom' && s.llmCustomInstruction?.trim()) {
         let instruction = replaceCustom(s.llmCustomInstruction, scene, profile);
-        let enhancements = '';
-        if (s.llmAddQuality) enhancements += '\n- Include quality tags (masterpiece, best quality, highly detailed, sharp focus, etc.)';
-        if (s.llmAddLighting) enhancements += '\n- Include lighting descriptions (dramatic lighting, soft lighting, rim lighting, etc.)';
-        if (s.llmAddArtist) enhancements += `\n- Include artist tags (e.g., ${artist.replace(/ /g, '_')}, etc.)`;
-        if (enhancements) instruction += `\n\nADDITIONAL REQUIREMENTS:${enhancements}`;
-        instruction += skin + identity + subject;
-        if (nameRequirement || userRequirement) instruction += `\n\nNAME REQUIREMENTS:${nameRequirement}${userRequirement}`;
+        const extras = [];
+        if (s.llmAddQuality) extras.push('- Quality tags (masterpiece, best quality, highly detailed)');
+        if (s.llmAddLighting) extras.push('- A lighting description (soft, dramatic or rim lighting)');
+        if (s.llmAddArtist) extras.push(`- An artist tag such as ${artist.replace(/ /g, '_')}`);
+        if (extras.length) instruction += `\n\nALSO INCLUDE:\n${extras.join('\n')}`;
+        if (identityRules.length) instruction += `\n\nIDENTITY:\n${identityRules.join('\n')}`;
         if (!/\{\{\s*scene\s*\}\}/i.test(s.llmCustomInstruction)) instruction += `\n\n${isMultiMessage ? 'SELECTED SCENE CONTEXT' : 'SELECTED SCENE'}:\n${scene}`;
         return instruction;
     }
-    let enhancements = '';
-    let restrictions = '';
+    const reference = sections.join('\n');
     if (s.llmPromptStyle === 'natural') {
-        if (s.llmAddQuality) enhancements += '\n- Enhanced quality descriptors (masterpiece, highly detailed, sharp focus, etc.)';
-        if (s.llmAddLighting) enhancements += '\n- Professional lighting descriptions (dramatic lighting, soft lighting, rim lighting, etc.)';
-        if (s.llmAddArtist) enhancements += `\n- Art style references from well-known artists (e.g., ${artist}, etc.)`;
-        else restrictions += '\n- DO NOT include artist names or art style references';
-        return `[STANDALONE IMAGE PROMPT GENERATION TASK]${skin}
+        const cover = ['- Who is present and their defining visual traits (hair, eyes, build, outfit, distinguishing features)'];
+        if (preserve) cover.push('- For known franchise characters, the series name and canonical look');
+        cover.push('- Pose, expression and body language', '- Setting and background', '- Lighting and atmosphere',
+            '- Art style only where the scene or reference implies one (anime, illustration, painting, 3D, photo). Stay style-neutral otherwise; realism is never the default');
+        if (s.llmAddQuality) cover.push('- Quality descriptors (highly detailed, intricate, polished)');
+        if (s.llmAddLighting) cover.push('- A specific lighting setup (soft, dramatic or rim lighting)');
+        cover.push(s.llmAddArtist ? `- An art style reference to an artist such as ${artist}` : '- No artist names');
+        return `[STANDALONE IMAGE PROMPT GENERATION TASK]
+Write one image prompt for the scene below. This is a separate task, not a chat reply: use only the scene and reference given here, and describe what is seen instead of repeating the scene text.${multi}
+${reference ? `\nCHARACTER REFERENCE:\n${reference}\n` : ''}
+CURRENT SCENE:${sceneGap}${scene}
 
-CRITICAL INSTRUCTIONS:
-- IGNORE any ambient chat history outside the selected scene below
-- Generate ONLY a new image prompt based on the selected scene below
-- DO NOT repeat or paraphrase the scene text verbatim
-- This is a standalone task, not a continuation of chat
-${multi}
+Describe in flowing natural language, no tags or lists:
+${cover.join('\n')}
 
-[Output ONLY an image generation prompt. No commentary or explanation.]${skin}
-
-CHARACTER REFERENCE:
-${appearance}${nameBlock}${userBlock}${identity}${subject}
-${isMultiMessage ? 'SCENE CONTEXT (multiple messages):\n' : 'CURRENT SCENE: '}${scene}
-
-Write a detailed image prompt describing:
-- The characters involved with their defining visual traits (hair color, eye color, outfit, distinguishing features)
-${exactNames ? `- Use the exact active character names when the scene/card identifies them (${nameList})` : ''}
-${userBullet}
-${preserve ? '- Preserve explicit ages, species, creature types, and nonhuman identities from the scene/profile instead of replacing them with generic human labels' : ''}
-${preserve ? '- If from known media/franchise, include the series name and character\'s canonical appearance' : ''}
-- Their poses, expressions, and body language
-- The setting/background
-- Lighting and atmosphere
-- High quality visual details (sharp focus, detailed rendering, etc.)${enhancements ? `\n\nYOU MUST ALSO INCLUDE:${enhancements}` : ''}${restrictions}
+Output only the image prompt, no commentary.
 
 Prompt:`;
     }
-    restrictions = '\nCRITICAL RESTRICTIONS (MUST FOLLOW):\n- NEVER use realistic style tags (e.g., realistic, photorealistic, hyperrealistic, photography, etc.)\n- NEVER use realistic artists (e.g., wlop, artgerm, rossdraws, etc.)\n- NEVER use common/overused artists (e.g., sakimichan, greg rutkowski, alphonse mucha, etc.)';
-    if (s.llmAddQuality) enhancements += '\n- Enhanced quality tags (masterpiece, best quality, highly detailed, sharp focus, etc.)';
-    if (s.llmAddLighting) enhancements += '\n- Professional lighting descriptions (dramatic lighting, soft lighting, rim lighting, etc.)';
-    if (s.llmAddArtist) enhancements += `\n- Include artist tags from anime/manga artists (e.g., ${artist.replace(/ /g, '_')}, etc.)`;
-    else restrictions += '\n- DO NOT include any artist names';
-    return `### STANDALONE IMAGE GENERATION TASK ###${skin}
+    const cover = [preserve
+        ? `- Character name + series (use the recognised character and series tags${exactNames ? `; keep the exact names ${nameList} when no canonical tag exists` : ''})`
+        : '- Subjects and visible traits relevant to the scene',
+    '- Physical traits (hair, eyes, body, skin)', '- Clothing and accessories', '- Pose and expression', '- Background/setting',
+    `- Quality tags (masterpiece, best quality${s.llmAddQuality ? ', highly detailed, sharp focus' : ''})`];
+    if (s.llmAddLighting) cover.push('- Lighting tags (soft lighting, dramatic lighting, rim lighting)');
+    if (s.llmAddArtist) cover.push(`- An anime/manga artist tag such as ${artist.replace(/ /g, '_')}`);
+    return `### STANDALONE IMAGE GENERATION TASK ###
+Turn the scene below into Danbooru-style tags. This is a separate task, not a chat reply: use only the scene and character info given here.${multi}
 
-CRITICAL - THIS IS NOT A CONTINUATION OF CHAT:
-- IGNORE any ambient chat history outside the selected scene below
-- Generate a FRESH image prompt based ONLY on the selected scene below
-- DO NOT repeat or paraphrase the scene text verbatim
-- This is a standalone generation task
-${multi}
+Output ONLY comma-separated tags on one line. No sentences, no explanations.
+Example: 1girl, hatsune_miku, vocaloid, long_hair, twintails, blue_hair, blue_eyes, detached_sleeves, sitting, smile, looking_at_viewer, classroom, window, sunlight, masterpiece, best_quality
 
-### OUTPUT FORMAT (MANDATORY) ###
-Output ONLY comma-separated Danbooru/Booru-style tags. No sentences. No descriptions. No paragraphs. No prose. No explanations.
-If you write a sentence instead of tags, you have FAILED the task.
+Create Danbooru-style tags for this scene:${sceneGap}${scene}
+${reference ? `\nCHARACTER INFO:\n${reference}\n` : ''}
+Tag categories to cover:
+${cover.join('\n')}
 
-CORRECT example output:
-1girl, hatsune_miku, vocaloid, long_hair, twintails, blue_hair, blue_eyes, detached_sleeves, thighhighs, sitting, smile, looking_at_viewer, classroom, window, sunlight, masterpiece, best_quality
-
-WRONG (DO NOT do this):
-"A girl with long blue twintails sits in a classroom by the window, smiling at the viewer."
-
-### IMAGE GENERATION TASK ###
-
-Create Danbooru/Booru-style tags for this ${isMultiMessage ? 'scene context:\n' : 'scene: '}${scene}
-
-Character info: ${appearance}${nameBlock}${userBlock}${identity}${subject}
-
-Required tag categories:
-${preserve ? `- Character name + series name (CRITICAL: Use recognizable fictional media character tags whenever recognized${exactNames ? `, and keep exact active names like ${nameList || 'the named character'} when no canonical tag exists` : ''})` : '- Subjects and visible traits relevant to the selected scene'}
-${userBullet}
-${preserve ? '- Preserve explicit ages, species, creature types, and nonhuman identities from the scene/profile instead of replacing them with generic human tags' : ''}
-- Physical traits (hair, eyes, body, skin)
-- Clothing and accessories
-- Pose and expression
-- Background/setting
-- Quality tags (masterpiece, best quality, etc.)${enhancements ? `\n\nMUST INCLUDE these additional elements:${enhancements}` : ''}
-${restrictions}
+Never use:
+- Realism tags (realistic, photorealistic, photography)
+- ${s.llmAddArtist ? 'Realistic or overused artists (wlop, artgerm, sakimichan, greg rutkowski)' : 'Artist names'}
 
 Tags:`;
 }

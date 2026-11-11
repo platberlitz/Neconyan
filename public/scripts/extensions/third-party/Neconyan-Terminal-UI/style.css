@@ -2679,7 +2679,7 @@ body.sbterm.reduced-motion *,
 body.sbterm.reduced-motion *::before,
 body.sbterm.reduced-motion *::after {
     scroll-behavior: auto !important;
-    transition-duration: 0.01ms !important;
+    transition-duration: 0s !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
 }
@@ -2693,7 +2693,7 @@ body.sbterm.reduced-motion *::after {
     body.sbterm *::before,
     body.sbterm *::after {
         scroll-behavior: auto !important;
-        transition-duration: 0.01ms !important;
+        transition-duration: 0s !important;
         animation-duration: 0.01ms !important;
         animation-iteration-count: 1 !important;
     }

@@ -23,23 +23,62 @@ export class TabManager {
         this.movedElements = new Map();
         this.isTabsCreated = false;
         this.enabled = true;
+        this.intervalId = null;
+        this.startupTimeoutId = null;
+        this.visibilityHandler = null;
+        this.initialized = false;
+        this.destroyed = false;
 
         this.init();
     }
 
+    startPolling() {
+        if (!this.destroyed && this.enabled && this.intervalId === null && !document.hidden) {
+            this.intervalId = setInterval(() => this.checkConditionAndInitialize(), 2000);
+        }
+    }
+
+    stopPolling() {
+        if (this.intervalId !== null) {
+            clearInterval(this.intervalId);
+            this.intervalId = null;
+        }
+    }
+
     init() {
-        setTimeout(() => this.checkConditionAndInitialize(), 300);
-        this.intervalId = setInterval(() => this.checkConditionAndInitialize(), 2000);
+        if (this.initialized || this.destroyed) {
+            return;
+        }
+        this.initialized = true;
+        this.startupTimeoutId = setTimeout(() => {
+            this.startupTimeoutId = null;
+            if (!this.destroyed) {
+                this.checkConditionAndInitialize();
+            }
+        }, 300);
+        this.startPolling();
+        this.visibilityHandler = () => {
+            if (this.destroyed) {
+                return;
+            }
+            if (document.hidden) {
+                this.stopPolling();
+            } else if (this.enabled) {
+                this.checkConditionAndInitialize();
+                this.startPolling();
+            }
+        };
+        document.addEventListener('visibilitychange', this.visibilityHandler);
     }
 
     setEnabled(enabled) {
+        if (this.destroyed) {
+            return;
+        }
         this.enabled = enabled;
         if (!enabled) {
             // Clear interval to prevent re-creation
-            if (this.intervalId) {
-                clearInterval(this.intervalId);
-                this.intervalId = null;
-            }
+            this.stopPolling();
 
             // Force remove tabs immediately when disabled
             if (this.isTabsCreated) {
@@ -53,9 +92,9 @@ export class TabManager {
                     this.forceRemoveAllTabElements();
                 }
             }, 100);
-        } else if (enabled && !this.intervalId) {
+        } else if (enabled && this.intervalId === null) {
             // Re-enable interval checking when enabled
-            this.intervalId = setInterval(() => this.checkConditionAndInitialize(), 2000);
+            this.startPolling();
             // Check immediately
             this.checkConditionAndInitialize();
         }
@@ -73,6 +112,9 @@ export class TabManager {
     }
 
     checkConditionAndInitialize() {
+        if (this.destroyed) {
+            return;
+        }
         if (!this.enabled) {
             // If disabled, ensure tabs are removed
             if (this.isTabsCreated) {
@@ -410,10 +452,16 @@ export class TabManager {
 
     // Clean up method to stop all timers
     destroy() {
-        if (this.intervalId) {
-            clearInterval(this.intervalId);
-            this.intervalId = null;
+        this.destroyed = true;
+        if (this.startupTimeoutId !== null) {
+            clearTimeout(this.startupTimeoutId);
+            this.startupTimeoutId = null;
         }
+        if (this.visibilityHandler) {
+            document.removeEventListener('visibilitychange', this.visibilityHandler);
+            this.visibilityHandler = null;
+        }
+        this.stopPolling();
         if (this.isTabsCreated) {
             this.removeTabs();
         }

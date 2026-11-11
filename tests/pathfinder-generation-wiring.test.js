@@ -719,6 +719,7 @@ describe('Pathfinder integration with the real extracted host generation flow', 
                 this.isFinished = true;
             }
             async generate() { return this.result; }
+            isEmptyReply() { return !this.result; }
             async finalizeIntermediaryMessage() {}
             async onFinishStreaming() { host.context.unblockGeneration('normal'); }
             onStopStreaming() { this.abortController.abort(); this.isStopped = true; }

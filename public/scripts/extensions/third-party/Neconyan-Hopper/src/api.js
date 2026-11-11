@@ -250,7 +250,7 @@ export async function selectSession(sessionId, { personaId = null } = {}) {
     if (targetPersonaId && targetPersonaId !== ctx().userAvatar) {
         try {
             const { setUserAvatar } = await import('/scripts/personas.js');
-            await setUserAvatar(targetPersonaId, { toastPersonaNameChange: false });
+            await setUserAvatar(targetPersonaId, { toastPersonaNameChange: false, automatic: true });
         } catch (error) {
             if (ctx().userAvatar !== targetPersonaId) {
                 const fresh = getSettings();

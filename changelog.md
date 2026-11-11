@@ -12,6 +12,11 @@
 - PR #601 (2026-11-11) `fix(slate-flat): fill hovered Guided Gen buttons with the accent on phones`
 - PR #602 (2026-11-11) `fix(quick-image-gen): route prefixed image models through responses`
 - PR #603 (2026-11-11) `fix(windows-xp): tint dark raised cards instead of greying them`
+- PR #604 (2026-11-11) `fix(roleplay): treat an empty reply as a failed attempt`
+- PR #605 (2026-11-11) `feat(quick-image-gen): trim text ai prompts and free natural style`
+- PR #606 (2026-11-11) `perf(motion): stop reduced motion slowing replies and chat opening`
+- PR #607 (2026-11-11) `fix(roleplay): clear notes and the blank space on a server swipe`
+- PR #608 (2026-11-11) `fix(scratchpad): share Home persona picks and retry image replies`
 
 ## v1.5.4
 

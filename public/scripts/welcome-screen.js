@@ -10,6 +10,7 @@ import { power_user } from './power-user.js';
 import { callGenericPopup, POPUP_RESULT, POPUP_TYPE } from './popup.js';
 import { renderTemplateAsync } from './templates.js';
 import { syncNeconyanAssistantTools } from './neconyan-assistant-tools.js';
+import { clearHomePersonaChoice } from './scratchpad/home-persona.js';
 
 import { accountStorage } from './util/AccountStorage.js';
 import { getAssistantGender, getAssistantTourSrc, setAssistantGender } from './neconyan-assistant-art.js';
@@ -2400,6 +2401,7 @@ export function concealWelcomeHome() {
     const wasVisible = document.body.classList.contains('neconyan-home-visible');
     document.body.classList.remove('neconyan-home-visible');
     if (wasVisible) {
+        clearHomePersonaChoice();
         // Every way out of Home passes here, so the chat it uncovers eases in.
         revealChat(document.getElementById('chat'));
         window.dispatchEvent(new Event('neconyan:home-hidden'));

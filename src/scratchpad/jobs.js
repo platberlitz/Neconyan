@@ -159,7 +159,7 @@ export function planReply(session, request, chooseIndex = randomInt) {
     }
     const reply = messages[replyIndex];
     if (replySwipes(reply).length >= MAX_REPLY_SWIPES) throw fail('SCRATCHPAD_SWIPE_LIMIT', `This reply has ${MAX_REPLY_SWIPES} versions. Send a new message to keep talking.`, 409);
-    if (hasPendingImages(reply) || Object.keys(reply.images ?? {}).length) throw fail('SCRATCHPAD_REGENERATE_INVALID', 'Keep replies with image work. Send a new message for another suggestion.', 409);
+    if (hasPendingImages(reply)) throw fail('SCRATCHPAD_REGENERATE_INVALID', 'Wait for the image on this reply to finish before trying it again.', 409);
     if ((request.source?.scope || request.source?.kind === 'general') && !sameSourceContext(request.source, reply.contextSource)) {
         throw fail('SCRATCHPAD_REGENERATE_INVALID', request.source.kind === 'general'
             ? 'Return to the original Scratchpad context before trying this reply again.' : 'Open the original chat before trying this reply again.', 409);

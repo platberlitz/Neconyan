@@ -48,8 +48,9 @@ test('Echo preserves native structure, cutoff exemptions, tablet paint and actua
     await message.evaluate(el => el.parentElement.scrollTop += 30);
     await expect(message.locator('.ch_name')).toBeVisible();
     expect(await message.evaluate(el => el.offsetTop)).toBe(offset);
-    await message.locator('.mes_reasoning_details').evaluate(el => el.open = true);
     await message.evaluate(el => { el.parentElement.scrollTop += el.querySelector('.nn-echo-header-plate').getBoundingClientRect().bottom - el.parentElement.getBoundingClientRect().bottom - 8; });
+    await expect(message.locator('.ch_name')).toBeHidden();
+    await message.locator('.mes_reasoning_details').evaluate(el => el.open = true);
     await expect(message.locator('.ch_name')).toBeVisible();
     await message.locator('.mes_reasoning_details').evaluate(el => el.open = false);
     await expect(message.locator('.ch_name')).toBeHidden();
