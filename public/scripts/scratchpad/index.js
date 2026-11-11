@@ -52,10 +52,11 @@ import { previewForBlock, previewFromText, previewLanguage } from './preview-sou
 import { showHtmlPreview } from './html-preview.js';
 import { MAX_REPLY_SWIPES, replySwipes } from './swipes.js';
 import { buildSessionExport, chooseSessionExport, exportFileName, MAX_IMPORT_BYTES, sessionMarkdown, withoutAttachments } from './export.js';
+import { roundToDiscuss } from './discuss.js';
 import { canReadAloud, isReadingAloud, stopReadAloud, toggleReadAloud } from './read-aloud.js';
 import { editQuickPrompts } from './quick-prompts.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261111-scratchpad-review-all';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261112-scratchpad-discuss';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -923,7 +924,7 @@ function sessionText(session) {
     return (session?.messages ?? []).slice(-SESSION_TEXT_MESSAGES).map(item => item.text).join('\n');
 }
 
-async function send({ regenerate = '' } = {}) {
+async function send({ regenerate = '', discuss = false } = {}) {
     if (app.sending || app.swiping || app.readingFiles.has(app.attachments)) return;
     const source = app.source;
     if (!source) return;
@@ -933,9 +934,11 @@ async function send({ regenerate = '' } = {}) {
     }
     const draft = app.el.composer.value;
     const initialSessionId = activeSession()?.id;
-    const text = regenerate ? '' : draft.trim();
+    // A discussion round sends its own request; anything typed in the box rides along as the point to focus on.
+    const request = t`Read each other's answers to my last message. Say where you agree, where you disagree and why, and what you would now change in your own answer.`;
+    const text = regenerate ? '' : discuss ? [request, draft.trim()].filter(Boolean).join('\n\n') : draft.trim();
     const attachedDraft = app.attachments;
-    const attachments = regenerate ? [] : [...attachedDraft];
+    const attachments = regenerate || discuss ? [] : [...attachedDraft];
     if (!regenerate && !text && !attachments.length) {
         app.el.composer.focus();
         return;
@@ -977,6 +980,7 @@ async function send({ regenerate = '' } = {}) {
             source: wireSource(source),
             sessionId: session.id,
             regenerate: regenerate || undefined,
+            discuss: discuss || undefined,
             text,
             attachments,
             context: context.text,
@@ -1306,6 +1310,13 @@ function renderMessages() {
             latest: lastUserIndex >= 0 && index > lastUserIndex && message.role === 'assistant',
             retry: answered && message.role === 'assistant',
         }));
+    }
+    if (roundToDiscuss(session).length) {
+        list.append(h('div', { class: 'scratchpad-round-actions' },
+            iconButton(t`Discuss these answers`, () => void send({ discuss: true }), {
+                icon: 'fa-comments', className: 'scratchpad-discuss', title: t`Each assistant reads the others' answers and replies again`,
+                disabled: app.sending || app.swiping || Boolean(app.editing),
+            })));
     }
     if (stick) scrollMessages(true);
 }
@@ -2065,6 +2076,7 @@ function renderComposer() {
     setWebSearchToggle(el.webSearch, { enabled: currentSettings().webSearch === true, configured: app.webSearch?.readiness?.configured === true });
     el.webSearch.disabled = !app.source || !app.bucket || app.sending || Boolean(pending);
     el.plus.disabled = disabled;
+    for (const button of el.messages.querySelectorAll('.scratchpad-discuss')) button.disabled = disabled || Boolean(pending) || Boolean(app.editing);
     el.plus.classList.toggle('menu_button_primary', currentSettings().webSearch === true);
     el.attach.disabled = disabled;
     clear(el.attachments);

@@ -1746,6 +1746,41 @@ test('round tables require a recognised speaker and reserve room for every answe
     assert.throws(() => jobs.planReply({ settings, messages }, { text: 'Question' }), error => error.code === 'SCRATCHPAD_SESSION_FULL');
 });
 
+test('a discussion round needs a round table with finished answers from two assistants and shows each the others', { timeout: 10000 }, async t => {
+    const settings = store.normaliseSettings({ roundTable: true, participants: ['miso', 'taro'] });
+    const reply = (assistant, state = 'done', text = `${assistant} answer`) => ({ id: `${assistant}-${state}`, role: 'assistant', assistant, state, text });
+    const question = { id: 'q', role: 'user', text: 'Question' };
+    const refused = session => assert.throws(() => jobs.planReply(session, { text: 'Discuss', discuss: true }), error => error.code === 'SCRATCHPAD_DISCUSS_INVALID' && error.status === 409);
+    refused({ assistant: 'miso', settings, messages: [] });
+    refused({ assistant: 'miso', settings, messages: [question, reply('miso')] });
+    refused({ assistant: 'miso', settings, messages: [question, reply('miso'), reply('taro', 'failed', '')] });
+    refused({ assistant: 'miso', settings: { ...settings, randomReply: true }, messages: [question, reply('miso'), reply('taro')] });
+    refused({ assistant: 'miso', settings: { ...settings, roundTable: false }, messages: [question, reply('miso'), reply('taro')] });
+    assert.deepEqual(jobs.planReply({ assistant: 'miso', settings, messages: [question, reply('miso'), reply('taro')] }, { text: 'Discuss', discuss: true }).assistants, ['miso', 'taro']);
+    assert.equal(jobs.normaliseReplyRequest({ ...sendBody({ id: 'a'.repeat(24) }), discuss: true }).discuss, true);
+    assert.equal(jobs.normaliseReplyRequest({ ...sendBody({ id: 'a'.repeat(24) }), discuss: 'yes' }).discuss, false);
+
+    const a = account(t);
+    const session = startSession(a, { roundTable: true, participants: ['miso', 'taro'] });
+    registerScratchpadJobs({ generate: async options => ({ text: `${options.characterName} first view.` }) });
+    const early = sendBody(session, { text: 'Discuss', discuss: true });
+    await assert.rejects(acceptScratchpadReply(a.request(early), early), error => error.code === 'SCRATCHPAD_DISCUSS_INVALID');
+    const first = sendBody(session, { text: 'Which ending is better?' });
+    await runJob(getJob(a.directories, (await acceptScratchpadReply(a.request(first), first)).job.id));
+    const body = sendBody(session, { text: 'Read each other\'s answers.', discuss: true });
+    const accepted = await acceptScratchpadReply(a.request(body), body);
+    const requests = readArtifact(a.directories, accepted.job.id, 'request').replies;
+    assert.deepEqual(requests.map(request => request.characterName), ['Miso', 'Taro']);
+    for (const request of requests) {
+        const peer = request.characterName === 'Miso' ? 'Taro' : 'Miso';
+        assert.ok(request.messages.some(message => message.role === 'user' && message.content === `[Earlier reply from ${peer} in Scratchpad]\n${peer} first view.`));
+        assert.ok(request.messages.some(message => message.role === 'assistant' && message.content === `${request.characterName} first view.`));
+        assert.equal(request.messages.at(-1).content, 'Read each other\'s answers.');
+    }
+    await runJob(getJob(a.directories, accepted.job.id));
+    assert.deepEqual(a.read(SOURCE).sessions[0].messages.map(message => message.role), ['user', 'assistant', 'assistant', 'user', 'assistant', 'assistant']);
+});
+
 test('Random selects each eligible assistant, reserves one answer and never changes a retry speaker', () => {
     const settings = store.normaliseSettings({ roundTable: true, randomReply: true, participants: ['miso', 'nori'] });
     const session = { assistant: 'taro', settings, messages: [] };

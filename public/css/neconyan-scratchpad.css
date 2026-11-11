@@ -1462,6 +1462,12 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     margin-top: 8px;
 }
 
+.scratchpad-round-actions {
+    display: flex;
+    justify-content: center;
+    padding: 2px 0 6px;
+}
+
 .scratchpad-batch {
     text-align: start;
 }
