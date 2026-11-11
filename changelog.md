@@ -5,6 +5,7 @@
 ### Merged Staging PRs
 - PR #593 (2026-11-10) `fix(generation): repair defects found auditing server-side generation`
 - PR #596 (2026-11-11) `fix(speech): repair queue timeouts, streamed wav and alltalk addresses`
+- PR #597 (2026-11-11) `fix(roleplay): keep continued chunks on Stop and Agent rewrites`
 
 ## v1.5.4
 
