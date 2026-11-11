@@ -107,7 +107,8 @@ export function isNovelAICompatibleProxyUrl(value) {
 
 // Sunburst and Flare IDs are Responses image tool models, never images endpoint models, so each
 // generation the proxy exposes them for belongs in this list.
-const RESPONSES_IMAGE_TOOL_MODEL = /^gpt-image-2\.(?:5|6)-(?:sunburst|flare)(?:-\d{4}-\d{2}-\d{2})?$/i;
+// Capture the optional provider prefix separately: it routes the parent model, not the image tool.
+const RESPONSES_IMAGE_TOOL_MODEL = /^((?:[^/]+\/)*)(gpt-image-2\.(?:5|6)-(?:sunburst|flare)(?:-\d{4}-\d{2}-\d{2})?)$/i;
 
 export function usesImageResponsesApi(proxyUrl, model) {
     return /\/responses$/i.test(getUrlPath(proxyUrl))
@@ -287,13 +288,15 @@ export function buildGptImagePayload({
 /** Sunburst/Flare proxies expose the image model as a Responses tool, not the outer model. */
 export function buildImageResponsesPayload({ references = [], instructions = '', ...options }) {
     const { model, prompt, n: _count, ...imageOptions } = buildGptImagePayload(options);
+    const imageModel = String(model || '').trim();
+    const modelParts = imageModel.match(RESPONSES_IMAGE_TOOL_MODEL);
     return {
-        model: 'gpt-5.5',
+        model: `${modelParts?.[1] || ''}gpt-5.5`,
         input: [{ role: 'user', content: [
             { type: 'input_text', text: prompt },
             ...references.map(image_url => ({ type: 'input_image', image_url, detail: 'high' })),
         ] }],
-        tools: [{ type: 'image_generation', model, ...imageOptions, action: references.length ? 'edit' : 'generate' }],
+        tools: [{ type: 'image_generation', model: modelParts?.[2] || imageModel, ...imageOptions, action: references.length ? 'edit' : 'generate' }],
         tool_choice: { type: 'image_generation' },
         ...(instructions ? { instructions } : {}),
     };
