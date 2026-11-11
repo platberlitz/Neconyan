@@ -126,6 +126,11 @@ for (const phone of [true, false]) {
             });
         });
         const waiting = await page.locator('#chat').evaluate(chat => chat.scrollTop);
+        await expect(page.locator('#chat .mes[mesid="11"] .mes_text'), 'the old reply clears before any preview arrives').toHaveText('...');
+        await expect(page.locator('#chat .mes[mesid="11"] .mes_timer')).toBeHidden();
+        expect(await page.evaluate(async () => (await import('/script.js')).chat[11].mes), 'the saved chat is untouched')
+            .toContain('The previous long reply.');
+        await page.screenshot({ path: `../screenshots/server-swipe-waiting-${viewport}-${process.env.NECONYAN_SCREENSHOT_PHASE || 'after'}.png`, scale: 'css' });
         await page.evaluate(() => window.sendLivePreview({ childId: 'swipe', stage: 'generating', text: 'The new swipe starts here.' }));
         const body = page.locator('#neconyan-roleplay-preview .mes_text');
         await expect(body).toHaveText('The new swipe starts here.');

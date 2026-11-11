@@ -78,3 +78,49 @@ test('ordinary sends never reserve an existing reply', () => {
     expect(rows).toEqual([original]);
     expect(original.inert).toBe(false);
 });
+
+function withReply() {
+    const kept = [{ old: 1 }, { old: 2 }];
+    const text = { childNodes: [...kept] };
+    Object.defineProperty(text, 'firstChild', { get: () => text.childNodes[0] });
+    text.replaceChildren = (...nodes) => { text.childNodes = nodes; };
+    const timer = { hidden: false };
+    const alreadyHidden = { hidden: true };
+    original.style = { minHeight: '' };
+    original.getBoundingClientRect = () => ({ height: 240 });
+    original.querySelector = () => text;
+    original.querySelectorAll = () => [timer, alreadyHidden];
+    globalThis.document.createTextNode = value => ({ value });
+    return { kept, text, timer, alreadyHidden };
+}
+
+test('a server swipe empties the old reply at once and holds its height', () => {
+    const { kept, text, timer, alreadyHidden } = withReply();
+    const restore = beginRoleplayReplacement('roleplay.swipe', 1, () => true);
+    expect(text.childNodes).toEqual([{ value: '...' }]);
+    expect(timer.hidden).toBe(true);
+    expect(original.style.minHeight).toBe('240px');
+    restore();
+    expect(text.childNodes).toEqual(kept);
+    expect(timer.hidden).toBe(false);
+    expect(alreadyHidden.hidden).toBe(true);
+    expect(original.style.minHeight).toBe('');
+});
+
+test('a refused regenerate puts the old reply back after the preview had replaced it', () => {
+    const { kept, text } = withReply();
+    const restore = beginRoleplayReplacement('roleplay.correct', 1, () => true);
+    commitRoleplayReplacement(rows[0]);
+    restore();
+    expect(rows).toEqual([original]);
+    expect(text.childNodes).toEqual(kept);
+});
+
+test('restoring never overwrites a message that was redrawn while waiting', () => {
+    const { text } = withReply();
+    const restore = beginRoleplayReplacement('roleplay.swipe', 1, () => true);
+    const redrawn = [{ fresh: true }];
+    text.childNodes = redrawn;
+    restore();
+    expect(text.childNodes).toBe(redrawn);
+});
