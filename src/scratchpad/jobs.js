@@ -153,10 +153,11 @@ export function planReply(session, request, chooseIndex = randomInt) {
         if (messages.length + 1 + assistants.length > MAX_MESSAGES) throw fail('SCRATCHPAD_SESSION_FULL', 'This session is full. Start a new session to keep talking.', 409);
         return { prompt: request.text, attachments: request.attachments ?? [], history: historyFrom(messages), replace: null, assistants };
     }
-    const userIndex = messages.findLastIndex(message => message.role === 'user');
     const replyIndex = messages.findIndex(message => message.id === request.regenerate && message.role === 'assistant');
-    if (userIndex < 0 || replyIndex <= userIndex) {
-        throw fail('SCRATCHPAD_REGENERATE_INVALID', 'Only replies to the latest message can be regenerated.', 409);
+    // The message this reply answered, which need not be the latest one. Later messages stay as they are.
+    const userIndex = messages.slice(0, Math.max(replyIndex, 0)).findLastIndex(message => message.role === 'user');
+    if (userIndex < 0) {
+        throw fail('SCRATCHPAD_REGENERATE_INVALID', 'Only a reply to one of your messages can be tried again.', 409);
     }
     const reply = messages[replyIndex];
     if (replySwipes(reply).length >= MAX_REPLY_SWIPES) throw fail('SCRATCHPAD_SWIPE_LIMIT', `This reply has ${MAX_REPLY_SWIPES} versions. Send a new message to keep talking.`, 409);

@@ -949,14 +949,13 @@ async function send({ regenerate = '' } = {}) {
         const snapshot = JSON.stringify(session);
         const settings = session.settings;
         const chatProfileId = sourceConnectionProfile(source);
-        const lastUser = [...session.messages].reverse().find(item => item.role === 'user');
         const retried = regenerate ? session.messages.find(message => message.id === regenerate) : null;
         if (retried && (source.scope || source.kind === 'general') && !sameChat(retried.contextSource, source)) {
             throw new Error(source.kind === 'general' ? t`Return to the original Scratchpad context before trying this reply again.` : t`Open the original chat before trying this reply again.`);
         }
         const assistants = retried ? [retried.assistant || session.assistant] : sessionAssistants(session);
         const genders = Object.fromEntries(ASSISTANTS.map(item => [item.id, getAssistantGender(item.id)]));
-        const query = regenerate ? (lastUser?.text ?? '') : text;
+        const query = regenerate ? (session.messages.slice(0, session.messages.indexOf(retried)).findLast(item => item.role === 'user')?.text ?? '') : text;
         const context = await buildContext({ source, settings, pendingText: query, sessionText: sessionText(session) });
         await refreshImageAvailability();
         const help = [...new Set(await Promise.all(assistants.map(assistant => buildHelp({ assistant, gender: genders[assistant], text: query }))))].filter(Boolean).join('\n\n');
@@ -1298,9 +1297,12 @@ function renderMessages() {
     const ids = new Set(session.messages.map(item => item.id));
     for (const id of app.openMenus) if (!ids.has(id)) app.openMenus.delete(id);
     const lastUserIndex = session.messages.findLastIndex(item => item.role === 'user');
+    let answered = false;
     for (const [index, message] of session.messages.entries()) {
+        answered ||= message.role === 'user';
         list.append(renderMessage(session, message, {
             latest: lastUserIndex >= 0 && index > lastUserIndex && message.role === 'assistant',
+            retry: answered && message.role === 'assistant',
         }));
     }
     if (stick) scrollMessages(true);
@@ -1336,7 +1338,7 @@ function replyPreview(message) {
     return preview?.replies ? preview.replies[message.id] : preview;
 }
 
-function renderMessage(session, message, { latest }) {
+function renderMessage(session, message, { latest, retry }) {
     const assistant = message.role === 'assistant' ? assistantInfo(message.assistant ?? session.assistant) : null;
     const article = h('article', {
         class: `scratchpad-message is-${message.role}${message.state ? ` is-${message.state}` : ''}`,
@@ -1384,7 +1386,7 @@ function renderMessage(session, message, { latest }) {
             article.append(h('p', { class: 'scratchpad-error', role: 'status', text: message.error || t`This reply did not finish.` }));
         }
     }
-    const actions = renderMessageActions(session, message, { latest });
+    const actions = renderMessageActions(session, message, { retry });
     const menu = h('details', {
         class: 'scratchpad-message-menu',
         open: app.openMenus.has(message.id),
@@ -1866,7 +1868,7 @@ async function removeMessage(session, message) {
     await change(source => api.deleteMessage(source, session.id, message.id), t`Scratchpad could not delete that message.`, scope);
 }
 
-function renderMessageActions(session, message, { latest }) {
+function renderMessageActions(session, message, { retry }) {
     const busy = Boolean(pendingReply(session));
     const actions = h('div', { class: 'scratchpad-message-actions' });
     if (message.text) actions.append(iconButton('', () => void copyMessage(message), { icon: 'fa-copy', title: t`Copy` }));
@@ -1881,7 +1883,7 @@ function renderMessageActions(session, message, { latest }) {
             actions.append(iconButton('', () => void addAsReplyVersion(session, message), { icon: 'fa-layer-group', title: t`Add as another version of the last story reply`, disabled: busy }));
         }
     }
-    if (latest && message.role === 'assistant') {
+    if (retry) {
         actions.append(iconButton('', () => void send({ regenerate: message.id }), { icon: 'fa-rotate-right', title: t`Try again`, disabled: busy || app.sending }));
     }
     actions.append(iconButton('', () => void removeMessage(session, message), { icon: 'fa-trash', title: t`Delete`, disabled: busy }));
