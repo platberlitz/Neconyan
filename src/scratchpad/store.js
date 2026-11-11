@@ -9,6 +9,7 @@ import { BUILTIN_ASSISTANT_IDS, isAssistantId, orderedAssistants, normaliseAssis
 import { readSharedBucketLocked, writeSharedBucketLocked } from './shared-sessions.js';
 import { hasPendingImages, imagePart, imageChangeHash, normaliseStoredImages } from './image-state.js';
 import { normaliseStoredWebSearch } from './web-search-record.js';
+import { normaliseStoredWebPages } from './web-pages.js';
 import { normalisePresetTargets } from '../../public/scripts/scratchpad/preset-fields.js';
 import { normaliseAttachments } from '../../public/scripts/scratchpad/attachment-data.js';
 import { MAX_REPLY_SWIPES, replySwipes, selectReplySwipe } from '../../public/scripts/scratchpad/swipes.js';
@@ -181,6 +182,7 @@ export function defaultSettings() {
         prefill: '',
         partialPrefill: '',
         webSearch: false,
+        readLinks: false,
     };
 }
 
@@ -257,6 +259,7 @@ export function normaliseSettings(input, previous = defaultSettings(), { allowIn
         settings[key] = source[key];
     }
     if (typeof source.webSearch === 'boolean') settings.webSearch = source.webSearch;
+    if (typeof source.readLinks === 'boolean') settings.readLinks = source.readLinks;
     if (isPlainObject(source.assistantPrompts)) {
         settings.assistantPrompts ??= {};
         for (const assistant of Object.keys(source.assistantPrompts).filter(isAssistantId).slice(0, 27)) {
@@ -321,6 +324,8 @@ function normaliseMessage(input, { allowInternalKeys = false, allowSwipes = true
             if (Object.keys(images).length) message.images = images;
             const webSearch = normaliseStoredWebSearch(input.webSearch);
             if (webSearch) message.webSearch = webSearch;
+            const webPages = normaliseStoredWebPages(input.webPages);
+            if (webPages) message.webPages = webPages;
             if (Array.isArray(input.targets)) message.targets = input.targets.filter(target => target && validRoleplayAvatar(target.avatar)
                 && typeof target.name === 'string' && target.name.trim() && target.name.length <= 200).slice(0, 200).map(target => ({ avatar: target.avatar, name: target.name }));
             if (input.imageNames && typeof input.imageNames.user === 'string') message.imageNames = { user: input.imageNames.user.slice(0, 100), character: boundedString(input.imageNames.character, 200) };

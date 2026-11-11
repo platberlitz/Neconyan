@@ -388,6 +388,7 @@ describe('Scratchpad Context refresh lifecycle', () => {
             updateMessageTokenCounts() {},
             renderReply: (_session, message) => node('div', { class: 'scratchpad-reply', text: message.text }),
             renderWebSearchSources: () => null,
+            renderWebPages: () => null,
             renderReplySwipes: () => null,
             installReplySwipeGesture() {},
             renderAttachments: () => [],

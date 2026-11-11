@@ -212,4 +212,25 @@ export function renderWebSearchSources(message) {
     return details;
 }
 
+/** The linked pages read for a reply, with the reason beside any that could not be read. */
+export function renderWebPages(message) {
+    const pages = (Array.isArray(message?.webPages) ? message.webPages : []).flatMap(page => {
+        const url = safeWebUrl(page?.url);
+        return url ? [{ url, title: String(page.title || '').slice(0, 200), error: typeof page.error === 'string' ? page.error.slice(0, 200) : '' }] : [];
+    }).slice(0, 3);
+    if (!pages.length) return null;
+    const read = pages.filter(page => !page.error).length;
+    const details = h('details', { class: 'scratchpad-web-sources scratchpad-sources scratchpad-web-pages', open: read < pages.length },
+        h('summary', { class: 'scratchpad-web-summary', text: read ? t`Pages read (${read})` : t`Linked pages` }));
+    const list = h('ol', { class: 'scratchpad-web-source-list scratchpad-source-list' });
+    for (const page of pages) {
+        list.append(h('li', {},
+            h('a', { href: page.url, target: '_blank', rel: 'noopener noreferrer', referrerpolicy: 'no-referrer', 'data-i18n-ignore': '', text: page.title || page.url }),
+            h('small', { class: 'scratchpad-web-url', 'data-i18n-ignore': '', text: page.url.length > 160 ? `${page.url.slice(0, 157)}...` : page.url }),
+            page.error ? h('p', { class: 'scratchpad-web-error', role: 'status', text: t`Not read: ${page.error}` }) : ''));
+    }
+    details.append(h('div', { class: 'scratchpad-web-source-body' }, list));
+    return details;
+}
+
 export const testExports = { safeWebUrl, PROVIDERS };
