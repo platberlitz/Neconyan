@@ -98,6 +98,35 @@ describe('Scratchpad reviewed saves', () => {
         expect(agents[0].name).toBe('Night Keeper');
     });
 
+    test('saves a reviewed Author\'s Note only in Roleplay, while it is shared and unchanged', async () => {
+        const { chat_metadata } = await import('../public/script.js');
+        chat_metadata.note_prompt = 'Keep {{char}} calm.';
+        try {
+            const change = { type: 'authors-note', action: 'replace', value: 'Keep {{char}} wary.' };
+            await expect(prepareChange(change, source)).rejects.toThrow('Share the Author\'s Note under Context');
+            await expect(prepareChange(change, { kind: 'conversation', key: 'c' }, { authorsNoteShared: true })).rejects.toThrow('Roleplay chat');
+            const plan = await prepareChange(change, source, { authorsNoteShared: true });
+            expect(plan).toMatchObject({ target: 'Author\'s Note', field: 'This chat\'s note', before: 'Keep {{char}} calm.', after: 'Keep {{char}} wary.', editable: true });
+            await plan.commit('Keep {{char}} very wary.');
+            expect(chat_metadata.note_prompt).toBe('Keep {{char}} very wary.');
+            expect(saveChatConditional).toHaveBeenCalledWith({ throwOnError: true });
+
+            const stale = await prepareChange({ ...change, value: 'Third.' }, source, { authorsNoteShared: true });
+            chat_metadata.note_prompt = 'Changed elsewhere.';
+            await expect(stale.commit('Third.')).rejects.toThrow('changed while the review was open');
+            expect(saveChatConditional).toHaveBeenCalledTimes(1);
+
+            const refused = await prepareChange({ ...change, value: '' }, source, { authorsNoteShared: true });
+            saveChatConditional.mockResolvedValueOnce(false);
+            await expect(refused.commit('')).rejects.toThrow('was not saved');
+            expect(chat_metadata.note_prompt).toBe('Changed elsewhere.');
+            await refused.commit('');
+            expect(chat_metadata.note_prompt).toBe('');
+        } finally {
+            delete chat_metadata.note_prompt;
+        }
+    });
+
     test.each([
         ['depth_prompt_prompt', 'New note', { data: { extensions: { depth_prompt: { prompt: 'New note' } } } }],
         ['depth_prompt_depth', 0, { data: { extensions: { depth_prompt: { depth: 0 } } } }],

@@ -134,6 +134,34 @@ async function lorebookPlan(change, source) {
     };
 }
 
+function authorsNotePlan(change, source) {
+    if (source.kind !== 'roleplay') fail(t`Scratchpad can only change the Author's Note of a Roleplay chat.`);
+    const read = () => String(chat_metadata?.note_prompt ?? '');
+    const before = read();
+    return {
+        target: t`Author's Note`,
+        field: t`This chat's note`,
+        before,
+        after: change.value,
+        editable: true,
+        async commit(edited) {
+            requireSource(source);
+            if (read() !== before) conflict();
+            const value = String(edited ?? '');
+            chat_metadata.note_prompt = value;
+            let saved = false;
+            try {
+                saved = await saveChatConditional({ throwOnError: true }) === true;
+            } finally {
+                if (!saved) chat_metadata.note_prompt = before;
+            }
+            if (!saved) fail(t`The Author's Note was not saved. Review it again before retrying.`);
+            const box = globalThis.document?.getElementById('extension_floating_prompt');
+            if (box) box.value = value;
+        },
+    };
+}
+
 async function agentPlan(change) {
     const store = await import('../extensions/in-chat-agents/agent-store.js');
     const read = () => {
@@ -393,7 +421,7 @@ export async function addReplyVersion(source, target, text) {
  * Reads the live value a change would replace and returns everything the
  * review needs. Nothing is written until commit() is called.
  */
-export async function prepareChange(change, source, { sharedAvatar = '', sharedPersona, personaGuard, sharedPreset, presetGuard, creationGuard, creatorKey = '', agentsShared = false } = {}) {
+export async function prepareChange(change, source, { sharedAvatar = '', sharedPersona, personaGuard, sharedPreset, presetGuard, creationGuard, creatorKey = '', agentsShared = false, authorsNoteShared = false } = {}) {
     if (!isCurrentSource(source)) fail(t`Return to this Scratchpad context before applying changes.`);
     change = normaliseChange(change);
     if (change.type === 'preset') {
@@ -464,6 +492,10 @@ export async function prepareChange(change, source, { sharedAvatar = '', sharedP
     if (change.type === 'agent') {
         if (!agentsShared) fail(t`Share Agents under Context before saving a change to one.`);
         return agentPlan(change);
+    }
+    if (change.type === 'authors-note') {
+        if (!authorsNoteShared) fail(t`Share the Author's Note under Context before saving a change to it.`);
+        return authorsNotePlan(change, source);
     }
     if (change.type === 'lorebook') {
         if (source.kind === 'general') fail(t`General Scratchpad does not share lorebooks, so lorebook changes are unavailable.`);

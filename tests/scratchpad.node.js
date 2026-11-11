@@ -55,6 +55,19 @@ test('Agent changes are offered only when Agents are shared, and never for a not
     assert.match(buildScratchpadSystemPrompt({ assistant: 'miso', sourceKind: 'general', capabilities: { agents: true } }).text, /"type":"agent"/);
 });
 
+test('Author\'s Note changes are offered only in Roleplay, and only when the note is shared', () => {
+    assert.equal(normaliseCapabilities({ authorsNote: true }, 'roleplay').authorsNote, true);
+    for (const kind of ['conversation', 'general', 'notebook']) assert.equal(normaliseCapabilities({ authorsNote: true }, kind).authorsNote, undefined);
+    assert.equal(normaliseCapabilities({ authorsNote: 'yes' }).authorsNote, undefined);
+    for (const customPrompt of ['', 'Be helpful.']) {
+        const shared = buildScratchpadSystemPrompt({ assistant: 'miso', capabilities: { authorsNote: true }, customPrompt }).text;
+        assert.match(shared, /"type":"authors-note"/);
+        assert.match(shared, /You cannot change where or how often the note is inserted/);
+        assert.doesNotMatch(buildScratchpadSystemPrompt({ assistant: 'miso', capabilities: {}, customPrompt }).text, /"type":"authors-note"/);
+        assert.doesNotMatch(buildScratchpadSystemPrompt({ assistant: 'miso', sourceKind: 'general', capabilities: { authorsNote: true }, customPrompt }).text, /"type":"authors-note"/);
+    }
+});
+
 test('preset capabilities stay in Roleplay and remain available in custom assistant prompts', () => {
     const preset = [{ api: 'openai', name: 'Lantern' }];
     assert.deepEqual(normaliseCapabilities({ preset }).preset, preset);
@@ -328,6 +341,19 @@ test('a sent message offers Agent changes only while the session shares Agents',
         const accepted = await acceptScratchpadReply(a.request(body), body);
         await runJob(getJob(a.directories, accepted.job.id));
         assert.equal(calls.at(-1).messages[0].content.includes('"type":"agent"'), offered);
+    }
+});
+
+test('a sent message offers Author\'s Note changes only while the session shares the note', async t => {
+    const a = account(t);
+    const calls = [];
+    registerScratchpadJobs({ generate: async options => { calls.push(options); return { text: 'Done.' }; } });
+    for (const [include, offered] of [[{ authorsNote: true }, true], [{ authorsNote: false }, false]]) {
+        const session = startSession(a, { include });
+        const body = sendBody(session, { capabilities: { authorsNote: true } });
+        const accepted = await acceptScratchpadReply(a.request(body), body);
+        await runJob(getJob(a.directories, accepted.job.id));
+        assert.equal(calls.at(-1).messages[0].content.includes('"type":"authors-note"'), offered);
     }
 });
 
