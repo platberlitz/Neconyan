@@ -162,6 +162,43 @@ function authorsNotePlan(change, source) {
     };
 }
 
+async function regexPlan(change) {
+    const engine = await import('../extensions/regex/engine.js');
+    const read = () => {
+        const script = engine.getScriptsByType(engine.SCRIPT_TYPES.GLOBAL).find(item => item?.id === change.script);
+        if (!script) fail(t`There is no global regex script with that ID any more.`);
+        return script;
+    };
+    const script = read();
+    const before = String(script[change.field] ?? '');
+    return {
+        target: t`Regex script: ${script.scriptName || change.script}`,
+        field: { scriptName: t`Name`, findRegex: t`Find pattern`, replaceString: t`Replace with` }[change.field],
+        before,
+        after: change.value,
+        editable: true,
+        async commit(edited) {
+            const value = change.field === 'scriptName' ? String(edited ?? '').replace(/\s+/g, ' ').trim() : String(edited ?? '');
+            if (change.field === 'scriptName' && !value) fail(t`A regex script needs a name.`);
+            if (change.field === 'findRegex' && value) {
+                const { regexFromString } = await import('../utils.js');
+                if (!regexFromString(value)) fail(t`That Find pattern is not a valid regular expression, so nothing was saved.`);
+            }
+            const live = read();
+            if (String(live[change.field] ?? '') !== before) conflict();
+            live[change.field] = value;
+            engine.RegexProvider?.instance?.clear?.();
+            await engine.saveScriptsByType(engine.getScriptsByType(engine.SCRIPT_TYPES.GLOBAL), engine.SCRIPT_TYPES.GLOBAL);
+            try {
+                const list = await import('../extensions/regex/index.js');
+                await list.loadRegexScripts?.();
+            } catch (error) {
+                console.warn('Scratchpad could not refresh the Regexes list.', error);
+            }
+        },
+    };
+}
+
 async function agentPlan(change) {
     const store = await import('../extensions/in-chat-agents/agent-store.js');
     const read = () => {
@@ -421,7 +458,7 @@ export async function addReplyVersion(source, target, text) {
  * Reads the live value a change would replace and returns everything the
  * review needs. Nothing is written until commit() is called.
  */
-export async function prepareChange(change, source, { sharedAvatar = '', sharedPersona, personaGuard, sharedPreset, presetGuard, creationGuard, creatorKey = '', agentsShared = false, authorsNoteShared = false } = {}) {
+export async function prepareChange(change, source, { sharedAvatar = '', sharedPersona, personaGuard, sharedPreset, presetGuard, creationGuard, creatorKey = '', agentsShared = false, authorsNoteShared = false, regexShared = false } = {}) {
     if (!isCurrentSource(source)) fail(t`Return to this Scratchpad context before applying changes.`);
     change = normaliseChange(change);
     if (change.type === 'preset') {
@@ -496,6 +533,10 @@ export async function prepareChange(change, source, { sharedAvatar = '', sharedP
     if (change.type === 'authors-note') {
         if (!authorsNoteShared) fail(t`Share the Author's Note under Context before saving a change to it.`);
         return authorsNotePlan(change, source);
+    }
+    if (change.type === 'regex') {
+        if (!regexShared) fail(t`Share Regexes under Context before saving a change to one.`);
+        return regexPlan(change);
     }
     if (change.type === 'lorebook') {
         if (source.kind === 'general') fail(t`General Scratchpad does not share lorebooks, so lorebook changes are unavailable.`);

@@ -554,6 +554,53 @@ export function formatAgents(agents) {
     ].join('\n\n');
 }
 
+export const MAX_REGEX_CONTEXT_BYTES = 96 * 1024;
+
+async function loadGlobalRegexScripts() {
+    try {
+        const engine = await import('../extensions/regex/engine.js');
+        return engine.getScriptsByType(engine.SCRIPT_TYPES.GLOBAL);
+    } catch (error) {
+        console.warn('Scratchpad could not read the global regex scripts.', error);
+        return [];
+    }
+}
+
+/**
+ * Global regex scripts are listed with their exact saved text. A script that
+ * no longer fits keeps its ID and name only, and the section says so, so the
+ * model never edits a pattern it did not see.
+ */
+export function formatRegexScripts(scripts) {
+    const list = (Array.isArray(scripts) ? scripts : []).filter(script => script && typeof script.id === 'string' && script.id);
+    if (!list.length) return '';
+    const blocks = [];
+    let used = 0;
+    let withheld = 0;
+    for (const script of list) {
+        const head = [
+            `### ${String(script.scriptName ?? '').trim() || 'Unnamed script'}`,
+            `ID: ${script.id}`,
+            `Status: ${script.disabled ? 'off' : 'on'}`,
+        ].join('\n');
+        const full = `${head}\n[findRegex]\n${String(script.findRegex ?? '')}\n[replaceString]\n${String(script.replaceString ?? '')}`;
+        const bytes = byteLength(full);
+        if (used + bytes <= MAX_REGEX_CONTEXT_BYTES) {
+            blocks.push(full);
+            used += bytes;
+        } else {
+            blocks.push(`${head}\nNot shared: there was no room left. Do not propose a change to this script.`);
+            withheld++;
+        }
+    }
+    return [
+        '## Regexes (global scripts saved for this account, exactly as written)',
+        'A regex script finds text in messages and replaces it. Field keys are shown in [brackets]. Macros and capture groups such as {{match}} and $1 are left in place.',
+        ...(withheld ? [`${withheld} script${withheld === 1 ? ' was' : 's were'} left out to save room.`] : []),
+        ...blocks,
+    ].join('\n\n');
+}
+
 /**
  * Builds the reference material for a message from the visible workspace.
  * Nothing here is saved; General never borrows a hidden story. Messages are
@@ -622,6 +669,15 @@ export async function buildContext({ source, settings, pendingText = '', session
         }
     }
 
+    let regexShared = false;
+    if (include.regex) {
+        const text = formatRegexScripts(await loadGlobalRegexScripts());
+        if (text) {
+            sections.push(text);
+            regexShared = true;
+        }
+    }
+
     let lore = { books: [], entries: [] };
     if (include.lore && !general) {
         const scanText = loreScanText({ source, settings, sessionText, pendingText });
@@ -648,7 +704,7 @@ export async function buildContext({ source, settings, pendingText = '', session
     const scaffold = general ? 0 : 2 + byteLength(scaffoldHeading) + (scaffoldNote ? 2 + byteLength(scaffoldNote) : 0);
     requireCurrentSource(source);
     if (headBytes + scaffold > MAX_CONTEXT_BYTES) {
-        throw new Error(t`The shared context is too large to send. Turn off the persona, character cards, Author's Note, Agents, lorebooks or preset you do not need, then try again.`);
+        throw new Error(t`The shared context is too large to send. Turn off the persona, character cards, Author's Note, Agents, Regexes, lorebooks or preset you do not need, then try again.`);
     }
 
     const lines = selection.messages.map(item => ({ item, bytes: byteLength(messageLine(item)) }));
@@ -707,6 +763,7 @@ export async function buildContext({ source, settings, pendingText = '', session
             chat: source.kind === 'roleplay',
             members: source.groupId ? people.map(item => item.name).filter(Boolean) : [],
             ...(agentsShared ? { agents: true } : {}),
+            ...(regexShared ? { regex: true } : {}),
             ...(include.authorsNote && source.kind === 'roleplay' ? { authorsNote: true } : {}),
         },
     };

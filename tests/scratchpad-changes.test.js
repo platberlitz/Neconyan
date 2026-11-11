@@ -53,6 +53,24 @@ jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/agent-stor
     getAgentById: id => agents.find(item => item.id === id), saveAgent,
 }));
 
+let regexScripts = [];
+const saveScriptsByType = jest.fn(async () => {});
+const loadRegexScripts = jest.fn(async () => {});
+jest.unstable_mockModule('../public/scripts/extensions/regex/engine.js', () => ({
+    SCRIPT_TYPES: { GLOBAL: 0 }, getScriptsByType: () => regexScripts, saveScriptsByType, RegexProvider: { instance: { clear() {} } },
+}));
+jest.unstable_mockModule('../public/scripts/extensions/regex/index.js', () => ({ loadRegexScripts }));
+jest.unstable_mockModule('../public/scripts/utils.js', () => ({
+    regexFromString: input => {
+        const match = /^\/(.*)\/([a-z]*)$/s.exec(input);
+        try {
+            return match ? new RegExp(match[1], match[2]) : new RegExp(input);
+        } catch {
+            return undefined;
+        }
+    },
+}));
+
 const { addReplyVersion, prepareChange, replyVersionTarget } = await import('../public/scripts/scratchpad/changes.js');
 const panelSource = fs.readFileSync(new URL('../public/scripts/scratchpad/index.js', import.meta.url), 'utf8');
 
@@ -125,6 +143,32 @@ describe('Scratchpad reviewed saves', () => {
         } finally {
             delete chat_metadata.note_prompt;
         }
+    });
+
+    test('saves a reviewed regex script text only while Regexes are shared, valid and unchanged', async () => {
+        regexScripts = [{ id: 'tidy', scriptName: 'Tidy', findRegex: '/colour/g', replaceString: 'color', disabled: false }];
+        const change = { type: 'regex', action: 'replace', script: 'tidy', field: 'findRegex', value: '/colou?r/gi' };
+        await expect(prepareChange(change, source)).rejects.toThrow('Share Regexes under Context');
+        await expect(prepareChange({ ...change, script: 'gone' }, source, { regexShared: true })).rejects.toThrow('no global regex script');
+        const plan = await prepareChange(change, { kind: 'general', key: 'general', avatar: 'Nova.png' }, { regexShared: true });
+        expect(plan).toMatchObject({ target: 'Regex script: Tidy', field: 'Find pattern', before: '/colour/g', after: '/colou?r/gi', editable: true });
+        await expect(plan.commit('/colou(r/g')).rejects.toThrow('not a valid regular expression');
+        expect(saveScriptsByType).not.toHaveBeenCalled();
+        await plan.commit('/colou?r/g');
+        expect(regexScripts[0].findRegex).toBe('/colou?r/g');
+        expect(saveScriptsByType).toHaveBeenCalledWith(regexScripts, 0);
+        expect(loadRegexScripts).toHaveBeenCalledTimes(1);
+
+        const stale = await prepareChange({ ...change, field: 'replaceString', value: 'hue' }, source, { regexShared: true });
+        expect(stale.field).toBe('Replace with');
+        regexScripts[0].replaceString = 'Changed elsewhere.';
+        await expect(stale.commit('hue')).rejects.toThrow('changed while the review was open');
+        expect(saveScriptsByType).toHaveBeenCalledTimes(1);
+
+        const name = await prepareChange({ ...change, field: 'scriptName', value: 'Neat' }, source, { regexShared: true });
+        await expect(name.commit('   ')).rejects.toThrow('needs a name');
+        await name.commit('  Very   neat ');
+        expect(regexScripts[0].scriptName).toBe('Very neat');
     });
 
     test.each([

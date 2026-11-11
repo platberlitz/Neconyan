@@ -55,6 +55,21 @@ test('Agent changes are offered only when Agents are shared, and never for a not
     assert.match(buildScratchpadSystemPrompt({ assistant: 'miso', sourceKind: 'general', capabilities: { agents: true } }).text, /"type":"agent"/);
 });
 
+test('regex script changes are offered only when Regexes are shared, and never for a note', () => {
+    assert.equal(store.normaliseSettings({}).include.regex, false);
+    assert.equal(store.normaliseSettings({ include: { regex: true } }).include.regex, true);
+    for (const kind of ['roleplay', 'conversation', 'general']) assert.equal(normaliseCapabilities({ regex: true }, kind).regex, true);
+    assert.equal(normaliseCapabilities({ regex: true }, 'notebook').regex, undefined);
+    assert.equal(normaliseCapabilities({ regex: 'yes' }).regex, undefined);
+    for (const customPrompt of ['', 'Be helpful.']) {
+        const shared = buildScratchpadSystemPrompt({ assistant: 'miso', capabilities: { regex: true }, customPrompt }).text;
+        assert.match(shared, /"type":"regex"/);
+        assert.match(shared, /edit character or preset scripts/);
+        assert.doesNotMatch(buildScratchpadSystemPrompt({ assistant: 'miso', capabilities: {}, customPrompt }).text, /"type":"regex"/);
+    }
+    assert.match(buildScratchpadSystemPrompt({ assistant: 'miso', sourceKind: 'general', capabilities: { regex: true } }).text, /"type":"regex"/);
+});
+
 test('Author\'s Note changes are offered only in Roleplay, and only when the note is shared', () => {
     assert.equal(normaliseCapabilities({ authorsNote: true }, 'roleplay').authorsNote, true);
     for (const kind of ['conversation', 'general', 'notebook']) assert.equal(normaliseCapabilities({ authorsNote: true }, kind).authorsNote, undefined);
@@ -341,6 +356,19 @@ test('a sent message offers Agent changes only while the session shares Agents',
         const accepted = await acceptScratchpadReply(a.request(body), body);
         await runJob(getJob(a.directories, accepted.job.id));
         assert.equal(calls.at(-1).messages[0].content.includes('"type":"agent"'), offered);
+    }
+});
+
+test('a sent message offers regex script changes only while the session shares Regexes', async t => {
+    const a = account(t);
+    const calls = [];
+    registerScratchpadJobs({ generate: async options => { calls.push(options); return { text: 'Done.' }; } });
+    for (const [include, offered] of [[{ regex: true }, true], [{ regex: false }, false]]) {
+        const session = startSession(a, { include });
+        const body = sendBody(session, { capabilities: { regex: true } });
+        const accepted = await acceptScratchpadReply(a.request(body), body);
+        await runJob(getJob(a.directories, accepted.job.id));
+        assert.equal(calls.at(-1).messages[0].content.includes('"type":"regex"'), offered);
     }
 });
 
@@ -882,7 +910,7 @@ test('saved context setups keep only portable choices, are account-owned and pro
     assert.deepEqual(saved.setups, [{
         name: 'Lean read',
         settings: {
-            depth: 4, include: { card: false, persona: true, authorsNote: true, lore: true, preset: true, hidden: false, agents: false },
+            depth: 4, include: { card: false, persona: true, authorsNote: true, lore: true, preset: true, hidden: false, agents: false, regex: false },
             maxTokens: 512, stream: false, webSearch: true, readLinks: true, prefill: 'Ideas:', partialPrefill: '',
         },
     }]);

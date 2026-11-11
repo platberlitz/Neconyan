@@ -146,6 +146,20 @@ describe('Scratchpad reply parsing', () => {
         expect(describeChange({ type: 'agent', agent: 'a-1', field: 'description' })).toBe('Change Agent \'a-1\': description');
     });
 
+    test('accepts a regex script text change and refuses anything else about a script', () => {
+        expect(normaliseChange({ type: 'regex', script: ' tidy ', name: ' Tidy   up ', field: 'findRegex', value: '/colou?r/g', reason: 'Both spellings', disabled: true }))
+            .toEqual({ type: 'regex', action: 'replace', script: 'tidy', field: 'findRegex', value: '/colou?r/g', reason: 'Both spellings', name: 'Tidy up' });
+        expect(normaliseChange({ type: 'regex', action: 'edit', script: 'tidy', field: 'replaceString', value: '' })).toMatchObject({ action: 'replace', value: '' });
+        expect(normaliseChange({ type: 'regex', script: 'tidy', field: 'scriptName', value: '  Very   neat ' }).value).toBe('Very neat');
+        expect(() => normaliseChange({ type: 'regex', action: 'delete', script: 'tidy', field: 'findRegex', value: 'x' })).toThrow('can only replace');
+        expect(() => normaliseChange({ type: 'regex', script: ' ', field: 'findRegex', value: 'x' })).toThrow('exact ID');
+        expect(() => normaliseChange({ type: 'regex', script: 'tidy', field: 'disabled', value: 'x' })).toThrow('name, Find pattern or replacement');
+        expect(() => normaliseChange({ type: 'regex', script: 'tidy', field: 'findRegex' })).toThrow('no new text');
+        expect(() => normaliseChange({ type: 'regex', script: 'tidy', field: 'scriptName', value: '  ' })).toThrow('needs a name');
+        expect(describeChange({ type: 'regex', script: 'tidy', name: 'Tidy', field: 'findRegex', value: 'x' })).toBe('Change regex script \'Tidy\': findRegex');
+        expect(describeChange({ type: 'regex', script: 'tidy', field: 'replaceString', value: 'x' })).toBe('Change regex script \'tidy\': replaceString');
+    });
+
     test('accepts a replacement of the Author\'s Note text and nothing else about it', () => {
         expect(normaliseChange({ type: 'authors-note', value: 'Keep {{char}} calm.', reason: 'Shorter', depth: 2 }))
             .toEqual({ type: 'authors-note', action: 'replace', value: 'Keep {{char}} calm.', reason: 'Shorter' });
