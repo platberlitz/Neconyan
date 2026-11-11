@@ -200,6 +200,16 @@ describe('shell style runtime stylesheets', () => {
         expect(source).not.toContain('--aero-glow');
     });
 
+    test('Slate Flat fills hovered composer action buttons on phones, not just their label', () => {
+        const mobileShell = readSource('public', 'css', 'neconyan-mobile-shell.css');
+        expect(mobileShell).toContain('body.neconyan #send_form :is(#gg-action-button-container button, .stih--buttons button,');
+        const slate = stripCssBlockComments(readSource('public', 'css', 'shell-styles', 'slate-flat.css'));
+        const rule = slate.match(/:root\[data-sb-theme='slate-flat'\] body\.neconyan:not\(\.sbterm\) #send_form :is\(#gg-action-button-container, \.stih--buttons\) \.menu_button:not\(\.disabled\):not\(\[disabled\]\):hover \{([^}]*)\}/);
+        expect(rule).not.toBeNull();
+        expect(rule[1]).toContain('background: var(--neco-ginger);');
+        expect(rule[1]).toContain('color: var(--neco-on-accent);');
+    });
+
     test('every shell style other than Calico ships a sheet, and nothing else does', () => {
         const shipped = readdirSync(shellStylesDir).filter(name => name.endsWith('.css')).map(name => name.replace(/\.css$/, '')).sort();
         expect(shipped).toEqual([...runtimeIds].sort());

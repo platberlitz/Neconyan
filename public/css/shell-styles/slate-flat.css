@@ -256,6 +256,12 @@
         border-radius: 0;
         box-shadow: none;
     }
+    /* The phone composer gives these buttons a raised fill with two ids, which outranks the accent
+       hover fill above while its dark label still applies; match that weight so the fill comes too. */
+    :root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) #send_form :is(#gg-action-button-container, .stih--buttons) .menu_button:not(.disabled):not([disabled]):hover {
+        background: var(--neco-ginger);
+        color: var(--neco-on-accent);
+    }
     :root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) #form_sheld.neconyan-cat-panel #sb-bottom-chat-bar {
         background-image: none;
         border: 0;
