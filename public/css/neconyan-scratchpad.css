@@ -856,6 +856,23 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     margin: 12px 0 0;
 }
 
+.scratchpad-export-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+    margin: 0 0 12px;
+    padding: 8px 12px 12px;
+    border: 1px solid var(--neco-border);
+    border-radius: 12px;
+    text-align: start;
+}
+
+.scratchpad-export-group legend {
+    padding: 0 6px;
+    font-weight: 600;
+}
+
 .scratchpad-compose-row {
     display: flex;
     align-items: flex-end;

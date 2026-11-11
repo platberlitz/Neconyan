@@ -82,8 +82,9 @@ for (const phone of [false, true]) {
 
         // Portability includes the used assistant, not unrelated library entries.
         await page.getByRole('tab', { name: 'Sessions', exact: true }).click();
-        const download = page.waitForEvent('download');
         await page.getByRole('button', { name: 'Export current', exact: true }).click();
+        const download = page.waitForEvent('download');
+        await page.locator('dialog[open]').getByRole('button', { name: 'Export', exact: true }).click();
         const exported = JSON.parse(await fs.readFile(await (await download).path(), 'utf8'));
         expect(Object.keys(exported.session.settings.assistants)).toEqual([assistant.id]);
         expect(exported.session.settings.assistants[assistant.id].name).toBe('June');

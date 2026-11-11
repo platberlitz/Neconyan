@@ -194,6 +194,7 @@ export function renderWebSearchSources(message) {
     const details = h('details', { class: 'scratchpad-web-sources scratchpad-sources', open: Boolean(error) || !sources.length },
         h('summary', { class: 'scratchpad-web-summary', text: sources.length ? t`Sources (${sources.length})` : t`Web search` }));
     const body = h('div', { class: 'scratchpad-web-source-body' });
+    if (metadata.imported === true) body.append(h('p', { class: 'scratchpad-muted scratchpad-web-imported', text: t`These sources came with an imported file. Scratchpad did not run this search here.` }));
     if (query) body.append(h('p', { class: 'scratchpad-web-query', text: t`Search query: ${query}` }));
     if (error) body.append(h('p', { class: 'scratchpad-web-error', role: 'status', text: t`Web search failed: ${error}` }));
     if (sources.length) {

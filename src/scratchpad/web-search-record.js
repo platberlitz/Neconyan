@@ -63,7 +63,7 @@ export function normaliseStoredWebSearch(input) {
     const query = webSearchQuery(input.query);
     const error = typeof input.error === 'string' ? plainSearchText(input.error, 300) : '';
     if (!query && !sources.length && !error) return undefined;
-    return { provider: input.provider, query, sources, ...(error ? { error } : {}) };
+    return { provider: input.provider, query, sources, ...(error ? { error } : {}), ...(input.imported === true ? { imported: true } : {}) };
 }
 
 export function webSearchHistoryLine(input) {
