@@ -3,9 +3,9 @@ import { buildGptImagePayload, buildImageResponsesPayload, extractProviderImageS
     getGptImageApiUrl, getOpenAICompatibleApiUrl, requestGptImageWithRouteRetry, usesImageResponsesApi } from '../public/scripts/extensions/quick-image-gen/lib/provider-adapters.js';
 
 describe('Responses image proxy compatibility', () => {
-    test.each(['sunburst', 'flare', 'sunburst-2026-09-10'].flatMap(variant => [
+    test.each(['sunburst', 'flare', 'sunburst-2026-09-10', 'flare-2026-09-10'].flatMap(variant => [
         `gpt-image-2.5-${variant}`, `gpt-image-2.6-${variant}`,
-    ]))('routes %s through Responses with the proxy namespace intact', model => {
+    ]).flatMap(model => [model, `smol-openai/${model}`, `team/smol-openai/${model}`]))('routes %s through Responses with the proxy namespace intact', model => {
         for (const suffix of ['', '/v1', '/images', '/images/generations', '/chat/completions', '/responses/']) {
             const base = `https://proxy.example.test/openai${suffix}?token=test`;
             const expected = `https://proxy.example.test/openai${suffix === '/v1' ? '/v1' : ''}/responses?token=test`;
@@ -18,12 +18,29 @@ describe('Responses image proxy compatibility', () => {
         expect(usesImageResponsesApi('https://proxy.example.test/v1', 'gpt-image-2')).toBe(false);
         expect(usesImageResponsesApi('', 'gpt-image-2.5-flare')).toBe(false);
         expect(usesImageResponsesApi('https://proxy.example.test/v1', 'gpt-image-2.6')).toBe(false);
+        expect(usesImageResponsesApi('https://proxy.example.test/v1', 'smol-openai/gpt-image-2')).toBe(false);
+        expect(usesImageResponsesApi('https://proxy.example.test/v1', 'smol-openai/not-gpt-image-2.6-flare')).toBe(false);
+        expect(usesImageResponsesApi('', 'smol-openai/gpt-image-2.6-flare')).toBe(false);
         expect(getGptImageApiUrl('https://proxy.example.test/v1', 'gpt-image-2')).toBe('https://proxy.example.test/v1/images/generations');
         expect(getGptImageApiUrl()).toBe('https://api.openai.com/v1/images/generations');
         expect(getOpenAICompatibleApiUrl('https://proxy.example.test/v1', 'chat_completions')).toBe('https://proxy.example.test/v1/chat/completions');
         expect(buildGptImagePayload({ model: 'gpt-image-2', prompt: 'cat', size: '1024x1024' })).toEqual({
             model: 'gpt-image-2', prompt: 'cat', size: '1024x1024', n: 1,
         });
+    });
+
+    test.each(['', 'smol-openai/', 'team/smol-openai/'])('routes the parent model through %s and keeps the image tool model unprefixed', prefix => {
+        for (const model of ['gpt-image-2.5-sunburst', 'gpt-image-2.6-flare-2026-09-10']) {
+            const body = buildImageResponsesPayload({ model: `  ${prefix}${model}  `, prompt: 'cat', size: '1024x1024' });
+            expect(body.model).toBe(`${prefix}gpt-5.5`);
+            expect(body.tools).toEqual([{ type: 'image_generation', model, size: '1024x1024', action: 'generate' }]);
+        }
+    });
+
+    test('keeps a custom model intact when Responses is selected explicitly', () => {
+        const body = buildImageResponsesPayload({ model: 'custom/image-model', prompt: 'cat', size: '1024x1024' });
+        expect(body.model).toBe('gpt-5.5');
+        expect(body.tools[0].model).toBe('custom/image-model');
     });
 
     test('puts the image model and options on a forced image tool, and actual references in input', () => {

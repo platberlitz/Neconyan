@@ -797,7 +797,7 @@ test('invalid ComfyUI workflow and reference paths refuse before a paid image re
 });
 
 for (const model of ['gpt-image-2.5-sunburst', 'gpt-image-2.5-flare',
-    'gpt-image-2.6-sunburst', 'gpt-image-2.6-flare']) {
+    'gpt-image-2.6-sunburst', 'gpt-image-2.6-flare'].flatMap(model => [model, `smol-openai/${model}`])) {
     test(`GPT Image ${model} uses Responses and saves the paid result without repeating it`, async () => {
         const directories = tempRoot();
         const context = jobContext(directories);
@@ -814,8 +814,8 @@ for (const model of ['gpt-image-2.5-sunburst', 'gpt-image-2.5-flare',
             assert.equal(options.headers.Authorization, 'Bearer private-image-key');
             assert.equal(options.redirect, 'error');
             const body = JSON.parse(options.body);
-            assert.equal(body.model, 'gpt-5.5');
-            assert.deepEqual(body.tools, [{ type: 'image_generation', model: settings.gptImageModel,
+            assert.equal(body.model, model.includes('/') ? 'smol-openai/gpt-5.5' : 'gpt-5.5');
+            assert.deepEqual(body.tools, [{ type: 'image_generation', model: model.split('/').at(-1),
                 size: '1024x1536', quality: 'high', action: 'generate' }]);
             assert.deepEqual(body.tool_choice, { type: 'image_generation' });
             assert.match(body.input[0].content[0].text, /cat portrait.*\n\nAvoid in the image: blur/);
@@ -834,7 +834,7 @@ test('Responses proxy sends frozen reference bytes and chat instructions without
     const directories = tempRoot();
     fs.writeFileSync(path.join(directories.userImages, 'reference.png'), Buffer.from(PNG_BASE64, 'base64'));
     const settings = { provider: 'proxy', proxyUrl: 'https://proxy.example.test/openai/v1/chat/completions',
-        proxyModel: 'gpt-image-2.5-sunburst', proxyKey: 'reference-key', proxyChatImageMode: true,
+        proxyModel: 'smol-openai/gpt-image-2.5-sunburst', proxyKey: 'reference-key', proxyChatImageMode: true,
         proxyChatImageSystemPrompt: 'Keep the character recognisable.', proxyChatImageIncludePersonality: true,
         proxyPayloadMode: 'extended', proxyRefImages: ['/user/images/reference.png'], proxyExtraInstructions: 'Keep the hat.',
         width: 768, height: 1024, proxySse: 'on', proxySteps: 25, proxySeed: 7 };
@@ -845,6 +845,8 @@ test('Responses proxy sends frozen reference bytes and chat instructions without
             assert.equal(url, 'https://proxy.example.test/openai/v1/responses');
             const body = JSON.parse(options.body);
             assert.deepEqual(Object.keys(body).sort(), ['input', 'instructions', 'model', 'tool_choice', 'tools']);
+            assert.equal(body.model, 'smol-openai/gpt-5.5');
+            assert.equal(body.tools[0].model, 'gpt-image-2.5-sunburst');
             assert.equal(body.input[0].content[1].image_url, PNG_DATA_URL);
             assert.equal(body.tools[0].action, 'edit');
             assert.match(body.input[0].content[0].text, /Keep the hat/);
