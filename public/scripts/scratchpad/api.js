@@ -64,6 +64,8 @@ export const readInstructions = () => post('/instructions');
 export const updateInstructions = (instructions, expectedRevision) => post('/instructions/update', { instructions, expectedRevision });
 export const readQuickPrompts = () => post('/quick-prompts');
 export const updateQuickPrompts = (prompts, expectedRevision) => post('/quick-prompts/update', { prompts, expectedRevision });
+export const readContextSetups = () => post('/context-setups');
+export const updateContextSetups = (setups, expectedRevision) => post('/context-setups/update', { setups, expectedRevision });
 export const readWebSearch = () => post('/web-search', {});
 export const updateWebSearch = (webSearch, expectedRevision) => post('/web-search/update', { webSearch, expectedRevision });
 export const createSession = (source, input) => post('/session/create', { source, ...input });
