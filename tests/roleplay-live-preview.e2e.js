@@ -99,22 +99,28 @@ for (const phone of [true, false]) {
         await page.evaluate(() => window.stopLivePreview());
     });
 
-    test(`server swipe reserves the old reply while the new reply starts on ${viewport}`, async ({ app }) => {
+    test(`server swipe empties the old reply while the new reply starts on ${viewport}`, async ({ app }) => {
         const page = await openPreview(app, phone);
         await installSyntheticLongChat(page, { messageCount: 12 });
         await page.evaluate(async () => {
             const core = await import('/script.js');
             core.chat[11].mes = 'The previous long reply.\n'.repeat(100);
+            core.chat[11].extra = { ...(core.chat[11].extra || {}), inChatAgentCompanionResults: {
+                'swipe-companion': { agentName: 'Scene Notes', status: 'done', displayMode: 'card', content: 'The note for the previous reply.\n'.repeat(12) },
+            } };
             core.updateMessageBlock(11, core.chat[11]);
+            await window.SillyTavern.getContext().eventSource.emit('in_chat_agent_companion_results_updated', { messageIndex: 11 });
         });
         await expect(page.locator('#chat .mes[mesid="11"] .mes_text')).toContainText('The previous long reply.');
+        const notes = page.locator('#chat .mes[mesid="11"] .ica--companion-ledger');
+        await expect(notes).toContainText('The note for the previous reply.');
         // eslint-disable-next-line playwright/no-wait-for-timeout
         await page.waitForTimeout(2800);
         const before = await page.evaluate(async () => {
             const chat = document.querySelector('#chat');
             chat.scrollTop = chat.scrollHeight;
             await new Promise(resolve => requestAnimationFrame(resolve));
-            return chat.scrollTop;
+            return { row: chat.querySelector('.mes[mesid="11"]').getBoundingClientRect().height };
         });
         await page.evaluate(async () => {
             window.stopLivePreview();
@@ -125,22 +131,28 @@ for (const phone of [true, false]) {
                 account: 'test', isCurrent: () => true, onTerminal() {}, name: 'roleplay.swipe', messageIndex: 11,
             });
         });
-        const waiting = await page.locator('#chat').evaluate(chat => chat.scrollTop);
+        const waiting = await page.locator('#chat').evaluate(chat => ({
+            row: chat.querySelector('.mes[mesid="11"]').getBoundingClientRect().height,
+            bottomGap: chat.scrollHeight - chat.clientHeight - chat.scrollTop,
+        }));
         await expect(page.locator('#chat .mes[mesid="11"] .mes_text'), 'the old reply clears before any preview arrives').toHaveText('...');
         await expect(page.locator('#chat .mes[mesid="11"] .mes_timer')).toBeHidden();
         expect(await page.evaluate(async () => (await import('/script.js')).chat[11].mes), 'the saved chat is untouched')
             .toContain('The previous long reply.');
         await page.screenshot({ path: `../screenshots/server-swipe-waiting-${viewport}-${process.env.NECONYAN_SCREENSHOT_PHASE || 'after'}.png`, scale: 'css' });
+        await expect(notes, 'the old reply\'s Companion notes clear with it').toHaveCount(0);
         await page.evaluate(() => window.sendLivePreview({ childId: 'swipe', stage: 'generating', text: 'The new swipe starts here.' }));
         const body = page.locator('#neconyan-roleplay-preview .mes_text');
         await expect(body).toHaveText('The new swipe starts here.');
         await page.screenshot({ path: `../screenshots/server-swipe-${viewport}-${process.env.NECONYAN_SCREENSHOT_PHASE || 'after'}.png`, scale: 'css' });
         const bottomGap = await page.locator('#chat').evaluate(chat => chat.scrollHeight - chat.clientHeight - chat.scrollTop);
-        expect(Math.abs(waiting - before), 'waiting must not collapse the old reply').toBeLessThan(3);
+        expect(waiting.row, 'the emptied reply must not hold a blank page open').toBeLessThan(before.row / 4);
+        expect(waiting.bottomGap, 'the emptied reply stays at the bottom of the chat').toBeLessThan(3);
         expect(bottomGap, 'first tokens must stay at the bottom, not above the new reply').toBeLessThan(3);
         await expect(page.locator('#chat .mes[mesid="11"]')).toHaveCount(0);
         await expect(body).toBeInViewport();
         await page.evaluate(() => { window.stopLivePreview(); window.restoreSwipeSource(); });
+        await expect(notes, 'a swipe that ends without a new reply puts the notes back').toContainText('The note for the previous reply.');
     });
 
     test(`server preview shows Thinking without traces and clears it on ${viewport}`, async ({ app }) => {

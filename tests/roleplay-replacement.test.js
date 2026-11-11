@@ -24,7 +24,7 @@ beforeEach(() => {
 });
 afterEach(() => { delete globalThis.document; });
 
-test('waiting for a replacement keeps the original height and disables its controls', () => {
+test('waiting for a replacement keeps the original row and disables its controls', () => {
     const restore = beginRoleplayReplacement('roleplay.swipe', 1, () => true);
     expect(rows).toHaveLength(2);
     expect(rows[1]).toBe(original);
@@ -86,25 +86,40 @@ function withReply() {
     text.replaceChildren = (...nodes) => { text.childNodes = nodes; };
     const timer = { hidden: false };
     const alreadyHidden = { hidden: true };
+    const block = { children: [text] };
+    block.insertBefore = (node, next) => block.children.splice(next ? block.children.indexOf(next) : block.children.length, 0, node);
+    const footer = { parentNode: block };
+    const notes = { parentNode: block, nextSibling: footer };
+    notes.remove = () => { block.children = block.children.filter(child => child !== notes); };
+    block.children.push(notes, footer);
     original.style = { minHeight: '' };
-    original.getBoundingClientRect = () => ({ height: 240 });
-    original.querySelector = () => text;
-    original.querySelectorAll = () => [timer, alreadyHidden];
+    original.querySelector = selector => selector === '.mes_text' ? text : block.children.find(child => child === notes) ?? null;
+    original.querySelectorAll = selector => selector === '.ica--companion-ledger' ? block.children.filter(child => child === notes) : [timer, alreadyHidden];
     globalThis.document.createTextNode = value => ({ value });
-    return { kept, text, timer, alreadyHidden };
+    return { kept, text, timer, alreadyHidden, block, notes, footer };
 }
 
-test('a server swipe empties the old reply at once and holds its height', () => {
-    const { kept, text, timer, alreadyHidden } = withReply();
+test('a server swipe empties the old reply and its notes at once without reserving their height', () => {
+    const { kept, text, timer, alreadyHidden, block, notes, footer } = withReply();
     const restore = beginRoleplayReplacement('roleplay.swipe', 1, () => true);
     expect(text.childNodes).toEqual([{ value: '...' }]);
     expect(timer.hidden).toBe(true);
-    expect(original.style.minHeight).toBe('240px');
+    expect(block.children).toEqual([text, footer]);
+    expect(original.style.minHeight).toBe('');
     restore();
     expect(text.childNodes).toEqual(kept);
     expect(timer.hidden).toBe(false);
     expect(alreadyHidden.hidden).toBe(true);
-    expect(original.style.minHeight).toBe('');
+    expect(block.children).toEqual([text, notes, footer]);
+});
+
+test('restoring never adds a second set of notes after they were redrawn while waiting', () => {
+    const { block, notes } = withReply();
+    const restore = beginRoleplayReplacement('roleplay.swipe', 1, () => true);
+    const redrawn = {};
+    original.querySelector = selector => selector === '.ica--companion-ledger' ? redrawn : null;
+    restore();
+    expect(block.children).not.toContain(notes);
 });
 
 test('a refused regenerate puts the old reply back after the preview had replaced it', () => {
