@@ -32,6 +32,7 @@
 - PR #621 (2026-11-11) `feat(scratchpad): save context choices as reusable setups`
 - PR #623 (2026-11-11) `feat(scratchpad): dictate a message with the microphone`
 - PR #624 (2026-11-11) `feat(scratchpad): suggest changes to agents`
+- PR #625 (2026-11-11) `feat(scratchpad): suggest changes to the author's note`
 
 ## v1.5.4
 
