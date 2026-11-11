@@ -67,6 +67,7 @@ async function parseOllamaStream(jsonStream, request, response, onDisconnect = n
                 return;
             }
 
+            response.reportStreamActivity?.();
             partialData += decoder.write(data);
             if (response.reportStreamError && Buffer.byteLength(partialData) > 2 * 1024 * 1024) {
                 response.reportStreamError(new Error('The Ollama stream exceeded the saved result limit.'));
@@ -110,6 +111,7 @@ async function parseOllamaStream(jsonStream, request, response, onDisconnect = n
             // Neconyan: a resumable generation finishes without the client; only an explicit cancel stops it.
             resumableGeneration.onCancel(closeStream);
         } else {
+            response.once('close', closeStream);
             request.socket.on('close', closeStream);
         }
 

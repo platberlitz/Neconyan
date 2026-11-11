@@ -55,7 +55,7 @@ function restoreTransport(payload, material) {
  * server transport the Conversation API uses. Callers supply an already-built
  * request; saved chat profiles use runChatProfile below.
  */
-export async function runTextGeneration({ context, backend, payload, signal, anonymousCustom = false, boundProfile = false, fetch: fetchImpl, validatePrompt, beforeDispatch, onStream } = {}) {
+export async function runTextGeneration({ context, backend, payload, signal, anonymousCustom = false, boundProfile = false, fetch: fetchImpl, validatePrompt, beforeDispatch, onStream, idleTimeoutMs } = {}) {
     if (!context?.directories) throw Object.assign(new Error('A generation context is required.'), { status: 400, code: 'GENERATION_CONTEXT_MISSING' });
     if (!payload || typeof payload !== 'object' || Object.keys(payload).length === 0) {
         throw Object.assign(new Error('A generation payload is required.'), { status: 400, code: 'GENERATION_PAYLOAD_MISSING' });
@@ -88,7 +88,7 @@ export async function runTextGeneration({ context, backend, payload, signal, ano
             reasoning_finished: hasReasoning && reasoningFinishedAt !== null });
     };
     try {
-        response = await runBackendGeneration(request, resolvedBackend, payload, { signal, fetch: send, anonymousCustom, boundProfile, onStream: observe });
+        response = await runBackendGeneration(request, resolvedBackend, payload, { signal, fetch: send, anonymousCustom, boundProfile, onStream: observe, idleTimeoutMs });
     } catch (error) {
         if (validationError) throw validationError;
         throw isDefiniteProviderRefusal(error?.providerStatus) ? providerRefused(error) : error;

@@ -10,7 +10,7 @@ import { sendSystemNotification, shouldNotifyConversation } from '../push-notifi
 import { createConversationMessage, refreshBranchPreview } from '../endpoints/conversation-messages.js';
 import { ensureConversationStore, getConversationThreadKey, readUserSettingsWithStatus, saveConversationStore } from '../endpoints/conversation-store.js';
 import { repairConversationBranchMessageIds, seedConversationReadBoundary } from '../endpoints/conversation-utils.js';
-import { getJob, holdJobPruning } from '../jobs/store.js';
+import { getJob, holdJobPruning, listJobs } from '../jobs/store.js';
 import { readArtifact } from '../jobs/artifacts.js';
 import { conversationChimeOccurrenceKey, conversationReminderIdentityKey, getConversationSummarySubmissionKey } from './conversation-auto-policy.js';
 import { getConversationMessagesHash, getSettingsVersion } from '../settings-version.js';
@@ -20,6 +20,27 @@ const conflict = message => { throw Object.assign(new Error(message), { status: 
 const normalizeGroup = group => normalizeConversationGroupRecord(group, normalizeConversationSettings);
 
 const MAX_PENDING_PRESENTATIONS = 50;
+const MAX_REPLY_RECEIPTS = 100;
+
+/** Failed and interrupted jobs can retry; their families stay even if they exceed the cap. */
+function pruneReplyReceipts(context, receipts, currentKey) {
+    const keys = Object.keys(receipts);
+    if (keys.length <= MAX_REPLY_RECEIPTS) return;
+    const protectedKeys = new Set([currentKey]);
+    for (const job of listJobs(context.directories, { owner: context.owner, includeDismissed: true })) {
+        if (['completed', 'cancelled', 'conflict'].includes(job.state)) continue;
+        protectedKeys.add(digest(job.id));
+        if (job.parentId) protectedKeys.add(digest(job.parentId));
+    }
+    keys.sort((left, right) => (Number(receipts[left]?.at) || 0) - (Number(receipts[right]?.at) || 0));
+    let excess = keys.length - MAX_REPLY_RECEIPTS;
+    for (const key of keys) {
+        if (excess <= 0) break;
+        if (protectedKeys.has(key)) continue;
+        delete receipts[key];
+        excess -= 1;
+    }
+}
 
 /** Keep only un-consumed claims whose message still exists, in arrival order, bounded. */
 function prunePendingPresentations(entries, messages) {
@@ -220,11 +241,13 @@ export async function commitConversationEffect(context, target, effectId, mutate
     if (result?.then) throw new TypeError('A Conversation effect must finish before releasing its settings write.');
     current.branch.serverOperations ??= {};
     current.branch.serverOperations[jobKey] = {
+        at: Date.now(),
         ...(current.branch.messageContentHash && Number.isSafeInteger(current.branch.messageEditRevision) ? { messageEditRevision: current.branch.messageEditRevision } : {}),
         messageCount: current.branch.messages.length,
         messagesHash: digest(current.branch.messages),
         effects: { ...receipt?.effects, [effectKey]: result ?? null },
     };
+    pruneReplyReceipts(context, current.branch.serverOperations, jobKey);
     const saved = await saveConversationStore(request, current.store, current.version, { trustedConversationEffects: true });
     if (!saved.ok) throw Object.assign(new Error(saved.body?.error || 'Conversation save failed.'), { status: saved.status });
     return result;

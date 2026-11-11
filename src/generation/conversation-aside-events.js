@@ -15,7 +15,7 @@
  * Nothing here repeats a paid call: the occurrence key is derived from the saved
  * source, so a replayed event finds the accepted job instead of paying again.
  */
-import { randomInt } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { isCharacterMentionedInText } from '../../public/scripts/neconyan-conversation/partners-utils.js';
 import { getCharacterData, getConversationSettings, normalizeConversationSettings } from '../endpoints/conversation-generation.js';
 import { normalizeConversationGroupRecord } from '../endpoints/conversation-groups.js';
@@ -141,8 +141,18 @@ function eligibleMembers(request, avatars, groupId, personaId) {
     });
 }
 
-function roll(percent) {
-    return randomInt(100) < percent;
+/**
+ * One draw for one event: a whole number from 0 up to, but not including, `bound`.
+ * It is computed from what the event is, never rolled, so a second tab, another
+ * device or a reloaded page that submits the same event gets the same answer
+ * and the same member. A fresh roll per submission would let one message earn a
+ * second paid aside from a different member, whose occurrence and cooldown keys
+ * differ. `purpose` keeps the draws of one event independent of each other.
+ */
+export function drawConversationAsideEvent(owner, event, purpose, bound) {
+    const identity = [owner, event.personaId, event.source.groupId, event.source.locator.chat, event.source.locator.avatar,
+        event.source.locator.group, event.messageIndex, event.messageRevision, event.kind, purpose];
+    return createHash('sha256').update(JSON.stringify(identity)).digest().readUIntBE(0, 6) % bound;
 }
 
 /**
@@ -150,24 +160,23 @@ function roll(percent) {
  * acceptance decide whether that recipient is eligible right now. The response
  * reports the decision, so the page never has to guess whether the event fired.
  *
- * `rollPercent` is the sampling seam: the probabilities below are the ones the
- * page used to apply, and a caller may supply the draw instead of paying for a
- * real one.
+ * The probabilities below are the ones the page used to apply.
  */
-export async function acceptConversationAsideEvent(request, body = {}, { rollPercent = roll } = {}) {
+export async function acceptConversationAsideEvent(request, body = {}) {
     const owner = request.user?.profile?.handle;
     const directories = request.user?.directories;
     if (!owner || !directories?.root) throw fail('An authenticated account is required.', 401);
     const event = normalizeConversationAsideEvent(body);
     const saved = readConversationAsideEventSource(request, event);
     const refused = (skipped, extra = {}) => ({ eventKey: event.eventKey, accepted: false, reason: null, avatar: null, jobId: null, skipped, ...extra });
+    const draw = (purpose, bound) => drawConversationAsideEvent(owner, event, purpose, bound);
 
     if (event.source.locator.group !== true) {
         if (event.kind === 'mention') return refused('mention_requires_group');
         // A solo Roleplay reaction is the chat's own character answering the user
         // in their Conversation thread, on the same chance the page used to roll.
         if (!eligibleMembers(request, [event.source.locator.avatar], '', event.personaId).length) return refused('disabled');
-        if (!rollPercent(RANDOM_CHANCE_PERCENT)) return refused('sampled_out');
+        if (draw('chance', 100) >= RANDOM_CHANCE_PERCENT) return refused('sampled_out');
         return decide(request, event, [event.source.locator.avatar], 'reaction', refused);
     }
 
@@ -186,11 +195,11 @@ export async function acceptConversationAsideEvent(request, body = {}, { rollPer
         return decide(request, event, [named[0]], 'mention', refused);
     }
 
-    if (!rollPercent(RANDOM_CHANCE_PERCENT)) return refused('sampled_out');
+    if (draw('chance', 100) >= RANDOM_CHANCE_PERCENT) return refused('sampled_out');
     const others = members.filter(avatar => avatar !== event.speakerAvatar);
-    const speakerPreferred = event.speakerAvatar && members.includes(event.speakerAvatar) && rollPercent(SPEAKER_PREFERENCE_PERCENT);
+    const speakerPreferred = event.speakerAvatar && members.includes(event.speakerAvatar) && draw('speaker', 100) < SPEAKER_PREFERENCE_PERCENT;
     const pool = speakerPreferred ? [event.speakerAvatar] : (others.length ? others : members);
-    const chosen = pool[randomInt(pool.length)];
+    const chosen = pool[draw('member', pool.length)];
     return decide(request, event, [chosen], chosen === event.speakerAvatar ? 'reaction' : 'random', refused);
 }
 
