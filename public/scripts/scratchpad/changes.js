@@ -28,7 +28,7 @@ import { getMessageTimeStamp } from '../RossAscends-mods.js';
 import { getNameAndAvatarForMessage } from '../slash-commands.js';
 import { createWorldInfoEntry, deleteWorldInfoEntry, loadWorldInfo, saveWorldInfo, updateWorldInfoList, world_names } from '../world-info.js';
 import { isCurrentSource, sourceCharacters } from './context.js';
-import { fail, formatEntry, formatField, normaliseChange, parseEntry, parseField } from './proposals.js';
+import { DIALOGUE_COLOR, fail, formatEntry, formatField, normaliseChange, parseEntry, parseField } from './proposals.js';
 import { characterField, characterFieldPatch, readCharacterField } from './character-fields.js';
 
 function entryView(entry) {
@@ -158,6 +158,43 @@ function authorsNotePlan(change, source) {
             if (!saved) fail(t`The Author's Note was not saved. Review it again before retrying.`);
             const box = globalThis.document?.getElementById('extension_floating_prompt');
             if (box) box.value = value;
+        },
+    };
+}
+
+async function dialogueColorPlan(change) {
+    const [state, palettes, ui] = await Promise.all([
+        import('../extensions/third-party/sillytavern-character-colors/src/state.js'),
+        import('../extensions/third-party/sillytavern-character-colors/src/palettes.js'),
+        import('../extensions/third-party/sillytavern-character-colors/src/ui.js'),
+    ]);
+    const wanted = change.character.toLowerCase();
+    const read = () => {
+        const table = state.characterColors ?? {};
+        const key = Object.keys(table).find(item => item.toLowerCase() === wanted || String(table[item]?.name ?? '').toLowerCase() === wanted);
+        if (!key) fail(t`There is no character with that name in the colour table in use.`);
+        return { key, entry: table[key] };
+    };
+    const found = read();
+    const before = palettes.getBaseColor(found.entry);
+    return {
+        target: t`Dialogue colour: ${found.entry.name || change.character}`,
+        field: t`Colour`,
+        before,
+        after: change.value,
+        editable: true,
+        async commit(edited) {
+            const value = String(edited ?? '').trim().toLowerCase();
+            if (!DIALOGUE_COLOR.test(value)) fail(t`A dialogue colour must be written as # and six hex digits, such as #c0ffee.`);
+            const live = read();
+            if (palettes.getBaseColor(live.entry) !== before) conflict();
+            if (!ui.applyCharacterBaseColor(live.key, value, { saveImmediately: true })) fail(t`The dialogue colour was not saved. Review it again before retrying.`);
+            try {
+                ui.maybeAutoRecolorAfterColorChange();
+                (await import('../extensions/third-party/sillytavern-character-colors/src/storage.js')).saveData();
+            } catch (error) {
+                console.warn('Scratchpad could not flush the Dialogue Colors save.', error);
+            }
         },
     };
 }
@@ -493,7 +530,7 @@ export async function addReplyVersion(source, target, text) {
  * Reads the live value a change would replace and returns everything the
  * review needs. Nothing is written until commit() is called.
  */
-export async function prepareChange(change, source, { sharedAvatar = '', sharedPersona, personaGuard, sharedPreset, presetGuard, creationGuard, creatorKey = '', agentsShared = false, authorsNoteShared = false, regexShared = false, cssSnippetsShared = false, sharedLorebook = '' } = {}) {
+export async function prepareChange(change, source, { sharedAvatar = '', sharedPersona, personaGuard, sharedPreset, presetGuard, creationGuard, creatorKey = '', agentsShared = false, authorsNoteShared = false, regexShared = false, cssSnippetsShared = false, dialogueColorsShared = false, sharedLorebook = '' } = {}) {
     if (!isCurrentSource(source)) fail(t`Return to this Scratchpad context before applying changes.`);
     change = normaliseChange(change);
     if (change.type === 'preset') {
@@ -576,6 +613,10 @@ export async function prepareChange(change, source, { sharedAvatar = '', sharedP
     if (change.type === 'css-snippet') {
         if (!cssSnippetsShared) fail(t`Share CSS Snippets under Context before saving a change to one.`);
         return cssSnippetPlan(change);
+    }
+    if (change.type === 'dialogue-color') {
+        if (!dialogueColorsShared) fail(t`Share Dialogue Colors under Context before saving a change to one.`);
+        return dialogueColorPlan(change);
     }
     if (change.type === 'lorebook') {
         if (source.kind === 'general' && (!sharedLorebook || change.book !== sharedLorebook)) fail(t`Share that lorebook under Context before saving a change to it.`);
