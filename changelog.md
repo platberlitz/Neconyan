@@ -40,6 +40,7 @@
 - PR #630 (2026-11-12) `feat(scratchpad): suggest changes to dialogue colours`
 - PR #631 (2026-11-12) `feat(scratchpad): read saved mewmory records`
 - PR #632 (2026-11-12) `fix(persona-picker): stop persona rows squashing their chips`
+- PR #633 (2026-11-12) `feat(scratchpad): keep a pinned note or story tracker`
 
 ## v1.5.4
 
