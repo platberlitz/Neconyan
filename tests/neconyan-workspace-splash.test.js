@@ -37,6 +37,15 @@ describe('Preparing workspace splash', () => {
         expect(read('css/neconyan.css')).toContain('body.neconyan.neconyan-home-booting #sheld { background: transparent; }');
     });
 
+    test('keeps the shell style top bar painted while hiding its controls during boot', () => {
+        const rule = read('css/neconyan.css').match(/body\.neconyan\.neconyan-home-booting :is\(([^)]*)\) \{ visibility: hidden !important; \}/);
+        expect(rule).not.toBeNull();
+        const targets = rule[1].split(',').map(target => target.trim());
+        expect(targets).toContain('#top-bar > *');
+        expect(targets).not.toContain('#top-bar');
+        expect(targets).toContain('#form_sheld');
+    });
+
     test('hides the waving kitty with Hide cats while retaining the loading status', () => {
         expect(read('css/neconyan-kittyless.css')).toContain('.neconyan-workspace-kitty');
         expect(read('scripts/welcome-screen.js')).toContain('chatElement.querySelector(\'#neconyan-home-skeleton\')?.remove();');
