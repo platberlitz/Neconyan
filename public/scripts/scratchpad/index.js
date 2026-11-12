@@ -125,6 +125,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     partialPrefill: '',
     webSearch: false,
     readLinks: false,
+    autoSummary: false,
 });
 
 const app = {
@@ -1438,6 +1439,7 @@ function stageLabel(preview) {
     if (preview?.stage === 'failed') return preview.error || t`This reply did not finish.`;
     if (preview?.stage === 'searching') return t`Searching the web…`;
     if (preview?.stage === 'reading') return t`Reading the linked pages…`;
+    if (preview?.stage === 'summarising') return t`Summarising earlier discussion…`;
     if (!preview || preview.stage === 'queued') return t`Waiting for the model...`;
     if (!preview.text && preview.reasoning) return t`Thinking...`;
     return t`Writing...`;
@@ -2516,6 +2518,16 @@ function renderContext({ force = true } = {}) {
     append(panel, [
         renderContextSetups(),
         renderNotes(settings),
+        h('section', { class: 'scratchpad-section scratchpad-summary-settings' },
+            h('h3', { class: 'scratchpad-section-title', text: t`Automatic summary` }),
+            checkbox(t`Summarise older discussion`, settings.autoSummary === true,
+                value => void updateSettings({ autoSummary: value }, { rerenderContext: true }),
+                t`Summarise older discussion when it exceeds 50 messages or the history size limit. Uses the first replying assistant's connection and may make extra model calls. All saved messages and the 400-message limit stay.`),
+            activeSession()?.summary ? h('details', {},
+                h('summary', { text: t`Last saved summary` }),
+                h('p', { class: 'scratchpad-muted', text: t`Covers ${activeSession().summary.count} earlier messages. Checked against the conversation before each use; rebuilt if those messages change.` }),
+                h('pre', { class: 'scratchpad-preview-text', text: activeSession().summary.text, 'data-i18n-ignore': '' }))
+                : h('p', { class: 'scratchpad-muted', text: t`No summary saved yet. Recent messages are kept in full alongside the summary.` })),
         general ? h('section', { class: 'scratchpad-section' },
             h('h3', { class: 'scratchpad-section-title', text: t`General Scratchpad` }),
             h('p', { class: 'scratchpad-muted', text: t`No story chat is open. Chat messages, Author's Note and presets are not shared. You can share your persona, a selected card, saved notes and one lorebook you pick below.` }),

@@ -9,6 +9,7 @@ import { BUILTIN_ASSISTANT_IDS, isAssistantId, orderedAssistants, normaliseAssis
 import { readSharedBucketLocked, writeSharedBucketLocked } from './shared-sessions.js';
 import { hasPendingImages, imagePart, imageChangeHash, normaliseStoredImages } from './image-state.js';
 import { normaliseStoredWebSearch } from './web-search-record.js';
+import { normaliseSummary } from './summary.js';
 import { normaliseStoredWebPages } from './web-pages.js';
 import { normalisePresetTargets } from '../../public/scripts/scratchpad/preset-fields.js';
 import { normaliseAttachments } from '../../public/scripts/scratchpad/attachment-data.js';
@@ -184,6 +185,7 @@ export function defaultSettings() {
         partialPrefill: '',
         webSearch: false,
         readLinks: false,
+        autoSummary: false,
         lorebook: '',
     };
 }
@@ -262,6 +264,7 @@ export function normaliseSettings(input, previous = defaultSettings(), { allowIn
     }
     if (typeof source.webSearch === 'boolean') settings.webSearch = source.webSearch;
     if (typeof source.readLinks === 'boolean') settings.readLinks = source.readLinks;
+    if (typeof source.autoSummary === 'boolean') settings.autoSummary = source.autoSummary;
     settings.lorebook ??= '';
     if (source.lorebook !== undefined) {
         if (typeof source.lorebook !== 'string' || source.lorebook.length > 300) throw fail('SCRATCHPAD_LOREBOOK_INVALID', 'Choose a lorebook to share, or none.');
@@ -387,6 +390,7 @@ function normaliseSession(input, { allowInternalKeys = false } = {}) {
         temporary: input.temporary === true,
         pinned: input.pinned === true && input.temporary !== true,
         pinnedNote: normalisePinnedNote(input.pinnedNote),
+        ...(allowInternalKeys && normaliseSummary(input.summary) ? { summary: normaliseSummary(input.summary) } : {}),
         created: typeof input.created === 'string' ? input.created.slice(0, 40) : now(),
         updated: typeof input.updated === 'string' ? input.updated.slice(0, 40) : now(),
         settings: normaliseSettings(input.settings, defaultSettings(), { allowInternalKeys }),
@@ -839,6 +843,7 @@ export function clearSession(bucket, sessionId) {
         throw fail('SCRATCHPAD_REPLY_PENDING', 'Stop the reply in progress before clearing this session.', 409);
     }
     session.messages = [];
+    delete session.summary;
     touch(session);
 }
 

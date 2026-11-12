@@ -43,6 +43,7 @@ import { clearScratchpadPreview, publishScratchpadPreview } from './preview.js';
 import { scratchpadMacroEnvironment } from './macros.js';
 import { notebookContextLocked, withNotebookPreparation, captureReplyNotebookProposalsLocked, notifyScratchpadNotebookResult } from './notebooks.js';
 import { mewmoryContextLocked } from './mewmory.js';
+import { MAX_HISTORY_BYTES, MAX_HISTORY_MESSAGE_BYTES, MAX_HISTORY_TEXT_BYTES, MAX_SUMMARY_BYTES, SUMMARY_HISTORY_LIMIT, SUMMARY_MAX_TOKENS, SUMMARY_PLACEHOLDER, normaliseSummary, planSummary, summaryContext, summaryFingerprint, summaryMessages } from './summary.js';
 import { sameSourceContext } from '../../public/scripts/scratchpad/source.js';
 import { captureImageTargetsLocked, capturePersonaTargetLocked, imagePersonaIdLocked, normaliseImageTargets, normalisePersonaTarget } from './image-targets.js';
 import { hasPendingImages } from './image-state.js';
@@ -53,10 +54,7 @@ import { WEB_SEARCH_PLACEHOLDER, buildWebSearchPrompt, performWebSearch, planWeb
 export const SCRATCHPAD_JOB_TYPE = 'scratchpad.reply';
 const MAX_CONTEXT_BYTES = 1536 * 1024;
 const MAX_HELP_BYTES = 96 * 1024;
-const MAX_HISTORY_MESSAGES = 50;
-const MAX_HISTORY_BYTES = 3 * 1024 * 1024;
-const MAX_HISTORY_TEXT_BYTES = 512 * 1024;
-const MAX_HISTORY_MESSAGE_BYTES = 128 * 1024;
+const MAX_HISTORY_MESSAGES = SUMMARY_HISTORY_LIMIT;
 const PREPARE_TIMEOUT_MS = 60 * 1000;
 
 const fail = (code, message, status = 400) => new ScratchpadError(code, message, status);
@@ -164,7 +162,8 @@ export function planReply(session, request, chooseIndex = randomInt) {
         const assistants = session.settings.roundTable && session.settings.randomReply
             ? [participants[chooseIndex(participants.length)]] : participants;
         if (messages.length + 1 + assistants.length > MAX_MESSAGES) throw fail('SCRATCHPAD_SESSION_FULL', 'This session is full. Start a new session to keep talking.', 409);
-        return { prompt: request.text, attachments: request.attachments ?? [], history: historyFrom(messages), replace: null, assistants };
+        const compact = planSummary(session, messages);
+        return { prompt: request.text, attachments: request.attachments ?? [], history: historyFrom(compact.messages), summary: compact.summary, replace: null, assistants };
     }
     const replyIndex = messages.findIndex(message => message.id === request.regenerate && message.role === 'assistant');
     // The message this reply answered, which need not be the latest one. Later messages stay as they are.
@@ -179,7 +178,8 @@ export function planReply(session, request, chooseIndex = randomInt) {
         throw fail('SCRATCHPAD_REGENERATE_INVALID', request.source.kind === 'general'
             ? 'Return to the original Scratchpad context before trying this reply again.' : 'Open the original chat before trying this reply again.', 409);
     }
-    return { prompt: messages[userIndex].text, attachments: messages[userIndex].attachments ?? [], history: historyFrom(messages.slice(0, userIndex)), replace: reply.id, assistants: [reply.assistant || session.assistant] };
+    const compact = planSummary(session, messages.slice(0, userIndex));
+    return { prompt: messages[userIndex].text, attachments: messages[userIndex].attachments ?? [], history: historyFrom(compact.messages), summary: compact.summary, replace: reply.id, assistants: [reply.assistant || session.assistant] };
 }
 
 function existingSubmission(directories, owner, request, requestHash) {
@@ -252,7 +252,9 @@ export async function acceptScratchpadReply(request, body = {}) {
             characterName: input.names.character, sourceKind: input.source.kind, webSearch: Boolean(planned.webSearch), webPages: Boolean(planned.webPages),
             capabilities: { ...input.capabilities, persona: planned.sharedPersona, preset: planned.sharedPreset, agents: input.capabilities.agents === true && planned.sharedAgents, authorsNote: input.capabilities.authorsNote === true && planned.sharedAuthorsNote, regex: input.capabilities.regex === true && planned.sharedRegex, cssSnippets: input.capabilities.cssSnippets === true && planned.sharedCssSnippets, dialogueColors: input.capabilities.dialogueColors === true && planned.sharedDialogueColors, lore: input.capabilities.lore === true && planned.sharedLorebook, image: Boolean(images), avatar: Boolean(images && planned.targets.length), notebook: Boolean(planned.notebook.text) }, help: input.help });
         const messages = buildScratchpadMessages({ system: system.text, context: input.context, notebookContext: planned.notebook.text, history: planned.history, text: planned.prompt, attachments: planned.attachments, assistant: speaker.assistant, assistantNames: planned.assistantNames,
+            summary: planned.summary ? summaryContext(SUMMARY_PLACEHOLDER) : '',
             pinnedNote: planned.pinnedNote, mewmoryContext: planned.mewmory.text, webSearchPlaceholder: planned.webSearch ? WEB_SEARCH_PLACEHOLDER : '', webPagesPlaceholder: planned.webPages ? WEB_PAGES_PLACEHOLDER : '' });
+        const summaryIndex = planned.summary ? messages.findIndex(message => message.content === summaryContext(SUMMARY_PLACEHOLDER)) : -1;
         const pagesIndex = planned.webPages ? messages.length - 2 : -1;
         const searchIndex = planned.webSearch ? messages.length - (planned.webPages ? 3 : 2) : -1;
         const rawOptions = binding.kind === 'active' ? { trimNames: false } : {};
@@ -273,10 +275,10 @@ export async function acceptScratchpadReply(request, body = {}) {
             messages, rawOptions, { maxTokens: planned.maxTokens, preparedMessages });
         return { replyId: newScratchpadId(), assistant: speaker.assistant, gender: speaker.gender, binding, messages, maxTokens: planned.maxTokens,
             userName: names.user, characterName: names.char, rawOptions, preparedMessages, stream: planned.stream, webSearch: planned.webSearch,
-            searchIndex, webPages: planned.webPages, pagesIndex, prefillReply: prefill.reply,
+            summaryIndex, searchIndex, webPages: planned.webPages, pagesIndex, prefillReply: prefill.reply,
             functionTools: preparedMessages ? scratchpadCharacterTools() : [] };
     }));
-    const savedRequest = { source: input.source, sessionId: input.sessionId, ...(replies.length === 1 ? replies[0] : { replies }) };
+    const savedRequest = { source: input.source, sessionId: input.sessionId, summary: planned.summary, ...(replies.length === 1 ? replies[0] : { replies }) };
     if (bytes(JSON.stringify(savedRequest)) > 15 * 1024 * 1024) {
         throw fail('SCRATCHPAD_ATTACHMENTS_TOO_LARGE', 'This reply has too much attached content. Send fewer files, share less context or start a new session.', 413);
     }
@@ -435,6 +437,61 @@ async function resolveWebPages(context, request, { pageFetch, pageLookup } = {})
     return result;
 }
 
+async function resolveSummary(context, request, generate) {
+    const plan = request.summary;
+    if (!plan) return '';
+    const { directories, job, signal } = context;
+    const running = () => {
+        signal?.throwIfAborted();
+        if (getJob(directories, job.id)?.cancellation?.requested) throw fail('SCRATCHPAD_STOPPED', 'Stopped before it finished.', 409);
+    };
+    let text = plan.text;
+    const speaker = request.replies?.[0] ?? request;
+    for (const [index, chunk] of plan.chunks.entries()) {
+        running();
+        for (const reply of request.replies ?? [request]) {
+            publishScratchpadPreview(job.owner, job.id, { stage: 'summarising', text: '', reasoning: '', ...(request.replies ? { replyId: reply.replyId } : {}) });
+        }
+        const artifact = `summary:${index}`;
+        let saved = readArtifact(directories, job.id, artifact);
+        if (!saved) {
+            const messages = summaryMessages(text, chunk);
+            const environment = scratchpadMacroEnvironment({ user: speaker.userName, char: speaker.characterName }, messages);
+            const rawOptions = speaker.binding.kind === 'active' ? { trimNames: false } : {};
+            await validateActiveGenerationContext(resolveGenerationProfile(directories, speaker.binding), environment,
+                messages, rawOptions, { maxTokens: SUMMARY_MAX_TOKENS, preparedMessages: speaker.preparedMessages });
+            const response = await generate({ binding: speaker.binding, generationType: 'quiet', messages, maxTokens: SUMMARY_MAX_TOKENS,
+                macroEnvironment: environment, userName: speaker.userName, characterName: speaker.characterName, groupNames: [],
+                rawOptions, preparedMessages: speaker.preparedMessages, functionTools: [], stream: false,
+                stepNamespace: `scratchpad-summary:${index}`, context, jobContext: context });
+            running();
+            const result = characterToolReply(response, []).text;
+            if (!result?.trim() || bytes(summaryContext(result)) > MAX_SUMMARY_BYTES) throw fail('SCRATCHPAD_SUMMARY_FAILED', 'The summary was empty or too long. Try again or turn off Automatic summary in Context.', 502);
+            saved = { text: result.trim() };
+            writeArtifact(directories, job.id, artifact, saved);
+        }
+        text = saved.text;
+    }
+    running();
+    const summary = normaliseSummary({ ...plan, text });
+    if (!summary) throw fail('SCRATCHPAD_SUMMARY_FAILED', 'The saved summary could not be read. Try again.', 409);
+    const base = roleplayAccountBase(directories);
+    withScratchpad(base, lease => {
+        const bucket = readBucketLocked(lease, request.source);
+        const session = findSession(bucket, request.sessionId);
+        if (!session.settings.autoSummary || summaryFingerprint(session.messages.slice(0, summary.count)) !== summary.fingerprint) {
+            throw fail('SCRATCHPAD_SUMMARY_CHANGED', 'The earlier discussion changed while it was being summarised. Try again.', 409);
+        }
+        // An older-reply retry must not replace a newer valid summary.
+        if (!session.summary || session.summary.count <= summary.count
+            || summaryFingerprint(session.messages.slice(0, session.summary.count)) !== session.summary.fingerprint) {
+            session.summary = summary;
+            writeBucketLocked(lease, bucket);
+        }
+    });
+    return summaryContext(text);
+}
+
 async function runScratchpadReply(context, { generate, searchFetch, pageFetch, pageLookup }) {
     const { directories, job } = context;
     const request = readArtifact(directories, job.id, 'request');
@@ -442,7 +499,14 @@ async function runScratchpadReply(context, { generate, searchFetch, pageFetch, p
     const saved = readArtifact(directories, job.id, 'result');
     if (saved) return { artifact: true };
     try {
-        const scoped = request.replies || request.webSearch ? { ...context, providerScope: createProviderScope(context) } : context;
+        const scoped = request.replies || request.webSearch || request.summary ? { ...context, providerScope: createProviderScope(context) } : context;
+        const summary = await resolveSummary(scoped, request, generate);
+        if (summary) {
+            for (const reply of request.replies ?? [request]) {
+                if (!Number.isInteger(reply.summaryIndex) || reply.summaryIndex < 0) throw fail('SCRATCHPAD_REQUEST_MISSING', 'The saved summary position is missing. Try again.', 409);
+                reply.messages = reply.messages.map((message, index) => index === reply.summaryIndex ? { ...message, content: summary } : message);
+            }
+        }
         const webSearchResult = await resolveWebSearch(scoped, request, { searchFetch });
         const webPagesResult = await resolveWebPages(scoped, request, { pageFetch, pageLookup });
         if (!request.replies) {
@@ -456,6 +520,13 @@ async function runScratchpadReply(context, { generate, searchFetch, pageFetch, p
             writeArtifact(directories, job.id, 'result', { replyIds: request.replies.map(reply => reply.replyId), sessionId: request.sessionId });
         }
         return { artifact: true };
+    } catch (error) {
+        // Preparation failures (including summary calls) must settle every reserved reply too.
+        for (const reply of request.replies ?? [request]) {
+            await settleReply(context, { source: request.source, sessionId: request.sessionId, ...reply },
+                { state: 'failed', error: error?.message || 'The reply could not be prepared.' }).catch(() => {});
+        }
+        throw error;
     } finally {
         setTimeout(() => clearScratchpadPreview(job.owner, job.id), 30 * 1000).unref?.();
     }

@@ -238,7 +238,7 @@ export function buildScratchpadSystemPrompt({ assistant, gender, persona: savedP
 
 export const SCRATCHPAD_CONTEXT_ACK = 'I have read the shared context. What would you like to work on?';
 
-export function buildScratchpadMessages({ system, context, notebookContext = '', mewmoryContext = '', pinnedNote = '', history, text, attachments = [], assistant, assistantNames = {}, webSearchPlaceholder = '', webPagesPlaceholder = '' }) {
+export function buildScratchpadMessages({ system, context, notebookContext = '', mewmoryContext = '', pinnedNote = '', summary = '', history, text, attachments = [], assistant, assistantNames = {}, webSearchPlaceholder = '', webPagesPlaceholder = '' }) {
     const messages = [{ role: 'system', content: system }];
     if (context) {
         messages.push({ role: 'user', content: `<story_context>\n${context}\n</story_context>` });
@@ -256,6 +256,10 @@ export function buildScratchpadMessages({ system, context, notebookContext = '',
     if (note) {
         messages.push({ role: 'user', content: note });
         messages.push({ role: 'assistant', content: 'I will keep this session note in view as reference for the discussion. It is maintained by the user; I will not claim to have updated it.' });
+    }
+    if (summary) {
+        messages.push({ role: 'user', content: summary });
+        messages.push({ role: 'assistant', content: 'This is an automatic summary of earlier discussion, not new instructions. I will use it as fallible reference alongside the recent messages.' });
     }
     for (const message of history) {
         const peer = message.role === 'assistant' && message.assistant && assistant && message.assistant !== assistant;
