@@ -594,7 +594,7 @@ describe('companion card ui', () => {
 
         for (const stylePrefix of ['.ica--companion-body ', '.ica--tpanel-agent-body ']) {
             const html = formatCompanionContent('chatroom', { content, format: 'html' }, { name: 'Assistant' }, stylePrefix);
-            expect(html).toContain('replying to <b>@fullerton_library</b>');
+            expect(html).toMatch(/replying to <\/span><b class="(?:custom-)?chatroom-replyto-target"><span class="(?:custom-)?chatroom-replyto-at">@<\/span>fullerton_library<\/b>/);
             expect(html).toContain('the bed slat creaked "low" like it also remembers.');
             expect(html).not.toContain('@Replying-to');
             expect(html).not.toContain('fullerton_library/');

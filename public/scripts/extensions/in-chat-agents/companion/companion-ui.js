@@ -25,7 +25,7 @@ import { AGENT_REGEX_PLACEMENT, applyRegexScriptList } from '../regex-scripts.js
 import { resolveCompanionContentMacros } from './companion-macros.js';
 import { buildPlotCompassControls, readPlotCompassControls, submitPlotCompassOnEnter } from './plot-compass-controls.js';
 import { getPlotCompassIdentity } from './plot-compass-context.js';
-import { CHATROOM_FEED_PROBE_RE, buildChatroomReplyRunOptions, normalizeChatroomField, normalizeChatroomGeneratedLine } from './chatroom-feed.js';
+import { CHATROOM_FEED_PROBE_RE, buildChatroomReplyRunOptions, normalizeChatroomField, foldChatroomGreentextLines, normalizeChatroomGeneratedLine } from './chatroom-feed.js';
 import { isLorebookAgent, sendCompanionResultToLorebook } from './lorebook-sender.js';
 import {
     COMPANION_RESULTS_UPDATED_EVENT,
@@ -78,7 +78,7 @@ function normalizeChatroomContent(content = '') {
     }
 
     if (CHATROOM_FEED_PROBE_RE.test(text)) {
-        return text.split('\n').map(normalizeChatroomGeneratedLine).join('\n');
+        return foldChatroomGreentextLines(text.split('\n').map(normalizeChatroomGeneratedLine).join('\n'));
     }
 
     // Expect first line: `style|...` (may have the style value duplicated after the pipe)
