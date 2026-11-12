@@ -59,7 +59,7 @@ describe('the persona save before a reply', () => {
     test('the connection save runs once, and the persona save only for a Roleplay chat whose connections were not saved', () => {
         expect(scratchpadSend).toContain('const connectionsSaved = !(chatProfileId || assistants.every(assistant => assistantConnection(settings, assistant).kind === \'profile\'));');
         expect(scratchpadSend).toContain('const acknowledgement = connectionsSaved ? await acknowledge() : undefined;');
-        expect(scratchpadSend).toContain('const personaSaved = !context.capabilities.persona || !needsSavedPersonaSelection(source, connectionsSaved) || await saveSelectedPersona();');
+        expect(scratchpadSend).toContain('const personaSaved = rehearsal || retried?.rehearsal || !context.capabilities.persona || !needsSavedPersonaSelection(source, connectionsSaved) || await saveSelectedPersona();');
         expect(scratchpadSend.match(/saveSelectedPersona\(\)/g)).toHaveLength(1);
     });
 

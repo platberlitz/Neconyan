@@ -96,6 +96,14 @@ When you ask how something in Neconyan works, the assistant also gets the same h
 
 **Preview HTML/CSS** beside a code block shows its HTML with the CSS blocks in that reply. Supported proposed-text reviews offer it too. CSS without HTML uses sample content. Scripts, external resources and links are blocked, macros stay as written, and nothing is saved. Close the preview to return to the discussion or review.
 
+## Rehearse the next reply
+
+With a Roleplay or Conversation chat open, press **+ → Rehearse next reply** beside the Scratchpad message box. Write optional directions first, or leave the box empty. I use this to try a continuation before deciding whether it belongs in the story.
+
+The selected Scratchpad assistant drafts the next story reply using the material shared in Context. It uses that assistant's connection, rather than running the story's normal generation. Each result is labelled **Rehearsal** and stays in Scratchpad. Rehearsals offer no change cards or model tools; **Copy**, **Use as draft** and **Add as another version** remain deliberate actions. **Try again** keeps rehearsal mode, and later discussions identify these drafts as possibilities rather than story events. Session exports keep the label.
+
+Rehearsal is available only with a story chat open. Check **Show preview** first if the draft needs a detail that isn't currently shared.
+
 ## Automatic summary
 
 Under **Context → Automatic summary**, turn on **Summarise older discussion** to keep older decisions available when a session gets long. I've left it off by default because it makes extra model calls. Once the discussion exceeds 50 usable messages or the history size allowance, the first replying assistant's connection summarises the older turns before answering. A round table shares one summary. Usually the latest 20 messages stay in full beside it; unusually large turns can leave fewer.

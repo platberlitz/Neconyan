@@ -55,7 +55,7 @@ function noteChange(bucket, body) {
     const session = findSession(bucket, body.sessionId);
     const message = findMessage(session, body.messageId);
     const part = splitReply(message.text).find(item => item.type === 'change' && item.index === body.index);
-    if (message.role !== 'assistant' || message.state !== 'done' || part?.change?.type !== 'notebook') {
+    if (message.rehearsal || message.role !== 'assistant' || message.state !== 'done' || part?.change?.type !== 'notebook') {
         throw new ScratchpadError('SCRATCHPAD_PROPOSAL_INVALID', 'That note change is not part of a finished reply.');
     }
     return { session, message, part, changeHash: hash(canonical(part.change)) };
@@ -85,6 +85,7 @@ export function prepareNotebookProposalLocked(lease, source, body, { bucket = re
 
 /** Valid finished suggestions appear in both workspaces without saving their changes. */
 export function captureReplyNotebookProposalsLocked(lease, bucket, session, message) {
+    if (message.rehearsal) return [];
     const results = [];
     for (const part of splitReply(message.text)) {
         if (part.change?.type !== 'notebook') continue;

@@ -314,6 +314,7 @@ function normaliseMessage(input, { allowInternalKeys = false, allowSwipes = true
         created: typeof input.created === 'string' ? input.created.slice(0, 40) : now(),
     };
     if (role === 'user' && input.attachments !== undefined) message.attachments = normaliseAttachments(input.attachments);
+    if (input.rehearsal === true) message.rehearsal = true;
     if (role === 'assistant') {
         message.state = ['pending', 'done', 'failed'].includes(input.state) ? input.state : 'done';
         if (typeof input.jobId === 'string' && input.jobId.length <= 128) message.jobId = input.jobId;

@@ -59,6 +59,7 @@ import { expandTypedTools, MAX_ROLL_DICE, MAX_ROLL_SIDES, TypedToolError } from 
 import { canReadAloud, isReadingAloud, stopReadAloud, toggleReadAloud } from './read-aloud.js';
 import { editQuickPrompts } from './quick-prompts.js';
 import { MAX_PINNED_NOTE_BYTES, pinnedNoteContext } from './pinned-note.js';
+import { canRehearse } from './rehearsal.js';
 
 const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261112-scratchpad-dictation';
 const PHONE_QUERY = '(max-width: 768px)';
@@ -498,7 +499,9 @@ function buildChatPanel() {
         void addAttachments(files);
     } });
     el.attach = iconButton(t`Attach files`, () => { closeComposeMenu(); el.fileInput.click(); }, { icon: 'fa-paperclip' });
-    el.composeMenu = h('div', { id: 'scratchpad-compose-menu', class: 'scratchpad-compose-menu', hidden: true, role: 'group', 'aria-label': t`Message options` }, el.webSearch, el.readLinks, el.attach);
+    el.rehearse = iconButton(t`Rehearse next reply`, () => { closeComposeMenu(); void send({ rehearsal: true }); },
+        { icon: 'fa-masks-theater', className: 'scratchpad-rehearse', title: t`Draft the next story reply here using the shared context. Anything in the message box becomes directions. The draft stays in Scratchpad.` });
+    el.composeMenu = h('div', { id: 'scratchpad-compose-menu', class: 'scratchpad-compose-menu', hidden: true, role: 'group', 'aria-label': t`Message options` }, el.webSearch, el.readLinks, el.attach, el.rehearse);
     el.plus = iconButton('', () => {
         const open = el.composeMenu.hidden;
         el.composeMenu.hidden = !open;
@@ -961,10 +964,11 @@ function typedToolProblem(error) {
     }
 }
 
-async function send({ regenerate = '', discuss = false } = {}) {
+async function send({ regenerate = '', discuss = false, rehearsal = false } = {}) {
     if (app.sending || app.swiping || app.readingFiles.has(app.attachments)) return;
     const source = app.source;
     if (!source) return;
+    if (rehearsal && !canRehearse(source)) return;
     if (!isCurrentSource(source)) {
         toastr.warning(t`The Scratchpad context changed. Return to it before sending.`);
         return;
@@ -993,7 +997,7 @@ async function send({ regenerate = '', discuss = false } = {}) {
     const text = regenerate ? '' : discuss ? [request, typed].filter(Boolean).join('\n\n') : typed;
     const attachedDraft = app.attachments;
     const attachments = regenerate || discuss ? [] : [...attachedDraft];
-    if (!regenerate && !text && !attachments.length) {
+    if (!regenerate && !rehearsal && !text && !attachments.length) {
         app.el.composer.focus();
         return;
     }
@@ -1021,7 +1025,7 @@ async function send({ regenerate = '', discuss = false } = {}) {
         requireScope(source, session.id);
         const connectionsSaved = !(chatProfileId || assistants.every(assistant => assistantConnection(settings, assistant).kind === 'profile'));
         const acknowledgement = connectionsSaved ? await acknowledge() : undefined;
-        const personaSaved = !context.capabilities.persona || !needsSavedPersonaSelection(source, connectionsSaved) || await saveSelectedPersona();
+        const personaSaved = rehearsal || retried?.rehearsal || !context.capabilities.persona || !needsSavedPersonaSelection(source, connectionsSaved) || await saveSelectedPersona();
         if (!personaSaved) toastr.warning(t`Scratchpad could not save your persona, so Scenario Note suggestions for it are left out of this reply.`);
         const capabilities = personaSaved ? context.capabilities : Object.fromEntries(Object.entries(context.capabilities).filter(([key]) => key !== 'persona'));
         await app.queue;
@@ -1035,6 +1039,7 @@ async function send({ regenerate = '', discuss = false } = {}) {
             sessionId: session.id,
             regenerate: regenerate || undefined,
             discuss: discuss || undefined,
+            rehearsal: rehearsal || undefined,
             text,
             attachments,
             context: context.text,
@@ -1476,6 +1481,7 @@ function renderMessage(session, message, { latest, retry }) {
         ? h('div', { class: 'scratchpad-author' }, h('img', { src: assistantPortrait(assistant.id), alt: '', width: 24, height: 24 }), h('span', { text: message.assistantName || assistant.name, 'data-i18n-ignore': '' }))
         : h('div', { class: 'scratchpad-author' }, h('span', { text: sourceUserName(app.source) || t`You` }));
     article.append(author);
+    if (message.rehearsal) author.append(h('span', { class: 'scratchpad-badge', text: t`Rehearsal` }));
     if (assistant) updateMessageTokenCounts(author, message.state === 'pending' ? replyPreview(message) : message, { pending: message.state === 'pending' });
 
     if (app.editing === message.id) {
@@ -1614,7 +1620,7 @@ function installReplySwipeGesture(article, move) {
 
 function renderReply(session, message) {
     const body = h('div', { class: 'scratchpad-reply' });
-    for (const part of splitReply(message.text)) {
+    for (const part of message.rehearsal ? [{ type: 'text', text: message.text }] : splitReply(message.text)) {
         if (part.type === 'text') {
             if (!part.text.trim()) continue;
             const block = h('div', { class: 'scratchpad-text mes_text' });
@@ -1911,6 +1917,7 @@ async function reviewAndSaveChange(session, message, part, key) {
 
 /** Open suggestions of one reply that can be reviewed together: edits to things that already exist. */
 function batchParts(message) {
+    if (message.rehearsal) return [];
     return splitReply(message.text).filter(part => part.type === 'change' && part.change
         && !['image', 'notebook', 'creator'].includes(part.change.type) && part.change.action !== 'create'
         && !message.proposals?.[String(part.index)]);
@@ -2327,6 +2334,8 @@ function renderComposer() {
     el.readLinks.disabled = !app.source || !app.bucket || app.sending || Boolean(pending);
     el.plus.classList.toggle('menu_button_primary', currentSettings().webSearch === true || readLinks);
     el.attach.disabled = disabled;
+    el.rehearse.hidden = !canRehearse(app.source);
+    el.rehearse.disabled = disabled || Boolean(pending) || Boolean(app.editing);
     renderDictate(el.composer.disabled);
     clear(el.attachments);
     append(el.attachments, renderAttachments(app.attachments, { draft: true }));
