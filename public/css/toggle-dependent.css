@@ -312,11 +312,11 @@ body.bubblechat .mes[is_user="true"] {
 
 /* Document Style */
 
-body.documentstyle #chat .mes:not(.last_mes) {
+body.documentstyle #chat .mes:not(.last_mes, [data-roleplay-draft]) {
     padding: 4px 8px 0px 8px;
 }
 
-body.documentstyle .last_mes {
+body.documentstyle :is(.last_mes, [data-roleplay-draft]) {
     padding-top: 0;
 }
 
@@ -350,7 +350,7 @@ body.documentstyle #chat .mes .mes_block .ch_name .name_text,
 body.documentstyle #chat .mes .mes_block .ch_name .timestamp,
 body.documentstyle #chat .mes .mes_block .ch_name .timestamp-icon,
 body.documentstyle #chat .mes .mes_block .ch_name .timestamp-model,
-body.documentstyle .mes:not(.last_mes) .ch_name .mes_buttons {
+body.documentstyle .mes:not(.last_mes, [data-roleplay-draft]) .ch_name .mes_buttons {
     display: none !important;
 }
 

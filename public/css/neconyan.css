@@ -872,6 +872,14 @@ body.neconyan #chat .mes_buttons {
     overflow: visible;
 }
 body.neconyan #chat .mes_block > .ch_name { flex-direction: column; align-items: stretch; gap: 6px; }
+body.neconyan #chat .ch_name > .flex1 { width: 100%; min-width: 0; }
+body.neconyan #chat .mes .neconyan-message-heading { position: relative; width: 100%; min-width: 0; padding-inline-end: 1.5em; }
+body.neconyan #chat .neconyan-message-metadata { display: flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; white-space: nowrap; }
+body.neconyan #chat .neconyan-model-line .neconyan-message-metadata { flex-basis: 100%; min-height: calc(var(--mainFontSize) * 1.05); }
+body.neconyan #chat .neconyan-message-metadata .timestamp-model { overflow: hidden; text-overflow: ellipsis; }
+body.neconyan #chat .mes .neconyan-reply-status { position: absolute; inset-inline-end: 0; top: 0; width: 1.5em; line-height: 1.5; text-align: center; color: var(--neco-muted); }
+body.neconyan #chat .mes_buttons[aria-disabled="true"] > :is(.neconyan-message-action, .extraMesButtons),
+body.neconyan #chat .mes_buttons .neconyan-message-action[aria-disabled="true"] { opacity: 0.55; pointer-events: none; }
 body.neconyan #chat :is(.neconyan-message-action, .extraMesButtons > *) {
     aspect-ratio: auto;
     inline-size: auto;
