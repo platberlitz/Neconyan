@@ -1,4 +1,5 @@
 import express from 'express';
+import { mewmoryContextLocked } from '../scratchpad/mewmory.js';
 import { getJob } from '../jobs/store.js';
 import {
     activateSession,
@@ -319,6 +320,19 @@ router.post('/message/delete', (request, response) => change(request, response, 
 router.post('/proposal/mark', (request, response) => change(request, response, (bucket, body) => {
     markProposal(bucket, requireId(body.sessionId, 'session'), requireId(body.messageId, 'message'), body.index, body.state ?? null);
 }));
+
+router.post('/mewmory/context', (request, response) => {
+    try {
+        const body = request.body ?? {};
+        const source = normaliseSource(body.source);
+        const context = withScratchpad(scratchpadAccountBase(request), lease => {
+            const bucket = readBucketLocked(lease, source);
+            const settings = body.sessionId ? findSession(bucket, requireId(body.sessionId, 'session')).settings : {};
+            return mewmoryContextLocked(lease, source, settings);
+        });
+        response.json(context);
+    } catch (error) { sendError(response, error); }
+});
 
 router.post('/notes/context', async (request, response) => {
     try {

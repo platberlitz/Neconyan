@@ -110,7 +110,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     depth: 15,
     picked: [],
     notes: [],
-    include: { card: true, persona: true, authorsNote: true, lore: true, preset: false, hidden: false, agents: false, regex: false, cssSnippets: false, dialogueColors: false },
+    include: { card: true, persona: true, authorsNote: true, lore: true, preset: false, hidden: false, agents: false, regex: false, cssSnippets: false, dialogueColors: false, mewmory: false },
     loreOverrides: {},
     lorebook: '',
     connection: { kind: 'current' },
@@ -2477,6 +2477,7 @@ function renderContext({ force = true } = {}) {
             !general || app.source.avatar ? checkbox(t`Character cards`, include.card, value => setInclude('card', value)) : null,
             checkbox(t`Your persona and Scenario Notes`, include.persona, value => setInclude('persona', value)),
             roleplay ? checkbox(t`Author's Note`, include.authorsNote, value => setInclude('authorsNote', value)) : null,
+            roleplay ? checkbox(t`Mewmory`, include.mewmory === true, value => setInclude('mewmory', value), t`Reads saved memories from this Roleplay chat on the server. Pinned memories come first, followed by recent ones; unavailable or excluded memories are left out.`) : null,
             general ? null : checkbox(t`Lorebook entries`, include.lore, value => setInclude('lore', value), t`Entries are shared when their keywords appear, or when you set them to Always below.`),
             roleplay ? presetCheckbox(include.preset, value => setInclude('preset', value)) : null,
             checkbox(t`Agents`, include.agents === true, value => setInclude('agents', value), t`Shares the name, description and prompt of every saved Agent, so an assistant can suggest edits to them.`),
@@ -2807,8 +2808,11 @@ function renderPreview() {
             const sessionId = activeSession()?.id;
             const context = await buildContext({ source, settings: currentSettings(), pendingText: app.el.composer.value, sessionText: sessionText(activeSession()) });
             const notes = await api.readNotebookContext(wireSource(source), sessionId);
+            const mewmory = source.kind === 'roleplay' && currentSettings().include.mewmory === true
+                ? await api.readMewmoryContext(wireSource(source), sessionId) : null;
             requireScope(source, sessionId);
-            const preview = [context.text, notes.text ? `<notebook_context>\n${notes.text}\n</notebook_context>` : ''].filter(Boolean).join('\n\n');
+            const preview = [context.text, notes.text ? `<notebook_context>\n${notes.text}\n</notebook_context>` : '',
+                mewmory?.text ? `<mewmory_context>\n${mewmory.text}\n</mewmory_context>` : ''].filter(Boolean).join('\n\n');
             const tokens = await estimateTokens(preview);
             requireScope(source, sessionId);
             if (!output.isConnected) return;
@@ -2819,6 +2823,7 @@ function renderPreview() {
                 context.swipeCount ? h('p', { text: t`Swipes shared for comparison: ${context.swipeCount}.` }) : null,
                 context.preset ? h('p', { text: t`Preset modules on: ${context.preset.on}. Off: ${context.preset.off}.` }) : null,
                 h('p', { text: t`Saved notes or sections: ${notes.notes.filter(note => !note.unavailable).length}.` }),
+                mewmory?.enabled ? h('p', { text: t`Mewmory records shared: ${mewmory.count}. Left out to fit: ${mewmory.omitted}.` }) : null,
                 h('pre', { class: 'scratchpad-preview-text', text: preview }),
             ]);
         } catch (error) {
@@ -2828,7 +2833,7 @@ function renderPreview() {
     };
     return h('section', { class: 'scratchpad-section' },
         h('h3', { class: 'scratchpad-section-title', text: t`What Scratchpad will read` }),
-        h('p', { class: 'scratchpad-muted', text: t`This is the story and saved-note context for your next message. Notes are read on the server, and their contents and permissions are checked again when you send.` }),
+        h('p', { class: 'scratchpad-muted', text: t`This is the reference material for your next message. Saved notes and shared Mewmory records are read on the server and checked again when you send.` }),
         iconButton(t`Show preview`, () => void run(), { icon: 'fa-magnifying-glass' }),
         output);
 }

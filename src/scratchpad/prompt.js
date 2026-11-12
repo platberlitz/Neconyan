@@ -237,7 +237,7 @@ export function buildScratchpadSystemPrompt({ assistant, gender, persona: savedP
 
 export const SCRATCHPAD_CONTEXT_ACK = 'I have read the shared context. What would you like to work on?';
 
-export function buildScratchpadMessages({ system, context, notebookContext = '', history, text, attachments = [], assistant, assistantNames = {}, webSearchPlaceholder = '', webPagesPlaceholder = '' }) {
+export function buildScratchpadMessages({ system, context, notebookContext = '', mewmoryContext = '', history, text, attachments = [], assistant, assistantNames = {}, webSearchPlaceholder = '', webPagesPlaceholder = '' }) {
     const messages = [{ role: 'system', content: system }];
     if (context) {
         messages.push({ role: 'user', content: `<story_context>\n${context}\n</story_context>` });
@@ -246,6 +246,10 @@ export function buildScratchpadMessages({ system, context, notebookContext = '',
     if (notebookContext) {
         messages.push({ role: 'user', content: `<notebook_context>\n${notebookContext}\n</notebook_context>` });
         messages.push({ role: 'assistant', content: 'I will use only the shared notes as reference material and respect their permissions.' });
+    }
+    if (mewmoryContext) {
+        messages.push({ role: 'user', content: `<mewmory_context>\n${mewmoryContext}\n</mewmory_context>` });
+        messages.push({ role: 'assistant', content: 'I will use these saved memories as reference, respect uncertainty and character-specific knowledge, and treat them as read-only.' });
     }
     for (const message of history) {
         const peer = message.role === 'assistant' && message.assistant && assistant && message.assistant !== assistant;
