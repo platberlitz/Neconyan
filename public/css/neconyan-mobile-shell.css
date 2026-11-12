@@ -3716,6 +3716,17 @@ body.neconyan #sheld .sb-conversation-settings-nav {
 body.neconyan #sheld .sb-conversation-settings-nav::-webkit-scrollbar { display: none; }
 body.neconyan #sheld .sb-conversation-settings-nav button { flex: 0 0 auto; white-space: nowrap; }
 
+body.neconyan #mewmory-workspace .mewmory-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    touch-action: pan-x;
+    overscroll-behavior-x: contain;
+}
+body.neconyan #mewmory-workspace .mewmory-tabs::-webkit-scrollbar { display: none; }
+body.neconyan #mewmory-workspace .mewmory-tabs button { flex: 0 0 auto; padding-inline: .85rem; }
+
 body.neconyan #mewmory-workspace .mewmory-record > .mewmory-actions {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -1019,6 +1019,7 @@ const MOBILE_DOCUMENT_PAN_HORIZONTAL_SCROLL_SELECTOR = [
     '.notes-property-table-scroll',
     '.sbpl-tabs',
     '.sbwil-tabs',
+    '.mewmory-tabs',
 ].join(', ');
 
 const MOBILE_DOCUMENT_PAN_EDITABLE_SELECTOR = [
