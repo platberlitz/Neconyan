@@ -8,7 +8,11 @@ export function recallSummary(inspection, now = Date.now()) {
     if (!Array.isArray(selected)) return null;
     const ids = selected.filter(id => typeof id === 'string' && id);
     const records = [...new Set(ids.filter(id => !id.startsWith('source:')))].slice(0, MEWMORY_RECALL_LIMIT);
-    return { at: now, records, passages: ids.filter(id => id.startsWith('source:')).length };
+    const forced = Array.isArray(inspection.forcedIds) ? inspection.forcedIds : [];
+    const promises = new Set(forced.filter(id => typeof id === 'string' && id && !id.startsWith('source:') && records.includes(id))).size;
+    const summary = { at: now, records, passages: ids.filter(id => id.startsWith('source:')).length };
+    if (promises) summary.promises = promises;
+    return summary;
 }
 
 function stampExtra(extra, { summary, offRecord }) {
@@ -47,13 +51,18 @@ export function messageChips(message) {
     const recall = message.extra?.mewmoryRecall;
     const used = Array.isArray(recall?.records) ? recall.records.length : 0;
     const passages = Number.isSafeInteger(recall?.passages) ? recall.passages : 0;
+    const promises = Number.isSafeInteger(recall?.promises) ? Math.min(recall.promises, used) : 0;
     const offRecord = message.extra?.mewmoryExclude === true;
     if (!used && !passages && !offRecord) return null;
-    return { used, passages, offRecord };
+    return { used, passages, promises, offRecord };
 }
 
-export function usedLabel({ used, passages }) {
-    if (used) return used === 1 ? 'Used 1 memory' : 'Used ' + used + ' memories';
+export function usedLabel({ used, passages, promises = 0 }) {
+    if (used) {
+        const label = used === 1 ? 'Used 1 memory' : 'Used ' + used + ' memories';
+        if (!promises) return label;
+        return label + ' · ' + (promises === 1 ? '1 promise' : promises + ' promises');
+    }
     return passages === 1 ? 'Used 1 earlier passage' : 'Used ' + passages + ' earlier passages';
 }
 

@@ -3335,3 +3335,79 @@ test('memories sent to a lorebook are never read back in as lore', async t => {
     assert.equal(lore.length, 1);
     assert.match(lore[0].revisions.at(-1).text, /harbour freezes/);
 });
+
+test('the story view recaps events, lists open promises, maps connections and gathers one character', async () => {
+    const { storyRecap, openPromises, relationshipMap, characterPage } = await import('../src/mewmory/story.js');
+    const state = base();
+    const put = input => {
+        const record = validateRecord(state, input, { asOf: input.asOf ?? 2, origin: 'objective_extractor' });
+        putRecord(state, record, { automatic: true });
+        return record;
+    };
+    put({ id: 'entity:player', kind: 'entity', entityId: 'player', name: 'Kit', isCharacter: false, text: 'The visitor.', refs: [state.timeline[1]], asOf: 1 });
+    event(state);
+    event(state, { id: 'event:old', text: 'Mara opened the door.', refs: [state.timeline[1]], asOf: 1 });
+    event(state, { id: 'event:quiet', text: 'Mara tidied the shelf.', refs: [state.timeline[3]], asOf: 3, status: 'background' });
+    put({ id: 'commitment:return', kind: 'commitment', text: 'Mara promised to return the favour.', subjectIds: ['npc:mara'], triggerTerms: ['favour'], refs: [state.timeline[3]], asOf: 3 });
+    put({ id: 'commitment:done', kind: 'commitment', text: 'Mara promised tea.', subjectIds: ['npc:mara'], refs: [state.timeline[2]], status: 'resolved' });
+    put({ id: 'relationship:wary', kind: 'relationship', text: 'Mara is wary of Kit.', subjectIds: ['npc:mara', 'player'], evidenceStatus: 'established', refs: [state.timeline[2]] });
+    knowledge(state);
+
+    const recap = storyRecap(state);
+    assert.deepEqual(recap.events.map(item => item.id), ['event:old', 'event:gift']);
+    assert.equal(recap.total, 2);
+    assert.equal(recap.events[1].message, 3);
+    assert.equal(storyRecap(state, { limit: 1 }).events.length, 1);
+
+    const promises = openPromises(state);
+    assert.deepEqual(promises.promises.map(item => item.id), ['commitment:return']);
+    assert.deepEqual(promises.promises[0].triggerTerms, ['favour']);
+
+    const map = relationshipMap(state);
+    assert.deepEqual(map.nodes.map(node => node.id).sort(), ['npc:mara', 'player']);
+    assert.equal(map.links.length, 1);
+    assert.deepEqual([map.links[0].a, map.links[0].b], ['npc:mara', 'player']);
+    assert.equal(map.links[0].records[0].id, 'relationship:wary');
+
+    const page = characterPage(state, 'npc:mara');
+    assert.equal(page.name, 'Mara');
+    assert.equal(page.sheet.speech, 'Clipped, formal sentences.');
+    assert.deepEqual(page.knows.map(item => item.id), ['knowledge:gift']);
+    assert.deepEqual(page.relationships.map(item => item.id), ['relationship:wary']);
+    assert.ok(page.promises.some(item => item.id === 'commitment:return'));
+    assert.equal(characterPage(state, 'npc:nobody').sheet, null);
+});
+
+test('story and character routes are read-only', async t => {
+    const { directories } = disk(t, fixture.messages);
+    await loadCurrentState(directories, locator);
+    await mutateState(directories, locator, state => {
+        state.enabled = true;
+        putRecord(state, validateRecord(state, {
+            id: 'entity:mara', kind: 'entity', entityId: 'npc:mara', name: 'Mara', isCharacter: true, text: 'A careful host.', refs: [state.timeline[0]],
+        }, { asOf: 0, origin: 'objective_extractor' }), { automatic: true });
+        event(state);
+    });
+    const express = (await import('express')).default;
+    const { router } = await import('../src/endpoints/mewmory.js');
+    const app = express();
+    app.use(express.json());
+    app.use((request, _response, next) => { request.user = { directories }; next(); });
+    app.use(router);
+    const server = app.listen(0, '127.0.0.1');
+    t.after(() => server.close());
+    await new Promise(resolve => server.once('listening', resolve));
+    const post = (route, body) => fetch('http://127.0.0.1:' + server.address().port + route, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ locator, ...body }),
+    });
+    const before = readState(directories, locator).revision;
+    const story = await (await post('/story', {})).json();
+    assert.deepEqual(story.recap.events.map(item => item.id), ['event:gift']);
+    assert.ok(Array.isArray(story.promises.promises));
+    assert.ok(Array.isArray(story.map.nodes));
+    const page = await (await post('/character', { entityId: 'npc:mara' })).json();
+    assert.equal(page.name, 'Mara');
+    assert.equal(page.sheet.id, 'entity:mara');
+    assert.equal((await post('/character', {})).status, 400);
+    assert.equal(readState(directories, locator).revision, before);
+});

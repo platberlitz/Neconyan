@@ -24,13 +24,14 @@ function displayedSkipReason(reason) {
     return reason;
 }
 
-const tabs = [['now', 'Now'], ['pawspective', 'Pawspective'], ['archive', 'Archive'], ['recall', 'Recall'], ['settings', 'Settings']];
+const tabs = [['now', 'Now'], ['story', 'Story'], ['pawspective', 'Pawspective'], ['archive', 'Archive'], ['recall', 'Recall'], ['settings', 'Settings']];
 const kinds = { entity: 'NPC or entity reference', state: 'Current state', event: 'Event', relationship: 'Relationship fact',
     knowledge: 'Character knowledge', commitment: 'Promise or unresolved matter', interview: 'Pawspective interview', overview: 'Current subject view' };
 const kindBadges = { entity: 'NPC', state: 'State', event: 'Event', relationship: 'Relationship', knowledge: 'Knowledge',
     commitment: 'Promise', interview: 'Interview', overview: 'Current view' };
 const tabHints = {
     now: 'What Mewmory will add to your next reply, and who is in the scene.',
+    story: 'A recap of the story so far, promises still open, and who is connected to whom.',
     pawspective: 'How each character sees people, places and promises, and how that changed.',
     archive: 'Search everything Mewmory has remembered, plus the original messages. A match here is not necessarily used in a reply.',
     recall: 'Why each memory was picked, or left out, for the latest reply.',
@@ -53,7 +54,7 @@ const ui = { root: null, tab: 'now', owner: '', subject: '', significance: '', s
     searchMode: 'hybrid', searchType: '', searchReport: null, running: false, progress: '', scope: '',
     sort: 'story', flag: '', importance: '', state: '', from: '', to: '', moreFilters: false, selected: new Set(), history: null, duplicates: null,
     estimate: null, loreName: '', loreNote: '', transferNote: '',
-    layout: 'list', message: null };
+    layout: 'list', message: null, person: '' };
 
 /** Where a memory's newest message sits in the open chat, or -1 when it is not on screen (inherited or a card). */
 function chatIndex(asOf) {
@@ -637,6 +638,7 @@ function renderNow(root) {
         button(mewmory.busy ? 'Updating…' : 'Update now', () => processMewmory({ all: true }), { disabled: mewmory.busy }));
     renderPreview(root, { actions });
     renderQuickSetup(root);
+    renderStorySnippet(root);
     const cast = section('Active NPCs', button('Add NPC reference', () => openEditor(null, 'entity')));
     cast.append(node('p', 'mewmory-caption', 'Character references and current states sent with replies.'));
     cast.append(check('Choose active characters automatically', view.activeNpcIds === null,
@@ -709,6 +711,11 @@ function renderPawspective(root) {
         field('Subject', ui.subject, value => { ui.subject = value; change(); }, { options: [['', 'All subjects'], ...subjects.map(id => [id, nameOf(id)])] }),
     );
     root.append(controls);
+    if (ui.owner) {
+        const everything = node('div', 'mewmory-actions');
+        everything.append(button('Everything about ' + nameOf(ui.owner), () => { ui.person = ui.owner; void switchTab('story'); }));
+        root.append(everything);
+    }
     const extraFilters = node('details');
     extraFilters.append(node('summary', '', 'Filter interview history'));
     extraFilters.append(
@@ -731,6 +738,198 @@ function renderPawspective(root) {
     if (!records.length) empty(timeline, 'No interviews yet', 'Interviews only happen when something changes how a character sees things. A quiet scene may add none.');
     root.append(timeline);
     pagination(root);
+}
+
+const loads = {};
+
+/** Read-only views that are not part of the inspection, cached until the archive changes. */
+function loadView(key, route, body = {}) {
+    const signature = JSON.stringify([getMewmoryScope(), mewmory.view?.revision, route, body]);
+    const current = loads[key];
+    if (current?.signature === signature) return current;
+    const entry = { signature, data: null, error: '', loading: true };
+    loads[key] = entry;
+    requestMewmory(route, body).then(data => { entry.data = data; }, error => { entry.error = error.message; })
+        .finally(() => {
+            entry.loading = false;
+            if (loads[key] === entry) queueRender();
+        });
+    return entry;
+}
+
+function messageCaption(item) {
+    const parts = [item.message > 0 ? 'Message ' + item.message : 'From the character card'];
+    if (item.owner) parts.push(item.owner + '’s view');
+    if (item.subjects?.length) parts.push('About ' + item.subjects.join(', '));
+    if (item.triggerTerms?.length) parts.push('Comes back when: ' + item.triggerTerms.join('; '));
+    return parts.join(' · ');
+}
+
+function renderBrief(item, root, extra = []) {
+    const article = node('article', 'mewmory-record mewmory-brief');
+    const heading = node('div', 'mewmory-record-heading');
+    heading.append(node('h4', '', kindBadges[item.kind] || item.kind));
+    const badges = node('div', 'mewmory-badges');
+    if (item.significance === 'high') badges.append(badge('Important', 'accent'));
+    if (item.status === 'uncertain') badges.append(badge('Uncertain', 'muted'));
+    if (item.pinned) badges.append(badge('Pinned', 'accent'));
+    heading.append(badges);
+    article.append(heading, node('p', 'mewmory-prose', item.text), node('p', 'mewmory-caption', messageCaption(item)));
+    const actions = node('div', 'mewmory-actions');
+    const at = chatIndex(item.asOf);
+    if (item.message > 0 && at >= 0) actions.append(button('Go to message', () => void jumpToChatMessage(at)));
+    actions.append(...extra);
+    if (actions.childElementCount) article.append(actions);
+    root.append(article);
+}
+
+function loading(root, entry, what) {
+    if (entry.error) root.append(node('p', 'mewmory-error', entry.error));
+    else if (entry.loading && !entry.data) root.append(node('p', 'mewmory-caption', 'Loading ' + what + '…'));
+}
+
+function renderStorySnippet(root) {
+    const entry = loadView('story', 'story');
+    const data = entry.data;
+    if (!data || (!data.recap.events.length && !data.promises.total)) return;
+    const block = section('Previously on', button('Open Story', () => void switchTab('story')));
+    for (const item of data.recap.events.slice(-3)) renderBrief(item, block);
+    if (data.promises.total) block.append(node('p', 'mewmory-caption', data.promises.total === 1
+        ? '1 promise is still open.' : data.promises.total + ' promises are still open.'));
+    root.append(block);
+}
+
+const SVG = 'http://www.w3.org/2000/svg';
+
+function svg(tag, attributes = {}) {
+    const element = document.createElementNS(SVG, tag);
+    for (const [name, value] of Object.entries(attributes)) element.setAttribute(name, String(value));
+    return element;
+}
+
+function renderMap(root, map) {
+    const block = section('Who is connected');
+    block.id = 'mewmory-story-map';
+    if (!map.nodes.length) {
+        block.append(node('p', 'mewmory-caption', 'Connections appear once Mewmory records a relationship, or a character forms a view of someone.'));
+        root.append(block);
+        return;
+    }
+    block.append(node('p', 'mewmory-caption', 'Lines join people named together in a relationship memory or a character’s view. Choose a character to see everything about them.'));
+    const size = 320;
+    const centre = size / 2;
+    const radius = map.nodes.length === 1 ? 0 : size / 2 - 48;
+    const places = new Map(map.nodes.map((item, index) => {
+        const angle = (index / map.nodes.length) * Math.PI * 2 - Math.PI / 2;
+        return [item.id, { x: centre + Math.cos(angle) * radius, y: centre + Math.sin(angle) * radius }];
+    }));
+    const picture = svg('svg', { viewBox: '0 0 ' + size + ' ' + size, class: 'mewmory-map', role: 'img',
+        'aria-label': 'Map of ' + map.nodes.length + ' characters and things, joined by ' + map.links.length + ' connections' });
+    for (const link of map.links) {
+        const a = places.get(link.a);
+        const b = places.get(link.b);
+        if (!a || !b) continue;
+        picture.append(svg('line', { x1: a.x, y1: a.y, x2: b.x, y2: b.y, class: 'mewmory-map-link', 'stroke-width': Math.min(1 + link.records.length, 5) }));
+    }
+    for (const item of map.nodes) {
+        const place = places.get(item.id);
+        const group = svg('g', { class: 'mewmory-map-node' + (item.isCharacter ? ' is-character' : '') });
+        group.append(svg('circle', { cx: place.x, cy: place.y, r: 22, class: 'mewmory-map-dot' }));
+        const label = svg('text', { x: place.x, y: place.y + 38, 'text-anchor': 'middle', class: 'mewmory-map-label' });
+        label.textContent = item.name.length > 18 ? item.name.slice(0, 17) + '…' : item.name;
+        group.append(label);
+        if (item.isCharacter) {
+            group.setAttribute('role', 'button');
+            group.setAttribute('tabindex', '0');
+            group.setAttribute('aria-label', 'Everything about ' + item.name);
+            const open = () => { ui.person = item.id; render(); document.getElementById('mewmory-person')?.scrollIntoView({ block: 'nearest' }); };
+            group.addEventListener('click', open);
+            group.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); open(); } });
+        }
+        picture.append(group);
+    }
+    block.append(picture);
+    const names = new Map(map.nodes.map(item => [item.id, item.name]));
+    const list = node('ul', 'mewmory-map-list');
+    for (const link of map.links) {
+        const row = node('li');
+        row.append(node('strong', '', names.get(link.a) + ' and ' + names.get(link.b)));
+        for (const record of link.records.slice(0, 3)) row.append(node('p', 'mewmory-caption', record.text));
+        if (link.records.length > 3) row.append(node('p', 'mewmory-caption', 'And ' + (link.records.length - 3) + ' more.'));
+        list.append(row);
+    }
+    const details = node('details', 'mewmory-more-filters');
+    details.append(node('summary', '', 'List every connection'), list);
+    block.append(details);
+    if (map.hidden) block.append(node('p', 'mewmory-caption', map.hidden + ' more not shown, to keep the map readable.'));
+    root.append(block);
+}
+
+const PERSON_GROUPS = [['now', 'How they are now'], ['knows', 'What they know'], ['views', 'How they see others'],
+    ['seenBy', 'How others see them'], ['relationships', 'Relationships'], ['promises', 'Promises'], ['events', 'What happened to them']];
+
+function renderPerson(root) {
+    if (!ui.person) return;
+    const entry = loadView('person', 'character', { entityId: ui.person });
+    const page = entry.data;
+    const block = section('Everything about ' + (page?.name || nameOf(ui.person)), button('Close', () => { ui.person = ''; render(); }));
+    block.id = 'mewmory-person';
+    block.classList.add('mewmory-person');
+    loading(block, entry, 'this character');
+    if (page) {
+        if (page.sheet) {
+            block.append(node('p', 'mewmory-prose', page.sheet.text));
+            if (page.sheet.aliases?.length) block.append(node('p', 'mewmory-caption', 'Also called ' + page.sheet.aliases.join(', ')));
+            if (page.sheet.appearance) block.append(node('p', 'mewmory-caption', 'Appearance: ' + page.sheet.appearance));
+            if (page.sheet.speech) block.append(node('p', 'mewmory-caption', 'Speech: ' + page.sheet.speech));
+        }
+        for (const [key, title] of PERSON_GROUPS) {
+            if (!page[key]?.length) continue;
+            block.append(node('h5', 'mewmory-subheading', title));
+            for (const item of page[key]) renderBrief(item, block);
+        }
+        if (!page.total && !page.sheet) block.append(node('p', 'mewmory-caption', 'Nothing remembered about them yet.'));
+    }
+    root.append(block);
+}
+
+function renderStory(root) {
+    const view = mewmory.view;
+    if (!view?.enabled) {
+        empty(root, 'No story yet', 'Switch on Use Mewmory in this chat above. The recap and promises fill in as Mewmory reads the chat.');
+        return;
+    }
+    const entry = loadView('story', 'story');
+    renderPerson(root);
+    const recap = section('Previously on');
+    recap.id = 'mewmory-story-recap';
+    loading(recap, entry, 'the recap');
+    const data = entry.data;
+    if (data) {
+        recap.append(node('p', 'mewmory-caption', 'The most important recent events, oldest first. Built from saved memories, so it needs no model call.'));
+        for (const item of data.recap.events) renderBrief(item, recap);
+        if (!data.recap.events.length) recap.append(node('p', 'mewmory-caption', 'No events remembered yet. They appear after the next update.'));
+        if (data.recap.total > data.recap.events.length) {
+            const more = node('div', 'mewmory-actions');
+            more.append(button('See every event', () => { clearArchiveFilters(); ui.kind = 'event'; void switchTab('archive'); }));
+            recap.append(more);
+        }
+    }
+    root.append(recap);
+    if (!data) return;
+    const promises = section('Open promises');
+    promises.id = 'mewmory-story-promises';
+    promises.append(node('p', 'mewmory-caption', 'Promises and unfinished business. Mewmory reminds the AI of one whenever its cue words come up in the scene.'));
+    const mark = (id, action) => act(() => changeMewmory('record/action', { id, action, filters: filters() }));
+    for (const item of data.promises.promises) {
+        renderBrief(item, promises, [button('Mark as kept', () => mark(item.id, 'resolved')), button('Set aside', () => mark(item.id, 'background'))]);
+    }
+    if (!data.promises.total) promises.append(node('p', 'mewmory-caption', 'No open promises.'));
+    else if (data.promises.total > data.promises.promises.length) {
+        promises.append(node('p', 'mewmory-caption', 'Showing ' + data.promises.promises.length + ' of ' + data.promises.total + '.'));
+    }
+    root.append(promises);
+    renderMap(root, data.map);
 }
 
 function renderReview(root, reload) {
@@ -2173,6 +2372,7 @@ function render() {
         ui.duplicates = null;
         ui.layout = 'list';
         ui.message = null;
+        ui.person = '';
         ui.estimate = null;
         ui.loreName = '';
         ui.loreNote = '';
@@ -2256,7 +2456,7 @@ function render() {
             if (id === 'now') renderQuickSetup(page);
             if (locator && mewmory.error && !mewmory.loading) renderTransfers(page, true);
         } else {
-            ({ now: renderNow, pawspective: renderPawspective, archive: renderArchive, recall: renderRecall, settings: renderSettings })[id](page);
+            ({ now: renderNow, story: renderStory, pawspective: renderPawspective, archive: renderArchive, recall: renderRecall, settings: renderSettings })[id](page);
             renderEditor(page);
             renderSource(page);
         }
@@ -2274,7 +2474,7 @@ function loadMewmoryStyles() {
     if (!style) {
         style = document.createElement('link');
         style.id = 'mewmory-css';
-        style.href = 'css/mewmory.css?v=20261112-mewmory-cost-export';
+        style.href = 'css/mewmory.css?v=20261112-mewmory-story-views';
         document.head.append(style);
     }
     if (style.rel !== 'stylesheet') {

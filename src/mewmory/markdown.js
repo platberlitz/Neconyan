@@ -19,7 +19,7 @@ function inline(value) {
     return String(value ?? '').replace(/\s*\n+\s*/g, ' ').replace(/^#+\s*/, '').trim();
 }
 
-function names(state) {
+export function names(state) {
     const found = new Map();
     for (const record of state.records) {
         for (const [id, name] of Object.entries(record.subjectNames || {})) if (name && !found.has(id)) found.set(id, name);

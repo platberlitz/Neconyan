@@ -16,6 +16,7 @@ import { commitRecovery, listStories, MAX_ARCHIVE_BYTES, mutateState, normalizeL
 import { getCounter } from '../mewmory/tokens.js';
 import { spendStatus } from '../mewmory/spend.js';
 import { exportMarkdown, loreEntries } from '../mewmory/markdown.js';
+import { characterPage, openPromises, relationshipMap, storyRecap } from '../mewmory/story.js';
 import { startOperation } from '../mewmory/operations.js';
 import { listJobs } from '../jobs/store.js';
 import { disableMewmory, resumeVisibilityRestore } from '../mewmory/visibility.js';
@@ -522,6 +523,18 @@ route('/export/markdown', async (directories, body) => {
 route('/lore', async (directories, body) => {
     const state = await loadCurrentState(directories, normalizeLocator(body.locator));
     return { entries: loreEntries(state) };
+});
+
+route('/story', async (directories, body) => {
+    const state = await loadCurrentState(directories, normalizeLocator(body.locator));
+    return { recap: storyRecap(state), promises: openPromises(state), map: relationshipMap(state) };
+});
+
+route('/character', async (directories, body) => {
+    const state = await loadCurrentState(directories, normalizeLocator(body.locator));
+    const entityId = typeof body.entityId === 'string' ? body.entityId : '';
+    if (!entityId) fail('Choose a character first.', 400);
+    return characterPage(state, entityId);
 });
 
 route('/associate', async (directories, body) => {
