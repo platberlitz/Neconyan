@@ -1,8 +1,9 @@
 import {
-    changeMewmory, getMewmoryLocator, getMewmoryScope, hideOverflowMessages, initMewmory, MEWMORY_CONFIG_CHANGED_KEY,
-    mewmory, notifyMewmory, processMewmory, refreshMewmory, requestMewmory, retryMewmoryVisibilityRestore, stopMewmoryBackfill,
+    changeMewmory, getMewmoryLocator, getMewmoryScope, hideOverflowMessages, initMewmory, isMewmoryOffRecord, jumpToChatMessage,
+    MEWMORY_CONFIG_CHANGED_KEY, mewmory, notifyMewmory, processMewmory, putMessageBackOnRecord, refreshMewmory, requestMewmory,
+    retryMewmoryVisibilityRestore, setMewmoryOffRecord, stopMewmoryBackfill,
 } from './index.js';
-import { getRequestHeaders } from '../../script.js';
+import { chat, getRequestHeaders } from '../../script.js';
 import { currentUser } from '../user.js';
 import { getFriendlyTokenizerName } from '../tokenizers.js';
 import { uuidv4 } from '../utils.js';
@@ -49,7 +50,14 @@ const tokenizers = ['auto', 'o200k_base', 'cl100k_base', 'gpt2', 'llama', 'llama
 const ui = { root: null, tab: 'now', owner: '', subject: '', significance: '', status: '', kind: 'objective', query: '', offset: 0,
     source: null, editor: null, draft: null, configError: '', accountChanged: false, role: 'extractor', restore: null, matches: null,
     searchMode: 'hybrid', searchType: '', searchReport: null, running: false, progress: '', scope: '',
-    sort: 'story', flag: '', importance: '', state: '', from: '', to: '', moreFilters: false, selected: new Set(), history: null, duplicates: null };
+    sort: 'story', flag: '', importance: '', state: '', from: '', to: '', moreFilters: false, selected: new Set(), history: null, duplicates: null,
+    layout: 'list', message: null };
+
+/** Where a memory's newest message sits in the open chat, or -1 when it is not on screen (inherited or a card). */
+function chatIndex(asOf) {
+    const index = Number(asOf) - (Number(mewmory.view?.health?.nativeOffset) || 0);
+    return Number.isSafeInteger(index) && index >= 0 && index < chat.length ? index : -1;
+}
 
 function node(tag, className = '', content = '') {
     const element = document.createElement(tag);
@@ -317,7 +325,7 @@ function renderHistory(article) {
     article.append(block);
 }
 
-function renderRecord(record, root, { editable = true, selectable = false, onTick = null } = {}) {
+function renderRecord(record, root, { editable = true, selectable = false, onTick = null, jump = true } = {}) {
     const article = node('article', 'mewmory-record');
     const unused = record.eligible === false || Boolean(record.excluded);
     article.dataset.ineligible = String(record.eligible === false);
@@ -385,6 +393,8 @@ function renderRecord(record, root, { editable = true, selectable = false, onTic
         }, { options: corrections, key: 'correction-' + record.id, hideLabel: true });
         actions.append(correction, button('Edit', () => openEditor(record)),
             button('Undo last change', () => act(() => changeMewmory('record/action', { id: record.id, action: 'undo' }))));
+        const at = jump ? chatIndex(record.asOf) : -1;
+        if (at >= 0) actions.append(button('Go to message', () => void jumpToChatMessage(at)));
         if (record.version > 1) {
             const open = ui.history?.id === record.id;
             const toggle = button(open ? 'Hide earlier versions' : 'Earlier versions', () => open
@@ -773,8 +783,101 @@ function renderDuplicates(root) {
     root.append(block);
 }
 
+async function fetchMessage(target) {
+    try {
+        target.data = await requestMewmory('message', { messageId: target.messageId, index: target.index, used: target.used });
+        target.error = '';
+    } catch (error) {
+        target.error = error.message;
+    }
+}
+
+async function loadMessage({ scroll = false } = {}) {
+    const target = ui.message;
+    if (!target) return;
+    await fetchMessage(target);
+    if (ui.message !== target) return;
+    render();
+    if (scroll) document.getElementById('mewmory-message')?.scrollIntoView({ block: 'start' });
+}
+
+function excerpt(text, limit) {
+    const plain = String(text || '').replace(/\s+/g, ' ').trim();
+    return plain.length > limit ? plain.slice(0, limit - 1).trimEnd() + '…' : plain;
+}
+
+function renderMessage(root) {
+    const target = ui.message;
+    if (!target) return;
+    const message = chat[target.index];
+    const block = section('This message', button('Close', () => { ui.message = null; render(); }));
+    block.id = 'mewmory-message';
+    block.classList.add('mewmory-message');
+    const speaker = target.data?.speaker || message?.name || '';
+    block.append(node('p', 'mewmory-caption', 'Message ' + (target.index + 1) + (speaker ? ' · ' + speaker : '')));
+    if (message?.mes) block.append(node('p', 'mewmory-prose mewmory-message-text', excerpt(message.mes, 280)));
+    const actions = node('div', 'mewmory-actions');
+    if (message) actions.append(button('Go to message', () => void jumpToChatMessage(target.index)));
+    const offRecord = message?.extra?.mewmoryExclude === true;
+    if (offRecord) {
+        actions.append(button('Put back on the record', () => act(async () => {
+            await putMessageBackOnRecord(target.index);
+            await fetchMessage(target);
+        })));
+    } else if (target.data?.sourceId) {
+        const forgotten = Boolean(target.data.excluded);
+        actions.append(button(forgotten ? 'Remember this message again' : 'Forget this message', () => act(async () => {
+            await changeMewmory('source/exclude', { id: target.data.sourceId, exclude: !forgotten, filters: filters() });
+            await fetchMessage(target);
+        })));
+    }
+    block.append(actions);
+    if (offRecord) block.append(node('p', 'mewmory-caption', 'Off the record: Mewmory does not read this message or make memories from it.'));
+    else if (target.data?.excluded) block.append(node('p', 'mewmory-caption', 'Forgotten: this message stays in the chat, but Mewmory no longer uses it or any memory based on it.'));
+    if (target.error) block.append(node('p', 'mewmory-caption', target.error));
+    else if (!target.data) block.append(node('p', 'mewmory-caption', 'Loading what Mewmory knows about this message…'));
+    else {
+        const recall = message?.extra?.mewmoryRecall;
+        if (target.used.length || recall?.passages) {
+            block.append(node('h5', 'mewmory-subheading', 'Memories given to this reply'));
+            for (const record of target.data.used) renderRecord(record, block, { editable: false });
+            const notes = [];
+            if (target.data.missing) notes.push(target.data.missing === 1 ? '1 of them has since been removed.' : target.data.missing + ' of them have since been removed.');
+            if (recall?.passages) notes.push(recall.passages === 1 ? 'Also 1 original passage from earlier messages.' : 'Also ' + recall.passages + ' original passages from earlier messages.');
+            if (notes.length) block.append(node('p', 'mewmory-caption', notes.join(' ')));
+        }
+        block.append(node('h5', 'mewmory-subheading', 'Memories made from this message'));
+        for (const record of target.data.made) renderRecord(record, block, { editable: false });
+        if (!target.data.made.length) block.append(node('p', 'mewmory-caption', offRecord || target.data.enabled === false
+            ? 'None: Mewmory does not read this message.' : 'None yet. New messages are remembered at the next update.'));
+    }
+    root.append(block);
+}
+
+function renderTimeline(records, visible, tick) {
+    const timeline = node('ol', 'mewmory-timeline');
+    let step = null;
+    let current;
+    for (const record of visible) {
+        if (!step || record.asOf !== current) {
+            current = record.asOf;
+            step = node('li', 'mewmory-timeline-step');
+            const heading = node('div', 'mewmory-timeline-heading');
+            const at = chatIndex(record.asOf);
+            const speaker = at >= 0 ? chat[at]?.name : '';
+            heading.append(node('h5', '', record.asOf < 0 ? 'Before the story' : 'Message ' + (record.asOf + 1) + (speaker ? ' · ' + speaker : '')));
+            if (at >= 0) heading.append(button('Go to message', () => void jumpToChatMessage(at)));
+            step.append(heading);
+            timeline.append(step);
+        }
+        renderRecord(record, step, { selectable: true, onTick: tick, jump: false });
+    }
+    records.append(timeline);
+}
+
 function renderArchive(root) {
     const view = mewmory.view;
+    renderMessage(root);
     const search = async () => {
         ui.offset = 0;
         const result = ui.query.trim() ? await requestMewmory('search', { query: ui.query, mode: ui.searchMode, dataType: ui.searchType }) : null;
@@ -839,7 +942,9 @@ function renderArchive(root) {
     filter.append(field('Memory type', ui.kind, value => { ui.kind = value; reload(); },
         { options: [['objective', 'All facts and events'], ...Object.entries(kinds).filter(([kind]) => !['interview', 'overview'].includes(kind))] }),
     field('Sort by', ui.sort, value => { ui.sort = value; reload(); }, { key: 'archive-sort', options: [['story', 'Newest in the story first'],
-        ['oldest', 'Oldest in the story first'], ['changed', 'Most recently changed'], ['pinned', 'Pinned first']] }));
+        ['oldest', 'Oldest in the story first'], ['changed', 'Most recently changed'], ['pinned', 'Pinned first']] }),
+    field('Show as', ui.layout, value => { ui.layout = value; render(); }, { key: 'archive-layout',
+        options: [['list', 'List'], ['timeline', 'Timeline by message']] }));
     records.append(filter);
     const more = node('details', 'mewmory-more-filters');
     more.id = 'mewmory-archive-filters';
@@ -893,7 +998,8 @@ function renderArchive(root) {
     bulk.append(all, count, change);
     if (visible.length) records.append(bulk);
     syncBulk();
-    for (const record of visible) renderRecord(record, records, { selectable: true, onTick: syncBulk });
+    if (ui.layout === 'timeline' && visible.length) renderTimeline(records, visible, syncBulk);
+    else for (const record of visible) renderRecord(record, records, { selectable: true, onTick: syncBulk });
     if (!view.records.length) {
         if (filtered) empty(records, 'No memories match these filters', 'Loosen a filter, or clear them all to see every memory in this chat.',
             'Clear filters', () => { clearArchiveFilters(); reload(); });
@@ -1865,6 +1971,13 @@ function renderOverview(root) {
         return;
     }
     overview.append(node('p', 'mewmory-caption', 'Turning this off shows messages hidden by Mewmory. Messages you hid yourself stay hidden. Saved memories are kept.'));
+    const offRecord = isMewmoryOffRecord();
+    const privacy = check('Keep new messages off the record', offRecord, on => act(() => setMewmoryOffRecord(on), { refresh: false }));
+    privacy.classList.add('mewmory-switch');
+    privacy.querySelector('input').id = 'mewmory-off-record';
+    overview.append(privacy, node('p', 'mewmory-caption', offRecord
+        ? 'On: Mewmory skips every new message in this chat until you switch this off. Earlier messages are unaffected.'
+        : 'Switch on for a stretch you want Mewmory to skip. Messages sent while it is on are never remembered.'));
     const health = view.health || {};
     const total = Number(health.totalMessages) || 0;
     const pending = Math.max(0, Number(health.pending) || 0);
@@ -1930,8 +2043,19 @@ function render() {
         ui.selected = new Set();
         ui.history = null;
         ui.duplicates = null;
+        ui.layout = 'list';
+        ui.message = null;
         ui.progress = '';
         ui.running = false;
+    }
+    if (mewmory.focusMessage) {
+        const focus = mewmory.focusMessage;
+        mewmory.focusMessage = null;
+        ui.tab = 'archive';
+        ui.editor = null;
+        ui.source = null;
+        ui.message = { ...focus, data: null, error: '' };
+        void loadMessage({ scroll: true });
     }
     root.replaceChildren();
     const heading = node('header', 'mewmory-heading');
@@ -2018,7 +2142,7 @@ function loadMewmoryStyles() {
     if (!style) {
         style = document.createElement('link');
         style.id = 'mewmory-css';
-        style.href = 'css/mewmory.css?v=20261112-mewmory-archive-tools';
+        style.href = 'css/mewmory.css?v=20261112-mewmory-in-chat';
         document.head.append(style);
     }
     if (style.rel !== 'stylesheet') {

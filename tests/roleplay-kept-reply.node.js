@@ -35,10 +35,11 @@ function editChat(f, mutate) {
     });
 }
 
-function prepared(t, { effect = 'append', group = false, groupSpeakers = ['Nova.png'], named = null, messageIndex = 1, recovery = false } = {}) {
+function prepared(t, { effect = 'append', group = false, groupSpeakers = ['Nova.png'], named = null, messageIndex = 1, recovery = false, offRecord = false } = {}) {
     const f = fixture(t, group);
     const dirs = f.scope.directories;
     f.records[1].extra = {};
+    if (offRecord) f.records[0].chat_metadata = { ...f.records[0].chat_metadata, mewmory_off_record: true };
     fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
     if (group) {
         for (const avatar of groupSpeakers) {
@@ -721,4 +722,26 @@ test('a reply stopped after Agent postprocessing keeps its rewritten text and Ag
     assert.equal(saved.mes, 'Polished reply after Agent.');
     assert.deepEqual(saved.extra.inChatAgentTransformHistory, inChatAgentTransformHistory);
     assert.deepEqual(saved.extra.inChatAgentPreGenerationInterceptHistory, inChatAgentPreGenerationInterceptHistory);
+});
+
+test('a reply kept while the chat is off the record is never read by Mewmory', async t => {
+    const f = prepared(t, { offRecord: true });
+    const child = await f.child();
+    requestCancellation(f.dirs, f.jobId, { reason: 'user_cancelled' });
+    publishRoleplayPreview(f.context(child), { stage: 'generating', text: 'A secret half reply',
+        gen_started: '2026-10-28T10:00:00.000Z', generation: { model: 'fixture', source: 'custom' } });
+    const stopped = Object.assign(new Error('The reply was stopped.'), { name: 'AbortError' });
+    const kept = preserveInterruptedRoleplayReply({ ...f.context(child), signal: AbortSignal.abort() }, stopped);
+    assert.equal(kept.state, 'done', JSON.stringify(kept));
+    const reply = f.records().at(-1);
+    assert.equal(reply.mes, 'A secret half reply');
+    assert.equal(reply.extra.mewmoryExclude, true);
+    const normal = prepared(t, { effect: 'append' });
+    const normalChild = await normal.child();
+    requestCancellation(normal.dirs, normal.jobId, { reason: 'user_cancelled' });
+    publishRoleplayPreview(normal.context(normalChild), { stage: 'generating', text: 'An ordinary half reply',
+        gen_started: '2026-10-28T10:00:00.000Z', generation: { model: 'fixture', source: 'custom' } });
+    preserveInterruptedRoleplayReply({ ...normal.context(normalChild), signal: AbortSignal.abort() }, stopped);
+    assert.equal(normal.records().at(-1).mes, 'An ordinary half reply');
+    assert.equal(normal.records().at(-1).extra.mewmoryExclude, undefined, 'chats that are on the record are unchanged');
 });
