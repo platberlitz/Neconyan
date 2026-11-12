@@ -1387,6 +1387,7 @@ function scrollMessages(force = false) {
 
 function renderMessages() {
     const list = app.el.messages;
+    const scrollTop = list.scrollTop;
     const stick = nearBottom(list);
     const session = app.source ? activeSession() : null;
     if (session?.id && app.openMenusSessionId === session.id) {
@@ -1437,6 +1438,9 @@ function renderMessages() {
             })));
     }
     if (stick) scrollMessages(true);
+    // Rebuilding the list can reset its scroll offset while it is empty.
+    // Reviews and saved changes must also keep readers who are above the bottom in place.
+    else list.scrollTop = scrollTop;
 }
 
 function stageLabel(preview) {
