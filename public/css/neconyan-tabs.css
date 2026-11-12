@@ -5354,6 +5354,7 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
     font-size: calc(var(--mainFontSize) * 0.85);
     color: var(--SmartThemeBodyColor);
     min-height: 40px;
+    flex-shrink: 0;
 }
 
 .sb-persona-option:hover,
