@@ -12,6 +12,8 @@ const RETIRED_BUNDLED_PROMPTS = Object.freeze([
     Object.freeze({ templateId: 'tpl-continuity-companion', hash: 956974946916292, length: 345 }),
     // Continuity Corrector before it read the Continuity Companion's notes.
     Object.freeze({ templateId: 'tpl-continuity-corrector', hash: 4999155226325119, length: 4491 }),
+    // Chatroom v3 before a board post's comment line stayed inside its post.
+    Object.freeze({ templateId: 'tpl-chatroom-companion', hash: 1530291194946798, length: 7836 }),
 ]);
 
 /**

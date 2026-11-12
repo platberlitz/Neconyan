@@ -24,6 +24,20 @@ test('untouched old built-in prompts are recognised for an update, edited and cu
     assert.equal(isRetiredBundledPrompt('tpl-continuity-companion', `${oldCompanion} Also list weather.`), false);
 });
 
+test('an untouched Chatroom v3 prompt takes the board-post wording and stays v3', () => {
+    const template = readTemplate('chatroom-companion.json');
+    assert.equal(template.version, 3);
+    assert.equal(isRetiredBundledPrompt(template.id, template.prompt), false);
+    const oldSentence = 'Each chatroom line is one complete post with its post/comment field on that same line. Greentext is the one exception: a greentext story is ONE post. Put its first > line in the post/comment field, then put each further > line on its own line directly below, with no chatroom| prefix. Keep one greentext story inside one post.';
+    const oldBoard = 'the panel shows it as >>84920113. Bring greentext stories,';
+    const oldPrompt = template.prompt
+        .replace(/Every post opens on its own chatroom\| or chatroom-reply\| line[\s\S]*?so start every new post with its prefix\./, oldSentence)
+        .replace(/the panel shows it as >>84920113\. A greentext post[\s\S]*?Bring greentext stories,/, oldBoard);
+    assert.notEqual(oldPrompt, template.prompt);
+    assert.equal(isRetiredBundledPrompt(template.id, oldPrompt), true);
+    assert.equal(isRetiredBundledPrompt(template.id, `${oldPrompt} `), false);
+});
+
 test('Director\'s Commentary asks for criticism, not only praise', () => {
     const director = readTemplate('directors-commentary-companion.json').prompt;
     assert.match(director, /neutral observer, not a fan/);

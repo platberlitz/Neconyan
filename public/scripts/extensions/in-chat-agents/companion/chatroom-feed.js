@@ -11,9 +11,12 @@ const CHATROOM_STYLE_LINE_RE = /^(?:CHATROOM_STYLE|chatroom-style)\|/i;
 const CHATROOM_END_LINE_RE = /^(?:CHATROOM_END|chatroom-end)$/i;
 const CHATROOM_FEED_LINE_RE = /^(?:chatroom|chatroom-reply|chatroom-you|chatroom-poll|chatroom-option|chatroom-event)\|/i;
 const CHATROOM_CONTINUATION_LINE_RE = /^(?:>|&gt;)/;
-const CHATROOM_ATTACHED_LINE_RE = /^(?:chatroom-option\||>|&gt;)/i;
 const CHATROOM_QUOTE_LINK_RE = /^(?:>>|&gt;&gt;)(\d{2,})\s+(\S[\s\S]*)$/;
 const CHATROOM_FOLDABLE_ROW_RE = /^(chatroom|chatroom-reply)\|/i;
+const CHATROOM_POST_ROW_RE = /^(?:chatroom|chatroom-reply|chatroom-you|chatroom-poll|chatroom-event)\|/i;
+const CHATROOM_ANY_LINE_RE = /^(?:chatroom(?:-[a-z]+)?|CHATROOM(?:_[A-Z]+)?)(?:\||$)/i;
+// A post that lost its chatroom| prefix: Name|meta|tone|message.
+const CHATROOM_UNPREFIXED_POST_RE = /^[^|\n<>]{1,48}\|[^|\n]{0,48}\|[0-9]{1,3}\|\S/;
 
 export const CHATROOM_FEED_PROBE_RE = /^(?:CHATROOM_STYLE|chatroom-style|CHATROOM|chatroom|chatroom-reply|chatroom-you|chatroom-poll|chatroom-option|chatroom-event)\|/im;
 
@@ -146,7 +149,7 @@ export function normalizeChatroomGeneratedLine(line = '') {
 
     const kind = trimmed.match(/^(chatroom(?:-[a-z]+)?)\|/i)?.[1]?.toLowerCase();
     if (!kind) {
-        return line;
+        return CHATROOM_UNPREFIXED_POST_RE.test(trimmed) ? normalizeChatroomPostLine(line, ['chatroom', ...trimmed.split('|')]) : line;
     }
 
     const parts = trimmed.split('|');
@@ -183,46 +186,94 @@ export function normalizeChatroomGeneratedLine(line = '') {
 }
 
 /**
- * Folds greentext lines that follow a post into that post, so a multi-line greentext
- * story shows as one post. Display only: saved feeds keep one line per row.
+ * True for a line with no Chatroom prefix that continues the post above it: a greentext
+ * line, or the comment a board post adds below its greentext.
+ * @param {string} line Trimmed line
+ * @returns {boolean}
+ */
+function isChatroomPostContinuation(line) {
+    return Boolean(line) && !CHATROOM_ANY_LINE_RE.test(line) && !line.startsWith('```');
+}
+
+function greenSpan(text) {
+    return `<span class="chatroom-greentext">${text}</span>`;
+}
+
+function renderFoldedPost(post) {
+    const { line, head, body, kind, extra } = post;
+    const bodyGreen = CHATROOM_CONTINUATION_LINE_RE.test(body);
+    if (!extra.length) {
+        // A green reply body needs its own colour; the greentext row pattern colours plain posts.
+        return kind === 'chatroom-reply' && bodyGreen ? `${head}|${greenSpan(body)}` : line;
+    }
+
+    const lines = [body, ...extra];
+    if (kind === 'chatroom' && lines.every(text => CHATROOM_CONTINUATION_LINE_RE.test(text))) {
+        // The greentext row pattern already colours the whole body.
+        return `${head}|${lines.join('<br>')}`;
+    }
+    return `${head}|${lines.map(text => CHATROOM_CONTINUATION_LINE_RE.test(text) ? greenSpan(text) : text).join('<br>')}`;
+}
+
+/**
+ * Folds the lines that follow a post into that post, so a multi-line greentext story,
+ * or greentext followed by a comment, shows as one post instead of a nameless line.
+ * Display only: saved feeds keep one line per row.
  * @param {string} text Normalised Chatroom content
  * @returns {string}
  */
 export function foldChatroomGreentextLines(text = '') {
     const out = [];
-    let foldable = false;
-    let greenBody = false;
+    let post = null;
+    let blanks = [];
+
+    const closePost = () => {
+        if (post) out.push(renderFoldedPost(post));
+        post = null;
+        out.push(...blanks);
+        blanks = [];
+    };
 
     for (const line of String(text ?? '').split('\n')) {
         const trimmed = line.trim();
-        if (foldable && CHATROOM_CONTINUATION_LINE_RE.test(trimmed)) {
-            out[out.length - 1] += greenBody ? `<br>${trimmed}` : `<br><span class="chatroom-greentext">${trimmed}</span>`;
+        if (post && !trimmed) {
+            blanks.push(line);
+            continue;
+        }
+        if (post && isChatroomPostContinuation(trimmed)) {
+            post.extra.push(trimmed);
+            blanks = [];
             continue;
         }
 
+        closePost();
         const kind = trimmed.match(CHATROOM_FOLDABLE_ROW_RE)?.[1]?.toLowerCase();
-        foldable = Boolean(kind);
-        greenBody = false;
-        if (kind === 'chatroom') {
-            // The greentext row pattern already colours the whole body.
-            greenBody = CHATROOM_CONTINUATION_LINE_RE.test(trimmed.split('|')[4] ?? '');
-        } else if (kind === 'chatroom-reply') {
-            const parts = trimmed.split('|');
-            if (parts.length === 6 && CHATROOM_CONTINUATION_LINE_RE.test(parts[5])) {
-                parts[5] = `<span class="chatroom-greentext">${parts[5]}</span>`;
-                out.push(parts.join('|'));
-                continue;
-            }
+        const parts = trimmed.split('|');
+        const fields = kind === 'chatroom' ? 4 : 5;
+        if (kind && parts.length > fields) {
+            post = { line, kind, head: parts.slice(0, fields).join('|'), body: parts.slice(fields).join('|'), extra: [] };
+            continue;
         }
         out.push(line);
     }
+    closePost();
 
     return out.join('\n');
 }
 
 /**
- * Splits Chatroom content into its style and feed rows. Greentext continuations and poll
- * options stay attached to the row above them.
+ * True for a row that belongs to the row above it: a poll option, a greentext line or a
+ * post's follow-on comment.
+ * @param {string} row
+ * @returns {boolean}
+ */
+function isChatroomAttachedRow(row) {
+    return !CHATROOM_POST_ROW_RE.test(row);
+}
+
+/**
+ * Splits Chatroom content into its style and feed rows. Greentext lines, a post's
+ * follow-on comment and poll options stay attached to the row above them.
  * @param {string} content
  * @returns {{ style: string, rows: string[] }}
  */
@@ -230,6 +281,7 @@ export function parseChatroomFeed(content = '') {
     const lines = String(content ?? '').replaceAll(/\r\n?/g, '\n').split('\n');
     let style = '';
     const rows = [];
+    let inPost = false;
 
     for (const rawLine of lines) {
         const line = normalizeChatroomGeneratedLine(rawLine).trim();
@@ -239,9 +291,15 @@ export function parseChatroomFeed(content = '') {
             style ||= line.slice(line.indexOf('|') + 1).trim();
             continue;
         }
-        if (CHATROOM_END_LINE_RE.test(line)) continue;
+        if (CHATROOM_END_LINE_RE.test(line)) {
+            inPost = false;
+            continue;
+        }
 
-        if (CHATROOM_FEED_LINE_RE.test(line) || (rows.length > 0 && CHATROOM_CONTINUATION_LINE_RE.test(line))) {
+        if (CHATROOM_FEED_LINE_RE.test(line)) {
+            rows.push(line);
+            if (!/^chatroom-option\|/i.test(line)) inPost = CHATROOM_FOLDABLE_ROW_RE.test(line);
+        } else if (rows.length > 0 && (CHATROOM_CONTINUATION_LINE_RE.test(line) || (inPost && isChatroomPostContinuation(line)))) {
             rows.push(line);
         }
     }
@@ -256,7 +314,7 @@ function getLastRows(rows, limit) {
 
     let start = rows.length - limit;
     // Start the kept window on a whole post, not on a stray poll option or greentext line.
-    while (start < rows.length && CHATROOM_ATTACHED_LINE_RE.test(rows[start])) {
+    while (start < rows.length && isChatroomAttachedRow(rows[start])) {
         start++;
     }
     return rows.slice(start);
@@ -305,7 +363,7 @@ export function mergeChatroomReplyFeed({ previousContent = '', replyContent = ''
     const newRows = [];
     let keepAttached = false;
     for (const row of reply.rows) {
-        if (CHATROOM_ATTACHED_LINE_RE.test(row)) {
+        if (isChatroomAttachedRow(row)) {
             if (keepAttached) newRows.push(row);
             continue;
         }
@@ -313,7 +371,7 @@ export function mergeChatroomReplyFeed({ previousContent = '', replyContent = ''
         if (keepAttached) newRows.push(row);
     }
 
-    if (!newRows.some(row => !CHATROOM_ATTACHED_LINE_RE.test(row))) {
+    if (!newRows.some(row => !isChatroomAttachedRow(row))) {
         throw new Error('The chatroom answered without any new posts. Try sending the reply again.');
     }
 

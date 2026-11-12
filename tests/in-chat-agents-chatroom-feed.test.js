@@ -1,5 +1,5 @@
 import { describe, expect, test } from '@jest/globals';
-import { foldChatroomGreentextLines, normalizeChatroomGeneratedLine, parseChatroomFeed } from '../public/scripts/extensions/in-chat-agents/companion/chatroom-feed.js';
+import { foldChatroomGreentextLines, mergeChatroomReplyFeed, normalizeChatroomGeneratedLine, parseChatroomFeed } from '../public/scripts/extensions/in-chat-agents/companion/chatroom-feed.js';
 
 describe('Chatroom reply fields', () => {
     const message = 'the bed slat creaked "low" like it also remembers. even the furniture is a flashback device in this fic. the FURNITURE';
@@ -61,5 +61,65 @@ describe('Chatroom board posts', () => {
 
     test('keeps a greentext line with no post to join', () => {
         expect(foldChatroomGreentextLines('chatroom-style|mixed\n>orphan')).toBe('chatroom-style|mixed\n>orphan');
+    });
+
+    test('keeps the comment under a greentext story inside the same post', () => {
+        const folded = foldChatroomGreentextLines([
+            'chatroom-style|thread-board/4chan',
+            'chatroom|Anonymous|No.89412004|18|>be sleep-deprived poetlet',
+            '>toes curling in oxfords.jpg',
+            '',
+            'is she gonna make it bros?',
+            'chatroom|Anonymous|No.89412028|42|"approximately forty percent more ambient noise"',
+            'holy autism',
+            'chatroom-reply|Anonymous|No.89412029|42|89412028|>implying',
+            'kek',
+            'chatroom-end',
+            'trailing note',
+        ].join('\n'));
+
+        expect(folded.split('\n')).toEqual([
+            'chatroom-style|thread-board/4chan',
+            'chatroom|Anonymous|No.89412004|18|<span class="chatroom-greentext">>be sleep-deprived poetlet</span><br><span class="chatroom-greentext">>toes curling in oxfords.jpg</span><br>is she gonna make it bros?',
+            'chatroom|Anonymous|No.89412028|42|"approximately forty percent more ambient noise"<br>holy autism',
+            'chatroom-reply|Anonymous|No.89412029|42|89412028|<span class="chatroom-greentext">>implying</span><br>kek',
+            'chatroom-end',
+            'trailing note',
+        ]);
+    });
+
+    test('keeps a lone green reply coloured and a blank line between posts', () => {
+        expect(foldChatroomGreentextLines('chatroom-reply|Anon|No.2|18|1|>mfw\n\nchatroom|Anon|No.3|18|hi'))
+            .toBe('chatroom-reply|Anon|No.2|18|1|<span class="chatroom-greentext">>mfw</span>\n\nchatroom|Anon|No.3|18|hi');
+    });
+
+    test('turns a post that lost its chatroom prefix back into a post', () => {
+        expect(normalizeChatroomGeneratedLine('Anonymous|No.89412030|18|holy autism'))
+            .toBe('chatroom|Anonymous|No.89412030|18|holy autism');
+        expect(normalizeChatroomGeneratedLine('>be me|lol|1|x')).toBe('>be me|lol|1|x');
+        expect(normalizeChatroomGeneratedLine('is she gonna make it bros?')).toBe('is she gonna make it bros?');
+    });
+
+    test('carries a post comment through the saved feed and reply merge', () => {
+        const previous = 'chatroom-style|thread-board/4chan\nchatroom|Anonymous|No.1|18|>be me\nis she gonna make it bros?\nchatroom-end\nnot part of the feed';
+        expect(parseChatroomFeed(previous).rows).toEqual([
+            'chatroom|Anonymous|No.1|18|>be me',
+            'is she gonna make it bros?',
+        ]);
+        const merged = mergeChatroomReplyFeed({
+            previousContent: previous,
+            replyContent: 'chatroom-style|thread-board/4chan\nchatroom|Anonymous|No.2|42|yes\nbelieve',
+            viewerName: 'Anon',
+            viewerText: 'will she?',
+        });
+        expect(merged.split('\n')).toEqual([
+            'chatroom-style|thread-board/4chan',
+            'chatroom|Anonymous|No.1|18|>be me',
+            'is she gonna make it bros?',
+            'chatroom-you|Anon|will she?',
+            'chatroom|Anonymous|No.2|42|yes',
+            'believe',
+            'chatroom-end',
+        ]);
     });
 });
