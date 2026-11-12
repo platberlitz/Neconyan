@@ -37,6 +37,7 @@
 - PR #627 (2026-11-12) `feat(scratchpad): suggest changes to css snippets`
 - PR #628 (2026-11-12) `feat(scratchpad): share a hand-picked lorebook in general`
 - PR #629 (2026-11-12) `fix(chat): keep server reply headers steady`
+- PR #630 (2026-11-12) `feat(scratchpad): suggest changes to dialogue colours`
 
 ## v1.5.4
 
