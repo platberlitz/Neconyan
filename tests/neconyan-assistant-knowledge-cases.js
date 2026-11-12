@@ -38,6 +38,7 @@ export const refreshedKnowledgeCases = [
     ['Can Scratchpad read a reply aloud with text to speech?', 'scratchpad.read-aloud', 'press Read aloud'],
     ['Can a Scratchpad reply become a swipe of the last story reply?', 'scratchpad.reply-version', 'Add as another version of the last story reply'],
     ['How do I pin a Scratchpad session so cleanup keeps it?', 'scratchpad.session-pins', 'never deleted by automatic cleanup'],
+    ['How do I save a Scratchpad session as a PDF?', 'scratchpad.pdf-export', 'choose Save as PDF in the browser print options'],
     ['How do I export a Scratchpad session as Markdown with thinking and sources?', 'scratchpad.export-options', 'Under Also include tick Thinking'],
     ['Can Try again redo an older Scratchpad reply, not only the latest?', 'scratchpad.replies', 'on any reply, not only the latest'],
     ['How do Scratchpad reply versions work?', 'scratchpad.reply-versions', 'up to 50 versions per reply'],

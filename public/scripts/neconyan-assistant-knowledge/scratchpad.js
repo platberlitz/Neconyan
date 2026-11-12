@@ -3,6 +3,11 @@ const panel = 'public/scripts/scratchpad/index.js';
 
 export default [
     {
+        id: 'scratchpad.pdf-export', title: 'Exporting a Scratchpad session as a PDF or printout', keys: ['Scratchpad PDF export', 'export Scratchpad as PDF', 'print a Scratchpad session', 'Scratchpad print view', 'save Scratchpad as PDF'],
+        sources: [guide, panel, 'public/scripts/scratchpad/pdf-export.js'], anchors: ['PDF / print', 'Print / save PDF'],
+        content: 'Scratchpad → Sessions → Export current → File type → PDF / print opens a print view in a new window. It shows the chosen version of each reply, the pinned note, rehearsal labels and only the extras ticked under Also include. Press Print / save PDF and choose Save as PDF in the browser print options; on an iPhone use Share in the print preview. Page size and margins come from the browser. Raw HTML, scripts and remote images are left out, and only web links stay clickable. If the browser blocks the window, the export dialog stays open with an explanation: allow pop-ups for the site and try again. The print view cannot be imported again.',
+    },
+    {
         id: 'scratchpad.rehearsal', title: 'Rehearsing the next story reply in Scratchpad', keys: ['Scratchpad rehearse next reply', 'Scratchpad reply rehearsal', 'try a story continuation in Scratchpad'],
         sources: [guide, panel, 'public/scripts/scratchpad/rehearsal.js'], anchors: ['Rehearse next reply', 'REHEARSAL_INSTRUCTIONS', 'Rehearsal'],
         content: 'With a Roleplay or Conversation chat open, use + → Rehearse next reply beside the Scratchpad message box. Type optional directions first, or leave it empty. The selected Scratchpad assistant drafts a story continuation using the shared Context and its own connection. This is not the normal story generation. The result is labelled Rehearsal and stays in Scratchpad. It offers no change cards or model tools. Copy, Use as draft and Add as another version are deliberate actions. Try again preserves rehearsal mode; later discussion identifies these drafts as possibilities, not events. Exports keep the label. General and note discussions have no rehearsal control. Check Show preview to see the shared story material.',

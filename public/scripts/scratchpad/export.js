@@ -84,20 +84,28 @@ function choice(type, name, label, hint, checked, onChange) {
 }
 
 /** Resolves with `{ format, reasoning, sources, attachments }`, or null when the user cancels. */
-export async function chooseSessionExport() {
+export async function chooseSessionExport({ onPdf } = {}) {
     const options = { format: 'json', reasoning: false, sources: false, attachments: false };
     const content = h('div', { class: 'scratchpad-review scratchpad-section scratchpad-export' },
         h('h3', { text: t`Export this session` }),
         h('fieldset', { class: 'scratchpad-export-group' },
             h('legend', { text: t`File type` }),
             choice('radio', 'scratchpad-export-format', t`Scratchpad file`, t`Can be imported again, with every version of each reply.`, true, () => { options.format = 'json'; }),
-            choice('radio', 'scratchpad-export-format', t`Markdown`, t`A transcript for reading or sharing. It cannot be imported again.`, false, () => { options.format = 'markdown'; })),
+            choice('radio', 'scratchpad-export-format', t`Markdown`, t`A transcript for reading or sharing. It cannot be imported again.`, false, () => { options.format = 'markdown'; }),
+            choice('radio', 'scratchpad-export-format', t`PDF / print`, t`Opens a print view. Choose Save as PDF in your browser's print options.`, false, () => { options.format = 'pdf'; })),
         h('fieldset', { class: 'scratchpad-export-group' },
             h('legend', { text: t`Also include` }),
             choice('checkbox', 'scratchpad-export-reasoning', t`Thinking`, t`The assistants' thinking, where a reply saved it.`, false, value => { options.reasoning = value; }),
             choice('checkbox', 'scratchpad-export-sources', t`Web search sources`, t`The query and the numbered links under each reply.`, false, value => { options.sources = value; }),
             choice('checkbox', 'scratchpad-export-attachments', t`Attached files and images`, t`Makes the file much larger. A file too large to import again is imported without them.`, false, value => { options.attachments = value; })),
         h('p', { class: 'scratchpad-review-hint', text: t`With nothing ticked, the file holds the conversation text only. Message picks, saved-note sharing and generated pictures are never included.` }));
-    const result = await callGenericPopup(content, POPUP_TYPE.CONFIRM, '', { okButton: t`Export`, cancelButton: t`Cancel` });
+    const error = h('p', { class: 'scratchpad-error', role: 'alert', hidden: true });
+    content.append(error);
+    const result = await callGenericPopup(content, POPUP_TYPE.CONFIRM, '', { okButton: t`Export`, cancelButton: t`Cancel`,
+        onClosing: popup => {
+            if (popup.result !== POPUP_RESULT.AFFIRMATIVE || options.format !== 'pdf') return true;
+            try { onPdf(options); return true; } catch (failure) { error.textContent = failure.message; error.hidden = false; return false; }
+        },
+    });
     return result === POPUP_RESULT.AFFIRMATIVE ? options : null;
 }
