@@ -27,7 +27,7 @@ import { appendManualSwipe, selectManualSwipe } from '../manual-swipe.js';
 import { getMessageTimeStamp } from '../RossAscends-mods.js';
 import { getNameAndAvatarForMessage } from '../slash-commands.js';
 import { createWorldInfoEntry, deleteWorldInfoEntry, loadWorldInfo, saveWorldInfo, updateWorldInfoList, world_names } from '../world-info.js';
-import { isCurrentSource, sourceCharacters } from './context.js';
+import { isCurrentSource, sourceCharacters, wireSource } from './context.js';
 import { DIALOGUE_COLOR, fail, formatEntry, formatField, normaliseChange, parseEntry, parseField } from './proposals.js';
 import { characterField, characterFieldPatch, readCharacterField } from './character-fields.js';
 
@@ -158,6 +158,30 @@ function authorsNotePlan(change, source) {
             if (!saved) fail(t`The Author's Note was not saved. Review it again before retrying.`);
             const box = globalThis.document?.getElementById('extension_floating_prompt');
             if (box) box.value = value;
+        },
+    };
+}
+
+async function mewmoryPlan(change, source, sessionId) {
+    if (source.kind !== 'roleplay') fail(t`Mewmory corrections are only available in a Roleplay chat.`);
+    if (!sessionId) fail(t`Open this Scratchpad session again before saving a memory correction.`);
+    const api = await import('./api.js');
+    const current = await api.readMewmoryRecord(wireSource(source), sessionId, change.record);
+    requireSource(source);
+    const before = String(current[change.field] ?? '');
+    return {
+        target: t`Mewmory: ${change.record}`,
+        field: change.field === 'status' ? t`Status` : t`Memory text`,
+        before,
+        after: change.value,
+        editable: true,
+        hint: change.field === 'status' ? t`Use active, background, resolved, uncertain or invalidated.` : t`Saving replaces this memory's text as your own correction. Mewmory keeps the earlier version, so you can undo it there.`,
+        async commit(edited) {
+            requireSource(source);
+            const value = String(edited ?? '').trim();
+            await api.correctMewmoryRecord(wireSource(source), sessionId, change.record,
+                { field: change.field, value: change.field === 'status' ? value.toLowerCase() : value, expected: before, version: current.version });
+            requireSource(source);
         },
     };
 }
@@ -530,7 +554,7 @@ export async function addReplyVersion(source, target, text) {
  * Reads the live value a change would replace and returns everything the
  * review needs. Nothing is written until commit() is called.
  */
-export async function prepareChange(change, source, { sharedAvatar = '', sharedPersona, personaGuard, sharedPreset, presetGuard, creationGuard, creatorKey = '', agentsShared = false, authorsNoteShared = false, regexShared = false, cssSnippetsShared = false, dialogueColorsShared = false, sharedLorebook = '' } = {}) {
+export async function prepareChange(change, source, { sharedAvatar = '', sharedPersona, personaGuard, sharedPreset, presetGuard, creationGuard, creatorKey = '', agentsShared = false, authorsNoteShared = false, regexShared = false, cssSnippetsShared = false, dialogueColorsShared = false, mewmoryShared = false, sessionId = '', sharedLorebook = '' } = {}) {
     if (!isCurrentSource(source)) fail(t`Return to this Scratchpad context before applying changes.`);
     change = normaliseChange(change);
     if (change.type === 'preset') {
@@ -617,6 +641,10 @@ export async function prepareChange(change, source, { sharedAvatar = '', sharedP
     if (change.type === 'dialogue-color') {
         if (!dialogueColorsShared) fail(t`Share Dialogue Colors under Context before saving a change to one.`);
         return dialogueColorPlan(change);
+    }
+    if (change.type === 'mewmory') {
+        if (!mewmoryShared) fail(t`Share Mewmory under Context before saving a memory correction.`);
+        return mewmoryPlan(change, source, sessionId);
     }
     if (change.type === 'lorebook') {
         if (source.kind === 'general' && (!sharedLorebook || change.book !== sharedLorebook)) fail(t`Share that lorebook under Context before saving a change to it.`);

@@ -103,8 +103,13 @@ function imageInstructions({ image, avatar, persona }) {
     ].join('\n');
 }
 
-function changeInstructions({ lore, character, chat, members, notebook, persona, preset, agents, authorsNote, regex, cssSnippets, dialogueColors }) {
+function changeInstructions({ lore, character, chat, members, notebook, persona, preset, agents, authorsNote, regex, cssSnippets, dialogueColors, mewmory }) {
     const kinds = [];
+    if (mewmory) kinds.push([
+        'Mewmory corrections (only records listed under mewmory_context, and only kinds entity, state, event, relationship, knowledge or commitment):',
+        '{"type":"mewmory","action":"replace","record":"<exact record id>","field":"text","value":"<complete corrected text>","reason":"<which message or fact shows it is wrong>"}',
+        'Supported fields: text, and status (active, background, resolved, uncertain or invalidated). Copy the record ID exactly. A text value replaces the whole memory text. Suggest a correction only when the shared story or the user shows a saved memory is wrong or out of date, and say why. Never correct Pawspective interviews or overviews, never invent records, and never claim a memory changed: the user reviews and saves each correction. You cannot create, delete, pin or exclude memories; tell the user to do that in Mewmory.',
+    ].join('\n'));
     if (authorsNote) kinds.push([
         'This chat\'s Author\'s Note (the text under Author\'s Note in the context; when that heading is absent, the note is empty):',
         '{"type":"authors-note","action":"replace","value":"<complete new note text>","reason":"<why>"}',
@@ -227,7 +232,7 @@ export function buildScratchpadSystemPrompt({ assistant, gender, persona: savedP
     ];
     const instructions = typeof customPrompt === 'string' && customPrompt.trim()
         ? [customPrompt, contextNotice && !customPrompt.includes(contextNotice) ? contextNotice : '', webSearch ? WEB_SEARCH_INSTRUCTIONS : '', webPages ? WEB_PAGES_INSTRUCTIONS : '',
-            capabilities.notebook || capabilities.persona || capabilities.preset?.length || capabilities.agents || capabilities.authorsNote || capabilities.regex || capabilities.cssSnippets || capabilities.dialogueColors || generalLore ? changeInstructions({ lore: generalLore, notebook: capabilities.notebook, persona: capabilities.persona, preset: capabilities.preset, agents: capabilities.agents, authorsNote: capabilities.authorsNote, regex: capabilities.regex, cssSnippets: capabilities.cssSnippets, dialogueColors: capabilities.dialogueColors }) : ''].filter(Boolean).join('\n\n')
+            capabilities.notebook || capabilities.persona || capabilities.preset?.length || capabilities.agents || capabilities.authorsNote || capabilities.regex || capabilities.cssSnippets || capabilities.dialogueColors || capabilities.mewmory || generalLore ? changeInstructions({ lore: generalLore, notebook: capabilities.notebook, persona: capabilities.persona, preset: capabilities.preset, agents: capabilities.agents, authorsNote: capabilities.authorsNote, regex: capabilities.regex, cssSnippets: capabilities.cssSnippets, dialogueColors: capabilities.dialogueColors, mewmory: capabilities.mewmory }) : ''].filter(Boolean).join('\n\n')
         : sections.filter(Boolean).join('\n\n');
     const reference = help ? `Neconyan reference for app questions (use it only when ${names.user} asks how something in Neconyan works):\n${help}` : '';
     const preferences = userInstructions.trim() ? `The user's global Scratchpad instructions for you:\n${userInstructions}` : '';
