@@ -511,6 +511,41 @@ for (const phone of [false, true]) {
         }
     });
 
+    test(`Background Visibility clears the Settings sheet on ${phone ? 'phone' : 'desktop'}`, async ({ app }) => {
+        test.setTimeout(120000);
+        const account = await app.account({ phone });
+        const page = await account.open({ workspace: false, timeout: 60000 });
+        await readyArtwork(page, 'calico');
+        await page.evaluate(() => window.NeconyanShell.openTab('right', 'settings'));
+        const alphas = () => page.evaluate(() => {
+            const canvas = document.createElement('canvas');
+            canvas.width = canvas.height = 1;
+            const context = canvas.getContext('2d');
+            const alpha = element => {
+                context.clearRect(0, 0, 1, 1);
+                context.fillStyle = getComputedStyle(element).backgroundColor;
+                context.fillRect(0, 0, 1, 1);
+                return context.getImageData(0, 0, 1, 1).data[3] / 255;
+            };
+            const root = document.querySelector('#user-settings-block');
+            const scroller = [...root.querySelectorAll('.sb-shell-panel-scroller')].find(element => element.clientHeight > 0);
+            return {
+                root: alpha(root), frame: alpha(root.querySelector('.sb-shell-frame')), scroller: alpha(scroller),
+                nested: [...root.querySelectorAll('.sb-shell-frame :is(.sb-shell-main, .sb-shell-nav)')].map(alpha),
+            };
+        });
+        for (const value of [0, 50, 100]) {
+            await setVisibility(page, value);
+            const surface = 1 - value / 100;
+            await expect.poll(async () => (await alphas()).scroller).toBeCloseTo(0.9 * surface, 2);
+            const sample = await alphas();
+            // The frame keeps an 85% floor so settings text stays readable over bright wallpaper.
+            expect(sample.frame, `frame at ${value}`).toBeCloseTo(0.85 + 0.15 * surface, 2);
+            expect(sample.nested.every(alpha => alpha === 0), `nested rails at ${value}`).toBe(true);
+            expect(sample.root, `sheet at ${value}`).toBeCloseTo(phone ? surface : 0, 2);
+        }
+    });
+
     test(`Background Visibility keeps message surfaces readable on ${phone ? 'phone' : 'desktop'}`, async ({ app }) => {
         test.setTimeout(300000);
         const account = await app.account({ phone });
