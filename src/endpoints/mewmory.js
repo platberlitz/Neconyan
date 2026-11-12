@@ -17,6 +17,8 @@ import { getCounter } from '../mewmory/tokens.js';
 import { spendStatus } from '../mewmory/spend.js';
 import { exportMarkdown, loreEntries } from '../mewmory/markdown.js';
 import { characterPage, openPromises, relationshipMap, storyRecap } from '../mewmory/story.js';
+import { askMemories, findConflicts } from '../mewmory/ask.js';
+import { bringShared, listShared, removeShared, shareRecords } from '../mewmory/shared.js';
 import { startOperation } from '../mewmory/operations.js';
 import { listJobs } from '../jobs/store.js';
 import { disableMewmory, resumeVisibilityRestore } from '../mewmory/visibility.js';
@@ -535,6 +537,40 @@ route('/character', async (directories, body) => {
     const entityId = typeof body.entityId === 'string' ? body.entityId : '';
     if (!entityId) fail('Choose a character first.', 400);
     return characterPage(state, entityId);
+});
+
+route('/ask', async (directories, body, signal) => {
+    const state = await loadCurrentState(directories, normalizeLocator(body.locator));
+    return askMemories(directories, state, readConfig(directories), typeof body.question === 'string' ? body.question : '', { signal });
+});
+
+route('/conflicts', async (directories, body, signal) => {
+    const state = await loadCurrentState(directories, normalizeLocator(body.locator));
+    return findConflicts(directories, state, readConfig(directories), { signal });
+});
+
+route('/shared', async (directories, body) => {
+    const state = await loadCurrentState(directories, normalizeLocator(body.locator));
+    return listShared(directories, state);
+});
+
+route('/share', async (directories, body) => {
+    const locator = normalizeLocator(body.locator);
+    const state = await loadCurrentState(directories, locator);
+    return shareRecords(directories, state, body.ids, { chat: locator.chat });
+});
+
+route('/shared/remove', async (directories, body) => {
+    return removeShared(directories, body.id);
+});
+
+route('/shared/bring', async (directories, body) => {
+    const locator = normalizeLocator(body.locator);
+    const current = await loadCurrentState(directories, locator);
+    expectedRevision(body, current);
+    let result = null;
+    const state = mutateState(directories, locator, state => { result = bringShared(directories, state, body.ids); }, current.revision);
+    return { ...inspectState(state, readConfig(directories), body.filters), brought: result };
 });
 
 route('/associate', async (directories, body) => {

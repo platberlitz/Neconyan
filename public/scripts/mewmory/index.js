@@ -67,7 +67,7 @@ export function notifyMewmory() {
     }
 }
 
-const READ_ONLY_MEWMORY_ROUTES = new Set(['config/get', 'inspect', 'source/get', 'validate', 'tokens', 'search', 'export', 'record/history', 'duplicates', 'message', 'estimate', 'export/markdown', 'lore', 'story', 'character']);
+const READ_ONLY_MEWMORY_ROUTES = new Set(['config/get', 'inspect', 'source/get', 'validate', 'tokens', 'search', 'export', 'record/history', 'duplicates', 'message', 'estimate', 'export/markdown', 'lore', 'story', 'character', 'ask', 'conflicts', 'shared']);
 
 /** Mutations may change what the next inspect returns, so an older result is no longer joinable. */
 function invalidateMewmoryRefresh() {
