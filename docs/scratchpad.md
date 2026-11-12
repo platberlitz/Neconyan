@@ -96,6 +96,14 @@ When you ask how something in Neconyan works, the assistant also gets the same h
 
 **Preview HTML/CSS** beside a code block shows its HTML with the CSS blocks in that reply. Supported proposed-text reviews offer it too. CSS without HTML uses sample content. Scripts, external resources and links are blocked, macros stay as written, and nothing is saved. Close the preview to return to the discussion or review.
 
+## Automatic summary
+
+Under **Context → Automatic summary**, turn on **Summarise older discussion** to keep older decisions available when a session gets long. I've left it off by default because it makes extra model calls. Once the discussion exceeds 50 usable messages or the history size allowance, the first replying assistant's connection summarises the older turns before answering. A round table shares one summary. Usually the latest 20 messages stay in full beside it; unusually large turns can leave fewer.
+
+**Last saved summary** shows the text and how many earlier messages it covers. The server reuses it until more history needs summarising, and rebuilds it if its source messages change. Retrying an older reply never reads a summary of later turns. The summary can miss details and doesn't inspect attached images, so I keep exact requirements in the pinned note.
+
+Every saved message stays in the session. The 400-message cap still applies; start another session when it's full. **Clear messages** removes the summary, while imports and branches build their own. If summarisation fails, the reply stops with an explanation; retry it or turn the option off.
+
 ## Attachments
 
 Press **+** (Message options) beside the message box and choose **Attach files**. You can attach up to eight files to one message and send them without typing a message. Each original file can be up to 32 MiB. After resizing and text extraction, the attachments on one message can total 2 MiB.
