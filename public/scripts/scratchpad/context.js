@@ -272,8 +272,12 @@ export function loreOverrideKey(entry) {
     return `${entry.world}::${entry.uid}`;
 }
 
-function sourceLorebooks(source) {
-    if (source?.kind === 'general') return [];
+export function generalLorebook(source, settings) {
+    return source?.kind === 'general' && typeof settings?.lorebook === 'string' ? settings.lorebook.trim() : '';
+}
+
+function sourceLorebooks(source, settings) {
+    if (source?.kind === 'general') return [generalLorebook(source, settings)].filter(Boolean);
     const books = [];
     for (const character of sourceCharacters(source)) {
         books.push(character?.data?.extensions?.world);
@@ -290,7 +294,7 @@ function sourceLorebooks(source) {
 
 export function loreScanText({ source, settings, pendingText = '', sessionText = '' }) {
     return [
-        ...selectMessages(sourceMessages(source), settings, source).messages.slice(-LORE_SCAN_MESSAGES).map(item => item.text),
+        ...(source?.kind === 'general' ? [] : selectMessages(sourceMessages(source), settings, source).messages.slice(-LORE_SCAN_MESSAGES).map(item => item.text)),
         sessionText,
         pendingText,
     ].join('\n');
@@ -303,8 +307,9 @@ export function loreScanText({ source, settings, pendingText = '', sessionText =
  */
 export async function collectLore({ source, settings, scanText = '' }) {
     requireCurrentSource(source);
-    if (source.kind === 'notebook' || source.kind === 'general') return { books: [], entries: [] };
-    const loaded = await Promise.all(sourceLorebooks(source).map(async world => {
+    const general = source.kind === 'general';
+    if (source.kind === 'notebook' || (general && !generalLorebook(source, settings))) return { books: [], entries: [] };
+    const loaded = await Promise.all(sourceLorebooks(source, settings).map(async world => {
         try {
             const data = await loadWorldInfo(world);
             if (!data?.entries || typeof data.entries !== 'object' || Array.isArray(data.entries)) return null;
@@ -331,7 +336,7 @@ export async function collectLore({ source, settings, scanText = '' }) {
         else if (override === 'never') reason = null;
         else if (entry.constant) reason = 'constant';
         else if (Array.isArray(entry.key) && entry.key.some(item => keyMatches(item, scanText, lower))) reason = 'keyword';
-        if (settings?.include?.lore === false) reason = null;
+        if (!general && settings?.include?.lore === false) reason = null;
         return {
             key,
             world: String(entry.world),
@@ -360,9 +365,11 @@ export async function collectLore({ source, settings, scanText = '' }) {
     return { books, entries: listed };
 }
 
-function formatLore(lore, substitute) {
+function formatLore(lore, substitute, general = false) {
     const lines = [];
-    if (lore.books.length) lines.push(`Lorebooks active in this chat: ${lore.books.join(', ')}`);
+    if (lore.books.length) lines.push(general
+        ? `Lorebook shared by hand for this session: ${lore.books.join(', ')}`
+        : `Lorebooks active in this chat: ${lore.books.join(', ')}`);
     for (const entry of lore.entries.filter(item => item.included)) {
         lines.push([
             `### ${entry.title}`,
@@ -678,7 +685,11 @@ export async function buildContext({ source, settings, pendingText = '', session
     const sections = [];
 
     sections.push([
-        general ? 'General Scratchpad: no story chat is open. No story messages, Author\'s Note, chat metadata, preset or lorebook text is shared. Any selected character card is reference material, not a live story.' : `Chat: ${source.label}`,
+        general
+            ? (generalLorebook(source, settings)
+                ? 'General Scratchpad: no story chat is open. No story messages, Author\'s Note, chat metadata or preset is shared. One lorebook was shared by hand for this session. It and any selected character card are reference material, not a live story.'
+                : 'General Scratchpad: no story chat is open. No story messages, Author\'s Note, chat metadata, preset or lorebook text is shared. Any selected character card is reference material, not a live story.')
+            : `Chat: ${source.label}`,
         ...(general ? [] : [`Mode: ${source.kind === 'conversation' ? 'Conversation (messaging-style chat)' : 'Roleplay'}`]),
         `User: ${names.user}`,
     ].join('\n'));
@@ -735,10 +746,11 @@ export async function buildContext({ source, settings, pendingText = '', session
     }
 
     let lore = { books: [], entries: [] };
-    if (include.lore && !general) {
+    const loreShared = general ? Boolean(generalLorebook(source, settings)) : Boolean(include.lore);
+    if (loreShared) {
         const scanText = loreScanText({ source, settings, sessionText, pendingText });
         lore = await collectLore({ source, settings, scanText });
-        const text = formatLore(lore, substituteSource);
+        const text = formatLore(lore, general ? value => String(value ?? '') : substituteSource, general);
         if (text) sections.push(`## Lorebooks\n${text}`);
     }
 
@@ -799,7 +811,7 @@ export async function buildContext({ source, settings, pendingText = '', session
     if (!general) sections.push([heading, ...(swipeCount ? [swipeNote(kept)] : []), ...kept.map(messageLine)].join('\n\n'));
     const text = sections.join('\n\n');
 
-    const loreBooks = include.lore ? lore.books : [];
+    const loreBooks = loreShared ? lore.books : [];
     return {
         text,
         names,

@@ -37,6 +37,7 @@ import {
     setNotebookSource,
     wireSource,
 } from './context.js';
+import { world_names } from '../world-info.js';
 import { describeChange, splitReply } from './proposals.js';
 import { chooseNote, sessionNoteText } from './notebooks.js';
 import { currentPresetName } from './preset.js';
@@ -111,6 +112,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     notes: [],
     include: { card: true, persona: true, authorsNote: true, lore: true, preset: false, hidden: false, agents: false, regex: false, cssSnippets: false },
     loreOverrides: {},
+    lorebook: '',
     connection: { kind: 'current' },
     assistantConnections: {},
     roundTable: false,
@@ -1772,7 +1774,7 @@ async function prepareReviewPlan(source, session, message, part) {
                 throw new Error(t`Share the original preset in this chat before saving its changes.`);
             }
         },
-        agentsShared: currentSettings().include.agents === true, authorsNoteShared: currentSettings().include.authorsNote === true, regexShared: currentSettings().include.regex === true, cssSnippetsShared: currentSettings().include.cssSnippets === true,
+        agentsShared: currentSettings().include.agents === true, authorsNoteShared: currentSettings().include.authorsNote === true, regexShared: currentSettings().include.regex === true, cssSnippetsShared: currentSettings().include.cssSnippets === true, sharedLorebook: currentSettings().lorebook || '',
         creationGuard: () => requireScope(source, session.id), creatorKey: JSON.stringify([source.key, session.id, message.id, part.index]) });
     requireScope(source, session.id);
     if (plan.bucket) applyBucket(plan.bucket);
@@ -2455,7 +2457,13 @@ function renderContext({ force = true } = {}) {
         renderNotes(settings),
         general ? h('section', { class: 'scratchpad-section' },
             h('h3', { class: 'scratchpad-section-title', text: t`General Scratchpad` }),
-            h('p', { class: 'scratchpad-muted', text: t`No story chat is open. Chat messages, lorebooks, Author's Note and presets are not shared. You can share your persona, a selected card and saved notes.` })) : notebook ? h('section', { class: 'scratchpad-section' },
+            h('p', { class: 'scratchpad-muted', text: t`No story chat is open. Chat messages, Author's Note and presets are not shared. You can share your persona, a selected card, saved notes and one lorebook you pick below.` }),
+            h('div', { class: 'scratchpad-field' },
+                h('label', { for: 'scratchpad-lorebook', text: t`Share a lorebook` }),
+                h('select', { id: 'scratchpad-lorebook', class: 'text_pole', onchange: event => void updateSettings({ lorebook: event.currentTarget.value }, { rerenderContext: true }) },
+                    h('option', { value: '', text: t`None`, selected: !settings.lorebook }),
+                    ...[...new Set([...(world_names || []), settings.lorebook].filter(Boolean))].map(name => h('option', { value: name, text: name, selected: name === settings.lorebook, 'data-i18n-ignore': '' }))),
+                h('small', { text: t`Shared in this session only. Entries hidden from assistants stay hidden.` }))) : notebook ? h('section', { class: 'scratchpad-section' },
             h('h3', { class: 'scratchpad-section-title', text: t`Note discussion` }),
             h('p', { class: 'scratchpad-muted', text: t`This Scratchpad belongs to the note, not the open chat. Story messages, characters, your persona and lorebooks are not included.` })) : h('section', { class: 'scratchpad-section' },
             h('h3', { class: 'scratchpad-section-title', text: t`Chat messages` }),
@@ -2496,7 +2504,7 @@ function renderContext({ force = true } = {}) {
                     onchange: event => void updateSettings({ partialPrefill: event.currentTarget.value }) }),
                 h('small', { text: t`Used instead of the reply prefill for Kimi K3 and K3.1. Start with <think> to seed thinking; close it with </think> before any visible reply text. An unclosed <think> seeds only thinking and is not added to the saved reply.` }))),
         notebook || general ? null : renderPicks(settings),
-        notebook || general ? null : renderLore(settings),
+        notebook || (general && !settings.lorebook) ? null : renderLore(settings),
         renderPreview(),
     ]);
 }

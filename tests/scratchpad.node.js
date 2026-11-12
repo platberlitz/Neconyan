@@ -400,6 +400,41 @@ test('a sent message offers CSS snippet changes only while the session shares CS
     }
 });
 
+test('a hand-picked lorebook is shared in General for that session only', async t => {
+    assert.equal(store.normaliseSettings({}).lorebook, '');
+    assert.equal(store.normaliseSettings({ lorebook: ' Harbour ' }).lorebook, 'Harbour');
+    for (const lorebook of [7, 'x'.repeat(301)]) assert.throws(() => store.normaliseSettings({ lorebook }), { code: 'SCRATCHPAD_LOREBOOK_INVALID' });
+    assert.equal(normaliseCapabilities({ lore: true }, 'general').lore, true);
+    assert.equal(normaliseCapabilities({ lore: true }, 'notebook').lore, false);
+    const custom = buildScratchpadSystemPrompt({ assistant: 'miso', sourceKind: 'general', capabilities: { lore: true }, customPrompt: 'Be helpful.' }).text;
+    assert.match(custom, /shared one lorebook by hand/);
+    assert.match(custom, /Lorebook entries \(only/);
+
+    const a = account(t);
+    const connection = { kind: 'profile', profileId: 'saved' };
+    const picked = a.mutate(GENERAL, bucket => {
+        const session = store.createSession(bucket, { settings: { connection } });
+        store.updateSession(bucket, session.id, { settings: { lorebook: 'Harbour' } });
+        session.messages.push({ id: 'a'.repeat(24), role: 'user', text: 'Hi', created: '2026-11-11T00:00:00.000Z' },
+            { id: 'b'.repeat(24), role: 'assistant', state: 'done', text: 'Yo', created: '2026-11-11T00:00:01.000Z', assistant: 'taro' });
+        return session;
+    });
+    assert.equal(a.read(GENERAL).sessions.find(item => item.id === picked.id).settings.lorebook, 'Harbour');
+    assert.equal(a.mutate(GENERAL, bucket => store.branchSession(bucket, picked.id, 'b'.repeat(24))).session.settings.lorebook, 'Harbour');
+    const plain = a.mutate(GENERAL, bucket => store.createSession(bucket, { settings: { connection } }));
+    assert.equal(plain.settings.lorebook, '');
+
+    const calls = [];
+    registerScratchpadJobs({ generate: async options => { calls.push(options); return { text: 'Done.' }; } });
+    for (const [session, offered] of [[picked, true], [plain, false]]) {
+        const body = sendBody(session, { source: GENERAL, capabilities: { lore: true } });
+        const accepted = await acceptScratchpadReply(a.request(body), body);
+        await runJob(getJob(a.directories, accepted.job.id));
+        assert.equal(calls.at(-1).messages[0].content.includes('Lorebook entries (only'), offered);
+        assert.equal(calls.at(-1).messages[0].content.includes('shared one lorebook by hand'), offered);
+    }
+});
+
 test('a sent message offers Author\'s Note changes only while the session shares the note', async t => {
     const a = account(t);
     const calls = [];
@@ -678,13 +713,18 @@ test('Scratchpad explains the complete existing-character field contract', () =>
     assert.match(result.text, /without moving its file or chats/);
 });
 
-test('General prompts and custom prompts describe no story and disable chat and lore changes', () => {
+test('General prompts and custom prompts describe no story, disable chat changes and offer lore changes only for a hand-shared book', () => {
+    const shared = buildScratchpadSystemPrompt({ assistant: 'miso', gender: 'neutral', sourceKind: 'general', userName: 'Kris',
+        capabilities: { chat: true, lore: true } }).text;
+    assert.match(shared, /shared one lorebook by hand/);
+    assert.match(shared, /Lorebook entries \(only/);
+    assert.doesNotMatch(shared, /Story chat messages \(use|Never propose story message or lorebook edits here/);
     for (const customPrompt of [undefined, 'MY-CUSTOM-VOICE']) {
         const result = buildScratchpadSystemPrompt({ assistant: 'miso', gender: 'neutral', sourceKind: 'general', userName: 'Kris',
-            customPrompt, capabilities: { chat: true, lore: true } });
+            customPrompt, capabilities: { chat: true } });
         assert.match(result.text, /General Scratchpad/);
         assert.match(result.text, /No story chat is open/);
-        assert.doesNotMatch(result.text, /Story chat messages \(use|Lorebook entries \(only/);
+        assert.doesNotMatch(result.text, /Story chat messages \(use|Lorebook entries \(only|shared one lorebook by hand/);
         if (customPrompt) assert.ok(result.text.startsWith(customPrompt));
         assert.match(result.text, /create-character|new character/i);
     }
@@ -703,13 +743,13 @@ for (const roundTable of [false, true]) {
         const body = sendBody(session, { source, context: 'General Scratchpad: no story chat is open.', text: 'Help me decide.' });
         const input = jobs.normaliseReplyRequest(body);
         assert.equal(input.capabilities.chat, false);
-        assert.equal(input.capabilities.lore, false);
         assert.deepEqual(input.capabilities.members, []);
         const accepted = await acceptScratchpadReply(a.request(body), body);
         await runJob(getJob(a.directories, accepted.job.id));
         assert.equal(getJob(a.directories, accepted.job.id).state, 'completed');
         assert.equal(seen.length, roundTable ? 3 : 1);
         assert.ok(seen.every(options => options.binding.kind === 'profile' && options.messages[0].content.includes('General Scratchpad')));
+        assert.ok(seen.every(options => !options.messages[0].content.includes('Lorebook entries (only')));
         const saved = a.read(GENERAL).sessions[0];
         const reply = saved.messages.at(-1);
         assert.deepEqual(reply.contextSource, source);

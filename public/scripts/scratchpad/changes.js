@@ -493,7 +493,7 @@ export async function addReplyVersion(source, target, text) {
  * Reads the live value a change would replace and returns everything the
  * review needs. Nothing is written until commit() is called.
  */
-export async function prepareChange(change, source, { sharedAvatar = '', sharedPersona, personaGuard, sharedPreset, presetGuard, creationGuard, creatorKey = '', agentsShared = false, authorsNoteShared = false, regexShared = false, cssSnippetsShared = false } = {}) {
+export async function prepareChange(change, source, { sharedAvatar = '', sharedPersona, personaGuard, sharedPreset, presetGuard, creationGuard, creatorKey = '', agentsShared = false, authorsNoteShared = false, regexShared = false, cssSnippetsShared = false, sharedLorebook = '' } = {}) {
     if (!isCurrentSource(source)) fail(t`Return to this Scratchpad context before applying changes.`);
     change = normaliseChange(change);
     if (change.type === 'preset') {
@@ -578,7 +578,7 @@ export async function prepareChange(change, source, { sharedAvatar = '', sharedP
         return cssSnippetPlan(change);
     }
     if (change.type === 'lorebook') {
-        if (source.kind === 'general') fail(t`General Scratchpad does not share lorebooks, so lorebook changes are unavailable.`);
+        if (source.kind === 'general' && (!sharedLorebook || change.book !== sharedLorebook)) fail(t`Share that lorebook under Context before saving a change to it.`);
         return lorebookPlan(change, source);
     }
     if (change.type === 'character') {

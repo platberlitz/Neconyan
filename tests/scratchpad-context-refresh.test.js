@@ -57,6 +57,7 @@ function fixture() {
         currentPresetName: () => preset.name, renderPicks: () => h('section'), renderLore: () => h('section'), renderPreview: () => h('section'),
         iconButton: (text, onclick) => h('button', { text, onclick }), wireSource: value => value,
         renderWebSearchSettings: () => h('section', { class: 'scratchpad-web-settings' }),
+        world_names: [],
         renderContextSetups: () => h('section', { class: 'scratchpad-setups' }),
         renderDictationSettings: () => null,
         sameSourceBucket, sameSourceContext, currentSource: () => app.source, stopWatchers() {},

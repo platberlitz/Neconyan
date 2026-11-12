@@ -24,6 +24,7 @@ export const refreshedKnowledgeCases = [
     ['How does the Scratchpad Author\'s Note change card work when an assistant suggests a rewrite?', 'scratchpad.authors-note-changes', 'The card replaces the whole note text'],
     ['How does the Scratchpad regex script change card work when an assistant suggests a new Find pattern?', 'scratchpad.regex-changes', 'tick Regexes (off by default, also offered in General)'],
     ['How does the Scratchpad CSS snippet change card work when an assistant suggests new CSS?', 'scratchpad.css-snippet-changes', 'tick CSS Snippets (off by default, also offered in General)'],
+    ['How do I use the General Scratchpad lorebook picker to share a lorebook without a chat?', 'scratchpad.general-lorebook', 'choose a book under Share a lorebook'],
     ['How do I branch a Scratchpad session from an earlier message?', 'scratchpad.branch', 'press Branch into a new session from here'],
     ['How do I find a Scratchpad session that belongs to another chat?', 'scratchpad.search-all', 'press Copy here to copy it into the open list'],
     ['Can I review all the Scratchpad change cards in a reply at once?', 'scratchpad.review-all', 'press Save ticked changes'],
