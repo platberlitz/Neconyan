@@ -42,6 +42,7 @@ import { characterToolReply, scratchpadCharacterTools, scratchpadToolsFor } from
 import { clearScratchpadPreview, publishScratchpadPreview } from './preview.js';
 import { scratchpadMacroEnvironment } from './macros.js';
 import { notebookContextLocked, withNotebookPreparation, captureReplyNotebookProposalsLocked, notifyScratchpadNotebookResult } from './notebooks.js';
+import { mewmoryContextLocked } from './mewmory.js';
 import { sameSourceContext } from '../../public/scripts/scratchpad/source.js';
 import { captureImageTargetsLocked, capturePersonaTargetLocked, imagePersonaIdLocked, normaliseImageTargets, normalisePersonaTarget } from './image-targets.js';
 import { hasPendingImages } from './image-state.js';
@@ -226,12 +227,13 @@ export async function acceptScratchpadReply(request, body = {}) {
         const sharedPersona = capturePersonaTargetLocked(lease, bucket.source, input.capabilities.persona, session.settings.include.persona);
         const sharedPreset = session.settings.include.preset ? normalisePresetTargets(input.capabilities.preset) : [];
         const notebook = notebookContextLocked(lease, session.settings);
+        const mewmory = mewmoryContextLocked(lease, input.source, session.settings);
         const instructions = readInstructionsLocked(lease);
         const library = readAssistantsLocked(lease);
         const snapshots = refreshSessionAssistants(session, library);
         writeBucketLocked(lease, bucket);
         return { ...plan, targets, sharedPersona, sharedPreset, sharedAgents: session.settings.include.agents === true, sharedAuthorsNote: session.settings.include.authorsNote === true, sharedRegex: session.settings.include.regex === true, sharedCssSnippets: session.settings.include.cssSnippets === true, sharedDialogueColors: session.settings.include.dialogueColors === true, sharedLorebook: bucket.source.kind !== 'general' || Boolean(session.settings.lorebook), imagePersonaId: imagePersonaIdLocked(lease, bucket.source), notebook, webSearch, webPages, revision: hash(canonical(session)), maxTokens: session.settings.maxTokens, stream: session.settings.stream !== false,
-            prefill: session.settings.prefill, partialPrefill: session.settings.partialPrefill,
+            mewmory, prefill: session.settings.prefill, partialPrefill: session.settings.partialPrefill,
             instructionsRevision: instructions.revision,
             assistantsRevision: library.revision,
             assistantNames: Object.fromEntries(Object.entries(snapshots).map(([id, profile]) => [id, profile.name])),
@@ -250,7 +252,7 @@ export async function acceptScratchpadReply(request, body = {}) {
             characterName: input.names.character, sourceKind: input.source.kind, webSearch: Boolean(planned.webSearch), webPages: Boolean(planned.webPages),
             capabilities: { ...input.capabilities, persona: planned.sharedPersona, preset: planned.sharedPreset, agents: input.capabilities.agents === true && planned.sharedAgents, authorsNote: input.capabilities.authorsNote === true && planned.sharedAuthorsNote, regex: input.capabilities.regex === true && planned.sharedRegex, cssSnippets: input.capabilities.cssSnippets === true && planned.sharedCssSnippets, dialogueColors: input.capabilities.dialogueColors === true && planned.sharedDialogueColors, lore: input.capabilities.lore === true && planned.sharedLorebook, image: Boolean(images), avatar: Boolean(images && planned.targets.length), notebook: Boolean(planned.notebook.text) }, help: input.help });
         const messages = buildScratchpadMessages({ system: system.text, context: input.context, notebookContext: planned.notebook.text, history: planned.history, text: planned.prompt, attachments: planned.attachments, assistant: speaker.assistant, assistantNames: planned.assistantNames,
-            webSearchPlaceholder: planned.webSearch ? WEB_SEARCH_PLACEHOLDER : '', webPagesPlaceholder: planned.webPages ? WEB_PAGES_PLACEHOLDER : '' });
+            mewmoryContext: planned.mewmory.text, webSearchPlaceholder: planned.webSearch ? WEB_SEARCH_PLACEHOLDER : '', webPagesPlaceholder: planned.webPages ? WEB_PAGES_PLACEHOLDER : '' });
         const pagesIndex = planned.webPages ? messages.length - 2 : -1;
         const searchIndex = planned.webSearch ? messages.length - (planned.webPages ? 3 : 2) : -1;
         const rawOptions = binding.kind === 'active' ? { trimNames: false } : {};
@@ -310,6 +312,9 @@ export async function acceptScratchpadReply(request, body = {}) {
             }
             if (notebookContextLocked(lease, session.settings).fingerprint !== planned.notebook.fingerprint) {
                 throw fail('SCRATCHPAD_NOTES_CHANGED', 'The shared notes or their permissions changed while sending. Check the preview and try again.', 409);
+            }
+            if (mewmoryContextLocked(lease, input.source, session.settings).fingerprint !== planned.mewmory.fingerprint) {
+                throw fail('SCRATCHPAD_MEWMORY_CHANGED', 'The shared memories or their sources changed while sending. Check the preview and try again.', 409);
             }
             const created = new Date().toISOString();
             const contextSource = Object.fromEntries(Object.entries(input.source).filter(([key]) => key !== 'scope'));

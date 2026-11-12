@@ -54,6 +54,7 @@ async function post(path, body, { signal } = {}) {
 
 export const readBucket = (source, options) => post('/bucket', { source }, options);
 export const readNotebookContext = (source, sessionId) => post('/notes/context', { source, sessionId });
+export const readMewmoryContext = (source, sessionId) => post('/mewmory/context', { source, sessionId });
 export const readNotebookProposal = (source, sessionId, messageId, index) => post('/notes/proposal', { source, sessionId, messageId, index });
 export const decideNotebookProposal = (source, sessionId, messageId, index, proposalHash, decision) => post('/notes/decide', { source, sessionId, messageId, index, proposalHash, decision });
 export const readPrompt = body => post('/prompt', body);

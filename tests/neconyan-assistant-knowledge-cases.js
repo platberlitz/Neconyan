@@ -26,6 +26,7 @@ export const refreshedKnowledgeCases = [
     ['How does the Scratchpad CSS snippet change card work when an assistant suggests new CSS?', 'scratchpad.css-snippet-changes', 'tick CSS Snippets (off by default, also offered in General)'],
     ['How do I use the General Scratchpad lorebook picker to share a lorebook without a chat?', 'scratchpad.general-lorebook', 'choose a book under Share a lorebook'],
     ['How does the Scratchpad dialogue colour change card work when an assistant suggests a new colour?', 'scratchpad.dialogue-color-changes', 'tick Dialogue Colors (off by default, also offered in General)'],
+    ['How do I share saved Mewmory records with Scratchpad?', 'scratchpad.mewmory', 'tick Mewmory under Also share'],
     ['How do I branch a Scratchpad session from an earlier message?', 'scratchpad.branch', 'press Branch into a new session from here'],
     ['How do I find a Scratchpad session that belongs to another chat?', 'scratchpad.search-all', 'press Copy here to copy it into the open list'],
     ['Can I review all the Scratchpad change cards in a reply at once?', 'scratchpad.review-all', 'press Save ticked changes'],
