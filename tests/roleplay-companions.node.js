@@ -161,6 +161,32 @@ test('companion prompts expand the separate saved secrets macro', async t => {
     assert.equal(f.rows().at(-1).extra.inChatAgentCompanionResults.reader.content, 'Checked knowledge boundaries');
 });
 
+test('companion prompts read Mewmory facts and views, and stay empty when Mewmory is off', async t => {
+    const mewmory = { enabled: true, memoryText: 'Story memory', factsText: 'FACT_NOVA_HAS_A_BELL', interviewText: 'VIEW_NOVA_MISSES_HOME' };
+    const companionPrompt = async memory => {
+        const f = prepared(t, [{ ...companion('shard'), prompt: 'SHARD <facts>{{mewmory-facts}}</facts> <views>{{mewmory-interview}}</views>' }]);
+        let prompt = null;
+        await f.run({ generate: async options => {
+            const main = await paid('main', 'Main reply')(options);
+            await runRoleplayCompanions(options.jobContext, { base: f.scope, snapshot: f.worldInfo,
+                records: f.records, value: 'Main reply', generationType: 'normal', effect: 'append',
+                assistantName: 'Nova', binding: f.request.binding, mewmory: memory,
+                macros: savedRoleplayMacroSnapshot(f.worldInfo, f.records), assertCurrent: options.beforeDispatch,
+                generate: paid('shard', ({ messages }) => {
+                    prompt ??= messages.map(message => message.content).join('\n');
+                    return { text: 'Shard note' };
+                }) });
+            return main;
+        }, generateAgent: paid('shard', 'Shard note') });
+        return prompt;
+    };
+    const prompts = [await companionPrompt(mewmory), await companionPrompt(null), await companionPrompt({ ...mewmory, enabled: false })];
+    const [on, off, disabled] = prompts;
+    assert.match(on, /<facts>FACT_NOVA_HAS_A_BELL<\/facts> <views>VIEW_NOVA_MISSES_HOME<\/views>/);
+    for (const prompt of [off, disabled]) assert.match(prompt, /<facts><\/facts> <views><\/views>/);
+    assert.ok(prompts.every(prompt => !/\{\{mewmory-/.test(prompt)));
+});
+
 function continuityPair({ companionEnabled = true } = {}) {
     return [
         { id: 'corrector', name: 'Continuity Corrector', enabled: true, phase: 'post', sourceTemplateId: 'tpl-continuity-corrector',

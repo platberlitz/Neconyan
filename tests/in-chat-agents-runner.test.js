@@ -10571,6 +10571,21 @@ describe('in-chat agent post-processing runner', () => {
         setPreparedMewmoryContext(null, null);
     });
 
+    test('a Companion reading Mewmory leaves the main prompt memory alone, unlike a prompt agent', async () => {
+        const { buildPromptDynamicMacros } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        const { getPreparedMewmoryContext, setPreparedMewmoryContext } = await import('../public/scripts/extensions/in-chat-agents/agent-context-macros.js');
+        const prompt = '<story_memory>{{mewmory-facts}}</story_memory><character_views>{{mewmory-interview}}</character_views>';
+
+        setPreparedMewmoryContext('chat-a', { enabled: true, memoryText: 'Story memory', factsText: 'Facts', interviewText: 'Interview' });
+        const shard = { execution: 'companion', category: 'companion', sourceTemplateId: 'tpl-memory-shard-companion', prompt };
+        expect(buildPromptDynamicMacros('Reply', null, shard)).toMatchObject({ 'mewmory-facts': 'Facts', 'mewmory-interview': 'Interview' });
+        expect(getPreparedMewmoryContext('chat-a').mewmoryMacrosUsed).toBeUndefined();
+
+        buildPromptDynamicMacros('Reply', null, { phase: 'pre', prompt });
+        expect(getPreparedMewmoryContext('chat-a').mewmoryMacrosUsed).toBe(true);
+        setPreparedMewmoryContext(null, null);
+    });
+
     test('fills the active lore, Author\'s Note and tracker macros for agent prompts', async () => {
         const { buildPromptDynamicMacros, initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
         initAgentRunner();
