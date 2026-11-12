@@ -146,6 +146,20 @@ describe('Scratchpad reply parsing', () => {
         expect(describeChange({ type: 'agent', agent: 'a-1', field: 'description' })).toBe('Change Agent \'a-1\': description');
     });
 
+    test('accepts a CSS snippet text change and refuses anything else about a snippet', () => {
+        expect(normaliseChange({ type: 'css-snippet', snippet: ' tidy ', name: ' Tidy   up ', field: 'content', value: '.mes { color: red; }', reason: 'Calmer', isDisabled: true }))
+            .toEqual({ type: 'css-snippet', action: 'replace', snippet: 'tidy', field: 'content', value: '.mes { color: red; }', reason: 'Calmer', name: 'Tidy up' });
+        expect(normaliseChange({ type: 'css-snippet', action: 'edit', snippet: 'tidy', field: 'content', value: '' })).toMatchObject({ action: 'replace', value: '' });
+        expect(normaliseChange({ type: 'css-snippet', snippet: 'tidy', field: 'name', value: '  Very   neat ' }).value).toBe('Very neat');
+        expect(() => normaliseChange({ type: 'css-snippet', action: 'delete', snippet: 'tidy', field: 'content', value: 'x' })).toThrow('can only replace');
+        expect(() => normaliseChange({ type: 'css-snippet', snippet: ' ', field: 'content', value: 'x' })).toThrow('exact ID');
+        expect(() => normaliseChange({ type: 'css-snippet', snippet: 'tidy', field: 'isDisabled', value: 'x' })).toThrow('name or CSS');
+        expect(() => normaliseChange({ type: 'css-snippet', snippet: 'tidy', field: 'content' })).toThrow('no new text');
+        expect(() => normaliseChange({ type: 'css-snippet', snippet: 'tidy', field: 'name', value: '  ' })).toThrow('needs a name');
+        expect(describeChange({ type: 'css-snippet', snippet: 'tidy', name: 'Tidy', field: 'content', value: 'x' })).toBe('Change CSS snippet \'Tidy\': content');
+        expect(describeChange({ type: 'css-snippet', snippet: 'tidy', field: 'name', value: 'x' })).toBe('Change CSS snippet \'tidy\': name');
+    });
+
     test('accepts a regex script text change and refuses anything else about a script', () => {
         expect(normaliseChange({ type: 'regex', script: ' tidy ', name: ' Tidy   up ', field: 'findRegex', value: '/colou?r/g', reason: 'Both spellings', disabled: true }))
             .toEqual({ type: 'regex', action: 'replace', script: 'tidy', field: 'findRegex', value: '/colou?r/g', reason: 'Both spellings', name: 'Tidy up' });

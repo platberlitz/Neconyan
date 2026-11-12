@@ -41,6 +41,7 @@ function messageNumber(value) {
 
 export const AGENT_FIELDS = Object.freeze(['name', 'description', 'prompt']);
 export const REGEX_FIELDS = Object.freeze(['scriptName', 'findRegex', 'replaceString']);
+export const CSS_SNIPPET_FIELDS = Object.freeze(['name', 'content']);
 
 export function stringList(value) {
     if (Array.isArray(value)) return value.map(item => String(item ?? '').trim()).filter(Boolean);
@@ -198,6 +199,16 @@ export function normaliseChange(value) {
         return { type: 'regex', action: 'replace', script: value.script.trim(), field: value.field, value: next, reason,
             ...(typeof value.name === 'string' && value.name.trim() ? { name: text(value.name, 200).replace(/\s+/g, ' ').trim() } : {}) };
     }
+    if (value.type === 'css-snippet') {
+        if (![undefined, 'replace', 'edit'].includes(value.action)) fail('Scratchpad can only replace a CSS snippet\'s name or CSS.');
+        if (typeof value.snippet !== 'string' || !value.snippet.trim() || value.snippet.length > 200) fail('This CSS snippet change needs the exact ID of a shared snippet.');
+        if (!CSS_SNIPPET_FIELDS.includes(value.field)) fail('Scratchpad can only change a CSS snippet\'s name or CSS.');
+        if (typeof value.value !== 'string') fail('This CSS snippet change has no new text.');
+        const next = value.field === 'name' ? text(value.value, 200).replace(/\s+/g, ' ').trim() : text(value.value);
+        if (value.field === 'name' && !next) fail('A CSS snippet needs a name.');
+        return { type: 'css-snippet', action: 'replace', snippet: value.snippet.trim(), field: value.field, value: next, reason,
+            ...(typeof value.name === 'string' && value.name.trim() ? { name: text(value.name, 200).replace(/\s+/g, ' ').trim() } : {}) };
+    }
     if (value.type === 'chat') {
         if (value.action === 'insert') {
             const after = messageNumber(value.after);
@@ -278,6 +289,7 @@ export function describeChange(change) {
     if (change.type === 'agent') return `Change Agent '${change.name || change.agent}': ${change.field}`;
     if (change.type === 'authors-note') return change.value.trim() ? 'Change the Author\'s Note' : 'Clear the Author\'s Note';
     if (change.type === 'regex') return `Change regex script '${change.name || change.script}': ${change.field}`;
+    if (change.type === 'css-snippet') return `Change CSS snippet '${change.name || change.snippet}': ${change.field}`;
     switch (change.action) {
         case 'edit': return `Rewrite message #${change.message}`;
         case 'insert': return `Add a message after #${change.after}`;

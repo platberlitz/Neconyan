@@ -83,6 +83,7 @@ export function normaliseCapabilities(input, sourceKind = 'roleplay', source = {
         chat: !general && value.chat === true, members: general ? [] : members,
         ...(sourceKind !== 'notebook' && value.agents === true ? { agents: true } : {}),
         ...(sourceKind !== 'notebook' && value.regex === true ? { regex: true } : {}),
+        ...(sourceKind !== 'notebook' && value.cssSnippets === true ? { cssSnippets: true } : {}),
         ...(sourceKind === 'roleplay' && value.authorsNote === true ? { authorsNote: true } : {}),
         ...(value.image !== undefined ? { image: value.image === true } : {}) };
 }
@@ -228,7 +229,7 @@ export async function acceptScratchpadReply(request, body = {}) {
         const library = readAssistantsLocked(lease);
         const snapshots = refreshSessionAssistants(session, library);
         writeBucketLocked(lease, bucket);
-        return { ...plan, targets, sharedPersona, sharedPreset, sharedAgents: session.settings.include.agents === true, sharedAuthorsNote: session.settings.include.authorsNote === true, sharedRegex: session.settings.include.regex === true, imagePersonaId: imagePersonaIdLocked(lease, bucket.source), notebook, webSearch, webPages, revision: hash(canonical(session)), maxTokens: session.settings.maxTokens, stream: session.settings.stream !== false,
+        return { ...plan, targets, sharedPersona, sharedPreset, sharedAgents: session.settings.include.agents === true, sharedAuthorsNote: session.settings.include.authorsNote === true, sharedRegex: session.settings.include.regex === true, sharedCssSnippets: session.settings.include.cssSnippets === true, imagePersonaId: imagePersonaIdLocked(lease, bucket.source), notebook, webSearch, webPages, revision: hash(canonical(session)), maxTokens: session.settings.maxTokens, stream: session.settings.stream !== false,
             prefill: session.settings.prefill, partialPrefill: session.settings.partialPrefill,
             instructionsRevision: instructions.revision,
             assistantsRevision: library.revision,
@@ -246,7 +247,7 @@ export async function acceptScratchpadReply(request, body = {}) {
         const binding = captureGenerationBinding(directories, selection, body.acknowledgement);
         const system = buildScratchpadSystemPrompt({ ...speaker, assistantNames: planned.assistantNames, userName: input.names.user, participants: planned.participants, randomReply: planned.randomReply,
             characterName: input.names.character, sourceKind: input.source.kind, webSearch: Boolean(planned.webSearch), webPages: Boolean(planned.webPages),
-            capabilities: { ...input.capabilities, persona: planned.sharedPersona, preset: planned.sharedPreset, agents: input.capabilities.agents === true && planned.sharedAgents, authorsNote: input.capabilities.authorsNote === true && planned.sharedAuthorsNote, regex: input.capabilities.regex === true && planned.sharedRegex, image: Boolean(images), avatar: Boolean(images && planned.targets.length), notebook: Boolean(planned.notebook.text) }, help: input.help });
+            capabilities: { ...input.capabilities, persona: planned.sharedPersona, preset: planned.sharedPreset, agents: input.capabilities.agents === true && planned.sharedAgents, authorsNote: input.capabilities.authorsNote === true && planned.sharedAuthorsNote, regex: input.capabilities.regex === true && planned.sharedRegex, cssSnippets: input.capabilities.cssSnippets === true && planned.sharedCssSnippets, image: Boolean(images), avatar: Boolean(images && planned.targets.length), notebook: Boolean(planned.notebook.text) }, help: input.help });
         const messages = buildScratchpadMessages({ system: system.text, context: input.context, notebookContext: planned.notebook.text, history: planned.history, text: planned.prompt, attachments: planned.attachments, assistant: speaker.assistant, assistantNames: planned.assistantNames,
             webSearchPlaceholder: planned.webSearch ? WEB_SEARCH_PLACEHOLDER : '', webPagesPlaceholder: planned.webPages ? WEB_PAGES_PLACEHOLDER : '' });
         const pagesIndex = planned.webPages ? messages.length - 2 : -1;

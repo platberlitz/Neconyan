@@ -601,6 +601,53 @@ export function formatRegexScripts(scripts) {
     ].join('\n\n');
 }
 
+export const MAX_CSS_SNIPPET_CONTEXT_BYTES = 96 * 1024;
+
+async function loadCssSnippets() {
+    try {
+        const runtime = await import('../extensions/css-snippets/src/runtime.js');
+        return (runtime.getSettings().snippetList ?? []).filter(snippet => snippet && !snippet.isDeleted);
+    } catch (error) {
+        console.warn('Scratchpad could not read the CSS snippets.', error);
+        return [];
+    }
+}
+
+/**
+ * Formats the saved CSS snippets for the shared context, within a fixed allowance.
+ * @param {object[]} snippets Saved CSS snippets
+ * @returns {string} Context section, or an empty string when there is nothing to share
+ */
+export function formatCssSnippets(snippets) {
+    const list = (Array.isArray(snippets) ? snippets : []).filter(snippet => snippet && typeof snippet.id === 'string' && snippet.id);
+    if (!list.length) return '';
+    const blocks = [];
+    let used = 0;
+    let withheld = 0;
+    for (const snippet of list) {
+        const head = [
+            `### ${String(snippet.name ?? '').trim() || 'Unnamed snippet'}`,
+            `ID: ${snippet.id}`,
+            `Status: ${snippet.isDisabled ? 'off' : 'on'}`,
+        ].join('\n');
+        const full = `${head}\n[content]\n${String(snippet.content ?? '')}`;
+        const bytes = byteLength(full);
+        if (used + bytes <= MAX_CSS_SNIPPET_CONTEXT_BYTES) {
+            blocks.push(full);
+            used += bytes;
+        } else {
+            blocks.push(`${head}\nNot shared: there was no room left. Do not propose a change to this snippet.`);
+            withheld++;
+        }
+    }
+    return [
+        '## CSS Snippets (saved for this account, exactly as written)',
+        'A CSS snippet restyles the Neconyan interface. Field keys are shown in [brackets].',
+        ...(withheld ? [`${withheld} snippet${withheld === 1 ? ' was' : 's were'} left out to save room.`] : []),
+        ...blocks,
+    ].join('\n\n');
+}
+
 /**
  * Builds the reference material for a message from the visible workspace.
  * Nothing here is saved; General never borrows a hidden story. Messages are
@@ -678,6 +725,15 @@ export async function buildContext({ source, settings, pendingText = '', session
         }
     }
 
+    let cssSnippetsShared = false;
+    if (include.cssSnippets) {
+        const text = formatCssSnippets(await loadCssSnippets());
+        if (text) {
+            sections.push(text);
+            cssSnippetsShared = true;
+        }
+    }
+
     let lore = { books: [], entries: [] };
     if (include.lore && !general) {
         const scanText = loreScanText({ source, settings, sessionText, pendingText });
@@ -704,7 +760,7 @@ export async function buildContext({ source, settings, pendingText = '', session
     const scaffold = general ? 0 : 2 + byteLength(scaffoldHeading) + (scaffoldNote ? 2 + byteLength(scaffoldNote) : 0);
     requireCurrentSource(source);
     if (headBytes + scaffold > MAX_CONTEXT_BYTES) {
-        throw new Error(t`The shared context is too large to send. Turn off the persona, character cards, Author's Note, Agents, Regexes, lorebooks or preset you do not need, then try again.`);
+        throw new Error(t`The shared context is too large to send. Turn off the persona, character cards, Author's Note, Agents, Regexes, CSS Snippets, lorebooks or preset you do not need, then try again.`);
     }
 
     const lines = selection.messages.map(item => ({ item, bytes: byteLength(messageLine(item)) }));
@@ -764,6 +820,7 @@ export async function buildContext({ source, settings, pendingText = '', session
             members: source.groupId ? people.map(item => item.name).filter(Boolean) : [],
             ...(agentsShared ? { agents: true } : {}),
             ...(regexShared ? { regex: true } : {}),
+            ...(cssSnippetsShared ? { cssSnippets: true } : {}),
             ...(include.authorsNote && source.kind === 'roleplay' ? { authorsNote: true } : {}),
         },
     };
