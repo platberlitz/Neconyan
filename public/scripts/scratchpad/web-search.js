@@ -42,7 +42,7 @@ function keyButton(key, label) {
 function providerStatus(config, readiness, error) {
     if (error) return error;
     if (!readiness) return t`Web search settings are loading.`;
-    if (readiness.configured && readiness.provider === config.provider) return t`Ready. Only the message you send is used as the search query.`;
+    if (readiness.configured && readiness.provider === config.provider) return t`Ready. Search queries come from your message and the last few replies.`;
     return MISSING[readiness.missing]?.() || t`Save a provider to use web search.`;
 }
 
@@ -97,7 +97,7 @@ export function renderWebSearchSettings({ config, draft, readiness, error = '', 
         h('small', { text: t`Keep the base path. JSON output must be enabled in SearXNG. A 403 means it refused the request, often because JSON output is off or this server is not allowed.` }));
     const results = h('select', { class: 'text_pole', id: 'scratchpad-web-search-results',
         onchange: () => { updateStatus(); emitDraft(); } },
-    Array.from({ length: 10 }, (_, index) => h('option', { value: String(index + 1), text: String(index + 1) })));
+    Array.from({ length: 30 }, (_, index) => h('option', { value: String(index + 1), text: String(index + 1) })));
     results.value = String(value.results || 5);
     const readDraft = () => ({
         provider: provider.value,
@@ -158,7 +158,7 @@ export function renderWebSearchSettings({ config, draft, readiness, error = '', 
     return h('section', { class: 'scratchpad-section scratchpad-web-settings', id: 'scratchpad-web-search-settings' },
         h('h3', { class: 'scratchpad-section-title', text: t`Web search` }),
         h('p', { class: 'scratchpad-muted', text: t`Saved for your account and used by every Scratchpad session.` }),
-        h('p', { class: 'scratchpad-muted', text: t`Only the message you send is used as the search query. Scratchpad does not send the chat, character cards, persona or saved notes to the search service.` }),
+        h('p', { class: 'scratchpad-muted', text: t`The model writes its own search queries from your message and the last few replies, and keeps searching until it has enough to answer. Only those queries reach the search service; Scratchpad does not send the chat, character cards, persona or saved notes.` }),
         h('div', { class: 'scratchpad-field' }, h('label', { for: 'scratchpad-web-search-provider', text: t`Provider` }), provider),
         braveKey,
         nanoKey,
@@ -167,7 +167,7 @@ export function renderWebSearchSettings({ config, draft, readiness, error = '', 
         urlField,
         customFields,
         h('div', { class: 'scratchpad-field' }, h('label', { for: 'scratchpad-web-search-results', text: t`Results to read` }), results,
-            h('small', { text: t`Between 1 and 10. Five is the default.` })),
+            h('small', { text: t`The most results gathered across every search, between 1 and 30. Five is the default.` })),
         status,
         h('div', { class: 'scratchpad-web-actions' }, save, refresh));
 }
@@ -181,21 +181,24 @@ function safeWebUrl(value) {
     }
 }
 
-/** Numbered sources and the exact query, kept under the reply rather than in it. */
+/** Numbered sources and the exact queries, kept under the reply rather than in it. */
 export function renderWebSearchSources(message) {
     const metadata = message?.webSearch;
     if (!metadata || typeof metadata !== 'object') return null;
     const sources = (Array.isArray(metadata.sources) ? metadata.sources : []).flatMap(source => {
         const url = safeWebUrl(source?.url);
         return url ? [{ title: String(source.title || url).slice(0, 200), url }] : [];
-    }).slice(0, 10);
+    }).slice(0, 30);
     const query = typeof metadata.query === 'string' ? metadata.query.slice(0, 400) : '';
+    const queries = (Array.isArray(metadata.queries) ? metadata.queries : [])
+        .filter(item => typeof item === 'string' && item.trim()).map(item => item.slice(0, 400)).slice(0, 10);
     const error = typeof metadata.error === 'string' ? metadata.error.slice(0, 300) : '';
     const details = h('details', { class: 'scratchpad-web-sources scratchpad-sources', open: Boolean(error) || !sources.length },
         h('summary', { class: 'scratchpad-web-summary', text: sources.length ? t`Sources (${sources.length})` : t`Web search` }));
     const body = h('div', { class: 'scratchpad-web-source-body' });
     if (metadata.imported === true) body.append(h('p', { class: 'scratchpad-muted scratchpad-web-imported', text: t`These sources came with an imported file. Scratchpad did not run this search here.` }));
-    if (query) body.append(h('p', { class: 'scratchpad-web-query', text: t`Search query: ${query}` }));
+    if (queries.length > 1) body.append(h('p', { class: 'scratchpad-web-query', text: t`Search queries: ${queries.join('; ')}` }));
+    else if (queries[0] || query) body.append(h('p', { class: 'scratchpad-web-query', text: t`Search query: ${queries[0] || query}` }));
     if (error) body.append(h('p', { class: 'scratchpad-web-error', role: 'status', text: t`Web search failed: ${error}` }));
     if (sources.length) {
         const list = h('ol', { class: 'scratchpad-web-source-list scratchpad-source-list' });

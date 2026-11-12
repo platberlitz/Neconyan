@@ -300,7 +300,7 @@ export const refreshedKnowledgeCases = [
     ['Can a model draft a regex rule for me with my connection profile?', 'tools.regex-draft', 'Connection picks a saved connection profile or Current connection'],
     ['Does Draft rule save the regex straight away?', 'tools.regex-draft', 'Nothing is saved until Save'],
     ['Can Scratchpad search the web with Tavily or Exa before answering?', 'scratchpad.web-search', 'Exa (Manage Exa key), Tavily (Manage Tavily key)'],
-    ['Does Scratchpad web search send my chat to the search service?', 'scratchpad.web-search', 'receives only the message you send, trimmed to 400 characters'],
+    ['Does Scratchpad web search send my chat to the search service?', 'scratchpad.web-search', 'the search service receives only those queries, never your chat'],
     ['How do I use my own search API address with {query} in Scratchpad?', 'scratchpad.web-search', 'any JSON search API with {query} and optionally {count}'],
     ['How do I rerun after-reply agents on a reply that already finished?', 'agents.rerun', 'Rerun agents is the circular-arrow message button'],
     ['Why is the Rerun agents button missing from my messages?', 'agents.rerun', 'only appears while Agents is On'],

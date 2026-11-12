@@ -47,7 +47,9 @@ export function sessionPrintHtml(session, { reasoning = false, sources = false, 
         const found = sources && !user && Array.isArray(message.webSearch?.sources) ? message.webSearch.sources : [];
         if (found.length) {
             parts.push(`<h3>${escape(t`Sources`)}</h3>`);
-            if (message.webSearch.query) parts.push(`<p>${escape(t`Search query: ${message.webSearch.query}`)}</p>`);
+            const queries = Array.isArray(message.webSearch.queries) ? message.webSearch.queries.filter(item => typeof item === 'string' && item) : [];
+            if (queries.length > 1) parts.push(`<p>${escape(t`Search queries: ${queries.join('; ')}`)}</p>`);
+            else if (queries[0] || message.webSearch.query) parts.push(`<p>${escape(t`Search query: ${queries[0] || message.webSearch.query}`)}</p>`);
             parts.push('<ol>');
             for (const source of found) {
                 const url = String(source.url ?? '');

@@ -1,7 +1,9 @@
 import { decode } from 'html-entities';
 
 export const WEB_SEARCH_PROVIDERS = Object.freeze(['off', 'brave', 'searxng', 'nanogpt', 'exa', 'tavily', 'custom']);
-export const MAX_WEB_SEARCH_RESULTS = 10;
+export const MAX_WEB_SEARCH_RESULTS = 30;
+/** The most searches one reply may run while the model refines its queries. */
+export const MAX_WEB_SEARCH_QUERIES = 10;
 export const MAX_WEB_SEARCH_QUERY_CHARS = 400;
 export const MAX_WEB_SEARCH_TITLE_CHARS = 200;
 export const MAX_WEB_SEARCH_SNIPPET_CHARS = 500;
@@ -45,10 +47,24 @@ export function normaliseSearchUrl(value) {
     return url.href;
 }
 
-/** Collapse whitespace and keep the Brave limit. The message is the whole query. */
+/** Collapse whitespace and keep the Brave limit. */
 export function webSearchQuery(text) {
     const collapsed = cleanControl(text).replace(/\s+/g, ' ').trim();
     return [...collapsed].slice(0, MAX_WEB_SEARCH_QUERY_CHARS).join('').trim();
+}
+
+/** Distinct non-empty queries in the order they were searched. */
+export function webSearchQueries(input) {
+    const seen = new Set();
+    const queries = [];
+    for (const value of Array.isArray(input) ? input : []) {
+        const query = typeof value === 'string' ? webSearchQuery(value) : '';
+        if (!query || seen.has(query.toLowerCase())) continue;
+        seen.add(query.toLowerCase());
+        queries.push(query);
+        if (queries.length >= MAX_WEB_SEARCH_QUERIES) break;
+    }
+    return queries;
 }
 
 /** Old or imported records only keep a compact, validated evidence trail. */
@@ -61,9 +77,10 @@ export function normaliseStoredWebSearch(input) {
         return [{ title: plainSearchText(item.title, MAX_WEB_SEARCH_TITLE_CHARS), url }];
     }).slice(0, MAX_WEB_SEARCH_RESULTS);
     const query = webSearchQuery(input.query);
+    const queries = webSearchQueries(input.queries);
     const error = typeof input.error === 'string' ? plainSearchText(input.error, 300) : '';
     if (!query && !sources.length && !error) return undefined;
-    return { provider: input.provider, query, sources, ...(error ? { error } : {}), ...(input.imported === true ? { imported: true } : {}) };
+    return { provider: input.provider, query, ...(queries.length ? { queries } : {}), sources, ...(error ? { error } : {}), ...(input.imported === true ? { imported: true } : {}) };
 }
 
 export function webSearchHistoryLine(input) {

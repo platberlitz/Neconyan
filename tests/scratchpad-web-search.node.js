@@ -78,6 +78,10 @@ function streamedResponse(chunks) {
     return { ok: true, status: 200, headers: new Headers(), body: Readable.from(chunks.map(chunk => Buffer.from(chunk))) };
 }
 
+function isPlanner(options) {
+    return String(options?.stepNamespace || '').startsWith('scratchpad-search-plan:');
+}
+
 function braveKey(a, value = 'brave-secret-value') {
     return writeSecret(a.directories, SECRET_KEYS.BRAVE_SEARCH, value);
 }
@@ -94,7 +98,7 @@ test('web search settings default off, normalise counts and expose no key value'
     braveKey(a);
     updateConfig(a, { provider: 'brave', results: 50 });
     const ready = state(a);
-    assert.equal(ready.webSearch.results, 10, 'the result count is capped at ten');
+    assert.equal(ready.webSearch.results, 30, 'the result count is capped at thirty');
     assert.equal(ready.readiness.configured, true);
     assert.ok(!JSON.stringify(ready).includes('brave-secret-value'), 'the response never contains the key value');
     assert.ok(!JSON.stringify(ready).includes('keyId'), 'the selected key id stays server-side');
@@ -480,13 +484,14 @@ test('search errors, timeouts, cancellation and oversized responses are bounded'
 });
 
 test('provider results are capped, de-duplicated and stripped to plain text', () => {
-    const items = Array.from({ length: 14 }, (_, index) => ({
+    const items = Array.from({ length: 34 }, (_, index) => ({
         title: `<b>Title ${index}</b> &amp; more`, url: `https://example.com/${index}`, description: `<i>${'x'.repeat(900)}</i>`,
     }));
-    items.push({ title: 'Duplicate', url: 'https://example.com/0', description: 'duplicate' });
-    items.push({ title: 'Bad', url: 'https://user:pass@example.com/bad', description: 'credentials' });
+    items.splice(1, 0, { title: 'Duplicate', url: 'https://example.com/0', description: 'duplicate' });
+    items.splice(2, 0, { title: 'Bad', url: 'https://user:pass@example.com/bad', description: 'credentials' });
     const results = web.normaliseWebSearchResults(items, 50);
-    assert.equal(results.length, 10);
+    assert.equal(results.length, 30);
+    assert.equal(results[1].title, 'Title 1 & more');
     assert.equal(results[0].title, 'Title 0 & more');
     assert.ok(results[0].snippet.length <= 500);
     assert.ok(results.every((item, index, list) => list.findIndex(other => other.url === item.url) === index));
@@ -508,14 +513,21 @@ test('a round table searches once, cites numbered sources and saves compact meta
     const session = startSession(a, { webSearch: true, roundTable: true, prefill: '{{char}}: ' });
     let searchCalls = 0;
     const seen = [];
-    const searchFetch = async () => {
+    const planned = [];
+    const sent = [];
+    const searchFetch = async url => {
         searchCalls += 1;
+        sent.push(new URL(url).searchParams.get('q'));
         return response({ web: { results: [
             { title: '<b>One</b>', url: 'https://example.com/one', description: 'FULL-SNIPPET-ONE' },
             { title: 'Two', url: 'https://example.com/two', description: 'FULL-SNIPPET-TWO' },
         ] } });
     };
     registerScratchpadJobs({ searchFetch, generate: async options => {
+        if (isPlanner(options)) {
+            planned.push(options);
+            return { text: '{"done": false, "queries": ["Nova hidden secret"]}' };
+        }
         seen.push(options);
         return { text: `${options.characterName} says [1].` };
     } });
@@ -527,6 +539,12 @@ test('a round table searches once, cites numbered sources and saves compact meta
     assert.ok(!JSON.stringify(request).includes('round-table-secret'));
     await runJob(getJob(a.directories, accepted.job.id));
     assert.equal(searchCalls, 1, 'one shared search for the whole round table');
+    assert.deepEqual(sent, ['Nova hidden secret'], 'the model chooses the query');
+    assert.equal(planned.length, 1, 'two results fill the limit, so the model is not asked again');
+    assert.equal(planned[0].generationType, 'quiet');
+    assert.deepEqual(planned[0].functionTools, []);
+    assert.match(planned[0].messages[1].content, /<user_message>\nWhat\s+is\s+Nova hiding\?\n<\/user_message>/);
+    assert.doesNotMatch(JSON.stringify(planned[0].messages), /round-table-secret/);
     assert.equal(seen.length, 3);
     for (const options of seen) {
         const searchIndex = options.messages.findIndex(message => message.content.startsWith('<web_search_results>'));
@@ -545,13 +563,15 @@ test('a round table searches once, cites numbered sources and saves compact meta
         { title: 'Two', url: 'https://example.com/two' },
     ]);
     assert.equal(reply.webSearch.query, 'What is Nova hiding?');
+    assert.deepEqual(reply.webSearch.queries, ['Nova hidden secret']);
     assert.equal(reply.webSearch.provider, 'brave');
     assert.ok(!JSON.stringify(reply.webSearch).includes('FULL-SNIPPET'), 'snippets stay out of reply metadata');
     assert.ok(!JSON.stringify(a.read(SOURCE)).includes('round-table-secret'));
     const artifact = readArtifact(a.directories, accepted.job.id, 'web-search');
     assert.equal(artifact.results.length, 2);
     assert.ok(!JSON.stringify(artifact).includes('round-table-secret'));
-    assert.ok(readArtifact(a.directories, accepted.job.id, 'provider:web-search'));
+    assert.ok(readArtifact(a.directories, accepted.job.id, 'provider:web-search:0'));
+    assert.ok(readArtifact(a.directories, accepted.job.id, 'web-search-plan:0'));
 });
 
 test('retrying a reply searches the original user message again', async t => {
@@ -602,7 +622,8 @@ for (const [label, searchFetch] of [
         assert.equal(a.read(SOURCE).sessions[0].messages.at(-1).text, 'The model answered without web results.');
         const failure = readArtifact(a.directories, accepted.job.id, 'web-search');
         assert.equal(failure.ok, false);
-        assert.ok(readArtifact(a.directories, accepted.job.id, 'provider:web-search'));
+        assert.ok(readArtifact(a.directories, accepted.job.id, 'provider:web-search:0'));
+        assert.equal(readArtifact(a.directories, accepted.job.id, 'web-search-plan:1'), undefined, 'a failed round ends the research');
         assert.equal(unresolvedProviderStep(a.directories, accepted.job.id), undefined);
     });
 }
@@ -670,7 +691,7 @@ test('a saved search failure is reused and never re-sent on later execution', as
     assert.equal(searches, 1);
     assert.equal(failed.ok, false);
     assert.match(failed.error, /could not be reached|completed/i);
-    assert.ok(readArtifact(a.directories, accepted.job.id, 'provider:web-search'));
+    assert.ok(readArtifact(a.directories, accepted.job.id, 'provider:web-search:0'));
     assert.notEqual(getJob(a.directories, accepted.job.id).recoverability, 'unknown-outcome');
     const reused = await jobs.resolveWebSearch(scoped, request, {
         searchFetch: async () => { searches += 1; throw new Error('must not search again'); },
@@ -691,7 +712,7 @@ test('stopping during the search aborts the reply before the model runs', { time
             started.resolve();
             signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
         }),
-        generate: async () => { generated += 1; return { text: 'Must not appear.' }; },
+        generate: async options => { if (!isPlanner(options)) generated += 1; return { text: 'Must not appear.' }; },
     });
     const body = sendBody(session);
     const accepted = await acceptScratchpadReply(a.request(body), body);
@@ -726,4 +747,138 @@ test('stored metadata is internal-only and imported metadata is never trusted ev
     assert.deepEqual(stored, { provider: 'brave', query: 'A query', sources: [{ title: 'One', url: 'https://example.com/one' }], error: 'Search failed.' });
     assert.equal(web.normaliseStoredWebSearch({ provider: 'unknown', query: 'x', sources: [] }), undefined);
     assert.deepEqual(web.normaliseStoredWebSearch({ provider: 'off', query: 'x', sources: [] }), undefined);
+});
+
+function braveResults(prefix, count) {
+    return response({ web: { results: Array.from({ length: count }, (_, index) => ({
+        title: `${prefix} ${index}`, url: `https://example.com/${prefix}/${index}`, description: `${prefix} snippet ${index}`,
+    })) } });
+}
+
+test('the model keeps choosing new queries until it says it has enough', async t => {
+    const a = account(t);
+    braveKey(a);
+    updateConfig(a, { provider: 'brave', results: 30 });
+    const session = startSession(a, { webSearch: true });
+    const sent = [];
+    const counts = [];
+    const planner = [];
+    let answered;
+    const plans = [
+        '```json\n{"done": false, "queries": ["Nova cast list", "Nova season two"]}\n```',
+        'Thinking... {"done": false, "queries": ["nova CAST list", "Nova filming location"]}',
+        '{"done": true, "queries": []}',
+    ];
+    registerScratchpadJobs({
+        searchFetch: async url => {
+            const query = new URL(url).searchParams.get('q');
+            sent.push(query);
+            counts.push(new URL(url).searchParams.get('count'));
+            return braveResults(query.replace(/\s+/g, '-'), 4);
+        },
+        generate: async options => {
+            if (isPlanner(options)) {
+                planner.push(options);
+                return { text: plans[planner.length - 1] };
+            }
+            answered = options;
+            return { text: 'Here is what I found [1].' };
+        },
+    });
+    const body = sendBody(session, { text: 'Tell me about the show Nova' });
+    const accepted = await acceptScratchpadReply(a.request(body), body);
+    await runJob(getJob(a.directories, accepted.job.id));
+    assert.deepEqual(sent, ['Nova cast list', 'Nova season two', 'Nova filming location'], 'repeated queries are skipped');
+    assert.deepEqual(counts, ['20', '20', '20'], 'Brave is asked for no more than its own limit');
+    assert.equal(planner.length, 3);
+    assert.match(planner[1].messages[1].content, /Already searched:\n- Nova cast list\n- Nova season two/);
+    assert.match(planner[1].messages[1].content, /<results_so_far>/);
+    assert.match(planner[1].messages[1].content, /Nova-cast-list 0/);
+    const prompt = answered.messages.find(message => message.content.startsWith('<web_search_results>')).content;
+    assert.match(prompt, /Search queries:\n- Nova cast list\n- Nova season two\n- Nova filming location/);
+    assert.match(prompt, /\[12\] /);
+    const reply = a.read(SOURCE).sessions[0].messages.at(-1);
+    assert.equal(reply.state, 'done');
+    assert.deepEqual(reply.webSearch.queries, ['Nova cast list', 'Nova season two', 'Nova filming location']);
+    assert.equal(reply.webSearch.sources.length, 12);
+    assert.equal(reply.webSearch.sources[0].title, 'Nova-cast-list 0');
+    assert.equal(reply.webSearch.sources[1].title, 'Nova-season-two 0', 'results from each query are interleaved');
+});
+
+test('up to thirty results are gathered across queries and the loop stops once full', async t => {
+    const a = account(t);
+    braveKey(a);
+    updateConfig(a, { provider: 'brave', results: 30 });
+    const session = startSession(a, { webSearch: true });
+    let plannerCalls = 0;
+    let answered;
+    registerScratchpadJobs({
+        searchFetch: async url => braveResults(new URL(url).searchParams.get('q'), 20),
+        generate: async options => {
+            if (isPlanner(options)) {
+                plannerCalls += 1;
+                return { text: '{"done": false, "queries": ["alpha", "beta"]}' };
+            }
+            answered = options;
+            return { text: 'Done.' };
+        },
+    });
+    const body = sendBody(session);
+    const accepted = await acceptScratchpadReply(a.request(body), body);
+    await runJob(getJob(a.directories, accepted.job.id));
+    assert.equal(plannerCalls, 1, 'thirty results end the research');
+    const artifact = readArtifact(a.directories, accepted.job.id, 'web-search');
+    assert.equal(artifact.results.length, 30);
+    assert.deepEqual(artifact.queries, ['alpha', 'beta']);
+    const prompt = answered.messages.find(message => message.content.startsWith('<web_search_results>')).content;
+    assert.match(prompt, /\[30\] /);
+    assert.ok(Buffer.byteLength(prompt) <= web.MAX_WEB_SEARCH_PROMPT_BYTES);
+    assert.equal(a.read(SOURCE).sessions[0].messages.at(-1).webSearch.sources.length, 30);
+});
+
+test('an unreadable plan falls back to the message and a failed planner never blocks the reply', async t => {
+    const a = account(t);
+    braveKey(a);
+    updateConfig(a, { provider: 'brave' });
+    const session = startSession(a, { webSearch: true });
+    const sent = [];
+    let planner = 0;
+    registerScratchpadJobs({
+        searchFetch: async url => { sent.push(new URL(url).searchParams.get('q')); return braveResults('one', 1); },
+        generate: async options => {
+            if (isPlanner(options)) {
+                planner += 1;
+                if (planner === 1) return { text: 'I would search for something clever.' };
+                throw new Error('planner offline');
+            }
+            return { text: 'Answered.' };
+        },
+    });
+    const body = sendBody(session);
+    const accepted = await acceptScratchpadReply(a.request(body), body);
+    await runJob(getJob(a.directories, accepted.job.id));
+    assert.deepEqual(sent, ['What is Nova hiding in this scene?']);
+    assert.equal(planner, 2);
+    assert.equal(readArtifact(a.directories, accepted.job.id, 'web-search-plan:1').failed, true);
+    const reply = a.read(SOURCE).sessions[0].messages.at(-1);
+    assert.equal(reply.state, 'done');
+    assert.equal(reply.text, 'Answered.');
+});
+
+test('research plans are parsed defensively and capped', async () => {
+    const research = await import('../src/scratchpad/web-research.js');
+    assert.deepEqual(research.parseResearchPlan('{"done": true}'), { done: true, queries: [] });
+    assert.deepEqual(research.parseResearchPlan('Sure!\n```json\n{"queries": ["a", " b  c "]}\n```'), { done: false, queries: ['a', 'b c'] });
+    assert.deepEqual(research.parseResearchPlan('["x", "y"]'), { done: false, queries: ['x', 'y'] });
+    assert.equal(research.parseResearchPlan('no JSON here'), null);
+    assert.equal(research.parseResearchPlan(`{"queries": ["${'x'.repeat(20000)}"]}`), null);
+    assert.deepEqual(research.nextResearchQueries({ queries: ['A', 'a', 'b', 'c', 'd'] }, ['B']), ['A', 'c', 'd']);
+    const nine = Array.from({ length: 9 }, (_, index) => `q${index}`);
+    assert.deepEqual(research.nextResearchQueries({ queries: ['x', 'y'] }, nine), ['x'], 'never more than ten queries in total');
+    const messages = research.researchPlannerMessages({ question: 'Q?', results: 5, conversation: [{ role: 'user', text: 'Earlier' }] },
+        { round: 0, searched: [], results: [] });
+    assert.equal(messages[0].role, 'system');
+    assert.match(messages[0].content, /JSON/);
+    assert.match(messages[1].content, /Nothing has been searched yet/);
+    assert.match(messages[1].content, /Earlier/);
 });

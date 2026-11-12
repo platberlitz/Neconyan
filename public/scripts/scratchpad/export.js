@@ -60,7 +60,11 @@ export function sessionMarkdown(session, { reasoning = false, sources = false, a
         }
         const found = sources && !user && Array.isArray(message.webSearch?.sources) ? message.webSearch.sources : [];
         if (found.length) {
-            parts.push([`**${t`Sources`}**${message.webSearch.query ? ` (${t`Search query: ${linkText(message.webSearch.query)}`})` : ''}`, '',
+            const queries = Array.isArray(message.webSearch.queries) ? message.webSearch.queries.filter(item => typeof item === 'string' && item) : [];
+            const searched = queries.length > 1
+                ? ` (${t`Search queries: ${linkText(queries.join('; '))}`})`
+                : (queries[0] || message.webSearch.query) ? ` (${t`Search query: ${linkText(queries[0] || message.webSearch.query)}`})` : '';
+            parts.push([`**${t`Sources`}**${searched}`, '',
                 ...found.map((source, index) => `${index + 1}. [${linkText(source.title) || linkText(source.url)}](<${String(source.url).replace(/[<>\s]/g, '')}>)`)].join('\n'));
         }
     }

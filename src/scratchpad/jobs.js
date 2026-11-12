@@ -10,7 +10,7 @@ import { createMessageTokenCounter } from '../generation/message-token-counts.js
 import { captureGenerationBinding, resolveGenerationProfile } from '../generation/profiles.js';
 import { extractProviderReasoning } from '../../public/scripts/generation-format.js';
 import { hash } from '../mewmory/core.js';
-import { createProviderScope, providerStep, readArtifact, writeArtifact } from '../jobs/artifacts.js';
+import { createProviderScope, providerStep, readArtifact, unresolvedProviderStep, writeArtifact } from '../jobs/artifacts.js';
 import { acceptJob, canonical, getJob, listJobs, releaseJob, requestCancellation, updateJob } from '../jobs/store.js';
 import { noteOwner, registerHandler } from '../jobs/runner.js';
 import { roleplayAccountBase } from '../roleplay-store.js';
@@ -50,7 +50,8 @@ import { captureImageTargetsLocked, capturePersonaTargetLocked, imagePersonaIdLo
 import { hasPendingImages } from './image-state.js';
 import { readScratchpadImageAvailability } from './images.js';
 import { WEB_PAGES_PLACEHOLDER, buildWebPagesPrompt, planWebPages, readWebPages, webPagesAcknowledgement, webPagesHistoryLine, webPagesMetadata } from './web-pages.js';
-import { WEB_SEARCH_PLACEHOLDER, buildWebSearchPrompt, performWebSearch, planWebSearch, readWebSearchLocked, webSearchAcknowledgement, webSearchFailure, webSearchHistoryLine, webSearchMetadata } from './web-search.js';
+import { MAX_WEB_SEARCH_QUERIES, MAX_WEB_SEARCH_RESULTS, WEB_SEARCH_PLACEHOLDER, buildWebSearchPrompt, performWebSearch, planWebSearch, readWebSearchLocked, webSearchAcknowledgement, webSearchFailure, webSearchHistoryLine, webSearchMetadata } from './web-search.js';
+import { MAX_RESEARCH_ROUNDS, RESEARCH_PLAN_MAX_TOKENS, mergeResearchResults, nextResearchQueries, parseResearchPlan, researchPlannerMessages } from './web-research.js';
 
 export const SCRATCHPAD_JOB_TYPE = 'scratchpad.reply';
 const MAX_CONTEXT_BYTES = 1536 * 1024;
@@ -227,7 +228,7 @@ export async function acceptScratchpadReply(request, body = {}) {
         // Web search uses only the current message. Its settings and selected key
         // id are snapshotted here; the key value is read only when the job runs.
         // A discussion round has no question of its own to search for.
-        const webSearch = session.settings.webSearch && !input.discuss ? planWebSearch(base.directories, readWebSearchLocked(lease), plan.prompt) : null;
+        const webSearch = session.settings.webSearch && !input.discuss ? planWebSearch(base.directories, readWebSearchLocked(lease), plan.prompt, { history: plan.history }) : null;
         // Only links typed in the current message are read, and only when the session asks for it.
         const webPages = session.settings.readLinks && !input.discuss ? planWebPages(plan.prompt) : null;
         // Target checking only runs when images are available, so a stale or renamed shared card cannot fail a text reply.
@@ -406,25 +407,90 @@ function publishSearchStage(context, request) {
     }
 }
 
-/** One search per job, shared by every round-table participant. */
-async function resolveWebSearch(context, request, { searchFetch } = {}) {
+/** Ask the reply's model which queries to search next. Each round's answer is saved, so a restart repeats nothing. */
+async function planResearchRound(context, request, generate, plan, state) {
+    const { directories, job } = context;
+    const artifact = `web-search-plan:${state.round}`;
+    const saved = readArtifact(directories, job.id, artifact);
+    if (saved !== undefined) return saved;
+    const speaker = request.replies?.[0] ?? request;
+    let planned;
+    try {
+        if (typeof generate !== 'function') throw fail('SCRATCHPAD_WEB_SEARCH_PLAN', 'No model is available to plan the search.', 409);
+        const messages = researchPlannerMessages(plan, state);
+        const environment = scratchpadMacroEnvironment({ user: speaker.userName, char: speaker.characterName }, messages);
+        const rawOptions = speaker.binding.kind === 'active' ? { trimNames: false } : {};
+        await validateActiveGenerationContext(resolveGenerationProfile(directories, speaker.binding), environment,
+            messages, rawOptions, { maxTokens: RESEARCH_PLAN_MAX_TOKENS, preparedMessages: speaker.preparedMessages });
+        const response = await generate({ binding: speaker.binding, generationType: 'quiet', messages, maxTokens: RESEARCH_PLAN_MAX_TOKENS,
+            macroEnvironment: environment, userName: speaker.userName, characterName: speaker.characterName, groupNames: [],
+            rawOptions, preparedMessages: speaker.preparedMessages, functionTools: [], stream: false,
+            stepNamespace: `scratchpad-search-plan:${state.round}`, context, jobContext: context });
+        planned = parseResearchPlan(characterToolReply(response, []).text) ?? { done: true, queries: [], unreadable: true };
+    } catch (error) {
+        // An unknown provider outcome or a stop must not turn into a fresh search plan.
+        if (error?.code === 'PROVIDER_OUTCOME_UNKNOWN' || context.signal?.aborted || getJob(directories, job.id)?.cancellation?.requested) throw error;
+        planned = { done: true, queries: [], failed: true };
+    }
+    writeArtifact(directories, job.id, artifact, planned);
+    return planned;
+}
+
+/**
+ * One research pass per job, shared by every round-table participant. The
+ * model chooses the queries, reads what came back and decides whether to
+ * search again, until it is satisfied or the round, query or result limit is
+ * reached. The first round falls back to the message itself.
+ */
+async function resolveWebSearch(context, request, { searchFetch, generate } = {}) {
     const plan = request.webSearch ?? request.replies?.find(reply => reply.webSearch)?.webSearch;
     if (!plan) return null;
     const { directories, job } = context;
     const saved = readArtifact(directories, job.id, 'web-search');
     if (saved !== undefined) return saved;
+    const running = () => {
+        context.signal?.throwIfAborted();
+        if (getJob(directories, job.id)?.cancellation?.requested) throw fail('SCRATCHPAD_STOPPED', 'Stopped before it finished.', 409);
+    };
+    // A crash during an earlier call leaves its outcome unknown; refuse before
+    // the planner spends another model call on a job that cannot finish.
+    if (unresolvedProviderStep(directories, job.id, { scope: context.providerScope })) {
+        throw Object.assign(new Error('The earlier request to the AI service has an unknown result, so Neconyan will not send it again automatically.'),
+            { code: 'PROVIDER_OUTCOME_UNKNOWN', status: 503 });
+    }
     publishSearchStage(context, request);
-    // A search failure is recorded as this provider step's result, so the next
-    // model step is not refused as an unresolved call. Cancellation is rethrown
-    // and a genuine crash before the result stays unknown and is never replayed.
-    const result = await providerStep(context, 'web-search', async () => {
-        try {
-            return await performWebSearch(plan, { directories, signal: context.signal, fetch: searchFetch });
-        } catch (error) {
-            if (context.signal?.aborted || getJob(directories, job.id)?.cancellation?.requested) throw error;
-            return { ok: false, provider: plan.provider, query: plan.query, error: webSearchFailure(error) };
-        }
-    });
+    const limit = Math.min(MAX_WEB_SEARCH_RESULTS, Math.max(1, Number(plan.results) || 5));
+    const searched = [];
+    const failures = [];
+    let results = [];
+    for (let round = 0; round < MAX_RESEARCH_ROUNDS && searched.length < MAX_WEB_SEARCH_QUERIES && results.length < limit; round++) {
+        running();
+        const planned = await planResearchRound(context, request, generate, plan, { round, searched, results });
+        let queries = round > 0 && planned.done ? [] : nextResearchQueries(planned, searched);
+        if (round === 0 && !queries.length) queries = [plan.query];
+        if (!queries.length) break;
+        const first = searched.length;
+        searched.push(...queries);
+        // A search failure is recorded as its provider step's result, so the next
+        // model step is not refused as an unresolved call. Cancellation is rethrown
+        // and a genuine crash before the result stays unknown and is never replayed.
+        const outcomes = await Promise.all(queries.map((query, index) => providerStep(context, `web-search:${first + index}`, async () => {
+            try {
+                return await performWebSearch({ ...plan, query, results: limit }, { directories, signal: context.signal, fetch: searchFetch });
+            } catch (error) {
+                if (context.signal?.aborted || getJob(directories, job.id)?.cancellation?.requested) throw error;
+                return { ok: false, provider: plan.provider, query, error: webSearchFailure(error) };
+            }
+        })));
+        for (const outcome of outcomes) if (!outcome?.ok) failures.push(outcome?.error || 'The web search could not be completed.');
+        results = mergeResearchResults(results, outcomes.map(outcome => outcome?.ok ? outcome.results : []), limit);
+        // Rewording will not fix a provider that refused or failed every search.
+        if (outcomes.every(outcome => !outcome?.ok)) break;
+    }
+    running();
+    const result = failures.length === searched.length
+        ? { ok: false, provider: plan.provider, query: plan.query, queries: searched, error: failures[0] }
+        : { ok: true, provider: plan.provider, query: plan.query, queries: searched, results };
     writeArtifact(directories, job.id, 'web-search', result);
     return result;
 }
@@ -517,7 +583,7 @@ async function runScratchpadReply(context, { generate, searchFetch, pageFetch, p
                 reply.messages = reply.messages.map((message, index) => index === reply.summaryIndex ? { ...message, content: summary } : message);
             }
         }
-        const webSearchResult = await resolveWebSearch(scoped, request, { searchFetch });
+        const webSearchResult = await resolveWebSearch(scoped, request, { searchFetch, generate });
         const webPagesResult = await resolveWebPages(scoped, request, { pageFetch, pageLookup });
         if (!request.replies) {
             await runParticipant(scoped, request, { generate, webSearchResult, webPagesResult });

@@ -63,7 +63,7 @@ describe('Scratchpad web search settings draft', () => {
         const config = { provider: 'searxng', searxngUrl: 'https://search.example.com', results: 7 };
         const view = renderWebSearchSettings({ config, draft: null,
             readiness: { provider: 'searxng', configured: true, missing: '' }, onDraft: jest.fn() });
-        expect(status(view).textContent).toBe('Ready. Only the message you send is used as the search query.');
+        expect(status(view).textContent).toBe('Ready. Search queries come from your message and the last few replies.');
         expect(byId(view, 'scratchpad-web-search-results').value).toBe('7');
     });
 
@@ -132,7 +132,7 @@ describe('Scratchpad web search settings draft', () => {
         const config = { provider: 'custom', searxngUrl: '', customUrl: 'https://search.example.com/api?q={query}', customHeader: '', results: 5 };
         const ready = { provider: 'custom', configured: true, missing: '' };
         const view = renderWebSearchSettings({ config, draft: null, readiness: ready, onDraft: jest.fn() });
-        expect(status(view).textContent).toBe('Ready. Only the message you send is used as the search query.');
+        expect(status(view).textContent).toBe('Ready. Search queries come from your message and the last few replies.');
         const edited = renderWebSearchSettings({ config, draft: { ...config, customHeader: 'X-API-Key' }, readiness: ready, onDraft: jest.fn() });
         expect(status(edited).textContent).toBe('Unsaved changes. Press Save web search to apply them.');
     });

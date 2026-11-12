@@ -27,8 +27,8 @@ export function exportReply(message, { reasoning = false, sources = false, attac
         if (item.rehearsal) exported.rehearsal = true;
         if (reasoning && item.role === 'assistant' && item.reasoning) exported.reasoning = item.reasoning;
         if (sources && item.role === 'assistant' && item.webSearch) {
-            const { provider, query, sources: links, error } = item.webSearch;
-            exported.webSearch = { provider, query, sources: links, ...(error ? { error } : {}) };
+            const { provider, query, queries, sources: links, error } = item.webSearch;
+            exported.webSearch = { provider, query, ...(Array.isArray(queries) && queries.length ? { queries } : {}), sources: links, ...(error ? { error } : {}) };
         }
         if (attachments && item.role === 'user' && item.attachments?.length) exported.attachments = item.attachments;
         return exported;
