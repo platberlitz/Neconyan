@@ -615,13 +615,14 @@ describe('in-chat agent bundled templates', () => {
         expect(chatroom.prompt).toContain('chatroom-event|Short event text');
         expect(chatroom.prompt).toContain('[Viewer reply]');
         expect(chatroom.prompt).toContain('[Current chatroom]');
-        expect(chatroom.prompt).toContain('post/comment field on one line');
+        expect(chatroom.prompt).toContain('post/comment field on that same line');
+        expect(chatroom.prompt).toContain('each further > line on its own line directly below, with no chatroom| prefix');
         expect(chatroom.prompt).toContain('Keep the post/comment field clean');
         expect(chatroom.prompt).toContain('[Chatroom Extra Character Cards]');
         expect(chatroom.prompt).toContain('[Custom Chatroom Style]');
         expect(chatroom.prompt).toContain('- custom: follow [Custom Chatroom Style]');
         expect(chatroom.prompt).toContain('thread-board/4chan');
-        expect(chatroom.prompt).toContain('Use unique post labels instead of repeating Anon');
+        expect(chatroom.prompt).toContain('nearly everyone posts as Anonymous, and the post number in the label tells posts apart.');
         expect(chatroom.prompt).toContain('- reddit:');
         expect(chatroom.regexScripts.map(script => script.id)).toContain('chatroom-message-row-greentext');
         expect(chatroom.regexScripts.map(script => script.id)).toContain('chatroom-greentext-continuation');
@@ -1026,6 +1027,24 @@ describe('in-chat agent bundled templates', () => {
         expect(html).not.toMatch(/^>spend your free time/m);
     });
 
+    test('marks the Chatroom feed with its platform style so each style can draw its own look', () => {
+        const html = renderChatroomOutput([
+            'chatroom-style|thread-board/4chan',
+            'chatroom|Anonymous|No.84920113|18|>be me',
+            'chatroom-reply|Anonymous|No.84920114|42|84920113|checked',
+            'chatroom-end',
+        ].join('\n'));
+
+        expect(html).toContain('class="chatroom-feed" data-chatroom-style="thread-board/4chan"');
+        expect(html).toContain('.chatroom-feed[data-chatroom-style*="4chan"]');
+        expect(html).toContain('.chatroom-feed[data-chatroom-style*="reddit"]');
+        expect(html).toContain('class="chatroom-post chatroom-post--green"');
+        expect(html).toContain('class="chatroom-post chatroom-post--reply"');
+        expect(html).toContain('--chatroom-hue:42');
+        expect(html).not.toMatch(/\{\{|\}\}/);
+        expect(html.match(/<div\b/g).length).toBe(html.match(/<\/div>/g).length);
+    });
+
     test('renders direct replies, viewer posts, polls, options, and room events inside the Chatroom interface', () => {
         const html = renderChatroomOutput([
             'chatroom-style|discord/twitch',
@@ -1040,7 +1059,7 @@ describe('in-chat agent bundled templates', () => {
         ].join('\n'));
 
         expect(html).toContain('Did someone just open the hatch?');
-        expect(html).toContain('replying to <b>@Alex</b>');
+        expect(html).toContain('<span class="chatroom-replyto-label">↪ replying to </span><b class="chatroom-replyto-target"><span class="chatroom-replyto-at">@</span>Alex</b>');
         expect(html).toContain('Yeah, that was the courier sneaking out.');
         expect(html).toContain('Where does the courier run next?');
         expect(html).toContain('class="chatroom-poll-option"');

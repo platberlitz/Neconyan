@@ -12,6 +12,8 @@ const CHATROOM_END_LINE_RE = /^(?:CHATROOM_END|chatroom-end)$/i;
 const CHATROOM_FEED_LINE_RE = /^(?:chatroom|chatroom-reply|chatroom-you|chatroom-poll|chatroom-option|chatroom-event)\|/i;
 const CHATROOM_CONTINUATION_LINE_RE = /^(?:>|&gt;)/;
 const CHATROOM_ATTACHED_LINE_RE = /^(?:chatroom-option\||>|&gt;)/i;
+const CHATROOM_QUOTE_LINK_RE = /^(?:>>|&gt;&gt;)(\d{2,})\s+(\S[\s\S]*)$/;
+const CHATROOM_FOLDABLE_ROW_RE = /^(chatroom|chatroom-reply)\|/i;
 
 export const CHATROOM_FEED_PROBE_RE = /^(?:CHATROOM_STYLE|chatroom-style|CHATROOM|chatroom|chatroom-reply|chatroom-you|chatroom-poll|chatroom-option|chatroom-event)\|/im;
 
@@ -72,7 +74,15 @@ function normalizeChatroomPostLine(line, parts) {
         return line;
     }
 
-    return `chatroom|${cleanSpeaker}|${normalizeChatroomField(normalized.meta)}|${normalizeChatroomTone(normalized.tone)}|${cleanMessage}`;
+    const cleanMeta = normalizeChatroomField(normalized.meta);
+    const cleanTone = normalizeChatroomTone(normalized.tone);
+    // Board posts often open with a quote link (>>8492011). Show it as a reply to that post.
+    const quoteLink = cleanMessage.match(CHATROOM_QUOTE_LINK_RE);
+    if (quoteLink) {
+        return `chatroom-reply|${cleanSpeaker}|${cleanMeta}|${cleanTone}|${quoteLink[1]}|${quoteLink[2]}`;
+    }
+
+    return `chatroom|${cleanSpeaker}|${cleanMeta}|${cleanTone}|${cleanMessage}`;
 }
 
 function normalizeChatroomReplyLine(line, parts) {
@@ -97,7 +107,13 @@ function normalizeChatroomReplyLine(line, parts) {
             messageText = labelledTarget[2];
         }
     }
-    const message = normalizeChatroomField(messageText);
+    // A board reply can name its post as >>8492011 or No.8492011; keep the bare number.
+    target = target.replace(/^(?:>>|&gt;&gt;|No\.?\s*)(?=\d)/i, '');
+    let message = normalizeChatroomField(messageText);
+    const repeatedLink = message.match(CHATROOM_QUOTE_LINK_RE);
+    if (repeatedLink && repeatedLink[1] === target) {
+        message = repeatedLink[2];
+    }
 
     if (!speaker || !message) {
         return line;
@@ -120,7 +136,8 @@ export function normalizeChatroomGeneratedLine(line = '') {
 
     if (CHATROOM_STYLE_LINE_RE.test(trimmed)) {
         const [, style = 'mixed'] = trimmed.split('|');
-        return `chatroom-style|${normalizeChatroomField(style) || 'mixed'}`;
+        // The style lands in an HTML attribute, so quotes and angle brackets stay out.
+        return `chatroom-style|${normalizeChatroomField(style).replaceAll(/["<>]/g, '') || 'mixed'}`;
     }
 
     if (CHATROOM_END_LINE_RE.test(trimmed)) {
@@ -163,6 +180,44 @@ export function normalizeChatroomGeneratedLine(line = '') {
         default:
             return line;
     }
+}
+
+/**
+ * Folds greentext lines that follow a post into that post, so a multi-line greentext
+ * story shows as one post. Display only: saved feeds keep one line per row.
+ * @param {string} text Normalised Chatroom content
+ * @returns {string}
+ */
+export function foldChatroomGreentextLines(text = '') {
+    const out = [];
+    let foldable = false;
+    let greenBody = false;
+
+    for (const line of String(text ?? '').split('\n')) {
+        const trimmed = line.trim();
+        if (foldable && CHATROOM_CONTINUATION_LINE_RE.test(trimmed)) {
+            out[out.length - 1] += greenBody ? `<br>${trimmed}` : `<br><span class="chatroom-greentext">${trimmed}</span>`;
+            continue;
+        }
+
+        const kind = trimmed.match(CHATROOM_FOLDABLE_ROW_RE)?.[1]?.toLowerCase();
+        foldable = Boolean(kind);
+        greenBody = false;
+        if (kind === 'chatroom') {
+            // The greentext row pattern already colours the whole body.
+            greenBody = CHATROOM_CONTINUATION_LINE_RE.test(trimmed.split('|')[4] ?? '');
+        } else if (kind === 'chatroom-reply') {
+            const parts = trimmed.split('|');
+            if (parts.length === 6 && CHATROOM_CONTINUATION_LINE_RE.test(parts[5])) {
+                parts[5] = `<span class="chatroom-greentext">${parts[5]}</span>`;
+                out.push(parts.join('|'));
+                continue;
+            }
+        }
+        out.push(line);
+    }
+
+    return out.join('\n');
 }
 
 /**

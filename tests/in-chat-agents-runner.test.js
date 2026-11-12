@@ -2836,9 +2836,9 @@ describe('in-chat agent post-processing runner', () => {
         expect(selectedMessages[0].content).toContain('chatroom-option|Option text|60');
         expect(selectedMessages[0].content).toContain('chatroom-event|Short room event, such as a pinned post, a raid, or slow mode');
         expect(selectedMessages[0].content).toContain('Each post line has exactly five pipe-separated fields.');
-        expect(selectedMessages[0].content).toContain('Use a real short audience label in field 3');
+        expect(selectedMessages[0].content).toContain('Use a short label in field 3 the way the selected platform shows it');
         expect(selectedMessages[0].content).toContain('Keep labels, IDs, scores, dashes, bullets, markdown, and extra pipe fields out of the post/comment text.');
-        expect(selectedMessages[0].content).toContain('The panel renders each post as two stacked parts: Username on one line, then Post/comment below it.');
+        expect(selectedMessages[0].content).toContain('The panel draws the feed in the look of the selected platform, so fill every field the way that platform shows it.');
 
         const defaultMessages = await companionRunner.buildCompanionPromptMessages(defaultChatroomCompanion, 1);
         expect(defaultMessages[0].content).toContain('[Selected Chatroom Style]\nmixed');
