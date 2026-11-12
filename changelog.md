@@ -49,6 +49,7 @@
 - PR #639 (2026-11-12) `perf(ui): keep search boxes responsive while typing`
 - PR #640 (2026-11-12) `feat(scratchpad): export a session as pdf or print`
 - PR #641 (2026-11-12) `feat(scratchpad): correct saved mewmory records after review`
+- PR #643 (2026-11-12) `feat(mewmory): add archive bulk changes, filters, versions, review and merge`
 
 ## v1.5.4
 
