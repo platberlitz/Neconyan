@@ -60,6 +60,7 @@
 - PR #650 (2026-11-12) `feat(mewmory): ask memories, check contradictions and share across chats`
 - PR #651 (2026-11-12) `feat(mewmory): make the memory panel easier to read and get around`
 - PR #652 (2026-11-12) `feat(agents): trim Memory Shard and let it read Mewmory`
+- PR #653 (2026-11-12) `fix(prompts): fill setvar toggles before prompts that read them`
 
 ## v1.5.4
 
