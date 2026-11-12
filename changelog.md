@@ -35,6 +35,7 @@
 - PR #625 (2026-11-11) `feat(scratchpad): suggest changes to the author's note`
 - PR #626 (2026-11-11) `feat(scratchpad): suggest changes to regex scripts`
 - PR #627 (2026-11-12) `feat(scratchpad): suggest changes to css snippets`
+- PR #628 (2026-11-12) `feat(scratchpad): share a hand-picked lorebook in general`
 
 ## v1.5.4
 
