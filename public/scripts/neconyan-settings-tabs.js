@@ -739,6 +739,7 @@ import { isSimpleModeEnabled, setSimpleModeEnabled } from './neconyan-simple-mod
     // map above only knows this fork's own drawers. Give the leftovers a home so they show up in
     // exactly one tab instead of every tab.
     const DEFAULT_SETTINGS_TAB = 'system-device';
+    const SETTINGS_SEARCH_DELAY_MS = 120;
 
     function tagUntaggedDrawers() {
         const content = document.getElementById('user-settings-block-content');
@@ -1225,17 +1226,22 @@ import { isSimpleModeEnabled, setSimpleModeEnabled } from './neconyan-simple-mod
             } else {
                 refs.content.removeAttribute('data-search-active');
             }
-            refs.heading.textContent = query ? 'Search results' : getSettingsCategory(activeCategory).label;
+            const heading = query ? 'Search results' : getSettingsCategory(activeCategory).label;
+            if (refs.heading.textContent !== heading) refs.heading.textContent = heading;
 
             let matches = 0;
             for (const drawer of drawers) {
                 const isMatch = !query || normalizeSettingsSearchText(drawer.textContent).includes(query);
-                drawer.hidden = !isMatch;
+                // Only real changes: every hidden write restyles the whole panel, because
+                // :has() rules elsewhere watch the attribute.
+                if (drawer.hidden === isMatch) drawer.hidden = !isMatch;
                 matches += Number(isMatch);
             }
 
-            refs.resultCount.textContent = query ? `${matches} setting${matches === 1 ? '' : 's'} found` : '';
-            refs.noResults.hidden = !query || matches > 0;
+            const count = query ? `${matches} setting${matches === 1 ? '' : 's'} found` : '';
+            if (refs.resultCount.textContent !== count) refs.resultCount.textContent = count;
+            const noResultsHidden = !query || matches > 0;
+            if (refs.noResults.hidden !== noResultsHidden) refs.noResults.hidden = noResultsHidden;
         };
 
         const revealTarget = target => {
@@ -1284,8 +1290,16 @@ import { isSimpleModeEnabled, setSimpleModeEnabled } from './neconyan-simple-mod
         }
 
         searchInput.dataset.sbSettingsSearchBound = 'true';
-        const handleSearchChange = () => controller.refresh();
-        searchInput.addEventListener('input', handleSearchChange);
+        // Each pass reads the text of every settings drawer, so typing waits for a pause.
+        let searchTimer = 0;
+        const handleSearchChange = () => {
+            clearTimeout(searchTimer);
+            controller.refresh();
+        };
+        searchInput.addEventListener('input', () => {
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(handleSearchChange, SETTINGS_SEARCH_DELAY_MS);
+        });
         searchInput.addEventListener('change', handleSearchChange);
     }
 

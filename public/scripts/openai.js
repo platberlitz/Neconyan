@@ -6938,8 +6938,19 @@ function loadOpenAISettings(data, settings) {
     updateOpenAIModelFavoriteButton();
     updateAdvancedFormattingVisibility();
     updateOpenAISettingsGroupVisibility();
+    updateClaudePrefillWarning();
     $('#chat_completion_source').trigger('change');
     scheduleOpenAIUiRefresh();
+}
+
+// Neconyan: this used to be a CSS :has(:not(:placeholder-shown)) rule. One such rule makes
+// Chrome restyle the whole page whenever any empty text box gets its first character.
+function updateClaudePrefillWarning() {
+    const prefill = document.getElementById('claude_assistant_prefill');
+    const impersonation = document.getElementById('claude_assistant_impersonation');
+    const functionCalling = document.getElementById('openai_function_calling');
+    const visible = Boolean(functionCalling?.checked && (prefill?.value || impersonation?.value));
+    document.getElementById('claude_function_prefill_warning')?.classList.toggle('nn-prefill-warning-visible', visible);
 }
 
 function updateBindPresetToConnectionHelp() {
@@ -10640,6 +10651,7 @@ export function initOpenAI() {
 
     $('#claude_assistant_prefill').on('input', function () {
         oai_settings.assistant_prefill = String($(this).val());
+        updateClaudePrefillWarning();
         saveSettingsDebounced();
     });
 
@@ -10650,6 +10662,7 @@ export function initOpenAI() {
 
     $('#claude_assistant_impersonation').on('input', function () {
         oai_settings.assistant_impersonation = String($(this).val());
+        updateClaudePrefillWarning();
         saveSettingsDebounced();
     });
 
@@ -10718,6 +10731,7 @@ export function initOpenAI() {
     $('#openai_function_calling').on('input', function () {
         oai_settings.function_calling = !!$(this).prop('checked');
         updateFeatureSupportFlags();
+        updateClaudePrefillWarning();
         saveSettingsDebounced();
     });
 

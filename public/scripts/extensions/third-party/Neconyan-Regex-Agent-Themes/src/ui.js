@@ -95,6 +95,9 @@ let rootDrawerOpen = false;
 let refreshHandle = null;
 let renderGeneration = 0;
 let thumbnailObserver = null;
+let browseSearch = null;
+let browseSearchTimer = 0;
+const BROWSE_SEARCH_DELAY_MS = 180;
 const thumbnailJobs = new Map();
 const drawerStateObservers = new Set();
 const changedSelects = new WeakSet();
@@ -260,7 +263,7 @@ function restoreFocus(snapshot) {
         target = [...view.container.querySelectorAll('[data-focus-key]')]
             .find(node => node.dataset.focusKey === snapshot.key);
     }
-    if (!(target instanceof HTMLElement)) {
+    if (!(target instanceof HTMLElement) || target === document.activeElement) {
         return;
     }
     target.focus({ preventScroll: true });
@@ -724,6 +727,8 @@ function renderOverview(settings, host, agents, reports) {
 }
 
 function rerenderBrowse() {
+    clearTimeout(browseSearchTimer);
+    browseSearchTimer = 0;
     if (!view) {
         return;
     }
@@ -767,21 +772,40 @@ function staticDisable(node, disabled) {
     return node;
 }
 
-function renderBrowseFilters(settings, entries, families) {
-    const search = el('input', {
-        id: 'rat_theme_search',
-        class: 'text_pole',
-        type: 'search',
-        value: uiState.query,
-        placeholder: 'Search by name, colour or motion',
-        'aria-label': 'Search themes',
-        'data-focus-key': 'rat_theme_search',
-    });
-    search.value = uiState.query;
-    search.addEventListener('input', () => {
-        uiState.query = search.value;
-        rerenderBrowse();
-    });
+// One search box for the life of the page: rebuilding it per key blurred it,
+// dropped keys typed during the redraw and broke phone keyboard composition.
+function browseSearchInput() {
+    if (!browseSearch) {
+        browseSearch = el('input', {
+            id: 'rat_theme_search',
+            class: 'text_pole',
+            type: 'search',
+            placeholder: 'Search by name, colour or motion',
+            'aria-label': 'Search themes',
+            'data-focus-key': 'rat_theme_search',
+        });
+        browseSearch.addEventListener('input', () => {
+            uiState.query = browseSearch.value;
+            clearTimeout(browseSearchTimer);
+            browseSearchTimer = setTimeout(rerenderBrowse, BROWSE_SEARCH_DELAY_MS);
+        });
+    }
+    if (browseSearch.value !== uiState.query) {
+        browseSearch.value = uiState.query;
+    }
+    return browseSearch;
+}
+
+function renderBrowseFilters(settings, entries, families, filters) {
+    const search = browseSearchInput();
+    for (const child of [...filters.childNodes]) {
+        if (child !== search) {
+            child.remove();
+        }
+    }
+    if (search.parentNode !== filters) {
+        filters.prepend(search);
+    }
 
     const customCount = Object.keys(settings.customThemes).length;
     const modeTotals = modeCounts(entries, uiState);
@@ -826,11 +850,8 @@ function renderBrowseFilters(settings, entries, families) {
     });
     family.setAttribute('aria-label', 'Theme family');
 
-    return el('div', { class: 'rat-browse-filters' }, [
-        search,
-        chips,
-        family,
-    ]);
+    filters.append(chips, family);
+    return filters;
 }
 
 function renderPreviewStage(settings, selected, ordered) {
@@ -996,7 +1017,15 @@ function renderThemeCard(settings, entry) {
 function renderBrowse(settings) {
     const content = view.sections.browse.content;
     disconnectThumbnailObserver();
-    content.textContent = '';
+    const previousFilters = browseSearch?.parentNode;
+    const filters = previousFilters?.parentNode === content
+        ? previousFilters
+        : el('div', { class: 'rat-browse-filters' });
+    for (const child of [...content.childNodes]) {
+        if (child !== filters) {
+            child.remove();
+        }
+    }
 
     const entries = themeEntries(settings);
     if (!entries.some(entry => entry.slug === uiState.previewThemeSlug)) {
@@ -1014,7 +1043,10 @@ function renderBrowse(settings) {
     const ordered = groups.flatMap(group => group.entries);
     const selected = entries.find(entry => entry.slug === uiState.previewThemeSlug) ?? entries[0];
 
-    content.append(renderBrowseFilters(settings, entries, families));
+    if (filters.parentNode !== content) {
+        content.prepend(filters);
+    }
+    renderBrowseFilters(settings, entries, families, filters);
     content.append(renderPreviewStage(settings, selected, ordered));
 
     const summary = el('div', { class: 'rat-gallery-summary' }, [

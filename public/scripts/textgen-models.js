@@ -6,7 +6,8 @@ import { renderTemplateAsync } from './templates.js';
 import { POPUP_TYPE, callGenericPopup } from './popup.js';
 import { t } from './i18n.js';
 import { accountStorage } from './util/AccountStorage.js';
-import { localizePagination, PAGINATION_TEMPLATE } from './utils.js';
+import { debounce, localizePagination, PAGINATION_TEMPLATE } from './utils.js';
+import { debounce_timeout } from './constants.js';
 import { attachModelListSearch } from './model-list-search.js';
 import { isMobile } from './RossAscends-mods.js';
 import { updateServiceTierOptions } from './service-tiers.js';
@@ -638,30 +639,12 @@ export async function loadFeatherlessModels(data) {
         });
     }
 
-    // Unset previously added listeners
-    $(searchBar).off('input');
-    $(sortOrderSelect).off('change');
-    $(classSelect).off('change');
-    $(categoriesSelect).off('change');
-
-    // Add event listener for input on the search bar
-    searchBar.addEventListener('input', function () {
-        applyFiltersAndSort();
-    });
-
-    // Add event listener for the sort order select
-    sortOrderSelect.addEventListener('change', function () {
-        applyFiltersAndSort();
-    });
-
-    // Add event listener for the class select
-    classSelect.addEventListener('change', function () {
-        applyFiltersAndSort();
-    });
-
-    categoriesSelect.addEventListener('change', function () {
-        applyFiltersAndSort();
-    });
+    // Neconyan: bound through jQuery so off() really drops the previous load's handlers.
+    // Native listeners survived it and piled up, one more full re-filter per key each reload.
+    $(searchBar).off('input').on('input', debounce(() => applyFiltersAndSort(), debounce_timeout.quick));
+    $(sortOrderSelect).off('change').on('change', () => applyFiltersAndSort());
+    $(classSelect).off('change').on('change', () => applyFiltersAndSort());
+    $(categoriesSelect).off('change').on('change', () => applyFiltersAndSort());
 
     // Function to populate class selection dropdown
     function populateClassSelection(models) {

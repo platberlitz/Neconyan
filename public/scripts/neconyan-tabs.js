@@ -532,7 +532,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261112-settings-bg-visibility-132';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261112-search-typing-133';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -1380,6 +1380,7 @@ const NN_SEARCH_PAGES = Object.freeze([
     { route: 'report-issue', label: 'Report an Issue', description: 'Opens the Neconyan GitHub issues page in a new tab.', keywords: ['bug', 'issue', 'github', 'feedback'] },
 ].map(page => Object.freeze(page)));
 const NN_MOBILE_QUICK_ACTION_LIMIT = nnMobileShellLifecycle.railModel.limits.quickActionLimit;
+const NN_QUICK_ACTION_SEARCH_DELAY_MS = 150;
 const NN_MOBILE_QUICK_ACTION_ICON_FALLBACK = nnMobileShellLifecycle.railModel.limits.iconFallback;
 let nnIsSyncingRailActions = false;
 const NN_MOBILE_NAV_CLOSED_ICON = 'fa-compass';
@@ -15941,7 +15942,7 @@ function refreshMobileQuickActionSearchResults(mode = 'mobile') {
     }
 }
 
-function renderMobileQuickActionResults(query, resultsElement, mode = 'mobile') {
+function renderMobileQuickActionResults(query, resultsElement, mode = 'mobile', { sources = null } = {}) {
     if (!(resultsElement instanceof HTMLElement)) {
         return;
     }
@@ -15959,7 +15960,7 @@ function renderMobileQuickActionResults(query, resultsElement, mode = 'mobile') 
         return;
     }
 
-    const matches = getMobileQuickActionSearchMatches(trimmedQuery);
+    const matches = getMobileQuickActionSearchMatches(trimmedQuery, { sources });
     if (!matches.length) {
         resultsElement.appendChild(createElement('div', {
             className: 'sb-mobile-quick-action-empty',
@@ -16108,9 +16109,22 @@ function createMobileQuickActionSettingsGroup(mode = 'mobile') {
 
     resetButton.addEventListener('click', isDesktop ? resetDesktopQuickActions : resetMobileQuickActions);
 
-    searchInput.addEventListener('input', event => {
-        const input = event.currentTarget;
-        renderMobileQuickActionResults(input instanceof HTMLInputElement ? input.value : '', results, mode);
+    // Reading every settings page into a search list took 300-500 ms, and it ran on every
+    // key. Read it once per visit to the box and redraw the results when typing pauses.
+    let searchSources = null;
+    let searchTimer = 0;
+    searchInput.addEventListener('input', () => {
+        window.clearTimeout(searchTimer);
+        searchTimer = window.setTimeout(() => {
+            const query = searchInput.value.trim();
+            if (query.length >= 2) {
+                searchSources ??= getMobileQuickActionSearchSources();
+            }
+            renderMobileQuickActionResults(query, results, mode, { sources: searchSources });
+        }, NN_QUICK_ACTION_SEARCH_DELAY_MS);
+    });
+    searchInput.addEventListener('blur', () => {
+        searchSources = null;
     });
 
     group.append(header, searchInput, results, list, status);
@@ -17616,15 +17630,7 @@ function getTabSearchEntries(tabState, { includeThemeCard = false } = {}) {
     ];
 }
 
-function getMobileQuickActionSearchMatches(query) {
-    const normalizedQuery = normalizeText(query);
-
-    if (normalizedQuery.length < 2) {
-        return [];
-    }
-
-    const matcher = createSearchMatcher(query);
-    const matches = new Map();
+function getMobileQuickActionSearchSources() {
     const searchSources = [{ shellKey: 'pages', shellLabel: 'Pages', entries: getSearchPageEntries() }];
 
     for (const [shellKey, shellState] of Object.entries(nnState.shells)) {
@@ -17636,6 +17642,19 @@ function getMobileQuickActionSearchMatches(query) {
         searchSources.push({ shellKey, shellLabel, entries });
     }
     searchSources.push({ shellKey: 'characters', shellLabel: 'Characters', entries: getCharacterPanelSearchEntries() });
+    return searchSources;
+}
+
+function getMobileQuickActionSearchMatches(query, { sources = null } = {}) {
+    const normalizedQuery = normalizeText(query);
+
+    if (normalizedQuery.length < 2) {
+        return [];
+    }
+
+    const matcher = createSearchMatcher(query);
+    const matches = new Map();
+    const searchSources = sources || getMobileQuickActionSearchSources();
 
     for (const { shellKey, shellLabel, entries } of searchSources) {
         for (const entry of entries) {

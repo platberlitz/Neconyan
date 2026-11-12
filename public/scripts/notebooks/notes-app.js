@@ -216,6 +216,11 @@ function buildRoot() {
     elements.canvas = h('section', { class: 'notes-canvas-view', 'aria-label': 'Notebook planning canvases', hidden: true });
     elements.editorPane = h('section', { class: 'notes-pane notes-pane-editor', 'aria-label': 'Note' }, elements.empty, elements.editor, elements.graph, elements.propertyTable, elements.canvas);
     elements.nav = h('nav', { class: 'notes-pane notes-pane-nav', 'aria-label': 'Notebooks and notes' });
+    // One search box for the life of the app: the list below it redraws, the box does not,
+    // so keys typed while a search is running are kept and focus never moves.
+    elements.search = h('input', { type: 'search', class: 'text_pole notes-search-input', placeholder: 'Search titles and text',
+        'aria-label': 'Search notes', oninput: event => searchSoon(event.target.value) });
+    elements.searchRow = keyed('search', h('div', { class: 'notes-search' }, h('i', { class: 'fa-solid fa-magnifying-glass notes-search-icon', 'aria-hidden': 'true' }), elements.search));
     elements.details = h('aside', { class: 'notes-pane notes-pane-details', 'aria-label': 'Note details' });
     elements.paneTabs = h('div', { class: 'notes-choice-group notes-pane-tabs', role: 'group', 'aria-label': 'Notes sections' });
     elements.back = button('Back', () => void goBack(), { icon: 'fa-arrow-left', className: 'notes-back', title: 'Back to the previous note' });
@@ -630,8 +635,11 @@ function renderNav() {
     const { elements, state } = app;
     const nav = elements.nav;
     if (!nav) return;
-    const keepFocus = document.activeElement?.classList?.contains('notes-search-input');
-    clear(nav);
+    const { search, searchRow } = elements;
+    for (const node of [...nav.childNodes]) {
+        if (node !== searchRow) node.remove();
+    }
+    const head = [];
     const notebookRow = h('div', { class: 'notes-notebook-row', role: 'group', 'aria-label': 'Notebooks' });
     for (const notebook of state.notebooks) {
         // The title is translated here, because userText keeps the run-time localiser off the whole button.
@@ -641,18 +649,18 @@ function renderNav() {
         }));
     }
     notebookRow.append(button('New notebook', () => void app.dialogs.newNotebook(app), { icon: 'fa-plus', className: 'notes-quiet' }));
-    nav.append(keyed('notebooks', section('Notebooks', notebookRow)));
+    head.push(keyed('notebooks', section('Notebooks', notebookRow)));
     if (!state.notebookId) {
-        nav.append(keyed('empty', h('p', { class: 'notes-hint notes-nav-empty', text: 'Notebooks hold your notes. Make one to start writing.' })));
+        searchRow.remove();
+        nav.append(...head, keyed('empty', h('p', { class: 'notes-hint notes-nav-empty', text: 'Notebooks hold your notes. Make one to start writing.' })));
         return;
     }
-    const search = h('input', { type: 'search', class: 'text_pole notes-search-input', placeholder: 'Search titles and text',
-        'aria-label': 'Search notes', value: state.searchQuery, oninput: event => searchSoon(event.target.value) });
-    nav.append(keyed('create', h('div', { class: 'notes-nav-actions notes-create-row' },
+    head.push(keyed('create', h('div', { class: 'notes-nav-actions notes-create-row' },
         button('New note', () => void app.dialogs.newNote(app), { icon: 'fa-file-circle-plus', className: 'notes-primary' }),
-        button('Quick note', () => void app.dialogs.quickNote(app), { icon: 'fa-bolt' }))),
-    keyed('search', h('div', { class: 'notes-search' }, h('i', { class: 'fa-solid fa-magnifying-glass notes-search-icon', 'aria-hidden': 'true' }), search)));
-    if (keepFocus) queueMicrotask(() => { search.focus(); search.setSelectionRange(search.value.length, search.value.length); });
+        button('Quick note', () => void app.dialogs.quickNote(app), { icon: 'fa-bolt' }))));
+    if (searchRow.parentNode !== nav) nav.append(searchRow);
+    searchRow.before(...head);
+    if (document.activeElement !== search && search.value !== state.searchQuery) search.value = state.searchQuery;
     if (state.search) {
         const list = h('ul', { class: 'notes-list' });
         for (const result of state.search.results ?? []) {

@@ -2,6 +2,8 @@ import { getChatPickerTitle, matchesChatPickerQuery, resolveChatPickerPlacement 
 import { t } from './i18n.js';
 import { revealUi, setUiVisibility } from './ui-motion.js';
 
+const SEARCH_DELAY_MS = 120;
+
 function element(tag, className, text) {
     const node = document.createElement(tag);
     node.className = className;
@@ -19,6 +21,7 @@ export function createChatPicker({ button, onSelect, onRefresh, onOpen }) {
     let count;
     let retry;
     let observer;
+    let searchTimer = 0;
 
     function position() {
         if (!panel) return;
@@ -116,6 +119,11 @@ export function createChatPicker({ button, onSelect, onRefresh, onOpen }) {
     }
 
     function keydown(event) {
+        if (searchTimer && ['Escape', 'Enter', 'ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+            clearTimeout(searchTimer);
+            searchTimer = 0;
+            render();
+        }
         if (event.key === 'Escape') {
             event.preventDefault();
             event.stopPropagation();
@@ -166,7 +174,14 @@ export function createChatPicker({ button, onSelect, onRefresh, onOpen }) {
         search.placeholder = t`Search chats`;
         search.setAttribute('aria-label', t`Search chats`);
         search.autocomplete = 'off';
-        search.addEventListener('input', render);
+        // Each pass rebuilds every chat row, so typing waits for a pause; keydown flushes it.
+        search.addEventListener('input', () => {
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(() => {
+                searchTimer = 0;
+                render();
+            }, SEARCH_DELAY_MS);
+        });
         list = element('div', 'sb-chat-picker-list');
         status = element('p', 'sb-chat-picker-status');
         status.setAttribute('role', 'status');

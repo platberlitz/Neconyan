@@ -25,7 +25,11 @@ export class SlashCommandBrowser {
                             inp.classList.add('text_pole');
                             inp.type = 'search';
                             inp.placeholder = 'Search slash commands - use quotes to search "literal" instead of fuzzy';
-                            inp.addEventListener('input', () => {
+                            // Neconyan: the filter tests every command's help text, so it runs once typing
+                            // pauses, and only rows whose state changes are touched.
+                            let filterTimer = 0;
+                            const targetCache = new Map();
+                            const filterCommands = () => {
                                 this.details?.remove();
                                 this.details = null;
                                 let query = inp.value.trim();
@@ -45,7 +49,7 @@ export class SlashCommandBrowser {
                                     query = query.slice(match.index + match[0].length);
                                 }
                                 for (const cmd of this.cmdList) {
-                                    const targets = [
+                                    const targets = targetCache.get(cmd) ?? [
                                         cmd.name,
                                         ...cmd.namedArgumentList.map(it => it.name),
                                         ...cmd.namedArgumentList.map(it => it.description),
@@ -57,13 +61,18 @@ export class SlashCommandBrowser {
                                         ...cmd.aliases,
                                         cmd.helpString,
                                     ];
+                                    targetCache.set(cmd, targets);
                                     const find = () => targets.find(t => (fuzzyList.find(f => f.test(t)) ?? quotedList.find(q => t.includes(q))) !== undefined) !== undefined;
-                                    if (fuzzyList.length + quotedList.length === 0 || find()) {
-                                        this.itemMap[cmd.name].classList.remove('isFiltered');
-                                    } else {
-                                        this.itemMap[cmd.name].classList.add('isFiltered');
+                                    const filtered = !(fuzzyList.length + quotedList.length === 0 || find());
+                                    const item = this.itemMap[cmd.name];
+                                    if (item.classList.contains('isFiltered') !== filtered) {
+                                        item.classList.toggle('isFiltered', filtered);
                                     }
                                 }
+                            };
+                            inp.addEventListener('input', () => {
+                                clearTimeout(filterTimer);
+                                filterTimer = setTimeout(filterCommands, 120);
                             });
                             lbl.append(inp);
                         }

@@ -678,6 +678,7 @@ function setupQigSettingsTabs() {
 }
 
 let rerunSettingsSearch = () => {};
+const SETTINGS_SEARCH_DELAY_MS = 120;
 
 function setupSettingsSearch() {
     const searchInput = document.getElementById("qig-settings-search");
@@ -816,12 +817,20 @@ function setupSettingsSearch() {
         }
     };
 
-    rerunSettingsSearch = handleSearch;
-    searchInput.oninput = handleSearch;
+    // Each pass reads the text of every field in the panel, so typing waits for a pause.
+    let searchTimer = 0;
+    rerunSettingsSearch = () => {
+        clearTimeout(searchTimer);
+        handleSearch();
+    };
+    searchInput.oninput = () => {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(handleSearch, SETTINGS_SEARCH_DELAY_MS);
+    };
     if (clearBtn) {
         clearBtn.onclick = () => {
             searchInput.value = "";
-            handleSearch();
+            rerunSettingsSearch();
             searchInput.focus();
         };
     }

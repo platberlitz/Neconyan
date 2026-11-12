@@ -410,9 +410,12 @@ function createLorebookLibrary(worldInfo) {
     search.className = 'text_pole';
     search.placeholder = 'Search lorebooks';
     search.setAttribute('aria-label', 'Search lorebooks');
+    // Each pass rebuilds every book row, so typing waits for a pause.
+    let searchTimer = 0;
     search.addEventListener('input', () => {
         nativeState.lorebookQuery = search.value.trim().toLowerCase();
-        renderLorebookLibrary(library);
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => renderLorebookLibrary(library), 120);
     });
     newFolder.addEventListener('click', async () => {
         const name = window.prompt('Name this lorebook folder:')?.trim();

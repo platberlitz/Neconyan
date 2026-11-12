@@ -1866,28 +1866,33 @@ function highlightSelectedBackground() {
     }
 }
 
+// Neconyan: write-only visibility. jQuery's toggle() read each tile's computed display before
+// writing it, forcing a style pass per tile. A class rather than inline display because :has()
+// rules watch [style] and [hidden], so those writes restyle the whole drawer.
+function setFilterTileVisible(element, visible) {
+    if (element.classList.contains('displayNone') === visible) {
+        element.classList.toggle('displayNone', !visible);
+    }
+}
+
 function onBackgroundFilterInput() {
     const filterValue = String($('#bg-filter').val()).toLowerCase();
-    $('#bg_menu_content > .bg_example, #bg_custom_content > .bg_example').each(function () {
-        const $bg = $(this);
-        const title = $bg.attr('title') || '';
-        const hasMatch = title.toLowerCase().includes(filterValue);
-        $bg.toggle(hasMatch);
-    });
+    for (const bg of document.querySelectorAll('#bg_menu_content > .bg_example, #bg_custom_content > .bg_example')) {
+        const title = bg.getAttribute('title') || '';
+        setFilterTileVisible(bg, title.toLowerCase().includes(filterValue));
+    }
 
     // Show/hide folder tiles based on whether folder name matches the filter
     if (!activeFolderId) {
-        $('#bg_folder_grid .bg_folder_tile').each(function () {
-            const $tile = $(this);
-            const folderId = $tile.attr('data-folder-id');
+        const folderNames = new Map(folderList.map(folder => [folder.id, String(folder.name ?? '').toLowerCase()]));
+        for (const tile of document.querySelectorAll('#bg_folder_grid .bg_folder_tile')) {
+            const folderId = tile.getAttribute('data-folder-id');
             if (!folderId || !filterValue) {
-                $tile.show();
-                return;
+                setFilterTileVisible(tile, true);
+                continue;
             }
-            const folder = folderList.find(f => f.id === folderId);
-            const folderName = folder ? folder.name.toLowerCase() : '';
-            $tile.toggle(folderName.includes(filterValue));
-        });
+            setFilterTileVisible(tile, (folderNames.get(folderId) ?? '').includes(filterValue));
+        }
     }
 }
 

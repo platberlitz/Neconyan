@@ -304,19 +304,26 @@ export function bindPartnerList(listId, searchId) {
     const searchInput = document.getElementById(searchId);
     if (searchInput instanceof HTMLInputElement) {
         searchInput.addEventListener('input', () => {
-            const query = searchInput.value.toLowerCase().trim();
             const options = list.querySelectorAll('.sb-conversation-partner-option');
-            options.forEach(opt => {
-                if (opt instanceof HTMLElement) {
-                    const charName = opt.dataset.charName || '';
-                    if (charName.includes(query)) {
-                        opt.style.display = '';
-                    } else {
-                        opt.style.display = 'none';
-                    }
-                }
-            });
+            filterConversationPickerRows(options, searchInput.value.toLowerCase().trim(), 'charName');
         });
+    }
+}
+
+// Lists are drawn once and typing only hides rows. A class, not inline display or the
+// hidden attribute: Chrome restyles the whole page for either because :has() rules watch them.
+function filterConversationPickerRows(rows, query, nameKey, empty = null) {
+    let shown = 0;
+    for (const row of rows) {
+        if (!(row instanceof HTMLElement)) continue;
+        const filtered = Boolean(query) && !String(row.dataset[nameKey] || '').includes(query);
+        if (row.classList.contains('displayNone') !== filtered) {
+            row.classList.toggle('displayNone', filtered);
+        }
+        if (!filtered) shown++;
+    }
+    if (empty instanceof HTMLElement && empty.classList.contains('displayNone') !== (shown > 0)) {
+        empty.classList.toggle('displayNone', shown > 0);
     }
 }
 
@@ -347,36 +354,35 @@ export function toggleAddDmPicker() {
     const listContainer = document.getElementById('sb_conversation_add_dm_list');
     const searchInput = document.getElementById('sb_conversation_add_dm_search');
 
-    function renderList(query = '') {
+    function renderList() {
         if (!listContainer) return;
         const rows = [];
         (Array.isArray(characters) ? characters : []).forEach((character, idx) => {
             if (!character?.avatar) return;
             const name = character.name || 'Character';
-            if (query && !name.toLowerCase().includes(query)) return;
 
             const thumb = getThumbnailUrlForViewport('avatar', character.avatar);
             rows.push(`
-                <button type="button" class="sb-conversation-add-dm-option" data-sb-conversation-action="add-character-dm" data-character-index="${idx}" style="display: flex; align-items: center; gap: 8px; inline-size: 100%; background: none; border: none; padding: 6px; border-radius: var(--sb-radius-sm); text-align: left; cursor: pointer; color: inherit;">
+                <button type="button" class="sb-conversation-add-dm-option" data-sb-conversation-action="add-character-dm" data-character-index="${idx}" data-search-name="${escapeHtmlAttribute(name.toLowerCase())}" style="display: flex; align-items: center; gap: 8px; inline-size: 100%; background: none; border: none; padding: 6px; border-radius: var(--sb-radius-sm); text-align: left; cursor: pointer; color: inherit;">
                     <img src="${escapeHtmlAttribute(thumb)}" alt="" style="inline-size: 24px; block-size: 24px; border-radius: 50%; object-fit: cover;" loading="lazy" decoding="async" />
                     <span${character.name ? ' translate="no"' : ''} style="font-size: var(--sb-type-caption);">${escapeHtmlText(name)}</span>
                 </button>
             `);
         });
 
-        if (!rows.length) {
-            listContainer.innerHTML = '<div class="sb-conversation-empty" style="padding: 8px; font-size: var(--sb-type-meta); opacity: 0.7;">No matching characters found.</div>';
-        } else {
-            listContainer.innerHTML = rows.join('');
-        }
+        const emptyHidden = rows.length ? ' displayNone' : '';
+        listContainer.innerHTML = rows.join('')
+            + `<div class="sb-conversation-empty${emptyHidden}" data-sb-picker-empty style="padding: 8px; font-size: var(--sb-type-meta); opacity: 0.7;">No matching characters found.</div>`;
     }
 
     renderList();
 
-    if (searchInput instanceof HTMLInputElement) {
+    if (searchInput instanceof HTMLInputElement && listContainer) {
         searchInput.focus({ preventScroll: true });
+        const options = listContainer.querySelectorAll('.sb-conversation-add-dm-option');
+        const empty = listContainer.querySelector('[data-sb-picker-empty]');
         searchInput.addEventListener('input', () => {
-            renderList(searchInput.value.toLowerCase().trim());
+            filterConversationPickerRows(options, searchInput.value.toLowerCase().trim(), 'searchName', empty);
         });
     }
 }
@@ -588,19 +594,18 @@ export function toggleConversationGroupPicker({ sourceAvatar = '', sourceGroupId
         }
     }
 
-    function renderList(query = '') {
+    function renderList() {
         if (!(listContainer instanceof HTMLElement)) return;
         const rows = [];
         (Array.isArray(characters) ? characters : []).forEach((character) => {
             if (!character?.avatar) return;
             const name = character.name || 'Character';
-            if (query && !name.toLowerCase().includes(query)) return;
 
             const checked = selectedMembers.has(character.avatar) ? ' checked' : '';
             const disabled = lockedMembers.has(character.avatar) ? ' disabled' : '';
             const thumb = getThumbnailUrlForViewport('avatar', character.avatar);
             rows.push(`
-                <label class="sb-conversation-add-dm-option sb-conversation-group-member-option">
+                <label class="sb-conversation-add-dm-option sb-conversation-group-member-option" data-search-name="${escapeHtmlAttribute(name.toLowerCase())}">
                     <input type="checkbox" class="sb-conversation-group-member-checkbox" value="${escapeHtmlAttribute(character.avatar)}"${checked}${disabled} />
                     <img src="${escapeHtmlAttribute(thumb)}" alt="" class="sb-conversation-group-member-avatar" width="24" height="24" loading="lazy" decoding="async" />
                     <span class="sb-conversation-group-member-name">${escapeHtmlText(name)}</span>
@@ -608,9 +613,9 @@ export function toggleConversationGroupPicker({ sourceAvatar = '', sourceGroupId
             `);
         });
 
-        listContainer.innerHTML = rows.length
-            ? rows.join('')
-            : '<div class="sb-conversation-empty sb-conversation-group-empty">No matching characters found.</div>';
+        const emptyHidden = rows.length ? ' displayNone' : '';
+        listContainer.innerHTML = rows.join('')
+            + `<div class="sb-conversation-empty sb-conversation-group-empty${emptyHidden}" data-sb-picker-empty>No matching characters found.</div>`;
         syncSelectedMembers();
     }
 
@@ -632,10 +637,12 @@ export function toggleConversationGroupPicker({ sourceAvatar = '', sourceGroupId
 
     renderList();
 
-    if (searchInput instanceof HTMLInputElement) {
+    if (searchInput instanceof HTMLInputElement && listContainer instanceof HTMLElement) {
         searchInput.focus({ preventScroll: true });
+        const options = listContainer.querySelectorAll('.sb-conversation-group-member-option');
+        const empty = listContainer.querySelector('[data-sb-picker-empty]');
         searchInput.addEventListener('input', () => {
-            renderList(searchInput.value.toLowerCase().trim());
+            filterConversationPickerRows(options, searchInput.value.toLowerCase().trim(), 'searchName', empty);
         });
     }
 }

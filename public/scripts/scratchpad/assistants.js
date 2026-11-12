@@ -113,17 +113,30 @@ export async function openAssistantLibrary({ assistants, portrait, selected, can
     function cards() {
         const results = h('div', { class: 'scratchpad-library-list' });
         const search = h('input', { class: 'text_pole', type: 'search', placeholder: t`Search character cards`, 'aria-label': t`Search character cards` });
-        const render = () => {
-            const matches = characters.filter(card => card.avatar && card.name?.toLocaleLowerCase().includes(search.value.trim().toLocaleLowerCase()));
-            results.replaceChildren(...matches.map(card => h('div', { class: 'scratchpad-library-row' },
+        // Rows are drawn once and typing only hides them, with a class rather than the hidden
+        // attribute, which :has() rules watch. Rebuilding every card row per key made typing lag.
+        const rows = characters.filter(card => card.avatar && card.name).map(card => ({
+            name: card.name.toLocaleLowerCase(),
+            row: h('div', { class: 'scratchpad-library-row' },
                 h('img', { src: getThumbnailUrl('avatar', card.avatar), alt: '', width: 48, height: 48, loading: 'lazy' }),
                 h('strong', { text: card.name, 'data-i18n-ignore': '' }),
                 button(t`Add`, () => void run(async () => {
                     const saved = await save(undefined, card.avatar);
                     if (canChoose(saved.id)) await choose(saved.id);
                     list();
-                }), { 'aria-label': t`Add ${card.name} as an assistant` }))));
-            if (!matches.length) results.append(h('p', { text: t`No character cards match. Import a card in Characters, or add a new assistant.` }));
+                }), { 'aria-label': t`Add ${card.name} as an assistant` })),
+        }));
+        const empty = h('p', { text: t`No character cards match. Import a card in Characters, or add a new assistant.` });
+        results.replaceChildren(...rows.map(item => item.row), empty);
+        const render = () => {
+            const query = search.value.trim().toLocaleLowerCase();
+            let shown = 0;
+            for (const item of rows) {
+                const filtered = !item.name.includes(query);
+                if (!filtered) shown++;
+                if (item.row.classList.contains('displayNone') !== filtered) item.row.classList.toggle('displayNone', filtered);
+            }
+            empty.classList.toggle('displayNone', shown > 0);
         };
         search.addEventListener('input', render);
         show(subheading(t`Use a character card`), h('p', { class: 'scratchpad-review-hint', text: t`Copy a card's picture, description, personality and example dialogue. You can edit the assistant afterwards. The original card stays as it is.` }),

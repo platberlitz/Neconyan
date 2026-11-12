@@ -1,54 +1,59 @@
+import { debounce } from './utils.js';
+import { debounce_timeout } from './constants.js';
+
 /**
  * Search for settings that match the search string and highlight them.
  */
-async function searchSettings() {
-    removeHighlighting(); // Remove previous highlights
+function searchSettings() {
     const searchString = String($('#settingsSearch').val());
-    const searchableText = $('#user-settings-block-content'); // Get the HTML block
-    if (searchString.trim() !== '') {
-        highlightMatchingElements(searchableText[0], searchString); // Highlight matching elements
+    const searchableText = document.getElementById('user-settings-block-content'); // Get the HTML block
+    const matches = searchableText && searchString.trim() !== ''
+        ? findMatchingElements(searchableText, searchString)
+        : new Set();
+    // Neconyan: only touch elements whose highlight changes. Clearing and re-adding every
+    // highlight per key restyled the whole settings panel twice.
+    for (const element of document.querySelectorAll('.highlighted')) {
+        if (!matches.has(element)) {
+            element.classList.remove('highlighted');
+        }
+    }
+    for (const element of matches) {
+        element.classList.add('highlighted');
     }
 }
 
 /**
- * Check if the element is a child of a header element
- * @param {HTMLElement | Text | Document | Comment} element Settings block HTML element
- * @returns {boolean} True if the element is a child of a header element, false otherwise
- */
-function isParentHeader(element) {
-    return $(element).closest('h4, h3').length > 0;
-}
-
-/**
- * Recursively highlight elements that match the search string
- * @param {HTMLElement | Text | Document | Comment} element Settings block HTML element
+ * Collect the parents of text nodes that match the search string, skipping headers.
+ * @param {HTMLElement} root Settings block HTML element
  * @param {string} searchString Search string
+ * @returns {Set<HTMLElement>} Elements to highlight
  */
-function highlightMatchingElements(element, searchString) {
-    $(element).contents().each(function () {
-        const isTextNode = this.nodeType === Node.TEXT_NODE;
-        const isElementNode = this.nodeType === Node.ELEMENT_NODE;
-
-        if (isTextNode && this.nodeValue.trim() !== '' && !isParentHeader(this)) {
-            const parentElement = $(this).parent();
-            const elementText = this.nodeValue;
-
-            if (elementText.toLowerCase().includes(searchString.toLowerCase())) {
-                parentElement.addClass('highlighted'); // Add CSS class to highlight matched elements
+function findMatchingElements(root, searchString) {
+    const needle = searchString.toLowerCase();
+    const matches = new Set();
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
+        acceptNode(node) {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+                // h4 subtrees are never searched; other elements are walked through.
+                return /** @type {Element} */ (node).tagName === 'H4' ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_SKIP;
             }
-        } else if (isElementNode && !$(this).is('h4')) {
-            highlightMatchingElements(this, searchString);
-        }
+            return NodeFilter.FILTER_ACCEPT;
+        },
     });
-}
 
-/**
- * Remove highlighting from previously highlighted elements.
- */
-function removeHighlighting() {
-    $('.highlighted').removeClass('highlighted');  // Remove CSS class from previously highlighted elements
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const text = node.nodeValue;
+        const parent = node.parentElement;
+        if (!parent || text.trim() === '' || !text.toLowerCase().includes(needle) || parent.closest('h4, h3')) {
+            continue;
+        }
+        matches.add(parent);
+    }
+
+    return matches;
 }
 
 export function initSettingsSearch() {
-    $('#settingsSearch').on('input change', searchSettings);
+    const debouncedSearch = debounce(searchSettings, debounce_timeout.quick);
+    $('#settingsSearch').on('input', debouncedSearch).on('change', searchSettings);
 }
