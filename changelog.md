@@ -48,6 +48,7 @@
 - PR #638 (2026-11-12) `fix(settings): fix background slider, theme jump and avatar layout`
 - PR #639 (2026-11-12) `perf(ui): keep search boxes responsive while typing`
 - PR #640 (2026-11-12) `feat(scratchpad): export a session as pdf or print`
+- PR #641 (2026-11-12) `feat(scratchpad): correct saved mewmory records after review`
 
 ## v1.5.4
 
