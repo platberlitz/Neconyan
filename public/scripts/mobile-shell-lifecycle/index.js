@@ -985,6 +985,7 @@ export const MOBILE_SWIPE_RAIL_SELECTOR = [
     '.group_speaker_list',
     '.ica--agent-tabs',
     '.me-tabs',
+    '.mewmory-tabs',
     '.me-ref-chips',
     '.world_info_view_filters',
     '.ica--editor-tabs',
@@ -1019,7 +1020,6 @@ const MOBILE_DOCUMENT_PAN_HORIZONTAL_SCROLL_SELECTOR = [
     '.notes-property-table-scroll',
     '.sbpl-tabs',
     '.sbwil-tabs',
-    '.mewmory-tabs',
 ].join(', ');
 
 const MOBILE_DOCUMENT_PAN_EDITABLE_SELECTOR = [
