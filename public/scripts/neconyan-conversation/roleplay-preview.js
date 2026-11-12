@@ -12,6 +12,11 @@ const labels = {
     companions: 'Running Companions…', review: 'Waiting for your review…',
     translating: 'Translating reply…', speech: 'Preparing speech…', saving: 'Saving reply…',
 };
+const stageIcons = {
+    preparing: 'fa-hourglass-half', generating: 'fa-pen', agents: 'fa-user-gear',
+    'waiting-memory': 'fa-brain', companions: 'fa-user-group', review: 'fa-eye',
+    translating: 'fa-language', speech: 'fa-volume-high', saving: 'fa-floppy-disk',
+};
 const PREVIEW_SILENCE_MS = 5000;
 // Companion notes share the saved job artifact's 16 MiB limit.
 const MAX_PREVIEW_EVENT_LENGTH = 16 * 1024 * 1024;
@@ -181,6 +186,9 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
             const status = node.querySelector('[role="status"]');
             const label = labels[latest.stage] || labels.preparing;
             if (status.textContent !== label) status.textContent = label;
+            const icon = node.querySelector('[data-roleplay-stage-icon]');
+            icon.className = `neconyan-reply-status fa-solid ${stageIcons[latest.stage] || stageIcons.preparing}`;
+            icon.title = label;
             thinkingIndicator.update(node, latest.stage === 'generating'
                 && !/\S/.test(latest.text || '') && !/\S/.test(latest.reasoning || ''));
             // The saved receipt names the final child job. Keep the preview's own
@@ -207,6 +215,7 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
                 return;
             }
             const messageElement = updateMessageElement(message, { messageId, isPreview: true,
+                previewAddsSwipe: Boolean(replacement) && (name === 'roleplay.swipe' || name === 'guided.swipe'),
                 ...(node?.isConnected ? { messageElement: globalThis.jQuery(node) } : {}) });
             if (!node?.isConnected) {
                 node = messageElement[0];
@@ -214,9 +223,13 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
                 node.style.flexShrink = '0';
                 node.setAttribute('aria-label', 'Reply in progress');
                 const status = document.createElement('small');
-                status.className = 'timestamp';
+                status.className = 'sr-only';
                 status.setAttribute('role', 'status');
                 node.querySelector('.name_text').parentElement.append(status);
+                const icon = document.createElement('i');
+                icon.setAttribute('data-roleplay-stage-icon', '');
+                icon.setAttribute('aria-hidden', 'true');
+                node.querySelector('.name_text').parentElement.append(icon);
                 if (replacement) {
                     // Keep the old reply's geometry until this complete frame is ready.
                     commitRoleplayReplacement(replacement, node, chat);

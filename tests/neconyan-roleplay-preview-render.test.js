@@ -174,6 +174,9 @@ class FakeElement {
         if (selector === '[role="status"]') {
             return this.nameText?.parentElement?.children.find(child => child.attributes.get('role') === 'status') ?? null;
         }
+        if (selector === '[data-roleplay-stage-icon]') {
+            return this.nameText?.parentElement?.children.find(child => child.attributes.has('data-roleplay-stage-icon')) ?? null;
+        }
         if (selector === '.mes_reasoning_details') return null;
         if (selector === '.mes_timer') return this.timer;
         return null;
@@ -390,6 +393,26 @@ describe('Roleplay preview rendering', () => {
         expect(scrollChatToBottom).not.toHaveBeenCalled();
         expect(refreshChatViewportBaseline).toHaveBeenCalled();
         stop();
+    });
+
+    test('stage icons keep the full progress announcement outside the timestamp', async () => {
+        startPreview();
+        for (const [stage, label, iconClass] of [
+            ['generating', 'Writing reply…', 'fa-pen'],
+            ['agents', 'Running Agents…', 'fa-user-gear'],
+            ['waiting-memory', 'Waiting for memory before replying…', 'fa-brain'],
+        ]) {
+            stream.send({ preview: { childId: 'reply', stage, text: stage } });
+            await waitFor(() => renderedEvents.at(-1)?.message.mes === stage);
+            const node = renderedEvents.at(-1).element;
+            const status = node.querySelector('[role="status"]');
+            const icon = node.querySelector('[data-roleplay-stage-icon]');
+            expect(status.textContent).toBe(label);
+            expect(status.className).toBe('sr-only');
+            expect(icon.className).toContain(iconClass);
+            expect(icon.title).toBe(label);
+            expect(icon.attributes.get('aria-hidden')).toBe('true');
+        }
     });
 
     test.each(['medium', undefined])('preview and recovery retain the accepted reasoning effort: %s', async effort => {

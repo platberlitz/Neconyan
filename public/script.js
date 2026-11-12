@@ -5846,6 +5846,9 @@ function inferCustomModelIconName(model) {
  */
 function insertModelLabel(mes, extra) {
     mes.find('.timestamp-model').remove();
+    // Keep the enabled metadata line ready before a server preview knows its model.
+    mes.toggleClass('neconyan-model-line', mes.attr('is_user') === 'false'
+        && (power_user.timestamp_model_name || power_user.timestamp_reasoning_effort || power_user.timestamp_model_icon));
 
     const label = getMessageIconLabel(extra);
 
@@ -5854,7 +5857,7 @@ function insertModelLabel(mes, extra) {
     }
 
     const icon = mes.find('.timestamp-icon').first();
-    $('<small class="timestamp-model"></small>').text(label).insertAfter(icon.length ? icon : mes.find('.timestamp').first());
+    $('<small class="timestamp-model"></small>').text(label).attr('title', label).insertAfter(icon.length ? icon : mes.find('.timestamp').first());
 }
 
 /**
@@ -6740,10 +6743,11 @@ export function addOneMessage(mes, { type = undefined, insertAfter = null, scrol
  * @param {number} [options.messageId=chat.length - 1] Force the message ID
  * @param {JQuery<HTMLElement>} [options.messageElement=messageTemplate.clone()] This message element will be updated with the ChatMessage object.
  * @param {SCROLL_BEHAVIOR} [options.adjustMediaScroll=SCROLL_BEHAVIOR.NONE] Scroll behavior option passed to appendMediaToMessage.
- * @param {boolean} [options.isPreview=false] Render an unsaved server draft with the normal message layout and no saved-message actions.
+ * @param {boolean} [options.isPreview=false] Render an unsaved server draft with disabled message actions.
+ * @param {boolean} [options.previewAddsSwipe=false] Reserve the action for the alternative this draft will add.
  * @returns {JQuery<HTMLElement>} Rendered HTMLElement.
  */
-export function updateMessageElement(mes, { messageId = chat.length - 1, messageElement = messageTemplate.clone(), adjustMediaScroll = SCROLL_BEHAVIOR.NONE, isPreview = false } = {}) {
+export function updateMessageElement(mes, { messageId = chat.length - 1, messageElement = messageTemplate.clone(), adjustMediaScroll = SCROLL_BEHAVIOR.NONE, isPreview = false, previewAddsSwipe = false } = {}) {
     let avatarImg = getThumbnailUrl('persona', user_avatar);
     // Neconyan: Add mobile thumbnail tracking for viewport-aware avatar rendering (mobile performance).
     let mobileAvatarImg = getMobileThumbnailUrl('persona', user_avatar);
@@ -6877,7 +6881,7 @@ export function updateMessageElement(mes, { messageId = chat.length - 1, message
     if (!isPreview) notifyCardScriptStripped(messageElement, messageId);
     if (!isPreview) scheduleCardScriptReconcile(messageId);
     addCopyToCodeBlocks(messageElement);
-    if (!isPreview) prepareNeconyanMessageActions(messageElement);
+    prepareNeconyanMessageActions(messageElement);
 
     // Set the swipes counter for all non-user messages.
     if (!mes.is_user) {
@@ -6888,7 +6892,10 @@ export function updateMessageElement(mes, { messageId = chat.length - 1, message
         // A draft looks like a message, but cannot act on an unrelated saved index
         // or enter the virtualised history window before the server publishes it.
         messageElement.removeAttr('mesid swipeid').attr('data-roleplay-draft', 'true');
-        messageElement.find('.mes_buttons, .mes_edit_buttons, .mes_reasoning_actions, .swipe_left, .swipeRightBlock, .for_checkbox, .del_checkbox')
+        messageElement.find('.mes_buttons').attr('inert', '').attr('aria-disabled', 'true');
+        messageElement.find('.mes_delete_add_swipe').toggle(isDeleteAddSwipeApplicable(messageId, chat[messageId], previewAddsSwipe));
+        // The empty checkbox spacer contributes a flex gap in saved rows too.
+        messageElement.find('.mes_edit_buttons, .mes_reasoning_actions, .swipe_left, .swipeRightBlock, .del_checkbox')
             .addClass('displayNone').attr('inert', '');
         requestAnimationFrame(() => updateMessageSleeperPosition(messageElement[0]));
     } else {
@@ -18362,6 +18369,11 @@ export function isMessageSwipeable(messageId, message = undefined) {
 
 // Neconyan: one-click recovery for replacing a failed current swipe.
 function canDeleteAddSwipe(messageId, message = chat[messageId]) {
+    return isSwipingAllowed() && isDeleteAddSwipeApplicable(messageId, message);
+}
+
+// Running a job disables this action without removing its place in the header.
+function isDeleteAddSwipeApplicable(messageId, message = chat[messageId], pendingSwipe = false) {
     if (!message) {
         return false;
     }
@@ -18370,10 +18382,10 @@ function canDeleteAddSwipe(messageId, message = chat[messageId]) {
     const selectedSwipe = Number(message.swipe_id);
     const overswipe = getOverswipeBehavior(messageId, message);
 
-    return isSwipingAllowed() &&
+    return swipes &&
         isMessageSwipeable(messageId, message) &&
         overswipe === OVERSWIPE_BEHAVIOR.REGENERATE &&
-        swipesArray.length > 1 &&
+        (swipesArray.length > 1 || pendingSwipe) &&
         Number.isInteger(selectedSwipe) &&
         selectedSwipe >= 0 &&
         selectedSwipe < swipesArray.length;
@@ -18419,10 +18431,18 @@ export function refreshSwipeButtons(updateCounters = false, fade = true) {
     //Never show swipe buttons on an empty chat.
     if (chat?.length === 0) return false;
 
+    const swipingAllowed = isSwipingAllowed();
+    chatElement.children('.mes[mesid]').each((_, div) => {
+        const messageId = Number(div.getAttribute('mesid'));
+        $(div).find('.mes_delete_add_swipe')
+            .toggle(isDeleteAddSwipeApplicable(messageId))
+            .attr('aria-disabled', String(!swipingAllowed))
+            .prop('inert', !swipingAllowed);
+    });
+
     //If swipes are disabled or hidden, hide all swipe buttons.
-    if (!isSwipingAllowed()) {
+    if (!swipingAllowed) {
         $('body').addClass('hideAllSwipeButtons');
-        chatElement.find('.mes_delete_add_swipe').hide();
         return;
         //Don't hide all swipe buttons.
     } else {
@@ -18451,7 +18471,6 @@ export function refreshSwipeButtons(updateCounters = false, fade = true) {
             const hasSwipes = (message?.swipes?.length > 1);
             const overswipe = getOverswipeBehavior(messageId, message);
             const swipePickerButton = $(div).find('.mes_swipe_picker');
-            const deleteAddSwipeButton = $(div).find('.mes_delete_add_swipe');
             const canOpenSwipePicker = canOpenSwipePickerForMessage(messageId);
 
             // Chevrons should always be shown on pristine greetings: https://github.com/SillyTavern/SillyTavern/pull/4712#issuecomment-3557893373
@@ -18467,7 +18486,6 @@ export function refreshSwipeButtons(updateCounters = false, fade = true) {
             //If there's only one swipe, the left arrow should not be shown.
             div.classList.toggle('swipes_visible', hasSwipes || pristineGreeting);
             swipePickerButton.toggle(canOpenSwipePicker);
-            deleteAddSwipeButton.toggle(canDeleteAddSwipe(messageId, message));
 
             //updateSwipeCounter does not need to be awaited, It can run a bit later.
             if (updateCounters) updateSwipeCounter(messageId, { message, messageElement: $(div) });
@@ -18475,7 +18493,6 @@ export function refreshSwipeButtons(updateCounters = false, fade = true) {
             //Hide all messages that are not swipeable.
             div.classList.remove('swipes_visible', 'last_swipe');
             $(div).find('.mes_swipe_picker').toggle(canOpenSwipePickerForMessage(messageId));
-            $(div).find('.mes_delete_add_swipe').hide();
         }
     });
 }
