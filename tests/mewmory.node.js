@@ -3074,3 +3074,99 @@ test('comparison artifacts keep a common memory allowance and exclude selector e
     assert.equal(report.qualityScores, null);
     assert.equal(fs.readFileSync(path.join(output, 'pawspective.txt'), 'utf8').includes('INSPECT ONLY'), false);
 });
+
+test('archive inspection sorts, filters by flag and message range, and counts memories not yet looked at', () => {
+    const state = base();
+    event(state);
+    event(state, { id: 'event:late', text: 'Mara read the date on the receipt.', refs: [state.timeline[5]], asOf: 5 });
+    const config = defaultConfig();
+    const ids = filters => inspectState(state, config, { kind: 'objective', ...filters }).records.map(record => record.id);
+    assert.deepEqual(ids({}), ['event:late', 'event:gift', 'entity:mara']);
+    assert.deepEqual(ids({ sort: 'oldest' }), ['entity:mara', 'event:gift', 'event:late']);
+    assert.deepEqual(ids({ sort: 'not-a-sort' }), ids({}), 'an unknown sort falls back to story order');
+    assert.deepEqual(ids({ fromMessage: 3, toMessage: 3 }), ['event:gift']);
+    assert.deepEqual(ids({ fromMessage: 4 }), ['event:late']);
+    assert.deepEqual(ids({ toMessage: 1 }), ['entity:mara']);
+    assert.deepEqual(ids({ flag: 'pinned' }), []);
+    assert.equal(inspectState(state, config).review.fresh, 3);
+    const gift = state.records.find(record => record.id === 'event:gift');
+    putRecord(state, { ...gift, pinned: true, origin: 'author', authorOverride: true });
+    assert.deepEqual(ids({ flag: 'pinned' }), ['event:gift']);
+    assert.deepEqual(ids({ flag: 'edited' }), ['event:gift']);
+    assert.deepEqual(ids({ sort: 'pinned' }), ['event:gift', 'event:late', 'entity:mara']);
+    assert.deepEqual(ids({ flag: 'new' }), ['event:late', 'entity:mara'], 'a memory the author changed is not new');
+    state.reviewedAt = Date.now() + 1;
+    assert.deepEqual(ids({ flag: 'new' }), []);
+    assert.deepEqual(inspectState(state, config).review, { reviewedAt: state.reviewedAt, fresh: 0, uncertain: 0 });
+    const branch = forkState(state, { ...locator, chat: 'Branch' }, 5, fixture.messages);
+    assert.equal(branch.reviewedAt, state.reviewedAt, 'a branch does not re-list memories already looked at');
+});
+
+test('archive routes change several memories in one write, show earlier versions, and combine near-duplicates', async t => {
+    const { directories } = disk(t);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => {
+        state.enabled = true;
+        event(state);
+        event(state, { id: 'event:twin', text: 'Mara accepted the gift!', refs: [state.timeline[3]], asOf: 3 });
+        event(state, { id: 'event:late', text: 'Mara read the date on the receipt.', refs: [state.timeline[5]], asOf: 5 });
+    });
+    const express = (await import('express')).default;
+    const { router, duplicateGroups } = await import('../src/endpoints/mewmory.js');
+    const app = express();
+    app.use(express.json());
+    app.use((request, response, next) => { request.user = { directories }; next(); });
+    app.use(router);
+    const server = await new Promise(resolve => { const listener = app.listen(0, '127.0.0.1', () => resolve(listener)); });
+    t.after(() => new Promise(resolve => server.close(resolve)));
+    const post = async (route, body = {}) => {
+        const response = await fetch('http://127.0.0.1:' + server.address().port + '/' + route, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ locator, revision: readState(directories, locator).revision, ...body }),
+        });
+        return { status: response.status, body: await response.json().catch(() => null) };
+    };
+    const saved = id => readState(directories, locator).records.find(record => record.id === id);
+
+    const pinned = await post('record/action', { ids: ['event:gift', 'event:late', 'event:gift'], action: 'pin_on', filters: { flag: 'pinned' } });
+    assert.equal(pinned.status, 200, JSON.stringify(pinned.body));
+    assert.deepEqual(pinned.body.records.map(record => record.id), ['event:late', 'event:gift'], 'the reply honours the filters the page is showing');
+    assert.equal((await post('record/action', { ids: ['event:gift'], action: 'pin_on' })).status, 200);
+    assert.equal(saved('event:gift').pinned, true, 'pinning twice leaves it pinned');
+
+    const before = readState(directories, locator).revision;
+    const partial = await post('record/action', { ids: ['event:late', 'event:missing'], action: 'exclude_on' });
+    assert.equal(partial.status, 404);
+    assert.equal(saved('event:late').excluded, false, 'one missing memory stops the whole change');
+    assert.equal(readState(directories, locator).revision, before);
+    assert.equal((await post('record/action', { ids: [], action: 'pin_on' })).status, 400);
+    assert.equal((await post('record/action', { ids: ['event:late'], action: 'pin_on', revision: before - 1 })).status, 409);
+
+    const history = await post('record/history', { id: 'event:late' });
+    assert.equal(history.status, 200);
+    assert.equal(history.body.current.pinned, true);
+    assert.equal(history.body.versions.length, 1);
+    assert.equal(Boolean(history.body.versions[0].record.pinned), false);
+    assert.equal((await post('record/history', { id: 'event:missing' })).status, 404);
+
+    assert.ok((await post('inspect')).body.review.fresh > 0);
+    const seen = await post('review/seen');
+    assert.equal(seen.status, 200);
+    assert.equal(seen.body.review.fresh, 0);
+    assert.ok(readState(directories, locator).reviewedAt > 0, 'the looked-at time is saved with the chat');
+
+    const groups = (await post('duplicates')).body.groups;
+    assert.deepEqual(groups.map(group => group.map(record => record.id)), [['event:twin', 'event:gift']]);
+    assert.equal((await post('record/merge', { keep: 'event:gift', ids: ['event:gift'] })).status, 400);
+    const merged = await post('record/merge', { keep: 'event:gift', ids: ['event:gift', 'event:twin'] });
+    assert.equal(merged.status, 200, JSON.stringify(merged.body));
+    const state = readState(directories, locator);
+    assert.deepEqual(saved('event:gift').refs.map(ref => ref.id).sort(), [state.timeline[2].id, state.timeline[3].id].sort());
+    assert.equal(saved('event:gift').asOf, 3);
+    assert.equal(saved('event:gift').pinned, true);
+    assert.equal(saved('event:twin').status, 'invalidated');
+    assert.deepEqual(duplicateGroups(state), []);
+    assert.equal((await post('record/merge', { keep: 'event:gift', ids: ['event:twin'] })).status, 409, 'a retired memory cannot be combined again');
+    assert.equal((await post('record/action', { id: 'event:twin', action: 'undo' })).status, 200);
+    assert.equal(saved('event:twin').status, 'active', 'undo brings the retired copy back');
+});

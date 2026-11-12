@@ -163,3 +163,16 @@ test('a held inspection cannot answer the panel refresh after a job dismiss', as
     expect(mewmory.busy).toBe(true);
     expect(mewmory.error).toBe('');
 });
+
+test('earlier versions mark the words that were added and removed', async () => {
+    const { wordChanges } = await import('../public/scripts/mewmory/ui.js');
+    expect(wordChanges('Mara accepted the gift.', 'Mara accepted the gift.')).toEqual([['same', 'Mara accepted the gift.']]);
+    const parts = wordChanges('Mara accepted the gift.', 'Mara quietly accepted the parcel.');
+    expect(parts.filter(([type]) => type !== 'removed').map(([, text]) => text).join('')).toBe('Mara quietly accepted the parcel.');
+    expect(parts.filter(([type]) => type !== 'added').map(([, text]) => text).join('')).toBe('Mara accepted the gift.');
+    expect(parts.filter(([type]) => type === 'added').map(([, text]) => text.trim())).toEqual(['quietly', 'parcel.']);
+    expect(parts.filter(([type]) => type === 'removed').map(([, text]) => text.trim())).toEqual(['gift.']);
+    expect(wordChanges('', 'New text')).toEqual([['added', 'New text']]);
+    const long = Array.from({ length: 700 }, (_, index) => 'word' + index).join(' ');
+    expect(wordChanges(long, long + ' more')).toEqual([['removed', long], ['added', long + ' more']]);
+});
