@@ -46,7 +46,7 @@ function harness() {
         source.match(/^const NN_CHARACTER_PANEL_TABS = Object\.freeze\(\[[\s\S]*?^\]\);/m)[0],
         ...['getCharacterPanelTabConfig', 'getSearchPageEntries', 'getQuickActionPageEntry', 'getMobileQuickActionTabConfig', 'getMobileQuickActionContext',
             'normalizeMobileQuickAction', 'normalizeMobileQuickActionList', 'getMobileQuickActionKey',
-            'createMobileQuickActionFromMatch', 'getMobileQuickActionSearchMatches', 'findMobileQuickActionMatch',
+            'createMobileQuickActionFromMatch', 'getMobileQuickActionSearchSources', 'getMobileQuickActionSearchMatches', 'findMobileQuickActionMatch',
             'activateMobileQuickAction', 'getCharacterPanelSearchEntries', 'migrateLegacyMobileQuickAction', 'parseMobileQuickActionStorage'].map(functionSource),
     ].join('\n'), context);
     return context;

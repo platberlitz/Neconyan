@@ -29,6 +29,7 @@ import {
 
 const TITLE_ID = 'csss_manager_title';
 const SAVE_DELAY = 350;
+const SEARCH_DELAY_MS = 150;
 
 const FILTER_LABELS = Object.freeze({
     disabled: 'Switched off',
@@ -42,6 +43,7 @@ let openPromise = null;
 let root = null;
 let unsubscribe = null;
 let quiet = 0;
+let searchTimer = 0;
 const pendingSaves = new Map();
 const state = {
     query: '',
@@ -720,8 +722,15 @@ function buildShell() {
         onInput: event => {
             state.query = event.currentTarget.value;
             state.pinnedId = null;
-            renderList();
-            syncFoldAll();
+            // Each pass rebuilds every card and its code box, so it waits for a pause in typing.
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(() => {
+                if (!root) {
+                    return;
+                }
+                renderList();
+                syncFoldAll();
+            }, SEARCH_DELAY_MS);
         },
     });
     search.value = state.query;

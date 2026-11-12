@@ -296,7 +296,12 @@ function injectPromptToolbar(promptList) {
 
     promptList.parentElement.insertBefore(toolbar, promptList);
 
-    toolbar.querySelector('#bpt-prompt-search').addEventListener('input', schedulePromptRefresh);
+    // Each key used to queue two full passes over the prompt list, so typing waits for a pause.
+    let searchTimer = 0;
+    toolbar.querySelector('#bpt-prompt-search').addEventListener('input', () => {
+        clearTimeout(searchTimer);
+        searchTimer = window.setTimeout(schedulePromptRefresh, 120);
+    });
     toolbar.querySelector('#bpt-prompt-clear').addEventListener('click', () => {
         toolbar.querySelector('#bpt-prompt-search').value = '';
         schedulePromptRefresh();
