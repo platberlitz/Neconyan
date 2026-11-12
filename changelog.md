@@ -56,6 +56,7 @@
 - PR #646 (2026-11-12) `feat(mewmory): show memories in the chat and keep messages off the record`
 - PR #647 (2026-11-12) `fix(agents): keep prefilled reasoning out of Agent replies`
 - PR #648 (2026-11-12) `feat(mewmory): estimate updates, cap daily use and add exports`
+- PR #649 (2026-11-12) `feat(mewmory): add a story view with recap, promises and a connection map`
 
 ## v1.5.4
 
