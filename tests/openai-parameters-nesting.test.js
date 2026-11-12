@@ -8,6 +8,7 @@ const read = (...parts) => readFileSync(path.join(repoRoot, ...parts), 'utf8').r
 const openAiSource = read('public', 'scripts', 'openai.js');
 const tabManagerSource = read('public', 'scripts', 'extensions', 'third-party', 'ChatCompletionTabs', 'components', 'openai-tab-manager.js');
 const neconyanCss = read('public', 'css', 'neconyan.css');
+const indexHtml = read('public', 'index.html');
 
 function getGroupConfig(id) {
     const start = openAiSource.indexOf(`id: '${id}'`);
@@ -43,6 +44,22 @@ describe('Presets Parameters nesting', () => {
         expect(body).toContain('content?.style.removeProperty(\'display\')');
         expect(openAiSource).toContain('flattenOpenAISettingsSubdrawer($block[0]);');
         expect(openAiSource).toContain('flattenOpenAISettingsSubdrawer($drawer[0]);');
+    });
+
+    test('preset linking is the last Parameters section, not a drawer under the preset picker', () => {
+        const linking = getGroupConfig('sb-openai-preset-linking');
+        const presetHeader = indexHtml.slice(indexHtml.indexOf('<div id="openai_api-presets">'), indexHtml.indexOf('<div id="textgenerationwebui_api-presets">'));
+        const openAiSettings = indexHtml.slice(indexHtml.indexOf('<div id="openai_settings">'), indexHtml.indexOf('<!-- end of OpenAI settings-->'));
+
+        expect(linking).toContain('title: \'Switching Presets\'');
+        expect(linking).toContain('#openai_settings > div > #openai_preset_linking');
+        expect(openAiSource.indexOf('id: \'sb-openai-advanced\'')).toBeLessThan(openAiSource.indexOf('id: \'sb-openai-preset-linking\''));
+        expect(presetHeader).not.toContain('bind_preset_to_connection');
+        expect(presetHeader).not.toContain('Preset API/Sampler Linking');
+        for (const id of ['bind_preset_to_connection', 'bind_preset_to_sampling', 'model_sampling_profiles_enabled']) {
+            expect(openAiSettings).toContain(`id="${id}"`);
+        }
+        expect(tabManagerSource).toContain('\'#left-nav-panel #sb-openai-advanced\',\n                        \'#left-nav-panel #sb-openai-preset-linking\',');
     });
 
     test('the Parameters tab carries the new group and sections are divided', () => {

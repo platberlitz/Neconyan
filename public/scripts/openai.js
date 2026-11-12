@@ -3691,6 +3691,14 @@ function groupOpenAISettingsIntoDrawers() {
             ],
         },
         {
+            id: 'sb-openai-preset-linking',
+            title: 'Switching Presets',
+            description: 'What loading a preset changes besides its prompts',
+            selectors: [
+                '#openai_settings > div > #openai_preset_linking',
+            ],
+        },
+        {
             id: 'sb-openai-prompt-manager',
             title: 'Prompt Manager',
             description: 'Inspect, reorder, toggle, and edit injected prompts',

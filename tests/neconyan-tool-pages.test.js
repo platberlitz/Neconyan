@@ -385,11 +385,12 @@ describe('settings pages open as Neconyan pages with an assistant tour', () => {
 
     test('Nori explains presets without pressing save, import or delete and skips unavailable controls', () => {
         const steps = getToolTourSteps('presets');
-        expect(steps.map(step => step.id)).toEqual(['welcome', 'choose', 'save', 'copy', 'files', 'linking', 'parameters', 'prompts', 'done']);
+        expect(steps.map(step => step.id)).toEqual(['welcome', 'choose', 'save', 'copy', 'files', 'parameters', 'linking', 'prompts', 'done']);
         expect(getToolTourSteps('presets', { isShown: () => false }).map(step => step.id)).toEqual(['welcome', 'choose', 'done']);
         expect(steps.find(step => step.id === 'choose').targets).toEqual(expect.arrayContaining(['#settings_preset_openai', '#settings_preset_textgenerationwebui', '#settings_preset_novel', '#settings_preset']));
         expect(steps.find(step => step.id === 'prompts').tab).toBe('#openai-tab-btn-prompts');
         expect(steps.find(step => step.id === 'parameters').tab).toBe('#openai-tab-btn-parameters');
+        expect(steps.find(step => step.id === 'linking')).toMatchObject({ targets: ['#sb-openai-preset-linking'], tab: '#openai-tab-btn-parameters' });
         expect(steps.every(step => !step.open)).toBe(true);
         expect(steps[0].body).toContain('won\'t change, save or delete');
         expect(steps.find(step => step.id === 'copy').body).toContain('keep the original preset unchanged');

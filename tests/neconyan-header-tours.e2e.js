@@ -138,16 +138,17 @@ for (const layout of layouts) {
             const card = page.locator('#neconyan-tool-tour');
             await expect(card.locator('.neconyan-tool-tour-speaker')).toHaveText('Nori\'s Presets tour');
             await expect(card.locator('.neconyan-tool-tour-portrait')).toHaveAttribute('src', /nori/);
-            const steps = ['welcome', 'choose', 'save', 'copy', 'files', 'linking', 'parameters', 'prompts', 'done'];
+            const steps = ['welcome', 'choose', 'save', 'copy', 'files', 'parameters', 'linking', 'prompts', 'done'];
             for (const step of steps) {
                 await expect(card).toHaveAttribute('data-step', step);
                 await expect(page.locator('.neconyan-tool-tour-target')).toHaveCount(1);
                 if (step === 'welcome') await expect(root.locator('.sb-shell-header .neconyan-tool-page-intro')).toHaveClass(/neconyan-tool-tour-target/);
-                if (step === 'parameters') await expect(page.locator('#openai-tab-btn-parameters')).toHaveAttribute('aria-selected', 'true');
+                if (step === 'parameters' || step === 'linking') await expect(page.locator('#openai-tab-btn-parameters')).toHaveAttribute('aria-selected', 'true');
                 if (step === 'prompts') {
                     await expect(page.locator('#openai-tab-btn-prompts')).toHaveAttribute('aria-selected', 'true');
                     await card.locator('[data-tool-tour-back]').click();
-                    await expect(card).toHaveAttribute('data-step', 'parameters');
+                    await expect(card).toHaveAttribute('data-step', 'linking');
+                    await expect(page.locator('#sb-openai-preset-linking')).toHaveClass(/neconyan-tool-tour-target/);
                     await expect(page.locator('#openai-tab-btn-parameters')).toHaveAttribute('aria-selected', 'true');
                     await card.locator('[data-tool-tour-next]').click();
                     await expect(card).toHaveAttribute('data-step', 'prompts');
