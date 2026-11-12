@@ -17,6 +17,7 @@ import { getPromptDisplayTokenCounts, getPromptSourceTokenCounts, isCommentOnlyP
 import { getRenderedMarkerPrompt } from './prompt-manager-marker-preview.js';
 import { getPromptPreview } from './prompt-preview.js';
 import { clearPromptSetVariables } from './prompt-variable-cleanup.js';
+import { promptSetsVariables } from './prompt-variable-names.js';
 import { withReadOnlyVariables } from './variable-read-only.js';
 import { RUNTIME_AGENTS_IDENTIFIER, resolveInChatAgentTokenUsage } from './in-chat-agent-inspection.js';
 import { PINNED_PROMPTS_FIELD, normalizePinnedPromptIds, setPinnedPromptId } from './pinned-prompt-toggles.js';
@@ -2108,6 +2109,7 @@ class PromptManager {
         generationType = String(generationType || 'normal').toLowerCase().trim();
         const promptCollection = new PromptCollection();
         const promptOrder = this.getPromptOrderForCharacter(this.activeCharacter);
+        const includedPrompts = [];
 
         promptOrder.forEach(entry => {
             const prompt = this.getPromptById(entry.identifier);
@@ -2118,14 +2120,21 @@ class PromptManager {
             }
 
             if (allowedTrigger) {
-                promptCollection.add(this.preparePrompt(prompt));
+                includedPrompts.push(prompt);
             } else if (entry.identifier === 'main') {
                 // Some extensions require main prompt to be present for relative inserts.
                 // So we make a GMO-free vegan replacement.
                 const replacementPrompt = structuredClone(prompt);
                 replacementPrompt.content = '';
-                promptCollection.add(this.preparePrompt(replacementPrompt));
+                includedPrompts.push(replacementPrompt);
             }
+        });
+
+        // Prompts that set variables are filled in first, so a prompt higher in the list
+        // reads this reply's {{getvar}} values instead of the ones saved by the last reply.
+        const preparedPrompts = includedPrompts.map(prompt => promptSetsVariables(prompt.content) ? this.preparePrompt(prompt) : null);
+        includedPrompts.forEach((prompt, index) => {
+            promptCollection.add(preparedPrompts[index] ?? this.preparePrompt(prompt));
         });
 
         return promptCollection;
