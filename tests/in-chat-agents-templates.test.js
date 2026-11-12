@@ -616,7 +616,9 @@ describe('in-chat agent bundled templates', () => {
         expect(chatroom.prompt).toContain('[Viewer reply]');
         expect(chatroom.prompt).toContain('[Current chatroom]');
         expect(chatroom.prompt).toContain('post/comment field on that same line');
-        expect(chatroom.prompt).toContain('each further > line on its own line directly below, with no chatroom| prefix');
+        expect(chatroom.prompt).toContain('or the comment that follows its greentext) on its own line directly below, with no chatroom| prefix');
+        expect(chatroom.prompt).toContain('A line with no prefix always belongs to the post above it');
+        expect(chatroom.prompt).toContain('that comment stays in the same post. Every other Anonymous starts a new chatroom| line');
         expect(chatroom.prompt).toContain('Keep the post/comment field clean');
         expect(chatroom.prompt).toContain('[Chatroom Extra Character Cards]');
         expect(chatroom.prompt).toContain('[Custom Chatroom Style]');

@@ -33,7 +33,7 @@ export function getChatroomOutputContractPrompt(style) {
         'Use the username/handle in field 2. Use a short label in field 3 the way the selected platform shows it (post number, score, @handle and time, role), or leave field 3 blank instead of the literal word meta.',
         'Keep labels, IDs, scores, dashes, bullets, markdown, and extra pipe fields out of the post/comment text.',
         'The panel draws the feed in the look of the selected platform, so fill every field the way that platform shows it.',
-        'When a post is greentext, put its first > line in field 5 and each further > line on its own line directly below, with no chatroom| prefix. Keep one greentext story inside one post.',
+        'Start every new post with its own chatroom| or chatroom-reply| line. When a post runs over several lines (greentext, or greentext followed by a comment), put its first line in the post field and each further line of that same post on its own line directly below, with no chatroom| prefix. A line with no prefix always belongs to the post above it.',
         'Optional extra lines, placed between chatroom-style and chatroom-end:',
         'chatroom-reply|NightWatch|regular|205|Alex|That was the courier sneaking out.',
         'chatroom-poll|Username|Poll question',
