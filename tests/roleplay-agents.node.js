@@ -456,6 +456,17 @@ test('partial prefills follow each saved Agent model and survive replay without 
     assert.equal((await runAgentModelStep(f.context, { ...success, generate: () => assert.fail('Repeated a saved call') })).text, 'Answer: Done');
 });
 
+test('reasoning continued from an open thinking prefill stays out of the Agent reply', async t => {
+    const f = prepared(t);
+    const options = { base: f.scope, account: f.account, name: 'open-thinking', identity: roleplayHash('open-thinking'), binding: f.binding,
+        maxTokens: 64, macros: {}, buildMessages: () => [{ role: 'user', content: 'Rewrite' }, { role: 'assistant', content: '<think>\nI am going to plan now' }],
+        generate: modelResponse(() => ({ text: ', keeping the tone.\n</think>\n\nRewritten reply' })) };
+    assert.equal((await runAgentModelStep(f.context, options)).text, 'Rewritten reply');
+    const kimi = { ...options, name: 'open-thinking-kimi', modelOverride: 'kimi-k3.1-pro', partialPrefill: '<think>Plan',
+        buildMessages: () => [{ role: 'user', content: 'Rewrite' }] };
+    assert.equal((await runAgentModelStep(f.context, kimi)).text, 'Rewritten reply');
+});
+
 test('an empty Agent reply tries the fallback, and every connection failing keeps the last error', async t => {
     const f = prepared(t);
     const aux = { kind: 'profile', ...captureChatProfile(f.directories, 'aux') };
