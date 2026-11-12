@@ -595,6 +595,11 @@ describe('in-chat agent bundled templates', () => {
         expect(memoryShard.prompt).toContain('# MEMORY SHARD: [ID]-[NEXT NUM]');
         expect(memoryShard.prompt).toContain('# CONSOLIDATED MEMORY SHARD: [ID]-MASTER');
         expect(memoryShard.prompt).toContain('## Shard Reference Key');
+        // Mewmory is optional: the sections are empty when it is off, and the chat stays the source.
+        expect(memoryShard.prompt).toContain('<story_memory>\n{{mewmory-facts}}\n</story_memory>');
+        expect(memoryShard.prompt).toContain('<character_views>\n{{mewmory-interview}}\n</character_views>');
+        expect(memoryShard.prompt).not.toContain('{{full-mewmory}}');
+        expect(memoryShard.prompt.indexOf('# Mewmory Reference')).toBeGreaterThan(memoryShard.prompt.indexOf('# Final Check'));
         expect(chatroom.companion).toEqual(expect.objectContaining({
             trigger: 'auto',
             displayMode: 'panel',
