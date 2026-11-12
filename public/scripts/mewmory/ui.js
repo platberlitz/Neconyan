@@ -9,6 +9,7 @@ import { getFriendlyTokenizerName } from '../tokenizers.js';
 import { uuidv4 } from '../utils.js';
 import { dismissJob, retryJob } from '../jobs.js';
 import { mewmoryConfigAutosave } from './config-autosave.js';
+import { defaultLorebookName, sendToLorebook } from './lorebook.js';
 import { PREFIX_PRESETS, RAG_DEFAULTS } from './rag-settings.js';
 import {
     DECISION_ROLES, EXTRACTION_FOCUS_OPTIONS, JEV_DECISION_PRESETS, MESSAGE_WINDOW_PRESETS,
@@ -51,6 +52,7 @@ const ui = { root: null, tab: 'now', owner: '', subject: '', significance: '', s
     source: null, editor: null, draft: null, configError: '', accountChanged: false, role: 'extractor', restore: null, matches: null,
     searchMode: 'hybrid', searchType: '', searchReport: null, running: false, progress: '', scope: '',
     sort: 'story', flag: '', importance: '', state: '', from: '', to: '', moreFilters: false, selected: new Set(), history: null, duplicates: null,
+    estimate: null, loreName: '', loreNote: '', transferNote: '',
     layout: 'list', message: null };
 
 /** Where a memory's newest message sits in the open chat, or -1 when it is not on screen (inherited or a card). */
@@ -1236,6 +1238,7 @@ function incompleteConfigDraft(draft) {
     };
     add('Recent chat allowance, tokens', draft.historyWindow);
     add('Hide older messages at this chat size, tokens', draft.autoHideTokens);
+    add('Daily token limit for automatic updates', draft.dailyTokenLimit);
     add('Keep at least this many recent messages', draft.recentMessages);
     add('Remove older chat in groups of', draft.historyBatchMessages);
     add('Space for recalled memories, tokens', draft.memoryTokens);
@@ -1486,7 +1489,7 @@ function renderSettings(root) {
     jump.setAttribute('aria-label', 'Settings sections');
     jump.append(node('span', 'mewmory-caption', 'Jump to'));
     for (const [id, label] of [['automatic', 'Memory updates'], ['models', 'Models used by Mewmory'], ['search', 'Finding relevant memories'],
-        ...(mewmory.view ? [['upkeep', 'Upkeep'], ['transfers', 'Export and restore']] : [])]) {
+        ...(mewmory.view ? [['upkeep', 'Upkeep'], ['transfers', 'Export and restore'], ['lorebook', 'Lorebook']] : [])]) {
         const link = node('button', 'mewmory-jump-link', label);
         link.type = 'button';
         link.addEventListener('click', () => {
@@ -1579,6 +1582,8 @@ function renderSettings(root) {
         type: 'number', key: 'candidate-limit', hint: 'How many possible matches to consider before choosing what helps the next reply.',
     }), configField('Token counter for replies', draft.writerTokenizer, value => { draft.writerTokenizer = value; }, {
         options: tokenizers, key: 'writer-tokenizer', hint: 'Match the model that writes replies. Auto follows the app setting. Counts can differ from your provider.',
+    }), configField('Daily token limit for automatic updates', draft.dailyTokenLimit ?? 0, value => { draft.dailyTokenLimit = value; }, {
+        type: 'number', key: 'daily-token-limit', hint: '0 means no limit. Counts every Mewmory model call today across all chats. When it is reached, automatic updates wait until tomorrow; buttons you press still work.',
     }));
     settings.append(budgets);
     if (draft.historyMode === 'messages') {
@@ -1851,8 +1856,8 @@ function renderHealth(root) {
         ? 'The recent-message window controls which remembered messages can leave the reply. Optional hiding applies the same window to the saved chat.'
         : 'The hiding threshold is separate from the recent chat allowance. At the threshold, older visible messages are hidden together and the latest reply can stay visible.'));
     const actions = node('div', 'mewmory-actions');
-    actions.append(button('Update memories for the whole chat', () => processMewmory({ all: true }), { disabled: mewmory.busy || !view.enabled }),
-        button('Review for missed details', () => processMewmory({ all: true, checkpoint: true }), { disabled: mewmory.busy || !view.enabled }),
+    actions.append(button('Update memories for the whole chat', () => openEstimate(false), { disabled: mewmory.busy || !view.enabled }),
+        button('Review for missed details', () => openEstimate(true), { disabled: mewmory.busy || !view.enabled }),
         button('Rebuild meaning search', () => act(scope => requestMewmory('index', { reset: true }, { scope })),
             { disabled: !mewmory.config.roles.embedding.enabled || mewmory.busy || !view.enabled }),
         button(mewmory.config.historyMode === 'messages' ? 'Hide messages outside the recent window' : 'Hide old messages at the token threshold',
@@ -1860,6 +1865,8 @@ function renderHealth(root) {
     health.append(node('p', 'mewmory-caption', 'Updating the whole chat includes recent messages and can make paid model requests. Reviewing missed details does not create a running story summary.'));
     if (mewmory.busy) actions.append(button('Stop updating', stopMewmoryBackfill));
     health.append(actions);
+    renderEstimate(health);
+    renderSpend(health);
     if (view.operationsError) health.append(node('p', 'mewmory-caption', view.operationsError));
     for (const job of view.operations || []) {
         const jobMessage = job.error?.message || job.warning || '';
@@ -1905,6 +1912,124 @@ function renderHealth(root) {
     }
 }
 
+function tokenCount(value) {
+    return Number(value || 0).toLocaleString() + (value === 1 ? ' token' : ' tokens');
+}
+
+export function estimateText(estimate) {
+    if (!estimate.messages) return ['Nothing is waiting. Every message in this chat already has its memories.'];
+    const lines = [estimate.messages + (estimate.messages === 1 ? ' message' : ' messages') + ' to read in about '
+        + estimate.batches + (estimate.batches === 1 ? ' model request.' : ' model requests.')];
+    lines.push(estimate.tokens
+        ? 'Expected use: about ' + tokenCount(estimate.tokens) + ', based on earlier updates in this chat.'
+        : 'The messages add up to about ' + tokenCount(estimate.messageTokens) + '. Instructions and earlier memories add more on top, so the real figure is higher.');
+    if (!estimate.enabled) lines.push('Facts and events is switched off, so nothing will be read until you switch it on.');
+    if (estimate.overLimit) lines.push('This would go past your daily token limit. Updates you start yourself still run.');
+    return lines;
+}
+
+function openEstimate(checkpoint) {
+    const scope = getMewmoryScope();
+    ui.estimate = { checkpoint, data: null, error: '', scope };
+    render();
+    requestMewmory('estimate', { checkpoint }, { scope }).then(data => {
+        if (ui.estimate?.scope === scope && ui.estimate.checkpoint === checkpoint) ui.estimate.data = data;
+    }, error => {
+        if (ui.estimate?.scope === scope) ui.estimate.error = error?.message || String(error);
+    }).finally(() => render());
+}
+
+function renderEstimate(root) {
+    if (!ui.estimate) return;
+    const { checkpoint, data, error } = ui.estimate;
+    const box = node('div', 'mewmory-estimate');
+    box.id = 'mewmory-estimate';
+    box.setAttribute('role', 'status');
+    box.append(node('h4', '', checkpoint ? 'Before reviewing for missed details' : 'Before updating the whole chat'));
+    if (error) box.append(node('p', 'mewmory-caption', error));
+    else if (!data) box.append(node('p', 'mewmory-caption', 'Working out how much this update reads…'));
+    else for (const line of estimateText(data)) box.append(node('p', 'mewmory-caption', line));
+    const actions = node('div', 'mewmory-actions');
+    actions.append(button(checkpoint ? 'Start review' : 'Start update', () => {
+        ui.estimate = null;
+        return processMewmory({ all: true, checkpoint });
+    }, { primary: true, disabled: !data || !data.messages || !data.enabled || mewmory.busy }),
+    button('Cancel', () => { ui.estimate = null; render(); }));
+    box.append(actions);
+    root.append(box);
+}
+
+function renderSpend(root) {
+    const spend = mewmory.spend;
+    if (!spend) return;
+    const line = 'Model use today across all chats: ' + tokenCount(spend.used) + ' in '
+        + spend.requests + (spend.requests === 1 ? ' call' : ' calls')
+        + (spend.limit ? ' of a ' + tokenCount(spend.limit) + ' daily limit.' : '. No daily limit is set.');
+    root.append(node('p', 'mewmory-caption', line));
+    if (spend.reached) root.append(node('p', 'mewmory-notice', 'Daily limit reached. Automatic updates are paused until tomorrow. Buttons you press still work.'));
+}
+
+function download(name, parts, type) {
+    const url = URL.createObjectURL(new Blob(parts, { type }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = name;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function fileName(chat) {
+    return String(chat || 'chat').replace(/[^\p{L}\p{N}_-]/gu, '-');
+}
+
+export function pickRestoreBackup(file, view) {
+    if (file?.format !== 'mewmory-export-all-1') return file;
+    const match = (file.chats || []).find(entry => entry?.state?.storyId === view?.storyId && entry?.state?.branchId === view?.branchId)
+        || (file.chats || []).find(entry => JSON.stringify(entry?.locator) === JSON.stringify(view?.locator));
+    if (!match) throw new Error('This file has no memories for this chat.');
+    return { format: 'mewmory-export-1', exportedAt: match.exportedAt || file.exportedAt, state: match.state };
+}
+
+async function exportEveryChat() {
+    const stories = mewmory.stories || [];
+    if (!stories.length) throw new Error('No chat has any memories to export yet.');
+    const parts = ['{"format":"mewmory-export-all-1","exportedAt":' + Date.now() + ',"chats":['];
+    let first = true;
+    for (const [index, story] of stories.entries()) {
+        ui.progress = 'Exporting chat ' + (index + 1) + ' of ' + stories.length + '…';
+        render();
+        const data = await requestMewmory('export', { locator: story.locator });
+        parts.push((first ? '' : ',') + JSON.stringify({ locator: story.locator, exportedAt: data.exportedAt, state: data.state }));
+        first = false;
+    }
+    parts.push(']}');
+    ui.progress = '';
+    download('Mewmory-every-chat.json', parts, 'application/json');
+    ui.transferNote = 'Exported ' + stories.length + (stories.length === 1 ? ' chat.' : ' chats.');
+}
+
+function renderLorebook(root) {
+    const locator = getMewmoryLocator();
+    if (!locator) return;
+    const lore = section('Send memories to a lorebook');
+    lore.id = 'mewmory-settings-lorebook';
+    lore.append(node('p', 'mewmory-caption', 'Copies this chat’s current facts, events and promises into a lorebook you can edit or share. '
+        + 'Mewmory never reads these entries back, and sending again updates the same entries instead of adding copies.'));
+    const name = ui.loreName || defaultLorebookName(locator.chat);
+    lore.append(field('Lorebook name', name, value => { ui.loreName = value; }, { key: 'lorebook-name' }));
+    const actions = node('div', 'mewmory-actions');
+    actions.append(button('Send memories to this lorebook', () => act(async () => {
+        const { entries } = await requestMewmory('lore');
+        const result = await sendToLorebook(ui.loreName || name, entries);
+        ui.loreNote = (result.added || result.updated)
+            ? 'Added ' + result.added + ' and updated ' + result.updated + ' entries in ' + result.name + '.'
+            : 'Nothing new to send: ' + result.name + ' already matches.';
+    }, { refresh: false })));
+    lore.append(actions);
+    if (ui.loreNote) lore.append(node('p', 'mewmory-caption', ui.loreNote));
+    root.append(lore);
+}
+
 function renderTransfers(root, recover = false) {
     const archive = section('Export and restore');
     if (!recover) archive.id = 'mewmory-settings-transfers';
@@ -1912,13 +2037,13 @@ function renderTransfers(root, recover = false) {
     const transfers = node('div', 'mewmory-actions');
     if (!recover) transfers.append(button('Export Mewmory', () => act(async () => {
         const data = await requestMewmory('export');
-        const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = 'Mewmory-' + getMewmoryLocator().chat.replace(/[^\p{L}\p{N}_-]/gu, '-') + '.json';
-        link.click();
-        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    }, { refresh: false })));
+        download('Mewmory-' + fileName(getMewmoryLocator().chat) + '.json', [JSON.stringify(data, null, 2)], 'application/json');
+    }, { refresh: false })), button('Export as Markdown', () => act(async () => {
+        const { markdown } = await requestMewmory('export/markdown');
+        download('Mewmory-' + fileName(getMewmoryLocator().chat) + '.md', [markdown], 'text/markdown');
+    }, { refresh: false })), button('Export every chat', () => act(exportEveryChat, { refresh: false }), {
+        disabled: !mewmory.stories?.length,
+    }));
     const upload = node('label', 'mewmory-field');
     upload.append(node('span', '', 'Choose a Mewmory export'));
     const file = document.createElement('input');
@@ -1931,7 +2056,7 @@ function renderTransfers(root, recover = false) {
             if (selected.size > 256 * 1024 * 1024) throw new Error('This export is larger than the 256 MiB restore limit.');
             const locator = getMewmoryLocator();
             const revision = mewmory.view?.revision;
-            const backup = JSON.parse(await selected.text());
+            const backup = pickRestoreBackup(JSON.parse(await selected.text()), mewmory.view);
             const review = await requestMewmory('restore', { locator, backup, revision, recover }, { scope });
             ui.restore = { backup, review, recover };
         }, { refresh: false });
@@ -1939,6 +2064,7 @@ function renderTransfers(root, recover = false) {
     upload.append(file);
     transfers.append(upload);
     archive.append(transfers);
+    if (ui.transferNote && !recover) archive.append(node('p', 'mewmory-caption', ui.transferNote));
     if (ui.restore) {
         const { backup, review, recover } = ui.restore;
         archive.append(node('p', '', review.restored.length + ' memories can be restored as your own corrections. '
@@ -1949,8 +2075,10 @@ function renderTransfers(root, recover = false) {
             ui.restore = null;
         }), { disabled: !recover && !review.restored.length }), button('Cancel restore', () => { ui.restore = null; render(); }));
     }
-    archive.append(node('p', 'mewmory-caption', 'Deleting a message also removes the memories based on it. Chat backups and downloaded exports are not affected.'));
+    archive.append(node('p', 'mewmory-caption', 'Deleting a message also removes the memories based on it. Chat backups and downloaded exports are not affected. '
+        + 'Markdown is for reading; only the JSON exports can be restored. A file with every chat restores the memories that belong to this chat.'));
     root.append(archive);
+    if (!recover) renderLorebook(root);
 }
 
 function renderOverview(root) {
@@ -2045,6 +2173,10 @@ function render() {
         ui.duplicates = null;
         ui.layout = 'list';
         ui.message = null;
+        ui.estimate = null;
+        ui.loreName = '';
+        ui.loreNote = '';
+        ui.transferNote = '';
         ui.progress = '';
         ui.running = false;
     }
@@ -2142,7 +2274,7 @@ function loadMewmoryStyles() {
     if (!style) {
         style = document.createElement('link');
         style.id = 'mewmory-css';
-        style.href = 'css/mewmory.css?v=20261112-mewmory-in-chat';
+        style.href = 'css/mewmory.css?v=20261112-mewmory-cost-export';
         document.head.append(style);
     }
     if (style.rel !== 'stylesheet') {

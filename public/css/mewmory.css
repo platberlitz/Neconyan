@@ -318,6 +318,9 @@
 .mewmory-version del { color: var(--mw-muted); text-decoration: line-through; }
 .mewmory-message { padding: .8rem; border: 1px solid color-mix(in srgb, var(--mw-accent) 45%, var(--mw-border)); border-radius: 8px; background: var(--mw-tint); }
 .mewmory-message-text { padding-left: .7rem; border-left: 2px solid var(--mw-border); color: var(--mw-muted); font-style: italic; }
+.mewmory-estimate { display: flex; flex-direction: column; gap: .5rem; padding: .8rem; border: 1px solid color-mix(in srgb, var(--mw-accent) 45%, var(--mw-border)); border-radius: 8px; background: var(--mw-tint); }
+.mewmory-estimate h4 { margin: 0; }
+.mewmory-notice { margin: 0; padding: .6rem .8rem; border-left: 3px solid var(--mw-accent); border-radius: 4px; background: var(--mw-tint); font-weight: 600; }
 .mewmory-subheading { margin: .4rem 0 0; font-size: 1em; font-weight: 700; }
 .mewmory-timeline { display: flex; flex-direction: column; gap: 1rem; margin: 0; padding: 0; list-style: none; }
 .mewmory-timeline-step { display: flex; flex-direction: column; gap: .6rem; padding-left: .9rem; border-left: 2px solid color-mix(in srgb, var(--mw-accent) 55%, var(--mw-border)); }
