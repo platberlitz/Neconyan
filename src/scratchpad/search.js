@@ -118,6 +118,7 @@ export function readFoundSessionLocked(lease, listId, sessionId) {
         assistant: session.assistant,
         gender: session.gender,
         name: session.name,
+        pinnedNote: session.pinnedNote,
         settings: session.settings,
         messages: (Array.isArray(session.messages) ? session.messages : []).filter(item => item?.role === 'user' || item?.state === 'done'),
     };

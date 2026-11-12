@@ -261,7 +261,7 @@ router.post('/prompt', (request, response) => {
 router.post('/session/import', (request, response) => change(request, response, (bucket, body, lease) => {
     const session = body.session && typeof body.session === 'object' ? body.session : {};
     const settings = { ...session.settings, notes: [], picked: [], pickedSource: null, lorebook: '' };
-    const imported = createSession(bucket, { assistant: session.assistant, gender: session.gender, name: session.name, settings,
+    const imported = createSession(bucket, { assistant: session.assistant, gender: session.gender, name: session.name, pinnedNote: session.pinnedNote, settings,
         messages: Array.isArray(session.messages) ? session.messages : [] });
     refreshSessionAssistants(imported, readAssistantsLocked(lease));
 }));

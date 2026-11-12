@@ -16,6 +16,7 @@ export const refreshedKnowledgeCases = [
     ['Where can I read the actual recalled memory in Mewmory?', 'mewmory.recall-text', 'actual recalled text before its selection reason'],
     ['Where is Block external media by default?', 'privacy.external', 'Settings → Chat & Writing → Chat & messages → Messages'],
     ['Does Separate notes for each persona give me separate Author\'s Note libraries?', 'chat.authors-note', 'own note library for that character, not just separate ticks'],
+    ['How do I use the Scratchpad pinned note or story tracker?', 'scratchpad.pinned-note', 'press Pinned note beside the assistant controls'],
     ['How do I add my own quick prompts to Scratchpad?', 'scratchpad.quick-prompts', 'Add a prompt creates a row'],
     ['How do I reuse my Scratchpad Context choices in another session?', 'scratchpad.context-setups', 'Press Save current choices and name the setup'],
     ['What do the typed tools /roll, /calc and /pick do in a Scratchpad message?', 'scratchpad.typed-tools', '/roll 2d6+1 rolls dice and shows every die'],

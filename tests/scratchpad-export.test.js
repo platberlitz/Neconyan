@@ -34,6 +34,11 @@ function session() {
 const library = [{ id: 'custom-1', name: 'Custom', personality: 'Kind.' }, { id: 'custom-2', name: 'Unused', personality: 'Absent.' }, { id: 'miso', name: 'Miso' }];
 
 describe('Scratchpad session export', () => {
+    test('the session note travels in JSON and readable Markdown without requiring extra export choices', () => {
+        const original = { ...session(), pinnedNote: 'Goal: find the ferry.\nLoose end: the key.' };
+        expect(buildSessionExport(original, library).session.pinnedNote).toBe(original.pinnedNote);
+        expect(sessionMarkdown(original)).toContain(`## Pinned note\n\n${original.pinnedNote}\n\n## You`);
+    });
     test('the default file holds conversation text only, with every version and the assistants used', () => {
         const payload = buildSessionExport(session(), library);
         expect(payload).toMatchObject({ format: 'neconyan-scratchpad', version: 1, session: { name: 'Tea notes', assistant: 'miso', gender: 'male' } });
