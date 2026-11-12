@@ -20,6 +20,16 @@ function addPromptVariableName(names, macroName, name) {
 }
 
 /**
+ * Checks whether prompt content writes a variable with setvar/setglobalvar.
+ * @param {string} content Prompt content
+ * @returns {boolean} True when the content contains a setvar/setglobalvar macro
+ */
+export function promptSetsVariables(content) {
+    const { local, global } = collectPromptSetVariableNames(content);
+    return local.length > 0 || global.length > 0;
+}
+
+/**
  * Extracts variable names written by setvar/setglobalvar macros in prompt content.
  * @param {string} content Prompt content
  * @returns {{ local: string[], global: string[] }} Local and global variable names
