@@ -43,6 +43,7 @@
 - PR #633 (2026-11-12) `feat(scratchpad): keep a pinned note or story tracker`
 - PR #634 (2026-11-12) `fix(chatroom): draw each style in its platform's look`
 - PR #635 (2026-11-12) `feat(scratchpad): summarise older discussion automatically`
+- PR #636 (2026-11-12) `feat(scratchpad): rehearse the next story reply`
 
 ## v1.5.4
 
