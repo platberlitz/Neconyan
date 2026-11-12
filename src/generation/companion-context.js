@@ -2,7 +2,7 @@ import { createMacroEnvironment } from '../macros/index.js';
 import { getStringHash } from '../../public/scripts/macro-primitives.js';
 import { getActiveCompanionResults, getPlotCompassOpeningNote, isEmptyOutputSentinel, isPlotCompassAgent, MEMORY_SHARD_TEMPLATE_ID, TRACKER_EMPTY_OUTPUT_INSTRUCTION } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
 import { TRACKER_REPAIR_INSTRUCTION } from '../../public/scripts/extensions/in-chat-agents/tracker-state.js';
-import { buildTrackerStateText, captureSecretsTrackerState, SECRETS_TRACKER_MACRO } from '../../public/scripts/extensions/in-chat-agents/agent-context-macros.js';
+import { buildMewmoryMacros, buildTrackerStateText, captureSecretsTrackerState, SECRETS_TRACKER_MACRO } from '../../public/scripts/extensions/in-chat-agents/agent-context-macros.js';
 import { buildContinuityCorrectionsText, CONTINUITY_CORRECTIONS_MACRO, continuityCorrectionsFromRuns } from '../../public/scripts/extensions/in-chat-agents/continuity-link.js';
 import { agentMessageExtra } from './agent-message-state.js';
 import { COMPANION_GUARD_INSTRUCTION, COMPANION_FINAL_BOUNDARY, COMPANION_BATCH_FINAL_BOUNDARY, COMPANION_TASK_ANCHOR, getCompanionFormatInstruction,
@@ -23,7 +23,8 @@ export function companionEnvironment(options, agent, message = options.messages.
     for (const name of ['currentMessage', 'lastMessage', 'latestMessage', 'response', 'currentResponse', 'latestResponse', 'assistantMessage']) {
         environment.dynamicMacros[name.toLowerCase()] = text;
     }
-    Object.assign(environment.dynamicMacros, { assistantname: environment.names.char, agentname: agent.name, generationtype: options.generationType });
+    Object.assign(environment.dynamicMacros, { assistantname: environment.names.char, agentname: agent.name, generationtype: options.generationType },
+        buildMewmoryMacros(options.mewmory));
     environment.dynamicMacros[SECRETS_TRACKER_MACRO] = buildTrackerStateText(captureSecretsTrackerState(options.agents, options.records?.[0]?.chat_metadata));
     const runs = message === options.messages.at(-1) && options.continuityRuns ? options.continuityRuns : agentMessageExtra(message ?? {}, 'inChatAgentPromptRuns');
     environment.dynamicMacros[CONTINUITY_CORRECTIONS_MACRO] = buildContinuityCorrectionsText(continuityCorrectionsFromRuns(runs, options.agents));
