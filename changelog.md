@@ -59,6 +59,7 @@
 - PR #649 (2026-11-12) `feat(mewmory): add a story view with recap, promises and a connection map`
 - PR #650 (2026-11-12) `feat(mewmory): ask memories, check contradictions and share across chats`
 - PR #651 (2026-11-12) `feat(mewmory): make the memory panel easier to read and get around`
+- PR #652 (2026-11-12) `feat(agents): trim Memory Shard and let it read Mewmory`
 
 ## v1.5.4
 
