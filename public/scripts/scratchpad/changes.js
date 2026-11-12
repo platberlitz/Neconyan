@@ -162,6 +162,41 @@ function authorsNotePlan(change, source) {
     };
 }
 
+async function cssSnippetPlan(change) {
+    const runtime = await import('../extensions/css-snippets/src/runtime.js');
+    const read = () => {
+        const snippet = (runtime.getSettings().snippetList ?? []).find(item => item?.id === change.snippet && !item.isDeleted);
+        if (!snippet) fail(t`There is no CSS snippet with that ID any more.`);
+        return snippet;
+    };
+    const snippet = read();
+    const before = String(snippet[change.field] ?? '');
+    return {
+        target: t`CSS snippet: ${snippet.name || change.snippet}`,
+        field: { name: t`Name`, content: t`CSS` }[change.field],
+        before,
+        after: change.value,
+        editable: true,
+        async commit(edited) {
+            const value = change.field === 'name' ? String(edited ?? '').replace(/\s+/g, ' ').trim() : String(edited ?? '');
+            if (change.field === 'name' && !value) fail(t`A CSS snippet needs a name.`);
+            if (change.field === 'content' && value.trim() && globalThis.document && runtime.hasNoReadableRules(value)) {
+                fail(t`The browser cannot read any rule in that CSS, so nothing was saved.`);
+            }
+            const live = read();
+            if (String(live[change.field] ?? '') !== before) conflict();
+            live[change.field] = value;
+            // The runtime's save also applies the styles, which must not happen while the extension is turned off.
+            if (globalThis.document?.getElementById('csss--css-snippets')) {
+                runtime.saveSnippet(live);
+            } else {
+                live.modifiedOn = Date.now();
+                runtime.getCtx().saveSettingsDebounced();
+            }
+        },
+    };
+}
+
 async function regexPlan(change) {
     const engine = await import('../extensions/regex/engine.js');
     const read = () => {
@@ -458,7 +493,7 @@ export async function addReplyVersion(source, target, text) {
  * Reads the live value a change would replace and returns everything the
  * review needs. Nothing is written until commit() is called.
  */
-export async function prepareChange(change, source, { sharedAvatar = '', sharedPersona, personaGuard, sharedPreset, presetGuard, creationGuard, creatorKey = '', agentsShared = false, authorsNoteShared = false, regexShared = false } = {}) {
+export async function prepareChange(change, source, { sharedAvatar = '', sharedPersona, personaGuard, sharedPreset, presetGuard, creationGuard, creatorKey = '', agentsShared = false, authorsNoteShared = false, regexShared = false, cssSnippetsShared = false } = {}) {
     if (!isCurrentSource(source)) fail(t`Return to this Scratchpad context before applying changes.`);
     change = normaliseChange(change);
     if (change.type === 'preset') {
@@ -537,6 +572,10 @@ export async function prepareChange(change, source, { sharedAvatar = '', sharedP
     if (change.type === 'regex') {
         if (!regexShared) fail(t`Share Regexes under Context before saving a change to one.`);
         return regexPlan(change);
+    }
+    if (change.type === 'css-snippet') {
+        if (!cssSnippetsShared) fail(t`Share CSS Snippets under Context before saving a change to one.`);
+        return cssSnippetPlan(change);
     }
     if (change.type === 'lorebook') {
         if (source.kind === 'general') fail(t`General Scratchpad does not share lorebooks, so lorebook changes are unavailable.`);

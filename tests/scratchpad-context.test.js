@@ -616,7 +616,7 @@ describe('Scratchpad current preset', () => {
 describe('Scratchpad shared context budget', () => {
     const bytes = text => new TextEncoder().encode(text).length;
     const occurrences = (text, body) => text.split(body).length - 1;
-    const headCopy = 'The shared context is too large to send. Turn off the persona, character cards, Author\'s Note, Agents, Regexes, lorebooks or preset you do not need, then try again.';
+    const headCopy = 'The shared context is too large to send. Turn off the persona, character cards, Author\'s Note, Agents, Regexes, CSS Snippets, lorebooks or preset you do not need, then try again.';
     const depthCopy = 'The selected chat messages are too large to share. Shorten them, pick specific messages, or turn off the persona, character cards, Author\'s Note, lorebooks and preset, then try again.';
     const pickedCopy = 'These picked messages are too large to share. Pick fewer or shorter ones, then try again.';
 

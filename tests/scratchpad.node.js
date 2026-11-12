@@ -70,6 +70,21 @@ test('regex script changes are offered only when Regexes are shared, and never f
     assert.match(buildScratchpadSystemPrompt({ assistant: 'miso', sourceKind: 'general', capabilities: { regex: true } }).text, /"type":"regex"/);
 });
 
+test('CSS snippet changes are offered only when CSS Snippets are shared, and never for a note', () => {
+    assert.equal(store.normaliseSettings({}).include.cssSnippets, false);
+    assert.equal(store.normaliseSettings({ include: { cssSnippets: true } }).include.cssSnippets, true);
+    for (const kind of ['roleplay', 'conversation', 'general']) assert.equal(normaliseCapabilities({ cssSnippets: true }, kind).cssSnippets, true);
+    assert.equal(normaliseCapabilities({ cssSnippets: true }, 'notebook').cssSnippets, undefined);
+    assert.equal(normaliseCapabilities({ cssSnippets: 'yes' }).cssSnippets, undefined);
+    for (const customPrompt of ['', 'Be helpful.']) {
+        const shared = buildScratchpadSystemPrompt({ assistant: 'miso', capabilities: { cssSnippets: true }, customPrompt }).text;
+        assert.match(shared, /"type":"css-snippet"/);
+        assert.match(shared, /change which themes or characters it applies to/);
+        assert.doesNotMatch(buildScratchpadSystemPrompt({ assistant: 'miso', capabilities: {}, customPrompt }).text, /"type":"css-snippet"/);
+    }
+    assert.match(buildScratchpadSystemPrompt({ assistant: 'miso', sourceKind: 'general', capabilities: { cssSnippets: true } }).text, /"type":"css-snippet"/);
+});
+
 test('Author\'s Note changes are offered only in Roleplay, and only when the note is shared', () => {
     assert.equal(normaliseCapabilities({ authorsNote: true }, 'roleplay').authorsNote, true);
     for (const kind of ['conversation', 'general', 'notebook']) assert.equal(normaliseCapabilities({ authorsNote: true }, kind).authorsNote, undefined);
@@ -369,6 +384,19 @@ test('a sent message offers regex script changes only while the session shares R
         const accepted = await acceptScratchpadReply(a.request(body), body);
         await runJob(getJob(a.directories, accepted.job.id));
         assert.equal(calls.at(-1).messages[0].content.includes('"type":"regex"'), offered);
+    }
+});
+
+test('a sent message offers CSS snippet changes only while the session shares CSS Snippets', async t => {
+    const a = account(t);
+    const calls = [];
+    registerScratchpadJobs({ generate: async options => { calls.push(options); return { text: 'Done.' }; } });
+    for (const [include, offered] of [[{ cssSnippets: true }, true], [{ cssSnippets: false }, false]]) {
+        const session = startSession(a, { include });
+        const body = sendBody(session, { capabilities: { cssSnippets: true } });
+        const accepted = await acceptScratchpadReply(a.request(body), body);
+        await runJob(getJob(a.directories, accepted.job.id));
+        assert.equal(calls.at(-1).messages[0].content.includes('"type":"css-snippet"'), offered);
     }
 });
 
@@ -910,7 +938,7 @@ test('saved context setups keep only portable choices, are account-owned and pro
     assert.deepEqual(saved.setups, [{
         name: 'Lean read',
         settings: {
-            depth: 4, include: { card: false, persona: true, authorsNote: true, lore: true, preset: true, hidden: false, agents: false, regex: false },
+            depth: 4, include: { card: false, persona: true, authorsNote: true, lore: true, preset: true, hidden: false, agents: false, regex: false, cssSnippets: false },
             maxTokens: 512, stream: false, webSearch: true, readLinks: true, prefill: 'Ideas:', partialPrefill: '',
         },
     }]);

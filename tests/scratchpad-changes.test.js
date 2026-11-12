@@ -53,6 +53,14 @@ jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/agent-stor
     getAgentById: id => agents.find(item => item.id === id), saveAgent,
 }));
 
+let cssSnippets = [];
+const saveSnippet = jest.fn();
+const saveSnippetSettings = jest.fn();
+jest.unstable_mockModule('../public/scripts/extensions/css-snippets/src/runtime.js', () => ({
+    getSettings: () => ({ snippetList: cssSnippets }), saveSnippet, hasNoReadableRules: () => false,
+    getCtx: () => ({ saveSettingsDebounced: saveSnippetSettings }),
+}));
+
 let regexScripts = [];
 const saveScriptsByType = jest.fn(async () => {});
 const loadRegexScripts = jest.fn(async () => {});
@@ -169,6 +177,35 @@ describe('Scratchpad reviewed saves', () => {
         await expect(name.commit('   ')).rejects.toThrow('needs a name');
         await name.commit('  Very   neat ');
         expect(regexScripts[0].scriptName).toBe('Very neat');
+    });
+
+    test('saves a reviewed CSS snippet text only while CSS Snippets are shared and the text is unchanged', async () => {
+        cssSnippets = [
+            { id: 'tidy', name: 'Tidy', content: '.mes { color: red; }', isDisabled: false, modifiedOn: 1 },
+            { id: 'old', name: 'Old', content: '.x { top: 0; }', isDeleted: true, modifiedOn: 1 },
+        ];
+        const change = { type: 'css-snippet', action: 'replace', snippet: 'tidy', field: 'content', value: '.mes { color: blue; }' };
+        await expect(prepareChange(change, source)).rejects.toThrow('Share CSS Snippets under Context');
+        await expect(prepareChange({ ...change, snippet: 'gone' }, source, { cssSnippetsShared: true })).rejects.toThrow('no CSS snippet');
+        await expect(prepareChange({ ...change, snippet: 'old' }, source, { cssSnippetsShared: true })).rejects.toThrow('no CSS snippet');
+        const plan = await prepareChange(change, { kind: 'general', key: 'general', avatar: 'Nova.png' }, { cssSnippetsShared: true });
+        expect(plan).toMatchObject({ target: 'CSS snippet: Tidy', field: 'CSS', before: '.mes { color: red; }', after: '.mes { color: blue; }', editable: true });
+        await plan.commit('.mes { color: green; }');
+        expect(cssSnippets[0].content).toBe('.mes { color: green; }');
+        expect(cssSnippets[0].modifiedOn).toBeGreaterThan(1);
+        expect(saveSnippetSettings).toHaveBeenCalledTimes(1);
+        expect(saveSnippet).not.toHaveBeenCalled();
+
+        const stale = await prepareChange({ ...change, value: '.mes { color: pink; }' }, source, { cssSnippetsShared: true });
+        cssSnippets[0].content = '.changed { top: 0; }';
+        await expect(stale.commit('.mes { color: pink; }')).rejects.toThrow('changed while the review was open');
+        expect(saveSnippetSettings).toHaveBeenCalledTimes(1);
+
+        const name = await prepareChange({ ...change, field: 'name', value: 'Neat' }, source, { cssSnippetsShared: true });
+        expect(name.field).toBe('Name');
+        await expect(name.commit('   ')).rejects.toThrow('needs a name');
+        await name.commit('  Very   neat ');
+        expect(cssSnippets[0].name).toBe('Very neat');
     });
 
     test.each([
