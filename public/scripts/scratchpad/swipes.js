@@ -24,6 +24,7 @@ export function appendReplySwipe(message, next) {
 export function exportReply(message, { reasoning = false, sources = false, attachments = false } = {}) {
     const plain = item => {
         const exported = Object.fromEntries(['role', 'text', 'created', 'assistant', 'assistantName', 'gender'].map(key => [key, item[key]]));
+        if (item.rehearsal) exported.rehearsal = true;
         if (reasoning && item.role === 'assistant' && item.reasoning) exported.reasoning = item.reasoning;
         if (sources && item.role === 'assistant' && item.webSearch) {
             const { provider, query, sources: links, error } = item.webSearch;

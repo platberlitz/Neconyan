@@ -29,7 +29,7 @@ function fitsHistory(messages) {
 
 function record(message) {
     return { id: message.id, role: message.role, state: message.state, text: message.text,
-        assistant: message.assistant, name: message.assistantName, attachments: message.attachments,
+        assistant: message.assistant, name: message.assistantName, rehearsal: message.rehearsal, attachments: message.attachments,
         webSearch: message.webSearch, webPages: message.webPages, images: message.images, proposals: message.proposals };
 }
 

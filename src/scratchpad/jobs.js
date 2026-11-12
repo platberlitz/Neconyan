@@ -4,6 +4,7 @@ import { normalisePresetTargets } from '../../public/scripts/scratchpad/preset-f
 import { appendReplySwipe, MAX_REPLY_SWIPES, replySwipes } from '../../public/scripts/scratchpad/swipes.js';
 import { scratchpadPrefill, joinScratchpadPrefill } from '../../public/scripts/scratchpad/prefill.js';
 import { roundToDiscuss } from '../../public/scripts/scratchpad/discuss.js';
+import { canRehearse, REHEARSAL_INSTRUCTIONS, REHEARSAL_REQUEST } from '../../public/scripts/scratchpad/rehearsal.js';
 import { runChatProfile, validateActiveGenerationContext } from '../generation/service.js';
 import { createMessageTokenCounter } from '../generation/message-token-counts.js';
 import { captureGenerationBinding, resolveGenerationProfile } from '../generation/profiles.js';
@@ -103,7 +104,10 @@ export function normaliseReplyRequest(body = {}) {
     const sessionId = requireId(body.sessionId, 'session');
     const regenerate = body.regenerate ? requireId(body.regenerate, 'reply') : null;
     const attachments = regenerate ? [] : normaliseAttachments(body.attachments);
-    const text = regenerate ? '' : boundedText(body.text, MAX_INPUT_BYTES, 'The message');
+    const rehearsal = !regenerate && body.rehearsal === true;
+    if (rehearsal && (!canRehearse(source) || body.discuss === true)) throw fail('SCRATCHPAD_REHEARSAL_INVALID', 'Open a story chat to rehearse its next reply.');
+    const typed = regenerate ? '' : boundedText(body.text, MAX_INPUT_BYTES, 'The message');
+    const text = rehearsal && !typed.trim() ? REHEARSAL_REQUEST : typed;
     if (!regenerate && !text.trim() && !attachments.length) throw fail('SCRATCHPAD_TEXT_REQUIRED', 'Write a message or attach a file first.');
     return {
         submissionKey,
@@ -111,6 +115,7 @@ export function normaliseReplyRequest(body = {}) {
         sessionId,
         regenerate,
         discuss: !regenerate && body.discuss === true,
+        rehearsal,
         text,
         attachments,
         context: boundedText(body.context, MAX_CONTEXT_BYTES, 'The shared context'),
@@ -144,7 +149,7 @@ function historyFrom(messages) {
                 ? usable[index].proposals?.[proposal] === 'applied' ? 'image saved and avatar replacement approved' : 'image saved; no avatar replacement performed' : image.state}.]`).join('\n');
         const webSources = usable[index].role === 'assistant' && usable[index].state === 'done' ? webSearchHistoryLine(usable[index].webSearch) : '';
         const webPages = usable[index].role === 'assistant' && usable[index].state === 'done' ? webPagesHistoryLine(usable[index].webPages) : '';
-        history.unshift({ role: usable[index].role, text: [text, webSources, webPages, images].filter(Boolean).join('\n'), ...(attachments.length ? { attachments } : {}), ...(usable[index].assistant ? { assistant: usable[index].assistant, assistantName: usable[index].assistantName } : {}) });
+        history.unshift({ role: usable[index].role, text: [usable[index].rehearsal ? '[Rehearsal only, not an event in the story.]' : '', text, webSources, webPages, images].filter(Boolean).join('\n'), ...(attachments.length ? { attachments } : {}), ...(usable[index].assistant ? { assistant: usable[index].assistant, assistantName: usable[index].assistantName } : {}) });
     }
     while (history.length && history[0].role !== 'user') history.shift();
     return history;
@@ -163,7 +168,7 @@ export function planReply(session, request, chooseIndex = randomInt) {
             ? [participants[chooseIndex(participants.length)]] : participants;
         if (messages.length + 1 + assistants.length > MAX_MESSAGES) throw fail('SCRATCHPAD_SESSION_FULL', 'This session is full. Start a new session to keep talking.', 409);
         const compact = planSummary(session, messages);
-        return { prompt: request.text, attachments: request.attachments ?? [], history: historyFrom(compact.messages), summary: compact.summary, replace: null, assistants };
+        return { prompt: request.text, rehearsal: request.rehearsal === true, attachments: request.attachments ?? [], history: historyFrom(compact.messages), summary: compact.summary, replace: null, assistants };
     }
     const replyIndex = messages.findIndex(message => message.id === request.regenerate && message.role === 'assistant');
     // The message this reply answered, which need not be the latest one. Later messages stay as they are.
@@ -172,6 +177,8 @@ export function planReply(session, request, chooseIndex = randomInt) {
         throw fail('SCRATCHPAD_REGENERATE_INVALID', 'Only a reply to one of your messages can be tried again.', 409);
     }
     const reply = messages[replyIndex];
+    const rehearsal = reply.rehearsal === true;
+    if (rehearsal && !canRehearse(request.source)) throw fail('SCRATCHPAD_REHEARSAL_INVALID', 'Open the original story chat to rehearse this reply again.');
     if (replySwipes(reply).length >= MAX_REPLY_SWIPES) throw fail('SCRATCHPAD_SWIPE_LIMIT', `This reply has ${MAX_REPLY_SWIPES} versions. Send a new message to keep talking.`, 409);
     if (hasPendingImages(reply)) throw fail('SCRATCHPAD_REGENERATE_INVALID', 'Wait for the image on this reply to finish before trying it again.', 409);
     if ((request.source?.scope || request.source?.kind === 'general') && !sameSourceContext(request.source, reply.contextSource)) {
@@ -179,7 +186,7 @@ export function planReply(session, request, chooseIndex = randomInt) {
             ? 'Return to the original Scratchpad context before trying this reply again.' : 'Open the original chat before trying this reply again.', 409);
     }
     const compact = planSummary(session, messages.slice(0, userIndex));
-    return { prompt: messages[userIndex].text, attachments: messages[userIndex].attachments ?? [], history: historyFrom(compact.messages), summary: compact.summary, replace: reply.id, assistants: [reply.assistant || session.assistant] };
+    return { prompt: messages[userIndex].text, rehearsal, attachments: messages[userIndex].attachments ?? [], history: historyFrom(compact.messages), summary: compact.summary, replace: reply.id, assistants: [reply.assistant || session.assistant] };
 }
 
 function existingSubmission(directories, owner, request, requestHash) {
@@ -205,6 +212,7 @@ export async function acceptScratchpadReply(request, body = {}) {
     const input = normaliseReplyRequest(body);
     const requestHash = hash({ source: input.source, sessionId: input.sessionId, regenerate: input.regenerate, text: input.text, ...(input.discuss ? { discuss: true } : {}),
         ...(input.attachments.length ? { attachments: input.attachments } : {}),
+        ...(input.rehearsal ? { rehearsal: true } : {}),
         context: input.context, help: input.help, capabilities: input.capabilities, names: input.names, chatProfileId: input.chatProfileId, genders: input.genders,
         ...(input.targets !== undefined ? { targets: input.targets } : {}) });
     const duplicate = existingSubmission(directories, owner, input, requestHash);
@@ -223,8 +231,8 @@ export async function acceptScratchpadReply(request, body = {}) {
         // Only links typed in the current message are read, and only when the session asks for it.
         const webPages = session.settings.readLinks && !input.discuss ? planWebPages(plan.prompt) : null;
         // Target checking only runs when images are available, so a stale or renamed shared card cannot fail a text reply.
-        const targets = images ? captureImageTargetsLocked(lease, bucket.source, input.targets, { shared: session.settings.include.card }) : [];
-        const sharedPersona = capturePersonaTargetLocked(lease, bucket.source, input.capabilities.persona, session.settings.include.persona);
+        const targets = images && !plan.rehearsal ? captureImageTargetsLocked(lease, bucket.source, input.targets, { shared: session.settings.include.card }) : [];
+        const sharedPersona = plan.rehearsal ? null : capturePersonaTargetLocked(lease, bucket.source, input.capabilities.persona, session.settings.include.persona);
         const sharedPreset = session.settings.include.preset ? normalisePresetTargets(input.capabilities.preset) : [];
         const notebook = notebookContextLocked(lease, session.settings);
         const mewmory = mewmoryContextLocked(lease, input.source, session.settings);
@@ -251,6 +259,7 @@ export async function acceptScratchpadReply(request, body = {}) {
         const system = buildScratchpadSystemPrompt({ ...speaker, assistantNames: planned.assistantNames, userName: input.names.user, participants: planned.participants, randomReply: planned.randomReply,
             characterName: input.names.character, sourceKind: input.source.kind, webSearch: Boolean(planned.webSearch), webPages: Boolean(planned.webPages),
             capabilities: { ...input.capabilities, persona: planned.sharedPersona, preset: planned.sharedPreset, agents: input.capabilities.agents === true && planned.sharedAgents, authorsNote: input.capabilities.authorsNote === true && planned.sharedAuthorsNote, regex: input.capabilities.regex === true && planned.sharedRegex, cssSnippets: input.capabilities.cssSnippets === true && planned.sharedCssSnippets, dialogueColors: input.capabilities.dialogueColors === true && planned.sharedDialogueColors, lore: input.capabilities.lore === true && planned.sharedLorebook, image: Boolean(images), avatar: Boolean(images && planned.targets.length), notebook: Boolean(planned.notebook.text) }, help: input.help });
+        if (planned.rehearsal) system.text = [REHEARSAL_INSTRUCTIONS, speaker.userInstructions].filter(Boolean).join('\n\n');
         const messages = buildScratchpadMessages({ system: system.text, context: input.context, notebookContext: planned.notebook.text, history: planned.history, text: planned.prompt, attachments: planned.attachments, assistant: speaker.assistant, assistantNames: planned.assistantNames,
             summary: planned.summary ? summaryContext(SUMMARY_PLACEHOLDER) : '',
             pinnedNote: planned.pinnedNote, mewmoryContext: planned.mewmory.text, webSearchPlaceholder: planned.webSearch ? WEB_SEARCH_PLACEHOLDER : '', webPagesPlaceholder: planned.webPages ? WEB_PAGES_PLACEHOLDER : '' });
@@ -276,7 +285,7 @@ export async function acceptScratchpadReply(request, body = {}) {
         return { replyId: newScratchpadId(), assistant: speaker.assistant, gender: speaker.gender, binding, messages, maxTokens: planned.maxTokens,
             userName: names.user, characterName: names.char, rawOptions, preparedMessages, stream: planned.stream, webSearch: planned.webSearch,
             summaryIndex, searchIndex, webPages: planned.webPages, pagesIndex, prefillReply: prefill.reply,
-            functionTools: preparedMessages ? scratchpadCharacterTools() : [] };
+            ...(planned.rehearsal ? { rehearsal: true } : {}), functionTools: preparedMessages && !planned.rehearsal ? scratchpadCharacterTools() : [] };
     }));
     const savedRequest = { source: input.source, sessionId: input.sessionId, summary: planned.summary, ...(replies.length === 1 ? replies[0] : { replies }) };
     if (bytes(JSON.stringify(savedRequest)) > 15 * 1024 * 1024) {
@@ -322,10 +331,11 @@ export async function acceptScratchpadReply(request, body = {}) {
             const contextSource = Object.fromEntries(Object.entries(input.source).filter(([key]) => key !== 'scope'));
             const shared = input.source.kind === 'general' && input.capabilities.character ? { sharedAvatar: input.source.avatar } : {};
             if (!input.regenerate) nameFromFirstMessage(session, input.text);
-            if (!input.regenerate) session.messages.push({ id: newScratchpadId(), role: 'user', text: input.text, ...(input.attachments.length ? { attachments: input.attachments } : {}), created, contextSource });
+            const mode = planned.rehearsal ? { rehearsal: true } : {};
+            if (!input.regenerate) session.messages.push({ id: newScratchpadId(), role: 'user', text: input.text, ...mode, ...(input.attachments.length ? { attachments: input.attachments } : {}), created, contextSource });
             const pending = replies.map(reply => ({ id: reply.replyId, role: 'assistant', text: '', created, contextSource, ...shared,
                 targets: planned.targets, sharedPersona: planned.sharedPersona, sharedPreset: planned.sharedPreset, imageNames: input.names, imagePersonaId: planned.imagePersonaId,
-                state: 'pending', jobId: job.id, assistant: reply.assistant, assistantName: reply.characterName, gender: reply.gender }));
+                ...mode, state: 'pending', jobId: job.id, assistant: reply.assistant, assistantName: reply.characterName, gender: reply.gender }));
             if (planned.replace) {
                 const index = session.messages.findIndex(message => message.id === planned.replace);
                 session.messages[index] = appendReplySwipe(session.messages[index], pending[0]);

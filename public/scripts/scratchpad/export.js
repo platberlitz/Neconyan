@@ -49,6 +49,7 @@ export function sessionMarkdown(session, { reasoning = false, sources = false, a
         const heading = user ? t`You` : linkText(nameOf(message)) || t`Assistant`;
         const position = Number(message.swipeIndex) + 1;
         parts.push(versions > 1 ? `## ${heading} (${t`version ${position} of ${versions}`})` : `## ${heading}`);
+        if (message.rehearsal) parts.push(`*${t`Rehearsal: a draft, not an event in the story.`}*`);
         if (reasoning && !user && message.reasoning) parts.push(`<details>\n<summary>${t`Thinking`}</summary>\n\n${message.reasoning}\n\n</details>`);
         if (message.text) parts.push(message.text);
         for (const attachment of user && Array.isArray(message.attachments) ? message.attachments : []) {
