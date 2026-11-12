@@ -96,6 +96,40 @@ export function prepareHelperPartialPrefill(messages, value, model) {
     return { messages: [...messages, { role: 'assistant', content: text, partial: true }], reply, active: true };
 }
 
+const REASONING_TAG_RE = /<(\/?)(think|thinking|thought|reasoning)>/gi;
+
+function getMessageText(content) {
+    if (typeof content === 'string') return content;
+    if (!Array.isArray(content)) return '';
+    return content.map(part => typeof part === 'string' ? part : typeof part?.text === 'string' ? part.text : '').join('');
+}
+
+/** The reasoning tag an assistant prefill leaves open, or '' when every tag is closed. */
+function getOpenReasoningTag(content) {
+    let open = '';
+    for (const match of getMessageText(content).matchAll(REASONING_TAG_RE)) {
+        open = match[1] ? '' : match[2].toLowerCase();
+    }
+    return open;
+}
+
+/**
+ * A request that ends with an assistant prefill opening a reasoning block (for example
+ * `<think>\nI am going to plan now`) makes some models continue that reasoning in the reply
+ * itself, closing it with only `</think>`. Reasoning parsers miss a closing tag without its
+ * opening tag, so drop everything up to that first closing tag and keep the actual reply.
+ */
+export function stripPrefilledReasoning(text, messages) {
+    if (typeof text !== 'string' || !text || !Array.isArray(messages)) return text;
+    const last = messages.at(-1);
+    if (last?.role !== 'assistant') return text;
+    const tag = getOpenReasoningTag(last.content);
+    if (!tag) return text;
+    const close = new RegExp(`</${tag}>`, 'i').exec(text);
+    if (!close) return text;
+    return text.slice(close.index + close[0].length).replace(/^\s+/, '');
+}
+
 /** Restore only visible continuation text, never the seeded reasoning. */
 export function joinHelperPartialPrefill(text, prefix = '') {
     if (!text?.trim() || !prefix || text.startsWith(prefix) || text.trimStart().startsWith(prefix.trimStart())) return text;

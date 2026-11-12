@@ -68,6 +68,7 @@ import {
     parseHelperPrefillMessages,
     prepareHelperPartialPrefill,
     joinHelperPartialPrefill,
+    stripPrefilledReasoning,
 } from '../helper-prefill.js';
 import {
     getToolAction,
@@ -3957,6 +3958,7 @@ export async function requestPromptTransform(agent, promptMessages, maxTokens, o
         const requestConnection = async (attemptProfileId, attemptModelOverride, signal) => {
             const prefill = prepareHelperPartialPrefill(promptMessages, getGlobalSettings().kimiPartialPrefill,
                 getPromptTransformRequestModel(attemptProfileId, attemptModelOverride));
+            const allowAssistantPrefillTail = prefill.active || options.allowAssistantPrefillTail;
             let result;
             if (attemptProfileId) {
                 if (!CMRS || typeof CMRS.sendRequest !== 'function') {
@@ -3970,11 +3972,14 @@ export async function requestPromptTransform(agent, promptMessages, maxTokens, o
             } else {
                 result = await runAllowedRequest(
                     () => requestMainModelPromptTransform(context, prefill.messages, maxTokens,
-                        { ...options, allowAssistantPrefillTail: prefill.active || options.allowAssistantPrefillTail }, signal),
+                        { ...options, allowAssistantPrefillTail }, signal),
                     signal,
                 );
             }
-            return { ...result, output: joinHelperPartialPrefill(result.output, prefill.reply) };
+            // Profiles always receive the assistant tail; the main model only when it is allowed.
+            const sentMessages = attemptProfileId || allowAssistantPrefillTail ? prefill.messages : [];
+            const output = stripPrefilledReasoning(result.output, sentMessages);
+            return { ...result, output: joinHelperPartialPrefill(output, prefill.reply) };
         };
         // Each attempt stops waiting as soon as it is cancelled or runs out of time, even when the
         // connection ignores the abort, so a stalled request cannot keep Agents marked as running.

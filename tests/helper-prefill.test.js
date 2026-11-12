@@ -6,6 +6,7 @@ import {
     serializeHelperPrefillForPrompt,
     prepareHelperPartialPrefill,
     joinHelperPartialPrefill,
+    stripPrefilledReasoning,
 } from '../public/scripts/extensions/helper-prefill.js';
 
 describe('helper prefill role blocks', () => {
@@ -32,6 +33,28 @@ describe('helper prefill role blocks', () => {
         expect(result.reply).toBe('');
         expect(joinHelperPartialPrefill('Visible answer', result.reply)).toBe('Visible answer');
     });
+
+    test('drops reasoning a model continues from an open thinking prefill', () => {
+        const messages = appendHelperPrefillMessages([{ role: 'user', content: 'Rewrite the reply.' }],
+            '[assistant]\n<think>\nI am going to plan now');
+        expect(stripPrefilledReasoning(' first, check the tone.\n</think>\n\nThe rewritten reply.', messages))
+            .toBe('The rewritten reply.');
+        expect(stripPrefilledReasoning('<think>\nI am going to plan now, then\n</think>\nThe rewritten reply.', messages))
+            .toBe('The rewritten reply.');
+        expect(stripPrefilledReasoning('Planning</THINKING> Reply', [{ role: 'assistant', content: [{ type: 'text', text: '<thinking>' }] }]))
+            .toBe('Reply');
+    });
+
+    test('leaves replies alone unless the final assistant prefill leaves reasoning open', () => {
+        const reply = 'Notes</think>\nReply';
+        expect(stripPrefilledReasoning(reply, [{ role: 'assistant', content: '<think>Done.</think>Answer:' }])).toBe(reply);
+        expect(stripPrefilledReasoning(reply, [{ role: 'assistant', content: '<think>' }, { role: 'user', content: 'Go' }])).toBe(reply);
+        expect(stripPrefilledReasoning(reply, [{ role: 'assistant', content: 'Begin directly.' }])).toBe(reply);
+        expect(stripPrefilledReasoning(reply, [])).toBe(reply);
+        expect(stripPrefilledReasoning('Still thinking with no close', [{ role: 'assistant', content: '<think>' }]))
+            .toBe('Still thinking with no close');
+    });
+
     test('parses role blocks in order with multiline content', () => {
         const input = `[system]
 Follow the helper rules.

@@ -11531,6 +11531,42 @@ Helper context.`;
         expect(chat[0].mes).toBe('Direct rewrite');
     });
 
+    test('keeps reasoning continued from an open thinking prefill out of post-transform replacements', async () => {
+        usePromptTransformPostAgent();
+        mainApi = 'openai';
+        globalSettings.helperPrefillMessages = '[assistant]\n<think>\nI am going to plan now';
+        generateRaw.mockResolvedValue(', starting with the tone.\n</think>\n\nDirect rewrite');
+
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+
+        chat.push({ name: 'Assistant', mes: 'Needs rewrite', is_user: false, is_system: false, extra: {} });
+
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+
+        expect(generateRaw.mock.calls[0][0].prompt.at(-1)).toEqual({ role: 'assistant', content: '<think>\nI am going to plan now' });
+        expect(chat[0].mes).toBe('Direct rewrite');
+    });
+
+    test('keeps reasoning continued from an open thinking prefill out of profile replacements', async () => {
+        usePromptTransformPostAgent();
+        enabledAgents[0].connectionProfile = 'profile-cc';
+        globalSettings.helperPrefillMessages = '[assistant]\n<think>\nI am going to plan now';
+        connectionManagerRequestService = {
+            getProfile: jest.fn(() => ({ name: 'Agent profile', model: 'helper-model' })),
+            sendRequest: jest.fn(async () => ({ content: ' then write it.</think>\nProfile rewrite' })),
+        };
+
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+
+        chat.push({ name: 'Assistant', mes: 'Needs rewrite', is_user: false, is_system: false, extra: {} });
+
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+
+        expect(chat[0].mes).toBe('Profile rewrite');
+    });
+
     test('keeps text-completion profile reasoning out of post-transform replacements', async () => {
         usePromptTransformPostAgent();
         enabledAgents[0].connectionProfile = 'profile-textgen-reasoning';

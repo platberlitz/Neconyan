@@ -6,7 +6,7 @@ import { markProviderSettled } from '../jobs/store.js';
 import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-store.js';
 import { MAX_AGENT_FALLBACK_CONNECTIONS } from './agent-definition.js';
 import { getChatProfileContextLimit, resolveGenerationProfile } from './profiles.js';
-import { prepareHelperPartialPrefill, joinHelperPartialPrefill } from '../../public/scripts/extensions/helper-prefill.js';
+import { prepareHelperPartialPrefill, joinHelperPartialPrefill, stripPrefilledReasoning } from '../../public/scripts/extensions/helper-prefill.js';
 import { runChatProfile } from './service.js';
 import { beginDiagnosticAgent, endDiagnosticAgent } from '../diagnostic-activity.js';
 import { isRoleplayAgentStop, withRoleplayAgentStop } from './roleplay-agent-stop.js';
@@ -170,7 +170,7 @@ async function runSingleAgentModelStep(context, { base, account, name, identity,
         const blocked = classifyGenerationOutcome(response?.response);
         if (blocked) throw providerBlockedError(blocked);
         if (typeof response?.text !== 'string' || Buffer.byteLength(response.text) > 256 * 1024) throw fail('The Agent returned no valid bounded text result.');
-        const result = { identity: inputIdentity, inputHash, text: joinHelperPartialPrefill(response.text, input.prefillReply), lengthLimited: limited(response), macroState: input.macroState,
+        const result = { identity: inputIdentity, inputHash, text: joinHelperPartialPrefill(stripPrefilledReasoning(response.text, input.messages), input.prefillReply), lengthLimited: limited(response), macroState: input.macroState,
             profileId: binding.profileId ?? '', model: modelOverride || response.generation?.model || '', completedAt: Date.now() };
         completed = { ...result, hash: roleplayHash(result) };
         save(`${key}:result`, completed);
