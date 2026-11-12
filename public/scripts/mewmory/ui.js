@@ -48,7 +48,8 @@ const SWITCHES = ['enableNewChats', 'autoUpdate', 'localOnly', 'excludeHistory',
 const tokenizers = ['auto', 'o200k_base', 'cl100k_base', 'gpt2', 'llama', 'llama3', 'mistral', 'gemma', 'claude', 'qwen2', 'deepseek', 'nemo', 'jamba', 'yi'];
 const ui = { root: null, tab: 'now', owner: '', subject: '', significance: '', status: '', kind: 'objective', query: '', offset: 0,
     source: null, editor: null, draft: null, configError: '', accountChanged: false, role: 'extractor', restore: null, matches: null,
-    searchMode: 'hybrid', searchType: '', searchReport: null, running: false, progress: '', scope: '' };
+    searchMode: 'hybrid', searchType: '', searchReport: null, running: false, progress: '', scope: '',
+    sort: 'story', flag: '', importance: '', state: '', from: '', to: '', moreFilters: false, selected: new Set(), history: null, duplicates: null };
 
 function node(tag, className = '', content = '') {
     const element = document.createElement(tag);
@@ -158,10 +159,22 @@ function nameOf(id) {
         || String(id).replace(/^subject:/, '').replaceAll('-', ' ');
 }
 
+/** Only the Archive filters that differ from 'show everything', so an unfiltered list asks for exactly what it always did. */
+function archiveFilters() {
+    return Object.fromEntries(Object.entries({
+        sort: ui.sort === 'story' ? '' : ui.sort, flag: ui.flag, significance: ui.importance, status: ui.state,
+        fromMessage: Number(ui.from) || 0, toMessage: Number(ui.to) || 0,
+    }).filter(([, value]) => value));
+}
+
+function clearArchiveFilters() {
+    Object.assign(ui, { kind: 'objective', sort: 'story', flag: '', importance: '', state: '', from: '', to: '', offset: 0 });
+}
+
 function filters() {
     if (ui.tab === 'pawspective') return { kind: 'interview', ownerId: ui.owner, subjectId: ui.subject,
         significance: ui.significance, status: ui.status, offset: ui.offset };
-    if (ui.tab === 'archive') return { kind: ui.kind, query: ui.query, offset: ui.offset };
+    if (ui.tab === 'archive') return { kind: ui.kind, query: ui.query, offset: ui.offset, ...archiveFilters() };
     return {};
 }
 
@@ -244,7 +257,67 @@ function renderSource(root) {
     root.append(block);
 }
 
-function renderRecord(record, root, { editable = true } = {}) {
+/** Splits two wordings into the words they share and the words only one of them has. Long texts are left whole. */
+export function wordChanges(before, after) {
+    const a = String(before || '').split(/(\s+)/).filter(Boolean);
+    const b = String(after || '').split(/(\s+)/).filter(Boolean);
+    if (a.length > 600 || b.length > 600) return before === after ? [['same', after]] : [['removed', before], ['added', after]].filter(([, text]) => text);
+    const rows = Array.from({ length: a.length + 1 }, () => new Uint16Array(b.length + 1));
+    for (let i = a.length - 1; i >= 0; i--) {
+        for (let j = b.length - 1; j >= 0; j--) rows[i][j] = a[i] === b[j] ? rows[i + 1][j + 1] + 1 : Math.max(rows[i + 1][j], rows[i][j + 1]);
+    }
+    const parts = [];
+    const push = (type, text) => {
+        if (parts.at(-1)?.[0] === type) parts.at(-1)[1] += text;
+        else parts.push([type, text]);
+    };
+    let i = 0;
+    let j = 0;
+    while (i < a.length || j < b.length) {
+        if (i < a.length && j < b.length && a[i] === b[j]) push('same', a[i++] + (j++, ''));
+        else if (j < b.length && (i === a.length || rows[i][j + 1] >= rows[i + 1][j])) push('added', b[j++]);
+        else push('removed', a[i++]);
+    }
+    return parts;
+}
+
+const versionActions = { generated: 'Mewmory rewrote it', corrected: 'You changed it', undo: 'A change was undone' };
+const versionFields = [['status', 'Status'], ['significance', 'Importance'], ['pinned', 'Pinned'], ['excluded', 'Left out of replies'],
+    ['evidenceStatus', 'How certain'], ['method', 'Learned through']];
+
+function shown(value) {
+    return typeof value === 'boolean' ? value ? 'yes' : 'no' : String(value ?? 'not set') || 'not set';
+}
+
+function renderHistory(article) {
+    const history = ui.history;
+    const block = node('div', 'mewmory-history');
+    block.id = 'mewmory-history-' + history.id;
+    block.append(node('strong', '', 'Earlier versions'));
+    if (!history.versions.length) block.append(node('p', 'mewmory-caption', 'This memory has not changed since it was first saved.'));
+    let newer = history.current;
+    for (const version of history.versions) {
+        const older = version.record;
+        const entry = node('div', 'mewmory-version');
+        entry.append(node('p', 'mewmory-caption', new Date(version.at).toLocaleString() + ' · ' + (versionActions[version.action] || 'Changed')));
+        const text = node('p', 'mewmory-prose');
+        for (const [type, words] of wordChanges(older.text, newer.text)) {
+            const part = node(type === 'added' ? 'ins' : type === 'removed' ? 'del' : 'span', '', words);
+            text.append(part);
+        }
+        if (text.childElementCount) entry.append(text);
+        const changed = versionFields.filter(([key]) => shown(older[key]) !== shown(newer[key]))
+            .map(([key, label]) => label + ': ' + shown(older[key]) + ' → ' + shown(newer[key]));
+        if (changed.length) entry.append(node('p', 'mewmory-caption', changed.join(' · ')));
+        if (older.text === newer.text && !changed.length) entry.append(node('p', 'mewmory-caption', 'The wording stayed the same; only its sources or links changed.'));
+        block.append(entry);
+        newer = older;
+    }
+    if (history.versions.length) block.append(node('p', 'mewmory-caption', 'Struck-through words were removed by that change; underlined words were added.'));
+    article.append(block);
+}
+
+function renderRecord(record, root, { editable = true, selectable = false, onTick = null } = {}) {
     const article = node('article', 'mewmory-record');
     const unused = record.eligible === false || Boolean(record.excluded);
     article.dataset.ineligible = String(record.eligible === false);
@@ -263,6 +336,17 @@ function renderRecord(record, root, { editable = true } = {}) {
     if (['high', 'medium'].includes(record.significance)) badges.append(badge(record.significance === 'high' ? 'High importance' : 'Medium importance',
         record.significance === 'high' ? 'accent' : ''));
     if (record.authorOverride) badges.append(badge('Edited by you'));
+    if (selectable) {
+        const tick = check('Tick ' + title, ui.selected.has(record.id), ticked => {
+            if (ticked) ui.selected.add(record.id);
+            else ui.selected.delete(record.id);
+            onTick?.();
+        });
+        tick.classList.add('mewmory-tick');
+        tick.querySelector('input').id = 'mewmory-tick-' + record.id;
+        tick.querySelector('span').className = 'mewmory-sr-only';
+        heading.append(tick);
+    }
     heading.append(node('h4', '', title));
     if (badges.childElementCount) heading.append(badges);
     article.append(heading);
@@ -301,7 +385,17 @@ function renderRecord(record, root, { editable = true } = {}) {
         }, { options: corrections, key: 'correction-' + record.id, hideLabel: true });
         actions.append(correction, button('Edit', () => openEditor(record)),
             button('Undo last change', () => act(() => changeMewmory('record/action', { id: record.id, action: 'undo' }))));
+        if (record.version > 1) {
+            const open = ui.history?.id === record.id;
+            const toggle = button(open ? 'Hide earlier versions' : 'Earlier versions', () => open
+                ? (ui.history = null, render())
+                : act(async () => { ui.history = await requestMewmory('record/history', { id: record.id }); }, { refresh: false }));
+            toggle.id = 'mewmory-versions-' + record.id;
+            toggle.setAttribute('aria-expanded', String(open));
+            actions.append(toggle);
+        }
         article.append(actions);
+        if (ui.history?.id === record.id) renderHistory(article);
     }
     root.append(article);
 }
@@ -627,6 +721,58 @@ function renderPawspective(root) {
     pagination(root);
 }
 
+function renderReview(root, reload) {
+    const review = mewmory.view.review;
+    if (!review || (!review.fresh && !review.uncertain)) return;
+    const strip = node('div', 'mewmory-review');
+    const parts = [review.fresh ? review.fresh + (review.fresh === 1 ? ' new memory' : ' new memories')
+        + (review.reviewedAt ? ' since you last looked' : ' you have not looked at yet') : '',
+    review.uncertain ? review.uncertain + ' marked uncertain' : ''].filter(Boolean);
+    strip.append(node('p', '', parts.join(' · ')));
+    const actions = node('div', 'mewmory-actions');
+    const show = changes => { Object.assign(ui, { flag: '', state: '' }, changes); reload(); };
+    if (review.fresh) actions.append(button('Show new', () => show({ flag: 'new' }), { disabled: ui.flag === 'new' }));
+    if (review.uncertain) actions.append(button('Show uncertain', () => show({ state: 'uncertain' }), { disabled: ui.state === 'uncertain' }));
+    if (review.fresh) actions.append(button('Mark all as looked at', () => act(async () => {
+        if (ui.flag === 'new') ui.flag = '';
+        await changeMewmory('review/seen', { filters: filters() });
+    })));
+    strip.append(actions);
+    root.append(strip);
+}
+
+function renderDuplicates(root) {
+    if (!ui.duplicates) return;
+    const block = node('div', 'mewmory-duplicates');
+    block.id = 'mewmory-duplicates';
+    const heading = node('div', 'mewmory-actions');
+    heading.append(node('strong', '', ui.duplicates.length ? ui.duplicates.length === 1 ? '1 set of near-duplicates' : ui.duplicates.length + ' sets of near-duplicates'
+        : 'No near-duplicates found'), button('Close', () => { ui.duplicates = null; render(); }));
+    block.append(heading, node('p', 'mewmory-caption', ui.duplicates.length
+        ? 'These say almost the same thing about the same characters. Keeping one gives it the sources of the others and retires the rest; \'Undo last change\' on any of them reverses it.'
+        : 'No two memories of the same type and about the same characters share most of their wording.'));
+    for (const [index, group] of ui.duplicates.entries()) {
+        const set = node('div', 'mewmory-duplicate-set');
+        set.setAttribute('role', 'group');
+        set.setAttribute('aria-label', 'Near-duplicate set ' + (index + 1));
+        for (const record of group) {
+            const row = node('div', 'mewmory-duplicate');
+            const text = node('div', '');
+            text.append(node('p', 'mewmory-prose', record.text), node('p', 'mewmory-caption mewmory-record-meta', [kindBadges[record.kind],
+                record.asOf >= 0 ? 'From message ' + (record.asOf + 1) : '', record.pinned ? 'Pinned' : '', record.authorOverride ? 'Edited by you' : ''].filter(Boolean).join(' · ')));
+            const keep = button('Keep this one', () => act(async () => {
+                await changeMewmory('record/merge', { keep: record.id, ids: group.map(item => item.id), filters: filters() });
+                ui.duplicates = (await requestMewmory('duplicates')).groups;
+            }));
+            keep.id = 'mewmory-keep-' + record.id;
+            row.append(text, keep);
+            set.append(row);
+        }
+        block.append(set);
+    }
+    root.append(block);
+}
+
 function renderArchive(root) {
     const view = mewmory.view;
     const search = async () => {
@@ -682,16 +828,77 @@ function renderArchive(root) {
             sources.append(row);
         }
     }
-    const records = section('Memories', button('Add memory', () => openEditor()));
+    const reload = () => { ui.offset = 0; void act(() => refreshMewmory(filters()), { refresh: false }); };
+    const findDuplicates = () => act(async () => { ui.duplicates = (await requestMewmory('duplicates')).groups; }, { refresh: false })
+        .then(() => document.getElementById('mewmory-duplicates')?.scrollIntoView({ block: 'nearest' }));
+    const records = section('Memories', button('Find near-duplicates', findDuplicates, { disabled: view.recordCount < 2 }),
+        button('Add memory', () => openEditor()));
+    renderReview(records, reload);
+    renderDuplicates(records);
     const filter = node('div', 'mewmory-fields');
-    filter.append(field('Memory type', ui.kind, value => {
-        ui.kind = value;
-        ui.offset = 0;
-        void act(() => refreshMewmory(filters()), { refresh: false });
-    }, { options: [['objective', 'All facts and events'], ...Object.entries(kinds).filter(([kind]) => !['interview', 'overview'].includes(kind))] }));
+    filter.append(field('Memory type', ui.kind, value => { ui.kind = value; reload(); },
+        { options: [['objective', 'All facts and events'], ...Object.entries(kinds).filter(([kind]) => !['interview', 'overview'].includes(kind))] }),
+    field('Sort by', ui.sort, value => { ui.sort = value; reload(); }, { key: 'archive-sort', options: [['story', 'Newest in the story first'],
+        ['oldest', 'Oldest in the story first'], ['changed', 'Most recently changed'], ['pinned', 'Pinned first']] }));
     records.append(filter);
-    for (const record of view.records.filter(record => !['interview', 'overview'].includes(record.kind))) renderRecord(record, records);
-    if (!view.records.length) empty(records, 'No memories here yet', 'Run an update, choose another memory type, or add a memory yourself.');
+    const more = node('details', 'mewmory-more-filters');
+    more.id = 'mewmory-archive-filters';
+    more.append(node('summary', '', 'More filters'));
+    const moreFields = node('div', 'mewmory-fields');
+    const range = (label, name, key) => field(label, ui[name], value => { ui[name] = value; }, { type: 'number', key, placeholder: 'Any' });
+    moreFields.append(
+        field('Show', ui.flag, value => { ui.flag = value; reload(); }, { key: 'archive-flag', options: [['', 'All memories'], ['new', 'New since you last looked'],
+            ['pinned', 'Pinned'], ['edited', 'Edited by you'], ['excluded', 'Left out of replies by you'], ['unused', 'Not used in replies']] }),
+        field('Importance', ui.importance, value => { ui.importance = value; reload(); }, { key: 'archive-importance',
+            options: [['', 'Any importance'], ['high', 'High'], ['medium', 'Medium'], ['low', 'Low']] }),
+        field('Status', ui.state, value => { ui.state = value; reload(); }, { key: 'archive-status', options: [['', 'Any status'], ['active', 'Active'],
+            ['background', 'Background'], ['resolved', 'Resolved'], ['uncertain', 'Uncertain'], ['invalidated', 'Retired']] }),
+        range('From message', 'from', 'archive-from'), range('To message', 'to', 'archive-to'));
+    for (const input of moreFields.querySelectorAll('input[type="number"]')) {
+        input.min = '1';
+        input.step = '1';
+        input.inputMode = 'numeric';
+        input.addEventListener('change', reload);
+    }
+    more.append(moreFields);
+    const filtered = Object.keys(archiveFilters()).some(key => key !== 'sort') || ui.kind !== 'objective';
+    more.open = Boolean(ui.moreFilters || ui.flag || ui.importance || ui.state || ui.from || ui.to);
+    more.addEventListener('toggle', () => { if (more.isConnected) ui.moreFilters = more.open; });
+    records.append(more);
+    const visible = view.records.filter(record => !['interview', 'overview'].includes(record.kind));
+    for (const id of [...ui.selected]) if (!visible.some(record => record.id === id)) ui.selected.delete(id);
+    const bulk = node('div', 'mewmory-bulk');
+    const count = node('span', 'mewmory-caption');
+    count.setAttribute('role', 'status');
+    const all = check('Tick all on this page', false, ticked => {
+        ui.selected = new Set(ticked ? visible.map(record => record.id) : []);
+        for (const record of visible) {
+            const box = document.getElementById('mewmory-tick-' + record.id);
+            if (box) box.checked = ticked;
+        }
+        syncBulk();
+    });
+    all.querySelector('input').id = 'mewmory-tick-all';
+    const change = field('Change ticked memories', '', action => {
+        if (action && ui.selected.size) void act(() => changeMewmory('record/action', { ids: [...ui.selected], action, filters: filters() }));
+    }, { key: 'archive-bulk', hideLabel: true, options: [['', 'Change ticked memories…'], ['pin_on', 'Pin for this scene'], ['pin_off', 'Unpin'],
+        ['exclude_on', 'Stop using in replies'], ['exclude_off', 'Use in replies again'], ['suspicion', 'Only a suspicion'],
+        ['unsupported', 'Not supported by the story'], ['resolved', 'Resolved'], ['background', 'Keep in the background'], ['active', 'Active again']] });
+    function syncBulk() {
+        const ticked = ui.selected.size;
+        count.textContent = ticked ? ticked + (ticked === 1 ? ' memory ticked' : ' memories ticked') : 'Tick memories to change several at once.';
+        all.querySelector('input').checked = Boolean(visible.length) && ticked === visible.length;
+        change.querySelector('select').disabled = !ticked || Boolean(ui.running);
+    }
+    bulk.append(all, count, change);
+    if (visible.length) records.append(bulk);
+    syncBulk();
+    for (const record of visible) renderRecord(record, records, { selectable: true, onTick: syncBulk });
+    if (!view.records.length) {
+        if (filtered) empty(records, 'No memories match these filters', 'Loosen a filter, or clear them all to see every memory in this chat.',
+            'Clear filters', () => { clearArchiveFilters(); reload(); });
+        else empty(records, 'No memories here yet', 'Run an update, or add a memory yourself.');
+    }
     root.append(records);
     pagination(root);
     if (!ui.matches && view.sources.length) root.append(sources);
@@ -1718,6 +1925,11 @@ function render() {
         ui.significance = '';
         ui.status = '';
         ui.parent = '';
+        clearArchiveFilters();
+        ui.moreFilters = false;
+        ui.selected = new Set();
+        ui.history = null;
+        ui.duplicates = null;
         ui.progress = '';
         ui.running = false;
     }
@@ -1806,7 +2018,7 @@ function loadMewmoryStyles() {
     if (!style) {
         style = document.createElement('link');
         style.id = 'mewmory-css';
-        style.href = 'css/mewmory.css?v=20261028a';
+        style.href = 'css/mewmory.css?v=20261112-mewmory-archive-tools';
         document.head.append(style);
     }
     if (style.rel !== 'stylesheet') {
