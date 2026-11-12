@@ -438,6 +438,8 @@ body.neconyan :is(.inline-drawer-header, .sb-theme-settings-drawer > .inline-dra
     background: transparent; box-shadow: none; text-align: left;
 }
 body.neconyan #user-settings-block .sb-settings-subdrawer { margin-top: 0; }
+#sb-avatar-chat-styles-drawer [name='AvatarAndChatDisplay'] { align-items: flex-start; }
+#sb-avatar-chat-styles-drawer [name='AvatarAndChatDisplay'] > :is(#nn-chat-style-gallery, small) { align-self: stretch; }
 .sb-theme-lifted-drawer > .sb-settings-subdrawer-body[style*='display: block'] { display: flex !important; flex-direction: column; gap: var(--sb-shell-space-sm); min-width: 0; }
 .sb-theme-lifted-drawer > .sb-settings-subdrawer-body > p:first-child { margin-top: 0; }
 .sb-openai-settings-section:not(:first-child) > .sb-openai-settings-section-header { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--SmartThemeBorderColor); }

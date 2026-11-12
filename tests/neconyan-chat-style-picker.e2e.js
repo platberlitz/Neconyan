@@ -192,3 +192,36 @@ for (const width of [393, 1280]) {
         }
     });
 }
+
+for (const width of [393, 1280]) {
+    test(`Avatar & Chat Styles rows line up on the left at ${width}px`, async ({ browser }) => {
+        const phone = width < 768;
+        const context = await browser.newContext({ ...(phone ? IPHONE_SAFARI_CONTEXT : {}), viewport: { width, height: phone ? 852 : 900 }, serviceWorkers: 'block', reducedMotion: 'reduce' });
+        if (phone) await installIPhoneSafari(context);
+        const page = await context.newPage();
+        await prepare(page);
+        try {
+            await page.goto('/', { waitUntil: 'domcontentloaded' });
+            await openPicker(page);
+            if (phone) await applyIOSOnlyCss(page);
+            await expect(page.locator('#nn-chat-style-gallery')).toBeVisible();
+            const edges = await page.locator('#sb-avatar-chat-styles-drawer [name="AvatarAndChatDisplay"]').evaluate(column => {
+                const start = Math.round(column.getBoundingClientRect().left);
+                return {
+                    start,
+                    width: Math.round(column.getBoundingClientRect().width),
+                    galleryWidth: Math.round(document.querySelector('#nn-chat-style-gallery').getBoundingClientRect().width),
+                    rows: [...column.children].filter(child => child.getClientRects().length).map(child => ({
+                        row: (child.id || child.textContent.trim()).slice(0, 40),
+                        offset: Math.round(child.getBoundingClientRect().left) - start,
+                    })),
+                };
+            });
+            expect(edges.rows.length).toBeGreaterThan(5);
+            for (const { row, offset } of edges.rows) expect(offset, row).toBe(0);
+            expect(edges.galleryWidth).toBe(edges.width);
+        } finally {
+            await context.close();
+        }
+    });
+}
