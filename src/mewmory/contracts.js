@@ -86,3 +86,22 @@ export const SELECTION_CONTRACT = [
     'Every justification is one short sentence. Every rejection is {recordId,justification}; reject only close calls worth explaining, not every unused candidate. needsEvidence is at most six candidate IDs whose linked existing sources should be expanded. No free-text search commands.',
     'No additional fields, replacement text, confidence scores or writing instructions. Explanations are for inspection only and never enter the writing prompt.',
 ].join('\n');
+
+export const ASK_CONTRACT = [
+    'Mewmory read-only memory question contract v1.',
+    'Answer the author\'s question about their story using only the supplied memories. Never invent events, motives or facts that the memories do not state.',
+    'Write a short, plain answer of one to four sentences in British English. Name characters as the memories do.',
+    'When the memories do not answer the question, say so plainly and set unsure to true.',
+    'Return exactly {"answer":"","citations":[],"unsure":false}.',
+    'citations lists the IDs of the memories the answer relies on, most important first, at most eight. Use only IDs from memories.',
+    'No additional fields.',
+].join('\n');
+
+export const CONFLICT_CONTRACT = [
+    'Mewmory read-only contradiction check contract v1.',
+    'Find pairs of memories that cannot both be true at the same point in the story. A later change of state, a resolved situation or two different characters believing different things is not a contradiction.',
+    'Work fast. Report only clear conflicts; an empty list is a good answer.',
+    'Return exactly {"conflicts":[]}.',
+    'Every conflict is {"a":"memory ID","b":"memory ID","explanation":"one short sentence saying what disagrees"}. Use only IDs from memories, at most ten conflicts.',
+    'No additional fields.',
+].join('\n');

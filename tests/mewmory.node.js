@@ -3411,3 +3411,109 @@ test('story and character routes are read-only', async t => {
     assert.equal((await post('/character', {})).status, 400);
     assert.equal(readState(directories, locator).revision, before);
 });
+
+test('Ask Mewmory answers from cited memories and the contradiction check pairs known records', async () => {
+    const { askMemories, findConflicts } = await import('../src/mewmory/ask.js');
+    const state = base(fixture.messages);
+    event(state);
+    event(state, { id: 'event:refused', refs: [state.timeline[3]], text: 'Mara refused the gift.', asOf: 3 });
+    const config = defaultConfig();
+    const calls = [];
+    const answer = await askMemories({}, state, config, 'What did Mara do with the gift?', {
+        call: async (_directories, _config, role, _contract, input, options) => {
+            calls.push({ role, input, options });
+            return { value: { answer: 'She accepted it.', citations: ['event:gift', 'event:gift', 'made-up'], unsure: false }, usage: {} };
+        },
+    });
+    assert.equal(calls[0].role, 'extractor');
+    assert.deepEqual(calls[0].options.dataTypes, ['memory']);
+    assert.ok(calls[0].input.memories.some(item => item.id === 'event:gift'));
+    assert.equal(answer.answer, 'She accepted it.');
+    assert.deepEqual(answer.citations.map(item => item.id), ['event:gift']);
+    assert.equal(answer.unsure, false);
+    await assert.rejects(askMemories({}, state, config, '  ', { call: async () => assert.fail('no call') }), /Type a question/);
+    await assert.rejects(askMemories({}, state, config, 'Why?', { call: async () => ({ value: { answer: '' } }) }), /empty answer/);
+    const empty = await askMemories({}, newState(locator), config, 'Anything?', { call: async () => assert.fail('no call') });
+    assert.equal(empty.unsure, true);
+    assert.equal(empty.checked, 0);
+
+    const conflicts = await findConflicts({}, state, config, {
+        call: async () => ({ value: { conflicts: [
+            { a: 'event:gift', b: 'event:refused', explanation: 'Accepted and refused.' },
+            { a: 'event:refused', b: 'event:gift', explanation: 'Same pair again.' },
+            { a: 'event:gift', b: 'event:gift', explanation: 'Itself.' },
+            { a: 'event:gift', b: 'ghost', explanation: 'Unknown.' },
+        ] }, usage: {} }),
+    });
+    assert.equal(conflicts.conflicts.length, 1);
+    assert.deepEqual([conflicts.conflicts[0].a.id, conflicts.conflicts[0].b.id], ['event:gift', 'event:refused']);
+    assert.equal(conflicts.conflicts[0].explanation, 'Accepted and refused.');
+});
+
+test('memories shared from one chat can be brought into another chat with the same character', async t => {
+    const { shareRecords, listShared, bringShared, removeShared, characterSources } = await import('../src/mewmory/shared.js');
+    const { directories } = disk(t, fixture.messages);
+    const { write: writeCard } = await import('../src/character-card-parser.js');
+    const png = fs.readFileSync(new URL('../default/content/backgrounds/__transparent.png', import.meta.url));
+    fs.writeFileSync(path.join(directories.characters, 'Mara.png'), writeCard(png, JSON.stringify({ name: 'Mara', description: 'A careful host.' })));
+    let first = await loadCurrentState(directories, locator);
+    assert.ok(characterSources(first).length, 'the fixture chat has a character card');
+    await mutateState(directories, locator, state => { state.enabled = true; event(state); });
+    first = readState(directories, locator);
+    const shared = shareRecords(directories, first, ['event:gift'], { chat: 'Gift' });
+    assert.equal(shared.shared, 1);
+    assert.throws(() => shareRecords(directories, first, []), /Tick at least one/);
+    assert.equal(listShared(directories, first).mine.length, 1);
+    assert.equal(listShared(directories, first).available.length, 0);
+
+    const other = { ...locator, chat: 'Second' };
+    fs.copyFileSync(path.join(directories.chats, 'Mara', 'Gift.jsonl'), path.join(directories.chats, 'Mara', 'Second.jsonl'));
+    const second = await loadCurrentState(directories, other);
+    assert.notEqual(second.storyId, first.storyId);
+    const list = listShared(directories, second);
+    assert.equal(list.available.length, 1);
+    assert.equal(list.available[0].brought, false);
+    let brought;
+    await mutateState(directories, other, state => { brought = bringShared(directories, state, [list.available[0].id]); });
+    assert.equal(brought.added, 1);
+    const after = readState(directories, other);
+    const record = after.records.find(item => item.sharedFrom?.entryId === list.available[0].id);
+    assert.ok(record);
+    assert.equal(record.origin, 'author');
+    assert.ok(recordEligible(after, record), 'the brought memory is usable in the new chat');
+    assert.equal(listShared(directories, after).available[0].brought, true);
+    await mutateState(directories, other, state => { brought = bringShared(directories, state, [list.available[0].id]); });
+    assert.equal(brought.added, 0);
+    assert.equal(removeShared(directories, list.available[0].id).removed, 1);
+    assert.throws(() => removeShared(directories, list.available[0].id), /no longer there/);
+    assert.equal(listShared(directories, readState(directories, other)).available.length, 0);
+});
+
+test('ask, contradiction and sharing routes report plain errors and keep the archive unchanged', async t => {
+    const { directories } = disk(t, fixture.messages);
+    await loadCurrentState(directories, locator);
+    await mutateState(directories, locator, state => { state.enabled = true; event(state); });
+    const express = (await import('express')).default;
+    const { router } = await import('../src/endpoints/mewmory.js');
+    const app = express();
+    app.use(express.json());
+    app.use((request, _response, next) => { request.user = { directories }; next(); });
+    app.use(router);
+    const server = app.listen(0, '127.0.0.1');
+    t.after(() => server.close());
+    await new Promise(resolve => server.once('listening', resolve));
+    const post = (route, body) => fetch('http://127.0.0.1:' + server.address().port + route, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ locator, ...body }),
+    });
+    const before = readState(directories, locator).revision;
+    assert.equal((await post('/ask', { question: '' })).status, 400);
+    const ask = await post('/ask', { question: 'What happened to the gift?' });
+    assert.equal(ask.status, 409);
+    assert.match((await ask.json()).error ?? '', /Enable/);
+    assert.deepEqual((await (await post('/conflicts', {})).json()).conflicts, [], 'one memory needs no model call');
+    const shared = await (await post('/shared', {})).json();
+    assert.deepEqual(shared.available, []);
+    assert.equal((await post('/share', { ids: [] })).status, 400);
+    assert.equal((await post('/shared/remove', { id: 'missing' })).status, 404);
+    assert.equal(readState(directories, locator).revision, before);
+});

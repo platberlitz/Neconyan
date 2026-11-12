@@ -328,6 +328,10 @@
 .mewmory-timeline-heading > h5 { margin: 0; font-size: 1em; font-weight: 700; }
 .mewmory-timeline-heading > button { margin: 0; }
 .mewmory-brief .mewmory-prose { margin: 0; }
+.mewmory-ask-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .5rem; }
+.mewmory-ask-form > label { flex: 1 1 14rem; }
+.mewmory-ask-form > button { margin: 0; }
+.mewmory-answer, .mewmory-conflict { display: flex; flex-direction: column; gap: .5rem; margin-top: .6rem; padding: .8rem; border: 1px solid color-mix(in srgb, var(--mw-accent) 45%, var(--mw-border)); border-radius: 8px; background: var(--mw-tint); }
 .mewmory-person { padding: .8rem; border: 1px solid color-mix(in srgb, var(--mw-accent) 45%, var(--mw-border)); border-radius: 8px; background: var(--mw-tint); }
 .mewmory-map { display: block; width: 100%; max-width: 360px; height: auto; margin: 0 auto; }
 .mewmory-map-link { stroke: color-mix(in srgb, var(--mw-accent) 60%, var(--mw-border)); stroke-linecap: round; }

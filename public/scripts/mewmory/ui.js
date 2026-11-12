@@ -54,7 +54,7 @@ const ui = { root: null, tab: 'now', owner: '', subject: '', significance: '', s
     searchMode: 'hybrid', searchType: '', searchReport: null, running: false, progress: '', scope: '',
     sort: 'story', flag: '', importance: '', state: '', from: '', to: '', moreFilters: false, selected: new Set(), history: null, duplicates: null,
     estimate: null, loreName: '', loreNote: '', transferNote: '',
-    layout: 'list', message: null, person: '' };
+    layout: 'list', message: null, person: '', question: '', answer: null, askError: '', conflicts: null, conflictError: '', shareNote: '' };
 
 /** Where a memory's newest message sits in the open chat, or -1 when it is not on screen (inherited or a card). */
 function chatIndex(asOf) {
@@ -893,6 +893,135 @@ function renderPerson(root) {
     root.append(block);
 }
 
+function inlineError(root, message) {
+    const note = node('p', 'mewmory-error', message);
+    note.setAttribute('role', 'alert');
+    root.append(note);
+}
+
+function renderAsk(root) {
+    const block = section('Ask Mewmory');
+    block.id = 'mewmory-ask';
+    block.append(node('p', 'mewmory-caption', 'Ask about this story, such as who promised what or who knows a secret. The answer comes only from saved memories and uses one request to the Facts and events model.'));
+    const form = node('form', 'mewmory-ask-form');
+    const question = field('Your question', ui.question, value => { ui.question = value; }, { key: 'ask-question', placeholder: 'What happened with…' });
+    const ask = button('Ask', null, { primary: true, disabled: mewmory.busy });
+    ask.type = 'submit';
+    form.append(question, ask);
+    form.addEventListener('submit', event => {
+        event.preventDefault();
+        ui.question = form.querySelector('input')?.value ?? ui.question;
+        if (!ui.question.trim()) return;
+        void act(async () => {
+            ui.askError = '';
+            try {
+                ui.answer = await requestMewmory('ask', { question: ui.question });
+            } catch (error) {
+                ui.answer = null;
+                ui.askError = error.message;
+            }
+        }, { refresh: false });
+    });
+    block.append(form);
+    if (ui.askError) inlineError(block, ui.askError);
+    const answer = ui.answer;
+    if (answer) {
+        const result = node('div', 'mewmory-answer');
+        result.setAttribute('role', 'status');
+        result.append(node('p', 'mewmory-caption', 'You asked: ' + answer.question));
+        result.append(node('p', 'mewmory-prose', answer.answer));
+        if (answer.unsure) result.append(node('p', 'mewmory-caption', 'Mewmory is not sure: the saved memories do not settle this.'));
+        if (answer.citations.length) {
+            result.append(node('h5', 'mewmory-subheading', answer.citations.length === 1 ? 'Based on 1 memory' : 'Based on ' + answer.citations.length + ' memories'));
+            for (const item of answer.citations) renderBrief(item, result);
+        }
+        const actions = node('div', 'mewmory-actions');
+        actions.append(button('Clear answer', () => { ui.answer = null; render(); }));
+        result.append(actions);
+        block.append(result);
+    }
+    root.append(block);
+}
+
+function renderConflicts(root) {
+    const block = section('Check for contradictions', button('Check now', () => act(async () => {
+        ui.conflictError = '';
+        try {
+            ui.conflicts = await requestMewmory('conflicts');
+        } catch (error) {
+            ui.conflicts = null;
+            ui.conflictError = error.message;
+        }
+    }, { refresh: false }), { disabled: mewmory.busy }));
+    block.id = 'mewmory-conflicts';
+    block.append(node('p', 'mewmory-caption', 'Mewmory compares up to 60 recent memories and lists pairs that cannot both be true. It uses one request to the Facts and events model and changes nothing until you choose.'));
+    if (ui.conflictError) inlineError(block, ui.conflictError);
+    const result = ui.conflicts;
+    if (result) {
+        if (!result.conflicts.length) block.append(node('p', 'mewmory-caption', result.checked < 2 ? 'There are not enough memories to compare yet.' : 'No contradictions found in ' + result.checked + ' memories.'));
+        const settle = (pair, id, action) => act(async () => {
+            await changeMewmory('record/action', { id, action, filters: filters() });
+            result.conflicts = result.conflicts.filter(item => item !== pair);
+        });
+        for (const pair of result.conflicts) {
+            const item = node('div', 'mewmory-conflict');
+            item.append(node('p', 'mewmory-prose', pair.explanation || 'These two memories disagree.'));
+            for (const side of [pair.a, pair.b]) {
+                renderBrief(side, item, [button('Only a suspicion', () => settle(pair, side.id, 'suspicion')),
+                    button('Not supported by the story', () => settle(pair, side.id, 'unsupported'))]);
+            }
+            const keep = node('div', 'mewmory-actions');
+            keep.append(button('Both are fine', () => { result.conflicts = result.conflicts.filter(entry => entry !== pair); render(); }));
+            item.append(keep);
+            block.append(item);
+        }
+    }
+    root.append(block);
+}
+
+function renderShared(root) {
+    const entry = loadView('shared', 'shared');
+    const block = section('From other chats');
+    block.id = 'mewmory-shared';
+    block.append(node('p', 'mewmory-caption', 'Memories you shared from other chats with the same character. Nothing comes across on its own: bring one in and it becomes your own note in this chat. Share memories from the Archive by ticking them.'));
+    if (ui.shareNote) block.append(node('p', 'mewmory-caption', ui.shareNote));
+    loading(block, entry, 'shared memories');
+    const data = entry.data;
+    if (data) {
+        const refresh = () => { delete loads.shared; render(); };
+        if (!data.characters) block.append(node('p', 'mewmory-caption', 'This chat has no character card, so there is nothing to share with.'));
+        else if (!data.available.length) block.append(node('p', 'mewmory-caption', 'Nothing shared from other chats yet.'));
+        for (const item of data.available) {
+            const article = node('article', 'mewmory-record mewmory-brief');
+            article.append(node('p', 'mewmory-prose', item.text),
+                node('p', 'mewmory-caption', 'Shared from ' + (item.chat || 'another chat') + ' · ' + (item.characterNames || []).join(', ')));
+            const actions = node('div', 'mewmory-actions');
+            actions.append(button(item.brought ? 'Already in this chat' : 'Bring into this chat', () => act(async () => {
+                await changeMewmory('shared/bring', { ids: [item.id], filters: filters() });
+                delete loads.shared;
+            }), { disabled: item.brought }));
+            article.append(actions);
+            block.append(article);
+        }
+        if (data.mine.length) {
+            const mine = node('details', 'mewmory-more-filters');
+            mine.append(node('summary', '', data.mine.length === 1 ? '1 memory shared from this chat' : data.mine.length + ' memories shared from this chat'));
+            for (const item of data.mine) {
+                const article = node('article', 'mewmory-record mewmory-brief');
+                const actions = node('div', 'mewmory-actions');
+                actions.append(button('Stop sharing', () => act(async () => {
+                    await requestMewmory('shared/remove', { id: item.id });
+                    refresh();
+                }, { refresh: false })));
+                article.append(node('p', 'mewmory-prose', item.text), actions);
+                mine.append(article);
+            }
+            block.append(mine);
+        }
+    }
+    root.append(block);
+}
+
 function renderStory(root) {
     const view = mewmory.view;
     if (!view?.enabled) {
@@ -901,6 +1030,7 @@ function renderStory(root) {
     }
     const entry = loadView('story', 'story');
     renderPerson(root);
+    renderAsk(root);
     const recap = section('Previously on');
     recap.id = 'mewmory-story-recap';
     loading(recap, entry, 'the recap');
@@ -930,6 +1060,8 @@ function renderStory(root) {
     }
     root.append(promises);
     renderMap(root, data.map);
+    renderConflicts(root);
+    renderShared(root);
 }
 
 function renderReview(root, reload) {
@@ -1186,10 +1318,17 @@ function renderArchive(root) {
     });
     all.querySelector('input').id = 'mewmory-tick-all';
     const change = field('Change ticked memories', '', action => {
-        if (action && ui.selected.size) void act(() => changeMewmory('record/action', { ids: [...ui.selected], action, filters: filters() }));
+        if (action === 'share' && ui.selected.size) {
+            void act(async () => {
+                const result = await requestMewmory('share', { ids: [...ui.selected] });
+                delete loads.shared;
+                ui.shareNote = (result.shared === 1 ? 'Shared 1 memory' : 'Shared ' + result.shared + ' memories') + ' with this character’s other chats.'
+                    + (result.skipped ? ' ' + result.skipped + ' could not be shared: only facts, events, relationships, knowledge and promises can.' : '');
+            });
+        } else if (action && ui.selected.size) void act(() => changeMewmory('record/action', { ids: [...ui.selected], action, filters: filters() }));
     }, { key: 'archive-bulk', hideLabel: true, options: [['', 'Change ticked memories…'], ['pin_on', 'Pin for this scene'], ['pin_off', 'Unpin'],
         ['exclude_on', 'Stop using in replies'], ['exclude_off', 'Use in replies again'], ['suspicion', 'Only a suspicion'],
-        ['unsupported', 'Not supported by the story'], ['resolved', 'Resolved'], ['background', 'Keep in the background'], ['active', 'Active again']] });
+        ['unsupported', 'Not supported by the story'], ['resolved', 'Resolved'], ['background', 'Keep in the background'], ['active', 'Active again'], ['share', 'Share with other chats']] });
     function syncBulk() {
         const ticked = ui.selected.size;
         count.textContent = ticked ? ticked + (ticked === 1 ? ' memory ticked' : ' memories ticked') : 'Tick memories to change several at once.';
@@ -2373,6 +2512,12 @@ function render() {
         ui.layout = 'list';
         ui.message = null;
         ui.person = '';
+        ui.question = '';
+        ui.answer = null;
+        ui.askError = '';
+        ui.conflicts = null;
+        ui.conflictError = '';
+        ui.shareNote = '';
         ui.estimate = null;
         ui.loreName = '';
         ui.loreNote = '';
@@ -2474,7 +2619,7 @@ function loadMewmoryStyles() {
     if (!style) {
         style = document.createElement('link');
         style.id = 'mewmory-css';
-        style.href = 'css/mewmory.css?v=20261112-mewmory-story-views';
+        style.href = 'css/mewmory.css?v=20261112-mewmory-model-tools';
         document.head.append(style);
     }
     if (style.rel !== 'stylesheet') {

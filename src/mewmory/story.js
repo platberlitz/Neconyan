@@ -8,7 +8,7 @@ export const PAGE_LIMIT = 40;
 
 const RANK = { high: 2, medium: 1, low: 0 };
 
-function usable(state) {
+export function usable(state) {
     return state.records.filter(record => record.status !== 'invalidated' && recordEligible(state, record));
 }
 
@@ -20,7 +20,7 @@ function offsetOf(state) {
     return state.inheritedTimeline?.length || 0;
 }
 
-function brief(state, record, nameOf) {
+export function brief(state, record, nameOf = namer(state)) {
     const offset = offsetOf(state);
     return {
         id: record.id,
@@ -38,7 +38,7 @@ function brief(state, record, nameOf) {
     };
 }
 
-function namer(state) {
+export function namer(state) {
     const known = names(state);
     return id => known.get(id) || id;
 }
