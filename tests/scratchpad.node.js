@@ -85,6 +85,21 @@ test('CSS snippet changes are offered only when CSS Snippets are shared, and nev
     assert.match(buildScratchpadSystemPrompt({ assistant: 'miso', sourceKind: 'general', capabilities: { cssSnippets: true } }).text, /"type":"css-snippet"/);
 });
 
+test('dialogue colour changes are offered only when Dialogue Colors are shared, and never for a note', () => {
+    assert.equal(store.normaliseSettings({}).include.dialogueColors, false);
+    assert.equal(store.normaliseSettings({ include: { dialogueColors: true } }).include.dialogueColors, true);
+    for (const kind of ['roleplay', 'conversation', 'general']) assert.equal(normaliseCapabilities({ dialogueColors: true }, kind).dialogueColors, true);
+    assert.equal(normaliseCapabilities({ dialogueColors: true }, 'notebook').dialogueColors, undefined);
+    assert.equal(normaliseCapabilities({ dialogueColors: 'yes' }).dialogueColors, undefined);
+    for (const customPrompt of ['', 'Be helpful.']) {
+        const shared = buildScratchpadSystemPrompt({ assistant: 'miso', capabilities: { dialogueColors: true }, customPrompt }).text;
+        assert.match(shared, /"type":"dialogue-color"/);
+        assert.match(shared, /change gradients, fonts, groups/);
+        assert.doesNotMatch(buildScratchpadSystemPrompt({ assistant: 'miso', capabilities: {}, customPrompt }).text, /"type":"dialogue-color"/);
+    }
+    assert.match(buildScratchpadSystemPrompt({ assistant: 'miso', sourceKind: 'general', capabilities: { dialogueColors: true } }).text, /"type":"dialogue-color"/);
+});
+
 test('Author\'s Note changes are offered only in Roleplay, and only when the note is shared', () => {
     assert.equal(normaliseCapabilities({ authorsNote: true }, 'roleplay').authorsNote, true);
     for (const kind of ['conversation', 'general', 'notebook']) assert.equal(normaliseCapabilities({ authorsNote: true }, kind).authorsNote, undefined);
@@ -397,6 +412,19 @@ test('a sent message offers CSS snippet changes only while the session shares CS
         const accepted = await acceptScratchpadReply(a.request(body), body);
         await runJob(getJob(a.directories, accepted.job.id));
         assert.equal(calls.at(-1).messages[0].content.includes('"type":"css-snippet"'), offered);
+    }
+});
+
+test('a sent message offers dialogue colour changes only while the session shares Dialogue Colors', async t => {
+    const a = account(t);
+    const calls = [];
+    registerScratchpadJobs({ generate: async options => { calls.push(options); return { text: 'Done.' }; } });
+    for (const [include, offered] of [[{ dialogueColors: true }, true], [{ dialogueColors: false }, false]]) {
+        const session = startSession(a, { include });
+        const body = sendBody(session, { capabilities: { dialogueColors: true } });
+        const accepted = await acceptScratchpadReply(a.request(body), body);
+        await runJob(getJob(a.directories, accepted.job.id));
+        assert.equal(calls.at(-1).messages[0].content.includes('"type":"dialogue-color"'), offered);
     }
 });
 
@@ -978,7 +1006,7 @@ test('saved context setups keep only portable choices, are account-owned and pro
     assert.deepEqual(saved.setups, [{
         name: 'Lean read',
         settings: {
-            depth: 4, include: { card: false, persona: true, authorsNote: true, lore: true, preset: true, hidden: false, agents: false, regex: false, cssSnippets: false },
+            depth: 4, include: { card: false, persona: true, authorsNote: true, lore: true, preset: true, hidden: false, agents: false, regex: false, cssSnippets: false, dialogueColors: false },
             maxTokens: 512, stream: false, webSearch: true, readLinks: true, prefill: 'Ideas:', partialPrefill: '',
         },
     }]);

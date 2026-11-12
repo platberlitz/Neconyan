@@ -146,6 +146,18 @@ describe('Scratchpad reply parsing', () => {
         expect(describeChange({ type: 'agent', agent: 'a-1', field: 'description' })).toBe('Change Agent \'a-1\': description');
     });
 
+    test('accepts a dialogue colour change and refuses anything else about a colour table', () => {
+        expect(normaliseChange({ type: 'dialogue-color', character: '  Nova   Vale ', value: ' #C0FFEE ', reason: 'Warmer', locked: true }))
+            .toEqual({ type: 'dialogue-color', action: 'replace', character: 'Nova Vale', value: '#c0ffee', reason: 'Warmer' });
+        expect(normaliseChange({ type: 'dialogue-color', action: 'edit', character: 'Nova', value: '#112233' })).toMatchObject({ action: 'replace' });
+        expect(() => normaliseChange({ type: 'dialogue-color', action: 'delete', character: 'Nova', value: '#112233' })).toThrow('can only replace');
+        expect(() => normaliseChange({ type: 'dialogue-color', character: ' ', value: '#112233' })).toThrow('exact name');
+        for (const value of ['#fff', 'red', undefined]) {
+            expect(() => normaliseChange({ type: 'dialogue-color', character: 'Nova', value })).toThrow('six hex digits');
+        }
+        expect(describeChange({ type: 'dialogue-color', character: 'Nova', value: '#112233' })).toBe('Change dialogue colour of \'Nova\'');
+    });
+
     test('accepts a CSS snippet text change and refuses anything else about a snippet', () => {
         expect(normaliseChange({ type: 'css-snippet', snippet: ' tidy ', name: ' Tidy   up ', field: 'content', value: '.mes { color: red; }', reason: 'Calmer', isDisabled: true }))
             .toEqual({ type: 'css-snippet', action: 'replace', snippet: 'tidy', field: 'content', value: '.mes { color: red; }', reason: 'Calmer', name: 'Tidy up' });

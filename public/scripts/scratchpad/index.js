@@ -110,7 +110,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     depth: 15,
     picked: [],
     notes: [],
-    include: { card: true, persona: true, authorsNote: true, lore: true, preset: false, hidden: false, agents: false, regex: false, cssSnippets: false },
+    include: { card: true, persona: true, authorsNote: true, lore: true, preset: false, hidden: false, agents: false, regex: false, cssSnippets: false, dialogueColors: false },
     loreOverrides: {},
     lorebook: '',
     connection: { kind: 'current' },
@@ -1774,7 +1774,7 @@ async function prepareReviewPlan(source, session, message, part) {
                 throw new Error(t`Share the original preset in this chat before saving its changes.`);
             }
         },
-        agentsShared: currentSettings().include.agents === true, authorsNoteShared: currentSettings().include.authorsNote === true, regexShared: currentSettings().include.regex === true, cssSnippetsShared: currentSettings().include.cssSnippets === true, sharedLorebook: currentSettings().lorebook || '',
+        agentsShared: currentSettings().include.agents === true, authorsNoteShared: currentSettings().include.authorsNote === true, regexShared: currentSettings().include.regex === true, cssSnippetsShared: currentSettings().include.cssSnippets === true, dialogueColorsShared: currentSettings().include.dialogueColors === true, sharedLorebook: currentSettings().lorebook || '',
         creationGuard: () => requireScope(source, session.id), creatorKey: JSON.stringify([source.key, session.id, message.id, part.index]) });
     requireScope(source, session.id);
     if (plan.bucket) applyBucket(plan.bucket);
@@ -2481,7 +2481,8 @@ function renderContext({ force = true } = {}) {
             roleplay ? presetCheckbox(include.preset, value => setInclude('preset', value)) : null,
             checkbox(t`Agents`, include.agents === true, value => setInclude('agents', value), t`Shares the name, description and prompt of every saved Agent, so an assistant can suggest edits to them.`),
             checkbox(t`Regexes`, include.regex === true, value => setInclude('regex', value), t`Shares the name, Find pattern and replacement of every global regex script, so an assistant can suggest edits to them.`),
-            checkbox(t`CSS Snippets`, include.cssSnippets === true, value => setInclude('cssSnippets', value), t`Shares the name and CSS of every saved snippet, so an assistant can suggest edits to them.`)),
+            checkbox(t`CSS Snippets`, include.cssSnippets === true, value => setInclude('cssSnippets', value), t`Shares the name and CSS of every saved snippet, so an assistant can suggest edits to them.`),
+            checkbox(t`Dialogue Colors`, include.dialogueColors === true, value => setInclude('dialogueColors', value), t`Shares the name and colour of every character in the colour table in use, so an assistant can suggest new colours.`)),
         h('section', { class: 'scratchpad-section' },
             h('h3', { class: 'scratchpad-section-title', text: t`Assistant connections` }),
             h('p', { class: 'scratchpad-muted', text: t`Choose a saved profile for each assistant. Profiles include the model and connection settings.` }),

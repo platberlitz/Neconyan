@@ -42,6 +42,7 @@ function messageNumber(value) {
 export const AGENT_FIELDS = Object.freeze(['name', 'description', 'prompt']);
 export const REGEX_FIELDS = Object.freeze(['scriptName', 'findRegex', 'replaceString']);
 export const CSS_SNIPPET_FIELDS = Object.freeze(['name', 'content']);
+export const DIALOGUE_COLOR = /^#[0-9a-f]{6}$/i;
 
 export function stringList(value) {
     if (Array.isArray(value)) return value.map(item => String(item ?? '').trim()).filter(Boolean);
@@ -209,6 +210,12 @@ export function normaliseChange(value) {
         return { type: 'css-snippet', action: 'replace', snippet: value.snippet.trim(), field: value.field, value: next, reason,
             ...(typeof value.name === 'string' && value.name.trim() ? { name: text(value.name, 200).replace(/\s+/g, ' ').trim() } : {}) };
     }
+    if (value.type === 'dialogue-color') {
+        if (![undefined, 'replace', 'edit'].includes(value.action)) fail('Scratchpad can only replace a character\'s dialogue colour.');
+        if (typeof value.character !== 'string' || !value.character.trim() || value.character.length > 200) fail('This dialogue colour change needs the exact name of a listed character.');
+        if (typeof value.value !== 'string' || !DIALOGUE_COLOR.test(value.value.trim())) fail('A dialogue colour must be written as # and six hex digits, such as #c0ffee.');
+        return { type: 'dialogue-color', action: 'replace', character: value.character.replace(/\s+/g, ' ').trim(), value: value.value.trim().toLowerCase(), reason };
+    }
     if (value.type === 'chat') {
         if (value.action === 'insert') {
             const after = messageNumber(value.after);
@@ -290,6 +297,7 @@ export function describeChange(change) {
     if (change.type === 'authors-note') return change.value.trim() ? 'Change the Author\'s Note' : 'Clear the Author\'s Note';
     if (change.type === 'regex') return `Change regex script '${change.name || change.script}': ${change.field}`;
     if (change.type === 'css-snippet') return `Change CSS snippet '${change.name || change.snippet}': ${change.field}`;
+    if (change.type === 'dialogue-color') return `Change dialogue colour of '${change.character}'`;
     switch (change.action) {
         case 'edit': return `Rewrite message #${change.message}`;
         case 'insert': return `Add a message after #${change.after}`;

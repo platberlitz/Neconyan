@@ -61,6 +61,27 @@ jest.unstable_mockModule('../public/scripts/extensions/css-snippets/src/runtime.
     getCtx: () => ({ saveSettingsDebounced: saveSnippetSettings }),
 }));
 
+const dialogueColors = { characterColors: {} };
+const applyCharacterBaseColor = jest.fn((key, color) => {
+    if (!dialogueColors.characterColors[key]) return false;
+    dialogueColors.characterColors[key].baseColor = color;
+    return true;
+});
+const maybeAutoRecolorAfterColorChange = jest.fn();
+jest.unstable_mockModule('../public/scripts/extensions/third-party/sillytavern-character-colors/src/state.js', () => ({
+    get characterColors() { return dialogueColors.characterColors; },
+}));
+jest.unstable_mockModule('../public/scripts/extensions/third-party/sillytavern-character-colors/src/palettes.js', () => ({
+    getBaseColor: entry => entry.baseColor,
+}));
+jest.unstable_mockModule('../public/scripts/extensions/third-party/sillytavern-character-colors/src/ui.js', () => ({
+    applyCharacterBaseColor, maybeAutoRecolorAfterColorChange,
+}));
+const saveDialogueColors = jest.fn();
+jest.unstable_mockModule('../public/scripts/extensions/third-party/sillytavern-character-colors/src/storage.js', () => ({
+    saveData: saveDialogueColors,
+}));
+
 let regexScripts = [];
 const saveScriptsByType = jest.fn(async () => {});
 const loadRegexScripts = jest.fn(async () => {});
@@ -206,6 +227,31 @@ describe('Scratchpad reviewed saves', () => {
         await expect(name.commit('   ')).rejects.toThrow('needs a name');
         await name.commit('  Very   neat ');
         expect(cssSnippets[0].name).toBe('Very neat');
+    });
+
+    test('saves a reviewed dialogue colour only while Dialogue Colors are shared and the colour is unchanged', async () => {
+        dialogueColors.characterColors = { nova: { name: 'Nova', baseColor: '#aa0000' } };
+        const change = { type: 'dialogue-color', action: 'replace', character: 'Nova', value: '#112233' };
+        await expect(prepareChange(change, source)).rejects.toThrow('Share Dialogue Colors under Context');
+        await expect(prepareChange({ ...change, character: 'Milo' }, source, { dialogueColorsShared: true })).rejects.toThrow('no character with that name');
+        const plan = await prepareChange(change, { kind: 'general', key: 'general', avatar: 'Nova.png' }, { dialogueColorsShared: true });
+        expect(plan).toMatchObject({ target: 'Dialogue colour: Nova', field: 'Colour', before: '#aa0000', after: '#112233', editable: true });
+        await expect(plan.commit('red')).rejects.toThrow('six hex digits');
+        expect(applyCharacterBaseColor).not.toHaveBeenCalled();
+        await plan.commit(' #445566 ');
+        expect(applyCharacterBaseColor).toHaveBeenCalledWith('nova', '#445566', { saveImmediately: true });
+        expect(dialogueColors.characterColors.nova.baseColor).toBe('#445566');
+        expect(maybeAutoRecolorAfterColorChange).toHaveBeenCalledTimes(1);
+        expect(saveDialogueColors).toHaveBeenCalledTimes(1);
+
+        const stale = await prepareChange(change, source, { dialogueColorsShared: true });
+        dialogueColors.characterColors.nova.baseColor = '#000000';
+        await expect(stale.commit('#112233')).rejects.toThrow('changed while the review was open');
+        expect(applyCharacterBaseColor).toHaveBeenCalledTimes(1);
+
+        const refused = await prepareChange(change, source, { dialogueColorsShared: true });
+        applyCharacterBaseColor.mockReturnValueOnce(false);
+        await expect(refused.commit('#112233')).rejects.toThrow('was not saved');
     });
 
     test.each([

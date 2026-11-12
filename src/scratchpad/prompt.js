@@ -102,7 +102,7 @@ function imageInstructions({ image, avatar, persona }) {
     ].join('\n');
 }
 
-function changeInstructions({ lore, character, chat, members, notebook, persona, preset, agents, authorsNote, regex, cssSnippets }) {
+function changeInstructions({ lore, character, chat, members, notebook, persona, preset, agents, authorsNote, regex, cssSnippets, dialogueColors }) {
     const kinds = [];
     if (authorsNote) kinds.push([
         'This chat\'s Author\'s Note (the text under Author\'s Note in the context; when that heading is absent, the note is empty):',
@@ -123,6 +123,11 @@ function changeInstructions({ lore, character, chat, members, notebook, persona,
         'CSS snippets (only the ones listed under CSS Snippets in the context):',
         '{"type":"css-snippet","action":"replace","snippet":"<exact snippet ID>","name":"<that snippet\'s current name>","field":"content","value":"<complete new CSS>","reason":"<why>"}',
         'Supported fields: name, content. Copy the ID exactly as listed. The value replaces the whole field, so include every rule that should stay. Never change a snippet marked as not shared. You cannot create, delete, turn on or turn off a snippet, or change which themes or characters it applies to; tell the user to do that in CSS Snippets.',
+    ].join('\n'));
+    if (dialogueColors) kinds.push([
+        'Dialogue colours (only the characters listed under Dialogue Colors in the context):',
+        '{"type":"dialogue-color","action":"replace","character":"<exact character name>","value":"#rrggbb","reason":"<why>"}',
+        'Copy the character name exactly as listed. The value is the new colour as # and six hex digits. Leave a character marked as locked alone unless the user asks for it. You cannot add or remove a character, or change gradients, fonts, groups or other Dialogue Colors settings; tell the user to do that in Dialogue Colors.',
     ].join('\n'));
     if (preset?.length) kinds.push([
         `Shared preset targets: ${JSON.stringify(preset)}. Use their exact api and name; do not edit an unshared preset.`,
@@ -221,7 +226,7 @@ export function buildScratchpadSystemPrompt({ assistant, gender, persona: savedP
     ];
     const instructions = typeof customPrompt === 'string' && customPrompt.trim()
         ? [customPrompt, contextNotice && !customPrompt.includes(contextNotice) ? contextNotice : '', webSearch ? WEB_SEARCH_INSTRUCTIONS : '', webPages ? WEB_PAGES_INSTRUCTIONS : '',
-            capabilities.notebook || capabilities.persona || capabilities.preset?.length || capabilities.agents || capabilities.authorsNote || capabilities.regex || capabilities.cssSnippets || generalLore ? changeInstructions({ lore: generalLore, notebook: capabilities.notebook, persona: capabilities.persona, preset: capabilities.preset, agents: capabilities.agents, authorsNote: capabilities.authorsNote, regex: capabilities.regex, cssSnippets: capabilities.cssSnippets }) : ''].filter(Boolean).join('\n\n')
+            capabilities.notebook || capabilities.persona || capabilities.preset?.length || capabilities.agents || capabilities.authorsNote || capabilities.regex || capabilities.cssSnippets || capabilities.dialogueColors || generalLore ? changeInstructions({ lore: generalLore, notebook: capabilities.notebook, persona: capabilities.persona, preset: capabilities.preset, agents: capabilities.agents, authorsNote: capabilities.authorsNote, regex: capabilities.regex, cssSnippets: capabilities.cssSnippets, dialogueColors: capabilities.dialogueColors }) : ''].filter(Boolean).join('\n\n')
         : sections.filter(Boolean).join('\n\n');
     const reference = help ? `Neconyan reference for app questions (use it only when ${names.user} asks how something in Neconyan works):\n${help}` : '';
     const preferences = userInstructions.trim() ? `The user's global Scratchpad instructions for you:\n${userInstructions}` : '';

@@ -655,6 +655,38 @@ export function formatCssSnippets(snippets) {
     ].join('\n\n');
 }
 
+async function loadDialogueColors() {
+    try {
+        const [state, storage, palettes] = await Promise.all([
+            import('../extensions/third-party/sillytavern-character-colors/src/state.js'),
+            import('../extensions/third-party/sillytavern-character-colors/src/storage.js'),
+            import('../extensions/third-party/sillytavern-character-colors/src/palettes.js'),
+        ]);
+        return {
+            label: storage.getStorageLabelForKey(storage.getStorageKey()),
+            entries: Object.values(state.characterColors ?? {}).map(entry => ({ name: entry?.name, color: palettes.getBaseColor(entry), locked: entry?.locked === true })),
+        };
+    } catch (error) {
+        console.warn('Scratchpad could not read the Dialogue Colors table.', error);
+        return { label: '', entries: [] };
+    }
+}
+
+/**
+ * Formats the Dialogue Colors table in use for the shared context.
+ * @param {{label?: string, entries?: {name: string, color: string, locked?: boolean}[]}} table Colour table in use
+ * @returns {string} Context section, or an empty string when there is nothing to share
+ */
+export function formatDialogueColors(table) {
+    const list = (Array.isArray(table?.entries) ? table.entries : []).filter(entry => entry && typeof entry.name === 'string' && entry.name.trim());
+    if (!list.length) return '';
+    return [
+        '## Dialogue Colors (the colour table in use, exactly as saved)',
+        ...(table.label ? [`Table: ${table.label}`] : []),
+        list.slice(0, 500).map(entry => `- ${entry.name.trim()}: ${entry.color}${entry.locked ? ' (locked)' : ''}`).join('\n'),
+    ].join('\n\n');
+}
+
 /**
  * Builds the reference material for a message from the visible workspace.
  * Nothing here is saved; General never borrows a hidden story. Messages are
@@ -744,6 +776,14 @@ export async function buildContext({ source, settings, pendingText = '', session
             cssSnippetsShared = true;
         }
     }
+    let dialogueColorsShared = false;
+    if (include.dialogueColors) {
+        const text = formatDialogueColors(await loadDialogueColors());
+        if (text) {
+            sections.push(text);
+            dialogueColorsShared = true;
+        }
+    }
 
     let lore = { books: [], entries: [] };
     const loreShared = general ? Boolean(generalLorebook(source, settings)) : Boolean(include.lore);
@@ -772,7 +812,7 @@ export async function buildContext({ source, settings, pendingText = '', session
     const scaffold = general ? 0 : 2 + byteLength(scaffoldHeading) + (scaffoldNote ? 2 + byteLength(scaffoldNote) : 0);
     requireCurrentSource(source);
     if (headBytes + scaffold > MAX_CONTEXT_BYTES) {
-        throw new Error(t`The shared context is too large to send. Turn off the persona, character cards, Author's Note, Agents, Regexes, CSS Snippets, lorebooks or preset you do not need, then try again.`);
+        throw new Error(t`The shared context is too large to send. Turn off the persona, character cards, Author's Note, Agents, Regexes, CSS Snippets, Dialogue Colors, lorebooks or preset you do not need, then try again.`);
     }
 
     const lines = selection.messages.map(item => ({ item, bytes: byteLength(messageLine(item)) }));
@@ -833,6 +873,7 @@ export async function buildContext({ source, settings, pendingText = '', session
             ...(agentsShared ? { agents: true } : {}),
             ...(regexShared ? { regex: true } : {}),
             ...(cssSnippetsShared ? { cssSnippets: true } : {}),
+            ...(dialogueColorsShared ? { dialogueColors: true } : {}),
             ...(include.authorsNote && source.kind === 'roleplay' ? { authorsNote: true } : {}),
         },
     };
