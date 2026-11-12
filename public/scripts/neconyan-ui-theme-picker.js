@@ -16,6 +16,48 @@ export function deriveUiThemePreview(theme) {
     return { ...colours, tone: contrastRatio(colours.surface, 'rgb(0, 0, 0)') > 9 ? 'light' : 'dark' };
 }
 
+const holdMilliseconds = 1500;
+const userScrollEvents = ['wheel', 'touchstart', 'pointerdown', 'keydown'];
+
+function scrollParent(node) {
+    for (let parent = node.parentElement; parent; parent = parent.parentElement) {
+        if (/(auto|scroll)/.test(getComputedStyle(parent).overflowY) && parent.scrollHeight > parent.clientHeight) return parent;
+    }
+    return null;
+}
+
+/**
+ * Applying a theme swaps stylesheets and custom CSS, which can resize content above the
+ * gallery. Browsers without scroll anchoring (Safari) then move the page under the finger,
+ * so keep the picked card where it was until the theme settles or the user scrolls.
+ * The hold starts once the theme has applied, since that can take a while on slow phones.
+ */
+export function holdCardInPlace(card, grid) {
+    const scroller = scrollParent(grid);
+    const top = card.getBoundingClientRect().top;
+    const gridTop = grid.scrollTop;
+    const pageX = window.scrollX;
+    const pageY = window.scrollY;
+    let end = 0;
+    let frame = 0;
+    const stop = () => {
+        cancelAnimationFrame(frame);
+        for (const type of userScrollEvents) window.removeEventListener(type, stop, true);
+    };
+    const settle = () => {
+        if (!card.isConnected) return stop();
+        end ||= performance.now() + holdMilliseconds;
+        if (window.scrollY !== pageY) window.scrollTo(pageX, pageY);
+        if (grid.scrollTop !== gridTop) grid.scrollTop = gridTop;
+        const drift = card.getBoundingClientRect().top - top;
+        if (scroller && Math.abs(drift) >= 1) scroller.scrollTop += drift;
+        if (performance.now() < end) frame = requestAnimationFrame(settle);
+        else stop();
+    };
+    for (const type of userScrollEvents) window.addEventListener(type, stop, { capture: true, passive: true });
+    return settle;
+}
+
 /** Mount once; selection changes preserve the cards, keyboard focus and scroll position. */
 export function createUiThemePicker(host, { onSelect, translate = text => text }) {
     const element = (tag, className, text) => {
@@ -133,7 +175,11 @@ export function createUiThemePicker(host, { onSelect, translate = text => text }
                     meta.append(check);
                     button.append(palette, name, meta);
                     button.addEventListener('focus', () => setTabStop(button));
-                    button.addEventListener('click', () => onSelect(theme.name));
+                    button.addEventListener('click', () => {
+                        const settle = holdCardInPlace(button, grid);
+                        onSelect(theme.name);
+                        settle();
+                    });
                     return { name: theme.name, tone: preview.tone, button };
                 });
                 grid.replaceChildren(...entries.map(entry => entry.button));

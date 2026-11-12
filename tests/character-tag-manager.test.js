@@ -796,7 +796,7 @@ describe('Character Tag Manager template, wiring and styling contracts', () => {
     });
 
     test('bumps every stylesheet cache version together', () => {
-        expect(cacheVersion).toBe('20261112-persona-picker-rows-130');
+        expect(cacheVersion).toBe('20261112-settings-bg-visibility-132');
         expect(tabsJs).toContain(`NN_SHELL_STYLE_STYLESHEET_VERSION = '${cacheVersion}'`);
         expect(indexHtml).not.toContain('20261101-faithful-trackers');
         expect(indexHtml).not.toContain('20261104-agents-prefill');

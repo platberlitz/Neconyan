@@ -81,6 +81,52 @@ for (const width of [393, 1280, 320]) {
     });
 }
 
+test('picking a theme keeps the tapped card under the finger when content above it resizes', async ({ browser }) => {
+    const context = await browser.newContext({ ...IPHONE_SAFARI_CONTEXT, viewport: { width: 393, height: 852 }, serviceWorkers: 'block', reducedMotion: 'reduce' });
+    await installIPhoneSafari(context, { standalone: true });
+    const page = await context.newPage();
+    await prepare(page);
+    await page.route('**/api/settings/save', route => route.fulfill({ json: {} }));
+    try {
+        await page.goto('/', { waitUntil: 'domcontentloaded' });
+        await openPicker(page);
+        await applyIOSOnlyCss(page);
+        // Safari has no scroll anchoring, so content resizing above the gallery moves the page.
+        await page.addStyleTag({ content: '* { overflow-anchor: none !important; }' });
+        await page.evaluate(() => {
+            const scroller = document.querySelector('#nn-ui-theme-gallery').closest('.sb-shell-panel-scroller');
+            const filters = document.querySelector('.nn-ui-theme-filters').getBoundingClientRect();
+            scroller.scrollTop += filters.bottom - scroller.getBoundingClientRect().top + 80;
+            window.jQuery('#themes').one('change', () => {
+                const spacer = document.createElement('div');
+                spacer.style.height = '90px';
+                const gallery = document.querySelector('#nn-ui-theme-gallery');
+                gallery.before(spacer);
+                window.setTimeout(() => { spacer.style.height = '140px'; }, 400);
+            });
+        });
+        const target = await page.evaluate(() => {
+            const scroller = document.querySelector('#nn-ui-theme-gallery').closest('.sb-shell-panel-scroller').getBoundingClientRect();
+            const grid = document.querySelector('.nn-ui-theme-grid').getBoundingClientRect();
+            const top = Math.max(grid.top, scroller.top);
+            const bottom = Math.min(grid.bottom, scroller.bottom, window.innerHeight - 90);
+            const card = [...document.querySelectorAll('.nn-ui-theme-card')].find(button => {
+                const box = button.getBoundingClientRect();
+                return box.top >= top && box.bottom <= bottom && button.getAttribute('aria-pressed') !== 'true';
+            });
+            const box = card.getBoundingClientRect();
+            return { name: card.dataset.themeName, x: box.x + box.width / 2, y: box.y + box.height / 2, top: box.top };
+        });
+        await page.touchscreen.tap(target.x, target.y);
+        await expect(card(page, target.name)).toHaveAttribute('aria-pressed', 'true');
+        await page.waitForTimeout(1200);
+        const top = await card(page, target.name).evaluate(button => button.getBoundingClientRect().top);
+        expect(Math.abs(top - target.top)).toBeLessThan(2);
+    } finally {
+        await context.close();
+    }
+});
+
 test('import, update and delete refresh palette cards', async ({ page }) => {
     await prepare(page);
     // Exercise the real client lifecycle without leaving imported files or settings on the server.

@@ -362,14 +362,14 @@ body.neconyan:not(.sbterm) #right-nav-panel > :is(.scrollableInner, .scrollableI
     background-color: transparent !important;
 }
 body.neconyan:not(.sbterm) :is(.sb-shell-panel-scroller, .sb-conversation-thread-empty) {
-    background-color: color-mix(in srgb, var(--neco-surface) 90%, transparent) !important;
+    background-color: color-mix(in srgb, var(--neco-surface) calc(var(--sb-shell-surface-opacity) * 90%), transparent) !important;
 }
 @media (max-width: 768px) {
     /* Phone sheets fill the screen, so the floating-card look above turns into wallpaper
        bleeding through the header zone and list gutters. Paint them solid. */
     body.neconyan:not(.sbterm) :is(.sb-shell-root.openDrawer, #right-nav-panel.openDrawer),
     body.neconyan:not(.sbterm) #right-nav-panel.openDrawer > :is(.scrollableInner, .scrollableInnerFull) {
-        background-color: var(--neco-surface) !important;
+        background-color: color-mix(in srgb, var(--neco-surface) var(--sb-shell-surface-opacity-percent), transparent) !important;
     }
 }
 

@@ -532,7 +532,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261112-persona-picker-rows-130';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261112-settings-bg-visibility-132';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
