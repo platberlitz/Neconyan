@@ -3220,3 +3220,118 @@ test('a chat message lists the memories made from it and the memories given to i
     assert.equal(after.body.excluded, true);
     assert.equal(after.body.made[0].eligible, false, 'memories that rest on a forgotten message are no longer used');
 });
+
+test('a daily token limit pauses automatic updates but keeps today\'s total across chats', async t => {
+    const { recordSpend, spendStatus, spendToday, dayKey, SPEND_DAYS } = await import('../src/mewmory/spend.js');
+    const { directories } = disk(t);
+    const config = defaultConfig();
+    assert.equal(config.dailyTokenLimit, 0, 'no limit unless someone sets one');
+    Object.assign(config.roles.extractor, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'test' });
+    saveConfig(directories, { ...config, dailyTokenLimit: 100 });
+    assert.equal(readConfig(directories).dailyTokenLimit, 100);
+    saveConfig(directories, { ...readConfig(directories), dailyTokenLimit: undefined });
+    assert.equal(readConfig(directories).dailyTokenLimit, 100, 'a save that leaves the limit out keeps it');
+    assert.throws(() => saveConfig(directories, { ...readConfig(directories), dailyTokenLimit: -1 }));
+
+    const now = new Date(2026, 10, 12, 9).getTime();
+    recordSpend(directories, { role: 'extractor', input: 60, output: 10 }, now);
+    recordSpend(directories, { role: 'selector', input: 30, output: 5 }, now);
+    recordSpend(directories, { role: 'extractor', input: 999, output: 999, cached: true }, now);
+    assert.deepEqual(spendToday(directories, now), { requests: 2, input: 90, output: 15 }, 'cached answers cost nothing');
+    const status = spendStatus(directories, readConfig(directories), now);
+    assert.equal(status.day, dayKey(now));
+    assert.equal(status.used, 105);
+    assert.equal(status.reached, true);
+    assert.deepEqual(spendToday(directories, now + 86_400_000), { requests: 0, input: 0, output: 0 }, 'a new day starts from zero');
+    for (let day = 1; day <= SPEND_DAYS + 3; day++) recordSpend(directories, { input: 1, output: 0 }, now + day * 86_400_000);
+    const ledger = JSON.parse(fs.readFileSync(path.join(directories.root, 'mewmory', 'usage.json'), 'utf8'));
+    assert.equal(Object.keys(ledger.days).length, SPEND_DAYS, 'old days are dropped');
+});
+
+test('automatic updates wait once the daily limit is reached, and pressed buttons still run', async t => {
+    const { recordSpend } = await import('../src/mewmory/spend.js');
+    const { directories } = disk(t);
+    const config = defaultConfig();
+    Object.assign(config.roles.extractor, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'test' });
+    saveConfig(directories, { ...config, dailyTokenLimit: 50 });
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; });
+    recordSpend(directories, { role: 'extractor', input: 40, output: 20 });
+    let calls = 0;
+    const call = async () => { calls++; return { value: { records: [], interviews: [], activeNpcIds: [] }, usage: { role: 'extractor' } }; };
+    await scanProcessing(directories, call);
+    assert.equal(calls, 0, 'the background scan does not start over the limit');
+    assert.notEqual(readState(directories, locator).processing?.status, 'running');
+
+    await startProcessing(directories, locator, { all: true, checkpoint: true }, call);
+    const manual = await waitForProcessing(directories, locator);
+    assert.equal(manual.processing.status, 'complete');
+    assert.ok(calls > 0, 'an update the user starts is not blocked');
+
+    saveConfig(directories, { ...readConfig(directories), dailyTokenLimit: 0 });
+    const { estimateUpdate } = await import('../src/endpoints/mewmory.js');
+    const estimate = await estimateUpdate(directories, readState(directories, locator), readConfig(directories), { checkpoint: true });
+    assert.equal(estimate.messages, 0, 'nothing is left once the manual update read everything');
+    assert.equal(estimate.overLimit, false);
+});
+
+test('the update estimate counts waiting messages, requests and past use', async t => {
+    const { estimateUpdate } = await import('../src/endpoints/mewmory.js');
+    const { directories } = disk(t);
+    const config = defaultConfig();
+    Object.assign(config.roles.extractor, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'test', tokenizer: 'o200k_base' });
+    saveConfig(directories, { ...config, batchMessages: 3, dailyTokenLimit: 100 });
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; });
+    const fresh = await estimateUpdate(directories, readState(directories, locator), readConfig(directories), { checkpoint: false });
+    assert.equal(fresh.messages, fixture.messages.length);
+    assert.equal(fresh.batches, Math.ceil(fixture.messages.length / 3));
+    assert.ok(fresh.messageTokens > 0);
+    assert.equal(fresh.average, null, 'no guess before the first update');
+    assert.equal(fresh.tokens, null);
+    assert.equal(fresh.enabled, true);
+    mutateState(directories, locator, state => { state.usage = { extractor: { requests: 4, input: 4000, output: 400, milliseconds: 10 } }; });
+    const known = await estimateUpdate(directories, readState(directories, locator), readConfig(directories), { checkpoint: false });
+    assert.deepEqual(known.average, { input: 1000, output: 100 });
+    assert.equal(known.tokens, known.batches * 1100);
+    assert.equal(known.overLimit, true, 'the estimate warns when the update would pass the daily limit');
+});
+
+test('Markdown export and lorebook entries list usable memories only', async () => {
+    const { exportMarkdown, loreEntries } = await import('../src/mewmory/markdown.js');
+    const state = base(fixture.messages);
+    event(state);
+    event(state, { id: 'event:retired', text: 'Mara refused the gift.', status: 'invalidated' });
+    knowledge(state, { id: 'knowledge:receipt' });
+    const markdown = exportMarkdown(state, { title: 'Mewmory: Gift', exportedAt: new Date(2026, 10, 12).getTime() });
+    assert.match(markdown, /^# Mewmory: Gift\n/);
+    assert.match(markdown, /Exported 2026-11-12 from Mewmory\./);
+    assert.match(markdown, /## Characters, places and things/);
+    assert.match(markdown, /### Mara/);
+    assert.match(markdown, /## What happened\n\n- Mara accepted the gift\. _\(message 3/);
+    assert.doesNotMatch(markdown, /refused/, 'retired memories stay out');
+    assert.ok(markdown.endsWith('\n') && !markdown.endsWith('\n\n'));
+    assert.match(exportMarkdown({ ...state, records: [] }, { title: 'Empty' }), /No memories yet\./);
+
+    const entries = loreEntries(state);
+    const mara = entries.find(entry => entry.id === 'entity:mara');
+    assert.equal(mara.title, 'Mara');
+    assert.ok(mara.keys.includes('Mara'));
+    assert.match(mara.content, /Speech: Clipped, formal sentences\./);
+    assert.ok(entries.some(entry => entry.id === 'event:gift' && entry.title.startsWith('Event: ')));
+    assert.ok(!entries.some(entry => entry.id === 'event:retired'));
+    assert.match(entries.find(entry => entry.id === 'knowledge:receipt').content, /^Mara knows: /);
+});
+
+test('memories sent to a lorebook are never read back in as lore', async t => {
+    const { directories } = disk(t);
+    writeJson(path.join(directories.worlds, 'Old.json'), { entries: {
+        1: { comment: 'Harbour', content: 'The harbour freezes in winter.', key: ['harbour'] },
+        2: { comment: 'Event: Mara accepted', content: 'Mara accepted the gift.', key: ['gift'], mewmoryRecordId: 'event:gift' },
+    } });
+    writeJson(path.join(directories.root, 'settings.json'), { world_info: { globalSelect: ['Old'] } });
+    const state = await loadCurrentState(directories, locator);
+    const lore = Object.values(state.sources).filter(source => source.type === 'lore');
+    assert.equal(lore.length, 1);
+    assert.match(lore[0].revisions.at(-1).text, /harbour freezes/);
+});

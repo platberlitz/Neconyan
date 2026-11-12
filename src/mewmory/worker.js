@@ -4,6 +4,7 @@ import path from 'node:path';
 import { beginServerWork } from '../android-wake.js';
 import { fail, hash, sourceFingerprint } from './core.js';
 import { readConfig, resolvedRoleIdentity } from './models.js';
+import { overDailyLimit } from './spend.js';
 import { isStaleSourceError, pendingSources, processBatch, processingVersion } from './processing.js';
 import { loadCurrentState } from './sources.js';
 import { chatPath, listStories, listStoriesGradually, mutateState, readStateShared, statePath } from './store.js';
@@ -98,7 +99,12 @@ async function run(directories, locator, branchId, job, signal, call) {
             await yieldToRequests();
             const current = readStateShared(directories, locator);
             if (signal.aborted || current.branchId !== branchId || current.processing?.id !== job.id) return;
-            if (!current.enabled || (job.automatic && !readConfig(directories).autoUpdate)) break;
+            if (!current.enabled) break;
+            if (job.automatic) {
+                const config = readConfig(directories);
+                // Automatic updates pause for the rest of the day once the daily limit is used up.
+                if (!config.autoUpdate || overDailyLimit(directories, config)) break;
+            }
             let state;
             try {
                 state = await processBatch(directories, locator, { checkpoint: job.checkpoint, signal }, call);
@@ -137,6 +143,7 @@ export async function cancelProcessing(directories, locator) {
 /** One bounded scan also resumes persisted manual work after a restart. */
 export async function scanProcessing(directories, call, { reconcile = true } = {}) {
     const config = readConfig(directories);
+    const capped = overDailyLimit(directories, config);
     const shared = reconcile ? sharedInputs(directories, config) : null;
     const stories = (await listStoriesGradually(directories)).sort((a, b) => b.updatedAt - a.updatedAt);
     const seen = new Set();
@@ -157,7 +164,7 @@ export async function scanProcessing(directories, call, { reconcile = true } = {
                     try { resumeVisibilityRestore(base, story.locator); } catch { /* Retry remains visible per chat. */ }
                 }
             }
-            if (story.processing?.status === 'running' && (!story.enabled || (story.processing.automatic && !config.autoUpdate))) {
+            if (story.processing?.status === 'running' && (!story.enabled || (story.processing.automatic && (!config.autoUpdate || capped)))) {
                 mutateState(directories, story.locator, state => {
                     if (state.processing?.status === 'running') Object.assign(state.processing, { status: 'complete', finishedAt: Date.now() });
                 }, undefined, { existingOnly: true });
@@ -180,9 +187,9 @@ export async function scanProcessing(directories, call, { reconcile = true } = {
             if (running.has(key) || atCapacity(directories, story.processing?.status !== 'running' || story.processing.automatic)) continue;
             const previous = state.processing;
             let idle = false;
-            if (previous?.status === 'running' && (!previous.automatic || config.autoUpdate)) {
+            if (previous?.status === 'running' && (!previous.automatic || (config.autoUpdate && !capped))) {
                 await startProcessing(directories, story.locator, previous, call);
-            } else if (config.autoUpdate && config.roles.extractor.enabled
+            } else if (config.autoUpdate && !capped && config.roles.extractor.enabled
                 && pendingSources(state, config, { checkpoint: config.excludeHistory }).length
                 && (!['failed', 'cancelled'].includes(previous?.status) || previous.fingerprint !== fingerprint(state, config))) {
                 await startProcessing(directories, story.locator, { all: true, checkpoint: config.excludeHistory, automatic: true }, call);

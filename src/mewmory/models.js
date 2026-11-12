@@ -9,6 +9,7 @@ import { readSecret, writeSecret, SecretManager, SECRETS_FILE } from '../endpoin
 import { withChatFileLocks } from '../chat-file-lock.js';
 import { fail, hash, list, object, ROLE_NAMES, SOURCE_TYPES, text } from './core.js';
 import { readJson, writeJson } from './store.js';
+import { recordSpend } from './spend.js';
 import { getCounter, getTokenizerModel, TOKENIZERS } from './tokens.js';
 import { listModelProfiles, resolveModelProfile } from './connection-profiles.js';
 import { captureVectorPolicy, requestVectorEmbedding } from '../operations/vector-provider.js';
@@ -27,7 +28,7 @@ export function defaultConfig() {
         memoryTokens: 6000, batchMessages: 12, candidateLimit: 24,
         historyMode: 'tokens', recentMessages: 10, historyBatchMessages: 5, historyCatchUp: 'reply',
         extractionFocus: 'balanced', extractionInstructions: '',
-        writerTokenizer: 'auto', excludeHistory: true, autoHide: false, autoHideTokens: 30000, enableNewChats: false,
+        writerTokenizer: 'auto', excludeHistory: true, autoHide: false, autoHideTokens: 30000, enableNewChats: false, dailyTokenLimit: 0,
         retrieval: { ...RAG_DEFAULTS }, fallbackProfileIds: [], sharedProfileId: '', sharedModelOverride: '',
         roles: Object.fromEntries(ROLE_NAMES.map(name => [name, {
             enabled: false, ...(name === 'embedding' ? {} : { useShared: false }),
@@ -128,6 +129,7 @@ export function validateConfig(input) {
     result.recentMessages = integer(input.recentMessages === undefined ? 10 : input.recentMessages, 'Keep at least this many recent messages', 1, 100000);
     result.historyBatchMessages = integer(input.historyBatchMessages === undefined ? 5 : input.historyBatchMessages, 'Remove older chat in groups of', 1, 10000);
     result.autoHideTokens = integer(input.autoHideTokens, 'Hide older messages at this chat size, tokens', 1024, 2000000);
+    result.dailyTokenLimit = integer(input.dailyTokenLimit ?? 0, 'Daily token limit for automatic updates', 0, 1000000000);
     result.memoryTokens = integer(input.memoryTokens, 'Space for recalled memories, tokens', 256, 64000);
     result.batchMessages = integer(input.batchMessages, 'Maximum messages per memory request', 1, 24);
     result.candidateLimit = integer(input.candidateLimit, 'Search matches considered for recall', 4, 64);
@@ -225,6 +227,7 @@ function readSavedConfig(directories) {
     config.sharedModelOverride ??= '';
     config.extractionFocus ??= 'balanced';
     config.extractionInstructions ??= '';
+    config.dailyTokenLimit ??= 0;
     for (const name of ROLE_NAMES) {
         if (name !== 'embedding') config.roles[name].useShared ??= false;
         if (DECISION_ROLES.includes(name)) {
@@ -322,7 +325,7 @@ export function saveConfig(directories, input) {
     withChatFileLocks([filename, secretsFile], () => {
         const current = readJson(filename, null) || defaultConfig();
         if (input.revision !== current.revision) fail('Mewmory settings were changed in another tab. Reload the page, then save again.', 409);
-        for (const key of ['historyMode', 'recentMessages', 'historyBatchMessages', 'historyCatchUp', 'extractionFocus', 'extractionInstructions']) {
+        for (const key of ['historyMode', 'recentMessages', 'historyBatchMessages', 'historyCatchUp', 'extractionFocus', 'extractionInstructions', 'dailyTokenLimit']) {
             if (input[key] === undefined) validated[key] = current[key] ?? defaultConfig()[key];
         }
         for (const roleName of DECISION_ROLES) {
@@ -666,6 +669,11 @@ function fallbackRoles(directories, config, name, dataTypes) {
     });
 }
 
+function spent(directories, result) {
+    recordSpend(directories, result?.usage);
+    return result;
+}
+
 export async function callJsonRole(directories, config, name, contract, input, { dataTypes = SOURCE_TYPES, signal } = {}) {
     const saved = config.roles[name];
     // A broken own connection still lets the fallbacks answer; a switched-off role or a data permission does not.
@@ -731,7 +739,7 @@ export async function callJsonRole(directories, config, name, contract, input, {
         primaryError = Object.assign(new Error(ROLE_LABELS[name] + ': ' + saved.error), { status: 409 });
     } else {
         try {
-            return await attempt(null);
+            return spent(directories, await attempt(null));
         } catch (error) {
             signal?.throwIfAborted();
             // Only a model-side failure moves on; cancellations, limits and permission problems stop here.
@@ -743,7 +751,7 @@ export async function callJsonRole(directories, config, name, contract, input, {
     for (const fallback of fallbacks) {
         signal?.throwIfAborted();
         try {
-            return await attempt(fallback);
+            return spent(directories, await attempt(fallback));
         } catch (error) {
             signal?.throwIfAborted();
             if (error.status !== 502) throw error;
@@ -768,5 +776,5 @@ export async function embed(directories, config, texts, { query = false, dataTyp
         return row.embedding;
     });
     if (vectors.some(vector => vector.length !== vectors[0].length)) fail('The Embeddings model sent back results of different sizes in one reply. Choose a different Embeddings model in Mewmory settings.', 502);
-    return { vectors, usage: { ...result.usage, tokenizer: counter.name } };
+    return spent(directories, { vectors, usage: { ...result.usage, tokenizer: counter.name } });
 }

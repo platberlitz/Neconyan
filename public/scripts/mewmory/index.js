@@ -21,7 +21,7 @@ import { MEWMORY_CATCH_UP_TIMEOUT_MS, observeMewmoryCatchUp } from './catch-up.j
 import { decorateMessages, MEWMORY_OFF_RECORD_KEY, putBackOnRecord, recallSummary, stampMessage } from './in-chat.js';
 
 export const mewmory = {
-    config: null, view: null, stories: [], error: '', loading: false, busy: false, backfilling: false, preparing: false,
+    config: null, view: null, stories: [], spend: null, error: '', loading: false, busy: false, backfilling: false, preparing: false,
     focusMessage: null,
 };
 /** Written when the settings panel saves, so another tab refreshes its cached config without a reply-time request. */
@@ -67,7 +67,7 @@ export function notifyMewmory() {
     }
 }
 
-const READ_ONLY_MEWMORY_ROUTES = new Set(['config/get', 'inspect', 'source/get', 'validate', 'tokens', 'search', 'export', 'record/history', 'duplicates', 'message']);
+const READ_ONLY_MEWMORY_ROUTES = new Set(['config/get', 'inspect', 'source/get', 'validate', 'tokens', 'search', 'export', 'record/history', 'duplicates', 'message', 'estimate', 'export/markdown', 'lore']);
 
 /** Mutations may change what the next inspect returns, so an older result is no longer joinable. */
 function invalidateMewmoryRefresh() {
@@ -152,6 +152,7 @@ async function refreshCurrentChat(filters, { signal }) {
         if (!current()) return null;
         if (!mewmory.config || config.config.revision >= mewmory.config.revision) mewmory.config = config.config;
         mewmory.stories = config.stories;
+        mewmory.spend = config.spend ?? null;
         const view = locator ? await requestMewmory('inspect', { locator, ...filters }, { signal, scope: currentKey }) : null;
         if (!current()) return null;
         if (!view || !mewmory.view || view.revision >= mewmory.view.revision) mewmory.view = view;

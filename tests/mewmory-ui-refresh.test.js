@@ -176,3 +176,29 @@ test('earlier versions mark the words that were added and removed', async () => 
     const long = Array.from({ length: 700 }, (_, index) => 'word' + index).join(' ');
     expect(wordChanges(long, long + ' more')).toEqual([['removed', long], ['added', long + ' more']]);
 });
+
+test('the update estimate says what will be read and warns about the daily limit', async () => {
+    const { estimateText } = await import('../public/scripts/mewmory/ui.js');
+    expect(estimateText({ messages: 0 })).toEqual(['Nothing is waiting. Every message in this chat already has its memories.']);
+    const first = estimateText({ messages: 1, batches: 1, messageTokens: 900, tokens: null, enabled: true, overLimit: false });
+    expect(first[0]).toBe('1 message to read in about 1 model request.');
+    expect(first[1]).toMatch(/^The messages add up to about .*real figure is higher\.$/);
+    const later = estimateText({ messages: 24, batches: 2, messageTokens: 5000, tokens: 2200, enabled: false, overLimit: true });
+    expect(later[0]).toBe('24 messages to read in about 2 model requests.');
+    expect(later[1]).toMatch(/^Expected use: about .*earlier updates in this chat\.$/);
+    expect(later).toContain('This would go past your daily token limit. Updates you start yourself still run.');
+    expect(later.some(line => line.startsWith('Facts and events is switched off'))).toBe(true);
+});
+
+test('a file with every chat restores only the memories that belong to this chat', async () => {
+    const { pickRestoreBackup } = await import('../public/scripts/mewmory/ui.js');
+    const single = { format: 'mewmory-export-1', state: { storyId: 's1' } };
+    expect(pickRestoreBackup(single, { storyId: 'other' })).toBe(single);
+    const all = { format: 'mewmory-export-all-1', exportedAt: 9, chats: [
+        { locator: { chat: 'A' }, exportedAt: 5, state: { storyId: 's1', branchId: 'b1' } },
+        { locator: { chat: 'B' }, state: { storyId: 's2', branchId: 'b2' } },
+    ] };
+    expect(pickRestoreBackup(all, { storyId: 's1', branchId: 'b1' })).toEqual({ format: 'mewmory-export-1', exportedAt: 5, state: all.chats[0].state });
+    expect(pickRestoreBackup(all, { storyId: 'x', branchId: 'y', locator: { chat: 'B' } })).toEqual({ format: 'mewmory-export-1', exportedAt: 9, state: all.chats[1].state });
+    expect(() => pickRestoreBackup(all, { storyId: 'x', branchId: 'y', locator: { chat: 'C' } })).toThrow('This file has no memories for this chat.');
+});

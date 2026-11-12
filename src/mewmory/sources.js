@@ -92,7 +92,7 @@ export function readContextSourcesSync(directories, locator, state, source = rea
         const book = readWorldInfoFile(directories, world, false);
         if (!book) continue;
         for (const [uid, entry] of Object.entries(book.entries || {})) {
-            if (!entry || typeof entry !== 'object') continue;
+            if (!entry || typeof entry !== 'object' || entry.mewmoryRecordId) continue;
             sources.push({
                 id: 'lore:' + hash([state.worldAliases?.[world] || world, uid]).slice(0, 32), type: 'lore',
                 name: String(entry.comment || world + ' / ' + uid),

@@ -14,6 +14,8 @@ import { hybridCandidates, searchDocuments, updateIndex } from '../mewmory/searc
 import { loadCurrentState, purgeMissingContextSources, readContextSources } from '../mewmory/sources.js';
 import { commitRecovery, listStories, MAX_ARCHIVE_BYTES, mutateState, normalizeLocator, readChat, readStateShared, recoveryState } from '../mewmory/store.js';
 import { getCounter } from '../mewmory/tokens.js';
+import { spendStatus } from '../mewmory/spend.js';
+import { exportMarkdown, loreEntries } from '../mewmory/markdown.js';
 import { startOperation } from '../mewmory/operations.js';
 import { listJobs } from '../jobs/store.js';
 import { disableMewmory, resumeVisibilityRestore } from '../mewmory/visibility.js';
@@ -206,6 +208,7 @@ export function inspectState(state, config, { query = '', kind = '', ownerId = '
 
 route('/config/get', (directories, body, signal, owner) => ({
     config: accountConfig(publicConfig(directories), owner), stories: listStories(directories),
+    spend: spendStatus(directories, readConfig(directories)),
 }), { accountScoped: true });
 route('/config/save', (directories, body, signal, owner) => ({
     config: accountConfig(saveConfig(directories, body.config), owner),
@@ -405,6 +408,31 @@ route('/source/exclude', async (directories, body) => {
     return inspectState(state, readConfig(directories), body.filters);
 });
 
+/** What a whole-chat update will read, from this chat's own past model calls. Mewmory knows no prices, so it counts tokens. */
+export async function estimateUpdate(directories, state, config, { checkpoint = false } = {}) {
+    const pending = pendingSources(state, config, { checkpoint });
+    const role = config.roles.extractor;
+    const counter = await getCounter(role.tokenizer, { tokenizerKey: 'openai', tokenizerName: role.model });
+    const messageTokens = pending.reduce((sum, ref) => sum + counter.count(sourceAt(state, ref)?.text || ''), 0);
+    const batches = Math.ceil(pending.length / config.batchMessages);
+    const past = state.usage?.extractor;
+    const average = past?.requests > 0
+        ? { input: Math.round(past.input / past.requests), output: Math.round(past.output / past.requests) }
+        : null;
+    const tokens = average ? batches * (average.input + average.output) : null;
+    const spend = spendStatus(directories, config);
+    return {
+        messages: pending.length, batches, messageTokens, tokenizer: counter.name, average, tokens,
+        enabled: role.enabled, spend,
+        overLimit: spend.limit > 0 && spend.used + (tokens ?? messageTokens) > spend.limit,
+    };
+}
+
+route('/estimate', async (directories, body) => {
+    const state = await loadCurrentState(directories, normalizeLocator(body.locator));
+    return estimateUpdate(directories, state, readConfig(directories), { checkpoint: body.checkpoint === true });
+});
+
 route('/process', async (directories, body) => {
     const locator = normalizeLocator(body.locator);
     let state = await startProcessing(directories, locator, { all: body.all === true, checkpoint: body.checkpoint === true });
@@ -483,6 +511,17 @@ route('/index', async (directories, body, signal, owner) => {
 route('/export', async (directories, body) => {
     const state = await loadCurrentState(directories, normalizeLocator(body.locator));
     return { format: 'mewmory-export-1', exportedAt: new Date().toISOString(), state };
+});
+
+route('/export/markdown', async (directories, body) => {
+    const locator = normalizeLocator(body.locator);
+    const state = await loadCurrentState(directories, locator);
+    return { markdown: exportMarkdown(state, { title: 'Mewmory: ' + locator.chat }) };
+});
+
+route('/lore', async (directories, body) => {
+    const state = await loadCurrentState(directories, normalizeLocator(body.locator));
+    return { entries: loreEntries(state) };
 });
 
 route('/associate', async (directories, body) => {
