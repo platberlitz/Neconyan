@@ -500,6 +500,35 @@ describe('General Scratchpad context', () => {
         expect(sourceMessages(source)).toEqual([]);
     });
 
+    test('Home shares one hand-picked lorebook, without hidden entries or the hidden story', async () => {
+        home.visible = true;
+        chat.push({ name: 'Roleplay', mes: 'HIDDEN-STORY about the lighthouse' });
+        books.set('Harbour', { entries: {
+            0: { uid: 0, comment: 'Quay', key: ['quay'], constant: true, content: 'The quay is {{char}}\'s.' },
+            1: { uid: 1, comment: 'Secret', key: ['quay'], constant: true, agentBlacklisted: true, content: 'HIDDEN-ENTRY' },
+            2: { uid: 2, comment: 'Lamp', key: ['lighthouse'], content: 'The lamp is out.' },
+            3: { uid: 3, comment: 'Tide', key: ['tide'], content: 'The tide is high.' },
+        } });
+        const source = currentSource();
+        const picked = { ...settings, lorebook: ' Harbour ', include: { ...settings.include, lore: false } };
+        const result = await buildContext({ source, settings: picked, pendingText: 'What about the tide?' });
+        expect(loadWorldInfo.mock.calls).toEqual([['Harbour']]);
+        expect(result.capabilities).toMatchObject({ lore: true, chat: false });
+        expect(result.lore.books).toEqual(['Harbour']);
+        expect(result.text).toContain('One lorebook was shared by hand for this session.');
+        expect(result.text).toContain('## Lorebooks\nLorebook shared by hand for this session: Harbour');
+        expect(result.text).toContain('The quay is {{char}}\'s.');
+        expect(result.text).toContain('The tide is high.');
+        expect(result.text).not.toMatch(/HIDDEN-|The lamp is out|Chat lore|Global lore/);
+        expect((await collectLore({ source, settings: picked })).entries.map(entry => entry.uid)).toEqual([0, 2, 3]);
+
+        loadWorldInfo.mockClear();
+        const none = await buildContext({ source, settings: { ...settings, lorebook: '' } });
+        expect(none.capabilities.lore).toBe(false);
+        expect(none.text).not.toContain('## Lorebooks');
+        expect(loadWorldInfo).not.toHaveBeenCalled();
+    });
+
     test('plain no-chat and unselected Conversation never borrow the underlying Roleplay card', async () => {
         avatar = '';
         expect(currentSource().avatar).toBeUndefined();

@@ -10,6 +10,6 @@ import creator from './creator.js';
 import sync from './sync.js';
 
 // Knowledge revisions are independent of the assistant cards and artwork.
-export const KNOWLEDGE_REVISION = 88;
+export const KNOWLEDGE_REVISION = 89;
 export const topics = Object.freeze([...core, ...appearance, ...modes, ...memory, ...tools, ...connections, ...notes, ...scratchpad, ...creator, ...sync]
     .map(topic => Object.freeze({ ...topic, keys: Object.freeze([...topic.keys]), verification: 'source' })));

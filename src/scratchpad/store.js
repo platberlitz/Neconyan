@@ -183,6 +183,7 @@ export function defaultSettings() {
         partialPrefill: '',
         webSearch: false,
         readLinks: false,
+        lorebook: '',
     };
 }
 
@@ -260,6 +261,11 @@ export function normaliseSettings(input, previous = defaultSettings(), { allowIn
     }
     if (typeof source.webSearch === 'boolean') settings.webSearch = source.webSearch;
     if (typeof source.readLinks === 'boolean') settings.readLinks = source.readLinks;
+    settings.lorebook ??= '';
+    if (source.lorebook !== undefined) {
+        if (typeof source.lorebook !== 'string' || source.lorebook.length > 300) throw fail('SCRATCHPAD_LOREBOOK_INVALID', 'Choose a lorebook to share, or none.');
+        settings.lorebook = source.lorebook.trim();
+    }
     if (isPlainObject(source.assistantPrompts)) {
         settings.assistantPrompts ??= {};
         for (const assistant of Object.keys(source.assistantPrompts).filter(isAssistantId).slice(0, 27)) {
@@ -694,7 +700,7 @@ export function createSession(bucket, input = {}) {
     const assistant = normaliseAssistant(input.assistant);
     const previous = bucket.sessions.find(item => item.id === bucket.activeSessionId);
     const name = boundedString(input.name, MAX_NAME_LENGTH, { trim: true });
-    const settings = normaliseSettings(input.settings, previous ? { ...previous.settings, picked: [], pickedSource: null, notes: previous.settings.notes.filter(ref => !ref.grantId) } : defaultSettings());
+    const settings = normaliseSettings(input.settings, previous ? { ...previous.settings, picked: [], pickedSource: null, lorebook: '', notes: previous.settings.notes.filter(ref => !ref.grantId) } : defaultSettings());
     const session = {
         id: newScratchpadId(),
         name: name || nextName(bucket, assistant, undefined, settings),

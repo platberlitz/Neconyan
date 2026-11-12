@@ -265,9 +265,19 @@ describe('Scratchpad reviewed saves', () => {
         expect(saveChatConditional).not.toHaveBeenCalled();
     });
 
-    test.each(['add', 'edit', 'delete'])('General rejects lorebook %s before loading lore', async action => {
-        await expect(prepareChange({ type: 'lorebook', action, book: 'Garden', uid: 0, content: 'New.' }, { kind: 'general', key: 'general', avatar: selectedAvatar })).rejects.toThrow('does not share lorebooks');
+    test.each(['add', 'edit', 'delete'])('General rejects lorebook %s before loading lore unless that book was shared by hand', async action => {
+        const general = { kind: 'general', key: 'general', avatar: selectedAvatar };
+        const change = { type: 'lorebook', action, book: 'Garden', uid: 0, content: 'New.' };
+        await expect(prepareChange(change, general)).rejects.toThrow('Share that lorebook under Context');
+        await expect(prepareChange(change, general, { sharedLorebook: 'Harbour' })).rejects.toThrow('Share that lorebook under Context');
         expect(loadWorldInfo).not.toHaveBeenCalled();
+    });
+
+    test('General saves a reviewed change to the lorebook that was shared by hand', async () => {
+        const general = { kind: 'general', key: 'general', avatar: selectedAvatar };
+        const plan = await prepareChange({ type: 'lorebook', action: 'edit', book: 'Garden', uid: 0, content: 'New lore.' }, general, { sharedLorebook: 'Garden' });
+        await plan.commit(plan.after);
+        expect(saveWorldInfo.mock.calls[0][1].entries[0].content).toBe('New lore.');
     });
 
     test('General permits new-character creation only after review approval', async () => {

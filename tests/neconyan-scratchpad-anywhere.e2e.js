@@ -176,7 +176,7 @@ for (const phone of [true, false]) {
             expect(result.width).toBe(phone ? 393 : 1280);
             const hidden = result.buttons.filter(button => !button.visible).map(button => button.label).sort();
             expect(hidden, `${phase} hidden controls`).toEqual(phase === 'closed'
-                ? ['Attach files', 'Set up web search in Context']
+                ? ['Attach files', 'Read links', 'Set up web search in Context']
                 : []);
             for (const button of result.buttons) {
                 if (!button.visible) continue;

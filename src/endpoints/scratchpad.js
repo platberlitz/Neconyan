@@ -242,10 +242,13 @@ router.post('/prompt', (request, response) => {
             const session = body.sessionId ? findSession(bucket, requireId(body.sessionId, 'session')) : null;
             return capturePersonaTargetLocked(lease, source, body.capabilities?.persona, session?.settings.include.persona !== false);
         }) : null;
+        const sharedLorebook = source?.kind !== 'general' || (body.sessionId ? withScratchpad(base, lease =>
+            Boolean(findSession(readBucketLocked(lease, source), requireId(body.sessionId, 'session')).settings.lorebook)) : false);
         response.json(buildScratchpadSystemPrompt({ assistant: body.assistant, gender: body.gender,
             persona: profiles[body.assistant], assistantNames: Object.fromEntries(Object.entries(profiles).map(([id, profile]) => [id, profile?.name])),
             sourceKind: source?.kind, userName: body.names?.user, characterName: body.names?.character,
             capabilities: { ...normaliseCapabilities(body.capabilities, source?.kind, source ?? {}), notebook: body.capabilities?.notebook === true,
+                lore: body.capabilities?.lore === true && source?.kind !== 'notebook' && sharedLorebook,
                 persona,
                 image: imageAvailability.image && body.capabilities?.image === true, avatar: imageAvailability.image && body.capabilities?.image === true && targets.length > 0 },
             participants: Array.isArray(body.participants) ? body.participants.slice(0, 3) : [], randomReply: body.randomReply === true }));
@@ -256,7 +259,7 @@ router.post('/prompt', (request, response) => {
 
 router.post('/session/import', (request, response) => change(request, response, (bucket, body, lease) => {
     const session = body.session && typeof body.session === 'object' ? body.session : {};
-    const settings = { ...session.settings, notes: [], picked: [], pickedSource: null };
+    const settings = { ...session.settings, notes: [], picked: [], pickedSource: null, lorebook: '' };
     const imported = createSession(bucket, { assistant: session.assistant, gender: session.gender, name: session.name, settings,
         messages: Array.isArray(session.messages) ? session.messages : [] });
     refreshSessionAssistants(imported, readAssistantsLocked(lease));
@@ -272,7 +275,7 @@ router.post('/search', (request, response) => {
 
 router.post('/search/copy', (request, response) => change(request, response, (bucket, body, lease) => {
     const found = readFoundSessionLocked(lease, body.list, requireId(body.sessionId, 'session'));
-    const copied = createSession(bucket, { ...found, settings: { ...found.settings, notes: [], picked: [], pickedSource: null } });
+    const copied = createSession(bucket, { ...found, settings: { ...found.settings, notes: [], picked: [], pickedSource: null, lorebook: '' } });
     refreshSessionAssistants(copied, readAssistantsLocked(lease));
 }));
 
