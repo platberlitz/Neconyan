@@ -327,6 +327,18 @@
 .mewmory-timeline-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .4rem .8rem; }
 .mewmory-timeline-heading > h5 { margin: 0; font-size: 1em; font-weight: 700; }
 .mewmory-timeline-heading > button { margin: 0; }
+.mewmory-brief .mewmory-prose { margin: 0; }
+.mewmory-person { padding: .8rem; border: 1px solid color-mix(in srgb, var(--mw-accent) 45%, var(--mw-border)); border-radius: 8px; background: var(--mw-tint); }
+.mewmory-map { display: block; width: 100%; max-width: 360px; height: auto; margin: 0 auto; }
+.mewmory-map-link { stroke: color-mix(in srgb, var(--mw-accent) 60%, var(--mw-border)); stroke-linecap: round; }
+.mewmory-map-dot { fill: var(--mw-raised); stroke: var(--mw-border); stroke-width: 2; }
+.mewmory-map-node.is-character .mewmory-map-dot { fill: var(--mw-tint); stroke: var(--mw-accent); }
+.mewmory-map-node.is-character { cursor: pointer; }
+.mewmory-map-node.is-character:hover .mewmory-map-dot { fill: color-mix(in srgb, var(--mw-accent) 30%, var(--mw-surface)); }
+.mewmory-map-node:focus { outline: none; }
+.mewmory-map-node:focus-visible .mewmory-map-dot { stroke: var(--sb-focus-ring, var(--mw-accent)); stroke-width: 4; }
+.mewmory-map-label { fill: var(--mw-ink); font-size: 11px; font-weight: 600; text-anchor: middle; pointer-events: none; }
+.mewmory-map-list { display: flex; flex-direction: column; gap: .4rem; margin: .5rem 0 0; padding-left: 1.1rem; }
 
 .mewmory-source { padding: 1rem; border: 1px solid var(--mw-border); border-radius: 8px; background: var(--mw-card); display: flex; flex-direction: column; gap: .7rem; }
 .mewmory-field { display: flex; flex-direction: column; gap: .4rem; min-width: 0; }

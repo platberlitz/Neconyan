@@ -29,13 +29,23 @@ describe('Mewmory chat controls', () => {
 
     test('chips appear only when there is something to say, and never on hidden system notes', () => {
         expect(messageChips({ mes: 'Hi', extra: {} })).toBeNull();
-        expect(messageChips({ extra: { mewmoryRecall: { records: ['a', 'b'], passages: 1 } } })).toEqual({ used: 2, passages: 1, offRecord: false });
-        expect(messageChips({ extra: { mewmoryExclude: true } })).toEqual({ used: 0, passages: 0, offRecord: true });
+        expect(messageChips({ extra: { mewmoryRecall: { records: ['a', 'b'], passages: 1 } } })).toEqual({ used: 2, passages: 1, promises: 0, offRecord: false });
+        expect(messageChips({ extra: { mewmoryExclude: true } })).toEqual({ used: 0, passages: 0, promises: 0, offRecord: true });
         expect(messageChips({ is_system: true, extra: { mewmoryExclude: true } })).toBeNull();
         expect(messageChips({ is_system: true, extra: { mewmoryKeepHidden: true, mewmoryExclude: true } })).not.toBeNull();
         expect(usedLabel({ used: 1, passages: 0 })).toBe('Used 1 memory');
         expect(usedLabel({ used: 3, passages: 2 })).toBe('Used 3 memories');
         expect(usedLabel({ used: 0, passages: 1 })).toBe('Used 1 earlier passage');
         expect(usedLabel({ used: 0, passages: 4 })).toBe('Used 4 earlier passages');
+    });
+
+    test('promises brought back by their cues are counted on the chip', () => {
+        const summary = recallSummary({ retrieval: { selected: ['event:gift', 'commitment:return', 'commitment:visit'] }, forcedIds: ['commitment:return', 'commitment:visit', 'commitment:return', 'source:chat:a:0', 'commitment:gone'] }, 5);
+        expect(summary).toEqual({ at: 5, records: ['event:gift', 'commitment:return', 'commitment:visit'], passages: 0, promises: 2 });
+        const chips = messageChips({ extra: { mewmoryRecall: summary } });
+        expect(chips.promises).toBe(2);
+        expect(usedLabel(chips)).toBe('Used 3 memories · 2 promises');
+        expect(usedLabel({ used: 1, passages: 0, promises: 1 })).toBe('Used 1 memory · 1 promise');
+        expect(messageChips({ extra: { mewmoryRecall: { records: ['a'], passages: 0, promises: 9 } } }).promises).toBe(1);
     });
 });
