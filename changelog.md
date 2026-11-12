@@ -46,6 +46,7 @@
 - PR #636 (2026-11-12) `feat(scratchpad): rehearse the next story reply`
 - PR #637 (2026-11-12) `fix(chatroom): keep a board post's comment line inside its post`
 - PR #638 (2026-11-12) `fix(settings): fix background slider, theme jump and avatar layout`
+- PR #639 (2026-11-12) `perf(ui): keep search boxes responsive while typing`
 
 ## v1.5.4
 
