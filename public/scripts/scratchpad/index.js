@@ -3010,8 +3010,12 @@ async function exportSession(session) {
     if (exportOpen) return;
     exportOpen = true;
     try {
-        const options = await chooseSessionExport();
+        const { openSessionPrint } = await import('./pdf-export.js');
+        const options = await chooseSessionExport({ onPdf: options => openSessionPrint(session, {
+            ...options, nameOf: message => message.assistantName || assistantInfo(message.assistant, session).name,
+        }) });
         if (!options) return;
+        if (options.format === 'pdf') return;
         const markdown = options.format === 'markdown';
         const text = markdown
             ? sessionMarkdown(session, { ...options, nameOf: message => message.assistantName || assistantInfo(message.assistant, session).name })
