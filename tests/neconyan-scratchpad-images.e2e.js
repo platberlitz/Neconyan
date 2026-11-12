@@ -167,6 +167,68 @@ for (const { phone, textProfile } of [{ phone: true, textProfile: false }, { pho
 }
 
 for (const phone of [false, true]) {
+    test(`${phone ? 'phone' : 'desktop'} keeps the reading position when reviewing and saving an earlier avatar`, async ({ app }, testInfo) => {
+        test.setTimeout(180000);
+        const imageProvider = await app.images();
+        imageProvider.mode.reply = { data: [{ b64_json: mockPicture().toString('base64') }] };
+        const account = await app.account({ phone, contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {}, configureSettings: saved => {
+            saved.extension_settings['quick-image-gen'] = { provider: 'gptimage', gptImageKey: 'fixture-image-key', gptImageModel: 'gpt-image-1',
+                gptImageProxyUrl: imageProvider.url, width: 1024, height: 1024, appendQuality: false, useSTStyle: false,
+                reviewBeforeGenerate: false, setupWizardSeen: true };
+        } });
+        if (phone) await installIPhoneSafari(account.context, { standalone: true });
+        const page = await account.open({ workspace: true });
+        const open = () => page.evaluate(async () => (await import('/scripts/scratchpad/index.js')).openScratchpad({ tab: 'chat' }));
+        await open();
+        const source = await page.evaluate(async () => {
+            const { currentSource, wireSource } = await import('/scripts/scratchpad/context.js');
+            return wireSource(currentSource());
+        });
+        await account.post('/api/scratchpad/session/import', { source, session: { name: 'Portrait discussion', messages:
+            Array.from({ length: 12 }, (_, index) => ({ role: 'user', text: `Earlier discussion ${index + 1}.\n` + 'Keep the portrait consistent with the story.\n'.repeat(4) })) } });
+        await open();
+        if (phone) await applyIOSOnlyCss(page);
+        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await page.locator('#scratchpad-connection-miso').selectOption('durable');
+        await page.getByRole('tab', { name: 'Chat', exact: true }).click();
+        await sendProposal(page, app, account, fence({ type: 'image', action: 'generate', target: 'avatar', character: 'Durable Nova', prompt: 'A new portrait for Durable Nova.' }));
+        const card = page.locator('.scratchpad-image-card');
+        await generate(card, page, account);
+        await sendProposal(page, app, account, 'Later discussion.\n\n' + 'We can return to the earlier portrait when you are ready.\n\n'.repeat(30));
+        const review = card.getByRole('button', { name: 'Review avatar', exact: true });
+        await review.scrollIntoViewIfNeeded();
+        const position = () => page.locator('.scratchpad-messages').evaluate(list => ({
+            top: list.scrollTop, remaining: list.scrollHeight - list.clientHeight - list.scrollTop,
+            cardTop: list.querySelector('.scratchpad-image-card').getBoundingClientRect().top,
+        }));
+        const original = await position();
+        expect(original.top).toBeGreaterThan(500);
+        expect(original.remaining).toBeGreaterThan(200);
+        await review.click();
+        const popup = page.locator('dialog.popup[open]');
+        await expect(popup.getByText('Proposed avatar', { exact: true })).toBeVisible();
+        await popup.getByRole('button', { name: 'Not now', exact: true }).click();
+        const cancelled = await position();
+        await review.click();
+        await expect(popup.getByText('Proposed avatar', { exact: true })).toBeVisible();
+        await popup.getByRole('button', { name: 'Save change', exact: true }).click();
+        await expect(card).toContainText('Avatar saved');
+        await page.evaluate(() => window.toastr.remove());
+        const result = await position();
+        await testInfo.attach('reading-position', { body: JSON.stringify({ original, cancelled, result }), contentType: 'application/json' });
+        const screenshot = path.resolve(`../screenshots/scratchpad-image-scroll-${phone ? 'phone' : 'desktop'}-${before ? 'before' : 'after'}.png`);
+        await page.screenshot({ path: screenshot });
+        await testInfo.attach('saved-avatar', { path: screenshot, contentType: 'image/png' });
+        expect(Math.abs(result.top - original.top)).toBeLessThan(3);
+        expect(Math.abs(result.cardTop - original.cardTop)).toBeLessThan(3);
+        expect(Math.abs(cancelled.top - original.top)).toBeLessThan(3);
+        await page.locator('.scratchpad-messages').evaluate(list => { list.scrollTop = list.scrollHeight; });
+        await sendProposal(page, app, account, 'The portrait is saved. Let us continue.');
+        await expect.poll(async () => (await position()).remaining).toBeLessThan(3);
+    });
+}
+
+for (const phone of [false, true]) {
     const size = phone ? 'phone' : 'desktop';
     test(`${size}: review before generate opens the processed prompt straight from Generate image`, async ({ app }) => {
         test.setTimeout(240000);
