@@ -18,9 +18,11 @@ import { isAgentWorkPending, waitForAgentWorkIdle } from '../extensions/in-chat-
 import { t, translate } from '../i18n.js';
 import { hasRestrictedGroupHistory } from '../group-chat-visibility.js';
 import { MEWMORY_CATCH_UP_TIMEOUT_MS, observeMewmoryCatchUp } from './catch-up.js';
+import { decorateMessages, MEWMORY_OFF_RECORD_KEY, putBackOnRecord, recallSummary, stampMessage } from './in-chat.js';
 
 export const mewmory = {
     config: null, view: null, stories: [], error: '', loading: false, busy: false, backfilling: false, preparing: false,
+    focusMessage: null,
 };
 /** Written when the settings panel saves, so another tab refreshes its cached config without a reply-time request. */
 export const MEWMORY_CONFIG_CHANGED_KEY = 'neconyan.mewmory.config.changed';
@@ -36,6 +38,8 @@ let pendingEnable;
 let autoHiding = false;
 let restoringVisibility = false;
 let pendingDisable = null;
+let lastRecall = null;
+let decorateFrame = 0;
 
 export function getMewmoryLocator() {
     if (conversationState.conversationWorkspaceOpen) return null;
@@ -63,7 +67,7 @@ export function notifyMewmory() {
     }
 }
 
-const READ_ONLY_MEWMORY_ROUTES = new Set(['config/get', 'inspect', 'source/get', 'validate', 'tokens', 'search', 'export', 'record/history', 'duplicates']);
+const READ_ONLY_MEWMORY_ROUTES = new Set(['config/get', 'inspect', 'source/get', 'validate', 'tokens', 'search', 'export', 'record/history', 'duplicates', 'message']);
 
 /** Mutations may change what the next inspect returns, so an older result is no longer joinable. */
 function invalidateMewmoryRefresh() {
@@ -670,10 +674,94 @@ function scheduleUpdate(delay = 1500) {
     }, delay);
 }
 
+export const isMewmoryOffRecord = () => chat_metadata?.[MEWMORY_OFF_RECORD_KEY] === true;
+
+/** New messages in this chat are kept out of memory while this is on; earlier messages stay as they are. */
+export async function setMewmoryOffRecord(on) {
+    if (on) chat_metadata[MEWMORY_OFF_RECORD_KEY] = true;
+    else delete chat_metadata[MEWMORY_OFF_RECORD_KEY];
+    await saveMetadata();
+    notifyMewmory();
+}
+
+function scheduleDecorate() {
+    if (decorateFrame) return;
+    const frame = globalThis.requestAnimationFrame ?? (callback => setTimeout(callback, 0));
+    decorateFrame = frame(() => {
+        decorateFrame = 0;
+        decorateMessages(globalThis.document?.getElementById?.('chat'), chat);
+    });
+}
+
+/** Opens the Mewmory panel on what it knows about one chat message. */
+export function openMessageMemories(index) {
+    const message = chat[index];
+    if (!message || !getMewmoryLocator()) return false;
+    mewmory.focusMessage = {
+        index, messageId: typeof message.mewmory_id === 'string' ? message.mewmory_id : '',
+        used: Array.isArray(message.extra?.mewmoryRecall?.records) ? message.extra.mewmoryRecall.records : [],
+    };
+    globalThis.NeconyanShell?.openTab?.('left', 'mewmory');
+    notifyMewmory();
+    return true;
+}
+
+export async function putMessageBackOnRecord(index) {
+    const message = chat[index];
+    if (!putBackOnRecord(message)) return false;
+    await saveChatConditional();
+    scheduleDecorate();
+    invalidateMewmoryRefresh();
+    scheduleUpdate();
+    return true;
+}
+
+export async function jumpToChatMessage(index) {
+    if (!Number.isSafeInteger(index) || index < 0 || index >= chat.length) return false;
+    globalThis.NeconyanShell?.closeMewmory?.();
+    const { executeSlashCommandsWithOptions } = await import('../slash-commands.js');
+    await executeSlashCommandsWithOptions('/chat-jump ' + index);
+    return true;
+}
+
+function installInChatControls() {
+    eventSource.on(event_types.MESSAGE_RECEIVED, (messageId, type) => {
+        const recall = lastRecall;
+        lastRecall = null;
+        const message = chat[Number(messageId)];
+        if (!message || message.is_user || type === 'first_message') return;
+        const summary = recall?.scope === getMewmoryScope() && (recall.summary?.records.length || recall.summary?.passages)
+            ? recall.summary : null;
+        if (stampMessage(message, { summary, offRecord: isMewmoryOffRecord() })) scheduleDecorate();
+    });
+    eventSource.on(event_types.MESSAGE_SENT, async messageId => {
+        const message = chat[Number(messageId)];
+        if (!message?.is_user || !isMewmoryOffRecord() || !stampMessage(message, { offRecord: true })) return;
+        scheduleDecorate();
+        await saveChatConditional();
+    });
+    eventSource.on(event_types.GENERATION_STOPPED, () => { lastRecall = null; });
+    for (const event of [
+        event_types.CHAT_CHANGED, event_types.CHAT_LOADED, event_types.MORE_MESSAGES_LOADED, event_types.CHARACTER_MESSAGE_RENDERED,
+        event_types.USER_MESSAGE_RENDERED, event_types.MESSAGE_SWIPED, event_types.MESSAGE_UPDATED, event_types.MESSAGE_EDITED,
+    ]) {
+        eventSource.on(event, scheduleDecorate);
+    }
+    globalThis.document?.addEventListener?.('click', event => {
+        const target = event.target instanceof Element ? event.target.closest('.mes_mewmory, .mewmory-chip') : null;
+        const index = Number(target?.closest('.mes')?.getAttribute('mesid'));
+        if (!target || !Number.isSafeInteger(index)) return;
+        event.preventDefault();
+        openMessageMemories(index);
+    });
+}
+
 export function initMewmory() {
     if (initialized) return;
     initialized = true;
+    installInChatControls();
     const changed = () => {
+        lastRecall = null;
         selectionVersion++;
         stopPendingEnableWait();
         pendingEnable = null;
@@ -829,6 +917,7 @@ export async function validateMewmoryGeneration(context, prompt, tokenBudget, { 
                 + (waiting ? ' ' : '') + 'Increase the context size if your model supports it, reduce ‘Space for recalled memories, tokens’, or update memories for the whole chat.');
         }
         await requestMewmory('validate', { locator: context.locator, fingerprint: context.validationFingerprint }, { signal });
+        lastRecall = { scope: context.scope, summary: recallSummary(context.inspection) };
     } catch (error) {
         if (!signal?.aborted) toastr.error(error.message, 'Mewmory');
         throw error;

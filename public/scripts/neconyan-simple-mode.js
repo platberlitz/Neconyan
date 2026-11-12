@@ -40,6 +40,8 @@ export const SIMPLE_MODE_HIDDEN_SELECTORS = Object.freeze([
     '.sb-shell-tab[data-sb-tab="extensions"]',
     '.sb-shell-tab[data-sb-tab="server"]',
     '.sb-shell-tab[data-sb-tab="console-logs"]',
+    '#chat .mes_mewmory',
+    '#chat .mewmory-chips',
 ]);
 
 function normalizeSimpleModePreference(value) {

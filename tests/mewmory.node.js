@@ -3170,3 +3170,53 @@ test('archive routes change several memories in one write, show earlier versions
     assert.equal((await post('record/action', { id: 'event:twin', action: 'undo' })).status, 200);
     assert.equal(saved('event:twin').status, 'active', 'undo brings the retired copy back');
 });
+
+test('a chat message lists the memories made from it and the memories given to its reply', async t => {
+    const messages = structuredClone(fixture.messages).map((message, index) => ({ ...message, mewmory_id: 'message-' + index }));
+    const { directories } = disk(t, messages);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => {
+        state.enabled = true;
+        event(state);
+        event(state, { id: 'event:late', text: 'Mara read the date on the receipt.', refs: [state.timeline[5]], asOf: 5 });
+    });
+    const { messageMemories, router } = await import('../src/endpoints/mewmory.js');
+    const state = readState(directories, locator);
+    const third = messageMemories(state, { messageId: 'message-2', used: ['event:late', 'event:late', 'event:gone'] });
+    assert.equal(third.index, 2);
+    assert.equal(third.sourceId, state.timeline[2].id);
+    assert.deepEqual(third.made.map(record => record.id), ['event:gift']);
+    assert.deepEqual(third.used.map(record => record.id), ['event:late'], 'repeated ids are listed once');
+    assert.equal(third.missing, 1, 'memories deleted since the reply are counted, not invented');
+    assert.equal(third.excluded, false);
+    assert.equal(messageMemories(state, { index: 5 }).made[0].id, 'event:late', 'older chats without ids fall back to the position');
+    assert.throws(() => messageMemories(state, { messageId: 'message-99', index: 40 }), error => error.status === 404);
+    assert.equal(messageMemories(state, { messageId: 'message-1', index: 5 }).index, 1, 'the id wins over a stale position');
+
+    const express = (await import('express')).default;
+    const app = express();
+    app.use(express.json());
+    app.use((request, response, next) => { request.user = { directories }; next(); });
+    app.use(router);
+    const server = await new Promise(resolve => { const listener = app.listen(0, '127.0.0.1', () => resolve(listener)); });
+    t.after(() => new Promise(resolve => server.close(resolve)));
+    const post = async (route, body = {}) => {
+        const response = await fetch('http://127.0.0.1:' + server.address().port + '/' + route, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ locator, revision: readState(directories, locator).revision, ...body }),
+        });
+        return { status: response.status, body: await response.json().catch(() => null) };
+    };
+    const before = readState(directories, locator).revision;
+    const found = await post('message', { messageId: 'message-2', index: 2, used: ['event:late'] });
+    assert.equal(found.status, 200, JSON.stringify(found.body));
+    assert.deepEqual(found.body.made.map(record => record.id), ['event:gift']);
+    assert.equal(readState(directories, locator).revision, before, 'looking at a message changes nothing');
+
+    const forgotten = await post('source/exclude', { id: found.body.sourceId, exclude: true, filters: { flag: 'pinned' } });
+    assert.equal(forgotten.status, 200);
+    assert.deepEqual(forgotten.body.records, [], 'the reply honours the filters the page is showing');
+    const after = await post('message', { messageId: 'message-2' });
+    assert.equal(after.body.excluded, true);
+    assert.equal(after.body.made[0].eligible, false, 'memories that rest on a forgotten message are no longer used');
+});

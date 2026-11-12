@@ -355,6 +355,40 @@ route('/source/get', async (directories, body) => {
     return { ...source, id: body.ref.id, type: state.sources[body.ref.id].type, eligible: sourceEligible(state, body.ref) };
 });
 
+const MESSAGE_USED_LIMIT = 80;
+
+export function messageMemories(state, { messageId = '', index = -1, used = [] } = {}) {
+    const offset = state.inheritedTimeline?.length || 0;
+    let position = messageId ? state.timeline.findIndex(ref => state.sources[ref.id]?.messageId === messageId) : -1;
+    if (position < offset && Number.isSafeInteger(index) && index >= 0) position = offset + index;
+    const ref = position >= offset ? state.timeline[position] : null;
+    if (!ref || (messageId && state.sources[ref.id]?.messageId && state.sources[ref.id].messageId !== messageId)) {
+        fail('Mewmory has not read this message yet. Save the chat and try again in a moment.', 404);
+    }
+    const decorate = record => ({
+        ...record, eligible: recordEligible(state, record),
+        unavailableSources: record.refs.filter(item => !sourceEligible(state, item)).map(refKey),
+    });
+    const cites = record => [...record.refs, ...(record.evidenceRefs || []), ...(record.inputRefs || [])].some(item => item.id === ref.id);
+    const wanted = [...new Set(strings(used))].slice(0, MESSAGE_USED_LIMIT);
+    const byId = new Map(state.records.map(record => [record.id, record]));
+    const source = sourceAt(state, ref);
+    return {
+        sourceId: ref.id, index: position - offset, speaker: source?.speaker || '',
+        excluded: state.excludedSources.includes(ref.id), enabled: source?.enabled !== false,
+        made: state.records.filter(record => record.status !== 'invalidated' && cites(record))
+            .sort((a, b) => b.createdAt - a.createdAt).slice(0, MESSAGE_USED_LIMIT).map(decorate),
+        used: wanted.map(id => byId.get(id)).filter(Boolean).map(decorate),
+        missing: wanted.filter(id => !byId.has(id)).length,
+    };
+}
+
+route('/message', async (directories, body) => {
+    const state = await loadCurrentState(directories, normalizeLocator(body.locator));
+    return messageMemories(state, { messageId: typeof body.messageId === 'string' ? body.messageId : '',
+        index: body.index, used: Array.isArray(body.used) ? body.used : [] });
+});
+
 route('/source/exclude', async (directories, body) => {
     const locator = normalizeLocator(body.locator);
     const current = await loadCurrentState(directories, locator);
@@ -368,7 +402,7 @@ route('/source/exclude', async (directories, body) => {
         state.preview = null;
         state.index.pending = true;
     }, current.revision);
-    return inspectState(state, readConfig(directories));
+    return inspectState(state, readConfig(directories), body.filters);
 });
 
 route('/process', async (directories, body) => {

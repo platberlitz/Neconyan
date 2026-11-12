@@ -316,6 +316,14 @@
 .mewmory-version + .mewmory-version { padding-top: .6rem; border-top: 1px solid color-mix(in srgb, var(--mw-border) 55%, transparent); }
 .mewmory-version ins { text-decoration: underline; text-decoration-thickness: 2px; text-decoration-color: var(--mw-accent); background: var(--mw-tint); }
 .mewmory-version del { color: var(--mw-muted); text-decoration: line-through; }
+.mewmory-message { padding: .8rem; border: 1px solid color-mix(in srgb, var(--mw-accent) 45%, var(--mw-border)); border-radius: 8px; background: var(--mw-tint); }
+.mewmory-message-text { padding-left: .7rem; border-left: 2px solid var(--mw-border); color: var(--mw-muted); font-style: italic; }
+.mewmory-subheading { margin: .4rem 0 0; font-size: 1em; font-weight: 700; }
+.mewmory-timeline { display: flex; flex-direction: column; gap: 1rem; margin: 0; padding: 0; list-style: none; }
+.mewmory-timeline-step { display: flex; flex-direction: column; gap: .6rem; padding-left: .9rem; border-left: 2px solid color-mix(in srgb, var(--mw-accent) 55%, var(--mw-border)); }
+.mewmory-timeline-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .4rem .8rem; }
+.mewmory-timeline-heading > h5 { margin: 0; font-size: 1em; font-weight: 700; }
+.mewmory-timeline-heading > button { margin: 0; }
 
 .mewmory-source { padding: 1rem; border: 1px solid var(--mw-border); border-radius: 8px; background: var(--mw-card); display: flex; flex-direction: column; gap: .7rem; }
 .mewmory-field { display: flex; flex-direction: column; gap: .4rem; min-width: 0; }
@@ -356,3 +364,42 @@
     .mewmory-bulk > .mewmory-field { flex-basis: 100%; max-width: none; }
     .mewmory-review, .mewmory-duplicates, .mewmory-bulk { padding: .6rem; }
 }
+
+#chat .mewmory-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-block: 0.4rem 0.1rem;
+}
+
+#chat .mewmory-chip {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-height: 2rem;
+    padding: 0.2rem 0.7rem;
+    border: 1px solid color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 45%, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 10%, transparent);
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+    font: inherit;
+    font-size: 0.85em;
+    cursor: pointer;
+}
+
+#chat .mewmory-chip::after {
+    content: '';
+    position: absolute;
+    inset: -0.375rem 0;
+}
+
+#chat .mewmory-chip:hover { border-color: var(--neco-ginger-hover, var(--neco-ginger, var(--SmartThemeQuoteColor))); }
+#chat .mewmory-chip:focus-visible { outline: 2px solid var(--sb-focus-ring, var(--neco-ginger, var(--SmartThemeQuoteColor))); outline-offset: 2px; }
+#chat .mewmory-chip i { color: var(--neco-ginger, var(--SmartThemeQuoteColor)); }
+#chat .mewmory-chip[data-mewmory-chip="off-record"] {
+    border-style: dashed;
+    background: transparent;
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+}
+#chat .mewmory-chip[data-mewmory-chip="off-record"] i { color: inherit; }
