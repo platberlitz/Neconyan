@@ -19,6 +19,7 @@ export function buildSessionExport(session, assistants, options = {}) {
         exported: new Date().toISOString(),
         session: {
             name: session.name,
+            pinnedNote: session.pinnedNote || '',
             assistant: session.assistant,
             gender: session.gender,
             settings: { ...session.settings, assistants: Object.fromEntries(assistants.filter(item => item.personality && used.has(item.id)).map(item => [item.id, item])), notes: [], picked: [], pickedSource: undefined },
@@ -40,6 +41,7 @@ function linkText(value) {
 /** A transcript for reading. It cannot be imported again, and shows the chosen version of each reply. */
 export function sessionMarkdown(session, { reasoning = false, sources = false, attachments = false, nameOf = message => message.assistantName || '' } = {}) {
     const parts = [`# ${linkText(session.name) || 'Scratchpad'}`];
+    if (session.pinnedNote?.trim()) parts.push(`## ${t`Pinned note`}\n\n${session.pinnedNote}`);
     for (const message of session.messages) {
         if (message.state === 'pending') continue;
         const user = message.role === 'user';

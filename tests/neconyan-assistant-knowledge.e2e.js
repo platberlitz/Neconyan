@@ -274,7 +274,7 @@ for (const phone of [false, true]) {
             }
             return { revision: KNOWLEDGE_REVISION, results };
         }, refreshedKnowledgeCases);
-        expect(references.revision).toBe(91);
+        expect(references.revision).toBe(92);
         expect(references.results).toHaveLength((13 + refreshedKnowledgeCases.length) * 9);
         expect(references.results.filter(result => !result.found)).toEqual([]);
     });
@@ -289,6 +289,11 @@ for (const phone of [false, true]) {
         });
         await page.evaluate(() => window.NeconyanShell.openTab('left', 'agents'));
         await expect(page.locator('#ica--settings')).toBeVisible();
+        // The first-visit invitation mounts after the settings become visible and moves the toolbar.
+        const invitation = page.locator('.neconyan-tool-tour-invite[data-tool-page="agents"]');
+        await expect(invitation).toBeVisible();
+        await invitation.getByRole('button', { name: 'Not now', exact: true }).click();
+        await expect(invitation).toBeHidden();
         await page.getByRole('button', { name: 'Browse library', exact: true }).click();
         await page.getByRole('textbox', { name: 'Search templates', exact: true }).fill('Relationship Tracker');
         const template = page.locator('.ica--template-card[data-id="tpl-relationship-tracker"]');

@@ -13,6 +13,7 @@ import { normaliseStoredWebPages } from './web-pages.js';
 import { normalisePresetTargets } from '../../public/scripts/scratchpad/preset-fields.js';
 import { normaliseAttachments } from '../../public/scripts/scratchpad/attachment-data.js';
 import { MAX_REPLY_SWIPES, replySwipes, selectReplySwipe } from '../../public/scripts/scratchpad/swipes.js';
+import { MAX_PINNED_NOTE_BYTES } from '../../public/scripts/scratchpad/pinned-note.js';
 
 export const SCRATCHPAD_SCHEMA = 1;
 export const ASSISTANT_IDS = BUILTIN_ASSISTANT_IDS;
@@ -365,6 +366,12 @@ function normaliseMessage(input, { allowInternalKeys = false, allowSwipes = true
     return message;
 }
 
+export function normalisePinnedNote(value = '') {
+    if (typeof value !== 'string') throw fail('SCRATCHPAD_PINNED_NOTE_INVALID', 'The pinned note must be text.');
+    if (byteLength(value) > MAX_PINNED_NOTE_BYTES) throw fail('SCRATCHPAD_PINNED_NOTE_TOO_LARGE', 'The pinned note is too long. Keep it within 16 KiB.', 413);
+    return value;
+}
+
 function normaliseSession(input, { allowInternalKeys = false } = {}) {
     if (!isPlainObject(input)) return null;
     const id = typeof input.id === 'string' && ID_PATTERN.test(input.id) ? input.id : newScratchpadId();
@@ -379,6 +386,7 @@ function normaliseSession(input, { allowInternalKeys = false } = {}) {
         gender: normaliseGender(input.gender),
         temporary: input.temporary === true,
         pinned: input.pinned === true && input.temporary !== true,
+        pinnedNote: normalisePinnedNote(input.pinnedNote),
         created: typeof input.created === 'string' ? input.created.slice(0, 40) : now(),
         updated: typeof input.updated === 'string' ? input.updated.slice(0, 40) : now(),
         settings: normaliseSettings(input.settings, defaultSettings(), { allowInternalKeys }),
@@ -709,6 +717,7 @@ export function createSession(bucket, input = {}) {
         gender: normaliseGender(input.gender),
         temporary: input.temporary === true,
         pinned: false,
+        pinnedNote: normalisePinnedNote(input.pinnedNote),
         created: now(),
         updated: now(),
         settings,
@@ -757,7 +766,7 @@ export function branchSession(bucket, sessionId, messageId) {
     const index = original.messages.indexOf(message);
     const kept = original.messages.slice(0, message.role === 'user' ? index : index + 1).filter(item => item.state !== 'pending');
     const name = `${original.name.slice(0, MAX_NAME_LENGTH - BRANCH_SUFFIX.length).trimEnd()}${BRANCH_SUFFIX}`;
-    const session = createSession(bucket, { assistant: original.assistant, gender: original.gender, name,
+    const session = createSession(bucket, { assistant: original.assistant, gender: original.gender, name, pinnedNote: original.pinnedNote,
         settings: { ...structuredClone(original.settings), notes: original.settings.notes.filter(ref => !ref.grantId) }, messages: structuredClone(kept) });
     // These records were made by this server for these very replies, so the copy keeps them as they are.
     if (session.messages.length === kept.length) {
@@ -774,6 +783,13 @@ export function branchSession(bucket, sessionId, messageId) {
 
 export function updateSession(bucket, sessionId, input = {}) {
     const session = findSession(bucket, sessionId);
+    if (input.pinnedNote !== undefined) {
+        const note = normalisePinnedNote(input.pinnedNote);
+        if (input.expectedPinnedNote !== (session.pinnedNote || '')) {
+            throw fail('SCRATCHPAD_PINNED_NOTE_CHANGED', 'The pinned note changed elsewhere. Copy your draft, reopen the note and try again.', 409);
+        }
+        session.pinnedNote = note;
+    }
     if (input.settings !== undefined) session.settings = normaliseSettings(input.settings, session.settings);
     if (input.name !== undefined) {
         const name = boundedString(input.name, MAX_NAME_LENGTH, { trim: true });

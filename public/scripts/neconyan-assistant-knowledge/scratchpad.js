@@ -3,6 +3,11 @@ const panel = 'public/scripts/scratchpad/index.js';
 
 export default [
     {
+        id: 'scratchpad.pinned-note', title: 'Keeping a pinned note or story tracker in Scratchpad', keys: ['Scratchpad pinned note or story tracker', 'Scratchpad pinned note', 'Scratchpad track goals and loose ends', 'edit the Scratchpad story tracker'],
+        sources: [guide, panel, 'public/scripts/scratchpad/pinned-note.js'], anchors: ['Pinned note or story tracker', 'Save note', 'MAX_PINNED_NOTE_BYTES = 16 * 1024'],
+        content: 'In Scratchpad, press Pinned note beside the assistant controls. Write goals, scene details or loose ends and press Save note. Every reply in that session reads the saved note, including retries and discussion rounds, and Show preview includes it. You edit it by hand; assistants do not update it. It holds up to 16 KiB. Save an empty note to remove it; Cancel keeps the saved text. If another device changed the note, saving is refused and your draft stays in the editor. New sessions start blank; Clear messages keeps the note, and branches, copied sessions and exports keep a copy. It does not change the story or create a Notebook page.',
+    },
+    {
         id: 'scratchpad.mewmory', title: 'Sharing saved Mewmory records with Scratchpad', keys: ['share saved Mewmory records with Scratchpad', 'Scratchpad read Mewmory', 'Scratchpad memory preview', 'Mewmory in Scratchpad'],
         sources: [guide, panel, 'src/scratchpad/mewmory.js'], anchors: ['Mewmory', 'MAX_SCRATCHPAD_MEMORIES = 128', 'MAX_SCRATCHPAD_MEMORY_BYTES = 96 * 1024'],
         content: 'In a Roleplay chat, open Scratchpad → Context and tick Mewmory under Also share. It starts off. The server reads saved memories from that chat, pinned first and then recent, up to 128 records and 96 KiB. Show preview lists the exact records and how many were left out to fit. Excluded memories, unavailable or changed sources, assistant-hidden lore entries and memories depending on them stay out. This only reads the archive: it does not extract new memories, run recall or edit records. Character knowledge and Pawspective reflections keep their labels. The choice follows the session and Saved setups. Conversation, General and note discussions do not read Mewmory.',

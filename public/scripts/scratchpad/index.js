@@ -58,6 +58,7 @@ import { canDictate, DICTATION_SERVICES, DictationError, dictationService, MAX_D
 import { expandTypedTools, MAX_ROLL_DICE, MAX_ROLL_SIDES, TypedToolError } from './typed-tools.js';
 import { canReadAloud, isReadingAloud, stopReadAloud, toggleReadAloud } from './read-aloud.js';
 import { editQuickPrompts } from './quick-prompts.js';
+import { MAX_PINNED_NOTE_BYTES, pinnedNoteContext } from './pinned-note.js';
 
 const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261112-scratchpad-dictation';
 const PHONE_QUERY = '(max-width: 768px)';
@@ -472,6 +473,7 @@ function buildChatPanel() {
         { icon: 'fa-shuffle', pressed: false, className: 'scratchpad-random', title: t`One random assistant replies per message` });
     el.assistantPicker = h('div', { class: 'scratchpad-assistants', role: 'group', 'aria-label': t`Talking with` });
     el.manageAssistants = iconButton(t`Assistants`, () => void manageAssistants(), { icon: 'fa-user-plus', title: t`Choose or add an assistant` });
+    el.pinnedNote = iconButton(t`Pinned note`, () => void editPinnedNote(), { icon: 'fa-thumbtack', className: 'scratchpad-pinned-note', title: t`Edit the session's pinned note or story tracker` });
     el.summary = h('div', { class: 'scratchpad-summary' });
     el.messages = h('div', { class: 'scratchpad-messages', role: 'log', 'aria-live': 'polite', 'aria-relevant': 'additions' });
     el.quick = h('div', { class: 'scratchpad-quick', role: 'group', 'aria-label': t`Quick prompts` },
@@ -533,7 +535,7 @@ function buildChatPanel() {
     });
     el.overview = h('div', { id: 'scratchpad-overview', class: 'scratchpad-overview' },
         // Library and reply controls wrap after the current assistant choices.
-        h('div', { class: 'scratchpad-chat-top' }, el.overviewToggle, el.assistantPicker, el.manageAssistants, el.roundTable, el.randomReply),
+        h('div', { class: 'scratchpad-chat-top' }, el.overviewToggle, el.assistantPicker, el.manageAssistants, el.roundTable, el.randomReply, el.pinnedNote),
         el.summary);
     append(el.panels.chat, [
         el.overviewBar,
@@ -1288,6 +1290,10 @@ function toggleOverview() {
 function renderChat() {
     const el = app.el;
     const session = activeSession();
+    if (el.pinnedNote) {
+        el.pinnedNote.disabled = !app.source;
+        el.pinnedNote.querySelector('span').textContent = session?.pinnedNote?.trim() ? t`Pinned note (saved)` : t`Pinned note`;
+    }
     clear(el.summary);
     if (app.source) {
         const settings = currentSettings();
@@ -1304,6 +1310,61 @@ function renderChat() {
     renderOverview();
     renderMessages();
     renderComposer();
+}
+
+let pinnedNoteEditorOpen = false;
+
+async function editPinnedNote() {
+    if (pinnedNoteEditorOpen || !app.source) return;
+    pinnedNoteEditorOpen = true;
+    const source = app.source;
+    try {
+        await app.queue;
+        requireScope(source);
+        const session = await ensureSession(source);
+        if (!session) return;
+        const expectedPinnedNote = session.pinnedNote || '';
+        const editor = h('textarea', { class: 'text_pole scratchpad-review-editor', rows: '10', value: expectedPinnedNote, 'aria-label': t`Pinned note text` });
+        const errorText = h('p', { class: 'scratchpad-error', role: 'alert', hidden: true });
+        const content = h('div', { class: 'scratchpad-review scratchpad-section' },
+            h('h3', { text: t`Pinned note or story tracker` }),
+            h('p', { text: t`Keep goals, scene details and loose ends here. Every reply in this session reads the saved note. Edit it yourself when something changes; an empty note removes it.` }),
+            editor, h('small', { text: t`Up to ${formatBytes(MAX_PINNED_NOTE_BYTES)}. This session only; branches and exports keep a copy.` }), errorText);
+        let saving = false;
+        await callGenericPopup(content, POPUP_TYPE.CONFIRM, '', {
+            wide: true, okButton: t`Save note`, cancelButton: t`Cancel`,
+            onClosing: async popup => {
+                if (saving) return false;
+                if (popup.result !== POPUP_RESULT.AFFIRMATIVE) return true;
+                saving = true;
+                errorText.hidden = true;
+                try {
+                    const note = editor.value;
+                    const write = app.queue.then(async () => {
+                        requireScope(source, session.id);
+                        const result = await api.updateSession(wireSource(source), session.id, { pinnedNote: note, expectedPinnedNote });
+                        requireScope(source, session.id);
+                        app.ticket += 1;
+                        applyBucket(result.bucket);
+                    });
+                    app.queue = write.catch(() => null);
+                    await write;
+                    return true;
+                } catch (error) {
+                    errorText.textContent = error?.message || t`The pinned note could not be saved. Your draft is still here.`;
+                    errorText.hidden = false;
+                    return false;
+                } finally {
+                    saving = false;
+                }
+            },
+        });
+    } catch (error) {
+        reportError(error, t`The pinned note could not be opened.`);
+    } finally {
+        pinnedNoteEditorOpen = false;
+        if (app.open) app.el.pinnedNote?.focus();
+    }
 }
 
 function nearBottom(element) {
@@ -2812,7 +2873,7 @@ function renderPreview() {
                 ? await api.readMewmoryContext(wireSource(source), sessionId) : null;
             requireScope(source, sessionId);
             const preview = [context.text, notes.text ? `<notebook_context>\n${notes.text}\n</notebook_context>` : '',
-                mewmory?.text ? `<mewmory_context>\n${mewmory.text}\n</mewmory_context>` : ''].filter(Boolean).join('\n\n');
+                mewmory?.text ? `<mewmory_context>\n${mewmory.text}\n</mewmory_context>` : '', pinnedNoteContext(activeSession()?.pinnedNote)].filter(Boolean).join('\n\n');
             const tokens = await estimateTokens(preview);
             requireScope(source, sessionId);
             if (!output.isConnected) return;

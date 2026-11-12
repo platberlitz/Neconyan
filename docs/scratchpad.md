@@ -56,6 +56,10 @@ The line is swapped for its result in your message; the rest of the message is s
 
 The input starts one line high and grows as you add lines, up to a few lines, so the whole message stays readable. Longer drafts scroll inside it, and pasted text keeps its line breaks.
 
+**Pinned note**, beside the assistant controls, opens a **Pinned note or story tracker** for the session. I use it for goals, scene details and loose ends that should stay in view of the assistants. Write the note and press **Save note**; every reply reads that saved text, including retries and discussion rounds. **Show preview** includes it. The note holds up to 16 KiB and is edited by hand, rather than updated by the assistants. Saving an empty note removes it, while **Cancel** keeps the saved version. If another device changes it while the editor is open, saving is refused and your draft stays in the editor.
+
+A new session starts with no pinned note. **Clear messages** keeps it; branches, copied sessions and both export formats keep a copy. It belongs to the Scratchpad session, so it does not alter the story or create a Notebook page.
+
 Press **New session** at the top of Scratchpad to start a fresh conversation in the current list, including General.
 
 Turn on **Round table** to ask up to three assistants together. Press their portraits to include or exclude them; keep at least one selected. **Ask 2** or **Ask 3** sends one question to everyone selected, using each assistant's own connection profile and personality. Each answer is labelled and saved separately in the same session. The reply limit applies to each assistant.
