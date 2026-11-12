@@ -12,6 +12,7 @@ import { PinnedAddressAgent, validateOutboundTarget } from '../safe-http.js';
 import { ScratchpadError } from './store.js';
 import {
     MAX_SEARCH_URL_CHARS,
+    MAX_WEB_SEARCH_QUERIES,
     MAX_WEB_SEARCH_QUERY_CHARS,
     MAX_WEB_SEARCH_RESULTS,
     MAX_WEB_SEARCH_SNIPPET_CHARS,
@@ -23,10 +24,12 @@ import {
     normaliseStoredWebSearch,
     plainSearchText,
     webSearchHistoryLine,
+    webSearchQueries,
     webSearchQuery,
 } from './web-search-record.js';
 
 export {
+    MAX_WEB_SEARCH_QUERIES,
     MAX_WEB_SEARCH_QUERY_CHARS,
     MAX_WEB_SEARCH_RESULTS,
     MAX_WEB_SEARCH_TITLE_CHARS,
@@ -35,13 +38,19 @@ export {
     normaliseStoredWebSearch,
     plainSearchText,
     webSearchHistoryLine,
+    webSearchQueries,
     webSearchQuery,
 };
 
 export const DEFAULT_WEB_SEARCH_RESULTS = 5;
 export const MAX_WEB_SEARCH_RESPONSE_BYTES = 2 * 1024 * 1024;
 export const WEB_SEARCH_TIMEOUT_MS = 20 * 1000;
-export const MAX_WEB_SEARCH_PROMPT_BYTES = 12 * 1024;
+export const MAX_WEB_SEARCH_PROMPT_BYTES = 32 * 1024;
+/** Brave and Tavily return at most 20 results for one request. */
+const MAX_PROVIDER_RESULTS = 20;
+const MAX_QUESTION_BYTES = 4 * 1024;
+const MAX_CONVERSATION_MESSAGES = 4;
+const MAX_CONVERSATION_MESSAGE_BYTES = 800;
 const CONFIG_FILE_LIMIT = 16 * 1024;
 const MAX_RESULT_NODES = 500;
 
@@ -327,16 +336,23 @@ export function webSearchStateLocked(lease) {
  * Snapshot everything needed for a search except the key value. The reply job
  * uses this plan even if the account settings change while it waits.
  */
-export function planWebSearch(directories, config, text) {
+export function planWebSearch(directories, config, text, { history = [] } = {}) {
     const query = webSearchQuery(text);
-    if (!query) throw fail('SCRATCHPAD_WEB_SEARCH_QUERY', 'Write a message first. Web search uses that message as its query.');
+    if (!query) throw fail('SCRATCHPAD_WEB_SEARCH_QUERY', 'Write a message first. Web search starts from that message.');
     const readiness = webSearchReadiness(directories, config);
     if (!readiness.configured) {
         throw fail('SCRATCHPAD_WEB_SEARCH_UNCONFIGURED', `${readiness.message} Or turn off Web beside the message box.`, 409);
     }
+    // The query planner sees the message and the last few turns so a follow-up
+    // such as 'and the second one?' can become a complete search query.
+    const conversation = (Array.isArray(history) ? history : []).slice(-MAX_CONVERSATION_MESSAGES)
+        .map(item => ({ role: item?.role === 'assistant' ? 'assistant' : 'user', text: clipBytes(String(item?.text ?? '').trim(), MAX_CONVERSATION_MESSAGE_BYTES) }))
+        .filter(item => item.text);
     return {
         provider: config.provider,
         query,
+        question: clipBytes(String(text ?? '').trim(), MAX_QUESTION_BYTES),
+        ...(conversation.length ? { conversation } : {}),
         results: config.results,
         ...(config.provider === 'searxng' ? { searxngUrl: config.searxngUrl } : {}),
         ...(config.provider === 'custom' ? { customUrl: config.customUrl, customHeader: config.customHeader } : {}),
@@ -347,13 +363,21 @@ export function planWebSearch(directories, config, text) {
 /** A worst-case reservation so the prompt is checked with room for the real results. */
 export const WEB_SEARCH_PLACEHOLDER = clipBytes([
     '<web_search_results>',
-    'Web search results are inserted here for the final prompt. '.repeat(260),
+    'Web search results are inserted here for the final prompt. '.repeat(600),
     '</web_search_results>',
 ].join('\n'), MAX_WEB_SEARCH_PROMPT_BYTES + 256);
 
+/** The queries actually searched, or the message itself for older results. */
+function searchedQueries(plan, result) {
+    const queries = webSearchQueries(result?.queries);
+    return queries.length ? queries : [webSearchQuery(plan?.query)].filter(Boolean);
+}
+
 export function buildWebSearchPrompt(plan, result) {
-    const query = promptText(plan?.query, MAX_WEB_SEARCH_QUERY_CHARS);
-    const header = ['<web_search_results>', `Search query: ${query}`];
+    const queries = searchedQueries(plan, result).map(query => promptText(query, MAX_WEB_SEARCH_QUERY_CHARS));
+    const header = ['<web_search_results>', queries.length > 1
+        ? `Search queries:\n${queries.map(query => `- ${query}`).join('\n')}`
+        : `Search query: ${queries[0] ?? ''}`];
     const footer = ['</web_search_results>'];
     if (!result?.ok) {
         const reason = promptText(result?.error || 'The search service could not be reached.', 300);
@@ -400,9 +424,11 @@ export function webSearchMetadata(plan, result) {
         .filter(item => item.url)
         .slice(0, MAX_WEB_SEARCH_RESULTS);
     const error = result?.ok ? '' : plainSearchText(result?.error || 'The search service could not be reached.', 300);
+    const queries = webSearchQueries(result?.queries);
     return {
         provider: plan.provider,
         query: webSearchQuery(plan.query),
+        ...(queries.length ? { queries } : {}),
         sources,
         ...(error ? { error } : {}),
     };
@@ -582,12 +608,14 @@ export async function performWebSearch(plan, { directories, signal, fetch: fetch
     }
     const timeoutSignal = AbortSignal.timeout(timeoutMs);
     const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+    const count = Math.min(MAX_WEB_SEARCH_RESULTS, Math.max(1, Number(plan.results) || DEFAULT_WEB_SEARCH_RESULTS));
+    const cappedCount = Math.min(count, MAX_PROVIDER_RESULTS);
     let url;
     let options;
     if (provider === 'brave') {
         url = new URL('https://api.search.brave.com/res/v1/web/search');
         url.searchParams.set('q', plan.query);
-        url.searchParams.set('count', String(plan.results));
+        url.searchParams.set('count', String(cappedCount));
         options = { method: 'GET', headers: { Accept: 'application/json', 'X-Subscription-Token': key } };
     } else if (provider === 'searxng') {
         if (!plan.searxngUrl) throw localRefusal('The saved SearXNG address is missing.');
@@ -604,18 +632,18 @@ export async function performWebSearch(plan, { directories, signal, fetch: fetch
         options = {
             method: 'POST',
             headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'x-api-key': key },
-            body: JSON.stringify({ query: plan.query, numResults: plan.results, type: 'auto', contents: { highlights: { maxCharacters: MAX_WEB_SEARCH_SNIPPET_CHARS } } }),
+            body: JSON.stringify({ query: plan.query, numResults: count, type: 'auto', contents: { highlights: { maxCharacters: MAX_WEB_SEARCH_SNIPPET_CHARS } } }),
         };
     } else if (provider === 'tavily') {
         url = new URL('https://api.tavily.com/search');
         options = {
             method: 'POST',
             headers: { Accept: 'application/json', 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-            body: JSON.stringify({ query: plan.query, max_results: plan.results, search_depth: 'basic' }),
+            body: JSON.stringify({ query: plan.query, max_results: cappedCount, search_depth: 'basic' }),
         };
     } else if (provider === 'custom') {
         try {
-            url = customSearchUrl(normaliseCustomUrl(plan.customUrl), plan.query, plan.results);
+            url = customSearchUrl(normaliseCustomUrl(plan.customUrl), plan.query, count);
         } catch {
             throw localRefusal('The saved custom search address is missing or invalid.');
         }
@@ -692,7 +720,7 @@ export async function performWebSearch(plan, { directories, signal, fetch: fetch
         ok: true,
         provider,
         query: plan.query,
-        results: normaliseWebSearchResults(providerBody(provider, payload), plan.results),
+        results: normaliseWebSearchResults(providerBody(provider, payload), count),
     };
 }
 
