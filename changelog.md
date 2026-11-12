@@ -54,6 +54,7 @@
 - PR #644 (2026-11-12) `fix(scratchpad): preserve reading position after image review`
 - PR #645 (2026-11-12) `feat(scratchpad): let the model research the web over several searches`
 - PR #646 (2026-11-12) `feat(mewmory): show memories in the chat and keep messages off the record`
+- PR #648 (2026-11-12) `feat(mewmory): estimate updates, cap daily use and add exports`
 
 ## v1.5.4
 
