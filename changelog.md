@@ -52,6 +52,7 @@
 - PR #642 (2026-11-12) `fix(shell): show the shell style's top bar during the workspace splash`
 - PR #643 (2026-11-12) `feat(mewmory): add archive bulk changes, filters, versions, review and merge`
 - PR #644 (2026-11-12) `fix(scratchpad): preserve reading position after image review`
+- PR #646 (2026-11-12) `feat(mewmory): show memories in the chat and keep messages off the record`
 
 ## v1.5.4
 
