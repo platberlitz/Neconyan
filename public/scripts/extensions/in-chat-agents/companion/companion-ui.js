@@ -26,6 +26,7 @@ import { resolveCompanionContentMacros } from './companion-macros.js';
 import { buildPlotCompassControls, readPlotCompassControls, submitPlotCompassOnEnter } from './plot-compass-controls.js';
 import { getPlotCompassIdentity } from './plot-compass-context.js';
 import { CHATROOM_FEED_PROBE_RE, buildChatroomReplyRunOptions, normalizeChatroomField, foldChatroomGreentextLines, normalizeChatroomGeneratedLine } from './chatroom-feed.js';
+import { foldMessageInboxLines } from './message-inbox-feed.js';
 import { isLorebookAgent, sendCompanionResultToLorebook } from './lorebook-sender.js';
 import {
     COMPANION_RESULTS_UPDATED_EVENT,
@@ -164,7 +165,9 @@ function applyAgentRegexToCompanionContent(agentId, content, message) {
 
     // Same semantics as the chat message display path: a converted tracker's beautifier
     // regex keeps working on its note card. Sanitization happens after, in the format step.
-    const normalizedContent = isChatroomAgent(agent) ? normalizeChatroomContent(content) : content;
+    const normalizedContent = isChatroomAgent(agent)
+        ? normalizeChatroomContent(content)
+        : isMessageInboxAgent(agent) ? foldMessageInboxLines(content) : content;
     return withReadOnlyVariables(() => applyRegexScriptList(normalizedContent, scripts, AGENT_REGEX_PLACEMENT.AI_OUTPUT, {
         characterOverride: String(message?.name ?? '').trim(),
         isMarkdown: true,
