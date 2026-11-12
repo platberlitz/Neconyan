@@ -69,12 +69,17 @@ function addReferenceChecklist(root, agent, field, title, help, onSelect = () =>
         });
         section.find('[role="status"]').text(`${list.find('input:checked').length} selected`);
     };
+    const rows = list.children().toArray().map(row => ({ row, text: row.textContent.toLowerCase() }));
     section.find('input[type="search"]').on('input', function () {
         const query = this.value.toLowerCase();
-        list.children().each((_, row) => { row.hidden = !row.textContent.toLowerCase().includes(query); });
+        // A class, not the hidden attribute: Chrome restyles the whole dialog for every hidden change because :has() rules watch it.
+        for (const { row, text } of rows) {
+            const filtered = !text.includes(query);
+            if (row.classList.contains('displayNone') !== filtered) row.classList.toggle('displayNone', filtered);
+        }
     });
     section.find('[data-select]').on('click', function () {
-        const shown = list.children().filter((_, row) => !row.hidden).find('input');
+        const shown = list.children().filter((_, row) => !row.classList.contains('displayNone')).find('input');
         const checked = this.dataset.select === 'true';
         shown.prop('checked', checked);
         if (checked && shown.length) onSelect();

@@ -8,6 +8,7 @@ const previewFields = {
     secondary: 'underline_text_color',
 };
 const defaultNames = ['Neconyan Calico Dark', 'Neconyan Calico'];
+const SEARCH_FILTER_DELAY_MS = 120;
 
 /** Use the same resolved colours as theme application, including imported palettes. */
 export function deriveUiThemePreview(theme) {
@@ -93,6 +94,7 @@ export function createUiThemePicker(host, { onSelect, translate = text => text }
     let activeName = '';
     let signature = '';
     let tone = 'all';
+    let filterTimer = 0;
     const filterButtons = ['all', 'dark', 'light'].map((value, index) => {
         const button = element('button', 'nn-ui-theme-filter', translate(['All', 'Dark', 'Light'][index]));
         button.type = 'button';
@@ -103,27 +105,46 @@ export function createUiThemePicker(host, { onSelect, translate = text => text }
     });
 
     function visibleEntries() {
-        return entries.filter(entry => !entry.button.hidden);
+        return entries.filter(entry => !entry.filtered);
     }
 
     function setTabStop(button) {
-        for (const entry of entries) entry.button.tabIndex = entry.button === button ? 0 : -1;
+        for (const entry of entries) {
+            const tabIndex = entry.button === button ? 0 : -1;
+            if (entry.button.tabIndex !== tabIndex) entry.button.tabIndex = tabIndex;
+        }
     }
 
+    // Writes only what changed: each redundant attribute write wakes the page-wide observers.
     function filter() {
+        clearTimeout(filterTimer);
+        filterTimer = 0;
         const query = search.value.trim().toLocaleLowerCase();
         for (const entry of entries) {
-            entry.button.hidden = !entry.name.toLocaleLowerCase().includes(query) || (tone !== 'all' && tone !== entry.tone);
+            const filtered = !entry.search.includes(query) || (tone !== 'all' && tone !== entry.tone);
+            if (entry.filtered === filtered) continue;
+            entry.filtered = filtered;
+            // A class, not the hidden attribute: Chrome restyles the whole settings panel for
+            // every hidden change because :has() rules watch it.
+            entry.button.classList.toggle('displayNone', filtered);
         }
-        for (const button of filterButtons) button.setAttribute('aria-pressed', String(button.dataset.tone === tone));
+        for (const button of filterButtons) {
+            const pressed = String(button.dataset.tone === tone);
+            if (button.getAttribute('aria-pressed') !== pressed) button.setAttribute('aria-pressed', pressed);
+        }
         const visible = visibleEntries();
-        empty.hidden = visible.length > 0;
-        grid.hidden = visible.length === 0;
-        count.textContent = `${visible.length} / ${entries.length}`;
+        if (empty.hidden !== visible.length > 0) empty.hidden = visible.length > 0;
+        if (grid.hidden !== (visible.length === 0)) grid.hidden = visible.length === 0;
+        const label = `${visible.length} / ${entries.length}`;
+        if (count.textContent !== label) count.textContent = label;
         setTabStop((visible.find(entry => entry.name === activeName) ?? visible[0])?.button);
     }
 
-    search.addEventListener('input', filter);
+    // Typing only echoes the key; the cards re-filter once the typist pauses.
+    search.addEventListener('input', () => {
+        clearTimeout(filterTimer);
+        filterTimer = setTimeout(filter, SEARCH_FILTER_DELAY_MS);
+    });
     clear.addEventListener('click', () => {
         search.value = '';
         tone = 'all';
@@ -180,17 +201,20 @@ export function createUiThemePicker(host, { onSelect, translate = text => text }
                         onSelect(theme.name);
                         settle();
                     });
-                    return { name: theme.name, tone: preview.tone, button };
+                    return { name: theme.name, search: theme.name.toLocaleLowerCase(), tone: preview.tone, button, filtered: false };
                 });
                 grid.replaceChildren(...entries.map(entry => entry.button));
             }
             const changed = activeName !== selected;
             activeName = selected;
             currentName.textContent = selected || translate('No theme selected.');
-            for (const entry of entries) entry.button.setAttribute('aria-pressed', String(entry.name === selected));
+            for (const entry of entries) {
+                const pressed = String(entry.name === selected);
+                if (entry.button.getAttribute('aria-pressed') !== pressed) entry.button.setAttribute('aria-pressed', pressed);
+            }
             filter();
             const active = entries.find(entry => entry.name === selected);
-            if (changed && active?.button.hidden) {
+            if (changed && active?.filtered) {
                 search.value = '';
                 tone = 'all';
                 filter();

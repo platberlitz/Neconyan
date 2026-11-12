@@ -2885,6 +2885,26 @@ function deferHiddenGradientGallery(host, preferredPreset, focusId) {
     return true;
 }
 
+// Hides rows with a class, not the hidden attribute: Chrome restyles the whole
+// settings page for every hidden change because :has() rules watch it.
+function filterGradientGalleryList(host) {
+    const query = gradientGallerySearch.trim().toLowerCase();
+    const items = [...host.querySelectorAll('[data-gradient-gallery-preset]')];
+    const shown = [];
+    for (const item of items) {
+        const filtered = Boolean(query) && !item.dataset.gradientGalleryName.includes(query);
+        if (item.classList.contains('displayNone') !== filtered) item.classList.toggle('displayNone', filtered);
+        if (!filtered) shown.push(item);
+    }
+    const tabStop = shown.find(item => item.dataset.gradientGalleryPreset === selectedGradientGalleryPreset) || shown[0];
+    for (const item of items) {
+        const tabIndex = item === tabStop ? 0 : -1;
+        if (item.tabIndex !== tabIndex) item.tabIndex = tabIndex;
+    }
+    const empty = host.querySelector('[data-gradient-gallery-empty]');
+    if (empty && empty.classList.contains('displayNone') !== shown.length > 0) empty.classList.toggle('displayNone', shown.length > 0);
+}
+
 export function renderGradientPresetGallery(preferredPreset = '', focusId = '') {
     const host = document.getElementById('dc-gradient-gallery');
     if (!host) return;
@@ -2894,8 +2914,10 @@ export function renderGradientPresetGallery(preferredPreset = '', focusId = '') 
     if (preferredPreset && catalog.some(item => item.id === preferredPreset)) selectedGradientGalleryPreset = preferredPreset;
     if (!catalog.some(item => item.id === selectedGradientGalleryPreset)) selectedGradientGalleryPreset = catalog[0]?.id || '';
     const query = gradientGallerySearch.trim().toLowerCase();
-    const visible = catalog.filter(item => (gradientGalleryFilter === 'all' || item.source === gradientGalleryFilter)
-        && (!query || item.name.toLowerCase().includes(query)));
+    // Every preset of the chosen source is drawn; the search only hides rows,
+    // so typing never has to rebuild the gallery or its search box.
+    const listed = catalog.filter(item => gradientGalleryFilter === 'all' || item.source === gradientGalleryFilter);
+    const visible = listed.filter(item => !query || item.name.toLowerCase().includes(query));
     const selectedIsVisible = visible.some(item => item.id === selectedGradientGalleryPreset);
     const selected = catalog.find(item => item.id === selectedGradientGalleryPreset) || null;
     const selectedGradient = selected?.preset?.gradient;
@@ -2915,11 +2937,13 @@ export function renderGradientPresetGallery(preferredPreset = '', focusId = '') 
             <select id="dc-gradient-gallery-filter" class="text_pole" data-gallery-focus="filter"><option value="all"${gradientGalleryFilter === 'all' ? ' selected' : ''}>All presets</option><option value="builtin"${gradientGalleryFilter === 'builtin' ? ' selected' : ''}>Built-in</option><option value="custom"${gradientGalleryFilter === 'custom' ? ' selected' : ''}>Custom</option></select>
         </div>
         <div class="dc-gradient-gallery-list" role="listbox" aria-label="Gradient presets">
-            ${visible.length ? visible.map((item, index) => {
+            ${listed.map(item => {
                 const gradient = item.preset.gradient;
                 const itemSelected = item.id === selectedGradientGalleryPreset;
-                return `<button type="button" class="dc-gradient-gallery-item${itemSelected ? ' dc-gradient-gallery-item-selected' : ''}" role="option" aria-selected="${itemSelected}" tabindex="${itemSelected || (!selectedIsVisible && index === 0) ? '0' : '-1'}" data-gradient-gallery-preset="${escapeAttr(item.id)}" data-gallery-focus="preset:${escapeAttr(item.id)}"><span class="dc-gradient-gallery-sample dc-gradient-surface" aria-hidden="true" style="${escapeAttr(buildGradientSurfaceStyle(item.preset, { allowAnimation: false }))}"></span><span><strong>${escapeHtml(item.name)}</strong><small>${item.source === 'builtin' ? 'Built-in' : 'Custom'} · ${gradient.stops.length + 1} stops · ${escapeHtml(formatGradientMotion(item.preset))}</small></span></button>`;
-            }).join('') : '<p class="dc-empty-state">No matching gradient presets.</p>'}
+                const shown = visible.includes(item);
+                const tabStop = itemSelected || (!selectedIsVisible && item === visible[0]);
+                return `<button type="button" class="dc-gradient-gallery-item${itemSelected ? ' dc-gradient-gallery-item-selected' : ''}${shown ? '' : ' displayNone'}" role="option" aria-selected="${itemSelected}" tabindex="${tabStop ? '0' : '-1'}" data-gradient-gallery-preset="${escapeAttr(item.id)}" data-gradient-gallery-name="${escapeAttr(item.name.toLowerCase())}" data-gallery-focus="preset:${escapeAttr(item.id)}"><span class="dc-gradient-gallery-sample dc-gradient-surface" aria-hidden="true" style="${escapeAttr(buildGradientSurfaceStyle(item.preset, { allowAnimation: false }))}"></span><span><strong>${escapeHtml(item.name)}</strong><small>${item.source === 'builtin' ? 'Built-in' : 'Custom'} · ${gradient.stops.length + 1} stops · ${escapeHtml(formatGradientMotion(item.preset))}</small></span></button>`;
+            }).join('')}<p class="dc-empty-state${visible.length ? ' displayNone' : ''}" data-gradient-gallery-empty>No matching gradient presets.</p>
         </div>
         ${selected ? `<div class="dc-gradient-gallery-preview">
             <div class="dc-gradient-gallery-preview-sample${selectedClasses}" role="img" aria-label="${escapeAttr(selected.name)} preview in the current color-vision preview" style="${escapeAttr(buildGradientSurfaceStyle(selected.preset, { allowAnimation: gradientGalleryMotionActive }))}"></div>
@@ -2947,10 +2971,7 @@ export function renderGradientPresetGallery(preferredPreset = '', focusId = '') 
     }
     searchInput?.addEventListener('input', event => {
         gradientGallerySearch = event.target.value;
-        renderGradientPresetGallery('', 'search');
-        const nextSearch = document.getElementById('dc-gradient-gallery-search');
-        nextSearch?.focus({ preventScroll: true });
-        nextSearch?.setSelectionRange(gradientGallerySearch.length, gradientGallerySearch.length);
+        filterGradientGalleryList(host);
     });
     host.querySelector('#dc-gradient-gallery-filter')?.addEventListener('change', event => {
         gradientGalleryFilter = event.target.value;
@@ -2965,7 +2986,7 @@ export function renderGradientPresetGallery(preferredPreset = '', focusId = '') 
         button.addEventListener('keydown', event => {
             if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
             event.preventDefault();
-            const options = [...host.querySelectorAll('[data-gradient-gallery-preset]')];
+            const options = [...host.querySelectorAll('[data-gradient-gallery-preset]:not(.displayNone)')];
             const currentIndex = options.indexOf(button);
             const nextIndex = event.key === 'Home' ? 0
                 : event.key === 'End' ? options.length - 1
@@ -3549,7 +3570,9 @@ function getVisibleCharacterEntries() {
     return getSortedEntries().slice(0, CHARACTER_LIST_RENDER_LIMIT);
 }
 
-export function updateCharList() {
+// The search only narrows the rows; the gradient gallery does not depend on it,
+// so typing skips the gallery redraw, which costs a few hundred milliseconds.
+export function updateCharList({ keepGallery = false } = {}) {
     const list = document.getElementById('dc-char-list'); if (!list) return;
     // Saves replace the registry object too; only a different storage key
     // invalidates drafts even when the rendered rows are otherwise identical.
@@ -3597,7 +3620,7 @@ export function updateCharList() {
         });
         applyControlHelpText(list);
         updateLegend();
-        if (!document.getElementById('dc-gradient-gallery')?.contains(document.activeElement)) renderGradientPresetGallery();
+        if (!keepGallery && !document.getElementById('dc-gradient-gallery')?.contains(document.activeElement)) renderGradientPresetGallery();
         registerGradientAnimationRoot(document.getElementById('dc-ext'));
         refreshGradientAnimationState();
         return;
@@ -3661,7 +3684,7 @@ export function updateCharList() {
     updateLegend();
     registerGradientAnimationRoot(document.getElementById('dc-ext'));
     refreshGradientAnimationState();
-    if (!document.getElementById('dc-gradient-gallery')?.contains(document.activeElement)) renderGradientPresetGallery();
+    if (!keepGallery && !document.getElementById('dc-gradient-gallery')?.contains(document.activeElement)) renderGradientPresetGallery();
     if (focusState?.key && focusState.id) {
         list.querySelector(`.dc-char[data-key="${CSS.escape(focusState.key)}"] [data-focus-id="${CSS.escape(focusState.id)}"]`)?.focus({ preventScroll: true });
     }
@@ -5990,7 +6013,7 @@ function bindSettingsPanelControls($) {
     $('dc-search').oninput = e => {
         setSearchTerm(e.target.value);
         cancelAnimationFrame(searchFrame);
-        searchFrame = requestAnimationFrame(updateCharList);
+        searchFrame = requestAnimationFrame(() => updateCharList({ keepGallery: true }));
     };
     $('dc-sort').onchange = e => { settings.sortMode = e.target.value; saveData(); updateCharList(); };
     $('dc-add-btn').onclick = () => {

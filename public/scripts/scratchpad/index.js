@@ -3123,31 +3123,48 @@ function renderEveryList() {
     return section;
 }
 
-function renderSessions() {
-    const panel = app.el.panels.sessions;
-    const focused = document.activeElement?.classList?.contains('scratchpad-session-search');
-    clear(panel);
-    if (!app.source) {
-        panel.append(h('p', { class: 'scratchpad-empty', text: t`Open a chat to see its Scratchpad sessions.` }));
-        return;
-    }
-    const sessions = app.bucket?.sessions ?? [];
-    const current = activeSession();
-    const search = h('input', {
+let sessionSearch = null;
+let sessionSearchTimer = 0;
+const SESSION_SEARCH_DELAY_MS = 150;
+
+// One search box that stays in the panel: rebuilding it per key blurred it and dropped
+// keys typed during the redraw. The list redraws once typing pauses.
+function sessionSearchInput() {
+    sessionSearch ??= h('input', {
         type: 'search',
         class: 'text_pole scratchpad-session-search',
         placeholder: t`Search sessions`,
         'aria-label': t`Search sessions`,
-        value: app.sessionQuery,
         oninput: event => {
             app.sessionQuery = event.currentTarget.value;
-            renderSessions();
+            clearTimeout(sessionSearchTimer);
+            sessionSearchTimer = setTimeout(renderSessions, SESSION_SEARCH_DELAY_MS);
         },
         onkeydown: event => {
             if (event.key === 'Enter' && !event.isComposing) void searchEveryList();
         },
     });
-    append(panel, [
+    if (sessionSearch.value !== app.sessionQuery) sessionSearch.value = app.sessionQuery;
+    return sessionSearch;
+}
+
+function renderSessions() {
+    const panel = app.el.panels.sessions;
+    clearTimeout(sessionSearchTimer);
+    sessionSearchTimer = 0;
+    if (!app.source) {
+        clear(panel);
+        panel.append(h('p', { class: 'scratchpad-empty', text: t`Open a chat to see its Scratchpad sessions.` }));
+        return;
+    }
+    const sessions = app.bucket?.sessions ?? [];
+    const current = activeSession();
+    const search = sessionSearchInput();
+    for (const node of [...panel.childNodes]) {
+        if (node !== search) node.remove();
+    }
+    if (search.parentNode !== panel) panel.append(search);
+    search.before(...[
         h('p', { class: 'scratchpad-muted', text: app.source.kind === 'general' ? t`General sessions belong to your account, separately from chats and notes. Temporary sessions disappear when you open another one.` : app.source.kind === 'notebook' ? t`Sessions belong to this note. Temporary sessions disappear when you open another one.`
             : app.source.scope?.kind === 'group' ? t`Sessions are shared across this group's chats. Temporary sessions disappear when you open another one.`
                 : t`Sessions are shared across this character's chats. Temporary sessions disappear when you open another one.` }),
@@ -3159,8 +3176,7 @@ function renderSessions() {
             current ? iconButton(t`Save session to note`, () => void saveToNote(current), { icon: 'fa-book-bookmark', disabled: !current.messages.length }) : null),
         h('p', { class: 'scratchpad-muted', text: t`Exports keep the conversation but leave out message picks and saved-note sharing. Add these again after importing. Thinking, web search sources and attached files are included only when you tick them.` }),
         renderCleanup(),
-        search,
-    ]);
+    ].filter(Boolean));
     const list = h('ul', { class: 'scratchpad-sessions' });
     const visible = sessions.filter(session => sessionMatches(session, app.sessionQuery.trim()))
         .sort((a, b) => Number(b.pinned === true) - Number(a.pinned === true));
@@ -3190,10 +3206,6 @@ function renderSessions() {
                 iconButton('', () => void removeSession(session), { icon: 'fa-trash', title: t`Delete session` }))));
     }
     panel.append(...[list, renderEveryList()].filter(Boolean));
-    if (focused) {
-        search.focus();
-        search.setSelectionRange(search.value.length, search.value.length);
-    }
 }
 
 /* Opening and closing */

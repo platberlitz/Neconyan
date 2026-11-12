@@ -144,7 +144,7 @@ export function buildCompanionQuickGroupsHtml(agent, companions = getOtherCompan
         <div class="ica--companion-quick-toolbar">
             <label class="ica--companion-quick-search">
                 <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
-                <input type="search" class="text_pole" placeholder="Filter companions..." value="${escapeHtml(searchQuery)}" data-quick-search aria-label="Filter companions">
+                <input type="search" class="text_pole" placeholder="Filter companions..." value="${escapeHtml(searchQuery)}" data-quick-search data-role="quick-search" aria-label="Filter companions">
             </label>
             <button type="button" class="ica--companion-quick-filter${selectedOnly ? ' is-active' : ''}" data-quick-selected-only aria-pressed="${selectedOnly ? 'true' : 'false'}" title="Show only connected companions in this tab">
                 <span>Connected</span>
@@ -166,7 +166,7 @@ export function buildCompanionQuickGroupsHtml(agent, companions = getOtherCompan
             const matchesSelected = !selectedOnly || linked;
             const visible = matchesQuery && matchesSelected;
             if (visible) visibleCount += 1;
-            return `<label class="checkbox_label ica--companion-quick-option${linked ? ' is-selected' : ''}" data-candidate-name="${escapeHtml(candidate.name.toLowerCase())}"${visible ? '' : ' hidden'}><input type="checkbox" data-quick-link="${field}" data-candidate-id="${escapeHtml(candidate.id)}"${linked ? ' checked' : ''}><span>${escapeHtml(candidate.name)}</span></label>`;
+            return `<label class="checkbox_label ica--companion-quick-option${linked ? ' is-selected' : ''}${visible ? '' : ' displayNone'}" data-candidate-name="${escapeHtml(candidate.name.toLowerCase())}"><input type="checkbox" data-quick-link="${field}" data-candidate-id="${escapeHtml(candidate.id)}"${linked ? ' checked' : ''}><span>${escapeHtml(candidate.name)}</span></label>`;
         }).join('');
         const emptyText = selectedOnly && !normalizedQuery
             ? 'No connected companions in this tab yet.'
@@ -198,17 +198,19 @@ function applyCompanionQuickFilter(container, scope, agentId) {
             const name = option.getAttribute('data-candidate-name') ?? option.textContent?.toLowerCase() ?? '';
             const input = option.querySelector('input[type="checkbox"]');
             const checked = Boolean(input?.checked);
-            option.classList.toggle('is-selected', checked);
+            if (option.classList.contains('is-selected') !== checked) option.classList.toggle('is-selected', checked);
             const matchesQuery = !normalizedQuery || name.includes(normalizedQuery);
             const matchesSelected = !selectedOnly || checked;
             const visible = matchesQuery && matchesSelected;
-            option.hidden = !visible;
+            // A class, not the hidden attribute: Chrome restyles the whole panel for every
+            // hidden change because :has() rules watch it.
+            if (option.classList.contains('displayNone') === visible) option.classList.toggle('displayNone', !visible);
             if (visible) visibleCount += 1;
         });
         const emptyEl = group.querySelector('[data-quick-empty]');
         if (emptyEl) {
-            emptyEl.textContent = emptyText;
-            emptyEl.hidden = visibleCount > 0;
+            if (emptyEl.textContent !== emptyText) emptyEl.textContent = emptyText;
+            if (emptyEl.hidden !== visibleCount > 0) emptyEl.hidden = visibleCount > 0;
         }
     });
 }

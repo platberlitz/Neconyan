@@ -956,22 +956,32 @@ export function buildPanelHtml() {
 }
 
 /** Filter existing sections so private drafts and expanded notes survive each keystroke. */
-function applyPanelSearch() {
+function applyPanelSearch({ rendering = false } = {}) {
     const panel = document.getElementById?.('ica--tracker-panel');
     if (!panel) return;
     const terms = panelSearchQuery.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
     const sections = [...panel.querySelectorAll('.ica--tpanel-agent')];
     let matches = 0;
+    let changed = false;
     for (const section of sections) {
-        section.hidden = !terms.every(term => section.dataset.searchText?.includes(term));
-        if (!section.hidden) matches++;
+        const filtered = !terms.every(term => section.dataset.searchText?.includes(term));
+        // A class, not the hidden attribute: Chrome restyles the whole panel for every
+        // hidden change because :has() rules watch it.
+        if (section.classList.contains('displayNone') !== filtered) {
+            section.classList.toggle('displayNone', filtered);
+            changed = true;
+        }
+        if (!filtered) matches++;
     }
     const status = panel.querySelector('[data-role="panel-search-status"]');
-    if (status) status.textContent = terms.length ? t`${matches} of ${sections.length} companions` : '';
+    const statusText = terms.length ? t`${matches} of ${sections.length} companions` : '';
+    if (status && status.textContent !== statusText) status.textContent = statusText;
     const empty = panel.querySelector('[data-role="panel-search-empty"]');
-    if (empty) empty.hidden = !terms.length || matches > 0 || sections.length === 0;
+    const emptyHidden = !terms.length || matches > 0 || sections.length === 0;
+    if (empty && empty.hidden !== emptyHidden) empty.hidden = emptyHidden;
     const clear = panel.querySelector('[data-action="panel-search-clear"]');
-    if (clear) clear.disabled = !panelSearchQuery;
+    if (clear && clear.disabled !== !panelSearchQuery) clear.disabled = !panelSearchQuery;
+    if (!changed && !rendering) return;
     const body = panel.querySelector('.ica--tpanel-body');
     if (body && typeof $(body).sortable === 'function' && $(body).sortable('instance')) $(body).sortable('refresh');
     notifyDiceCompanionHostsChanged();
@@ -997,7 +1007,7 @@ function renderPanel() {
     const liveDice = captureDiceCompanionWidget(panel);
     replaceCompanionView(panelElement, buildPanelHtml(), () => isMessageTargetCurrent(scope, target));
     if (liveDice) restoreDiceCompanionWidget(panel, liveDice);
-    applyPanelSearch();
+    applyPanelSearch({ rendering: true });
 
     for (const section of panel?.querySelectorAll(PANEL_ANCHOR_OPTIONS.messageSelector) ?? []) {
         const previousHeight = previousHeights.get(section.getAttribute(PANEL_ANCHOR_OPTIONS.keyAttribute));
@@ -1044,7 +1054,7 @@ function setupPanelSortable() {
     }
 
     body.sortable({
-        items: '.ica--tpanel-agent:not([hidden])',
+        items: '.ica--tpanel-agent:not(.displayNone)',
         handle: '.ica--tpanel-drag-handle',
         // jQuery UI's mouse widget matches event.target against `cancel` before the `handle`
         // gate runs; its default (`input, textarea, button, select, option`) would swallow every
@@ -1060,7 +1070,7 @@ function setupPanelSortable() {
             ui.placeholder.height(ui.item.outerHeight());
         },
         stop: async function () {
-            const orderedIds = body.children('.ica--tpanel-agent:not([hidden])').map((_, el) => el.dataset.agentId).get().filter(Boolean);
+            const orderedIds = body.children('.ica--tpanel-agent:not(.displayNone)').map((_, el) => el.dataset.agentId).get().filter(Boolean);
             panelDragActive = false;
             await applyPanelReorder(orderedIds);
         },
@@ -1685,7 +1695,7 @@ export function initCompanionPanel() {
         event.stopPropagation();
 
         const section = this.closest('.ica--tpanel-agent');
-        const sections = [...this.closest('.ica--tpanel-body').querySelectorAll('.ica--tpanel-agent:not([hidden])')];
+        const sections = [...this.closest('.ica--tpanel-body').querySelectorAll('.ica--tpanel-agent:not(.displayNone)')];
         const sibling = sections[sections.indexOf(section) + (event.key === 'ArrowUp' ? -1 : 1)];
         if (!section || !sibling?.classList?.contains('ica--tpanel-agent')) {
             return;
@@ -1699,7 +1709,7 @@ export function initCompanionPanel() {
 
         const agentId = section.dataset.agentId || '';
         const orderedIds = $('#ica--tracker-panel .ica--tpanel-body')
-            .children('.ica--tpanel-agent:not([hidden])')
+            .children('.ica--tpanel-agent:not(.displayNone)')
             .map((_, el) => el.dataset.agentId)
             .get()
             .filter(Boolean);
