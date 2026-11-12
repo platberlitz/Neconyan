@@ -1844,6 +1844,7 @@ async function prepareReviewPlan(source, session, message, part) {
             }
         },
         agentsShared: currentSettings().include.agents === true, authorsNoteShared: currentSettings().include.authorsNote === true, regexShared: currentSettings().include.regex === true, cssSnippetsShared: currentSettings().include.cssSnippets === true, dialogueColorsShared: currentSettings().include.dialogueColors === true, sharedLorebook: currentSettings().lorebook || '',
+        mewmoryShared: currentSettings().include.mewmory === true, sessionId: session.id,
         creationGuard: () => requireScope(source, session.id), creatorKey: JSON.stringify([source.key, session.id, message.id, part.index]) });
     requireScope(source, session.id);
     if (plan.bucket) applyBucket(plan.bucket);

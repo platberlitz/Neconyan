@@ -41,7 +41,11 @@ jest.unstable_mockModule('../public/scripts/world-info.js', () => ({
 jest.unstable_mockModule('../public/scripts/scratchpad/context.js', () => ({
     isCurrentSource: source => current && (source.kind !== 'general' || source.avatar === selectedAvatar),
     sourceCharacters: () => [{ name: 'Nova', avatar: selectedAvatar }],
+    wireSource: source => ({ kind: source.kind, key: source.key }),
 }));
+const readMewmoryRecord = jest.fn();
+const correctMewmoryRecord = jest.fn();
+jest.unstable_mockModule('../public/scripts/scratchpad/api.js', () => ({ readMewmoryRecord, correctMewmoryRecord }));
 
 let agents = [];
 const saveAgent = jest.fn(async (id, { update }) => {
@@ -252,6 +256,26 @@ describe('Scratchpad reviewed saves', () => {
         const refused = await prepareChange(change, source, { dialogueColorsShared: true });
         applyCharacterBaseColor.mockReturnValueOnce(false);
         await expect(refused.commit('#112233')).rejects.toThrow('was not saved');
+    });
+
+    test('saves a reviewed Mewmory correction only in Roleplay while Mewmory is shared, sending what was reviewed', async () => {
+        const roleplay = { kind: 'roleplay', key: 'roleplay:story' };
+        const change = { type: 'mewmory', action: 'replace', record: 'ferry', field: 'text', value: 'The ferry leaves at dusk.' };
+        readMewmoryRecord.mockResolvedValue({ id: 'ferry', kind: 'event', version: 2, text: 'The ferry leaves at noon.', status: 'active' });
+        await expect(prepareChange(change, roleplay, { sessionId: 's1' })).rejects.toThrow('Share Mewmory under Context');
+        await expect(prepareChange(change, { kind: 'conversation', key: 'c' }, { mewmoryShared: true, sessionId: 's1' })).rejects.toThrow('only available in a Roleplay chat');
+        expect(readMewmoryRecord).not.toHaveBeenCalled();
+        const plan = await prepareChange(change, roleplay, { mewmoryShared: true, sessionId: 's1' });
+        expect(readMewmoryRecord).toHaveBeenCalledWith({ kind: 'roleplay', key: 'roleplay:story' }, 's1', 'ferry');
+        expect(plan).toMatchObject({ target: 'Mewmory: ferry', field: 'Memory text', before: 'The ferry leaves at noon.', after: 'The ferry leaves at dusk.', editable: true });
+        expect(correctMewmoryRecord).not.toHaveBeenCalled();
+        await plan.commit('  The ferry leaves at sunset. ');
+        expect(correctMewmoryRecord).toHaveBeenCalledWith({ kind: 'roleplay', key: 'roleplay:story' }, 's1', 'ferry',
+            { field: 'text', value: 'The ferry leaves at sunset.', expected: 'The ferry leaves at noon.', version: 2 });
+        const status = await prepareChange({ ...change, field: 'status', value: 'resolved' }, roleplay, { mewmoryShared: true, sessionId: 's1' });
+        expect(status).toMatchObject({ field: 'Status', before: 'active' });
+        await status.commit('Resolved');
+        expect(correctMewmoryRecord).toHaveBeenLastCalledWith(expect.anything(), 's1', 'ferry', { field: 'status', value: 'resolved', expected: 'active', version: 2 });
     });
 
     test.each([

@@ -1,5 +1,5 @@
 import express from 'express';
-import { mewmoryContextLocked } from '../scratchpad/mewmory.js';
+import { mewmoryContextLocked, mewmoryRecordLocked, saveMewmoryCorrection } from '../scratchpad/mewmory.js';
 import { getJob } from '../jobs/store.js';
 import {
     activateSession,
@@ -331,6 +331,33 @@ router.post('/mewmory/context', (request, response) => {
             return mewmoryContextLocked(lease, source, settings);
         });
         response.json(context);
+    } catch (error) { sendError(response, error); }
+});
+
+function memorySessionSettings(lease, source, sessionId) {
+    return findSession(readBucketLocked(lease, source), requireId(sessionId, 'session')).settings;
+}
+
+router.post('/mewmory/record', (request, response) => {
+    try {
+        const body = request.body ?? {};
+        const source = normaliseSource(body.source);
+        const record = withScratchpad(scratchpadAccountBase(request), lease => {
+            const { id, kind, version, text, status, revision } = mewmoryRecordLocked(lease, source, memorySessionSettings(lease, source, body.sessionId), String(body.recordId ?? ''));
+            return { id, kind, version, text, status, revision };
+        });
+        response.json(record);
+    } catch (error) { sendError(response, error); }
+});
+
+router.post('/mewmory/correct', (request, response) => {
+    try {
+        const body = request.body ?? {};
+        const source = normaliseSource(body.source);
+        const base = scratchpadAccountBase(request);
+        const record = saveMewmoryCorrection(operation => withScratchpad(base, operation), source,
+            lease => memorySessionSettings(lease, source, body.sessionId), String(body.recordId ?? ''), body.correction);
+        response.json({ record });
     } catch (error) { sendError(response, error); }
 });
 
