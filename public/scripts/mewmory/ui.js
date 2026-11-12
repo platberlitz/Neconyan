@@ -2419,6 +2419,17 @@ function renderTransfers(root, recover = false) {
     if (!recover) renderLorebook(root);
 }
 
+/** Groups a switch with the sentence that explains it, and links the two for screen readers. */
+function switchRow(control, id, description) {
+    const row = node('div', 'mewmory-toggle');
+    control.classList.add('mewmory-switch');
+    const caption = node('p', 'mewmory-caption', description);
+    caption.id = 'mewmory-switch-hint-' + id;
+    control.querySelector('input').setAttribute('aria-describedby', caption.id);
+    row.append(control, caption);
+    return row;
+}
+
 function renderOverview(root) {
     const view = mewmory.view;
     const overview = node('section', 'mewmory-overview');
@@ -2428,20 +2439,20 @@ function renderOverview(root) {
         await changeMewmory('enabled', { enabled });
         window.dispatchEvent(new Event('mewmory:configured'));
     }), ['pending', 'failed'].includes(restoration?.status));
-    toggle.classList.add('mewmory-switch');
-    overview.append(toggle);
-    if (restoration?.status === 'failed') overview.append(button('Retry restoration', () => act(() => retryMewmoryVisibilityRestore())));
+    const toggles = node('div', 'mewmory-toggles');
+    overview.append(toggles);
     if (!view.enabled) {
-        overview.append(node('p', 'mewmory-caption', 'Off for this chat. Replies are written without Mewmory’s memories until you switch it on.'));
+        toggles.append(switchRow(toggle, 'enabled', 'Off for this chat. Replies are written without Mewmory’s memories until you switch it on.'));
+        if (restoration?.status === 'failed') overview.append(button('Retry restoration', () => act(() => retryMewmoryVisibilityRestore())));
         root.append(overview);
         return;
     }
-    overview.append(node('p', 'mewmory-caption', 'Turning this off shows messages hidden by Mewmory. Messages you hid yourself stay hidden. Saved memories are kept.'));
+    toggles.append(switchRow(toggle, 'enabled', 'Turning this off shows messages hidden by Mewmory. Messages you hid yourself stay hidden. Saved memories are kept.'));
+    if (restoration?.status === 'failed') overview.append(button('Retry restoration', () => act(() => retryMewmoryVisibilityRestore())));
     const offRecord = isMewmoryOffRecord();
     const privacy = check('Keep new messages off the record', offRecord, on => act(() => setMewmoryOffRecord(on), { refresh: false }));
-    privacy.classList.add('mewmory-switch');
     privacy.querySelector('input').id = 'mewmory-off-record';
-    overview.append(privacy, node('p', 'mewmory-caption', offRecord
+    toggles.append(switchRow(privacy, 'off-record', offRecord
         ? 'On: Mewmory skips every new message in this chat until you switch this off. Earlier messages are unaffected.'
         : 'Switch on for a stretch you want Mewmory to skip. Messages sent while it is on are never remembered.'));
     const health = view.health || {};
@@ -2465,6 +2476,17 @@ function renderOverview(root) {
     detail: health.indexStatus === 'ready' || health.indexStatus === 'lexical' ? '' : 'Keyword search works meanwhile' });
     overview.append(stats(entries));
     root.append(overview);
+}
+
+/** On narrow screens the tabs scroll sideways; keep the selected one in view without moving the page. */
+function revealSelectedTab(navigation) {
+    if (navigation.scrollWidth <= navigation.clientWidth) return;
+    const selected = navigation.querySelector('[aria-selected="true"]');
+    if (!selected) return;
+    const start = selected.offsetLeft - navigation.clientLeft;
+    const end = start + selected.offsetWidth;
+    if (start < navigation.scrollLeft) navigation.scrollLeft = start - 8;
+    else if (end > navigation.scrollLeft + navigation.clientWidth) navigation.scrollLeft = end - navigation.clientWidth + 8;
 }
 
 let renderFrame = null;
@@ -2534,6 +2556,7 @@ function render() {
         ui.message = { ...focus, data: null, error: '' };
         void loadMessage({ scroll: true });
     }
+    const tabsScrollLeft = root.querySelector('.mewmory-tabs')?.scrollLeft || 0;
     root.replaceChildren();
     const heading = node('header', 'mewmory-heading');
     const locator = getMewmoryLocator();
@@ -2606,6 +2629,9 @@ function render() {
             renderSource(page);
         }
     }
+    // Measure only once the whole panel is back, or the half-built page clamps the reader's scroll position.
+    navigation.scrollLeft = tabsScrollLeft;
+    revealSelectedTab(navigation);
     if (focusId && !(active instanceof HTMLSelectElement)) {
         const target = document.getElementById(focusId);
         target?.focus({ preventScroll: true });
@@ -2619,7 +2645,7 @@ function loadMewmoryStyles() {
     if (!style) {
         style = document.createElement('link');
         style.id = 'mewmory-css';
-        style.href = 'css/mewmory.css?v=20261112-mewmory-model-tools';
+        style.href = 'css/mewmory.css?v=20261113-mewmory-readable';
         document.head.append(style);
     }
     if (style.rel !== 'stylesheet') {
