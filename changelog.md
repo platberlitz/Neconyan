@@ -64,6 +64,7 @@
 - PR #654 (2026-11-13) `fix(presets): move preset linking into Parameters`
 - PR #655 (2026-11-13) `fix(mewmory): add shared tab scroll controls`
 - PR #656 (2026-11-13) `fix(mobile): keep rail scroll arrows on their rail while the page scrolls`
+- PR #657 (2026-11-13) `fix(companion): fail a run when the note is a refusal`
 
 ## v1.5.4
 
