@@ -66,10 +66,11 @@ export function readContextSourcesSync(directories, locator, state, source = rea
     const persona = selectSavedRoleplayPersona(settings, { locator, records: [{ chat_metadata: metadata }] },
         { groupId }, locator.avatar, directories);
     const playerName = persona.name || source.messages.findLast(message => message.is_user)?.name || settings.name1;
-    if (persona.name || persona.description || settings.name1) {
+    if (playerName) {
         sources.push({
             id: 'character:player', type: 'character', entityId: 'player', name: String(playerName || 'Player'),
-            text: String(persona.description || playerName), meta: { persona: persona.evidence?.avatar || '' },
+            // The writer already receives the persona through its preset. Mewmory needs only the identity.
+            text: String(playerName), meta: { persona: persona.evidence?.avatar || '' },
         });
     }
     if (persona.lorebook) worlds.add(persona.lorebook);

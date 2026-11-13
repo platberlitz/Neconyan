@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { setConfigFilePath } from '../src/util.js';
 
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
-const { newState, putRecord, sourceAt, syncSources, validateRecord } = await import('../src/mewmory/core.js');
+const { eligibleRecords, newState, putRecord, sourceAt, syncSources, validateRecord } = await import('../src/mewmory/core.js');
 const { activeReferences, assembleContext, playerReferences } = await import('../src/mewmory/context.js');
 const { defaultConfig, saveConfig } = await import('../src/mewmory/models.js');
 const { processBatch, interviewInput } = await import('../src/mewmory/processing.js');
@@ -19,11 +19,12 @@ const { PLAYER_REFERENCE_GUIDANCE } = await import('../src/mewmory/contracts.js'
 
 const locator = { avatar: 'Mara.png', chat: 'Gift', group: false };
 const messages = [
-    { name: 'Robin', is_user: true, mes: 'I wear a blue coat and carry the brass key.' },
+    { name: 'Robin', is_user: true, mes: 'I am a mapmaker. I wear a blue coat and carry the brass key.' },
     { name: 'Mara', is_user: false, mes: 'Mara waits by the harbour.' },
     { name: 'Robin', is_user: true, mes: 'I give Mara the key.' },
 ];
-const persona = { id: 'character:player', type: 'character', entityId: 'player', name: 'Robin', text: 'Robin is a mapmaker with a blue coat.' };
+const persona = { id: 'character:player', type: 'character', entityId: 'player', name: 'Robin',
+    text: 'Robin is a mapmaker with a blue coat.', meta: { persona: '' } };
 const counter = { name: 'test', count: value => value.length };
 
 function disk(t) {
@@ -37,7 +38,7 @@ function disk(t) {
     return directories;
 }
 
-test('the chat-locked persona supplies player details, selected appendices and its own lorebook', t => {
+test('the chat-locked persona supplies only the player name and its linked lorebook', t => {
     const directories = disk(t);
     for (const avatar of ['robin.png', 'other.png']) fs.writeFileSync(path.join(directories.avatars, avatar), 'avatar');
     writeJson(path.join(directories.root, 'settings.json'), {
@@ -59,9 +60,8 @@ test('the chat-locked persona supplies player details, selected appendices and i
     const sources = readContextSourcesSync(directories, locator, newState(locator), source);
     const player = sources.find(item => item.entityId === 'player');
     assert.equal(player.name, 'Robin');
-    assert.match(player.text, /mapmaker/);
-    assert.match(player.text, /carries a compass/);
-    assert.doesNotMatch(JSON.stringify(sources), /UNSELECTED|UNRELATED|Other lore/);
+    assert.equal(player.text, 'Robin');
+    assert.doesNotMatch(JSON.stringify(sources), /mapmaker|blue coat|carries a compass|UNSELECTED|UNRELATED|Other lore/);
     assert.ok(sources.some(item => item.meta.world === 'Robin lore'));
 
     const state = newState(locator);
@@ -70,6 +70,15 @@ test('the chat-locked persona supplies player details, selected appendices and i
     putRecord(state, validateRecord(state, { id: 'entity:player', kind: 'entity', entityId: 'player', name: 'Robin', text: player.text,
         isCharacter: true, refs: [ref] }, { asOf: -1 }));
     assert.equal(playerReferences(state).records[0].isCharacter, false);
+    const originalRef = { ...ref };
+    const settingsPath = path.join(directories.root, 'settings.json');
+    const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    settings.power_user.persona_descriptions['robin.png'].description = 'EDITED PERSONA';
+    writeJson(settingsPath, settings);
+    source.metadata.persona_appendices['robin.png'] = ['secret'];
+    syncSources(state, messages, readContextSourcesSync(directories, locator, state, source));
+    assert.deepEqual(state.contextSources.find(ref => ref.id === originalRef.id), originalRef,
+        'persona text and appendix edits do not invalidate story memories');
     source.metadata.persona = 'other.png';
     syncSources(state, messages, readContextSourcesSync(directories, locator, state, source));
     assert.equal(playerReferences(state).text, '', 'changing persona invalidates the old persona-backed reference');
@@ -85,11 +94,40 @@ test('group-bound personas take precedence over the last active persona', t => {
     } });
     const group = { group: true, chat: 'Group story' };
     const sources = readContextSourcesSync(directories, group, newState(group), { metadata: {}, messages });
-    assert.equal(sources.find(item => item.entityId === 'player').text, persona.text);
-    assert.doesNotMatch(JSON.stringify(sources), /UNRELATED/);
+    assert.equal(sources.find(item => item.entityId === 'player').text, 'Robin');
+    assert.doesNotMatch(JSON.stringify(sources), /mapmaker|blue coat|UNRELATED/);
 });
 
-test('extraction receives the player persona without making the player an NPC or an interview owner', async t => {
+test('a chat speaker names the player when no persona or saved name exists', t => {
+    const directories = disk(t);
+    const sources = readContextSourcesSync(directories, locator, newState(locator), { metadata: {}, messages });
+    assert.equal(sources.find(item => item.entityId === 'player').text, 'Robin');
+});
+
+test('upgrading a persona-backed archive retires the copied persona and preserves chat-backed player facts', async t => {
+    const directories = disk(t);
+    writeJson(path.join(directories.root, 'settings.json'), { username: 'Robin', power_user: { persona_description: persona.text } });
+    mutateState(directories, locator, state => {
+        syncSources(state, messages, [persona]);
+        putRecord(state, validateRecord(state, { id: 'entity:player', kind: 'entity', entityId: 'player', name: 'Robin',
+            text: persona.text, refs: state.contextSources }, { asOf: -1, origin: 'character_card' }));
+        putRecord(state, validateRecord(state, { id: 'state:player', kind: 'state', entityId: 'player',
+            text: 'Robin has given Mara the key.', refs: [state.timeline[2]] }, { asOf: 2 }));
+    });
+    const state = await loadCurrentState(directories, locator);
+    assert.equal(eligibleRecords(state).some(record => record.id === 'entity:player'), false);
+    assert.equal(eligibleRecords(state).some(record => record.id === 'state:player'), true);
+    assert.ok(state.records.some(record => record.text === persona.text), 'the archive is retained');
+    const documents = searchDocuments(state);
+    assert.ok(documents.some(document => document.recordId === 'state:player'));
+    const result = assembleContext(state, documents, { counter, memoryTokens: 100000 });
+    for (const field of ['npcText', 'memoryText', 'factsText', 'interviewText']) {
+        assert.ok(!result[field].includes(persona.text), field + ' must not recall the old persona');
+    }
+    assert.match(result.memoryText, /Robin has given Mara the key/);
+});
+
+test('extraction receives only the player name and remembers story facts without making the player an NPC or interview owner', async t => {
     const directories = disk(t);
     writeJson(path.join(directories.root, 'settings.json'), { username: 'Robin', power_user: { persona_description: persona.text } });
     const config = defaultConfig();
@@ -102,9 +140,11 @@ test('extraction receives the player persona without making the player an NPC or
         calls.push(role);
         assert.equal(role, 'extractor');
         assert.match(contract, /thoughts, feelings or intentions only when the user explicitly states them/);
-        assert.equal(input.sources.find(item => item.entityId === 'player').text, persona.text);
+        assert.equal(input.sources.find(item => item.entityId === 'player').text, 'Robin');
+        assert.ok(!JSON.stringify(input).includes(persona.text));
         assert.ok(input.sources.some(item => item.type === 'chat' && item.isPlayer));
         assert.equal(input.existing.find(item => item.entityId === 'player').isCharacter, false);
+        assert.equal(input.existing.find(item => item.entityId === 'player').text, 'Robin');
         const refs = input.sources.filter(item => item.type === 'chat').map(({ id, revision }) => ({ id, revision }));
         return { value: {
             records: [{ id: 'state:player', kind: 'state', entityId: 'player', text: 'Robin has given Mara the key.', refs }],
@@ -113,7 +153,7 @@ test('extraction receives the player persona without making the player an NPC or
     });
     assert.deepEqual(calls, ['extractor']);
     assert.deepEqual(activeReferences(state).ids, []);
-    assert.match(playerReferences(state).text, /mapmaker/);
+    assert.doesNotMatch(playerReferences(state).text, /mapmaker/);
     assert.match(playerReferences(state).text, /given Mara the key/);
     assert.equal(state.records.some(item => item.kind === 'interview'), false);
     assert.throws(() => interviewInput(state, { ownerId: 'player', subjectIds: ['npc:mara'] }, 2), /not a known AI character/);
@@ -121,11 +161,11 @@ test('extraction receives the player persona without making the player an NPC or
 
 function referenceState() {
     const state = newState(locator);
-    syncSources(state, messages, [persona]);
+    syncSources(state, messages, [{ ...persona, text: 'Robin' }]);
     const add = (record, asOf, refs = [state.timeline[asOf]]) => putRecord(state,
         validateRecord(state, { ...record, refs }, { asOf, origin: 'extractor' }), { automatic: true });
     add({ id: 'entity:player', kind: 'entity', entityId: 'player', name: 'Robin', text: 'Robin is a mapmaker.',
-        appearance: 'Blue coat', speech: 'Brief, direct sentences', isCharacter: true }, -1, state.contextSources);
+        appearance: 'Blue coat', isCharacter: true }, 0);
     add({ id: 'state:player', kind: 'state', entityId: 'player', text: 'Robin carries the brass key.' }, 0);
     add({ id: 'state:player', kind: 'state', entityId: 'player', text: 'Robin no longer holds the brass key.' }, 2);
     add({ id: 'entity:mara', kind: 'entity', entityId: 'npc:mara', name: 'Mara', text: 'Mara is an archivist.', isCharacter: true }, 1);
@@ -136,21 +176,40 @@ function referenceState() {
     return state;
 }
 
-test('player references survive an empty NPC selection and tiny recall budget, with historical and excluded evidence respected', () => {
+test('player facts are recalled only when selected and fit the memory budget', () => {
     const state = referenceState();
     state.activeNpcIds = [];
     const result = assembleContext(state, [], { counter, memoryTokens: 1 });
     assert.deepEqual(result.activeNpcIds, []);
-    assert.match(result.npcText, /user-controlled player reference/);
-    assert.match(result.npcText, /Blue coat/);
-    assert.match(result.npcText, /Brief, direct sentences/);
-    assert.match(result.npcText, /no longer holds/);
-    assert.ok(result.npcText.includes(PLAYER_REFERENCE_GUIDANCE));
-    assert.equal(result.tokens.npc, counter.count(result.npcText));
+    assert.equal(result.npcText, '');
+    assert.equal(result.tokens.npc, 0);
     assert.equal(result.memoryText, '');
+    assert.equal(result.factsText, '');
+    const documents = searchDocuments(state).filter(document => ['entity:player', 'state:player'].includes(document.recordId));
+    const recalled = assembleContext(state, documents, { counter });
+    assert.equal(recalled.npcText, '');
+    assert.match(recalled.memoryText, /Robin is a mapmaker/);
+    assert.match(recalled.memoryText, /Blue coat/);
+    assert.match(recalled.memoryText, /Robin no longer holds/);
+    assert.match(recalled.factsText, /Robin no longer holds/);
+    assert.deepEqual(recalled.selected, documents.map(document => document.id));
+    assert.equal(recalled.tokens.memory, counter.count(recalled.memoryText));
+    const limited = assembleContext(state, documents, { counter, memoryTokens: 1 });
+    assert.equal(limited.memoryText, '');
+    assert.deepEqual(limited.selected, []);
+    assert.deepEqual(limited.omitted, documents.map(document => document.id));
+    assert.throws(() => assembleContext(state, documents, { counter, memoryTokens: 1, forcedIds: ['state:player'] }), /Pinned memories/);
+});
+
+test('player recall respects historical and excluded story evidence', () => {
+    const state = referenceState();
+    const documents = searchDocuments(state, 0).filter(document => document.recordId === 'state:player');
+    const historical = assembleContext(state, documents, { asOf: 0, counter });
+    assert.match(historical.memoryText, /Robin carries the brass key/);
+    assert.doesNotMatch(historical.memoryText, /no longer/);
     assert.match(playerReferences(state, 0).text, /carries the brass key/);
     assert.doesNotMatch(playerReferences(state, 0).text, /no longer/);
-    state.excludedSources.push(state.contextSources[0].id);
+    state.excludedSources.push(state.timeline[0].id);
     assert.doesNotMatch(playerReferences(state).text, /mapmaker|Blue coat/);
     state.excludedSources.push(...state.timeline.map(ref => ref.id));
     assert.equal(playerReferences(state).text, '');
@@ -160,11 +219,11 @@ test('writer and isolated agent memory channels preserve user authorship, even w
     const state = referenceState();
     const documents = searchDocuments(state);
     const result = assembleContext(state, documents, { counter, memoryTokens: 100000 });
-    for (const field of ['npcText', 'memoryText', 'factsText', 'interviewText']) {
+    assert.doesNotMatch(result.npcText, /Robin|player/);
+    for (const field of ['memoryText', 'factsText', 'interviewText']) {
         assert.ok(result[field].includes(PLAYER_REFERENCE_GUIDANCE), field + ' must carry the player boundary');
-        assert.match(result[field], /unless they explicitly ask you to write them/);
     }
-    assert.match(result.memoryText, /User-controlled player persona excerpt/);
+    assert.doesNotMatch(result.memoryText, /player persona excerpt/);
     state.records = state.records.filter(item => item.entityId !== 'player');
     const isolated = assembleContext(state, documents.filter(item => item.recordId === 'interview:mara'), { counter });
     assert.ok(isolated.interviewText.includes(PLAYER_REFERENCE_GUIDANCE));
