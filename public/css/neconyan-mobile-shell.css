@@ -223,6 +223,7 @@
         border-radius: 0;
         box-shadow: none;
     }
+    body.neconyan #left-nav-panel .sb-preset-bar .sb-preset-actions > .menu_button { flex: 1 1 auto; min-height: 44px; padding: 0 10px; }
     body.neconyan #completion_prompt_manager #completion_prompt_manager_list li.completion_prompt_manager_prompt > span:nth-child(3) { touch-action: pan-x; }
     body.neconyan #completion_prompt_manager #completion_prompt_manager_list li.completion_prompt_manager_prompt .prompt_manager_prompt_controls > .prompt-manager-pin-action {
         display: inline-flex; align-items: center; justify-content: center; gap: 6px;

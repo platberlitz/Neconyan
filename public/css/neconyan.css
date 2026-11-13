@@ -3060,6 +3060,17 @@ body.neconyan .neconyan-model-saved {
 body.neconyan #left-nav-panel .neconyan-model-saved h3 { display: flex; gap: 6px; align-items: center; margin: 0 0 6px; font-size: 14px; background: none; border: 0; padding: 0; }
 body.neconyan .neconyan-model-saved .connection-profile-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 body.neconyan .neconyan-model-saved .connection-profile-actions > button { flex: 1; min-height: 44px; }
+body.neconyan .sb-preset-bar { display: grid; gap: 8px; min-width: 0; margin: 0 0 12px; }
+body.neconyan .sb-preset-bar-label { font-size: 12px; font-weight: 600; color: var(--neco-muted); }
+body.neconyan .sb-preset-bar-row { display: grid; gap: 8px; min-width: 0; }
+body.neconyan .sb-preset-bar-row > select { width: 100%; margin: 0; }
+body.neconyan .sb-preset-actions { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+body.neconyan #left-nav-panel .sb-preset-actions > .menu_button {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    width: auto; min-width: 0; min-height: 36px; margin: 0; padding: 0 12px;
+    border-radius: 6px; font-size: 13px; font-weight: 500; line-height: 1.15; white-space: nowrap;
+}
+body.neconyan #left-nav-panel .sb-preset-actions > .menu_button > i { font-size: 12px; }
 body.neconyan .neconyan-connection-management > summary,
 body.neconyan .neconyan-model-rotation > summary,
 body.neconyan .neconyan-provider-help > summary,

@@ -180,14 +180,24 @@ function injectRestoreDefaultPresetButtons() {
             return;
         }
 
-        const button = $('<div></div>', {
-            class: 'menu_button menu_button_icon',
-            title: t`Restore default presets`,
-            'aria-label': t`Restore default presets`,
-            'data-i18n': '[title]Restore default presets',
-            'data-preset-manager-restore-defaults': apiId,
-            html: '<i class="fa-solid fa-box-open" aria-hidden="true"></i>',
-        });
+        const labelled = $(element).closest('.sb-preset-actions').length > 0;
+        const button = labelled
+            ? $('<button></button>', {
+                type: 'button',
+                class: 'menu_button',
+                title: t`Restore default presets`,
+                'data-i18n': '[title]Restore default presets',
+                'data-preset-manager-restore-defaults': apiId,
+                html: `<i class="fa-fw fa-solid fa-box-open" aria-hidden="true"></i><span>${t`Restore defaults`}</span>`,
+            })
+            : $('<div></div>', {
+                class: 'menu_button menu_button_icon',
+                title: t`Restore default presets`,
+                'aria-label': t`Restore default presets`,
+                'data-i18n': '[title]Restore default presets',
+                'data-preset-manager-restore-defaults': apiId,
+                html: '<i class="fa-solid fa-box-open" aria-hidden="true"></i>',
+            });
 
         $(element).after(button);
     });

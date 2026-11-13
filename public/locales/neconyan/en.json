@@ -17,6 +17,8 @@
   "Export preset": "Export preset",
   "Restore current preset": "Restore current preset",
   "Delete the preset": "Delete the preset",
+  "Preset actions": "Preset actions",
+  "Delete several": "Delete several",
   "novelaipresets": "novelaipresets",
   "Default": "Default",
   "openaipresets": "Chat Completion Presets",
