@@ -72,6 +72,7 @@
 - PR #662 (2026-11-13) `fix(popups): drop doubled safe-area gaps above the iOS keyboard`
 - PR #663 (2026-11-13) `fix(mewmory): stop repeating the player persona in prompts`
 - PR #664 (2026-11-13) `feat(scratchpad): let vision models inspect generated images`
+- PR #665 (2026-11-13) `docs(readme): add the 1.5.4 sections to the translations`
 
 ## v1.5.4
 
