@@ -91,6 +91,12 @@ describe('in-chat agent scoped enabled state', () => {
         expect(store.getAgentLengthTarget({ settings: { lengthTarget: '  Under 150 words ' } })).toBe('Under 150 words');
         expect(store.getAgentLengthTarget({ settings: { lengthTarget: '' } })).toBe(store.DEFAULT_LENGTH_TARGET);
         expect(store.getAgentLengthTarget(null)).toBe(store.DEFAULT_LENGTH_TARGET);
+        expect(store.getAgentTargetLanguage({ settings: { targetLanguage: '  Brazilian Portuguese ' } })).toBe('Brazilian Portuguese');
+        expect(store.getAgentTargetLanguage({ settings: { targetLanguage: ' ' } })).toBe(store.DEFAULT_TARGET_LANGUAGE);
+        expect(store.getAgentTargetLanguage(null)).toBe('English');
+        expect(store.isTranslatorAgent({ sourceTemplateId: store.TRANSLATOR_TEMPLATE_ID })).toBe(true);
+        expect(store.isTranslatorAgent({ sourceTemplateId: 'tpl-proofreader' })).toBe(false);
+        expect(store.isTranslatorAgent(null)).toBe(false);
     });
 
     test('created-agent readback refuses an account switch during the request', async () => {

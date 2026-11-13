@@ -549,6 +549,48 @@ for (const effect of ['append', 'continue', 'swipe', 'replace']) {
 }
 
 for (const effect of ['append', 'swipe']) {
+    test(`the Translator rewrites the merged parallel result last for ${effect}`, async t => {
+        const template = name => JSON.parse(fs.readFileSync(new URL(`../public/scripts/extensions/in-chat-agents/templates/${name}.json`, import.meta.url)));
+        const bundled = ['translator', 'format-fixer', 'proofreader'].map(name => ({ ...template(name), enabled: true, sourceTemplateId: template(name).id }));
+        bundled[0].injection = { ...bundled[0].injection, order: 1 };
+        bundled[0].settings = { targetLanguage: 'Japanese' };
+        const agents = [...bundled, { id: 'tracker', name: 'Scene Tracker', phase: 'post', prompt: 'TRACKER', injection: { order: 4 },
+            postProcess: { enabled: true, type: 'extract', extractVariable: 'scene', extractPattern: '\\[SCENE\\][\\s\\S]*?\\[/SCENE\\]',
+                promptTransformEnabled: true, promptTransformMode: 'append', promptTransformMaxTokens: 64 } }];
+        const f = prepared(t, agents, { effect });
+        const calls = [];
+        await f.run({ generate: paid('main', () => 'Main output'), generateAgent: paid('agents', ({ messages }) => {
+            const instruction = messages[0].content;
+            if (instruction.includes('TRACKER')) {
+                calls.push('tracker');
+                return '[SCENE]Courtyard[/SCENE]';
+            }
+            if (instruction.startsWith('Combine parallel edits')) {
+                calls.push('synthesis');
+                return 'Merged output';
+            }
+            if (instruction.includes('literary translator')) {
+                calls.push('translator');
+                assert.match(instruction, /Japanese/);
+                assert.doesNotMatch(instruction, /\{\{targetLanguage\}\}/i);
+                assert.match(messages[1].content, /<assistant_response>\nMerged output\n/);
+                assert.doesNotMatch(messages[1].content, /Courtyard/);
+                return '翻訳された出力';
+            }
+            const fixer = instruction.includes('formatting editor');
+            assert.ok(fixer || instruction.includes('strict line editor'), 'unexpected Agent request');
+            calls.push(fixer ? 'format' : 'proofread');
+            assert.match(messages[1].content, /<assistant_response>\nMain output\n/);
+            return fixer ? 'Formatted output' : 'Proofread output';
+        }) });
+        assert.equal(calls.at(-1), 'translator');
+        assert.equal(calls.filter(call => call === 'translator').length, 1);
+        assert.ok(calls.indexOf('synthesis') < calls.indexOf('translator'));
+        assert.equal(f.saved().at(-1).mes, '翻訳された出力\n\n[SCENE]Courtyard[/SCENE]');
+    });
+}
+
+for (const effect of ['append', 'swipe']) {
     test(`Prompt Adherence Checker sees only the enabled preset prompts for ${effect}`, async t => {
         const template = JSON.parse(fs.readFileSync(new URL('../public/scripts/extensions/in-chat-agents/templates/prompt-adherence-checker.json', import.meta.url)));
         const agents = [{ ...template, enabled: true, sourceTemplateId: template.id }];

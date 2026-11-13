@@ -10,6 +10,7 @@ test('model refusals and policy notes count as refusals', () => {
         'I cannot continue this scene.',
         'I won\'t write explicit content involving these characters.',
         'I must respectfully decline.',
+        'I can\'t translate this passage.',
         'I\'m not comfortable writing this.',
         'As an AI, I keep things tasteful. Here is a softer version:\n\n' + reply,
         'This request goes against my guidelines, so here is a gentler take:\n\n' + reply,

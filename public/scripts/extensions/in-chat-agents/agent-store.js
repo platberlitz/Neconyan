@@ -825,8 +825,9 @@ export function agentMatchesListTab(agent, tab) {
 export const LEGACY_AGENT_MAX_TOKENS = 2000;
 export const DEFAULT_AGENT_MAX_TOKENS = 8192;
 export const MAX_AGENT_MAX_TOKENS = 64000;
-export { MAX_PROMPT_TRANSFORM_CONTEXT_MESSAGES, LENGTH_TRIMMER_TEMPLATE_ID, DEFAULT_LENGTH_TARGET,
-    normalizePromptTransformContextMessages, getAgentLengthTarget } from './prompt-transform-context.js';
+export { MAX_PROMPT_TRANSFORM_CONTEXT_MESSAGES, LENGTH_TRIMMER_TEMPLATE_ID, DEFAULT_LENGTH_TARGET, TRANSLATOR_TEMPLATE_ID,
+    DEFAULT_TARGET_LANGUAGE, normalizePromptTransformContextMessages, getAgentLengthTarget, getAgentTargetLanguage,
+    isTranslatorAgent } from './prompt-transform-context.js';
 export const PATHFINDER_TEMPLATE_ID = 'tpl-pathfinder';
 
 export function areAgentsGloballyEnabled() {

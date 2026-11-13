@@ -428,6 +428,8 @@ describe('in-chat agent post-processing runner', () => {
             MAX_AGENT_MAX_TOKENS: 64000,
             normalizePromptTransformContextMessages: jest.fn(value => Math.max(0, Math.min(20, Math.trunc(Number(value) || 0)))),
             getAgentLengthTarget: jest.fn(agent => String(agent?.settings?.lengthTarget ?? '').trim() || 'About 300 to 450 words'),
+            getAgentTargetLanguage: jest.fn(agent => String(agent?.settings?.targetLanguage ?? '').trim() || 'English'),
+            isTranslatorAgent: jest.fn(agent => String(agent?.sourceTemplateId ?? '').trim() === 'tpl-translator'),
             areAgentsGloballyEnabled: jest.fn(() => globalSettings.enabled),
             getAgentById: jest.fn(id => [...enabledAgents, ...enabledToolAgents].find(agent => agent.id === id)),
             getAgents: jest.fn(() => [...enabledAgents]),
@@ -7888,6 +7890,32 @@ describe('in-chat agent post-processing runner', () => {
         await new Promise(resolve => setTimeout(resolve, 5));
     });
 
+    test('the Translator rewrites the combined parallel result last, whatever its order', async () => {
+        useManualTransformAgents();
+        enabledAgents.unshift({ ...structuredClone(enabledAgents[0]), id: 'agent-translator', name: 'Translator',
+            sourceTemplateId: 'tpl-translator', prompt: 'Translate the reply', injection: { order: 1 } });
+        globalSettings.appendAgentsExecutionMode = 'parallel';
+        for (const agent of enabledAgents) agent.postProcess.enabled = true;
+        generateQuietPrompt.mockImplementation(async request => {
+            if (request.quietPrompt.includes('Combine parallel edits')) return 'Both improvements';
+            if (request.quietPrompt.includes('Translate the reply')) return 'Les deux améliorations';
+            return request.quietPrompt.includes('Rewrite as A') ? 'First improvement' : 'Second improvement';
+        });
+        const message = { mes: 'Original reply', is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        const prompts = generateQuietPrompt.mock.calls.map(([request]) => request.quietPrompt);
+        expect(prompts).toHaveLength(4);
+        expect(prompts[2]).toContain('Combine parallel edits');
+        expect(prompts[2]).not.toContain('Translate the reply');
+        expect(prompts[3]).toContain('Translate the reply');
+        expect(prompts[3]).toContain('Both improvements');
+        expect(message.mes).toBe('Les deux améliorations');
+        expect(message.extra.inChatAgentTransformHistory).toHaveLength(1);
+    });
+
     async function blockedCallerError() {
         const { providerBlockedError, classifyGenerationOutcome } = await import('../public/scripts/generation-outcome.js');
         return providerBlockedError(classifyGenerationOutcome({ choices: [{ finish_reason: 'content_filter' }] }));
@@ -10755,6 +10783,8 @@ describe('in-chat agent post-processing runner', () => {
 
         expect(buildPromptDynamicMacros('Reply', null, enabledAgents[0]).lengthTarget).toBe('Two short paragraphs');
         expect(buildPromptDynamicMacros('Reply', null, { settings: { lengthTarget: '  ' } }).lengthTarget).toBe('About 300 to 450 words');
+        expect(buildPromptDynamicMacros('Reply', null, { settings: { targetLanguage: ' Japanese ' } }).targetLanguage).toBe('Japanese');
+        expect(buildPromptDynamicMacros('Reply', null, {}).targetLanguage).toBe('English');
 
         chat.push(
             { name: 'Traveler', mes: 'Too old to include', is_user: true, is_system: false, extra: {} },

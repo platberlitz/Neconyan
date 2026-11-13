@@ -6,6 +6,7 @@ import {
     composePromptTransformDraft,
     createPromptTransformDraft,
     planPromptTransformStages,
+    runOrderedPromptTransformStages,
     runPromptTransformStages,
 } from '../public/scripts/extensions/in-chat-agents/prompt-transform-synthesis.js';
 
@@ -255,4 +256,70 @@ test('a failing rewrite waits for the append group before the error surfaces', a
         },
     }), /rewrite failed/);
     assert.equal(appendFinished, true);
+});
+
+const isFinalPass = agent => agent.id.startsWith('t');
+
+for (const parallel of [false, true]) {
+    test(`${parallel ? 'parallel' : 'sequential'} final-pass rewrites edit the finished body after every other stage`, async () => {
+        const calls = [];
+        const { draft, stopped } = await runPromptTransformStages({
+            agents: agents(['t1', 'r1', 'a1', 'r2']), text: reply, parallel, isAppend, isFinalPass,
+            runRewrite: async (agent, body) => {
+                calls.push([agent.id, body]);
+                return { text: agent.id === 't1' ? `Translated: ${body}` : `${body} (${agent.id})` };
+            },
+            runAppend: async group => ({ outputs: group.map(agent => ({ agent, text: 'Menu' })) }),
+            runSynthesis: async (original, rewrites) => {
+                assert.deepEqual(rewrites.map(item => item.agent.id), ['r1', 'r2']);
+                return { text: 'Combined reply' };
+            },
+        });
+        const finished = parallel ? 'Combined reply' : `${reply} (r1) (r2)`;
+        assert.equal(stopped, false);
+        assert.deepEqual(calls.at(-1), ['t1', finished]);
+        assert.equal(calls.filter(([id]) => id === 't1').length, 1);
+        assert.equal(composePromptTransformDraft(draft, join), `Translated: ${finished}\n\nMenu`);
+    });
+}
+
+test('ordered stages also run final-pass rewrites last', async () => {
+    const order = [];
+    const { draft } = await runOrderedPromptTransformStages({
+        agents: agents(['t1', 'r1']), text: reply, isAppend, isFinalPass,
+        runRewrite: async (agent, body) => {
+            order.push(agent.id);
+            return { text: `${body}+${agent.id}` };
+        },
+        runAppend: async () => ({ outputs: [] }),
+    });
+    assert.deepEqual(order, ['r1', 't1']);
+    assert.equal(draft.body, `${reply}+r1+t1`);
+});
+
+test('a stop before the final pass skips the translation', async () => {
+    const calls = [];
+    const { draft, stopped } = await runPromptTransformStages({
+        agents: agents(['r1', 't1']), text: reply, isAppend, isFinalPass,
+        runRewrite: async agent => {
+            calls.push(agent.id);
+            return { text: 'Edited', stop: true };
+        },
+        runAppend: async () => ({ outputs: [] }),
+    });
+    assert.equal(stopped, true);
+    assert.deepEqual(calls, ['r1']);
+    assert.equal(draft.body, 'Edited');
+});
+
+test('an empty or disallowed final-pass result keeps the finished body', async () => {
+    for (const [outcome, isAgentAllowed] of [[{ text: '  ' }, () => true], [{}, () => true], [{ text: 'Translated' }, () => false]]) {
+        const { draft, stopped } = await runPromptTransformStages({
+            agents: agents(['r1', 't1']), text: reply, parallel: true, isAppend, isFinalPass, isAgentAllowed,
+            runRewrite: async agent => agent.id === 't1' ? outcome : { text: 'Edited' },
+            runAppend: async () => ({ outputs: [] }),
+        });
+        assert.equal(stopped, false);
+        assert.equal(draft.body, isAgentAllowed() ? 'Edited' : reply);
+    }
 });
