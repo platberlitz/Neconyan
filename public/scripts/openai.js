@@ -53,7 +53,7 @@ import {
     PromptManager,
     promptManagerDefaultPromptOrders,
 } from './PromptManager.js';
-import { withReadOnlyVariables } from './variable-read-only.js';
+import { createVariablePreview } from './variable-preview.js';
 
 import { forceCharacterEditorTokenize, getCustomStoppingStrings, persona_description_positions, power_user } from './power-user.js';
 import { deleteSecret, rotateSecret, SECRET_KEYS, secret_state, writeSecret } from './secrets.js';
@@ -1819,7 +1819,7 @@ export async function prepareOpenAIMessages({
     const chatCompletion = new ChatCompletion();
     // Only synchronous substitutions are guarded; previews must not hold a global
     // read-only scope across token-counting requests or extension callbacks.
-    const evaluateMacros = dryRun ? withReadOnlyVariables : callback => callback();
+    const evaluateMacros = dryRun ? createVariablePreview() : callback => callback();
     if (power_user.console_log_prompts) chatCompletion.enableLogging();
 
     const userSettings = Number.isFinite(responseLength) && responseLength > 0

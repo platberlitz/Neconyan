@@ -18,8 +18,9 @@ import { isMobile } from '../../RossAscends-mods.js';
 import { timestampToMoment } from '../../utils.js';
 import { textgenerationwebui_banned_in_macros } from '../../textgen-settings.js';
 import { eventSource, event_types } from '../../events.js';
-import { findExtension } from '../../extensions.js';
-import { filterGroupPromptMessages } from '../../group-chat-visibility.js';
+import { extension_settings, findExtension } from '../../extensions.js';
+import { filterGroupPromptMessages, hasRestrictedGroupHistory } from '../../group-chat-visibility.js';
+import { getPreviewVariables } from '../../variable-preview.js';
 
 /**
  * Per-operation state shared by the state macros. The generation type is
@@ -50,7 +51,8 @@ export function ensureGenerationTracking() {
  * @returns {import('./MacroEnv.types.js').MacroEnvVariables}
  */
 function buildBrowserVariables() {
-    return SillyTavern.getContext().variables;
+    return getPreviewVariables(chat_metadata.variables, extension_settings.variables?.global, hasRestrictedGroupHistory())
+        ?? SillyTavern.getContext().variables;
 }
 
 /**
