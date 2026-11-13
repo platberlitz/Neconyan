@@ -2612,7 +2612,11 @@ function render() {
         });
         navigation.append(tab);
     }
-    root.append(navigation, node('p', 'mewmory-caption mewmory-tab-hint', tabHints[ui.tab] || ''));
+    // Stick the rail and its sibling scroll controls together. A sticky rail on
+    // its own leaves the controls following its position one animation frame late.
+    const navigationWrapper = node('div', 'mewmory-tabs-wrapper');
+    navigationWrapper.append(navigation);
+    root.append(navigationWrapper, node('p', 'mewmory-caption mewmory-tab-hint', tabHints[ui.tab] || ''));
     for (const [id] of tabs) {
         const page = node('div', 'mewmory-page');
         page.id = 'mewmory-pane-' + id;
@@ -2652,7 +2656,7 @@ function loadMewmoryStyles() {
     if (!style) {
         style = document.createElement('link');
         style.id = 'mewmory-css';
-        style.href = 'css/mewmory.css?v=20261113-mewmory-readable';
+        style.href = 'css/mewmory.css?v=20261113-mewmory-sticky';
         document.head.append(style);
     }
     if (style.rel !== 'stylesheet') {
