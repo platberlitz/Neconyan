@@ -3726,6 +3726,8 @@ body.neconyan #mewmory-workspace .mewmory-tabs {
 }
 body.neconyan #mewmory-workspace .mewmory-tabs::-webkit-scrollbar { display: none; }
 body.neconyan #mewmory-workspace .mewmory-tabs button { flex: 0 0 auto; padding-inline: .85rem; }
+/* Keep the shared scroll controls above Mewmory's sticky tab row. */
+body.neconyan #mewmory-workspace > .sb-mobile-rail-chrome { z-index: calc(var(--sb-z-raised, 10) + 3); }
 
 body.neconyan #mewmory-workspace .mewmory-record > .mewmory-actions {
     display: grid;
