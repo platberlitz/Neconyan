@@ -48,6 +48,27 @@ export function initMobileSwipeRails({ leftLabel, rightLabel }) {
     const toggle = (element, name, enabled) => {
         if (element.classList.contains(name) !== enabled) element.classList.toggle(name, enabled);
     };
+    const scrolls = element => /auto|scroll/.test(`${getComputedStyle(element).overflowX} ${getComputedStyle(element).overflowY}`);
+    const releaseAnchor = record => {
+        if (!record.anchor) return;
+        if (record.anchorStyle) record.anchor.style.setProperty('position', record.anchorStyle);
+        else record.anchor.style.removeProperty('position');
+        record.anchor = null;
+    };
+    // An offset parent outside a scrolling ancestor leaves the chrome behind
+    // during native scrolling until the next frame repositions it (visible on
+    // iOS), so the rail's own parent becomes the containing block instead.
+    const anchorChrome = (rail, record) => {
+        const host = rail.parentElement;
+        if (record.anchor && record.anchor !== host) releaseAnchor(record);
+        if (record.anchor) return;
+        const parent = record.chrome.offsetParent;
+        if (!parent || parent === host || getComputedStyle(host).position !== 'static') return;
+        if (!containersFor(rail, parent).filter(container => container !== parent).some(scrolls)) return;
+        record.anchor = host;
+        record.anchorStyle = host.style.getPropertyValue('position');
+        host.style.setProperty('position', 'relative');
+    };
 
     function revealTabInRail(rail, tab) {
         // scrollIntoView also scrolls vertical ancestors, pulling a scrolled
@@ -103,7 +124,7 @@ export function initMobileSwipeRails({ leftLabel, rightLabel }) {
         rail.addEventListener('click', revealTab);
         rail.addEventListener('focusin', revealTab);
         resize.observe(rail);
-        const record = { chrome, buttons, revealTab, progressOnly, containers: [] };
+        const record = { chrome, buttons, revealTab, progressOnly, containers: [], anchor: null, anchorStyle: '' };
         records.set(rail, record);
         watchContainers(record, containersFor(rail, null));
     }
@@ -120,6 +141,7 @@ export function initMobileSwipeRails({ leftLabel, rightLabel }) {
             const { chrome, buttons, revealTab, progressOnly } = record;
             if (!rail.isConnected) {
                 chrome.remove();
+                releaseAnchor(record);
                 resize.unobserve(rail);
                 watchContainers(record, []);
                 rail.removeEventListener('scroll', schedule);
@@ -142,7 +164,10 @@ export function initMobileSwipeRails({ leftLabel, rightLabel }) {
             toggle(rail, 'sb-can-scroll-left', state.canScrollLeft);
             toggle(rail, 'sb-can-scroll-right', state.canScrollRight);
             if (chrome.hidden === state.hasOverflow) chrome.hidden = !state.hasOverflow;
-            if (!state.hasOverflow) continue;
+            if (!state.hasOverflow) {
+                releaseAnchor(record);
+                continue;
+            }
             buttons.forEach((button, index) => {
                 const enabled = index === 0 ? state.canScrollLeft : state.canScrollRight;
                 if (button.hidden === enabled) button.hidden = !enabled;
@@ -152,6 +177,7 @@ export function initMobileSwipeRails({ leftLabel, rightLabel }) {
             setStyle(chrome, '--sb-rail-thumb-left', `${state.thumbOffsetPercent}%`);
             // The sibling inherits drawer stacking and clipping, including dialog top layers.
             // Offset-parent coordinates also follow scaled composer and theme containers.
+            anchorChrome(rail, record);
             const parent = chrome.offsetParent;
             if (!(parent instanceof HTMLElement)) continue;
             const containers = containersFor(rail, parent);

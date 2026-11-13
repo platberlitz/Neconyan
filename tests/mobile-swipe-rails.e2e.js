@@ -267,4 +267,45 @@ test.describe('phone discovery cues', () => {
             expect(errors).toEqual([]);
         });
     }
+
+    // Settings: the tab strip's column and its scroller are unpositioned, so the
+    // chrome's offset parent sat outside the scroller and trailed every scroll.
+    test('rail chrome scrolls with the rail inside an unpositioned scroller', async ({ page }) => {
+        const errors = [];
+        page.on('pageerror', error => errors.push(error.message));
+        await page.route('**/swipe-rail-scroller-fixture', route => route.fulfill({ contentType: 'text/html', body: `<!doctype html>
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <link rel="stylesheet" href="/css/neconyan-mobile-shell.css">
+            <style>body{margin:0;--neco-ginger:#d28c64;--neco-on-accent:#111;--neco-ginger-hover:#d28c64}
+            #body{position:relative;height:400px;overflow:hidden}
+            #scroller{height:100%;overflow-y:auto}
+            #column{padding-top:20px}
+            .scratchpad-quick{display:flex;overflow-x:auto;gap:4px;height:44px;white-space:nowrap}
+            .scratchpad-quick button{flex:0 0 120px}
+            #tail{height:1200px}</style>
+            <div id="body"><div id="scroller"><div id="column"><div class="scratchpad-quick">${Array.from({ length: 6 }, (_, i) => `<button>Tab ${i}</button>`).join('')}</div></div><div id="tail"></div></div></div>
+            <script type="module">import {initMobileSwipeRails} from '/scripts/mobile-swipe-rails.js';
+            initMobileSwipeRails({leftLabel:'Scroll left',rightLabel:'Scroll right'});window.ready=true;</script>` }));
+        await page.goto('/swipe-rail-scroller-fixture');
+        await page.waitForFunction(() => window.ready);
+        const chrome = chromeFor(page, '.scratchpad-quick');
+        await expect(chrome.locator('.sb-mobile-rail-right')).toBeVisible();
+        // Measured in the same task as the scroll, before any frame can reposition it.
+        const gaps = await page.evaluate(() => {
+            const rail = document.querySelector('.scratchpad-quick');
+            const cue = document.querySelector('.sb-mobile-rail-chrome');
+            const gap = () => Math.abs(cue.getBoundingClientRect().top - rail.getBoundingClientRect().top);
+            const before = gap();
+            document.getElementById('scroller').scrollTop = 40;
+            return [before, gap()];
+        });
+        expect(gaps[0]).toBeLessThan(1);
+        expect(gaps[1]).toBeLessThan(1);
+        expect(await chrome.evaluate(el => el.offsetParent.id)).toBe('column');
+        // The column goes back to its own positioning once the strip fits.
+        await page.locator('.scratchpad-quick').evaluate(el => { while (el.children.length > 1) el.lastElementChild.remove(); });
+        await expect(chrome).toBeHidden();
+        await expect.poll(() => page.locator('#column').evaluate(el => el.style.position)).toBe('');
+        expect(errors).toEqual([]);
+    });
 });
