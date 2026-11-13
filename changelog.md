@@ -67,6 +67,7 @@
 - PR #657 (2026-11-13) `fix(companion): fail a run when the note is a refusal`
 - PR #658 (2026-11-13) `perf(connections): stop the model ID field lagging while typing`
 - PR #659 (2026-11-13) `feat(agents): add a Translator reply rewrite agent`
+- PR #660 (2026-11-13) `feat(mewmory): remember the player without taking control`
 
 ## v1.5.4
 
