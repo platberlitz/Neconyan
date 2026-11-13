@@ -75,6 +75,7 @@
 - PR #665 (2026-11-13) `docs(readme): add the 1.5.4 sections to the translations`
 - PR #667 (2026-11-13) `fix(prompts): resolve variables in prompt previews`
 - PR #668 (2026-11-13) `feat(presets): tidy the presets panel and make new prompts painless`
+- PR #669 (2026-11-13) `feat(parameters): tidy the parameters tab into clear cards`
 
 ## v1.5.4
 
