@@ -613,19 +613,28 @@
                                     </div>
                                     <div class="inline-drawer-content">
                                         <div class="range-block m-t-1">
-                                            <div class="justifyLeft" data-i18n="Main">Main</div>
+                                            <div class="range-block-title openai_restorable">
+                                                <span data-i18n="Main">Main</span>
+                                                <i class="editor_maximize fa-solid fa-maximize right_menu_button" data-for="main_prompt_quick_edit_textarea" title="Expand the editor" data-i18n="[title]Expand the editor"></i>
+                                            </div>
                                             <div class="wide100p">
                                                 <textarea id="main_prompt_quick_edit_textarea" class="text_pole textarea_compact autoSetHeight" rows="6" placeholder="&mdash;" data-pm-prompt="main"></textarea>
                                             </div>
                                         </div>
                                         <div class="range-block m-t-1">
-                                            <div class="justifyLeft" data-i18n="Auxiliary">Auxiliary</div>
+                                            <div class="range-block-title openai_restorable">
+                                                <span data-i18n="Auxiliary">Auxiliary</span>
+                                                <i class="editor_maximize fa-solid fa-maximize right_menu_button" data-for="nsfw_prompt_quick_edit_textarea" title="Expand the editor" data-i18n="[title]Expand the editor"></i>
+                                            </div>
                                             <div class="wide100p">
                                                 <textarea id="nsfw_prompt_quick_edit_textarea" class="text_pole textarea_compact autoSetHeight" rows="6" placeholder="&mdash;" data-pm-prompt="nsfw"></textarea>
                                             </div>
                                         </div>
                                         <div class="range-block m-t-1">
-                                            <div class="justifyLeft" data-i18n="Post-History Instructions">Post-History Instructions</div>
+                                            <div class="range-block-title openai_restorable">
+                                                <span data-i18n="Post-History Instructions">Post-History Instructions</span>
+                                                <i class="editor_maximize fa-solid fa-maximize right_menu_button" data-for="jailbreak_prompt_quick_edit_textarea" title="Expand the editor" data-i18n="[title]Expand the editor"></i>
+                                            </div>
                                             <div class="wide100p">
                                                 <textarea id="jailbreak_prompt_quick_edit_textarea" class="text_pole textarea_compact autoSetHeight" rows="6" placeholder="&mdash;" data-pm-prompt="jailbreak"></textarea>
                                             </div>
@@ -641,6 +650,7 @@
                                         <div class="range-block m-t-1">
                                             <div class="range-block-title openai_restorable">
                                                 <span data-i18n="Impersonation prompt">Impersonation prompt</span>
+                                                <i class="editor_maximize fa-solid fa-maximize right_menu_button" data-for="impersonation_prompt_textarea" title="Expand the editor" data-i18n="[title]Expand the editor"></i>
                                                 <div id="impersonation_prompt_restore" data-i18n="[title]Restore default prompt" title="Restore default prompt" class="right_menu_button">
                                                     <div class="fa-solid fa-clock-rotate-left"></div>
                                                 </div>
@@ -655,6 +665,7 @@
                                         <div class="range-block m-t-1">
                                             <div class="range-block-title openai_restorable">
                                                 <span data-i18n="World Info Format Template">World Info format template</span>
+                                                <i class="editor_maximize fa-solid fa-maximize right_menu_button" data-for="wi_format_textarea" title="Expand the editor" data-i18n="[title]Expand the editor"></i>
                                                 <div id="wi_format_restore" data-i18n="[title]Restore default format" title="Restore default format" class="right_menu_button">
                                                     <div class="fa-solid fa-clock-rotate-left"></div>
                                                 </div>
@@ -671,6 +682,7 @@
                                         <div class="range-block m-t-1">
                                             <div class="range-block-title openai_restorable">
                                                 <span data-i18n="Scenario Format Template">Scenario format template</span>
+                                                <i class="editor_maximize fa-solid fa-maximize right_menu_button" data-for="scenario_format_textarea" title="Expand the editor" data-i18n="[title]Expand the editor"></i>
                                                 <div id="scenario_format_restore" data-i18n="[title]Restore default format" title="Restore default format" class="right_menu_button">
                                                     <div class="fa-solid fa-clock-rotate-left"></div>
                                                 </div>
@@ -685,6 +697,7 @@
                                         <div class="range-block m-t-1">
                                             <div class="range-block-title openai_restorable">
                                                 <span data-i18n="Personality Format Template">Personality format template</span>
+                                                <i class="editor_maximize fa-solid fa-maximize right_menu_button" data-for="personality_format_textarea" title="Expand the editor" data-i18n="[title]Expand the editor"></i>
                                                 <div id="personality_format_restore" data-i18n="[title]Restore default format" title="Restore default format" class="right_menu_button">
                                                     <div class="fa-solid fa-clock-rotate-left"></div>
                                                 </div>
@@ -699,6 +712,7 @@
                                         <div class="range-block m-t-1">
                                             <div class="range-block-title openai_restorable">
                                                 <span data-i18n="Group Nudge Prompt Template">Group Nudge prompt template</span>
+                                                <i class="editor_maximize fa-solid fa-maximize right_menu_button" data-for="group_nudge_prompt_textarea" title="Expand the editor" data-i18n="[title]Expand the editor"></i>
                                                 <div id="group_nudge_prompt_restore" data-i18n="[title]Restore default format" title="Restore default format" class="right_menu_button">
                                                     <div class="fa-solid fa-clock-rotate-left"></div>
                                                 </div>
@@ -715,6 +729,7 @@
                                         <div class="range-block m-t-1">
                                             <div class="range-block-title openai_restorable">
                                                 <span data-i18n="New Chat">New Chat</span>
+                                                <i class="editor_maximize fa-solid fa-maximize right_menu_button" data-for="newchat_prompt_textarea" title="Expand the editor" data-i18n="[title]Expand the editor"></i>
                                                 <div id="newchat_prompt_restore" data-i18n="[title]Restore new chat prompt" title="Restore new chat prompt" class="right_menu_button">
                                                     <div class="fa-solid fa-clock-rotate-left"></div>
                                                 </div>
@@ -731,6 +746,7 @@
                                         <div class="range-block m-t-1">
                                             <div class="range-block-title openai_restorable">
                                                 <span data-i18n="New Group Chat">New Group Chat</span>
+                                                <i class="editor_maximize fa-solid fa-maximize right_menu_button" data-for="newgroupchat_prompt_textarea" title="Expand the editor" data-i18n="[title]Expand the editor"></i>
                                                 <div id="newgroupchat_prompt_restore" title="Restore default prompt" data-i18n="[title]Restore new group chat prompt" class="right_menu_button">
                                                     <div class="fa-solid fa-clock-rotate-left"></div>
                                                 </div>
@@ -747,6 +763,7 @@
                                         <div class="range-block m-t-1">
                                             <div class="range-block-title openai_restorable">
                                                 <span data-i18n="New Example Chat">New Example Chat</span>
+                                                <i class="editor_maximize fa-solid fa-maximize right_menu_button" data-for="newexamplechat_prompt_textarea" title="Expand the editor" data-i18n="[title]Expand the editor"></i>
                                                 <div id="newexamplechat_prompt_restore" title="Restore new example chat prompt" data-i18n="[title]Restore default prompt" class="right_menu_button">
                                                     <div class="fa-solid fa-clock-rotate-left"></div>
                                                 </div>
@@ -763,6 +780,7 @@
                                         <div class="range-block m-t-1">
                                             <div class="range-block-title openai_restorable">
                                                 <span data-i18n="Continue nudge">Continue nudge</span>
+                                                <i class="editor_maximize fa-solid fa-maximize right_menu_button" data-for="continue_nudge_prompt_textarea" title="Expand the editor" data-i18n="[title]Expand the editor"></i>
                                                 <div id="continue_nudge_prompt_restore" data-i18n="[title]Restore new chat prompt" title="Restore new chat prompt" class="right_menu_button">
                                                     <div class="fa-solid fa-clock-rotate-left"></div>
                                                 </div>
@@ -777,8 +795,9 @@
                                             </div>
                                         </div>
                                         <div class="range-block m-t-1">
-                                            <div class="range-block-title justifyLeft" data-i18n="Replace empty message">
-                                                Replace empty message
+                                            <div class="range-block-title openai_restorable">
+                                                <span data-i18n="Replace empty message">Replace empty message</span>
+                                                <i class="editor_maximize fa-solid fa-maximize right_menu_button" data-for="send_if_empty_textarea" title="Expand the editor" data-i18n="[title]Expand the editor"></i>
                                             </div>
                                             <div class="toggle-description justifyLeft">
                                                 <span data-i18n="Send this text instead of nothing when the text box is empty.">
