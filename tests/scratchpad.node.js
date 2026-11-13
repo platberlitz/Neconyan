@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
+import { createHash } from 'node:crypto';
 import test, { after } from 'node:test';
 import express from 'express';
 import { fixture, png } from './roleplay-transactions-fixture.js';
@@ -34,6 +35,7 @@ const { characterToolReply, scratchpadCharacterTools } = await import('../src/sc
 const { runChatProfile } = await import('../src/generation/service.js');
 const { replySwipes, appendReplySwipe, exportReply, MAX_REPLY_SWIPES } = await import('../public/scripts/scratchpad/swipes.js');
 const { scratchpadPrefill, joinScratchpadPrefill } = await import('../public/scripts/scratchpad/prefill.js');
+const { imageChangeHash } = await import('../src/scratchpad/image-state.js');
 
 after(() => cancelAutoSaves());
 
@@ -159,6 +161,56 @@ function sendBody(session, extra = {}) {
         ...extra,
     };
 }
+
+function saveGeneratedPicture(a, session) {
+    const change = { type: 'image', action: 'generate', target: 'image', prompt: 'A red observatory.', negative: '', reason: '' };
+    const url = '/user/images/Scratchpad/scratchpad-vision.png';
+    const filename = path.join(a.directories.root, url.slice(1));
+    fs.mkdirSync(path.dirname(filename), { recursive: true });
+    fs.writeFileSync(filename, png);
+    a.mutate(SOURCE, bucket => store.findSession(bucket, session.id).messages.push(
+        { id: 'ask-picture', role: 'user', text: 'Draw an observatory.', created: new Date().toISOString() },
+        { id: 'picture', role: 'assistant', assistant: 'taro', state: 'done', created: new Date().toISOString(),
+            text: '```scratchpad-change\n' + JSON.stringify(change) + '\n```', images: { 0: { state: 'done', target: 'image', url,
+                changeHash: imageChangeHash(change), imageHash: createHash('sha256').update(png).digest('hex') } } },
+    ));
+}
+
+test('Scratchpad sends a saved generated picture with feedback, but not when retrying its original proposal', async t => {
+    const a = account(t, { oai: { media_inlining: true } });
+    const session = startSession(a);
+    saveGeneratedPicture(a, session);
+    registerScratchpadJobs({ generate: async () => ({ text: 'The roof should be blue.', usage: {} }) });
+    const accepted = await acceptScratchpadReply(a.request(), sendBody(session, { text: 'Make the roof blue.' }));
+    const messages = readArtifact(a.directories, accepted.job.id, 'request').messages;
+    const imageMessage = messages.find(message => Array.isArray(message.content));
+    assert.equal(imageMessage?.role, 'user');
+    assert.equal(imageMessage.content.find(part => part.type === 'image_url').image_url.url, `data:image/png;base64,${png.toString('base64')}`);
+    assert.match(imageMessage.content[0].text, /generated image.*proposal 1/i);
+    assert.equal(messages.at(-1).content, 'Make the roof blue.');
+    await runJob(getJob(a.directories, accepted.job.id));
+    const retry = await acceptScratchpadReply(a.request(), sendBody(session, { regenerate: 'picture' }));
+    assert.equal(readArtifact(a.directories, retry.job.id, 'request').messages.some(message => Array.isArray(message.content)), false);
+});
+
+test('a round table sends generated pictures only to its vision-capable speakers', async t => {
+    const a = account(t, { oai: { media_inlining: true, openai_model: 'gpt-3.5-turbo' } });
+    const filename = path.join(a.directories.root, SETTINGS_FILE);
+    const settings = JSON.parse(fs.readFileSync(filename, 'utf8'));
+    settings.extension_settings.connectionManager.profiles.push({ id: 'text-only', api: 'openai', model: 'gpt-3.5-turbo' });
+    fs.writeFileSync(filename, JSON.stringify(settings));
+    const session = startSession(a, { roundTable: true, participants: ['miso', 'taro', 'nori'],
+        assistantConnections: { taro: { kind: 'profile', profileId: 'text-only' } } });
+    saveGeneratedPicture(a, session);
+    const accepted = await acceptScratchpadReply(a.request(), sendBody(session, { text: 'How does the picture look?' }));
+    const { replies } = readArtifact(a.directories, accepted.job.id, 'request');
+    assert.equal(replies.length, 3);
+    for (const reply of replies) {
+        const imageMessages = reply.messages.filter(message => Array.isArray(message.content));
+        assert.equal(imageMessages.length, reply.assistant === 'taro' ? 0 : 1);
+        if (imageMessages.length) assert.match(imageMessages[0].content[0].text, /from taro, proposal 1/);
+    }
+});
 
 function readInstructions(a) {
     return store.withScratchpad(a.base, readInstructionsLocked);

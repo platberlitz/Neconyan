@@ -38,9 +38,9 @@ async function openRail(page, phone) {
     await page.getByRole('tab', { name: 'Chat', exact: true }).click();
 }
 
-async function sendProposal(page, app, account, text) {
+async function sendProposal(page, app, account, text, prompt = 'Suggest the requested picture for me to review.') {
     app.provider.mode.reply = { choices: [{ message: { role: 'assistant', content: text } }] };
-    await page.locator('.scratchpad-composer').fill('Suggest the requested picture for me to review.');
+    await page.locator('.scratchpad-composer').fill(prompt);
     const waiting = page.waitForResponse('**/api/scratchpad/send');
     await page.locator('.scratchpad-send').click();
     const response = await waiting;
@@ -69,6 +69,7 @@ for (const { phone, textProfile } of [{ phone: true, textProfile: false }, { pho
         const picture = mockPicture();
         imageProvider.mode.reply = { data: [{ b64_json: picture.toString('base64') }] };
         const account = await app.account({ phone, textProfile, contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {}, configureSettings: saved => {
+            saved.oai_settings.media_inlining = true;
             saved.extension_settings['quick-image-gen'] = { provider: 'gptimage', gptImageKey: 'fixture-image-key', gptImageModel: 'gpt-image-1',
                 gptImageProxyUrl: imageProvider.url, width: 1024, height: 1024, style: 'none', appendQuality: false, useSTStyle: false,
                 reviewBeforeGenerate: false, setupWizardSeen: true };
@@ -107,6 +108,18 @@ for (const { phone, textProfile } of [{ phone: true, textProfile: false }, { pho
         await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'));
         await openRail(page, phone);
         await expect(plain.locator('.scratchpad-generated-image')).toBeVisible();
+        expect(imageProvider.calls).toHaveLength(1);
+        await sendProposal(page, app, account, 'I can help adjust the roof.', 'Make the roof blue in the picture you generated.');
+        const feedback = app.provider.calls.at(-1);
+        if (textProfile) {
+            expect(feedback.prompt).toContain('Make the roof blue');
+            expect(feedback.prompt).not.toContain('data:image/');
+        } else {
+            const attached = feedback.messages.flatMap(message => Array.isArray(message.content) ? message.content : []).filter(part => part.type === 'image_url');
+            expect(attached).toHaveLength(1);
+            expect(attached[0].image_url.url).toBe(`data:image/png;base64,${picture.toString('base64')}`);
+            expect(feedback.messages.at(-1).content).toContain('Make the roof blue');
+        }
         expect(imageProvider.calls).toHaveLength(1);
         await page.locator('.scratchpad-close').click();
         await page.evaluate(async avatar => (await import('/scripts/neconyan-conversation/chrome.js')).openConversationWorkspaceForAvatar(avatar), account.avatar);
