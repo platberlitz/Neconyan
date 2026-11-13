@@ -3071,6 +3071,62 @@ body.neconyan #left-nav-panel .sb-preset-actions > .menu_button {
     border-radius: 6px; font-size: 13px; font-weight: 500; line-height: 1.15; white-space: nowrap;
 }
 body.neconyan #left-nav-panel .sb-preset-actions > .menu_button > i { font-size: 12px; }
+/* Parameters tab: each group is a card, and every row reads label, help, then control. */
+body.neconyan #openai-tab-content-parameters > .sb-openai-settings-drawer { margin: 0 0 8px; border: 1px solid var(--neco-border); border-radius: 8px; background: var(--neco-surface); }
+body.neconyan #openai-tab-content-parameters > .sb-openai-settings-drawer > .inline-drawer-header { min-height: 44px; padding: 10px 14px; border: 0; gap: 12px; }
+body.neconyan #openai-tab-content-parameters > .sb-openai-settings-drawer > .inline-drawer-header b { font-size: 15px; font-weight: 600; }
+body.neconyan #openai-tab-content-parameters > .sb-openai-settings-drawer > .inline-drawer-header > .flex-container { gap: 2px; }
+body.neconyan #openai-tab-content-parameters > .sb-openai-settings-drawer > .inline-drawer-header .sb-group-meta { font-size: 12px; color: var(--neco-muted); }
+body.neconyan #openai-tab-content-parameters > .sb-openai-settings-drawer > .inline-drawer-content { display: block; padding: 0 14px 2px; }
+body.neconyan #openai-tab-content-parameters > .sb-openai-settings-drawer > .inline-drawer-content > * { margin: 0; padding: 12px 0; border-top: 1px solid var(--neco-border); }
+body.neconyan #openai-tab-content-parameters > .sb-openai-settings-drawer > .inline-drawer-content > .quick_context_size_container { padding-top: 0; border-top: 0; }
+body.neconyan #openai-tab-content-parameters :is(.range-block-title, .toggle-description, .justifyLeft, .textAlignCenter) { justify-content: flex-start; text-align: left; }
+body.neconyan #openai-tab-content-parameters .range-block-title { margin: 0; font-size: 13px; font-weight: 600; color: var(--neco-ink); }
+body.neconyan #openai-tab-content-parameters .range-block-title > small { font-size: inherit; }
+body.neconyan #openai-tab-content-parameters .toggle-description { margin: 0; font-size: 12px; line-height: 1.4; color: var(--neco-muted); opacity: 1; }
+body.neconyan #openai-tab-content-parameters :is(strong.toggle-description, .toggle-description :is(strong, b)) { font-weight: 600; color: var(--neco-ink); }
+body.neconyan #openai-tab-content-parameters .range-block { gap: 6px; }
+body.neconyan #openai-tab-content-parameters .range-block > .checkbox_label { margin: 0; padding-block: 4px; }
+body.neconyan #openai-tab-content-parameters .flex-container.flexFlowColumn.textAlignCenter { align-items: stretch; margin: 0; gap: 6px; }
+body.neconyan #openai-tab-content-parameters .oneline-dropdown { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; gap: 6px; width: 100%; margin: 0; }
+body.neconyan #openai-tab-content-parameters .oneline-dropdown > :not(label, select, .sb-setting-inline-copy) { grid-column: 1 / -1; }
+body.neconyan #openai-tab-content-parameters .oneline-dropdown > label { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; font-weight: 600; }
+body.neconyan #openai-tab-content-parameters .oneline-dropdown > select,
+body.neconyan #openai-tab-content-parameters .range-block > .wide100p > :is(select, input[type='number']) { width: 100%; min-width: 0; max-width: none; margin: 0; }
+body.neconyan #openai-tab-content-parameters .oneline-dropdown > .sb-setting-inline-copy { width: auto; min-width: 0; max-width: none; margin: 0; }
+body.neconyan #openai-tab-content-parameters .oneline-dropdown > .sb-setting-inline-copy > label { margin: 0 0 2px; font-size: 13px; font-weight: 600; }
+@container (min-width: 440px) {
+    body.neconyan #openai-tab-content-parameters .oneline-dropdown,
+    body.neconyan #openai-tab-content-parameters .range-block:has(> .range-block-title + .wide100p > :is(select, input[type='number'])) { grid-template-columns: minmax(0, 1fr) minmax(140px, 13rem); align-items: center; column-gap: 16px; }
+    body.neconyan #openai-tab-content-parameters .oneline-dropdown > select { grid-column: 2; grid-row: 1; }
+}
+body.neconyan #openai-tab-content-parameters .sb-openai-settings-section > .sb-openai-settings-section-header { margin: 0 0 8px; padding: 0; border: 0; }
+body.neconyan #openai-tab-content-parameters .sb-openai-settings-section-header small:has(> #character_names_display, > #continue_postfix_display) { display: none; }
+body.neconyan #openai-tab-content-parameters .sb-openai-settings-section-body:has(> .checkbox_label > input[type='radio']) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+body.neconyan #openai-tab-content-parameters .sb-openai-settings-section-body:has(> .checkbox_label > input[type='radio'] ~ small) { grid-template-columns: minmax(0, 1fr); }
+@container (min-width: 560px) {
+    body.neconyan #openai-tab-content-parameters .sb-openai-settings-section-body:has(> .checkbox_label > input[type='radio']) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    body.neconyan #openai-tab-content-parameters .sb-openai-settings-section-body:has(> .checkbox_label > input[type='radio'] ~ small) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+body.neconyan #openai-tab-content-parameters .checkbox_label:has(> input[type='radio']) {
+    align-content: flex-start; margin: 0; padding: 8px 10px; border: 1px solid var(--neco-border); border-radius: 8px;
+    cursor: pointer; transition: border-color 150ms ease-out, background-color 150ms ease-out;
+}
+body.neconyan #openai-tab-content-parameters .checkbox_label:has(> input[type='radio']:checked) { border-color: var(--neco-ginger); background: color-mix(in srgb, var(--neco-ginger) 14%, var(--neco-surface)); }
+body.neconyan #openai-tab-content-parameters .checkbox_label:has(> input[type='radio']:focus-visible) { outline: 2px solid var(--neco-ginger); outline-offset: 2px; }
+body.neconyan #openai-tab-content-parameters .checkbox_label > small { font-size: 12px; line-height: 1.35; color: var(--neco-muted); }
+body.neconyan #openai-tab-content-parameters .sb-openai-settings-section-body > .range-block { margin: 0; }
+body.neconyan #openai-tab-content-parameters .sb-openai-settings-section-body > .range-block + .range-block { margin-top: 14px; }
+body.neconyan #openai-tab-content-parameters .range-block-title.openai_restorable > span { flex: 1 1 auto; min-width: 0; }
+body.neconyan #openai-tab-content-parameters #sb-openai-prompt-templates textarea.text_pole { max-height: min(16rem, 45vh); overflow-y: auto; resize: vertical; }
+body.neconyan #openai-tab-content-parameters #openai_preset_linking { gap: 0; }
+body.neconyan #openai-tab-content-parameters #openai_preset_linking > .sb-setting-inline-copy { width: 100%; max-width: none; margin: 0; padding: 12px 0; }
+body.neconyan #openai-tab-content-parameters #openai_preset_linking > .sb-setting-inline-copy:first-child { padding-top: 0; }
+body.neconyan #openai-tab-content-parameters #openai_preset_linking > .sb-setting-inline-copy:last-child { padding-bottom: 0; }
+body.neconyan #openai-tab-content-parameters #openai_preset_linking > .sb-setting-inline-copy + .sb-setting-inline-copy { border-top: 1px solid var(--neco-border); }
+@media (prefers-reduced-motion: reduce) {
+    body.neconyan #openai-tab-content-parameters .checkbox_label:has(> input[type='radio']) { transition: none; }
+}
 body.neconyan .neconyan-connection-management > summary,
 body.neconyan .neconyan-model-rotation > summary,
 body.neconyan .neconyan-provider-help > summary,
