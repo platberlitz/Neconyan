@@ -19,6 +19,7 @@ import { getPromptPreview } from './prompt-preview.js';
 import { clearPromptSetVariables } from './prompt-variable-cleanup.js';
 import { promptSetsVariables } from './prompt-variable-names.js';
 import { withReadOnlyVariables } from './variable-read-only.js';
+import { createVariablePreview } from './variable-preview.js';
 import { RUNTIME_AGENTS_IDENTIFIER, resolveInChatAgentTokenUsage } from './in-chat-agent-inspection.js';
 import { PINNED_PROMPTS_FIELD, normalizePinnedPromptIds, setPinnedPromptId } from './pinned-prompt-toggles.js';
 import {
@@ -2030,10 +2031,11 @@ class PromptManager {
                 content: renderedMarkerPrompt.content,
                 identifier: selectedPrompt.identifier,
             }
-            : withReadOnlyVariables(() => this.preparePrompt({
+            : this.preparePromptPreview({
+                ...selectedPrompt,
                 role: roleField.value || 'system',
                 content: promptField.value || '',
-            }));
+            });
         const previewContent = preparedPrompt.content || '';
 
         roleValue.textContent = preparedPrompt.role || 'system';
@@ -2051,6 +2053,18 @@ class PromptManager {
             }
             this.log('Prompt preview token counting failed: ' + error.message);
         }
+    }
+
+    preparePromptPreview(draft) {
+        return createVariablePreview()(() => {
+            // Use the same setter-first order as a reply, substituting the unsaved
+            // draft in place so a setter is never evaluated twice.
+            const prompts = this.getPromptCollection('normal', draft);
+            const included = this.getPromptOrderForCharacter(this.activeCharacter)
+                .some(entry => entry.identifier === draft.identifier && entry.enabled && this.shouldTrigger(draft, 'normal'));
+            // Disabled prompts (including main) and new drafts can still be previewed.
+            return included ? prompts.get(draft.identifier) : this.preparePrompt(draft);
+        });
     }
 
     /**
@@ -2103,16 +2117,17 @@ class PromptManager {
     /**
      * Returns a full list of prompts whose content markers have been substituted.
      * @param {string} generationType - The type of generation, e.g., 'continue' or 'quiet'.
+     * @param {Prompt|null} draft - An unsaved prompt to substitute during preview.
      * @returns {PromptCollection} A PromptCollection object
      */
-    getPromptCollection(generationType) {
+    getPromptCollection(generationType, draft = null) {
         generationType = String(generationType || 'normal').toLowerCase().trim();
         const promptCollection = new PromptCollection();
         const promptOrder = this.getPromptOrderForCharacter(this.activeCharacter);
         const includedPrompts = [];
 
         promptOrder.forEach(entry => {
-            const prompt = this.getPromptById(entry.identifier);
+            const prompt = draft?.identifier === entry.identifier ? draft : this.getPromptById(entry.identifier);
             const allowedTrigger = entry.enabled && this.shouldTrigger(prompt, generationType);
 
             if (!prompt) {
