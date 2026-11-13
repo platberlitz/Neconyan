@@ -647,7 +647,7 @@ test('a background recall cannot restore vectors cleared by an index reset', asy
     mutateState(directories, locator, state => { state.enabled = true; });
     const saved = readConfig(directories);
     const documents = searchDocuments(readState(directories, locator), Infinity, saved);
-    assert.equal(documents.length, 3);
+    assert.equal(documents.length, 4, 'three messages and the player name are indexed');
     const oldDocument = documents[0];
     const version = roleVersion(saved, 'embedding');
     mutateState(directories, locator, state => {
@@ -672,7 +672,7 @@ test('a background recall cannot restore vectors cleared by an index reset', asy
 
     let state = readState(directories, locator);
     let paidIds = Object.keys(state.index.build?.vectors || {});
-    assert.equal(paidIds.length, 2, 'the two vectors paid for by this recall are retained in the staged build');
+    assert.equal(paidIds.length, 3, 'the two new message vectors and player name vector are retained in the staged build');
     assert.ok(!paidIds.includes(oldDocument.id), 'a vector loaded before the reset is not restored');
     assert.equal(state.index.version, '', 'the reset working index is not replaced by a partial new model');
     assert.ok(state.index.pending);
@@ -763,7 +763,7 @@ test('a partial new embedding model stays staged until a full rebuild completes'
     mutateState(directories, locator, state => { state.enabled = true; });
     const saved = readConfig(directories);
     const documents = searchDocuments(readState(directories, locator), Infinity, saved);
-    assert.equal(documents.length, 40);
+    assert.equal(documents.length, 41, 'forty messages and the player name are indexed');
     const oldDocument = documents[0];
     mutateState(directories, locator, state => {
         state.index = { version: 'old-embedding-version',
@@ -786,7 +786,7 @@ test('a partial new embedding model stays staged until a full rebuild completes'
         { embedFn, scheduleBackground: false });
     state = readState(directories, locator);
     assert.equal(state.index.version, roleVersion(saved, 'embedding'), 'the next batch completes and publishes the new model');
-    assert.equal(Object.keys(state.index.vectors).length, 40);
+    assert.equal(Object.keys(state.index.vectors).length, 41);
     assert.equal(state.index.pending, false);
 });
 
@@ -825,14 +825,14 @@ test('a background recall keeps vectors it already paid for when a record change
 
     let state = readState(directories, locator);
     let ids = Object.keys(state.index.build?.vectors || {});
-    assert.equal(ids.length, 3, 'the three unchanged message vectors are staged for the new model');
+    assert.equal(ids.length, 4, 'the three unchanged message vectors and player name vector are staged for the new model');
     assert.ok(!ids.includes('event:key'), 'the changed record is not served from its stale vector');
     assert.equal(state.index.version, '', 'the incomplete new model is not published as the active index');
     assert.equal(mergeVectorIndex(state, readConfig(directories), [state.index.build]).remaining, 1);
     assert.ok(state.index.pending);
     const otherVersion = structuredClone(readConfig(directories));
     otherVersion.roles.embedding.modelRevision = 'next-revision';
-    assert.equal(mergeVectorIndex(state, otherVersion, [state.index.build]).remaining, 4,
+    assert.equal(mergeVectorIndex(state, otherVersion, [state.index.build]).remaining, 5,
         'vectors from a different embedding revision are never reused');
     const chatOnly = structuredClone(readConfig(directories));
     chatOnly.roles.embedding.allowedData = ['chat'];
@@ -851,7 +851,7 @@ test('a background recall keeps vectors it already paid for when a record change
     assert.equal(embedded.length, 1, 'the next recall only embeds the changed record, not the unchanged messages');
     assert.ok(embedded[0].includes('Mara hid the silver key'));
     ids = Object.keys(state.index.vectors);
-    assert.equal(ids.length, 4);
+    assert.equal(ids.length, 5);
     assert.ok(ids.includes('event:key'));
     assert.equal(state.index.pending, false);
 });

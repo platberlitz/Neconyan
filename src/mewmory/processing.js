@@ -52,7 +52,7 @@ function seedCharacters(state) {
         if (state.records.some(record => record.kind === 'entity' && record.entityId === revision.entityId && recordEligible(state, record))) continue;
         const record = validateRecord(state, {
             id: 'entity:' + revision.entityId, kind: 'entity', entityId: revision.entityId,
-            name: revision.speaker, text: revision.entityId === 'player' ? revision.text : revision.speaker,
+            name: revision.speaker, text: revision.speaker,
             isCharacter: revision.entityId !== 'player',
             refs: [ref], subjectIds: [revision.entityId],
         }, { asOf: -1, origin: 'character_card' });

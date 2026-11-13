@@ -2534,7 +2534,7 @@ for (const change of ['author correction', 'model settings']) {
         const state = readState(directories, locator);
         assert.equal(state.jobs.at(-1).status, 'failed');
         assert.equal(Object.keys(state.coverage).length, 0);
-        if (change === 'author correction') assert.equal(state.records[0].text, 'Author correction survives.');
+        if (change === 'author correction') assert.equal(state.records.find(record => record.id === 'event:gift').text, 'Author correction survives.');
     });
 }
 

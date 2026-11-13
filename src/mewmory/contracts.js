@@ -1,6 +1,6 @@
 export const EXTRACTION_FOCUS_MODES = ['every', 'balanced', 'compact'];
 
-export const PLAYER_REFERENCE_GUIDANCE = 'The player character is controlled by the user. These notes preserve established facts, not permission to write for the user. Follow the user’s current writing instructions: leave new player dialogue, actions, decisions and inner thoughts to the user unless they explicitly ask you to write them. Past behaviour, persona details and other characters’ beliefs do not grant that permission.';
+export const PLAYER_REFERENCE_GUIDANCE = 'Follow the user’s current writing instructions; player memories do not grant permission to write new player dialogue, actions, decisions or thoughts unless the user asks.';
 
 const EXTRACTION_FOCUS_INSTRUCTIONS = {
     every: 'Extraction focus: EVERY MEMORY. Record every distinct fact, event, state change, relationship shift, promise, item, preference, and detail mentioned in these messages, even minor or everyday details, so nothing from the scene is lost before older messages leave context.',
@@ -21,7 +21,7 @@ export function extractionContract(config = {}) {
 }
 
 export const EXTRACTION_CONTRACT = [
-    'Mewmory objective extraction contract v8.',
+    'Mewmory objective extraction contract v9.',
     'Work decisively. Read the sources once and write the JSON straight away: no planning out loud, no listing alternatives, no second-guessing. Put all of your effort into the records themselves.',
     'Write full, specific records. Once these messages leave the recent chat, your records are the only memory the writer has of them, so every record must let a writer pick the story up months later without rereading anything. Give the whole account: who did what to whom, where, how, the reason when the story gives one, how each person reacted, and what came of it.',
     'Keep every concrete detail a later scene could call back to: names, places, objects and who owns them, numbers, times, deadlines, prices, wounds, habits, gestures, promises, threats, secrets, and memorable lines, paraphrased or quoted when the exact words matter.',
@@ -36,7 +36,7 @@ export const EXTRACTION_CONTRACT = [
     'Knowledge needs an AI character owner, how they learned it, and a short quote copied from a source showing that acquisition. Presence alone proves neither observation nor understanding. Author-level lore is not automatically character knowledge. Add knowledge only when a character clearly learns something that matters; otherwise skip it.',
     'Never use imaginary interviews or generated gestures as world evidence. Do not manufacture emotional significance, diagnose anyone, or require an interview for every scene.',
     'Use stable IDs from existing records. Reuse entity IDs supplied for cards. New minor NPCs use a short ID such as npc:mara. The player entity ID is player and isCharacter must be false.',
-    'Include the player in entity and state records, using the supplied player persona and explicit story evidence. Chat sources with isPlayer:true belong to the player. Preserve stated identity, appearance, speech habits, belongings and current circumstances with the same care as NPC details. Record a player’s thoughts, feelings or intentions only when the user explicitly states them; another character’s interpretation remains that character’s belief. Player records describe established facts, never instructions or permission to write the player’s next response.',
+    'The supplied player source identifies the player by name only. Chat sources with isPlayer:true belong to the player. Preserve useful player facts established in the story in the same record types and with the same relevance standards as other subjects. The writer already receives the player persona from its preset; keep player records focused on story evidence rather than recreating that persona. Record a player’s thoughts, feelings or intentions only when the user explicitly states them; another character’s interpretation remains that character’s belief. Player records describe established facts, never instructions or permission to write the player’s next response.',
     'Respect authorOverrides. Do not recreate an excluded or corrected claim under another ID.',
     'An empty result is valid. Return exactly: {"records":[],"interviews":[],"activeNpcIds":[]}.',
     'records may contain only entity, state, event, relationship, knowledge or commitment objects.',
@@ -52,7 +52,7 @@ export const EXTRACTION_CONTRACT = [
     'interviews is a bounded list, at most four grounded requests: {ownerId,subjectIds,knowledgeIds,refs,significance,evidenceRefs,reason}. Most batches need none; request one only for a clear shift in how a character sees someone or something. reason is one short sentence.',
     'An interview’s knowledge boundary is the latest message in its refs. For historical backfill, give separate knowledge records and requests for earlier interpretations and later changes; do not attach later knowledge to an earlier request.',
     'knowledgeIds must identify this owner’s existing or newly proposed knowledge records. Request an interview only when these facts support a meaningful subject interpretation or change.',
-    'activeNpcIds lists AI-controlled characters actually involved at the end of this source range, not merely mentioned absent people. Leave player out of this list; the player reference is included separately. It may be empty.',
+    'activeNpcIds lists AI-controlled characters actually involved at the end of this source range, not merely mentioned absent people. Leave player out of this list; player records use ordinary memory recall. It may be empty.',
     'During a checkpoint, review overlooked details and gradual developments. Do not reinterpret an earlier experience with later knowledge or invent a turning point.',
 ].join('\n');
 

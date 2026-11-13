@@ -109,7 +109,6 @@ async function markedHidingFixture(t, { excludeHistory, channel }) {
     saveConfig(fixture.directories, config);
     await enableChat(fixture.directories);
     mutateState(fixture.directories, locator, state => {
-        syncSources(state, messages, []);
         const policy = processingVersion(readConfig(fixture.directories));
         const marks = channel === 'checkpoint' ? state.checkpoints : state.coverage;
         for (const ref of state.timeline) marks[refKey(ref)] = policy;

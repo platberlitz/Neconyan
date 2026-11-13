@@ -33,6 +33,9 @@ for (const phone of [false, true]) {
         });
         app.provider.mode.reply = body => {
             const input = JSON.parse(body.messages.at(-1).content);
+            expect(input.sources.find(source => source.entityId === 'player').text).toBe('Robin');
+            expect(input.existing.find(record => record.entityId === 'player').text).toBe('Robin');
+            expect(JSON.stringify(input)).not.toContain('mapmaker with a blue coat and a brass compass');
             const refs = input.sources.filter(source => source.type === 'chat').map(({ id, revision }) => ({ id, revision }));
             return { choices: [{ message: { role: 'assistant', content: JSON.stringify({
                 records: [{ id: 'state:player', kind: 'state', entityId: 'player', text: 'Robin has given Nova the harbour key.', refs }],
@@ -65,7 +68,8 @@ for (const phone of [false, true]) {
         const workspace = page.locator('#mewmory-workspace');
         await workspace.getByRole('tab', { name: 'Now', exact: true }).click();
         const player = workspace.locator('.mewmory-section').filter({ has: page.getByRole('heading', { name: 'Your character', exact: true }) });
-        await expect(player).toContainText('blue coat and a brass compass');
+        await expect(player).toContainText('Robin');
+        await expect(player).not.toContainText('blue coat and a brass compass');
         await expect(player).toContainText('Robin has given Nova the harbour key.');
         await expect(player).toContainText('unless you ask the AI to write them');
         await expect(player.locator('.mewmory-badge')).toHaveText('Your character');
@@ -100,8 +104,9 @@ for (const phone of [false, true]) {
         await editor.getByRole('button', { name: 'Cancel edit', exact: true }).click();
         await workspace.getByRole('button', { name: 'Preview next memory', exact: true }).click();
         const preview = workspace.locator('.mewmory-prompt');
-        await expect(preview).toContainText('user-controlled player reference');
-        await expect(preview).toContainText('unless they explicitly ask you to write them');
+        await expect(preview).not.toContainText('user-controlled player reference');
+        await expect(preview).not.toContainText('mapmaker with a blue coat and a brass compass');
+        await expect(preview).toContainText('unless the user asks');
         await expect(preview).toContainText('Robin has given Nova the harbour key.');
         expect(app.provider.calls.filter(call => call.model === 'extractor').length).toBeGreaterThan(0);
         expect(app.provider.calls.some(call => call.model === 'pawspective')).toBe(false);
