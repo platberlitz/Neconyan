@@ -63,6 +63,7 @@
 - PR #653 (2026-11-12) `fix(prompts): fill setvar toggles before prompts that read them`
 - PR #654 (2026-11-13) `fix(presets): move preset linking into Parameters`
 - PR #655 (2026-11-13) `fix(mewmory): add shared tab scroll controls`
+- PR #656 (2026-11-13) `fix(mobile): keep rail scroll arrows on their rail while the page scrolls`
 
 ## v1.5.4
 
