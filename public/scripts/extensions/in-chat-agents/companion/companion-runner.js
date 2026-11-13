@@ -88,6 +88,7 @@ import { buildDiceDirective, findDiceRollsForGeneration } from './dice.js';
 import { runDiceCompanionLocally } from './dice-companion-local.js';
 import { getExpressionsAgentCastPrompt } from '../../expressions/expression-sets.js';
 import { markTrackerRepairRunAgent } from '../tracker-repair-run.js';
+import { isLikelyCompanionNoteRefusal } from '../prompt-transform-refusal.js';
 import { findTrackerBlocks, getCompanionTrackerAutoRepairPayload, inspectCompanionTrackerOutput, inspectTrackerState, normalizeCompanionTrackerRepairPayload, TRACKER_REPAIR_INSTRUCTION } from '../tracker-state.js';
 
 export { COMPANION_RESULTS_EXTRA_KEY };
@@ -748,6 +749,17 @@ function markCompanionConnectionFailure(error) {
     const failure = error instanceof Error ? error : new Error(String(error || 'Companion request failed.'));
     failure.companionFailureKind ??= 'api';
     throw failure;
+}
+
+function isCompanionRefusal(text) {
+    return getGlobalSettings()?.promptTransformRefusalGuard !== false
+        && isLikelyCompanionNoteRefusal(capResultContent(text));
+}
+
+function companionRefusalError() {
+    const error = new Error(COMPANION_FAILURE_MESSAGES.refusal);
+    error.companionFailureKind = 'refusal';
+    return error;
 }
 
 const companionRuns = new WeakMap();
@@ -1872,8 +1884,10 @@ async function runSingleCompanionAgent(agent, messageIndex, generationType, canc
             }
             onGenerationStart?.();
             onGenerationStart = null;
-            const acceptOutput = agent.category !== 'tracker' ? undefined : output => {
+            const acceptOutput = output => {
                 const text = capResultContent(output);
+                if (isCompanionRefusal(text)) return false;
+                if (agent.category !== 'tracker') return true;
                 const display = trackerDisplayOptions(agent, messageIndex);
                 if (repair) return !!normalizeCompanionTrackerRepairPayload(agent, text, { ...display, previousText: previous }).payload;
                 if (repairPass) return !!getCompanionTrackerAutoRepairPayload(agent, text, {
@@ -1908,6 +1922,12 @@ async function runSingleCompanionAgent(agent, messageIndex, generationType, canc
             if (!repair && agent.category === 'tracker') {
                 attempt = await cleanUpCompanionTrackerOutput(agent, attempt, generate, extraContextSections, trackerDisplayOptions(agent, messageIndex));
             }
+            // A refusal is a failed run, not a note. Checked after tracker cleanup so a tracker
+            // that starts with prose still gets its repair attempt, and before post passes so a
+            // refusal never reaches the saved result.
+            if (isCompanionRefusal(attempt.rawContent)) {
+                throw companionRefusalError();
+            }
             const { rawContent, tokenUsage } = attempt;
             let content = await applyCompanionOutputPostPassesToContent(agent, rawContent, messageIndex, cancelRevision);
             if (!isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
@@ -1916,6 +1936,9 @@ async function runSingleCompanionAgent(agent, messageIndex, generationType, canc
             // A caller-supplied finishing step, such as appending a Chatroom reply to its feed.
             if (typeof transformContent === 'function') {
                 content = capResultContent(transformContent(content));
+            }
+            if (isCompanionRefusal(content)) {
+                throw companionRefusalError();
             }
             // An empty-output sentinel yields no payload here, which is deliberate: repair is the manual
             // fix for a malformed block, so "nothing changed" must roll back to the stored tracker state
@@ -2119,6 +2142,13 @@ async function runBatchCompanionAgents(agents, messageIndex, generationType, can
                 const rawContent = capResultContent(parsed.get(agent.id));
                 if (!rawContent.trim()) {
                     missingAgents.push(agent);
+                    continue;
+                }
+                if (isCompanionRefusal(rawContent)) {
+                    settleFailedCompanionRun(message, agent, runs?.get(agent.id)?.previousResult, {
+                        error: companionRefusalError(),
+                    });
+                    await emitCompanionResultsUpdated(messageIndex, agent.id);
                     continue;
                 }
                 const outputTokens = await countCompanionTokens({ role: 'assistant', content: rawContent });
@@ -2602,11 +2632,13 @@ async function runPlotCompassBeforeConversationInternal(agentId) {
     const promptMessages = await buildCompanionPromptMessages(agent, chat.length, 'normal');
     if (!isCurrent()) throw new Error('The chat changed before Plot Compass could run.');
     const response = await requestPromptTransform(agent, promptMessages, getCompanionConfig(agent).maxTokens, {
+        acceptOutput: output => !isCompanionRefusal(output),
         isEmptyOutput: isEmptyCompanionOutput, cancelRevision, isCurrent,
     });
     if (!isCurrent()) throw new Error('The chat changed while Plot Compass was running.');
     if (response.lengthLimited) throw new Error('The reply reached its output limit. Increase the limit and try again.');
     const content = capResultContent(response.output);
+    if (isCompanionRefusal(content)) throw companionRefusalError();
     if (!content) throw new Error('Plot Compass returned no output.');
     const tokenUsage = await buildCompanionTokenUsage(promptMessages, content);
     if (!isCurrent()) throw new Error('The chat changed while Plot Compass was running.');

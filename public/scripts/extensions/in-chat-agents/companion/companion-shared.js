@@ -563,6 +563,7 @@ export const COMPANION_FAILURE_MESSAGES = Object.freeze({
     cancelled: 'Cancelled.',
     interrupted: 'Interrupted before completion.',
     empty: 'Companion returned no output.',
+    refusal: 'The model refused to write this note. Try another connection or model.',
     limit: 'The reply reached its output limit. Increase the limit and try again.',
     dependency: 'A required companion did not complete. Run it successfully before retrying.',
     cycle: 'These companion dependencies form a cycle. Remove a circular dependency and try again.',

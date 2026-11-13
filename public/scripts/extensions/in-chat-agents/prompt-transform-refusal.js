@@ -86,3 +86,15 @@ export function isLikelyMainReplyRefusal(text) {
     if (!opensWithRefusal) return false;
     return MAIN_REPLY_CONTEXT_PATTERNS.some(pattern => pattern.test(opening));
 }
+
+/**
+ * Report whether a Companion's own note reads as a refusal, so the run fails instead of saving it.
+ * Fallback connections already get their turn before this is checked. A Companion note is
+ * written in the model's own voice like a main reply, so the same strict opening and request
+ * context apply; a character refusing inside quoted or in-story text stays story text.
+ * @param {string} text Companion note text.
+ * @returns {boolean}
+ */
+export function isLikelyCompanionNoteRefusal(text) {
+    return isLikelyMainReplyRefusal(text);
+}

@@ -83,6 +83,7 @@ describe('companion failure kinds', () => {
         const notRetryable = [
             { status: 'cancelled', error: COMPANION_FAILURE_MESSAGES.cancelled },
             { status: 'error', error: COMPANION_FAILURE_MESSAGES.limit },
+            { status: 'error', error: COMPANION_FAILURE_MESSAGES.refusal },
             { status: 'error', error: COMPANION_FAILURE_MESSAGES.cycle },
             { status: 'error', error: COMPANION_FAILURE_MESSAGES.invalid },
             { status: 'error', error: 'Something odd', failureKind: 'other' },
