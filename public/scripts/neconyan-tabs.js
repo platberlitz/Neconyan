@@ -4304,9 +4304,18 @@ function syncMobilePopupKeyboardShift() {
     // visualViewport tracks the keyboard: top grows and height shrinks as the
     // keyboard rises, so (top + height) is the bottom of the visible area.
     const viewportBottom = viewportSize.top + viewportSize.height;
+    // A keyboard rising from the bottom edge also hides the home indicator,
+    // so the bottom safe area no longer needs reserving above it.
+    const keyboardCoversBottom = layoutViewport.height - viewportBottom > MOBILE_IOS_KEYBOARD_MIN_HEIGHT_PX;
+    // Full-screen sheets (--sb-popup-fills-screen: 1) already pad themselves
+    // clear of the status bar, so they take the whole visible area instead of
+    // stacking a second safe-area gap on top of their own padding.
+    const fillsScreen = getComputedStyle(dialog).getPropertyValue('--sb-popup-fills-screen').trim() === '1';
     const edgeClearance = `${MOBILE_POPUP_KEYBOARD_CLEARANCE_PX}px`;
-    const topClearance = `max(${edgeClearance}, env(safe-area-inset-top, 0px))`;
-    const bottomClearance = `max(${edgeClearance}, env(safe-area-inset-bottom, 0px))`;
+    const topClearance = fillsScreen ? '0px' : `max(${edgeClearance}, env(safe-area-inset-top, 0px))`;
+    const bottomClearance = fillsScreen
+        ? '0px'
+        : keyboardCoversBottom ? edgeClearance : `max(${edgeClearance}, env(safe-area-inset-bottom, 0px))`;
     const availableHeight = `calc(${viewportSize.height}px - ${topClearance} - ${bottomClearance})`;
     const scroller = activeElement.closest('.popup-body, .popup-content');
 
@@ -4319,12 +4328,18 @@ function syncMobilePopupKeyboardShift() {
     dialog.style.setProperty('bottom', 'auto', 'important');
     dialog.style.setProperty('min-height', '0', 'important');
     dialog.style.setProperty('max-height', availableHeight, 'important');
+    if (keyboardCoversBottom) {
+        dialog.style.setProperty('--sb-popup-safe-area-bottom', '0px');
+    }
 
     if (scroller instanceof HTMLElement) {
         scroller.dataset.sbKeyboardMaxHeight = scroller.style.maxHeight;
         scroller.style.maxHeight = availableHeight;
 
-        const scrollOverflow = activeElement.getBoundingClientRect().bottom + MOBILE_POPUP_KEYBOARD_CLEARANCE_PX - viewportBottom;
+        // The scroller can end above the keyboard (popup buttons sit below
+        // it), so reveal the field inside whichever edge is higher.
+        const visibleBottom = Math.min(viewportBottom, scroller.getBoundingClientRect().bottom);
+        const scrollOverflow = activeElement.getBoundingClientRect().bottom + MOBILE_POPUP_KEYBOARD_CLEARANCE_PX - visibleBottom;
         if (scrollOverflow > 0) {
             scroller.scrollTop += scrollOverflow;
         }

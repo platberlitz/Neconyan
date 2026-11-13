@@ -5375,7 +5375,9 @@ body.neconyan .ica--standalone-title { display: none; }
         border-radius: 0;
         box-shadow: none;
         background: rgb(from var(--neco-canvas, var(--SmartThemeBlurTintColor)) r g b);
-        padding: max(10px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+        padding: max(10px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(8px, var(--sb-popup-safe-area-bottom, env(safe-area-inset-bottom))) max(12px, env(safe-area-inset-left));
+        /* Read by the shell's keyboard shift: this sheet pads itself clear of the status bar. */
+        --sb-popup-fills-screen: 1;
     }
 
     /* The paper theme forces a rounded corner on every popup; a matching backdrop hides it. */
