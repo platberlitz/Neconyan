@@ -1,8 +1,8 @@
-<!-- Translated from README.md at commit de66c177 (Neconyan 1.5.0). Keep the structure in step with the English README. -->
+<!-- Translated from README.md at commit 19874db1 (Neconyan 1.5.4). Keep the structure in step with the English README. -->
 
 # Neconyan~
 
-最新版本是 [1.5.0](https://github.com/platberlitz/Neconyan/releases/latest)。
+最新版本是 [1.5.4](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.4)。
 
 **用你的语言阅读：** [English](../README.md) · [Deutsch](readme-de_de.md) · [Español](readme-es_es.md) · [Français](readme-fr_fr.md) · [Italiano](readme-it_it.md) · [Nederlands](readme-nl_nl.md) · [Português](readme-pt_pt.md) · [Íslenska](readme-is_is.md) · [Русский](readme-ru_ru.md) · [Українська](readme-uk_ua.md) · [العربية](readme-ar_sa.md) · [ไทย](readme-th_th.md) · [Tiếng Việt](readme-vi_vn.md) · [日本語](readme-ja_jp.md) · [한국어](readme-ko_kr.md) · [繁體中文](readme-zh_tw.md)
 
@@ -29,6 +29,7 @@ Neconyan 是我基于 [SillyTavern](https://github.com/SillyTavern/SillyTavern) 
 - **Mewmory** 会记住故事中的事件和角色。**代理**可以维护追踪器、检查回复，或者另外写一条“同伴备注”。
 - **Catelier** 帮你编写角色卡和世界书。**笔记本**把你的笔记放在手边，**Scratchpad** 则给你一个独立的聊天，用来把想法聊透。
 - **Miso、Taro 和 Nori** 帮你查找东西，经你允许后还能进行受支持的修改。
+- **Device sync** 可以通过加密文件、WebDAV、私密 GitHub Gist 或直接配对，在彼此独立的安装之间转移选定的数据。只有在你要求时才会进行传输。
 - **主题、强调色和猫**。猫多得很。你可以把它们藏起来，不过我实在想不通你为什么会想这么做。
 
 你的角色卡、聊天记录、世界书和预设都沿用大家熟悉的 SillyTavern 格式。没有任何遥测。上游的部分功能和扩展在这里的行为有所不同；我只引入自己想要的那部分。[附带工具列表](../docs/neconyan-native-tools.md)中列出了随 Neconyan 一起打包的项目，并向它们致谢。
@@ -39,7 +40,7 @@ Neconyan 是我基于 [SillyTavern](https://github.com/SillyTavern/SillyTavern) 
   <img src="../docs/readme/banner-modes.webp" alt="模式">
 </p>
 
-全新的桌面端和手机截图，用的是与内置助手的演示聊天和笔记。
+来自 1.5.4 的桌面端和手机截图，用的是与内置助手的演示聊天和笔记。
 
 ### 主页
 
@@ -68,8 +69,28 @@ Neconyan 是我基于 [SillyTavern](https://github.com/SillyTavern/SillyTavern) 
   <td width="28%"><img src="../docs/readme/phone-catelier.webp" alt="手机上的 Catelier"></td>
 </tr></table>
 
+### 代理
+
+挑一个帮手，决定它何时运行，再给它接上一个连接。我建议先只用一个，别一下子把代理库里的一半都打开。
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-agents.webp" alt="桌面端的代理，显示回复帮手及其控件"></td>
+  <td width="28%"><img src="../docs/readme/phone-agents.webp" alt="手机上的代理"></td>
+</tr></table>
+
+### 生成后的 Proofreader
+
+Proofreader 会在回复送达之后检查它。它可以润色文字和格式，而不必让主模型把这一幕重写一遍。打开 **代理更改** 就能对比修改内容；如果你更喜欢原文，还可以撤销。
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-proofreader.webp" alt="桌面端的 Proofreader 更改历史，对比原回复与修改后的版本"></td>
+  <td width="28%"><img src="../docs/readme/phone-proofreader.webp" alt="手机上的 Proofreader 更改历史"></td>
+</tr></table>
+
+这个搭建出来的示例用固定的示例回复运行真实的代理流程。平时使用时，由你连接的模型来写这些修改，而且每一轮都可能多产生一次请求。[手册中的代理与伙伴](https://platberlitz.github.io/neconyan-docs/helpers/agents/)。
+
 <details>
-<summary><b>更多截图：Simple Mode、对话、Meower、故事模式、笔记本和 Scratchpad</b></summary>
+<summary><b>更多截图：Simple Mode、对话、Meower、故事模式、笔记本、Scratchpad 和 Device sync</b></summary>
 
 ### Simple Mode
 
@@ -123,6 +144,15 @@ Neconyan 是我基于 [SillyTavern](https://github.com/SillyTavern/SillyTavern) 
 <table><tr>
   <td width="72%"><img src="../docs/readme/desktop-scratchpad.webp" alt="桌面端的 Scratchpad"></td>
   <td width="28%"><img src="../docs/readme/phone-scratchpad.webp" alt="手机上的 Scratchpad"></td>
+</tr></table>
+
+### Device sync
+
+在彼此独立的安装之间转移选定的资料库。可以选择加密文件、WebDAV、私密 GitHub Gist 或直接配对；传输会在你要求时才开始。[手册中的设置与恢复](https://platberlitz.github.io/neconyan-docs/help/device-sync/)。
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-device-sync.webp" alt="桌面端的 Device sync 设置"></td>
+  <td width="28%"><img src="../docs/readme/phone-device-sync.webp" alt="手机上的 Device sync 设置"></td>
 </tr></table>
 
 </details>
@@ -197,3 +227,5 @@ git clone https://github.com/platberlitz/Neconyan.git
 Neconyan 建立在 SillyTavern 和 SillyBunny 背后每一个人的工作之上；没有他们，就不会有这一切。[附带工具列表](../docs/neconyan-native-tools.md)中注明了他们的原作者。
 
 由 [Platberlitz](https://github.com/platberlitz) 制作。采用 [GNU AGPL v3](../LICENSE) 许可证。如果你再分发它，请保留其中的声明和许可证。
+
+特别感谢 **El Topo**，我最主要的帮手和贡献者。你为 Neconyan 付出的所有心血，我都由衷感激。

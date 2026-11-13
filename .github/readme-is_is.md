@@ -1,8 +1,8 @@
-<!-- Translated from README.md at commit de66c177 (Neconyan 1.5.0). Keep the structure in step with the English README. -->
+<!-- Translated from README.md at commit 19874db1 (Neconyan 1.5.4). Keep the structure in step with the English README. -->
 
 # Neconyan~
 
-Nýjasta útgáfan er [1.5.0](https://github.com/platberlitz/Neconyan/releases/latest).
+Nýjasta útgáfan er [1.5.4](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.4).
 
 **Lestu á þínu tungumáli:** [English](../README.md) · [Deutsch](readme-de_de.md) · [Español](readme-es_es.md) · [Français](readme-fr_fr.md) · [Italiano](readme-it_it.md) · [Nederlands](readme-nl_nl.md) · [Português](readme-pt_pt.md) · [Русский](readme-ru_ru.md) · [Українська](readme-uk_ua.md) · [العربية](readme-ar_sa.md) · [ไทย](readme-th_th.md) · [Tiếng Việt](readme-vi_vn.md) · [日本語](readme-ja_jp.md) · [한국어](readme-ko_kr.md) · [简体中文](readme-zh_cn.md) · [繁體中文](readme-zh_tw.md)
 
@@ -29,6 +29,7 @@ Neconyan er afleggjarinn minn af [SillyTavern](https://github.com/SillyTavern/Si
 - **Mewmory** man atburði og persónur í sögunni. **Umboðsmenn** geta haldið utan um vaktara, athugað svar eða skrifað sérstakt Fylgiskjal.
 - **Catelier** hjálpar þér að skrifa persónuspjöld og fræðibækur. **Minnisbækur** hafa glósurnar þínar innan seilingar og **Scratchpad** gefur þér sérstakt spjall til að ræða hugmyndir.
 - **Miso, Taro og Nori** hjálpa þér að finna hluti og geta gert breytingar sem appið styður, ef þú leyfir það.
+- **Device sync** flytur valin gögn á milli aðskildra uppsetninga með dulkóðuðum skrám, WebDAV, leynilegum GitHub Gists eða beinni pörun. Flutningar fara fram þegar þú biður um þá.
 - **Þemu, áherslulitir og kettir.** Ansi margir kettir. Þú getur falið þá, þótt ég geti ekki ímyndað mér hvers vegna þú vildir það.
 
 Persónuspjöldin þín, spjöllin, fræðibækurnar og forstillingarnar nota kunnugleg SillyTavern-snið. Það er engin fjarmæling. Sumir eiginleikar og viðbætur úr upprunaverkefninu haga sér öðruvísi hér; ég tek bara inn þá hluta sem ég vil. Í [listanum yfir verkfærin sem fylgja með](../docs/neconyan-native-tools.md) er getið verkefnanna sem fylgja Neconyan.
@@ -39,7 +40,7 @@ Persónuspjöldin þín, spjöllin, fræðibækurnar og forstillingarnar nota ku
   <img src="../docs/readme/banner-modes.webp" alt="Hamir">
 </p>
 
-Nýjar skjámyndir úr tölvu og síma, með sýnispjöllum, glósum og innbyggðu aðstoðarmönnunum.
+Skjámyndir úr tölvu og síma frá útgáfu 1.5.4, með sýnispjöllum, glósum og innbyggðu aðstoðarmönnunum.
 
 ### Heim
 
@@ -68,8 +69,28 @@ Vinndu að persónudrögum, biddu um hjálp við skrifin og farðu yfir breyting
   <td width="28%"><img src="../docs/readme/phone-catelier.webp" alt="Catelier í síma"></td>
 </tr></table>
 
+### Umboðsmenn
+
+Veldu aðstoðarmann, ákveddu hvenær hann keyrir og gefðu honum tengingu. Ég myndi byrja á einum frekar en að kveikja á helmingi safnsins í einu.
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-agents.webp" alt="Umboðsmenn í tölvu, með svaraðstoðarmönnum og stjórntækjum þeirra"></td>
+  <td width="28%"><img src="../docs/readme/phone-agents.webp" alt="Umboðsmenn í síma"></td>
+</tr></table>
+
+### Proofreader eftir myndun
+
+Proofreader fer yfir svar eftir að það berst og getur lagað texta og snið án þess að biðja aðallíkanið um að skrifa senuna upp á nýtt. Opnaðu **Breytingar agents** til að bera breytinguna saman og afturkalla hana ef þú vilt frekar upprunalega textann.
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-proofreader.webp" alt="Breytingasaga Proofreader í tölvu, þar sem upprunalega svarið er borið saman við breyttu útgáfuna"></td>
+  <td width="28%"><img src="../docs/readme/phone-proofreader.webp" alt="Breytingasaga Proofreader í síma"></td>
+</tr></table>
+
+Þetta sviðsetta dæmi keyrir raunverulegt vinnuflæði umboðsmanna með föstu sýnisvari. Tengda líkanið þitt skrifar breytingarnar við venjulega notkun og hver yfirferð getur kostað aðra beiðni. [Umboðsmenn og fylgdarliðar í handbókinni](https://platberlitz.github.io/neconyan-docs/helpers/agents/).
+
 <details>
-<summary><b>Fleiri skjámyndir: Simple Mode, Samtal, Meower, Söguháttur, Minnisbækur og Scratchpad</b></summary>
+<summary><b>Fleiri skjámyndir: Simple Mode, Samtal, Meower, Söguháttur, Minnisbækur, Scratchpad og Device sync</b></summary>
 
 ### Simple Mode
 
@@ -123,6 +144,15 @@ Ræddu söguna við aðstoðarmann eða hringborð persóna, án þess að umræ
 <table><tr>
   <td width="72%"><img src="../docs/readme/desktop-scratchpad.webp" alt="Scratchpad í tölvu"></td>
   <td width="28%"><img src="../docs/readme/phone-scratchpad.webp" alt="Scratchpad í síma"></td>
+</tr></table>
+
+### Device sync
+
+Færðu valin söfn á milli aðskildra uppsetninga. Veldu dulkóðaðar skrár, WebDAV, leynilegt GitHub Gist eða beina pörun; flutningar hefjast þegar þú biður um þá. [Uppsetning og endurheimt í handbókinni](https://platberlitz.github.io/neconyan-docs/help/device-sync/).
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-device-sync.webp" alt="Stillingar Device sync í tölvu"></td>
+  <td width="28%"><img src="../docs/readme/phone-device-sync.webp" alt="Stillingar Device sync í síma"></td>
 </tr></table>
 
 </details>
@@ -197,3 +227,5 @@ Ef þú finnur ekki stillingu skaltu prófa **Leita** í hliðarstikunni. Ef vil
 Neconyan byggir á vinnu allra sem standa að SillyTavern og SillyBunny; ekkert af þessu væri til án þeirra. Í [listanum yfir verkfærin sem fylgja með](../docs/neconyan-native-tools.md) er getið upphaflegra höfunda þeirra.
 
 Gert af [Platberlitz](https://github.com/platberlitz). Gefið út undir [GNU AGPL v3](../LICENSE). Haltu tilkynningum og leyfisskilmálum á sínum stað ef þú dreifir því áfram.
+
+Sérstakar þakkir til **El Topo**, helsta aðstoðarmanns míns og þátttakanda. Ég kann virkilega að meta alla vinnuna sem þú hefur lagt í Neconyan.

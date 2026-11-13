@@ -1,8 +1,8 @@
-<!-- Translated from README.md at commit de66c177 (Neconyan 1.5.0). Keep the structure in step with the English README. -->
+<!-- Translated from README.md at commit 19874db1 (Neconyan 1.5.4). Keep the structure in step with the English README. -->
 
 # Neconyan~
 
-Остання версія: [1.5.0](https://github.com/platberlitz/Neconyan/releases/latest).
+Остання версія: [1.5.4](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.4).
 
 **Читай своєю мовою:** [English](../README.md) · [Deutsch](readme-de_de.md) · [Español](readme-es_es.md) · [Français](readme-fr_fr.md) · [Italiano](readme-it_it.md) · [Nederlands](readme-nl_nl.md) · [Português](readme-pt_pt.md) · [Íslenska](readme-is_is.md) · [Русский](readme-ru_ru.md) · [العربية](readme-ar_sa.md) · [ไทย](readme-th_th.md) · [Tiếng Việt](readme-vi_vn.md) · [日本語](readme-ja_jp.md) · [한국어](readme-ko_kr.md) · [简体中文](readme-zh_cn.md) · [繁體中文](readme-zh_tw.md)
 
@@ -29,6 +29,7 @@ Neconyan — це мій котячий форк [SillyTavern](https://github.co
 - **Mewmory** запам'ятовує події історії та персонажів. **Агенти** можуть вести трекери, перевіряти відповідь або писати окрему «Супровідну нотатку».
 - **Catelier** допомагає писати картки персонажів і лорбуки. **Блокноти** тримають твої нотатки під рукою, а **Scratchpad** дає окремий чат, щоб обговорити ідеї.
 - **Miso, Taro і Nori** допомагають знаходити потрібне й за твого дозволу можуть вносити підтримувані зміни.
+- **Device sync** переносить вибрані дані між окремими встановленнями за допомогою зашифрованих файлів, WebDAV, секретних GitHub Gist або прямого сполучення. Перенесення запускаються, лише коли ти про це просиш.
 - **Теми, акцентні кольори й коти.** Котів чимало. Їх можна приховати, хоча я не уявляю, навіщо тобі це.
 
 Твої картки персонажів, чати, лорбуки й пресети використовують знайомі формати SillyTavern. Телеметрії немає. Деякі функції та розширення з оригінального проєкту тут поводяться інакше; я переношу лише те, що хочу. [Список вбудованих інструментів](../docs/neconyan-native-tools.md) віддає належне проєктам, що постачаються з Neconyan.
@@ -39,7 +40,7 @@ Neconyan — це мій котячий форк [SillyTavern](https://github.co
   <img src="../docs/readme/banner-modes.webp" alt="Режими">
 </p>
 
-Нові скриншоти для комп'ютера й телефона; використано демо-чати та нотатки з вбудованими асистентами.
+Скриншоти для комп'ютера й телефона з версії 1.5.4; використано демо-чати та нотатки з вбудованими асистентами.
 
 ### Головна
 
@@ -68,8 +69,28 @@ Neconyan — це мій котячий форк [SillyTavern](https://github.co
   <td width="28%"><img src="../docs/readme/phone-catelier.webp" alt="Catelier на телефоні"></td>
 </tr></table>
 
+### Агенти
+
+Обери помічника, визнач, коли він запускається, і дай йому з'єднання. Раджу почати з одного помічника, а не вмикати одразу пів бібліотеки.
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-agents.webp" alt="«Агенти» на комп'ютері: помічники для відповідей і їхні елементи керування"></td>
+  <td width="28%"><img src="../docs/readme/phone-agents.webp" alt="«Агенти» на телефоні"></td>
+</tr></table>
+
+### Proofreader після генерації
+
+Proofreader перевіряє відповідь після того, як вона надійшла. Він може причесати прозу та форматування, не просячи основну модель знову писати сцену. Відкрий **Зміни агента**, щоб порівняти правку з оригіналом і скасувати її, якщо тобі більше до вподоби оригінал.
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-proofreader.webp" alt="Історія змін Proofreader на комп'ютері: початкова відповідь поруч із відредагованою версією"></td>
+  <td width="28%"><img src="../docs/readme/phone-proofreader.webp" alt="Історія змін Proofreader на телефоні"></td>
+</tr></table>
+
+Цей показовий приклад запускає справжній робочий процес агентів із фіксованою зразковою відповіддю. У звичайному користуванні правки пише твоя підключена модель, а кожен прохід може коштувати ще одного запиту. [Агенти та супутники в посібнику](https://platberlitz.github.io/neconyan-docs/helpers/agents/).
+
 <details>
-<summary><b>Ще скриншоти: Simple Mode, «Розмова», Meower, «Режим історії», «Блокноти» та Scratchpad</b></summary>
+<summary><b>Ще скриншоти: Simple Mode, «Розмова», Meower, «Режим історії», «Блокноти», Scratchpad та Device sync</b></summary>
 
 ### Simple Mode
 
@@ -123,6 +144,15 @@ Neconyan — це мій котячий форк [SillyTavern](https://github.co
 <table><tr>
   <td width="72%"><img src="../docs/readme/desktop-scratchpad.webp" alt="Scratchpad на комп'ютері"></td>
   <td width="28%"><img src="../docs/readme/phone-scratchpad.webp" alt="Scratchpad на телефоні"></td>
+</tr></table>
+
+### Device sync
+
+Переноси вибрані бібліотеки між окремими встановленнями. Обери зашифровані файли, WebDAV, секретний GitHub Gist або пряме сполучення; перенесення починається, коли ти про це просиш. [Налаштування й відновлення в посібнику](https://platberlitz.github.io/neconyan-docs/help/device-sync/).
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-device-sync.webp" alt="Налаштування Device sync на комп'ютері"></td>
+  <td width="28%"><img src="../docs/readme/phone-device-sync.webp" alt="Налаштування Device sync на телефоні"></td>
 </tr></table>
 
 </details>
@@ -197,3 +227,5 @@ git clone https://github.com/platberlitz/Neconyan.git
 Neconyan тримається на праці всіх, хто стоїть за SillyTavern і SillyBunny; без них нічого цього не було б. [Список вбудованих інструментів](../docs/neconyan-native-tools.md) називає їхніх першоавторів.
 
 Автор: [Platberlitz](https://github.com/platberlitz). Поширюється за ліцензією [GNU AGPL v3](../LICENSE). Якщо поширюєш Neconyan далі, залиш усі повідомлення й ліцензії на місці.
+
+Особлива подяка **El Topo**, моєму головному помічнику й дописувачу. Я дуже ціную всю працю, вкладену тобою в Neconyan.

@@ -1,8 +1,8 @@
-<!-- Translated from README.md at commit de66c177 (Neconyan 1.5.0). Keep the structure in step with the English README. -->
+<!-- Translated from README.md at commit 19874db1 (Neconyan 1.5.4). Keep the structure in step with the English README. -->
 
 # Neconyan~
 
-Bản phát hành mới nhất là [1.5.0](https://github.com/platberlitz/Neconyan/releases/latest).
+Bản phát hành mới nhất là [1.5.4](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.4).
 
 **Đọc bằng ngôn ngữ của bạn:** [English](../README.md) · [Deutsch](readme-de_de.md) · [Español](readme-es_es.md) · [Français](readme-fr_fr.md) · [Italiano](readme-it_it.md) · [Nederlands](readme-nl_nl.md) · [Português](readme-pt_pt.md) · [Íslenska](readme-is_is.md) · [Русский](readme-ru_ru.md) · [Українська](readme-uk_ua.md) · [العربية](readme-ar_sa.md) · [ไทย](readme-th_th.md) · [日本語](readme-ja_jp.md) · [한국어](readme-ko_kr.md) · [简体中文](readme-zh_cn.md) · [繁體中文](readme-zh_tw.md)
 
@@ -29,6 +29,7 @@ Neconyan là bản fork mang chủ đề mèo mà mình tách ra từ [SillyTave
 - **Mewmory** ghi nhớ các diễn biến và nhân vật trong câu chuyện. **Tác nhân** có thể duy trì các trình theo dõi, kiểm tra một câu trả lời hoặc viết một Ghi chú đồng hành riêng.
 - **Catelier** giúp bạn viết thẻ nhân vật và lorebook. **Sổ ghi chép** giữ ghi chú của bạn ngay trong tầm tay, còn **Scratchpad** cho bạn một khung trò chuyện riêng để bàn bạc ý tưởng.
 - **Miso, Taro và Nori** giúp bạn tìm những thứ bạn cần và có thể thực hiện những chỉnh sửa được hỗ trợ nếu bạn cho phép.
+- **Device sync** chuyển dữ liệu đã chọn giữa các bản cài đặt riêng biệt bằng tệp mã hóa, WebDAV, GitHub Gist bí mật hoặc ghép nối trực tiếp. Việc truyền chỉ chạy khi bạn yêu cầu.
 - **Chủ đề, màu nhấn và mèo.** Khá nhiều mèo. Bạn có thể ẩn chúng đi, dù mình không tưởng tượng nổi vì sao bạn lại muốn thế.
 
 Thẻ nhân vật, cuộc trò chuyện, lorebook và preset của bạn dùng các định dạng quen thuộc của SillyTavern. Không có telemetry. Một số tính năng và tiện ích mở rộng của bản gốc hoạt động khác ở đây; mình chỉ lấy về những phần mình muốn. [Danh sách công cụ đi kèm](../docs/neconyan-native-tools.md) ghi công các dự án đi kèm Neconyan.
@@ -39,7 +40,7 @@ Thẻ nhân vật, cuộc trò chuyện, lorebook và preset của bạn dùng c
   <img src="../docs/readme/banner-modes.webp" alt="Các chế độ">
 </p>
 
-Ảnh chụp màn hình mới trên máy tính và điện thoại, dùng các cuộc trò chuyện và ghi chú demo cùng với các trợ lý đi kèm.
+Ảnh chụp màn hình trên máy tính và điện thoại từ bản 1.5.4, dùng các cuộc trò chuyện và ghi chú demo cùng với các trợ lý đi kèm.
 
 ### Trang chủ
 
@@ -68,8 +69,28 @@ Soạn bản nháp nhân vật, nhờ hỗ trợ viết lách và xem lại các
   <td width="28%"><img src="../docs/readme/phone-catelier.webp" alt="Catelier trên điện thoại"></td>
 </tr></table>
 
+### Tác nhân
+
+Chọn một trình trợ giúp, quyết định khi nào nó chạy và cho nó một kết nối. Nếu là mình, mình sẽ bắt đầu với một cái thôi chứ không bật cả nửa thư viện cùng lúc.
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-agents.webp" alt="Tác nhân trên máy tính, với các trình trợ giúp trả lời và phần điều khiển của chúng"></td>
+  <td width="28%"><img src="../docs/readme/phone-agents.webp" alt="Tác nhân trên điện thoại"></td>
+</tr></table>
+
+### Proofreader sau khi tạo phản hồi
+
+Proofreader kiểm tra một câu trả lời sau khi nó xuất hiện. Nó có thể chỉnh lại văn xuôi và định dạng mà không cần bắt mô hình chính viết lại cảnh truyện. Mở **Thay đổi của agent** để so sánh bản chỉnh sửa và hoàn tác nếu bạn thích bản gốc hơn.
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-proofreader.webp" alt="Lịch sử thay đổi của Proofreader trên máy tính, so sánh câu trả lời gốc với phiên bản đã chỉnh sửa"></td>
+  <td width="28%"><img src="../docs/readme/phone-proofreader.webp" alt="Lịch sử thay đổi của Proofreader trên điện thoại"></td>
+</tr></table>
+
+Ví dụ dàn dựng này chạy quy trình Tác nhân thật với một phản hồi mẫu cố định. Khi dùng bình thường, mô hình đã kết nối của bạn sẽ viết các chỉnh sửa, và mỗi lượt có thể tốn thêm một yêu cầu. [Tác nhân và Đồng hành trong cẩm nang](https://platberlitz.github.io/neconyan-docs/helpers/agents/).
+
 <details>
-<summary><b>Thêm ảnh chụp màn hình: Simple Mode, Hội thoại, Meower, Chế độ câu chuyện, Sổ ghi chép và Scratchpad</b></summary>
+<summary><b>Thêm ảnh chụp màn hình: Simple Mode, Hội thoại, Meower, Chế độ câu chuyện, Sổ ghi chép, Scratchpad và Device sync</b></summary>
 
 ### Simple Mode
 
@@ -123,6 +144,15 @@ Bàn về câu chuyện với một trợ lý hoặc cả một bàn tròn gồm
 <table><tr>
   <td width="72%"><img src="../docs/readme/desktop-scratchpad.webp" alt="Scratchpad trên máy tính"></td>
   <td width="28%"><img src="../docs/readme/phone-scratchpad.webp" alt="Scratchpad trên điện thoại"></td>
+</tr></table>
+
+### Device sync
+
+Chuyển các thư viện đã chọn giữa các bản cài đặt riêng biệt. Chọn tệp mã hóa, WebDAV, một GitHub Gist bí mật hoặc ghép nối trực tiếp; việc truyền chỉ bắt đầu khi bạn yêu cầu. [Thiết lập và khôi phục trong cẩm nang](https://platberlitz.github.io/neconyan-docs/help/device-sync/).
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-device-sync.webp" alt="Cài đặt Device sync trên máy tính"></td>
+  <td width="28%"><img src="../docs/readme/phone-device-sync.webp" alt="Cài đặt Device sync trên điện thoại"></td>
 </tr></table>
 
 </details>
@@ -197,3 +227,5 @@ Nếu không thấy một cài đặt nào đó, hãy thử **Tìm kiếm** ở 
 Neconyan được xây dựng trên công sức của tất cả những người đứng sau SillyTavern và SillyBunny; không có họ thì sẽ không có những thứ này. [Danh sách công cụ đi kèm](../docs/neconyan-native-tools.md) ghi công các tác giả gốc của chúng.
 
 Do [Platberlitz](https://github.com/platberlitz) làm ra. Phát hành theo giấy phép [GNU AGPL v3](../LICENSE). Nếu bạn phân phối lại, hãy giữ nguyên các thông báo và giấy phép.
+
+Đặc biệt cảm ơn **El Topo**, người trợ giúp chính và cộng tác viên của mình. Mình thật sự trân trọng mọi công sức bạn đã bỏ ra cho Neconyan.

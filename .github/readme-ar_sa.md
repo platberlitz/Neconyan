@@ -1,10 +1,10 @@
-<!-- Translated from README.md at commit de66c177 (Neconyan 1.5.0). Keep the structure in step with the English README. -->
+<!-- Translated from README.md at commit 19874db1 (Neconyan 1.5.4). Keep the structure in step with the English README. -->
 
 <div dir="rtl">
 
 # Neconyan~
 
-أحدث إصدار هو [1.5.0](https://github.com/platberlitz/Neconyan/releases/latest).
+أحدث إصدار هو [1.5.4](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.4).
 
 **اقرأ بلغتك:** [English](../README.md) · [Deutsch](readme-de_de.md) · [Español](readme-es_es.md) · [Français](readme-fr_fr.md) · [Italiano](readme-it_it.md) · [Nederlands](readme-nl_nl.md) · [Português](readme-pt_pt.md) · [Íslenska](readme-is_is.md) · [Русский](readme-ru_ru.md) · [Українська](readme-uk_ua.md) · [ไทย](readme-th_th.md) · [Tiếng Việt](readme-vi_vn.md) · [日本語](readme-ja_jp.md) · [한국어](readme-ko_kr.md) · [简体中文](readme-zh_cn.md) · [繁體中文](readme-zh_tw.md)
 
@@ -31,6 +31,7 @@
 - يتذكّر **Mewmory** أحداث القصة وشخصياتها. ويستطيع **الوكلاء** الاحتفاظ بمتتبعات، أو فحص ردّ، أو كتابة «ملاحظة الرفيق» بشكل منفصل.
 - يساعدك **Catelier** على كتابة بطاقات الشخصيات وكتب المعرفة. وتُبقي **الدفاتر** ملاحظاتك قريبة منك، ويمنحك **Scratchpad** دردشة منفصلة لتتحدث فيها عن أفكارك.
 - يساعدك **Miso وTaro وNori** على العثور على ما تبحث عنه، ويمكنهم إجراء التعديلات المدعومة بإذنك.
+- ينقل **Device sync** بيانات مختارة بين نسخ منفصلة من التطبيق عبر ملفات مشفّرة، أو WebDAV، أو Gists سرية على GitHub، أو الاقتران المباشر. وتجري عمليات النقل حين تطلبها.
 - **السمات وألوان التمييز والقطط.** قطط كثيرة جدًا. يمكنك إخفاؤها، مع أنني لا أتخيل لماذا قد ترغب في ذلك.
 
 تستخدم بطاقات شخصياتك ودردشاتك وكتب المعرفة والإعدادات المسبقة صيغ SillyTavern المألوفة. لا يوجد أي قياس عن بُعد. وتعمل بعض ميزات المشروع الأصلي وإضافاته بشكل مختلف هنا؛ فأنا لا أجلب إلا الأجزاء التي أريدها. وتنسب [قائمة الأدوات المضمّنة](../docs/neconyan-native-tools.md) المشاريع المرفقة مع Neconyan إلى أصحابها.
@@ -41,7 +42,7 @@
   <img src="../docs/readme/banner-modes.webp" alt="الأوضاع">
 </p>
 
-لقطات شاشة جديدة للكمبيوتر والهاتف، مأخوذة من دردشات وملاحظات تجريبية مع المساعدين المرفقين.
+لقطات شاشة للكمبيوتر والهاتف من الإصدار 1.5.4، مأخوذة من دردشات وملاحظات تجريبية مع المساعدين المرفقين.
 
 ### الرئيسية
 
@@ -70,8 +71,28 @@
   <td width="28%"><img src="../docs/readme/phone-catelier.webp" alt="Catelier على الهاتف"></td>
 </tr></table>
 
+### الوكلاء
+
+اختر مساعدًا، وحدّد متى يعمل، وامنحه اتصالًا. لو كنتُ مكانك لبدأتُ بواحد فقط بدل تشغيل نصف المكتبة دفعة واحدة.
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-agents.webp" alt="الوكلاء على الكمبيوتر، مع مساعدي الردود وعناصر التحكم الخاصة بهم"></td>
+  <td width="28%"><img src="../docs/readme/phone-agents.webp" alt="الوكلاء على الهاتف"></td>
+</tr></table>
+
+### التدقيق بعد التوليد مع Proofreader
+
+يفحص Proofreader الردّ بعد وصوله. وبإمكانه تحسين النثر والتنسيق دون أن يطلب من النموذج الرئيسي كتابة المشهد من جديد. افتح **تغييرات الوكيل** لمقارنة التعديل مع الأصل، وتراجع عنه إن فضّلت النص الأصلي.
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-proofreader.webp" alt="سجل تغييرات Proofreader على الكمبيوتر، يقارن الردّ الأصلي بنسخته المعدَّلة"></td>
+  <td width="28%"><img src="../docs/readme/phone-proofreader.webp" alt="سجل تغييرات Proofreader على الهاتف"></td>
+</tr></table>
+
+يشغّل هذا المثال المُعَدّ مسبقًا سير عمل الوكلاء الحقيقي باستجابة نموذجية ثابتة. أما في الاستخدام العادي فيكتب نموذجك المتصل التعديلات، وقد تكلّف كل جولة طلبًا إضافيًا. [الوكلاء والرفاق في الدليل](https://platberlitz.github.io/neconyan-docs/helpers/agents/).
+
 <details>
-<summary><b>مزيد من لقطات الشاشة: Simple Mode، و«محادثة»، وMeower، ووضع القصة، والدفاتر، وScratchpad</b></summary>
+<summary><b>مزيد من لقطات الشاشة: Simple Mode، و«محادثة»، وMeower، ووضع القصة، والدفاتر، وScratchpad، وDevice sync</b></summary>
 
 ### Simple Mode
 
@@ -125,6 +146,15 @@
 <table><tr>
   <td width="72%"><img src="../docs/readme/desktop-scratchpad.webp" alt="Scratchpad على الكمبيوتر"></td>
   <td width="28%"><img src="../docs/readme/phone-scratchpad.webp" alt="Scratchpad على الهاتف"></td>
+</tr></table>
+
+### Device sync
+
+انقل مكتبات مختارة بين نسخ منفصلة من التطبيق. اختر ملفات مشفّرة، أو WebDAV، أو Gist سريًا على GitHub، أو الاقتران المباشر؛ وتبدأ عمليات النقل حين تطلب ذلك. [الإعداد والاستعادة في الدليل](https://platberlitz.github.io/neconyan-docs/help/device-sync/).
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-device-sync.webp" alt="إعدادات Device sync على الكمبيوتر"></td>
+  <td width="28%"><img src="../docs/readme/phone-device-sync.webp" alt="إعدادات Device sync على الهاتف"></td>
 </tr></table>
 
 </details>
@@ -199,5 +229,7 @@ git clone https://github.com/platberlitz/Neconyan.git
 بُني Neconyan على عمل كل من يقف وراء SillyTavern وSillyBunny؛ ولولاهم لما وُجد شيء من هذا. وتنسب [قائمة الأدوات المضمّنة](../docs/neconyan-native-tools.md) كل أداة إلى مؤلفيها الأصليين.
 
 من صنع [Platberlitz](https://github.com/platberlitz). مرخّص بموجب [GNU AGPL v3](../LICENSE). أبقِ الإشعارات والتراخيص في مكانها إن أعدت توزيعه.
+
+شكر خاص لـ **El Topo**، مساعدي ومساهمي الرئيسي. أقدّر حقًا كل الجهد الذي بذلتَه في Neconyan.
 
 </div>
