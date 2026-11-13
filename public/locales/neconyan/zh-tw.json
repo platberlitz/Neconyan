@@ -17615,5 +17615,14 @@
   "Request not sent, because you did not confirm its proxy address. Update or remove the reverse proxy in the connection profile or preset it uses.": "請求未送出，因為你沒有確認該請求的代理位址。請在該請求使用的連線設定檔或預設集中更新或移除反向代理伺服器。",
   "This change has already been undone.": "此變更已經復原。",
   "An earlier attempt to undo this change may not have finished, so nothing was changed this time. Open Change history again to see whether that attempt finished.": "先前復原此變更的嘗試可能尚未完成，因此這次沒有做任何變更。請再次開啟「Change history」，查看那次嘗試是否已完成。",
+  "Provider schema requires model support for text patterns. Instructions asks the model to follow the same pattern without enforcing it. Use this when your connection rejects schemas.": "Provider schema 需要模型支援文字模式。Instructions 會要求模型遵循相同的模式，但不強制執行。當你的連線拒絕 schema 時請使用此選項。",
+  "Otherwise, the assistant prefill supplies the starter. Hiding alone keeps it in model history. Removing it from saved chat affects new replies only. Text after [[keep]] stays.": "否則由助理預填提供起始範本。僅隱藏時，它仍會保留在模型歷史中。從已儲存的聊天中移除只會影響新的回覆。[[keep]] 之後的文字會保留。",
+  "Words match from a word start: gaze blocks gazed, but not stargaze. Punctuation matches anywhere. Keep the list short. Some providers reject these patterns.": "單字從字首開始比對：gaze 會封鎖 gazed，但不會封鎖 stargaze。標點符號在任何位置都會比對。請保持清單簡短。部分供應商會拒絕這些模式。",
+  "Show toasts and new Conversation DMs as device notifications. Off by default. Applies to this device and account. Muted threads and quiet hours still apply to DMs.": "將快顯訊息和新的對話私訊顯示為裝置通知。預設為關閉。適用於此裝置和帳號。已靜音的討論串和勿擾時段仍會套用於私訊。",
+  "Example:\n[Scene: rainy rooftop at midnight, Tone: quiet and tense]": "範例：\n[場景：午夜的雨中屋頂，語氣：安靜而緊繃]",
+  "1 sends on every reply. 0 turns the note off.": "1 表示每次回覆都傳送。0 表示關閉備註。",
+  "Generate from this persona's name and description. Choose an image for their latest message and future messages. Older messages keep their saved expression.": "根據此使用者角色的名稱和描述生成。為其最新訊息和之後的訊息選擇圖片。較早的訊息會保留已儲存的表情。",
+  "Green and magenta backgrounds are removed automatically. Choose a colour absent from the character. Separate images retain more detail than a large sheet. Image size follows Quick Image Gen settings.": "綠色和洋紅色背景會自動移除。請選擇角色身上沒有的顏色。分開的圖片比單張大圖保留更多細節。圖片大小遵循 Quick Image Gen 設定。",
+  "Downloads a 2.5 MB anime upscaler once. Processes small sections to limit memory use and keeps transparency. Runs after cleanup. Enlarging an image again makes it larger again.": "一次性下載 2.5 MB 的動漫放大器。分成小區塊處理以限制記憶體用量，並保留透明度。在清理之後執行。再次放大圖片會讓它變得更大。",
   "This version": "此版本"
 }

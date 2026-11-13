@@ -18724,5 +18724,14 @@
   "Request not sent, because you did not confirm its proxy address. Update or remove the reverse proxy in the connection profile or preset it uses.": "요청의 프록시 주소를 확인하지 않아 요청을 보내지 않았습니다. 요청이 사용하는 연결 프로필 또는 프리셋에서 역방향 프록시를 업데이트하거나 제거하세요.",
   "This change has already been undone.": "이 변경 사항은 이미 실행 취소되었습니다.",
   "An earlier attempt to undo this change may not have finished, so nothing was changed this time. Open Change history again to see whether that attempt finished.": "이 변경 사항을 실행 취소하려던 이전 시도가 완료되지 않았을 수 있어서 이번에는 아무것도 변경되지 않았습니다. “Change history”를 다시 열어 그 시도가 완료되었는지 확인하세요.",
+  "Provider schema requires model support for text patterns. Instructions asks the model to follow the same pattern without enforcing it. Use this when your connection rejects schemas.": "Provider schema는 모델이 텍스트 패턴을 지원해야 합니다. Instructions는 모델에게 같은 패턴을 따르도록 요청하지만 강제하지는 않습니다. 연결에서 스키마를 거부할 때 사용하세요.",
+  "Otherwise, the assistant prefill supplies the starter. Hiding alone keeps it in model history. Removing it from saved chat affects new replies only. Text after [[keep]] stays.": "그렇지 않으면 어시스턴트 프리필이 스타터를 제공합니다. 숨기기만 하면 모델 기록에는 남습니다. 저장된 채팅에서 제거하면 새 응답에만 영향을 줍니다. [[keep]] 뒤의 텍스트는 유지됩니다.",
+  "Words match from a word start: gaze blocks gazed, but not stargaze. Punctuation matches anywhere. Keep the list short. Some providers reject these patterns.": "단어는 단어 시작 위치부터 일치합니다: gaze는 gazed를 차단하지만 stargaze는 차단하지 않습니다. 문장 부호는 어디서든 일치합니다. 목록은 짧게 유지하세요. 일부 제공자는 이러한 패턴을 거부합니다.",
+  "Show toasts and new Conversation DMs as device notifications. Off by default. Applies to this device and account. Muted threads and quiet hours still apply to DMs.": "토스트와 새 대화 DM을 기기 알림으로 표시합니다. 기본값은 꺼짐입니다. 이 기기와 계정에 적용됩니다. 음소거한 스레드와 방해 금지 시간은 DM에도 계속 적용됩니다.",
+  "Example:\n[Scene: rainy rooftop at midnight, Tone: quiet and tense]": "예:\n[장면: 한밤중 비 내리는 옥상, 톤: 조용하고 긴장감 있음]",
+  "1 sends on every reply. 0 turns the note off.": "1은 모든 응답마다 보냅니다. 0은 노트를 끕니다.",
+  "Generate from this persona's name and description. Choose an image for their latest message and future messages. Older messages keep their saved expression.": "이 페르소나의 이름과 설명을 바탕으로 생성합니다. 페르소나의 최신 메시지와 이후 메시지에 사용할 이미지를 선택하세요. 이전 메시지는 저장된 표현식을 유지합니다.",
+  "Green and magenta backgrounds are removed automatically. Choose a colour absent from the character. Separate images retain more detail than a large sheet. Image size follows Quick Image Gen settings.": "녹색과 마젠타 배경은 자동으로 제거됩니다. 캐릭터에 없는 색상을 선택하세요. 개별 이미지는 큰 시트보다 세부 묘사를 더 잘 유지합니다. 이미지 크기는 Quick Image Gen 설정을 따릅니다.",
+  "Downloads a 2.5 MB anime upscaler once. Processes small sections to limit memory use and keeps transparency. Runs after cleanup. Enlarging an image again makes it larger again.": "2.5 MB 크기의 애니메이션 업스케일러를 한 번 다운로드합니다. 메모리 사용을 줄이기 위해 작은 구역 단위로 처리하며 투명도를 유지합니다. 정리 후에 실행됩니다. 이미지를 다시 확대하면 다시 더 커집니다.",
   "This version": "이 버전"
 }

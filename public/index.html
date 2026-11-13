@@ -4782,17 +4782,17 @@
                                             <p role="status" aria-live="polite" data-sp-verification></p>
                                             <small class="displayBlock" data-i18n="A matching reply confirms the result, not whether the provider enforced the pattern internally.">A matching reply confirms the result, not whether the provider enforced the pattern internally.</small>
                                             <label><span data-i18n="Output method">Output method</span><select class="text_pole" data-sp="output_method"><option value="schema" data-i18n="Provider schema">Provider schema</option><option value="instructions" data-i18n="Instructions (best effort)">Instructions (best effort)</option></select></label>
-                                            <small class="displayBlock" data-i18n="Provider schema requires model support for text patterns. Instructions asks the model to follow the same pattern without enforcing it; use this when your connection rejects schemas.">Provider schema requires model support for text patterns. Instructions asks the model to follow the same pattern without enforcing it; use this when your connection rejects schemas.</small>
+                                            <small class="displayBlock" data-i18n="Provider schema requires model support for text patterns. Instructions asks the model to follow the same pattern without enforcing it. Use this when your connection rejects schemas.">Provider schema requires model support for text patterns. Instructions asks the model to follow the same pattern without enforcing it. Use this when your connection rejects schemas.</small>
                                             <label class="checkbox_label"><input type="checkbox" data-sp="hide_prefill_in_display"><span data-i18n="Hide the starter in chat">Hide the starter in chat</span></label>
                                             <label class="checkbox_label"><input type="checkbox" data-sp="remove_prefill_from_history"><span data-i18n="Also remove the starter from saved chat">Also remove the starter from saved chat</span></label>
                                             <label class="checkbox_label"><input type="checkbox" data-sp="override_prefill_enabled"><span data-i18n="Use a separate starter template">Use a separate starter template</span></label>
                                             <label><span data-i18n="Starter template">Starter template</span><textarea class="text_pole" rows="3" data-sp="override_prefill_text" placeholder="I feel [[opt:calm|curious]]. [[keep]]"></textarea></label>
-                                            <small class="displayBlock" data-i18n="Otherwise, the assistant prefill supplies the starter. Hiding alone keeps it in model history; removing it from saved chat affects new replies only. Text after [[keep]] stays.">Otherwise, the assistant prefill supplies the starter. Hiding alone keeps it in model history; removing it from saved chat affects new replies only. Text after [[keep]] stays.</small>
+                                            <small class="displayBlock" data-i18n="Otherwise, the assistant prefill supplies the starter. Hiding alone keeps it in model history. Removing it from saved chat affects new replies only. Text after [[keep]] stays.">Otherwise, the assistant prefill supplies the starter. Hiding alone keeps it in model history. Removing it from saved chat affects new replies only. Text after [[keep]] stays.</small>
                                             <label><span data-i18n="Minimum characters after the starter">Minimum characters after the starter</span><input class="text_pole" type="number" min="0" max="100000" data-sp="min_chars_after_prefix"></label>
                                             <label><span data-i18n="Continue overlap (characters)">Continue overlap (characters)</span><input class="text_pole" type="number" min="0" max="1000" data-sp="continue_overlap_chars"></label>
                                             <label><span data-i18n="Newline marker">Newline marker</span><input class="text_pole" maxlength="32" data-sp="newline_token"></label>
                                             <label><span data-i18n="Banned phrases (one per line)">Banned phrases (one per line)</span><textarea class="text_pole" rows="3" maxlength="4000" data-sp="anti_slop_ban_list"></textarea></label>
-                                            <small class="displayBlock" data-i18n="Words match from a word start: gaze blocks gazed, but not stargaze. Punctuation matches anywhere. Keep the list short; some providers reject these patterns.">Words match from a word start: gaze blocks gazed, but not stargaze. Punctuation matches anywhere. Keep the list short; some providers reject these patterns.</small>
+                                            <small class="displayBlock" data-i18n="Words match from a word start: gaze blocks gazed, but not stargaze. Punctuation matches anywhere. Keep the list short. Some providers reject these patterns.">Words match from a word start: gaze blocks gazed, but not stargaze. Punctuation matches anywhere. Keep the list short. Some providers reject these patterns.</small>
                                             <details>
                                                 <summary data-i18n="Template slots">Template slots</summary>
                                                 <div>
@@ -6400,7 +6400,7 @@
                                             <label class="checkbox_label nn-vt-row" for="push_notifications">
                                                 <span class="nn-vt-text">
                                                     <small class="nn-vt-name" data-i18n="Push notifications">Push notifications</small>
-                                                    <span class="nn-vt-desc" data-i18n="Show toasts and new Conversation DMs as device notifications. Off by default; applies to this device and account. Muted threads and quiet hours still apply to DMs.">Show toasts and new Conversation DMs as device notifications. Off by default; applies to this device and account. Muted threads and quiet hours still apply to DMs.</span>
+                                                    <span class="nn-vt-desc" data-i18n="Show toasts and new Conversation DMs as device notifications. Off by default. Applies to this device and account. Muted threads and quiet hours still apply to DMs.">Show toasts and new Conversation DMs as device notifications. Off by default. Applies to this device and account. Muted threads and quiet hours still apply to DMs.</span>
                                                 </span>
                                                 <input id="push_notifications" type="checkbox" aria-describedby="push_notifications_status" />
                                             </label>
@@ -9277,7 +9277,7 @@
                                 <span data-i18n="extension_token_counter">Tokens:</span> <span id="extension_floating_prompt_token_counter">0</span>
                             </div>
                         </div>
-                        <textarea id="extension_floating_prompt" data-macros class="text_pole textarea_compact" rows="6" placeholder="Example:&#10;[Scene: rainy rooftop at midnight; Tone: quiet and tense]" data-i18n="[placeholder]Example:&#10;[Scene: rainy rooftop at midnight; Tone: quiet and tense]"></textarea>
+                        <textarea id="extension_floating_prompt" data-macros class="text_pole textarea_compact" rows="6" placeholder="Example:&#10;[Scene: rainy rooftop at midnight, Tone: quiet and tense]" data-i18n="[placeholder]Example:&#10;[Scene: rainy rooftop at midnight, Tone: quiet and tense]"></textarea>
                     </div>
                     <div class="an-field">
                         <span class="an-field-label" data-i18n="Where to insert">Where to insert</span>
@@ -9313,7 +9313,7 @@
                     <div class="an-row">
                         <label for="extension_floating_interval" class="an-row-copy">
                             <span class="an-row-title" data-i18n="Insertion Frequency">Insertion Frequency</span>
-                            <small class="an-row-desc" data-i18n="1 sends on every reply; 0 turns the note off.">1 sends on every reply; 0 turns the note off.</small>
+                            <small class="an-row-desc" data-i18n="1 sends on every reply. 0 turns the note off.">1 sends on every reply. 0 turns the note off.</small>
                         </label>
                         <input id="extension_floating_interval" class="text_pole widthUnset an-number" type="number" min="0" max="9999" />
                     </div>
@@ -9524,7 +9524,7 @@
                     <div class="an-row">
                         <label for="extension_default_interval" class="an-row-copy">
                             <span class="an-row-title" data-i18n="Insertion Frequency">Insertion Frequency</span>
-                            <small class="an-row-desc" data-i18n="1 sends on every reply; 0 turns the note off.">1 sends on every reply; 0 turns the note off.</small>
+                            <small class="an-row-desc" data-i18n="1 sends on every reply. 0 turns the note off.">1 sends on every reply. 0 turns the note off.</small>
                         </label>
                         <input id="extension_default_interval" class="text_pole widthUnset an-number" type="number" min="0" max="9999" />
                     </div>

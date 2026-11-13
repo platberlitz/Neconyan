@@ -474,6 +474,34 @@ const indexHtml = fs.readFileSync(new URL('../public/index.html', import.meta.ur
 const LOCALES = readLocaleJson('lang.json').map(item => item.lang).filter(lang => lang !== 'en');
 const DEEPSEEK_HINT_KEY = load(indexHtml)('[data-reasoning-legacy-hint][data-source="deepseek"]').attr('data-i18n');
 
+// The nine captions (ten elements) that used to hold a semicolon and so were cut into two keys. Each is read from its real page.
+const PAGES = {
+    index: load(indexHtml),
+    expressions: load(fs.readFileSync(new URL('../public/scripts/extensions/expressions/settings.html', import.meta.url), 'utf8')),
+};
+const CAPTIONS = [
+    { id: 'C1', page: 'index', selector: 'small[data-i18n^="Provider schema requires model support"]' },
+    { id: 'C2', page: 'index', selector: 'small[data-i18n^="Otherwise, the assistant prefill supplies"]' },
+    { id: 'C3', page: 'index', selector: 'small[data-i18n^="Words match from a word start"]' },
+    { id: 'C4', page: 'index', selector: '.nn-vt-desc[data-i18n^="Show toasts and new Conversation DMs"]' },
+    { id: 'C5', page: 'index', selector: '#extension_floating_prompt', attribute: 'placeholder' },
+    { id: 'C6', page: 'index', selector: '#an_panel_chat small.an-row-desc[data-i18n^="1 sends on every reply"]' },
+    { id: 'C7', page: 'index', selector: '#an_panel_defaults small.an-row-desc[data-i18n^="1 sends on every reply"]' },
+    { id: 'C8', page: 'expressions', selector: '#expression_persona_hint small' },
+    { id: 'C9', page: 'expressions', selector: '#expressions_background_hint' },
+    { id: 'C10', page: 'expressions', selector: '#expressions_upscale_hint' },
+];
+
+// The element's data-i18n, the key it holds and the text it shows (its placeholder for a textarea).
+function readCaption({ id, page, selector, attribute }) {
+    const matches = PAGES[page](selector);
+    expect({ id, matched: matches.length }).toEqual({ id, matched: 1 });
+    const dataI18n = matches.attr('data-i18n');
+    const key = attribute ? dataI18n.replace(/^\[placeholder\]/, '') : dataI18n;
+    const shown = attribute ? matches.attr(attribute) : matches.text().trim();
+    return { dataI18n, key, shown };
+}
+
 function localeFiles(lang) {
     return {
         [`${lang}.json`]: readLocaleJson(`${lang}.json`),
@@ -509,5 +537,46 @@ describe('a data-i18n caption is one key', () => {
         page.elements.push(caption);
         i18n.applyLocale();
         expect(caption.textContent).toBe(expected);
+    });
+
+    test.each(LOCALES)('the nine semicolon captions are translated whole in %s', async lang => {
+        const files = localeFiles(lang);
+        const { dictionary } = assembleLocaleData({
+            base: files[`${lang}.json`],
+            supplement: files[`neconyan/${lang}.json`],
+            catalogue: files['neconyan/en.json'],
+        });
+        const { i18n, page } = await loadI18n({ locale: lang, languages: [{ lang, display: lang }], files });
+        for (const item of CAPTIONS) {
+            const { dataI18n, key } = readCaption(item);
+            // A semicolon cuts the key into two half keys, so a caption that holds one can never be translated.
+            expect({ id: item.id, hasSemicolon: key.includes(';') }).toEqual({ id: item.id, hasSemicolon: false });
+            const expected = dictionary[key];
+            expect({ id: item.id, translated: typeof expected === 'string' && expected.length > 0 && expected !== key }).toEqual({ id: item.id, translated: true });
+            const caption = item.attribute ? element(dataI18n, '', { [item.attribute]: key }) : element(dataI18n, key);
+            page.elements.push(caption);
+            i18n.applyLocale();
+            expect({ id: item.id, shown: item.attribute ? caption.getAttribute(item.attribute) : caption.textContent }).toEqual({ id: item.id, shown: expected });
+        }
+    });
+
+    test('each caption key is its own English text in the catalogue', () => {
+        const catalogue = readLocaleJson('neconyan/en.json');
+        for (const item of CAPTIONS) {
+            const { key, shown } = readCaption(item);
+            expect({ id: item.id, catalogue: catalogue[key] }).toEqual({ id: item.id, catalogue: shown });
+        }
+    });
+
+    // Documents why the guard in tests/data-i18n-one-key.node.js exists. If i18n.js ever learns to escape a semicolon,
+    // delete this control and the guard together.
+    test('a semicolon in a key cuts it', async () => {
+        const key = 'Alpha one; Beta two';
+        const files = { ...FILES, 'neconyan/pt-pt.json': { ...FILES['neconyan/pt-pt.json'], [key]: 'Alfa um e Beta dois' } };
+        const { i18n, page } = await loadI18n({ files });
+        const caption = element(key, key);
+        page.elements.push(caption);
+        i18n.applyLocale();
+        expect(caption.textContent).toBe(key);
     });
 });
