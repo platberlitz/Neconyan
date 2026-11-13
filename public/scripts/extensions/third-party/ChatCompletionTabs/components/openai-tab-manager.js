@@ -26,6 +26,7 @@ export class OpenAITabManager {
                         '#left-nav-panel #sb-openai-output',
                         '#left-nav-panel #sb-openai-prompt-templates',
                         '#left-nav-panel #sb-openai-advanced',
+                        '#left-nav-panel #sb-openai-preset-linking',
                     ],
                 },
                 prompts: {

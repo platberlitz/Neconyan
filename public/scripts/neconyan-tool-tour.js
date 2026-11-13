@@ -532,14 +532,6 @@ const TOOL_PAGES = Object.freeze({
                 hint: 'Keep a backup before experimenting. Backups are free, unlike my taste in models.',
             },
             {
-                id: 'linking',
-                targets: ['#openai_api-presets .inline-drawer:has(#bind_preset_to_connection)'],
-                optional: true,
-                title: 'What changes when you switch',
-                body: '**Preset API/Sampler Linking** decides what loading a Chat Completion preset changes.\n**Keep API/model linked to preset** lets it change your provider and model too. Leave it off to reuse the preset with your current connection. **Keep sampling settings linked to preset** lets it load the saved sampling values, the settings that control how words are picked.',
-                hint: 'The preset doesn\'t have to choose the expensive model for you. I admit this reluctantly.',
-            },
-            {
                 id: 'parameters',
                 targets: ['#sb-openai-budget'],
                 tab: '#openai-tab-btn-parameters',
@@ -547,6 +539,15 @@ const TOOL_PAGES = Object.freeze({
                 title: 'Reply settings',
                 body: '**Parameters** groups the Chat Completion reply settings. **Token Budget** sets how much text the model can read and write; **Output** controls things such as streaming, showing the reply as it arrives.\nThe sliders that control word choice live on **Sampling**. Save the preset after making changes you want to keep.',
                 hint: 'Change one thing, try a reply, then decide. Even I can exercise restraint sometimes.',
+            },
+            {
+                id: 'linking',
+                targets: ['#sb-openai-preset-linking'],
+                tab: '#openai-tab-btn-parameters',
+                optional: true,
+                title: 'What changes when you switch',
+                body: '**Switching Presets**, at the end of **Parameters**, decides what loading a Chat Completion preset changes.\n**Keep API/model linked to preset** lets it change your provider and model too. Leave it off to reuse the preset with your current connection. **Keep sampling settings linked to preset** lets it load the saved sampling values, the settings that control how words are picked.',
+                hint: 'The preset doesn\'t have to choose the expensive model for you. I admit this reluctantly.',
             },
             {
                 id: 'prompts',
