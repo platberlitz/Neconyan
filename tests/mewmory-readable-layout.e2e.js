@@ -69,12 +69,12 @@ test('Mewmory keeps its tabs in one sticky row with readable headings and descri
                 const style = getComputedStyle(bar);
                 const tops = [...bar.querySelectorAll('[role="tab"]')].map(tab => Math.round(tab.getBoundingClientRect().top));
                 return {
-                    position: style.position, overflowX: style.overflowX, touchAction: style.touchAction,
+                    position: getComputedStyle(bar.parentElement).position, overflowX: style.overflowX, touchAction: style.touchAction,
                     rows: new Set(tops).size, heading: heading && getComputedStyle(heading).textTransform,
                 };
             });
             expect(layout.heading, `section heading at ${width}px`).toBe('none');
-            expect(layout.position, `tab bar at ${width}px`).toBe('sticky');
+            expect(layout.position, `tab wrapper at ${width}px`).toBe('sticky');
             expect(layout.rows, `tab rows at ${width}px`).toBe(1);
             if (width <= 393) {
                 expect(layout.overflowX).toBe('auto');
@@ -111,7 +111,7 @@ test.describe('Mewmory phone scroll controls', () => {
         const rail = page.locator('#mewmory-workspace .mewmory-tabs');
         await expect(rail).toBeVisible();
         await applyIOSOnlyCss(page, { inPlace: true });
-        const chrome = page.locator('#mewmory-workspace > .sb-mobile-rail-chrome');
+        const chrome = page.locator('#mewmory-workspace .sb-mobile-rail-chrome');
         const left = chrome.locator('.sb-mobile-rail-left');
         const right = chrome.locator('.sb-mobile-rail-right');
         await expect(chrome.locator('.sb-mobile-rail-track')).toBeVisible();
@@ -127,15 +127,23 @@ test.describe('Mewmory phone scroll controls', () => {
         await expect(chrome).toHaveCount(1);
         await expect(left).toBeVisible();
 
-        // The tab row sticks while its parent scrolls; its sibling controls must follow.
-        await rail.evaluate(el => {
+        // Measure in the scroll task itself: polling alone lets a delayed frame
+        // catch up and hides the drift when the tab row enters/leaves sticky mode.
+        const gaps = await rail.evaluate(el => {
+            const controls = el.parentElement.querySelector('.sb-mobile-rail-chrome');
             for (let parent = el.parentElement; parent; parent = parent.parentElement) {
                 if (/auto|scroll/.test(getComputedStyle(parent).overflowY) && parent.scrollHeight > parent.clientHeight) {
-                    parent.scrollTop = 300;
-                    break;
+                    return [0, 20, 300, 500, 200, 0, 300].map(top => {
+                        parent.scrollTop = top;
+                        const tabs = el.getBoundingClientRect();
+                        const chrome = controls.getBoundingClientRect();
+                        return Math.abs(tabs.top - chrome.top) + Math.abs(tabs.width - chrome.width);
+                    });
                 }
             }
+            throw new Error('Mewmory needs a scrollable settings page for this regression');
         });
+        for (const gap of gaps) expect(gap).toBeLessThan(1);
         await expect.poll(() => chrome.evaluate(el => {
             const tabs = el.parentElement.querySelector('.mewmory-tabs').getBoundingClientRect();
             const controls = el.getBoundingClientRect();

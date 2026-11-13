@@ -184,10 +184,14 @@
 .mewmory-stat dd.mewmory-caption { font-size: .78em; font-weight: 400; }
 .mewmory-progress { width: 100%; height: .4rem; accent-color: var(--mw-accent); }
 
-.mewmory-tabs {
+.mewmory-tabs-wrapper {
     position: sticky;
     top: 0;
     z-index: calc(var(--sb-z-raised, 10) + 2);
+    min-width: 0;
+}
+
+.mewmory-tabs {
     display: flex;
     gap: .25rem;
     padding: .3rem;
