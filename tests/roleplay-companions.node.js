@@ -406,6 +406,36 @@ test('a length-limited continued companion retains its last good selected note a
     assert.equal(cycle.rows().at(-1).extra.inChatAgentCompanionResults.b.failureKind, 'cycle');
 });
 
+test('a companion refusal fails the run instead of saving the refusal as a note', async t => {
+    const refusal = 'I cannot fulfill this request. The provided prompt contains highly explicit sexual content and '
+        + 'depictions of non-consensual sexual violence, and I am unable to generate responses or companion chatroom '
+        + 'commentary that engage with or depict sexually explicit material or sexual violence.';
+    const f = prepared(t, [companion('side')]);
+    await f.run({ generate: paid('main', 'Main reply'), generateAgent: paid('agent', refusal) });
+
+    const result = f.rows().at(-1).extra.inChatAgentCompanionResults.side;
+    assert.equal(result.status, 'error');
+    assert.equal(result.content, '');
+    assert.equal(result.failureKind, 'refusal');
+    assert.match(result.error, /refused to write this note/);
+});
+
+test('a companion refusal on a rerun keeps the last good note', async t => {
+    const refusal = 'I cannot fulfill this request. The provided prompt contains highly explicit sexual content and '
+        + 'depictions of non-consensual sexual violence, and I am unable to generate responses or companion chatroom '
+        + 'commentary that engage with or depict sexually explicit material or sexual violence.';
+    const f = prepared(t, [companion('side')], { effect: 'continue', changeRecords(records) {
+        records[2].extra.inChatAgentCompanionResults = { side: { status: 'done', content: 'Last good note', includeInChatHistory: false } };
+    } });
+    await f.run({ generate: paid('main', 'Main reply'), generateAgent: paid('agent', refusal) });
+
+    const result = f.rows().at(-1).extra.inChatAgentCompanionResults.side;
+    assert.equal(result.status, 'done');
+    assert.equal(result.content, 'Last good note');
+    assert.equal(result.lastRunFailureKind, 'refusal');
+    assert.match(result.lastRunError, /refused to write this note/);
+});
+
 for (const [placement, stripAll] of [['latest', false], ['source', false], ['block', false], ['block', true]]) {
     test(`retained hidden ${placement} companion notes preserve lore scanning through ${stripAll ? 'whole-note' : 'keyword'} prompt regex`, async t => {
         const script = { id: 'old-script', findRegex: stripAll ? '/[\\s\\S]+/g' : '/evening-bell/g', replaceString: '', placement: [2], promptOnly: true, markdownOnly: false,

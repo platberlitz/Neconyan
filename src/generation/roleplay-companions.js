@@ -10,7 +10,8 @@ import { isNativeCompanion } from './agent-definition.js';
 import { runAgentModelStep } from './agent-model-step.js';
 import { runRoleplayAgentPostprocessing } from './roleplay-agent-processing.js';
 import { companionEnvironment, companionMessageTokens, previousCompanionNotes, resolveCompanionText, singleCompanionPrompt, batchCompanionPrompt } from './companion-context.js';
-import { classifyCompanionFailureMessage, getActiveCompanionResults, isDiceRollerAgent, isEmptyOutputSentinel, MEMORY_SHARD_TEMPLATE_ID, resolveCompanionChatHistoryInjection } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
+import { COMPANION_FAILURE_MESSAGES, classifyCompanionFailureMessage, getActiveCompanionResults, isDiceRollerAgent, isEmptyOutputSentinel, MEMORY_SHARD_TEMPLATE_ID, resolveCompanionChatHistoryInjection } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
+import { isLikelyCompanionNoteRefusal } from '../../public/scripts/extensions/in-chat-agents/prompt-transform-refusal.js';
 import { getCompanionTrackerAutoRepairPayload, inspectCompanionTrackerOutput, normalizeCompanionTrackerRepairPayload } from '../../public/scripts/extensions/in-chat-agents/tracker-state.js';
 import { captureCompanionCapacity, MAX_COMPANION_RESULT_BYTES } from './companion-capacity.js';
 import { isRoleplayAgentStop, roleplayAgentsStopped } from './roleplay-agent-stop.js';
@@ -268,6 +269,9 @@ export async function runRoleplayCompanions(context, options) {
     };
     const usageOf = async (prompt, raw) => ({ inputTokens: await count(JSON.stringify(prompt.messages)),
         outputTokens: await count(JSON.stringify({ role: 'assistant', content: content(raw) })) });
+    // A refusal is a failed run, not a Companion note. The setting that discards refusals
+    // from other Agents also applies here, so turning it off restores the old behaviour.
+    const isCompanionRefusal = text => snapshot.agents?.refusalGuard !== false && isLikelyCompanionNoteRefusal(content(text));
     const trackerDisplayOptions = agent => {
         // Display validation may override the speaker, but must not mutate the accepted request.
         const environment = companionEnvironment({ ...input, macros: { ...input.macros, names: { ...input.macros.names } } }, agent);
@@ -314,6 +318,7 @@ export async function runRoleplayCompanions(context, options) {
         if (model.lengthLimited) return failedResult(agent, runIdentity, 'The reply reached its output limit.', model);
         let text = content(raw);
         if (!text) return failedResult(agent, runIdentity, 'Companion returned no output.', model);
+        if (isCompanionRefusal(text)) return failedResult(agent, runIdentity, COMPANION_FAILURE_MESSAGES.refusal, model);
         let usage = tokenUsage ?? await usageOf(prompt, raw);
         if (!isRepairTarget(agent) && agent.category === 'tracker') {
             const cleaned = await cleanTrackerOutput(agent, text, sections, stepName);
@@ -361,9 +366,14 @@ export async function runRoleplayCompanions(context, options) {
         if (agent.companion.includeWorldInfo) input.worldInfo = await worldInfoText();
         const prompt = singleCompanionPrompt({ ...input, repair: isRepairTarget(agent) }, agent, extra);
         const stepName = `companion:${agent.id}${suffix}`;
-        const acceptOutput = agent.category !== 'tracker' ? undefined : text => isRepairTarget(agent)
-            ? !!normalizeCompanionTrackerRepairPayload(agent, content(text), { ...trackerDisplayOptions(agent), previousText: prior?.content }).payload
-            : inspectCompanionTrackerOutput(agent, content(text), trackerDisplayOptions(agent)).action === 'keep';
+        const acceptOutput = text => {
+            const value = content(text);
+            if (isCompanionRefusal(value)) return false;
+            if (agent.category !== 'tracker') return true;
+            return isRepairTarget(agent)
+                ? !!normalizeCompanionTrackerRepairPayload(agent, value, { ...trackerDisplayOptions(agent), previousText: prior?.content }).payload
+                : inspectCompanionTrackerOutput(agent, value, trackerDisplayOptions(agent)).action === 'keep';
+        };
         const model = await runModel(agent, stepName, prompt, agent.companion.maxTokens, [agent], acceptOutput);
         return finishResult(agent, model.text, model, prompt, runIdentity, null, prompt.coverage, sections, stepName);
     };

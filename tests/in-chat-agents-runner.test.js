@@ -4461,6 +4461,10 @@ describe('in-chat agent post-processing runner', () => {
     });
 
     describe('a failed rerun keeps the previous note', () => {
+        const refusal = 'I cannot fulfill this request. The provided prompt contains highly explicit sexual content and '
+            + 'depictions of non-consensual sexual violence, and I am unable to generate responses or companion chatroom '
+            + 'commentary that engage with or depict sexually explicit material or sexual violence.';
+
         async function seedDoneNote() {
             const companion = createCompanionAgent({ id: 'rerun-companion' });
             enabledAgents = [companion];
@@ -4512,6 +4516,65 @@ describe('in-chat agent post-processing runner', () => {
             expect(stored.status).toBe('done');
             expect(stored.content).toBe('Useful earlier note');
             expect(stored.lastRunError).toBe('Companion returned no output.');
+        });
+
+        test('a refusal fails the run and keeps the previous note', async () => {
+            const { companion, companionRunner } = await seedDoneNote();
+            const { COMPANION_FAILURE_MESSAGES, isRetryableCompanionFailure } = await import(
+                '../public/scripts/extensions/in-chat-agents/companion/companion-shared.js'
+            );
+            generateQuietPrompt.mockResolvedValueOnce(refusal);
+
+            await companionRunner.runCompanionAgentOnMessage(companion.id, 0);
+
+            const stored = chat[0].extra.inChatAgentCompanionResults[companion.id];
+            expect(stored).toMatchObject({
+                status: 'done',
+                content: 'Useful earlier note',
+                lastRunError: COMPANION_FAILURE_MESSAGES.refusal,
+                lastRunFailureKind: 'refusal',
+            });
+            expect(isRetryableCompanionFailure(stored)).toBe(false);
+        });
+
+        test('a refusal with no previous note creates a failed result, not a note', async () => {
+            const companion = createCompanionAgent({ id: 'refusal-only' });
+            enabledAgents = [companion];
+            const { COMPANION_FAILURE_MESSAGES } = await import('../public/scripts/extensions/in-chat-agents/companion/companion-shared.js');
+            const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+            chat.push({ mes: 'Assistant reply', name: 'Assistant', is_user: false, is_system: false, extra: {} });
+            generateQuietPrompt.mockResolvedValueOnce(refusal);
+
+            const result = await companionRunner.runCompanionAgentOnMessage(companion.id, 0);
+
+            expect(result).toEqual(expect.objectContaining({
+                status: 'error',
+                content: '',
+                error: COMPANION_FAILURE_MESSAGES.refusal,
+                failureKind: 'refusal',
+            }));
+            expect(chat[0].extra.inChatAgentCompanionResults[companion.id].content).toBe('');
+        });
+
+        test('a fallback connection can write the note after the first one refuses', async () => {
+            const companion = { ...createCompanionAgent({ id: 'refusal-fallback' }), connectionProfile: 'primary' };
+            enabledAgents = [companion];
+            globalSettings.companionConnectionFallbacks = ['backup'];
+            connectionManagerRequestService = {
+                constructPrompt: jest.fn(messages => messages),
+                sendRequest: jest.fn(async profileId => ({ content: profileId === 'primary' ? refusal : 'A note from the backup' })),
+            };
+            const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+            chat.push({ mes: 'Assistant reply', name: 'Assistant', is_user: false, is_system: false, extra: {} });
+
+            const result = await companionRunner.runCompanionAgentOnMessage(companion.id, 0);
+
+            expect(result).toEqual(expect.objectContaining({
+                status: 'done',
+                content: 'A note from the backup',
+                profileId: 'backup',
+            }));
+            expect(connectionManagerRequestService.sendRequest.mock.calls.map(call => call[0])).toEqual(['primary', 'backup']);
         });
 
         test('a later successful run clears the failure marker', async () => {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { isLikelyMainReplyRefusal, isLikelyPromptTransformRefusal } from '../public/scripts/extensions/in-chat-agents/prompt-transform-refusal.js';
+import { isLikelyCompanionNoteRefusal, isLikelyMainReplyRefusal, isLikelyPromptTransformRefusal } from '../public/scripts/extensions/in-chat-agents/prompt-transform-refusal.js';
 
 const reply = 'She pulled him closer, breath hot against his neck. "Stay," she whispered, and the candle guttered out.';
 
@@ -57,4 +57,13 @@ test('in-character refusals and late refusals still run Agents', () => {
     ]) {
         assert.equal(isLikelyMainReplyRefusal(text), false, text);
     }
+});
+
+test('a Companion note that opens with a refusal is rejected without touching in-story refusals', () => {
+    const chatroomRefusal = 'I cannot fulfill this request. The provided prompt contains highly explicit sexual content and '
+        + 'depictions of non-consensual sexual violence, and I am unable to generate responses or companion chatroom commentary '
+        + 'that engage with or depict sexually explicit material or sexual violence.';
+    assert.equal(isLikelyCompanionNoteRefusal(chatroomRefusal), true);
+    assert.equal(isLikelyCompanionNoteRefusal('The courier flushed. "I can\'t tell you that," she said, and hurried on.'), false);
+    assert.equal(isLikelyCompanionNoteRefusal('Candlelight caught the rim of her glass. The room settled into quiet talk.'), false);
 });
