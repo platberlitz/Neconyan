@@ -3111,7 +3111,7 @@ function rebuildModelIdSearchDatalist(control, optionMap, favoriteOptions, query
 
     const seen = new Set();
     const options = [...favoriteOptions, ...optionMap.values()];
-    datalist.replaceChildren();
+    const children = [];
 
     for (const option of options) {
         if (seen.has(option.value) || !modelIdSearchOptionMatches(option, query)) {
@@ -3121,8 +3121,31 @@ function rebuildModelIdSearchDatalist(control, optionMap, favoriteOptions, query
         const optionElement = document.createElement('option');
         optionElement.value = option.value;
         optionElement.label = option.text;
-        datalist.appendChild(optionElement);
+        children.push(optionElement);
         seen.add(option.value);
+    }
+
+    replaceChangedModelIdSearchChildren(datalist, children);
+}
+
+/**
+ * Typing a model ID only changes its own entry, so replacing every option
+ * re-rendered the whole catalogue on each keystroke. Swap only what differs.
+ * @param {Element} parent
+ * @param {Element[]} children
+ */
+function replaceChangedModelIdSearchChildren(parent, children) {
+    children.forEach((child, index) => {
+        const current = parent.children[index];
+        if (!current) {
+            parent.appendChild(child);
+        } else if (!current.isEqualNode(child)) {
+            current.replaceWith(child);
+        }
+    });
+
+    while (parent.children.length > children.length) {
+        parent.lastElementChild.remove();
     }
 }
 
@@ -3161,21 +3184,21 @@ function rebuildModelIdSearchControl(control, { preserveQuery = false } = {}) {
         .filter(option => modelIdSearchOptionMatches(option, query));
     const renderedValues = new Set();
 
-    select.replaceChildren();
+    const next = document.createDocumentFragment();
 
     if (favoriteOptions.length > 0) {
         const favoritesGroup = document.createElement('optgroup');
         favoritesGroup.label = t`Favorites`;
         favoritesGroup.setAttribute('data-sb-model-id-generated', 'true');
         favoriteOptions.forEach(option => appendModelIdSearchOption(favoritesGroup, option, renderedValues, { favorite: true }));
-        select.appendChild(favoritesGroup);
+        next.appendChild(favoritesGroup);
     }
 
     for (const entry of staticEntries) {
         if (entry.type === 'option') {
             const option = entry.option;
             if (!favoriteValues.has(option.value) && modelIdSearchOptionMatches(option, query)) {
-                appendModelIdSearchOption(select, option, renderedValues);
+                appendModelIdSearchOption(next, option, renderedValues);
             }
             continue;
         }
@@ -3194,7 +3217,7 @@ function rebuildModelIdSearchControl(control, { preserveQuery = false } = {}) {
             .forEach(option => appendModelIdSearchOption(group, option, renderedValues));
 
         if (group.children.length > 0 || entry.dynamic) {
-            select.appendChild(group);
+            next.appendChild(group);
         }
     }
 
@@ -3208,7 +3231,7 @@ function rebuildModelIdSearchControl(control, { preserveQuery = false } = {}) {
             .forEach(option => appendModelIdSearchOption(dynamicGroup, option, renderedValues));
 
         if (dynamicGroup.children.length > 0) {
-            select.appendChild(dynamicGroup);
+            next.appendChild(dynamicGroup);
         }
     }
 
@@ -3217,15 +3240,17 @@ function rebuildModelIdSearchControl(control, { preserveQuery = false } = {}) {
         currentGroup.label = t`Current`;
         currentGroup.setAttribute('data-sb-model-id-generated', 'true');
         appendModelIdSearchOption(currentGroup, optionMap.get(selectedValue) || { value: selectedValue, text: selectedValue }, renderedValues);
-        select.appendChild(currentGroup);
+        next.appendChild(currentGroup);
     }
 
-    if (select.options.length === 0) {
+    if (!next.querySelector('option')) {
         const emptyOption = new Option(t`No matching models`, '');
         emptyOption.disabled = true;
         emptyOption.setAttribute('data-sb-model-id-generated', 'true');
-        select.appendChild(emptyOption);
+        next.appendChild(emptyOption);
     }
+
+    replaceChangedModelIdSearchChildren(select, [...next.children]);
 
     if (selectedValue && select.querySelector(`option[value="${CSS.escape(selectedValue)}"]`)) {
         select.value = selectedValue;
@@ -10780,14 +10805,33 @@ export function initOpenAI() {
         saveSettingsDebounced();
     });
 
-    $('#custom_model_id').on('input', function () {
-        oai_settings.custom_model = String($(this).val());
+    let customModelControlsTimer = null;
+    const refreshCustomModelControls = () => {
+        clearTimeout(customModelControlsTimer);
+        customModelControlsTimer = null;
         refreshModelIdSearchControlsForSource(chat_completion_sources.CUSTOM);
         updateKimiK3PrefillVisibility();
         updateChatCompletionSamplerControlVisibility();
         updateOpenAISettingsGroupVisibility();
+    };
+
+    $('#custom_model_id').on('input', function (event) {
+        oai_settings.custom_model = String($(this).val());
+        // Rebuilding a long model list on every keystroke made typing lag, so wait for a pause.
+        if (event.originalEvent) {
+            clearTimeout(customModelControlsTimer);
+            customModelControlsTimer = setTimeout(refreshCustomModelControls, 250);
+        } else {
+            refreshCustomModelControls();
+        }
         refreshCustomEndpointPresetEditedState();
         saveSettingsDebounced();
+    });
+
+    $('#custom_model_id').on('change', function () {
+        if (customModelControlsTimer !== null) {
+            refreshCustomModelControls();
+        }
     });
 
     $('#openai_model_id').on('input', function () {

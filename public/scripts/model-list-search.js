@@ -69,6 +69,7 @@ export function attachModelListSearch(select, options = {}) {
     let searchText = new WeakMap();
     let revealOnRender = true;
     let renderedGroups = [];
+    let headings = new Map();
     lists.set(select, list);
 
     // Programmatic .val() calls do not fire a change event. Sync before the
@@ -182,13 +183,34 @@ export function attachModelListSearch(select, options = {}) {
         return button;
     }
 
-    function render({ invalidate = true } = {}) {
+    /**
+     * Forgets the rows the given source changes touched, or every row when the
+     * changes are unknown. Untouched options keep their buttons.
+     * @param {MutationRecord[] | null} changes
+     */
+    function forgetRows(changes) {
+        if (!changes || changes.some(record => record.target === select && record.type === 'attributes')) {
+            rows = new WeakMap();
+            return;
+        }
+        for (const record of changes) {
+            const target = record.target instanceof Element ? record.target : record.target.parentElement;
+            const option = target?.closest('option');
+            if (option) rows.delete(option);
+        }
+    }
+
+    function render({ invalidate = true, changes = null } = {}) {
         const scrollTop = results.scrollTop;
         // A caller can replace options and dispatch input in the same turn,
         // before the observer has delivered those source changes.
-        if (!invalidate && observer.takeRecords().length) invalidate = true;
+        const pending = observer.takeRecords();
+        if (pending.length) {
+            changes = invalidate && !changes ? null : [...(changes ?? []), ...pending];
+            invalidate = true;
+        }
         if (invalidate) {
-            rows = new WeakMap();
+            forgetRows(changes);
             searchText = new WeakMap();
             const seen = new Set();
             // Native option reads and normalisation only change with the source,
@@ -229,17 +251,33 @@ export function attachModelListSearch(select, options = {}) {
         }
         renderedGroups = groups;
 
-        const fragment = document.createDocumentFragment();
+        const nodes = [];
+        const previousHeadings = headings;
+        headings = new Map();
         for (const group of groups) {
             if (group.label) {
-                const heading = document.createElement('div');
-                heading.className = 'nn-model-list-group';
-                heading.textContent = group.label;
-                fragment.append(heading);
+                let heading = headings.has(group.label) ? null : previousHeadings.get(group.label);
+                if (!heading) {
+                    heading = document.createElement('div');
+                    heading.className = 'nn-model-list-group';
+                    heading.textContent = group.label;
+                }
+                headings.set(group.label, heading);
+                nodes.push(heading);
             }
-            for (const option of group.items) fragment.append(createRow(option));
+            for (const option of group.items) nodes.push(createRow(option));
         }
-        results.replaceChildren(fragment);
+        // Move only the rows that changed: re-adding hundreds of unchanged rows
+        // on each keystroke in the model ID field made typing stall.
+        const keep = new Set(nodes);
+        for (const child of [...results.children]) {
+            if (!keep.has(child)) child.remove();
+        }
+        let cursor = results.firstElementChild;
+        for (const node of nodes) {
+            if (node === cursor) cursor = cursor.nextElementSibling;
+            else results.insertBefore(node, cursor);
+        }
         // Rebuilding options temporarily empties the scroller. Restore its
         // position before returning focus to a row, including on touch screens.
         results.scrollTop = scrollTop;
@@ -338,7 +376,7 @@ export function attachModelListSearch(select, options = {}) {
         select.addEventListener('change', syncPressed);
         select.addEventListener('input', syncPressed);
     }
-    const observer = new MutationObserver(() => render());
+    const observer = new MutationObserver(changes => render({ changes }));
     observer.observe(select, {
         childList: true,
         subtree: true,

@@ -122,4 +122,18 @@ describe('OpenAI custom favorites wiring', () => {
         expect(openAiSource).toContain('$(\'#custom_api_url_text\').on(\'change\', function () {');
         expect(openAiSource).toMatch(/\$\('#custom_api_url_text'\)\.on\('change', function \(\) \{[\s\S]*if \(oai_settings\.chat_completion_source === chat_completion_sources\.CUSTOM\) \{[\s\S]*refreshModelIdSearchControlsForSource\(chat_completion_sources\.CUSTOM\);[\s\S]*\}\);/);
     });
+
+    test('waits for a typing pause before rebuilding the Custom model lists', () => {
+        const start = openAiSource.indexOf('let customModelControlsTimer = null;');
+        const end = openAiSource.indexOf('$(\'#openai_model_id\').on(\'input\'', start);
+        const block = openAiSource.slice(start, end);
+        const handler = block.slice(block.indexOf('$(\'#custom_model_id\').on(\'input\''));
+
+        expect(start).toBeGreaterThanOrEqual(0);
+        expect(handler).toContain('oai_settings.custom_model = String($(this).val());');
+        expect(handler).toMatch(/if \(event\.originalEvent\) \{\s*clearTimeout\(customModelControlsTimer\);\s*customModelControlsTimer = setTimeout\(refreshCustomModelControls, 250\);\s*\} else \{\s*refreshCustomModelControls\(\);\s*\}/);
+        expect(handler).not.toMatch(/^\s*refreshModelIdSearchControlsForSource\(/m);
+        expect(block).toMatch(/const refreshCustomModelControls = \(\) => \{[\s\S]*refreshModelIdSearchControlsForSource\(chat_completion_sources\.CUSTOM\);[\s\S]*updateOpenAISettingsGroupVisibility\(\);/);
+        expect(block).toMatch(/\$\('#custom_model_id'\)\.on\('change', function \(\) \{\s*if \(customModelControlsTimer !== null\) \{\s*refreshCustomModelControls\(\);/);
+    });
 });
