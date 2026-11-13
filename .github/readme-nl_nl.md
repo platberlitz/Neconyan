@@ -1,8 +1,8 @@
-<!-- Translated from README.md at commit de66c177 (Neconyan 1.5.0). Keep the structure in step with the English README. -->
+<!-- Translated from README.md at commit 19874db1 (Neconyan 1.5.4). Keep the structure in step with the English README. -->
 
 # Neconyan~
 
-De nieuwste versie is [1.5.0](https://github.com/platberlitz/Neconyan/releases/latest).
+De nieuwste versie is [1.5.4](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.4).
 
 **Lees in je eigen taal:** [English](../README.md) · [Deutsch](readme-de_de.md) · [Español](readme-es_es.md) · [Français](readme-fr_fr.md) · [Italiano](readme-it_it.md) · [Português](readme-pt_pt.md) · [Íslenska](readme-is_is.md) · [Русский](readme-ru_ru.md) · [Українська](readme-uk_ua.md) · [العربية](readme-ar_sa.md) · [ไทย](readme-th_th.md) · [Tiếng Việt](readme-vi_vn.md) · [日本語](readme-ja_jp.md) · [한국어](readme-ko_kr.md) · [简体中文](readme-zh_cn.md) · [繁體中文](readme-zh_tw.md)
 
@@ -29,6 +29,7 @@ Neconyan is mijn fork met kattenthema van [SillyTavern](https://github.com/Silly
 - **Mewmory** onthoudt gebeurtenissen en personages uit je verhaal. **Agents** kunnen trackers bijhouden, een antwoord controleren of een aparte Metgezel-notitie schrijven.
 - **Catelier** helpt je bij het schrijven van personagekaarten en lorebooks. **Notitieboeken** houdt je notities binnen handbereik, en **Scratchpad** geeft je een aparte chat om ideeën door te praten.
 - **Miso, Taro en Nori** helpen je dingen te vinden en kunnen met jouw toestemming ondersteunde bewerkingen uitvoeren.
+- **Device sync** verplaatst geselecteerde gegevens tussen afzonderlijke installaties, met versleutelde bestanden, WebDAV, geheime GitHub Gists of direct koppelen. Overdrachten starten pas als jij erom vraagt.
 - **Thema's, accentkleuren en katten.** Best veel katten. Je kunt ze verbergen, al kan ik me niet voorstellen waarom je dat zou willen.
 
 Je personagekaarten, chats, lorebooks en voorinstellingen gebruiken vertrouwde SillyTavern-formaten. Er is geen telemetrie. Sommige functies en extensies van upstream werken hier anders; ik neem alleen de onderdelen over die ik wil hebben. De [lijst met meegeleverde tools](../docs/neconyan-native-tools.md) bevat de bronvermelding voor de projecten die met Neconyan worden meegeleverd.
@@ -39,7 +40,7 @@ Je personagekaarten, chats, lorebooks en voorinstellingen gebruiken vertrouwde S
   <img src="../docs/readme/banner-modes.webp" alt="Modi">
 </p>
 
-Nieuwe screenshots van de computer en de telefoon, gemaakt met demochats, notities en de meegeleverde assistenten.
+Screenshots van de computer en de telefoon uit 1.5.4, gemaakt met demochats, notities en de meegeleverde assistenten.
 
 ### Startpagina
 
@@ -68,8 +69,28 @@ Werk aan een personageconcept, vraag om hulp bij het schrijven en bekijk de wijz
   <td width="28%"><img src="../docs/readme/phone-catelier.webp" alt="Catelier op een telefoon"></td>
 </tr></table>
 
+### Agents
+
+Kies een helper, bepaal wanneer die draait en geef die een verbinding mee. Ik zou beginnen met één helper in plaats van de halve bibliotheek in één keer aan te zetten.
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-agents.webp" alt="Agents op de computer, met antwoordhelpers en hun bedieningselementen"></td>
+  <td width="28%"><img src="../docs/readme/phone-agents.webp" alt="Agents op een telefoon"></td>
+</tr></table>
+
+### Proofreader na generatie
+
+Proofreader controleert een antwoord nadat het binnenkomt. Het kan proza en opmaak opschonen, zonder dat het hoofdmodel de scène opnieuw hoeft te schrijven. Open **Agentwijzigingen** om de bewerking te vergelijken en ongedaan te maken als je het origineel liever hebt.
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-proofreader.webp" alt="Wijzigingsgeschiedenis van Proofreader op de computer, met het originele antwoord naast de bewerkte versie"></td>
+  <td width="28%"><img src="../docs/readme/phone-proofreader.webp" alt="Wijzigingsgeschiedenis van Proofreader op een telefoon"></td>
+</tr></table>
+
+Dit voorbeeld is geënsceneerd: het draait de echte Agent-workflow met een vast voorbeeldantwoord. Normaal schrijft je verbonden model de bewerkingen, en elke controle kan een extra verzoek kosten. [Agents en Metgezellen in het handboek](https://platberlitz.github.io/neconyan-docs/helpers/agents/).
+
 <details>
-<summary><b>Meer screenshots: Simple Mode, Gesprek, Meower, Story Mode, Notitieboeken en Scratchpad</b></summary>
+<summary><b>Meer screenshots: Simple Mode, Gesprek, Meower, Story Mode, Notitieboeken, Scratchpad en Device sync</b></summary>
 
 ### Simple Mode
 
@@ -123,6 +144,15 @@ Praat het verhaal door met een assistent of een ronde tafel van personages, zond
 <table><tr>
   <td width="72%"><img src="../docs/readme/desktop-scratchpad.webp" alt="Scratchpad op de computer"></td>
   <td width="28%"><img src="../docs/readme/phone-scratchpad.webp" alt="Scratchpad op een telefoon"></td>
+</tr></table>
+
+### Device sync
+
+Verplaats geselecteerde bibliotheken tussen afzonderlijke installaties. Kies versleutelde bestanden, WebDAV, een geheime GitHub Gist of direct koppelen; overdrachten starten wanneer jij erom vraagt. [Instellen en herstellen in het handboek](https://platberlitz.github.io/neconyan-docs/help/device-sync/).
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-device-sync.webp" alt="Device sync-instellingen op de computer"></td>
+  <td width="28%"><img src="../docs/readme/phone-device-sync.webp" alt="Device sync-instellingen op een telefoon"></td>
 </tr></table>
 
 </details>
@@ -197,3 +227,5 @@ Als je een instelling niet kunt vinden, probeer dan **Zoekopdracht** in de zijba
 Neconyan bouwt voort op het werk van iedereen achter SillyTavern en SillyBunny; zonder hen zou dit allemaal niet bestaan. De [lijst met meegeleverde tools](../docs/neconyan-native-tools.md) vermeldt de oorspronkelijke auteurs van die tools.
 
 Gemaakt door [Platberlitz](https://github.com/platberlitz). Uitgebracht onder [GNU AGPL v3](../LICENSE). Laat de vermeldingen en licenties staan als je het verder verspreidt.
+
+Speciale dank aan **El Topo**, mijn belangrijkste helper en bijdrager. Ik waardeer al het werk dat je in Neconyan hebt gestoken enorm.

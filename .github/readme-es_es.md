@@ -1,8 +1,8 @@
-<!-- Translated from README.md at commit de66c177 (Neconyan 1.5.0). Keep the structure in step with the English README. -->
+<!-- Translated from README.md at commit 19874db1 (Neconyan 1.5.4). Keep the structure in step with the English README. -->
 
 # Neconyan~
 
-La última versión es la [1.5.0](https://github.com/platberlitz/Neconyan/releases/latest).
+La última versión es la [1.5.4](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.4).
 
 **Léelo en tu idioma:** [English](../README.md) · [Deutsch](readme-de_de.md) · [Français](readme-fr_fr.md) · [Italiano](readme-it_it.md) · [Nederlands](readme-nl_nl.md) · [Português](readme-pt_pt.md) · [Íslenska](readme-is_is.md) · [Русский](readme-ru_ru.md) · [Українська](readme-uk_ua.md) · [العربية](readme-ar_sa.md) · [ไทย](readme-th_th.md) · [Tiếng Việt](readme-vi_vn.md) · [日本語](readme-ja_jp.md) · [한국어](readme-ko_kr.md) · [简体中文](readme-zh_cn.md) · [繁體中文](readme-zh_tw.md)
 
@@ -29,6 +29,7 @@ Neconyan es mi fork con temática gatuna de [SillyTavern](https://github.com/Sil
 - **Mewmory** recuerda los acontecimientos y los personajes de la historia. Los **Agentes** pueden llevar rastreadores, revisar una respuesta o escribir una Nota del acompañante aparte.
 - **Catelier** te ayuda a escribir fichas de personaje y lorebooks. **Cuadernos** te tiene las notas a mano, y **Scratchpad** te da un chat aparte para comentar ideas.
 - **Miso, Taro y Nori** te ayudan a encontrar cosas y, con tu permiso, pueden hacer las ediciones que admiten.
+- **Device sync** traslada datos seleccionados entre instalaciones distintas con archivos cifrados, WebDAV, Gists secretos de GitHub o emparejamiento directo. Las transferencias se ejecutan cuando tú lo pides.
 - **Temas, colores de acento y gatos.** Bastantes gatos. Puedes ocultarlos, aunque no se me ocurre por qué querrías hacerlo.
 
 Tus fichas de personaje, chats, lorebooks y preajustes usan los formatos habituales de SillyTavern. No hay telemetría. Algunas funciones y extensiones del proyecto original se comportan de otra manera aquí; yo solo incorporo las partes que me interesan. La [lista de herramientas incluidas](../docs/neconyan-native-tools.md) reconoce los proyectos que vienen con Neconyan.
@@ -39,7 +40,7 @@ Tus fichas de personaje, chats, lorebooks y preajustes usan los formatos habitua
   <img src="../docs/readme/banner-modes.webp" alt="Modos">
 </p>
 
-Capturas nuevas del ordenador y del móvil, con chats y notas de demostración y los asistentes incluidos.
+Capturas del ordenador y del móvil de la 1.5.4, con chats y notas de demostración y los asistentes incluidos.
 
 ### Inicio
 
@@ -68,8 +69,28 @@ Trabaja en el borrador de un personaje, pide ayuda para escribir y revisa los ca
   <td width="28%"><img src="../docs/readme/phone-catelier.webp" alt="Catelier en el móvil"></td>
 </tr></table>
 
+### Agentes
+
+Elige un ayudante, decide cuándo se ejecuta y dale una conexión. Yo empezaría con uno solo en lugar de activar media biblioteca de golpe.
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-agents.webp" alt="Agentes en el ordenador, con ayudantes de respuestas y sus controles"></td>
+  <td width="28%"><img src="../docs/readme/phone-agents.webp" alt="Agentes en el móvil"></td>
+</tr></table>
+
+### Proofreader posterior a la generación
+
+Proofreader revisa una respuesta después de que llegue. Puede pulir la prosa y el formato sin pedirle al modelo principal que vuelva a escribir la escena. Abre **Cambios del agente** para comparar la edición y deshacerla si prefieres el original.
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-proofreader.webp" alt="Historial de cambios de Proofreader en el ordenador, comparando la respuesta original con su versión editada"></td>
+  <td width="28%"><img src="../docs/readme/phone-proofreader.webp" alt="Historial de cambios de Proofreader en el móvil"></td>
+</tr></table>
+
+Este ejemplo de demostración ejecuta el flujo de trabajo real de los Agentes con una respuesta de muestra fija. En el uso normal, tu modelo conectado escribe las ediciones, y cada pasada puede costar otra solicitud. [Agentes y compañeros en el manual](https://platberlitz.github.io/neconyan-docs/helpers/agents/).
+
 <details>
-<summary><b>Más capturas: Simple Mode, Conversación, Meower, Modo historia, Cuadernos y Scratchpad</b></summary>
+<summary><b>Más capturas: Simple Mode, Conversación, Meower, Modo historia, Cuadernos, Scratchpad y Device sync</b></summary>
 
 ### Simple Mode
 
@@ -123,6 +144,15 @@ Comenta la historia con un asistente o con una mesa redonda de personajes, sin q
 <table><tr>
   <td width="72%"><img src="../docs/readme/desktop-scratchpad.webp" alt="Scratchpad en el ordenador"></td>
   <td width="28%"><img src="../docs/readme/phone-scratchpad.webp" alt="Scratchpad en el móvil"></td>
+</tr></table>
+
+### Device sync
+
+Traslada bibliotecas seleccionadas entre instalaciones distintas. Elige archivos cifrados, WebDAV, un Gist secreto de GitHub o emparejamiento directo; las transferencias empiezan cuando tú lo pides. [Configuración y recuperación en el manual](https://platberlitz.github.io/neconyan-docs/help/device-sync/).
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-device-sync.webp" alt="Ajustes de Device sync en el ordenador"></td>
+  <td width="28%"><img src="../docs/readme/phone-device-sync.webp" alt="Ajustes de Device sync en el móvil"></td>
 </tr></table>
 
 </details>
@@ -197,3 +227,5 @@ Si echas en falta algún ajuste, prueba **Buscar** en la barra lateral. Si hay e
 Neconyan se apoya en el trabajo de todas las personas que hay detrás de SillyTavern y SillyBunny; nada de esto existiría sin ellas. La [lista de herramientas incluidas](../docs/neconyan-native-tools.md) reconoce a sus autores originales.
 
 Hecho por [Platberlitz](https://github.com/platberlitz). Con licencia [GNU AGPL v3](../LICENSE). Si lo redistribuyes, mantén los avisos y las licencias.
+
+Un agradecimiento especial a **El Topo**, mi principal ayudante y colaborador. De verdad te agradezco todo el trabajo que has dedicado a Neconyan.

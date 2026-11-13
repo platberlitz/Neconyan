@@ -1,8 +1,8 @@
-<!-- Translated from README.md at commit de66c177 (Neconyan 1.5.0). Keep the structure in step with the English README. -->
+<!-- Translated from README.md at commit 19874db1 (Neconyan 1.5.4). Keep the structure in step with the English README. -->
 
 # Neconyan~
 
-เวอร์ชันล่าสุดคือ [1.5.0](https://github.com/platberlitz/Neconyan/releases/latest)
+เวอร์ชันล่าสุดคือ [1.5.4](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.4)
 
 **อ่านในภาษาของคุณ:** [English](../README.md) · [Deutsch](readme-de_de.md) · [Español](readme-es_es.md) · [Français](readme-fr_fr.md) · [Italiano](readme-it_it.md) · [Nederlands](readme-nl_nl.md) · [Português](readme-pt_pt.md) · [Íslenska](readme-is_is.md) · [Русский](readme-ru_ru.md) · [Українська](readme-uk_ua.md) · [العربية](readme-ar_sa.md) · [Tiếng Việt](readme-vi_vn.md) · [日本語](readme-ja_jp.md) · [한국어](readme-ko_kr.md) · [简体中文](readme-zh_cn.md) · [繁體中文](readme-zh_tw.md)
 
@@ -29,6 +29,7 @@ Neconyan คือ fork ธีมแมวของฉันที่แยก�
 - **Mewmory** จดจำเหตุการณ์ในเรื่องและตัวละคร ส่วน **เอเจนต์** ช่วยดูแลตัวติดตาม ตรวจคำตอบ หรือเขียน “บันทึกของเพื่อนร่วมทาง” แยกต่างหากได้
 - **Catelier** ช่วยคุณเขียนการ์ดตัวละครและ lorebook **Notebooks** เก็บโน้ตของคุณไว้ใกล้มือ ส่วน **Scratchpad** ให้แชทแยกไว้คุยทบทวนไอเดีย
 - **Miso, Taro และ Nori** ช่วยคุณหาสิ่งที่ต้องการ และแก้ไขในส่วนที่รองรับได้เมื่อคุณอนุญาต
+- **Device sync** ย้ายข้อมูลที่เลือกระหว่างการติดตั้งที่แยกจากกัน ด้วยไฟล์เข้ารหัส, WebDAV, GitHub Gist แบบลับ หรือการจับคู่โดยตรง การถ่ายโอนจะทำงานเมื่อคุณสั่ง
 - **ธีม สีเน้น และแมว** แมวเยอะมากทีเดียว ซ่อนได้นะ แต่ฉันนึกไม่ออกเลยว่าคุณจะอยากซ่อนไปทำไม
 
 การ์ดตัวละคร แชท lorebook และพรีเซ็ตของคุณใช้รูปแบบที่คุ้นเคยจาก SillyTavern และไม่มีการเก็บ telemetry ใด ๆ บางฟีเจอร์และส่วนขยายจากต้นทางทำงานต่างออกไปที่นี่ ฉันดึงมาจากต้นทางเฉพาะส่วนที่ฉันอยากได้ [รายชื่อเครื่องมือที่มาในตัว](../docs/neconyan-native-tools.md) ระบุเครดิตโปรเจกต์ที่รวมมากับ Neconyan
@@ -39,7 +40,7 @@ Neconyan คือ fork ธีมแมวของฉันที่แยก�
   <img src="../docs/readme/banner-modes.webp" alt="โหมดต่าง ๆ">
 </p>
 
-ภาพหน้าจอเดสก์ท็อปและโทรศัพท์ชุดใหม่ ใช้แชทและโน้ตตัวอย่างกับผู้ช่วยที่มาในตัว
+ภาพหน้าจอเดสก์ท็อปและโทรศัพท์จากเวอร์ชัน 1.5.4 ใช้แชทและโน้ตตัวอย่างกับผู้ช่วยที่มาในตัว
 
 ### หน้าแรก
 
@@ -68,8 +69,28 @@ Neconyan คือ fork ธีมแมวของฉันที่แยก�
   <td width="28%"><img src="../docs/readme/phone-catelier.webp" alt="Catelier บนโทรศัพท์"></td>
 </tr></table>
 
+### เอเจนต์
+
+เลือกตัวช่วยสักตัว กำหนดว่าจะให้ทำงานเมื่อไร แล้วเลือกการเชื่อมต่อให้มัน ถ้าเป็นฉัน ฉันจะเริ่มจากตัวเดียวก่อน แทนที่จะเปิดครึ่งคลังพร้อมกัน
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-agents.webp" alt="เอเจนต์บนเดสก์ท็อป พร้อมตัวช่วยตอบกลับและปุ่มควบคุม"></td>
+  <td width="28%"><img src="../docs/readme/phone-agents.webp" alt="เอเจนต์บนโทรศัพท์"></td>
+</tr></table>
+
+### Proofreader หลังสร้างคำตอบ
+
+Proofreader ตรวจคำตอบหลังจากที่คำตอบมาถึงแล้ว ช่วยเกลาร้อยแก้วและการจัดรูปแบบได้ โดยไม่ต้องให้โมเดลหลักเขียนฉากใหม่ เปิด **การเปลี่ยนแปลงของเอเจนต์** เพื่อเทียบการแก้ไข และเลิกทำได้ถ้าคุณชอบฉบับเดิมมากกว่า
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-proofreader.webp" alt="ประวัติการเปลี่ยนแปลงของ Proofreader บนเดสก์ท็อป เทียบคำตอบเดิมกับฉบับที่แก้ไขแล้ว"></td>
+  <td width="28%"><img src="../docs/readme/phone-proofreader.webp" alt="ประวัติการเปลี่ยนแปลงของ Proofreader บนโทรศัพท์"></td>
+</tr></table>
+
+ตัวอย่างที่จัดฉากไว้นี้รันเวิร์กโฟลว์เอเจนต์จริงด้วยคำตอบตัวอย่างที่กำหนดไว้ตายตัว เมื่อใช้งานตามปกติ โมเดลที่คุณเชื่อมต่อไว้จะเป็นผู้เขียนการแก้ไข และแต่ละรอบอาจใช้คำขอเพิ่มอีกหนึ่งครั้ง [เอเจนต์และเพื่อนคู่คิดในคู่มือ](https://platberlitz.github.io/neconyan-docs/helpers/agents/)
+
 <details>
-<summary><b>ภาพหน้าจอเพิ่มเติม: Simple Mode, สนทนา, Meower, โหมดเรื่องราว, Notebooks และ Scratchpad</b></summary>
+<summary><b>ภาพหน้าจอเพิ่มเติม: Simple Mode, สนทนา, Meower, โหมดเรื่องราว, Notebooks, Scratchpad และ Device sync</b></summary>
 
 ### Simple Mode
 
@@ -123,6 +144,15 @@ Neconyan คือ fork ธีมแมวของฉันที่แยก�
 <table><tr>
   <td width="72%"><img src="../docs/readme/desktop-scratchpad.webp" alt="Scratchpad บนเดสก์ท็อป"></td>
   <td width="28%"><img src="../docs/readme/phone-scratchpad.webp" alt="Scratchpad บนโทรศัพท์"></td>
+</tr></table>
+
+### Device sync
+
+ย้ายคลังข้อมูลที่เลือกระหว่างการติดตั้งที่แยกจากกัน เลือกไฟล์เข้ารหัส, WebDAV, GitHub Gist แบบลับ หรือการจับคู่โดยตรง การถ่ายโอนจะเริ่มเมื่อคุณสั่ง [การตั้งค่าและการกู้คืนในคู่มือ](https://platberlitz.github.io/neconyan-docs/help/device-sync/)
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-device-sync.webp" alt="การตั้งค่า Device sync บนเดสก์ท็อป"></td>
+  <td width="28%"><img src="../docs/readme/phone-device-sync.webp" alt="การตั้งค่า Device sync บนโทรศัพท์"></td>
 </tr></table>
 
 </details>
@@ -197,3 +227,5 @@ git clone https://github.com/platberlitz/Neconyan.git
 Neconyan สร้างขึ้นบนผลงานของทุกคนที่อยู่เบื้องหลัง SillyTavern และ SillyBunny ถ้าไม่มีพวกเขา สิ่งเหล่านี้คงไม่เกิดขึ้น [รายชื่อเครื่องมือที่มาในตัว](../docs/neconyan-native-tools.md) ระบุเครดิตผู้สร้างต้นฉบับของเครื่องมือเหล่านั้น
 
 สร้างโดย [Platberlitz](https://github.com/platberlitz) เผยแพร่ภายใต้สัญญาอนุญาต [GNU AGPL v3](../LICENSE) ถ้าคุณนำไปเผยแพร่ต่อ โปรดคงประกาศและสัญญาอนุญาตต่าง ๆ ไว้ตามเดิม
+
+ขอบคุณเป็นพิเศษ **El Topo** ผู้ช่วยหลักและผู้ร่วมพัฒนาของฉัน ฉันซาบซึ้งจริง ๆ กับทุกสิ่งที่คุณทุ่มเทให้ Neconyan

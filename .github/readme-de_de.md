@@ -1,8 +1,8 @@
-<!-- Translated from README.md at commit de66c177 (Neconyan 1.5.0). Keep the structure in step with the English README. -->
+<!-- Translated from README.md at commit 19874db1 (Neconyan 1.5.4). Keep the structure in step with the English README. -->
 
 # Neconyan~
 
-Die neueste Version ist [1.5.0](https://github.com/platberlitz/Neconyan/releases/latest).
+Die neueste Version ist [1.5.4](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.4).
 
 **In deiner Sprache lesen:** [English](../README.md) · [Español](readme-es_es.md) · [Français](readme-fr_fr.md) · [Italiano](readme-it_it.md) · [Nederlands](readme-nl_nl.md) · [Português](readme-pt_pt.md) · [Íslenska](readme-is_is.md) · [Русский](readme-ru_ru.md) · [Українська](readme-uk_ua.md) · [العربية](readme-ar_sa.md) · [ไทย](readme-th_th.md) · [Tiếng Việt](readme-vi_vn.md) · [日本語](readme-ja_jp.md) · [한국어](readme-ko_kr.md) · [简体中文](readme-zh_cn.md) · [繁體中文](readme-zh_tw.md)
 
@@ -29,6 +29,7 @@ Neconyan ist mein Fork von [SillyTavern](https://github.com/SillyTavern/SillyTav
 - **Mewmory** merkt sich Ereignisse und Charaktere der Geschichte. **Agenten** können Tracker führen, eine Antwort prüfen oder eine separate Begleiternotiz schreiben.
 - **Catelier** hilft dir beim Schreiben von Charakterkarten und Lorebooks. **Notizbücher** halten deine Notizen griffbereit, und **Scratchpad** gibt dir einen separaten Chat, um Ideen durchzusprechen.
 - **Miso, Taro und Nori** helfen dir, Dinge zu finden, und können mit deiner Erlaubnis unterstützte Änderungen vornehmen.
+- **Device sync** überträgt ausgewählte Daten zwischen getrennten Installationen, per verschlüsselten Dateien, WebDAV, geheimen GitHub Gists oder direkter Kopplung. Übertragungen laufen nur, wenn du sie anstößt.
 - **Themes, Akzentfarben und Katzen.** Ziemlich viele Katzen. Du kannst sie ausblenden, auch wenn ich mir nicht vorstellen kann, warum du das wollen würdest.
 
 Deine Charakterkarten, Chats, Lorebooks und Voreinstellungen nutzen vertraute SillyTavern-Formate. Es gibt keine Telemetrie. Manche Funktionen und Erweiterungen aus dem Original verhalten sich hier anders; ich übernehme nur die Teile, die ich haben will. Die [Liste der enthaltenen Tools](../docs/neconyan-native-tools.md) würdigt die Projekte, die mit Neconyan ausgeliefert werden.
@@ -39,7 +40,7 @@ Deine Charakterkarten, Chats, Lorebooks und Voreinstellungen nutzen vertraute Si
   <img src="../docs/readme/banner-modes.webp" alt="Modi">
 </p>
 
-Neue Screenshots vom Desktop und vom Handy, aufgenommen mit Demo-Chats, Demo-Notizen und den mitgelieferten Assistenten.
+Screenshots vom Desktop und vom Handy aus Version 1.5.4, aufgenommen mit Demo-Chats, Demo-Notizen und den mitgelieferten Assistenten.
 
 ### Startseite
 
@@ -68,8 +69,28 @@ Arbeite an einem Charakterentwurf, lass dir beim Schreiben helfen und prüfe die
   <td width="28%"><img src="../docs/readme/phone-catelier.webp" alt="Catelier auf dem Handy"></td>
 </tr></table>
 
+### Agenten
+
+Wähle einen Helfer, lege fest, wann er läuft, und gib ihm eine Verbindung. Ich würde mit einem anfangen, statt gleich die halbe Bibliothek auf einmal einzuschalten.
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-agents.webp" alt="Agenten am Desktop, mit Antwort-Helfern und ihren Bedienelementen"></td>
+  <td width="28%"><img src="../docs/readme/phone-agents.webp" alt="Agenten auf dem Handy"></td>
+</tr></table>
+
+### Proofreader nach der Generierung
+
+Proofreader prüft eine Antwort, nachdem sie angekommen ist. Er kann Prosa und Formatierung glätten, ohne dass das Hauptmodell die Szene neu schreiben muss. Öffne **Agenten-Änderungen**, um die Bearbeitung zu vergleichen und rückgängig zu machen, falls dir das Original lieber ist.
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-proofreader.webp" alt="Änderungsverlauf des Proofreaders am Desktop, mit der ursprünglichen Antwort und ihrer bearbeiteten Fassung im Vergleich"></td>
+  <td width="28%"><img src="../docs/readme/phone-proofreader.webp" alt="Änderungsverlauf des Proofreaders auf dem Handy"></td>
+</tr></table>
+
+Dieses gestellte Beispiel führt den echten Agenten-Workflow mit einer festen Beispielantwort aus. Dein verbundenes Modell schreibt die Änderungen im normalen Betrieb, und jeder Durchgang kann eine weitere Anfrage kosten. [Agenten und Begleiter im Handbuch](https://platberlitz.github.io/neconyan-docs/helpers/agents/).
+
 <details>
-<summary><b>Weitere Screenshots: Simple Mode, Konversation, Meower, Story-Modus, Notizbücher und Scratchpad</b></summary>
+<summary><b>Weitere Screenshots: Simple Mode, Konversation, Meower, Story-Modus, Notizbücher, Scratchpad und Device sync</b></summary>
 
 ### Simple Mode
 
@@ -123,6 +144,15 @@ Sprich die Geschichte mit einem Assistenten oder an einem runden Tisch mit mehre
 <table><tr>
   <td width="72%"><img src="../docs/readme/desktop-scratchpad.webp" alt="Scratchpad am Desktop"></td>
   <td width="28%"><img src="../docs/readme/phone-scratchpad.webp" alt="Scratchpad auf dem Handy"></td>
+</tr></table>
+
+### Device sync
+
+Übertrage ausgewählte Bibliotheken zwischen getrennten Installationen. Wähle verschlüsselte Dateien, WebDAV, einen geheimen GitHub Gist oder direkte Kopplung; Übertragungen starten, wenn du sie anstößt. [Einrichtung und Wiederherstellung im Handbuch](https://platberlitz.github.io/neconyan-docs/help/device-sync/).
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-device-sync.webp" alt="Einstellungen für Device sync am Desktop"></td>
+  <td width="28%"><img src="../docs/readme/phone-device-sync.webp" alt="Einstellungen für Device sync auf dem Handy"></td>
 </tr></table>
 
 </details>
@@ -197,3 +227,5 @@ Wenn du eine Einstellung nicht findest, probier **Suchen** in der Seitenleiste. 
 Neconyan baut auf der Arbeit aller auf, die hinter SillyTavern und SillyBunny stehen; ohne sie gäbe es nichts davon. Die [Liste der enthaltenen Tools](../docs/neconyan-native-tools.md) führt ihre ursprünglichen Autorinnen und Autoren auf.
 
 Gemacht von [Platberlitz](https://github.com/platberlitz). Lizenziert unter [GNU AGPL v3](../LICENSE). Wenn du es weiterverbreitest, behalte die Hinweise und Lizenzen bei.
+
+Ein besonderer Dank geht an **El Topo**, meinen wichtigsten Helfer und Mitwirkenden. Ich weiß all die Arbeit, die du in Neconyan gesteckt hast, wirklich zu schätzen.

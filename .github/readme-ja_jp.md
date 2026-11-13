@@ -1,8 +1,8 @@
-<!-- Translated from README.md at commit de66c177 (Neconyan 1.5.0). Keep the structure in step with the English README. -->
+<!-- Translated from README.md at commit 19874db1 (Neconyan 1.5.4). Keep the structure in step with the English README. -->
 
 # Neconyan~
 
-最新バージョンは[1.5.0](https://github.com/platberlitz/Neconyan/releases/latest)です。
+最新バージョンは[1.5.4](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.4)です。
 
 **お使いの言語で読む：** [English](../README.md) · [Deutsch](readme-de_de.md) · [Español](readme-es_es.md) · [Français](readme-fr_fr.md) · [Italiano](readme-it_it.md) · [Nederlands](readme-nl_nl.md) · [Português](readme-pt_pt.md) · [Íslenska](readme-is_is.md) · [Русский](readme-ru_ru.md) · [Українська](readme-uk_ua.md) · [العربية](readme-ar_sa.md) · [ไทย](readme-th_th.md) · [Tiếng Việt](readme-vi_vn.md) · [한국어](readme-ko_kr.md) · [简体中文](readme-zh_cn.md) · [繁體中文](readme-zh_tw.md)
 
@@ -29,6 +29,7 @@ Neconyanは、[SillyTavern](https://github.com/SillyTavern/SillyTavern)と[Silly
 - **Mewmory**は物語の出来事やキャラクターを覚えておきます。**エージェント**は、トラッカーを管理したり、返信をチェックしたり、「コンパニオンノート」を別に書いたりできます。
 - **Catelier**は、キャラクターカードやロアブックを書くのを手伝ってくれます。**ノートブック**ならメモをすぐ手元に置いておけますし、**Scratchpad**では別のチャットでアイデアを相談できます。
 - **Miso、Taro、Nori**が探し物を手伝ってくれます。許可すれば、対応している編集もしてくれます。
+- **Device sync**は、暗号化ファイル、WebDAV、シークレットGitHub Gist、直接ペアリングのいずれかで、別々のインストール間で選んだデータを移します。転送は、実行を指示したときに行われます。
 - **テーマ、アクセントカラー、そして猫**。猫はかなりたくさんいます。隠すこともできますが、なぜ隠したくなるのか、私には想像がつきません。
 
 キャラクターカード、チャット、ロアブック、プリセットには、SillyTavernでおなじみの形式を使っています。テレメトリーはありません。本家の機能や拡張機能には、ここでは動作が違うものがあります。私が欲しい部分だけを取り込んでいるためです。Neconyanに同梱しているプロジェクトのクレジットは、[同梱ツールの一覧](../docs/neconyan-native-tools.md)に載せています。
@@ -39,7 +40,7 @@ Neconyanは、[SillyTavern](https://github.com/SillyTavern/SillyTavern)と[Silly
   <img src="../docs/readme/banner-modes.webp" alt="モード">
 </p>
 
-デスクトップとスマホの新しいスクリーンショットです。同梱のアシスタントとのデモ用チャットとノートを使っています。
+1.5.4のデスクトップとスマホのスクリーンショットです。同梱のアシスタントとのデモ用チャットとノートを使っています。
 
 ### ホーム
 
@@ -68,8 +69,28 @@ Neconyanは、[SillyTavern](https://github.com/SillyTavern/SillyTavern)と[Silly
   <td width="28%"><img src="../docs/readme/phone-catelier.webp" alt="スマホでのCatelier"></td>
 </tr></table>
 
+### エージェント
+
+ヘルパーを選んで、いつ動かすかを決め、接続を設定します。ライブラリの半分を一度にオンにするのではなく、私ならまず1つから始めます。
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-agents.webp" alt="デスクトップでのエージェント。返信ヘルパーとその操作が並んでいます"></td>
+  <td width="28%"><img src="../docs/readme/phone-agents.webp" alt="スマホでのエージェント"></td>
+</tr></table>
+
+### 生成後のProofreader
+
+Proofreaderは、届いた返信をあとからチェックします。メインのモデルにシーンを書き直させなくても、文章や書式を整えられます。**エージェントの変更**を開くと、編集内容を見比べられて、元のほうがよければ取り消せます。
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-proofreader.webp" alt="デスクトップでのProofreaderの変更履歴。元の返信と編集後の返信を比べています"></td>
+  <td width="28%"><img src="../docs/readme/phone-proofreader.webp" alt="スマホでのProofreaderの変更履歴"></td>
+</tr></table>
+
+この演出用の例では、決まったサンプル応答を使って、実際のエージェントの流れを動かしています。普段は、接続したモデルが編集を書き、1回ごとにリクエストがもう1回かかることがあります。[ハンドブックのエージェントとコンパニオン](https://platberlitz.github.io/neconyan-docs/helpers/agents/)
+
 <details>
-<summary><b>スクリーンショットをもっと見る：Simple Mode、会話、Meower、ストーリーモード、ノートブック、Scratchpad</b></summary>
+<summary><b>スクリーンショットをもっと見る：Simple Mode、会話、Meower、ストーリーモード、ノートブック、Scratchpad、Device sync</b></summary>
 
 ### Simple Mode
 
@@ -123,6 +144,15 @@ Neconyanは、[SillyTavern](https://github.com/SillyTavern/SillyTavern)と[Silly
 <table><tr>
   <td width="72%"><img src="../docs/readme/desktop-scratchpad.webp" alt="デスクトップでのScratchpad"></td>
   <td width="28%"><img src="../docs/readme/phone-scratchpad.webp" alt="スマホでのScratchpad"></td>
+</tr></table>
+
+### Device sync
+
+選んだライブラリを、別々のインストール間で移します。暗号化ファイル、WebDAV、シークレットGitHub Gist、直接ペアリングから方法を選べます。転送は、実行を指示したときに始まります。[ハンドブックのセットアップと復旧](https://platberlitz.github.io/neconyan-docs/help/device-sync/)
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-device-sync.webp" alt="デスクトップでのDevice syncの設定"></td>
+  <td width="28%"><img src="../docs/readme/phone-device-sync.webp" alt="スマホでのDevice syncの設定"></td>
 </tr></table>
 
 </details>
@@ -197,3 +227,5 @@ SillyTavernやSillyBunnyから移ってきた方は、**先にバックアップ
 Neconyanは、SillyTavernとSillyBunnyを作ってきたすべての人の仕事の上に成り立っています。その人たちがいなければ、ここにあるものは何ひとつ存在しなかったはずです。元の作者たちのクレジットは、[同梱ツールの一覧](../docs/neconyan-native-tools.md)に載せています。
 
 作者は[Platberlitz](https://github.com/platberlitz)です。ライセンスは[GNU AGPL v3](../LICENSE)なので、再配布するときは著作権表示などの表記とライセンス文をそのまま残してください。
+
+特別な感謝を**El Topo**に。私のいちばんの助っ人であり、コントリビューターでもあります。Neconyanに注いでくれたすべての作業に、心から感謝しています。
