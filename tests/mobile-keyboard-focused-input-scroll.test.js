@@ -114,6 +114,36 @@ describe('mobile popup keyboard shift wiring', () => {
         expect(helperSource).toContain('scroller.scrollTop += scrollOverflow;');
     });
 
+    test('drops safe-area gaps the keyboard or a full-screen sheet already covers', () => {
+        const helperSource = tabsSource.slice(
+            tabsSource.indexOf('function syncMobilePopupKeyboardShift('),
+            tabsSource.indexOf('function scheduleMobilePopupKeyboardSync('),
+        );
+        const readSheet = (...parts) => readFileSync(path.join(repoRoot, 'public', ...parts), 'utf8');
+
+        expect(helperSource).toContain('const keyboardCoversBottom = layoutViewport.height - viewportBottom > MOBILE_IOS_KEYBOARD_MIN_HEIGHT_PX;');
+        expect(helperSource).toContain('getPropertyValue(\'--sb-popup-fills-screen\')');
+        expect(helperSource).toContain('dialog.style.setProperty(\'--sb-popup-safe-area-bottom\', \'0px\');');
+        expect(helperSource).toContain('Math.min(viewportBottom, scroller.getBoundingClientRect().bottom)');
+
+        // Full-screen phone sheets opt in and let the keyboard drop their home-indicator padding.
+        for (const sheet of [
+            readSheet('scripts', 'extensions', 'in-chat-agents', 'style.css'),
+            readSheet('scripts', 'extensions', 'neconyan-chats-archive', 'style.css'),
+        ]) {
+            expect(sheet).toContain('--sb-popup-fills-screen: 1;');
+            expect(sheet).toContain('var(--sb-popup-safe-area-bottom, env(safe-area-inset-bottom))');
+        }
+    });
+
+    test('mass delete drops the home-indicator gap above the keyboard', () => {
+        // The mass-delete overlay is not a popup dialog, so it drops the same gap itself.
+        const tabsCss = readFileSync(path.join(repoRoot, 'public', 'css', 'neconyan-tabs.css'), 'utf8');
+
+        expect(tabsSource).toContain('overlay.style.setProperty(\'--sb-chat-delete-safe-bottom\', \'0px\');');
+        expect(tabsCss).toContain('padding-bottom: max(12px, var(--sb-chat-delete-safe-bottom));');
+    });
+
     test('clears the shift when focus leaves or the keyboard closes', () => {
         expect(tabsSource).toContain('function clearMobilePopupKeyboardShift(');
         expect(tabsSource).toContain('function clearAllMobilePopupKeyboardShifts(');
