@@ -68,6 +68,7 @@
 - PR #658 (2026-11-13) `perf(connections): stop the model ID field lagging while typing`
 - PR #659 (2026-11-13) `feat(agents): add a Translator reply rewrite agent`
 - PR #660 (2026-11-13) `feat(mewmory): remember the player without taking control`
+- PR #662 (2026-11-13) `fix(popups): drop doubled safe-area gaps above the iOS keyboard`
 
 ## v1.5.4
 
