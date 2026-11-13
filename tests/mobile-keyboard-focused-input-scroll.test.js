@@ -136,6 +136,14 @@ describe('mobile popup keyboard shift wiring', () => {
         }
     });
 
+    test('mass delete drops the home-indicator gap above the keyboard', () => {
+        // The mass-delete overlay is not a popup dialog, so it drops the same gap itself.
+        const tabsCss = readFileSync(path.join(repoRoot, 'public', 'css', 'neconyan-tabs.css'), 'utf8');
+
+        expect(tabsSource).toContain('overlay.style.setProperty(\'--sb-chat-delete-safe-bottom\', \'0px\');');
+        expect(tabsCss).toContain('padding-bottom: max(12px, var(--sb-chat-delete-safe-bottom));');
+    });
+
     test('clears the shift when focus leaves or the keyboard closes', () => {
         expect(tabsSource).toContain('function clearMobilePopupKeyboardShift(');
         expect(tabsSource).toContain('function clearAllMobilePopupKeyboardShifts(');

@@ -7671,6 +7671,7 @@ function bindChatDeleteVisualViewport(overlay) {
             overlay.style.removeProperty('--sb-chat-delete-vv-top');
             overlay.style.removeProperty('--sb-chat-delete-vv-width');
             overlay.style.removeProperty('--sb-chat-delete-vv-height');
+            overlay.style.removeProperty('--sb-chat-delete-safe-bottom');
             overlay.classList.remove('sb-chat-delete-overlay--keyboard-open');
             return;
         }
@@ -7685,6 +7686,12 @@ function bindChatDeleteVisualViewport(overlay) {
         overlay.style.setProperty('--sb-chat-delete-vv-top', `${viewportTop}px`);
         overlay.style.setProperty('--sb-chat-delete-vv-width', `${viewportWidth}px`);
         overlay.style.setProperty('--sb-chat-delete-vv-height', `${viewportHeight}px`);
+        // The keyboard hides the home indicator, so its safe area needs no gap.
+        if (fallbackHeight - (viewportTop + viewportHeight) > MOBILE_IOS_KEYBOARD_MIN_HEIGHT_PX) {
+            overlay.style.setProperty('--sb-chat-delete-safe-bottom', '0px');
+        } else {
+            overlay.style.removeProperty('--sb-chat-delete-safe-bottom');
+        }
     }
 
     function scheduleUpdate() {
@@ -7716,6 +7723,7 @@ function bindChatDeleteVisualViewport(overlay) {
         overlay.style.removeProperty('--sb-chat-delete-vv-top');
         overlay.style.removeProperty('--sb-chat-delete-vv-width');
         overlay.style.removeProperty('--sb-chat-delete-vv-height');
+        overlay.style.removeProperty('--sb-chat-delete-safe-bottom');
     };
 }
 
