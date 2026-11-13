@@ -20203,7 +20203,10 @@ function bindInlineDrawerPersistence(root = document) {
 function queueInlineDrawerPersistenceBind(records = []) {
     for (const record of records) {
         for (const node of record.addedNodes) {
-            const root = node.parentElement?.closest('.inline-drawer') ?? (node instanceof HTMLElement ? node : null);
+            // Nodes without a drawer (model rows, datalist options) would make the
+            // containment check below quadratic: an 800-model list froze typing.
+            const root = node.parentElement?.closest('.inline-drawer')
+                ?? (node instanceof HTMLElement && (node.classList.contains('inline-drawer') || node.querySelector('.inline-drawer')) ? node : null);
             if (root) {
                 nnInlineDrawerPersistencePendingRoots.add(root);
             }

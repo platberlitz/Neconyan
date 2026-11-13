@@ -48,6 +48,24 @@ function createRuntime() {
             this.parentElement.children.splice(index + 1, 0, node);
         }
         replaceChildren(...nodes) { this.children = []; this.append(...nodes); }
+        get firstElementChild() { return this.children[0] ?? null; }
+        get nextElementSibling() {
+            const siblings = this.parentElement?.children ?? [];
+            return siblings[siblings.indexOf(this) + 1] ?? null;
+        }
+        remove() {
+            if (!this.parentElement) return;
+            this.parentElement.children.splice(this.parentElement.children.indexOf(this), 1);
+            this.parentElement = null;
+        }
+        insertBefore(node, reference) {
+            node.remove?.();
+            const index = reference ? this.children.indexOf(reference) : -1;
+            node.parentElement = this;
+            if (index < 0) this.children.push(node);
+            else this.children.splice(index, 0, node);
+            return node;
+        }
         addEventListener(type, listener) {
             if (!this.listeners.has(type)) this.listeners.set(type, []);
             this.listeners.get(type).push(listener);
