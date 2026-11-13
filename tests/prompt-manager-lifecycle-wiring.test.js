@@ -59,7 +59,8 @@ describe('prompt manager lifecycle wiring', () => {
     });
 
     test('captures prompt manager scroll before save-triggered render', () => {
-        const saveStart = promptManagerSource.indexOf('this.handleSavePrompt = (event) => {');
+        const saveStart = promptManagerSource.indexOf('this.handleSavePrompt = () => {');
+        expect(saveStart).toBeGreaterThanOrEqual(0);
         const saveEnd = promptManagerSource.indexOf('// Reset prompt should it be a system prompt', saveStart);
         const saveSource = promptManagerSource.slice(saveStart, saveEnd);
 
@@ -115,14 +116,16 @@ describe('prompt manager lifecycle wiring', () => {
         expect(promptManagerRenderSource).toContain('return false;');
         expect(promptManagerRenderSource).toContain('return true;');
 
-        const listHeaderAwaitIndex = promptListRenderSource.indexOf('let listItemHtml = await renderTemplateAsync(\'promptManagerListHeader\'');
+        const promptListGuardIndex = promptListRenderSource.indexOf('!this.#isRenderCurrent(renderRequestId)) return false;');
         const promptListClearIndex = promptListRenderSource.indexOf('promptManagerList.innerHTML = \'\';');
-        const promptListGuardIndex = promptListRenderSource.indexOf('if (!this.#isRenderCurrent(renderRequestId) || promptManagerList !== this.listElement)', listHeaderAwaitIndex);
 
         expect(promptListRenderSource).toContain('async renderPromptManagerListItems(renderRequestId = this.renderRequestId)');
-        expect(listHeaderAwaitIndex).toBeGreaterThanOrEqual(0);
-        expect(promptListGuardIndex).toBeGreaterThan(listHeaderAwaitIndex);
+        expect(promptListRenderSource).not.toContain('promptManagerListHeader');
+        expect(promptListGuardIndex).toBeGreaterThanOrEqual(0);
         expect(promptListClearIndex).toBeGreaterThan(promptListGuardIndex);
+        // Nothing is awaited between the render-token check and the clear, so a stale
+        // render cannot wipe a newer list.
+        expect(promptListRenderSource.slice(promptListGuardIndex, promptListClearIndex)).not.toContain('await ');
         expect(promptListRenderSource).toContain('return false;');
         expect(promptListRenderSource).toContain('return true;');
     });

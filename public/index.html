@@ -8604,157 +8604,142 @@
             </div>
         </div>
         <div id="completion_prompt_manager_popup" class="drawer-content" style="display:none;">
-            <div id="completion_prompt_manager_popup_inspect">
-                <h3>Inspect</h3>
-                <div class="completion_prompt_manager_popup_entry">
-                    <form class="completion_prompt_manager_popup_entry_form">
-                        <div class="completion_prompt_manager_popup_entry_form_control">
-                            <div class="completion_prompt_manager_popup_header">
-                                <label for="completion_prompt_manager_popup_entry_form_prompt">
-                                    <span>Prompt List</span>
-                                </label>
-                                <a id="completion_prompt_manager_popup_close_button" title="close" data-i18n="[title]close" class="fa-solid fa-close menu_button"></a>
-                            </div>
-                            <div class="text_muted">The list of prompts associated with this marker.</div>
-                            <div id="completion_prompt_manager_popup_entry_form_inspect_list"></div>
-                        </div>
-                    </form>
+            <div class="completion_prompt_manager_popup_head">
+                <h3 id="completion_prompt_manager_popup_title" class="completion_prompt_manager_popup_title">Edit prompt</h3>
+                <div id="completion_prompt_manager_popup_tabs" class="completion_prompt_manager_popup_tabs" role="group" aria-label="Editor view" data-i18n="[aria-label]Editor view" style="display: none;">
+                    <button type="button" class="completion_prompt_manager_tab_button active" data-tab="edit" aria-pressed="true">
+                        <span data-i18n="prompt_manager_edit">Edit</span>
+                    </button>
+                    <button type="button" class="completion_prompt_manager_tab_button" data-tab="preview" aria-pressed="false">
+                        <span data-i18n="prompt_manager_preview">Preview</span>
+                    </button>
                 </div>
+                <button type="button" id="completion_prompt_manager_popup_close_button" class="menu_button menu_button_icon completion_prompt_manager_popup_close" title="Close" aria-label="Close" data-i18n="[title]Close;[aria-label]Close">
+                    <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                </button>
             </div>
-            <div id="completion_prompt_manager_popup_tabs" class="completion_prompt_manager_popup_tabs" style="display: none;">
-                <button type="button" class="completion_prompt_manager_tab_button active" data-tab="edit">
-                    <span data-i18n="prompt_manager_edit">Edit</span>
-                </button>
-                <button type="button" class="completion_prompt_manager_tab_button" data-tab="preview">
-                    <span data-i18n="prompt_manager_preview">Preview</span>
-                </button>
+            <div id="completion_prompt_manager_popup_inspect">
+                <div class="text_muted" data-i18n="The list of prompts associated with this marker.">The list of prompts associated with this marker.</div>
+                <div id="completion_prompt_manager_popup_entry_form_inspect_list"></div>
             </div>
             <div id="completion_prompt_manager_popup_edit">
-                <h3 data-i18n="prompt_manager_edit">Edit</h3>
-                <div class="completion_prompt_manager_popup_entry">
-                    <form class="completion_prompt_manager_popup_entry_form">
-                        <div class="flex-container gap10px">
-                            <div class="completion_prompt_manager_popup_entry_form_control flex1">
-                                <label for="completion_prompt_manager_popup_entry_form_name">
-                                    <span data-i18n="prompt_manager_name">Name</span>
-                                </label>
-                                <input id="completion_prompt_manager_popup_entry_form_name" class="text_pole" type="text" name="name" />
-                                <div class="text_muted" data-i18n="A name for this prompt.">A name for this prompt.</div>
-                            </div>
-                            <div class="completion_prompt_manager_popup_entry_form_control flex1">
-                                <label for="completion_prompt_manager_popup_entry_form_role">
-                                    <span data-i18n="Role">Role</span>
-                                </label>
-                                <select id="completion_prompt_manager_popup_entry_form_role" class="text_pole" name="role">
-                                    <option data-i18n="System" value="system">System</option>
-                                    <option data-i18n="User" value="user">User</option>
-                                    <option data-i18n="AI Assistant" value="assistant">AI Assistant</option>
-                                </select>
-                                <div class="text_muted" data-i18n="To whom this message will be attributed.">To whom this message will be attributed.</div>
-                            </div>
-                            <div class="completion_prompt_manager_popup_entry_form_control flex1">
-                                <label for="completion_prompt_manager_popup_entry_form_injection_trigger">
-                                    <span data-i18n="Triggers">Triggers</span>
-                                </label>
-                                <select id="completion_prompt_manager_popup_entry_form_injection_trigger" class="text_pole" name="injection_trigger" multiple>
-                                    <option data-i18n="Normal" value="normal">Normal</option>
-                                    <option data-i18n="Continue" value="continue">Continue</option>
-                                    <option data-i18n="Impersonate" value="impersonate">Impersonate</option>
-                                    <option data-i18n="Swipe" value="swipe">Swipe</option>
-                                    <option data-i18n="Regenerate" value="regenerate">Regenerate</option>
-                                    <option data-i18n="Quiet" value="quiet">Quiet</option>
-                                </select>
-                                <div class="text_muted" data-i18n="Filter to specific generation types.">
-                                    Filter to specific generation types.
-                                </div>
-                            </div>
-                        </div>
-                        <div class="flex-container gap10px">
-                            <div class="completion_prompt_manager_popup_entry_form_control flex1">
-                                <label for="completion_prompt_manager_popup_entry_form_injection_position">
-                                    <span data-i18n="prompt_manager_position">Position</span>
-                                </label>
-                                <select id="completion_prompt_manager_popup_entry_form_injection_position" class="text_pole" name="injection_position">
-                                    <option data-i18n="prompt_manager_relative" value="0">Relative</option>
-                                    <option data-i18n="prompt_manager_in_chat" value="1">In-chat</option>
-                                </select>
-                                <div class="text_muted" data-i18n="Relative (to other prompts in prompt manager) or In-chat @ Depth.">Relative (to other prompts in prompt manager) or In-chat @ Depth.</div>
-                            </div>
-                            <div id="completion_prompt_manager_depth_block" class="completion_prompt_manager_popup_entry_form_control flex1">
-                                <label for="completion_prompt_manager_popup_entry_form_injection_depth">
-                                    <span data-i18n="prompt_manager_depth">Depth</span>
-                                </label>
-                                <input id="completion_prompt_manager_popup_entry_form_injection_depth" class="text_pole" type="number" name="injection_depth" min="0" max="9999" value="4" />
-                                <div class="text_muted" data-i18n="0 = after the last message, 1 = before the last message, etc.">0 = after the last message, 1 = before the last message, etc.</div>
-                            </div>
-                            <div id="completion_prompt_manager_order_block" class="completion_prompt_manager_popup_entry_form_control flex1">
-                                <label for="completion_prompt_manager_popup_entry_form_injection_order">
-                                    <span data-i18n="prompt_manager_order">Order</span>
-                                    <i class="fas fa-info-circle" title="Prompt injections from other sources (World Info, Author's Note, etc.) always have a default order of 100." data-i18n="[title]prompt_manager_order_note"></i>
-                                </label>
-                                <input id="completion_prompt_manager_popup_entry_form_injection_order" class="text_pole" type="number" name="injection_order" min="0" max="9999" value="100" />
-                                <div class="text_muted" data-i18n="Ordered from low/top to high/bottom, and at same order: Assistant, User, System.">Ordered from low/top to high/bottom, and at same order: Assistant, User, System.</div>
-                            </div>
+                <form class="completion_prompt_manager_popup_entry_form">
+                    <div class="completion_prompt_manager_popup_entry_form_control">
+                        <label for="completion_prompt_manager_popup_entry_form_name">
+                            <span data-i18n="prompt_manager_name">Name</span>
+                        </label>
+                        <input id="completion_prompt_manager_popup_entry_form_name" class="text_pole" type="text" name="name" placeholder="Untitled prompt" data-i18n="[placeholder]Untitled prompt" />
+                    </div>
+                    <div id="completion_prompt_manager_placement_block" class="completion_prompt_manager_popup_entry_form_control" style="display: none;">
+                        <label for="completion_prompt_manager_popup_entry_form_placement">
+                            <span data-i18n="Place after">Place after</span>
+                        </label>
+                        <select id="completion_prompt_manager_popup_entry_form_placement" class="text_pole" name="placement"></select>
+                    </div>
+                    <div class="completion_prompt_manager_popup_entry_form_grid">
+                        <div class="completion_prompt_manager_popup_entry_form_control">
+                            <label for="completion_prompt_manager_popup_entry_form_role">
+                                <span data-i18n="Role">Role</span>
+                            </label>
+                            <select id="completion_prompt_manager_popup_entry_form_role" class="text_pole" name="role">
+                                <option data-i18n="System" value="system">System</option>
+                                <option data-i18n="User" value="user">User</option>
+                                <option data-i18n="AI Assistant" value="assistant">AI Assistant</option>
+                            </select>
+                            <div class="text_muted" data-i18n="Who the message is sent as.">Who the message is sent as.</div>
                         </div>
                         <div class="completion_prompt_manager_popup_entry_form_control">
-                            <div class="completion_prompt_manager_prompt_header flex-container alignItemsCenter" data-i18n="[external_piece_text]The content of this prompt is pulled from elsewhere and cannot be edited here." external_piece_text="The content of this prompt is pulled from elsewhere and cannot be edited here.">
-                                <div class="flex1">
-                                    <label for="completion_prompt_manager_popup_entry_form_prompt">
-                                        <span data-i18n="Prompt">Prompt</span>
-                                    </label>
-                                </div>
-                                <div class="completion_prompt_manager_prompt_header_actions">
-                                    <i class="editor_maximize fa-solid fa-maximize right_menu_button completion_prompt_manager_editor_maximize" data-for="completion_prompt_manager_popup_entry_form_prompt" title="Expand the editor" data-i18n="[title]Expand the editor"></i>
-                                    <div id="completion_prompt_manager_forbid_overrides_block">
-                                        <label class="checkbox_label" for="completion_prompt_manager_popup_entry_form_forbid_overrides" title="This prompt cannot be overridden by character cards, even if overrides are preferred." data-i18n="[title]This prompt cannot be overridden by character cards, even if overrides are preferred.">
-                                            <input type="checkbox" id="completion_prompt_manager_popup_entry_form_forbid_overrides" name="forbid_overrides" />
-                                            <span data-i18n="prompt_manager_forbid_overrides">Forbid Overrides</span>
-                                        </label>
-                                    </div>
-                                </div>
-                            </div>
-                            <div id="completion_prompt_manager_popup_entry_source_block">
-                                <b data-i18n="Source:">Source:</b>
-                                <span>&nbsp;</span>
-                                <span id="completion_prompt_manager_popup_entry_source"></span>
-                            </div>
-                            <textarea id="completion_prompt_manager_popup_entry_form_prompt" class="text_pole" name="prompt" data-macros data-macros-autocomplete="always" data-macros-autocomplete-style="expanded" placeholder="The prompt to be sent." data-i18n="[placeholder]The prompt to be sent."></textarea>
+                            <label for="completion_prompt_manager_popup_entry_form_injection_position">
+                                <span data-i18n="prompt_manager_position">Position</span>
+                            </label>
+                            <select id="completion_prompt_manager_popup_entry_form_injection_position" class="text_pole" name="injection_position">
+                                <option data-i18n="prompt_manager_relative" value="0">Relative</option>
+                                <option data-i18n="prompt_manager_in_chat" value="1">In-chat</option>
+                            </select>
+                            <div class="text_muted" data-i18n="Relative follows this list. In-chat goes between messages.">Relative follows this list. In-chat goes between messages.</div>
                         </div>
-                        <div class="completion_prompt_manager_popup_entry_form_footer">
-                            <a id="completion_prompt_manager_popup_entry_form_close" title="Close" data-i18n="[title]close" class="fa-solid fa-close menu_button"></a>
-                            <a id="completion_prompt_manager_popup_entry_form_reset" title="Reset" data-i18n="[title]reset" class="fa-solid fa-undo menu_button"></a>
-                            <a id="completion_prompt_manager_popup_entry_form_save" title="Save" data-i18n="[title]save" class="fa-solid fa-save menu_button" data-pm-prompt=""></a>
+                        <div id="completion_prompt_manager_depth_block" class="completion_prompt_manager_popup_entry_form_control">
+                            <label for="completion_prompt_manager_popup_entry_form_injection_depth">
+                                <span data-i18n="prompt_manager_depth">Depth</span>
+                            </label>
+                            <input id="completion_prompt_manager_popup_entry_form_injection_depth" class="text_pole" type="number" name="injection_depth" min="0" max="9999" value="4" />
+                            <div class="text_muted" data-i18n="0 = after the last message, 1 = before the last message, etc.">0 = after the last message, 1 = before the last message, etc.</div>
                         </div>
-                    </form>
-                </div>
-            </div>
-            <div id="completion_prompt_manager_popup_preview" style="display: none;">
-                <h3 data-i18n="prompt_manager_preview">Preview</h3>
-                <div class="completion_prompt_manager_popup_entry">
-                    <div class="completion_prompt_manager_popup_entry_form">
-                        <div class="completion_prompt_manager_popup_entry_form_control">
-                            <div class="completion_prompt_manager_popup_header">
-                                <label>
-                                    <span data-i18n="prompt_manager_rendered_prompt">Rendered Prompt</span>
-                                </label>
-                                <a id="completion_prompt_manager_popup_preview_close_button" title="close" data-i18n="[title]close" class="fa-solid fa-close menu_button"></a>
-                            </div>
-                            <div class="text_muted" data-i18n="Preview this prompt with macros substituted before saving changes.">Preview this prompt with macros substituted before saving changes.</div>
-                            <div class="completion_prompt_manager_preview_content">
-                                <div class="completion_prompt_manager_preview_meta">
-                                    <span class="completion_prompt_manager_preview_role">
-                                        <strong data-i18n="Role">Role</strong>
-                                        <span id="completion_prompt_manager_preview_role_value">system</span>
-                                    </span>
-                                    <span class="completion_prompt_manager_preview_tokens" title="Token counts may be inaccurate and provided just for reference." data-i18n="[title]Token counts may be inaccurate and provided just for reference.">
-                                        <strong data-i18n="Tokens">Tokens</strong>
-                                        <span id="completion_prompt_manager_preview_token_count">0</span>
-                                    </span>
-                                </div>
-                                <div id="completion_prompt_manager_preview_text" class="completion_prompt_manager_preview_text"></div>
-                            </div>
+                        <div id="completion_prompt_manager_order_block" class="completion_prompt_manager_popup_entry_form_control">
+                            <label for="completion_prompt_manager_popup_entry_form_injection_order">
+                                <span data-i18n="prompt_manager_order">Order</span>
+                            </label>
+                            <input id="completion_prompt_manager_popup_entry_form_injection_order" class="text_pole" type="number" name="injection_order" min="0" max="9999" value="100" />
+                            <div class="text_muted" data-i18n="Lower goes first. Lorebook and Author's Note entries use 100.">Lower goes first. Lorebook and Author's Note entries use 100.</div>
                         </div>
                     </div>
+                    <div class="completion_prompt_manager_popup_entry_form_control">
+                        <label for="completion_prompt_manager_popup_entry_form_injection_trigger">
+                            <span data-i18n="Triggers">Triggers</span>
+                        </label>
+                        <select id="completion_prompt_manager_popup_entry_form_injection_trigger" class="text_pole" name="injection_trigger" multiple>
+                            <option data-i18n="Normal" value="normal">Normal</option>
+                            <option data-i18n="Continue" value="continue">Continue</option>
+                            <option data-i18n="Impersonate" value="impersonate">Impersonate</option>
+                            <option data-i18n="Swipe" value="swipe">Swipe</option>
+                            <option data-i18n="Regenerate" value="regenerate">Regenerate</option>
+                            <option data-i18n="Quiet" value="quiet">Quiet</option>
+                        </select>
+                        <div class="text_muted" data-i18n="Leave empty to send it with every kind of reply.">Leave empty to send it with every kind of reply.</div>
+                    </div>
+                    <div class="completion_prompt_manager_popup_entry_form_control completion_prompt_manager_prompt_control">
+                        <div class="completion_prompt_manager_prompt_header" data-i18n="[external_piece_text]The content of this prompt is pulled from elsewhere and cannot be edited here." external_piece_text="The content of this prompt is pulled from elsewhere and cannot be edited here.">
+                            <label for="completion_prompt_manager_popup_entry_form_prompt">
+                                <span data-i18n="Prompt">Prompt</span>
+                            </label>
+                            <i class="editor_maximize fa-solid fa-maximize right_menu_button completion_prompt_manager_editor_maximize" data-for="completion_prompt_manager_popup_entry_form_prompt" title="Expand the editor" data-i18n="[title]Expand the editor"></i>
+                        </div>
+                        <div id="completion_prompt_manager_popup_entry_source_block">
+                            <b data-i18n="Source:">Source:</b>
+                            <span>&nbsp;</span>
+                            <span id="completion_prompt_manager_popup_entry_source"></span>
+                        </div>
+                        <textarea id="completion_prompt_manager_popup_entry_form_prompt" class="text_pole" name="prompt" data-macros data-macros-autocomplete="always" data-macros-autocomplete-style="expanded" placeholder="The prompt to be sent." data-i18n="[placeholder]The prompt to be sent."></textarea>
+                        <div id="completion_prompt_manager_forbid_overrides_block">
+                            <label class="checkbox_label" for="completion_prompt_manager_popup_entry_form_forbid_overrides" title="This prompt cannot be overridden by character cards, even if overrides are preferred." data-i18n="[title]This prompt cannot be overridden by character cards, even if overrides are preferred.">
+                                <input type="checkbox" id="completion_prompt_manager_popup_entry_form_forbid_overrides" name="forbid_overrides" />
+                                <span data-i18n="prompt_manager_forbid_overrides">Forbid Overrides</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="completion_prompt_manager_popup_entry_form_footer">
+                        <button type="button" id="completion_prompt_manager_popup_entry_form_delete" class="menu_button completion_prompt_manager_popup_delete" style="display: none;">
+                            <i class="fa-solid fa-trash-can" aria-hidden="true"></i>
+                            <span data-i18n="Delete">Delete</span>
+                        </button>
+                        <button type="button" id="completion_prompt_manager_popup_entry_form_reset" class="menu_button" title="Restore the built-in text for this prompt" data-i18n="[title]Restore the built-in text for this prompt">
+                            <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
+                            <span data-i18n="Reset">Reset</span>
+                        </button>
+                        <button type="button" id="completion_prompt_manager_popup_entry_form_close" class="menu_button">
+                            <span data-i18n="Cancel">Cancel</span>
+                        </button>
+                        <button type="button" id="completion_prompt_manager_popup_entry_form_save" class="menu_button menu_button_primary" data-pm-prompt="">
+                            <i class="fa-solid fa-check" aria-hidden="true"></i>
+                            <span id="completion_prompt_manager_popup_entry_form_save_label">Save</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+            <div id="completion_prompt_manager_popup_preview" style="display: none;">
+                <div class="text_muted" data-i18n="Preview this prompt with macros substituted before saving changes.">Preview this prompt with macros substituted before saving changes.</div>
+                <div class="completion_prompt_manager_preview_content">
+                    <div class="completion_prompt_manager_preview_meta">
+                        <span class="completion_prompt_manager_preview_role">
+                            <strong data-i18n="Role">Role</strong>
+                            <span id="completion_prompt_manager_preview_role_value">system</span>
+                        </span>
+                        <span class="completion_prompt_manager_preview_tokens" title="Token counts may be inaccurate and provided just for reference." data-i18n="[title]Token counts may be inaccurate and provided just for reference.">
+                            <strong data-i18n="Tokens">Tokens</strong>
+                            <span id="completion_prompt_manager_preview_token_count">0</span>
+                        </span>
+                    </div>
+                    <div id="completion_prompt_manager_preview_text" class="completion_prompt_manager_preview_text"></div>
                 </div>
             </div>
         </div>
