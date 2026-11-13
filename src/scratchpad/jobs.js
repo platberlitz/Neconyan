@@ -49,6 +49,7 @@ import { sameSourceContext } from '../../public/scripts/scratchpad/source.js';
 import { captureImageTargetsLocked, capturePersonaTargetLocked, imagePersonaIdLocked, normaliseImageTargets, normalisePersonaTarget } from './image-targets.js';
 import { hasPendingImages } from './image-state.js';
 import { readScratchpadImageAvailability } from './images.js';
+import { generatedImageReceipts, prepareGeneratedImageHistory } from './image-history.js';
 import { WEB_PAGES_PLACEHOLDER, buildWebPagesPrompt, planWebPages, readWebPages, webPagesAcknowledgement, webPagesHistoryLine, webPagesMetadata } from './web-pages.js';
 import { MAX_WEB_SEARCH_QUERIES, MAX_WEB_SEARCH_RESULTS, WEB_SEARCH_PLACEHOLDER, buildWebSearchPrompt, performWebSearch, planWebSearch, readWebSearchLocked, webSearchAcknowledgement, webSearchFailure, webSearchHistoryLine, webSearchMetadata } from './web-search.js';
 import { MAX_RESEARCH_ROUNDS, RESEARCH_PLAN_MAX_TOKENS, mergeResearchResults, nextResearchQueries, parseResearchPlan, researchPlannerMessages } from './web-research.js';
@@ -150,7 +151,8 @@ function historyFrom(messages) {
                 ? usable[index].proposals?.[proposal] === 'applied' ? 'image saved and avatar replacement approved' : 'image saved; no avatar replacement performed' : image.state}.]`).join('\n');
         const webSources = usable[index].role === 'assistant' && usable[index].state === 'done' ? webSearchHistoryLine(usable[index].webSearch) : '';
         const webPages = usable[index].role === 'assistant' && usable[index].state === 'done' ? webPagesHistoryLine(usable[index].webPages) : '';
-        history.unshift({ role: usable[index].role, text: [usable[index].rehearsal ? '[Rehearsal only, not an event in the story.]' : '', text, webSources, webPages, images].filter(Boolean).join('\n'), ...(attachments.length ? { attachments } : {}), ...(usable[index].assistant ? { assistant: usable[index].assistant, assistantName: usable[index].assistantName } : {}) });
+        const generatedImages = generatedImageReceipts(usable[index]);
+        history.unshift({ role: usable[index].role, text: [usable[index].rehearsal ? '[Rehearsal only, not an event in the story.]' : '', text, webSources, webPages, images].filter(Boolean).join('\n'), ...(attachments.length ? { attachments } : {}), ...(generatedImages.length ? { generatedImages } : {}), ...(usable[index].assistant ? { assistant: usable[index].assistant, assistantName: usable[index].assistantName } : {}) });
     }
     while (history.length && history[0].role !== 'user') history.shift();
     return history;
@@ -253,17 +255,24 @@ export async function acceptScratchpadReply(request, body = {}) {
                 customPrompt: session.settings.assistantPrompts?.[assistant], gender: input.genders[assistant] ?? (assistant === session.assistant ? session.gender : 'neutral'), connection: assistantConnection(session.settings, assistant) })) };
     });
 
+    const imageHistoryCache = new Map();
     const replies = await Promise.all(planned.speakers.map(async speaker => {
         const profileId = speaker.connection.kind === 'profile' ? speaker.connection.profileId : input.chatProfileId;
         const selection = profileId ? { kind: 'profile', profileId } : { kind: 'active' };
         const binding = captureGenerationBinding(directories, selection, body.acknowledgement);
+        const material = resolveGenerationProfile(directories, binding);
         const system = buildScratchpadSystemPrompt({ ...speaker, assistantNames: planned.assistantNames, userName: input.names.user, participants: planned.participants, randomReply: planned.randomReply,
             characterName: input.names.character, sourceKind: input.source.kind, webSearch: Boolean(planned.webSearch), webPages: Boolean(planned.webPages),
             capabilities: { ...input.capabilities, persona: planned.sharedPersona, preset: planned.sharedPreset, agents: input.capabilities.agents === true && planned.sharedAgents, authorsNote: input.capabilities.authorsNote === true && planned.sharedAuthorsNote, regex: input.capabilities.regex === true && planned.sharedRegex, cssSnippets: input.capabilities.cssSnippets === true && planned.sharedCssSnippets, dialogueColors: input.capabilities.dialogueColors === true && planned.sharedDialogueColors, lore: input.capabilities.lore === true && planned.sharedLorebook, image: Boolean(images), avatar: Boolean(images && planned.targets.length), notebook: Boolean(planned.notebook.text), mewmory: planned.mewmory.correctable === true }, help: input.help });
         if (planned.rehearsal) system.text = [REHEARSAL_INSTRUCTIONS, speaker.userInstructions].filter(Boolean).join('\n\n');
-        const messages = buildScratchpadMessages({ system: system.text, context: input.context, notebookContext: planned.notebook.text, history: planned.history, text: planned.prompt, attachments: planned.attachments, assistant: speaker.assistant, assistantNames: planned.assistantNames,
+        const buildMessages = history => buildScratchpadMessages({ system: system.text, context: input.context, notebookContext: planned.notebook.text, history, text: planned.prompt, attachments: planned.attachments, assistant: speaker.assistant, assistantNames: planned.assistantNames,
             summary: planned.summary ? summaryContext(SUMMARY_PLACEHOLDER) : '',
             pinnedNote: planned.pinnedNote, mewmoryContext: planned.mewmory.text, webSearchPlaceholder: planned.webSearch ? WEB_SEARCH_PLACEHOLDER : '', webPagesPlaceholder: planned.webPages ? WEB_PAGES_PLACEHOLDER : '' });
+        let messages = buildMessages(planned.history);
+        // Reserve each speaker's share of the request limit before adding optional pictures.
+        const imageHistory = await prepareGeneratedImageHistory({ context: { directories, owner }, material, history: planned.history, cache: imageHistoryCache,
+            maxBytes: Math.floor((15 * 1024 * 1024 - bytes(JSON.stringify(planned.summary))) / planned.speakers.length) - bytes(JSON.stringify(messages)) - 256 * 1024 });
+        if (imageHistory !== planned.history) messages = buildMessages(imageHistory);
         const summaryIndex = planned.summary ? messages.findIndex(message => message.content === summaryContext(SUMMARY_PLACEHOLDER)) : -1;
         const pagesIndex = planned.webPages ? messages.length - 2 : -1;
         const searchIndex = planned.webSearch ? messages.length - (planned.webPages ? 3 : 2) : -1;
@@ -273,7 +282,6 @@ export async function acceptScratchpadReply(request, body = {}) {
             throw fail('SCRATCHPAD_IMAGE_CONNECTION', 'Images need a Chat Completion connection with an image-capable model. Choose one in Context before sending.');
         }
         const names = { user: input.names.user, char: system.persona.name };
-        const material = resolveGenerationProfile(directories, binding);
         const environment = scratchpadMacroEnvironment(names, messages);
         const selectedPrefill = scratchpadPrefill(planned, material.profile?.model || material.active?.model_novel);
         const prefill = scratchpadPrefill({ prefill: environment.evaluate(selectedPrefill.text) }, selectedPrefill.partial ? 'kimi-k3' : '');

@@ -99,7 +99,7 @@ function imageInstructions({ image, avatar, persona }) {
         persona ? `For the shared user's persona portrait use {"type":"image","action":"generate","target":"persona-avatar","persona":${JSON.stringify(persona.name)},"prompt":"<explicit portrait prompt>","reason":"<why>"}. Use global image settings. Never include a character target. Generation leaves the persona unchanged until Review avatar and Save change.` : '',
         persona ? `For a saved Scenario Note portrait use {"type":"image","action":"generate","target":"persona-note-avatar","persona":${JSON.stringify(persona.name)},"noteId":"<exact shared note id>","prompt":"<explicit portrait prompt>","reason":"<why>"}. Use global image settings. Review avatar and Save change update only that note's portrait; its label, text and activation stay intact.` : '',
         'One JSON object per block, one image per suggestion. Do not supply image URLs, paths, credentials or settings. The owner presses Generate image; displaying a suggestion does not generate anything. Saved prompt-review preferences may require another approval before the provider runs.',
-        'A generated image is saved separately from the card. Only Review avatar followed by Save change replaces a portrait, after preserving the previous picture. Never claim that emitting a block generated an image or changed an avatar. You cannot inspect saved image bytes through text history.',
+        'A generated image is saved separately from the card. Only Review avatar followed by Save change replaces a portrait, after preserving the previous picture. Never claim that emitting a block generated an image or changed an avatar.',
     ].join('\n');
 }
 
@@ -238,7 +238,8 @@ export function buildScratchpadSystemPrompt({ assistant, gender, persona: savedP
     const preferences = userInstructions.trim() ? `The user's global Scratchpad instructions for you:\n${userInstructions}` : '';
     const voice = typeof customPrompt === 'string' && customPrompt.trim() ? ''
         : `For this reply, be ${persona.name} throughout: ${substituteNames(persona.personality, names)}\nGive the requested help in that voice, including explanations around any change blocks. Keep factual claims accurate and distinguish playful teasing from real advice.`;
-    return { text: [instructions, preferences, SCRATCHPAD_MACRO_GUIDANCE, CHARACTER_CREATION_INSTRUCTIONS, PERSONA_CREATION_INSTRUCTIONS, CREATOR_SCRATCHPAD_INSTRUCTIONS, imageInstructions(capabilities), reference, voice].filter(Boolean).join('\n\n'), persona };
+    const imageHistory = 'Saved generated pictures may accompany earlier Scratchpad replies as labelled image inputs. Inspect those pictures when discussing feedback, and distinguish the visible result from the requested prompt. A saved-image status or prompt alone does not show you the picture; only claim to see images actually attached to this request.';
+    return { text: [instructions, preferences, SCRATCHPAD_MACRO_GUIDANCE, CHARACTER_CREATION_INSTRUCTIONS, PERSONA_CREATION_INSTRUCTIONS, CREATOR_SCRATCHPAD_INSTRUCTIONS, imageInstructions(capabilities), imageHistory, reference, voice].filter(Boolean).join('\n\n'), persona };
 }
 
 export const SCRATCHPAD_CONTEXT_ACK = 'I have read the shared context. What would you like to work on?';
@@ -270,6 +271,7 @@ export function buildScratchpadMessages({ system, context, notebookContext = '',
         const peer = message.role === 'assistant' && message.assistant && assistant && message.assistant !== assistant;
         messages.push({ role: peer ? 'user' : message.role,
             content: peer ? `[Earlier reply from ${message.assistantName || assistantNames[message.assistant] || FALLBACK_NAMES[normaliseAssistant(message.assistant)] || 'Assistant'} in Scratchpad]\n${message.text}` : attachmentContent(message.text, message.attachments) });
+        if (message.generatedImageContent?.length) messages.push({ role: 'user', content: message.generatedImageContent });
     }
     // The job replaces this reservation with the numbered results and an acknowledgement
     // before the final user message. It is never sent as written.
