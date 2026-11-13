@@ -223,6 +223,7 @@
         border-radius: 0;
         box-shadow: none;
     }
+    body.neconyan #left-nav-panel .sb-preset-bar .sb-preset-actions > .menu_button { flex: 1 1 auto; min-height: 44px; padding: 0 10px; }
     body.neconyan #completion_prompt_manager #completion_prompt_manager_list li.completion_prompt_manager_prompt > span:nth-child(3) { touch-action: pan-x; }
     body.neconyan #completion_prompt_manager #completion_prompt_manager_list li.completion_prompt_manager_prompt .prompt_manager_prompt_controls > .prompt-manager-pin-action {
         display: inline-flex; align-items: center; justify-content: center; gap: 6px;
@@ -239,6 +240,15 @@
     body.neconyan #completion_prompt_manager #completion_prompt_manager_list li.completion_prompt_manager_prompt .prompt_manager_prompt_controls > .prompt-manager-toggle-action { height: 44px; width: 44px; min-height: 44px; flex: 0 0 44px; }
     body.neconyan #completion_prompt_manager .prompt-manager-pin-note { display: none; }
     body.neconyan #completion_prompt_manager #completion_prompt_manager_list li.completion_prompt_manager_prompt .prompt_manager_prompt_controls > button:focus-visible { outline: 2px solid var(--neco-ginger); outline-offset: -3px; }
+    body.neconyan #completion_prompt_manager :is(.prompt_manager_header_controls, .prompt_manager_footer_row, .prompt_manager_footer_tools) > .menu_button { flex: 1 1 auto; min-height: 44px; }
+    body.neconyan #completion_prompt_manager .prompt_manager_footer_row > select { flex-basis: 100%; min-height: 44px; }
+    body.neconyan #completion_prompt_manager_popup { padding: 0 12px; }
+    body.neconyan #completion_prompt_manager_popup .completion_prompt_manager_popup_entry_form_footer { padding-bottom: calc(12px + var(--sb-mobile-safe-area-bottom, 0px)); }
+    body.neconyan #completion_prompt_manager_popup .completion_prompt_manager_popup_entry_form_footer > .menu_button { flex: 1 1 auto; min-height: 44px; }
+    body.neconyan #completion_prompt_manager_popup #completion_prompt_manager_popup_close_button { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
+    body.neconyan #completion_prompt_manager_popup .completion_prompt_manager_tab_button { min-height: 40px; }
+    body.neconyan #completion_prompt_manager_popup .completion_prompt_manager_popup_entry_form :is(input.text_pole, select.text_pole:not(.select2-hidden-accessible)) { min-height: 44px; }
+    body.neconyan #completion_prompt_manager_popup .completion_prompt_manager_editor_maximize { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; }
     /* Wrapped agent changes scroll vertically, without Safari's sideways bounce. */
     body.neconyan .ica-transform-history .ica-transform-diff {
         overflow-x: hidden;

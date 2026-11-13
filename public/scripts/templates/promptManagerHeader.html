@@ -4,14 +4,20 @@
     {{/if}}
     <div id="{{prefix}}prompt_manager_drawer" class="wide100p flexFlowColumn sb-openai-settings-subdrawer {{prefix}}prompt_manager_drawer">
         <div class="inline-drawer-header" style="cursor:default;">
-            <div class="flex-container flexFlowColumn">
+            <div class="prompt_manager_header_text">
                 <b data-i18n="Prompts">Prompts</b>
-                <small class="sb-group-meta"><span data-i18n="Inspect, reorder, toggle, and edit injected prompts">Inspect, reorder, toggle, and edit injected prompts</span> &middot; <span data-i18n="Total Tokens:">Total Tokens:</span> {{totalActiveTokens}}{{#if totalAgentTokens}} &middot; <span data-i18n="Agent Tokens:">Agent Tokens:</span> {{totalAgentTokens}}{{/if}}</small>
+                <small class="sb-group-meta" data-i18n="Prompts you switch on are sent with every reply, top to bottom.">Prompts you switch on are sent with every reply, top to bottom.</small>
+                <small class="sb-group-meta prompt_manager_header_tokens"><span data-i18n="Total Tokens:">Total Tokens:</span> {{totalActiveTokens}}{{#if totalAgentTokens}} &middot; <span data-i18n="Agent Tokens:">Agent Tokens:</span> {{totalAgentTokens}}{{/if}}</small>
                 <small class="sb-group-meta prompt-manager-pin-note" data-i18n="Pin prompts to control them beside desktop chat.">Pin prompts to control them beside desktop chat.</small>
             </div>
             <div class="prompt_manager_header_controls {{prefix}}prompt_manager_header_controls">
-                <button type="button" id="{{prefix}}prompt_manager_drag_lock" class="menu_button menu_button_icon toggleable prompt_manager_drag_lock_button {{#if dragLocked}}toggled{{/if}}" title="Lock/unlock prompt reordering" aria-label="Lock/unlock prompt reordering" aria-pressed="{{#if dragLocked}}true{{else}}false{{/if}}" data-i18n="[title]Lock/unlock prompt reordering;[aria-label]Lock/unlock prompt reordering">
+                <button type="button" id="{{prefix}}prompt_manager_drag_lock" class="menu_button toggleable prompt_manager_drag_lock_button {{#if dragLocked}}toggled{{/if}}" title="Lock/unlock prompt reordering" aria-pressed="{{#if dragLocked}}true{{else}}false{{/if}}" data-i18n="[title]Lock/unlock prompt reordering">
                     <i class="fa-solid fa-fw {{#if dragLocked}}fa-lock{{else}}fa-unlock{{/if}}" aria-hidden="true"></i>
+                    <span data-i18n="Lock order">Lock order</span>
+                </button>
+                <button type="button" id="{{prefix}}prompt_manager_new" class="menu_button menu_button_primary prompt_manager_new_button">
+                    <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                    <span data-i18n="New prompt">New prompt</span>
                 </button>
             </div>
         </div>

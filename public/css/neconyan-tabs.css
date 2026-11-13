@@ -8124,28 +8124,6 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
         white-space: normal;
         overflow: visible;
     }
-
-    #openai_api-presets :is(
-        #import_oai_preset,
-        #export_oai_preset,
-        #delete_oai_preset,
-        #update_oai_preset,
-        #new_oai_preset,
-        [data-preset-manager-rename='openai'],
-        [data-preset-manager-delete-all='openai']
-    ) {
-        width: var(--sb-mobile-touch-target, 44px);
-        min-width: var(--sb-mobile-touch-target, 44px);
-        max-width: var(--sb-mobile-touch-target, 44px);
-        height: var(--sb-mobile-touch-target, 44px);
-        min-height: var(--sb-mobile-touch-target, 44px);
-        max-height: var(--sb-mobile-touch-target, 44px);
-        padding: 0;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        box-sizing: border-box;
-    }
 }
 
 @media screen and (max-width: 768px) {

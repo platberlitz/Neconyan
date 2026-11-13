@@ -404,6 +404,10 @@ class PromptManager {
         // Currently selected prompt shown in the editor pane.
         this.selectedPromptId = null;
 
+        // Prompt to scroll into view after the next render (just added or put back).
+        this.pendingRevealPromptId = null;
+        this.pendingRevealEditor = false;
+
         // Active editor pane area (`edit` / `inspect` / `preview`) when visible.
         this.activePopupArea = '';
 
@@ -458,6 +462,9 @@ class PromptManager {
 
         /** Delete prompt button click */
         this.handleDeletePrompt = () => { };
+
+        /** Editor delete button click */
+        this.handleEditorDeletePrompt = () => { };
 
         /** Append prompt button click */
         this.handleAppendPrompt = () => { };
@@ -803,12 +810,13 @@ class PromptManager {
             const promptID = event.target.closest('.' + this.configuration.prefix + 'prompt_manager_prompt').dataset.pmIdentifier;
             const messages = promptID === RUNTIME_AGENTS_IDENTIFIER
                 ? this.runtimeAgentMessages
-                : this.messages.getItemByIdentifier(promptID);
+                : this.messages?.getItemByIdentifier(promptID);
             if (messages) {
                 this.selectedPromptId = promptID;
                 this.activePopupArea = 'inspect';
 
                 this.loadMessagesIntoInspectForm(messages);
+                this.setPopupTitle(t`Inspect`);
 
                 this.showPopup('inspect');
             }
@@ -852,17 +860,25 @@ class PromptManager {
         };
 
         // Save prompt edit form to settings and close form.
-        this.handleSavePrompt = (event) => {
-            const promptId = event.target.dataset.pmPrompt;
+        this.handleSavePrompt = () => {
+            const promptId = document.getElementById(this.configuration.prefix + 'prompt_manager_popup_entry_form_save')?.dataset.pmPrompt;
+            if (!promptId) return;
             const prompt = this.getPromptById(promptId);
             const isDesktopSplit = this.isDesktopSplitLayout();
-            this.#queuePromptManagerScrollRestore();
 
             if (null === prompt) {
+                // Neconyan: a new prompt goes straight into the list, switched on,
+                // where the editor said, instead of waiting in the footer picker.
                 const newPrompt = {};
                 this.updatePromptWithPromptEditForm(newPrompt);
+                if (!newPrompt.name?.trim()) newPrompt.name = t`Untitled prompt`;
                 this.addPrompt(newPrompt, promptId);
+                const placement = /** @type {HTMLSelectElement} */(document.getElementById(this.configuration.prefix + 'prompt_manager_popup_entry_form_placement'));
+                this.appendPrompt(this.getPromptById(promptId), this.activeCharacter, placement?.value ?? null);
+                this.pendingRevealPromptId = promptId;
+                this.loadPromptIntoEditForm(this.getPromptById(promptId));
             } else {
+                this.#queuePromptManagerScrollRestore();
                 this.updatePromptWithPromptEditForm(prompt);
             }
 
@@ -887,9 +903,10 @@ class PromptManager {
         };
 
         // Reset prompt should it be a system prompt
-        this.handleResetPrompt = (event) => {
-            const promptId = event.target.dataset.pmPrompt;
+        this.handleResetPrompt = () => {
+            const promptId = document.getElementById(this.configuration.prefix + 'prompt_manager_popup_entry_form_reset')?.dataset.pmPrompt;
             const prompt = this.getPromptById(promptId);
+            if (!prompt) return;
             const isPulledPrompt = Object.keys(this.promptSources).includes(promptId);
 
             switch (promptId) {
@@ -937,10 +954,10 @@ class PromptManager {
                 option.selected = false;
             });
             injectionTriggerField.dispatchEvent(new Event('change', { bubbles: true }));
-            depthBlock.style.visibility = prompt.injection_position === INJECTION_POSITION.ABSOLUTE ? 'visible' : 'hidden';
-            orderBlock.style.visibility = prompt.injection_position === INJECTION_POSITION.ABSOLUTE ? 'visible' : 'hidden';
+            this.setEditFormBlockVisibility(depthBlock, prompt.injection_position === INJECTION_POSITION.ABSOLUTE);
+            this.setEditFormBlockVisibility(orderBlock, prompt.injection_position === INJECTION_POSITION.ABSOLUTE);
             forbidOverridesField.checked = prompt.forbid_overrides ?? false;
-            forbidOverridesBlock.style.visibility = this.overridablePrompts.includes(prompt.identifier) ? 'visible' : 'hidden';
+            this.setEditFormBlockVisibility(forbidOverridesBlock, this.overridablePrompts.includes(prompt.identifier));
             promptField.disabled = prompt.marker ?? false;
             entrySourceBlock.style.display = isPulledPrompt ? '' : 'none';
 
@@ -950,59 +967,76 @@ class PromptManager {
             }
         };
 
-        // Append prompt to selected character
-        this.handleAppendPrompt = (event) => {
+        // Put a removed prompt back in the list, after the selected prompt or at the end
+        this.handleAppendPrompt = () => {
             const appendPromptFooter = /** @type {HTMLSelectElement} */(document.getElementById(this.configuration.prefix + 'prompt_manager_footer_append_prompt'));
-            const promptID = appendPromptFooter.value;
+            const promptID = appendPromptFooter?.value;
             const prompt = this.getPromptById(promptID);
 
             if (prompt) {
-                this.appendPrompt(prompt, this.activeCharacter);
+                this.appendPrompt(prompt, this.activeCharacter, this.selectedPromptId);
+                this.pendingRevealPromptId = promptID;
                 this.render();
                 this.saveServiceSettings();
             }
         };
 
-        // Delete selected prompt from list form and close edit form
-        this.handleDeletePrompt = async (event) => {
-            Popup.show.confirm(t`Are you sure you want to delete this prompt?`, null).then((userChoice) => {
-                if (!userChoice) return;
-                const appendPromptFooter = /** @type {HTMLSelectElement} */(document.getElementById(this.configuration.prefix + 'prompt_manager_footer_append_prompt'));
-                const promptID = appendPromptFooter.value;
-                const prompt = this.getPromptById(promptID);
+        const deletePromptAfterConfirm = async (promptID) => {
+            const prompt = this.getPromptById(promptID);
+            if (!prompt || true !== this.isPromptDeletionAllowed(prompt)) return;
 
-                if (prompt && true === this.isPromptDeletionAllowed(prompt)) {
-                    const promptIndex = this.getPromptIndexById(promptID);
-                    this.serviceSettings.prompts.splice(Number(promptIndex), 1);
+            const userChoice = await Popup.show.confirm(t`Are you sure you want to delete this prompt?`, null);
+            if (!userChoice || !this.getPromptById(promptID)) return;
 
-                    this.log('Deleted prompt: ' + prompt.identifier);
+            const promptIndex = this.getPromptIndexById(promptID);
+            this.serviceSettings.prompts.splice(Number(promptIndex), 1);
+            this.detachPrompt(prompt, this.activeCharacter);
 
-                    this.hidePopup();
-                    this.clearEditForm();
-                    this.clearInspectForm();
-                    if (this.selectedPromptId === promptID) {
-                        this.selectedPromptId = null;
-                        this.activePopupArea = '';
-                    }
-                    this.render();
-                    this.saveServiceSettings();
-                }
-            });
+            this.log('Deleted prompt: ' + prompt.identifier);
+
+            this.hidePopup();
+            this.clearEditForm();
+            this.clearInspectForm();
+            if (this.selectedPromptId === promptID) {
+                this.selectedPromptId = null;
+                this.activePopupArea = '';
+            }
+            this.render();
+            this.saveServiceSettings();
         };
 
-        // Create new prompt, then save it to settings and close form.
-        this.handleNewPrompt = (event) => {
+        // Delete the prompt picked in the removed prompts footer
+        this.handleDeletePrompt = async () => {
+            const appendPromptFooter = /** @type {HTMLSelectElement} */(document.getElementById(this.configuration.prefix + 'prompt_manager_footer_append_prompt'));
+            await deletePromptAfterConfirm(appendPromptFooter?.value);
+        };
+
+        // Delete the prompt open in the editor
+        this.handleEditorDeletePrompt = async () => {
+            const deleteButton = document.getElementById(this.configuration.prefix + 'prompt_manager_popup_entry_form_delete');
+            await deletePromptAfterConfirm(deleteButton?.dataset.pmPrompt);
+        };
+
+        // Open an empty editor; saving it adds the prompt to the list.
+        this.handleNewPrompt = () => {
             const prompt = {
                 identifier: this.getUuidv4(),
                 name: '',
                 role: 'system',
                 content: '',
             };
+            const placeAfter = this.selectedPromptId;
+            this.clearEditForm();
+            this.clearInspectForm();
             this.selectedPromptId = prompt.identifier;
             this.activePopupArea = 'edit';
 
-            this.loadPromptIntoEditForm(prompt);
+            this.loadPromptIntoEditForm(prompt, { placeAfter });
             this.showPopup('edit');
+            requestAnimationFrame(() => {
+                // The name is the first thing to fill in for a blank prompt.
+                document.getElementById(this.configuration.prefix + 'prompt_manager_popup_entry_form_name')?.focus({ preventScroll: true });
+            });
         };
 
         // Export all user prompts
@@ -1182,6 +1216,7 @@ class PromptManager {
         // Prepare prompt edit form buttons
         document.getElementById(this.configuration.prefix + 'prompt_manager_popup_entry_form_save').addEventListener('click', this.handleSavePrompt);
         document.getElementById(this.configuration.prefix + 'prompt_manager_popup_entry_form_reset').addEventListener('click', this.handleResetPrompt);
+        document.getElementById(this.configuration.prefix + 'prompt_manager_popup_entry_form_delete')?.addEventListener('click', this.handleEditorDeletePrompt);
 
         const closeAndClearPopup = () => {
             this.hidePopup();
@@ -1196,8 +1231,7 @@ class PromptManager {
         // Clear forms on closing the popup
         document.getElementById(this.configuration.prefix + 'prompt_manager_popup_entry_form_close').addEventListener('click', closeAndClearPopup);
         document.getElementById(this.configuration.prefix + 'prompt_manager_popup_close_button').addEventListener('click', closeAndClearPopup);
-        // Neconyan: preview mode has its own close button and field listeners.
-        document.getElementById(this.configuration.prefix + 'prompt_manager_popup_preview_close_button').addEventListener('click', closeAndClearPopup);
+        // Neconyan: the edit and preview views share the close button in the popup head.
         document.querySelectorAll('.' + this.configuration.prefix + 'prompt_manager_tab_button').forEach(button => {
             button.addEventListener('click', this.handlePromptEditorTabClick);
         });
@@ -1290,6 +1324,33 @@ class PromptManager {
         }
     }
 
+    /**
+     * Scrolls a prompt that was just added or put back into view, after the
+     * usual scroll restore has run.
+     */
+    #revealPendingPrompt() {
+        if (this.pendingRevealEditor) {
+            this.pendingRevealEditor = false;
+            const pane = this.containerElement?.querySelector(`.${this.configuration.prefix}prompt_manager_editor_pane`);
+            requestAnimationFrame(() => pane?.scrollIntoView({ block: 'nearest' }));
+        }
+        const identifier = this.pendingRevealPromptId;
+        if (!identifier) return;
+        this.pendingRevealPromptId = null;
+        const row = this.listElement?.querySelector(`li[data-pm-identifier="${CSS.escape(identifier)}"]`);
+        const container = this.#getScrollContainer();
+        if (!(row instanceof HTMLElement) || !container) return;
+        requestAnimationFrame(() => {
+            const rowRect = row.getBoundingClientRect();
+            const containerRect = container.getBoundingClientRect();
+            if (rowRect.top < containerRect.top) {
+                container.scrollTop += rowRect.top - containerRect.top - 12;
+            } else if (rowRect.bottom > containerRect.bottom) {
+                container.scrollTop += rowRect.bottom - containerRect.bottom + 12;
+            }
+        });
+    }
+
     #isRenderCurrent(renderRequestId) {
         return renderRequestId === this.renderRequestId;
     }
@@ -1370,6 +1431,7 @@ class PromptManager {
 
                 this.makeDraggable();
                 this.#setScrollPosition(scrollPosition);
+                this.#revealPendingPrompt();
             } finally {
                 this.profileEnd('render');
             }
@@ -1475,13 +1537,19 @@ class PromptManager {
      * Add a prompt to the current character's prompt list.
      * @param {Prompt} prompt - The prompt to be added.
      * @param {object} character - The character whose prompt list will be updated.
+     * @param {string|null} [afterIdentifier] - Place it after this prompt. An empty string puts it first; null or an id not in the list puts it last.
      * @returns {void}
      */
-    appendPrompt(prompt, character) {
+    appendPrompt(prompt, character, afterIdentifier = null) {
+        if (!prompt) return;
         const promptOrder = this.getPromptOrderForCharacter(character);
-        const index = promptOrder.findIndex(entry => entry.identifier === prompt.identifier);
+        if (promptOrder.some(entry => entry.identifier === prompt.identifier)) return;
 
-        if (-1 === index) promptOrder.unshift({ identifier: prompt.identifier, enabled: false });
+        // Neconyan: added prompts land where people asked and switched on, not
+        // disabled at the top where they had to be dragged back down.
+        const anchorIndex = afterIdentifier ? promptOrder.findIndex(entry => entry.identifier === afterIdentifier) : -1;
+        const insertAt = afterIdentifier === '' ? 0 : (anchorIndex === -1 ? promptOrder.length : anchorIndex + 1);
+        promptOrder.splice(insertAt, 0, { identifier: prompt.identifier, enabled: true });
     }
 
     /**
@@ -1881,11 +1949,39 @@ class PromptManager {
         block.style.visibility = isVisible ? '' : 'hidden';
     }
 
+    setPopupTitle(title) {
+        const titleElement = document.getElementById(this.configuration.prefix + 'prompt_manager_popup_title');
+        if (titleElement) titleElement.textContent = title;
+    }
+
+    /**
+     * Fills the 'Place after' picker a new prompt uses to choose its spot in the list.
+     * @param {string|null} placeAfter - The prompt to preselect; the last prompt when it is not in the list.
+     */
+    fillPlacementSelect(placeAfter) {
+        const placementField = document.getElementById(this.configuration.prefix + 'prompt_manager_popup_entry_form_placement');
+        if (!(placementField instanceof HTMLSelectElement)) return;
+
+        const order = this.getPromptOrderForCharacter(this.activeCharacter);
+        const options = [`<option value="">${escapeHtml(t`Top of the list`)}</option>`];
+        order.forEach(entry => {
+            const prompt = this.getPromptById(entry.identifier);
+            if (prompt) options.push(`<option value="${escapeHtml(entry.identifier)}">${escapeHtml(prompt.name || entry.identifier)}</option>`);
+        });
+        placementField.innerHTML = options.join('');
+
+        const known = order.some(entry => entry.identifier === placeAfter && this.getPromptById(entry.identifier));
+        const lastPrompt = [...order].reverse().find(entry => this.getPromptById(entry.identifier));
+        placementField.value = known ? placeAfter : (lastPrompt?.identifier ?? '');
+    }
+
     /**
      * Loads a given prompt into the edit form fields.
      * @param {Partial<Prompt>} prompt - Prompt object with properties 'name', 'role', 'content', and 'system_prompt'
+     * @param {object} [options]
+     * @param {string|null} [options.placeAfter] - For a new prompt, the prompt it should follow in the list.
      */
-    loadPromptIntoEditForm(prompt) {
+    loadPromptIntoEditForm(prompt, { placeAfter = null } = {}) {
         const nameField = /** @type {HTMLInputElement} */(document.getElementById(this.configuration.prefix + 'prompt_manager_popup_entry_form_name'));
         const roleField = /** @type {HTMLSelectElement} */(document.getElementById(this.configuration.prefix + 'prompt_manager_popup_entry_form_role'));
         const promptField = /** @type {HTMLTextAreaElement} */(document.getElementById(this.configuration.prefix + 'prompt_manager_popup_entry_form_prompt'));
@@ -1926,7 +2022,7 @@ class PromptManager {
 
         const resetPromptButton = document.getElementById(this.configuration.prefix + 'prompt_manager_popup_entry_form_reset');
         if (true === prompt.system_prompt) {
-            resetPromptButton.style.display = 'block';
+            resetPromptButton.style.display = '';
             resetPromptButton.dataset.pmPrompt = prompt.identifier;
         } else {
             resetPromptButton.style.display = 'none';
@@ -1937,6 +2033,22 @@ class PromptManager {
 
         const savePromptButton = document.getElementById(this.configuration.prefix + 'prompt_manager_popup_entry_form_save');
         savePromptButton.dataset.pmPrompt = prompt.identifier;
+
+        // Neconyan: one editor serves new and saved prompts, so its title, save
+        // label, placement picker and delete button follow which one is open.
+        const isNewPrompt = null === this.getPromptById(prompt.identifier);
+        const saveLabel = document.getElementById(this.configuration.prefix + 'prompt_manager_popup_entry_form_save_label');
+        const placementBlock = document.getElementById(this.configuration.prefix + 'prompt_manager_placement_block');
+        const deletePromptButton = document.getElementById(this.configuration.prefix + 'prompt_manager_popup_entry_form_delete');
+        this.setPopupTitle(isNewPrompt ? t`New prompt` : t`Edit prompt`);
+        if (saveLabel) saveLabel.textContent = isNewPrompt ? t`Add prompt` : t`Save`;
+        if (isNewPrompt) this.fillPlacementSelect(placeAfter);
+        this.setEditFormBlockVisibility(placementBlock, isNewPrompt);
+        if (deletePromptButton) {
+            const canDelete = !isNewPrompt && true === this.isPromptDeletionAllowed(prompt);
+            deletePromptButton.style.display = canDelete ? '' : 'none';
+            deletePromptButton.dataset.pmPrompt = canDelete ? prompt.identifier : '';
+        }
     }
 
     handleInjectionPositionChange(event) {
@@ -1989,7 +2101,9 @@ class PromptManager {
 
     syncPreviewTabState(activeArea) {
         document.querySelectorAll('.' + this.configuration.prefix + 'prompt_manager_tab_button').forEach(button => {
-            button.classList.toggle('active', button.dataset.tab === activeArea);
+            const isActive = button.dataset.tab === activeArea;
+            button.classList.toggle('active', isActive);
+            button.setAttribute('aria-pressed', String(isActive));
         });
     }
 
@@ -2293,11 +2407,8 @@ class PromptManager {
             return false;
         }
 
-        let selectedPromptIndex = 0;
         const existingAppendSelect = document.getElementById(`${this.configuration.prefix}prompt_manager_footer_append_prompt`);
-        if (existingAppendSelect instanceof HTMLSelectElement) {
-            selectedPromptIndex = existingAppendSelect.selectedIndex;
-        }
+        const previousRemovedPromptId = existingAppendSelect instanceof HTMLSelectElement ? existingAppendSelect.value : '';
         const promptManagerDiv = this.containerElement;
 
         const errorDiv = this.error ? `
@@ -2316,18 +2427,16 @@ class PromptManager {
 
         let footerHtml = '';
         if (null !== this.activeCharacter) {
+            // Neconyan: the footer only offers prompts that were taken out of this list,
+            // so 'Add back' and 'Delete' never act on a prompt that is already showing.
+            const listedIds = new Set(this.getPromptOrderForCharacter(this.activeCharacter).map(entry => entry.identifier));
             const prompts = [...this.serviceSettings.prompts]
-                .filter(prompt => prompt && !prompt?.system_prompt)
-                .sort((promptA, promptB) => promptA.name.localeCompare(promptB.name));
-            const promptsHtml = prompts.reduce((acc, prompt) => acc + `<option value="${prompt.identifier}">${escapeHtml(prompt.name)}</option>`, '');
-
-            if (selectedPromptIndex > 0) {
-                selectedPromptIndex = Math.min(selectedPromptIndex, prompts.length - 1);
-            }
-
-            if (selectedPromptIndex === -1 && prompts.length) {
-                selectedPromptIndex = 0;
-            }
+                .filter(prompt => prompt && !prompt?.system_prompt && !listedIds.has(prompt.identifier))
+                .sort((promptA, promptB) => String(promptA.name ?? '').localeCompare(String(promptB.name ?? '')));
+            const promptsHtml = prompts.reduce((acc, prompt) => {
+                const selected = prompt.identifier === previousRemovedPromptId ? ' selected' : '';
+                return acc + `<option value="${escapeHtml(prompt.identifier)}"${selected}>${escapeHtml(prompt.name || t`Untitled prompt`)}</option>`;
+            }, '');
 
             footerHtml = await renderTemplateAsync('promptManagerFooter', { promptsHtml, prefix: this.configuration.prefix });
             if (!this.#isRenderCurrent(renderRequestId)) {
@@ -2343,6 +2452,7 @@ class PromptManager {
             this.activePopupArea = '';
         }
 
+        const editorWasBesideList = this.isDesktopSplitLayout() && this.getPopupElement()?.parentElement === this.getEditorHost();
         this.restorePopupToOrigin();
         const focused = document.activeElement;
         const focusedRow = focused?.closest?.('[data-pm-identifier]');
@@ -2359,6 +2469,7 @@ class PromptManager {
         promptManagerDiv.insertAdjacentHTML('beforeend', headerHtml);
 
         this.listElement = promptManagerDiv.querySelector(`#${this.configuration.prefix}prompt_manager_list`);
+        promptManagerDiv.querySelector(`#${this.configuration.prefix}prompt_manager_new`)?.addEventListener('click', this.handleNewPrompt);
 
         if (null !== this.activeCharacter) {
             const footerSlot = promptManagerDiv.querySelector(`.${this.configuration.prefix}prompt_manager_footer_slot`);
@@ -2370,21 +2481,21 @@ class PromptManager {
                 return true;
             }
 
-            footerDiv?.querySelector('#prompt-manager-reset-character')?.addEventListener('click', this.handleCharacterReset);
-            footerDiv.querySelector('.menu_button:nth-child(2)').addEventListener('click', this.handleAppendPrompt);
-            footerDiv.querySelector('.caution').addEventListener('click', this.handleDeletePrompt);
-            footerDiv.querySelector('.menu_button:last-child').addEventListener('click', this.handleNewPrompt);
-            footerDiv.querySelector('select').selectedIndex = selectedPromptIndex;
-
-            // Add prompt export dialogue and options
-            footerDiv.querySelector('#prompt-manager-import').addEventListener('click', this.handleImport);
-            footerDiv.querySelector('#prompt-manager-export').addEventListener('click', this.handleFullExport);
+            footerDiv.querySelector(`#${this.configuration.prefix}prompt_manager_footer_add_back`)?.addEventListener('click', this.handleAppendPrompt);
+            footerDiv.querySelector(`#${this.configuration.prefix}prompt_manager_footer_delete`)?.addEventListener('click', this.handleDeletePrompt);
+            footerDiv.querySelector('#prompt-manager-import')?.addEventListener('click', this.handleImport);
+            footerDiv.querySelector('#prompt-manager-export')?.addEventListener('click', this.handleFullExport);
+            footerDiv.querySelector('#prompt-manager-reset-character')?.addEventListener('click', this.handleCharacterReset);
         }
 
         this.bindDragLockButton();
         this.syncPopupPlacement();
         this.syncEditorPaneState();
         this.syncListSelection();
+        // Neconyan: an editor opened before the list was drawn only reaches its pane now, so reveal it as showPopup would.
+        if (!editorWasBesideList && this.isDesktopSplitLayout() && this.isPopupVisible() && this.activePopupArea) {
+            this.pendingRevealEditor = true;
+        }
         return true;
     }
 
@@ -2417,11 +2528,7 @@ class PromptManager {
         const { prefix } = this.configuration;
         const displayTokenCounts = this.getActivePromptTokenCounts();
 
-        let listItemHtml = await renderTemplateAsync('promptManagerListHeader', { prefix });
-        if (!this.#isRenderCurrent(renderRequestId) || promptManagerList !== this.listElement) {
-            return false;
-        }
-
+        let listItemHtml = '';
         this.getPromptsForCharacter(this.activeCharacter).forEach(prompt => {
             if (!prompt) return;
 
@@ -2845,6 +2952,10 @@ class PromptManager {
 
         window.requestAnimationFrame(() => {
             if (!popup.classList.contains('openDrawer') || isUiClosing(popup) || this.activePopupArea !== area) return;
+            // Neconyan: on desktop the editor sits beside the list and can start or end below the fold, which hides Save.
+            if (this.isDesktopSplitLayout()) {
+                this.containerElement?.querySelector(`.${this.configuration.prefix}prompt_manager_editor_pane`)?.scrollIntoView({ block: 'nearest' });
+            }
             const focusTarget = area === 'edit'
                 ? document.getElementById(this.configuration.prefix + 'prompt_manager_popup_entry_form_prompt')
                 : document.getElementById(this.configuration.prefix + 'prompt_manager_popup_' + area + '_close_button')

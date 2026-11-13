@@ -1559,20 +1559,18 @@
     /* Make prompt editor popup overlay the shell panel on mobile */
     #completion_prompt_manager_popup {
         position: fixed !important;
-        top: var(--topBarBlockSize) !important;
+        top: var(--sb-topbar-layout-offset, var(--topBarBlockSize)) !important;
         left: 0 !important;
         right: 0 !important;
         bottom: 0 !important;
         width: 100dvw !important;
         max-width: 100dvw !important;
-        height: calc(100dvh - var(--topBarBlockSize)) !important;
-        max-height: calc(100dvh - var(--topBarBlockSize)) !important;
+        height: calc(100dvh - var(--sb-topbar-layout-offset, var(--topBarBlockSize))) !important;
+        max-height: calc(100dvh - var(--sb-topbar-layout-offset, var(--topBarBlockSize))) !important;
         z-index: var(--sb-z-loader) !important;
         overflow-y: auto !important;
         border-radius: 0 !important;
-        -webkit-backdrop-filter: blur(20px);
-        backdrop-filter: blur(20px);
-        background: var(--SmartThemeBlurTintColor);
+        background: var(--neco-surface, var(--SmartThemeBlurTintColor));
     }
 
     /*
