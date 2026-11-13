@@ -66,4 +66,40 @@ describe('Presets Parameters nesting', () => {
         expect(tabManagerSource).toContain('\'#left-nav-panel #sb-openai-output\',\n                        \'#left-nav-panel #sb-openai-prompt-templates\',');
         expect(neconyanCss).toContain('.sb-openai-settings-section:not(:first-child) > .sb-openai-settings-section-header');
     });
+
+    test('every prompt template field has a fullscreen expand button', () => {
+        const fields = [
+            'main_prompt_quick_edit_textarea',
+            'nsfw_prompt_quick_edit_textarea',
+            'jailbreak_prompt_quick_edit_textarea',
+            'impersonation_prompt_textarea',
+            'wi_format_textarea',
+            'scenario_format_textarea',
+            'personality_format_textarea',
+            'group_nudge_prompt_textarea',
+            'newchat_prompt_textarea',
+            'newgroupchat_prompt_textarea',
+            'newexamplechat_prompt_textarea',
+            'continue_nudge_prompt_textarea',
+            'send_if_empty_textarea',
+        ];
+
+        for (const id of fields) {
+            expect(indexHtml).toContain(`id="${id}"`);
+            expect(indexHtml).toContain(`<i class="editor_maximize fa-solid fa-maximize right_menu_button" data-for="${id}" title="Expand the editor" data-i18n="[title]Expand the editor"></i>`);
+        }
+    });
+
+    test('quick prompt edits save when the expanded editor writes back', () => {
+        const promptManagerSource = read('public', 'scripts', 'PromptManager.js');
+        const start = promptManagerSource.indexOf('const handleQuickEditSave = (event) => {');
+        const block = promptManagerSource.slice(start, promptManagerSource.indexOf('bindQuickEditSave(this.updateQuickEdit(\'jailbreak\'', start));
+
+        expect(start).toBeGreaterThan(-1);
+        expect(block).toContain('textarea.addEventListener(\'blur\', handleQuickEditSave);');
+        expect(block).toContain('event.isTrigger');
+        expect(block).toContain('saveExpandedQuickEdit(textarea);');
+        expect(block).toContain('bindQuickEditSave(this.updateQuickEdit(\'main\'');
+        expect(block).toContain('bindQuickEditSave(this.updateQuickEdit(\'nsfw\'');
+    });
 });

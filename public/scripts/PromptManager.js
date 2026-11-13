@@ -1155,17 +1155,26 @@ class PromptManager {
                 this.saveServiceSettings().then(() => this.render());
             };
 
+            // Neconyan: the expand button's editor writes back with a jQuery 'input' trigger and never blurs the field.
+            const saveExpandedQuickEdit = debounce((textarea) => handleQuickEditSave({ target: textarea }), debounce_timeout.relaxed);
+            const bindQuickEditSave = (elementId) => {
+                const textarea = document.getElementById(elementId);
+                textarea.addEventListener('blur', handleQuickEditSave);
+                $(textarea).on('input', (event) => {
+                    if (event.isTrigger) {
+                        saveExpandedQuickEdit(textarea);
+                    }
+                });
+            };
+
             const mainPrompt = this.getPromptById('main');
-            const mainElementId = this.updateQuickEdit('main', mainPrompt);
-            document.getElementById(mainElementId).addEventListener('blur', handleQuickEditSave);
+            bindQuickEditSave(this.updateQuickEdit('main', mainPrompt));
 
             const nsfwPrompt = this.getPromptById('nsfw');
-            const nsfwElementId = this.updateQuickEdit('nsfw', nsfwPrompt);
-            document.getElementById(nsfwElementId).addEventListener('blur', handleQuickEditSave);
+            bindQuickEditSave(this.updateQuickEdit('nsfw', nsfwPrompt));
 
             const jailbreakPrompt = this.getPromptById('jailbreak');
-            const jailbreakElementId = this.updateQuickEdit('jailbreak', jailbreakPrompt);
-            document.getElementById(jailbreakElementId).addEventListener('blur', handleQuickEditSave);
+            bindQuickEditSave(this.updateQuickEdit('jailbreak', jailbreakPrompt));
         }
 
         // Re-render when chat history changes.
