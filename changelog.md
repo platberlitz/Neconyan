@@ -70,6 +70,7 @@
 - PR #660 (2026-11-13) `feat(mewmory): remember the player without taking control`
 - PR #661 (2026-11-13) `fix(mewmory): keep scroll controls attached to sticky tabs`
 - PR #662 (2026-11-13) `fix(popups): drop doubled safe-area gaps above the iOS keyboard`
+- PR #663 (2026-11-13) `fix(mewmory): stop repeating the player persona in prompts`
 
 ## v1.5.4
 
