@@ -742,7 +742,7 @@ const TOOL_PAGES = Object.freeze({
         assistant: 'taro',
         name: 'Mewmory',
         kicker: 'Long-term memory',
-        description: 'Mewmory remembers events and NPC details from your Roleplay chats, and tracks how each character’s view changes, so long stories stay consistent.',
+        description: 'Mewmory remembers events, your character and NPC details from your Roleplay chats, and tracks how AI-controlled characters’ views change, so long stories stay consistent.',
         invite: 'Taro will show you how Mewmory remembers, one step at a time.',
         emptyWhen: '#mewmory-workspace [data-mewmory-no-chat]',
         steps: [
