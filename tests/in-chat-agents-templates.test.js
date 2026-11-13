@@ -1227,6 +1227,7 @@ describe('in-chat agent bundled templates', () => {
             ['repetition-breaker.json', 'tpl-repetition-breaker', 'Repetition Breaker', 6],
             ['length-trimmer.json', 'tpl-length-trimmer', 'Length Trimmer', 0],
             ['proofreader.json', 'tpl-proofreader', 'Proofreader', 4],
+            ['translator.json', 'tpl-translator', 'Translator', 4],
         ];
         const orders = [];
 
@@ -1248,6 +1249,10 @@ describe('in-chat agent bundled templates', () => {
         expect(new Set(orders).size).toBe(orders.length);
         expect(readTemplate('length-trimmer.json').settings).toEqual({ lengthTarget: 'About 300 to 450 words' });
         expect(readTemplate('length-trimmer.json').prompt).toContain('{{lengthTarget}}');
+        expect(readTemplate('translator.json').settings).toEqual({ targetLanguage: 'English' });
+        expect(readTemplate('translator.json').prompt).toContain('{{targetLanguage}}');
+        expect(readTemplate('translator.json').prompt).toContain('Copy every code block, tracker block and status panel exactly as written, character for character.');
+        expect(readTemplate('translator.json').prompt).toContain('When the response is already entirely in the target language, return it unchanged.');
         for (const macro of ['{{persona}}', '{{active-lore}}', '{{active-authors-note}}', '{{secrets-tracker}}']) {
             expect(readTemplate('knowledge-guard.json').prompt).toContain(macro);
         }

@@ -11,7 +11,7 @@ const POLICY_PATTERNS = [
 ];
 
 const REFUSAL_PATTERNS = [
-    /\bi (?:really |simply |just )?(?:cannot|will not|cannot and will not|am unable to|am not able to|am not comfortable|do not feel comfortable|am not going to|do not|must decline to|have to decline to) (?:help|assist|continu|comply|creat|writ|produc|generat|provid|engag|fulfil|edit|revis|rewrit|enhanc|mak|expand|describ|depict|do (?:that|this))\w*(?!\w| but\b)/,
+    /\bi (?:really |simply |just )?(?:cannot|will not|cannot and will not|am unable to|am not able to|am not comfortable|do not feel comfortable|am not going to|do not|must decline to|have to decline to) (?:help|assist|continu|comply|creat|writ|produc|generat|provid|engag|fulfil|edit|revis|rewrit|enhanc|mak|expand|describ|depict|translat|do (?:that|this))\w*(?!\w| but\b)/,
     /\bi (?:must|have to|need to) (?:respectfully |politely )?(?:decline|refuse)\b/,
 ];
 

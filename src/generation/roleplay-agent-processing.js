@@ -1,6 +1,6 @@
 import { projectPromptMediaRecords } from '../../public/scripts/prompt-media-policy.js';
 import { appendHelperPrefillMessages } from '../../public/scripts/extensions/helper-prefill.js';
-import { buildPromptTransformRecentChat, getAgentLengthTarget } from '../../public/scripts/extensions/in-chat-agents/prompt-transform-context.js';
+import { buildPromptTransformRecentChat, getAgentLengthTarget, getAgentTargetLanguage, isTranslatorAgent } from '../../public/scripts/extensions/in-chat-agents/prompt-transform-context.js';
 import { ACTIVE_LORE_MACRO, buildAgentContextMacros, capturePresetPrompts, captureSecretsTrackerState, captureTrackerState, PRESET_PROMPTS_MACRO, SECRETS_TRACKER_MACRO, TRACKER_STATE_MACRO, usesAgentMacro } from '../../public/scripts/extensions/in-chat-agents/agent-context-macros.js';
 import { mergeChatPresetSettings } from '../../public/scripts/chat-preset-request.js';
 import { CONTINUITY_NOTES_MACRO, describeTextCorrections, isContinuityCorrector, latestContinuityNotes } from '../../public/scripts/extensions/in-chat-agents/continuity-link.js';
@@ -79,7 +79,7 @@ function activation(agent, records, generationType, random) {
 function aliases(environment, agent, text, generationType, assistantName, contextMacros = {}) {
     for (const key of ['currentmessage', 'lastmessage', 'latestmessage', 'response', 'currentresponse', 'latestresponse', 'assistantmessage']) environment.dynamicMacros[key] = text;
     Object.assign(environment.dynamicMacros, contextMacros, { assistantname: assistantName, agentname: agent.name, generationtype: generationType,
-        lengthtarget: getAgentLengthTarget(agent) });
+        lengthtarget: getAgentLengthTarget(agent), targetlanguage: getAgentTargetLanguage(agent) });
     return environment;
 }
 
@@ -485,6 +485,7 @@ export async function runRoleplayAgentPostprocessing(context, options) {
             } catch { /* A display observer cannot invalidate a paid Agent result. */ }
         },
         isAppend: agent => agent.postProcess.promptTransformMode === 'append',
+        isFinalPass: isTranslatorAgent,
         runRewrite: async (agent, body) => {
             const run = await modelRun(scope, options, agent, body, modelName(agent.id));
             // The Continuity Companion is told what the Corrector fixed, so it does not report those slips again.

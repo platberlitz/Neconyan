@@ -3,6 +3,7 @@ import { escapeHtml } from '../../utils.js';
 import {
     captureAgentSaveGuard,
     DEFAULT_LENGTH_TARGET,
+    DEFAULT_TARGET_LANGUAGE,
     getAgentById,
     getAgents,
     getCompanionConfig,
@@ -11,6 +12,7 @@ import {
     MAX_PROMPT_TRANSFORM_CONTEXT_MESSAGES,
     normalizePromptTransformContextMessages,
     saveAgentBatch,
+    TRANSLATOR_TEMPLATE_ID,
 } from './agent-store.js';
 import { getCompanionReferenceIds } from './companion/companion-shared.js';
 import { populateConnectionProfileSelect } from './profile-utils.js';
@@ -155,8 +157,15 @@ export async function openAgentQuickSettings(ids, { view = 'settings', lockAgent
                 const lengthTarget = typeof first.settings?.lengthTarget === 'string' ? first.settings.lengthTarget : DEFAULT_LENGTH_TARGET;
                 const input = $('<input type="text" class="text_pole" maxlength="200">').attr('placeholder', DEFAULT_LENGTH_TARGET).val(lengthTarget);
                 rewrite.append($('<label>').text('Target length').append(input));
-                fields.push({ input: input[0], key: 'lengthTarget', setting: true, initial: input.val() });
+                fields.push({ input: input[0], key: 'lengthTarget', setting: true, fallback: DEFAULT_LENGTH_TARGET, initial: input.val() });
                 rewrite.append('<p class="ica--profile-help">Plain words work: ‘About 300 words’, ‘Two short paragraphs’, ‘Under 150 words’.</p>');
+            }
+            if (String(first.sourceTemplateId ?? '').trim() === TRANSLATOR_TEMPLATE_ID) {
+                const targetLanguage = typeof first.settings?.targetLanguage === 'string' ? first.settings.targetLanguage : DEFAULT_TARGET_LANGUAGE;
+                const input = $('<input type="text" class="text_pole" maxlength="200">').attr('placeholder', DEFAULT_TARGET_LANGUAGE).val(targetLanguage);
+                rewrite.append($('<label>').text('Translate into').append(input));
+                fields.push({ input: input[0], key: 'targetLanguage', setting: true, fallback: DEFAULT_TARGET_LANGUAGE, initial: input.val() });
+                rewrite.append('<p class="ica--profile-help">Name the language, and a variety or register if it matters: ‘Japanese’, ‘Brazilian Portuguese’, ‘Casual French’. It runs after every other rewrite.</p>');
             }
             addNumber(rewrite, 'promptTransformContextMessages', 'Recent messages to read', normalizePromptTransformContextMessages(first.postProcess.promptTransformContextMessages), 0, MAX_PROMPT_TRANSFORM_CONTEXT_MESSAGES);
             fields.at(-1).postProcess = true;
@@ -248,7 +257,7 @@ export async function openAgentQuickSettings(ids, { view = 'settings', lockAgent
                             }
                         } else if (field.key === 'order') draft.injection = { ...draft.injection, order: value };
                         else if (field.postProcess) draft.postProcess = { ...draft.postProcess, [field.key]: normalizePromptTransformContextMessages(value) };
-                        else if (field.setting) draft.settings = { ...draft.settings, [field.key]: String(value).trim() || DEFAULT_LENGTH_TARGET };
+                        else if (field.setting) draft.settings = { ...draft.settings, [field.key]: String(value).trim() || field.fallback };
                         else draft[field.key] = value;
                     }
                 }

@@ -36,11 +36,13 @@ import {
     getEnabledToolAgents,
     getAgentConnectionFallbacks,
     getAgentLengthTarget,
+    getAgentTargetLanguage,
     getGlobalSettings,
     getPromptTransformMode,
     isAgentRuntimeAllowed,
     isCompanionAgent,
     isTrackerFixAgent,
+    isTranslatorAgent,
     isPathfinderSubmoduleEnabled,
     saveAgent,
     isToolAgent,
@@ -2388,6 +2390,7 @@ export function buildPromptDynamicMacros(messageText = '', message = null, agent
         agentName,
         generationType: normalizedGenerationType,
         lengthTarget: getAgentLengthTarget(agent),
+        targetLanguage: getAgentTargetLanguage(agent),
         ...buildBrowserAgentContextMacros(agent, message, generationType),
     };
 }
@@ -4588,6 +4591,7 @@ async function runPromptTransformPasses(agents, message, generationType, text, m
         text: initialText,
         parallel: executionMode !== 'sequential',
         isAppend: agent => getPromptTransformMode(agent) === 'append',
+        isFinalPass: isTranslatorAgent,
         isPrepend: shouldPrependPromptTransformOutput,
         isAgentAllowed: isAgentRuntimeAllowed,
         shouldStop: () => {

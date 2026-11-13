@@ -361,6 +361,67 @@ for (const width of [1280, 393]) {
                 await page.request.post('/api/in-chat-agents/delete', { headers: requestHeaders, data: { id: agent.id } });
             }
         });
+
+        test('the Translator language survives quick settings, editor changes and reloads', async ({ page }, info) => {
+            await openAgents(page);
+            const skipTour = page.getByRole('region', { name: 'Neconyan interactive tutorial' }).getByRole('button', { name: 'Skip', exact: true });
+            if (await skipTour.isVisible()) {
+                await skipTour.click();
+                await page.evaluate(() => window.NeconyanShell.openTab('left', 'agents'));
+            }
+            const template = JSON.parse(readFileSync(new URL('../public/scripts/extensions/in-chat-agents/templates/translator.json', import.meta.url)));
+            const agent = { ...template, id: `translator-settings-${width}-${Date.now()}`, sourceTemplateId: template.id,
+                name: 'Translator settings check', settings: { ...template.settings, auditMarker: 'preserve' } };
+            const requestHeaders = await headers(page);
+            expect((await page.request.post('/api/in-chat-agents/save', { headers: requestHeaders, data: agent })).ok()).toBe(true);
+            try {
+                await openAgents(page);
+                await page.locator('#ica--agentTabs .ica--agent-tab[data-tab="all"]').click();
+                await searchAgentList(page, agent.name, { count: 1 });
+                const quick = await openCardQuickSettings(page);
+                const language = quick.getByLabel('Translate into', { exact: true });
+                await expect(language).toHaveValue('English');
+                await expect(quick.getByLabel('Target length', { exact: true })).toHaveCount(0);
+                await language.fill('Brazilian Portuguese');
+                await language.scrollIntoViewIfNeeded();
+                const box = await language.boundingBox();
+                expect(box.x).toBeGreaterThanOrEqual(0);
+                expect(box.x + box.width).toBeLessThanOrEqual(width);
+                await capture(page, info, 'translator-quick-settings');
+                await page.locator('dialog.popup:visible .popup-button-ok').click();
+                await expect(quick).toBeHidden();
+                await openAgents(page);
+                await page.locator('#ica--agentTabs .ica--agent-tab[data-tab="all"]').click();
+                await searchAgentList(page, agent.name, { count: 1 });
+                const reopenedQuick = await openCardQuickSettings(page);
+                await reopenedQuick.locator('.ica--quick-open-editor').click();
+                const editor = page.locator('#ica--editor');
+                await chooseEditorSection(page, 'basics');
+                const editorLanguage = editor.locator('#ica--editor-target-language');
+                await expect(editorLanguage).toBeVisible();
+                await expect(editorLanguage).toHaveValue('Brazilian Portuguese');
+                await expect(editor.locator('#ica--length-target-row')).toBeHidden();
+                await editorLanguage.evaluate(element => element.scrollIntoView({ block: 'center', behavior: 'instant' }));
+                const editorBox = await editorLanguage.boundingBox();
+                expect(editorBox.x).toBeGreaterThanOrEqual(0);
+                expect(editorBox.x + editorBox.width).toBeLessThanOrEqual(width);
+                await capture(page, info, 'translator-editor');
+                await editorLanguage.fill('');
+                await page.locator('dialog.popup:visible .popup-button-ok').click();
+                await expect(editor).toBeHidden();
+                await openAgents(page);
+                await page.locator('#ica--agentTabs .ica--agent-tab[data-tab="all"]').click();
+                await searchAgentList(page, agent.name, { count: 1 });
+                await openCardQuickSettings(page);
+                await expect(page.locator('.ica--quick-settings').getByLabel('Translate into', { exact: true })).toHaveValue('English');
+                const response = await page.request.post('/api/settings/get', { headers: requestHeaders, data: {} });
+                const saved = (await response.json()).inChatAgents.find(item => item.id === agent.id);
+                expect(saved.settings).toEqual({ targetLanguage: 'English', auditMarker: 'preserve' });
+                expect(saved.enabled).toBe(false);
+            } finally {
+                await page.request.post('/api/in-chat-agents/delete', { headers: requestHeaders, data: { id: agent.id } });
+            }
+        });
     });
 }
 

@@ -42,7 +42,9 @@ import {
     AGENT_SUBCATEGORIES,
     DEFAULT_AGENT_MAX_TOKENS,
     DEFAULT_LENGTH_TARGET,
+    DEFAULT_TARGET_LANGUAGE,
     LENGTH_TRIMMER_TEMPLATE_ID,
+    TRANSLATOR_TEMPLATE_ID,
     MAX_AGENT_MAX_TOKENS,
     normalizePromptTransformContextMessages,
     getGlobalSettings,
@@ -758,6 +760,7 @@ const DEFAULT_BUNDLED_TEMPLATE_IDS = new Set([
     'tpl-nsfw-enhancer',
     'tpl-repetition-breaker',
     'tpl-length-trimmer',
+    'tpl-translator',
     'tpl-intent-reader',
     'tpl-continuity-pins',
     'tpl-beat-planner',
@@ -4181,6 +4184,10 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
         ? agent.settings.lengthTarget
         : DEFAULT_LENGTH_TARGET);
     editorEl.find('#ica--length-target-row').toggle(String(agent.sourceTemplateId ?? '').trim() === LENGTH_TRIMMER_TEMPLATE_ID);
+    editorEl.find('#ica--editor-target-language').val(typeof agent.settings?.targetLanguage === 'string'
+        ? agent.settings.targetLanguage
+        : DEFAULT_TARGET_LANGUAGE);
+    editorEl.find('#ica--target-language-row').toggle(String(agent.sourceTemplateId ?? '').trim() === TRANSLATOR_TEMPLATE_ID);
 
     let editorFullscreen = false;
     const fullscreenButton = editorEl.find('#ica--editor-fullscreen');
@@ -5047,6 +5054,9 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
         }
         if (sourceTemplateId === LENGTH_TRIMMER_TEMPLATE_ID) {
             agent.settings.lengthTarget = editorEl.find('#ica--editor-length-target').val()?.toString().trim() || DEFAULT_LENGTH_TARGET;
+        }
+        if (sourceTemplateId === TRANSLATOR_TEMPLATE_ID) {
+            agent.settings.targetLanguage = editorEl.find('#ica--editor-target-language').val()?.toString().trim() || DEFAULT_TARGET_LANGUAGE;
         }
 
         agent.injection.position = Number(editorEl.find('#ica--editor-position').val());

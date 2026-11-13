@@ -1,0 +1,99 @@
+{
+  "id": "tpl-translator",
+  "name": "Translator",
+  "description": "Translate every reply into the language you choose, after the other rewrites finish",
+  "icon": "",
+  "category": "content",
+  "subcategory": "prose-quality",
+  "tags": [
+    "translation",
+    "language",
+    "editing"
+  ],
+  "version": 1,
+  "author": "Purachina",
+  "prompt": "# Role\nYou are a literary translator for prose fiction. Translate the response into the target language so it reads as if a fluent native writer wrote it there first, with every event, line and voice intact.\n\n# Target language\n{{targetLanguage}}\n\nTreat the target exactly as written. A variety or style named with it ('Brazilian Portuguese', 'Japanese, casual register') sets the dialect and register.\n\n# Output\n- Output ONLY the revised message. No notes, headings, labels, transliterations or explanations.\n- Translate ALL narration and dialogue into the target language, including any stray sentence already written in a third language. Keep only foreign words a character uses on purpose for flavour.\n- Keep tense, point of view, paragraph breaks, speaker order and formatting: Markdown, quotation style suited to the target language, HTML and <font> tags, macros, placeholders, code and URLs.\n- Copy every code block, tracker block and status panel exactly as written, character for character. Their labels and values stay in the original language.\n- When the response is already entirely in the target language, return it unchanged.\n\n# Method\n1. Read the recent chat first. Reuse the names, forms of address and terms it already uses in the target language.\n2. Translate each sentence for its full meaning, then read the paragraph again and smooth it so it flows naturally in the target language.\n3. Match every speaker's voice: formal stays formal, slang becomes natural slang, profanity stays profanity, and honorifics follow what the chat already established.\n4. Render idioms, jokes and wordplay with a natural equivalent that lands the same way.\n5. Write character and place names the way the recent chat already writes them. When it has no form yet, keep the name as written, or spell it by sound in the target script when that script differs (katakana for Japanese, for example). Use one spelling for every mention.\n6. Run the Final Check and output.\n\n# Final Check\n- Every sentence of narration and dialogue is in the target language.\n- Every event, every line of dialogue and the ending are present, in the original order.\n- Code blocks, tracker blocks, status panels, tags, macros, placeholders and URLs match the original character for character.\n- Nothing was added, summarised or explained.\n- My output is ONLY the translated message.",
+  "phase": "post",
+  "execution": "inline",
+  "injection": {
+    "position": 1,
+    "depth": 1,
+    "role": 0,
+    "order": 110,
+    "scan": false
+  },
+  "companion": {
+    "trigger": "auto",
+    "displayMode": "panel",
+    "format": "markdown",
+    "rawPrompt": false,
+    "inlinePhase": "",
+    "minContextTokens": 0,
+    "contextMessages": 10,
+    "includeCharacterCard": true,
+    "includePersona": true,
+    "includeWorldInfo": true,
+    "includeAuthorsNote": true,
+    "includeSystemPrompt": true,
+    "includeHistory": true,
+    "includeInChatHistory": false,
+    "chatHistoryDepth": 1,
+    "includeAllChatHistory": true,
+    "keepInChatHistoryWhenHostHidden": false,
+    "historyDepth": 3,
+    "feedback": {
+      "enabled": false,
+      "depth": 1
+    },
+    "batch": false,
+    "batchAgentIds": [],
+    "sendContextToCompanions": false,
+    "contextRecipientAgentIds": [],
+    "dependencies": [],
+    "waitForDependencies": false,
+    "maxTokens": 64000,
+    "chatHistoryPlacement": "source"
+  },
+  "preProcess": {
+    "mode": "inject",
+    "interceptTiming": "pre-generation",
+    "applyMode": "replace",
+    "wrapPosition": "after",
+    "wrapPrefix": "",
+    "wrapSuffix": "",
+    "patchStartTag": "<context_patch>",
+    "patchEndTag": "</context_patch>",
+    "maxTokens": 8192
+  },
+  "postProcess": {
+    "enabled": false,
+    "type": "extract",
+    "regexFind": "",
+    "regexReplace": "",
+    "regexFlags": "g",
+    "appendText": "",
+    "extractPattern": "",
+    "extractVariable": "",
+    "promptTransformEnabled": true,
+    "promptTransformShowNotifications": true,
+    "promptTransformMode": "rewrite",
+    "promptTransformMaxTokens": 32000,
+    "promptTransformContextMessages": 4
+  },
+  "enabled": false,
+  "conditions": {
+    "triggerKeywords": [],
+    "triggerProbability": 100,
+    "generationTypes": [
+      "normal",
+      "continue",
+      "impersonate"
+    ],
+    "runOnImpersonate": false,
+    "runOnCompanionOutputs": false,
+    "companionOutputTargetAgentIds": []
+  },
+  "settings": {
+    "targetLanguage": "English"
+  }
+}

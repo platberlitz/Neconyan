@@ -1,6 +1,8 @@
 export const MAX_PROMPT_TRANSFORM_CONTEXT_MESSAGES = 30;
 export const LENGTH_TRIMMER_TEMPLATE_ID = 'tpl-length-trimmer';
 export const DEFAULT_LENGTH_TARGET = 'About 300 to 450 words';
+export const TRANSLATOR_TEMPLATE_ID = 'tpl-translator';
+export const DEFAULT_TARGET_LANGUAGE = 'English';
 
 export function normalizePromptTransformContextMessages(value) {
     const numeric = Math.trunc(Number(value));
@@ -10,6 +12,16 @@ export function normalizePromptTransformContextMessages(value) {
 export function getAgentLengthTarget(agent) {
     const value = typeof agent?.settings?.lengthTarget === 'string' ? agent.settings.lengthTarget.trim() : '';
     return value || DEFAULT_LENGTH_TARGET;
+}
+
+export function getAgentTargetLanguage(agent) {
+    const value = typeof agent?.settings?.targetLanguage === 'string' ? agent.settings.targetLanguage.trim() : '';
+    return value || DEFAULT_TARGET_LANGUAGE;
+}
+
+/** Translators rewrite the finished reply after every other transform, so nothing edits it in another language. */
+export function isTranslatorAgent(agent) {
+    return String(agent?.sourceTemplateId ?? '').trim() === TRANSLATOR_TEMPLATE_ID;
 }
 
 /** The caller supplies only messages preceding the target, never later chat. */
