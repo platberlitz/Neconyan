@@ -92,7 +92,7 @@ export async function createMewmoryProvider(port = 0) {
             const introduction = scene.find(source => source.text.includes('Mara has silver eyes'));
             const gift = scene.find(source => source.text.includes('Mara accepts the gift.'));
             const receipt = scene.find(source => source.text.includes('Mara reads the date on the receipt.'));
-            const ownerId = input.sources.find(source => source.type === 'character')?.entityId
+            const ownerId = input.sources.find(source => source.type === 'character' && source.entityId !== 'player')?.entityId
                 || input.existing.find(record => record.kind === 'entity' && record.name === 'Mara')?.entityId || 'npc:mara';
             const refs = source => [{ id: source.id, revision: source.revision }];
             const records = [];

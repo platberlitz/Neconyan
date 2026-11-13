@@ -5,7 +5,7 @@ import {
     continueState, eligibleRecords, fail, hash, list, object, putRecord, recordEligible, recordRevision,
     refKey, sourceAt, sourceEligible, SOURCE_TYPES, strings, syncSources, text, undoRecord, validateRecord,
 } from '../mewmory/core.js';
-import { activeReferences, assemblyFingerprint, currentOverviews, generationFingerprint } from '../mewmory/context.js';
+import { activeReferences, assemblyFingerprint, currentOverviews, generationFingerprint, playerReferences } from '../mewmory/context.js';
 import { embed, publicConfig, readConfig, roleVersion, saveConfig } from '../mewmory/models.js';
 import { addUsage, pendingSources, processingVersion } from '../mewmory/processing.js';
 import { cancelProcessing, startProcessing, waitForProcessing } from '../mewmory/worker.js';
@@ -176,7 +176,7 @@ export function inspectState(state, config, { query = '', kind = '', ownerId = '
         locator: state.locator, revision: state.revision, storyId: state.storyId, branchId: state.branchId,
         parent: state.parent, enabled: state.enabled, activeNpcIds: state.activeNpcIds,
         visibilityRestore: state.visibilityRestore || null, lastDisableId: state.lastDisableId || '',
-        activeReferences: activeReferences(state), overviews: currentOverviews(state),
+        activeReferences: activeReferences(state), playerReferences: playerReferences(state), overviews: currentOverviews(state),
         entities: eligibleRecords(state).filter(record => record.kind === 'entity'),
         records: filtered.slice(page, page + 80).map(record => ({
             ...record, eligible: recordEligible(state, record),

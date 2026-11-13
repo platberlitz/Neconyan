@@ -25,7 +25,7 @@ function displayedSkipReason(reason) {
 }
 
 const tabs = [['now', 'Now'], ['story', 'Story'], ['pawspective', 'Pawspective'], ['archive', 'Archive'], ['recall', 'Recall'], ['settings', 'Settings']];
-const kinds = { entity: 'NPC or entity reference', state: 'Current state', event: 'Event', relationship: 'Relationship fact',
+const kinds = { entity: 'Character or entity reference', state: 'Current state', event: 'Event', relationship: 'Relationship fact',
     knowledge: 'Character knowledge', commitment: 'Promise or unresolved matter', interview: 'Pawspective interview', overview: 'Current subject view' };
 const kindBadges = { entity: 'NPC', state: 'State', event: 'Event', relationship: 'Relationship', knowledge: 'Knowledge',
     commitment: 'Promise', interview: 'Interview', overview: 'Current view' };
@@ -340,7 +340,7 @@ function renderRecord(record, root, { editable = true, selectable = false, onTic
     const title = record.kind === 'entity' ? record.name
         : record.ownerId ? nameOf(record.ownerId) + (subjects ? ' / ' + subjects : '') : kinds[record.kind];
     const badges = node('div', 'mewmory-badges');
-    if (title !== kinds[record.kind] && kindBadges[record.kind]) badges.append(badge(kindBadges[record.kind]));
+    if (title !== kinds[record.kind] && kindBadges[record.kind]) badges.append(badge(record.kind === 'entity' && record.entityId === 'player' ? 'Your character' : kindBadges[record.kind]));
     if (record.pinned) badges.append(badge('Pinned', 'accent'));
     if (unused) badges.append(badge('Not used in replies', 'muted'));
     if (record.status && record.status !== 'active') badges.append(badge(record.status[0].toUpperCase() + record.status.slice(1), 'muted'));
@@ -628,7 +628,7 @@ function renderNow(root) {
     const view = mewmory.view;
     if (!view?.enabled) {
         empty(root, 'Keep the story, and how it felt.',
-            'Mewmory remembers events and NPC details. Pawspective tracks how each character’s view changes, linked back to the messages behind it. Switch on Use Mewmory in this chat above, then pick the models it uses.',
+            'Mewmory remembers events, your character and NPC details. Pawspective tracks how AI-controlled characters’ views change, linked back to the messages behind them. Switch on Use Mewmory in this chat above, then pick the models it uses.',
             'Set up model roles', () => switchTab('settings'));
         renderQuickSetup(root);
         return;
@@ -639,6 +639,12 @@ function renderNow(root) {
     renderPreview(root, { actions });
     renderQuickSetup(root);
     renderStorySnippet(root);
+    const player = section('Your character');
+    player.append(node('p', 'mewmory-caption', 'Your character’s established details and current state stay in memory. You keep control of their next words, actions and thoughts unless you ask the AI to write them. Pawspective only interviews AI-controlled characters.'));
+    const playerRecords = view.playerReferences?.records || [];
+    if (!playerRecords.length) player.append(node('p', 'mewmory-caption', 'Your character’s details appear after Mewmory reads your persona or chat messages.'));
+    else for (const record of playerRecords) renderRecord(record, player);
+    root.append(player);
     const cast = section('Active NPCs', button('Add NPC reference', () => openEditor(null, 'entity')));
     cast.append(node('p', 'mewmory-caption', 'Character references and current states sent with replies.'));
     cast.append(check('Choose active characters automatically', view.activeNpcIds === null,
@@ -677,7 +683,7 @@ function renderPreview(root, { actions = null } = {}) {
         ? 'This is the latest prepared snapshot. A later reply may use different memories. Why each memory was picked is shown in Recall.'
         : 'This preview is out of date. Preview again to refresh it.'));
     const counts = node('dl', 'mewmory-tokens');
-    for (const [label, value] of [['NPC details, tokens', preview.tokens?.npc], ['Picked memories, tokens', preview.tokens?.memory],
+    for (const [label, value] of [['Character details, tokens', preview.tokens?.npc], ['Picked memories, tokens', preview.tokens?.memory],
         ['Recent chat kept, tokens', preview.history?.retainedTokens], ['Recent chat in this prepared reply, messages', preview.history?.retainedMessages]]) {
         if (value === undefined) continue;
         const item = node('div', 'mewmory-token');
@@ -1442,7 +1448,8 @@ function renderEditor(root) {
     if (record.kind === 'entity') {
         editor.append(field('Name', record.name, value => { record.name = value; }, { key: 'entity-name' }),
             field('Aliases, separated by commas', (record.aliases || []).join(', '), value => { record.aliases = value.split(',').map(item => item.trim()).filter(Boolean); }),
-            check('AI-controlled character', record.isCharacter, value => { record.isCharacter = value; }),
+            record.entityId === 'player' ? node('p', 'mewmory-caption', 'Your character is user-controlled. Remembered details do not give the AI permission to write for you.')
+                : check('AI-controlled character', record.isCharacter, value => { record.isCharacter = value; }),
             field('Stable appearance', record.appearance, value => { record.appearance = value; }, { multiline: true }),
             field('Speech notes', record.speech, value => { record.speech = value; }, { multiline: true, hint: 'Keep specific patterns and examples. Temporary clothing belongs in a Current state record.' }));
     }

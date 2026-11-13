@@ -39,17 +39,20 @@ Sharing Vectorization does not import another chat's index or add a second Mewmo
 
 A saved profile uses its own bound key and selected proxy. A keyless custom profile stays anonymous; a deleted key binding needs repair. Azure and Workers AI also need their connection fields in that profile or its named preset. Mewmory rejects redirects, including requests made through saved profiles. A failed configuration save leaves both settings and role keys unchanged, and removing a manual role key removes its older saved replacements too.
 
-**Now** shows the current cast, protected NPC references, current subject views and memory prompt preview. **Pawspective** shows current interpretations before historical interviews. **Archive** contains objective records and searchable original passages. **Recall** shows selection and rejection explanations. **Settings** includes jobs, preservation coverage, token/latency usage, index rebuild, export and restore.
+**Now** shows your character separately from the current AI-controlled cast, protected character references, current subject views and memory prompt preview. **Pawspective** shows current interpretations before historical interviews. **Archive** contains objective records and searchable original passages. **Recall** shows selection and rejection explanations. **Settings** includes jobs, preservation coverage, token/latency usage, index rebuild, export and restore.
 
 ## What is preserved
 
 - Accepted message revisions, with the selected swipe kept separate from rejected alternatives.
 - Source-backed entities, stable appearance and speech notes, temporary state, events, directional relationship facts, knowledge acquisition and commitments.
+- Your character's persona, including selected appendices, and established details from the chat. The persona follows the chat lock, character or group connection, default persona, then the last active persona.
 - Imaginary interviews owned by AI-controlled characters, linked current overviews and earlier interpretations.
 - Enabled lore from applicable global, character, chat and persona books, even when ordinary lore activation did not fire.
 - Author corrections, exclusions, pins and earlier derived versions for undo.
 
 An interview receives only that character’s source-backed knowledge and eligible prior views. It does not receive an omniscient transcript or the complete lorebook. A player character cannot own an interview. Generated interview gestures never enter the source archive or objective extraction inputs.
+
+I keep your character separate from the AI-controlled cast. Their current reference accompanies replies even when no NPCs are selected. The memory instructions leave your next words, actions, decisions and thoughts to you unless you explicitly ask the AI to write them. Persona details, past actions and another character's beliefs don't grant that permission. These are instructions to the model, not a guarantee that every model will follow them.
 
 Each entity has one complete current temporary-state record. Updating its clothing or location must retain an ongoing injury or carried item. Automatic cast changes are saved at their story position, so reviewing an earlier scene cannot apply a later departure. Superseded overviews remain labelled as historical when recalled alongside the current interpretation.
 
@@ -61,7 +64,7 @@ Use **Edit** to correct the text, owner, subjects or sources. The correction men
 
 ## Preservation and prompt limits
 
-The default recent-chat target is **30,000 tokens of chat**, separate from NPC references, memory, instructions, lore and output space.
+The default recent-chat target is **30,000 tokens of chat**, separate from player and NPC references, memory, instructions, lore and output space.
 
 Automatic background batches include preservation review when history exclusion is enabled. I no longer make the reply wait for Mewmory's model requests: it uses a quick local search and completed AI selections while embeddings and fresh AI recall run alongside the writer. Fresh selections become available for later replies, so the current reply can miss an association that only the AI would find. Extraction, interviews and backfill also carry on separately. Older messages leave the outgoing history only when their current revisions have completed the required checkpoint. A failed job does not advance coverage.
 
@@ -69,7 +72,7 @@ The server checks enabled saved chats every 15 seconds and starts waiting work a
 
 Changing extraction models, providers or output-affecting settings invalidates existing coverage across enabled stories and can trigger full background reprocessing. Changing only a timeout keeps that coverage. Periodic scans reconcile chat, character and lorebook sources so changes outside the current page are detected; large enabled libraries still have a recurring scan cost.
 
-The original chat remains unchanged. Source passages remain searchable through the local lexical index even when embeddings are unavailable. Memory and active-NPC sections are assembled outside history trimming. If the retained prompt cannot fit, generation stops with an actionable error. Increase context, reduce pinned memory or complete backfill instead of silently losing protected material.
+The original chat remains unchanged. Source passages remain searchable through the local lexical index even when embeddings are unavailable. Memory, player and active-NPC sections are assembled outside history trimming. If the retained prompt cannot fit, generation stops with an actionable error. Increase context, reduce pinned memory or complete backfill instead of silently losing protected material.
 
 Token counts use a real local tokenizer. Each memory role’s Auto option follows its own model, including the selected connection profile, independently of the RP writer. Settings shows the local match. Model-family matches are approximate, and unknown model names fall back to the GPT-3.5 tokenizer; choose an explicit tokenizer if your provider uses another. The writer’s separate Auto option follows the application’s selected tokenizer; a backend-only estimate is insufficient for exclusion. Final request accounting includes a conservative serialised-payload check as well as the host’s prompt budget.
 

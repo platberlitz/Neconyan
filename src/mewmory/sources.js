@@ -8,6 +8,7 @@ import { readConfig, legacyRoleVersion, resolvedRoleIdentity, roleVersion } from
 import { processingVersion } from './processing.js';
 import { captureBranchMemory, readChatShared, readJsonShared, readStateShared, synchronize } from './store.js';
 import { fileCollections } from '../operations/vector-sources.js';
+import { selectSavedRoleplayPersona } from '../generation/world-info.js';
 
 const cardTextCache = new Map();
 const CARD_TEXT_CACHE_MAX_ENTRIES = 128;
@@ -50,17 +51,28 @@ export function readContextSourcesSync(directories, locator, state, source = rea
     const settings = readJsonShared(path.join(directories.root, 'settings.json'), {});
     const worlds = new Set(Array.isArray(settings.world_info?.globalSelect) ? settings.world_info.globalSelect : []);
     if (metadata.world_info) worlds.add(metadata.world_info);
-    if (settings.power_user?.persona_description_lorebook) worlds.add(settings.power_user.persona_description_lorebook);
     const avatars = new Set(locator.avatar ? [locator.avatar] : []);
+    let groupId;
     if (locator.group && fs.existsSync(directories.groups)) {
         for (const filename of fs.readdirSync(directories.groups).filter(name => name.endsWith('.json'))) {
             const group = readJsonShared(path.join(directories.groups, filename), {});
             if (String(group.chat_id) !== locator.chat && !(group.chats || []).map(String).includes(locator.chat)
                 && !(group.past_chats || []).map(String).includes(locator.chat)) continue;
+            groupId = String(group.id ?? filename.slice(0, -5));
             for (const avatar of group.members || []) if (safeFilename(avatar)) avatars.add(avatar);
         }
     }
     const sources = [];
+    const persona = selectSavedRoleplayPersona(settings, { locator, records: [{ chat_metadata: metadata }] },
+        { groupId }, locator.avatar, directories);
+    const playerName = persona.name || source.messages.findLast(message => message.is_user)?.name || settings.name1;
+    if (persona.name || persona.description || settings.name1) {
+        sources.push({
+            id: 'character:player', type: 'character', entityId: 'player', name: String(playerName || 'Player'),
+            text: String(persona.description || playerName), meta: { persona: persona.evidence?.avatar || '' },
+        });
+    }
+    if (persona.lorebook) worlds.add(persona.lorebook);
     for (const avatar of avatars) {
         if (!safeFilename(avatar)) fail('Mewmory could not identify that character card.');
         const filename = path.join(directories.characters, avatar);
