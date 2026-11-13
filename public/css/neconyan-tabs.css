@@ -5067,6 +5067,7 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
     --sb-chat-delete-vv-top: 0px;
     --sb-chat-delete-vv-width: 100vw;
     --sb-chat-delete-vv-height: 100dvh;
+    --sb-chat-delete-safe-bottom: env(safe-area-inset-bottom, 0px);
     position: fixed;
     inset: 0;
     z-index: var(--sb-z-loader);
@@ -5106,11 +5107,11 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
 @supports (-webkit-touch-callout: none) {
     .sb-chat-delete-overlay {
         padding-top: max(16px, env(safe-area-inset-top, 0px));
-        padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
+        padding-bottom: max(16px, var(--sb-chat-delete-safe-bottom));
     }
 
     .sb-chat-delete-dialog {
-        max-height: min(720px, calc(var(--sb-chat-delete-vv-height, 100dvh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 32px));
+        max-height: min(720px, calc(var(--sb-chat-delete-vv-height, 100dvh) - env(safe-area-inset-top, 0px) - var(--sb-chat-delete-safe-bottom) - 32px));
     }
 }
 
@@ -5120,7 +5121,7 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
         align-items: center;
         overflow: hidden;
         padding-top: max(16px, env(safe-area-inset-top, 0px));
-        padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
+        padding-bottom: max(12px, var(--sb-chat-delete-safe-bottom));
         padding-left: 12px;
         padding-right: 12px;
     }
@@ -5128,7 +5129,7 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
     .sb-chat-delete-dialog {
         gap: 10px;
         height: calc(100vh - 32px);
-        height: min(720px, calc(var(--sb-chat-delete-vv-height, 100dvh) - max(16px, env(safe-area-inset-top, 0px)) - max(12px, env(safe-area-inset-bottom, 0px)) - 24px));
+        height: min(720px, calc(var(--sb-chat-delete-vv-height, 100dvh) - max(16px, env(safe-area-inset-top, 0px)) - max(12px, var(--sb-chat-delete-safe-bottom)) - 24px));
         max-height: none;
         min-height: 0;
         overflow: hidden;

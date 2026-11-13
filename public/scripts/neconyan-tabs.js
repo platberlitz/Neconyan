@@ -532,7 +532,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261113-mewmory-scroll';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261113-ios-keyboard';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -4304,9 +4304,18 @@ function syncMobilePopupKeyboardShift() {
     // visualViewport tracks the keyboard: top grows and height shrinks as the
     // keyboard rises, so (top + height) is the bottom of the visible area.
     const viewportBottom = viewportSize.top + viewportSize.height;
+    // A keyboard rising from the bottom edge also hides the home indicator,
+    // so the bottom safe area no longer needs reserving above it.
+    const keyboardCoversBottom = layoutViewport.height - viewportBottom > MOBILE_IOS_KEYBOARD_MIN_HEIGHT_PX;
+    // Full-screen sheets (--sb-popup-fills-screen: 1) already pad themselves
+    // clear of the status bar, so they take the whole visible area instead of
+    // stacking a second safe-area gap on top of their own padding.
+    const fillsScreen = getComputedStyle(dialog).getPropertyValue('--sb-popup-fills-screen').trim() === '1';
     const edgeClearance = `${MOBILE_POPUP_KEYBOARD_CLEARANCE_PX}px`;
-    const topClearance = `max(${edgeClearance}, env(safe-area-inset-top, 0px))`;
-    const bottomClearance = `max(${edgeClearance}, env(safe-area-inset-bottom, 0px))`;
+    const topClearance = fillsScreen ? '0px' : `max(${edgeClearance}, env(safe-area-inset-top, 0px))`;
+    const bottomClearance = fillsScreen
+        ? '0px'
+        : keyboardCoversBottom ? edgeClearance : `max(${edgeClearance}, env(safe-area-inset-bottom, 0px))`;
     const availableHeight = `calc(${viewportSize.height}px - ${topClearance} - ${bottomClearance})`;
     const scroller = activeElement.closest('.popup-body, .popup-content');
 
@@ -4319,12 +4328,18 @@ function syncMobilePopupKeyboardShift() {
     dialog.style.setProperty('bottom', 'auto', 'important');
     dialog.style.setProperty('min-height', '0', 'important');
     dialog.style.setProperty('max-height', availableHeight, 'important');
+    if (keyboardCoversBottom) {
+        dialog.style.setProperty('--sb-popup-safe-area-bottom', '0px');
+    }
 
     if (scroller instanceof HTMLElement) {
         scroller.dataset.sbKeyboardMaxHeight = scroller.style.maxHeight;
         scroller.style.maxHeight = availableHeight;
 
-        const scrollOverflow = activeElement.getBoundingClientRect().bottom + MOBILE_POPUP_KEYBOARD_CLEARANCE_PX - viewportBottom;
+        // The scroller can end above the keyboard (popup buttons sit below
+        // it), so reveal the field inside whichever edge is higher.
+        const visibleBottom = Math.min(viewportBottom, scroller.getBoundingClientRect().bottom);
+        const scrollOverflow = activeElement.getBoundingClientRect().bottom + MOBILE_POPUP_KEYBOARD_CLEARANCE_PX - visibleBottom;
         if (scrollOverflow > 0) {
             scroller.scrollTop += scrollOverflow;
         }
@@ -7656,6 +7671,7 @@ function bindChatDeleteVisualViewport(overlay) {
             overlay.style.removeProperty('--sb-chat-delete-vv-top');
             overlay.style.removeProperty('--sb-chat-delete-vv-width');
             overlay.style.removeProperty('--sb-chat-delete-vv-height');
+            overlay.style.removeProperty('--sb-chat-delete-safe-bottom');
             overlay.classList.remove('sb-chat-delete-overlay--keyboard-open');
             return;
         }
@@ -7670,6 +7686,12 @@ function bindChatDeleteVisualViewport(overlay) {
         overlay.style.setProperty('--sb-chat-delete-vv-top', `${viewportTop}px`);
         overlay.style.setProperty('--sb-chat-delete-vv-width', `${viewportWidth}px`);
         overlay.style.setProperty('--sb-chat-delete-vv-height', `${viewportHeight}px`);
+        // The keyboard hides the home indicator, so its safe area needs no gap.
+        if (fallbackHeight - (viewportTop + viewportHeight) > MOBILE_IOS_KEYBOARD_MIN_HEIGHT_PX) {
+            overlay.style.setProperty('--sb-chat-delete-safe-bottom', '0px');
+        } else {
+            overlay.style.removeProperty('--sb-chat-delete-safe-bottom');
+        }
     }
 
     function scheduleUpdate() {
@@ -7701,6 +7723,7 @@ function bindChatDeleteVisualViewport(overlay) {
         overlay.style.removeProperty('--sb-chat-delete-vv-top');
         overlay.style.removeProperty('--sb-chat-delete-vv-width');
         overlay.style.removeProperty('--sb-chat-delete-vv-height');
+        overlay.style.removeProperty('--sb-chat-delete-safe-bottom');
     };
 }
 

@@ -1711,12 +1711,14 @@ body.neconyan .sbca-root :is(input, select, .sbca-owner-summary) {
         max-height: 100dvh !important;
         margin: 0 !important;
         border-radius: 0;
+        /* Read by the shell's keyboard shift: this sheet pads itself clear of the status bar. */
+        --sb-popup-fills-screen: 1;
     }
 
     .sbca-dialog .popup-body {
         padding-block:
             max(var(--sbca-space-md), env(safe-area-inset-top))
-            max(var(--sbca-space-sm), env(safe-area-inset-bottom));
+            max(var(--sbca-space-sm), var(--sb-popup-safe-area-bottom, env(safe-area-inset-bottom)));
         padding-inline:
             max(var(--sbca-space-md), env(safe-area-inset-left))
             max(var(--sbca-space-md), env(safe-area-inset-right));
