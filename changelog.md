@@ -79,6 +79,7 @@
 - PR #669 (2026-11-13) `feat(parameters): tidy the parameters tab into clear cards`
 - PR #670 (2026-11-14) `feat(presets): open chat completion presets in a searchable picker`
 - PR #671 (2026-11-14) `feat(presets): show chat history tokens in the summary`
+- PR #672 (2026-11-14) `feat(scratchpad): support image editing with compatible providers`
 
 ## v1.5.4
 
