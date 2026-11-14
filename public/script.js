@@ -339,6 +339,7 @@ import { getPresetManager, initPresetManager } from './scripts/preset-manager.js
 import { evaluateMacros, getLastMessageId, initMacros } from './scripts/macros.js';
 import { getCurrentUserHandle, isAdmin, setUserControls } from './scripts/user.js';
 import { POPUP_RESULT, POPUP_TYPE, Popup, callGenericPopup, fixToastrForDialogs } from './scripts/popup.js';
+import { createSelectPicker } from './scripts/select-picker.js';
 import { renderTemplate, renderTemplateAsync } from './scripts/templates.js';
 import { initScrapers } from './scripts/scrapers.js';
 import { initCustomSelectedSamplers, validateDisabledSamplers } from './scripts/samplerSelect.js';
@@ -19019,25 +19020,23 @@ async function openCharacterWorldPopup() {
         extrasSelect.append(new Option(item, String(i), isSelected, isSelected));
     });
 
+    let extrasPicker = null;
     const popup = new Popup(template, POPUP_TYPE.TEXT, '', {
-        onOpen: function (popup) {
-            const popupDialog = $(popup.dlg);
-
+        onOpen: function () {
             primarySelect.on('change', handlePrimaryWorldSelect);
             extrasSelect.on('change', handleExtrasWorldSelect);
 
             // Android WebView renders a native multiple select as a tiny list, not a picker.
-            extrasSelect.select2({
-                width: '100%',
-                placeholder: t`No auxiliary Lorebooks set. Click here to select.`,
-                dropdownCssClass: 'sb-world-info-select2-dropdown',
-                allowClear: true,
-                closeOnSelect: false,
-                dropdownParent: popupDialog,
+            extrasPicker = createSelectPicker(extrasSelect[0], {
+                labels: () => ({
+                    title: t`Additional Lorebooks`,
+                    search: t`Search lorebooks`,
+                    placeholder: t`No auxiliary Lorebooks set. Click here to select.`,
+                }),
             });
         },
         onClose: function () {
-            extrasSelect.select2('destroy');
+            extrasPicker?.close();
         },
     });
 

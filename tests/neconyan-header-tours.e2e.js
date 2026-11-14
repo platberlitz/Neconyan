@@ -35,7 +35,7 @@ test('Presets tour follows the Text Completion preset controls', async ({ browse
         await expect(formats.locator('option')).toHaveText(['Chat Completion', 'Text Completion']);
         await formats.selectOption('textgenerationwebui');
         const root = await openPage(page, 'left', 'presets', 'presets');
-        await expect(root.locator('#settings_preset_textgenerationwebui')).toBeVisible();
+        await expect(root.locator('#sb-settings_preset_textgenerationwebui-picker-button')).toBeVisible();
         await root.locator('.sb-shell-header .neconyan-tool-tour-button').click();
         const card = page.locator('#neconyan-tool-tour');
         for (const step of ['welcome', 'choose', 'save', 'copy', 'files', 'done']) {

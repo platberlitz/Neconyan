@@ -475,7 +475,7 @@ function renderLorebookLibrary(library) {
             primaryGroup.append(legacyPicker);
         }
         for (const child of [...primaryGroup.children]) {
-            if (child !== legacyPicker && !child.matches('button, input[type="file"], .menu_button, [data-extension-name]')) legacyPicker.append(child);
+            if (child !== legacyPicker && !child.matches('button:not(.sb-select-picker-button), input[type="file"], .menu_button, [data-extension-name]')) legacyPicker.append(child);
         }
         for (const id of ['world_import_button', 'world_batch_import_embedded']) {
             const action = document.getElementById(id);

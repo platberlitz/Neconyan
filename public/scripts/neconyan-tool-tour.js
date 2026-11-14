@@ -502,7 +502,7 @@ const TOOL_PAGES = Object.freeze({
             },
             {
                 id: 'choose',
-                targets: ['#sb-openai-preset-picker-button', '#settings_preset_openai', '#settings_preset_textgenerationwebui', '#settings_preset_novel', '#settings_preset'],
+                targets: ['#sb-openai-preset-picker-button', '#sb-settings_preset_textgenerationwebui-picker-button', '#sb-settings_preset_novel-picker-button', '#sb-settings_preset-picker-button'],
                 title: 'Choosing a preset',
                 body: 'Pick a name from this list to load that preset. Loading another preset can replace your current reply settings, so save any edits you want to keep first.\nA **Text Completion** preset doesn\'t contain the instruction templates on **Formatting**. Those are managed separately.',
                 hint: 'Read what you\'re choosing. An impressive name isn\'t a recommendation.',

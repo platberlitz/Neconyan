@@ -41,6 +41,7 @@ import {
     renameNeconyanLorebookAssignment,
     unfileNeconyanLorebook,
 } from './neconyan-lorebook-folders.js';
+import { createSelectPicker } from './select-picker.js';
 
 // Neconyan divergence: World Info is integrated with the fork shell and auxiliary lorebook sources while retaining upstream scan helpers.
 export const world_info_insertion_strategy = {
@@ -3719,19 +3720,17 @@ function updatePosOrdDisplayHelper({ template, data, uid }) {
 }
 
 /**
- * Helper to initialize character filter select2.
+ * Helper to initialize the character filter picker.
  * @param {JQuery<HTMLElement>} characterFilter - The select element for character filter.
  */
-function initCharacterFilterSelect2Helper(characterFilter) {
-    if (!isMobile()) {
-        $(characterFilter).select2({
-            width: '100%',
+function initCharacterFilterPickerHelper(characterFilter) {
+    createSelectPicker(/** @type {HTMLSelectElement} */ (characterFilter[0]), {
+        labels: () => ({
+            title: t`Filter to Characters or Tags`,
+            search: t`Search...`,
             placeholder: t`Tie this entry to specific characters or characters with specific tags`,
-            dropdownCssClass: 'sb-world-info-select2-dropdown',
-            allowClear: true,
-            closeOnSelect: false,
-        });
-    }
+        }),
+    });
 }
 
 /**
@@ -4377,7 +4376,7 @@ export async function getWorldEntry(name, data, entry, options = {}) {
 
         const characterFilter = editTemplate.find('select[name="characterFilter"]');
         characterFilter.data('uid', entry.uid);
-        initCharacterFilterSelect2Helper(characterFilter);
+        initCharacterFilterPickerHelper(characterFilter);
         fillCharacterAndTagOptionsHelper({ characterFilter, entry });
         handleCharacterFilterChangeHelper({ characterFilter, data, entry, name });
 
@@ -4554,15 +4553,13 @@ export async function getWorldEntry(name, data, entry, options = {}) {
             setWIOriginalDataValue(data, uid, 'extensions.triggers', data.entries[uid].triggers);
             !noSave && await saveWorldInfo(name, data);
         });
-        if (!isMobile()) {
-            generationTypeTriggers.select2({
+        createSelectPicker(/** @type {HTMLSelectElement} */ (generationTypeTriggers[0]), {
+            labels: () => ({
+                title: t`Filter to Generation Triggers`,
+                search: t`Search...`,
                 placeholder: t`All types (default)`,
-                width: '100%',
-                dropdownCssClass: 'sb-world-info-select2-dropdown',
-                closeOnSelect: false,
-                allowClear: true,
-            });
-        }
+            }),
+        });
         generationTypeTriggers
             .val(Array.isArray(entry.triggers) ? entry.triggers : [])
             .trigger('input', { noSave: true })
@@ -7675,68 +7672,30 @@ export function initWorldInfo() {
         await assignLorebookToChat({ shiftKey: true, altKey: false });
     });
 
-    // Not needed on mobile
-    if (!isMobile()) {
-        const syncWorldInfoSelect2DropdownGeometry = (select) => {
-            const $select = $(select);
-            const select2 = $select.data('select2');
-            const $container = select2?.$container?.length ? select2.$container : $select.next('.select2-container');
-            const containerRect = $container[0]?.getBoundingClientRect();
-            const fallbackRect = select.closest('.world_popup_action_group')?.getBoundingClientRect();
-            const measuredWidth = containerRect?.width || fallbackRect?.width || select.getBoundingClientRect().width;
-            const maxViewportWidth = Math.max(240, (document.documentElement.clientWidth || window.innerWidth || measuredWidth) - 24);
-            const width = Math.min(Math.max(240, Math.ceil(measuredWidth || 0)), maxViewportWidth);
-            const $dropdown = select2?.dropdown?.$dropdown?.length
-                ? select2.dropdown.$dropdown
-                : $(`#select2-${select.id}-results`).closest('.select2-dropdown');
+    createSelectPicker(/** @type {HTMLSelectElement} */ (document.getElementById('world_editor_select')), {
+        labels: () => ({ title: t`Choose a lorebook`, search: t`Search lorebooks` }),
+    });
 
-            if (!$dropdown.length || !Number.isFinite(width)) {
-                return;
-            }
-
-            const dropdownWidth = `${width}px`;
-            const $dropdownContainer = $dropdown.closest('.select2-container--open');
-            $dropdown.css({ width: dropdownWidth, minWidth: dropdownWidth });
-            $dropdownContainer.css({ width: dropdownWidth, minWidth: dropdownWidth });
-        };
-
-        $('#world_editor_select').select2({
-            width: '100%',
-            placeholder: t`--- Pick to Edit ---`,
-            searchInputPlaceholder: t`Search...`,
-            dropdownCssClass: 'sb-world-info-select2-dropdown',
-            allowClear: true,
-            closeOnSelect: true,
-            multiple: false,
-        });
-
-        $('#world_info').select2({
-            width: '100%',
+    createSelectPicker(/** @type {HTMLSelectElement} */ (document.getElementById('world_info')), {
+        labels: () => ({
+            title: t`Active lorebooks`,
+            search: t`Search lorebooks`,
             placeholder: t`No Worlds active. Click here to select.`,
-            dropdownCssClass: 'sb-world-info-select2-dropdown',
-            allowClear: true,
-            closeOnSelect: false,
-        });
-
-        $('#world_editor_select, #world_info')
-            .off('select2:open.neconyanWorldInfoGeometry')
-            .on('select2:open.neconyanWorldInfoGeometry', function () {
-                window.requestAnimationFrame(() => syncWorldInfoSelect2DropdownGeometry(this));
-            });
-
-        // Subscribe world loading to the select2 multiselect items (We need to target the specific select2 control)
-        select2ChoiceClickSubscribe($('#world_info'), target => {
-            const name = $(target).text();
-            const selectedIndex = world_names.indexOf(name);
-            const alreadySelectedInEditor = $('#world_editor_select option:selected').text() === name;
-            if (selectedIndex !== -1 && !alreadySelectedInEditor) {
-                $('#world_editor_select').val(selectedIndex).trigger('change');
-                console.log('Quick selection of world', name);
-            } else {
-                console.warn('lets not reload an already loaded list yes?');
-            }
-        }, { buttonStyle: true, closeDrawer: true });
-    }
+        }),
+        // An active lorebook can be opened in the editor straight from the list.
+        rowAction: {
+            label: t`Open lorebook`,
+            icon: 'fa-pen-to-square',
+            visible: option => option.selected,
+            run: option => {
+                const selectedIndex = world_names.indexOf(option.text);
+                const alreadySelectedInEditor = $('#world_editor_select option:selected').text() === option.text;
+                if (selectedIndex !== -1 && !alreadySelectedInEditor) {
+                    $('#world_editor_select').val(selectedIndex).trigger('change');
+                }
+            },
+        },
+    });
 
     $('#WorldInfo, #world_popup_editor_host, #world_popup_entries_list').on('scroll', () => {
         $('.world_entry input[name="group"], .world_entry input[name="automationId"]').each((_, el) => {

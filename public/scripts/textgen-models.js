@@ -9,7 +9,7 @@ import { accountStorage } from './util/AccountStorage.js';
 import { debounce, localizePagination, PAGINATION_TEMPLATE } from './utils.js';
 import { debounce_timeout } from './constants.js';
 import { attachModelListSearch } from './model-list-search.js';
-import { isMobile } from './RossAscends-mods.js';
+import { createSelectPicker } from './select-picker.js';
 import { updateServiceTierOptions } from './service-tiers.js';
 
 let mancerModels = [];
@@ -20,10 +20,6 @@ let featherlessModels = [];
 let tabbyModels = [];
 let llamacppModels = [];
 export let openRouterModels = [];
-
-function shouldUseNativeApiSelects() {
-    return isMobile() || (window.matchMedia?.('(max-width: 768px)').matches ?? false);
-}
 
 // Neconyan: share in-flight catalogue requests, not a hardcoded provider list.
 let openRouterProvidersRequest = null;
@@ -87,7 +83,6 @@ function setProviderOptions(providersSelector, selectedProviders, providers) {
         option.selected = selected.includes(name);
         return option;
     }));
-    $(select).trigger('change.select2');
 }
 
 export async function syncOpenRouterProvidersForModel(modelId, providersSelector) {
@@ -132,7 +127,6 @@ export async function syncOpenRouterProvidersForModel(modelId, providersSelector
 
     if (!modelId || !modelId.includes('/')) {
         $providers.find('option').prop('disabled', false);
-        $providers.trigger('change.select2');
         refreshWarningState();
         return;
     }
@@ -158,7 +152,6 @@ export async function syncOpenRouterProvidersForModel(modelId, providersSelector
 
         if (!Array.isArray(providerNames) || providerNames.length === 0) {
             $providers.find('option').prop('disabled', false);
-            $providers.trigger('change.select2');
             refreshWarningState();
             return;
         }
@@ -168,7 +161,6 @@ export async function syncOpenRouterProvidersForModel(modelId, providersSelector
             $(this).prop('disabled', !isAvailable);
         });
 
-        $providers.trigger('change.select2');
         refreshWarningState();
     } catch (error) {
         console.error('Failed to fetch OpenRouter providers for model', error);
@@ -188,7 +180,6 @@ export async function syncNanoGptProvidersForModel(modelId, providersSelector) {
     };
 
     $providers.removeData('supportsProviderSelection').find('option').prop('disabled', false);
-    $providers.trigger('change.select2');
     refreshWarningState();
 
     try {
@@ -247,7 +238,6 @@ export async function syncNanoGptProvidersForModel(modelId, providersSelector) {
             $(this).prop('disabled', !isAvailable);
         });
 
-        $providers.add('#nanogpt_ignored_providers').trigger('change.select2');
         refreshWarningState();
     } catch (error) {
         console.error('Failed to fetch NanoGPT providers for model', error);
@@ -1106,56 +1096,40 @@ export function initTextGenModels() {
         attachModelListSearch(document.querySelector(selector), options);
     }
 
-    if (shouldUseNativeApiSelects()) {
-        return;
+    for (const select of $('.openrouter_quantizations')) {
+        createSelectPicker(select, {
+            labels: () => ({
+                title: t`Model Quantizations`,
+                subtitle: t`OpenRouter`,
+                search: t`Search quantizations...`,
+                placeholder: t`Select quantizations. No selection = all quantizations.`,
+            }),
+        });
     }
-
-    // Keep API Select2 dropdowns inside the scrolling API drawer so they move with the control.
-    const apiDropdownParent = $('#rm_api_block');
-    const select2Defaults = {
-        dropdownParent: apiDropdownParent.length ? apiDropdownParent : $(document.body),
-        minimumResultsForSearch: 0,
-    };
-    $('.openrouter_quantizations').select2({
-        ...select2Defaults,
-        closeOnSelect: false,
-        placeholder: t`Select quantizations. No selection = all quantizations.`,
-        searchInputCssClass: 'text_pole',
-        searchInputPlaceholder: t`Search quantizations...`,
-        width: '100%',
-    });
-    providersSelect.select2({
-        ...select2Defaults,
-        sorter: data => data.sort((a, b) => a.text.localeCompare(b.text)),
-        placeholder: t`Select providers. No selection = all providers.`,
-        searchInputPlaceholder: t`Search providers...`,
-        searchInputCssClass: 'text_pole',
-        width: '100%',
-        closeOnSelect: false,
-    });
-    // Neconyan: refresh open results after async updates, surviving shell reinitialisation.
-    $(document).on('change.select2', '.openrouter_providers, #nanogpt_allowed_providers, #nanogpt_ignored_providers', function () {
-        const select2 = $(this).data('select2');
-        if (select2?.isOpen()) {
-            select2.trigger('query', { term: select2.selection.$search.val() || '' });
-        }
-    });
-    providersSelect.on('select2:select', function (/** @type {any} */ evt) {
-        const element = evt.params.data.element;
-        const $element = $(element);
-
-        $element.detach();
-        $(this).append($element);
-        $(this).trigger('change');
-    });
-    nanoGptProvidersSelect.select2({
-        ...select2Defaults,
-        sorter: data => data.sort((a, b) => a.text.localeCompare(b.text)),
-        placeholder: t`Select providers`,
-        searchInputPlaceholder: t`Search providers...`,
-        searchInputCssClass: 'text_pole',
-        width: '100%',
-        allowClear: true,
-        closeOnSelect: false,
-    });
+    for (const select of providersSelect) {
+        createSelectPicker(select, {
+            labels: () => ({
+                title: t`Model Providers`,
+                subtitle: t`OpenRouter`,
+                search: t`Search providers...`,
+                placeholder: t`Select providers. No selection = all providers.`,
+            }),
+            sortByLabel: true,
+            // The newest selection goes last: OpenRouter tries providers in list order.
+            onToggle: option => {
+                if (option.selected) option.parentElement?.append(option);
+            },
+        });
+    }
+    for (const select of nanoGptProvidersSelect) {
+        createSelectPicker(select, {
+            labels: () => ({
+                title: select.id === 'nanogpt_ignored_providers' ? t`Ignored providers` : t`Allowed providers`,
+                subtitle: t`NanoGPT`,
+                search: t`Search providers...`,
+                placeholder: t`Select providers`,
+            }),
+            sortByLabel: true,
+        });
+    }
 }

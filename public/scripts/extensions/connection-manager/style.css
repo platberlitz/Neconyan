@@ -50,10 +50,6 @@
     gap: 8px;
 }
 
-.connection-profile-picker #connection_profiles {
-    width: 100%;
-}
-
 .connection-profile-actions {
     display: flex;
     flex-wrap: wrap;
@@ -156,15 +152,6 @@
 
 .connection-profile-folder-manager .folder-empty-message {
     opacity: 0.75;
-}
-
-#connection_profiles optgroup {
-    font-style: normal;
-    font-weight: bold;
-}
-
-#connection_profiles optgroup option {
-    padding-left: 20px;
 }
 
 @media screen and (max-width: 700px) {

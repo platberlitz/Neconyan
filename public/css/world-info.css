@@ -958,7 +958,6 @@
 }
 
 #world_editor_select,
-#world_editor_select~.select2-container,
 #world_info_sort_order,
 #world_info_search {
     flex: 1;
@@ -967,20 +966,6 @@
 #world_info_sort_order,
 #world_info_search {
     min-width: 6em;
-}
-
-#world_editor_select~.select2-container {
-    overflow: hidden;
-}
-
-#world_editor_select~.select2-container .select2-selection--single .select2-selection__rendered {
-    padding-right: 30px;
-}
-
-#world_editor_select~.select2-container .select2-selection .select2-selection__clear {
-    right: 20px;
-    display: flex;
-    align-items: center;
 }
 
 .world_entry .killSwitch.fa-toggle-on {
@@ -1062,13 +1047,11 @@
 }
 
 body.neconyan #WIMultiSelector,
-body.neconyan #WIMultiSelector :is(.select2-container, .select2-selection, .select2-selection__rendered, .select2-search__field),
 body.neconyan #world_popup_editor_host :is(.select2-container, .select2-selection, .select2-selection__rendered, .select2-search__field),
 body.neconyan #world_popup_editor_host :is(input, textarea, select) {
     font-family: var(--mainFontFamily) !important;
 }
 
-body.neconyan #WIMultiSelector .select2-selection__placeholder,
 body.neconyan #world_popup_editor_host :is(.select2-selection__placeholder, input::placeholder, textarea::placeholder) {
     font-family: var(--mainFontFamily) !important;
     color: var(--SmartThemeEmColor);
@@ -1462,7 +1445,7 @@ select.keyselect+span.select2-container .select2-selection--multiple {
 }
 
 .world_popup_action_group--select > #world_editor_select,
-.world_popup_action_group--select > .select2-container {
+.world_popup_action_group--select > .sb-select-picker-button {
     flex: 1 1 240px;
     min-width: 220px;
 }
@@ -1582,12 +1565,6 @@ select.keyselect+span.select2-container .select2-selection--multiple {
     overflow: hidden;
 }
 
-#WIMultiSelector .select2-container .select2-selection--multiple {
-    max-height: 25vh;
-    overflow-y: auto;
-    overflow-x: hidden;
-}
-
 @media screen and (max-width: 1280px) {
     #wiTopBlock {
         grid-template-columns: 1fr;
@@ -1641,7 +1618,7 @@ select.keyselect+span.select2-container .select2-selection--multiple {
     }
 
     .world_popup_action_group--select > #world_editor_select,
-    .world_popup_action_group--select > .select2-container,
+    .world_popup_action_group--select > .sb-select-picker-button,
     .world_popup_action_group--filters > #world_info_search,
     .world_popup_action_group--filters > #world_info_sort_order {
         flex-basis: 100%;
@@ -2484,7 +2461,7 @@ body.neconyan #WorldInfo.sb-shell-embedded-content #world_popup_entries_list .wo
     }
 
     #WorldInfo.sb-shell-embedded-content .world_popup_action_group--select > #world_editor_select,
-    #WorldInfo.sb-shell-embedded-content .world_popup_action_group--select > .select2-container,
+    #WorldInfo.sb-shell-embedded-content .world_popup_action_group--select > .sb-select-picker-button,
     #WorldInfo.sb-shell-embedded-content .world_popup_action_group--filters > #world_info_search,
     #WorldInfo.sb-shell-embedded-content .world_popup_action_group--filters > #world_info_sort_order {
         flex-basis: 100%;

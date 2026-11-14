@@ -188,19 +188,18 @@ async function selectReasoningFixtureCharacter(page) {
     await page.evaluate(() => window.NeconyanShell.openTab('left', 'api'));
 }
 
-async function openPicker(page, mobile, id, source) {
-    const menu = mobile
-        ? page.locator(`.sb-inline-select-picker-menu[data-sb-model-id-picker-menu-source="${source}"]`)
-        : page.locator(`#select2-${id}-results`);
+// Both provider lists open the shared searchable picker on every layout.
+async function openPicker(page, id) {
+    const menu = page.locator(`#sb-${id}-picker`);
     if (!await menu.isVisible()) {
-        await page.locator(mobile ? `#${id}_picker:visible, #${id}:visible` : `#${id} + .select2 .select2-selection`).click();
+        await page.locator(`#sb-${id}-picker-button`).click();
     }
     await expect(menu).toBeVisible();
     return menu;
 }
 
-function pickerRow(menu, mobile, label) {
-    return menu.locator(mobile ? 'button[role="option"]' : '.select2-results__option').filter({ hasText: label });
+function pickerRow(menu, label) {
+    return menu.locator('.sb-chat-picker-row').filter({ hasText: label });
 }
 
 // The model list is always visible on both layouts; there is no picker to open.
@@ -215,16 +214,20 @@ async function chooseModel(page, mobile, model) {
 
 async function toggleProvider(page, mobile, kind, label, remove = false) {
     const id = `nanogpt_${kind}_providers`;
-    if (remove && !mobile) {
-        await page.locator(`#${id} + .select2 .select2-selection__choice`).filter({ hasText: label }).locator('.select2-selection__choice__remove').click();
+    const menu = await openPicker(page, id);
+    const option = pickerRow(menu, label);
+    await expect(option, `${kind} provider '${label}' must be ${remove ? 'removable' : 'selectable'}`).toBeVisible();
+    await expect(option).toBeEnabled();
+    await expect(option).toHaveAttribute('aria-pressed', remove ? 'true' : 'false');
+    await option.click();
+    if (remove) {
+        // A provider the model cannot use leaves the list once it is no longer chosen.
+        await expect(pickerRow(menu, label).and(menu.locator('[aria-pressed="true"]'))).toHaveCount(0);
     } else {
-        const menu = await openPicker(page, mobile, id, `nanogpt-${kind}-providers`);
-        const option = pickerRow(menu, mobile, label);
-        await expect(option, `${kind} provider '${label}' must be ${remove ? 'removable' : 'selectable'}`).toBeVisible();
-        await expect(option).toBeEnabled();
-        await option.click();
+        await expect(pickerRow(menu, label)).toHaveAttribute('aria-pressed', 'true');
     }
     await page.getByRole('heading', { name: 'Connections', exact: true, level: 2 }).locator('..').click({ position: { x: 8, y: 8 } });
+    await expect(menu).toHaveCount(0);
 }
 
 async function expectRouting(page, allowed, ignored, payg) {
@@ -632,22 +635,22 @@ for (const mobile of [false, true]) {
             });
         });
 
-        if (mobile) {
-            test('provider picker supports keyboard opening and closing without closing the API panel', async ({ page, baseURL }) => {
-                await setupNanoGpt(page, baseURL);
-                const picker = page.locator('#nanogpt_allowed_providers_picker');
-                const menu = page.locator('#nanogpt_allowed_providers_menu');
-                await expect(picker).toHaveText('Select providers');
-                await picker.focus();
-                await page.keyboard.press('Enter');
-                await expect(picker).toHaveAttribute('aria-expanded', 'true');
-                await expect(menu).toBeVisible();
-                await page.keyboard.press('Escape');
-                await expect(menu).toBeHidden();
-                await expect(picker).toHaveAttribute('aria-expanded', 'false');
-                await expect(picker).toBeVisible();
-            });
-        }
+        test('provider picker supports keyboard opening and closing without closing the API panel', async ({ page, baseURL }) => {
+            await setupNanoGpt(page, baseURL);
+            const picker = page.locator('#sb-nanogpt_allowed_providers-picker-button');
+            const menu = page.locator('#sb-nanogpt_allowed_providers-picker');
+            await expect(page.locator('#nanogpt_allowed_providers')).toBeHidden();
+            await expect(picker).toHaveText('Select providers');
+            await picker.focus();
+            await page.keyboard.press('Enter');
+            await expect(picker).toHaveAttribute('aria-expanded', 'true');
+            await expect(menu).toBeVisible();
+            await page.keyboard.press('Escape');
+            await expect(menu).toHaveCount(0);
+            await expect(picker).toHaveAttribute('aria-expanded', 'false');
+            await expect(picker).toBeVisible();
+            await expect(picker).toBeFocused();
+        });
 
         test('model picker renders subscription metadata safely and keeps original IDs', async ({ page, baseURL }, testInfo) => {
             await setupNanoGpt(page, baseURL);
@@ -728,13 +731,13 @@ for (const mobile of [false, true]) {
             const warning = page.locator('#nanogpt_provider_warning');
             await expectRouting(page, [], [], false);
             await expect(billing).toBeHidden();
-            const allowedPicker = page.locator('#nanogpt_allowed_providers_picker');
-            await expect(allowedPicker).toBeVisible({ visible: mobile });
+            const allowedPicker = page.locator('#sb-nanogpt_allowed_providers-picker-button');
+            await expect(allowedPicker).toBeVisible();
             await expect(allowedPicker).toHaveText('Select providers');
             // The provider pickers line up with the model list above them.
             const modelBox = await page.locator('[data-model-list-for="model_nanogpt_select"]').boundingBox();
             for (const kind of ['allowed', 'ignored']) {
-                const field = page.locator(mobile ? `#nanogpt_${kind}_providers_picker` : `#nanogpt_${kind}_providers + .select2 .select2-selection`);
+                const field = page.locator(`#sb-nanogpt_${kind}_providers-picker-button`);
                 const box = await field.boundingBox();
                 expect(box.x).toBeCloseTo(modelBox.x, 0);
                 expect(box.width).toBeCloseTo(modelBox.width, 0);
@@ -762,8 +765,8 @@ for (const mobile of [false, true]) {
             await toggleProvider(page, mobile, 'ignored', 'Cerebras');
             await expectRouting(page, ['chutes', NEW_PROVIDER], ['cerebras'], false);
             await expect(allowedPicker).toHaveText(`Chutes, ${NEW_PROVIDER}`);
-            await expect(page.locator('#nanogpt_ignored_providers_picker')).toHaveText('Cerebras');
-            expect((await allowedPicker.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(mobile ? 44 : 0);
+            await expect(page.locator('#sb-nanogpt_ignored_providers-picker-button')).toHaveText('Cerebras');
+            expect((await allowedPicker.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
             await page.locator('#nanogpt_payg_override').scrollIntoViewIfNeeded();
             await screenshot(page, testInfo, `${layout}-provider-controls`);
             await page.locator('#nanogpt_payg_override').check();

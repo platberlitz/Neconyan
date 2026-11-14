@@ -24,7 +24,7 @@ import { power_user } from './power-user.js';
 import { SlashCommandParser } from './slash-commands/SlashCommandParser.js';
 import { SlashCommand } from './slash-commands/SlashCommand.js';
 import { ARGUMENT_TYPE, SlashCommandArgument, SlashCommandNamedArgument } from './slash-commands/SlashCommandArgument.js';
-import { isMobile } from './RossAscends-mods.js';
+import { createSelectPicker } from './select-picker.js';
 import { POPUP_RESULT, POPUP_TYPE, Popup, callGenericPopup } from './popup.js';
 import { debounce_timeout } from './constants.js';
 import { INTERACTABLE_CONTROL_CLASS } from './keyboard.js';
@@ -2688,18 +2688,16 @@ async function onTagDeleteClick() {
 
     appendTagToList(popupContent.find('#tag_to_delete'), tag);
 
-    // Make the select control more fancy on not mobile
-    if (!isMobile()) {
-        // Delete the empty option in the dropdown, and make the select2 be empty by default
-        popupContent.find('#merge_tag_select option[value=""]').remove();
-        popupContent.find('#merge_tag_select').select2({
-            width: '50%',
-            placeholder: 'Select tag to merge into',
-            allowClear: true,
-        }).val(null).trigger('change');
-    }
-
-    const result = await callGenericPopup(popupContent, POPUP_TYPE.CONFIRM);
+    const result = await callGenericPopup(popupContent, POPUP_TYPE.CONFIRM, '', {
+        onOpen: popup => {
+            const mergeSelect = popup.dlg.querySelector('#merge_tag_select');
+            if (mergeSelect instanceof HTMLSelectElement) {
+                createSelectPicker(mergeSelect, {
+                    labels: () => ({ title: t`Select tag to merge into`, search: t`Search tags` }),
+                });
+            }
+        },
+    });
     if (result !== POPUP_RESULT.AFFIRMATIVE) {
         return;
     }

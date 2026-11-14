@@ -1533,10 +1533,6 @@
         overflow-x: hidden;
     }
 
-    #horde_model {
-        height: unset;
-    }
-
     .note-link-span {
         display: inline-flex;
         align-items: center;
@@ -1544,16 +1540,6 @@
         width: 44px;
         height: 44px;
         font-size: 18px;
-    }
-
-    /* Model filter input for mobile (replaces Select2 which doesn't work on iOS) */
-    .sb-model-filter {
-        width: 100%;
-        margin-bottom: 8px;
-        padding: 10px 12px;
-        font-size: 16px !important; /* Prevents iOS zoom */
-        border-radius: 12px;
-        box-sizing: border-box;
     }
 
     /* Make prompt editor popup overlay the shell panel on mobile */

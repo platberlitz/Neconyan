@@ -20,6 +20,7 @@ import { performFuzzySearch } from '/scripts/power-user.js';
 import { StreamingDisplay } from '/scripts/streaming-display.js';
 import { confirmProfileProxy, ConnectionManagerRequestService, getProfileServiceTier } from '../shared.js';
 import { formatReasoning } from '/scripts/reasoning.js';
+import { createSelectPicker } from '../../select-picker.js';
 
 const MODULE_NAME = 'connection-manager';
 const NONE = '<None>';
@@ -1465,6 +1466,9 @@ export async function init() {
     const profiles = document.getElementById('connection_profiles');
     const detailsContent = document.getElementById('connection_profile_details_content');
     renderConnectionProfiles(profiles);
+    createSelectPicker(profiles, {
+        labels: () => ({ title: t`Connection Profile`, search: t`Search...` }),
+    });
 
     /**
      * Applies a real disabled state to an action icon.
