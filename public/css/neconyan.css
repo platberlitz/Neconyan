@@ -19,6 +19,16 @@ body.neconyan #sb_character_chat_import_action:hover {
     background: color-mix(in srgb, var(--neco-ginger-hover) 14%, var(--neco-surface));
 }
 
+/* Deletion selection stays distinct from each Purrk's enabled state. */
+#character_purrks_block[data-selecting="true"] .neconyan-purrk-card {
+    opacity: 1;
+    border-color: var(--neco-border);
+}
+#character_purrks_block[data-selecting="true"] .neconyan-purrk-card[data-selected="true"] {
+    border-color: var(--neco-ginger);
+    background: color-mix(in srgb, var(--neco-ginger) 16%, var(--neco-surface));
+}
+
 /* Bulk selection must survive Shell Style card and hover backgrounds without resizing rows. */
 body.neconyan:not(.sbterm) #right-nav-panel.openDrawer #rm_print_characters_block.group_overlay_mode_select > :is(.character_select, .group_select).flex-container.character_selected {
     background: color-mix(in srgb, var(--neco-ginger) 28%, var(--neco-surface));
