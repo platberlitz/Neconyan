@@ -4199,10 +4199,20 @@ export async function getWorldEntry(name, data, entry, options = {}) {
         const bottom = editTemplate.find('[name="WIEntryBottomControls"]').detach();
         const extraRows = editTemplate.children('.flex-container.wide100p.flexGap10').detach();
         const matching = editTemplate.find('.world-entry-advanced-details-content').children().detach();
+        overrides.addClass('neconyan-entry-fields').children().addClass('neconyan-entry-field')
+            .children('small').addClass('neconyan-entry-field-heading').removeClass('textAlignCenter');
+        extraRows.addClass('neconyan-entry-fields neconyan-entry-fields-with-options').children().each((_, element) => {
+            const field = $(element).addClass('neconyan-entry-field').removeClass('flexNoGap');
+            field.children().first().addClass('neconyan-entry-field-heading').removeClass('marginBot5');
+            // Optional toggles sit below the value, leaving paired labels and controls on shared rows.
+            field.append(field.find('.checkbox_label').removeClass('flexNoGap').detach());
+        });
         const flags = $('<div class="neconyan-entry-flags"></div>');
         for (const name of ['excludeRecursion', 'preventRecursion', 'delay_until_recursion', 'ignoreBudget', 'agentBlacklisted']) {
             flags.append(contentBlock.find(`input[name="${name}"]`).closest('label').detach());
         }
+        flags.append(bottom.find('label').detach());
+        flags.add(matching).find('label').removeClass('flexNoGap');
         const contentLabel = contentBlock.find('label').first();
         const contentHeader = $('<div class="neconyan-entry-content-heading"></div>');
         contentHeader.append(contentLabel.find('.mdhotkey_location').detach(), contentLabel.find('.editor_maximize').detach(), contentLabel.find('.world_entry_form_token_counter').parent().detach());
@@ -4213,7 +4223,7 @@ export async function getWorldEntry(name, data, entry, options = {}) {
             $('<i class="fa-solid fa-chevron-down" aria-hidden="true"></i>'),
         ));
         const advancedBody = $('<div class="world-entry-advanced-details-content neconyan-entry-advanced-content"></div>');
-        advancedBody.append($('<h4></h4>').text(t`Activation rules`), flags, bottom, overrides);
+        advancedBody.append($('<h4></h4>').text(t`Activation rules`), flags, overrides);
         advancedBody.append($('<h4></h4>').text(t`Inclusion and timing`), extraRows);
         advancedBody.append($('<h4></h4>').text(t`Additional matching sources`), $('<div class="neconyan-entry-flags"></div>').append(matching));
         advanced.append(advancedBody);

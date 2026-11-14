@@ -3035,11 +3035,24 @@ body.neconyan #right-nav-panel.neconyan-character-workspace .neconyan-character-
 }
 body.neconyan #right-nav-panel.neconyan-character-workspace .neconyan-character-native-nav-wrapper [hidden],
 body.neconyan #right-nav-panel[data-menu-type='world-info'] .neconyan-character-native-nav-wrapper { display: none; }
-body.neconyan #WorldInfo .neconyan-entry-advanced > summary { gap: 12px; }
+body.neconyan #WorldInfo .neconyan-entry-advanced > summary { gap: 12px; padding-inline: 4px; }
 body.neconyan #WorldInfo .neconyan-entry-advanced > summary::-webkit-details-marker { display: none; }
 body.neconyan #WorldInfo .neconyan-entry-advanced > summary > i { margin-inline-start: auto; flex-shrink: 0; }
 body.neconyan #WorldInfo .neconyan-entry-advanced[open] > summary > i { rotate: 180deg; }
 body.neconyan #WorldInfo .neconyan-entry-advanced > summary:focus-visible { outline: 2px solid var(--neco-ginger); outline-offset: 2px; }
+body.neconyan #WorldInfo :is(.neconyan-entry-fields, .neconyan-entry-flags) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+/* Shared label/value tracks stay aligned when either label wraps. Keep the native hidden-field rules stronger. */
+.neconyan-entry-editor .neconyan-entry-field { display: grid; grid-row: span 2; grid-template-rows: subgrid; row-gap: 6px; min-width: 0; }
+.neconyan-entry-fields-with-options .neconyan-entry-field { grid-row: span 3; }
+body.neconyan #WorldInfo .neconyan-entry-field-heading { display: flex; align-items: center; min-width: 0; margin: 0; text-align: start; }
+body.neconyan #WorldInfo .neconyan-entry-field-heading > small { display: flex; align-items: center; gap: 6px; min-width: 0; }
+body.neconyan #WorldInfo .neconyan-entry-field > .range-block-range { min-width: 0; align-self: start; }
+body.neconyan #WorldInfo :is(.neconyan-entry-flags label, .neconyan-entry-field > .checkbox_label) { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 8px; min-height: 44px; margin: 0; }
+body.neconyan #WorldInfo :is(.neconyan-entry-flags, .neconyan-entry-field) input[type='checkbox'] { margin: 0; }
+body.neconyan #WorldInfo .neconyan-entry-flags > small { display: grid; grid-row: span 3; grid-template-rows: subgrid; min-width: 0; }
+@container (max-width: 330px) {
+    body.neconyan #WorldInfo :is(.neconyan-entry-fields, .neconyan-entry-flags) { grid-template-columns: minmax(0, 1fr); }
+}
 body.neconyan .neconyan-character-filters { min-width: 0; }
 body.neconyan .neconyan-character-filters > summary { cursor: pointer; min-height: 44px; padding: 10px 0; display: flex; align-items: center; gap: 8px; color: var(--neco-ink); list-style: none; }
 body.neconyan .neconyan-character-filters > summary::-webkit-details-marker { display: none; }
