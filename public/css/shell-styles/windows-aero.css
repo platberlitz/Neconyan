@@ -97,6 +97,15 @@
     border-radius: 3px;
 }
 
+/* A solid tinted selection keeps category labels readable over the glass. */
+:root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) .sb-settings-tab-btn.active {
+    background: linear-gradient(
+        color-mix(in srgb, var(--neco-ginger) 8%, var(--neco-raised)),
+        color-mix(in srgb, var(--neco-ginger) 16%, var(--neco-raised))
+    );
+    color: var(--neco-ink);
+}
+
 :root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) #sb-mobile-nav-content {
     background: var(--aero-shine), var(--aero-glass-strong);
     backdrop-filter: blur(16px) saturate(160%);
