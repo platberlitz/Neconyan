@@ -247,8 +247,8 @@ export function buildCompanionQuickControlsHtml(agent, { scope = 'card' } = {}) 
         <div class="ica--companion-quick" data-companion-quick="${id}">
             <div class="ica--companion-quick-history">
                 <label class="checkbox_label" title="Saved notes become context for future replies">
-                    <input type="checkbox" data-quick-keep${config.includeInChatHistory ? ' checked' : ''}>
-                    <span>Keep in chat history</span>
+                    <input type="checkbox" aria-label="Keep in chat history" data-quick-keep${config.includeInChatHistory ? ' checked' : ''}>
+                    <span>Keep in chat</span>
                 </label>
                 <label class="ica--companion-quick-depth" title="How many recent notes stay in chat history. Leave blank to keep all of them.">
                     <input type="number" class="text_pole" min="1" step="1" inputmode="numeric" placeholder="All" value="${depth}" data-quick-depth aria-label="Notes to keep in chat history for ${name} (blank keeps all)">
