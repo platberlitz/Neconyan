@@ -37,7 +37,7 @@ Rules:
 
 - Never write a hex colour in a component rule; use a token. Outside Calico the tokens fall back to SmartTheme colours, so custom themes keep working.
 - `--sb-*` tokens used by the shell (`--sb-accent`, `--sb-shell-nav-bg`, `--sb-shell-text`, `--sb-shell-text-secondary`, `--sb-button-bg`, `--sb-focus-ring`) are bridged from `--neco-*` unconditionally in `neconyan.css`.
-- Surfaces that hold text are solid (`--neco-surface`). Only the canvas and the conversation stage are translucent (`--neco-panel-gradient`), so the paw wallpaper shows through at 67% but never behind copy.
+- I keep controls and cards on their own readable surfaces (`--neco-surface` or `--neco-raised`). Reading panels and outer category navigation share one backing controlled by 'Background visibility' across every shell, on phone and desktop: 0% is opaque, values below 100% retain backing, and 100% clears the backing and glass blur. Keep nested panel and navigation fills transparent so they don't compound the slider's opacity. The slider still defaults to 100% in steps of 5; native captions and controls keep their paired paint and ink.
 - Every bundled theme is passed through `public/scripts/theme-contrast.js` on load: text reaches 4.5:1 and borders 3:1 against every surface. Calico Dark is the reference and is left untouched.
 
 ## Accent-aware buttons
@@ -78,7 +78,7 @@ The accent is the user's choice, not ginger. `--neco-ginger` reads the theme's q
 ## Phone vs desktop rules
 
 - Breakpoint: 768px. Phone stylesheets are gated at the link level; JS uses `isMobileViewport()`.
-- Phones: the top bar is 42px and shows the character name (plus context size or custom text when chosen); the hamburger opens the workspace rail as an opaque drawer under the top bar; sheets (`#right-nav-panel`, settings shells) are opaque and their header collapses to a close button beside a labelled, horizontally scrolling tab row; no dropdown section pickers anywhere; the bottom bar (persona, chat pill, extension rows, composer) is one solid box; Create/Import/Filter/Grid/Bulk edit live in one scrolling tool row.
+- Phones: the top bar is 42px and shows the character name (plus context size or custom text when chosen); the hamburger opens the workspace rail as an opaque drawer under the top bar; sheets (`#right-nav-panel`, settings shells) follow 'Background visibility' and their header collapses to a close button beside a labelled, horizontally scrolling tab row; no dropdown section pickers anywhere; the bottom bar (persona, chat pill, extension rows, composer) is one solid box; Create/Import/Filter/Grid/Bulk edit live in one scrolling tool row.
 - Any horizontally scrolling rail needs both `touch-action: pan-x` and an entry in `MOBILE_DOCUMENT_PAN_HORIZONTAL_SCROLL_SELECTOR` in `public/scripts/mobile-shell-lifecycle/index.js`, or the capture-phase touch guard cancels the swipe.
 - Desktop keeps wrapping tab rows, the labelled Send and Chat tools pills, and the sidebar always visible. The character editor's sections (Basics, Definition, Greetings, Advanced) are a labelled tab row at every width, fullscreen and pinned included, never a dropdown; in a pinned panel the tab icons step aside so all four fit on one row.
 - Size layouts inside panels by the panel, not the window: a pinned or MovingUI-resized panel is narrow on a wide screen, so use container queries (`container-type: inline-size` on the box, `@container`) rather than viewport media queries for anything that lives in `#right-nav-panel`.
