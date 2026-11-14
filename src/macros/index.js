@@ -104,6 +104,7 @@ export function createMacroEnvironment(snapshot = {}, capabilities = {}, { readO
     const suppliedMacros = Object.fromEntries(Object.entries({ ...(snapshot.dynamicMacros ?? {}), ...dynamicMacros })
         .map(([key, value]) => [String(key).toLowerCase(), value]));
     const enhanced = snapshot.macroEnhanced?.enabled !== false && data.extra.powerUser?.experimental_macro_engine !== false;
+    const enhancedDefinitions = enhanced ? enhancedMacroDefinitions() : {};
     const syntax = snapshot.macroEnhanced?.syntax ?? snapshot.browserMacroSyntax ?? {};
     const enhancedSyntax = { compatExpressions: enhanced && Boolean(syntax.compatExpressions), fixImportedSyntax: enhanced && Boolean(syntax.fixImportedSyntax) };
     let enhancedState = data.extra.chatMetadata.MacroEnhanced
@@ -121,7 +122,7 @@ export function createMacroEnvironment(snapshot = {}, capabilities = {}, { readO
         // Request-local dynamic macros may travel either with the snapshot itself
         // (a saved roleplay capture) or as explicit options; the explicit option
         // wins on a shared name so the caller keeps control.
-        dynamicMacros: { ...(enhanced ? enhancedMacroDefinitions() : {}), ...suppliedMacros },
+        dynamicMacros: { ...enhancedDefinitions, ...suppliedMacros },
         extra: {
             chat: [], extensionPrompts: {},
             getInput: () => '', getCurrentChatId: () => data.chatId ?? '',
@@ -165,7 +166,11 @@ export function createMacroEnvironment(snapshot = {}, capabilities = {}, { readO
     const bundledPolicy = { requireBundled: snapshot.requireBundledMacros === true };
     const evaluateContent = (content, { legacy = false, strictCapabilities = false, original: suppliedOriginal, postProcess: suppliedPostProcess } = {}) => {
         strictCapabilities ||= Boolean(snapshot.writableScopes);
-        const activeMacros = legacy ? suppliedMacros : env.dynamicMacros;
+        // Callers also attach operation context after creating the environment.
+        // Legacy mode excludes only our built-ins, keeping those late additions
+        // and explicit overrides just as it did before Enhanced support.
+        const activeMacros = legacy ? Object.fromEntries(Object.entries(env.dynamicMacros).filter(([name, value]) =>
+            !Object.hasOwn(enhancedDefinitions, name) || value !== enhancedDefinitions[name] || Object.hasOwn(suppliedMacros, name))) : env.dynamicMacros;
         const unsupportedSyntax = enhanced && !legacy ? {} : snapshot.browserMacroSyntax;
         if (strictCapabilities) assertServerMacroVocabulary(content, activeMacros, snapshot.browserMacros, unsupportedSyntax, bundledPolicy);
         let unavailable;

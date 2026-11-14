@@ -1,11 +1,10 @@
-/* global globalThis */
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { setConfigFilePath } from '../src/util.js';
 import { createRawPrompt } from '../public/scripts/generation-format.js';
 import { SCRATCHPAD_MACRO_GUIDANCE, scratchpadMacroEnvironment } from '../src/scratchpad/macros.js';
-import { createMacroEnvironment, MacroRegistry } from '../src/macros/index.js';
+import { createMacroEnvironment } from '../src/macros/index.js';
 
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
 const { buildScratchpadMessages, buildScratchpadSystemPrompt } = await import('../src/scratchpad/prompt.js');
@@ -27,33 +26,16 @@ test('all Scratchpad assistants receive literal reusable-content guidance, inclu
     }
 });
 
-test('the suggested Enhanced snippets expand with the installed macros', async t => {
-    const base = '../public/scripts/extensions/third-party/MacroEnhanced/src/';
-    const { emptyState } = await import(`${base}chat-state.js`);
-    const { registerPronounMacros } = await import(`${base}pronoun-macros.js`);
-    const { registerStateMacros } = await import(`${base}state-macros.js`);
-    const { registerLogicMacros } = await import(`${base}logic-macros.js`);
-    const { teardownRegistrations } = await import(`${base}registration.js`);
-    const context = { macros: { registry: MacroRegistry }, chatMetadata: { chat_id_hash: 'scratchpad-example' } };
-    const previous = globalThis.SillyTavern;
-    globalThis.SillyTavern = { getContext: () => context };
-    t.after(() => {
-        teardownRegistrations();
-        if (previous === undefined) delete globalThis.SillyTavern;
-        else globalThis.SillyTavern = previous;
-    });
-    const state = emptyState();
-    const env = createMacroEnvironment({ names: { user: 'Kris', char: 'Nova' }, extra: { meSandboxState: state } });
-    registerPronounMacros();
-    registerStateMacros();
-    registerLogicMacros();
+test('the suggested Enhanced snippets expand with the shared server macros', () => {
+    const env = createMacroEnvironment({ names: { user: 'Kris', char: 'Nova' },
+        extra: { chatMetadata: { chat_id_hash: 'scratchpad-example' } } });
     const expand = snippet => {
         assert.ok(SCRATCHPAD_MACRO_GUIDANCE.includes(snippet), 'exercise the actual suggested syntax');
         return env.evaluate(snippet);
     };
     const pronouns = '{{char}} notices {{user}} at the door. {{Sub}} {{pverb::is::are}} holding {{poss}} coat.';
     for (const [spec, sentence] of [['he/him', 'He is holding his coat.'], ['she/her', 'She is holding her coat.'], ['they/them', 'They are holding their coat.']]) {
-        state.pronouns.user = spec;
+        env.evaluate(`{{setpronouns::${spec}}}`);
         assert.equal(expand(pronouns), `Nova notices Kris at the door. ${sentence}`);
     }
     const greeting = '{{if {{eq::{{getvar::relationship}}::friend}}}}Welcome back, {{user}}.{{else}}Good evening, stranger.{{/if}}';

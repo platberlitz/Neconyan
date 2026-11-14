@@ -175,6 +175,14 @@ test('captured environments select historical legacy behaviour without changing 
     assert.equal(env.evaluate('{{description}}/{{model}}/{{original}}/{{original}}', { legacy: true }), 'D/test-model/original/');
 });
 
+test('late-bound operation macros and explicit overrides work in both macro modes', () => {
+    for (const legacy of [false, true]) {
+        const env = createMacroEnvironment({ dynamicMacros: { existing: 'before' } });
+        Object.assign(env.dynamicMacros, { existing: 'after', late: 'context', obj: 'override' });
+        assert.equal(env.evaluate('{{existing}}/{{late}}/{{obj}}', { legacy, strictCapabilities: true }), 'after/context/override');
+    }
+});
+
 test('dynamic definitions control deferred arguments without changing invalid-option fallbacks', () => {
     const env = createMacroEnvironment({}, {}, { dynamicMacros: {
         choose: { delayArgResolution: true, unnamedArgs: [{ name: 'body' }], handler: ({ unnamedArgs, resolve }) => resolve(unnamedArgs[0]) },
