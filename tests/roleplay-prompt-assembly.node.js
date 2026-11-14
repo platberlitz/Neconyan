@@ -181,7 +181,7 @@ test('provider-formatting mutations survive a completed provider retry and rejec
             f.records[0].chat_metadata.variables = { turns: 4 };
             f.records[0].chat_metadata.MacroEnhanced = { chatVars: { score: '2' } };
         },
-            directories => captureGenerationBinding(directories, { kind: 'active' }, { settingsRevision: 1 }), {}, { serverPrompt: true });
+        directories => captureGenerationBinding(directories, { kind: 'active' }, { settingsRevision: 1 }), {}, { serverPrompt: true });
         job.options.promptBackend = resolveGenerationProfile;
         let calls = 0;
         await assert.rejects(job.run(async options => {

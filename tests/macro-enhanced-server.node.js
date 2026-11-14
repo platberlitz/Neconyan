@@ -1,3 +1,4 @@
+/* global globalThis */
 /* eslint playwright/expect-expect: off -- Node assertions verify the shared macro host. */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
