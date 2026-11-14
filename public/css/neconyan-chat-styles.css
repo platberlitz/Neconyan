@@ -2142,6 +2142,7 @@ body.tidestyle #chat .mes:not(.smallSysMes) .ica--companion-ledger > .ica--compa
             margin-right: calc(var(--custom-echo-avatar) + 5px + 8px + var(--moonlit-sb-stats-room, 0px));
         }
 
+        &[is_user='true'] .ch_name > .flex1,
         &[is_user='true'] .ch_name .mes_buttons {
             width: auto;
         }
