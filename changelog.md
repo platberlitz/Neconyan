@@ -89,6 +89,7 @@
 - PR #679 (2026-11-14) `fix(mewmory): keep tabs steady during memory updates`
 - PR #680 (2026-11-14) `fix(macros): support macroenhanced built-ins on the server`
 - PR #681 (2026-11-14) `fix: repair staging regressions and stabilise browser tests`
+- PR #682 (2026-11-14) `fix(companions): keep history controls on one row`
 
 ## v1.5.4
 
