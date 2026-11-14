@@ -4,6 +4,7 @@ import { appendAutoAppendReasoningInstruction } from './chat-reasoning-instructi
 import { supportsChatImages, supportsChatVideo, supportsChatAudio, supportsChatSignatures, selectToolHistoryReasoning, supportsInterleavedToolReasoning } from './chat-input-capabilities.js';
 import { getChatImageTokenCost } from './chat-prompt-tokens.js';
 import { injectChatPromptDepth } from './chat-prompt-depth.js';
+import { capturePresetPrompts, setPreparedPresetPrompts } from './extensions/in-chat-agents/agent-context-macros.js';
 /*
 * CODE FOR OPENAI SUPPORT
 * By CncAnon (@CncAnon1)
@@ -24,6 +25,7 @@ import {
     extension_prompt_roles,
     extension_prompt_types,
     Generate,
+    getCurrentChatId,
     getExtensionPrompt,
     getExtensionPromptMaxDepth,
     getMediaDisplay,
@@ -1507,10 +1509,13 @@ async function populateChatCompletion(prompts, chatCompletion, { bias, quietProm
     // Bias
     if (bias && bias.trim().length) await addToChatCompletion('bias');
 
+    const relativeRules = { beforeMain: [], afterMain: [] };
     const injectToMain = async (/** @type {Prompt} */ prompt, /** @type {string|number} */ position) => {
         if (chatCompletion.has('main')) {
             const message = await Message.fromPromptAsync(prompt);
             chatCompletion.insert(message, 'main', position);
+            if (position === 'start') relativeRules.beforeMain.unshift(prompt);
+            else relativeRules.afterMain.push(prompt);
         } else {
             // Convert the relative prompt to an injection and place it relative to main prompt
             // Keeping prompts in the same order bucket will squash them together during in-chat injection
@@ -1524,6 +1529,8 @@ async function populateChatCompletion(prompts, chatCompletion, { bias, quietProm
                 promptCopy.injection_order = main.injection_order;
                 const newIndex = position === 'end' ? indexOfMain + 1 : indexOfMain;
                 absolutePrompts.splice(newIndex, 0, promptCopy);
+                if (position === 'start') relativeRules.beforeMain.push(promptCopy);
+                else relativeRules.afterMain.unshift(promptCopy);
             }
         }
     };
@@ -1589,6 +1596,7 @@ async function populateChatCompletion(prompts, chatCompletion, { bias, quietProm
 
     chatCompletion.freeBudget(controlPrompts);
     if (controlPrompts.collection.length) chatCompletion.add(controlPrompts);
+    return relativeRules;
 }
 
 /**
@@ -1812,6 +1820,7 @@ export async function prepareOpenAIMessages({
     if (!promptManager.activeCharacter && dryRun) return [null, false];
 
     const chatCompletion = new ChatCompletion();
+    const promptChatId = getCurrentChatId();
     // Only synchronous substitutions are guarded; previews must not hold a global
     // read-only scope across token-counting requests or extension callbacks.
     const evaluateMacros = dryRun ? createVariablePreview() : callback => callback();
@@ -1841,7 +1850,12 @@ export async function prepareOpenAIMessages({
         });
 
         // Fill the chat completion with as much context as the budget allows
-        await populateChatCompletion(prompts, chatCompletion, { bias, quietPrompt, quietImage, type, cyclePrompt, messages, messageExamples, mewmoryContext, assistantKnowledge, evaluateMacros });
+        const relativeRules = await populateChatCompletion(prompts, chatCompletion, { bias, quietPrompt, quietImage, type, cyclePrompt, messages, messageExamples, mewmoryContext, assistantKnowledge, evaluateMacros });
+        if (!dryRun && type !== 'quiet') {
+            setPreparedPresetPrompts(promptChatId, type || 'normal', capturePresetPrompts(userSettings, type, {
+                preparedPrompts: prompts.collection, ...relativeRules,
+            }));
+        }
     } catch (error) {
         if (assistantKnowledge?.text) {
             toastr.error('The assistant help text is too long for one reply. Increase the context size (how much text the model can read at once) or shorten the required prompt.');

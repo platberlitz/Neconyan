@@ -591,9 +591,14 @@ for (const effect of ['append', 'swipe']) {
 }
 
 for (const effect of ['append', 'swipe']) {
-    test(`Prompt Adherence Checker sees only the enabled preset prompts for ${effect}`, async t => {
+    test(`Prompt Adherence Checker sees active preset and before/after-main rules for ${effect}`, async t => {
         const template = JSON.parse(fs.readFileSync(new URL('../public/scripts/extensions/in-chat-agents/templates/prompt-adherence-checker.json', import.meta.url)));
-        const agents = [{ ...template, enabled: true, sourceTemplateId: template.id }];
+        const agents = [{ ...template, enabled: true, sourceTemplateId: template.id },
+            { id: 'before', name: 'HTML Toggle', phase: 'pre', prompt: 'HTML_RULE for {{char}}', injection: { position: 2, role: 0 } },
+            { id: 'after', name: 'Time Tracker', phase: 'pre', prompt: 'TIME_RULE for {{char}}', injection: { position: 0, role: 1 } },
+            { id: 'off', enabled: false, phase: 'pre', prompt: 'DISABLED_AGENT_RULE', injection: { position: 0 } },
+            { id: 'continue', phase: 'pre', prompt: 'CONTINUE_AGENT_RULE', conditions: { generationTypes: ['continue'] }, injection: { position: 0 } },
+        ];
         const preset = { prompts: [...controls.prompts,
             { identifier: 'main', name: 'Main Prompt', content: 'Write in third person past tense for {{char}}.' },
             { identifier: 'rule-off', name: 'Switched Off', content: 'DISABLED_RULE_TEXT' },
@@ -601,18 +606,38 @@ for (const effect of ['append', 'swipe']) {
             { identifier: 'charDescription', marker: true }].filter((prompt, index, list) => list.findLastIndex(item => item.identifier === prompt.identifier) === index),
         prompt_order: [{ character_id: 100001, order: [...controls.prompt_order[0].order,
             { identifier: 'rule-off', enabled: false }, { identifier: 'rule-swipe', enabled: true }, { identifier: 'charDescription', enabled: true }] }] };
-        const f = prepared(t, agents, { effect });
+        const f = prepared(t, agents, { effect, configure: records => {
+            records[0].chat_metadata = { note_prompt: 'NOTE_RULE for {{char}}', note_interval: 1, note_position: 0, note_depth: 4 };
+        } });
         let system = '';
-        await f.run({ promptBackend: () => ({ backend: 'chat', active: preset, profile: { model: 'fixture' }, source: 'custom' }),
-            generate: paid('main', () => 'Main output'), generateAgent: paid('rewrite', ({ messages }) => {
-                system = messages[0].content;
-                return 'Checked output';
-            }) });
+        let mainMessages;
+        let presetReads = 0;
+        await f.run({ promptBackend: () => {
+            presetReads++;
+            return { backend: 'chat', active: preset, profile: { model: 'fixture' }, source: 'custom' };
+        }, generate: paid('main', ({ messages }) => {
+            mainMessages = messages;
+            preset.prompts.find(prompt => prompt.identifier === 'main').content = 'Changed after dispatch';
+            return 'Main output';
+        }), generateAgent: paid('rewrite', ({ messages }) => {
+            system = messages[0].content;
+            return 'Checked output';
+        }) });
+        assert.equal(presetReads, 1, 'the checker reuses the instructions sent with the reply');
         assert.match(system, /<prompt name="Main Prompt">\nWrite in third person past tense for Nova\.\n<\/prompt>/);
-        assert.doesNotMatch(system, /DISABLED_RULE_TEXT|\{\{preset-prompts\}\}|charDescription/);
+        assert.match(system, /<prompt name="HTML Toggle">\nHTML_RULE for Nova\n<\/prompt>/);
+        assert.match(system, /<prompt name="Time Tracker">\nTIME_RULE for Nova\n<\/prompt>/);
+        assert.match(system, /NOTE_RULE for Nova/);
+        assert.ok(system.indexOf('HTML_RULE') < system.indexOf('Write in third person'));
+        assert.ok(system.indexOf('Write in third person') < system.indexOf('NOTE_RULE'));
+        assert.ok(system.indexOf('NOTE_RULE') < system.indexOf('TIME_RULE'));
+        assert.ok(mainMessages.some(message => message.role === 'user' && message.content === 'TIME_RULE for Nova'));
+        assert.doesNotMatch(system, /DISABLED_RULE_TEXT|DISABLED_AGENT_RULE|CONTINUE_AGENT_RULE|\{\{preset-prompts\}\}|charDescription/);
         if (effect === 'swipe') assert.match(system, /SWIPE_RULE_TEXT/);
         else assert.doesNotMatch(system, /SWIPE_RULE_TEXT/);
         assert.equal(f.saved().at(-1).mes, 'Checked output');
+        assert.deepEqual(readArtifact(f.directories, f.jobId, 'roleplay-prompt').presetPrompts.map(rule => rule.name),
+            ['HTML Toggle', 'Main Prompt', '2_floating_prompt', 'Time Tracker', ...(effect === 'swipe' ? ['Swipe Only'] : [])]);
     });
 }
 
@@ -711,6 +736,29 @@ test('a post-main review resumes its saved main result and records only the revi
     assert.equal(calls, 1);
     assert.equal(f.saved()[3].mes, 'Reviewed answer');
     assert.equal(f.saved()[3].extra.inChatAgentPreGenerationInterceptHistory.at(-1).timing, 'post-main-generation');
+});
+
+test('a resumed adherence check uses the frozen surrounding rules without reading a new preset', async t => {
+    const template = JSON.parse(fs.readFileSync(new URL('../public/scripts/extensions/in-chat-agents/templates/prompt-adherence-checker.json', import.meta.url)));
+    const f = prepared(t, [{ ...template, enabled: true, sourceTemplateId: template.id },
+        { id: 'before', phase: 'pre', prompt: 'FROZEN_BEFORE', injection: { position: 2, role: 1 } },
+        { id: 'review', prompt: 'REVIEW_EDIT', phase: 'pre', preProcess: {
+            mode: 'intercept', interceptTiming: 'post-main-generation', applyMode: 'replace', maxTokens: 64,
+        } }], { review: true });
+    const pending = await f.run({ generate: paid('main', () => 'Unreviewed answer'), generateAgent: () => assert.fail('review is required') });
+    assert.equal(pending.waiting, true);
+    const approval = getJob(f.directories, f.jobId).result.approval;
+    decideJobApproval(f.context(), { id: approval.id, proposalHash: approval.proposalHash, decision: 'continue' });
+    let checked = false;
+    await f.run({ promptBackend: () => assert.fail('the resumed reply must not read a new preset'),
+        generate: () => assert.fail('saved main result repeated'), generateAgent: paid('review', ({ messages }) => {
+            if (messages[0].content.includes('REVIEW_EDIT')) return 'Reviewed answer';
+            assert.match(messages[0].content, /<prompt name="before">\nFROZEN_BEFORE\n<\/prompt>/);
+            checked = true;
+            return 'Checked answer';
+        }) });
+    assert.equal(checked, true);
+    assert.equal(f.saved().at(-1).mes, 'Checked answer');
 });
 
 test('Agent continuation rewrites the full selected answer while preserving every other swipe', async t => {

@@ -4,6 +4,7 @@ import { injectChatPromptDepth } from '../../public/scripts/chat-prompt-depth.js
 import { roleplayError } from '../roleplay-store.js';
 import { buildRoleplayPromptExtensions, insertWorldInfoExamples, roleplayEffectTrigger } from './roleplay-prompt.js';
 import { mergeChatPresetSettings } from '../../public/scripts/chat-preset-request.js';
+import { capturePresetPrompts } from '../../public/scripts/extensions/in-chat-agents/agent-context-macros.js';
 
 const roles = ['system', 'user', 'assistant'];
 const fail = message => { throw roleplayError('ROLEPLAY_INVALID', message, 409); };
@@ -83,6 +84,12 @@ export async function assembleRoleplayChatPrompt(history, snapshot, material, wo
     const absolute = prompts.filter(prompt => prompt.injection_position === 1);
     const main = prompts.find(prompt => prompt.identifier === 'main');
     const relative = extensions.filter(prompt => prompt.position !== 1).sort((a, b) => a.key.localeCompare(b.key));
+    const beforeMain = relative.filter(prompt => prompt.position === 2);
+    const afterMain = relative.filter(prompt => prompt.position === 0);
+    const presetPrompts = capturePresetPrompts(controls, trigger, { preparedPrompts: prompts,
+        beforeMain: main ? main.injection_position === 1 ? beforeMain : [...beforeMain].reverse() : [],
+        afterMain: main ? main.injection_position === 1 ? [...afterMain].reverse() : afterMain : [],
+    });
     if (main?.injection_position === 1) {
         for (const prompt of relative) {
             const index = absolute.indexOf(main);
@@ -158,7 +165,7 @@ export async function assembleRoleplayChatPrompt(history, snapshot, material, wo
     const bias = effect === 'continue' ? '' : render(savedBias || defaultBias || '');
     if (bias.trim()) result.push({ role: 'assistant', content: bias });
     result.push(...control);
-    if (!controls.squash_system_messages) return { messages: appendAutoAppendReasoningInstruction(result, { ...controls, chat_completion_source: material.source }, material.profile?.model, trigger), exampleCount: exampleBlocks.length };
+    if (!controls.squash_system_messages) return { messages: appendAutoAppendReasoningInstruction(result, { ...controls, chat_completion_source: material.source }, material.profile?.model, trigger), exampleCount: exampleBlocks.length, presetPrompts };
     const messages = [];
     let previous;
     for (const message of result) {
@@ -171,5 +178,5 @@ export async function assembleRoleplayChatPrompt(history, snapshot, material, wo
             previous = merge ? copy : null;
         }
     }
-    return { messages: appendAutoAppendReasoningInstruction(messages, { ...controls, chat_completion_source: material.source }, material.profile?.model, trigger), exampleCount: exampleBlocks.length };
+    return { messages: appendAutoAppendReasoningInstruction(messages, { ...controls, chat_completion_source: material.source }, material.profile?.model, trigger), exampleCount: exampleBlocks.length, presetPrompts };
 }
