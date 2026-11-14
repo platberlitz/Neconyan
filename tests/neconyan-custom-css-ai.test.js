@@ -104,12 +104,70 @@ describe('Neconyan Custom CSS AI helper', () => {
         const powerUser = fs.readFileSync(new URL('../public/scripts/power-user.js', import.meta.url), 'utf8');
 
         expect(system.content).toContain(':root[data-sb-surface-tone="light"]');
-        expect(system.content).toMatch(/data-neconyan-calico-tone="light"\] or "dark" matches only the stock Calico/);
+        expect(system.content).toContain('primary and secondary accent edits are ignored for this match');
+        expect(system.content).toContain('Nonempty Custom CSS makes that flag "custom"');
+        expect(system.content).toContain('These attributes follow theme settings, not a measurement of your generated CSS');
         expect(system.content).not.toContain('custom accents use data-neconyan-accent="custom"');
+        expect(powerUser).toContain('const blurChannels = parseColorChannels(power_user.blur_tint_color)');
+        expect(powerUser).toContain('const accentKeys = [\'quote_text_color\', \'underline_text_color\']');
+        expect(powerUser).toContain('themeValuesMatch(appliedDarkCalico, power_user, accentKeys)');
+        expect(powerUser).toContain('themeValuesMatch(appliedLightCalico, power_user, accentKeys)');
+        expect(powerUser).toMatch(/function getLegacyThemeValueKeys\(theme\) \{[\s\S]*?\.\.\.LEGACY_THEME_EFFECT_KEYS,[\s\S]*?'custom_css'/);
         expect(powerUser).toMatch(/dataset\.sbSurfaceTone = isLightSurface \? 'light' : 'dark'/);
         expect(powerUser).toMatch(/dataset\.sbTextTone = /);
         expect(powerUser).toMatch(/dataset\.neconyanCalicoTone = isDarkCalico \? 'dark' : isLightCalico \? 'light' : 'custom'/);
         expect(powerUser).toMatch(/dataset\.neconyanAccent = isThemeAccent \? 'theme' : 'custom'/);
+    });
+
+    test('names the actual settings and character containers rather than guessing from their side', async () => {
+        const { helper } = await importHelper();
+        const [system] = helper.buildCustomCssAIMessages({ instruction: 'Restyle Appearance settings', paletteSnapshot: '' });
+        const tabsSource = fs.readFileSync(new URL('../public/scripts/neconyan-tabs.js', import.meta.url), 'utf8');
+        const indexHtml = fs.readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+        const shellRoots = [...tabsSource.matchAll(/rootPanelId: '([^']+)'/g)].map(match => match[1]);
+
+        expect(shellRoots).toEqual(['left-nav-panel', 'user-settings-block']);
+        for (const id of [...shellRoots, 'right-nav-panel', 'form_sheld', 'send_form', 'send_textarea']) {
+            expect(indexHtml).toContain(`id="${id}"`);
+            expect(system.content).toContain(`#${id}`);
+        }
+        expect(system.content).toContain('#user-settings-block holds settings including Appearance');
+        expect(system.content).toContain('#right-nav-panel holds Characters and the character editor');
+        expect(system.content).toContain('configurable #sb-topbar-title');
+        expect(system.content).not.toContain('top controls and current model');
+    });
+
+    test('covers the real Chat Style body classes and their additional layout breakpoint', async () => {
+        const { helper } = await importHelper();
+        const [system] = helper.buildCustomCssAIMessages({ instruction: 'Adjust Echo avatars', paletteSnapshot: '' });
+        const powerUser = fs.readFileSync(new URL('../public/scripts/power-user.js', import.meta.url), 'utf8');
+        const chatStylesCss = fs.readFileSync(new URL('../public/css/neconyan-chat-styles.css', import.meta.url), 'utf8');
+        const definitions = powerUser.match(/const CHAT_STYLE_BODY_CLASSES = Object\.freeze\(\{([\s\S]*?)\n\}\);/)[1];
+        const classSets = [...definitions.matchAll(/\[chat_styles\.\w+\]: '([^']+)'/g)].map(match => match[1].split(' '));
+
+        expect(classSets).toHaveLength(13);
+        for (const className of new Set(classSets.flat())) {
+            expect(system.content).toContain(`.${className}`);
+        }
+        expect(chatStylesCss).toContain('@media screen and (max-width: 1000px)');
+        expect(system.content).toContain('max-width: 1000px');
+        expect(system.content).toContain('body.neconyan[data-neconyan-chat-mode="roleplay"]');
+        expect(system.content).toContain('avatar columns, message alignment and swipe controls');
+    });
+
+    test('accounts for the Custom CSS insertion point and important declarations in late styles', async () => {
+        const { helper } = await importHelper();
+        const [system] = helper.buildCustomCssAIMessages({ instruction: 'Adjust message spacing', paletteSnapshot: '' });
+        const powerUser = fs.readFileSync(new URL('../public/scripts/power-user.js', import.meta.url), 'utf8');
+        const chatStylesCss = fs.readFileSync(new URL('../public/css/neconyan-chat-styles.css', import.meta.url), 'utf8');
+
+        expect(powerUser).toContain('var styleId = \'custom-style\'');
+        expect(powerUser).toContain('document.head.appendChild(style)');
+        expect(powerUser).toContain('ensureNativeChatStyleStylesheet()');
+        expect(chatStylesCss).toContain('!important');
+        expect(system.content).toContain('style#custom-style');
+        expect(system.content).toContain('sheets can load later');
+        expect(system.content).toContain('A normal declaration cannot beat !important or a normal inline style just by adding IDs');
     });
 
     test('covers every shell style in the catalogue and scopes the stage shells', async () => {
@@ -258,6 +316,7 @@ describe('Neconyan Custom CSS AI helper', () => {
         const { CUSTOM_CSS_AI_PALETTE_VARIABLES } = await import('../public/scripts/neconyan-custom-css-core.js');
         const [system] = helper.buildCustomCssAIMessages({ instruction: 'Larger chat text', paletteSnapshot: '' });
         const powerUser = fs.readFileSync(new URL('../public/scripts/power-user.js', import.meta.url), 'utf8');
+        const coreCss = fs.readFileSync(new URL('../public/style.css', import.meta.url), 'utf8');
         const roles = powerUser.match(/const GOOGLE_FONT_ROLES = Object\.freeze\(\{([\s\S]*?)\n\}\);/)[1];
         const variables = [...roles.matchAll(/cssVariable: '([^']+)'/g)].map(match => match[1]);
 
@@ -268,6 +327,8 @@ describe('Neconyan Custom CSS AI helper', () => {
         }
         expect(system.content).toContain('var(--sb-font-chat, var(--mainFontFamily))');
         expect(system.content).toContain('four independently selected font roles');
+        expect(coreCss).toContain('--mainFontSize: calc(var(--fontScale) * 15px)');
+        expect(system.content).toContain('The default --mainFontSize is calc(var(--fontScale) * 15px), so apply the scale once');
     });
 
     test('keeps the contrast-matched primary fill through hover and active states', async () => {
