@@ -81,6 +81,7 @@
 - PR #671 (2026-11-14) `feat(presets): show chat history tokens in the summary`
 - PR #672 (2026-11-14) `feat(scratchpad): support image editing with compatible providers`
 - PR #673 (2026-11-14) `feat(agents): rerun agents from the saved-reply warning`
+- PR #674 (2026-11-14) `fix(mewmory): make fallbacks work, add prefills and settings search`
 
 ## v1.5.4
 
