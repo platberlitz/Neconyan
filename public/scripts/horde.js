@@ -10,7 +10,7 @@ import {
 } from '../script.js';
 import { SECRET_KEYS, writeSecret } from './secrets.js';
 import { delay } from './utils.js';
-import { isMobile } from './RossAscends-mods.js';
+import { createSelectPicker } from './select-picker.js';
 import { autoSelectInstructPreset } from './instruct-mode.js';
 import { t } from './i18n.js';
 import { callGenericPopup, POPUP_TYPE } from './popup.js';
@@ -372,52 +372,28 @@ export function isHordeGenerationNotAllowed() {
     return false;
 }
 
-function getHordeModelTemplate(option) {
-    const model = models.find(x => x.name === option?.element?.value);
+// The models repo sends HTML in its metadata; the picker shows it as plain text.
+function stripHordeModelHtml(html) {
+    return new DOMParser().parseFromString(String(html || ''), 'text/html').body.textContent?.trim() || '';
+}
 
-    if (!option.id || !model) {
-        console.debug('No model found for option', option, option?.element?.value);
-        console.debug('Models', models);
-        return option.text;
-    }
+function getHordeModelPickerTitle(option) {
+    const model = models.find(x => x.name === option.value);
+    if (!model) return option.label;
+    const displayName = stripHordeModelHtml(model.display_name || model.name).replace(/.*\//g, '') || model.name;
+    return model.tags?.includes('popular') ? `★ ${displayName}` : displayName;
+}
 
-    const strip = html => {
-        const tmp = document.createElement('DIV');
-        tmp.innerHTML = html || '';
-        return tmp.textContent || tmp.innerText || '';
-    };
-
-    // how much do we trust the metadata from the models repo? about this much
-    const displayName = strip(model.display_name || model.name).replace(/.*\//g, '');
-    const description = strip(model.description);
-    const tags = model.tags ? model.tags.map(strip) : [];
-    const url = strip(model.url);
-    const style = strip(model.style);
-
-    const workerInfo = hordeModelQueueStateString(model);
-    const isPopular = model.tags?.includes('popular');
-    const descriptionDiv = description ? `<div class="horde-model-description">${description}</div>` : '';
-    const tagSpans = tags.length > 0 &&
-        `${tags.map(tag => `<span class="tag tag_name">${tag}</span>`).join('')}</span>` || '';
-
-    const modelDetailsLink = url && `<a href="${url}" target="_blank" rel="noopener noreferrer" class="model-details-link fa-solid fa-circle-question"> </a>`;
-    const capitalize = s => s ? s[0].toUpperCase() + s.slice(1) : '';
-    const innerContent = [
-        `<strong>${displayName}</strong> ${modelDetailsLink}`,
-        style ? `${capitalize(style)}` : '',
-        tagSpans ? `<span class="tags tags_inline inline-flex margin-r2">${tagSpans}</span>` : '',
-    ].filter(Boolean).join(' | ');
-
-    return $((`
-        <div class="flex-container flexFlowColumn">
-            <div>
-                ${isPopular ? '<span class="fa-fw fa-solid fa-star" title="Popular"></span>' : ''}
-                ${innerContent}
-            </div>
-            ${descriptionDiv}
-            <div><small>${workerInfo}</small></div>
-        </div>
-    `));
+function getHordeModelPickerDetails(option) {
+    const model = models.find(x => x.name === option.value);
+    if (!model) return '';
+    const style = stripHordeModelHtml(model.style);
+    const tags = (model.tags || []).map(stripHordeModelHtml).filter(Boolean);
+    return [
+        [style && style[0].toUpperCase() + style.slice(1), ...tags].filter(Boolean).join(', '),
+        stripHordeModelHtml(model.description),
+        hordeModelQueueStateString(model),
+    ].filter(Boolean).join(' · ');
 }
 
 export function initHorde() {
@@ -468,20 +444,13 @@ export function initHorde() {
     $('#horde_refresh').on('click', () => getHordeModels(true));
     $('#horde_kudos').on('click', showKudos);
 
-    // Not needed on mobile
-    if (!isMobile()) {
-        const apiDropdownParent = $('#rm_api_block');
-        $('#horde_model').select2({
-            dropdownParent: apiDropdownParent.length ? apiDropdownParent : $(document.body),
-            width: '100%',
-            placeholder: t`Select Horde models`,
-            allowClear: true,
-            closeOnSelect: false,
-            templateSelection: function (data) {
-                // Customize the pillbox text by shortening the full text
-                return data.id;
-            },
-            templateResult: getHordeModelTemplate,
+    const modelSelect = document.getElementById('horde_model');
+    if (modelSelect instanceof HTMLSelectElement) {
+        createSelectPicker(modelSelect, {
+            labels: () => ({ title: t`Models`, subtitle: t`AI Horde`, search: t`Search models`, placeholder: t`Select Horde models` }),
+            rowLabel: getHordeModelPickerTitle,
+            describe: getHordeModelPickerDetails,
+            selectionLabel: option => option.value,
         });
     }
 }

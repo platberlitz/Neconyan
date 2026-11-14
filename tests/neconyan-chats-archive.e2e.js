@@ -159,7 +159,6 @@ test('caps borrowed frames, dropdowns and backup previews without changing singl
             <select class="text_pole" multiple><option>First</option><option>Second</option></select>
             <div id="chat"><textarea class="edit_textarea">Editing a reply</textarea></div>
             <div class="select2-container--default"><div class="select2-dropdown">First result<br>Second result</div></div>
-            <div id="nanogpt_form"><div class="select2-selection--multiple">First provider<br>Second provider</div></div>
             <div class="chatBackupPreviewName">Backup preview</div>
             <div class="chatBackupPreviewMessages">First message<br>Second message</div>
         </main>`;
@@ -170,12 +169,12 @@ test('caps borrowed frames, dropdowns and backup previews without changing singl
             const radiusOf = selector => parseFloat(getComputedStyle(root.querySelector(selector)).borderTopLeftRadius);
             return {
                 panels: ['div.text_pole', 'textarea.text_pole', 'select[multiple]', '.edit_textarea',
-                    '.select2-dropdown', '.select2-selection--multiple', '.chatBackupPreviewName'].map(radiusOf),
+                    '.select2-dropdown', '.chatBackupPreviewName'].map(radiusOf),
                 backup: parseFloat(getComputedStyle(root.querySelector('.chatBackupPreviewMessages')).borderBottomLeftRadius),
                 controls: ['input', 'select:not([multiple])'].map(radiusOf),
             };
         });
-        expect(shapes.panels).toEqual(Array(7).fill(Math.min(parseFloat(radius), 18)));
+        expect(shapes.panels).toEqual(Array(6).fill(Math.min(parseFloat(radius), 18)));
         expect(shapes.backup).toBe(Math.min(parseFloat(radius), 18));
         expect(shapes.controls).toEqual(Array(2).fill(parseFloat(radius)));
     }

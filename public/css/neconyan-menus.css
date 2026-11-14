@@ -334,7 +334,9 @@ body.neconyan .popup .swipe_picker_hint {
 
     body.neconyan .sb-chat-picker button.sb-chat-picker-row:hover,
     body.neconyan .sb-chat-picker button.sb-chat-picker-close:hover,
-    body.neconyan .sb-chat-picker button.sb-chat-picker-retry:hover {
+    body.neconyan .sb-chat-picker button.sb-chat-picker-retry:hover,
+    body.neconyan .sb-chat-picker button.sb-select-picker-clear:hover,
+    body.neconyan .sb-chat-picker button.sb-select-picker-row-action:hover {
         background: color-mix(in srgb, var(--neco-ginger) 10%, var(--neco-surface));
         border-color: var(--neco-ginger);
     }
@@ -658,7 +660,7 @@ body.neconyan .sb-chat-picker .sb-chat-picker-retry { flex-shrink: 0; padding: 8
 body.neconyan .sb-chat-picker :is(button, input):focus-visible { outline: 2px solid var(--neco-ginger); outline-offset: -2px; }
 .sb-chat-picker-status { margin: 0; font-size: 0.8125rem; color: var(--neco-muted); }
 body.neconyan .sb-chat-picker [hidden] { display: none; }
-/* A select shown as a button that opens the chat browser's list (Chat Completion presets). */
+/* A select shown as a button that opens the chat browser's list (presets, lorebooks, providers and similar lists). */
 body.neconyan select.sb-select-picker-source[hidden] { display: none; }
 body.neconyan .sb-select-picker-button {
     display: flex;
@@ -692,3 +694,15 @@ body.neconyan .sb-select-picker-button:disabled { cursor: default; opacity: 0.6;
 .sb-select-picker-value { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 600; }
 body.neconyan .sb-select-picker-button > i { flex-shrink: 0; font-size: 0.75rem; color: var(--neco-muted); }
 body.neconyan .sb-select-picker-button[aria-expanded="true"] > i { rotate: 180deg; color: var(--neco-ginger); }
+body.neconyan .sb-select-picker-button.is-placeholder .sb-select-picker-value { font-weight: 400; color: var(--neco-muted); }
+.sb-select-picker-group { margin: 4px 2px 8px; font-size: 0.75rem; font-weight: 700; color: var(--neco-muted); overflow-wrap: anywhere; }
+.sb-select-picker-group:first-child { margin-top: 0; }
+.sb-select-picker-group.is-divider { height: 0; margin: 4px 0 10px; border-top: 1px solid var(--neco-border); }
+.sb-select-picker-group.is-divider:first-child { display: none; }
+.sb-select-picker-row-wrap { display: flex; align-items: stretch; gap: 6px; margin: 0 0 6px; }
+body.neconyan .sb-select-picker-row-wrap > .sb-chat-picker-row { flex: 1; min-width: 0; margin: 0; }
+body.neconyan .sb-chat-picker .sb-select-picker-row-action { flex: 0 0 44px; display: grid; place-items: center; padding: 0; color: var(--neco-muted); }
+body.neconyan .sb-chat-picker .sb-select-picker-clear { flex-shrink: 0; padding: 8px 12px; font-size: 0.8125rem; }
+.sb-select-picker-check { flex-shrink: 0; margin-top: 2px; font-size: 0.9375rem; color: var(--neco-muted); }
+.sb-chat-picker-row.is-current .sb-select-picker-check { color: var(--neco-ink); }
+.sb-select-picker .sb-chat-picker-row-meta { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow-wrap: anywhere; }

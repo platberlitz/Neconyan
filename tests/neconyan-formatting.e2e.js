@@ -110,10 +110,13 @@ for (const phone of [true, false]) {
 
                 // Selecting a template still reaches its original editor and export action.
                 const presets = page.locator('#sysprompt_select');
+                await expect(presets).toBeHidden();
                 const options = await presets.locator('option').evaluateAll(nodes => nodes.map(node => node.value));
                 expect(options.length).toBeGreaterThan(1);
                 const current = await presets.inputValue();
-                await presets.selectOption(options.find(value => value !== current));
+                await page.locator('#sb-sysprompt_select-picker-button').click();
+                await page.locator('#sb-sysprompt_select-picker .sb-chat-picker-row:not(.is-current)').first().click();
+                await expect(presets).not.toHaveValue(current);
                 await expect(page.locator('#sysprompt_content')).not.toHaveValue('');
                 const download = page.waitForEvent('download');
                 await page.locator('[data-preset-manager-export="sysprompt"]').click();

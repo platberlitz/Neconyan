@@ -95,6 +95,7 @@ import { renderTemplateAsync } from './templates.js';
 import { SlashCommandEnumValue } from './slash-commands/SlashCommandEnumValue.js';
 import { callGenericPopup, Popup, POPUP_RESULT, POPUP_TYPE } from './popup.js';
 import { t, translate, getCurrentLocale } from './i18n.js';
+import { createSelectPicker } from './select-picker.js';
 import { attachModelListSearch, focusModelListSearch, syncModelListSearchValue } from './model-list-search.js';
 import { formatModelLabelWithSource } from './model-family.js';
 import { extension_settings } from './extensions.js';
@@ -315,14 +316,8 @@ const MODEL_ID_SEARCH_CONTROLS = [
 ];
 
 const INLINE_SELECT_PICKER_CONTROLS = [
-    { source: 'nanogpt-allowed-providers', select: '#nanogpt_allowed_providers', label: 'Allowed providers', multiple: true },
-    { source: 'nanogpt-ignored-providers', select: '#nanogpt_ignored_providers', label: 'Ignored providers', multiple: true },
     { source: 'openrouter-sort-models', select: '#openrouter_sort_models', label: 'OpenRouter model sorting' },
-    { source: 'openrouter-providers-chat', select: '#openrouter_providers_chat', label: 'OpenRouter providers', multiple: true },
-    { source: 'openrouter-quantizations-chat', select: '#openrouter_quantizations_chat', label: 'OpenRouter quantizations', multiple: true },
     { source: 'openrouter-middleout', select: '#openrouter_middleout', label: 'OpenRouter middle-out transform' },
-    { source: 'openrouter-providers-text', select: '#openrouter_providers_text', label: 'OpenRouter providers', multiple: true },
-    { source: 'openrouter-quantizations-text', select: '#openrouter_quantizations_text', label: 'OpenRouter quantizations', multiple: true },
 ];
 
 // Neconyan: touch browsers can open Select2 search as a keyboard-only field.
@@ -2306,16 +2301,6 @@ function appendOpenAIModelEntry($container, entry, favoriteValues = new Set()) {
     }
 }
 
-function getApiSelect2DropdownParent() {
-    const apiDropdownParent = $('#rm_api_block');
-    return apiDropdownParent.length ? apiDropdownParent : $(document.body);
-}
-
-function getPromptManagerSelect2DropdownParent() {
-    const promptManagerPopup = $('#completion_prompt_manager_popup');
-    return promptManagerPopup.length ? promptManagerPopup : getApiSelect2DropdownParent();
-}
-
 function closeModelSelectPickerMenus(exceptMenu = null) {
     document.querySelectorAll('.sb-model-id-picker-menu').forEach(menu => {
         if (menu !== exceptMenu) {
@@ -2548,8 +2533,6 @@ function toggleInlineSelectPickerOption(select, value) {
             if (option.value === value) {
                 if (!option.disabled || option.selected) {
                     option.selected = !option.selected;
-                    // Neconyan: match desktop OpenRouter routing priority, newest selection last.
-                    if (option.selected && select.classList.contains('openrouter_providers')) select.append(option);
                 }
                 break;
             }
@@ -2656,16 +2639,6 @@ function bindInlineSelectPickerSelect(select, control) {
     select.dataset.sbInlineSelectPickerBound = 'true';
     select.classList.add('sb-inline-select-picker-control');
 
-    // Neconyan: repaint an open provider menu after async updates without saving settings.
-    if (select.classList.contains('openrouter_providers') || ['nanogpt_allowed_providers', 'nanogpt_ignored_providers'].includes(select.id)) {
-        $(select).on('change.select2', () => {
-            const menu = document.getElementById(`${select.id}_menu`);
-            if (shouldUseInlineModelSelectPicker() && menu && !menu.hidden) {
-                openInlineSelectPicker(select, { ...control, forceOpen: true });
-            }
-        });
-    }
-
     const openPicker = event => {
         if (!shouldUseInlineModelSelectPicker()) {
             return;
@@ -2707,7 +2680,7 @@ function observeInlineSelectPickerReplacements() {
     if (inlineSelectPickerReplacementsObserver || !(document.body instanceof HTMLElement)) {
         return;
     }
-    // The eight inline picker selects are static in the settings panel. Watch
+    // The two inline picker selects are static in the settings panel. Watch
     // that panel for replacements instead of every body mutation during chat.
     const container = document.getElementById('left-nav-panel') ?? document.getElementById('openai_settings');
     if (!(container instanceof HTMLElement)) {
@@ -6864,8 +6837,7 @@ function updateNanoGptProviderControls() {
                 select.add(new Option(provider, provider));
             }
         }
-        $(select).val(providers).trigger('change.select2');
-        $(`#${key}_picker`).text(Array.from(select.selectedOptions, option => option.text).join(', ') || t`Select providers`);
+        $(select).val(providers);
     }
     $('#nanogpt_payg_override').prop('checked', oai_settings.nanogpt_payg_override === true);
     $('#nanogpt_service_tier').val(oai_settings.nanogpt_service_tier);
@@ -11040,12 +11012,10 @@ export function initOpenAI() {
         });
     }
 
-    if (!shouldUseInlineModelSelectPicker()) {
-        $('#completion_prompt_manager_popup_entry_form_injection_trigger').select2({
-            dropdownParent: getPromptManagerSelect2DropdownParent(),
-            placeholder: t`All types (default)`,
-            width: '100%',
-            closeOnSelect: false,
+    const injectionTriggerSelect = document.getElementById('completion_prompt_manager_popup_entry_form_injection_trigger');
+    if (injectionTriggerSelect instanceof HTMLSelectElement) {
+        createSelectPicker(injectionTriggerSelect, {
+            labels: () => ({ title: t`Triggers`, search: t`Search...`, placeholder: t`All types (default)` }),
         });
     }
 

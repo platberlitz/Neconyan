@@ -4383,23 +4383,11 @@ grammarly-extension {
     display: inline-block;
 }
 
-#horde_model {
-    height: 150px;
-}
-
 .horde_model_title {
     display: flex;
     flex-direction: row;
     align-items: center;
     column-gap: 20px;
-}
-
-.horde-model-description {
-    -webkit-line-clamp: 3;
-    line-clamp: 3;
-    font-size: 0.9em;
-    overflow: hidden;
-    text-overflow: ellipsis;
 }
 
 .drag-handle {

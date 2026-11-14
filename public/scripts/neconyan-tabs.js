@@ -54,11 +54,6 @@ import {
     readBottomChatBarLayout,
     writeBottomChatBarLayout,
 } from './neconyan-bottom-bar-layout.js';
-import {
-    MODEL_FILTER_BOTH_VIEWPORTS_SELECTORS,
-    MODEL_FILTER_PHONE_ONLY_SELECTORS,
-    computeVisibleModelOptions,
-} from './neconyan-model-filter.js';
 import { getReasoningEffortShortLabel, isReasoningEffortSupported } from './neconyan-reasoning-effort.js';
 import {
     mountNeconyanCharacterWorkspace,
@@ -533,7 +528,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261114-mewmory-search';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261114-select-pickers';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -20446,103 +20441,28 @@ function syncDesktopShellSizingAfterWidthChange() {
     syncDesktopShellSizing();
 }
 
-function reinitSelect2AfterShell() {
-    if (isMobileViewport()) {
-        return;
-    }
-
-    // On desktop, reinitialize Select2 after DOM reparenting
-    const apiDropdownParent = $('#rm_api_block');
-    const select2Defaults = {
-        dropdownParent: apiDropdownParent.length ? apiDropdownParent : $(document.body),
-        minimumResultsForSearch: 0,
-    };
-    const selectors = ['.openrouter_quantizations', '.openrouter_providers', '#nanogpt_allowed_providers', '#nanogpt_ignored_providers'];
-    for (const selector of selectors) {
-        const $el = $(selector);
-        if ($el.length && $el.data('select2')) {
-            try {
-                const config = $el.data('select2').options.options;
-                $el.select2('destroy');
-                $el.select2({ ...select2Defaults, ...config });
-            } catch {
-                // Element may not have been initialized yet
-            }
-        }
-    }
-}
-
-function injectModelFilterInput($select) {
-    if (!$select.length || $select.prev('.sb-model-filter').length) {
-        return;
-    }
-
-    const select = $select[0];
-    const input = document.createElement('input');
-    input.type = 'search';
-    input.className = 'sb-model-filter text_pole';
-    input.placeholder = t`Filter models...`;
-    input.setAttribute('aria-label', t`Filter models`);
-
-    const snapshotModelOptions = () => Array.from(select.options).map(option => ({
-        value: option.value,
-        text: option.textContent,
-    }));
-
-    let masterOptions = snapshotModelOptions();
-
-    // Neconyan: backends replace the option list when their models finish loading, so re-snapshot on
-    // external DOM changes instead of freezing the boot-time list (which only holds the placeholder).
-    const observer = new MutationObserver(() => {
-        masterOptions = snapshotModelOptions();
-        applyFilter();
-    });
-
-    const applyFilter = () => {
-        const currentValue = select.value;
-        const selectedValues = new Set(Array.from(select.selectedOptions, option => option.value));
-        const visibleOptions = computeVisibleModelOptions(masterOptions, input.value, {
-            currentValue,
-            selectedValues: [...selectedValues],
-            multiple: select.multiple,
-        });
-
-        observer.disconnect();
-        select.innerHTML = '';
-        for (const option of visibleOptions) {
-            const element = document.createElement('option');
-            element.value = option.value;
-            element.textContent = option.text;
-            element.selected = select.multiple ? selectedValues.has(option.value) : option.value === currentValue;
-            select.appendChild(element);
-        }
-        observer.observe(select, { childList: true });
-    };
-
-    input.addEventListener('input', applyFilter);
-    observer.observe(select, { childList: true });
-    $select.before(input);
-}
-
-function installModelFilterInputs() {
-    const selectors = isMobileViewport()
-        ? [...MODEL_FILTER_BOTH_VIEWPORTS_SELECTORS, ...MODEL_FILTER_PHONE_ONLY_SELECTORS]
-        : MODEL_FILTER_BOTH_VIEWPORTS_SELECTORS;
-
-    for (const selector of selectors) {
-        injectModelFilterInput($(selector));
-    }
-}
-
-// The Chat Completion preset list opens the same searchable picker as the chat switcher.
-function installPresetPicker() {
-    const select = document.getElementById('settings_preset_openai');
-    if (!(select instanceof HTMLSelectElement)) return;
-    createSelectPicker(select, {
+// Preset and template lists open the same searchable picker as the chat switcher.
+const PRESET_PICKERS = [
+    { id: 'settings_preset', labels: () => ({ title: t`Choose a preset`, subtitle: t`KoboldAI`, search: t`Search presets` }) },
+    { id: 'settings_preset_novel', labels: () => ({ title: t`Choose a preset`, subtitle: t`NovelAI`, search: t`Search presets` }) },
+    {
+        id: 'settings_preset_openai',
         buttonId: 'sb-openai-preset-picker-button',
         panelId: 'sb-openai-preset-picker',
         labels: () => ({ title: t`Choose a preset`, subtitle: t`Chat Completion`, search: t`Search presets` }),
-    });
+    },
+    { id: 'settings_preset_textgenerationwebui', labels: () => ({ title: t`Choose a preset`, subtitle: t`Text Completion`, search: t`Search presets` }) },
+    { id: 'context_presets', labels: () => ({ title: t`Context Template`, search: t`Search templates` }) },
+    { id: 'instruct_presets', labels: () => ({ title: t`Instruct Template`, search: t`Search templates` }) },
+    { id: 'sysprompt_select', labels: () => ({ title: t`System Prompt`, search: t`Search templates` }) },
+    { id: 'reasoning_select', labels: () => ({ title: t`Reasoning Template`, search: t`Search templates` }) },
+];
+
+function installPresetPickers() {
+    for (const { id, ...options } of PRESET_PICKERS) {
+        const select = document.getElementById(id);
+        if (select instanceof HTMLSelectElement) createSelectPicker(select, options);
+    }
 }
 
 const BOTTOM_CHAT_BAR_UNITS = [
@@ -22007,13 +21927,7 @@ function initAll() {
         syncDesktopShellSizing();
     });
 
-    // Reinitialize Select2 widgets after shell reparents DOM elements.
-    // Select2 bindings break when elements are moved in the DOM.
-    reinitSelect2AfterShell();
-
-    // One filter box above every model dropdown that has no search of its own.
-    installModelFilterInputs();
-    installPresetPicker();
+    installPresetPickers();
 
     // Group Advanced Formatting sections into collapsible drawers
     groupAdvancedFormattingIntoDrawers();

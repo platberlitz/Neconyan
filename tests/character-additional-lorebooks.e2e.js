@@ -34,18 +34,18 @@ for (const device of ['phone', 'tablet', 'desktop']) {
         await openPicker(page, account.avatar);
         const dialog = page.locator('dialog[open]');
         const select = dialog.locator('.character_extra_world_info_selector');
-        const picker = dialog.locator('.select2-selection--multiple');
+        const trigger = dialog.locator('.sb-select-picker-button');
+        const panel = dialog.locator('.sb-select-picker');
         const press = locator => device === 'desktop' ? locator.click() : locator.tap();
-        if (await picker.count()) await press(picker);
-        else await select.click();
+        await expect(select).toBeHidden();
+        await expect(trigger).toHaveClass(/is-placeholder/);
+        await press(trigger);
+        await expect(panel).toBeVisible();
         if (process.env.NECONYAN_PICKER_SCREENSHOTS) {
             await page.screenshot({ path: `../screenshots/additional-lorebooks/${device}-${process.env.NECONYAN_PICKER_SCREENSHOTS}.png` });
         }
-        await expect(picker).toBeVisible();
-        const results = dialog.locator('.sb-world-info-select2-dropdown');
-        await expect(results).toBeVisible();
-        await expect(results.getByRole('option', { name: '-- Lorebooks not found --', exact: true })).toHaveCount(0);
-        const geometry = await results.evaluate(element => {
+        await expect(panel.getByRole('button', { name: '-- Lorebooks not found --', exact: true })).toHaveCount(0);
+        const geometry = await panel.evaluate(element => {
             const rect = element.getBoundingClientRect();
             const x = rect.left + rect.width / 2;
             const y = rect.top + Math.min(rect.height / 2, 30);
@@ -58,13 +58,16 @@ for (const device of ['phone', 'tablet', 'desktop']) {
         expect(geometry.top).toBeGreaterThanOrEqual(0);
         expect(geometry.bottom).toBeLessThanOrEqual(geometry.height);
         expect(geometry.reachable).toBe(true);
-        const search = picker.locator('.select2-search__field');
+        const search = panel.locator('.sb-chat-picker-search');
         await search.fill('Birch');
-        await press(results.getByRole('option', { name: books[1], exact: true }));
+        await press(panel.getByRole('button', { name: books[1], exact: true }));
         await search.fill('Cedar');
-        await press(results.getByRole('option', { name: books[2], exact: true }));
+        await press(panel.getByRole('button', { name: books[2], exact: true }));
         await expect(select).toHaveValues(['1', '2']);
+        await expect(panel).toBeVisible();
+        await expect(trigger).toContainText(`${books[1]}, ${books[2]}`);
         await dialog.locator('h3').click();
+        await expect(panel).toHaveCount(0);
         await dialog.locator('.popup-button-ok').click();
         const savedBooks = async () => {
             const settings = JSON.parse((await account.post('/api/settings/get')).settings);
@@ -75,8 +78,10 @@ for (const device of ['phone', 'tablet', 'desktop']) {
         await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'));
         await openPicker(page, account.avatar);
         await expect(select).toHaveValues(['1', '2']);
-        await press(picker.locator('.select2-selection__clear'));
+        await press(trigger);
+        await press(panel.getByRole('button', { name: 'Clear', exact: true }));
         await expect(select).toHaveValues([]);
+        await expect(trigger).toHaveClass(/is-placeholder/);
         await dialog.locator('h3').click();
         await dialog.locator('.popup-button-ok').click();
         await expect.poll(savedBooks).toEqual([]);

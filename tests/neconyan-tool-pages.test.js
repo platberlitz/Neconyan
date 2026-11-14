@@ -389,7 +389,7 @@ describe('settings pages open as Neconyan pages with an assistant tour', () => {
         const steps = getToolTourSteps('presets');
         expect(steps.map(step => step.id)).toEqual(['welcome', 'choose', 'save', 'copy', 'files', 'parameters', 'linking', 'prompts', 'done']);
         expect(getToolTourSteps('presets', { isShown: () => false }).map(step => step.id)).toEqual(['welcome', 'choose', 'done']);
-        expect(steps.find(step => step.id === 'choose').targets).toEqual(expect.arrayContaining(['#settings_preset_openai', '#settings_preset_textgenerationwebui', '#settings_preset_novel', '#settings_preset']));
+        expect(steps.find(step => step.id === 'choose').targets).toEqual(expect.arrayContaining(['#sb-openai-preset-picker-button', '#sb-settings_preset_textgenerationwebui-picker-button', '#sb-settings_preset_novel-picker-button', '#sb-settings_preset-picker-button']));
         expect(steps.find(step => step.id === 'prompts').tab).toBe('#openai-tab-btn-prompts');
         expect(steps.find(step => step.id === 'parameters').tab).toBe('#openai-tab-btn-parameters');
         expect(steps.find(step => step.id === 'linking')).toMatchObject({ targets: ['#sb-openai-preset-linking'], tab: '#openai-tab-btn-parameters' });
