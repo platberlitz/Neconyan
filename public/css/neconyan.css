@@ -2738,6 +2738,9 @@ body.neconyan .ica--tpanel-history-entry {
     border: 1px solid var(--neco-border);
     background: var(--neco-surface);
 }
+body.neconyan .ica--companion-quick-history { gap: 4px 6px; }
+body.neconyan .ica--companion-quick-history > label { gap: 4px; }
+body.neconyan .ica--companion-quick-depth input.text_pole { width: 4.25em; padding-inline: 4px; }
 
 /* Reasoning ("Thought for N seconds") wears the panel look on every viewport:
    a quiet surface pill for the header and a bordered card with a ginger spine for the body. */
