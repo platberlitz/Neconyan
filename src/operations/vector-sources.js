@@ -4,6 +4,7 @@ import { roleplayHash, roleplayLease, readRoleplayFile, withRoleplayAccount } fr
 import { authoringEvidence } from '../authoring-store.js';
 import { roleplayChatPath } from '../generation/roleplay-source.js';
 import { createMacroEnvironment } from '../macros/index.js';
+import { captureEnhancedMacros } from '../macros/enhanced.js';
 import { captureLabChat, captureLabConnection, readLabSettings } from '../labs/sources.js';
 import { captureLabBookLocked } from '../labs/books.js';
 import { captureSavedTranslationPolicy } from '../generation/roleplay-translation.js';
@@ -125,7 +126,7 @@ export async function captureVectors(base, account, input, captured = {}) {
     const queryScope = input.action === 'query' ? input.queryScope : undefined;
     if (queryScope && !['chat', 'files', 'world'].includes(queryScope)) throw operationError('Choose a valid search source.', 400);
     const chat = captured.chat ?? (input.locator ? captureLabChat(base, account, input.locator) : null);
-    const macros = captured.macros ?? chat?.macros ?? { names: { user: settings.username || 'User', char: 'Character' }, character: {}, variables: {}, extra: {} };
+    const macros = captured.macros ?? chat?.macros ?? { macroEnhanced: captureEnhancedMacros(settings), names: { user: settings.username || 'User', char: 'Character' }, character: {}, variables: {}, extra: {} };
     const environment = createMacroEnvironment(macros);
     const sources = [];
     if (chat) sources.push({ relative: path.relative(base.directories.root, roleplayChatPath(base, chat.locator)),

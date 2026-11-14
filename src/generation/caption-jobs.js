@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { captureEnhancedMacros } from '../macros/enhanced.js';
 import { registerHandler } from '../jobs/runner.js';
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { admitRoleplayJob, applyRoleplayJobEffect, readRoleplayJobResult } from '../roleplay-jobs.js';
@@ -40,6 +41,7 @@ export function captureCaptionRequest(base, account, source, { avatar, mediaInde
             selection: [{ index, mediaIndex, imageIndex: 0 }], reviewedPrompt, reviewed });
         if (!captions) throw fail('Enable captions before accepting this operation.');
         const macros = { names: { char: card.name || path.parse(avatar).name, user: persona.name || settings.username || 'User' },
+            macroEnhanced: captureEnhancedMacros(settings, card.extensions, { personaAvatar: persona.evidence?.avatar, group: Boolean(source.locator.group) }),
             character: { description: text(card.description), personality: text(card.personality), scenario: text(card.scenario), persona: persona.description || '' },
             variables: { local: saved.records[0].chat_metadata?.variables ?? {}, global: settings.extension_settings?.variables?.global ?? {} },
             extra: { character: { ...card, avatar }, characterAvatar: avatar, chat: saved.records.slice(1), chatMetadata: saved.records[0].chat_metadata ?? {} } };

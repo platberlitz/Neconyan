@@ -26,11 +26,11 @@ export const STATEFUL_MACRO_NAMES = Object.freeze(['freeze', 'sticky', 'daily', 
 
 /** In-flight freeze/sticky/daily expansions, so content that contains its own
  *  key stops with a warning instead of looping. */
-const expanding = new Set();
+const stateExpanding = new Set();
 
 /** Test hook. */
 export function resetStateRecursion() {
-    expanding.clear();
+    stateExpanding.clear();
 }
 
 /** Stored values are saved only for a live macro call. */
@@ -41,6 +41,7 @@ function persist(mode) {
 }
 
 function guardedResolve(ctx, kind, key, rawContent) {
+    const expanding = ctx.env?.extra?.meExpanding ?? stateExpanding;
     const guardKey = `${kind}:${String(key).toLowerCase()}`;
     if (expanding.has(guardKey)) {
         ctx.warn(`{{${kind}}} "${key}" expands itself; expansion stopped.`);
@@ -250,7 +251,8 @@ export function registerStateMacros(safeRegister = defaultRegister) {
                 ctx.warn('{{listpick}}: the list is empty.');
                 return '';
             }
-            const chatSeed = String(SillyTavern.getContext().chatMetadata?.chat_id_hash ?? '');
+            const metadata = ctx.env?.extra?.chatMetadata ?? SillyTavern.getContext().chatMetadata;
+            const chatSeed = String(metadata?.chat_id_hash ?? '');
             return items[pickIndex(`${chatSeed}:${String(key ?? '')}`, items.length)];
         },
     });
@@ -281,9 +283,9 @@ export function registerStateMacros(safeRegister = defaultRegister) {
         returnType: 'integer',
         exampleUsage: ['{{chatdays}}'],
         handler: (ctx) => {
-            const liveCtx = SillyTavern.getContext();
+            const chat = ctx.env?.extra?.chat ?? SillyTavern.getContext().chat;
             const { state, chatOpen } = resolveMacroState(ctx.env);
-            let start = parseTimestamp(liveCtx.chat?.[0]?.send_date);
+            let start = parseTimestamp(chat?.[0]?.send_date);
             if (!Number.isFinite(start)) {
                 start = state?.counters?.firstSeenAt ?? NaN;
             }

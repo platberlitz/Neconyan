@@ -20,6 +20,7 @@ import { buildConversationPromptMessages, buildConversationSystemPrompt, getChar
 import { getConversationThreadKey } from '../endpoints/conversation-store.js';
 import { clamp, parsePositiveInt, unScopeConversationStorageKey } from '../endpoints/conversation-utils.js';
 import { captureChatProfile, captureGenerationBinding, getChatProfileContextLimit, resolveGenerationProfile } from './profiles.js';
+import { captureEnhancedMacros } from '../macros/enhanced.js';
 import { buildSavedConversationContext } from './conversation-context.js';
 import { activeCharacterRegexHash } from './active-regex.js';
 import { createMacroEnvironment } from '../macros/index.js';
@@ -367,6 +368,7 @@ export async function buildConversationParticipantSnapshot(request, current, tar
             || [...current.branch.messages].reverse().find(message => message.role !== 'system'),
         ),
         macros: {
+            macroEnhanced: captureEnhancedMacros(current.settings, character.extensions, { personaAvatar: target.personaId, group: Boolean(target.groupId) }),
             names: { user: userName, char: character.name, group: groupNames.join(', ') || character.name,
                 groupNotMuted: groupMembers.filter(member => !current.group.disabled_members?.includes(member.avatar)).map(member => member.name).join(', ') || character.name,
                 notChar: [...groupNames.filter(name => name !== character.name), userName].join(', ') },

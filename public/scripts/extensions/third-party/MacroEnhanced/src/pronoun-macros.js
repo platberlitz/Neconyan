@@ -173,7 +173,8 @@ export function clearOverride(subject, { source } = {}) {
 export function resolveSet(subject, { env, warn } = {}) {
     const { state } = resolveMacroState(env);
     const override = String(state?.pronouns?.[subject.key] ?? '').trim();
-    const spec = override || getStoredSpec(subject).trim();
+    const stored = env?.extra?.mePronouns ? String(env.extra.mePronouns[subject.key] ?? '') : getStoredSpec(subject);
+    const spec = override || stored.trim();
     const set = parsePronounSet(spec);
     if (!set) {
         warn?.(`"${spec}" is not a pronoun set. Use ${PRESET_HINT}. Falling back to ${DEFAULT_SPEC}.`);

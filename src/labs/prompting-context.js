@@ -1,4 +1,5 @@
 import { roleplayHash } from '../roleplay-store.js';
+import { captureEnhancedMacros } from '../macros/enhanced.js';
 import path from 'node:path';
 import { createPromptMediaContext, selectPromptMedia } from '../../public/scripts/prompt-media-policy.js';
 import { parseChatJsonl } from '../chat-recovery.js';
@@ -54,6 +55,7 @@ export function capturePromptingContext(base, account, pins, { maxTokens = 300, 
     const persona = selectSavedRoleplayPersona(settings, { locator: selected, records }, {}, avatar, base.directories);
     const names = { user: persona.name || settings.username || 'User', char: data.name || path.parse(avatar).name };
     const chat = { locator: selected, records, persona: { ...persona, name: names.user }, macros: {
+        macroEnhanced: captureEnhancedMacros(settings, data.extensions, { personaAvatar: persona.evidence?.avatar }),
         names, character: { ...data, persona: persona.description }, variables: { local: records[0].chat_metadata.variables ?? {},
             global: settings.extension_settings?.variables?.global ?? {} }, extra: { chat: records.slice(1), chatMetadata: records[0].chat_metadata },
     } };
@@ -97,6 +99,7 @@ export function capturePromptingContext(base, account, pins, { maxTokens = 300, 
         storyTemplate: power.context?.story_string ?? '', storyPosition: power.context?.story_string_position ?? 0,
         personaPosition: persona.position, personaDepth: persona.depth, personaRole: persona.role, promptVariables: chat.macros.variables,
         experimentalMacroEngine: Boolean(power.experimental_macro_engine), enhancedLoreMacros: pins.macroEnhanced !== 'off',
+        macroEnhanced: chat.macros.macroEnhanced,
         depthPrompt: { prompt: data.extensions?.depth_prompt?.prompt ?? '', depth: data.extensions?.depth_prompt?.depth ?? 4,
             role: data.extensions?.depth_prompt?.role ?? 'system' }, regex: scan.regex, noteScanEnabled: Boolean(note.allowWIScan),
         cfg: extensions.cfg ?? null, reasoningInPrompt: Boolean(power.reasoning?.add_to_prompts), reasoning: {

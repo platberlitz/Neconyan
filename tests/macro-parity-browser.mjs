@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { chromium } from './node_modules/playwright/index.mjs';
 import { modern, legacy } from './fixtures/macro-baseline.js';
+import { enhanced } from './fixtures/macro-enhanced-baseline.js';
 
 const browser = await chromium.launch();
 try {
@@ -13,7 +14,7 @@ try {
         await page.route('**/*', route => new URL(route.request().url()).origin === new URL(base).origin ? route.continue() : route.abort());
         await page.goto(base);
         await page.waitForFunction(() => globalThis.SillyTavern?.getContext().macros.registry.hasMacro('char'), null, { timeout: 90000 });
-        const result = await page.evaluate(async ({ modern, legacy }) => {
+        const result = await page.evaluate(async ({ modern, legacy, enhanced }) => {
             const { power_user } = await import('/scripts/power-user.js');
             const { evaluateMacros } = await import('/scripts/macros.js');
             const { withReadOnlyVariables } = await import('/scripts/variable-read-only.js');
@@ -26,12 +27,24 @@ try {
             const outputs = modern.map(([input]) => ctx.substituteParams(input, options));
             const env = ctx.macros.envBuilder.buildFromRawEnv({ content: '{{input}}', ...options });
             const capture = withReadOnlyVariables(() => ctx.substituteParams('{{incvar::probe}}{{getvar::probe}}', options));
+            const extension = await import('/scripts/extensions/third-party/MacroEnhanced/index.js');
+            const { emptyState } = await import('/scripts/extensions/third-party/MacroEnhanced/src/chat-state.js');
+            extension.init();
+            const local = Object.create(null);
+            const enhancedEnv = ctx.macros.envBuilder.buildFromRawEnv({ content: '', ...options });
+            Object.assign(enhancedEnv.extra, { meSandboxState: emptyState(), meLocalVariables: local,
+                mePronouns: { user: 'she/her', char: 'he/him' }, variables: { local: {
+                    get: name => local[name] ?? '', set: (name, value) => { local[name] = value; return value; },
+                    inc: name => { local[name] = Number(local[name] || 0) + 1; return local[name]; },
+                } } });
+            const enhancedOutputs = enhanced.map(([input]) => ctx.macros.engine.evaluate(input, enhancedEnv));
             power_user.experimental_macro_engine = false;
             const old = legacy.map(([input]) => evaluateMacros(input, { user: 'User', char: 'Char', group: 'Char', obj: { x: 1 }, 'a.b': 'literal' }));
             const routed = ctx.substituteParams('{{char}}/{{user}}', options);
-            return { outputs, old, routed, capture, variables: !!env.extra.variables, vendorIdentity: vendor.moment === library.moment && vendor.chevrotain === library.chevrotain };
-        }, { modern, legacy });
+            return { outputs, enhancedOutputs, old, routed, capture, variables: !!env.extra.variables, vendorIdentity: vendor.moment === library.moment && vendor.chevrotain === library.chevrotain };
+        }, { modern, legacy, enhanced });
         assert.deepEqual(result.outputs, modern.map(([, value]) => value));
+        assert.deepEqual(result.enhancedOutputs, enhanced.map(([, value]) => value));
         assert.deepEqual(result.old, legacy.map(([, value]) => value));
         assert.equal(result.routed, 'Char/User');
         assert.equal(result.capture, '3');

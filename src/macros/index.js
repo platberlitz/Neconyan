@@ -18,6 +18,8 @@ import { parseTimestamp } from '../../public/scripts/message-timestamp.js';
 import { moment } from './vendor.js';
 import { evaluateLegacyMacros } from './legacy-macros.js';
 import { assertServerMacroVocabulary } from './browser-only.js';
+import { enhancedMacroDefinitions } from './enhanced.js';
+import { normaliseMacroState } from '../../public/scripts/extensions/third-party/MacroEnhanced/src/chat-state.js';
 
 export { MacroEngine, MacroRegistry };
 export {
@@ -99,6 +101,14 @@ export function createMacroEnvironment(snapshot = {}, capabilities = {}, { readO
             },
         };
     };
+    const suppliedMacros = Object.fromEntries(Object.entries({ ...(snapshot.dynamicMacros ?? {}), ...dynamicMacros })
+        .map(([key, value]) => [String(key).toLowerCase(), value]));
+    const enhanced = snapshot.macroEnhanced?.enabled !== false && data.extra.powerUser?.experimental_macro_engine !== false;
+    const syntax = snapshot.macroEnhanced?.syntax ?? snapshot.browserMacroSyntax ?? {};
+    const enhancedSyntax = { compatExpressions: enhanced && Boolean(syntax.compatExpressions), fixImportedSyntax: enhanced && Boolean(syntax.fixImportedSyntax) };
+    let enhancedState = data.extra.chatMetadata.MacroEnhanced
+        ? normaliseMacroState(data.extra.chatMetadata.MacroEnhanced) : null;
+    let enhancedWritten = false;
     const env = {
         content: data.content ?? '',
         contentHash: getStringHash(data.content ?? ''),
@@ -111,8 +121,7 @@ export function createMacroEnvironment(snapshot = {}, capabilities = {}, { readO
         // Request-local dynamic macros may travel either with the snapshot itself
         // (a saved roleplay capture) or as explicit options; the explicit option
         // wins on a shared name so the caller keeps control.
-        dynamicMacros: Object.fromEntries(Object.entries({ ...(snapshot.dynamicMacros ?? {}), ...dynamicMacros })
-            .map(([key, value]) => [String(key).toLowerCase(), value])),
+        dynamicMacros: { ...(enhanced ? enhancedMacroDefinitions() : {}), ...suppliedMacros },
         extra: {
             chat: [], extensionPrompts: {},
             getInput: () => '', getCurrentChatId: () => data.chatId ?? '',
@@ -126,6 +135,19 @@ export function createMacroEnvironment(snapshot = {}, capabilities = {}, { readO
             powerUser: { ...data.extra.powerUser, instruct: data.extra.powerUser?.instruct ?? {},
                 sysprompt: data.extra.powerUser?.sysprompt ?? {}, context: data.extra.powerUser?.context ?? {} },
             variables: { local: makeScope('local'), global: makeScope('global') },
+            meLocalVariables: data.variables.local,
+            mePronouns: snapshot.macroEnhanced?.pronouns ?? {},
+            meSyntax: enhancedSyntax,
+            meExpanding: new Set(), meLooping: new Set(),
+            resolveEnhancedState: ({ write }) => {
+                if (write) {
+                    assertWritable('local');
+                    enhancedState ??= normaliseMacroState();
+                    env.extra.chatMetadata.MacroEnhanced = enhancedState;
+                    enhancedWritten = true;
+                }
+                return { state: enhancedState, mode: 'sandbox', chatOpen: true };
+            },
             setChatIdHash: value => {
                 env.extra.chatMetadata.chat_id_hash = value;
                 if (!readOnly) onMetadataChange?.({ key: 'chat_id_hash', value });
@@ -143,7 +165,9 @@ export function createMacroEnvironment(snapshot = {}, capabilities = {}, { readO
     const bundledPolicy = { requireBundled: snapshot.requireBundledMacros === true };
     const evaluateContent = (content, { legacy = false, strictCapabilities = false, original: suppliedOriginal, postProcess: suppliedPostProcess } = {}) => {
         strictCapabilities ||= Boolean(snapshot.writableScopes);
-        if (strictCapabilities) assertServerMacroVocabulary(content, env.dynamicMacros, snapshot.browserMacros, snapshot.browserMacroSyntax, bundledPolicy);
+        const activeMacros = legacy ? suppliedMacros : env.dynamicMacros;
+        const unsupportedSyntax = enhanced && !legacy ? {} : snapshot.browserMacroSyntax;
+        if (strictCapabilities) assertServerMacroVocabulary(content, activeMacros, snapshot.browserMacros, unsupportedSyntax, bundledPolicy);
         let unavailable;
         const extra = { ...env.extra };
         const missing = name => () => {
@@ -151,14 +175,17 @@ export function createMacroEnvironment(snapshot = {}, capabilities = {}, { readO
             throw unavailable;
         };
         if (strictCapabilities) {
-            extra.assertMacroCondition = condition => {
-                if (!/^[\w-]+$/.test(condition)) return;
+            extra.assertMacroVocabulary = (text, macros = activeMacros) => {
                 try {
-                    assertServerMacroVocabulary(`{{${condition}}}`, env.dynamicMacros, snapshot.browserMacros, {}, bundledPolicy);
+                    assertServerMacroVocabulary(text, macros, snapshot.browserMacros, {}, bundledPolicy);
                 } catch (error) {
                     mutationError = error;
                     throw error;
                 }
+            };
+            extra.assertMacroCondition = condition => {
+                if (!/^[\w-]+$/.test(condition)) return;
+                extra.assertMacroVocabulary(`{{${condition}}}`);
             };
             for (const [key, name] of Object.entries({ isMobile: 'isMobile', findExtension: 'hasExtension', getInput: 'input',
                 getFirstDisplayedMessageId: 'firstDisplayedMessageId', parseMesExamples: 'mesExamples', formatInstructModeExamples: 'mesExamples' })) {
@@ -177,7 +204,7 @@ export function createMacroEnvironment(snapshot = {}, capabilities = {}, { readO
                 charDepthPrompt: fields.charDepthPrompt ?? '', creatorNotes: fields.creatorNotes ?? '',
                 ...env.names, charIfNotGroup: env.names.group ?? env.names.char, model: env.system.model,
                 isMobile: () => String(Boolean(extra.isMobile?.())),
-                ...env.dynamicMacros,
+                ...activeMacros,
             };
             if (functions.original) values.original = functions.original;
             if (strictCapabilities) values.mesExamples = () => {
@@ -188,13 +215,13 @@ export function createMacroEnvironment(snapshot = {}, capabilities = {}, { readO
             const result = evaluateLegacyMacros(content, values, extra, suppliedPostProcess ?? postProcess);
             if (unavailable) throw unavailable;
             if (mutationError) throw mutationError;
-            if (strictCapabilities) assertServerMacroVocabulary(result, env.dynamicMacros, snapshot.browserMacros, snapshot.browserMacroSyntax, bundledPolicy);
+            if (strictCapabilities) assertServerMacroVocabulary(result, activeMacros, snapshot.browserMacros, unsupportedSyntax, bundledPolicy);
             return result;
         }
         const result = MacroEngine.evaluate(content, { ...env, extra, content, contentHash: getStringHash(content), functions });
         if (unavailable) throw unavailable;
         if (mutationError) throw mutationError;
-        if (strictCapabilities) assertServerMacroVocabulary(result, env.dynamicMacros, snapshot.browserMacros, snapshot.browserMacroSyntax, bundledPolicy);
+        if (strictCapabilities) assertServerMacroVocabulary(result, activeMacros, snapshot.browserMacros, unsupportedSyntax, bundledPolicy);
         return result;
     };
     let evaluationDepth = 0;
@@ -204,6 +231,10 @@ export function createMacroEnvironment(snapshot = {}, capabilities = {}, { readO
         try {
             const result = evaluateContent(...args);
             if (mutationError) throw mutationError;
+            if (evaluationDepth === 1 && enhancedWritten) {
+                enhancedWritten = false;
+                if (!readOnly) onMetadataChange?.({ key: 'MacroEnhanced', value: structuredClone(enhancedState) });
+            }
             return result;
         } catch (error) {
             // The shared evaluator catches handler errors. Keep a nested server

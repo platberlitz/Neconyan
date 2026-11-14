@@ -8,6 +8,7 @@ import { roleplayEntityContent } from './roleplay-source.js';
 import { captureGenerationBinding, resolveGenerationProfile } from './profiles.js';
 import { validateActiveGenerationContext } from './service.js';
 import { createMacroEnvironment } from '../macros/index.js';
+import { captureEnhancedMacros } from '../macros/enhanced.js';
 import { readQuickImageGenSettings } from './quick-image-gen.js';
 import { quickImageGenSettingsFingerprint } from './quick-image-gen-job.js';
 import { deriveAccounts, selectParticipants, KIND_CHARACTER, KIND_PERSONA, reasoningOverridesFrom } from '../../public/scripts/extensions/third-party/Neconyan-Hopper/src/core.js';
@@ -56,7 +57,10 @@ export function accountsForPlan(plan, profiles = plan.settings.profiles, strange
 export function meowerMacros(plan, accounts = plan.accounts) {
     const persona = accounts.find(account => account.kind === KIND_PERSONA);
     const character = accounts.find(account => plan.activeKeys.includes(account.key) && account.kind === KIND_CHARACTER);
+    const card = plan.characters.find(card => card.avatar === character?.entityId);
     return { names: { user: persona?.name || 'You', char: character?.name || 'Character' },
+        macroEnhanced: { ...plan.macroEnhanced, pronouns: { ...plan.macroEnhanced?.pronouns,
+            char: String((card?.data ?? card)?.extensions?.MacroEnhanced?.pronouns ?? '') } },
         character: { ...character, persona: plan.persona?.description || '' }, variables: { local: {}, global: {} },
         extra: { chat: [], chatMetadata: {} } };
 }
@@ -92,6 +96,7 @@ export async function captureMeowerPlan({ owner, directories }, store, input) {
     const persona = session.personaId ? { entityId: session.personaId,
         name: saved.power_user?.personas?.[session.personaId] || saved.name1 || 'You', description: descriptions.filter(Boolean).join('\n\n') } : null;
     const plan = { version: 1, input, now: Date.now(), settings, session: structuredClone(session), characters, persona, binding,
+        macroEnhanced: captureEnhancedMacros(saved, {}, { personaAvatar: session.personaId }),
         account: withRoleplayAccount({ owner, directories }, null, (_lease, account) => account),
         overridePayload: binding.kind === 'profile' ? reasoningOverridesFrom(material.profile, material.preset) : {},
         imageFingerprint: settings.images.enabled ? quickImageGenSettingsFingerprint(readQuickImageGenSettings(directories)) : null };

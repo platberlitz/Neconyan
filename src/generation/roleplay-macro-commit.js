@@ -10,7 +10,11 @@ export function prepareRoleplayMacroCommit(context, state) {
     if (job.intent.request.worldInfo?.macroPolicyVersion !== 1) return undefined;
     if (!isMap(state?.variables?.local)) throw failure();
     const prompt = readArtifact(directories, job.id, 'roleplay-prompt');
+    const enhanced = job.intent.request.worldInfo.macroEnhanced?.enabled;
+    if (enhanced && state.chatMetadata?.MacroEnhanced != null && !isMap(state.chatMetadata.MacroEnhanced)) throw failure();
     const data = { intentHash: roleplayHash(job.intent), promptHash: prompt?.hash,
+        ...(enhanced ? { enhanced: state.chatMetadata?.MacroEnhanced ?? null,
+            enhancedBaseline: roleplayHash(job.intent.request.worldInfo.metadata?.MacroEnhanced ?? null) } : {}),
         baseline: roleplayHash(job.intent.request.worldInfo.promptVariables.local), local: state.variables.local };
     const value = { ...data, hash: roleplayHash(data) };
     if (!prompt || Buffer.byteLength(JSON.stringify(value)) > 2 * 1024 * 1024) throw failure();
@@ -28,6 +32,9 @@ export function roleplayMacroCommitHash(directories, job) {
     if (!saved || hash !== roleplayHash(data) || data.intentHash !== roleplayHash(job.intent)
         || !prompt || data.promptHash !== prompt.hash || !isMap(data.local)
         || data.baseline !== roleplayHash(job.intent.request.worldInfo.promptVariables.local)) throw failure();
+    if (job.intent.request.worldInfo.macroEnhanced?.enabled
+        && (data.enhanced !== null && !isMap(data.enhanced)
+            || data.enhancedBaseline !== roleplayHash(job.intent.request.worldInfo.metadata?.MacroEnhanced ?? null))) throw failure();
     return hash;
 }
 
@@ -42,6 +49,11 @@ export function applyRoleplayMacroCommit(directories, job, records, output, base
     const provider = readArtifact(directories, job.id, 'roleplay-main-provider');
     if (hash !== output?.macroCommit || provider && provider.macroCommit !== hash
         || saved.baseline !== roleplayHash(baselineRecords[0].chat_metadata?.variables ?? {})) throw failure();
+    if (job.intent.request.worldInfo.macroEnhanced?.enabled
+        && saved.enhancedBaseline !== roleplayHash(baselineRecords[0].chat_metadata?.MacroEnhanced ?? null)) throw failure();
     records[0].chat_metadata ??= {};
     records[0].chat_metadata.variables = structuredClone(saved.local);
+    if (job.intent.request.worldInfo.macroEnhanced?.enabled && saved.enhanced !== null) {
+        records[0].chat_metadata.MacroEnhanced = structuredClone(saved.enhanced);
+    }
 }

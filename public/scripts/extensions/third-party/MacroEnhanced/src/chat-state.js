@@ -73,6 +73,11 @@ function repair(state) {
     return state;
 }
 
+/** Normalise a private host snapshot without reading or saving browser state. */
+export function normaliseMacroState(value) {
+    return repair(migrate(value && typeof value === 'object' && !Array.isArray(value) ? value : emptyState()));
+}
+
 /** Whether there is a chat the state could belong to. */
 function hasChatContext() {
     const ctx = SillyTavern.getContext();
@@ -174,6 +179,9 @@ function beginReadOnlySession() {
  * @returns {{state: object|null, mode: 'sandbox'|'readonly'|'live', chatOpen: boolean}}
  */
 export function resolveMacroState(env, { write = false } = {}) {
+    if (env?.extra?.resolveEnhancedState) {
+        return env.extra.resolveEnhancedState({ write });
+    }
     const sandboxState = env?.extra?.meSandboxState;
     if (sandboxState) {
         return { state: sandboxState, mode: 'sandbox', chatOpen: true };

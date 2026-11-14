@@ -171,6 +171,7 @@ export function savedRoleplayMacroSnapshot(snapshot, records) {
         chatId: snapshot.source.locator.chat,
         browserMacros: snapshot.browserMacros,
         browserMacroSyntax: snapshot.browserMacroSyntax,
+        macroEnhanced: snapshot.macroEnhanced ?? { enabled: Boolean(snapshot.enhancedLoreMacros) },
         // Page-captured bundled macros travel as request-local dynamic macros, so
         // history, notes, cards, World Info and the prompt templates all resolve
         // them exactly as the page's own macro would have.

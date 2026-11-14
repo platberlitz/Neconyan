@@ -38,11 +38,11 @@ export const CHATVAR_ALL_MACRO_NAMES = Object.freeze([
 ]);
 
 /** In-flight {{foreachChatVar}} prefixes, so a body that loops itself stops. */
-const looping = new Set();
+const chatVarLooping = new Set();
 
 /** Test hook. */
 export function resetChatVarRecursion() {
-    looping.clear();
+    chatVarLooping.clear();
 }
 
 /** The chatVars map to read/write, or null when there is nowhere to persist. */
@@ -164,7 +164,7 @@ export function registerChatVarMacros(safeRegister = defaultRegister) {
             if (!key) {
                 return '';
             }
-            const { vars, mode } = resolveVars(ctx.env);
+            const { vars, mode } = resolveVars(ctx.env, { write: true });
             if (vars && Object.hasOwn(vars, key)) {
                 delete vars[key];
                 if (mode === 'live') {
@@ -228,6 +228,7 @@ export function registerChatVarMacros(safeRegister = defaultRegister) {
             }
 
             const guardKey = `${prefix}\u0000${alias}`;
+            const looping = ctx.env?.extra?.meLooping ?? chatVarLooping;
             if (looping.has(guardKey)) {
                 ctx.warn(`{{foreachChatVar}}: the "${prefix}" block loops itself; expansion stopped.`);
                 return '';
@@ -244,7 +245,7 @@ export function registerChatVarMacros(safeRegister = defaultRegister) {
             // local store. so they have to be written there for real, then put
             // back exactly as they were (Layer B in workbench/sandbox.js).
             const names = loopVarNames(alias);
-            const store = SillyTavern.getContext().chatMetadata?.variables ?? null;
+            const store = ctx.env?.extra?.meLocalVariables ?? SillyTavern.getContext().chatMetadata?.variables ?? null;
             if (!store) {
                 ctx.warn('{{foreachChatVar}}: no chat is loaded.');
                 return '';

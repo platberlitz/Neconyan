@@ -43,8 +43,9 @@ const conditionArgs = ({ unnamedArgs, list }) => [...unnamedArgs, ...(list ?? []
  * expression is worked out instead. otherwise `{{or::a::{{lower::$<t>}} == "x"}}`
  * would see a non-empty string and call it true whatever the comparison says.
  */
-function argIsTrue(value, warn) {
-    return isCompatActive() ? conditionIsTrue(value, warn) : isTruthyText(value);
+function argIsTrue(value, ctx) {
+    const compat = ctx.env?.extra?.meSyntax?.compatExpressions ?? isCompatActive();
+    return compat ? conditionIsTrue(value, ctx.warn) : isTruthyText(value);
 }
 
 export function registerLogicMacros(safeRegister = defaultRegister) {
@@ -83,7 +84,7 @@ export function registerLogicMacros(safeRegister = defaultRegister) {
         returns: 'true or false',
         returnType: 'boolean',
         exampleUsage: ['{{and::{{gt::{{getvar::hp}}::0}}::{{getvar::awake}}}}'],
-        handler: (ctx) => boolString(conditionArgs(ctx).every(arg => argIsTrue(arg, ctx.warn))),
+        handler: (ctx) => boolString(conditionArgs(ctx).every(arg => argIsTrue(arg, ctx))),
     });
 
     safeRegister('or', {
@@ -97,7 +98,7 @@ export function registerLogicMacros(safeRegister = defaultRegister) {
         returns: 'true or false',
         returnType: 'boolean',
         exampleUsage: ['{{or::{{getvar::injured}}::{{getvar::tired}}}}'],
-        handler: (ctx) => boolString(conditionArgs(ctx).some(arg => argIsTrue(arg, ctx.warn))),
+        handler: (ctx) => boolString(conditionArgs(ctx).some(arg => argIsTrue(arg, ctx))),
     });
 
     safeRegister('not', {
@@ -439,7 +440,7 @@ export function registerLogicMacros(safeRegister = defaultRegister) {
         description: 'Sets a value inside a JSON variable, creating missing levels. Returns nothing, like {{setvar}}.',
         returns: 'an empty string',
         exampleUsage: ['{{jsonset::inventory::weapons[0]::sword}}'],
-        handler: ({ unnamedArgs: [variable, path, value, scope], warn }) => {
+        handler: ({ unnamedArgs: [variable, path, value, scope], warn, env }) => {
             const name = String(variable ?? '').trim();
             if (!name) {
                 warn('{{jsonset}}: give it a variable name.');
@@ -450,7 +451,7 @@ export function registerLogicMacros(safeRegister = defaultRegister) {
                 warn(`{{jsonset}}: scope must be local or global (got "${scope}").`);
                 return '';
             }
-            const variables = SillyTavern.getContext().variables?.[scopeName];
+            const variables = (env?.extra?.variables ?? SillyTavern.getContext().variables)?.[scopeName];
             if (!variables) {
                 warn('{{jsonset}}: the variables API is unavailable.');
                 return '';
