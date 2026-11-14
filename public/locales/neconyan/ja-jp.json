@@ -18881,5 +18881,14 @@
   "Request not sent, because you did not confirm its proxy address. Update or remove the reverse proxy in the connection profile or preset it uses.": "このリクエストのプロキシアドレスを確認しなかったため、リクエストは送信されませんでした。リクエストが使用する接続プロファイルまたはプリセットで、リバースプロキシを更新または削除してください。",
   "This change has already been undone.": "この変更はすでに元に戻されています。",
   "An earlier attempt to undo this change may not have finished, so nothing was changed this time. Open Change history again to see whether that attempt finished.": "以前にこの変更を元に戻そうとした操作が完了していない可能性があるため、今回は何も変更されていません。「Change history」をもう一度開いて、その操作が完了したかどうかを確認してください。",
+  "Provider schema requires model support for text patterns. Instructions asks the model to follow the same pattern without enforcing it. Use this when your connection rejects schemas.": "Provider schemaはモデルがテキストパターンに対応している必要があります。Instructionsはモデルに同じパターンに従うよう求めますが、強制はしません。接続でスキーマが拒否される場合に使用してください。",
+  "Otherwise, the assistant prefill supplies the starter. Hiding alone keeps it in model history. Removing it from saved chat affects new replies only. Text after [[keep]] stays.": "それ以外の場合は、アシスタントのプレフィルがスターターを供給します。非表示にするだけでは、モデルの履歴には残ります。保存済みチャットから削除すると、新しい返信にのみ影響します。[[keep]]以降のテキストは残ります。",
+  "Words match from a word start: gaze blocks gazed, but not stargaze. Punctuation matches anywhere. Keep the list short. Some providers reject these patterns.": "単語は語頭から一致します：gazeはgazedをブロックしますが、stargazeはブロックしません。記号はどこでも一致します。リストは短くしてください。一部のプロバイダーはこれらのパターンを拒否します。",
+  "Show toasts and new Conversation DMs as device notifications. Off by default. Applies to this device and account. Muted threads and quiet hours still apply to DMs.": "トーストと新しい会話DMをデバイス通知として表示します。デフォルトではオフです。このデバイスとアカウントに適用されます。ミュートしたスレッドとサイレント時間は、DMにも引き続き適用されます。",
+  "Example:\n[Scene: rainy rooftop at midnight, Tone: quiet and tense]": "例：\n[シーン：雨の降る真夜中の屋上、トーン：静かで緊張感がある]",
+  "1 sends on every reply. 0 turns the note off.": "1は返信のたびに送信されます。0はノートをオフにします。",
+  "Generate from this persona's name and description. Choose an image for their latest message and future messages. Older messages keep their saved expression.": "このペルソナの名前と説明から生成します。ペルソナの最新のメッセージと今後のメッセージに使う画像を選んでください。それより前のメッセージは、保存済みの表情を保持します。",
+  "Green and magenta backgrounds are removed automatically. Choose a colour absent from the character. Separate images retain more detail than a large sheet. Image size follows Quick Image Gen settings.": "緑とマゼンタの背景は自動的に除去されます。キャラクターに含まれない色を選んでください。個別の画像は、大きなシートよりも細部が保たれます。画像サイズはQuick Image Genの設定に従います。",
+  "Downloads a 2.5 MB anime upscaler once. Processes small sections to limit memory use and keeps transparency. Runs after cleanup. Enlarging an image again makes it larger again.": "2.5 MBのアニメ用アップスケーラーを一度だけダウンロードします。メモリ使用量を抑えるため小さな区画ごとに処理し、透明度を保持します。クリーンアップの後に実行されます。画像をもう一度拡大すると、さらに大きくなります。",
   "This version": "このバージョン"
 }
