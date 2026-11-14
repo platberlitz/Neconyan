@@ -129,7 +129,6 @@ for (const layout of ['phone', 'desktop', 'iphone']) {
             await isolateSettingsSaves(page);
             await page.goto('/', { waitUntil: 'domcontentloaded' });
             await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'));
-            await page.waitForLoadState('networkidle');
             const skip = page.getByRole('button', { name: 'Skip', exact: true });
             if (await skip.isVisible()) await skip.click();
             await page.waitForFunction(() => window.jQuery?.('#bg_tabs').data('ui-tabs'));
@@ -146,7 +145,7 @@ for (const layout of ['phone', 'desktop', 'iphone']) {
                 await page.locator('#bg-header-fixed h3').scrollIntoViewIfNeeded();
                 if (directory) {
                     fs.mkdirSync(directory, { recursive: true });
-                    await page.screenshot({ path: path.join(directory, `${theme}-${layout}-${process.env.NECONYAN_BACKGROUND_SIZE_PHASE || 'check'}.png`) });
+                    await page.screenshot({ path: path.join(directory, `${theme}-${layout}-${process.env.NECONYAN_BACKGROUND_SIZE_PHASE || 'check'}.png`), style: '#toast-container { visibility: hidden !important; }' });
                 }
                 const heading = await page.locator('#bg-header-fixed h3').boundingBox();
                 const controls = page.locator('#background_fitting, #background_position, #auto_background, #bg_add_folder_button, #bg_restore_defaults_button, #add_background_button_top');
@@ -162,19 +161,46 @@ for (const layout of ['phone', 'desktop', 'iphone']) {
                     if (index) expect(box.x).toBeGreaterThanOrEqual(boxes[index - 1].x + boxes[index - 1].width);
                 }
                 const row = page.locator('#bg-header-fixed .bg-header-row-1');
+                const chrome = page.locator('#bg-header-fixed > .sb-mobile-rail-chrome');
+                const left = chrome.locator('.sb-mobile-rail-left');
+                const right = chrome.locator('.sb-mobile-rail-right');
+                const thumbOffset = () => chrome.evaluate(element => parseFloat(element.style.getPropertyValue('--sb-rail-thumb-left')));
                 if (isPhone) {
                     await expect(row).toHaveCSS('touch-action', 'pan-x');
+                    await expect(chrome.locator('.sb-mobile-rail-track')).toBeVisible();
+                    await expect(left).toBeHidden();
+                    await expect(right).toBeVisible();
+                    await expect.poll(thumbOffset).toBe(0);
+                    const arrow = await right.boundingBox();
+                    expect(arrow.width).toBeGreaterThanOrEqual(44);
+                    expect(arrow.height).toBeGreaterThanOrEqual(44);
+                    await right.tap();
+                    await expect.poll(thumbOffset).toBeGreaterThan(0);
+                    await expect(right).toBeHidden();
+                    await expect(page.locator('#add_background_button_top')).toBeInViewport();
+                    await left.tap();
+                    await expect.poll(thumbOffset).toBe(0);
                     const box = await row.boundingBox();
                     const touch = await context.newCDPSession(page);
-                    const start = { x: box.x + box.width - 25, y: box.y + box.height / 2 };
+                    const start = { x: box.x + box.width - 65, y: box.y + box.height / 2 };
                     await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [start] });
                     for (let step = 1; step <= 6; step++) await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: start.x - step * 35, y: start.y }] });
                     await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
                     await expect.poll(() => row.evaluate(element => element.scrollLeft)).toBeGreaterThan(100);
+                    await expect.poll(thumbOffset).toBeGreaterThan(0);
                     await expect(page.locator('#add_background_button_top')).toBeInViewport();
                     await touch.detach();
-                    await row.evaluate(element => element.scrollTo({ left: 0, behavior: 'instant' }));
+                    await left.tap();
+                    await expect.poll(thumbOffset).toBe(0);
+                } else {
+                    await expect(chrome).toBeHidden();
                 }
+            }
+            if (!isPhone) {
+                await page.setViewportSize({ width: 393, height: 852 });
+                await expect(page.locator('#bg-header-fixed > .sb-mobile-rail-chrome')).toBeVisible();
+                await page.setViewportSize({ width: 1280, height: 900 });
+                await expect(page.locator('#bg-header-fixed > .sb-mobile-rail-chrome')).toBeHidden();
             }
             expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
         } finally {
