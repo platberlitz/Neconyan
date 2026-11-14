@@ -43,6 +43,7 @@ const NORMAL_TURN_TYPES = new Set([undefined, null, '', 'normal']);
 const expandedEditorIds = new Set();
 let initialized = false;
 let editorSaveChain = Promise.resolve();
+let editorBulkSelection = null;
 let pendingTurn = null;
 let popoverAnchor = null;
 
@@ -231,11 +232,83 @@ function setExpanded(button, expanded) {
     button.setAttribute('aria-expanded', String(expanded));
 }
 
+function getBulkDeleteTarget() {
+    return getEditorTargetKey() || create_save;
+}
+
+function updateBulkDeleteSelection() {
+    if (!editorBulkSelection) return;
+    const host = document.getElementById('character_purrks_block');
+    const cards = host.querySelectorAll('.neconyan-purrk-card');
+    const selectedIds = editorBulkSelection.selectedIds;
+    for (const card of cards) {
+        const selected = selectedIds.has(card.dataset.purrkId);
+        card.dataset.selected = String(selected);
+        card.querySelector('.neconyan-purrk-toggle').checked = selected;
+        card.querySelector('.neconyan-purrk-label-btn').setAttribute('aria-pressed', String(selected));
+    }
+    const deleteBtn = host.querySelector('#character_purrks_delete_selected_btn');
+    deleteBtn.textContent = t`Delete selected (${selectedIds.size})`;
+    deleteBtn.disabled = selectedIds.size === 0;
+    host.querySelector('#character_purrks_select_all_btn').textContent = selectedIds.size === cards.length
+        ? t`Clear selection` : t`Select all`;
+}
+
+function finishBulkDelete() {
+    editorBulkSelection = null;
+    renderCharacterEditorPurrks();
+    const button = document.getElementById('character_purrks_bulk_delete_btn');
+    (button.disabled ? document.getElementById('character_purrks_add_btn') : button)?.focus({ preventScroll: true });
+}
+
+function renderBulkDeleteToolbar(toolbar, items) {
+    const selection = editorBulkSelection;
+    const selectAllBtn = el('button', 'menu_button', t`Select all`);
+    selectAllBtn.type = 'button';
+    selectAllBtn.id = 'character_purrks_select_all_btn';
+    selectAllBtn.addEventListener('click', () => {
+        if (selection.selectedIds.size === items.length) selection.selectedIds.clear();
+        else items.forEach(item => selection.selectedIds.add(item.id));
+        updateBulkDeleteSelection();
+    });
+
+    const cancelBtn = el('button', 'menu_button', t`Cancel`);
+    cancelBtn.type = 'button';
+    cancelBtn.addEventListener('click', finishBulkDelete);
+
+    const deleteBtn = el('button', 'menu_button menu_button_primary');
+    deleteBtn.type = 'button';
+    deleteBtn.id = 'character_purrks_delete_selected_btn';
+    deleteBtn.setAttribute('aria-live', 'polite');
+    deleteBtn.addEventListener('click', async () => {
+        const ids = new Set(selection.selectedIds);
+        if (!ids.size) return;
+        const message = ids.size === 1 ? t`Delete the selected Purrk?` : t`Delete the ${ids.size} selected Purrks?`;
+        const confirmed = await callGenericPopup(message, POPUP_TYPE.CONFIRM);
+        // A confirmation belongs to this selection session, never another character or a reopened editor.
+        if (confirmed !== POPUP_RESULT.AFFIRMATIVE || editorBulkSelection !== selection || getBulkDeleteTarget() !== selection.target) return;
+        const current = readEditorPurrks();
+        current.items = current.items.filter(item => !ids.has(item.id));
+        ids.forEach(id => expandedEditorIds.delete(id));
+        void saveEditorPurrks(current, { rerender: false });
+        finishBulkDelete();
+    });
+    toolbar.replaceChildren(selectAllBtn, cancelBtn, deleteBtn);
+}
+
 export function renderCharacterEditorPurrks() {
     const host = document.getElementById('character_purrks_block');
     if (!(host instanceof HTMLElement)) return;
 
     const purrks = readEditorPurrks();
+    if (editorBulkSelection?.target !== getBulkDeleteTarget() || !purrks.items.length) editorBulkSelection = null;
+    if (editorBulkSelection) {
+        const availableIds = new Set(purrks.items.map(item => item.id));
+        for (const id of editorBulkSelection.selectedIds) {
+            if (!availableIds.has(id)) editorBulkSelection.selectedIds.delete(id);
+        }
+    }
+    host.dataset.selecting = String(Boolean(editorBulkSelection));
     host.replaceChildren();
 
     const header = el('div', 'neconyan-purrks-header');
@@ -343,13 +416,25 @@ export function renderCharacterEditorPurrks() {
         void saveEditorPurrks(current);
     });
 
-    toolbar.append(aiBtn, extractBtn, addBtn);
+    const bulkDeleteBtn = el('button', 'menu_button', t`Bulk Delete`);
+    bulkDeleteBtn.type = 'button';
+    bulkDeleteBtn.id = 'character_purrks_bulk_delete_btn';
+    bulkDeleteBtn.disabled = purrks.items.length === 0;
+    bulkDeleteBtn.addEventListener('click', () => {
+        editorBulkSelection = { target: getBulkDeleteTarget(), selectedIds: new Set() };
+        renderCharacterEditorPurrks();
+        document.getElementById('character_purrks_select_all_btn')?.focus({ preventScroll: true });
+    });
+
+    toolbar.append(aiBtn, extractBtn, addBtn, bulkDeleteBtn);
+    if (editorBulkSelection) renderBulkDeleteToolbar(toolbar, purrks.items);
     header.append(titleGroup, toolbar);
 
     const subtitle = el(
         'p',
         'neconyan-purrks-subtitle',
-        t`Switchable prompt traits, moods, keyword triggers and Scene AI directives that travel with this card. System prompt and After chat history Purrks follow the 'Prefer character prompt' settings.`,
+        editorBulkSelection ? t`Select the Purrks you want to delete.`
+            : t`Switchable prompt traits, moods, keyword triggers and Scene AI directives that travel with this card. System prompt and After chat history Purrks follow the 'Prefer character prompt' settings.`,
     );
 
     const directorBar = el('div', 'neconyan-purrks-director-bar');
@@ -396,12 +481,16 @@ export function renderCharacterEditorPurrks() {
         }
     }
 
-    host.append(header, subtitle, directorBar, list);
+    host.append(header, subtitle);
+    if (!editorBulkSelection) host.append(directorBar);
+    host.append(list);
+    updateBulkDeleteSelection();
 }
 
 function renderEditorPurrkCard(item) {
     const itemId = item.id;
-    const isExpanded = expandedEditorIds.has(itemId);
+    const selection = editorBulkSelection;
+    const isExpanded = !selection && expandedEditorIds.has(itemId);
     const card = el('div', 'neconyan-purrk-card');
     card.dataset.purrkId = itemId;
     card.dataset.enabled = String(Boolean(item.enabled));
@@ -437,17 +526,27 @@ function renderEditorPurrkCard(item) {
     const toggle = document.createElement('input');
     toggle.type = 'checkbox';
     toggle.className = 'neconyan-purrk-toggle';
-    toggle.checked = Boolean(item.enabled);
-    toggle.setAttribute('aria-label', t`Enable ${item.label || itemId}`);
+    toggle.checked = selection ? selection.selectedIds.has(itemId) : Boolean(item.enabled);
+    toggle.setAttribute('aria-label', selection ? t`Select ${item.label || itemId} for deletion` : t`Enable ${item.label || itemId}`);
     toggle.addEventListener('change', () => {
+        if (selection) {
+            if (toggle.checked) selection.selectedIds.add(itemId);
+            else selection.selectedIds.delete(itemId);
+            updateBulkDeleteSelection();
+            return;
+        }
         updateItem(target => { target.enabled = toggle.checked; });
         card.dataset.enabled = String(toggle.checked);
     });
 
     const labelBtn = el('button', 'neconyan-purrk-label-btn', item.label || itemId);
     labelBtn.type = 'button';
-    setExpanded(labelBtn, isExpanded);
-    labelBtn.addEventListener('click', toggleExpanded);
+    if (selection) {
+        labelBtn.addEventListener('click', () => toggle.click());
+    } else {
+        setExpanded(labelBtn, isExpanded);
+        labelBtn.addEventListener('click', toggleExpanded);
+    }
 
     mainCol.append(toggle, labelBtn);
 
@@ -468,7 +567,7 @@ function renderEditorPurrkCard(item) {
     editBtn.setAttribute('aria-label', isExpanded ? t`Close ${item.label || itemId}` : t`Edit ${item.label || itemId}`);
     setExpanded(editBtn, isExpanded);
     editBtn.addEventListener('click', toggleExpanded);
-    badges.append(editBtn);
+    if (!selection) badges.append(editBtn);
 
     row.append(mainCol, badges);
     card.append(row);
@@ -1090,6 +1189,7 @@ export function initCharacterPurrks() {
 
     eventSource.on(event_types.CHARACTER_EDITOR_OPENED, () => {
         expandedEditorIds.clear();
+        editorBulkSelection = null;
         renderCharacterEditorPurrks();
     });
     eventSource.on(event_types.CHAT_CHANGED, onChatChanged);
