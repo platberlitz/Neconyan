@@ -74,6 +74,9 @@ for (const phone of [false, true]) {
             const text = '# My note\n\nDiscuss this exact text. [[Another note]]';
             await fillSource(page, text);
             if (phone) await applyIOSOnlyCss(page);
+            // Installing an assistant and starting its discussion can happen in
+            // the same second. Keep Date fixed while ordinary timers still run.
+            await page.clock.setFixedTime(new Date('2026-11-14T09:15:25.100Z'));
             const root = page.locator('#neconyan-notes');
             for (const [mode, assistant] of [['Roleplay', 'Taro'], ['Conversation', 'Nori'], ['Conversation', 'Miso'], ['Roleplay', 'Miso']]) {
                 await root.getByRole('button', { name: 'Talk about this note', exact: true }).click();
