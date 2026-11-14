@@ -76,6 +76,7 @@
 - PR #667 (2026-11-13) `fix(prompts): resolve variables in prompt previews`
 - PR #668 (2026-11-13) `feat(presets): tidy the presets panel and make new prompts painless`
 - PR #669 (2026-11-13) `feat(parameters): tidy the parameters tab into clear cards`
+- PR #670 (2026-11-14) `feat(presets): open chat completion presets in a searchable picker`
 
 ## v1.5.4
 
