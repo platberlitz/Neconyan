@@ -69,6 +69,16 @@ describe('Scratchpad reply parsing', () => {
         { action: 'save' }, { target: 'url' }, { target: 'avatar' }, { character: [] }])('rejects malformed image suggestions: %j', extra => {
         expect(() => normaliseChange({ type: 'image', action: 'generate', target: 'image', prompt: 'A scene.', ...extra })).toThrow();
     });
+    test('image edits use bounded message selectors, never supplied paths', () => {
+        const change = { type: 'image', action: 'edit', target: 'image', prompt: 'Make the roof blue.', source: { messageId: 'earlier-reply', kind: 'generated', index: 0 } };
+        expect(normaliseChange({ ...change, source: { ...change.source, url: '/private.png' } })).toEqual({ ...change, negative: '', reason: '' });
+        expect(describeChange(normaliseChange(change))).toBe('Edit an image');
+        for (const source of [undefined, 'https://example.com/image.png', { ...change.source, messageId: '../private' }, { ...change.source, index: -1 },
+            { ...change.source, index: 24 }, { ...change.source, kind: 'url' }, { ...change.source, kind: 'attachment', index: 8 }]) {
+            expect(() => normaliseChange({ ...change, source })).toThrow();
+        }
+        expect(() => normaliseChange({ ...change, action: 'generate' })).toThrow();
+    });
     test('keeps stable indexed mixed proposals and caps suggestions at 24', () => {
         const reply = Array.from({ length: 27 }, (_, index) => fence(index % 2 ? { type: 'character', action: 'create', character: { name: 'Nova' } }
             : { type: 'image', action: 'generate', target: 'image', prompt: `Scene ${index}` })).join('\n');

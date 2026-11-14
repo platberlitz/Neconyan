@@ -43,6 +43,19 @@ beforeEach(() => {
 afterEach(() => jest.restoreAllMocks());
 
 describe('Scratchpad images and avatar reviews', () => {
+    test('image edits identify their source and disable unsupported submissions', async () => {
+        const change = { type: 'image', action: 'edit', target: 'image', prompt: 'Make the roof blue.', source: { messageId: 'original', kind: 'generated', index: 0 } };
+        const editSession = { id: 'session', messages: [{ id: 'original', images: { 0: { url: '/user/images/Scratchpad/scratchpad-original.png' } } }] };
+        const availability = { image: true, edit: false, editReason: 'Choose a provider with image input.' };
+        const card = renderImageCard({ session: editSession, message: { id: 'reply' }, part: { index: 0, change }, availability,
+            button: (label, onclick, options) => h('button', { text: label, onclick, ...options }) });
+        expect(nodes(card).find(node => node.attributes.text === 'Edit image').attributes.disabled).toBe(true);
+        expect(nodes(card).find(node => node.attributes.text === 'View source image').attributes.href).toBe('/user/images/Scratchpad/scratchpad-original.png');
+        expect(nodes(card).some(node => node.attributes.text === availability.editReason)).toBe(true);
+        readImageAvailability.mockResolvedValue(availability);
+        await expect(generateProposal({ source, session: editSession, message: { id: 'reply' }, part: { index: 0, change }, guard: () => {}, acknowledge: jest.fn() })).rejects.toThrow('image input');
+        expect(generateImage).not.toHaveBeenCalled();
+    });
     test('Scenario Note avatar save rechecks the saved image before committing the reviewed field', async () => {
         const portrait = 'data:image/webp;base64,aGVsbG8=';
         const review = { avatar: 'User.png', kind: 'persona-note', noteId: 'winter', avatarValue: '', proposedAvatar: portrait, revision: 'a'.repeat(64),

@@ -8,7 +8,7 @@ import { fixture, png } from './roleplay-transactions-fixture.js';
 const { generatedImageReceipts, prepareGeneratedImageHistory, MAX_GENERATED_HISTORY_BYTES } = await import('../src/scratchpad/image-history.js');
 const { imageChangeHash } = await import('../src/scratchpad/image-state.js');
 const { encodeServerImage } = await import('../src/media-codecs.js');
-const { buildScratchpadMessages } = await import('../src/scratchpad/prompt.js');
+const { buildScratchpadMessages, buildScratchpadSystemPrompt } = await import('../src/scratchpad/prompt.js');
 const material = { source: 'openai', profile: { model: 'gpt-4o' }, active: { media_inlining: true } };
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 
@@ -26,6 +26,18 @@ function setup(t, bytes = png) {
 }
 
 const images = history => history.flatMap(message => message.generatedImageContent ?? []).filter(part => part.type === 'image_url');
+
+test('editing instructions use server-labelled sources, including text-only image history', () => {
+    for (const imageEditing of [false, true]) {
+        const system = buildScratchpadSystemPrompt({ assistant: 'miso', capabilities: { image: true }, imageEditing }).text;
+        assert.equal(system.includes('"action":"edit","target":"image"'), imageEditing);
+    }
+    const messages = buildScratchpadMessages({ system: '', text: 'Change the roof.', userMessageId: 'upload',
+        attachments: [{ kind: 'image', name: 'observatory.png', dataUrl: `data:image/png;base64,${png.toString('base64')}` }],
+        history: [{ id: 'earlier', role: 'assistant', text: 'Image saved.', generatedImages: [{ index: 2 }] }] });
+    assert.match(messages[1].content, /Image source {"messageId":"earlier","kind":"generated","index":2}/);
+    assert.match(messages.at(-1).content[0].text, /Image source {"messageId":"upload","kind":"attachment","index":0}/);
+});
 
 test('generated images follow the selected model, saved preset and media setting', async t => {
     const input = setup(t);

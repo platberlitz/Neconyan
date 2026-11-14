@@ -15,6 +15,7 @@ import { QUICK_IMAGE_GEN_EXTENSION_ID, assertQuickImageGenConfigured, saveQuickI
 import { generateQuickImageGenJobImage, quickImageGenSettingsFingerprint } from '../generation/quick-image-gen-job.js';
 import { prepareConversationScopedImagePrompt } from '../generation/quick-image-gen-scoped.js';
 import { captureQuickImageReferenceSources } from '../generation/quick-image-gen-reference.js';
+import { supportsQuickImageEditing, withQuickImageEdit } from '../generation/quick-image-gen-edit.js';
 import { captureQuickImageTextSettings } from '../generation/quick-image-gen-text.js';
 import { resolveCharacterImageSettings } from '../../public/scripts/extensions/quick-image-gen/lib/character-settings.js';
 import { detectImageFormat } from '../../public/scripts/extensions/quick-image-gen/lib/image-metadata.js';
@@ -24,6 +25,7 @@ import { sameSourceContext } from '../../public/scripts/scratchpad/source.js';
 import { ScratchpadError, assistantConnection, findSession, findMessage, normaliseSource, requireId, newScratchpadId,
     scratchpadAccountBase, withScratchpad, readBucketLocked, writeBucketLocked, publicBucket, projectPending } from './store.js';
 import { imageChangeHash, imagePart, SCRATCHPAD_IMAGE_URL } from './image-state.js';
+import { resolveScratchpadImageSource } from './image-sources.js';
 import { resolveImageTargetLocked, readImageCardLocked, readPersonaTargetLocked, readScenarioNoteTargetLocked, resolvePersonaTargetLocked } from './image-targets.js';
 
 export const SCRATCHPAD_IMAGE_JOB = 'scratchpad.image';
@@ -65,8 +67,9 @@ function configured(directories, scope = { kind: 'global' }) {
 
 export function readScratchpadImageAvailability(base) {
     try {
-        withScratchpad(base, () => configured(base.directories));
-        return { image: true, reason: '' };
+        const { settings } = withScratchpad(base, () => configured(base.directories));
+        const edit = supportsQuickImageEditing(settings);
+        return { image: true, edit, editReason: edit ? '' : 'This Quick Image Gen provider or model does not support Scratchpad image editing. Choose a provider with image input.', reason: '' };
     } catch {
         return { image: false, reason: 'Quick Image Gen is disabled or not configured for server images. Open Quick Image Gen to check its provider and settings.' };
     }
@@ -107,12 +110,13 @@ function assertImageLocked(lease, request, jobId) {
     return current;
 }
 
-function imageSnapshot(lease, source, session, message, target, acknowledgement) {
+function imageSnapshot(lease, source, session, message, target, acknowledgement, editReference) {
     const { directories } = roleplayLease(lease).scope;
     const personaTarget = ['persona', 'persona-note'].includes(target?.kind) ? target : null;
     if (personaTarget) target = null;
     const scope = target ? { avatar: target.avatar } : { kind: 'global' };
     const { saved, settings } = configured(directories, scope);
+    const referenceSettings = withQuickImageEdit(settings, editReference);
     const sd = saved.extension_settings?.sd || saved.extension_settings?.['stable-diffusion'] || {};
     const personaId = message.imagePersonaId || source.personaId || '';
     const persona = personaTarget ? personaTarget.description.slice(0, 64000) : target ? String(saved.power_user?.persona_descriptions?.[personaId]?.description || '').slice(0, 64000) : '';
@@ -123,7 +127,7 @@ function imageSnapshot(lease, source, session, message, target, acknowledgement)
     const snapshot = { quickImageGenCharacterScope: scope,
         quickImageGenSettingsFingerprint: quickImageGenSettingsFingerprint(settings),
         quickImageGenSDSettingsFingerprint: quickImageGenSettingsFingerprint(sd),
-        quickImageGenReferenceSources: captureQuickImageReferenceSources(directories, settings),
+        quickImageGenReferenceSources: captureQuickImageReferenceSources(directories, referenceSettings, editReference ? [editReference] : []),
         macros: { names: { user: message.imageNames?.user || 'User', char: target?.name || '' },
             character: { description: character?.description || '', persona }, messages: [],
             extra: { characterScope: target ? 'character' : 'none', ...(target ? { character, characterAvatar: target.avatar } : {}) } },
@@ -205,7 +209,8 @@ export async function acceptScratchpadImage(request, body = {}) {
         }
         if (Buffer.byteLength(change.prompt) > 40000 || Buffer.byteLength(change.negative) > 40000) throw fail('This image prompt is too long.');
         const target = requireTarget(lease, bucket.source, session, message, change);
-        const captured = imageSnapshot(lease, bucket.source, session, message, target, body.acknowledgement);
+        const edit = change.action === 'edit' ? resolveScratchpadImageSource(base.directories, session, message, change.source) : null;
+        const captured = imageSnapshot(lease, bucket.source, session, message, target, body.acknowledgement, edit?.reference);
         const { job, created } = acceptJob(base.directories, { owner: base.owner, type: SCRATCHPAD_IMAGE_JOB, submissionKey,
             intent: { kind: 'scratchpad', source: { kind: source.kind, key: source.key }, sessionId: session.id, messageId: message.id, index, changeHash, requestHash },
             automatic: false, paused: true, target: { kind: 'scratchpad', id: session.id }, label: change.target !== 'image' ? `Scratchpad avatar for ${target.name}` : 'Scratchpad image' });
@@ -214,6 +219,7 @@ export async function acceptScratchpadImage(request, body = {}) {
             ...(captured.review ? { review: true } : {}),
             prompt: change.prompt, negative: change.negative, ...(target ? { avatar: target.avatar, characterName: target.name } : {}) };
         const input = { source, sessionId: session.id, messageId: message.id, index, changeHash, account, snapshot: captured.snapshot,
+            ...(edit ? { edit: { ...edit, source: change.source } } : {}),
             prompt: change.prompt, negative: [captured.negative, change.negative].filter(Boolean).join(', '), review: captured.review, effectId: `scratchpad-${image.id}` };
         try {
             // The request record is written first, so a crash cannot leave a bucket image pointing at a missing request.
@@ -254,7 +260,11 @@ export async function runScratchpadImage(context, { generate = generateQuickImag
     const request = readArtifact(context.directories, context.job.id, 'request');
     if (!request) throw fail('The saved image request is missing.');
     const sourceCheck = lease => {
-        assertImageLocked(lease, request, context.job.id);
+        const current = assertImageLocked(lease, request, context.job.id);
+        if (request.edit) {
+            const edit = resolveScratchpadImageSource(context.directories, current.session, current.message, request.edit.source);
+            if (edit.hash !== request.edit.hash || edit.reference !== request.edit.reference) throw fail('The image editing source changed before dispatch.', 'SCRATCHPAD_IMAGE_SOURCE_CHANGED');
+        }
         configured(context.directories, request.snapshot.quickImageGenCharacterScope);
     };
     try {
@@ -270,7 +280,8 @@ export async function runScratchpadImage(context, { generate = generateQuickImag
         const image = await generate(context, { effectId: request.effectId, prompt: prepared.prompt, negative: prepared.negative,
             settingsFingerprint: request.snapshot.quickImageGenSettingsFingerprint, expectedAccount: request.account,
             assertSourceLocked: sourceCheck, characterScope: request.snapshot.quickImageGenCharacterScope,
-            referenceSources: request.snapshot.quickImageGenReferenceSources, seedOverride: prepared.seedOverride });
+            referenceSources: request.snapshot.quickImageGenReferenceSources, seedOverride: prepared.seedOverride,
+            ...(request.edit ? { editReference: request.edit.reference } : {}) });
         const format = detectImageFormat(Buffer.from(image.base64, 'base64'));
         if (!format || image.format !== (format.ext === 'jpeg' ? 'jpg' : format.ext)) throw fail('The image provider returned an invalid picture.');
         const bitmap = await decodeServerImage(Buffer.from(image.base64, 'base64'));

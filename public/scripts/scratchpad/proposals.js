@@ -67,7 +67,15 @@ export function normaliseChange(value) {
             ...(value.api === 'openai' ? { module: value.module } : {}), field: value.field, value: value.value, reason };
     }
     if (value.type === 'image') {
-        if (value.action !== 'generate' || !['image', 'avatar', 'persona-avatar', 'persona-note-avatar'].includes(value.target)) fail('This image suggestion needs a valid action and target.');
+        if (!['generate', 'edit'].includes(value.action) || !['image', 'avatar', 'persona-avatar', 'persona-note-avatar'].includes(value.target)) fail('This image suggestion needs a valid action and target.');
+        let source;
+        if (value.action === 'edit') {
+            const candidate = value.source;
+            if (!candidate || !['attachment', 'generated'].includes(candidate.kind) || typeof candidate.messageId !== 'string'
+                || !/^[A-Za-z0-9_-]{1,64}$/.test(candidate.messageId) || !Number.isInteger(candidate.index) || candidate.index < 0
+                || candidate.index >= (candidate.kind === 'attachment' ? 8 : 24)) fail('An image edit needs the exact source selector of an attached or saved image in this session.');
+            source = { messageId: candidate.messageId, kind: candidate.kind, index: candidate.index };
+        } else if (value.source !== undefined) fail('Use the edit action to work from an existing image.');
         const personaTarget = ['persona-avatar', 'persona-note-avatar'].includes(value.target);
         if (personaTarget && (typeof value.persona !== 'string' || !value.persona.trim() || value.persona.length > 200 || value.character !== undefined)) fail('A persona avatar suggestion must name only the shared persona.');
         if (!personaTarget && value.persona !== undefined) fail('Only a persona avatar suggestion can name a persona.');
@@ -78,7 +86,8 @@ export function normaliseChange(value) {
         if (value.negative !== undefined && (typeof value.negative !== 'string' || value.negative.length > 10_000)) fail('The negative image prompt must be text up to 10000 characters.');
         if (value.character !== undefined && (typeof value.character !== 'string' || !value.character.trim() || value.character.length > 200)) fail('This image suggestion needs an unambiguous shared character name.');
         if (value.target === 'avatar' && !value.character?.trim()) fail('An avatar suggestion must name a shared character.');
-        return { type: 'image', action: 'generate', target: value.target, prompt: value.prompt.trim(), negative: value.negative?.trim() || '',
+        return { type: 'image', action: value.action, target: value.target, prompt: value.prompt.trim(), negative: value.negative?.trim() || '',
+            ...(source ? { source } : {}),
             ...(value.character ? { character: value.character.trim() } : {}), ...(value.persona ? { persona: value.persona.trim() } : {}),
             ...(value.target === 'persona-note-avatar' ? { noteId: value.noteId } : {}), reason };
     }
@@ -285,7 +294,7 @@ export function describeChange(change) {
     if (change.type === 'persona' && change.action === 'create') return `Create persona '${change.name}'`;
     if (change.type === 'persona-note' && change.action === 'create') return `Create Scenario Note '${change.name}' for ${change.persona}`;
     if (change.type === 'creator') return `Catelier draft: ${change.name}`;
-    if (change.type === 'image') return change.target === 'persona-note-avatar' ? `New Scenario Note avatar for ${change.persona}` : change.target === 'persona-avatar' ? `New persona avatar for ${change.persona}` : change.target === 'avatar' ? `New avatar for ${change.character}` : 'Generate an image';
+    if (change.type === 'image') return change.target === 'persona-note-avatar' ? `New Scenario Note avatar for ${change.persona}` : change.target === 'persona-avatar' ? `New persona avatar for ${change.persona}` : change.target === 'avatar' ? `New avatar for ${change.character}` : change.action === 'edit' ? 'Edit an image' : 'Generate an image';
     if (change.type === 'persona') return `Change ${change.persona}'s persona ${PERSONA_FIELDS[change.field].toLowerCase()}`;
     if (change.type === 'persona-note') return `Change ${change.persona}'s Scenario Note ${PERSONA_FIELDS[change.field].toLowerCase()}`;
     if (change.type === 'notebook') {

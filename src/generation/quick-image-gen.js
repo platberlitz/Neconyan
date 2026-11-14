@@ -293,7 +293,8 @@ const PROVIDER_GENERATORS = {
         const width = numberOr(s.width, 1024);
         const height = numberOr(s.height, 1024);
         const size = width === height ? '1024x1024' : width > height ? '1536x1024' : '1024x1536';
-        const buildPayload = usesImageResponsesApi(s.gptImageProxyUrl, model) ? buildImageResponsesPayload : buildGptImagePayload;
+        const responses = usesImageResponsesApi(s.gptImageProxyUrl, model);
+        const buildPayload = responses ? buildImageResponsesPayload : buildGptImagePayload;
         const payload = buildPayload({
             model,
             prompt,
@@ -303,11 +304,23 @@ const PROVIDER_GENERATORS = {
             outputFormat: ['png', 'jpeg', 'webp'].includes(String(s.gptImageFormat)) ? s.gptImageFormat : 'png',
             background: ['auto', 'transparent', 'opaque'].includes(String(s.gptImageBackground)) ? s.gptImageBackground : 'auto',
             moderation: ['auto', 'low'].includes(String(s.gptImageModeration)) ? s.gptImageModeration : 'auto',
+            ...(s.__qigEditReference ? { references: [s.__qigEditReference] } : {}),
         });
-        const response = await fetchImpl(getGptImageApiUrl(s.gptImageProxyUrl, model), {
+        let url = getGptImageApiUrl(s.gptImageProxyUrl, model);
+        let body = JSON.stringify(payload);
+        const headers = { Authorization: `Bearer ${apiKey}` };
+        if (s.__qigEditReference && !responses) {
+            const match = /^data:(image\/[\w.+-]+);base64,([A-Za-z0-9+/=]+)$/.exec(s.__qigEditReference);
+            if (!match) throw fail('The image editing source was not prepared.', { code: 'QIG_INPUT_MISSING' });
+            url = url.replace(/\/images\/generations\/?(?=\?|$)/i, '/images/edits');
+            body = new FormData();
+            for (const [key, value] of Object.entries(payload)) body.append(key, String(value));
+            body.append('image', new Blob([Buffer.from(match[2], 'base64')], { type: match[1] }), `source.${match[1].split('/')[1]}`);
+        } else headers['Content-Type'] = 'application/json';
+        const response = await fetchImpl(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-            body: JSON.stringify(payload),
+            headers,
+            body,
             signal,
         });
         if (!response.ok) throw fail(await describeError(response, 'GPT Image'));
