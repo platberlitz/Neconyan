@@ -7,6 +7,13 @@ import { test } from './neconyan-conversation-durable-fixture.js';
 
 test.setTimeout(240000);
 
+// Settings sections fold shut, and only Memory updates starts open.
+async function openSection(workspace, key) {
+    const fold = workspace.locator('#mewmory-settings-' + key);
+    if (!await fold.evaluate(element => element.open)) await fold.locator('summary').first().click();
+    await expect(fold).toHaveJSProperty('open', true);
+}
+
 for (const phone of [false, true]) {
     test(`${phone ? 'phone' : 'desktop'} Mewmory shares native prefixes and retrieves file passages`, async ({ app }, info) => {
         app.provider.mode.reply = body => ({ data: body.input.map((_, index) => ({ index, embedding: [1, 0] })) });
@@ -50,12 +57,14 @@ for (const phone of [false, true]) {
         // The number fields save on a debounce. Fill them before the controls that save at
         // once: a completed save redraws the panel, and a redraw during fill() restores the
         // old number first, so the new digits would be appended to it.
+        await openSection(workspace, 'search');
         await workspace.getByLabel('Maximum passage length, characters', { exact: true }).fill('800');
         await workspace.getByLabel('Text repeated between passages, characters', { exact: true }).fill('100');
         await workspace.getByLabel('Preference for meaning matches', { exact: true }).fill('0.7');
         await workspace.getByLabel('Maximum recalled results', { exact: true }).fill('4');
         await workspace.getByLabel('Update memories as I chat', { exact: true }).uncheck();
         await workspace.getByLabel('Token counter for replies', { exact: true }).selectOption('o200k_base');
+        await openSection(workspace, 'models');
         await workspace.locator('#mewmory-role-embedding').click();
         await workspace.getByLabel('Enable this role', { exact: true }).check();
         await workspace.getByLabel('Embedding connection', { exact: true }).selectOption('native');
@@ -96,10 +105,11 @@ for (const phone of [false, true]) {
         const geometry = await workspace.evaluate(element => ({ width: element.clientWidth, scroll: element.scrollWidth,
             font: getComputedStyle(element.querySelector('input')).fontSize,
             controls: [...element.querySelectorAll('.mewmory-fields input, .mewmory-fields select, .mewmory-fields textarea')]
-                .map(control => ({ width: control.getBoundingClientRect().width, height: control.getBoundingClientRect().height })),
+                .filter(control => control.getClientRects().length).map(control => ({ width: control.getBoundingClientRect().width, height: control.getBoundingClientRect().height })),
             pageWidth: document.documentElement.clientWidth, pageScroll: document.documentElement.scrollWidth }));
         expect(geometry.scroll).toBeLessThanOrEqual(geometry.width + 1);
         expect(geometry.pageScroll).toBeLessThanOrEqual(geometry.pageWidth + 1);
+        expect(geometry.controls.length).toBeGreaterThan(5);
         expect(geometry.controls.every(control => control.width > 100 && control.height >= 32)).toBe(true);
         await info.attach('RAG geometry', { body: JSON.stringify(geometry), contentType: 'application/json' });
         await page.screenshot({ path: info.outputPath('mewmory-rag-settings.png') });

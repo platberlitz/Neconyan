@@ -74,6 +74,13 @@ async function openChat(page, avatar, chatName) {
     }, { avatar, chatName });
 }
 
+// Settings sections fold shut, and only Memory updates starts open.
+async function openSection(workspace, key) {
+    const fold = workspace.locator('#mewmory-settings-' + key);
+    if (!await fold.evaluate(element => element.open)) await fold.locator('summary').first().click();
+    await expect(fold).toHaveJSProperty('open', true);
+}
+
 async function appendAndSave(page, rows) {
     await page.evaluate(async rows => {
         const app = await import('/script.js');
@@ -169,7 +176,8 @@ async function hidingRegression({ page }) {
 
     await workspace.getByRole('tab', { name: 'Settings', exact: true }).click();
     await expect(workspace.getByLabel(HIDE_TRIGGER, { exact: true })).toHaveValue(String(TRIGGER));
-    // The manual hiding action is in the Settings tab's Progress section.
+    // The manual hiding action is in the Settings tab's Upkeep section.
+    await openSection(workspace, 'upkeep');
     const hideButton = workspace.getByRole('button', { name: /Hide old messages/i });
     await expect(hideButton).toBeVisible();
     await expect(hideButton).toBeEnabled();
@@ -304,6 +312,7 @@ async function disabledControlsRegression({ page }) {
     await expect(toggle).not.toBeChecked();
 
     await workspace.getByRole('tab', { name: 'Settings', exact: true }).click();
+    await openSection(workspace, 'upkeep');
     const hide = workspace.getByRole('button', { name: /Hide old messages/i });
     const rebuild = workspace.getByRole('button', { name: 'Rebuild meaning search', exact: true });
     await expect(hide).toBeDisabled();

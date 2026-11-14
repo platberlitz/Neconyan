@@ -25,6 +25,13 @@ async function openSettings(page) {
     return workspace;
 }
 
+// Settings sections fold shut, and only Memory updates starts open.
+async function openSection(workspace, key) {
+    const fold = workspace.locator('#mewmory-settings-' + key);
+    if (!await fold.evaluate(element => element.open)) await fold.locator('summary').first().click();
+    await expect(fold).toHaveJSProperty('open', true);
+}
+
 async function readConfig(page) {
     const headers = await page.evaluate(() => window.SillyTavern.getContext().getRequestHeaders());
     const response = await page.request.post('/api/mewmory/config/get', { headers, data: {} });
@@ -132,6 +139,7 @@ async function settingsSaveAutomatically({ page }) {
     await threshold.fill('46000');
     await expect(status).toHaveText('Configuration saved.', { timeout: 15000 });
 
+    await openSection(workspace, 'models');
     await workspace.locator('#mewmory-role-extractor').click();
     await workspace.getByLabel('Tokenizer for this role').selectOption('cl100k_base');
     await expect.poll(async () => (await readConfig(page)).config.roles.extractor.tokenizer, { timeout: 15000 }).toBe('cl100k_base');
@@ -142,6 +150,8 @@ async function settingsSaveAutomatically({ page }) {
 
     workspace = await openSettings(page);
     await expect(workspace.getByLabel(HIDE_THRESHOLD, { exact: true })).toHaveValue('46000');
+    // The Models section stays open after the reload because its open state is remembered.
+    await expect(workspace.locator('#mewmory-settings-models')).toHaveJSProperty('open', true);
     await workspace.locator('#mewmory-role-extractor').click();
     await expect(workspace.getByLabel('Tokenizer for this role')).toHaveValue('cl100k_base');
     await resetSettings(page);
@@ -283,6 +293,7 @@ async function fallbackConnectionsSaveInOrder({ page }) {
     await setTestProfiles(page, true);
     try {
         const workspace = await openSettings(page);
+        await openSection(workspace, 'models');
         const status = workspace.locator('#mewmory-settings-status');
         const fallbacks = workspace.locator('#mewmory-fallbacks');
         const add = fallbacks.getByLabel('Add a fallback connection', { exact: true });
@@ -308,7 +319,9 @@ async function fallbackConnectionsSaveInOrder({ page }) {
         await expect.poll(saved, { timeout: 15000 }).toEqual(['e2e-fallback-a']);
         await expect(status).toHaveText('Configuration saved.', { timeout: 15000 });
 
-        const reopened = (await openSettings(page)).locator('#mewmory-fallbacks');
+        const again = await openSettings(page);
+        await openSection(again, 'models');
+        const reopened = again.locator('#mewmory-fallbacks');
         await expect(reopened.locator('.mewmory-fallback-name')).toHaveText(['E2E fallback A']);
     } finally {
         await resetSettings(page);
@@ -329,6 +342,7 @@ async function sharedProfileDrivesEveryRole({ page }) {
                 name === 'embedding' ? role : { ...role, enabled: false, profileId: '', modelOverride: '', endpoint: '', model: '' }])),
         });
         let workspace = await openSettings(page);
+        await openSection(workspace, 'models');
         const saved = async () => (await readConfig(page)).config;
         const followers = async () => Object.entries((await saved()).roles)
             .filter(([name]) => name !== 'embedding').map(([name, role]) => [name, role.useShared, role.model]);
@@ -360,6 +374,7 @@ async function sharedProfileDrivesEveryRole({ page }) {
         ]);
 
         workspace = await openSettings(page);
+        await openSection(workspace, 'models');
         await expect(workspace.getByLabel('Connection profile for all roles', { exact: true })).toHaveValue('e2e-fallback-b');
         await expect(workspace.getByLabel('Connection profile', { exact: true })).toHaveValue('mewmory:shared-profile');
     } finally {
@@ -436,6 +451,7 @@ async function jevPresetsAndQuickControlsSave({ page }) {
         await expect.poll(async () => (await readConfig(page)).config.extractionInstructions, { timeout: 15000 })
             .toBe('Keep exact inventory items and promises.');
 
+        await openSection(workspace, 'models');
         await workspace.locator('#mewmory-role-selector').click();
         await expect(workspace.getByLabel('Connection profile', { exact: true })).toHaveValue('');
         await expect(workspace.getByLabel('OpenAI-compatible endpoint', { exact: true })).toBeVisible();
@@ -457,6 +473,84 @@ async function jevPresetsAndQuickControlsSave({ page }) {
     }
 }
 
+async function searchFindsSettingsInFoldedSections({ page }) {
+    await load(page);
+    await resetSettings(page);
+    await page.evaluate(() => window.localStorage.removeItem('mewmory:settings-open'));
+    let workspace = await openSettings(page);
+    const updates = workspace.locator('#mewmory-settings-automatic');
+    const models = workspace.locator('#mewmory-settings-models');
+    const retrieval = workspace.locator('#mewmory-settings-search');
+    const search = workspace.getByRole('searchbox', { name: 'Search settings', exact: true });
+    const result = workspace.locator('#mewmory-settings-find-result');
+    const elsewhere = workspace.locator('#mewmory-settings-find-roles');
+    const clear = workspace.locator('#mewmory-settings-search-clear');
+    await expect(updates).toHaveJSProperty('open', true);
+    await expect(models).toHaveJSProperty('open', false);
+    await expect(retrieval).toHaveJSProperty('open', false);
+    await expect(workspace.locator('#mewmory-fallbacks')).toBeHidden();
+    await expect(clear).toBeHidden();
+
+    await search.fill('backup');
+    await expect(models).toHaveJSProperty('open', true);
+    await expect(workspace.locator('#mewmory-fallbacks')).toBeVisible();
+    await expect(updates).toBeHidden();
+    await expect(retrieval).toBeHidden();
+    await expect(workspace.getByLabel('Model', { exact: true })).toBeHidden();
+    await expect(result).toHaveText(/^\d+ match(es)?\.$/);
+    await expect(clear).toBeVisible();
+
+    await search.fill('prefill');
+    await expect(workspace.locator('#mewmory-field-prefill-extractor')).toBeVisible();
+    await expect(workspace.locator('#mewmory-field-partial-prefill-extractor')).toBeVisible();
+    await expect(workspace.locator('.mewmory-role-picker')).toBeVisible();
+    await expect(workspace.locator('#mewmory-fallbacks')).toBeHidden();
+    await expect(elsewhere).toBeHidden();
+
+    // A setting the role on screen does not have points to the roles that do.
+    await search.fill('document prefix');
+    await expect(result).toHaveText('No settings match ‘document prefix’ for Facts and events.');
+    await expect(models).toBeHidden();
+    await expect(elsewhere).toContainText('Try another model role:');
+    await elsewhere.getByRole('button', { name: 'Embeddings', exact: true }).click();
+    await expect(workspace.locator('#mewmory-role-embedding')).toHaveAttribute('aria-pressed', 'true');
+    await expect(search).toHaveValue('document prefix');
+    await expect(workspace.getByLabel('Document prefix, optional', { exact: true })).toBeVisible();
+    await expect(workspace.getByLabel('Query prefix, optional', { exact: true })).toBeHidden();
+
+    await search.fill('prefill');
+    await elsewhere.getByRole('button', { name: 'Recall selector', exact: true }).click();
+    await expect(workspace.locator('#mewmory-role-selector')).toHaveAttribute('aria-pressed', 'true');
+    await expect(workspace.locator('#mewmory-field-prefill-selector')).toBeVisible();
+    await expect(workspace.getByLabel('Document prefix, optional', { exact: true })).toHaveCount(0);
+
+    await search.fill('zzz unknown setting');
+    await expect(result).toHaveText(/^No settings match ‘zzz unknown setting’\. Some settings only appear after another choice/);
+    await expect(elsewhere).toBeHidden();
+
+    // Clearing the search puts every section back the way it was left.
+    await search.press('Escape');
+    await expect(search).toHaveValue('');
+    await expect(search).toBeFocused();
+    await expect(clear).toBeHidden();
+    await expect(result).toBeHidden();
+    await expect(updates).toHaveJSProperty('open', true);
+    await expect(models).toHaveJSProperty('open', false);
+    await expect(retrieval).toHaveJSProperty('open', false);
+    await expect(models).toBeVisible();
+
+    await updates.locator('summary').first().click();
+    await retrieval.locator('summary').first().click();
+    await expect(updates).toHaveJSProperty('open', false);
+    await expect(retrieval).toHaveJSProperty('open', true);
+    await expect(workspace.getByLabel('Maximum recalled results', { exact: true })).toBeVisible();
+    workspace = await openSettings(page);
+    await expect(workspace.locator('#mewmory-settings-automatic')).toHaveJSProperty('open', false);
+    await expect(workspace.locator('#mewmory-settings-search')).toHaveJSProperty('open', true);
+    await expect(workspace.locator('#mewmory-settings-models')).toHaveJSProperty('open', false);
+    await page.evaluate(() => window.localStorage.removeItem('mewmory:settings-open'));
+}
+
 const SHARED_TITLE = 'a connection profile for all roles switches every following role together';
 const AUTOSAVE_TITLE = 'every setting saves automatically, including token limits and model roles';
 const FALLBACK_TITLE = 'fallback connections are added, reordered and removed, and save in order';
@@ -466,6 +560,7 @@ const RAPID_TITLE = 'rapid edits and panel navigation keep the newest draft and 
 const OLD_SERVER_TITLE = 'a server still running older code is reported instead of silently dropping a switch';
 const WINDOW_TITLE = 'message mode saves its own recent window without changing token mode';
 const JEV_TITLE = 'Jev decision presets, window presets and memory detail focus save from Now and Settings';
+const SEARCH_TITLE = 'settings search opens the matching sections, offers other roles and restores the folds';
 
 test.describe('desktop', () => {
     test.use({ viewport: { width: 1280, height: 900 } });
@@ -478,6 +573,7 @@ test.describe('desktop', () => {
     test(SHARED_TITLE, sharedProfileDrivesEveryRole);
     test(WINDOW_TITLE, messageWindowSettingsSave);
     test(JEV_TITLE, jevPresetsAndQuickControlsSave);
+    test(SEARCH_TITLE, searchFindsSettingsInFoldedSections);
 });
 
 test.describe('touch phone', () => {
@@ -488,4 +584,5 @@ test.describe('touch phone', () => {
     test(OLD_SERVER_TITLE, oldServerIsReported);
     test(WINDOW_TITLE, messageWindowSettingsSave);
     test(JEV_TITLE, jevPresetsAndQuickControlsSave);
+    test(SEARCH_TITLE, searchFindsSettingsInFoldedSections);
 });
