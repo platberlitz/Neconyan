@@ -32,6 +32,18 @@ async function applyStyle(page, id) {
         : document.querySelector(`link[data-sb-shell-style="${id}"]`)?.sheet, id);
 }
 
+async function expectSavedStyle(page, id) {
+    // Returning to an already saved style is a no-op; it need not send another POST.
+    await expect.poll(() => page.evaluate(async () => {
+        const { getRequestHeaders } = await import('/script.js');
+        const response = await fetch('/api/settings/get', {
+            method: 'POST', headers: getRequestHeaders(), body: '{}',
+        });
+        if (!response.ok) throw new Error(`Settings read failed: ${response.status}`);
+        return JSON.parse((await response.json()).settings).power_user.neconyan_shell_style;
+    }), { timeout: 15000 }).toBe(id);
+}
+
 async function expand(page, selector) {
     const header = page.locator(selector);
     if (await header.getAttribute('aria-expanded') !== 'true') await header.click();
@@ -95,6 +107,7 @@ for (const phone of [false, true]) {
         await page.locator('[data-sb-theme-option="windows-98"]').click();
         await expect(page.locator('[data-sb-theme-option="windows-98"]')).toHaveAttribute('aria-pressed', 'true');
         await page.waitForFunction(() => document.querySelector('link[data-sb-shell-style="windows-98"]')?.sheet);
+        await expectSavedStyle(page, 'windows-98');
         await page.evaluate(() => NeconyanShell.showHome());
         await syncPhoneCss(page, phone);
 
@@ -152,11 +165,8 @@ for (const phone of [false, true]) {
         expect(await contentOf(message.locator('.w98-installed'))).toBe('normal');
         expect(await contentOf(page.locator('.neconyan-cat-head').first())).toBe('normal');
         await expect(intro).not.toHaveCSS('border-radius', '0px');
-        const savedStyle = page.waitForResponse(response => response.url().endsWith('/api/settings/save')
-            && response.ok() && response.request().postDataJSON()?.power_user?.neconyan_shell_style === 'windows-98');
         await applyStyle(page, 'windows-98');
-        // Reload only after the automatic settings save acknowledges this final selection.
-        await savedStyle;
+        await expectSavedStyle(page, 'windows-98');
         await expect.poll(() => contentOf(message.locator('.w98-installed'))).toContain('win98/portrait-miso-neutral.webp');
 
         // Custom accents recolour the caption strip instead of the navy default.
