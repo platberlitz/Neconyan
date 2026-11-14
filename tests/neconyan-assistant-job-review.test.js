@@ -64,10 +64,14 @@ test('a native note proposal shows its summary and diff before saving', async ()
 
 test('concurrent observers share one approval popup', async () => {
     let release;
-    popup.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+    const opened = Promise.withResolvers();
+    popup.mockImplementationOnce(() => new Promise(resolve => {
+        release = resolve;
+        opened.resolve();
+    }));
     const first = reviewAssistantJobChildren(root, 'alice');
     const second = reviewAssistantJobChildren(root, 'alice');
-    for (let index = 0; index < 10; index++) await Promise.resolve();
+    await opened.promise;
     expect(popup).toHaveBeenCalledTimes(1);
     release(1);
     await Promise.all([first, second]);

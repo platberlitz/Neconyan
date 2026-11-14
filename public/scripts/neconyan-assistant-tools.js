@@ -14,9 +14,7 @@ import {
 import { selected_group } from './group-chats.js';
 import { ToolManager } from './tool-calling.js';
 import { callGenericPopup, POPUP_RESULT, POPUP_TYPE } from './popup.js';
-import { buildAssistantReview, buildNoteProposalReview } from './neconyan-assistant-review.js';
 import { NOTE_TOOL_DEFINITIONS } from './notebooks/assistant-note-tools.js';
-import { formatDiff } from './notebooks/line-diff.js';
 import { loadWorldInfo, world_names } from './world-info.js';
 import { updateEntry } from './extensions/in-chat-agents/pathfinder/entry-manager.js';
 import {
@@ -29,8 +27,6 @@ import { extension_settings } from './extensions.js';
 import { getPresetManager } from './preset-manager.js';
 import { getCurrentUserHandle } from './user.js';
 import { uuidv4 } from './utils.js';
-import { normaliseCharacterDraft } from './neconyan-character-draft.js';
-import { saveCharacterDraft } from './neconyan-character-create.js';
 import { isNeconyanAssistant } from './neconyan-assistant-knowledge.js';
 import { ASK_FIRST, CONFIRM_PROTOCOL, CREATE_CHARACTER_GUIDE, USER_CONFIRMED_DESCRIPTION } from './neconyan-assistant-tool-guidance.js';
 import { CREATE_AGENT_GUIDE, CREATE_AGENT_SCHEMA, buildAssistantAgent, assistantAgentCreated } from './neconyan-assistant-agent.js';
@@ -283,6 +279,8 @@ function enqueueAssistantEdit(task) {
 
 async function confirmEdit(review, guard) {
     guard.assert();
+    const { buildAssistantReview } = await import('./neconyan-assistant-review.js');
+    guard.assert();
     const result = await callGenericPopup(buildAssistantReview(review), POPUP_TYPE.CONFIRM, '', { wide: true, large: true });
     guard.assert();
     return result === POPUP_RESULT.AFFIRMATIVE;
@@ -319,6 +317,11 @@ function noteTool(kind) {
         const proposal = await postNotebook('/assistant/proposal', { proposalId: result.proposalId, full: true });
         guard.assert();
         if (proposal.status !== 'success') return result;
+        const [{ buildNoteProposalReview }, { formatDiff }] = await Promise.all([
+            import('./neconyan-assistant-review.js'),
+            import('./notebooks/line-diff.js'),
+        ]);
+        guard.assert();
         const diff = typeof proposal.before === 'string' && typeof proposal.after === 'string'
             ? formatDiff(proposal.before, proposal.after) : '';
         const choice = await callGenericPopup(buildNoteProposalReview({ summary: proposal.summary ?? result.summary, diff }),
@@ -726,6 +729,12 @@ async function readCharacter(input, guard) {
 }
 
 async function createCharacter(input, guard) {
+    guard.assert();
+    const [{ normaliseCharacterDraft }, { saveCharacterDraft }] = await Promise.all([
+        import('./neconyan-character-draft.js'),
+        import('./neconyan-character-create.js'),
+    ]);
+    guard.assert();
     const draft = normaliseCharacterDraft(input);
     const { character: fields, characterNote, alternateGreetings, avatarPrompt } = draft;
     const name = fields.name;
