@@ -2129,6 +2129,15 @@ function renderSettings(root) {
                 + ' Counts are approximate. Choose a tokenizer manually if your provider uses a different one.' : '',
         }),
     );
+    if (ui.role !== 'embedding') {
+        const decisionNote = DECISION_ROLES.includes(ui.role) ? ' Not used by the Jev / System One decision API.' : '';
+        fields.append(
+            configField('Prefill, optional', role.prefill || '', value => { role.prefill = value; }, { multiline: true, key: 'prefill-' + ui.role,
+                hint: 'Start this role’s replies with this text, for example { so the model goes straight to its answer. Mewmory puts it back in front of the reply before reading it. Fallback connections use it too. Your provider must support assistant prefills.' + decisionNote }),
+            configField('Partial prefill for Kimi K3, optional', role.partialPrefill || '', value => { role.partialPrefill = value; }, { multiline: true, key: 'partial-prefill-' + ui.role,
+                hint: 'Used instead of Prefill when this role or a fallback connection runs Kimi K3 or K3.1 Pro. Sends partial: true. Leave blank to use Prefill. A <think> block starts the model’s reasoning.' + decisionNote }),
+        );
+    }
     if (ui.role === 'embedding') {
         if (!native) fields.append(configField('Prefix preset', '', value => {
             const preset = PREFIX_PRESETS[Number(value)];
