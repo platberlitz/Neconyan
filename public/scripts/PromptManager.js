@@ -2427,9 +2427,10 @@ class PromptManager {
         ` : '';
 
         const totalActiveTokens = this.getDisplayTokenUsage();
+        const totalChatHistoryTokens = this.getActivePromptTokenCounts()?.chatHistory ?? this.tokenHandler?.getCounts().chatHistory ?? 0;
         const totalAgentTokens = this.getInChatAgentTokenUsage();
 
-        const headerHtml = await renderTemplateAsync('promptManagerHeader', { error: this.error, errorDiv, prefix: this.configuration.prefix, totalActiveTokens, totalAgentTokens, dragLocked: power_user.prompt_manager_drag_locked });
+        const headerHtml = await renderTemplateAsync('promptManagerHeader', { error: this.error, errorDiv, prefix: this.configuration.prefix, totalActiveTokens, totalChatHistoryTokens, totalAgentTokens, dragLocked: power_user.prompt_manager_drag_locked });
         if (!this.#isRenderCurrent(renderRequestId)) {
             return false;
         }
