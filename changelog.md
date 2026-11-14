@@ -80,6 +80,7 @@
 - PR #670 (2026-11-14) `feat(presets): open chat completion presets in a searchable picker`
 - PR #671 (2026-11-14) `feat(presets): show chat history tokens in the summary`
 - PR #672 (2026-11-14) `feat(scratchpad): support image editing with compatible providers`
+- PR #673 (2026-11-14) `feat(agents): rerun agents from the saved-reply warning`
 
 ## v1.5.4
 
