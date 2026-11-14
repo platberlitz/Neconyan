@@ -128,8 +128,12 @@ body.neconyan {
     background: color-mix(in srgb, var(--neco-accent-secondary) 12%, var(--neco-surface));
     color: var(--neco-ink);
 }
-body.neconyan #bg-header-fixed .bg-header-row-1 > h3 { flex: 0 1 auto; padding: 0; border: 0; background: transparent; }
-body.neconyan #background_fitting { flex: 1 0 auto; width: auto; min-width: calc(7ch + 52px); max-width: none; }
+body.neconyan #bg-header-fixed > h3 { margin-bottom: 8px; padding: 0; border: 0; background: transparent; }
+body.neconyan #bg-header-fixed .bg-header-row-1 { flex-wrap: nowrap; overflow-x: auto; touch-action: pan-x; padding: 2px; margin-bottom: 8px; }
+body.neconyan #bg-header-fixed .bg-header-row-1 > * { flex: 0 0 auto; min-height: 44px; margin: 0; }
+body.neconyan #bg-header-fixed .bg-header-row-1 > .menu_button { width: 44px; min-width: 44px; padding: 0; }
+body.neconyan #bg-header-fixed .bg-header-row-1 > .menu_button > span { display: none; }
+body.neconyan #background_fitting { width: auto; min-width: calc(7ch + 52px); max-width: none; }
 /* The built-in wallpaper follows the same fit as selected images. */
 body.neconyan:has(> #bg1.cover)::before { background-size: cover; background-position: var(--neconyan-wallpaper-focus, center); }
 body.neconyan:has(> #bg1.contain)::before { background-size: contain; background-position: var(--neconyan-wallpaper-focus, center); }
@@ -138,7 +142,7 @@ body.neconyan:has(> #bg1.center)::before { background-size: auto; background-pos
 /* Background Position: the part of the picture kept in view when the screen crops it. */
 :root[data-sb-bg-position] #bg1,
 :root[data-sb-bg-position] body.neconyan::before { background-position: var(--sb-bg-position) !important; }
-body.neconyan #background_position { flex: 0 1 auto; width: auto; min-width: calc(6ch + 40px); max-width: none; }
+body.neconyan #background_position { width: auto; min-width: calc(6ch + 40px); max-width: none; }
 body.neconyan {
     --sb-accent: var(--neco-ginger);
     --sb-accent-soft: var(--neco-user);

@@ -299,30 +299,57 @@ async function fallbackConnectionsSaveInOrder({ page }) {
         const add = fallbacks.getByLabel('Add a fallback connection', { exact: true });
         const names = fallbacks.locator('.mewmory-fallback-name');
         const saved = async () => (await readConfig(page)).config.fallbackProfileIds;
+        const scrollPositions = () => page.evaluate(() => {
+            const element = document.getElementById('mewmory-fallbacks');
+            const positions = [];
+            for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+                positions.push({ top: parent.scrollTop, max: Math.max(0, parent.scrollHeight - parent.clientHeight) });
+            }
+            return positions;
+        });
+        const editWithoutJumping = async (control, action, order) => {
+            await control.scrollIntoViewIfNeeded();
+            const before = await scrollPositions();
+            expect(before.some(position => position.top > 100)).toBe(true);
+            await action();
+            await expect.poll(saved, { timeout: 15000 }).toEqual(order);
+            await expect(status).toHaveText('Configuration saved.', { timeout: 15000 });
+            const after = await scrollPositions();
+            expect(after).toHaveLength(before.length);
+            for (let index = 0; index < before.length; index++) {
+                expect(Math.abs(after[index].top - Math.min(before[index].top, after[index].max)), 'Fallback edits keep the scrolled settings in place').toBeLessThanOrEqual(1);
+            }
+        };
 
         await fallbacks.scrollIntoViewIfNeeded();
         await expect(fallbacks.locator('.mewmory-fallback-count')).toHaveText('0 of 10');
-        await add.selectOption('e2e-fallback-a');
-        await expect.poll(saved, { timeout: 15000 }).toEqual(['e2e-fallback-a']);
-        await add.selectOption('e2e-fallback-b');
-        await expect.poll(saved, { timeout: 15000 }).toEqual(['e2e-fallback-a', 'e2e-fallback-b']);
+        await editWithoutJumping(add, () => add.selectOption('e2e-fallback-a'), ['e2e-fallback-a']);
+        await editWithoutJumping(add, () => add.selectOption('e2e-fallback-b'), ['e2e-fallback-a', 'e2e-fallback-b']);
         await expect(names).toHaveText(['E2E fallback A', 'E2E fallback B']);
         await expect(fallbacks.locator('.mewmory-fallback-count')).toHaveText('2 of 10');
 
-        await fallbacks.getByRole('button', { name: 'Try earlier: E2E fallback B', exact: true }).click();
-        await expect.poll(saved, { timeout: 15000 }).toEqual(['e2e-fallback-b', 'e2e-fallback-a']);
+        const earlier = fallbacks.getByRole('button', { name: 'Try earlier: E2E fallback B', exact: true });
+        await editWithoutJumping(earlier, () => earlier.click(), ['e2e-fallback-b', 'e2e-fallback-a']);
         await expect(names).toHaveText(['E2E fallback B', 'E2E fallback A']);
         await expect(fallbacks.getByRole('button', { name: 'Try earlier: E2E fallback B', exact: true })).toBeDisabled();
         await expect(fallbacks.getByRole('button', { name: 'Try later: E2E fallback B', exact: true })).toBeFocused();
 
-        await fallbacks.getByRole('button', { name: 'Remove: E2E fallback B', exact: true }).click();
-        await expect.poll(saved, { timeout: 15000 }).toEqual(['e2e-fallback-a']);
-        await expect(status).toHaveText('Configuration saved.', { timeout: 15000 });
+        const later = fallbacks.getByRole('button', { name: 'Try later: E2E fallback B', exact: true });
+        await editWithoutJumping(later, () => later.click(), ['e2e-fallback-a', 'e2e-fallback-b']);
+        await expect(earlier).toBeFocused();
+
+        const remove = fallbacks.getByRole('button', { name: 'Remove: E2E fallback B', exact: true });
+        await editWithoutJumping(remove, () => remove.click(), ['e2e-fallback-a']);
+        await expect(fallbacks.getByRole('button', { name: 'Remove: E2E fallback A', exact: true })).toBeFocused();
 
         const again = await openSettings(page);
         await openSection(again, 'models');
         const reopened = again.locator('#mewmory-fallbacks');
         await expect(reopened.locator('.mewmory-fallback-name')).toHaveText(['E2E fallback A']);
+        const last = reopened.getByRole('button', { name: 'Remove: E2E fallback A', exact: true });
+        await editWithoutJumping(last, () => last.click(), []);
+        await expect(reopened.locator('.mewmory-fallback-count')).toHaveText('0 of 10');
+        await expect(reopened.getByLabel('Add a fallback connection', { exact: true })).toBeEnabled();
     } finally {
         await resetSettings(page);
         await setTestProfiles(page, false);

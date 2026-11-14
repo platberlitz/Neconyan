@@ -409,6 +409,7 @@ describe('mobile shell lifecycle wiring', () => {
             ['#sheld', '.group_speaker_list'],
             ['#left-nav-panel', '.ica--agent-tabs'],
             ['#right-nav-panel', '.me-tabs'],
+            ['#right-nav-panel', '#bg-header-fixed .bg-header-row-1'],
             ['#right-nav-panel', '.me-ref-chips'],
             ['#right-nav-panel', '.world_info_view_filters'],
             ['.popup', '.ica--editor-tabs'],
