@@ -1850,6 +1850,86 @@ body.neconyan #right-nav-panel #CharListButtonAndHotSwaps.has-favorites #HotSwap
 }
 body.neconyan #right-nav-panel #CharListButtonAndHotSwaps.has-favorites .sb-character-favorites-label::before,
 body.neconyan #right-nav-panel #CharListButtonAndHotSwaps.has-favorites .sb-character-favorites-label::after { display: none; }
+
+/* Desktop rails share the phone rail's accent pills and scroll-position line. */
+@media (min-width: 769px) {
+    #HotSwapWrapper { position: relative; }
+    #right-nav-panel #HotSwapWrapper .hotswap { flex: 0 1 auto; }
+    #HotSwapWrapper .sb-mobile-swipe-rail {
+        --sb-rail-fade-left: 0px;
+        --sb-rail-fade-right: 0px;
+        mask-image: linear-gradient(to right, transparent, #000 var(--sb-rail-fade-left), #000 calc(100% - var(--sb-rail-fade-right)), transparent);
+    }
+    #HotSwapWrapper .sb-can-scroll-left { --sb-rail-fade-left: 22px; }
+    #HotSwapWrapper .sb-can-scroll-right { --sb-rail-fade-right: 22px; }
+    :is(#sb_character_creator_panel, #HotSwapWrapper) .sb-mobile-rail-chrome {
+        position: absolute;
+        z-index: 11;
+        pointer-events: none;
+        direction: ltr;
+        contain: layout style;
+    }
+    :is(#sb_character_creator_panel, #HotSwapWrapper) .sb-mobile-rail-chrome[hidden],
+    :is(#sb_character_creator_panel, #HotSwapWrapper) .sb-mobile-rail-arrow[hidden],
+    #sb_character_creator_panel .sb-mobile-rail-track {
+        display: none;
+    }
+    :is(#sb_character_creator_panel, #HotSwapWrapper) .sb-mobile-rail-arrow {
+        position: absolute;
+        top: 50%;
+        translate: 0 -50%;
+        display: grid;
+        place-items: center;
+        width: 44px;
+        height: 36px;
+        margin: 0;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: var(--neco-on-accent);
+        box-shadow: none;
+        pointer-events: auto;
+        cursor: pointer;
+    }
+    :is(#sb_character_creator_panel, #HotSwapWrapper) .sb-mobile-rail-arrow > span {
+        display: grid;
+        place-items: center;
+        width: 20px;
+        height: 28px;
+        border: 1px solid var(--neco-ginger);
+        border-radius: 999px;
+        background: var(--neco-ginger);
+        color: var(--neco-on-accent);
+    }
+    :is(#sb_character_creator_panel, #HotSwapWrapper) .sb-mobile-rail-arrow:hover > span {
+        background: var(--neco-ginger-hover);
+    }
+    :is(#sb_character_creator_panel, #HotSwapWrapper) .sb-mobile-rail-arrow:focus-visible {
+        outline: 2px solid var(--neco-ginger);
+        outline-offset: 1px;
+    }
+    :is(#sb_character_creator_panel, #HotSwapWrapper) .sb-mobile-rail-left { left: 0; justify-items: start; }
+    :is(#sb_character_creator_panel, #HotSwapWrapper) .sb-mobile-rail-right { right: 0; justify-items: end; }
+    #HotSwapWrapper .sb-mobile-rail-track {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 2px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--neco-ginger) 20%, transparent);
+    }
+    #HotSwapWrapper .sb-mobile-rail-thumb {
+        position: absolute;
+        height: 100%;
+        width: var(--sb-rail-thumb-width);
+        left: var(--sb-rail-thumb-left);
+        border-radius: inherit;
+        background: var(--neco-ginger);
+    }
+}
+
 body.neconyan #right-nav-panel .sb-character-library-primary-actions,
 body.neconyan #right-nav-panel .sb-character-library-secondary-actions {
     display: flex;
