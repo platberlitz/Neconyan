@@ -73,6 +73,7 @@
 - PR #663 (2026-11-13) `fix(mewmory): stop repeating the player persona in prompts`
 - PR #664 (2026-11-13) `feat(scratchpad): let vision models inspect generated images`
 - PR #665 (2026-11-13) `docs(readme): add the 1.5.4 sections to the translations`
+- PR #666 (2026-11-14) `fix(locale): make nine semicolon captions translatable`
 - PR #667 (2026-11-13) `fix(prompts): resolve variables in prompt previews`
 - PR #668 (2026-11-13) `feat(presets): tidy the presets panel and make new prompts painless`
 - PR #669 (2026-11-13) `feat(parameters): tidy the parameters tab into clear cards`
