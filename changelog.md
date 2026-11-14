@@ -82,6 +82,7 @@
 - PR #672 (2026-11-14) `feat(scratchpad): support image editing with compatible providers`
 - PR #673 (2026-11-14) `feat(agents): rerun agents from the saved-reply warning`
 - PR #674 (2026-11-14) `fix(mewmory): make fallbacks work, add prefills and settings search`
+- PR #675 (2026-11-14) `feat(ui): open select lists in the shared searchable picker`
 
 ## v1.5.4
 
