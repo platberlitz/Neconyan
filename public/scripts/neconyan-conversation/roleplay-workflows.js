@@ -511,7 +511,56 @@ function warnAgentFailure(receipt, id, { account, locator }) {
         || account !== getCurrentUserHandle() || !matchesCurrentWorkflowLocator(locator)
         || globalThis.document?.visibilityState === 'hidden') return;
     warnedAgentFailures.add(id);
-    globalThis.toastr?.warning?.(t`Your reply was saved, but some Agents could not finish. Unfinished Agent changes were skipped.`, t`Agents did not finish`);
+    const messageIndex = chat.findIndex(message => {
+        const savedReply = message.extra?.roleplay_workflow_reply;
+        return savedReply?.rootJobId === receipt.jobId && savedReply?.childJobId === receipt.result.childJobId;
+    });
+    const message = chat[messageIndex];
+    const canRerun = message && !message.is_user && !message.is_system;
+    let dismissed = false;
+    const toast = globalThis.toastr?.warning?.(
+        t`Your reply was saved, but some Agents could not finish. Unfinished Agent changes were skipped.`,
+        t`Agents did not finish`,
+        canRerun ? { timeOut: 0, extendedTimeOut: 0, tapToDismiss: false, closeButton: true, onCloseClick: () => { dismissed = true; } } : undefined,
+    );
+    if (!canRerun || !toast) return;
+
+    const revision = getRoleplaySourceMessageRevision(message);
+    const swipeId = message.swipe_id ?? 0;
+    const isCurrent = () => account === getCurrentUserHandle() && matchesCurrentWorkflowLocator(locator)
+        && chat[messageIndex] === message && (message.swipe_id ?? 0) === swipeId;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'menu_button menu_button_primary neconyan-rerun-agents';
+    button.textContent = t`Rerun agents`;
+    button.addEventListener('click', async event => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (dismissed || button.disabled) return;
+        button.disabled = true;
+        try {
+            const { rerunSavedReplyAgentsOnMessage } = await import('../extensions/in-chat-agents/agent-runner.js');
+            if (dismissed) return;
+            if (!isCurrent() || getRoleplaySourceMessageRevision(message) !== revision) {
+                globalThis.toastr?.clear?.(toast, { force: true });
+                globalThis.toastr?.info?.(t`That saved reply is no longer selected or has changed. Use its message menu to rerun Agents.`);
+                return;
+            }
+            if (isGenerating()) {
+                button.disabled = false;
+                globalThis.toastr?.info?.(t`Wait for the current reply to finish, then rerun Agents.`);
+                return;
+            }
+            dismissed = true;
+            globalThis.toastr?.clear?.(toast, { force: true });
+            await rerunSavedReplyAgentsOnMessage(messageIndex, { isCurrent });
+        } catch (error) {
+            button.disabled = false;
+            console.warn('[roleplay-workflow] Saved reply Agents could not be rerun.', error);
+            globalThis.toastr?.error?.(t`Agents could not be rerun. Try again from the reply’s message menu.`);
+        }
+    });
+    toast.find('.toast-message').append(button);
 }
 
 /**

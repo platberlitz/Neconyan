@@ -25,7 +25,7 @@ for (const phone of [false, true]) for (const change of ['agent', 'settings', 'a
     const viewport = phone ? 'phone' : 'desktop';
     const settingsChange = change.startsWith('settings');
     const staysOpen = change.endsWith('page open');
-    test(`${viewport} keeps formatting and warns after changing ${change} and helper failure`, async ({ app, browser, initialServerOptions }) => {
+    test(`${viewport} keeps formatting and warns after changing ${change} and helper failure`, async ({ app, browser, initialServerOptions }, info) => {
         test.setTimeout(180000);
         app.provider.mode.streamReply = { first: 'The paid main reply', rest: answer.slice('The paid main reply'.length) };
         app.provider.mode.hold = ['failed-helper'];
@@ -34,8 +34,10 @@ for (const phone of [false, true]) for (const change of ['agent', 'settings', 'a
             saved.world_info_settings = { world_info: { globalSelect: [] } };
             saved.extension_settings.connectionManager.profiles.push({ id: 'helper', name: 'Failing helper',
                 api: 'custom', mode: 'cc', model: 'failed-helper', 'api-url': app.provider.url });
+            saved.extension_settings.connectionManager.profiles.push({ id: 'companion', name: 'Automatic Companion',
+                api: 'custom', mode: 'cc', model: 'automatic-companion', 'api-url': app.provider.url });
             saved.extension_settings.inChatAgents = { globalSettings: { enabled: true, separateRecentChats: false,
-                connectionProfile: 'helper', trackerCompanionAutoLoopVersion: 4 } };
+                connectionProfile: 'helper', trackerCompanionAutoLoopVersion: 4, hiddenCompanionAgentIds: ['hidden-companion'] } };
             saved.extension_settings.translate = { provider: 'libre', target_language: 'fr', internal_language: 'en',
                 auto_mode: 'none' };
         } });
@@ -47,6 +49,12 @@ for (const phone of [false, true]) for (const change of ['agent', 'settings', 'a
             postProcess: { enabled: false, promptTransformEnabled: true }, regexScripts: [displayScript] };
         await fs.mkdir(directory, { recursive: true });
         await fs.writeFile(path.join(directory, 'helper.json'), JSON.stringify(agent));
+        for (const [id, trigger, enabled] of [['auto-companion', 'auto', true], ['manual-companion', 'manual', true],
+            ['hidden-companion', 'auto', true], ['disabled-companion', 'auto', false]]) {
+            await fs.writeFile(path.join(directory, `${id}.json`), JSON.stringify({ id, name: id, enabled,
+                execution: 'companion', category: 'companion', phase: 'post', prompt: `Write a note for ${id}.`,
+                connectionProfile: 'companion', companion: { trigger, contextMessages: 10, format: 'markdown', displayMode: 'card' } }));
+        }
         const page = await openRoleplay(account);
         await page.evaluate(async autoMode => {
             const { extension_settings } = await import('/scripts/extensions.js');
@@ -113,8 +121,64 @@ for (const phone of [false, true]) for (const change of ['agent', 'settings', 'a
         await expect(reopened.locator('.toast-warning')).toContainText('Your reply was saved, but some Agents could not finish.');
         await reopened.evaluate(async () => (await import('/scripts/neconyan-conversation/roleplay-workflows.js')).resumeNativeRoleplayWorkflowObservation());
         await expect(reopened.locator('.toast-warning')).toHaveCount(1);
+        const warning = reopened.locator('.toast-warning').filter({ hasText: 'Agents did not finish' });
+        const rerun = warning.getByRole('button', { name: 'Rerun agents', exact: true });
+        await expect(rerun).toBeVisible();
         await reopened.screenshot({ path: `../screenshots/helper-failure-${change}-${viewport}.png`, scale: 'css' });
+        // eslint-disable-next-line playwright/no-conditional-in-test -- The open-page cases accept; reopened cases decline.
+        if (staysOpen) {
+            await verifyRerunButton(reopened, rerun, phone, info);
+            app.provider.mode.fail = false;
+            app.provider.mode.reply = body => ({ choices: [{ message: { role: 'assistant',
+                content: body.model === 'automatic-companion' ? 'The automatic Companion was rerun.' : `${answer}\n\nRevised by the after-reply Agent.` } }] });
+            await rerun.click();
+            await expect(warning).toHaveCount(0);
+            await expect.poll(() => app.provider.calls.filter(call => call.model === 'automatic-companion').length).toBe(1);
+            await expect.poll(() => reopened.evaluate(async () => {
+                const { chat } = await import('/script.js');
+                return chat.at(-1)?.extra?.inChatAgentCompanionResults?.['auto-companion']?.content;
+            })).toBe('The automatic Companion was rerun.');
+            await expect(reopened.locator('#chat .mes[mesid]').last()).toContainText('Revised by the after-reply Agent.');
+            expect(app.provider.calls.filter(call => call.model === 'failed-helper')).toHaveLength(2);
+            expect(app.provider.calls.filter(call => call.model === MODEL)).toHaveLength(1);
+            const companionRequest = app.provider.calls.find(call => call.model === 'automatic-companion');
+            expect(JSON.stringify(companionRequest)).toContain('Revised by the after-reply Agent.');
+        } else {
+            await warning.locator('.toast-close-button').click();
+            await expect(warning).toHaveCount(0);
+            await reopened.evaluate(async () => (await import('/scripts/neconyan-conversation/roleplay-workflows.js')).resumeNativeRoleplayWorkflowObservation());
+            await expect(warning).toHaveCount(0);
+            expect(app.provider.calls.filter(call => call.model === 'failed-helper')).toHaveLength(1);
+            expect(app.provider.calls.filter(call => call.model === 'automatic-companion')).toHaveLength(0);
+        }
     });
+}
+
+async function verifyRerunButton(page, button, phone, info) {
+    await page.screenshot({ path: `../screenshots/rerun-agents-after-${phone ? 'phone' : 'desktop'}.png`, scale: 'css' });
+    const measurements = [];
+    for (const accent of [null, 'Pearl', 'Midnight Ink']) {
+        if (accent) await page.locator(`.sb-accent-profile-apply[aria-label="Apply ${accent} accent profile"]`).evaluate(element => element.click());
+        const sample = await button.evaluate(async element => {
+            const { contrastRatio } = await import('/scripts/theme-contrast.js');
+            const style = getComputedStyle(element);
+            const canvas = document.createElement('canvas').getContext('2d');
+            const channels = colour => {
+                canvas.fillStyle = colour;
+                canvas.fillRect(0, 0, 1, 1);
+                return [...canvas.getImageData(0, 0, 1, 1).data].slice(0, 3);
+            };
+            const rect = element.getBoundingClientRect();
+            return { contrast: contrastRatio(channels(style.color), channels(style.backgroundColor)),
+                height: rect.height, left: rect.left, right: rect.right };
+        });
+        expect(sample.contrast).toBeGreaterThanOrEqual(4.5);
+        expect(sample.height).toBeGreaterThanOrEqual(44);
+        expect(sample.left).toBeGreaterThanOrEqual(0);
+        expect(sample.right).toBeLessThanOrEqual(phone ? 393 : 1280);
+        measurements.push({ accent: accent || 'default', ...sample });
+    }
+    await info.attach('rerun-button-measurements', { body: JSON.stringify(measurements), contentType: 'application/json' });
 }
 
 for (const phone of [false, true]) for (const stage of ['translation', 'speech']) {

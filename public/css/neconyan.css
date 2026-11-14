@@ -2812,6 +2812,14 @@ body.neconyan #toast-container .toast-message .menu_button {
 }
 body.neconyan #toast-container > div.neconyan-undo-toast::before { display: none; }
 
+body.neconyan #toast-container .toast-message .neconyan-rerun-agents {
+    display: block;
+    min-height: 44px;
+    background: var(--neco-ginger);
+    color: var(--neco-on-accent);
+    border-color: var(--neco-ginger);
+}
+
 /* Message deletion Undo stays compact, keyboard-visible, and usable on touch. */
 body.neconyan #toast-container .neconyan-undo-toast {
     width: min(480px, calc(100vw - 24px));
