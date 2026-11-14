@@ -91,8 +91,11 @@ function restoreHistorySnapshot(snapshot, { history = false, expanded = null, sw
 }
 
 export function saveHistory() {
+    const snapshot = createHistorySnapshot();
+    // Background scans must not consume Undo or discard Redo without a change.
+    if (colorHistory[historyIndex] === snapshot) return;
     setColorHistory(colorHistory.slice(0, historyIndex + 1));
-    colorHistory.push(createHistorySnapshot());
+    colorHistory.push(snapshot);
     if (colorHistory.length > 20) colorHistory.shift();
     setHistoryIndex(colorHistory.length - 1);
 }
