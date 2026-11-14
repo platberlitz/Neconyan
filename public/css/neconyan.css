@@ -454,6 +454,13 @@ body.neconyan #user-settings-block .sb-settings-subdrawer > .inline-drawer-heade
 }
 body.neconyan .inline-drawer-header strong { flex: 1; color: var(--neco-ink); font-weight: 500; font-size: 13px; }
 body.neconyan .inline-drawer-header .inline-drawer-icon { color: var(--neco-muted); font-size: 14px; }
+/* Inspect cards must fit the panel even with unbroken agent names or prompt text. */
+body.neconyan #completion_prompt_manager_popup #completion_prompt_manager_popup_entry_form_inspect_list {
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+body.neconyan #completion_prompt_manager_popup .completion_prompt_manager_prompt { min-width: 0; }
 body.neconyan :is(.sb-theme-card, .sb-settings-group, .sb-shell-callout, .sb-admin-card, .sb-theme-settings-drawer) {
     background: transparent; border-color: var(--neco-border); box-shadow: none;
 }
