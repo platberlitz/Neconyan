@@ -321,7 +321,8 @@ body.neconyan .popup .swipe_picker_hint {
 }
 
 @media (hover: hover) {
-    body.neconyan #sb-bottom-chat-picker-button:hover { border-color: var(--neco-ginger); }
+    body.neconyan #sb-bottom-chat-picker-button:hover,
+    body.neconyan .sb-select-picker-button:hover:not(:disabled) { border-color: var(--neco-ginger); }
     .swipe_picker_block:not([highlight]):hover {
         background: var(--neco-raised, var(--white30a));
     }
@@ -657,3 +658,37 @@ body.neconyan .sb-chat-picker .sb-chat-picker-retry { flex-shrink: 0; padding: 8
 body.neconyan .sb-chat-picker :is(button, input):focus-visible { outline: 2px solid var(--neco-ginger); outline-offset: -2px; }
 .sb-chat-picker-status { margin: 0; font-size: 0.8125rem; color: var(--neco-muted); }
 body.neconyan .sb-chat-picker [hidden] { display: none; }
+/* A select shown as a button that opens the chat browser's list (Chat Completion presets). */
+body.neconyan select.sb-select-picker-source[hidden] { display: none; }
+body.neconyan .sb-select-picker-button {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    min-height: var(--sb-field-min-height, 44px);
+    margin: 0;
+    padding: 8px 14px;
+    font: inherit;
+    font-size: var(--sb-type-control);
+    line-height: var(--sb-line-body);
+    text-align: start;
+    color: var(--neco-ink);
+    background: var(--neco-surface);
+    border: 1px solid color-mix(in srgb, var(--neco-ginger) 35%, var(--neco-border));
+    border-radius: 10px;
+    -webkit-appearance: none;
+    appearance: none;
+    cursor: pointer;
+}
+body.neconyan .sb-select-picker-button[aria-expanded="true"] {
+    background: color-mix(in srgb, var(--neco-ginger) 10%, var(--neco-surface));
+    border-color: var(--neco-ginger);
+}
+body.neconyan .sb-select-picker-button:focus-visible { outline: 2px solid var(--neco-ginger); outline-offset: 2px; }
+body.neconyan .sb-select-picker-button:disabled { cursor: default; opacity: 0.6; }
+.sb-select-picker-value { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 600; }
+body.neconyan .sb-select-picker-button > i { flex-shrink: 0; font-size: 0.75rem; color: var(--neco-muted); }
+body.neconyan .sb-select-picker-button[aria-expanded="true"] > i { rotate: 180deg; color: var(--neco-ginger); }

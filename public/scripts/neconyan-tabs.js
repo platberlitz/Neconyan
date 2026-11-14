@@ -5,6 +5,7 @@ import { finishUiMotion, getUiDrawerEdge, getUiSlideOptions, isUiClosing, reveal
 import { DEFAULT_SCROLL_EDGE_SETTLE_DELAYS, jumpScrollElementToEdge } from './chat-scroll-edges.js';
 import { getChatPickerTitle } from './chat-picker-model.js';
 import { createChatPicker } from './chat-picker.js';
+import { createSelectPicker } from './select-picker.js';
 import { createShellStylePreview } from './neconyan-shell-style-preview.js';
 import {
     clampMobileShellText as clampText,
@@ -532,7 +533,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261114-parameters-redesign';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261114-preset-picker';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -20533,6 +20534,17 @@ function installModelFilterInputs() {
     }
 }
 
+// The Chat Completion preset list opens the same searchable picker as the chat switcher.
+function installPresetPicker() {
+    const select = document.getElementById('settings_preset_openai');
+    if (!(select instanceof HTMLSelectElement)) return;
+    createSelectPicker(select, {
+        buttonId: 'sb-openai-preset-picker-button',
+        panelId: 'sb-openai-preset-picker',
+        labels: () => ({ title: t`Choose a preset`, subtitle: t`Chat Completion`, search: t`Search presets` }),
+    });
+}
+
 const BOTTOM_CHAT_BAR_UNITS = [
     {
         id: 'persona',
@@ -22001,6 +22013,7 @@ function initAll() {
 
     // One filter box above every model dropdown that has no search of its own.
     installModelFilterInputs();
+    installPresetPicker();
 
     // Group Advanced Formatting sections into collapsible drawers
     groupAdvancedFormattingIntoDrawers();
