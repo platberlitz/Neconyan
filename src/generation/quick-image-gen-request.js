@@ -2,6 +2,7 @@ import path from 'node:path';
 import { normalizeBatchCount } from '../../public/scripts/extensions/quick-image-gen/lib/generation.js';
 import { resolveCharacterImageSettings } from '../../public/scripts/extensions/quick-image-gen/lib/character-settings.js';
 import { createMacroEnvironment } from '../macros/index.js';
+import { captureEnhancedMacros } from '../macros/enhanced.js';
 import { readRoleplayFile, roleplayError, roleplayHash, roleplaySettingsHash, saveRoleplayAccount, withRoleplayAccount } from '../roleplay-store.js';
 import { assertRoleplaySourceLocked, readRoleplayEntityLocked } from './roleplay-source.js';
 import { captureGenerationBinding, getChatProfileContextLimit } from './profiles.js';
@@ -84,6 +85,7 @@ export function captureQuickImageRequest(base, account, source, { avatar, mode, 
             charTagsResolved: [...new Set(members.flatMap(member => member.tags))].join(', '), userDescResolved: persona.description || '',
             usesCurrentCardContext: !group, useExactNameRequirements: true };
         const macros = { names: { char: name, user, group: profile.charNameJoined, notChar: [...members.filter(member => member.avatar !== avatar).map(member => member.name), user].join(', ') },
+            macroEnhanced: captureEnhancedMacros(settings, card.extensions, { personaAvatar: persona.evidence?.avatar, group: Boolean(group) }),
             character: { description: profile.charDescResolved, personality: copyText(card.personality), scenario: profile.charScenarioResolved,
                 persona: profile.userDescResolved, creatorNotes: copyText(card.creator_notes), charDepthPrompt: copyText(card.extensions?.depth_prompt?.prompt) },
             variables: { local: saved.records[0].chat_metadata?.variables ?? {}, global: settings.extension_settings?.variables?.global ?? {} },

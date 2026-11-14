@@ -2,6 +2,7 @@ import path from 'node:path';
 import { authoringEvidence, publishAuthoringFileLocked, readAuthoringFileLocked, stageAuthoringFileLocked } from '../authoring-store.js';
 import { runChatProfile } from '../generation/service.js';
 import { createMacroEnvironment } from '../macros/index.js';
+import { captureEnhancedMacros } from '../macros/enhanced.js';
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { roleplayHash, roleplayLease } from '../roleplay-store.js';
 import { getSettingsRevision, getSettingsVersion, prepareSettingsSave } from '../settings-version.js';
@@ -22,7 +23,7 @@ function boundedText(value, name, { required = false } = {}) {
 }
 
 function cssMacros(saved) {
-    return { names: { user: String(saved.name1 || 'User'), char: '' }, variables: {}, extra: { chat: [], chatMetadata: {} } };
+    return { macroEnhanced: captureEnhancedMacros(saved), names: { user: String(saved.name1 || 'User'), char: '' }, variables: {}, extra: { chat: [], chatMetadata: {} } };
 }
 
 export async function captureCustomCss(base, account, input = {}) {

@@ -222,19 +222,25 @@ describe('the Miso, Taro & Nori template pack', () => {
 
     test('noriprank uses sticky on a one-turn period and keeps its value across a swipe', () => {
         const context = installContext();
-        const env = makeEnvironment();
+        // This checks live browser persistence, not the server's private snapshot.
+        const evaluate = () => MacroEngine.evaluate('{{noriprank}}', {
+            extra: { chatMetadata: context.chatMetadata },
+            functions: { postProcess: value => value },
+            dynamicMacros: {},
+        });
         const template = templateFor('noriprank');
 
         expect(template.startsWith('{{sticky::1::nori-prank::{{random::')).toBe(true);
 
-        const first = env.evaluate('{{noriprank}}');
-        const swipe = env.evaluate('{{noriprank}}');
+        const first = evaluate();
+        const swipe = evaluate();
         expect(swipe).toBe(first);
         expect(context.chatMetadata.MacroEnhanced.sticky['nori-prank'].atUserCount).toBe(0);
 
         context.chatMetadata.MacroEnhanced.counters.userMessages = 1;
-        env.evaluate('{{noriprank}}');
+        evaluate();
 
         expect(context.chatMetadata.MacroEnhanced.sticky['nori-prank'].atUserCount).toBe(1);
+        expect(context.saveMetadataDebounced).toHaveBeenCalled();
     });
 });

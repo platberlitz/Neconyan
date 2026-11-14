@@ -62,7 +62,7 @@ const main = { identifier: 'main', role: 'system', system_prompt: true, content:
 const history = { identifier: 'chatHistory', marker: true, system_prompt: true };
 
 function macroJob(t, content, prepare = () => {}) {
-    return promptJob(t, [{ ...main, content }, history], ['main', 'chatHistory'],
+    return promptJob(t, [{ ...main, content }, history, { identifier: 'worldInfoBefore', marker: true, role: 'system', system_prompt: true }], ['main', 'worldInfoBefore', 'chatHistory'],
         { power_user: { experimental_macro_engine: true } }, prepare, undefined, {}, { serverPrompt: true });
 }
 
@@ -100,10 +100,11 @@ test('failed prompts leave saved variables alone and retries retain the prepared
     assert.equal(readRoleplayChat(job.f.scope, job.f.source().locator).records[0].chat_metadata.variables.turns, 5);
 });
 
-test('unsupported extension macros in presets, history and lore refuse before dispatch', async t => {
+test('built-in extension macros expand in presets, history and lore before dispatch', async t => {
     for (const location of ['preset', 'history', 'lore']) {
-        const input = '{{switch::x::x=yes::default=no}} {{getchatvar::n_yseult}}';
+        const input = '{{switch::x::x=yes::default=no}} {{getchatvar::n_yseult}} {{Obj}}/{{charobj}}';
         const job = macroJob(t, location === 'preset' ? input : 'Main', f => {
+            f.records[0].chat_metadata.MacroEnhanced = { chatVars: { n_yseult: '7' }, pronouns: { user: 'she/her', char: 'he/him' } };
             if (location === 'history') f.records[1].mes = input;
             if (location === 'lore') {
                 f.records[0].chat_metadata.world_info = 'Macro lore';
@@ -114,14 +115,60 @@ test('unsupported extension macros in presets, history and lore refuse before di
                 } }));
             }
         });
-        await assert.rejects(job.run(async () => assert.fail('Provider must stay idle')), { code: 'MACRO_BROWSER_ONLY' }, location);
-        assert.equal(readRoleplayChat(job.f.scope, job.f.source().locator).records.length, 3);
+        await job.run(async ({ messages, beforeDispatch }) => {
+            beforeDispatch();
+            assert.ok(messages.some(message => message.content.includes('yes 7 Her/him')), location);
+            assert.ok(messages.every(message => !message.content.includes('{{')), location);
+            return { text: 'Expanded' };
+        });
+        assert.equal(readRoleplayChat(job.f.scope, job.f.source().locator).records.at(-1).mes, 'Expanded');
     }
 });
 
+test('saved persona and card pronouns reach the accepted server prompt', async t => {
+    const settings = { user_avatar: 'other.png', power_user: { experimental_macro_engine: true }, extension_settings: {
+        MacroEnhanced: { pronouns: { personas: { 'locked.png': 'she/her', 'other.png': 'they/them' } } },
+    } };
+    const job = promptJob(t, [{ ...main, content: '{{obj}}/{{charobj}}' }, history], ['main', 'chatHistory'], settings, f => {
+        f.records[0].chat_metadata.persona = 'locked.png';
+        fs.mkdirSync(path.join(f.scope.directories.root, 'User Avatars'));
+        fs.writeFileSync(path.join(f.scope.directories.root, 'User Avatars', 'locked.png'), png);
+        fs.writeFileSync(path.join(f.scope.directories.characters, 'Nova.png'), writeCard(png, JSON.stringify({
+            name: 'Nova', data: { extensions: { MacroEnhanced: { pronouns: 'he/him' } } },
+        })));
+    }, undefined, {}, { serverPrompt: true });
+    await job.run(async ({ messages, beforeDispatch }) => {
+        beforeDispatch();
+        assert.equal(messages[0].content, 'her/him');
+        return { text: 'Accepted' };
+    });
+});
+
+test('MacroEnhanced values persist with the reply once, including a prepared-prompt retry', async t => {
+    const job = macroJob(t, '{{addchatvar::turns::1}}{{setpronouns::she/her}}{{freeze::choice}}{{obj}}{{/freeze}}/{{getchatvar::turns}}', f => {
+        f.records[0].chat_metadata.MacroEnhanced = { chatVars: { turns: '4' }, pronouns: { user: 'he/him' } };
+    });
+    await assert.rejects(job.run(async () => { throw new Error('Not dispatched'); }), /Not dispatched/);
+    assert.equal(readRoleplayChat(job.f.scope, job.f.locator).records[0].chat_metadata.MacroEnhanced.chatVars.turns, '4');
+    let calls = 0;
+    const generate = async ({ messages, beforeDispatch }) => {
+        beforeDispatch();
+        calls++;
+        assert.equal(messages[0].content, 'her/5');
+        return { text: 'Accepted' };
+    };
+    await job.run(generate);
+    await job.run(generate);
+    assert.equal(calls, 1);
+    const state = readRoleplayChat(job.f.scope, job.f.locator).records[0].chat_metadata.MacroEnhanced;
+    assert.equal(state.chatVars.turns, '5');
+    assert.equal(state.pronouns.user, 'she/her');
+    assert.equal(state.frozen.choice.value, 'her');
+});
+
 test('provider-formatting mutations survive a completed provider retry and reject damaged receipts', async t => {
-    for (const damage of [false, true]) {
-        const prompts = [{ ...main, content: '{{incvar::turns}}' }, history];
+    for (const damage of [false, 'local', 'enhanced']) {
+        const prompts = [{ ...main, content: '{{incvar::turns}}{{addchatvar::score::1}}' }, history];
         const order = ['main', 'chatHistory'];
         const settings = { _settingsRevision: 1, username: 'User', main_api: 'openai',
             active_generation: { api: 'openai', source: 'custom', model: 'gpt-4o' },
@@ -130,8 +177,11 @@ test('provider-formatting mutations survive a completed provider retry and rejec
                 prompt_order: [{ character_id: 100001, order: order.map(identifier => ({ identifier, enabled: true })) }] },
             power_user: { experimental_macro_engine: true, custom_stopping_strings_macro: true,
                 custom_stopping_strings: '["{{incvar::formatting}}STOP"]' } };
-        const job = promptJob(t, prompts, order, settings, f => { f.records[0].chat_metadata.variables = { turns: 4 }; },
-            directories => captureGenerationBinding(directories, { kind: 'active' }, { settingsRevision: 1 }), {}, { serverPrompt: true });
+        const job = promptJob(t, prompts, order, settings, f => {
+            f.records[0].chat_metadata.variables = { turns: 4 };
+            f.records[0].chat_metadata.MacroEnhanced = { chatVars: { score: '2' } };
+        },
+        directories => captureGenerationBinding(directories, { kind: 'active' }, { settingsRevision: 1 }), {}, { serverPrompt: true });
         job.options.promptBackend = resolveGenerationProfile;
         let calls = 0;
         await assert.rejects(job.run(async options => {
@@ -147,7 +197,8 @@ test('provider-formatting mutations survive a completed provider retry and rejec
         assert.equal(readRoleplayChat(job.f.scope, job.f.locator).records[0].chat_metadata.variables.turns, 4);
         if (damage) {
             const receipt = readArtifact(job.context.directories, job.context.job.id, 'roleplay-macro-commit');
-            receipt.local.turns = 999;
+            if (damage === 'local') receipt.local.turns = 999;
+            else receipt.enhanced.chatVars.score = '999';
             writeArtifact(job.context.directories, job.context.job.id, 'roleplay-macro-commit', receipt);
             await assert.rejects(job.run(async () => assert.fail('Never repeat a paid result')), { code: 'ROLEPLAY_MACRO_RECOVERY' });
             assert.equal(readRoleplayChat(job.f.scope, job.f.locator).records.length, 3);
@@ -155,6 +206,7 @@ test('provider-formatting mutations survive a completed provider retry and rejec
             await job.run(async () => assert.fail('Never repeat a paid result'));
             assert.deepEqual(readRoleplayChat(job.f.scope, job.f.locator).records[0].chat_metadata.variables,
                 { turns: 5, formatting: 1 });
+            assert.equal(readRoleplayChat(job.f.scope, job.f.locator).records[0].chat_metadata.MacroEnhanced.chatVars.score, '3');
         }
         assert.equal(calls, 1);
     }

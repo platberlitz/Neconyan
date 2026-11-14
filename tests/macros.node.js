@@ -22,23 +22,24 @@ const capabilities = {
     isMobile: () => false, findExtension: () => ({ enabled: true }), populateEnv: () => {},
 };
 
-test('strict server hosts reject the extension vocabulary in modern and legacy prompts', () => {
+test('strict server hosts resolve built-in extension macros and retain the legacy boundary', () => {
     const env = createMacroEnvironment(snapshot());
-    for (const legacy of [false, true]) {
-        for (const input of ['{{switch::x::x=yes::default=no}}', '{{getchatvar::n_yseult}}', '{{setchatvar::n_yseult::1}}',
-            '{{usermsgcount}}', '{{ME-UPPER::x}}', '{{chatvarexists::x}}', '{{if::1}}{{freeze::key}}x{{/freeze}}{{/if}}']) {
-            assert.throws(() => env.evaluate(input, { legacy, strictCapabilities: true }), { code: 'MACRO_BROWSER_ONLY', status: 409 }, input);
-        }
+    for (const [input, output] of [['{{switch::x::x=yes::default=no}}', 'yes'], ['{{getchatvar::n_yseult}}', ''], ['{{setchatvar::n_yseult::1}}', ''],
+        ['{{usermsgcount}}', '0'], ['{{ME-UPPER::x}}', 'X'], ['{{chatvarexists::x}}', 'false'], ['{{if::1}}{{freeze::key}}x{{/freeze}}{{/if}}', 'x']]) {
+        assert.equal(env.evaluate(input, { strictCapabilities: true }), output, input);
+        assert.throws(() => env.evaluate(input, { legacy: true, strictCapabilities: true }), { code: 'MACRO_BROWSER_ONLY', status: 409 }, input);
+        const disabled = createMacroEnvironment({ ...snapshot(), macroEnhanced: { enabled: false } });
+        assert.throws(() => disabled.evaluate(input, { strictCapabilities: true }), { code: 'MACRO_BROWSER_ONLY' }, input);
     }
     assert.equal(env.evaluate('{{user}} / {{char}} / {{reverse::abc}}', { strictCapabilities: true }), 'User / Char / cba');
     assert.equal(env.evaluate('{{// {{getchatvar::x}} }}', { strictCapabilities: true }), '');
     assert.equal(MacroRegistry.hasMacro('switch'), false);
     for (const condition of ['usermsgcount', '!usermsgcount', '{{reverse::tnuocgsmresu}}']) {
-        assert.throws(() => env.evaluate(`{{if::${condition}}}yes{{/if}}`, { strictCapabilities: true }), { code: 'MACRO_BROWSER_ONLY' });
+        assert.doesNotThrow(() => env.evaluate(`{{if::${condition}}}yes{{/if}}`, { strictCapabilities: true }));
     }
 });
 
-test('custom vocabulary and syntax settings stay private while server lore overrides remain available', () => {
+test('custom vocabulary stays private while server lore overrides and enabled syntax are available', () => {
     const browserMacros = capturedBrowserMacros({ MacroEnhanced: { customMacros: [{ name: 'privateGreeting', enabled: true }] } }, {}, {});
     const env = createMacroEnvironment({ ...snapshot(), browserMacros }, {}, { dynamicMacros: {
         lore: { unnamedArgs: [{ name: 'entry' }, { name: 'book' }], handler: () => 'Saved lore' },
@@ -46,9 +47,10 @@ test('custom vocabulary and syntax settings stay private while server lore overr
     assert.throws(() => env.evaluate('{{privateGreeting}}', { strictCapabilities: true }), { code: 'MACRO_BROWSER_ONLY' });
     assert.equal(createMacroEnvironment().evaluate('{{privateGreeting}}', { strictCapabilities: true }), '{{privateGreeting}}');
     assert.equal(env.evaluate('{{lore::book::key}}', { strictCapabilities: true }), 'Saved lore');
-    for (const [setting, input] of [['compatExpressions', '{{if::1 > 0}}yes{{/if}}'], ['fixImportedSyntax', '{{@name}}']]) {
+    for (const [setting, input, output] of [['compatExpressions', '{{if::1 > 0}}yes{{/if}}', 'yes'], ['fixImportedSyntax', '{{@name}}', '']]) {
         const syntax = createMacroEnvironment({ browserMacroSyntax: { [setting]: true } });
-        assert.throws(() => syntax.evaluate(input, { strictCapabilities: true }), { code: 'MACRO_BROWSER_ONLY' });
+        assert.equal(syntax.evaluate(input, { strictCapabilities: true }), output);
+        assert.throws(() => syntax.evaluate(input, { legacy: true, strictCapabilities: true }), { code: 'MACRO_BROWSER_ONLY' });
     }
 });
 
@@ -171,6 +173,26 @@ test('captured environments select historical legacy behaviour without changing 
     for (const [input, output] of legacy) assert.equal(env.evaluate(input, { legacy: true }), output, input);
     assert.equal(env.extra.variables.local.get('probe'), 16);
     assert.equal(env.evaluate('{{description}}/{{model}}/{{original}}/{{original}}', { legacy: true }), 'D/test-model/original/');
+});
+
+test('late-bound operation macros and explicit overrides work in both macro modes', () => {
+    for (const legacy of [false, true]) {
+        const env = createMacroEnvironment({ dynamicMacros: { existing: 'before' } });
+        Object.assign(env.dynamicMacros, { existing: 'after', late: 'context', obj: 'override' });
+        assert.equal(env.evaluate('{{existing}}/{{late}}/{{obj}}', { legacy, strictCapabilities: true }), 'after/context/override');
+    }
+});
+
+test('dynamic definitions control deferred arguments without changing invalid-option fallbacks', () => {
+    const env = createMacroEnvironment({}, {}, { dynamicMacros: {
+        choose: { delayArgResolution: true, unnamedArgs: [{ name: 'body' }], handler: ({ unnamedArgs, resolve }) => resolve(unnamedArgs[0]) },
+        reverse: { delayArgResolution: true, handler: () => 'invalid', aliases: [{ alias: 'reverse' }] },
+        if: 'override',
+    } });
+    assert.equal(env.evaluate('{{choose::{{incvar::chosen}}}}/{{getvar::chosen}}'), '1/1');
+    assert.equal(env.evaluate('{{reverse::{{incvar::fallback}}}}/{{getvar::fallback}}'), '1/1');
+    env.evaluate('{{if::{{incvar::eager}}}}');
+    assert.equal(env.extra.variables.local.get('eager'), 1);
 });
 
 test('legacy mobile macros use the captured capability or refuse it explicitly', () => {

@@ -25,7 +25,7 @@ export function createRoleplayLoreMacros(worldInfo, snapshot) {
     const args = [{ name: 'entry' }, { name: 'book', optional: true }];
     const lore = { unnamedArgs: args, handler: ({ unnamedArgs: [title, book], resolve }) => content(lookup(title, book), resolve) };
     const scope = value => !value || value === 'active' ? worldInfo.activeLore : value === 'bound' ? worldInfo.boundLore : null;
-    return {
+    const macros = {
         lore, wi: lore,
         lorekeys: { unnamedArgs: args, handler: ({ unnamedArgs: [title, book] }) => (lookup(title, book)?.entry.key ?? []).join(', ') },
         loreexists: { unnamedArgs: args, handler: ({ unnamedArgs: [title, book] }) => String(Boolean(lookup(title, book))) },
@@ -53,4 +53,5 @@ export function createRoleplayLoreMacros(worldInfo, snapshot) {
         loretokens: { unnamedArgs: [{ name: 'scope', optional: true }], handler: ({ unnamedArgs: [value] }) =>
             scope(value) ? String(Math.ceil(scope(value).map(entry => entry.content).join('\n').length / 4)) : '' },
     };
+    return { ...macros, ...Object.fromEntries(Object.entries(macros).filter(([name]) => name !== 'wi').map(([name, value]) => [`me-${name}`, value])) };
 }

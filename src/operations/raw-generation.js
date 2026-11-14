@@ -1,6 +1,7 @@
 import { runChatProfile } from '../generation/service.js';
 import { isDefiniteProviderRefusal, readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { createMacroEnvironment } from '../macros/index.js';
+import { captureEnhancedMacros } from '../macros/enhanced.js';
 import { captureLabConnection, readLabSettings } from '../labs/sources.js';
 import { registerOperation } from './jobs.js';
 import { operationError, withOperation } from './store.js';
@@ -23,7 +24,7 @@ export async function captureRawGeneration(base, account, input = {}) {
         throw operationError('Choose a reply length between 1 and 32768 tokens.', 400);
     }
     const saved = readLabSettings(base);
-    const macros = { names: { user: String(saved.name1 || 'User'), char: '' }, variables: {}, extra: { chat: [], chatMetadata: {} } };
+    const macros = { macroEnhanced: captureEnhancedMacros(saved), names: { user: String(saved.name1 || 'User'), char: '' }, variables: {}, extra: { chat: [], chatMetadata: {} } };
     const { binding } = await captureLabConnection(base, { profileId: typeof input.profileId === 'string' ? input.profileId : '',
         acknowledgement: input.acknowledgement, maxTokens }, macros);
     const messages = [

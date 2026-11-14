@@ -395,7 +395,16 @@ class MacroCstWalker {
         const argumentNodes = /** @type {CstNode[]} */ (argumentsNode?.children?.argument || []);
 
         // Check if this macro has delayArgResolution flag - if so, skip nested macro evaluation
-        const macroDef = MacroRegistry.getMacro(name);
+        let macroDef = MacroRegistry.getMacro(name);
+        const dynamic = Object.hasOwn(context.env.dynamicMacros ?? {}, name.toLowerCase())
+            ? context.env.dynamicMacros[name.toLowerCase()] : undefined;
+        if (dynamic && typeof dynamic === 'object' && typeof dynamic.handler === 'function') {
+            try {
+                macroDef = MacroRegistry.buildMacroDefFromOptions(name, dynamic);
+            } catch { /* Invalid dynamic options fall back to the registered macro, as resolution does. */ }
+        } else if (['string', 'number', 'boolean', 'function'].includes(typeof dynamic)) {
+            macroDef = null;
+        }
         const delayArgResolution = macroDef?.delayArgResolution === true;
 
         /** @type {string[]} */

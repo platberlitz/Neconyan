@@ -6,6 +6,7 @@ import { normaliseRoleplayLocator, roleplayChatPath, roleplayEntityContent } fro
 import { captureGenerationBinding, resolveGenerationProfile } from '../generation/profiles.js';
 import { validateActiveGenerationContext } from '../generation/service.js';
 import { createMacroEnvironment } from '../macros/index.js';
+import { captureEnhancedMacros } from '../macros/enhanced.js';
 import { selectSavedRoleplayPersona } from '../generation/world-info.js';
 import { labError } from './store.js';
 
@@ -49,6 +50,7 @@ export function captureLabChat(base, account, locator) {
         const name = persona.name || settings.name1 || parsed.records[0].user_name || 'User';
         return { locator: selected, records: parsed.records, rawHash: file.rawHash, physical: file.physical, persona: { ...persona, name },
             macros: { names: { user: name, char: character.name || parsed.records[0].character_name || 'Character' },
+                macroEnhanced: captureEnhancedMacros(settings, character.extensions, { personaAvatar: persona.evidence?.avatar, group: Boolean(selected.group) }),
                 character: { ...character, persona: persona?.description || '' },
                 variables: { global: settings.extension_settings?.variables?.global || {}, local: parsed.records[0].chat_metadata?.variables || {} },
                 extra: { chat: parsed.records.slice(1), chatMetadata: parsed.records[0].chat_metadata || {} } } };

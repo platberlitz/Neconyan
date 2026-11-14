@@ -17,6 +17,7 @@ import { capturedBrowserMacros, mergeBrowserMacros } from '../macros/browser-onl
 import { applyRegexScriptList, AGENT_REGEX_PLACEMENT } from '../../public/scripts/extensions/in-chat-agents/regex-scripts.js';
 import { scanWorldInfo, worldInfoScanWindow } from './world-info-scan.js';
 import { normalizeExtensionBootId } from '../../public/scripts/extension-boot-lifecycle/index.js';
+import { captureEnhancedMacros } from '../macros/enhanced.js';
 import { getStringHash } from '../../public/scripts/macro-primitives.js';
 import { captureScopedAuthorsNotes, findCharacterNoteEntry, getPersonaNoteEntry } from '../../public/scripts/authors-note-profiles.js';
 import { captureWorldInfoHookPolicy, worldInfoActivationActions } from './world-info-hook-policy.js';
@@ -477,14 +478,16 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
         const translation = captureIncomingRoleplayTranslation(base.directories, savedSettings, { serverPrompt: serverPrompt && !agentContext });
         const inputTranslation = captureRoleplayInputTranslation(base.directories, savedSettings, promptRecords, { serverPrompt: serverPrompt && !agentContext });
         const speech = serverPrompt && !agentContext ? captureSpeechPolicy(base.directories, savedSettings) : null;
-        const enhancedMacros = Boolean(settings.power_user?.experimental_macro_engine)
-            && !extensions.disabledExtensions?.some(name => normalizeExtensionBootId(name) === 'macroenhanced');
+        const macroEnhanced = captureEnhancedMacros(settings, character.data?.data?.extensions ?? character.data?.extensions,
+            { personaAvatar, group: Boolean(source.locator.group) });
+        const enhancedMacros = macroEnhanced.enabled;
         const snapshot = { account: { accountId: account.accountId, dataEpoch: account.dataEpoch }, source, serverPrompt,
             // The page-captured bundled macros travel with the accepted request itself;
             // an absent field keeps the old snapshot shape for already accepted jobs.
             ...(bundledMacros ? { bundledMacros: structuredClone(bundledMacros) } : {}),
             ...(mediaPolicy ? { mediaPolicyVersion, mediaPolicy, mediaBinding, captionTexts: mediaProjection.captionTexts.filter(item => !item.composed) } : {}),
             macroPolicyVersion: serverPrompt ? 1 : 0,
+            macroEnhanced,
             // Browser-local custom macros travel by name from the active page
             // registry. Merging keeps the saved vocabulary and adds only names the
             // server could not read from account data; an absent list is a no-op.
@@ -623,6 +626,7 @@ export function assertRoleplayWorldInfoCurrent(base, snapshot) {
     });
     // Previously accepted jobs retain their original snapshot shape and write
     // policy; adding the boundary must not invalidate paid work after an update.
+    if (!Object.hasOwn(snapshot, 'macroEnhanced')) delete captured.macroEnhanced;
     if (!Object.hasOwn(snapshot, 'macroPolicyVersion')) {
         delete captured.macroPolicyVersion;
         delete captured.browserMacros;
