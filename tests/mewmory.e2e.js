@@ -13,6 +13,13 @@ test.skip(process.env.NECONYAN_MEWMORY_TEST_DISPOSABLE !== '1', 'Use a disposabl
 const fixture = JSON.parse(fs.readFileSync(new URL('./fixtures/mewmory-gift.json', import.meta.url), 'utf8'));
 const provider = process.env.MEWMORY_FIXTURE_URL || 'http://127.0.0.1:4491/v1';
 
+// Settings sections fold shut, and only Memory updates starts open.
+async function openSection(workspace, key) {
+    const fold = workspace.locator('#mewmory-settings-' + key);
+    if (!await fold.evaluate(element => element.open)) await fold.locator('summary').first().click();
+    await expect(fold).toHaveJSProperty('open', true);
+}
+
 test('native Mewmory setup, backfill, source inspection, correction, recall and writing work on desktop and mobile', async ({ page }, info) => {
     page.setDefaultTimeout(20000);
     await page.setViewportSize({ width: 1280, height: 900 });
@@ -86,6 +93,7 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
     await page.locator('#neconyan-workspace-rail [data-neconyan-route="mewmory"]').click();
     await expect(workspace.getByRole('tab', { name: 'Now', exact: true })).toBeVisible();
     await workspace.getByRole('tab', { name: 'Settings', exact: true }).click();
+    await openSection(workspace, 'models');
     const settingsStatus = workspace.locator('#mewmory-settings-status');
     for (const name of ['extractor', 'pawspective', 'selector', 'fallback']) {
         await workspace.getByRole('group', { name: 'Model role to set up' }).locator('#mewmory-role-' + name).click();
@@ -381,6 +389,7 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
     expect(textWriter.prompt).not.toContain('INSPECT ONLY');
     await page.locator('#neconyan-workspace-rail [data-neconyan-route="mewmory"]').click();
     await workspace.getByRole('tab', { name: 'Settings', exact: true }).click();
+    await openSection(workspace, 'upkeep');
     const rebuild = workspace.getByRole('button', { name: 'Rebuild meaning search', exact: true });
     await expect(rebuild).toBeEnabled();
     await page.request.post(fixtureUrl + '/fixture/hold', { data: { model: 'text-embedding-3-small' } });

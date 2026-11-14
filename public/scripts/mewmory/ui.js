@@ -15,6 +15,7 @@ import {
     DECISION_ROLES, EXTRACTION_FOCUS_OPTIONS, JEV_DECISION_PRESETS, MESSAGE_WINDOW_PRESETS,
     defaultDecisionThreshold, detectMessageWindowPreset, effectiveDecisionMode, findDecisionPreset, isDecisionModel,
 } from './jev-presets.js';
+import { SETTINGS_FOLDS, matchesTerms, otherRoleMatches, readOpenFolds, searchTerms } from './settings-search.js';
 
 function displayedSkipReason(reason) {
     if (reason === 'Entity ID is empty or too long.') return 'A character or object reference is missing or invalid.';
@@ -54,7 +55,8 @@ const ui = { root: null, tab: 'now', owner: '', subject: '', significance: '', s
     searchMode: 'hybrid', searchType: '', searchReport: null, running: false, progress: '', scope: '',
     sort: 'story', flag: '', importance: '', state: '', from: '', to: '', moreFilters: false, selected: new Set(), history: null, duplicates: null,
     estimate: null, loreName: '', loreNote: '', transferNote: '',
-    layout: 'list', message: null, person: '', question: '', answer: null, askError: '', conflicts: null, conflictError: '', shareNote: '' };
+    layout: 'list', message: null, person: '', question: '', answer: null, askError: '', conflicts: null, conflictError: '', shareNote: '',
+    settingsQuery: '', settingsOpen: null };
 
 /** Where a memory's newest message sits in the open chat, or -1 when it is not on screen (inherited or a card). */
 function chatIndex(asOf) {
@@ -497,7 +499,7 @@ function renderQuickSetup(root) {
     }) === 'decision');
     const quick = section('Memory focus and window',
         ...(selectorRole?.enabled && selectorDecision ? [badge('Jev / System One', 'accent')] : []),
-        button('All model settings', () => switchTab('settings')));
+        button('All model settings', () => showSettingsSection('models')));
     quick.id = 'mewmory-now-quick-controls';
     quick.classList.add('mewmory-quick-controls');
     const matchedDecision = findDecisionPreset(selectorModel);
@@ -629,7 +631,7 @@ function renderNow(root) {
     if (!view?.enabled) {
         empty(root, 'Keep the story, and how it felt.',
             'Mewmory remembers events, your character and NPC details. Pawspective tracks how AI-controlled characters’ views change, linked back to the messages behind them. Switch on Use Mewmory in this chat above, then pick the models it uses.',
-            'Set up model roles', () => switchTab('settings'));
+            'Set up model roles', () => showSettingsSection('models'));
         renderQuickSetup(root);
         return;
     }
@@ -1824,31 +1826,215 @@ function renderFallbackConnections(draft) {
     return list;
 }
 
+const SETTINGS_OPEN_KEY = 'mewmory:settings-open';
+const SETTINGS_GROUPS = '.mewmory-fields, fieldset.mewmory-role, section.mewmory-section';
+
+function openSettingsFolds() {
+    if (!ui.settingsOpen) {
+        let saved = null;
+        try {
+            saved = window.localStorage?.getItem(SETTINGS_OPEN_KEY);
+        } catch {
+            // Blocked storage only means every visit starts with the default sections open.
+        }
+        ui.settingsOpen = readOpenFolds(saved);
+    }
+    return ui.settingsOpen;
+}
+
+function rememberSettingsFold(key, open) {
+    const folds = openSettingsFolds();
+    if (open === folds.has(key)) return;
+    if (open) folds.add(key);
+    else folds.delete(key);
+    try {
+        window.localStorage?.setItem(SETTINGS_OPEN_KEY, JSON.stringify([...folds]));
+    } catch {
+        // The choice still lasts until the page reloads.
+    }
+}
+
+/** Opens one Settings section, clears any settings search and scrolls to it. */
+function showSettingsSection(key) {
+    ui.settingsQuery = '';
+    rememberSettingsFold(key, true);
+    const switching = switchTab('settings');
+    document.getElementById('mewmory-settings-' + key)?.scrollIntoView({ block: 'start' });
+    return switching;
+}
+
+/** Turns each top-level Settings section into a fold that remembers whether it was left open. */
+function foldSettingsSections(page) {
+    for (const part of page.querySelectorAll(':scope > section.mewmory-section[id^="mewmory-settings-"]')) {
+        const key = part.id.slice('mewmory-settings-'.length);
+        if (!Object.hasOwn(SETTINGS_FOLDS, key)) continue;
+        const fold = node('details', 'mewmory-section mewmory-fold');
+        fold.id = part.id;
+        fold.dataset.mewmoryFold = key;
+        const summary = node('summary');
+        summary.append(part.querySelector(':scope > h4') || node('h4', '', key), node('span', 'mewmory-caption mewmory-fold-hint', SETTINGS_FOLDS[key]));
+        const body = node('div', 'mewmory-fold-body');
+        if (part.dataset.mewmoryTour) body.dataset.mewmoryTour = part.dataset.mewmoryTour;
+        body.append(...part.childNodes);
+        fold.append(summary, body);
+        fold.open = openSettingsFolds().has(key);
+        fold.addEventListener('toggle', () => {
+            if (!searchTerms(ui.settingsQuery).length) rememberSettingsFold(key, fold.open);
+        });
+        part.replaceWith(fold);
+    }
+}
+
+/** The words a person can see in a piece of Settings, leaving out what they typed into boxes. */
+function settingsText(item) {
+    if (item.nodeType === Node.TEXT_NODE) return item.nodeValue;
+    if (item.nodeType !== Node.ELEMENT_NODE) return '';
+    const label = item.getAttribute('aria-label') || '';
+    if (item.matches('select, textarea, option')) return label;
+    return label + ' ' + [...item.childNodes].map(settingsText).join(' ');
+}
+
+function isSettingsTitle(element, container) {
+    return element.tagName === 'LEGEND' || element.classList.contains('mewmory-section-heading')
+        || (element.tagName === 'H4' && element === container.firstElementChild && container.matches('section.mewmory-section'));
+}
+
+/** Splits a Settings container into the pieces a search shows or hides; a switch keeps the explanations under it. */
+function settingsUnits(container) {
+    const units = [];
+    for (const child of container.children) {
+        if (child.hidden || isSettingsTitle(child, container)) continue;
+        const previous = units.at(-1);
+        if (child.matches('p.mewmory-caption') && previous?.elements[0].matches('.mewmory-check')) previous.elements.push(child);
+        else units.push({ elements: [child], group: child.matches(SETTINGS_GROUPS), heading: child.tagName === 'H4' });
+    }
+    return units;
+}
+
+/** Hides what does not match inside a Settings container and returns how many matching pieces stay visible. */
+function filterSettingsGroup(container, context, terms) {
+    let shown = 0;
+    let heading = null;
+    let underHeading = 0;
+    let base = context;
+    const closeHeading = () => heading?.classList.toggle('mewmory-filtered-out', !underHeading);
+    for (const unit of settingsUnits(container)) {
+        const [first] = unit.elements;
+        if (unit.heading) {
+            closeHeading();
+            heading = first;
+            underHeading = 0;
+            base = context + ' ' + settingsText(first);
+            continue;
+        }
+        const title = unit.group ? [...first.children].find(child => isSettingsTitle(child, first)) : null;
+        const count = unit.group
+            ? filterSettingsGroup(first, base + ' ' + (title ? settingsText(title) : ''), terms)
+            : Number(matchesTerms(base + ' ' + unit.elements.map(settingsText).join(' '), terms));
+        for (const element of unit.elements) element.classList.toggle('mewmory-filtered-out', !count);
+        shown += count;
+        underHeading += count;
+    }
+    closeHeading();
+    return shown;
+}
+
+/** Shows only the Settings that match the search box, opening the sections they are in. */
+function applySettingsSearch(page) {
+    const result = page.querySelector('#mewmory-settings-find-result');
+    const elsewhere = page.querySelector('#mewmory-settings-find-roles');
+    if (!result || !elsewhere) return;
+    for (const element of page.querySelectorAll('.mewmory-filtered-out')) element.classList.remove('mewmory-filtered-out');
+    const folds = [...page.querySelectorAll(':scope > details.mewmory-fold')];
+    const terms = searchTerms(ui.settingsQuery);
+    elsewhere.replaceChildren();
+    if (!terms.length) {
+        for (const fold of folds) fold.open = openSettingsFolds().has(fold.dataset.mewmoryFold);
+        result.textContent = '';
+        result.hidden = true;
+        elsewhere.hidden = true;
+        return;
+    }
+    let total = 0;
+    for (const fold of folds) {
+        const count = filterSettingsGroup(fold.querySelector(':scope > .mewmory-fold-body'), settingsText(fold.querySelector(':scope > summary > h4')), terms);
+        const roleForm = fold.querySelector('fieldset.mewmory-role');
+        if (roleForm && !roleForm.classList.contains('mewmory-filtered-out')) fold.querySelector('.mewmory-role-picker')?.classList.remove('mewmory-filtered-out');
+        fold.classList.toggle('mewmory-filtered-out', !count);
+        if (count) fold.open = true;
+        total += count;
+    }
+    const others = page.querySelector('#mewmory-settings-models') ? otherRoleMatches(terms, ui.role, roles) : [];
+    result.hidden = false;
+    result.textContent = total
+        ? total + (total === 1 ? ' match.' : ' matches.')
+        : 'No settings match ‘' + ui.settingsQuery.trim() + '’' + (others.length ? ' for ' + roles[ui.role] + '.'
+            : '. Some settings only appear after another choice, such as a model role’s connection type.');
+    elsewhere.hidden = !others.length;
+    if (!others.length) return;
+    elsewhere.append(node('span', 'mewmory-caption', total ? 'Also in other model roles:' : 'Try another model role:'));
+    for (const other of others) {
+        const choice = button(other.label, () => {
+            ui.role = other.role;
+            render();
+            document.getElementById('mewmory-settings-models')?.scrollIntoView({ block: 'start' });
+        });
+        choice.disabled = false;
+        choice.title = other.settings.join(', ');
+        elsewhere.append(choice);
+    }
+}
+
+function renderSettingsFinder(page) {
+    const finder = node('div', 'mewmory-settings-find');
+    finder.setAttribute('role', 'search');
+    const clearSearch = () => {
+        ui.settingsQuery = '';
+        input.value = '';
+        clear.hidden = true;
+        applySettingsSearch(page);
+        input.focus();
+    };
+    const search = field('Search settings', ui.settingsQuery, value => {
+        ui.settingsQuery = value;
+        clear.hidden = !value;
+        applySettingsSearch(page);
+    }, { type: 'search', key: 'settings-search', placeholder: 'For example: fallback, prefill, timeout' });
+    const input = search.querySelector('input');
+    input.disabled = false;
+    input.autocomplete = 'off';
+    input.spellcheck = false;
+    input.setAttribute('aria-describedby', 'mewmory-settings-find-result');
+    input.addEventListener('keydown', event => {
+        if (event.key !== 'Escape' || !input.value) return;
+        event.preventDefault();
+        event.stopPropagation();
+        clearSearch();
+    });
+    const clear = button('Clear search', clearSearch);
+    clear.id = 'mewmory-settings-search-clear';
+    clear.disabled = false;
+    clear.hidden = !ui.settingsQuery;
+    const bar = node('div', 'mewmory-search-bar');
+    bar.append(search, clear);
+    const result = node('p', 'mewmory-caption mewmory-settings-find-result');
+    result.id = 'mewmory-settings-find-result';
+    result.setAttribute('role', 'status');
+    result.hidden = true;
+    const elsewhere = node('div', 'mewmory-settings-find-roles');
+    elsewhere.id = 'mewmory-settings-find-roles';
+    elsewhere.hidden = true;
+    finder.append(bar, result, elsewhere);
+    return finder;
+}
+
 function renderSettings(root) {
     syncSettingsDraft();
     const draft = ui.draft;
     if (!draft || !mewmory.config) return;
     const configField = (label, value, onChange, options = {}) => field(label, value, onChange, { ...options, autosave: true });
     const configCheck = (label, checked, onChange, disabled = false) => check(label, checked, onChange, disabled, { autosave: true });
-    const jump = node('nav', 'mewmory-jump');
-    jump.setAttribute('aria-label', 'Settings sections');
-    jump.append(node('span', 'mewmory-caption', 'Jump to'));
-    for (const [id, label] of [['automatic', 'Memory updates'], ['models', 'Models used by Mewmory'], ['search', 'Finding relevant memories'],
-        ...(mewmory.view ? [['upkeep', 'Upkeep'], ['transfers', 'Export and restore'], ['lorebook', 'Lorebook']] : [])]) {
-        const link = node('button', 'mewmory-jump-link', label);
-        link.type = 'button';
-        link.addEventListener('click', () => {
-            const target = document.getElementById('mewmory-settings-' + id);
-            target?.scrollIntoView({ block: 'start', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
-            const title = target?.querySelector('h4');
-            if (title) {
-                title.tabIndex = -1;
-                title.focus({ preventScroll: true });
-            }
-        });
-        jump.append(link);
-    }
-    root.append(jump);
+    root.append(renderSettingsFinder(root));
     const settings = section('Memory updates');
     settings.id = 'mewmory-settings-automatic';
     settings.dataset.mewmoryTour = 'automatic';
@@ -2129,6 +2315,15 @@ function renderSettings(root) {
                 + ' Counts are approximate. Choose a tokenizer manually if your provider uses a different one.' : '',
         }),
     );
+    if (ui.role !== 'embedding') {
+        const decisionNote = DECISION_ROLES.includes(ui.role) ? ' Not used by the Jev / System One decision API.' : '';
+        fields.append(
+            configField('Prefill, optional', role.prefill || '', value => { role.prefill = value; }, { multiline: true, key: 'prefill-' + ui.role,
+                hint: 'Start this role’s replies with this text, for example { so the model goes straight to its answer. Mewmory puts it back in front of the reply before reading it. Fallback connections use it too. Your provider must support assistant prefills.' + decisionNote }),
+            configField('Partial prefill for Kimi K3, optional', role.partialPrefill || '', value => { role.partialPrefill = value; }, { multiline: true, key: 'partial-prefill-' + ui.role,
+                hint: 'Used instead of Prefill when this role or a fallback connection runs Kimi K3 or K3.1 Pro. Sends partial: true. Leave blank to use Prefill. A <think> block starts the model’s reasoning.' + decisionNote }),
+        );
+    }
     if (ui.role === 'embedding') {
         if (!native) fields.append(configField('Prefix preset', '', value => {
             const preset = PREFIX_PRESETS[Number(value)];
@@ -2168,6 +2363,8 @@ function renderSettings(root) {
     root.addEventListener('change', updateSettingsStatus);
     updateSettingsStatus();
     renderHealth(root);
+    foldSettingsSections(root);
+    applySettingsSearch(root);
 }
 
 /**
@@ -2244,6 +2441,7 @@ function renderHealth(root) {
     renderTransfers(root);
     if (!view.parent && !view.recordCount) {
         const association = section('Continue a story from another chat');
+        association.id = 'mewmory-settings-continue';
         association.append(node('p', 'mewmory-caption', 'This explicitly copies the selected chat’s current memory and accepted history into this continuation. Later changes stay in their own branch.'));
         const choices = mewmory.stories.filter(story => JSON.stringify(story.locator) !== JSON.stringify(view.locator));
         association.append(field('Earlier chat', ui.parent || '', value => { ui.parent = value; }, {
@@ -2516,7 +2714,7 @@ function render() {
     if (!root || !root.isConnected || root.closest('[hidden], [aria-hidden="true"], .closedDrawer')) return;
     const active = root.contains(document.activeElement) ? document.activeElement : null;
     const focusId = active?.id;
-    const selection = active instanceof HTMLTextAreaElement || (active instanceof HTMLInputElement && ['text', 'password'].includes(active.type))
+    const selection = active instanceof HTMLTextAreaElement || (active instanceof HTMLInputElement && ['text', 'password', 'search'].includes(active.type))
         ? [active.selectionStart, active.selectionEnd] : null;
     const scope = getMewmoryScope();
     if (ui.scope !== scope) {
@@ -2562,6 +2760,10 @@ function render() {
         ui.source = null;
         ui.message = { ...focus, data: null, error: '' };
         void loadMessage({ scroll: true });
+    }
+    // A section opened by a click that redraws at once (the tour opens a section, then picks a role) has not reported its toggle yet.
+    if (!searchTerms(ui.settingsQuery).length) {
+        for (const fold of root.querySelectorAll('#mewmory-pane-settings > details[data-mewmory-fold]')) rememberSettingsFold(fold.dataset.mewmoryFold, fold.open);
     }
     const tabsScrollLeft = root.querySelector('.mewmory-tabs')?.scrollLeft || 0;
     root.replaceChildren();
@@ -2656,7 +2858,7 @@ function loadMewmoryStyles() {
     if (!style) {
         style = document.createElement('link');
         style.id = 'mewmory-css';
-        style.href = 'css/mewmory.css?v=20261113-mewmory-sticky';
+        style.href = 'css/mewmory.css?v=20261114-mewmory-search';
         document.head.append(style);
     }
     if (style.rel !== 'stylesheet') {

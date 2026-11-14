@@ -13,6 +13,9 @@ import { recordSpend } from './spend.js';
 import { getCounter, getTokenizerModel, TOKENIZERS } from './tokens.js';
 import { listModelProfiles, resolveModelProfile } from './connection-profiles.js';
 import { captureVectorPolicy, requestVectorEmbedding } from '../operations/vector-provider.js';
+import { seedKimiK3PartialReasoning } from '../prompt-converters.js';
+import { isKimiK3Model } from '../../public/scripts/openai-model-capabilities.js';
+import { joinHelperPartialPrefill, stripPrefilledReasoning } from '../../public/scripts/extensions/helper-prefill.js';
 import { RAG_DEFAULTS } from '../../public/scripts/mewmory/rag-settings.js';
 import {
     DECISION_MODES, DECISION_ROLES, defaultDecisionThreshold,
@@ -35,11 +38,13 @@ export function defaultConfig() {
             profileId: '', endpoint: '', model: '', modelOverride: '', modelRevision: '', allowRemote: true,
             contextTokens: 200000, maxOutputTokens: name === 'embedding' ? 0 : 32000,
             timeoutMs: 300000, tokenizer: 'auto', allowedData: [...SOURCE_TYPES],
-            queryPrefix: '', documentPrefix: '', ...(name === 'embedding' ? { provider: 'custom' } : {}),
+            queryPrefix: '', documentPrefix: '', ...(name === 'embedding' ? { provider: 'custom' } : { prefill: '', partialPrefill: '' }),
             ...(DECISION_ROLES.includes(name) ? { decisionMode: 'auto', decisionThreshold: 0.5 } : {}),
         }])),
     };
 }
+
+export const MAX_PREFILL_LENGTH = 10000;
 
 export function isLocalEndpoint(endpoint) {
     let url;
@@ -74,6 +79,13 @@ function prefix(value, label) {
     if (value === undefined) return '';
     if (typeof value !== 'string' || value.length > 500) fail(label + ' must be text of at most 500 characters.');
     return value;
+}
+
+/** Kept exactly as written: a prefill's spacing and line breaks are part of what the model continues. */
+function prefillText(value, label) {
+    if (value === undefined) return '';
+    if (typeof value !== 'string' || value.length > MAX_PREFILL_LENGTH) fail(label + ' must be text of at most ' + MAX_PREFILL_LENGTH.toLocaleString('en-GB') + ' characters.');
+    return value.replace(/\r\n?/g, '\n');
 }
 
 const RETRIEVAL_LABELS = {
@@ -185,6 +197,10 @@ export function validateConfig(input) {
                 allowedData: [...new Set(list(role.allowedData, 'Allowed data', SOURCE_TYPES.length))],
                 queryPrefix: prefix(role.queryPrefix, 'Query prefix'),
                 documentPrefix: prefix(role.documentPrefix, 'Document prefix'),
+                ...(name === 'embedding' ? {} : {
+                    prefill: prefillText(role.prefill, 'Prefill'),
+                    partialPrefill: prefillText(role.partialPrefill, 'Partial prefill'),
+                }),
             };
             if (!TOKENIZERS.includes(role.tokenizer)) fail('Choose a token counter for this role from the list.');
             if (result.roles[name].allowedData.some(type => !SOURCE_TYPES.includes(type))) fail('Choose what this role may read from the list.');
@@ -229,7 +245,11 @@ function readSavedConfig(directories) {
     config.extractionInstructions ??= '';
     config.dailyTokenLimit ??= 0;
     for (const name of ROLE_NAMES) {
-        if (name !== 'embedding') config.roles[name].useShared ??= false;
+        if (name !== 'embedding') {
+            config.roles[name].useShared ??= false;
+            config.roles[name].prefill ??= '';
+            config.roles[name].partialPrefill ??= '';
+        }
         if (DECISION_ROLES.includes(name)) {
             config.roles[name].decisionMode ??= 'auto';
             config.roles[name].decisionThreshold ??= defaultDecisionThreshold(config.roles[name].modelOverride || config.roles[name].model);
@@ -328,6 +348,12 @@ export function saveConfig(directories, input) {
         for (const key of ['historyMode', 'recentMessages', 'historyBatchMessages', 'historyCatchUp', 'extractionFocus', 'extractionInstructions', 'dailyTokenLimit']) {
             if (input[key] === undefined) validated[key] = current[key] ?? defaultConfig()[key];
         }
+        // A tab opened before prefills existed saves without them; that must not wipe them.
+        for (const roleName of ROLE_NAMES.filter(name => name !== 'embedding')) {
+            for (const key of ['prefill', 'partialPrefill']) {
+                if (input.roles?.[roleName]?.[key] === undefined) validated.roles[roleName][key] = current.roles?.[roleName]?.[key] ?? '';
+            }
+        }
         for (const roleName of DECISION_ROLES) {
             // A manual key belongs to its saved destination, including when a preset changes it.
             if (current.roles?.[roleName]?.endpoint !== validated.roles[roleName].endpoint
@@ -395,6 +421,8 @@ export function legacyRoleVersion(config, name) {
     const legacyRole = { ...connectionRole(config, config.roles[name]), timeoutMs: undefined };
     delete legacyRole.decisionMode;
     delete legacyRole.decisionThreshold;
+    delete legacyRole.prefill;
+    delete legacyRole.partialPrefill;
     return hash([config.localOnly, legacyRole]);
 }
 
@@ -594,11 +622,17 @@ async function requestModel(directories, config, name, payload, dataTypes, signa
             });
             data = { ...result, choices: [{ ...(result.choices?.[0] || {}), message: { content: extractGeneratedText(result) } }] };
         } else {
+            const body = { model: role.model, ...payload };
+            // Saved connections get this from the chat completions handler; a manual endpoint needs it here.
+            if (Array.isArray(body.messages) && body.messages.at(-1)?.partial === true) {
+                body.messages = seedKimiK3PartialReasoning(body.messages.map(message => ({ ...message })),
+                    { stockReasoning: !/(?:^|[/:])smol-alibaba\//i.test(String(role.model)) });
+            }
             const response = await send(url, {
                 method: 'POST', redirect: 'error', size: 4 * 1024 * 1024,
                 signal: controller.signal,
                 headers: { 'Content-Type': 'application/json', ...(key ? { Authorization: 'Bearer ' + key } : {}) },
-                body: JSON.stringify({ model: role.model, ...payload }),
+                body: JSON.stringify(body),
             });
             if (!response.ok) fail('The model for ' + ROLE_LABELS[name] + ' returned error code ' + response.status + '. Check its model connection in Mewmory settings and try again.', 502);
             data = await response.json();
@@ -621,8 +655,16 @@ async function requestModel(directories, config, name, payload, dataTypes, signa
             },
         };
     } catch (error) {
-        if (error.status) throw error;
         if (signal?.aborted) fail('Mewmory request cancelled.', 499);
+        // A saved connection reports the provider's own refusal (400, 401, 429...); that is a model failure, so fallbacks still get their turn.
+        if (error.providerStatus !== undefined) {
+            const detail = String(error.message || '').trim().replace(/\.$/, '').slice(0, 200);
+            const useful = detail && !/could not complete the reply \(HTTP \d+\)$/.test(detail);
+            fail('The model for ' + ROLE_LABELS[name] + ' returned error code ' + (error.providerStatus || error.status)
+                + (useful ? ' (' + detail + ')' : '') + '. Check its model connection in Mewmory settings and try again.', 502);
+        }
+        // Our own time limit aborts a saved connection as 'client disconnected'; report it as the timeout it is.
+        if (error.status && !(error.status === 499 && controller.signal.aborted)) throw error;
         fail('The model for ' + ROLE_LABELS[name] + ' could not be reached or took too long. Check its model connection and timeout in Mewmory settings.', 502);
     } finally {
         clearTimeout(timeout);
@@ -651,8 +693,10 @@ function parseJsonReply(content) {
 }
 
 function fallbackRoles(directories, config, name, dataTypes) {
-    if (name === 'embedding') return [];
-    return (config.fallbackProfileIds || []).flatMap(profileId => {
+    const roles = [];
+    const skipped = [];
+    if (name === 'embedding') return { roles, skipped };
+    for (const profileId of config.fallbackProfileIds || []) {
         try {
             const connection = resolveModelProfile(directories, profileId, false, '');
             const role = { ...config.roles[name], profileId, modelOverride: '', connection, model: connection.model, endpoint: connection.endpoint, error: undefined };
@@ -661,12 +705,42 @@ function fallbackRoles(directories, config, name, dataTypes) {
                 role.decisionThreshold = defaultDecisionThreshold(connection.model);
             }
             authorizeRole({ ...config, roles: { ...config.roles, [name]: role } }, name, dataTypes);
-            return [role];
-        } catch {
-            // A deleted profile, a missing key or a remote profile this role may not use is left out.
-            return [];
+            roles.push(role);
+        } catch (error) {
+            // A deleted profile, a missing key or a remote profile this role may not use is left out, but named in the error.
+            skipped.push({ profileId, reason: String(error.message || '').split(/(?<=\.)\s/)[0].replace(/\.$/, '') });
         }
-    });
+    }
+    return { roles, skipped };
+}
+
+function skippedFallbackNote(directories, skipped) {
+    if (!skipped.length) return '';
+    let names = new Map();
+    try {
+        names = new Map(listModelProfiles(directories).map(profile => [profile.id, profile.name]));
+    } catch {
+        // Profile ids still identify them.
+    }
+    const items = skipped.map(({ profileId, reason }) => (names.get(profileId) || profileId) + ' (' + reason + ')');
+    return (items.length === 1 ? 'Your fallback connection could not be used: ' : 'These fallback connections could not be used: ') + items.join('; ') + '.';
+}
+
+/**
+ * The assistant message that starts this connection's reply. Kimi K3 and K3.1 Pro take the
+ * Partial prefill when there is one and continue it as `partial: true`, as Catelier does.
+ * `reply` is the visible start of the answer, without any seeded reasoning, to put back in front of
+ * providers that return only the continuation.
+ */
+function rolePrefill(role) {
+    const partial = isKimiK3Model(role.model);
+    const value = partial && role.partialPrefill?.trim() ? role.partialPrefill : role.prefill || '';
+    if (!value.trim()) return null;
+    const thinking = value.match(/^\s*<think>[\s\S]*?(?:<\/think>|$)/i);
+    return {
+        message: { role: 'assistant', content: value, ...(partial ? { partial: true } : {}) },
+        reply: thinking ? value.slice(thinking[0].length).trimStart() : value,
+    };
 }
 
 function spent(directories, result) {
@@ -717,14 +791,17 @@ export async function callJsonRole(directories, config, name, contract, input, {
             });
             return { value, usage: { ...result.usage, input: result.usage.cached ? 0 : result.usage.input || decisionTokens, tokenizer: counter.name, decision: true } };
         }
-        const inputTokens = counter.count(JSON.stringify(messages)) + 16;
+        const prefill = rolePrefill(activeRole);
+        const sent = prefill ? [...messages, prefill.message] : messages;
+        const inputTokens = counter.count(JSON.stringify(sent)) + 16;
         checkBudget(inputTokens, activeRole.maxOutputTokens);
         const result = await requestModel(directories, config, name, {
-            messages, stream: false, max_tokens: activeRole.maxOutputTokens, temperature: 0.2,
+            messages: sent, stream: false, max_tokens: activeRole.maxOutputTokens, temperature: 0.2,
         }, dataTypes, signal, connectionRole);
-        const content = result.data.choices?.[0]?.message?.content;
+        let content = result.data.choices?.[0]?.message?.content;
         if (result.data.choices?.[0]?.finish_reason === 'length') fail('The ' + ROLE_LABELS[name] + ' model ran out of reply space, so its answer was cut short and nothing was saved. Raise ' + ROLE_LABELS[name] + ' > Output limit, tokens in Mewmory settings if your model supports it, or lower Messages per update.', 502);
         if (typeof content !== 'string') fail('The model for ' + ROLE_LABELS[name] + ' sent back an empty reply. Check its model connection in Mewmory settings, then try again.', 502);
+        if (prefill) content = joinHelperPartialPrefill(stripPrefilledReasoning(content, sent), prefill.reply);
         let value;
         try {
             value = parseJsonReply(content);
@@ -747,7 +824,7 @@ export async function callJsonRole(directories, config, name, contract, input, {
             primaryError = error;
         }
     }
-    const fallbacks = fallbackRoles(directories, config, name, dataTypes);
+    const { roles: fallbacks, skipped } = fallbackRoles(directories, config, name, dataTypes);
     for (const fallback of fallbacks) {
         signal?.throwIfAborted();
         try {
@@ -757,8 +834,12 @@ export async function callJsonRole(directories, config, name, contract, input, {
             if (error.status !== 502) throw error;
         }
     }
-    if (!fallbacks.length) throw primaryError;
-    fail(primaryError.message + ' ' + (fallbacks.length === 1 ? 'The fallback connection also failed.' : 'All ' + fallbacks.length + ' fallback connections also failed.'), primaryError.status);
+    if (!fallbacks.length && !skipped.length) throw primaryError;
+    const notes = [
+        fallbacks.length ? (fallbacks.length === 1 ? 'The fallback connection also failed.' : 'All ' + fallbacks.length + ' fallback connections also failed.') : '',
+        skippedFallbackNote(directories, skipped),
+    ].filter(Boolean);
+    fail(primaryError.message + ' ' + notes.join(' '), primaryError.status);
 }
 
 export async function embed(directories, config, texts, { query = false, dataTypes = SOURCE_TYPES, signal } = {}) {

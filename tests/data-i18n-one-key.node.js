@@ -32,7 +32,7 @@ function cutParts(value) {
 }
 
 // Legacy two-key fallbacks that are not a cut caption. The list may only shrink: every entry must still be found.
-const ALLOWED = [{ file: 'scripts/templates/promptManagerListHeader.html', value: 'Tokens;prompt_manager_tokens', why: 'legacy two-key fallback' }];
+const ALLOWED = [];
 
 function* publicFiles(directory) {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {

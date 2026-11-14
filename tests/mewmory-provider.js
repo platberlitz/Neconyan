@@ -75,7 +75,7 @@ export async function createMewmoryProvider(port = 0) {
         }
         if (mode.reply) return response.end(JSON.stringify(typeof mode.reply === 'function' ? mode.reply(body) : mode.reply));
         if (mode.fail) {
-            response.statusCode = 503;
+            response.statusCode = mode.failStatus || 503;
             return response.end(JSON.stringify({ error: 'Fixture provider unavailable.' }));
         }
         if (request.url.endsWith('/embeddings')) {

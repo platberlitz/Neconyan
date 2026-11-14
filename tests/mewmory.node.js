@@ -944,6 +944,145 @@ test('fallback connections answer in order after a model failure and respect eac
     });
 });
 
+test('a saved main connection that refuses or stalls hands over to the fallbacks and names the reason', async t => {
+    const { directories } = disk(t);
+    const broken = await createMewmoryProvider();
+    const working = await createMewmoryProvider();
+    t.after(async () => {
+        for (const provider of [broken, working]) {
+            provider.server.closeAllConnections();
+            await new Promise(resolve => provider.server.close(resolve));
+        }
+    });
+    writeJson(path.join(directories.root, 'settings.json'), { extension_settings: { connectionManager: { profiles: [
+        { id: 'main', name: 'Main', api: 'custom', 'api-url': broken.url, model: 'extractor' },
+        { id: 'spare', name: 'Spare', api: 'custom', 'api-url': working.url, model: 'extractor' },
+    ] } } });
+    const config = defaultConfig();
+    config.fallbackProfileIds = ['spare'];
+    Object.assign(config.roles.extractor, { enabled: true, profileId: 'main', timeoutMs: 1000 });
+    saveConfig(directories, config);
+    const input = { sources: [], existing: [] };
+    broken.mode.fail = true;
+    for (const status of [400, 401, 403, 404, 429, 500]) {
+        broken.mode.failStatus = status;
+        const result = await callJsonRole(directories, readConfig(directories), 'extractor', 'Extract facts.', input);
+        assert.equal(result.usage.fallbackProfileId, 'spare', 'error code ' + status + ' from the main connection moves on');
+    }
+
+    broken.mode.failStatus = 400;
+    working.mode.fail = true;
+    working.mode.failStatus = 400;
+    await assert.rejects(callJsonRole(directories, readConfig(directories), 'extractor', 'Extract.', input), error => {
+        assert.equal(error.status, 502);
+        assert.match(error.message, /^The model for Facts and events returned error code 400 \(Bad Request\)\. Check its model connection in Mewmory settings and try again\. The fallback connection also failed\.$/);
+        return true;
+    });
+    working.mode.fail = false;
+
+    broken.mode.fail = false;
+    broken.mode.hold = 'extractor';
+    const stalled = await callJsonRole(directories, readConfig(directories), 'extractor', 'Extract.', input);
+    assert.equal(stalled.usage.fallbackProfileId, 'spare', 'a main connection past its timeout moves on');
+    broken.mode.hold = '';
+
+    const controller = new AbortController();
+    broken.mode.hold = 'extractor';
+    const before = working.calls.length;
+    const cancelled = callJsonRole(directories, readConfig(directories), 'extractor', 'Extract.', input, { signal: controller.signal });
+    setTimeout(() => controller.abort(), 100);
+    await assert.rejects(cancelled, error => error.name === 'AbortError' || error.status === 499);
+    assert.equal(working.calls.length, before, 'a cancelled request does not try the fallbacks');
+    broken.mode.hold = '';
+
+    broken.mode.fail = true;
+    const unusable = publicConfig(directories);
+    unusable.fallbackProfileIds = ['gone'];
+    saveConfig(directories, unusable);
+    await assert.rejects(callJsonRole(directories, readConfig(directories), 'extractor', 'Extract.', input), error => {
+        assert.equal(error.status, 502);
+        assert.match(error.message, /returned error code 400.*Your fallback connection could not be used: gone \(The chosen connection profile no longer exists/);
+        return true;
+    });
+});
+
+test('model roles start their reply with the saved prefill, and Kimi K3 connections use the partial prefill', async t => {
+    const { directories } = disk(t);
+    const provider = await createMewmoryProvider();
+    t.after(() => new Promise(resolve => provider.server.close(resolve)));
+    writeJson(path.join(directories.root, 'settings.json'), { extension_settings: { connectionManager: { profiles: [
+        { id: 'kimi', name: 'Kimi', api: 'custom', 'api-url': provider.url, model: 'kimi-k3' },
+    ] } } });
+    const config = defaultConfig();
+    assert.equal(config.roles.extractor.prefill, '');
+    assert.equal(config.roles.extractor.partialPrefill, '');
+    assert.equal('prefill' in config.roles.embedding, false, 'the embedding role does not write replies');
+    Object.assign(config.roles.extractor, {
+        enabled: true, endpoint: provider.url, model: 'plain-model',
+        prefill: '{"records": ', partialPrefill: '<think>Only JSON.</think>{"records": ',
+    });
+    saveConfig(directories, config);
+    const saved = readConfig(directories).roles.extractor;
+    assert.equal(saved.prefill, '{"records": ');
+    assert.equal(saved.partialPrefill, '<think>Only JSON.</think>{"records": ');
+    const fingerprint = roleVersion(readConfig(directories), 'extractor');
+    provider.mode.reply = () => ({ choices: [{ message: { content: '[], "interviews": []}' } }] });
+    const input = { sources: [], existing: [] };
+
+    const plain = await callJsonRole(directories, readConfig(directories), 'extractor', 'Extract.', input);
+    assert.deepEqual(plain.value, { records: [], interviews: [] }, 'the prefill is joined back onto the continuation');
+    assert.deepEqual(provider.calls.at(-1).messages.at(-1), { role: 'assistant', content: '{"records": ' });
+
+    const kimi = publicConfig(directories);
+    Object.assign(kimi.roles.extractor, { model: 'kimi-k3' });
+    saveConfig(directories, kimi);
+    const partial = await callJsonRole(directories, readConfig(directories), 'extractor', 'Extract.', input);
+    assert.deepEqual(partial.value, { records: [], interviews: [] });
+    const sent = provider.calls.at(-1).messages.at(-1);
+    assert.equal(sent.role, 'assistant');
+    assert.equal(sent.partial, true);
+    assert.equal(sent.content, '{"records": ', 'the reasoning block moves out of the visible reply');
+    assert.equal(sent.reasoning_content, 'Only JSON.');
+
+    const blankPartial = publicConfig(directories);
+    blankPartial.roles.extractor.partialPrefill = '   ';
+    saveConfig(directories, blankPartial);
+    await callJsonRole(directories, readConfig(directories), 'extractor', 'Extract.', input);
+    assert.equal(provider.calls.at(-1).messages.at(-1).partial, true, 'a blank partial prefill falls back to Prefill');
+    assert.equal(provider.calls.at(-1).messages.at(-1).content, '{"records": ');
+
+    const echoed = publicConfig(directories);
+    Object.assign(echoed.roles.extractor, { model: 'plain-model', partialPrefill: '' });
+    saveConfig(directories, echoed);
+    provider.mode.reply = () => ({ choices: [{ message: { content: '{"records": [], "interviews": []}' } }] });
+    const repeated = await callJsonRole(directories, readConfig(directories), 'extractor', 'Extract.', input);
+    assert.deepEqual(repeated.value, { records: [], interviews: [] }, 'a model that repeats the prefill is not doubled');
+
+    const followsFallback = publicConfig(directories);
+    Object.assign(followsFallback.roles.extractor, { endpoint: 'http://127.0.0.1:1/v1', timeoutMs: 1000, partialPrefill: '{"records": ' });
+    followsFallback.fallbackProfileIds = ['kimi'];
+    saveConfig(directories, followsFallback);
+    provider.mode.reply = () => ({ choices: [{ message: { content: '[], "interviews": []}' } }] });
+    const fallback = await callJsonRole(directories, readConfig(directories), 'extractor', 'Extract.', input);
+    assert.equal(fallback.usage.fallbackProfileId, 'kimi');
+    assert.deepEqual(fallback.value, { records: [], interviews: [] });
+    assert.equal(provider.calls.at(-1).messages.at(-1).partial, true, 'a Kimi K3 fallback uses the partial prefill');
+
+    const untouched = publicConfig(directories);
+    delete untouched.roles.extractor.prefill;
+    delete untouched.roles.extractor.partialPrefill;
+    saveConfig(directories, untouched);
+    assert.equal(readConfig(directories).roles.extractor.prefill, '{"records": ', 'a save that predates prefills keeps them');
+    const longPrefill = publicConfig(directories);
+    longPrefill.roles.extractor.prefill = 'x'.repeat(10001);
+    assert.throws(() => saveConfig(directories, longPrefill), /Facts and events: Prefill must be text of at most 10,000 characters\./);
+
+    const edited = publicConfig(directories);
+    Object.assign(edited.roles.extractor, { endpoint: provider.url, model: 'plain-model', prefill: 'Different start ', partialPrefill: 'Other' });
+    saveConfig(directories, edited);
+    assert.equal(roleVersion(readConfig(directories), 'extractor'), fingerprint, 'editing a prefill keeps processed memories current');
+});
+
 test('a connection profile for all roles drives every role that follows it without changing processing fingerprints', async t => {
     const { directories } = disk(t);
     const provider = await createMewmoryProvider();
