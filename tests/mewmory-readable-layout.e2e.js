@@ -1,5 +1,5 @@
 // @ts-check
-/* global document, window, getComputedStyle */
+/* global document, window, getComputedStyle, requestAnimationFrame */
 /* eslint-disable playwright/no-conditional-in-test, playwright/no-conditional-expect -- Phone and desktop widths use different tab layouts. */
 import { isolateSettingsSaves } from './chat-scroll-regression-helpers.js';
 import { test, expect } from '@playwright/test';
@@ -102,6 +102,79 @@ test('Mewmory keeps its tabs in one sticky row with readable headings and descri
 
 test.describe('Mewmory phone scroll controls', () => {
     test.use(IPHONE_SAFARI_CONTEXT);
+
+    test('memory updates keep the tab scroll controls painted and preserve the reading position', async ({ context, page }) => {
+        await installIPhoneSafari(context, { standalone: true });
+        await page.reload();
+        await expect(page.locator('body')).toHaveClass(/neconyan-rail-ready/, { timeout: 60_000 });
+        await page.evaluate(() => window.NeconyanShell.openTab('left', 'mewmory'));
+        const workspace = page.locator('#mewmory-workspace');
+        const rail = workspace.locator('.mewmory-tabs');
+        const chrome = workspace.locator('.sb-mobile-rail-chrome');
+        await expect(workspace.getByRole('button', { name: 'Refresh', exact: true })).toBeEnabled();
+        await applyIOSOnlyCss(page, { inPlace: true });
+        await rail.getByRole('tab', { name: 'Recall', exact: true }).evaluate(tab => tab.click());
+        await expect(workspace.getByRole('button', { name: 'Refresh', exact: true })).toBeEnabled();
+        await expect(chrome.locator('.sb-mobile-rail-track')).toBeVisible();
+
+        // Keep Recall selected while reading the tabs to its left. A status
+        // refresh must not scroll back to the selected tab or remove the hints.
+        await rail.evaluate(el => { el.scrollLeft = 0; });
+        await expect(chrome.locator('.sb-mobile-rail-left')).toBeHidden();
+        await expect(chrome.locator('.sb-mobile-rail-right')).toBeVisible();
+        const frames = await page.evaluate(async () => {
+            const { mewmory, notifyMewmory } = await import('/scripts/mewmory/index.js');
+            const samples = [];
+            for (const state of [
+                { busy: true, loading: true, preparing: true },
+                { busy: true, loading: false, preparing: false },
+                { busy: true, loading: true, preparing: false },
+                { busy: true, loading: false, preparing: false },
+                { busy: false, loading: false, preparing: false },
+            ]) {
+                Object.assign(mewmory, state);
+                notifyMewmory();
+                // Sample the first paint after render, before the shared rails
+                // can repair missing controls in a later animation frame.
+                await new Promise(resolve => requestAnimationFrame(resolve));
+                const rail = document.querySelector('#mewmory-workspace .mewmory-tabs');
+                const controls = rail.parentElement.querySelector('.sb-mobile-rail-chrome');
+                samples.push({
+                    controlsVisible: Boolean(controls && !controls.hidden),
+                    scrollLeft: rail.scrollLeft,
+                    fade: rail.classList.contains('sb-can-scroll-right'),
+                    selected: rail.querySelector('[aria-selected="true"]').id,
+                    status: document.querySelector('#mewmory-workspace .mewmory-heading .mewmory-status').dataset.state,
+                });
+                await new Promise(resolve => requestAnimationFrame(resolve));
+            }
+            return samples;
+        });
+        expect(frames).toEqual(Array.from({ length: 5 }, (_, index) => ({
+            controlsVisible: true, scrollLeft: 0, fade: true, selected: 'mewmory-tab-recall',
+            status: index === 4 ? 'off' : 'busy',
+        })));
+
+        await chrome.locator('.sb-mobile-rail-right').tap();
+        await rail.getByRole('tab', { name: 'Recall', exact: true }).tap();
+        await expect(rail.getByRole('tab', { name: 'Recall', exact: true })).toHaveAttribute('aria-selected', 'true');
+        await expect(workspace.getByRole('button', { name: 'Refresh', exact: true })).toBeEnabled();
+        await rail.getByRole('tab', { name: 'Recall', exact: true }).press('Home');
+        await expect(rail.getByRole('tab', { name: 'Now', exact: true })).toBeFocused();
+        await expect(rail.getByRole('tab', { name: 'Now', exact: true })).toHaveAttribute('aria-selected', 'true');
+        await expect.poll(() => rail.evaluate(el => el.scrollLeft)).toBe(0);
+
+        const actionState = await page.evaluate(async () => {
+            const { act } = await import('/scripts/mewmory/ui.js');
+            let finish;
+            const action = act(() => new Promise(resolve => { finish = resolve; }), { refresh: false });
+            const disabledDuringAction = [...document.querySelectorAll('.mewmory-tab')].every(tab => tab.disabled);
+            finish();
+            await action;
+            return { disabledDuringAction, enabledAfterAction: [...document.querySelectorAll('.mewmory-tab')].every(tab => !tab.disabled) };
+        });
+        expect(actionState).toEqual({ disabledDuringAction: true, enabledAfterAction: true });
+    });
 
     test('shared arrows and scroll line follow sticky tabs and survive panel redraws', async ({ context, page }) => {
         await installIPhoneSafari(context, { standalone: true });

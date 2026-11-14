@@ -2694,6 +2694,34 @@ function revealSelectedTab(navigation) {
     else if (end > navigation.scrollLeft + navigation.clientWidth) navigation.scrollLeft = end - navigation.clientWidth + 8;
 }
 
+function createNavigation() {
+    const navigation = node('nav', 'mewmory-tabs');
+    navigation.setAttribute('role', 'tablist');
+    navigation.setAttribute('aria-label', 'Mewmory views');
+    for (const [id, label] of tabs) {
+        const tab = button(label, () => switchTab(id));
+        // The host assigns role=button to .menu_button, so tabs use their own native-button class.
+        tab.className = 'mewmory-tab';
+        tab.id = 'mewmory-tab-' + id;
+        tab.setAttribute('role', 'tab');
+        tab.setAttribute('aria-controls', 'mewmory-pane-' + id);
+        tab.addEventListener('keydown', event => {
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+            event.preventDefault();
+            const current = tabs.findIndex(([key]) => key === id);
+            const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1
+                : (current + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+            void switchTab(tabs[next][0]).then(() => document.getElementById('mewmory-tab-' + tabs[next][0])?.focus());
+        });
+        navigation.append(tab);
+    }
+    // Stick the rail and its sibling scroll controls together. A sticky rail on
+    // its own leaves the controls following its position one animation frame late.
+    const wrapper = node('div', 'mewmory-tabs-wrapper');
+    wrapper.append(navigation);
+    return wrapper;
+}
+
 let renderFrame = null;
 
 function queueRender() {
@@ -2765,8 +2793,13 @@ function render() {
     if (!searchTerms(ui.settingsQuery).length) {
         for (const fold of root.querySelectorAll('#mewmory-pane-settings > details[data-mewmory-fold]')) rememberSettingsFold(fold.dataset.mewmoryFold, fold.open);
     }
-    const tabsScrollLeft = root.querySelector('.mewmory-tabs')?.scrollLeft || 0;
-    root.replaceChildren();
+    const navigationWrapper = root.querySelector('.mewmory-tabs-wrapper') || createNavigation();
+    const navigation = navigationWrapper.querySelector('.mewmory-tabs');
+    const selectionChanged = navigation.querySelector('[aria-selected="true"]')?.id !== 'mewmory-tab-' + ui.tab;
+    // Keep the rail connected: replacing it drops the arrows, scroll line and
+    // edge fades until the shared scroll controls initialise on the next frame.
+    for (const child of [...root.childNodes]) if (child !== navigationWrapper) child.remove();
+    const header = document.createDocumentFragment();
     const heading = node('header', 'mewmory-heading');
     const locator = getMewmoryLocator();
     const where = node('div', 'mewmory-where');
@@ -2790,35 +2823,17 @@ function render() {
         : mewmory.loading || mewmory.busy || mewmory.preparing || restoration?.status === 'pending' ? 'busy'
             : mewmory.view?.enabled ? extractorOn && !waiting ? 'ready' : 'warning' : 'off';
     heading.append(where, status, button('Refresh', () => act(() => refreshMewmory(filters()), { refresh: false })));
-    root.append(heading);
-    if (mewmory.view) renderOverview(root);
-    const navigation = node('nav', 'mewmory-tabs');
-    navigation.setAttribute('role', 'tablist');
-    navigation.setAttribute('aria-label', 'Mewmory views');
-    for (const [id, label] of tabs) {
-        const tab = button(label, () => switchTab(id));
-        // The host assigns role=button to .menu_button, so tabs use their own native-button class.
-        tab.className = 'mewmory-tab';
-        tab.id = 'mewmory-tab-' + id;
-        tab.setAttribute('role', 'tab');
+    header.append(heading);
+    if (mewmory.view) renderOverview(header);
+    root.prepend(header);
+    if (navigationWrapper.parentElement !== root) root.append(navigationWrapper);
+    for (const [id] of tabs) {
+        const tab = navigation.querySelector('#mewmory-tab-' + id);
         tab.setAttribute('aria-selected', String(ui.tab === id));
-        tab.setAttribute('aria-controls', 'mewmory-pane-' + id);
         tab.tabIndex = ui.tab === id ? 0 : -1;
-        tab.addEventListener('keydown', event => {
-            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-            event.preventDefault();
-            const current = tabs.findIndex(([key]) => key === id);
-            const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1
-                : (current + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
-            void switchTab(tabs[next][0]).then(() => document.getElementById('mewmory-tab-' + tabs[next][0])?.focus());
-        });
-        navigation.append(tab);
+        tab.disabled = Boolean(ui.running);
     }
-    // Stick the rail and its sibling scroll controls together. A sticky rail on
-    // its own leaves the controls following its position one animation frame late.
-    const navigationWrapper = node('div', 'mewmory-tabs-wrapper');
-    navigationWrapper.append(navigation);
-    root.append(navigationWrapper, node('p', 'mewmory-caption mewmory-tab-hint', tabHints[ui.tab] || ''));
+    root.append(node('p', 'mewmory-caption mewmory-tab-hint', tabHints[ui.tab] || ''));
     for (const [id] of tabs) {
         const page = node('div', 'mewmory-page');
         page.id = 'mewmory-pane-' + id;
@@ -2843,8 +2858,7 @@ function render() {
         }
     }
     // Measure only once the whole panel is back, or the half-built page clamps the reader's scroll position.
-    navigation.scrollLeft = tabsScrollLeft;
-    revealSelectedTab(navigation);
+    if (selectionChanged) revealSelectedTab(navigation);
     if (focusId && !(active instanceof HTMLSelectElement)) {
         const target = document.getElementById(focusId);
         target?.focus({ preventScroll: true });
