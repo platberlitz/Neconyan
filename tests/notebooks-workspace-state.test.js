@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 const source = readFileSync(new URL('../public/scripts/notebooks/notes-app.js', import.meta.url), 'utf8');
-const functionSource = name => source.match(new RegExp(`^(?:async )?function ${name}\\([\\s\\S]*?^}`, 'm'))?.[0] ?? '';
+const functionSource = name => (source.match(new RegExp(`^(?:export )?(?:async )?function ${name}\\([\\s\\S]*?^}`, 'm'))?.[0] ?? '').replace(/^export /, '');
 const deferred = () => {
     let resolve;
     const promise = new Promise(done => { resolve = done; });
@@ -24,6 +24,29 @@ function runtime(overrides = {}, functions = ['loadNotebooks', 'selectNotebook',
 }
 
 describe('Notes workspace selection and delayed responses', () => {
+    test('reopening refreshes folders changed while hidden without replacing the unsaved note', async () => {
+        const request = jest.fn(route => Promise.resolve(route === '/tree'
+            ? { status: 'success', folders: [{ path: 'Inbox' }, { path: 'Plans/Sub' }] }
+            : { status: 'success', notes: [], total: 0 }));
+        const { app, context } = runtime({ request, NOTES_STYLESHEET: '/notes.css', loadStylesheetAsync: async () => {},
+            ensureModules: async () => {}, mountTour: () => {}, accountChanged: () => {}, readPrefs: () => ({}),
+            isPhone: () => false, subscribeNotes: () => () => {}, applyLayout: () => {} },
+        ['openNotes', 'loadNotebooks', 'selectNotebook', 'refreshTree', 'onRemoteChange']);
+        const draft = { id: 'current-note', text: 'My unsaved words' };
+        Object.assign(app.state, { built: true, open: false, note: draft, dirty: true, tree: { folders: [{ path: 'Inbox' }] } });
+        app.elements = { root: { hidden: true } };
+        context.onRemoteChange({ kind: 'folder', notebookId: 'old' });
+        expect(request).not.toHaveBeenCalled();
+
+        await context.openNotes({ notebookId: 'old' });
+
+        expect(app.state.tree.folders.map(folder => folder.path)).toEqual(['Inbox', 'Plans/Sub']);
+        expect(app.state.note).toBe(draft);
+        expect(app.state.note.text).toBe('My unsaved words');
+        expect(app.state.dirty).toBe(true);
+        expect(app.elements.root.hidden).toBe(false);
+    });
+
     test('a late notebook notification cannot undo selecting the notebook just imported', async () => {
         const notification = deferred();
         const imported = deferred();
