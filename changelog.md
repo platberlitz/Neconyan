@@ -91,6 +91,7 @@
 - PR #681 (2026-11-14) `fix: repair staging regressions and stabilise browser tests`
 - PR #682 (2026-11-14) `fix(companions): keep history controls on one row`
 - PR #683 (2026-11-14) `feat(purrks): add selective bulk deletion`
+- PR #684 (2026-11-14) `fix(agents): include surrounding prompt rules in adherence checks`
 
 ## v1.5.4
 
