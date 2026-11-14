@@ -7598,10 +7598,10 @@ function getRerunUtilityAgents(enabledAgents) {
  * serial around it.
  *
  * @param {number} messageIndex
- * @param {{ cancelRevision?: number }} [options]
+ * @param {{ cancelRevision?: number, isCurrent?: () => boolean }} [options]
  * @returns {Promise<null>}
  */
-export async function rerunPostGenerationAgentsOnMessage(messageIndex, { cancelRevision = agentGenerationCancelRevision } = {}) {
+export async function rerunPostGenerationAgentsOnMessage(messageIndex, { cancelRevision = agentGenerationCancelRevision, isCurrent = () => true } = {}) {
     if (!areAgentsGloballyEnabled()) {
         toastr.warning('In-Chat Agents are disabled.');
         return null;
@@ -7625,8 +7625,33 @@ export async function rerunPostGenerationAgentsOnMessage(messageIndex, { cancelR
         return null;
     }
 
-    const target = { kind: 'message', messageIndex: numericMessageIndex, message, state: captureMessageTargetState(message, numericMessageIndex), isCurrent: () => true };
+    const target = { kind: 'message', messageIndex: numericMessageIndex, message, state: captureMessageTargetState(message, numericMessageIndex), isCurrent };
     return await enqueueManualOperation(manualAgentRunQueues[0], target, () => executeRerunPostGenerationAgentsOnMessage(target, cancelRevision), cancelRevision);
+}
+
+/** Rerun the saved reply's after-reply Agents, then its enabled automatic Companions. */
+export async function rerunSavedReplyAgentsOnMessage(messageIndex, { isCurrent = () => true } = {}) {
+    const message = chat[messageIndex];
+    if (!message || message.is_user || message.is_system) return;
+    if (!areAgentsGloballyEnabled()) {
+        toastr.warning('In-Chat Agents are disabled.');
+        return;
+    }
+    if (isPostProcessingInFlightForMessage(message, messageIndex)) {
+        warnRerunAlreadyProcessing();
+        return;
+    }
+    const state = captureMessageTargetState(message, messageIndex);
+    const cancelRevision = agentGenerationCancelRevision;
+    const canContinue = () => isCurrent() && areAgentsGloballyEnabled() && !isMainGenerationStillActive()
+        && agentGenerationCancelRevision === cancelRevision
+        && isMessageTargetCurrent(message, state, messageIndex, { text: false });
+    const { runAutomaticCompanionsOnMessage } = await import('./companion/companion-runner.js');
+    if (!canContinue() || !isMessageTargetCurrent(message, state, messageIndex)) return;
+    if (getPromptTransformAgents(getEnabledAgents().filter(isAgentRuntimeAllowed)).length > 0) {
+        await rerunPostGenerationAgentsOnMessage(messageIndex, { cancelRevision, isCurrent });
+    }
+    if (canContinue()) await runAutomaticCompanionsOnMessage(messageIndex);
 }
 
 async function executeRerunPostGenerationAgentsOnMessage(submittedTarget, cancelRevision) {
@@ -7650,7 +7675,7 @@ async function executeRerunPostGenerationAgentsOnMessage(submittedTarget, cancel
 
     resetChatBackupSequence();
     await commitOpenEditorForMessage(messageIndex);
-    if (!message || message.is_user || message.is_system || !areAgentsGloballyEnabled()) return null;
+    if (!message || message.is_user || message.is_system || !areAgentsGloballyEnabled() || !submittedTarget.isCurrent()) return null;
     if (!isMessageTargetCurrent(message, submittedTarget.state, messageIndex, { text: false, revision: false })) {
         warnRerunSkipped('before');
         return null;
@@ -7676,7 +7701,7 @@ async function executeRerunPostGenerationAgentsOnMessage(submittedTarget, cancel
     const baselineText = getRerunPostGenerationBaselineText(message);
     const target = captureMessageTargetState(message);
     const isRerunCancelled = () => agentGenerationCancelRevision !== cancelRevision;
-    const isRerunTargetCurrent = () => !isRerunCancelled() && isMessageTargetCurrent(message, target, messageIndex);
+    const isRerunTargetCurrent = () => !isRerunCancelled() && submittedTarget.isCurrent() && isMessageTargetCurrent(message, target, messageIndex);
     const warnIfRerunTargetChanged = stage => {
         if (isMessageTargetCurrent(message, target, messageIndex)) return false;
         warnRerunSkipped(stage);

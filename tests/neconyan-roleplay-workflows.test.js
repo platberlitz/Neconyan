@@ -55,12 +55,19 @@ const interceptors = [];
 const restoreDisplay = jest.fn();
 const beginRoleplayReplacement = jest.fn(() => restoreDisplay);
 jest.unstable_mockModule('../public/scripts/neconyan-conversation/roleplay-replacement.js', () => ({ beginRoleplayReplacement }));
+const rerunSavedReplyAgentsOnMessage = jest.fn(async () => {});
+jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/agent-runner.js', () => ({ rerunSavedReplyAgentsOnMessage }));
+const toastAppend = jest.fn();
+const warningToast = { find: jest.fn(() => ({ append: toastAppend })) };
 
 const globalEvents = new EventTarget();
 globalThis.addEventListener = globalEvents.addEventListener.bind(globalEvents);
 globalThis.removeEventListener = globalEvents.removeEventListener.bind(globalEvents);
 globalThis.dispatchEvent = jest.fn(event => globalEvents.dispatchEvent(event));
-globalThis.document = Object.assign(new EventTarget(), { visibilityState: 'visible' });
+globalThis.document = Object.assign(new EventTarget(), {
+    visibilityState: 'visible',
+    createElement: tagName => Object.assign(new EventTarget(), { tagName }),
+});
 jest.unstable_mockModule('../public/scripts/events.js', () => ({ event_types, eventSource }));
 
 const extensionNames = [];
@@ -193,7 +200,9 @@ beforeEach(() => {
     activations.length = 0;
     observers.clear();
     previews.clear();
-    globalThis.toastr = { error: jest.fn(), warning: jest.fn() };
+    globalThis.toastr = { error: jest.fn(), warning: jest.fn(() => warningToast), info: jest.fn(), clear: jest.fn() };
+    toastAppend.mockClear();
+    rerunSavedReplyAgentsOnMessage.mockClear();
     listJobs.mockClear();
     cancelJob.mockClear();
     serviceVectorBrowserWork.mockClear();
@@ -1250,10 +1259,71 @@ test.each(['poll', 'preview'])('an Agent failure warns once after the saved repl
     await waitFor(() => globalThis.toastr.warning.mock.calls.length === 1);
     expect(reloads).toEqual([2]);
     expect(globalThis.toastr.warning).toHaveBeenCalledWith(
-        'Your reply was saved, but some Agents could not finish. Unfinished Agent changes were skipped.', 'Agents did not finish');
+        'Your reply was saved, but some Agents could not finish. Unfinished Agent changes were skipped.', 'Agents did not finish', undefined);
     await observers.get(key).onSnapshot(done);
     previews.get(key).onTerminal(done);
     expect(globalThis.toastr.warning).toHaveBeenCalledTimes(1);
+});
+
+async function savedReplyWarning(suffix) {
+    const key = `saved-reply-action-${suffix}`;
+    const locator = { chat: 'roleplay', avatar: 'nova.png', group: false };
+    chat[1].extra = { roleplay_workflow_reply: { rootJobId: key, childJobId: `${key}-child` } };
+    receiptHandler = () => response(200, { accepted: true, state: 'closed', jobId: key,
+        result: { agentsFailed: true, childJobId: `${key}-child` } });
+    workflows.observeRoleplayWorkflowJob(key, { key, name: 'roleplay.reply', locator, account });
+    await waitFor(() => observers.has(key));
+    await observers.get(key).onSnapshot({ state: 'completed' });
+    await waitFor(() => toastAppend.mock.calls.length === 1);
+    return toastAppend.mock.calls[0][0];
+}
+
+test('the saved-reply action stays open and reruns its own reply only once', async () => {
+    const button = await savedReplyWarning('click');
+    expect(globalThis.toastr.warning.mock.calls[0][2]).toMatchObject({
+        timeOut: 0, extendedTimeOut: 0, tapToDismiss: false, closeButton: true,
+    });
+    expect(button.textContent).toBe('Rerun agents');
+    chat.push({ mes: 'A later reply' });
+    button.dispatchEvent(new Event('click'));
+    button.dispatchEvent(new Event('click'));
+    await waitFor(() => rerunSavedReplyAgentsOnMessage.mock.calls.length === 1);
+    expect(rerunSavedReplyAgentsOnMessage).toHaveBeenCalledWith(1, { isCurrent: expect.any(Function) });
+    expect(globalThis.toastr.clear).toHaveBeenCalledWith(warningToast, { force: true });
+    expect(button.disabled).toBe(true);
+});
+
+test.each([false, true])('closing the saved-reply warning declines the rerun (starting: %s)', async starting => {
+    const button = await savedReplyWarning(`close-${starting}`);
+    if (starting) button.dispatchEvent(new Event('click'));
+    globalThis.toastr.warning.mock.calls[0][2].onCloseClick();
+    button.dispatchEvent(new Event('click'));
+    await settle();
+    expect(rerunSavedReplyAgentsOnMessage).not.toHaveBeenCalled();
+});
+
+test.each(['chat', 'account', 'swipe', 'edit', 'replacement'])('an old saved-reply action cannot rerun after a %s change', async change => {
+    const button = await savedReplyWarning(change);
+    if (change === 'chat') currentChatId = 'another';
+    if (change === 'account') account = 'bob';
+    if (change === 'swipe') chat[1].swipe_id = 1;
+    if (change === 'edit') chat[1].mes = 'An edited reply';
+    if (change === 'replacement') chat[1] = { ...chat[1] };
+    button.dispatchEvent(new Event('click'));
+    await waitFor(() => globalThis.toastr.info.mock.calls.length > 0);
+    expect(rerunSavedReplyAgentsOnMessage).not.toHaveBeenCalled();
+});
+
+test('the saved-reply action can be tried again once generation finishes', async () => {
+    const button = await savedReplyWarning('busy');
+    generating = true;
+    button.dispatchEvent(new Event('click'));
+    await waitFor(() => button.disabled === false);
+    expect(rerunSavedReplyAgentsOnMessage).not.toHaveBeenCalled();
+    expect(globalThis.toastr.clear).not.toHaveBeenCalled();
+    generating = false;
+    button.dispatchEvent(new Event('click'));
+    await waitFor(() => rerunSavedReplyAgentsOnMessage.mock.calls.length === 1);
 });
 
 test.each([false, true])('a closed-page Agent failure waits for its visible chat and warns once (chat switch: %s)', async attachOnly => {

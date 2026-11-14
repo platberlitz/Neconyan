@@ -8795,6 +8795,61 @@ describe('in-chat agent post-processing runner', () => {
         expect(runner.isAgentGenerationActive()).toBe(false);
     });
 
+    test('saved-reply rerun runs after-reply Agents before enabled automatic Companions', async () => {
+        usePromptTransformPostAgent();
+        enabledAgents.push(createCompanionAgent({ id: 'auto' }),
+            createCompanionAgent({ id: 'manual', companion: { trigger: 'manual' } }),
+            createCompanionAgent({ id: 'hidden' }));
+        globalSettings.hiddenCompanionAgentIds = ['hidden'];
+        chat.push({ mes: 'Saved reply', is_user: false, is_system: false, extra: {} });
+        generateQuietPrompt.mockResolvedValueOnce('Revised reply').mockResolvedValue('Automatic note');
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+
+        await runner.rerunSavedReplyAgentsOnMessage(0);
+
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(2);
+        expect(generateQuietPrompt.mock.calls[1][0].quietPrompt).toContain('Revised reply');
+        expect(chat[0].mes).toBe('Revised reply');
+        expect(Object.keys(chat[0].extra.inChatAgentCompanionResults)).toEqual(['auto']);
+        expect(chat[0].extra.inChatAgentCompanionResults.auto.content).toBe('Automatic note');
+    });
+
+    test('saved-reply rerun works when only automatic Companions are enabled', async () => {
+        enabledAgents = [createCompanionAgent()];
+        chat.push({ mes: 'Saved reply', is_user: false, is_system: false, extra: {} });
+        generateQuietPrompt.mockResolvedValue('Automatic note');
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        await runner.rerunSavedReplyAgentsOnMessage(0);
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        expect(chat[0].mes).toBe('Saved reply');
+        expect(globalThis.toastr.info).not.toHaveBeenCalledWith('No enabled after-reply prompt agents found.');
+    });
+
+    test.each(['stop', 'edit', 'swipe', 'account'])('saved-reply rerun does not start Companions after a %s during the after-reply run', async change => {
+        usePromptTransformPostAgent();
+        enabledAgents.push(createCompanionAgent());
+        chat.push({ mes: 'Saved reply', is_user: false, is_system: false, extra: {} });
+        const releases = [];
+        generateQuietPrompt.mockImplementation(() => new Promise(resolve => releases.push(resolve)));
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        let current = true;
+        runner.initAgentRunner();
+        const run = runner.rerunSavedReplyAgentsOnMessage(0, { isCurrent: () => current });
+        await waitFor(() => releases.length === 1);
+        if (change === 'stop') runner.cancelAgentGeneration();
+        if (change === 'swipe') chat[0].swipe_id = 1;
+        if (change === 'account') current = false;
+        if (change === 'edit') {
+            chat[0].mes = 'My edit';
+            await eventSource.emit(eventTypes.MESSAGE_EDITED, 0);
+        }
+        releases.shift()('Revised reply');
+        await run;
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        expect(chat[0].extra.inChatAgentCompanionResults).toBeUndefined();
+        expect(chat[0].mes).toBe(change === 'edit' ? 'My edit' : 'Saved reply');
+    });
+
     test('rerun agents starts parallel rewrites on one reply and applies the synthesis once', async () => {
         useManualTransformAgents();
         globalSettings.appendAgentsExecutionMode = 'parallel';
