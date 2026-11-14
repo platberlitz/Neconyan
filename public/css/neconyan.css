@@ -321,7 +321,7 @@ body.neconyan :is(.sb-shell-root, #right-nav-panel).openDrawer {
     height: calc(100dvh - var(--sb-topbar-layout-offset)) !important;
     max-height: calc(100dvh - var(--sb-topbar-layout-offset)) !important;
     margin: 0 !important; border: 0 !important; border-left: 1px solid var(--neco-border) !important;
-    border-radius: 0 !important; background: var(--neco-rail) !important; box-shadow: none !important;
+    border-radius: 0 !important; background: color-mix(in srgb, var(--neco-surface) var(--sb-shell-surface-opacity-percent, 100%), transparent) !important; box-shadow: none !important;
     transform: none !important; animation: none !important; pointer-events: auto !important;
 }
 /* Anchored on the drawer holder, not body: a body-level :has() here made Chromium restyle the

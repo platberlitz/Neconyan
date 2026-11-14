@@ -225,6 +225,12 @@ test('a held capture submission does not delay a settings save or a provider rep
         await expect.poll(() => app.provider.calls.length, { timeout: 15000 }).toBeGreaterThan(callsBefore);
         await expect(page.locator('#chat .mes[mesid]').last().locator('.mes_text'))
             .toHaveText('Reply while the capture submission is held.', { timeout: 15000 });
+        // Visible text precedes generation's final chat/settings writes. Keep the
+        // capture held until those finish, so this case measures independence
+        // while held; the neighbouring cases exercise overlapping server writes.
+        await expect.poll(() => page.evaluate(() => window.__tmRecovery.reply), { timeout: 15000 })
+            .toEqual({ state: 'resolved' });
+        await settleSaves(saves);
         expect(gate.submitHeld).toBe(true);
         expect((await captureState(page)).state).toBe('pending');
 

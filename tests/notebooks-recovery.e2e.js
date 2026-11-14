@@ -322,7 +322,8 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 393, height: 852 
         await expect(message.locator('.mes_text')).toContainText('Exact character words.');
         await message.getByRole('button', { name: 'More message actions', exact: true }).click();
         await message.locator('.mes_save_note').click();
-        await expect(page.locator('.popup:visible').getByRole('heading', { name: 'Save to note', exact: true })).toBeVisible();
+        // The first capture loads the Notes editor on demand before opening its dialogue.
+        await expect(page.locator('.popup:visible').getByRole('heading', { name: 'Save to note', exact: true })).toBeVisible({ timeout: 15000 });
         await measureControls(page, '.popup:visible', viewport, info, 'chat-capture');
         const title = `Captured ${randomUUID()}`;
         await page.locator('.popup:visible').getByLabel('Name', { exact: true }).fill(title);

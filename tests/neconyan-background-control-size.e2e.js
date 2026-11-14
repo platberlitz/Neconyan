@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { expect, test } from '@playwright/test';
+import { PNG } from 'pngjs';
 import { contrastRatio } from '../public/scripts/theme-contrast.js';
 import { isolateSettingsSaves, openQuietChatForSmoke, settleCssTransitions } from './chat-scroll-regression-helpers.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
@@ -66,11 +67,32 @@ for (const layout of ['phone', 'desktop', 'iphone']) {
                     for (const pressed of [false, true]) {
                         if (pressed) await select.click();
                         await settleCssTransitions(page);
-                        const colours = await select.evaluate(element => ({
-                            foreground: getComputedStyle(element.querySelector('i')).color,
-                            background: getComputedStyle(element).backgroundColor,
-                        }));
-                        expect(contrastRatio(colours.foreground, colours.background), `${profile || 'default'}, pressed: ${pressed}`).toBeGreaterThanOrEqual(4.5);
+                        const colours = await select.evaluate(element => {
+                            const icon = element.querySelector('i');
+                            const canvas = document.createElement('canvas'), context = canvas.getContext('2d');
+                            context.fillStyle = getComputedStyle(icon).color;
+                            context.fillRect(0, 0, 1, 1);
+                            const foreground = [...context.getImageData(0, 0, 1, 1).data];
+                            let opacity = foreground[3] / 255;
+                            for (let node = icon; node; node = node.parentElement) opacity *= Number(getComputedStyle(node).opacity);
+                            const buttonBox = element.getBoundingClientRect(), iconBox = icon.getBoundingClientRect();
+                            return { foreground: foreground.slice(0, 3), opacity,
+                                points: [0.25, 0.5, 0.75].map(ratio => ({ x: iconBox.left - buttonBox.left + iconBox.width / 2, y: iconBox.top - buttonBox.top + iconBox.height * ratio })),
+                                shell: document.documentElement.dataset.sbTheme,
+                                background: getComputedStyle(element).backgroundColor, image: getComputedStyle(element).backgroundImage };
+                        });
+                        // Gradient controls have a transparent backgroundColor; sample
+                        // their actual paint beneath the hidden icon instead of black.
+                        const image = PNG.sync.read(await select.screenshot({ scale: 'css', animations: 'disabled',
+                            style: '#toast-container, #bg_selection_mode_button i { visibility: hidden !important; }' }));
+                        const ratios = colours.points.map(({ x, y }) => {
+                            const offset = (Math.floor(y) * image.width + Math.floor(x)) * 4;
+                            const background = [...image.data.subarray(offset, offset + 3)];
+                            const ink = colours.foreground.map((value, index) => value * colours.opacity + background[index] * (1 - colours.opacity));
+                            return contrastRatio(ink, background);
+                        });
+                        await info.attach(`selection-${profile || 'default'}-${pressed}`, { body: JSON.stringify({ ...colours, ratios }), contentType: 'application/json' });
+                        expect(Math.min(...ratios), `${profile || 'default'}, pressed: ${pressed}`).toBeGreaterThanOrEqual(4.5);
                     }
                     await select.click();
                 }

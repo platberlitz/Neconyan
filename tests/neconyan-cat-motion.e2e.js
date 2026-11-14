@@ -10,6 +10,12 @@ test.afterEach(async ({ page }) => {
     await page.unrouteAll({ behavior: 'wait' });
 });
 
+async function useCalico(page) {
+    await page.evaluate(() => window.NeconyanShell.applyTheme('calico'));
+    await expect(page.locator('html')).toHaveAttribute('data-sb-theme', 'calico');
+    await expect(page.locator('link[data-sb-shell-style]')).toHaveCount(0);
+}
+
 test('generated mascot rasters keep their recorded frame timing and dimensions', async ({ page }, testInfo) => {
     const artwork = JSON.parse(readFileSync(new URL('../public/img/neconyan/artwork-provenance.json', import.meta.url), 'utf8'));
     const output = path => artwork.outputs.find(entry => entry.path === `public/${path}`);
@@ -93,7 +99,7 @@ test('Home paints the backflip and keeps OS and app motion preferences separate'
     await expect(cat).toHaveAttribute('src', /neconyan-pixel-cat-rest\.webp/);
 });
 
-test('kitty clouds remain visible behind Home and Conversation, while Characters uses a solid sheet', async ({ page }, testInfo) => {
+test('kitty clouds remain visible behind Home, Conversation and visibility-controlled Characters', async ({ page }, testInfo) => {
     test.setTimeout(120000);
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -110,6 +116,7 @@ test('kitty clouds remain visible behind Home and Conversation, while Characters
     expect(asset.status()).toBe(200);
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('[data-neconyan-cat]')).toBeVisible({ timeout: 45000 });
+    await useCalico(page);
     const layer = await page.locator('body').evaluate(body => {
         const style = window.getComputedStyle(body, '::before');
         return { image: style.backgroundImage, opacity: style.opacity, pointerEvents: style.pointerEvents,
@@ -165,8 +172,24 @@ test('kitty clouds remain visible behind Home and Conversation, while Characters
     await checkCanvas('home', '#sheld, #neconyan-home-host');
     await page.getByRole('button', { name: 'Characters', exact: true }).click();
     await expect(page.locator('#sheld')).toHaveCSS('visibility', 'hidden');
-    await expect(page.locator('#right-nav-panel')).toHaveCSS('background-color', layer.tone === 'dark' ? 'rgb(27, 28, 26)' : 'rgb(255, 250, 240)');
+    await checkCanvas('characters', '#right-nav-panel');
+    await page.locator('#sb-surface-transparency-input').evaluate(input => {
+        input.value = '0';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await expect.poll(() => page.locator('#right-nav-panel').evaluate(element => {
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = 1;
+        const context = canvas.getContext('2d');
+        context.fillStyle = window.getComputedStyle(element).backgroundColor;
+        context.fillRect(0, 0, 1, 1);
+        return context.getImageData(0, 0, 1, 1).data[3];
+    })).toBe(255);
     await expect(page.locator('#right-nav-panel > .scrollableInner')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+    await page.locator('#sb-surface-transparency-input').evaluate(input => {
+        input.value = '100';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
     await page.getByRole('button', { name: 'Close Characters', exact: true }).click();
     await expect(page.locator('#sheld')).toHaveCSS('visibility', 'visible');
 
@@ -209,6 +232,7 @@ for (const tone of ['Dark', 'Light']) {
         const cat = page.locator('[data-neconyan-cat]');
         const toggle = page.locator('[data-neconyan-cat-toggle]');
         await expect(cat).toBeVisible({ timeout: 45000 });
+        await useCalico(page);
         await expect(page.locator('body')).toHaveCSS('color-scheme', tone.toLowerCase());
         await expect(page.locator('#themes')).toHaveCSS('color-scheme', tone.toLowerCase());
         if (tone === 'Dark') await expect(page.locator('#neconyan-workspace-rail')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0.68)');

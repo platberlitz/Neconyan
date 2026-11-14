@@ -203,7 +203,9 @@ async function visibleContrast(page, selector) {
         return entries;
     });
     try {
-        const png = PNG.sync.read(await page.screenshot({ animations: 'disabled', scale: 'css' }));
+        // Late startup notifications are not part of the caption's own paint.
+        const png = PNG.sync.read(await page.screenshot({ animations: 'disabled', scale: 'css',
+            style: '#toast-container { visibility: hidden !important; }' }));
         return info.points.map(point => {
             const index = (point.y * png.width + point.x) * 4;
             const background = [...png.data.subarray(index, index + 3)];
@@ -494,7 +496,7 @@ for (const [browserTest, browser] of [[chromiumTest, 'Chromium'], [webkitTest, '
     });
 }
 
-for (const theme of ['Neconyan Calico', 'Neconyan Calico Dark']) for (const accent of [null, 'Mint Glass', 'Plum Wine']) chromiumTest(`Windows desktop displayed captions and category states keep paired paint and ink: ${theme}/${accent || 'default'}`, async ({ app }) => {
+for (const theme of ['Neconyan Calico', 'Neconyan Calico Dark']) for (const accent of [null, 'Mint Glass', 'Plum Wine']) for (const id of windows) chromiumTest(`Windows desktop displayed captions and category states keep paired paint and ink: ${theme}/${accent || 'default'}/${id}`, async ({ app }) => {
     chromiumTest.setTimeout(180000);
     const { page } = await setup(app);
     await page.evaluate(name => window.jQuery('#themes').val(name).trigger('change'), theme);
@@ -503,7 +505,7 @@ for (const theme of ['Neconyan Calico', 'Neconyan Calico Dark']) for (const acce
         if (!button) throw new Error('Missing accent profile ' + name);
         button.click();
     }, accent);
-    for (const id of windows) {
+    await chromiumTest.step(id, async () => {
         await applyStyle(page, id);
         const context = `${theme}/${accent || 'theme default'}/${id}`;
         const root = await open(page, 'right', 'settings');
@@ -522,7 +524,7 @@ for (const theme of ['Neconyan Calico', 'Neconyan Calico Dark']) for (const acce
             await readable(page, family + ' > .sb-character-shell-header .sb-shell-subtitle', `${context}/${tab}/help`);
         }
         await genericCaptionReadable(page, await open(page, 'left', 'api'), context + '/api');
-    }
+    });
     expect(app.provider.calls).toHaveLength(0);
 });
 
@@ -544,26 +546,28 @@ chromiumTest('Windows XP Olive Green desktop captions keep paired paint and ink'
     expect(app.provider.calls).toHaveLength(0);
 });
 
-chromiumTest('Windows phone displayed captions keep paired paint and ink, inferred iOS', async ({ app }) => {
-    chromiumTest.setTimeout(420000);
+for (const theme of ['Neconyan Calico', 'Neconyan Calico Dark']) for (const accent of [null, 'Mint Glass', 'Plum Wine']) chromiumTest(`Windows phone displayed captions keep paired paint and ink, inferred iOS: ${theme}/${accent || 'default'}`, async ({ app }) => {
+    chromiumTest.setTimeout(180000);
     const { page: phonePage } = await setup(app, { phone: true, ios: true });
-    for (const theme of ['Neconyan Calico', 'Neconyan Calico Dark']) {
-        await phonePage.evaluate(name => window.jQuery('#themes').val(name).trigger('change'), theme);
-        for (const accent of [null, 'Mint Glass', 'Plum Wine']) {
-            if (accent) await phonePage.evaluate(name => {
-                const button = [...document.querySelectorAll('.sb-accent-profile-apply')].find(node => node.textContent.trim() === name);
-                if (!button) throw new Error('Missing accent profile ' + name);
-                button.click();
-            }, accent);
-            for (const id of windows) {
-                await applyStyle(phonePage, id);
-                for (const [side, tab] of [['left', 'api'], ['right', 'settings']]) {
-                    const root = await open(phonePage, side, tab, { ios: true });
-                    await genericCaptionReadable(phonePage, root, `${theme}/${accent || 'theme default'}/${id}/${tab}/phone inferred iOS`);
-                }
-            }
+    await phonePage.evaluate(name => window.jQuery('#themes').val(name).trigger('change'), theme);
+    if (accent) await phonePage.evaluate(name => {
+        const button = [...document.querySelectorAll('.sb-accent-profile-apply')].find(node => node.textContent.trim() === name);
+        if (!button) throw new Error('Missing accent profile ' + name);
+        button.click();
+    }, accent);
+    for (const id of windows) {
+        await applyStyle(phonePage, id);
+        for (const [side, tab] of [['left', 'api'], ['right', 'settings']]) {
+            const root = await open(phonePage, side, tab, { ios: true });
+            await genericCaptionReadable(phonePage, root, `${theme}/${accent || 'theme default'}/${id}/${tab}/phone inferred iOS`);
         }
     }
+    expect(app.provider.calls).toHaveLength(0);
+});
+
+chromiumTest('Windows XP Olive Green phone displayed captions keep paired paint and ink, inferred iOS', async ({ app }) => {
+    chromiumTest.setTimeout(120000);
+    const { page: phonePage } = await setup(app, { phone: true, ios: true });
     await phonePage.evaluate(() => window.jQuery('#themes').val('Windows XP Olive Green').trigger('change'));
     await expect(phonePage.locator('html')).toHaveAttribute('data-neconyan-ui-theme', 'windows-xp-olive-green');
     await applyStyle(phonePage, 'windows-xp');

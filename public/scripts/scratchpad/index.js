@@ -61,7 +61,7 @@ import { editQuickPrompts } from './quick-prompts.js';
 import { MAX_PINNED_NOTE_BYTES, pinnedNoteContext } from './pinned-note.js';
 import { canRehearse } from './rehearsal.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261112-scratchpad-dictation';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261114-test-repairs';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;

@@ -534,15 +534,16 @@ for (const phone of [false, true]) {
                 nested: [...root.querySelectorAll('.sb-shell-frame :is(.sb-shell-main, .sb-shell-nav)')].map(alpha),
             };
         });
-        for (const value of [0, 50, 100]) {
+        for (const value of [0, 50, 95, 100]) {
             await setVisibility(page, value);
             const surface = 1 - value / 100;
-            await expect.poll(async () => (await alphas()).scroller).toBeCloseTo(0.9 * surface, 2);
+            await expect.poll(async () => (await alphas()).root).toBeCloseTo(surface, 2);
             const sample = await alphas();
-            // The frame keeps an 85% floor so settings text stays readable over bright wallpaper.
-            expect(sample.frame, `frame at ${value}`).toBeCloseTo(0.85 + 0.15 * surface, 2);
+            // One backing serves both the reading panel and category navigation.
+            expect(sample.frame, `frame at ${value}`).toBe(0);
+            expect(sample.scroller, `scroller at ${value}`).toBe(0);
             expect(sample.nested.every(alpha => alpha === 0), `nested rails at ${value}`).toBe(true);
-            expect(sample.root, `sheet at ${value}`).toBeCloseTo(phone ? surface : 0, 2);
+            expect(sample.root, `sheet at ${value}`).toBeCloseTo(surface, 2);
         }
     });
 

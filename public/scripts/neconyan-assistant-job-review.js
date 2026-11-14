@@ -1,7 +1,6 @@
 import { getJob, getJobApproval, decideJobApproval, listJobs, TERMINAL } from './jobs.js';
 import { getCurrentUserHandle } from './user.js';
 import { callGenericPopup, POPUP_RESULT, POPUP_TYPE } from './popup.js';
-import { buildAssistantReview, buildNoteProposalReview } from './neconyan-assistant-review.js';
 
 const pending = new Map();
 const refreshed = new Set();
@@ -113,6 +112,8 @@ async function review(job, account) {
     if (account !== getCurrentUserHandle() || approval.decision !== null
         || !['neconyan-assistant-edit', 'neconyan-note-proposal', 'neconyan-browser-macro'].includes(kind)) return;
     if (kind === 'neconyan-browser-macro') return reviewBrowserMacro(job, account, approval);
+    const { buildAssistantReview, buildNoteProposalReview } = await import('./neconyan-assistant-review.js');
+    if (account !== getCurrentUserHandle()) return;
     const proposal = approval.proposal;
     const args = proposal.arguments;
     const node = kind === 'neconyan-note-proposal'

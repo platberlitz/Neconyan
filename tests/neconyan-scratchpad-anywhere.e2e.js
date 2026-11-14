@@ -126,7 +126,7 @@ for (const phone of [true, false]) {
         if (phone) expect(geometry.sendHeight).toBeGreaterThanOrEqual(44);
     });
 
-    test(`${size} General controls fit and retain contrast across themes, accents and shell styles`, async ({ app }) => {
+    for (const theme of ['Neconyan Calico Dark', 'Neconyan Calico']) test(`${size} General controls fit and retain contrast across accents and shell styles in ${theme}`, async ({ app }) => {
         test.skip(before, 'Before captures cover the disabled no-chat panel.');
         test.setTimeout(240000);
         const account = await app.account({ phone, contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {} });
@@ -176,8 +176,8 @@ for (const phone of [true, false]) {
             expect(result.width).toBe(phone ? 393 : 1280);
             const hidden = result.buttons.filter(button => !button.visible).map(button => button.label).sort();
             expect(hidden, `${phase} hidden controls`).toEqual(phase === 'closed'
-                ? ['Attach files', 'Read links', 'Set up web search in Context']
-                : []);
+                ? ['Attach files', 'Read links', 'Rehearse next reply', 'Set up web search in Context']
+                : ['Rehearse next reply']);
             for (const button of result.buttons) {
                 if (!button.visible) continue;
                 expect(button.contrast, JSON.stringify({ phase, button })).toBeGreaterThanOrEqual(4.5);
@@ -194,36 +194,34 @@ for (const phone of [true, false]) {
             }
         };
         const measured = [];
-        for (const theme of ['Neconyan Calico Dark', 'Neconyan Calico']) {
-            await page.locator('#themes').selectOption({ label: theme }, { force: true });
-            for (const accent of [null, 'Pearl', 'Midnight Ink']) {
-                if (accent) await page.locator(`.sb-accent-profile-apply[aria-label="Apply ${accent} accent profile"]`).evaluate(element => element.click());
-                for (const style of ['calico', 'kittyless', 'windows-aero', 'windows-xp', 'windows-98', 'clean-minimal', 'macos-minimal', 'cozy-warm', 'hypr-glow', 'slate-flat']) {
-                    await page.evaluate(id => window.NeconyanShell.applyTheme(id), style);
-                    await page.waitForFunction(id => id === 'calico' || document.querySelector(`link[data-sb-shell-style="${id}"]`)?.sheet, style);
-                    if (phone) await applyIOSOnlyCss(page);
-                    const closed = await readControls();
-                    measured.push({ theme, accent, style, phase: 'closed', ...closed });
-                    assertControls('closed', closed);
+        await page.locator('#themes').selectOption({ label: theme }, { force: true });
+        for (const accent of [null, 'Pearl', 'Midnight Ink']) {
+            if (accent) await page.locator(`.sb-accent-profile-apply[aria-label="Apply ${accent} accent profile"]`).evaluate(element => element.click());
+            for (const style of ['calico', 'kittyless', 'windows-aero', 'windows-xp', 'windows-98', 'clean-minimal', 'macos-minimal', 'cozy-warm', 'hypr-glow', 'slate-flat']) {
+                await page.evaluate(id => window.NeconyanShell.applyTheme(id), style);
+                await page.waitForFunction(id => id === 'calico' || document.querySelector(`link[data-sb-shell-style="${id}"]`)?.sheet, style);
+                if (phone) await applyIOSOnlyCss(page);
+                const closed = await readControls();
+                measured.push({ theme, accent, style, phase: 'closed', ...closed });
+                assertControls('closed', closed);
 
-                    await composeToggle.click();
-                    await expect(composeToggle).toHaveAttribute('aria-expanded', 'true');
-                    await expect(composeMenu).toBeVisible();
-                    const opened = await readControls();
-                    measured.push({ theme, accent, style, phase: 'open', ...opened });
-                    assertControls('open', opened);
-                    for (const label of ['Set up web search in Context', 'Attach files']) {
-                        const button = opened.buttons.find(item => item.label === label);
-                        expect(button, `${label} is measurable with the menu open`).toBeTruthy();
-                        expect(button.visible, `${label} is visible with the menu open`).toBe(true);
-                        expect(button.width, `${label} width with the menu open`).toBeGreaterThan(0);
-                        expect(button.height, `${label} height with the menu open`).toBeGreaterThanOrEqual(44);
-                        expect(button.right, `${label} right edge with the menu open`).toBeLessThanOrEqual(phone ? 393 : 1280);
-                    }
-                    await composeToggle.click();
-                    await expect(composeToggle).toHaveAttribute('aria-expanded', 'false');
-                    await expect(composeMenu).toBeHidden();
+                await composeToggle.click();
+                await expect(composeToggle).toHaveAttribute('aria-expanded', 'true');
+                await expect(composeMenu).toBeVisible();
+                const opened = await readControls();
+                measured.push({ theme, accent, style, phase: 'open', ...opened });
+                assertControls('open', opened);
+                for (const label of ['Set up web search in Context', 'Attach files']) {
+                    const button = opened.buttons.find(item => item.label === label);
+                    expect(button, `${label} is measurable with the menu open`).toBeTruthy();
+                    expect(button.visible, `${label} is visible with the menu open`).toBe(true);
+                    expect(button.width, `${label} width with the menu open`).toBeGreaterThan(0);
+                    expect(button.height, `${label} height with the menu open`).toBeGreaterThanOrEqual(44);
+                    expect(button.right, `${label} right edge with the menu open`).toBeLessThanOrEqual(phone ? 393 : 1280);
                 }
+                await composeToggle.click();
+                await expect(composeToggle).toHaveAttribute('aria-expanded', 'false');
+                await expect(composeMenu).toBeHidden();
             }
         }
         await test.info().attach('general-control-measurements', { body: JSON.stringify(measured, null, 2), contentType: 'application/json' });

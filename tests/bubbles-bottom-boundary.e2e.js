@@ -25,7 +25,7 @@ test('desktop Bubbles follows stationary paint, native edits and the real lower 
     const cap = page.locator('#neconyan-bubbles-bottom-boundary');
     const diagnostic = () => row.evaluate(element => ({
         row: element.getBoundingClientRect().toJSON(), chat: element.parentElement.getBoundingClientRect().toJSON(),
-        scrollTop: element.parentElement.scrollTop, scrollHeight: element.parentElement.scrollHeight,
+        scrollTop: element.parentElement.scrollTop, scrollHeight: element.parentElement.scrollHeight, clientHeight: element.parentElement.clientHeight,
         classes: document.body.className, style: document.querySelector('#chat_display').value,
         clip: getComputedStyle(element.parentElement).clipPath,
     }));
@@ -57,11 +57,11 @@ test('desktop Bubbles follows stationary paint, native edits and the real lower 
     await page.evaluate(() => document.documentElement.style.setProperty('--sb-message-surface-opacity', '0.37'));
     await expect.poll(() => cap.locator('div').evaluate(element => getComputedStyle(element).opacity)).toBe('0.37');
     await row.evaluate(element => element.classList.remove('selected'));
-    await row.locator('.mes_edit').click({ force: true });
+    await row.locator('.mes_edit').click();
     await expect(row.locator('.edit_textarea')).toBeVisible();
     await hidden('native editor');
     expect(await page.locator('#chat').evaluate(element => getComputedStyle(element).clipPath)).toBe('none');
-    await row.locator('.mes_edit_cancel').click({ force: true });
+    await row.locator('.mes_edit_cancel').click();
     await cross(); await expect(cap).toBeVisible();
 
     // Export through the application's native action, then decode the actual download.
@@ -86,7 +86,10 @@ test('desktop Bubbles follows stationary paint, native edits and the real lower 
     await page.mouse.wheel(0, 99999);
     await expect.poll(async () => {
         const geometry = await diagnostic();
-        return geometry.row.bottom <= geometry.chat.bottom;
+        // Scroll dimensions are whole CSS pixels; the painted row can end a fraction below them.
+        return Math.abs(geometry.scrollHeight - geometry.clientHeight - geometry.scrollTop) <= 1
+            && geometry.row.bottom <= geometry.chat.bottom + 1;
     }, { message: 'Native wheel exposes the actual lower edge' }).toBe(true);
+    await info.attach('native-wheel-geometry', { body: JSON.stringify(await diagnostic()), contentType: 'application/json' });
     await hidden('natural lower edge');
 });

@@ -187,6 +187,10 @@ for (const phone of [false, true]) {
         } }));
         const page = await account.open({ workspace: false });
         await page.locator('#neconyan-home-skeleton').waitFor({ state: 'hidden' });
+        await page.locator('#sb-surface-transparency-input').evaluate(input => {
+            input.value = '0';
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+        });
         for (const style of styles) {
             await applyStyle(page, style);
             for (const tab of ['characters', 'world-info']) {

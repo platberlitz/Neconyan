@@ -171,6 +171,11 @@ test.describe('Editor surfaces and composer density', () => {
         await safety.navigate(() => page.goto('/', { waitUntil: 'domcontentloaded' }));
         await expect(page.locator('[data-neconyan-cat]')).toBeVisible({ timeout: 60000 });
         await openMisoChat(page);
+        // Opaque editor backing is the 0% endpoint of Background visibility.
+        await page.locator('#sb-surface-transparency-input').evaluate(input => {
+            input.value = '0';
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+        });
         for (const width of [1280, 768, 390, 320]) {
             await page.setViewportSize({ width, height: 900 });
             await page.evaluate(() => window.NeconyanShell.openTab('characters', 'characters'));
@@ -397,7 +402,8 @@ test('Built-in Extensions links bundled tools to their own settings pages', asyn
     expect(phoneSettingsLayout).toEqual({
         layoutDisplay: 'flex',
         layoutDirection: 'column',
-        navPosition: 'static',
+        // The phone scroll indicators use this column as their positioning anchor.
+        navPosition: 'relative',
         tabsDirection: 'row',
         tabsWrap: 'nowrap',
     });

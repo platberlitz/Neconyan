@@ -45,6 +45,8 @@ for (const device of ['phone', 'tablet', 'desktop']) {
             await page.screenshot({ path: `../screenshots/additional-lorebooks/${device}-${process.env.NECONYAN_PICKER_SCREENSHOTS}.png` });
         }
         await expect(panel.getByRole('button', { name: '-- Lorebooks not found --', exact: true })).toHaveCount(0);
+        // Startup notifications can cover the header while the picker itself is reachable.
+        await expect(page.locator('#toast-container')).toBeHidden({ timeout: 15000 });
         const geometry = await panel.evaluate(element => {
             const rect = element.getBoundingClientRect();
             const x = rect.left + rect.width / 2;

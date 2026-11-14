@@ -1681,6 +1681,10 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
 }
 
 @container scratchpad (max-width: 520px) {
+    .scratchpad-app .scratchpad-chat-top > .scratchpad-button {
+        padding-inline: 8px;
+    }
+
     .scratchpad-assistants.has-custom .scratchpad-assistant.is-included span {
         display: none;
     }

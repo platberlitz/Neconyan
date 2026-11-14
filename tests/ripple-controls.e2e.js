@@ -109,13 +109,15 @@ test('Ripple honours the existing-arrow single-alternative updater and restores 
         await page.setViewportSize({ width, height: 900 });
         await arrow.scrollIntoViewIfNeeded();
         for (const count of [1, 2]) {
+            await expect(arrow).toBeVisible();
             const state = await page.evaluate(async count => {
+                const { updateMessageSwipeUI } = await import('/scripts/extensions/third-party/Neconyan-Deep-Swipe/ui.js');
                 const c = window.SillyTavern.getContext(), message = c.chat[0];
                 const first = message.swipes[0];
                 message.swipes = count === 1 ? [first] : [first, first + '\n\nA second saved alternative.'];
                 message.swipe_id = count - 1;
                 const arrow = document.querySelector('#chat > .mes[mesid="0"] .deep-swipe-left-outer');
-                await (await import('/scripts/extensions/third-party/Neconyan-Deep-Swipe/ui.js')).updateMessageSwipeUI(0);
+                await updateMessageSwipeUI(0);
                 return { sameArrow: arrow === document.querySelector('#chat > .mes[mesid="0"] .deep-swipe-left-outer'),
                     opacity: getComputedStyle(arrow).opacity, pointer: getComputedStyle(arrow).pointerEvents,
                     inline: arrow.getAttribute('style') };

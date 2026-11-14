@@ -57,7 +57,7 @@ import {
     getStatusTextgen,
 } from './scripts/textgen-settings.js';
 import { shouldRestoreTextGenStatusOnStartup } from './scripts/textgen-startup-status.js';
-import { normalizeCharacterChatName, resolveCharacterChatNameForLoad } from './scripts/character-chat-resolver.js';
+import { availableCharacterChatName, normalizeCharacterChatName, resolveCharacterChatNameForLoad } from './scripts/character-chat-resolver.js';
 import { getDebouncedChatSaveAbortReason, getQueuedChatSaveAbortReason } from './scripts/chat-save-guard.js';
 import { getChatBackupSaveOptions } from './scripts/chat-backup-sequence.js';
 import { fetchWithCsrfRetry } from './scripts/csrf-token-refresh.js';
@@ -2297,13 +2297,13 @@ function chatFileTimestamp() {
 }
 
 // Neconyan: the server refuses chat names it would have to sanitise, so names like 'Rico | Again' must be cleaned first.
-function newCharacterChatName(characterName) {
+function newCharacterChatName(characterName, existingChats = []) {
     const safeName = String(characterName ?? '')
         .replace(/[/?<>\\:*|"\x00-\x1f\x80-\x9f]/g, ' ')
         .replace(/\s+/g, ' ')
         .trim()
         .slice(0, 150) || 'Chat';
-    return `${safeName} - ${chatFileTimestamp()}`;
+    return availableCharacterChatName(`${safeName} - ${chatFileTimestamp()}`, existingChats);
 }
 
 async function resolveCharacterChatForLoad(characterId, { allowCreate = false, allowMissingPersisted = false } = {}) {
@@ -2324,7 +2324,7 @@ async function resolveCharacterChatForLoad(characterId, { allowCreate = false, a
         persistedChat,
         existingChats,
         allowCreate,
-        newChatName: allowCreate ? newCharacterChatName(character.name) : '',
+        newChatName: allowCreate ? newCharacterChatName(character.name, existingChats) : '',
     });
     const nextChatName = resolvedChat.chatName;
 
@@ -2389,7 +2389,7 @@ export async function deleteCharacterChatByName(characterId, fileName) {
         });
         const chats = Object.values(await chatsResponse.json());
         chats.sort((a, b) => sortMoments(timestampToMoment(a.last_mes), timestampToMoment(b.last_mes)));
-        const newChatName = chats.length && typeof chats[0] === 'object' ? chats[0].file_name.replace('.jsonl', '') : newCharacterChatName(character.name);
+        const newChatName = chats.length && typeof chats[0] === 'object' ? chats[0].file_name.replace('.jsonl', '') : newCharacterChatName(character.name, chats);
         await updateRemoteChatName(characterId, newChatName);
     }
 
@@ -2423,7 +2423,7 @@ export async function replaceCurrentChat() {
             await getChat();
         } else {
             // start new chat
-            characters[this_chid].chat = newCharacterChatName(name2);
+            characters[this_chid].chat = newCharacterChatName(name2, chats);
             $('#selected_chat_pole').val(characters[this_chid].chat);
             await updateRemoteChatName(this_chid, characters[this_chid].chat);
             await getChat();
@@ -3856,7 +3856,13 @@ function releaseBackgroundChatView() {
                 // page would leave a gap between its first batch and the retained history.
                 const batchSize = getMobileChatRenderBatchSize(current.firstMessageId - first);
                 await showMoreMessages(batchSize, { canRender: unchanged });
-                if (!canRestore()) return false;
+                if (!canRestore()) {
+                    const restored = getRenderedChatMessageWindow();
+                    // Keep a wake callback only for unfinished history. A completed last
+                    // batch must be released again when the page has already gone away.
+                    if (restored.lastMessageId === last && restored.firstMessageId > first) return false;
+                    return;
+                }
                 // Paging listeners can change row geometry after the paging anchor settles.
                 if (unchanged()) restoreVisibleChatMessageAnchor(readingAnchor);
                 if (getRenderedChatMessageWindow().firstMessageId >= current.firstMessageId) return;
@@ -20060,6 +20066,11 @@ export async function doNewChat({ deleteCurrentChat = false } = {}) {
         return;
     }
 
+    // Installing an assistant and starting its discussion can create two chats in one second.
+    const isCurrent = captureChatRenderValidity();
+    const existingChats = selected_group ? [] : await getExistingCharacterChats(this_chid);
+    if (!isCurrent()) return;
+
     await clearChat({ clearData: true });
 
     chat_file_for_del = getCurrentChatDetails()?.sessionName;
@@ -20070,7 +20081,7 @@ export async function doNewChat({ deleteCurrentChat = false } = {}) {
     } else {
         //RossAscends: added character name to new chat filenames; Neconyan uses a tidy date-time stamp.
         chat_metadata = {};
-        const newChatName = newCharacterChatName(name2);
+        const newChatName = newCharacterChatName(name2, existingChats);
         const previousChatName = characters[this_chid].chat;
         characters[this_chid].chat = newChatName;
         $('#selected_chat_pole').val(newChatName);

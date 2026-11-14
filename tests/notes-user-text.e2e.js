@@ -20,8 +20,11 @@ function t(strings, ...values) {
     return translate(key).replace(/\$\{(\d+)\}/g, (_match, index) => values[index]);
 }
 
-function functionSource(text, name) {
-    return text.match(new RegExp(`(?:export )?(?:async )?function ${name}\\([^]*?\\n}`, 'm'))[0].replace(/^export /, '');
+function functionSource(text, name, modulePath = null) {
+    const source = text.match(new RegExp(`(?:export )?(?:async )?function ${name}\\([^]*?\\n}`, 'm'))[0].replace(/^export /, '');
+    // Extracted functions still resolve lazy imports relative to their real module.
+    return modulePath ? source.replace(/import\((['"])(\.{1,2}\/[^'"]+)\1\)/g,
+        (_match, _quote, path) => `import(${JSON.stringify(new URL(path, `https://notes.test/${modulePath}`).pathname)})`) : source;
 }
 
 /** Serves the real Notes modules and localiser from the checkout. lib.js is replaced by the two libraries render.js needs, and i18n.js by its translate() and t(). */
@@ -61,8 +64,8 @@ async function openNotes(page) {
         entries: `${functionSource(panels, 'pickEntry')}\nreturn pickEntry;`,
         property: `${functionSource(await readFile(new URL('public/scripts/notebooks/notes-dialogs.js', root), 'utf8'), 'editPropertyCell')}\nreturn editPropertyCell;`,
         review: `${functionSource(await readFile(new URL('public/scripts/notebooks/notes-dialogs.js', root), 'utf8'), 'reviewProposal')}\nreturn reviewProposal;`,
-        tool: `${functionSource(await readFile(new URL('public/scripts/neconyan-assistant-tools.js', root), 'utf8'), 'noteTool')}\nreturn noteTool;`,
-        job: `${functionSource(await readFile(new URL('public/scripts/neconyan-assistant-job-review.js', root), 'utf8'), 'review')}\nreturn review;`,
+        tool: `${functionSource(await readFile(new URL('public/scripts/neconyan-assistant-tools.js', root), 'utf8'), 'noteTool', 'public/scripts/neconyan-assistant-tools.js')}\nreturn noteTool;`,
+        job: `${functionSource(await readFile(new URL('public/scripts/neconyan-assistant-job-review.js', root), 'utf8'), 'review', 'public/scripts/neconyan-assistant-job-review.js')}\nreturn review;`,
         table: ['propertyTableScopeCurrent', 'bindPropertyTableTouchScroll', 'createPropertyTableView']
             .map(name => functionSource(table, name)).join('\n') + '\nreturn createPropertyTableView;',
         lore: ['notice', 'publishFlow', 'bindingRow', 'contextItem', 'usedItem', 'contextPreview'].map(name => functionSource(panels, name)).join('\n')
@@ -490,24 +493,28 @@ test('the assistant\'s proposal review, from Notes and from both chat routes, tr
         const notesSummary = { ...summary, changedRegions: ['Whole note', 'Home'] };
         const main = document.getElementById('notes');
         const shown = {};
+        const opened = Object.fromEntries(['notes', 'tools', 'jobs'].map(route => [route, Promise.withResolvers()]));
         // The popup is replaced: it shows each route's review in the page and never answers.
-        const popup = route => content => { shown[route] = content; main.append(content); return new Promise(() => {}); };
+        const popup = route => content => {
+            shown[route] = content; main.append(content); opened[route].resolve();
+            return new Promise(() => {});
+        };
         // Notes: the real reviewProposal from notes-dialogs.js.
         const reviewProposal = new Function('buildNoteProposalReview', 'formatDiff', 'callGenericPopup', 'POPUP_TYPE', sources.review)(
             buildNoteProposalReview, formatDiff, popup('notes'), { CONFIRM: 2 });
-        void reviewProposal({ request: async () => ({ state: 'waiting', summary: notesSummary, before: '', after: 'Home' }), failed: () => false }, 'p1');
+        void reviewProposal({ request: async () => ({ state: 'waiting', summary: notesSummary, before: '', after: 'Home' }), failed: () => false }, 'p1').catch(opened.notes.reject);
         // Chat, assistant tools: the real noteTool from neconyan-assistant-tools.js.
         const noteTool = new Function('postNotebook', 'shortHash', 'formatDiff', 'callGenericPopup', 'POPUP_TYPE', 'POPUP_RESULT', 'buildNoteProposalReview', sources.tool)(
             async route => (route === '/assistant/tool' ? { status: 'needs_approval', proposalId: 'p2', summary } : { status: 'success', summary, before: '', after: 'Home' }),
             text => text, formatDiff, popup('tools'), { CONFIRM: 2 }, { AFFIRMATIVE: 1 }, buildNoteProposalReview);
-        void noteTool('create')({}, { invocation: {}, callId: 'call', assert: () => {} });
+        void noteTool('create')({}, { invocation: {}, callId: 'call', assert: () => {} }).catch(opened.tools.reject);
         // Chat, background jobs: the real review from neconyan-assistant-job-review.js.
         const reviewJob = new Function('getCurrentUserHandle', 'getJobApproval', 'decideJobApproval', 'callGenericPopup', 'POPUP_RESULT', 'POPUP_TYPE',
             'buildNoteProposalReview', 'buildAssistantReview', sources.job)(() => 'owner',
             async () => ({ decision: null, proposal: { kind: 'neconyan-note-proposal', summary, diff: '+ Home' } }),
             async () => {}, popup('jobs'), { AFFIRMATIVE: 1 }, { CONFIRM: 2 }, buildNoteProposalReview, buildAssistantReview);
-        void reviewJob({ id: 'job', result: { approval: { id: 'approval' } } }, 'owner');
-        for (let turn = 0; turn < 5; turn++) await new Promise(resolve => setTimeout(resolve, 0));
+        void reviewJob({ id: 'job', result: { approval: { id: 'approval' } } }, 'owner').catch(opened.jobs.reject);
+        await Promise.all(Object.values(opened).map(signal => signal.promise));
         // A later pass, as applyLocale makes over the whole page.
         localizeControls(main, dictionary);
         const lines = route => [...shown[route].querySelectorAll('p')].map(line => line.textContent).filter(line => /Home/.test(line));

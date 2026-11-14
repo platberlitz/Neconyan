@@ -183,6 +183,20 @@ test('partially restored history resumes up to the original first row on the nex
     expect(f.getRenderedChatMessageWindow().firstMessageId).toBe(0);
 });
 
+test('hiding after the last restore batch releases the fully rendered history again', async () => {
+    const chat = chatFixture();
+    const lifecycle = fixture(true, jest.fn(() => chat.releaseBackgroundChatView()));
+    chat.showMoreMessages.mockImplementationOnce(() => {
+        chat.pruneRenderedChatMessagesToWindow({ windowSize: 100 });
+        lifecycle.hide();
+    });
+    lifecycle.hide();
+    lifecycle.hide(false);
+    await new Promise(setImmediate);
+    expect(lifecycle.release).toHaveBeenCalledTimes(2);
+    expect(chat.getRenderedChatMessageWindow().renderedMessageCount).toBe(25);
+});
+
 test.each([{ visible: 0 }, { protectedRow: 0 }, { busy: true }])('keeps reading anchors, interactive cards and busy work: %j', options => {
     const f = chatFixture(options);
     expect(f.releaseBackgroundChatView()).toBeUndefined();

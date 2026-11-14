@@ -42,7 +42,7 @@ async function addUnkeptCharacter(page) {
 }
 
 for (const phone of [true, false]) {
-    test(`background saves allow unkept dialogue colour deletion on ${phone ? 'phone' : 'desktop'}`, async ({ app }) => {
+    test(`background saves allow unkept dialogue colour deletion on ${phone ? 'phone' : 'desktop'}`, async ({ app }, info) => {
         test.setTimeout(180000);
         const page = await openDialogueColours(app, phone);
         const press = locator => phone ? locator.tap() : locator.click();
@@ -81,7 +81,22 @@ for (const phone of [true, false]) {
             await expect(page.locator('#user-settings-block')).toBeVisible();
             if (flow === 'row') {
                 await page.screenshot({ path: `../screenshots/dialogue-delete-${phone ? 'phone' : 'desktop'}-after.png` });
+                // A deferred chat-load scan can finish after the deletion without
+                // changing any colours. It must not consume the next Undo step.
+                await page.evaluate(async extension => {
+                    (await import(`${extension}/color-blocks.js`)).scanAllMessages({ notify: false });
+                }, extension);
+                await info.attach('before-delete-undo', { body: JSON.stringify(await page.evaluate(async extension => {
+                    const state = await import(`${extension}/state.js`);
+                    return { historyIndex: state.historyIndex, history: state.colorHistory,
+                        colors: state.characterColors, pendingHistory: state.pendingColorStateHistory };
+                }, extension)), contentType: 'application/json' });
                 await page.evaluate(async extension => (await import(`${extension}/history.js`)).undo(), extension);
+                await info.attach('after-delete-undo', { body: JSON.stringify(await page.evaluate(async extension => {
+                    const state = await import(`${extension}/state.js`);
+                    return { historyIndex: state.historyIndex, history: state.colorHistory,
+                        colors: state.characterColors, pendingHistory: state.pendingColorStateHistory };
+                }, extension)), contentType: 'application/json' });
                 await expect(row).toHaveCount(1);
                 await page.evaluate(async extension => (await import(`${extension}/history.js`)).redo(), extension);
                 await expect(row).toHaveCount(0);

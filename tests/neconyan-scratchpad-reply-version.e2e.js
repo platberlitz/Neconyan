@@ -58,6 +58,7 @@ for (const phone of [false, true]) {
         await menu.click();
         await button.click();
         await page.locator('dialog[open]').last().getByText('Add version', { exact: true }).click();
+        await expect(page.locator('.toast-success').filter({ hasText: 'Added as a new version of the last story reply.' })).toBeVisible();
         await expect.poll(async () => (await story()).text).toBe(REPLY);
         const added = await story();
         expect(added.swipes.at(-1)).toBe(REPLY);

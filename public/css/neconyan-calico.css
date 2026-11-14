@@ -355,28 +355,20 @@ body.neconyan:not(.sbterm) :is(#chat, #sb_conversation_stage) {
 body.neconyan.neconyan-home-visible:not(.sbterm) #neconyan-home-host {
     background-color: transparent !important;
 }
-body.neconyan:not(.sbterm) .sb-shell-root:where(.openDrawer):not(#right-nav-panel) {
-    background-color: transparent !important;
+/* Reading panels and category rails share the drawer's visibility-controlled
+   backing. Nested fills would compound its opacity and disagree at 100%. */
+body.neconyan:not(.sbterm) :is(.sb-shell-root, #right-nav-panel).openDrawer :is(
+    .sb-shell-frame, .sb-shell-main, .sb-shell-nav-wrapper, .sb-model-native-nav-wrapper,
+    .sb-character-shell-nav-wrapper, .sb-shell-nav, .sb-character-shell-nav,
+    .sb-shell-panel-scroller, .scrollableInner, .scrollableInnerFull
+) {
+    background: transparent !important;
 }
-body.neconyan:not(.sbterm) #right-nav-panel > :is(.scrollableInner, .scrollableInnerFull) {
-    background-color: transparent !important;
-}
-body.neconyan:not(.sbterm) :is(.sb-shell-panel-scroller, .sb-conversation-thread-empty) {
+body.neconyan:not(.sbterm) .sb-conversation-thread-empty {
     background-color: color-mix(in srgb, var(--neco-surface) calc(var(--sb-shell-surface-opacity) * 90%), transparent) !important;
 }
-@media (max-width: 768px) {
-    /* Phone sheets fill the screen, so the floating-card look above turns into wallpaper
-       bleeding through the header zone and list gutters. Paint them solid. */
-    body.neconyan:not(.sbterm) :is(.sb-shell-root.openDrawer, #right-nav-panel.openDrawer),
-    body.neconyan:not(.sbterm) #right-nav-panel.openDrawer > :is(.scrollableInner, .scrollableInnerFull) {
-        background-color: color-mix(in srgb, var(--neco-surface) var(--sb-shell-surface-opacity-percent), transparent) !important;
-    }
-}
 
-/* Character and Persona workspaces sit over the ambient canvas. Keep their
-   active roots and editor cards on the solid Calico surface. */
-body.neconyan:not(.sbterm) #right-nav-panel.openDrawer:is([data-menu-type='character_edit'], [data-menu-type='create'], [data-menu-type='persona'], [data-menu-type='group_create'], [data-menu-type='group_edit'], [data-menu-type='groups']),
-body.neconyan:not(.sbterm) #right-nav-panel.openDrawer:is([data-menu-type='character_edit'], [data-menu-type='create'], [data-menu-type='persona'], [data-menu-type='group_create'], [data-menu-type='group_edit'], [data-menu-type='groups']) > :is(.scrollableInner, .scrollableInnerFull),
+/* Editor controls retain their readable fill independently of the page backing. */
 body.neconyan:not(.sbterm) #right-nav-panel.openDrawer:is([data-menu-type='character_edit'], [data-menu-type='create'], [data-menu-type='persona'], [data-menu-type='group_create'], [data-menu-type='group_edit'], [data-menu-type='groups']) :is(
     #form_create,
     #spoiler_free_desc,

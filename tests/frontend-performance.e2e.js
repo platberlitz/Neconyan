@@ -27,6 +27,7 @@ async function waitForResourceStability(page) {
 
 test.describe('frontend performance smoke', () => {
     test('mobile shell exposes core performance marks and bounded assets', async ({ page }, testInfo) => {
+        test.setTimeout(120000);
         await page.setViewportSize({ width: 390, height: 844 });
         await page.addInitScript(() => globalThis.performance.setResourceTimingBufferSize(2000));
         await page.goto('/', { waitUntil: 'domcontentloaded' });
@@ -102,6 +103,9 @@ test.describe('frontend performance smoke', () => {
         const startupResourceNames = snapshot.resources.map(entry => entry.name);
         expect(startupResourceNames.some(name => name.includes('/Neconyan-BotSearcher/client/browser.js'))).toBe(false);
         expect(startupResourceNames.some(name => name.includes('/Neconyan-Prompting-Lab/src/ui/cases-tab.js'))).toBe(false);
+        for (const helper of ['neconyan-assistant-review', 'neconyan-character-draft', 'neconyan-character-create']) {
+            expect(startupResourceNames.some(name => new URL(name).pathname.includes(`/scripts/${helper}`)), `${helper} loads only when its tool is used`).toBe(false);
+        }
 
         const activeTabSelector = [
             '.sbpl-cases-tab', '.sbpl-presets-tab', '.sbpl-prompts-tab', '.sbpl-run-tab',

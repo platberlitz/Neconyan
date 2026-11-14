@@ -44,6 +44,7 @@ for (const phone of [false, true]) {
         await review.getByLabel('Where does Mira work?', { exact: true }).fill('Northern docks');
         expect(calls).toHaveLength(2);
         await creator.getByRole('button', { name: 'Drafts', exact: true }).click();
+        await expect(creator.getByRole('heading', { name: 'Your drafts', exact: true })).toBeVisible();
         const saved = (await account.post('/api/creator/list')).drafts[0];
         await page.evaluate(id => globalThis.NeconyanShell.openCreator({ draftId: id }), saved.id);
         await creator.getByRole('button', { name: 'Dossier', exact: true }).click();

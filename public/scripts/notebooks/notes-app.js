@@ -485,6 +485,7 @@ export async function openNotes(options = {}) {
     if (!state.unsubscribe) state.unsubscribe = subscribeNotes(onRemoteChange);
     if (!state.notebooks.length) await loadNotebooks(options.notebookId ?? prefs.notebookId);
     else if (options.notebookId && options.notebookId !== state.notebookId) await selectNotebook(options.notebookId);
+    else await refreshTree();
     const noteId = options.noteId ?? (!state.note ? prefs.noteId : null);
     if (noteId && state.notebookId) await openNote(state.notebookId, noteId, { quiet: !options.noteId });
     state.pane = state.note ? 'note' : 'nav';

@@ -298,9 +298,11 @@ for (const phone of [false, true]) {
 
     test(`Notebook exports can select notes or a folder on ${layout}`, async ({ app }) => {
         const { page, account, notebookId, noteId } = await openFeedbackNote(app, { phone });
-        await account.post('/api/notebooks/folders/create', { notebookId, operationId: 'feedback:create-folder', folder: 'Plans/Sub' });
-        await account.post('/api/notebooks/notes/create', { notebookId, operationId: 'feedback:other-note', folder: 'Plans', title: 'Other plan', text: 'Only in the selected folder.' });
-        await account.post('/api/notebooks/notes/create', { notebookId, operationId: 'feedback:child-note', folder: 'Plans/Sub', title: 'Nested plan', text: 'Only in its subfolder.' });
+        await page.evaluate(async () => (await import('/scripts/notebooks/notes-app.js')).hideNotes());
+        expect((await account.post('/api/notebooks/folders/create', { notebookId, operationId: 'feedback:create-folder', folder: 'Plans/Sub' })).status).toBe('success');
+        expect((await account.post('/api/notebooks/notes/create', { notebookId, operationId: 'feedback:other-note', folder: 'Plans', title: 'Other plan', text: 'Only in the selected folder.' })).status).toBe('success');
+        expect((await account.post('/api/notebooks/notes/create', { notebookId, operationId: 'feedback:child-note', folder: 'Plans/Sub', title: 'Nested plan', text: 'Only in its subfolder.' })).status).toBe('success');
+        await openAgain(page, notebookId, noteId);
         const root = page.locator('#neconyan-notes');
         const popup = page.locator('.popup:visible').last();
         await setPane(page, 'nav');

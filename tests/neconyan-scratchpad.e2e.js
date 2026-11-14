@@ -95,6 +95,11 @@ test('the first connection choice stays selected and carries over to chats witho
     await expect.poll(async () => (await account.post('/api/scratchpad/bucket', { source: otherSource })).bucket.sessions[0]?.settings.assistantConnections?.taro)
         .toEqual({ kind: 'profile', profileId: 'remembered' });
 
+    // Session settings and the remembered account preference save independently.
+    await expect.poll(async () => {
+        const settings = JSON.parse((await account.post('/api/settings/get')).settings);
+        return JSON.parse(settings.accountStorage?.neconyanScratchpad || '{}').connections?.taro;
+    }, { timeout: 10000 }).toEqual({ kind: 'profile', profileId: 'remembered' });
     await page.close();
     const reopened = await account.open();
     const third = await createCharacter(account, 'Third Chat');

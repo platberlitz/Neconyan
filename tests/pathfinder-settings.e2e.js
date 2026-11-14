@@ -357,11 +357,12 @@ test('Pathfinder preserves failed prompt and summary drafts, including an empty 
     const state = await openSettings(page, baseURL);
     await page.locator('#pf--prompt-editor-section > button').click();
     await page.getByLabel('Select Prompt to Edit', { exact: true }).selectOption('candidate-selector');
-    await page.getByLabel('System Prompt', { exact: true }).fill('A test prompt draft');
+    const prompt = page.getByRole('textbox', { name: 'System Prompt', exact: true });
+    await prompt.fill('A test prompt draft');
     state.saveMode = 'fail';
     await page.locator('#pf--prompt-save').click();
     await expect(page.locator('#pf--prompt-status')).toContainText('Save failed:');
-    await expect(page.getByLabel('System Prompt', { exact: true })).toHaveValue('A test prompt draft');
+    await expect(prompt).toHaveValue('A test prompt draft');
     state.saveMode = 'success';
     await page.locator('#pf--settings-retry').click();
     await expect(page.locator('#pf--settings-save-status')).toHaveText('Saved!');

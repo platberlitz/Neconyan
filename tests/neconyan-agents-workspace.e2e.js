@@ -814,6 +814,23 @@ test('saved agent setups survive reload and recover from a failed load without d
     const initialSettings = JSON.parse(initial.settings);
     const originalGlobals = structuredClone(initialSettings.extension_settings.inChatAgents?.globalSettings);
     const originalSelection = initialSettings.accountStorage?.['ica--selected-setup'];
+    const globals = originalGlobals || {};
+    const referencedProfiles = [...new Set([
+        ...initial.inChatAgents.map(agent => agent.connectionProfile),
+        globals.connectionProfile, globals.companionConnectionProfile, globals.trackerRepairConnectionProfile,
+        ...[globals.connectionFallbacks, globals.companionConnectionFallbacks, globals.trackerRepairConnectionFallbacks]
+            .flatMap(list => Array.isArray(list) ? list : []),
+    ].filter(Boolean))];
+    // Shared preview agents can refer to profiles created by another test. Give
+    // this recovery fixture matching supported profiles without making a model call.
+    await isolateSettingsSaves(page, settings => {
+        openOnManage(settings);
+        const manager = settings.extension_settings.connectionManager ??= {};
+        manager.profiles = [
+            ...(manager.profiles || []).filter(profile => !referencedProfiles.includes(profile.id)),
+            ...referencedProfiles.map(id => ({ id, name: `Setup fixture ${id}`, api: 'custom', model: 'setup-fixture' })),
+        ];
+    });
     const id = `setup-ui-agent-${Date.now()}`;
     const name = `Setup UI ${Date.now()}`;
     const agent = { id, name, prompt: 'Saved instructions', enabled: false, category: 'custom', settings: { secretId: 'saved-reference', customOption: 42 }, customSchema: { properties: { password: { type: 'string' } } } };

@@ -186,6 +186,8 @@ test('Hush keeps stats beside the portrait and removes blank bands before readin
         expect(m.text.left).toBeCloseTo(m.row.left + m.inset, 0);
         expect(m.scrollWidth).toBe(m.chatWidth);
         await row.scrollIntoViewIfNeeded();
+        // Hit-test the portrait after startup notices have stopped covering it.
+        await expect(page.locator('#toast-container')).toBeHidden({ timeout: 15000 });
         for (const selector of ['.mesAvatarWrapper > .avatar', '.mes_stats']) {
             expect(await row.locator(selector).evaluate(el => {
                 const r = el.getBoundingClientRect();
