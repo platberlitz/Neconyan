@@ -777,6 +777,8 @@ describe('owned host generation flow', () => {
         };
         context.preparePromptsForChatCompletion = async () => [];
         context.populateChatCompletion = async () => {};
+        context.capturePresetPrompts = () => [];
+        context.setPreparedPresetPrompts = jest.fn();
         context.shouldCheckPostInterceptChatBudget = () => false;
         load(context, 'scripts/openai.js', ['keepPromptBiasLast', 'prepareOpenAIMessages']);
         await context.prepareOpenAIMessages({ messages: [], responseLength: 1024 }, false);

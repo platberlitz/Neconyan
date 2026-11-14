@@ -163,7 +163,7 @@ export function prepareRoleplayAgentContributions(context, { base, snapshot, rec
     const history = { scripts: captureAgentHistoryScripts(records, historyAgents), policies: captureCompanionHistoryPolicies(policyRecords) };
     const extensions = active.filter(agent => inline(agent) && ['pre', 'both'].includes(agent.phase)
         && agent.preProcess.mode !== 'intercept' && agent.prompt.trim()).map(agent => ({
-        key: `inchat_agent_${agent.id}`, content: evaluate(aliases(environment, agent, '', generationType, snapshot.speakerNames?.character || '', agentContextMacros(snapshot, null, { agents, records })), agent.prompt, snapshot),
+        key: `inchat_agent_${agent.id}`, name: agent.name, content: evaluate(aliases(environment, agent, '', generationType, snapshot.speakerNames?.character || '', agentContextMacros(snapshot, null, { agents, records })), agent.prompt, snapshot),
         position: agent.injection.position, depth: agent.injection.depth, role: ['system', 'user', 'assistant'][agent.injection.role], scan: agent.injection.scan,
     }));
     const feedback = prepareCompanionFeedback(active, historyAgents, records, snapshot, environment, history.policies, generationType);
@@ -395,7 +395,7 @@ export async function runRoleplayThinkingRecovery(context, options) {
     const usesPresetPrompts = usesAgentMacro(agent.prompt, PRESET_PROMPTS_MACRO);
     const agentReference = { lore: options.activeLore ?? '', agents: usesTrackers ? readRoleplayAgents(base, snapshot, options.agentCache) : [],
         records: options.metadataRecords ?? records, continuityNotes: '',
-        presetPrompts: usesPresetPrompts ? await roleplayPresetPrompts(context.directories, options.binding, generationType, options.resolvePresetProfile) : null };
+        presetPrompts: usesPresetPrompts ? options.presetPrompts ?? await roleplayPresetPrompts(context.directories, options.binding, generationType, options.resolvePresetProfile) : null };
     let run;
     try {
         run = await modelRun(context, { ...options, agentReference, toolResults, thinkingRecovery: continuation ? 'continue' : true }, agent, reasoning, 'thinking-recovery');
@@ -468,7 +468,7 @@ export async function runRoleplayAgentPostprocessing(context, options) {
     options = { ...options, agentReference: { lore: options.activeLore ?? await scannedAgentLoreText(context, options, selected, identity),
         agents: usesTrackers ? referenceAgents : [], records: options.metadataRecords ?? options.records,
         continuityNotes: usesContinuityNotes ? latestContinuityNotes(records, referenceAgents) : '',
-        presetPrompts: usesPresetPrompts ? await roleplayPresetPrompts(context.directories, options.binding, generationType, options.resolvePresetProfile) : null } };
+        presetPrompts: usesPresetPrompts ? options.presetPrompts ?? await roleplayPresetPrompts(context.directories, options.binding, generationType, options.resolvePresetProfile) : null } };
     let postFailed = false;
     const runs = [];
     const parallel = snapshot.agents.appendMode === 'parallel';

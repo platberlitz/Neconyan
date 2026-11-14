@@ -10783,6 +10783,41 @@ describe('in-chat agent post-processing runner', () => {
         expect(buildPromptDynamicMacros('Reply', null, { prompt: 'No rules here' }, 'normal')['preset-prompts']).toBe('');
     });
 
+    test('keeps the assembled reply rules through auxiliary requests and clears them for the next reply', async () => {
+        const { buildPromptDynamicMacros, initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        const { setPreparedPresetPrompts } = await import('../public/scripts/extensions/in-chat-agents/agent-context-macros.js');
+        initAgentRunner();
+        mainApi = 'openai';
+        contextChatCompletionSettings = {
+            prompts: [{ identifier: 'main', name: 'Main', content: 'Current preset' }],
+            prompt_order: [{ character_id: 100001, order: [{ identifier: 'main', enabled: true }] }],
+        };
+        const agent = { prompt: '{{preset-prompts}}' };
+        const rules = () => buildPromptDynamicMacros('Reply', null, agent, 'normal')['preset-prompts'];
+        const snapshot = [{ name: 'Before', content: 'Before rule' }, { name: 'Main', content: 'Resolved main rule' },
+            { name: 'Time Tracker', content: 'After rule' }];
+        setPreparedPresetPrompts('chat-a', 'normal', snapshot);
+        snapshot[0].content = 'Later mutation';
+        expect(rules()).toContain('Before rule');
+        expect(rules()).toContain('After rule');
+        expect(rules()).not.toContain('Current preset');
+        expect(buildPromptDynamicMacros('Reply', null, agent, 'swipe')['preset-prompts']).toContain('Current preset');
+        currentChatId = 'chat-b';
+        expect(rules()).toContain('Current preset');
+        currentChatId = 'chat-a';
+
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'quiet', {}, false);
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', {}, true);
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', { isAuxiliaryGeneration: true }, false);
+        expect(rules()).toContain('Resolved main rule');
+
+        setPreparedPresetPrompts('chat-a', 'normal', []);
+        expect(rules()).toBe('');
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', {}, false);
+        expect(rules()).toContain('Current preset');
+        await eventSource.emit(eventTypes.GENERATION_STOPPED);
+    });
+
     test('fills the separate secrets macro from renamed and legacy trackers without other tracker state', async () => {
         const { buildPromptDynamicMacros } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
         enabledAgents.push(

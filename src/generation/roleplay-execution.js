@@ -236,7 +236,8 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
                 assertCurrent: sourceChanged
                     ? () => { signal.throwIfAborted(); }
                     : () => { assertSource(); assertRoleplayWorldInfoCurrent(base, request.worldInfo); },
-                generate: generateAgent, resolvePresetProfile: promptBackend, agentCache });
+                generate: generateAgent, resolvePresetProfile: promptBackend, agentCache,
+                presetPrompts: readArtifact(directories, job.id, 'roleplay-prompt')?.presetPrompts });
             if (recovery?.text) {
                 thinkingRecovery = { agentId: recovery.agentId, agentName: recovery.agentName, status: recovery.status,
                     profileLabel: recovery.profileLabel, modelLabel: recovery.modelLabel, timestamp: recovery.timestamp };
@@ -407,7 +408,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
                     activeLore: roleplayAgentLoreText(selection), agentCache: cache,
                     macros: savedRoleplayMacroSnapshot(request.worldInfo, records), generationType: request.worldInfo.global.trigger,
                     assistantName: request.characterName, assertCurrent: () => freshness(), generate: generateAgent,
-                    resolvePresetProfile: promptBackend };
+                    resolvePresetProfile: promptBackend, presetPrompts: readArtifact(directories, job.id, 'roleplay-prompt')?.presetPrompts };
                 // The fresh path already announced cards before its first check.
                 // A resumed, reviewed or retried pass builds them before any
                 // reviewed interceptor can delay the post-reply work. If those
@@ -1035,6 +1036,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
     const contributedMessages = new Set(contributions.history);
     const preparedPrompt = request.serverPrompt ? readArtifact(directories, job.id, request.worldInfo?.agents ? 'roleplay-base-prompt' : 'roleplay-prompt') : undefined;
     let preparedText = preparedPrompt?.preparedText;
+    let presetPrompts = preparedPrompt?.presetPrompts ?? [];
     let cfgValues = preparedPrompt?.cfgValues;
     let textPrompt;
     const macroSnapshot = { ...acceptedMacros,
@@ -1103,6 +1105,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
                 contributions: promptExtensions, records: initialRecords,
             });
             exampleCount = assembled.exampleCount;
+            presetPrompts = assembled.presetPrompts;
             return assembled.messages;
         }
         if (request.serverPrompt) {
@@ -1159,6 +1162,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
             || typeof preparedPrompt.memoryPresentation.memoryText !== 'string')
          || countText && typeof preparedText !== 'string'
          || preparedPrompt.hash !== roleplayHash({ messages: preparedPrompt.messages, macroState: preparedPrompt.macroState,
+             ...(preparedPrompt.presetPrompts ? { presetPrompts: preparedPrompt.presetPrompts } : {}),
              ...(preparedPrompt.memoryPresentation ? { memoryPresentation: preparedPrompt.memoryPresentation } : {}),
              ...(preparedText !== undefined ? { preparedText } : {}), ...(cfgValues ? { cfgValues } : {}),
              ...(retrieval ? { pathfinderHash: retrieval.hash } : {}), ...(captions ? { captionsHash: captions.hash } : {}),
@@ -1242,7 +1246,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
     };
     if (request.serverPrompt && !preparedPrompt) await finaliseMemory(request.worldInfo?.agents ? 'working' : 'terminal');
     if (request.serverPrompt && !preparedPrompt) {
-        const saved = { messages, macroState: macroEnvironment.captureState(), ...(preparedText !== undefined ? { preparedText } : {}),
+        const saved = { messages, presetPrompts, macroState: macroEnvironment.captureState(), ...(preparedText !== undefined ? { preparedText } : {}),
             ...(memoryFinal?.enabled ? { memoryPresentation: { version: 1, phase: request.worldInfo?.agents ? 'working' : 'terminal',
                 choice: memoryFinal.presentationChoice, memoryText: memoryFinal.memoryText,
                 factsText: memoryFinal.factsText, interviewText: memoryFinal.interviewText } } : {}),
@@ -1275,6 +1279,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
         if (size > budget) throw roleplayError('ROLEPLAY_INVALID', 'The Agent-modified prompt exceeds the bound context budget.', 409);
         const basePrompt = readArtifact(directories, job.id, 'roleplay-base-prompt');
         const final = { messages, macroState: basePrompt.macroState, ...(preparedText !== undefined ? { preparedText } : {}),
+            ...(basePrompt.presetPrompts ? { presetPrompts: basePrompt.presetPrompts } : {}),
             ...(memoryFinal?.enabled ? { memoryPresentation: { version: 1, phase: 'terminal', choice: memoryFinal.presentationChoice,
                 memoryText: memoryFinal.memoryText, factsText: memoryFinal.factsText, interviewText: memoryFinal.interviewText } } : {}),
             ...(cfgValues ? { cfgValues } : {}), ...(retrieval ? { pathfinderHash: retrieval.hash } : {}), ...(captions ? { captionsHash: captions.hash } : {}),

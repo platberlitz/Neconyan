@@ -16,6 +16,7 @@ const GROUP_CARD_FIELDS = [['description', 'Description'], ['personality', 'Pers
 
 let preparedMewmory = null;
 let preparedLore = null;
+let preparedPresetPrompts = null;
 
 /** Remembers the memories Mewmory picked for the latest reply in a chat. */
 export function setPreparedMewmoryContext(chatId, context) {
@@ -33,6 +34,17 @@ export function setPreparedActiveLore(chatId, lore) {
 
 export function getPreparedActiveLore(chatId) {
     return preparedLore && chatId && preparedLore.chatId === String(chatId) ? preparedLore.lore : '';
+}
+
+/** Keep the main reply's resolved instructions through auxiliary Agent requests. */
+export function setPreparedPresetPrompts(chatId, generationType, prompts) {
+    preparedPresetPrompts = chatId && Array.isArray(prompts)
+        ? { chatId: String(chatId), generationType, prompts: structuredClone(prompts) } : null;
+}
+
+export function getPreparedPresetPrompts(chatId, generationType) {
+    return preparedPresetPrompts && chatId && preparedPresetPrompts.chatId === String(chatId)
+        && preparedPresetPrompts.generationType === generationType ? preparedPresetPrompts.prompts : null;
 }
 
 function text(value) {
@@ -126,21 +138,26 @@ export function buildTrackerStateText(trackers) {
  * The written rules of the Chat Completion preset: every prompt switched on in the
  * prompt order that would be sent for this generation type, in preset order. Slots the
  * app fills with card, persona, lore or chat text are left out, as are switched-off prompts.
+ * Assembly can supply resolved prompts and the injections actually placed around main.
+ * This avoids rerunning extension filters, random macros or variable writes for a checker.
  */
-export function capturePresetPrompts(settings, generationType = 'normal') {
-    const prompts = Array.isArray(settings?.prompts) ? settings.prompts : [];
+export function capturePresetPrompts(settings, generationType = 'normal', { preparedPrompts, beforeMain = [], afterMain = [] } = {}) {
+    const prompts = preparedPrompts ?? (Array.isArray(settings?.prompts) ? settings.prompts : []);
     const orders = Array.isArray(settings?.prompt_order) ? settings.prompt_order : [];
     const order = orders.find(entry => String(entry?.character_id) === PRESET_GLOBAL_ORDER_ID)?.order;
     if (!Array.isArray(order)) return [];
     const trigger = String(generationType || 'normal');
+    const rule = prompt => text(prompt?.content)
+        ? [{ name: text(prompt.name) || text(prompt.identifier) || text(prompt.key), content: text(prompt.content) }] : [];
     return order.flatMap(item => {
-        if (item?.enabled !== true || PRESET_CONTENT_SLOTS.has(item.identifier)) return [];
+        if (!item || PRESET_CONTENT_SLOTS.has(item.identifier)) return [];
         const prompt = prompts.find(entry => entry?.identifier === item.identifier);
-        const content = text(prompt?.content);
-        if (!prompt || prompt.marker || !content) return [];
-        const triggers = prompt.injection_trigger;
-        if (Array.isArray(triggers) && triggers.length && !triggers.includes(trigger)) return [];
-        return [{ name: String(prompt.name ?? '').trim() || String(item.identifier), content }];
+        const triggers = prompt?.injection_trigger;
+        const active = item.enabled === true && prompt && (!prompt.marker || preparedPrompts && item.identifier === 'main')
+            && (!Array.isArray(triggers) || !triggers.length || triggers.includes(trigger));
+        const rules = active ? rule(prompt) : [];
+        return item.identifier === 'main'
+            ? [...beforeMain.flatMap(rule), ...rules, ...afterMain.flatMap(rule)] : rules;
     });
 }
 
