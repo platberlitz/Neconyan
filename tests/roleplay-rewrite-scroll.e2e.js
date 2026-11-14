@@ -92,6 +92,8 @@ const stopRecording = page => page.evaluate(() => {
 async function expectLineHeld(page, settleMs = 1200) {
     // eslint-disable-next-line playwright/no-wait-for-timeout
     await page.waitForTimeout(settleMs);
+    // Keep the observation period and frame count on slower browser runners.
+    await expect.poll(() => page.evaluate(() => window.roleplayRewriteFrames.length), { timeout: 10000 }).toBeGreaterThan(20);
     const frames = await stopRecording(page);
     expect(frames.length).toBeGreaterThan(20);
     expect(frames).not.toContain(null);
@@ -265,17 +267,20 @@ for (const phone of [false, true]) {
             // Momentum, scrollbar and keyboard scrolling raise scroll events only.
             await page.evaluate(() => {
                 const chat = document.querySelector('#chat');
-                let count = 0;
-                const step = () => {
-                    if (count++ >= 90) return;
-                    chat.scrollTop -= 6;
+                window.roleplayRewriteScroll = new Promise(resolve => {
+                    let count = 0;
+                    const step = () => {
+                        if (count++ >= 90) return resolve();
+                        chat.scrollTop -= 6;
+                        requestAnimationFrame(step);
+                    };
                     requestAnimationFrame(step);
-                };
-                requestAnimationFrame(step);
+                });
             });
             // eslint-disable-next-line playwright/no-wait-for-timeout
             await page.waitForTimeout(200);
             await finishSavedReply(page);
+            await page.evaluate(() => window.roleplayRewriteScroll);
             // eslint-disable-next-line playwright/no-wait-for-timeout
             await page.waitForTimeout(3000);
             expectScrollNotPulledBack(await stopRecording(page), 8);

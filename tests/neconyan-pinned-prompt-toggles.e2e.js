@@ -157,16 +157,28 @@ for (const phone of [false, true]) {
         await expect(action).toHaveAttribute('aria-pressed', 'true');
         await page.evaluate(async () => {
             const { promptManager: manager } = await import('/scripts/openai.js');
-            const render = manager.renderDebounced;
-            manager.renderDebounced = () => {};
+            const render = manager.renderPromptManager;
+            const gate = Promise.withResolvers();
+            // Cancel an older in-flight render and hold the actual DOM boundary,
+            // including renders already queued by the debouncer before this fixture.
+            manager.renderRequestId++;
+            window.fixturePromptRenderWaiting = false;
+            manager.renderPromptManager = async (...args) => {
+                window.fixturePromptRenderWaiting = true;
+                await gate.promise;
+                return render.apply(manager, args);
+            };
             window.fixtureReleasePromptRender = () => {
-                manager.renderDebounced = render;
+                manager.renderPromptManager = render;
+                gate.resolve();
+                delete window.fixturePromptRenderWaiting;
                 delete window.fixtureReleasePromptRender;
                 manager.renderDebounced();
             };
         });
         try {
             await choosePreset(page, 'Pinned fixture B');
+            await page.waitForFunction(() => window.fixturePromptRenderWaiting);
             await expect(action).toHaveAccessibleName('Pin Other preset toggle to chat');
             await expect(action).toBeDisabled();
             await expect(action).toHaveAttribute('aria-pressed', 'false');

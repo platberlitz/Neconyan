@@ -96,7 +96,8 @@ function privateAccount(app) {
 
 async function seedChat(account, name, image = true) {
     const fields = { avatar_url: account.avatar, file_name: name };
-    const response = await account.context.request.post('/api/chats/get', { headers: account.headers, data: { ...fields, allow_create: true } });
+    // A reset during this initial vacancy read is safe to retry before any save or paid job.
+    const response = await account.context.request.post('/api/chats/get', { headers: account.headers, maxRetries: 2, data: { ...fields, allow_create: true } });
     expect(response.ok(), await response.text()).toBe(true);
     const vacancy = JSON.parse(response.headers()['x-neconyan-roleplay']);
     const records = [{ user_name: 'User', character_name: 'Durable Nova', chat_metadata: { stage6: true } },

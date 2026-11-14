@@ -152,7 +152,11 @@ for (const phone of [false, true]) {
         expect(await contentOf(message.locator('.w98-installed'))).toBe('normal');
         expect(await contentOf(page.locator('.neconyan-cat-head').first())).toBe('normal');
         await expect(intro).not.toHaveCSS('border-radius', '0px');
+        const savedStyle = page.waitForResponse(response => response.url().endsWith('/api/settings/save')
+            && response.ok() && response.request().postDataJSON()?.power_user?.neconyan_shell_style === 'windows-98');
         await applyStyle(page, 'windows-98');
+        // Reload only after the automatic settings save acknowledges this final selection.
+        await savedStyle;
         await expect.poll(() => contentOf(message.locator('.w98-installed'))).toContain('win98/portrait-miso-neutral.webp');
 
         // Custom accents recolour the caption strip instead of the navy default.
