@@ -1764,7 +1764,7 @@ function renderFallbackConnections(draft) {
         scheduleConfigSave({ immediate: true });
         const replacement = renderFallbackConnections(draft);
         list.replaceWith(replacement);
-        replacement.querySelector(focus(replacement))?.focus();
+        replacement.querySelector(focus(replacement))?.focus({ preventScroll: true });
     };
     const rows = node('ol', 'mewmory-fallback-rows');
     fallbacks.forEach((profileId, index) => {
@@ -2740,6 +2740,10 @@ function render() {
     const root = ui.root;
     // Activating the shell tab mounts it again with the latest state.
     if (!root || !root.isConnected || root.closest('[hidden], [aria-hidden="true"], .closedDrawer')) return;
+    const scrollPositions = [];
+    for (let element = root; element; element = element.parentElement) {
+        if (element.scrollTop || element.scrollLeft) scrollPositions.push({ element, top: element.scrollTop, left: element.scrollLeft });
+    }
     const active = root.contains(document.activeElement) ? document.activeElement : null;
     const focusId = active?.id;
     const selection = active instanceof HTMLTextAreaElement || (active instanceof HTMLInputElement && ['text', 'password', 'search'].includes(active.type))
@@ -2858,7 +2862,13 @@ function render() {
         }
     }
     // Measure only once the whole panel is back, or the half-built page clamps the reader's scroll position.
-    if (selectionChanged) revealSelectedTab(navigation);
+    if (selectionChanged) {
+        revealSelectedTab(navigation);
+    } else {
+        // Saving refreshes this view. Rebuilding around the retained sticky tabs can
+        // move the browser's scroll anchor even when focus uses preventScroll.
+        for (const { element, top, left } of scrollPositions) element.scrollTo({ top, left, behavior: 'instant' });
+    }
     if (focusId && !(active instanceof HTMLSelectElement)) {
         const target = document.getElementById(focusId);
         target?.focus({ preventScroll: true });

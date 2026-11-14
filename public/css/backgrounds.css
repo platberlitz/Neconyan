@@ -140,18 +140,6 @@ body.sb-bg-blur #bg_custom {
     min-height: 44px;
 }
 
-.bg-header-row-1 > h3 {
-    flex: 1 1 160px;
-    min-width: 0;
-    white-space: normal;
-    overflow-wrap: anywhere;
-    line-height: 1.2;
-}
-
-.bg-header-row-1 > .expander {
-    display: none;
-}
-
 #background_fitting,
 #background_position {
     flex: 0 1 180px;
@@ -251,10 +239,6 @@ body.sb-bg-blur #bg_custom {
 
 .bg_example.selected-background::before {
     left: 5px;
-}
-
-#bg_selection_mode_button.active {
-    color: var(--golden);
 }
 
 #bg_group_select_count {

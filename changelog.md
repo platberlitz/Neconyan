@@ -92,6 +92,7 @@
 - PR #682 (2026-11-14) `fix(companions): keep history controls on one row`
 - PR #683 (2026-11-14) `feat(purrks): add selective bulk deletion`
 - PR #684 (2026-11-14) `fix(agents): include surrounding prompt rules in adherence checks`
+- PR #685 (2026-11-14) `fix: align background controls and keep Mewmory in place`
 
 ## v1.5.4
 

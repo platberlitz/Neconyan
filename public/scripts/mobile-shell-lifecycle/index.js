@@ -986,6 +986,7 @@ export const MOBILE_SWIPE_RAIL_SELECTOR = [
     '.group_speaker_list',
     '.ica--agent-tabs',
     '.me-tabs',
+    '#bg-header-fixed .bg-header-row-1',
     '.mewmory-tabs',
     '.me-ref-chips',
     '.world_info_view_filters',
