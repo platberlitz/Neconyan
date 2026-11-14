@@ -63,10 +63,9 @@ test('Shorthand and frozen previews produce real results without leaving saved s
     // Settle settings and chat writes caused by opening the workbench and selecting
     // the character. These are legitimate startup writes, not preview writes.
     await settlePersistence(page);
-    await page.clock.install();
-    await page.clock.fastForward(2000);
-    // A delayed legitimate write can be released by the clock. Settle it before
-    // attaching the observer, so the no-save assertion only covers the preview.
+    // Installing a fake clock after startup cannot cancel timers created by the
+    // native clock. Let the real startup debounces finish before observing saves.
+    await page.waitForTimeout(2000);
     await settlePersistence(page);
     const saves = [];
     page.on('request', request => {
@@ -85,11 +84,13 @@ test('Shorthand and frozen previews produce real results without leaving saved s
     await input.press('Control+Enter');
     await expect(workbench.locator('.me-result-output')).toHaveText('5 / 7 / hello');
     await expect.poll(() => savedMacroState(page)).toBe(before);
-    await page.clock.fastForward(1500);
+    // Observe longer than the real one-second save debounce; no preview write
+    // may reach the server, even after its delayed callbacks have had time to run.
+    await page.waitForTimeout(1500);
     expect(saves).toEqual([]);
     await input.fill('{{setvar::hp::5}}{{.hp}} / {{.hp = 9}}{{getvar::hp}} / {{setglobalvar::score::3}}{{$score}} / {{$score += 2}}{{getglobalvar::score}}');
     await expect(workbench.locator('.me-result-output')).toHaveText('5 / 9 / 3 / 5');
-    await page.clock.fastForward(1500);
+    await page.waitForTimeout(1500);
     expect(saves).toEqual([]);
     expect(await savedMacroState(page)).toBe(before);
     expect(app.provider.calls).toHaveLength(0);

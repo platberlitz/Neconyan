@@ -22,7 +22,13 @@ for (const phone of [true, false]) {
         const target = page.locator('#dc-gradient-gallery-target');
         await expect(target).toBeVisible();
         if (phone) await applyIOSOnlyCss(page);
-        await target.scrollIntoViewIfNeeded();
+        // Scrolling the library into view triggers its deferred rebuild. Focus the
+        // current control through a retryable assertion before measuring it.
+        await expect(async () => {
+            await target.focus();
+            await expect(target).toBeFocused();
+            await expect(target).toBeInViewport();
+        }).toPass();
         await page.screenshot({ path: `../screenshots/dialogue-gallery-${phone ? 'phone' : 'desktop'}-${process.env.NECONYAN_SCREENSHOT_PHASE || 'after'}.png` });
 
         const bounds = await target.boundingBox();

@@ -397,7 +397,8 @@ test('Built-in Extensions links bundled tools to their own settings pages', asyn
     expect(phoneSettingsLayout).toEqual({
         layoutDisplay: 'flex',
         layoutDirection: 'column',
-        navPosition: 'static',
+        // The phone scroll indicators use this column as their positioning anchor.
+        navPosition: 'relative',
         tabsDirection: 'row',
         tabsWrap: 'nowrap',
     });

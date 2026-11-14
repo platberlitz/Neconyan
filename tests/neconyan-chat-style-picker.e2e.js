@@ -28,27 +28,38 @@ async function openPicker(page) {
 // These cases share the preview account, so a case that walks every Shell Style must put the
 // baseline back or later suites inherit its control styling (Sunken Reef's pill shadows, for one).
 async function restoreBaselineShell(page) {
-    if (await page.locator('html').getAttribute('data-sb-theme') === 'calico') return;
-    const saved = page.waitForResponse(response => response.url().endsWith('/api/settings/save')
-        && response.request().postDataJSON()?.power_user?.neconyan_shell_style === 'calico', { timeout: 15000 });
-    await page.evaluate(() => window.NeconyanShell.applyTheme('calico'));
-    await saved;
+    // This is account cleanup: wait for the acknowledged write rather than an
+    // incidental debounce, which later shell changes can replace or cancel.
+    expect(await page.evaluate(async () => {
+        window.NeconyanShell.applyTheme('calico');
+        const core = await import('/script.js');
+        return core.saveSettings(0, { returnResult: true });
+    })).toBe(true);
+    await expect(page.locator('html')).toHaveAttribute('data-sb-theme', 'calico');
 }
 
 const card = (page, value) => page.locator(`.nn-chat-style-card[data-chat-style="${value}"]`);
 const classes = ['flatchat', 'bubblechat', 'documentstyle', 'echostyle', 'whisperstyle', 'hushstyle', 'ripplestyle', 'tidestyle', 'nnchat-messenger', 'nnchat-notebook', 'nnchat-script', 'nnchat-compact', 'nnchat-storybook'];
 
-for (const width of [393, 1280, 320]) {
-    test(`chat previews select, synchronise and persist at ${width}px`, async ({ browser }) => {
-        const phone = width < 768;
-        const context = await browser.newContext({ ...(phone ? IPHONE_SAFARI_CONTEXT : {}), viewport: { width, height: phone ? 852 : 900 }, serviceWorkers: 'block', reducedMotion: 'reduce' });
+async function withPicker(browser, width, check) {
+    const phone = width < 768;
+    const context = await browser.newContext({ ...(phone ? IPHONE_SAFARI_CONTEXT : {}), viewport: { width, height: phone ? 852 : 900 }, serviceWorkers: 'block', reducedMotion: 'reduce' });
+    try {
         if (phone) await installIPhoneSafari(context);
         const page = await context.newPage();
         await prepare(page);
-        try {
-            await page.goto('/', { waitUntil: 'domcontentloaded' });
-            await openPicker(page);
-            if (phone) await applyIOSOnlyCss(page);
+        await page.goto('/', { waitUntil: 'domcontentloaded' });
+        await openPicker(page);
+        if (phone) await applyIOSOnlyCss(page);
+        await check(page);
+    } finally {
+        await context.close();
+    }
+}
+
+for (const width of [393, 1280, 320]) {
+    test(`chat previews select and synchronise at ${width}px`, async ({ browser }) => {
+        await withPicker(browser, width, async page => {
             await expect(page.locator('#chat_display')).toBeHidden();
             await expect(page.locator('.nn-chat-style-card')).toHaveCount(await page.locator('#chat_display option').count());
             const grid = page.locator('.nn-chat-style-grid');
@@ -62,6 +73,12 @@ for (const width of [393, 1280, 320]) {
                 await expect(page.locator('body')).toHaveClass(new RegExp(`\\b${classes[value]}\\b`));
                 await expect(page.locator('.nn-chat-style-card[aria-pressed="true"]')).toHaveCount(1);
             }
+        });
+    });
+
+    test(`chat previews support keyboard navigation and persist at ${width}px`, async ({ browser }) => {
+        await withPicker(browser, width, async page => {
+            const grid = page.locator('.nn-chat-style-grid');
             await card(page, 0).focus();
             await page.keyboard.press('ArrowRight');
             await expect(card(page, 1)).toBeFocused();
@@ -89,9 +106,7 @@ for (const width of [393, 1280, 320]) {
             await openPicker(page);
             await expect(card(page, 8)).toHaveAttribute('aria-pressed', 'true');
             await expect(card(page, 8)).toHaveAttribute('tabindex', '0');
-        } finally {
-            await context.close();
-        }
+        });
     });
 }
 

@@ -63,11 +63,14 @@ async function checkAccents(page, phone) {
                         const style = getComputedStyle(element);
                         const label = getComputedStyle(element.querySelector('i'));
                         const rect = element.getBoundingClientRect();
-                        return { control: element.getAttribute('aria-label'), contrast: contrastRatio(channels(label.color), channels(style.backgroundColor)), height: rect.height, width: rect.width,
+                        return { control: element.getAttribute('aria-label') || element.textContent.trim(), contrast: contrastRatio(channels(label.color), channels(style.backgroundColor)), height: rect.height, width: rect.width,
                             foreground: label.color, background: style.backgroundColor, pageWidth: document.documentElement.scrollWidth };
                     });
                 });
-                expect(controls).toHaveLength(5);
+                expect(controls.map(control => control.control).sort()).toEqual([
+                    'Attach files', 'Message options', 'Read links', 'Rehearse next reply',
+                    'Remove accent.txt', enabled ? 'Web search is on for this session' : 'Search the web for this message',
+                ]);
                 for (const measured of controls) {
                     measurements.push({ theme, accent, enabled, ...measured });
                     expect(measured.contrast, JSON.stringify(measurements)).toBeGreaterThanOrEqual(4.5);

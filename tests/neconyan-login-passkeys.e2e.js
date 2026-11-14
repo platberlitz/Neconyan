@@ -8,7 +8,8 @@ test.describe.configure({ mode: 'serial' });
 for (const title of ['phone sign-in', 'desktop sign-in']) {
     const phone = title.startsWith('phone');
     test.describe(`${title}`, () => {
-        test.use({ viewport: phone ? { width: 393, height: 852 } : { width: 1280, height: 900 }, isMobile: phone, hasTouch: phone });
+        // The security cases intercept challenge responses before the browser signs them.
+        test.use({ viewport: phone ? { width: 393, height: 852 } : { width: 1280, height: 900 }, isMobile: phone, hasTouch: phone, serviceWorkers: 'block' });
         test('password, passkey, rejected verification, remembered expiry and logout', async ({ page, context }, testInfo) => {
             test.skip(!username || !password, 'Set NECONYAN_AUTH_TEST_USERNAME and NECONYAN_AUTH_TEST_PASSWORD for an isolated authenticated preview at localhost or HTTPS.');
             test.setTimeout(180000);

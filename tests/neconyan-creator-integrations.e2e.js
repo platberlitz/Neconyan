@@ -30,6 +30,7 @@ for (const phone of [false, true]) {
         await expect(creator.getByLabel('Director prompt', { exact: true })).toHaveValue('Use terse dialogue and {{char}} literally.');
         await page.screenshot({ path: `../screenshots/creator-instructions-${phone ? 'phone' : 'desktop'}.png` });
         await creator.getByRole('button', { name: 'Drafts', exact: true }).click();
+        await expect(creator.getByRole('heading', { name: 'Your drafts', exact: true })).toBeVisible();
         const drafts = await account.post('/api/creator/list');
         const stored = await account.post('/api/creator/get', { id: drafts.drafts[0].id });
         expect(stored.draft.writing.prompts.director).toBe('Use terse dialogue and {{char}} literally.');

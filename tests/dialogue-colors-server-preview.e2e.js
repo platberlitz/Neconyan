@@ -102,6 +102,9 @@ test('preview updates preserve gradients, exclusions and display-only state', as
             stops: [{ color: '#9e88ee', baseColor: '#9e88ee', position: 100 }] };
         state.setCharacterColors({ [key]: entry });
         await (await import(`${extension}/storage.js`)).saveData();
+        // Chat-open listeners can still be saving their initial metadata. The
+        // display-only comparison starts after those writes have completed.
+        if (!await core.flushPendingChatSavesForNavigation()) throw new Error('Initial chat metadata did not save');
         window.savedPreviewState = JSON.stringify({ chat: core.chat, colours: state.characterColors, metadata: core.chat_metadata });
         const originalFetch = window.fetch;
         window.fetch = (input, options) => String(input).includes('/api/jobs/colour-regression/preview')

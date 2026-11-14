@@ -156,8 +156,9 @@ function iconInkCentre(buffer) {
     return (top + bottom + 1) / 2 - png.height / 2;
 }
 
-for (const phone of [true, false]) {
-    test(`Whisper ${phone ? 'phone' : 'tablet and desktop'} swipe ink, counters and saved alternatives stay aligned`, async ({ app }, info) => {
+for (const width of [393, 769, 900, 1000, 1001, 1280]) {
+    const phone = width === 393;
+    test(`Whisper ${phone ? 'phone' : 'tablet and desktop'} at ${width}px swipe ink, counters and saved alternatives stay aligned`, async ({ app }, info) => {
         test.setTimeout(180000);
         const account = await app.account({ phone, contextOptions: phone ? IPHONE_SAFARI_CONTEXT : { hasTouch: true } });
         if (phone) await installIPhoneSafari(account.context);
@@ -177,7 +178,7 @@ for (const phone of [true, false]) {
         await page.evaluate(() => document.fonts.ready);
         const ids = ['2', '1', '0'];
         await expect(page.locator('#chat > .mes[mesid="2"]')).toHaveClass(/\blast_mes\b/);
-        for (const width of phone ? [393] : [769, 900, 1000, 1001, 1280]) {
+        await test.step(`Check ${width}px controls and saved alternatives`, async () => {
             await page.setViewportSize({ width, height: phone ? 852 : 900 });
             for (const placement of width > 1000 ? ['inside', 'below'] : ['native']) {
                 if (placement !== 'native') await page.locator('#desktop_response_controls').selectOption(placement, { force: true });
@@ -228,6 +229,6 @@ for (const phone of [true, false]) {
                     }
                 }
             }
-        }
+        });
     });
 }

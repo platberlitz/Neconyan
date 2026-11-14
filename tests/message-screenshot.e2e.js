@@ -491,18 +491,21 @@ function registerMobileScreenshotTests(profileName, targetBrowserName, useOption
                     throw new Error('Image source descriptor unavailable');
                 }
 
+                window.stalledScreenshotSvgs = 0;
                 Object.defineProperty(window.HTMLImageElement.prototype, 'src', {
                     configurable: true,
                     get: imageSource.get,
                     set(value) {
-                        if (!/^data:image\/svg\+xml.*;base64,/.test(String(value))) {
-                            imageSource.set.call(this, value);
+                        const source = String(value);
+                        // Stall the final capture, not ordinary SVG icons loaded while preparing it.
+                        if (/^data:image\/svg\+xml.*;base64,/.test(source)
+                            && window.atob(source.slice(source.indexOf(',') + 1)).includes('<foreignObject')) {
+                            window.stalledScreenshotSvgs++;
+                            return;
                         }
+                        imageSource.set.call(this, value);
                     },
                 });
-
-                const nativeSetTimeout = window.setTimeout.bind(window);
-                window.setTimeout = (callback, timeout, ...args) => nativeSetTimeout(callback, timeout === 15000 ? 20 : timeout, ...args);
             });
 
             await page.locator('#chat .mes').first().locator('.mes_screenshot').dispatchEvent('click');
@@ -510,6 +513,8 @@ function registerMobileScreenshotTests(profileName, targetBrowserName, useOption
             await page.locator('#message_screenshot_end_id').fill('0');
             await page.locator('.message_screenshot_popup .popup-button-ok').dispatchEvent('click');
 
+            // Preparation can take longer in WebKit; measure the real 15-second bound from the stalled render.
+            await expect.poll(() => page.evaluate(() => window.stalledScreenshotSvgs), { timeout: 60000 }).toBe(1);
             await expect(page.locator('.toast-error').filter({ hasText: 'Screenshot failed' })).toBeVisible({ timeout: 20000 });
             expect(screenshotErrors).toHaveLength(1);
             expect(await page.locator('.html2canvas-container').count()).toBe(0);
