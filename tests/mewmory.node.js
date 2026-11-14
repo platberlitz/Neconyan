@@ -944,6 +944,68 @@ test('fallback connections answer in order after a model failure and respect eac
     });
 });
 
+test('a saved main connection that refuses or stalls hands over to the fallbacks and names the reason', async t => {
+    const { directories } = disk(t);
+    const broken = await createMewmoryProvider();
+    const working = await createMewmoryProvider();
+    t.after(async () => {
+        for (const provider of [broken, working]) {
+            provider.server.closeAllConnections();
+            await new Promise(resolve => provider.server.close(resolve));
+        }
+    });
+    writeJson(path.join(directories.root, 'settings.json'), { extension_settings: { connectionManager: { profiles: [
+        { id: 'main', name: 'Main', api: 'custom', 'api-url': broken.url, model: 'extractor' },
+        { id: 'spare', name: 'Spare', api: 'custom', 'api-url': working.url, model: 'extractor' },
+    ] } } });
+    const config = defaultConfig();
+    config.fallbackProfileIds = ['spare'];
+    Object.assign(config.roles.extractor, { enabled: true, profileId: 'main', timeoutMs: 1000 });
+    saveConfig(directories, config);
+    const input = { sources: [], existing: [] };
+    broken.mode.fail = true;
+    for (const status of [400, 401, 403, 404, 429, 500]) {
+        broken.mode.failStatus = status;
+        const result = await callJsonRole(directories, readConfig(directories), 'extractor', 'Extract facts.', input);
+        assert.equal(result.usage.fallbackProfileId, 'spare', 'error code ' + status + ' from the main connection moves on');
+    }
+
+    broken.mode.failStatus = 400;
+    working.mode.fail = true;
+    working.mode.failStatus = 400;
+    await assert.rejects(callJsonRole(directories, readConfig(directories), 'extractor', 'Extract.', input), error => {
+        assert.equal(error.status, 502);
+        assert.match(error.message, /^The model for Facts and events returned error code 400 \(Bad Request\)\. Check its model connection in Mewmory settings and try again\. The fallback connection also failed\.$/);
+        return true;
+    });
+    working.mode.fail = false;
+
+    broken.mode.fail = false;
+    broken.mode.hold = 'extractor';
+    const stalled = await callJsonRole(directories, readConfig(directories), 'extractor', 'Extract.', input);
+    assert.equal(stalled.usage.fallbackProfileId, 'spare', 'a main connection past its timeout moves on');
+    broken.mode.hold = '';
+
+    const controller = new AbortController();
+    broken.mode.hold = 'extractor';
+    const before = working.calls.length;
+    const cancelled = callJsonRole(directories, readConfig(directories), 'extractor', 'Extract.', input, { signal: controller.signal });
+    setTimeout(() => controller.abort(), 100);
+    await assert.rejects(cancelled, error => error.name === 'AbortError' || error.status === 499);
+    assert.equal(working.calls.length, before, 'a cancelled request does not try the fallbacks');
+    broken.mode.hold = '';
+
+    broken.mode.fail = true;
+    const unusable = publicConfig(directories);
+    unusable.fallbackProfileIds = ['gone'];
+    saveConfig(directories, unusable);
+    await assert.rejects(callJsonRole(directories, readConfig(directories), 'extractor', 'Extract.', input), error => {
+        assert.equal(error.status, 502);
+        assert.match(error.message, /returned error code 400.*Your fallback connection could not be used: gone \(The chosen connection profile no longer exists/);
+        return true;
+    });
+});
+
 test('a connection profile for all roles drives every role that follows it without changing processing fingerprints', async t => {
     const { directories } = disk(t);
     const provider = await createMewmoryProvider();

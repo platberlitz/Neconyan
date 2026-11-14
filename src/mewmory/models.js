@@ -621,8 +621,16 @@ async function requestModel(directories, config, name, payload, dataTypes, signa
             },
         };
     } catch (error) {
-        if (error.status) throw error;
         if (signal?.aborted) fail('Mewmory request cancelled.', 499);
+        // A saved connection reports the provider's own refusal (400, 401, 429...); that is a model failure, so fallbacks still get their turn.
+        if (error.providerStatus !== undefined) {
+            const detail = String(error.message || '').trim().replace(/\.$/, '').slice(0, 200);
+            const useful = detail && !/could not complete the reply \(HTTP \d+\)$/.test(detail);
+            fail('The model for ' + ROLE_LABELS[name] + ' returned error code ' + (error.providerStatus || error.status)
+                + (useful ? ' (' + detail + ')' : '') + '. Check its model connection in Mewmory settings and try again.', 502);
+        }
+        // Our own time limit aborts a saved connection as 'client disconnected'; report it as the timeout it is.
+        if (error.status && !(error.status === 499 && controller.signal.aborted)) throw error;
         fail('The model for ' + ROLE_LABELS[name] + ' could not be reached or took too long. Check its model connection and timeout in Mewmory settings.', 502);
     } finally {
         clearTimeout(timeout);
@@ -651,8 +659,10 @@ function parseJsonReply(content) {
 }
 
 function fallbackRoles(directories, config, name, dataTypes) {
-    if (name === 'embedding') return [];
-    return (config.fallbackProfileIds || []).flatMap(profileId => {
+    const roles = [];
+    const skipped = [];
+    if (name === 'embedding') return { roles, skipped };
+    for (const profileId of config.fallbackProfileIds || []) {
         try {
             const connection = resolveModelProfile(directories, profileId, false, '');
             const role = { ...config.roles[name], profileId, modelOverride: '', connection, model: connection.model, endpoint: connection.endpoint, error: undefined };
@@ -661,12 +671,25 @@ function fallbackRoles(directories, config, name, dataTypes) {
                 role.decisionThreshold = defaultDecisionThreshold(connection.model);
             }
             authorizeRole({ ...config, roles: { ...config.roles, [name]: role } }, name, dataTypes);
-            return [role];
-        } catch {
-            // A deleted profile, a missing key or a remote profile this role may not use is left out.
-            return [];
+            roles.push(role);
+        } catch (error) {
+            // A deleted profile, a missing key or a remote profile this role may not use is left out, but named in the error.
+            skipped.push({ profileId, reason: String(error.message || '').split(/(?<=\.)\s/)[0].replace(/\.$/, '') });
         }
-    });
+    }
+    return { roles, skipped };
+}
+
+function skippedFallbackNote(directories, skipped) {
+    if (!skipped.length) return '';
+    let names = new Map();
+    try {
+        names = new Map(listModelProfiles(directories).map(profile => [profile.id, profile.name]));
+    } catch {
+        // Profile ids still identify them.
+    }
+    const items = skipped.map(({ profileId, reason }) => (names.get(profileId) || profileId) + ' (' + reason + ')');
+    return (items.length === 1 ? 'Your fallback connection could not be used: ' : 'These fallback connections could not be used: ') + items.join('; ') + '.';
 }
 
 function spent(directories, result) {
@@ -747,7 +770,7 @@ export async function callJsonRole(directories, config, name, contract, input, {
             primaryError = error;
         }
     }
-    const fallbacks = fallbackRoles(directories, config, name, dataTypes);
+    const { roles: fallbacks, skipped } = fallbackRoles(directories, config, name, dataTypes);
     for (const fallback of fallbacks) {
         signal?.throwIfAborted();
         try {
@@ -757,8 +780,12 @@ export async function callJsonRole(directories, config, name, contract, input, {
             if (error.status !== 502) throw error;
         }
     }
-    if (!fallbacks.length) throw primaryError;
-    fail(primaryError.message + ' ' + (fallbacks.length === 1 ? 'The fallback connection also failed.' : 'All ' + fallbacks.length + ' fallback connections also failed.'), primaryError.status);
+    if (!fallbacks.length && !skipped.length) throw primaryError;
+    const notes = [
+        fallbacks.length ? (fallbacks.length === 1 ? 'The fallback connection also failed.' : 'All ' + fallbacks.length + ' fallback connections also failed.') : '',
+        skippedFallbackNote(directories, skipped),
+    ].filter(Boolean);
+    fail(primaryError.message + ' ' + notes.join(' '), primaryError.status);
 }
 
 export async function embed(directories, config, texts, { query = false, dataTypes = SOURCE_TYPES, signal } = {}) {
