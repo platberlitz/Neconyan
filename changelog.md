@@ -93,6 +93,7 @@
 - PR #683 (2026-11-14) `feat(purrks): add selective bulk deletion`
 - PR #684 (2026-11-14) `fix(agents): include surrounding prompt rules in adherence checks`
 - PR #685 (2026-11-14) `fix: align background controls and keep Mewmory in place`
+- PR #686 (2026-11-14) `feat(favourites): add shared desktop scroll controls`
 
 ## v1.5.4
 
