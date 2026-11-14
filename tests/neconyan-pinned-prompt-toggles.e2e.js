@@ -53,6 +53,12 @@ async function openPrompts(page) {
     await page.locator('#completion_prompt_manager_drawer').evaluate(node => node.scrollIntoView({ block: 'start' }));
 }
 
+async function choosePreset(page, name) {
+    await page.locator('#sb-openai-preset-picker-button').click();
+    await page.locator('#sb-openai-preset-picker').getByTitle(name, { exact: true }).click();
+    await expect(page.locator('#sb-openai-preset-picker-button')).toHaveAccessibleName(new RegExp(`${name}$`));
+}
+
 async function seededAccount(app, phone = false) {
     let preset;
     const account = await app.account({ phone, activeConnection: true, configureSettings: settings => {
@@ -160,7 +166,7 @@ for (const phone of [false, true]) {
             };
         });
         try {
-            await page.locator('#settings_preset_openai').selectOption({ label: 'Pinned fixture B' });
+            await choosePreset(page, 'Pinned fixture B');
             await expect(action).toHaveAccessibleName('Pin Other preset toggle to chat');
             await expect(action).toBeDisabled();
             await expect(action).toHaveAttribute('aria-pressed', 'false');
@@ -171,11 +177,11 @@ for (const phone of [false, true]) {
         await expect(action).toBeEnabled();
         await pin(page, 'pin-a');
         await expect(action).toHaveAttribute('aria-pressed', 'true');
-        await page.locator('#settings_preset_openai').selectOption({ label: 'Pinned fixture A' });
+        await choosePreset(page, 'Pinned fixture A');
         await expect(action).toHaveAccessibleName('Unpin NSFW from chat');
         await pin(page, 'pin-a');
         await expect(action).toHaveAttribute('aria-pressed', 'false');
-        await page.locator('#settings_preset_openai').selectOption({ label: 'Pinned fixture B' });
+        await choosePreset(page, 'Pinned fixture B');
         await expect(action).toHaveAccessibleName('Unpin Other preset toggle from chat');
         await expect(action).toBeEnabled();
         await expect(action).toHaveAttribute('aria-pressed', 'true');
@@ -265,9 +271,9 @@ test('desktop pins, live switches, reload, collapse, preset isolation, requests 
     // Both fixture replies use the same text; wait for the second generation before switching presets.
     await expect.poll(() => page.evaluate(async () => (await import('/script.js')).is_send_press), { timeout: 60000 }).toBe(false);
     await openPrompts(page);
-    await page.locator('#settings_preset_openai').selectOption({ label: 'Pinned fixture B' });
+    await choosePreset(page, 'Pinned fixture B');
     await expect(page.locator('#neconyan-chat-widgets')).toHaveCount(0);
-    await page.locator('#settings_preset_openai').selectOption({ label: 'Pinned fixture A' });
+    await choosePreset(page, 'Pinned fixture A');
     await expect(dockRow(page, 'pin-a')).toHaveAttribute('aria-checked', 'true');
     await expect(promptRow(page, 'pin-a').locator('.prompt-manager-pin-action')).toHaveAttribute('aria-pressed', 'true');
     await pin(page, 'pin-a');
@@ -511,9 +517,9 @@ test('preset saving and selection intervals reject old scopes, and actual modes 
     await promptRow(page, 'pin-a').locator('.prompt-manager-pin-action').click();
     await expect.poll(() => held).toBe(true);
     await expect(promptRow(page, 'pin-a').locator('.prompt-manager-pin-action')).toBeDisabled();
-    await page.locator('#settings_preset_openai').selectOption({ label: 'Pinned fixture B' });
+    await choosePreset(page, 'Pinned fixture B');
     await expect(page.locator('#neconyan-chat-widgets')).toHaveCount(0);
-    await page.locator('#settings_preset_openai').selectOption({ label: 'Pinned fixture A' });
+    await choosePreset(page, 'Pinned fixture A');
     release();
     await expect(promptRow(page, 'pin-a').locator('.prompt-manager-pin-action')).toBeEnabled();
     await expect(promptRow(page, 'pin-a').locator('.prompt-manager-pin-action')).toHaveAttribute('aria-pressed', 'true');

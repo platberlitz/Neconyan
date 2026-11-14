@@ -35,4 +35,19 @@ describe('chat browser viewport placement', () => {
         expect(p.left).toBeGreaterThanOrEqual(viewport.left + 8);
         expect(p.left + p.width).toBeLessThanOrEqual(viewport.left + viewport.width - 8);
     });
+
+    test('opens a settings list below its trigger unless only the space above fits it', () => {
+        const desktop = { top: 0, left: 0, width: 1280, height: 900 };
+        const below = resolveChatPickerPlacement({ anchor: { top: 255, bottom: 301, left: 263 }, viewport: desktop, preferredHeight: 420, preferBelow: true });
+        expect(below).toMatchObject({ above: false, edgeTop: 309, maxHeight: 420 });
+
+        const phone = { top: 0, left: 0, width: 393, height: 852 };
+        const nearBottom = resolveChatPickerPlacement({ anchor: { top: 700, bottom: 746, left: 18 }, viewport: phone, preferredHeight: 420, preferBelow: true });
+        expect(nearBottom.above).toBe(true);
+        expect(nearBottom.maxHeight).toBe(420);
+
+        const keyboardOpen = { top: 0, left: 0, width: 393, height: 380 };
+        const cramped = resolveChatPickerPlacement({ anchor: { top: 150, bottom: 196, left: 18 }, viewport: keyboardOpen, preferredHeight: 420, preferBelow: true });
+        expect(cramped.above).toBe(false);
+    });
 });

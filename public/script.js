@@ -22093,6 +22093,7 @@ jQuery(async function () {
 
         const forbiddenTargets = [
             '#sb-bottom-chat-picker',
+            '.sb-select-picker',
             '#neconyan-chat-widgets',
             // Neconyan: resizing the sidebar must keep the current workspace open.
             '#neconyan-sidebar-toggle',

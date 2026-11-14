@@ -51,15 +51,17 @@ export function matchesChatPickerQuery(entry, query) {
 
 /**
  * Places the picker beside its trigger inside the visible viewport, which shrinks when a
- * phone keyboard opens. It opens above the trigger unless there is clearly more room below.
+ * phone keyboard opens. It opens above the trigger unless there is clearly more room below;
+ * with preferBelow it opens below unless there is clearly more room above.
  * @param {object} options
  * @param {{ top: number, bottom: number, left: number }} options.anchor Trigger rectangle.
  * @param {{ top: number, left: number, width: number, height: number }} options.viewport Visible viewport.
  * @param {number} [options.preferredWidth=440]
  * @param {number} [options.preferredHeight=520]
- * @param {number} [options.minAboveHeight=240]
+ * @param {number} [options.minAboveHeight=240] Room the preferred side needs before the other side is considered.
  * @param {number} [options.gap=8]
  * @param {number} [options.edge=8]
+ * @param {boolean} [options.preferBelow=false]
  * @returns {{ left: number, width: number, maxHeight: number, above: boolean, edgeTop: number }}
  */
 export function resolveChatPickerPlacement({
@@ -70,6 +72,7 @@ export function resolveChatPickerPlacement({
     minAboveHeight = 240,
     gap = 8,
     edge = 8,
+    preferBelow = false,
 }) {
     const viewTop = viewport.top + edge;
     const viewBottom = viewport.top + viewport.height - edge;
@@ -81,7 +84,10 @@ export function resolveChatPickerPlacement({
     const anchorTop = Math.min(anchor.top, viewBottom + gap);
     const spaceAbove = Math.max(0, anchorTop - gap - viewTop);
     const spaceBelow = Math.max(0, viewBottom - (anchor.bottom + gap));
-    const above = spaceAbove >= Math.min(minAboveHeight, preferredHeight) || spaceAbove >= spaceBelow;
+    const enoughRoom = Math.min(minAboveHeight, preferredHeight);
+    const above = preferBelow
+        ? spaceBelow < enoughRoom && spaceAbove > spaceBelow
+        : spaceAbove >= enoughRoom || spaceAbove >= spaceBelow;
     const maxHeight = Math.max(0, Math.min(preferredHeight, above ? spaceAbove : spaceBelow));
     return {
         left: Math.round(left),
