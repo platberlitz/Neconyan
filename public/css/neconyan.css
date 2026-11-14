@@ -3035,6 +3035,11 @@ body.neconyan #right-nav-panel.neconyan-character-workspace .neconyan-character-
 }
 body.neconyan #right-nav-panel.neconyan-character-workspace .neconyan-character-native-nav-wrapper [hidden],
 body.neconyan #right-nav-panel[data-menu-type='world-info'] .neconyan-character-native-nav-wrapper { display: none; }
+body.neconyan #WorldInfo .neconyan-entry-advanced > summary { gap: 12px; }
+body.neconyan #WorldInfo .neconyan-entry-advanced > summary::-webkit-details-marker { display: none; }
+body.neconyan #WorldInfo .neconyan-entry-advanced > summary > i { margin-inline-start: auto; flex-shrink: 0; }
+body.neconyan #WorldInfo .neconyan-entry-advanced[open] > summary > i { rotate: 180deg; }
+body.neconyan #WorldInfo .neconyan-entry-advanced > summary:focus-visible { outline: 2px solid var(--neco-ginger); outline-offset: 2px; }
 body.neconyan .neconyan-character-filters { min-width: 0; }
 body.neconyan .neconyan-character-filters > summary { cursor: pointer; min-height: 44px; padding: 10px 0; display: flex; align-items: center; gap: 8px; color: var(--neco-ink); list-style: none; }
 body.neconyan .neconyan-character-filters > summary::-webkit-details-marker { display: none; }

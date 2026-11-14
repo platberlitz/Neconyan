@@ -4208,7 +4208,10 @@ export async function getWorldEntry(name, data, entry, options = {}) {
         contentHeader.append(contentLabel.find('.mdhotkey_location').detach(), contentLabel.find('.editor_maximize').detach(), contentLabel.find('.world_entry_form_token_counter').parent().detach());
         contentLabel.replaceWith(contentHeader);
         const advanced = $('<details class="world-entry-advanced-details neconyan-entry-advanced"></details>');
-        advanced.append($('<summary></summary>').text(t`Advanced entry settings`));
+        advanced.append($('<summary></summary>').append(
+            $('<span></span>').text(t`Advanced entry settings`),
+            $('<i class="fa-solid fa-chevron-down" aria-hidden="true"></i>'),
+        ));
         const advancedBody = $('<div class="world-entry-advanced-details-content neconyan-entry-advanced-content"></div>');
         advancedBody.append($('<h4></h4>').text(t`Activation rules`), flags, bottom, overrides);
         advancedBody.append($('<h4></h4>').text(t`Inclusion and timing`), extraRows);
