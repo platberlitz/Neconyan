@@ -203,7 +203,9 @@ async function visibleContrast(page, selector) {
         return entries;
     });
     try {
-        const png = PNG.sync.read(await page.screenshot({ animations: 'disabled', scale: 'css' }));
+        // Late startup notifications are not part of the caption's own paint.
+        const png = PNG.sync.read(await page.screenshot({ animations: 'disabled', scale: 'css',
+            style: '#toast-container { visibility: hidden !important; }' }));
         return info.points.map(point => {
             const index = (point.y * png.width + point.x) * 4;
             const background = [...png.data.subarray(index, index + 3)];

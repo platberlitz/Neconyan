@@ -156,6 +156,16 @@ function iconInkCentre(buffer) {
     return (top + bottom + 1) / 2 - png.height / 2;
 }
 
+function cropControl(image, box) {
+    const x = Math.floor(box.left), y = Math.floor(box.top);
+    const width = Math.ceil(box.right) - x, height = Math.ceil(box.bottom) - y;
+    expect(x).toBeGreaterThanOrEqual(0); expect(y).toBeGreaterThanOrEqual(0);
+    expect(x + width).toBeLessThanOrEqual(image.width); expect(y + height).toBeLessThanOrEqual(image.height);
+    const crop = new PNG({ width, height });
+    PNG.bitblt(image, crop, x, y, width, height, 0, 0);
+    return PNG.sync.write(crop);
+}
+
 for (const width of [393, 769, 900, 1000, 1001, 1280]) {
     const phone = width === 393;
     test(`Whisper ${phone ? 'phone' : 'tablet and desktop'} at ${width}px swipe ink, counters and saved alternatives stay aligned`, async ({ app }, info) => {
@@ -211,10 +221,19 @@ for (const width of [393, 769, 900, 1000, 1001, 1280]) {
                             expect(measures.translate).toBe('0px -4px');
                             if (placement === 'below') widths.push(measures.footer.width);
                         } else for (const arrow of arrows) expect(measures.row.bottom - arrow.bottom).toBeCloseTo(13, 0);
-                        const leftInk = iconInkCentre(await left.screenshot({ scale: 'css' }));
-                        const rightInk = iconInkCentre(await right.screenshot({ scale: 'css' }));
-                        expect(Math.abs(leftInk - rightInk)).toBeLessThanOrEqual(0.5);
+                        // One frame keeps both arrows at the same scroll position; unrelated
+                        // startup notifications must not become part of their measured ink.
+                        const frame = PNG.sync.read(await page.screenshot({ animations: 'disabled', scale: 'css',
+                            style: '#toast-container { visibility: hidden !important; }' }));
+                        const leftImage = cropControl(frame, arrows.find(c => c.classes.includes('chevron-left')));
+                        const rightImage = cropControl(frame, arrows.find(c => c.classes.includes('chevron-right')));
+                        const leftInk = iconInkCentre(leftImage), rightInk = iconInkCentre(rightImage);
                         await info.attach(`${width}-${placement}-${all}-${id}`, { body: JSON.stringify({ ...measures, leftInk, rightInk }), contentType: 'application/json' });
+                        if (Math.abs(leftInk - rightInk) > 0.5) {
+                            await info.attach('left-arrow-ink', { body: leftImage, contentType: 'image/png' });
+                            await info.attach('right-arrow-ink', { body: rightImage, contentType: 'image/png' });
+                        }
+                        expect(Math.abs(leftInk - rightInk)).toBeLessThanOrEqual(0.5);
                     }
                 }
                 if (width > 1000 && placement === 'below') expect(Math.max(...widths) - Math.min(...widths)).toBeLessThan(0.6);

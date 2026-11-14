@@ -908,6 +908,7 @@ test('Tide below bars and narrow clusters share one size on both roles', async (
     // AC11: 138x44 detached bars, 44px counters, 36px arrows, aligned with the reading column.
     const bar = async (id, placement) => {
         if (placement) await page.locator('#desktop_response_controls').selectOption(placement, { force: true });
+        await expect(page.locator(`#chat > .mes[mesid="${id}"] > .nn-response-controls`)).toBeVisible();
         return page.evaluate(id => {
             const row = document.querySelector(`#chat > .mes[mesid="${id}"]`);
             const element = row.querySelector(':scope > .nn-response-controls');

@@ -49,7 +49,7 @@ for (const phone of [false, true]) {
 test('Roleplay saves supported variables and reports browser-only prompt macros', async ({ app }) => {
     const account = await app.account({ activeConnection: true, configureSettings: settings => {
         settings.power_user.experimental_macro_engine = true;
-        settings.oai_settings.prompts.find(prompt => prompt.identifier === 'main').content = '{{incvar::serverPromptCount}}';
+        settings.oai_settings.prompts.find(prompt => prompt.identifier === 'main').content = '{{incvar::serverPromptCount}}|{{getchatvar::n_yseult}}';
         settings.extension_settings.note.default = '';
     } });
     const page = await account.open({ workspace: false });
@@ -58,7 +58,7 @@ test('Roleplay saves supported variables and reports browser-only prompt macros'
     await startNativeReply(page);
     await expect(page.locator('#chat .mes').last()).toContainText('Durable first reply.', { timeout: 60000 });
     expect(app.provider.calls).toHaveLength(1);
-    expect(app.provider.calls[0].messages.some(message => message.content === '1')).toBe(true);
+    expect(app.provider.calls[0].messages.some(message => message.content === '1|')).toBe(true);
     await expect.poll(() => page.evaluate(() => window.SillyTavern.getContext().chatMetadata.variables?.serverPromptCount)).toBe(1);
     // Force the preview refresh that can run after a reply or settings change.
     // It must not write a second increment over the server's accepted value.
@@ -71,10 +71,13 @@ test('Roleplay saves supported variables and reports browser-only prompt macros'
     await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'));
     await selectCharacter(page, account.avatar);
     expect(await page.evaluate(() => window.SillyTavern.getContext().chatMetadata.variables.serverPromptCount)).toBe(1);
-    await page.evaluate(async () => {
+    expect(await page.evaluate(async () => {
+        const { installMacros } = await import('/scripts/extensions/third-party/MacroEnhanced/src/custom/gallery-ui.js');
+        const installed = await installMacros('global', [{ name: 'browserOnlyFixture', template: 'Browser-only fixture expanded.' }]);
         const { oai_settings } = await import('/scripts/openai.js');
-        oai_settings.prompts.find(prompt => prompt.identifier === 'main').content = '{{getchatvar::n_yseult}}';
-    });
+        oai_settings.prompts.find(prompt => prompt.identifier === 'main').content = '{{browserOnlyFixture}}';
+        return installed;
+    })).toEqual({ installed: ['browserOnlyFixture'], skipped: [] });
     await acknowledgeActiveSettings(page);
     await page.evaluate(() => window.toastr?.remove());
     await page.locator('#send_textarea').fill('Test unsupported macro');
@@ -87,5 +90,6 @@ test('Roleplay saves supported variables and reports browser-only prompt macros'
     await page.locator('#send_textarea').fill('Test browser macro');
     await page.locator('#send_but').click();
     await expect.poll(() => app.provider.calls.length, { timeout: 60000 }).toBe(2);
+    expect(app.provider.calls[1].messages.some(message => message.content === 'Browser-only fixture expanded.')).toBe(true);
     await expect(page.locator('#toast-container', { hasText: 'browser-only' })).toHaveCount(0);
 });

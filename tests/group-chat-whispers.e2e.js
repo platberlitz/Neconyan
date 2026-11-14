@@ -21,7 +21,7 @@ test('a mid-reply audience change cannot make a whisper public and an away recip
     await page.locator('#group_scene_whisper').selectOption(group.members[1]);
     await page.locator('.group_scene_member').filter({ hasText: 'Scene Mira' }).click();
     await sendSceneMessage(page, 'Do not send this publicly.');
-    await expect(page.locator('.toast-warning')).toContainText('Your whisper recipient is unavailable');
+    await expect(page.locator('.toast-warning').filter({ hasText: 'Your whisper recipient is unavailable' })).toBeVisible();
     await expect(page.locator('#send_textarea')).toHaveValue('Do not send this publicly.');
     expect(app.provider.calls).toHaveLength(1);
 });
