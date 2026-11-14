@@ -3856,7 +3856,13 @@ function releaseBackgroundChatView() {
                 // page would leave a gap between its first batch and the retained history.
                 const batchSize = getMobileChatRenderBatchSize(current.firstMessageId - first);
                 await showMoreMessages(batchSize, { canRender: unchanged });
-                if (!canRestore()) return false;
+                if (!canRestore()) {
+                    const restored = getRenderedChatMessageWindow();
+                    // Keep a wake callback only for unfinished history. A completed last
+                    // batch must be released again when the page has already gone away.
+                    if (restored.lastMessageId === last && restored.firstMessageId > first) return false;
+                    return;
+                }
                 // Paging listeners can change row geometry after the paging anchor settles.
                 if (unchanged()) restoreVisibleChatMessageAnchor(readingAnchor);
                 if (getRenderedChatMessageWindow().firstMessageId >= current.firstMessageId) return;
