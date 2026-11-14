@@ -15,7 +15,8 @@ import { generateComfyImageJob } from './quick-image-gen-comfy.js';
 import { prepareProxyImageRequest } from './quick-image-gen-proxy.js';
 import { prepareA1111ImageRequest } from './quick-image-gen-a1111.js';
 import { generateCustomImageJob, prepareCustomImageReferences } from './quick-image-gen-custom.js';
-import { freezeQuickImageReferenceSources } from './quick-image-gen-reference.js';
+import { freezeQuickImageReferenceSources, prepareQuickImageReference } from './quick-image-gen-reference.js';
+import { withQuickImageEdit } from './quick-image-gen-edit.js';
 
 const recovery = message => Object.assign(new Error(message), { status: 409, code: 'QIG_RESULT_RECOVERY' });
 const sourceChanged = () => Object.assign(new Error('The Quick Image Gen settings changed before the image request was sent.'), { status: 409, code: 'QIG_SETTINGS_CHANGED' });
@@ -34,7 +35,7 @@ export function quickImageGenSettingsFingerprint(settings) {
 
 /** Save an image request before dispatch; a restarted job may only use its recorded result. */
 export async function generateQuickImageGenJobImage(context, { effectId, prompt, negative = '', settingsFingerprint,
-    expectedAccount, assertSourceLocked, seedOverride, batch, characterScope, referenceSources, proxyContext, proxyReferences, fetch, wait } = {}) {
+    expectedAccount, assertSourceLocked, seedOverride, batch, characterScope, referenceSources, editReference, proxyContext, proxyReferences, fetch, wait } = {}) {
     if (typeof effectId !== 'string' || !effectId || effectId.length > 128) throw recovery('The image request has no stable effect identity.');
     if (seedOverride !== undefined && (!Number.isSafeInteger(seedOverride) || seedOverride < 0 || seedOverride > 0xffffffff)) {
         throw recovery('The saved image seed override is invalid.');
@@ -48,9 +49,11 @@ export async function generateQuickImageGenJobImage(context, { effectId, prompt,
         || referenceSources.some(value => !value || !/^[a-f0-9]{64}$/.test(value.sourceHash)
             || !/^[a-f0-9]{64}$/.test(value.rawHash) || !value.physical)
         || new Set(referenceSources.map(value => value.sourceHash)).size !== referenceSources.length)) throw recovery('The saved reference images are invalid.');
+    if (editReference !== undefined && (typeof editReference !== 'string' || !editReference || Buffer.byteLength(editReference) > 28 * 1024 * 1024)) throw recovery('The saved image editing source is invalid.');
     const extraInput = { ...(batch ? { batch: { index: batch.index, count: batch.count } } : {}),
         ...(characterScope !== undefined ? { characterScope: structuredClone(characterScope) } : {}),
         ...(referenceSources !== undefined ? { referenceSourcesHash: roleplayHash(referenceSources) } : {}),
+        ...(editReference !== undefined ? { editReferenceHash: roleplayHash(editReference) } : {}),
         ...(proxyContext !== undefined ? { proxyContextHash: roleplayHash(proxyContext) } : {}),
         ...(proxyReferences !== undefined ? { proxyReferencesHash: roleplayHash(proxyReferences) } : {}) };
     const name = `quick-image:${effectId}`;
@@ -83,7 +86,7 @@ export async function generateQuickImageGenJobImage(context, { effectId, prompt,
         || input.prompt !== String(prompt || '').trim() || input.negative !== String(negative || '')
         || input.seedOverride !== seedOverride
         || roleplayHash(Object.fromEntries(Object.keys(extraInput).map(key => [key, input[key] ?? null]))) !== roleplayHash(extraInput)
-        || ['batch', 'characterScope', 'referenceSourcesHash', 'proxyContextHash', 'proxyReferencesHash'].some(key => Object.hasOwn(input, key) !== Object.hasOwn(extraInput, key))
+        || ['batch', 'characterScope', 'referenceSourcesHash', 'editReferenceHash', 'proxyContextHash', 'proxyReferencesHash'].some(key => Object.hasOwn(input, key) !== Object.hasOwn(extraInput, key))
         || settingsFingerprint !== undefined && settingsFingerprint !== input.settingsFingerprint
         || expectedAccount && (expectedAccount.accountId !== input.account.accountId
             || expectedAccount.dataEpoch !== input.account.dataEpoch)) {
@@ -119,11 +122,16 @@ export async function generateQuickImageGenJobImage(context, { effectId, prompt,
     if (savedResult === undefined) {
         settings = readSettings();
         if (quickImageGenSettingsFingerprint(settings) !== input.settingsFingerprint || settings.provider !== input.provider) throw sourceChanged();
+        settings = withQuickImageEdit(settings, editReference);
         withAccount(() => freezeQuickImageReferenceSources(referenceContext));
         assertQuickImageGenRequestConfigured({ ...settings, seed: input.seed,
             ...(input.provider === 'proxy' ? { proxySeed: input.proxySeed, __qigProxyContext: proxyContext,
-                __qigProxyReferences: proxyReferences } : {}) }, input.prompt, input.negative);
-        if (input.provider === 'nanogpt') {
+                __qigProxyReferences: editReference === undefined ? proxyReferences : [] } : {}) }, input.prompt, input.negative);
+        if (input.provider === 'gptimage' && editReference !== undefined) {
+            const reference = await prepareQuickImageReference(referenceContext, { name: `${inputName}:edit`, source: editReference,
+                fingerprint: input.settingsFingerprint, withAccount, readSettingsLocked, fetchImpl: fetch || globalThis.fetch });
+            providerInput = `data:${reference.format.mime};base64,${reference.bytes.toString('base64')}`;
+        } else if (input.provider === 'nanogpt') {
             providerInput = await prepareNanoGptPayload(referenceContext, {
                 effectId, settings: { ...settings, seed: input.seed }, fingerprint: input.settingsFingerprint,
                 prompt: input.prompt, negative: input.negative, fetchImpl: fetch || globalThis.fetch,
@@ -137,7 +145,7 @@ export async function generateQuickImageGenJobImage(context, { effectId, prompt,
             });
         } else if (input.provider === 'proxy') {
             providerInput = await prepareProxyImageRequest(referenceContext, { effectId,
-                settings: { ...settings, __qigProxyContext: proxyContext, __qigProxyReferences: proxyReferences }, fingerprint: input.settingsFingerprint,
+                settings: { ...settings, __qigProxyContext: proxyContext, __qigProxyReferences: editReference === undefined ? proxyReferences : [] }, fingerprint: input.settingsFingerprint,
                 input, fetchImpl: fetch || globalThis.fetch, withAccount,
                 readSettingsLocked });
         } else if (input.provider === 'local' && settings.localType !== 'comfyui') {
@@ -172,13 +180,14 @@ export async function generateQuickImageGenJobImage(context, { effectId, prompt,
                     throw providerNotDispatched(sourceChanged());
                 }
                 return generateQuickImageGenImage({ directories: context.directories, prompt: input.prompt, negative: input.negative,
-                    settings: { ...current, seed: input.seed,
+                    settings: { ...withQuickImageEdit(current, editReference), seed: input.seed,
+                        ...(input.provider === 'gptimage' && editReference !== undefined ? { __qigEditReference: providerInput } : {}),
                         ...(input.provider === 'nanogpt' ? { __qigNanoGptPayload: providerInput } : {}),
                         ...(input.provider === 'nanobanana' ? { __qigNanobananaPayload: providerInput } : {}),
                         ...(input.provider === 'local' ? { __qigA1111Request: providerInput } : {}),
                         ...(input.provider === 'custom' ? { __qigCustomReferences: providerInput } : {}),
                         ...(input.provider === 'proxy' ? { proxySeed: input.proxySeed, __qigProxyRequest: providerInput,
-                            __qigProxyContext: proxyContext, __qigProxyReferences: proxyReferences } : {}) },
+                            __qigProxyContext: proxyContext, __qigProxyReferences: editReference === undefined ? proxyReferences : [] } : {}) },
                     signal: context.signal, fetch, deferDownload: true });
             }, {
                 readResult: readSaved,

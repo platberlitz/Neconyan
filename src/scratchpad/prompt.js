@@ -11,6 +11,7 @@ import { SCRATCHPAD_MACRO_GUIDANCE } from './macros.js';
 import { NOTE_TOOL_DEFINITIONS, NOTE_MUTATING_KINDS, NOTE_TOOL_NOTICE } from '../../public/scripts/notebooks/assistant-note-tools.js';
 import { attachmentContent } from '../../public/scripts/scratchpad/attachment-data.js';
 import { pinnedNoteContext } from '../../public/scripts/scratchpad/pinned-note.js';
+import { scratchpadImageSourceLabels } from './image-sources.js';
 
 export const CHANGE_FENCE = 'scratchpad-change';
 const CARD_CACHE = new Map();
@@ -88,13 +89,14 @@ const LORE_RULES = [
     'Write entries as in-world facts, not as instructions to the writer.',
 ];
 
-function imageInstructions({ image, avatar, persona }) {
+function imageInstructions({ image, avatar, persona }, imageEditing) {
     if (!image) return '';
     return [
         'Images through the user\'s saved Quick Image Gen settings:',
         '```scratchpad-change',
         '{"type":"image","action":"generate","target":"image","prompt":"<explicit image prompt>","negative":"<optional exclusions>","reason":"<why>"}',
         '```',
+        imageEditing ? 'To edit an attached or previously saved image, use action "edit" and copy its exact Image source selector into "source", for example {"type":"image","action":"edit","target":"image","source":{"messageId":"<exact labelled message id>","kind":"attachment","index":0},"prompt":"<requested changes; preserve everything else>","reason":"<why>"}. Source kind "generated" selects a saved result by its zero-based proposal index. Use only labelled sources from this session. Ask for an attachment if none is available. The owner presses Edit image. The provider checks model-specific image-input limits before dispatch.' : 'The saved image provider does not support Scratchpad editing. Do not suggest an edit or claim a text-only generation will preserve an existing picture.',
         avatar ? 'For an avatar use target "avatar" and character "<exact shared character name>". For character-specific image settings, a plain image may also name an exact shared character. Never name an unshared or ambiguous character.' : 'No character avatar target is shared; never name a character target.',
         persona ? `For the shared user's persona portrait use {"type":"image","action":"generate","target":"persona-avatar","persona":${JSON.stringify(persona.name)},"prompt":"<explicit portrait prompt>","reason":"<why>"}. Use global image settings. Never include a character target. Generation leaves the persona unchanged until Review avatar and Save change.` : '',
         persona ? `For a saved Scenario Note portrait use {"type":"image","action":"generate","target":"persona-note-avatar","persona":${JSON.stringify(persona.name)},"noteId":"<exact shared note id>","prompt":"<explicit portrait prompt>","reason":"<why>"}. Use global image settings. Review avatar and Save change update only that note's portrait; its label, text and activation stay intact.` : '',
@@ -205,7 +207,7 @@ function changeInstructions({ lore, character, chat, members, notebook, persona,
     ].join('\n');
 }
 
-export function buildScratchpadSystemPrompt({ assistant, gender, persona: savedPersona, assistantNames = {}, userName, characterName, sourceKind = 'roleplay', capabilities = {}, help = '', participants = [], randomReply = false, customPrompt, userInstructions = '', webSearch = false, webPages = false }) {
+export function buildScratchpadSystemPrompt({ assistant, gender, persona: savedPersona, assistantNames = {}, userName, characterName, sourceKind = 'roleplay', capabilities = {}, help = '', participants = [], randomReply = false, customPrompt, userInstructions = '', webSearch = false, webPages = false, imageEditing = false }) {
     const persona = savedPersona ?? readAssistantPersona(assistant, gender);
     const names = { user: userName || 'User', char: persona.name };
     const story = characterName ? `the story chat with ${characterName}` : 'the story chat';
@@ -239,12 +241,12 @@ export function buildScratchpadSystemPrompt({ assistant, gender, persona: savedP
     const voice = typeof customPrompt === 'string' && customPrompt.trim() ? ''
         : `For this reply, be ${persona.name} throughout: ${substituteNames(persona.personality, names)}\nGive the requested help in that voice, including explanations around any change blocks. Keep factual claims accurate and distinguish playful teasing from real advice.`;
     const imageHistory = 'Saved generated pictures may accompany earlier Scratchpad replies as labelled image inputs. Inspect those pictures when discussing feedback, and distinguish the visible result from the requested prompt. A saved-image status or prompt alone does not show you the picture; only claim to see images actually attached to this request.';
-    return { text: [instructions, preferences, SCRATCHPAD_MACRO_GUIDANCE, CHARACTER_CREATION_INSTRUCTIONS, PERSONA_CREATION_INSTRUCTIONS, CREATOR_SCRATCHPAD_INSTRUCTIONS, imageInstructions(capabilities), imageHistory, reference, voice].filter(Boolean).join('\n\n'), persona };
+    return { text: [instructions, preferences, SCRATCHPAD_MACRO_GUIDANCE, CHARACTER_CREATION_INSTRUCTIONS, PERSONA_CREATION_INSTRUCTIONS, CREATOR_SCRATCHPAD_INSTRUCTIONS, imageInstructions(capabilities, imageEditing), imageHistory, reference, voice].filter(Boolean).join('\n\n'), persona };
 }
 
 export const SCRATCHPAD_CONTEXT_ACK = 'I have read the shared context. What would you like to work on?';
 
-export function buildScratchpadMessages({ system, context, notebookContext = '', mewmoryContext = '', pinnedNote = '', summary = '', history, text, attachments = [], assistant, assistantNames = {}, webSearchPlaceholder = '', webPagesPlaceholder = '' }) {
+export function buildScratchpadMessages({ system, context, notebookContext = '', mewmoryContext = '', pinnedNote = '', summary = '', history, text, attachments = [], userMessageId, assistant, assistantNames = {}, webSearchPlaceholder = '', webPagesPlaceholder = '' }) {
     const messages = [{ role: 'system', content: system }];
     if (context) {
         messages.push({ role: 'user', content: `<story_context>\n${context}\n</story_context>` });
@@ -269,14 +271,15 @@ export function buildScratchpadMessages({ system, context, notebookContext = '',
     }
     for (const message of history) {
         const peer = message.role === 'assistant' && message.assistant && assistant && message.assistant !== assistant;
+        const labelledText = [message.text, scratchpadImageSourceLabels(message.id, message.attachments, message.generatedImages)].filter(Boolean).join('\n');
         messages.push({ role: peer ? 'user' : message.role,
-            content: peer ? `[Earlier reply from ${message.assistantName || assistantNames[message.assistant] || FALLBACK_NAMES[normaliseAssistant(message.assistant)] || 'Assistant'} in Scratchpad]\n${message.text}` : attachmentContent(message.text, message.attachments) });
+            content: peer ? `[Earlier reply from ${message.assistantName || assistantNames[message.assistant] || FALLBACK_NAMES[normaliseAssistant(message.assistant)] || 'Assistant'} in Scratchpad]\n${labelledText}` : attachmentContent(labelledText, message.attachments) });
         if (message.generatedImageContent?.length) messages.push({ role: 'user', content: message.generatedImageContent });
     }
     // The job replaces this reservation with the numbered results and an acknowledgement
     // before the final user message. It is never sent as written.
     if (webSearchPlaceholder) messages.push({ role: 'user', content: webSearchPlaceholder });
     if (webPagesPlaceholder) messages.push({ role: 'user', content: webPagesPlaceholder });
-    messages.push({ role: 'user', content: attachmentContent(text, attachments) });
+    messages.push({ role: 'user', content: attachmentContent([text, scratchpadImageSourceLabels(userMessageId, attachments)].filter(Boolean).join('\n'), attachments) });
     return messages;
 }

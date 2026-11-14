@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 import { Jimp } from '../src/jimp.js';
 import { decodeServerImage } from '../src/media-codecs.js';
@@ -17,12 +18,14 @@ import { decideJobApproval, readJobApproval } from '../src/generation/job-approv
 import { resolveCharacterImageSettings } from '../public/scripts/extensions/quick-image-gen/lib/character-settings.js';
 import { captureImageTargetsLocked, resolveImageTargetLocked } from '../src/scratchpad/image-targets.js';
 import { write as writeCard } from '../src/character-card-parser.js';
+import { imageChangeHash } from '../src/scratchpad/image-state.js';
+import { normaliseChange } from '../public/scripts/scratchpad/proposals.js';
 
 const SOURCE = { kind: 'general', key: 'general', label: 'General Scratchpad', avatar: 'Nova.png', contextMode: 'roleplay', personaId: 'User.png' };
 const fence = change => '```scratchpad-change\n' + JSON.stringify(change) + '\n```';
 let serial = 0;
 
-function account(t, { change = {}, qig = {}, source = SOURCE, targets = [{ avatar: 'Nova.png', name: 'Nova' }], generatedImage = png } = {}) {
+function account(t, { change = {}, qig = {}, source = SOURCE, targets = [{ avatar: 'Nova.png', name: 'Nova' }], generatedImage = png, preceding = [], metadata = null } = {}) {
     const f = fixture(t, false, 'image-owner');
     const directories = f.scope.directories;
     directories.userImages = path.join(directories.root, 'user/images');
@@ -43,7 +46,7 @@ function account(t, { change = {}, qig = {}, source = SOURCE, targets = [{ avata
     const proposal = { type: 'image', action: 'generate', target: 'image', prompt: 'An observatory.', ...change };
     const session = mutate(bucket => {
         const session = store.createSession(bucket);
-        session.messages.push({ id: 'reply', role: 'assistant', state: 'done', text: fence(proposal), contextSource: source,
+        session.messages.push(...structuredClone(preceding), { id: 'reply', role: 'assistant', state: 'done', text: fence(proposal), contextSource: source,
             targets, sharedAvatar: source.avatar, sharedPersona: { avatar: 'User.png', name: 'Kris' }, imageNames: { user: 'Kris', character: 'Nova' }, imagePersonaId: 'User.png' });
         return session;
     });
@@ -52,14 +55,126 @@ function account(t, { change = {}, qig = {}, source = SOURCE, targets = [{ avata
     const calls = [];
     registerScratchpadImageJobs({ generate: (context, options) => generateQuickImageGenJobImage(context, { ...options,
         fetch: async (url, request) => {
-            calls.push({ url, body: JSON.parse(request.body) });
-            return new Response(JSON.stringify({ data: [{ b64_json: generatedImage.toString('base64') }] }), { headers: { 'Content-Type': 'application/json' } });
+            if (url.startsWith('data:')) return new Response(Buffer.from(url.split(',')[1], 'base64'), { headers: { 'Content-Type': 'image/png' } });
+            if (url.endsWith('/endpoints')) return Response.json(metadata);
+            const body = request.body instanceof FormData ? Object.fromEntries(request.body) : JSON.parse(request.body);
+            calls.push({ url, body, headers: request.headers });
+            return Response.json({ data: [{ b64_json: generatedImage.toString('base64') }], images: [generatedImage.toString('base64')],
+                output: [{ type: 'image_generation_call', status: 'completed', result: generatedImage.toString('base64') }],
+                candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: generatedImage.toString('base64') } }] } }] });
         } }) });
     const accept = extra => acceptScratchpadImage(request, { ...body, ...extra });
     const run = accepted => runner.runJob(getJob(directories, accepted.job.id));
-    const image = () => read().sessions[0].messages[0].images?.[0];
+    const image = () => read().sessions[0].messages.find(message => message.id === 'reply').images?.[0];
     return { f, directories, base, request, source, settings, saveSettings, mutate, read, session, body, accept, run, image, calls };
 }
+
+const attachedImage = { id: 'upload', role: 'user', state: 'done', text: 'Make the roof blue.', attachments: [
+    { kind: 'image', name: 'observatory.png', size: png.length, dataUrl: `data:image/png;base64,${png.toString('base64')}` },
+] };
+const editSource = { messageId: 'upload', kind: 'attachment', index: 0 };
+const gptSettings = { provider: 'gptimage', gptImageKey: 'fixture-image-key', gptImageModel: 'gpt-image-1' };
+
+test('an attachment edit sends its exact pixels to GPT Image edits once and keeps saved settings', async t => {
+    const a = account(t, { qig: gptSettings, preceding: [attachedImage], change: { action: 'edit', source: editSource } });
+    const settingsBefore = fs.readFileSync(path.join(a.directories.root, 'settings.json'), 'utf8');
+    assert.equal(readScratchpadImageAvailability(a.base).edit, true);
+    const accepted = await a.accept({ sourceImage: 'https://ignored.invalid/image.png', prompt: 'Ignored browser prompt' });
+    await a.run(accepted);
+    assert.equal(getJob(a.directories, accepted.job.id).state, 'completed', a.image()?.error);
+    assert.equal(a.calls.length, 1);
+    assert.equal(a.calls[0].url, 'https://api.openai.com/v1/images/edits');
+    assert.equal(a.calls[0].headers['Content-Type'], undefined);
+    assert.deepEqual(Buffer.from(await a.calls[0].body.image.arrayBuffer()), png);
+    assert.match(a.calls[0].body.prompt, /An observatory/);
+    assert.doesNotMatch(a.calls[0].body.prompt, /Ignored/);
+    assert.equal((await a.accept({ submissionKey: 'duplicate-edit' })).job.id, accepted.job.id);
+    await a.run(accepted);
+    assert.equal(a.calls.length, 1);
+    assert.equal(fs.readFileSync(path.join(a.directories.root, 'settings.json'), 'utf8'), settingsBefore);
+});
+
+test('a saved image edit sends the full verified original through Responses and preserves it', async t => {
+    const previousChange = normaliseChange({ type: 'image', action: 'generate', target: 'image', prompt: 'Original' });
+    const url = '/user/images/Scratchpad/scratchpad-original.png';
+    const prior = { id: 'original', role: 'assistant', state: 'done', text: fence(previousChange), images: { 0: {
+        id: 'picture', state: 'done', target: 'image', url, imageHash: createHash('sha256').update(png).digest('hex'), changeHash: imageChangeHash(previousChange),
+    } } };
+    const a = account(t, { qig: { ...gptSettings, gptImageModel: 'smol-openai/gpt-image-2.6-flare', gptImageProxyUrl: 'https://images.example/v1' },
+        preceding: [prior], change: { action: 'edit', source: { messageId: 'original', kind: 'generated', index: 0 } } });
+    const file = path.join(a.directories.root, url.slice(1));
+    fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, png);
+    const accepted = await a.accept();
+    fs.appendFileSync(file, 'changed source');
+    await a.run(accepted);
+    assert.equal(getJob(a.directories, accepted.job.id).state, 'failed');
+    assert.equal(a.calls.length, 0);
+    fs.writeFileSync(file, png);
+    updateJob(a.directories, accepted.job.id, { state: 'queued', error: null, finishedAt: null, ...explicitRetryRecovery(getJob(a.directories, accepted.job.id)) });
+    await a.run(accepted);
+    assert.equal(getJob(a.directories, accepted.job.id).state, 'completed', a.image()?.error);
+    assert.equal(a.calls[0].url, 'https://images.example/v1/responses');
+    assert.equal(a.calls[0].body.tools[0].action, 'edit');
+    assert.equal(a.calls[0].body.input[0].content.find(part => part.type === 'input_image').image_url, attachedImage.attachments[0].dataUrl);
+    assert.deepEqual(fs.readFileSync(file), png);
+    assert.notEqual(a.image().url, url);
+});
+
+test('changed, missing, future and cross-session image sources stop before a provider request', async t => {
+    for (const source of [{ ...editSource, messageId: 'other-session' }, { ...editSource, messageId: 'reply' }, { ...editSource, index: 1 }, { ...editSource, kind: 'generated' }]) {
+        const a = account(t, { qig: gptSettings, preceding: [attachedImage], change: { action: 'edit', source } });
+        await assert.rejects(a.accept(), /source image is missing or changed/);
+        assert.equal(a.calls.length, 0);
+    }
+    const a = account(t, { qig: gptSettings, preceding: [attachedImage], change: { action: 'edit', source: editSource } });
+    const accepted = await a.accept();
+    a.mutate(bucket => { bucket.sessions[0].messages[0].attachments = []; });
+    await a.run(accepted);
+    assert.equal(getJob(a.directories, accepted.job.id).state, 'failed');
+    assert.equal(a.calls.length, 0);
+});
+
+test('unsupported routes reject editing rather than silently generating from text', async t => {
+    for (const qig of [{}, { provider: 'gptimage', gptImageKey: 'fixture-key', gptImageModel: 'dall-e-3' },
+        { provider: 'proxy', proxyUrl: 'https://proxy.example/v1', proxyModel: 'image-model', proxyPayloadMode: 'openai_strict' },
+        { provider: 'proxy', proxyUrl: 'https://proxy.example/v1', proxyModel: 'image-model', proxyRefImageMode: 'url_only' }]) {
+        const a = account(t, { qig, preceding: [attachedImage], change: { action: 'edit', source: editSource } });
+        assert.equal(readScratchpadImageAvailability(a.base).edit, false);
+        await assert.rejects(a.accept(), /does not support Scratchpad image editing/);
+        assert.equal(a.calls.length, 0);
+    }
+});
+
+test('NanoGPT validates current model image support before any paid edit', async t => {
+    for (const supported of [false, true]) {
+        const a = account(t, { qig: { provider: 'nanogpt', nanogptKey: 'fixture-key', nanogptModel: 'test-model' },
+            preceding: [attachedImage], change: { action: 'edit', source: editSource },
+            metadata: { endpoints: [{ capabilities: { image_to_image: supported } }] } });
+        const accepted = await a.accept();
+        await a.run(accepted);
+        assert.equal(getJob(a.directories, accepted.job.id).state, supported ? 'completed' : 'failed', a.image()?.error);
+        assert.equal(a.calls.length, supported ? 1 : 0);
+        if (supported) assert.deepEqual(a.calls[0].body.input_references, [attachedImage.attachments[0].dataUrl]);
+    }
+});
+
+for (const [name, qig, pixels] of [
+    ['Gemini', { provider: 'nanobanana', nanobananaKey: 'fixture-key', nanobananaModel: 'gemini-3-pro-image' }, body => body.contents[0].parts[0].inlineData.data],
+    ['A1111', { provider: 'local', localType: 'a1111', localUrl: 'http://127.0.0.1:7860', a1111IpAdapter: true }, body => body.init_images[0]],
+    ['Custom', { provider: 'custom', customApiMode: 'json', customApiUrl: 'https://custom.example.com/image',
+        customApiRequestTemplate: '{"prompt":"{{prompt}}","image":"{{firstReferenceImage}}"}', customApiResponsePath: '/images/0', customApiResponseType: 'base64' }, body => body.image.split(',')[1]],
+    ['Proxy', { provider: 'proxy', proxyUrl: 'https://proxy.example/v1', proxyModel: 'image-model', proxyPayloadMode: 'extended' }, body => body.image[0].split(',')[1]],
+    ['Proxy chat', { provider: 'proxy', proxyUrl: 'https://proxy.example/v1', proxyModel: 'image-model', proxyEndpointMode: 'chat_completions' }, body => body.messages[0].content.find(part => part.type === 'image_url').image_url.url.split(',')[1]],
+    ['Proxy Responses', { provider: 'proxy', proxyUrl: 'https://proxy.example/v1', proxyModel: 'gpt-image-2.6-flare' }, body => body.input[0].content.find(part => part.type === 'input_image').image_url.split(',')[1]],
+]) test(`${name} editing passes the selected attachment through the shared provider route`, async t => {
+    const a = account(t, { qig, preceding: [attachedImage], change: { action: 'edit', source: editSource } });
+    const accepted = await a.accept();
+    await a.run(accepted);
+    assert.equal(getJob(a.directories, accepted.job.id).state, 'completed', a.image()?.error);
+    assert.equal(a.calls.length, 1);
+    assert.equal(pixels(a.calls[0].body), png.toString('base64'));
+    if (name === 'A1111') assert.match(a.calls[0].url, /\/sdapi\/v1\/img2img$/);
+});
 
 test('persona avatar uses global settings, preserves a backup and rejects changes after review', async t => {
     const a = account(t, { change: { target: 'persona-avatar', persona: 'Kris' } });

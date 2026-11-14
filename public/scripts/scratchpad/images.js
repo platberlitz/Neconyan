@@ -24,6 +24,7 @@ export async function generateProposal({ source, session, message, part, guard, 
     const ready = await imageAvailability();
     guard();
     if (!ready.image) throw new Error(ready.reason);
+    if (part.change.action === 'edit' && !ready.edit && !part.change.character) throw new Error(ready.editReason);
     const acknowledgement = await acknowledge();
     guard();
     return api.generateImage({ source, sessionId: session.id, messageId: message.id, index: part.index, submissionKey: api.newSubmissionKey(), acknowledgement });
@@ -33,12 +34,22 @@ export function renderImageCard({ session, message, part, button, availability, 
     const image = message.images?.[part.index];
     const applied = message.proposals?.[part.index] === 'applied';
     const dismissed = message.proposals?.[part.index] === 'rejected';
+    const editing = part.change.action === 'edit';
+    const editUnavailable = editing && !part.change.character && availability.image && availability.edit === false;
+    const generateLabel = editing ? t`Edit image` : t`Generate image`;
     const card = h('div', { class: 'scratchpad-change scratchpad-image-card', dataset: { imageIndex: part.index } },
-        h('p', { class: 'scratchpad-change-title', text: part.change.target === 'persona-note-avatar' ? t`New Scenario Note avatar for ${part.change.persona}` : part.change.target === 'persona-avatar' ? t`New persona avatar for ${part.change.persona}` : part.change.target === 'avatar' ? t`New avatar for ${part.change.character}` : t`Image suggestion` }),
+        h('p', { class: 'scratchpad-change-title', text: part.change.target === 'persona-note-avatar' ? t`New Scenario Note avatar for ${part.change.persona}` : part.change.target === 'persona-avatar' ? t`New persona avatar for ${part.change.persona}` : part.change.target === 'avatar' ? t`New avatar for ${part.change.character}` : editing ? t`Image edit suggestion` : t`Image suggestion` }),
         h('p', { class: 'scratchpad-image-prompt', text: part.change.prompt, 'data-i18n-ignore': '' }),
         part.change.negative ? h('p', { class: 'scratchpad-muted', text: t`Exclude: ${part.change.negative}` }) : null,
         part.change.reason ? h('p', { class: 'scratchpad-change-reason', text: part.change.reason, 'data-i18n-ignore': '' }) : null);
+    if (editing) {
+        const source = session.messages.find(item => item.id === part.change.source.messageId);
+        const attachment = part.change.source.kind === 'attachment' ? source?.attachments?.[part.change.source.index] : null;
+        card.append(h('p', { class: 'scratchpad-change-state', text: part.change.source.kind === 'attachment' ? t`Edit attached image: ${attachment?.name || t`Unavailable image`}` : t`Edit saved image from proposal ${part.change.source.index + 1}. The original is kept.` }));
+    }
     const actions = h('div', { class: 'scratchpad-change-actions' });
+    const original = editing && part.change.source.kind === 'generated' ? session.messages.find(item => item.id === part.change.source.messageId)?.images?.[part.change.source.index] : null;
+    if (original && safeImage(original.url)) actions.append(h('a', { class: 'scratchpad-button scratchpad-image-link', href: original.url, target: '_blank', rel: 'noopener', text: t`View source image` }));
     if (image?.url && safeImage(image.url)) {
         card.append(h('img', { class: 'scratchpad-generated-image', src: image.url, alt: t`Generated image: ${image.prompt}`, loading: 'lazy',
             ...(image.width && image.height ? { width: image.width, height: image.height } : {}) }));
@@ -56,11 +67,11 @@ export function renderImageCard({ session, message, part, button, availability, 
     } else if (image?.jobId) {
         card.append(h('p', { class: 'scratchpad-error', role: 'status', text: image.error || t`This image did not finish.` }));
         if (image.state === 'failed') actions.append(button(t`Retry saved job`, () => void retryJob(image.jobId).then(() => onRetried?.()).catch(onError)));
-        else if (image.state === 'cancelled' && !dismissed) actions.append(button(t`Generate image`, onGenerate, { primary: true }));
+        else if (image.state === 'cancelled' && !dismissed) actions.append(button(generateLabel, onGenerate, { primary: true, disabled: editUnavailable }));
     } else if (!dismissed) {
-        actions.append(button(t`Generate image`, onGenerate, { primary: true }));
+        actions.append(button(generateLabel, onGenerate, { primary: true, disabled: editUnavailable }));
     }
-    const reason = error || (!image?.url && !availability.image ? availability.reason : '');
+    const reason = error || (!image?.url && editUnavailable ? availability.editReason : !image?.url && !availability.image ? availability.reason : '');
     if (reason) card.append(h('p', { class: 'scratchpad-error', role: 'status', text: reason }));
     if (reason || !availability.image) actions.append(button(t`Open Quick Image Gen`, () => {
         if (!globalThis.NeconyanShell?.openIncludedTool?.('quick-image-gen')) globalThis.toastr?.info?.(t`Quick Image Gen is turned off. Turn it on in Manage extensions, then try again.`);
