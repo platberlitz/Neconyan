@@ -84,6 +84,7 @@
 - PR #674 (2026-11-14) `fix(mewmory): make fallbacks work, add prefills and settings search`
 - PR #675 (2026-11-14) `feat(ui): open select lists in the shared searchable picker`
 - PR #676 (2026-11-14) `fix(lorebooks): clarify and align advanced entry settings`
+- PR #677 (2026-11-14) `fix(custom-css): align the generation prompt with the interface`
 
 ## v1.5.4
 
