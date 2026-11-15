@@ -85,6 +85,38 @@ export function createChatSaveConfirmer({ context, metadataOnly = false, ...opti
     };
 }
 
+// The host skips a save requested before its own settings have loaded, which is
+// where a brand-new account's first start leaves this extension, so wait for them.
+export function waitForHostSettingsReady({ isReady = null, eventSource = null, eventTypes = null, timeoutMs = 30000 } = {}) {
+    if (typeof isReady !== "function" || isReady()) return Promise.resolve(true);
+    const type = eventTypes?.SETTINGS_LOADED;
+    if (!eventSource || typeof eventSource.on !== "function" || !type) return Promise.resolve(false);
+    return new Promise((resolve) => {
+        let settled = false;
+        let unsubscribe = null;
+        let timer = null;
+        const handler = () => finish(true);
+        const finish = (value) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            try {
+                if (typeof unsubscribe === "function") unsubscribe();
+                else if (typeof eventSource.removeListener === "function") eventSource.removeListener(type, handler);
+            } catch { /* host teardown may already have removed the listener */ }
+            resolve(value);
+        };
+        timer = setTimeout(() => finish(isReady() === true), timeoutMs);
+        try {
+            unsubscribe = eventSource.on(type, handler);
+        } catch {
+            finish(isReady() === true);
+            return;
+        }
+        if (isReady()) finish(true);
+    });
+}
+
 export function createSettingsSaveEventConfirmer({ eventSource = null, eventTypes = null, confirm = null, timeoutMs = 2500 }) {
     return () => {
         let cancel = () => {};
