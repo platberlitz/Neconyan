@@ -97,6 +97,7 @@
 - PR #687 (2026-11-15) `fix(backgrounds): load the gallery at once and fix three browser tests`
 - PR #688 (2026-11-15) `fix(sync): import large packages, speed up big imports and clear up export and pairing failures`
 - PR #689 (2026-11-15) `fix(conversation): tidy the messenger layout and restore typing`
+- PR #690 (2026-11-15) `fix(locale): fill missing settings and main panel translations`
 
 ## v1.5.4
 
