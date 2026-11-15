@@ -135,6 +135,7 @@ const PREPEND_PROMPT_TRANSFORM_TEMPLATE_IDS = new Set([
     'tpl-time-tracker',
 ]);
 const IMPERSONATE_PROMPT_TRANSFORM_TEMPLATE_IDS = new Set([
+    'tpl-proofreader',
     'tpl-prose-polisher',
 ]);
 const PREPEND_PROMPT_TRANSFORM_TAG_RE = /\[(?:SCENE|TIME)\|/;
