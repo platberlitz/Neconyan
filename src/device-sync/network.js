@@ -34,9 +34,9 @@ export function targetUrl(value, { pairing = false } = {}) {
 }
 
 /** DNS results are checked and pinned to this one connection; redirects are never followed. */
-export async function request(context, value, { method = 'GET', headers = {}, body, pairing = false, max = LIMITS.envelope } = {}) {
+export async function request(context, value, { method = 'GET', headers = {}, body, pairing = false, max = LIMITS.envelope, timeout = 20000 } = {}) {
     context.guard();
-    const signal = AbortSignal.any([context.signal, AbortSignal.timeout(20000)]);
+    const signal = AbortSignal.any([context.signal, AbortSignal.timeout(timeout)]);
     signal.throwIfAborted();
     const url = targetUrl(value, { pairing });
     const hostname = url.hostname.replace(/^\[|\]$/g, '');
@@ -73,6 +73,16 @@ export async function request(context, value, { method = 'GET', headers = {}, bo
         if (data) req.write(data);
         req.end();
     });
+}
+
+/** A receiving installation answers with its own statuses, which mean something else than a storage provider's. */
+export function checkPairingResponse(response) {
+    if (response.status === 200) return response;
+    if (response.status === 401 || response.status === 403) throw fail('The receiving installation refused this pairing code. It may have expired, been revoked or been tried too often. Create a new code there.', 502);
+    if (response.status === 413) throw fail('The receiving installation refused the package as too large. Select fewer categories.', 413);
+    if (response.status === 409) throw fail('The receiving installation could not accept the transfer. Check that Direct pairing is switched on there and that it has no interrupted sync or sync already running, then retry.', 409);
+    if (response.status === 400) throw fail('The receiving installation rejected the package. Check that both installations use the same passphrase and have the same data categories selected.', 502);
+    throw fail('The receiving installation returned an unexpected response. Retry manually.', 502);
 }
 
 export function checkResponse(response, statuses) {

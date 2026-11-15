@@ -17,7 +17,7 @@ const { categories, categoryFor, decrypt, encrypt, entry, reconcile, validateSna
 const { snapshotLocked, publishEntry, currentEntry, validateData, discardEntryStage } = await import('../src/device-sync/data.js');
 const { withSync } = await import('../src/device-sync/store.js');
 const { configureSync, createGrant, authoriseGrant, revokeGrant, readSyncState, manualSync, exportEnvelope, importEnvelope, resolveConflict, recoverSync, forgetConflict, conflictCopy } = await import('../src/device-sync/service.js');
-const { webdavSync, gistSync, validateConfig } = await import('../src/device-sync/transports.js');
+const { webdavSync, gistSync, pairingSync, validateConfig } = await import('../src/device-sync/transports.js');
 const { targetUrl, request } = await import('../src/device-sync/network.js');
 const password = 'shared test secret, never a real credential';
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC', 'base64');
@@ -682,4 +682,90 @@ test('real network requests refuse redirects, compressed or oversized replies, c
     await assert.rejects(() => request(context, wire.origin + '/large', { pairing: true, max: 10 }), /oversized|size/);
     controller.abort(); await assert.rejects(() => request(context, wire.origin + '/aborted', { pairing: true }));
     assert.equal(calls, 3);
+});
+
+test('a package near the documented size limits decodes on import, and misplaced padding is still refused', async t => {
+    const a = fixture(t, 'a'), b = fixture(t, 'b'); a.enable(); b.enable();
+    const card = writeCard(png, JSON.stringify({ name: 'Big', description: 'x'.repeat(1400 * 1024) }));
+    assert.ok(card.length > 5 * 1024 * 1024 && card.length <= LIMITS.file);
+    a.write('characters/Big.png', card);
+    const envelope = await a.send();
+    assert.ok(envelope.data.length > 7 * 1024 * 1024);
+    assert.equal((await b.receive(envelope)).imported, 1);
+    assert.ok(fs.readFileSync(path.join(b.root, 'characters/Big.png')).equals(card));
+    const value = await decrypt(envelope, password);
+    const item = value.entries.find(candidate => candidate.path === 'characters/Big.png');
+    item.data = item.data.slice(0, 1024 * 1024 - 1) + '=' + item.data.slice(1024 * 1024);
+    assert.throws(() => validateSnapshot(value), { syncSafe: true });
+    a.write('backgrounds/Huge.png', Buffer.alloc(LIMITS.file + 1));
+    await assert.rejects(() => a.send(), /larger than 8 MiB/);
+});
+
+test('preserved contents are kept once beside the state, load from an older inline state and leave with their last copy', async t => {
+    const a = fixture(t, 'a'), b = fixture(t, 'b'); a.enable(); b.enable();
+    a.write('instruct/One.json', '{"text":"remote"}'); b.write('instruct/One.json', '{"text":"local"}');
+    assert.equal((await b.receive(await a.send())).conflicts, 1);
+    const privateRoot = path.join(b.directory, '_device-sync');
+    const directory = path.join(privateRoot, fs.readdirSync(privateRoot)[0]);
+    const names = () => fs.readdirSync(directory);
+    const stateFile = path.join(directory, names().find(name => !name.endsWith('.content.json')));
+    const contentFile = stateFile.replace(/\.json$/, '.content.json');
+    const remote = Buffer.from('{"text":"remote"}').toString('base64');
+    assert.ok(!fs.readFileSync(stateFile, 'utf8').includes(remote));
+    assert.ok(fs.readFileSync(contentFile, 'utf8').includes(remote));
+    assert.equal(fs.statSync(contentFile).mode & 0o777, 0o600);
+    const { id } = readSyncState(b.base, b.account).conflicts[0];
+    const inline = withSync(b.base, b.account, ({ state }) => JSON.stringify(state));
+    assert.ok(inline.includes(remote));
+    fs.writeFileSync(stateFile, inline); fs.rmSync(contentFile);
+    assert.ok(await conflictCopy(b.base, b.account, id, 'remote'));
+    resolveConflict(b.base, b.account, id, 'local');
+    assert.ok(!fs.readFileSync(stateFile, 'utf8').includes(remote));
+    const held = fs.readFileSync(contentFile);
+    fs.rmSync(contentFile);
+    assert.throws(() => readSyncState(b.base, b.account), /needs recovery/);
+    fs.writeFileSync(contentFile, held, { mode: 0o600 });
+    forgetConflict(b.base, b.account, id);
+    assert.equal(fs.existsSync(contentFile), false);
+    assert.equal(readSyncState(b.base, b.account).conflicts.length, 0);
+    assert.equal(fs.readFileSync(path.join(b.root, 'instruct/One.json'), 'utf8'), '{"text":"local"}');
+});
+
+test('chats left behind by a deleted character and stray files in the chat root stay local without stopping the export', async t => {
+    const a = fixture(t, 'a'), b = fixture(t, 'b'); a.enable(); b.enable();
+    const records = [{ user_name: 'Me', character_name: 'Nova', chat_metadata: {} }, { name: 'Nova', is_user: false, mes: 'Hello' }].map(JSON.stringify).join('\n');
+    a.write('characters/Nova.png', writeCard(png, JSON.stringify({ name: 'Nova' })));
+    a.write('chats/Nova/Story.jsonl', records);
+    a.write('chats/Gone/Old.jsonl', records);
+    a.write('chats/notes.json', '{}');
+    const envelope = await a.send();
+    const paths = (await decrypt(envelope, password)).entries.map(item => item.path).filter(name => /^(?:characters|chats)\//.test(name)).sort();
+    assert.deepEqual(paths, ['characters/Nova.png', 'chats/Nova/Story.jsonl']);
+    assert.equal((await b.receive(envelope)).conflicts, 0);
+    assert.equal(fs.existsSync(path.join(b.root, 'chats/Gone')), false);
+    assert.ok(fs.existsSync(path.join(a.root, 'chats/Gone/Old.jsonl')));
+});
+
+test('expired pairing codes are not listed as live', t => {
+    const f = fixture(t); f.enable('pairing');
+    const grant = createGrant(f.base, f.account);
+    assert.deepEqual(readSyncState(f.base, f.account).grants.map(item => item.id), [grant.id]);
+    withSync(f.base, f.account, ({ state, save }) => { state.grants[grant.id].expires = Date.now() - 1; save(); });
+    assert.equal(readSyncState(f.base, f.account).grants.length, 0);
+    assert.throws(() => authoriseGrant(f.base, f.account, grant.id, grant.token), /invalid/);
+});
+
+test('pairing allows time for the receiving import and names the receiving installation in each refusal', async t => {
+    const f = fixture(t);
+    const code = 'neconyan-sync:' + Buffer.from(JSON.stringify({ url: 'http://192.168.1.4:8000', owner: 'other', id: 'a'.repeat(32), token: 'A'.repeat(43) })).toString('base64url');
+    f.enable('pairing', validateConfig('pairing', { code }));
+    for (const [status, message] of [[403, /refused this pairing code/], [409, /Direct pairing is switched on there/], [400, /same passphrase/], [413, /too large/], [500, /receiving installation returned an unexpected response/]]) {
+        let sent;
+        await assert.rejects(() => manualSync(f.base, f.account, 'pairing', context => pairingSync(context, async (_context, _url, options) => { sent = options; return response(status, { error: 'private detail' }); })), message);
+        assert.equal(sent.timeout, 5 * 60 * 1000); assert.equal(sent.pairing, true);
+    }
+    const slow = await provider(t, async () => { await new Promise(resolve => setTimeout(resolve, 400)); return { body: {} }; });
+    const context = { guard() {}, signal: new AbortController().signal };
+    await assert.rejects(() => request(context, slow.origin + '/slow', { pairing: true, timeout: 50 }));
+    assert.equal((await request(context, slow.origin + '/slow', { pairing: true, timeout: 5000 })).status, 200);
 });

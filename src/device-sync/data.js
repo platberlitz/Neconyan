@@ -120,11 +120,18 @@ export function snapshotLocked(lease, deviceId, sequence, selected) {
             if (dirent.isSymbolicLink()) throw fail('Linked files or folders cannot be synced.');
             if (dirent.name.startsWith('.')) continue;
             const child = relative + '/' + dirent.name;
-            if (dirent.isDirectory()) { if (depth > 0) walk(child, depth - 1); continue; }
+            if (dirent.isDirectory()) {
+                // Chats left behind by a deleted character are unreachable and stay local.
+                if (depth > 0 && entries.some(card => card.path.startsWith('characters/') && card.path.slice(11).replace('.png', '') === dirent.name)) walk(child, depth - 1);
+                continue;
+            }
+            if (relative === 'chats') continue;
             if (!dirent.isFile()) throw fail('Only ordinary files can be synced.');
             const allowed = relative === 'characters' ? /\.png$/ : relative.startsWith('chats/') ? /\.jsonl$/
                 : ['User Avatars', 'backgrounds'].includes(relative) ? /\.(png|jpg|jpeg|webp|gif)$/ : /\.json$/;
-            if (allowed.test(dirent.name)) add(currentEntry(lease, child));
+            if (!allowed.test(dirent.name)) continue;
+            if (fs.statSync(path.join(filename, dirent.name)).size > LIMITS.file) throw fail('A selected file is larger than 8 MiB, so nothing was shared. Reduce or remove that file, or clear its category.', 413);
+            add(currentEntry(lease, child));
         }
     };
     for (const category of selected) for (const root of roots[category] ?? []) walk(root, root === 'chats' ? 1 : 0);
