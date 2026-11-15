@@ -6974,6 +6974,12 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
     }
 
     $('#in_chat_agents_container').append(settingsHtml);
+    // The toolbar is visible before its buttons are wired, so keep them disabled until they respond.
+    const startingToolbarButtons = [...document.querySelectorAll('#ica--settings .ica--toolbar-actions > button:not(:disabled)')];
+    for (const button of startingToolbarButtons) {
+        button.disabled = true;
+        button.setAttribute('aria-busy', 'true');
+    }
     attachTextareaFullscreen($('#ica--settings'));
     await decorateAgentControls(document.getElementById('ica--settings'));
     collapsedCategories = readCollapsedAgentCategories(agentUiPreferences, AGENT_COLLAPSED_CATEGORIES_STORAGE_KEY, AGENT_CATEGORIES);
@@ -7233,6 +7239,10 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
         updateBulkBar();
         renderAgentList();
     });
+    for (const button of startingToolbarButtons) {
+        button.disabled = false;
+        button.removeAttribute('aria-busy');
+    }
     $('#ica--bulkCancel').on('click', exitSelectMode);
     $('#ica--bulkSelectAll').on('click', () => {
         flushPendingAgentListSearchRender();

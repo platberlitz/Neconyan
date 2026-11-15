@@ -172,13 +172,13 @@ test('native wait failure offers Reply now for the same accepted message', async
     await acknowledgeActiveSettings(page);
     const submissions = [];
     const acceptedJobs = [];
-    page.on('request', request => {
-        if (request.url().endsWith('/api/roleplay/workflow/submit')) submissions.push(request.postDataJSON());
-    });
+    // A settings save that lands during a submit is answered with one automatic resubmission, which is not another reply.
     page.on('response', async response => {
-        if (!response.url().endsWith('/api/roleplay/workflow/submit') || !response.ok()) return;
-        const accepted = await response.json();
-        if (accepted.jobId) acceptedJobs.push(accepted.jobId);
+        if (!response.url().endsWith('/api/roleplay/workflow/submit')) return;
+        const body = await response.json().catch(() => ({}));
+        if (response.status() === 409 && body.code === 'roleplay_settings_ack_required') return;
+        submissions.push(response.request().postDataJSON());
+        if (response.ok() && body.jobId) acceptedJobs.push(body.jobId);
     });
     await page.locator('#send_textarea').fill('Native question.');
     await page.evaluate(() => { void import('/script.js').then(core => core.Generate('normal', { skipNativeRoleplay: false })); });

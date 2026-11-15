@@ -2,8 +2,53 @@
 
 ## v1.5.5
 
+### Highlights
+- **Scratchpad** lets you save your own quick prompts, pin sessions, keep a pinned note or story tracker in each session and save Context choices as setups to reuse anywhere. New sessions take their name from the first message.
+- Scratchpad sessions can branch from any message, be searched across every list and export as a Scratchpad file, Markdown or a print/PDF view, with thinking, web sources and attachments if you tick them.
+- 'Try again' can redo any Scratchpad reply, not only the latest. Round-table assistants can discuss each other's answers, and 'Rehearse next reply' drafts the next story reply without advancing the story.
+- A Scratchpad reply can go into the story as another version of the character's last reply.
+- Scratchpad can read the web pages linked in a message, research the web over several searches, take dictation through the microphone and read replies aloud.
+- Typed tools settle dice, sums and picks before the assistant reads them: `/roll`, `/calc`, `/pick` and `/now`.
+- Scratchpad assistants can suggest changes to Agents, the Author's Note, regex scripts, CSS snippets, Dialogue Colors and saved Mewmory records. Each arrives as a change card to review first, and 'Review all' handles several cards together.
+- General Scratchpad can read one hand-picked lorebook, and Scratchpad in a Roleplay chat can read that chat's saved Mewmory records.
+- Scratchpad can edit an attached or generated picture with compatible Quick Image Gen providers, and vision models can see generated pictures when you ask for changes.
+- Scratchpad can summarise older discussion automatically, keeping every saved message.
+- **Mewmory** shows up in the chat: 'Used N memories' under replies, 'Mewmory for this message' in a message's More menu, 'Forget this message' and a per-chat 'Keep new messages off the record' switch.
+- Mewmory has a **Story** tab with 'Previously on', open promises and a map of who is connected, plus a page for everything it remembers about one character.
+- 'Ask Mewmory' answers a question from saved memories and lists the memories it used. 'Check for contradictions' lists memories that disagree. Both run only when pressed.
+- The Mewmory Archive has tick boxes and bulk changes, sorting, more filters, a timeline by message, earlier versions of rewritten memories, a 'new since I last looked' strip and near-duplicate merging.
+- Mewmory estimates the cost of a whole-chat update before it starts, can cap daily token use for automatic updates and exports as Markdown, as one file for every chat or into a lorebook.
+- Memories can be shared with other chats of the same character. Sharing is opt-in per memory, and nothing is read into another chat until you bring it in.
+- Mewmory's panel is easier to read, with sticky tabs, a settings search and folding sections. Fallback connections now take over when the main one fails, and each model role has prefill boxes.
+- Mewmory remembers facts about your character without writing for them or repeating the persona in every prompt.
+- A new **Translator** reply rewrite Agent returns every reply in the language you type. It ships switched off.
+- Memory Shard uses about a third fewer tokens and can read Mewmory. Prompt Adherence Checker also reads the rules added by Agents and the Author's Note.
+- The saved-reply warning has a 'Rerun agents' button, so a failed Agent can be retried without generating the reply again.
+- The buttons above the Agents list ('Create agent', 'Browse library', 'Help me choose', 'Select') no longer ignore a press made in the first moments after the app loads.
+- **Presets** has a 'New prompt' button that places the prompt where you choose, switched on, with labelled buttons throughout. Parameters is grouped into clear cards, and preset linking lives under 'Switching Presets'.
+- Preset lists, templates, connection profiles, lorebook pickers and provider lists open in one searchable picker on phone and desktop.
+- Presets shows 'Chat History Tokens' in its summary.
+- Toggles that set a variable are filled before the prompts that read it, in replies and in Preview. MacroEnhanced's built-in macros work in server-built prompts.
+- **Conversation** has a cleaner messenger layout, the typing indicator is back, and plain text quotes no longer trigger an image review warning.
+- Chatroom Companion draws each style in its platform's look, and a Companion note that is a refusal counts as a failed run.
+- Purrks can be deleted in bulk from the character editor.
+- Server-written Roleplay replies keep finished text when you press Stop, empty at once on swipe or regenerate, and keep the chat where you were reading.
+- An empty reply counts as a failed attempt instead of becoming a new swipe, and a provider that goes silent mid-reply is given up after five minutes.
+- Replies that finished in the background come back reliably, and a saved connection profile no longer sends another connection's private headers.
+- Quick Image Gen saves a paid image's address before downloading it, routes provider-prefixed image models correctly and sends shorter Text AI prompts.
+- Narration no longer times out while waiting behind another narration, and streamed WAV audio works with more local services.
+- Search boxes, the Model ID field and the background gallery respond at once, and 'reduce motion' no longer slows replies or opening a chat.
+- Device sync imports large packages, finishes big imports far sooner and explains export and pairing failures.
+- Background Visibility works on the Settings page, choosing a UI theme no longer makes the page jump, and iPhone popups sit properly above the keyboard.
+- Scroll arrows stay attached to their tabs on phones, and the desktop Favorites bar has scroll arrows.
+- Windows XP on dark themes and Slate Flat on phones have corrected colours.
+- All 16 non-English languages have the missing settings and main panel translations filled, and the README translations cover the 1.5.4 features. Thanks to El Topo for both.
+- The assistants explain the new Scratchpad, Mewmory, Presets and Translator features.
+
 ### Merged Staging PRs
 - PR #593 (2026-11-10) `fix(generation): repair defects found auditing server-side generation`
+- PR #594 (2026-11-11) `fix(media): save a paid image address before downloading it`
+- PR #595 (2026-11-11) `fix(generation): close three small gaps left by the generation audit`
 - PR #596 (2026-11-11) `fix(speech): repair queue timeouts, streamed wav and alltalk addresses`
 - PR #597 (2026-11-11) `fix(roleplay): keep continued chunks on Stop and Agent rewrites`
 - PR #598 (2026-11-11) `fix(conversation): time out silent providers and stop duplicate asides`
@@ -30,6 +75,7 @@
 - PR #619 (2026-11-11) `feat(scratchpad): search the sessions of every list`
 - PR #620 (2026-11-11) `feat(scratchpad): branch a session from an earlier message`
 - PR #621 (2026-11-11) `feat(scratchpad): save context choices as reusable setups`
+- PR #622 (2026-11-11) `feat(scratchpad): add typed tools for dice, sums and picks`
 - PR #623 (2026-11-11) `feat(scratchpad): dictate a message with the microphone`
 - PR #624 (2026-11-11) `feat(scratchpad): suggest changes to agents`
 - PR #625 (2026-11-11) `feat(scratchpad): suggest changes to the author's note`

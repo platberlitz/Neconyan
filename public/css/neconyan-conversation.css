@@ -3175,6 +3175,15 @@
     :root:not([data-sb-theme='windows-98']):not([data-sb-theme='windows-xp']) body.neconyan:not(.sbterm) #sheld[data-sb-conversation-mode='on'] .sb-conversation-message[data-message-id] > .sb-conversation-message-bubble { max-inline-size: calc(100% - 56px); }
 }
 
+/* Under 360px the three action buttons leave too little room for the name, so they take their own row. */
+@media (max-width: 359px) {
+    :root:not([data-sb-theme='windows-98']):not([data-sb-theme='windows-xp']) body.neconyan:not(.sbterm) #sheld[data-sb-conversation-mode='on'] #sb_conversation_header {
+        grid-template-columns: 44px 40px minmax(0, 1fr);
+        grid-template-areas: 'pals avatar copy' 'actions actions actions';
+    }
+    :root:not([data-sb-theme='windows-98']):not([data-sb-theme='windows-xp']) body.neconyan:not(.sbterm) #sheld[data-sb-conversation-mode='on'] #sb_conversation_header .sb-conversation-header-actions { justify-content: flex-end; }
+}
+
 /* Character art is usually a tall portrait; crop avatars from the upper part so faces stay in frame. */
 :is(.sb-conversation-participant-avatar, .sb-conversation-message-avatar, .sb-conversation-rail-footer-avatar, .sb-conversation-persona-option) img,
 :is(.sb-conversation-partner-avatar, .sb-conversation-group-member-avatar) {

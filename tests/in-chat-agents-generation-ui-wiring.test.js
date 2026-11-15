@@ -517,4 +517,20 @@ describe('in-chat agents generation UI wiring', () => {
         expect(pickerSource).toContain('const targets = selected.flatMap(value => {');
         expect(extensionStyleSource).toContain('.ica--run-target-range');
     });
+
+    test('keeps the toolbar buttons disabled until their handlers are attached', () => {
+        const mounted = indexSource.indexOf('$(\'#in_chat_agents_container\').append(settingsHtml);');
+        const held = indexSource.indexOf('#ica--settings .ica--toolbar-actions > button:not(:disabled)', mounted);
+        const firstWait = indexSource.indexOf('await decorateAgentControls(document.getElementById(\'ica--settings\'));', mounted);
+        const released = indexSource.indexOf('for (const button of startingToolbarButtons) {\n        button.disabled = false;', mounted);
+        const wired = ['addAgent', 'templates', 'askTaro', 'selectMode'].map(id => indexSource.indexOf(`$('#ica--${id}').on('click'`, mounted));
+
+        expect(mounted).toBeGreaterThanOrEqual(0);
+        expect(held).toBeGreaterThan(mounted);
+        expect(held).toBeLessThan(firstWait);
+        expect(wired.every(position => position > held && position < released)).toBe(true);
+        for (const id of ['addAgent', 'templates', 'askTaro', 'selectMode']) {
+            expect(settingsSource).toMatch(new RegExp(`<div class="ica--toolbar-actions">[\\s\\S]*?id="ica--${id}"`));
+        }
+    });
 });
