@@ -48,7 +48,7 @@ import {
     reconcileSynchronizedStore,
     saveSettingsWithConfirmation,
 } from "./lib/settings-persistence.js";
-import { confirmSettingsSyncCacheId, confirmSettingsValues, createSettingsSaveEventConfirmer } from "./lib/host-persistence.js";
+import { confirmSettingsSyncCacheId, confirmSettingsValues, createSettingsSaveEventConfirmer, waitForHostSettingsReady } from "./lib/host-persistence.js";
 import { clearGalleryRepositoryStorage, GalleryRepository } from "./lib/gallery-repository.js";
 import {
     detectImageFormat,
@@ -22835,7 +22835,15 @@ function initializeQuickImageGen() {
             extension_settings = extensionsModule.extension_settings;
             getContext = extensionsModule.getContext;
             saveSettingsDebounced = scriptModule.saveSettingsDebounced;
-            saveSettings = scriptModule.saveSettings;
+            // Confirmed saves wait for the host, which starts this extension before its own settings finish loading.
+            saveSettings = async (...args) => {
+                await waitForHostSettingsReady({
+                    isReady: () => scriptModule.settingsReady === true,
+                    eventSource: scriptModule.eventSource,
+                    eventTypes: scriptModule.event_types,
+                });
+                return scriptModule.saveSettings(...args);
+            };
             generateQuietPrompt = scriptModule.generateQuietPrompt;
             generateRaw = scriptModule.generateRaw;
             generateRawData = scriptModule.generateRawData;

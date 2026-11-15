@@ -1,5 +1,7 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, jest, test } from '@jest/globals';
-import { createChatSaveConfirmer } from '../public/scripts/extensions/quick-image-gen/lib/host-persistence.js';
+import { EventEmitter } from '../public/lib/eventemitter.js';
+import { createChatSaveConfirmer, waitForHostSettingsReady } from '../public/scripts/extensions/quick-image-gen/lib/host-persistence.js';
 import { persistChatState, persistLockedBackgroundState } from '../public/scripts/extensions/quick-image-gen/lib/chat-transaction.js';
 
 function createContext(groupId = null) {
@@ -180,5 +182,59 @@ describe('chat readback boundaries', () => {
             await expect(createChatSaveConfirmer({ context, metadataOnly: true, fetchImpl })()).resolves.toBe(false);
         }
         expect(fetchImpl).not.toHaveBeenCalled();
+    });
+});
+
+describe('waiting for host settings', () => {
+    const eventTypes = { SETTINGS_LOADED: 'settings_loaded' };
+
+    test('resolves at once when the host is already ready', async () => {
+        const eventSource = new EventEmitter();
+        await expect(waitForHostSettingsReady({ isReady: () => true, eventSource, eventTypes })).resolves.toBe(true);
+        expect(eventSource.events?.settings_loaded?.length ?? 0).toBe(0);
+    });
+
+    test('waits for the host to finish loading its settings', async () => {
+        const eventSource = new EventEmitter();
+        let ready = false;
+        let settled = false;
+        const waiting = waitForHostSettingsReady({ isReady: () => ready, eventSource, eventTypes }).then(value => {
+            settled = true;
+            return value;
+        });
+        await Promise.resolve();
+        expect(settled).toBe(false);
+        ready = true;
+        await eventSource.emit('settings_loaded');
+        await expect(waiting).resolves.toBe(true);
+        expect(eventSource.events.settings_loaded).toHaveLength(0);
+    });
+
+    test('gives up after the timeout and reports whether the host became ready', async () => {
+        jest.useFakeTimers();
+        try {
+            const eventSource = new EventEmitter();
+            const waiting = waitForHostSettingsReady({ isReady: () => false, eventSource, eventTypes, timeoutMs: 1000 });
+            jest.advanceTimersByTime(1000);
+            await expect(waiting).resolves.toBe(false);
+            expect(eventSource.events.settings_loaded).toHaveLength(0);
+        } finally {
+            jest.useRealTimers();
+        }
+    });
+
+    test('does not wait without a way to hear from the host', async () => {
+        await expect(waitForHostSettingsReady({ isReady: () => false })).resolves.toBe(false);
+        await expect(waitForHostSettingsReady()).resolves.toBe(true);
+    });
+
+    test('Quick Image Gen routes its confirmed saves through the wait', () => {
+        const source = readFileSync(new URL('../public/scripts/extensions/quick-image-gen/index.js', import.meta.url), 'utf8');
+        const assignment = source.match(/saveSettings = async \(\.\.\.args\) => \{([\s\S]*?)\n {12}\};/);
+        expect(assignment).not.toBeNull();
+        expect(assignment[1]).toContain('await waitForHostSettingsReady({');
+        expect(assignment[1]).toContain('isReady: () => scriptModule.settingsReady === true');
+        expect(assignment[1]).toContain('return scriptModule.saveSettings(...args);');
+        expect(source).not.toMatch(/saveSettings = scriptModule\.saveSettings;/);
     });
 });
