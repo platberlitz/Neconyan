@@ -144,27 +144,54 @@ export function isAnimatedWebP(buffer) {
     return headerBuffer.includes('ANIM') || headerBuffer.includes('ANMF');
 }
 
+const FALLBACK_DOMINANT_COLOR = '#808080';
+const AVERAGE_COLOR_SAMPLES_PER_AXIS = 64;
+
+/**
+ * Averages an evenly spaced grid of pixels from a decoded RGBA bitmap.
+ * Resizing a full-size image to 1x1 costs about as much as decoding it; a grid does not.
+ * @param {{data: Uint8Array, width: number, height: number}} bitmap Decoded RGBA bitmap.
+ * @returns {string} The average color as a hex string (e.g., '#RRGGBB').
+ */
+export function getAverageBitmapColor(bitmap) {
+    const { data, width, height } = bitmap;
+    const stepX = Math.max(1, Math.floor(width / AVERAGE_COLOR_SAMPLES_PER_AXIS));
+    const stepY = Math.max(1, Math.floor(height / AVERAGE_COLOR_SAMPLES_PER_AXIS));
+    let r = 0;
+    let g = 0;
+    let b = 0;
+    let count = 0;
+
+    for (let y = Math.floor(stepY / 2); y < height; y += stepY) {
+        for (let x = Math.floor(stepX / 2); x < width; x += stepX) {
+            const offset = (y * width + x) * 4;
+            r += data[offset];
+            g += data[offset + 1];
+            b += data[offset + 2];
+            count++;
+        }
+    }
+
+    if (!count) {
+        return FALLBACK_DOMINANT_COLOR;
+    }
+
+    const toHex = (c) => Math.round(c / count).toString(16).padStart(2, '0');
+    return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
 /**
  * Calculate average color using Jimp.
- * Resizes the image to 1x1 to efficiently get the average color.
  * @param {Buffer} buffer The image buffer.
  * @returns {Promise<string>} The average color as a hex string (e.g., '#RRGGBB').
  */
 async function getAverageColorWithJimp(buffer) {
     try {
         const image = await Jimp.read(buffer);
-        image.resize({ w: 1, h: 1 });
-
-        const colorInt = image.getPixelColor(0, 0);
-        const r = (colorInt >> 24) & 255;
-        const g = (colorInt >> 16) & 255;
-        const b = (colorInt >> 8) & 255;
-
-        const toHex = (c) => c.toString(16).padStart(2, '0');
-        return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+        return getAverageBitmapColor(image.bitmap);
     } catch (error) {
         console.warn('[Jimp] Failed to calculate average color:', error.message);
-        return '#808080';
+        return FALLBACK_DOMINANT_COLOR;
     }
 }
 
@@ -172,9 +199,10 @@ async function getAverageColorWithJimp(buffer) {
  * Generates metadata for a single image file.
  * @param {string} filePath - The full path to the image file.
  * @param {ThumbnailType} type - The thumbnail type for resolution calculation.
+ * @param {{deferColor?: boolean}} [options] - With deferColor, a still image is not decoded and gets no dominantColor.
  * @returns {Promise<ImageMetadata>} A metadata object. Throws an error if processing fails.
  */
-export async function generateImageMetadata(filePath, type) {
+export async function generateImageMetadata(filePath, type, { deferColor = false } = {}) {
     const buffer = await fs.readFile(filePath);
     const hash = crypto.createHash('sha256').update(buffer).digest('hex');
     const dimensions = imageSize(buffer);
@@ -200,8 +228,8 @@ export async function generateImageMetadata(filePath, type) {
 
     let dominantColor;
     if (isAnimated) {
-        dominantColor = '#808080';
-    } else {
+        dominantColor = FALLBACK_DOMINANT_COLOR;
+    } else if (!deferColor) {
         dominantColor = await getAverageColorWithJimp(buffer);
     }
 
@@ -250,67 +278,180 @@ export async function writeMetadataIndex(userDataRoot, metadata) {
     await writeFileAtomic(indexPath, jsonString, 'utf8');
 }
 
+/** @type {Map<string, Promise<void>>} */
+const metadataIndexLocks = new Map();
+
+/**
+ * Runs one read-change-write of the metadata index at a time per user data root,
+ * so two changes made at the same moment cannot overwrite each other.
+ * @template T
+ * @param {string} userDataRoot - Path to the user data directory root
+ * @param {() => Promise<T>} task - The change to make
+ * @returns {Promise<T>} The task's result
+ */
+function withMetadataIndexLock(userDataRoot, task) {
+    const previous = metadataIndexLocks.get(userDataRoot) ?? Promise.resolve();
+    const result = previous.then(task);
+    const settled = result.then(() => {}, () => {});
+    metadataIndexLocks.set(userDataRoot, settled);
+    settled.then(() => {
+        if (metadataIndexLocks.get(userDataRoot) === settled) {
+            metadataIndexLocks.delete(userDataRoot);
+        }
+    });
+    return result;
+}
+
 /**
  * Gets metadata for multiple images, generating on-demand as needed.
  * Uses relative paths from the user data root as keys in the centralized index.
  * @param {string} userDataRoot - Path to the user data directory root
  * @param {string[]} relativePaths - Array of relative paths from userDataRoot
  * @param {ThumbnailType} type - The thumbnail type for resolution calculation.
+ * @param {{deferColor?: boolean}} [options] - With deferColor, results come back without waiting for dominant colors, which are filled in afterwards.
  * @returns {Promise<{results: Object.<string, ImageMetadata>, generatedCount: number}>} Results map and count of newly generated
  */
-export async function getOrGenerateMetadataBatch(userDataRoot, relativePaths, type) {
-    /** @type {Object.<string, ImageMetadata>} */
-    const results = {};
-    const index = await readMetadataIndex(userDataRoot);
-    let indexModified = false;
-    let generatedCount = 0;
+export function getOrGenerateMetadataBatch(userDataRoot, relativePaths, type, { deferColor = false } = {}) {
+    return withMetadataIndexLock(userDataRoot, async () => {
+        /** @type {Object.<string, ImageMetadata>} */
+        const results = {};
+        const index = await readMetadataIndex(userDataRoot);
+        let indexModified = false;
+        let generatedCount = 0;
+        /** @type {string[]} */
+        const colorPending = [];
 
-    for (const relativePath of relativePaths) {
-        // Normalize the path to use forward slashes for consistent keys
-        const posixPath = relativePath.replaceAll(path.sep, path.posix.sep);
-        const fullPath = path.join(userDataRoot, relativePath);
+        // Checked together: one at a time, each check waits its turn behind whatever else the server is doing.
+        const allStats = await Promise.all(relativePaths.map(relativePath => fs.stat(path.join(userDataRoot, relativePath)).catch(() => null)));
 
-        let stats;
-        try {
-            stats = await fs.stat(fullPath);
-        } catch {
-            continue; // File doesn't exist, skip
-        }
+        for (const [position, relativePath] of relativePaths.entries()) {
+            // Normalize the path to use forward slashes for consistent keys
+            const posixPath = relativePath.replaceAll(path.sep, path.posix.sep);
+            const fullPath = path.join(userDataRoot, relativePath);
 
-        const currentMtime = stats.mtimeMs;
-        const cached = index.images[posixPath];
-
-        // If cached and not modified, use cached unless thumbnail dimensions changed.
-        if (cached && cached.mtime === currentMtime && cached.thumbnailResolution === getThumbnailResolution(type)) {
-            results[relativePath] = cached;
-            continue;
-        }
-
-        // Generate new metadata
-        try {
-            const metadata = await generateImageMetadata(fullPath, type);
-            metadata.mtime = currentMtime;
-
-            // Preserve folderIds if they existed
-            if (cached?.folderIds) {
-                metadata.folderIds = cached.folderIds;
+            const stats = allStats[position];
+            if (!stats) {
+                continue; // File doesn't exist, skip
             }
 
-            index.images[posixPath] = metadata;
-            results[relativePath] = metadata;
-            indexModified = true;
-            generatedCount++;
-        } catch (error) {
-            console.warn(`[ImageMetadata] Failed to generate metadata for ${relativePath}:`, error.message);
+            const currentMtime = stats.mtimeMs;
+            const cached = index.images[posixPath];
+
+            // If cached and not modified, use cached unless thumbnail dimensions changed.
+            const cachedIsCurrent = cached && cached.mtime === currentMtime && cached.thumbnailResolution === getThumbnailResolution(type);
+            if (cachedIsCurrent && (cached.dominantColor || deferColor)) {
+                results[relativePath] = cached;
+                if (!cached.dominantColor) {
+                    colorPending.push(posixPath);
+                }
+                continue;
+            }
+
+            // Generate new metadata
+            try {
+                const metadata = await generateImageMetadata(fullPath, type, { deferColor });
+                metadata.mtime = currentMtime;
+
+                // Preserve folderIds if they existed
+                if (cached?.folderIds) {
+                    metadata.folderIds = cached.folderIds;
+                }
+
+                index.images[posixPath] = metadata;
+                results[relativePath] = metadata;
+                indexModified = true;
+                generatedCount++;
+                if (!metadata.dominantColor) {
+                    colorPending.push(posixPath);
+                }
+            } catch (error) {
+                console.warn(`[ImageMetadata] Failed to generate metadata for ${relativePath}:`, error.message);
+            }
         }
+
+        // Write index if modified
+        if (indexModified) {
+            await writeMetadataIndex(userDataRoot, index);
+        }
+
+        if (colorPending.length > 0) {
+            scheduleDominantColors(userDataRoot, colorPending);
+        }
+
+        return { results, generatedCount };
+    });
+}
+
+/** @type {Map<string, {queue: Set<string>, promise: Promise<void>}>} */
+const dominantColorJobs = new Map();
+
+/**
+ * Fills in the dominant colors that a deferColor batch left out, one image at a time
+ * so other requests are served between images.
+ * @param {string} userDataRoot - Path to the user data directory root
+ * @param {string[]} posixPaths - Index keys that still need a dominant color
+ */
+function scheduleDominantColors(userDataRoot, posixPaths) {
+    const running = dominantColorJobs.get(userDataRoot);
+    if (running) {
+        posixPaths.forEach(posixPath => running.queue.add(posixPath));
+        return;
     }
 
-    // Write index if modified
-    if (indexModified) {
-        await writeMetadataIndex(userDataRoot, index);
-    }
+    const job = { queue: new Set(posixPaths), promise: Promise.resolve() };
+    dominantColorJobs.set(userDataRoot, job);
+    job.promise = fillDominantColors(userDataRoot, job.queue)
+        .catch(error => console.warn('[ImageMetadata] Failed to fill in dominant colors:', error.message))
+        .finally(() => dominantColorJobs.delete(userDataRoot));
+}
 
-    return { results, generatedCount };
+/**
+ * @param {string} userDataRoot - Path to the user data directory root
+ * @param {Set<string>} queue - Index keys that still need a dominant color; may grow while this runs
+ */
+async function fillDominantColors(userDataRoot, queue) {
+    while (queue.size > 0) {
+        /** @type {Map<string, {mtime: number, dominantColor: string}>} */
+        const colors = new Map();
+
+        for (const posixPath of queue) {
+            queue.delete(posixPath);
+            await new Promise(resolve => setImmediate(resolve));
+            try {
+                const fullPath = path.join(userDataRoot, posixPath);
+                const stats = await fs.stat(fullPath);
+                const dominantColor = await getAverageColorWithJimp(await fs.readFile(fullPath));
+                colors.set(posixPath, { mtime: stats.mtimeMs, dominantColor });
+            } catch {
+                // The file went away; a later request regenerates its metadata if it comes back.
+            }
+        }
+
+        // One write for the whole batch, against a fresh copy of the index, so folder edits made meanwhile are kept.
+        await withMetadataIndexLock(userDataRoot, async () => {
+            const index = await readMetadataIndex(userDataRoot);
+            let indexModified = false;
+            for (const [posixPath, { mtime, dominantColor }] of colors) {
+                const entry = index.images[posixPath];
+                if (entry && entry.mtime === mtime && !entry.dominantColor) {
+                    entry.dominantColor = dominantColor;
+                    indexModified = true;
+                }
+            }
+            if (indexModified) {
+                await writeMetadataIndex(userDataRoot, index);
+            }
+        });
+    }
+}
+
+/**
+ * Resolves once no dominant colors are being filled in for the given user data root.
+ * @param {string} userDataRoot - Path to the user data directory root
+ * @returns {Promise<void>}
+ */
+export async function waitForDominantColors(userDataRoot) {
+    await dominantColorJobs.get(userDataRoot)?.promise;
 }
 
 /**
@@ -318,24 +459,26 @@ export async function getOrGenerateMetadataBatch(userDataRoot, relativePaths, ty
  * @param {string} userDataRoot - Path to the user data directory root
  * @param {string} relativePath - The relative path to remove
  */
-export async function removeMetadata(userDataRoot, relativePath) {
-    const posixPath = relativePath.replaceAll(path.sep, path.posix.sep);
-    const index = await readMetadataIndex(userDataRoot);
-    if (index.images[posixPath]) {
-        delete index.images[posixPath];
+export function removeMetadata(userDataRoot, relativePath) {
+    return withMetadataIndexLock(userDataRoot, async () => {
+        const posixPath = relativePath.replaceAll(path.sep, path.posix.sep);
+        const index = await readMetadataIndex(userDataRoot);
+        if (index.images[posixPath]) {
+            delete index.images[posixPath];
 
-        // Clear any folder thumbnailFile references that point to the deleted file
-        const deletedFileName = path.posix.basename(posixPath);
-        if (Array.isArray(index.folders)) {
-            for (const folder of index.folders) {
-                if (folder.thumbnailFile === deletedFileName) {
-                    folder.thumbnailFile = '';
+            // Clear any folder thumbnailFile references that point to the deleted file
+            const deletedFileName = path.posix.basename(posixPath);
+            if (Array.isArray(index.folders)) {
+                for (const folder of index.folders) {
+                    if (folder.thumbnailFile === deletedFileName) {
+                        folder.thumbnailFile = '';
+                    }
                 }
             }
-        }
 
-        await writeMetadataIndex(userDataRoot, index);
-    }
+            await writeMetadataIndex(userDataRoot, index);
+        }
+    });
 }
 
 /**
@@ -345,33 +488,35 @@ export async function removeMetadata(userDataRoot, relativePath) {
  * @param {string} newRelativePath - The new relative path
  * @returns {Promise<ImageMetadata|null>} The updated metadata
  */
-export async function renameMetadata(userDataRoot, oldRelativePath, newRelativePath) {
-    const posixOldPath = oldRelativePath.replaceAll(path.sep, path.posix.sep);
-    const posixNewPath = newRelativePath.replaceAll(path.sep, path.posix.sep);
-    const index = await readMetadataIndex(userDataRoot);
-    const data = index.images[posixOldPath];
+export function renameMetadata(userDataRoot, oldRelativePath, newRelativePath) {
+    return withMetadataIndexLock(userDataRoot, async () => {
+        const posixOldPath = oldRelativePath.replaceAll(path.sep, path.posix.sep);
+        const posixNewPath = newRelativePath.replaceAll(path.sep, path.posix.sep);
+        const index = await readMetadataIndex(userDataRoot);
+        const data = index.images[posixOldPath];
 
-    if (!data) {
-        throw new Error(`Image '${oldRelativePath}' not found in metadata.`);
-    }
+        if (!data) {
+            throw new Error(`Image '${oldRelativePath}' not found in metadata.`);
+        }
 
-    delete index.images[posixOldPath];
-    index.images[posixNewPath] = data;
+        delete index.images[posixOldPath];
+        index.images[posixNewPath] = data;
 
-    // Update any folder thumbnailFile references that point to the old filename
-    const oldFileName = path.posix.basename(posixOldPath);
-    const newFileName = path.posix.basename(posixNewPath);
-    if (oldFileName !== newFileName && Array.isArray(index.folders)) {
-        for (const folder of index.folders) {
-            if (folder.thumbnailFile === oldFileName) {
-                folder.thumbnailFile = newFileName;
+        // Update any folder thumbnailFile references that point to the old filename
+        const oldFileName = path.posix.basename(posixOldPath);
+        const newFileName = path.posix.basename(posixNewPath);
+        if (oldFileName !== newFileName && Array.isArray(index.folders)) {
+            for (const folder of index.folders) {
+                if (folder.thumbnailFile === oldFileName) {
+                    folder.thumbnailFile = newFileName;
+                }
             }
         }
-    }
 
-    await writeMetadataIndex(userDataRoot, index);
+        await writeMetadataIndex(userDataRoot, index);
 
-    return data;
+        return data;
+    });
 }
 
 /**
@@ -380,34 +525,36 @@ export async function renameMetadata(userDataRoot, oldRelativePath, newRelativeP
  * @param {string} userDataRoot - Path to the user data directory root
  * @returns {Promise<string[]>} Array of removed paths
  */
-export async function cleanupOrphanedMetadata(userDataRoot) {
-    const index = await readMetadataIndex(userDataRoot);
-    const orphanedPaths = [];
+export function cleanupOrphanedMetadata(userDataRoot) {
+    return withMetadataIndexLock(userDataRoot, async () => {
+        const index = await readMetadataIndex(userDataRoot);
+        const orphanedPaths = [];
 
-    for (const relativePath of Object.keys(index.images)) {
-        const fullPath = path.resolve(userDataRoot, relativePath);
+        for (const relativePath of Object.keys(index.images)) {
+            const fullPath = path.resolve(userDataRoot, relativePath);
 
-        if (!isPathUnderParent(userDataRoot, fullPath)) {
-            orphanedPaths.push(relativePath);
-            delete index.images[relativePath];
-            continue;
+            if (!isPathUnderParent(userDataRoot, fullPath)) {
+                orphanedPaths.push(relativePath);
+                delete index.images[relativePath];
+                continue;
+            }
+
+            try {
+                await fs.access(fullPath);
+            } catch {
+                // File doesn't exist, mark for removal
+                orphanedPaths.push(relativePath);
+                delete index.images[relativePath];
+            }
         }
 
-        try {
-            await fs.access(fullPath);
-        } catch {
-            // File doesn't exist, mark for removal
-            orphanedPaths.push(relativePath);
-            delete index.images[relativePath];
+        if (orphanedPaths.length > 0) {
+            await writeMetadataIndex(userDataRoot, index);
+            console.log(`[ImageMetadata] Cleaned up ${orphanedPaths.length} orphaned metadata entries`);
         }
-    }
 
-    if (orphanedPaths.length > 0) {
-        await writeMetadataIndex(userDataRoot, index);
-        console.log(`[ImageMetadata] Cleaned up ${orphanedPaths.length} orphaned metadata entries`);
-    }
-
-    return orphanedPaths;
+        return orphanedPaths;
+    });
 }
 
 /**
@@ -416,13 +563,15 @@ export async function cleanupOrphanedMetadata(userDataRoot) {
  * @param {string} name
  * @returns {Promise<{id: string, name: string, thumbnailFile: string}>}
  */
-export async function createFolder(userDataRoot, name) {
-    const index = await readMetadataIndex(userDataRoot);
-    const id = uuidv4();
-    const folder = { id, name, thumbnailFile: '' };
-    index.folders.push(folder);
-    await writeMetadataIndex(userDataRoot, index);
-    return folder;
+export function createFolder(userDataRoot, name) {
+    return withMetadataIndexLock(userDataRoot, async () => {
+        const index = await readMetadataIndex(userDataRoot);
+        const id = uuidv4();
+        const folder = { id, name, thumbnailFile: '' };
+        index.folders.push(folder);
+        await writeMetadataIndex(userDataRoot, index);
+        return folder;
+    });
 }
 
 /**
@@ -432,15 +581,17 @@ export async function createFolder(userDataRoot, name) {
  * @param {{id: string, thumbnailFile: string}[]} updates
  * @returns {Promise<void>}
  */
-export async function setFolderThumbnailsBatch(userDataRoot, updates) {
-    const index = await readMetadataIndex(userDataRoot);
-    for (const { id, thumbnailFile } of updates) {
-        const folder = index.folders.find(f => f.id === id);
-        if (folder) {
-            folder.thumbnailFile = thumbnailFile;
+export function setFolderThumbnailsBatch(userDataRoot, updates) {
+    return withMetadataIndexLock(userDataRoot, async () => {
+        const index = await readMetadataIndex(userDataRoot);
+        for (const { id, thumbnailFile } of updates) {
+            const folder = index.folders.find(f => f.id === id);
+            if (folder) {
+                folder.thumbnailFile = thumbnailFile;
+            }
         }
-    }
-    await writeMetadataIndex(userDataRoot, index);
+        await writeMetadataIndex(userDataRoot, index);
+    });
 }
 
 /**
@@ -450,14 +601,16 @@ export async function setFolderThumbnailsBatch(userDataRoot, updates) {
  * @param {{name?: string, thumbnailFile?: string}} updates
  * @returns {Promise<{id: string, name: string, thumbnailFile: string}>}
  */
-export async function updateFolder(userDataRoot, folderId, updates) {
-    const index = await readMetadataIndex(userDataRoot);
-    const folder = index.folders.find(f => f.id === folderId);
-    if (!folder) throw new Error(`Folder '${folderId}' not found.`);
-    if (updates.name !== undefined) folder.name = updates.name;
-    if (updates.thumbnailFile !== undefined) folder.thumbnailFile = updates.thumbnailFile;
-    await writeMetadataIndex(userDataRoot, index);
-    return folder;
+export function updateFolder(userDataRoot, folderId, updates) {
+    return withMetadataIndexLock(userDataRoot, async () => {
+        const index = await readMetadataIndex(userDataRoot);
+        const folder = index.folders.find(f => f.id === folderId);
+        if (!folder) throw new Error(`Folder '${folderId}' not found.`);
+        if (updates.name !== undefined) folder.name = updates.name;
+        if (updates.thumbnailFile !== undefined) folder.thumbnailFile = updates.thumbnailFile;
+        await writeMetadataIndex(userDataRoot, index);
+        return folder;
+    });
 }
 
 /**
@@ -466,19 +619,21 @@ export async function updateFolder(userDataRoot, folderId, updates) {
  * @param {string} folderId
  * @returns {Promise<void>}
  */
-export async function deleteFolder(userDataRoot, folderId) {
-    const index = await readMetadataIndex(userDataRoot);
-    const idx = index.folders.findIndex(f => f.id === folderId);
-    if (idx === -1) throw new Error(`Folder '${folderId}' not found.`);
-    index.folders.splice(idx, 1);
-    // Remove folderId from all images
-    for (const meta of Object.values(index.images)) {
-        if (Array.isArray(meta.folderIds)) {
-            const fi = meta.folderIds.indexOf(folderId);
-            if (fi !== -1) meta.folderIds.splice(fi, 1);
+export function deleteFolder(userDataRoot, folderId) {
+    return withMetadataIndexLock(userDataRoot, async () => {
+        const index = await readMetadataIndex(userDataRoot);
+        const idx = index.folders.findIndex(f => f.id === folderId);
+        if (idx === -1) throw new Error(`Folder '${folderId}' not found.`);
+        index.folders.splice(idx, 1);
+        // Remove folderId from all images
+        for (const meta of Object.values(index.images)) {
+            if (Array.isArray(meta.folderIds)) {
+                const fi = meta.folderIds.indexOf(folderId);
+                if (fi !== -1) meta.folderIds.splice(fi, 1);
+            }
         }
-    }
-    await writeMetadataIndex(userDataRoot, index);
+        await writeMetadataIndex(userDataRoot, index);
+    });
 }
 
 /**
@@ -488,41 +643,43 @@ export async function deleteFolder(userDataRoot, folderId) {
  * @param {string[]} relativePaths
  * @returns {Promise<void>}
  */
-export async function assignImagesToFolder(userDataRoot, folderId, relativePaths) {
-    const index = await readMetadataIndex(userDataRoot);
-    if (!index.folders.some(f => f.id === folderId)) {
-        throw new Error(`Folder '${folderId}' not found.`);
-    }
-    for (const rp of relativePaths) {
-        const posixPath = rp.replaceAll(path.sep, path.posix.sep);
+export function assignImagesToFolder(userDataRoot, folderId, relativePaths) {
+    return withMetadataIndexLock(userDataRoot, async () => {
+        const index = await readMetadataIndex(userDataRoot);
+        if (!index.folders.some(f => f.id === folderId)) {
+            throw new Error(`Folder '${folderId}' not found.`);
+        }
+        for (const rp of relativePaths) {
+            const posixPath = rp.replaceAll(path.sep, path.posix.sep);
 
-        // Validate: must be a backgrounds/ path, and no path-traversal segments
-        const normalized = path.posix.normalize(posixPath);
-        if (!normalized.startsWith('backgrounds/') || normalized.split('/').some(seg => seg === '..')) {
-            throw new Error(`Invalid background path: '${posixPath}'`);
-        }
+            // Validate: must be a backgrounds/ path, and no path-traversal segments
+            const normalized = path.posix.normalize(posixPath);
+            if (!normalized.startsWith('backgrounds/') || normalized.split('/').some(seg => seg === '..')) {
+                throw new Error(`Invalid background path: '${posixPath}'`);
+            }
 
-        // Validate: skip silently on missing files
-        const absPath = path.join(userDataRoot, normalized);
-        try {
-            await fs.access(absPath);
-        } catch {
-            console.warn(`[ImageMetadata] Skipping missing background file: '${posixPath}'`);
-            continue;
-        }
+            // Validate: skip silently on missing files
+            const absPath = path.join(userDataRoot, normalized);
+            try {
+                await fs.access(absPath);
+            } catch {
+                console.warn(`[ImageMetadata] Skipping missing background file: '${posixPath}'`);
+                continue;
+            }
 
-        let meta = index.images[normalized];
-        if (!meta) {
-            // Create a stub entry so folderIds can be stored even before full metadata generation
-            meta = { folderIds: [] };
-            index.images[normalized] = meta;
+            let meta = index.images[normalized];
+            if (!meta) {
+                // Create a stub entry so folderIds can be stored even before full metadata generation
+                meta = { folderIds: [] };
+                index.images[normalized] = meta;
+            }
+            if (!Array.isArray(meta.folderIds)) meta.folderIds = [];
+            if (!meta.folderIds.includes(folderId)) {
+                meta.folderIds.push(folderId);
+            }
         }
-        if (!Array.isArray(meta.folderIds)) meta.folderIds = [];
-        if (!meta.folderIds.includes(folderId)) {
-            meta.folderIds.push(folderId);
-        }
-    }
-    await writeMetadataIndex(userDataRoot, index);
+        await writeMetadataIndex(userDataRoot, index);
+    });
 }
 
 /**
@@ -532,16 +689,18 @@ export async function assignImagesToFolder(userDataRoot, folderId, relativePaths
  * @param {string[]} relativePaths
  * @returns {Promise<void>}
  */
-export async function unassignImagesFromFolder(userDataRoot, folderId, relativePaths) {
-    const index = await readMetadataIndex(userDataRoot);
-    for (const rp of relativePaths) {
-        const posixPath = rp.replaceAll(path.sep, path.posix.sep);
-        const meta = index.images[posixPath];
-        if (!meta || !Array.isArray(meta.folderIds)) continue;
-        const fi = meta.folderIds.indexOf(folderId);
-        if (fi !== -1) meta.folderIds.splice(fi, 1);
-    }
-    await writeMetadataIndex(userDataRoot, index);
+export function unassignImagesFromFolder(userDataRoot, folderId, relativePaths) {
+    return withMetadataIndexLock(userDataRoot, async () => {
+        const index = await readMetadataIndex(userDataRoot);
+        for (const rp of relativePaths) {
+            const posixPath = rp.replaceAll(path.sep, path.posix.sep);
+            const meta = index.images[posixPath];
+            if (!meta || !Array.isArray(meta.folderIds)) continue;
+            const fi = meta.folderIds.indexOf(folderId);
+            if (fi !== -1) meta.folderIds.splice(fi, 1);
+        }
+        await writeMetadataIndex(userDataRoot, index);
+    });
 }
 
 export const router = express.Router();
