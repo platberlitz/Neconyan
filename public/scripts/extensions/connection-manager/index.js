@@ -1163,7 +1163,7 @@ function renderConnectionProfiles(profiles) {
 
     if (favoriteProfiles.length > 0) {
         const favoritesGroup = document.createElement('optgroup');
-        favoritesGroup.label = '★ Favorites';
+        favoritesGroup.label = t`★ Favorites`;
         for (const profile of favoriteProfiles) {
             favoritesGroup.appendChild(createProfileOption(profile, false));
         }
