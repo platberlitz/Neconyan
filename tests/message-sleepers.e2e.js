@@ -18,7 +18,7 @@ test.beforeEach(async ({ page }) => {
     });
 });
 
-async function checkAnimals(page, selector) {
+async function checkAnimals(page, selector, [expectedWidth, expectedHeight] = [96, 77]) {
     const animals = page.locator(selector);
     expect(await animals.count()).toBeGreaterThanOrEqual(2);
     for (const animal of await animals.all()) {
@@ -35,8 +35,8 @@ async function checkAnimals(page, selector) {
                 correctSide: img.classList.contains('is-user') === tiger,
                 naturalWidth: img.naturalWidth, radius: getComputedStyle(img).borderRadius };
         });
-        expect(state.width).toBeCloseTo(96, 2);
-        expect(state.height).toBeCloseTo(77, 2);
+        expect(state.width).toBeCloseTo(expectedWidth, 2);
+        expect(state.height).toBeCloseTo(expectedHeight, 2);
         expect(state.naturalWidth).toBe(384);
         expect(state.correctSide).toBe(true);
         expect(state.radius).toBe('0px');
@@ -204,10 +204,11 @@ for (const width of [393, 1280]) {
             });
             const conversation = '#sb_conversation_stage .sb-conversation-message-bubble > .neconyan-message-sleeper';
             await expect(page.locator(conversation).last()).toBeVisible();
-            await checkAnimals(page, conversation);
+            // The Conversation timeline draws a smaller cat above each run of bubbles.
+            await checkAnimals(page, conversation, [58, 46]);
             await checkPet(page, page.locator(conversation).last(), width === 393);
             await page.locator('.sb-conversation-more-actions').last().click();
-            await checkAnimals(page, conversation);
+            await checkAnimals(page, conversation, [58, 46]);
             await page.screenshot({ path: info.outputPath('conversation.png') });
             await page.evaluate(async hopper => {
                 window.dispatchEvent(new CustomEvent('sb:close-conversation-workspace'));

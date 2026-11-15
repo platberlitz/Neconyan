@@ -118,10 +118,11 @@ for (const phone of [false, true]) for (const change of ['agent', 'settings', 'a
                 visible: width > 0, fits: width < viewportWidth };
         }, phone ? 393 : 1280)).toEqual({ headingWeight: '700', visible: true, fits: true });
         expect(settled.result?.agentsFailed ?? settled.result?.result?.agentsFailed).toBe(true);
-        await expect(reopened.locator('.toast-warning')).toContainText('Your reply was saved, but some Agents could not finish.');
-        await reopened.evaluate(async () => (await import('/scripts/neconyan-conversation/roleplay-workflows.js')).resumeNativeRoleplayWorkflowObservation());
-        await expect(reopened.locator('.toast-warning')).toHaveCount(1);
+        // Start-up warnings from other features can still be on screen when the page stayed open.
         const warning = reopened.locator('.toast-warning').filter({ hasText: 'Agents did not finish' });
+        await expect(warning).toContainText('Your reply was saved, but some Agents could not finish.');
+        await reopened.evaluate(async () => (await import('/scripts/neconyan-conversation/roleplay-workflows.js')).resumeNativeRoleplayWorkflowObservation());
+        await expect(warning).toHaveCount(1);
         const rerun = warning.getByRole('button', { name: 'Rerun agents', exact: true });
         await expect(rerun).toBeVisible();
         await reopened.screenshot({ path: `../screenshots/helper-failure-${change}-${viewport}.png`, scale: 'css' });
