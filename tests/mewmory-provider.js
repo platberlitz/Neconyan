@@ -25,7 +25,8 @@ export async function createMewmoryProvider(port = 0) {
             held.clear();
             return response.end('{}');
         }
-        const name = typeof body.prompt === 'string' ? 'text-writer' : body.model;
+        // Image requests also carry a string prompt, and tests hold them by their model.
+        const name = typeof body.prompt === 'string' && !request.url.includes('/images/') ? 'text-writer' : body.model;
         const call = { model: name, stream: body.stream, max_tokens: body.max_tokens, messages: body.messages, prompt: body.prompt, input: body.input, tools: body.tools, headers: request.headers, url: request.url, startedAt: Date.now(), completedAt: null };
         calls.push(call);
         if ([].concat(mode.hold).includes(name)) await new Promise(resolve => held.add(resolve));
