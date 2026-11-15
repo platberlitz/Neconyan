@@ -8,7 +8,7 @@ for (const width of [393, 1280]) {
     test.describe(`dark backgrounds at ${width}px`, () => {
         test.use({ viewport: { width, height: width === 393 ? 852 : 900 }, hasTouch: width === 393, serviceWorkers: 'block' });
         test('installs and applies all six night scenes without bright large surfaces', async ({ page }) => {
-            test.setTimeout(240000);
+            test.setTimeout(120000);
             await isolateSettingsSaves(page);
             await openQuietChatForSmoke(page);
             const skip = page.getByRole('button', { name: 'Skip', exact: true });
@@ -20,9 +20,7 @@ for (const width of [393, 1280]) {
                 window.NeconyanShell.openTab('right', 'background');
             });
             await page.locator('#background_fitting').selectOption('cover');
-            // A fresh server builds metadata for every background on the first gallery load,
-            // which takes about 20 seconds on an idle machine and longer on a busy runner.
-            await expect(page.locator('#bg_menu_content .bg_example').first()).toBeAttached({ timeout: 120000 });
+            await expect(page.locator('#bg_menu_content .bg_example').first()).toBeAttached({ timeout: 30000 });
             for (const title of titles) {
                 const file = `Neconyan - ${title}.jpg`;
                 const choice = page.locator(`#bg_menu_content .bg_example[bgfile="${file}"]`);
