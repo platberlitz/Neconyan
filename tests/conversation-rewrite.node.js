@@ -120,6 +120,10 @@ test('a regeneration saves the reply, its commands and reminders in one write', 
     const directories = makeDirectories();
     registerConversationRewriteJobs({ generate: async options => {
         assert.equal(options.stream, true);
+        const typing = readConversationPreview('tester', options.context.job.id).participants[0];
+        assert.equal(typing.avatar, 'nova.png', 'the speaker is shown as typing before any text arrives');
+        assert.equal(typing.token_count, undefined);
+        assert.equal(typing.text, '');
         options.onStream({ text: 'Fresh', reasoning: 'Choose a new reply.' });
         const preview = readConversationPreview('tester', options.context.job.id).participants[0];
         assert.equal(preview.avatar, 'nova.png');

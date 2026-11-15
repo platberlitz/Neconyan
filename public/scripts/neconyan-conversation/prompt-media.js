@@ -95,6 +95,11 @@ export function projectConversationImageInput(messages, mediaPolicy, { hash } = 
                     continue;
                 }
             }
+            // A quote saved without an attachment summary quoted a message that had no
+            // attachments, so its text is authored prose. An edited, deleted or trimmed
+            // source cannot turn it into image content.
+            if (choice === undefined && !reference.attachmentSummary
+                && !(sourceIndex >= 0 && getConversationAttachmentSummary(messages[sourceIndex]))) continue;
             throw promptMediaError('mixed-reply-context', index, -1, uiText('A reply contains a quote that cannot be checked against its original message. Your image settings require you to review the quote before continuing. Choose what the model receives in Review chat images.'));
         }
     }

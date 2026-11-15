@@ -191,14 +191,16 @@ async function runConversationRewriteJob(context, { generate }) {
     if (!reply) {
         const assertSource = () => verify(readConversationTarget(request, snapshot.target));
         assertSource();
-        const counter = await createMessageTokenCounter(value => publishConversationPreview(context, snapshot, value), { signal: context.signal });
+        publishConversationPreview(context, snapshot, {});
+        let counter;
         try {
+            counter = await createMessageTokenCounter(value => publishConversationPreview(context, snapshot, value), { signal: context.signal });
             const response = await generate({ ...generationOptions(snapshot), context, jobContext: context, beforeDispatch: assertSource,
                 onStream: value => counter.publish(value) });
             const reasoning = getReplyReasoning(response);
             reply = { text: String(response?.text ?? ''), ...(reasoning ? { reasoning } : {}) };
         } finally {
-            counter.stop();
+            counter?.stop();
             publishConversationPreview(context, snapshot, null);
         }
         writeArtifact(directories, job.id, 'reply', reply);

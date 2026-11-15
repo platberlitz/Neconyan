@@ -180,13 +180,12 @@ for (const viewport of [
             const pane = await readLayout(page);
             expect(pane.timelineSurfaceAlpha, 'message area has a tint').toBeGreaterThan(0);
             expect(pane.timelineSurfaceAlpha, 'message area is translucent, not opaque').toBeLessThan(1);
-            expect(pane.timelineStyle.borderTopWidth, 'message area has a visible edge').toBe('1px');
-            expect(pane.timelineStyle.borderRadius, 'message area keeps the shell radius').toBeGreaterThanOrEqual(10);
+            expect(pane.timelineStyle.borderTopWidth, 'message area has no frame').toBe('0px');
+            expect(pane.timelineStyle.borderRadius, 'message area has square corners').toBe(0);
             expect(pane.timelineStyle.overflowY, 'message area still scrolls').toBe('auto');
             expect(pane.stageBackground, 'stage keeps the wallpaper visible').toBe('rgba(0, 0, 0, 0)');
-            expect(pane.timeline.x, 'pane is inset from the stage').toBeGreaterThan(pane.stage.x + 2);
-            expect(pane.timeline.y, 'pane is inset from the header').toBeGreaterThan(pane.stage.y + 2);
-            expect(pane.timeline.right, 'pane is inset from the stage edge').toBeLessThan(pane.stage.right - 2);
+            expect(Math.abs(pane.timeline.x - pane.stage.x), 'message area starts at the stage edge').toBeLessThanOrEqual(1);
+            expect(Math.abs(pane.timeline.right - pane.stage.right), 'message area ends at the stage edge').toBeLessThanOrEqual(1);
             expect(pane.timeline.bottom, 'pane stops above the composer').toBeLessThan(pane.composer.y - 2);
             expect(pane.composer.bottom, 'composer stays reachable').toBeLessThanOrEqual(pane.viewport.height + 1);
             expect(pane.timeline.height, 'message area keeps most of the stage height').toBeGreaterThan(pane.stage.height * 0.6);
