@@ -14,7 +14,7 @@ afterEach(() => { globalThis.fetch = originalFetch; });
 
 function folderRuntime() {
     const source = readFileSync(new URL('../public/scripts/world-info.js', import.meta.url), 'utf8');
-    const field = { find() { return this; }, text: () => '', remove() { return this; }, append() { return this; } };
+    const field = { find() { return this; }, text: () => '', val: () => '', remove() { return this; }, append() { return this; } };
     const context = vm.createContext({
         world_info: { unrelated: 'keep', neconyanFolders: { folders: [createNeconyanFolder('Places', 'places')], assignments: { Notes: 'places' } } },
         world_names: ['Notes'], worldInfoEditor: null, selected_world_info: [],
@@ -25,7 +25,7 @@ function folderRuntime() {
         fetch: async () => ({ ok: true, json: async () => ({ world_names: ['Renamed'] }) }),
         $: () => field, Option: class {}, updatePersonaLorebookActions() {}, updateWorldInfoWorkspaceState() {},
     });
-    const functions = ['getNeconyanLorebookFolders', 'updateNeconyanLorebookFolders', 'updateWorldInfoList']
+    const functions = ['getNeconyanLorebookFolders', 'updateNeconyanLorebookFolders', 'getSelectedEditorWorldName', 'updateWorldInfoList']
         .map(name => source.match(new RegExp(`^export (?:async )?function ${name}\\([\\s\\S]*?^}`, 'm'))[0].replace('export ', ''));
     vm.runInContext('let neconyanLorebookFolderSaveChain = Promise.resolve();\n' + functions.join('\n'), context);
     return context;

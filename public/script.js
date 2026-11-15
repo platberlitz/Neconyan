@@ -1816,7 +1816,7 @@ function getCharacterBlock(item, id) {
         loading: 'lazy',
         decoding: 'async',
     });
-    template.find('.avatar').attr('title', `[Character] ${item.name}\nFile: ${item.avatar}`);
+    template.find('.avatar').attr({ title: t`[Character] ${item.name}\nFile: ${item.avatar}`, 'data-i18n-ignore': '' });
     template.find('.ch_name').text(item.name).attr('title', `[Character] ${item.name}`);
     if (power_user.show_card_avatar_urls) {
         template.find('.ch_avatar_url').text(item.avatar);
@@ -14399,7 +14399,7 @@ export function buildAvatarList(block, entities, { templateId = 'inline_avatar_t
             loading: 'lazy',
             decoding: 'async',
         });
-        avatarTemplate.attr('title', `[Character] ${entity.item.name}\nFile: ${entity.item.avatar}`);
+        avatarTemplate.attr({ title: t`[Character] ${entity.item.name}\nFile: ${entity.item.avatar}`, 'data-i18n-ignore': '' });
         if (highlightFavs) {
             avatarTemplate.toggleClass('is_fav', entity.item.fav || entity.item.fav == 'true');
             avatarTemplate.find('.ch_fav').val(entity.item.fav);
@@ -14413,7 +14413,7 @@ export function buildAvatarList(block, entities, { templateId = 'inline_avatar_t
             avatarTemplate.empty();
             avatarTemplate.append(grpTemplate.children());
             avatarTemplate.attr({ 'data-grid': id, 'data-chid': null });
-            avatarTemplate.attr('title', `[Group] ${entity.item.name}`);
+            avatarTemplate.attr({ title: t`[Group] ${entity.item.name}`, 'data-i18n-ignore': '' });
         } else if (entity.type === 'persona') {
             avatarTemplate.attr({ 'data-pid': id, 'data-chid': null });
             avatarTemplate.find('img').attr({

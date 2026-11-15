@@ -1152,6 +1152,8 @@ function renderConnectionProfiles(profiles) {
         const option = document.createElement('option');
         option.value = profile.id;
         option.textContent = `${profile.fav ? '★ ' : ''}${profile.name}`;
+        // A profile name is data. The '<None>' option beside it is a caption and stays unmarked.
+        option.setAttribute('data-i18n-ignore', '');
         option.selected = allowSelected && profile.id === selectedProfileId;
         option.dataset.folderId = profile.folderId ?? '';
         option.dataset.favorite = String(Boolean(profile.fav));

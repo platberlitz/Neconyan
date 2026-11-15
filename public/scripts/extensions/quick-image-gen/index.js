@@ -15079,12 +15079,12 @@ function renderContextualFiltersSummary(container, viewState = getContextualFilt
     if (!container) return;
     const totalPools = viewState.globalPools.length + viewState.cardPools.length + viewState.charPools.length;
     const scopeLabel = viewState.currentCardKey
-        ? `${viewState.currentCardLabel || "Current card"} + character scope`
+        ? t`${viewState.currentCardLabel || translate("Current card")} + character scope`
         : (viewState.currentCharId != null
-            ? (viewState.charName || "Current character")
+            ? (viewState.charName || t`Current character`)
             : (viewState.activeCharacterCount > 0
-                ? `${plural(viewState.activeCharacterCount, "active character")} in group context`
-                : "Global-only context"));
+                ? (viewState.activeCharacterCount === 1 ? t`1 active character in group context` : t`${viewState.activeCharacterCount} active characters in group context`)
+                : t`Global-only context`));
     const scopeParts = [];
     if (viewState.cardFilters.length) scopeParts.push(plural(viewState.cardFilters.length, "card-only filter"));
     if (viewState.charFilters.length) scopeParts.push(plural(viewState.charFilters.length, "character-wide filter"));
@@ -15114,6 +15114,8 @@ function renderContextualFiltersSummary(container, viewState = getContextualFilt
         </div>`;
     container.querySelector('[data-qig-summary="visible"]').textContent = String(viewState.visibleFilters.length);
     container.querySelector('[data-qig-summary="scope"]').textContent = scopeLabel;
+    // Every branch of the line is built with t; a card or character name inside it is data.
+    container.querySelector('[data-qig-summary="scope"]').setAttribute('data-i18n-ignore', '');
     container.querySelector('[data-qig-summary="active"]').textContent = String(viewState.activeVisibleCount);
     container.querySelector('[data-qig-summary="enabled-pools"]').textContent = `${plural(viewState.enabledPoolIds.size, "enabled pool")}`;
     container.querySelector('[data-qig-summary="seeds"]').textContent = String(viewState.seededFilterCount);
@@ -15839,8 +15841,10 @@ function updateCharacterSettingsUI() {
 
     if (status) {
         status.textContent = !storageKey
-            ? "No individual character is active. Character overrides are unavailable in groups."
-            : `${charName || "Current character"}: ${override ? "QIG override active" : "using global QIG settings"}`;
+            ? t`No individual character is active. Character overrides are unavailable in groups.`
+            : t`${charName || translate("Current character")}: ${override ? translate("QIG override active") : translate("using global QIG settings")}`;
+        // Every branch is built with t; the character's name inside is data.
+        status.setAttribute('data-i18n-ignore', '');
     }
     if (inheritedStatus) {
         inheritedStatus.textContent = inherited

@@ -4,6 +4,7 @@
  * the settings drawer. The manuscript look itself is style.css under body.sbstory.
  */
 import * as api from './api.js';
+import { t } from '../../../../i18n.js';
 import { BODY_CLASS, DEFAULT_RULES, classifyBlock, computeJoins, formatDuration } from './core.js';
 
 const BAR_ID = 'sbstory-bar';
@@ -1265,8 +1266,9 @@ function field(labelText, control, hint = '') {
 }
 
 function agentLabel(agent) {
-    return !agent.enabled ? `${agent.name} (switched off in Agents)`
-        : agent.paused ? `${agent.name} (paused by Story Mode)` : agent.name;
+    // Every branch is the agent's name or a caption built with t; the row's label is marked as data where it is made.
+    return !agent.enabled ? t`${agent.name} (switched off in Agents)`
+        : agent.paused ? t`${agent.name} (paused by Story Mode)` : agent.name;
 }
 
 export function renderDrawer() {
@@ -1516,7 +1518,7 @@ export function renderDrawer() {
         }
         const allowed = new Set(settings.allowedAgents);
         for (const agent of agents) {
-            agentSection.append(checkboxRow({
+            const agentRow = checkboxRow({
                 id: `sbstory-opt-agent-${agent.id}`,
                 label: agentLabel(agent),
                 checked: allowed.has(agent.id),
@@ -1530,7 +1532,9 @@ export function renderDrawer() {
                     api.updateSettings({ allowedAgents: [...next] });
                     api.applyAgentGate();
                 },
-            }));
+            });
+            agentRow.querySelector('span')?.setAttribute('data-i18n-ignore', '');
+            agentSection.append(agentRow);
         }
         if (agents.length > 0) {
             agentSection.append(el('small', { text: 'Unticked agents are paused while Story Mode is on. Their saved on/off settings do not change.' }));

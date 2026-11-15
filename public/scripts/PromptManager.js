@@ -911,21 +911,21 @@ class PromptManager {
 
             switch (promptId) {
                 case 'main':
-                    prompt.name = 'Main Prompt';
+                    prompt.name = PROMPT_RESET_NAMES[promptId];
                     prompt.content = this.configuration.defaultPrompts.main;
                     prompt.forbid_overrides = false;
                     break;
                 case 'nsfw':
-                    prompt.name = 'Nsfw Prompt';
+                    prompt.name = PROMPT_RESET_NAMES[promptId];
                     prompt.content = this.configuration.defaultPrompts.nsfw;
                     break;
                 case 'jailbreak':
-                    prompt.name = 'Jailbreak Prompt';
+                    prompt.name = PROMPT_RESET_NAMES[promptId];
                     prompt.content = this.configuration.defaultPrompts.jailbreak;
                     prompt.forbid_overrides = false;
                     break;
                 case 'enhanceDefinitions':
-                    prompt.name = 'Enhance Definitions';
+                    prompt.name = PROMPT_RESET_NAMES[promptId];
                     prompt.content = this.configuration.defaultPrompts.enhanceDefinitions;
                     break;
             }
@@ -1975,7 +1975,7 @@ class PromptManager {
         const options = [`<option value="">${escapeHtml(t`Top of the list`)}</option>`];
         order.forEach(entry => {
             const prompt = this.getPromptById(entry.identifier);
-            if (prompt) options.push(`<option value="${escapeHtml(entry.identifier)}">${escapeHtml(prompt.name || entry.identifier)}</option>`);
+            if (prompt) options.push(`<option value="${escapeHtml(entry.identifier)}"${promptNameMark(prompt)}>${escapeHtml(prompt.name || entry.identifier)}</option>`);
         });
         placementField.innerHTML = options.join('');
 
@@ -2445,7 +2445,7 @@ class PromptManager {
                 .sort((promptA, promptB) => String(promptA.name ?? '').localeCompare(String(promptB.name ?? '')));
             const promptsHtml = prompts.reduce((acc, prompt) => {
                 const selected = prompt.identifier === previousRemovedPromptId ? ' selected' : '';
-                return acc + `<option value="${escapeHtml(prompt.identifier)}"${selected}>${escapeHtml(prompt.name || t`Untitled prompt`)}</option>`;
+                return acc + `<option value="${escapeHtml(prompt.identifier)}"${selected}${promptNameMark(prompt)}>${escapeHtml(prompt.name || t`Untitled prompt`)}</option>`;
             }, '');
 
             footerHtml = await renderTemplateAsync('promptManagerFooter', { promptsHtml, prefix: this.configuration.prefix });
@@ -2636,7 +2636,7 @@ class PromptManager {
                         ${isImportantPrompt ? '<span class="fa-fw fa-solid fa-star" title="Important Prompt"></span>' : ''}
                         ${isUserPrompt ? '<span class="fa-fw fa-solid fa-asterisk" title="Preset Prompt"></span>' : ''}
                         ${isInjectionPrompt ? '<span class="fa-fw fa-solid fa-syringe" title="In-Chat Injection"></span>' : ''}
-                        ${this.isPromptInspectionAllowed(prompt) ? `<a title="${encodedName}" class="prompt-manager-inspect-action" role="button" tabindex="0">${encodedName}</a>` : `<span title="${encodedName}">${encodedName}</span>`}
+                        ${this.isPromptInspectionAllowed(prompt) ? `<a title="${encodedName}" class="prompt-manager-inspect-action" role="button" tabindex="0"${promptNameMark(prompt)}>${encodedName}</a>` : `<span title="${encodedName}"${promptNameMark(prompt)}>${encodedName}</span>`}
                         ${roleIcon ? `<span data-role="${escapeHtml(prompt.role)}" class="fa-xs fa-solid ${roleIcon}" title="${roleTitle}"></span>` : ''}
                         ${isInjectionPrompt ? `<small class="prompt-manager-injection-depth">@ ${escapeHtml(prompt.injection_depth.toString())}</small>` : ''}
                         ${isOverriddenPrompt ? '<small class="fa-solid fa-address-card prompt-manager-overridden" title="Pulled from a character card"></small>' : ''}
@@ -3049,6 +3049,33 @@ class PromptManager {
     }
 }
 
+/**
+ * The names the Reset button writes back for the prompts that have a stored default. They are the app's own captions, so
+ * they keep translating. tests/user-name-surfaces.test.js checks that every reset case is listed here.
+ */
+export const PROMPT_RESET_NAMES = Object.freeze({
+    main: 'Main Prompt',
+    nsfw: 'Nsfw Prompt',
+    jailbreak: 'Jailbreak Prompt',
+    enhanceDefinitions: 'Enhance Definitions',
+});
+
+/**
+ * Whether a prompt's name is one the app wrote (its default name, or the name Reset writes), not one a person chose.
+ * A name a person chose is data: the run-time localiser must leave it as written. Bundled presets' own prompts under
+ * custom identifiers count as chosen names, as the bundled preset names do.
+ * @param {{identifier?: string, name?: string}|null|undefined} prompt
+ * @returns {boolean}
+ */
+export function isBuiltInPromptName(prompt) {
+    const identifier = prompt?.identifier;
+    if (typeof identifier !== 'string' || !Object.hasOwn(DEFAULT_PROMPT_NAMES, identifier)) return false;
+    return prompt.name === DEFAULT_PROMPT_NAMES[identifier] || prompt.name === PROMPT_RESET_NAMES[identifier];
+}
+
+/** The attribute that keeps a chosen prompt name from being translated, for HTML built as a string. */
+const promptNameMark = prompt => isBuiltInPromptName(prompt) ? '' : ' data-i18n-ignore';
+
 const chatCompletionDefaultPrompts = {
     'prompts': [
         {
@@ -3130,6 +3157,13 @@ const chatCompletionDefaultPrompts = {
         },
     ],
 };
+
+/**
+ * The default prompts' names by identifier, copied when this module loads. An account whose saved settings hold no prompts uses
+ * chatCompletionDefaultPrompts.prompts itself as its prompt list, so a prompt added or renamed there changes that array.
+ * isBuiltInPromptName reads this copy, never the live array.
+ */
+const DEFAULT_PROMPT_NAMES = Object.freeze(Object.fromEntries(chatCompletionDefaultPrompts.prompts.map(prompt => [prompt.identifier, prompt.name])));
 
 const promptManagerDefaultPromptOrders = {
     'prompt_order': [],

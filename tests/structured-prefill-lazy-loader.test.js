@@ -19,6 +19,11 @@ class FakeOption {
     constructor(text, value) {
         this.text = text;
         this.value = value;
+        this.attributes = {};
+    }
+
+    setAttribute(name, value) {
+        this.attributes[name] = String(value);
     }
 }
 

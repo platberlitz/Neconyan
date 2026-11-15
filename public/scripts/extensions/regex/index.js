@@ -330,6 +330,8 @@ class RegexPresetManager {
 
         extension_settings.regex_presets.forEach(preset => {
             const option = new Option(preset.name, preset.id, preset.isSelected, preset.isSelected);
+            // A preset name is data; the fallback option above is a caption.
+            option.setAttribute('data-i18n-ignore', '');
             this.presetSelect.appendChild(option);
         });
 
@@ -815,7 +817,10 @@ function fillRegexDraftProfiles(select, selectedId) {
             groups.set(profile.mode, group);
             select.append(group);
         }
-        group.append(new Option(profile.name, profile.id));
+        // A profile name is data; 'Current connection' and the group captions stay unmarked.
+        const option = new Option(profile.name, profile.id);
+        option.setAttribute('data-i18n-ignore', '');
+        group.append(option);
     }
     select.value = resolveRegexDraftProfileId(profiles, selectedId);
     return profiles.length;

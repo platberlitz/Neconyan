@@ -2060,7 +2060,7 @@ function getGroupAvatar(group) {
     }
     // if isDataURL or if it's a valid local file url
     if (isValidImageUrl(group.avatar_url)) {
-        return $(`<div class="avatar" title="[Group] ${group.name}"><img src="${group.avatar_url}"></div>`);
+        return $(`<div class="avatar" data-i18n-ignore title="${t`[Group] ${group.name}`}"><img src="${group.avatar_url}"></div>`);
     }
 
     const memberAvatars = [];
@@ -2090,7 +2090,7 @@ function getGroupAvatar(group) {
             });
         }
 
-        groupAvatar.attr('title', `[Group] ${group.name}`);
+        groupAvatar.attr({ title: t`[Group] ${group.name}`, 'data-i18n-ignore': '' });
         return groupAvatar;
     }
 
@@ -2106,7 +2106,7 @@ function getGroupAvatar(group) {
         loading: 'lazy',
         decoding: 'async',
     });
-    groupAvatar.attr('title', `[Group] ${group.name}`);
+    groupAvatar.attr({ title: t`[Group] ${group.name}`, 'data-i18n-ignore': '' });
     return groupAvatar;
 }
 
@@ -3058,7 +3058,8 @@ async function populateGroupDirectorProfiles(selectedId = '') {
     const selected = String(selectedId || '');
     select.empty().append($('<option value=""></option>').text(t`Current chat model`));
     for (const profile of profiles) {
-        select.append($('<option></option>').val(profile.id).text(profile.name || profile.id));
+        // A profile name is data; the captions around it are built with t.
+        select.append($('<option></option>').val(profile.id).text(profile.name || profile.id).attr('data-i18n-ignore', ''));
     }
     if (selected && !profiles.some(profile => profile.id === selected)) {
         select.append($('<option></option>').val(selected).text(t`Missing profile (uses the chat model)`));

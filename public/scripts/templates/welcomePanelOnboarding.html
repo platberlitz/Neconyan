@@ -71,7 +71,7 @@
                 <div class="noRecentChat displayNone" data-recent-chat-empty-state="filtered"><strong>No chats match this filter.</strong><span>Choose another chat type.</span></div>
                 {{#each chats}}{{#with this}}
                 <article class="recentChat {{#if hidden}}hidden{{/if}} {{#if is_group}}group{{else}}individual{{/if}} {{#if is_agent}}agent{{/if}} {{#if is_conversation}}conversation{{/if}}" data-recent-chat-type="{{recent_chat_type}}" data-file="{{chat_name}}" data-avatar="{{avatar}}" data-group="{{group}}" data-conversation-branch-id="{{conversation_branch_id}}" data-conversation-branch-name="{{conversation_branch_name}}">
-                    <button type="button" class="recentChatOpen"><span class="sr-only">Open {{char_name}}: {{chat_name}}</span></button>
+                    <button type="button" class="recentChatOpen"><span class="sr-only" data-i18n-ignore>{{open_label}}</span></button>
                     {{#if pinned}}<div class="recentChatPinned"><i class="fa-solid fa-thumbtack" title="Pinned chat" aria-label="Pinned chat"></i></div>{{/if}}
                     <div class="avatar"><img src="{{char_thumbnail}}" alt="{{char_name}}" width="48" height="48" loading="lazy" decoding="async"></div>
                     <div class="recentChatInfo">

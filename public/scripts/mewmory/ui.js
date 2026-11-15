@@ -4,6 +4,7 @@ import {
     retryMewmoryVisibilityRestore, setMewmoryOffRecord, stopMewmoryBackfill,
 } from './index.js';
 import { chat, getRequestHeaders } from '../../script.js';
+import { t } from '../i18n.js';
 import { currentUser } from '../user.js';
 import { getFriendlyTokenizerName } from '../tokenizers.js';
 import { uuidv4 } from '../utils.js';
@@ -2808,7 +2809,9 @@ function render() {
     const locator = getMewmoryLocator();
     const where = node('div', 'mewmory-where');
     where.append(node('span', 'mewmory-eyebrow', 'Memory for'),
-        node('p', 'mewmory-scope', locator?.chat || mewmory.view?.locator?.chat || 'No Roleplay chat selected'));
+        node('p', 'mewmory-scope', locator?.chat || mewmory.view?.locator?.chat || t`No Roleplay chat selected`));
+    // The line is a chat's name, or a caption built with t, so the localiser leaves it as written.
+    where.querySelector('.mewmory-scope').setAttribute('data-i18n-ignore', '');
     const extractorOn = mewmory.config?.roles.extractor.enabled;
     const waiting = Boolean(mewmory.view?.health?.pending);
     const restoration = mewmory.view?.visibilityRestore;

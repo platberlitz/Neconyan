@@ -104,6 +104,8 @@ export function populateConnectionProfileSelect(select, { emptyLabel = 'Use defa
         const option = document.createElement('option');
         option.value = profile.id;
         option.textContent = profile.name || profile.id;
+        // A profile name is data; the 'empty' and 'Missing profile' captions around it stay unmarked.
+        option.setAttribute('data-i18n-ignore', '');
         select.appendChild(option);
     }
 

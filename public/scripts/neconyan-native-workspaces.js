@@ -463,8 +463,10 @@ function renderLorebookLibrary(library) {
     const selectedCopy = library.querySelector('.neconyan-lorebook-selected');
     const selectedText = view === 'book'
         ? `${nativeState.lorebookSelected} · ${getLorebookFolderName(metadata, metadata.assignments[nativeState.lorebookSelected])}`
-        : 'Choose a book to edit its entries.';
+        : t`Choose a book to edit its entries.`;
     if (selectedCopy instanceof HTMLElement && selectedCopy.textContent !== selectedText) selectedCopy.textContent = selectedText;
+    // The line is a book's name and its folder (the folder caption is built with t), or a caption built with t.
+    if (selectedCopy instanceof HTMLElement) selectedCopy.toggleAttribute('data-i18n-ignore', view === 'book');
     const primaryActions = library.querySelector('#world_popup_primary_actions');
     const primaryGroup = primaryActions?.querySelector('.world_popup_action_group--select');
     if (primaryGroup) {
@@ -562,13 +564,16 @@ function renderLorebookLibrary(library) {
         const row = element('article', 'neconyan-lorebook-book');
         const open = button('', 'neconyan-lorebook-book-open');
         open.setAttribute('aria-label', t`Open ${name}`);
-        open.append(element('i', 'fa-solid fa-book-open', ''), element('span', '', name));
+        // The class is in ui-localization.js userText: a lorebook's name is data.
+        open.append(element('i', 'fa-solid fa-book-open', ''), element('span', 'neconyan-lorebook-book-name', name));
         open.addEventListener('click', () => selectLorebook(name));
         const location = element('span', 'neconyan-lorebook-book-location', getLorebookFolderName(metadata, metadata.assignments[name]));
         const move = document.createElement('select');
         move.className = 'text_pole neconyan-lorebook-book-move';
-        move.setAttribute('aria-label', `Folder for ${name}`);
-        move.appendChild(new Option('Unfiled', ''));
+        move.setAttribute('aria-label', t`Folder for ${name}`);
+        move.setAttribute('data-i18n-ignore', '');
+        // Every caption in the picker is built with t; the folder names beside them are data.
+        move.appendChild(new Option(t`Unfiled`, ''));
         for (const folder of metadata.folders) move.appendChild(new Option(folder.name, folder.id));
         move.value = metadata.assignments[name] || '';
         move.addEventListener('change', async () => {

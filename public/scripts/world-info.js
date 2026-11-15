@@ -2268,6 +2268,17 @@ export async function loadWorldInfo(name) {
     return null;
 }
 
+/**
+ * The lorebook open in the editor, by its stored name. The select's value is an index into world_names, so the answer
+ * never depends on the text a localiser or a label has put on the option.
+ * @returns {string} The name, or an empty string when none is open.
+ */
+export function getSelectedEditorWorldName() {
+    const value = String($('#world_editor_select').val() ?? '');
+    if (value === '') return '';
+    return world_names?.[Number(value)] ?? '';
+}
+
 export async function updateWorldInfoList() {
     const result = await fetch('/api/settings/get', {
         method: 'POST',
@@ -2277,7 +2288,7 @@ export async function updateWorldInfoList() {
 
     if (result.ok) {
         const data = await result.json();
-        const editorSelected = String($('#world_editor_select').find(':selected').text());
+        const editorSelected = getSelectedEditorWorldName();
         world_names = data.world_names?.length ? data.world_names : [];
         updatePersonaLorebookActions();
         $('#world_info').find('option[value!=""]').remove();
@@ -3747,6 +3758,7 @@ function fillCharacterAndTagOptionsHelper({ characterFilter, entry }) {
         const name = character.avatar.replace(/\.[^/.]+$/, '') ?? character.name;
         knownNames.add(name);
         option.innerText = name;
+        option.setAttribute('data-i18n-ignore', '');
         option.selected = entry.characterFilter?.names?.includes(name);
         option.setAttribute('data-type', 'character');
         characterFilter.append(option);
@@ -3757,6 +3769,7 @@ function fillCharacterAndTagOptionsHelper({ characterFilter, entry }) {
         }
         const option = document.createElement('option');
         option.innerText = name;
+        option.setAttribute('data-i18n-ignore', '');
         option.selected = true;
         option.setAttribute('data-type', 'character');
         characterFilter.append(option);
@@ -3766,6 +3779,7 @@ function fillCharacterAndTagOptionsHelper({ characterFilter, entry }) {
     tags.forEach((tag) => {
         const option = document.createElement('option');
         option.innerText = `[Tag] ${tag.name}`;
+        option.setAttribute('data-i18n-ignore', '');
         option.selected = entry.characterFilter?.tags?.includes(tag.id);
         option.value = tag.id;
         knownTags.add(tag.id);
@@ -3778,6 +3792,7 @@ function fillCharacterAndTagOptionsHelper({ characterFilter, entry }) {
         }
         const option = document.createElement('option');
         option.innerText = `[Tag] ${tag}`;
+        option.setAttribute('data-i18n-ignore', '');
         option.value = tag;
         option.selected = true;
         option.setAttribute('data-type', 'tag');
@@ -7702,7 +7717,7 @@ export function initWorldInfo() {
             visible: option => option.selected,
             run: option => {
                 const selectedIndex = world_names.indexOf(option.text);
-                const alreadySelectedInEditor = $('#world_editor_select option:selected').text() === option.text;
+                const alreadySelectedInEditor = getSelectedEditorWorldName() === option.text;
                 if (selectedIndex !== -1 && !alreadySelectedInEditor) {
                     $('#world_editor_select').val(selectedIndex).trigger('change');
                 }

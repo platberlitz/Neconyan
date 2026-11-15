@@ -433,6 +433,8 @@ export function populateProfileSelect(elementId, selectedProfileId) {
             const opt = document.createElement('option');
             opt.value = p.id;
             opt.textContent = p.name || p.id;
+            // A profile name is data; the captions around it stay unmarked.
+            opt.setAttribute('data-i18n-ignore', '');
             if (p.id === selectedProfileId) {
                 opt.selected = true;
                 selectedProfileFound = true;

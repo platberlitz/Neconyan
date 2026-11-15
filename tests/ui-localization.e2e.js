@@ -389,3 +389,81 @@ test('the six extension updater refusals are translated whole by the localiser, 
         'ChatCompletionTabs vem com o Neconyan e não pode ser excluída pelo atualizador.',
     ]);
 });
+
+// M71: names in a select2 list. The select2 widgets that list lorebook, tag and character-filter names carry the class sb-user-names on
+// their selection and dropdown (the native select under them carries data-i18n-ignore or marked options). These pass on the code before the
+// change only in their preservation half.
+test('an element with the sb-user-names class keeps a name that equals a key, and an unmarked control beside it still translates (pt-pt)', async ({ page }) => {
+    const dictionary = await mergedDictionary('pt-pt');
+    for (const key of ['Default', 'Summary', 'Notes']) expect(dictionary[key], key).toBeTruthy();
+    await openLocaliser(page, `
+        <div class="sb-user-names" title="Summary">Default</div>
+        <p id="control" title="Summary">Default</p>
+        <p id="caption">Notes</p>`);
+    const result = await page.evaluate(dictionary => {
+        window.localizeControls(document.getElementById('root'), dictionary);
+        const marked = document.querySelector('.sb-user-names');
+        return {
+            marked: [marked.textContent, marked.title],
+            control: [document.getElementById('control').textContent, document.getElementById('control').title],
+            caption: document.getElementById('caption').textContent,
+        };
+    }, dictionary);
+    expect.soft(result.marked, 'defect: the name stays as written').toEqual(['Default', 'Summary']);
+    expect(result.control, 'preservation: an unmarked control translates').toEqual([dictionary.Default, dictionary.Summary]);
+    expect(result.caption, 'preservation: a caption translates').toBe(dictionary.Notes);
+});
+
+test('a select2-shaped selection and dropdown marked sb-user-names keep their text and title, and a sibling outside them translates (pt-pt)', async ({ page }) => {
+    const dictionary = await mergedDictionary('pt-pt');
+    await openLocaliser(page, `
+        <span class="select2 select2-container">
+            <span class="select2-selection select2-selection--multiple sb-user-names">
+                <ul class="select2-selection__rendered"><li class="select2-selection__choice" title="Default"><span class="select2-selection__choice__remove">×</span>Default</li></ul>
+            </span>
+        </span>
+        <span class="select2-container select2-container--open"><span class="select2-dropdown sb-user-names">
+            <ul class="select2-results__options"><li class="select2-results__option" title="Summary">Summary</li></ul>
+        </span></span>
+        <span id="sibling" class="select2-selection__placeholder" title="Summary">Default</span>`);
+    const result = await page.evaluate(dictionary => {
+        window.localizeControls(document.getElementById('root'), dictionary);
+        const choice = document.querySelector('.select2-selection__choice');
+        const option = document.querySelector('.select2-results__option');
+        const sibling = document.getElementById('sibling');
+        return { choice: [choice.textContent.replace('×', ''), choice.title], option: [option.textContent, option.title], sibling: [sibling.textContent, sibling.title] };
+    }, dictionary);
+    expect.soft({ choice: result.choice, option: result.option }, 'defect: the names stay as written').toEqual({ choice: ['Default', 'Default'], option: ['Summary', 'Summary'] });
+    expect(result.sibling, 'preservation: a select2 element outside the marked ones translates').toEqual([dictionary.Default, dictionary.Summary]);
+});
+
+// M71: one proof per userText entry the change adds (rule F). Each element only ever shows a name a person chose. The name equals a pt-pt
+// key, so it must stay as written, while an unmarked control beside it, of the same tag, still translates. Each fails on the code before the
+// change, where the entry is missing.
+for (const [selector, attribute, where] of [
+    ['#an_chara_name', 'id="an_chara_name"', 'Author\'s Note character name (authors-note.js)'],
+    ['#extension_floating_chara_editing', 'id="extension_floating_chara_editing"', 'Author\'s Note note being edited (authors-note.js renderNoteSlot)'],
+    ['.an-note-name', 'class="an-note-name"', 'Author\'s Note character note list (authors-note.js renderCharaNoteList)'],
+    ['.group_select_block_list', 'class="group_select_block_list"', 'group card member names (group-chats.js)'],
+    ['.select_chat_block_filename', 'class="select_chat_block_filename"', 'Manage chats file names (index.html template)'],
+    ['.sb-chat-file-title', 'class="sb-chat-file-title"', 'chat file rows (neconyan-tabs.js createChatFileButton)'],
+    ['.scratchpad-source', 'class="scratchpad-source"', 'Scratchpad source chat (scratchpad/index.js)'],
+    ['.sbca-filename', 'class="sbca-filename"', 'Chats archive file names'],
+    ['.sbca-owner', 'class="sbca-owner"', 'Chats archive owner names'],
+    ['.sbca-owner-choice-name', 'class="sbca-owner-choice-name"', 'Chats archive owner choices'],
+    ['.neconyan-lorebook-book-name', 'class="neconyan-lorebook-book-name"', 'lorebook library card names (neconyan-native-workspaces.js)'],
+]) {
+    test(`userText ${selector}: a name that equals a key stays as written, and an unmarked control beside it translates (pt-pt)`, async ({ page }) => {
+        const dictionary = await mergedDictionary('pt-pt');
+        for (const key of ['Default', 'Summary']) expect(dictionary[key], key).toBeTruthy();
+        await openLocaliser(page, `<div><span ${attribute} title="Summary">Default</span><span id="control" title="Summary">Default</span></div>`);
+        const result = await page.evaluate(([query, dictionary]) => {
+            window.localizeControls(document.getElementById('root'), dictionary);
+            const marked = document.querySelector(query);
+            const control = document.getElementById('control');
+            return { marked: [marked.textContent, marked.title], control: [control.textContent, control.title] };
+        }, [selector, dictionary]);
+        expect.soft(result.marked, `defect: ${where} keeps the name as written`).toEqual(['Default', 'Summary']);
+        expect(result.control, 'preservation: an unmarked control translates').toEqual([dictionary.Default, dictionary.Summary]);
+    });
+}

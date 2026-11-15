@@ -1235,7 +1235,7 @@ export function buildLorebookOptions(selected) {
     const options = ['<option value="">Character default (no override)</option>'];
     for (const worldName of (Array.isArray(world_names) ? world_names : [])) {
         const safe = escapeHtmlAttribute(worldName);
-        options.push(`<option value="${safe}"${worldName === selected ? ' selected' : ''}>${escapeHtmlText(worldName)}</option>`);
+        options.push(`<option value="${safe}"${worldName === selected ? ' selected' : ''} data-i18n-ignore>${escapeHtmlText(worldName)}</option>`);
     }
     return options.join('');
 }
@@ -1247,7 +1247,7 @@ export function buildConnectionProfileOptions(selected) {
             continue;
         }
         const safe = escapeHtmlAttribute(profile.name);
-        options.push(`<option value="${safe}"${profile.name === selected ? ' selected' : ''}>${escapeHtmlText(profile.name)}</option>`);
+        options.push(`<option value="${safe}"${profile.name === selected ? ' selected' : ''} data-i18n-ignore>${escapeHtmlText(profile.name)}</option>`);
     }
     return options.join('');
 }

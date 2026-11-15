@@ -8,6 +8,39 @@ const previewFields = {
     secondary: 'underline_text_color',
 };
 const defaultNames = ['Neconyan Calico Dark', 'Neconyan Calico'];
+/**
+ * The themes the app ships, by name (default/content/themes). Their names are the app's own captions and keep translating.
+ * A theme with any other name was saved or imported by a person, so the run-time localiser must leave it as written.
+ * tests/user-name-surfaces.test.js checks this list against default/content/index.json.
+ */
+export const BUNDLED_THEME_NAMES = new Set([
+    'Amber Dusk', 'AMOLED Black', 'Arcade Cabinet', 'Atomic Diner', 'Aurora Drift', 'Azure', 'Bauhaus Poster',
+    'Bioluminescent Tide', 'Biometric Lab', 'Black Orange', 'Blueprint', 'Botanical Plate', 'Bubble Tea', 'Burnt Orange',
+    'Campfire Flicker', 'Candlelit Page', 'Candy Gloss', 'Cappuccino', 'Carbon Fibre', 'Cassette Future', 'Catppuccin Latte',
+    'Catppuccin Mocha', 'Celestial Chart', 'Celestial Macaron', 'Cerulean', 'Cherry Cola', 'Chrome 98', 'Chrome HUD', 'Cinder',
+    'Circuitry', 'Clean Room', 'Comet Trail', 'Comic Panel', 'Construction Paper', 'Cottagecore Linen', 'Dark Lite', 'Dark V 1.0',
+    'Datastream', 'Dawn Glow', 'Deep Sea Sonar', 'Delft Porcelain', 'DOS Cobalt', 'Dracula', 'Dracula Light', 'Dungeon Slate',
+    'E-Ink Reader', 'Editorial Hairline', 'Eldritch Deep', 'Elven Gilt', 'Ember Hearth', 'Espresso Bar', 'Everforest Dark',
+    'Everforest Light', 'Firefly Glow', 'Frost Rune', 'Game Boy DMG', 'Glacier', 'Glass Frost', 'Glitchwave', 'Greenhouse Grid',
+    'Grimoire', 'Gruvbox Dark', 'Gruvbox Light', 'Hacker-Terminal', 'Hacker-Terminal-Light', 'Hazard Console', 'Heat Haze',
+    'Herbarium', 'Holo Foil', 'Hydrangea', 'Ice Station', 'Ink & Vellum', 'Koi Pond Night', 'Lantern Warmth', 'Lava Lamp',
+    'Lavender', 'Legal Pad', 'Lemon Sorbet', 'Lime', 'Magenta', 'Marshmallow', 'Meadow Sway', 'Memphis Pop', 'Miami Deco',
+    'Midnight Kawaii', 'Midnight Library', 'Mint', 'Mint Chip', 'Monochrome', 'Monochrome Slate', 'Moonlit Garden', 'Moss Hollow',
+    'Nebula Swirl', 'Neconyan Calico', 'Neconyan Calico Dark', 'Neo-Brutalist', 'Neon Abyss', 'Neon Grid', 'Neon Heartbeat',
+    'Neon Yellow', 'Newsprint', 'Night Orchid', 'Nord', 'Nord Light', 'Nordic Frost', 'Obsidian Ink', 'Ocean Breath',
+    'Paper Minimal', 'Paper Tape', 'Peach Fuzz', 'Petal Breeze', 'Phosphor Green', 'Photocopy Zine', 'Plasma Ring', 'Plum',
+    'Plushie Felt', 'Pressed Lavender', 'Prism Haze', 'Radar Sweep', 'Rain on Glass', 'Raygun Poster', 'Riso Print', 'Rose',
+    'Rose Gold Bloom', 'Rosé Pine', 'Rosé Pine Dawn', 'Sage', 'Sakura Drift', 'Signal Pulse', 'Slate', 'Soap Bubble', 'Soft Clay',
+    'Solarized Dark', 'Solarized Light', 'Sonokai Andromeda', 'Sonokai Andromeda Light', 'Sonokai Atlantis',
+    'Sonokai Atlantis Light', 'Sonokai Default', 'Sonokai Default Light', 'Sonokai Espresso', 'Sonokai Espresso Light',
+    'Sonokai Maia', 'Sonokai Maia Light', 'Sonokai Shusia', 'Sonokai Shusia Light', 'Stealth Ops', 'Steampunk Brass',
+    'Sticker Book', 'Storm Charge', 'Strawberry Milk', 'Sunbeam Dust', 'Sunflower Field', 'Sunlit Mosaic', 'Sunny Bento',
+    'Swiss Grid', 'Synthwave Drive', 'Teletext', 'Terminal Amber', 'Terracotta Sun', 'Tidepool Shimmer', 'Tokyo Night',
+    'Tokyo Night Day', 'Ultraviolet Rave', 'Vaporwave Sunset', 'Velvet Noir', 'Verdant', 'Verdant Light', 'VFD Cyan',
+    'Volcanic Glass', 'Wildflower Press', 'Windows 98', 'Windows Aero', 'Windows Aero Light', 'Windows XP Blue',
+    'Windows XP Olive Green', 'Windows XP Olive Green Dark', 'Windows XP Royale', 'Windows XP Royale Noir', 'Windows XP Silver',
+    'Windows XP Zune', 'Witching Hour',
+]);
 const SEARCH_FILTER_DELAY_MS = 120;
 
 /** Use the same resolved colours as theme application, including imported palettes. */
@@ -189,6 +222,7 @@ export function createUiThemePicker(host, { onSelect, translate = text => text }
                         palette.append(swatch);
                     }
                     const name = element('span', 'nn-ui-theme-name', theme.name);
+                    if (!BUNDLED_THEME_NAMES.has(theme.name)) name.setAttribute('data-i18n-ignore', '');
                     const meta = element('span', 'nn-ui-theme-meta');
                     meta.append(element('span', '', translate(preview.tone === 'light' ? 'Light' : 'Dark')));
                     const check = element('span', 'nn-ui-theme-check', '✓');
@@ -208,6 +242,8 @@ export function createUiThemePicker(host, { onSelect, translate = text => text }
             const changed = activeName !== selected;
             activeName = selected;
             currentName.textContent = selected || translate('No theme selected.');
+            // A chosen name stays as written; a bundled name and the fallback caption keep translating.
+            currentName.toggleAttribute('data-i18n-ignore', Boolean(selected) && !BUNDLED_THEME_NAMES.has(selected));
             for (const entry of entries) {
                 const pressed = String(entry.name === selected);
                 if (entry.button.getAttribute('aria-pressed') !== pressed) entry.button.setAttribute('aria-pressed', pressed);

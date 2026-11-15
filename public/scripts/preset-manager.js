@@ -1303,7 +1303,9 @@ class PresetManager {
      * @returns {Promise<string[]>}
      */
     async selectPresetsForDeletion() {
-        const presetNames = this.getAllPresets().filter(name => name !== 'gui');
+        // The built-in 'gui' entry is told apart by its value. Its text is a caption ('GUI KoboldAI Settings'), never 'gui'.
+        // The preset selects are data-i18n-ignore, so an option's text is the stored preset name.
+        const presetNames = $(this.select).find('option').filter((_, option) => option.value !== 'gui').map((_, option) => option.text).toArray();
 
         if (presetNames.length === 0) {
             toastr.info(t`No deletable presets found.`);
@@ -1323,7 +1325,7 @@ class PresetManager {
                     ${presetNames.map(name => `
                         <label class="checkbox_label justifyStart">
                             <input type="checkbox" value="${escapeAttr(name)}" />
-                            <span>${escapeAttr(name)}</span>
+                            <span data-i18n-ignore>${escapeAttr(name)}</span>
                         </label>
                     `).join('')}
                 </div>

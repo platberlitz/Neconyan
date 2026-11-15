@@ -8067,6 +8067,8 @@ function populateChatSelector(select, chatFiles, chatContext, placeholder) {
     for (const chat of uniqueChats) {
         const chatName = chat.fileName;
         const option = createElement('option', { text: formatChatSelectorLabel(chatName, chat.tokenEstimate) });
+        // A chat's file name is data; the placeholder option above stays unmarked.
+        option.setAttribute('data-i18n-ignore', '');
         option.value = chatName;
         option.selected = chatName === currentValue;
         select.appendChild(option);
@@ -8074,6 +8076,7 @@ function populateChatSelector(select, chatFiles, chatContext, placeholder) {
 
     if (currentValue && !uniqueChats.some(chat => chat.fileName === currentValue)) {
         const option = createElement('option', { text: currentValue });
+        option.setAttribute('data-i18n-ignore', '');
         option.value = currentValue;
         option.selected = true;
         select.appendChild(option);
@@ -8095,7 +8098,7 @@ function createChatFileButton(chatFile, currentChatId, onSelect, { compact = fal
     button.classList.toggle('is-current', chatFile.fileName === currentChatId);
     button.innerHTML = `
         <div class="sb-chat-file-head">
-            <strong>${chatFile.fileName}</strong>
+            <strong class="sb-chat-file-title">${chatFile.fileName}</strong>
             <small>${dateLabel || ''}</small>
         </div>
         <span class="sb-chat-file-preview">${chatFile.preview}</span>
@@ -20866,6 +20869,8 @@ async function refreshBottomChatSelect() {
             const option = document.createElement('option');
             option.value = chatName;
             option.textContent = formatChatSelectorLabel(chatName, chat.tokenEstimate);
+            // A chat's file name is data; the 'No chat selected' fallback below stays unmarked.
+            option.setAttribute('data-i18n-ignore', '');
             option.selected = chatName === currentChatName;
             chatSelect.appendChild(option);
         }
@@ -20873,6 +20878,7 @@ async function refreshBottomChatSelect() {
         if (!chatNames.includes(currentChatName)) {
             const fallback = document.createElement('option');
             fallback.value = '';
+            if (currentChatName) fallback.setAttribute('data-i18n-ignore', '');
             fallback.textContent = currentChatName || 'No chat selected';
             fallback.selected = true;
             chatSelect.prepend(fallback);

@@ -4,7 +4,7 @@ import { renderTemplateAsync } from './templates.js';
 import { debounce, download } from './utils.js';
 import { getTokenCountAsync } from './tokenizers.js';
 import {
-    convertCharacterBook, flushWorldInfoEditor, getWorldInfoEditorSnapshot, loadWorldInfo,
+    convertCharacterBook, flushWorldInfoEditor, getSelectedEditorWorldName, getWorldInfoEditorSnapshot, loadWorldInfo,
     restoreWorldInfoCommit, selectWorldInfoEntry, showWorldEditor, world_info_budget, world_info_budget_cap,
     world_info_case_sensitive, world_info_match_whole_words, world_names,
 } from './world-info.js';
@@ -520,7 +520,12 @@ export async function mountLorebookTools(root) {
                 const book = panel.querySelector('#neco-lore-merge-book');
                 const previous = book.value;
                 book.replaceChildren(new Option('--- Pick a lorebook ---', ''));
-                for (const name of world_names.filter(name => name !== state.name)) book.add(new Option(name, name));
+                // A lorebook name is data; '--- Pick a lorebook ---' above it is a caption and stays unmarked.
+                for (const name of world_names.filter(name => name !== state.name)) {
+                    const option = new Option(name, name);
+                    option.setAttribute('data-i18n-ignore', '');
+                    book.add(option);
+                }
                 book.value = previous;
                 await refreshSaved();
             });
@@ -665,7 +670,7 @@ export async function mountLorebookTools(root) {
                 const result = await restoreWorldInfoCommit(name, {
                     revision: state.revision, headCommitId: state.history.headCommitId, commitId: selectedCommit,
                 });
-                if (root.querySelector('#world_editor_select')?.selectedOptions[0]?.textContent !== name) return;
+                if (getSelectedEditorWorldName() !== name) return;
                 state = { name, ...result };
                 histories.set(name, result.history);
                 await showWorldEditor(name);
@@ -681,7 +686,7 @@ export async function mountLorebookTools(root) {
                 await flushWorldInfoEditor();
                 await client.run('apply', { proposalKey: result.record.key, resultHash: result.record.resultHash },
                     { scope: `apply:${result.record.key}` });
-                if (root.querySelector('#world_editor_select')?.selectedOptions[0]?.textContent !== name) return;
+                if (getSelectedEditorWorldName() !== name) return;
                 await showWorldEditor(name);
                 if (!await prepare()) return;
                 clearPreview(toolMode);

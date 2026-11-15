@@ -304,6 +304,8 @@ function renderOwnerOptions(ctx, ui, choices, selected) {
         option.dataset.sbcaOwner = choice.value;
         option.dataset.sbcaSearch = `${choice.label} ${choice.meta} ${choice.id}`.toLocaleLowerCase();
         option.setAttribute('aria-label', choice.meta ? `${choice.label}, ${choice.meta}` : choice.label);
+        // Every caption here is a name or already built with tr(), so the localiser must leave the option alone.
+        option.setAttribute('data-i18n-ignore', '');
         option.append(ownerChoiceVisual(ctx, choice));
         const copy = el('span', 'sbca-owner-choice-copy');
         copy.append(el('span', 'sbca-owner-choice-name', choice.label));
