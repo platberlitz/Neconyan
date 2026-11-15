@@ -95,6 +95,7 @@
 - PR #685 (2026-11-14) `fix: align background controls and keep Mewmory in place`
 - PR #686 (2026-11-14) `feat(favourites): add shared desktop scroll controls`
 - PR #687 (2026-11-15) `fix(backgrounds): load the gallery at once and fix three browser tests`
+- PR #688 (2026-11-15) `fix(sync): import large packages, speed up big imports and clear up export and pairing failures`
 
 ## v1.5.4
 
