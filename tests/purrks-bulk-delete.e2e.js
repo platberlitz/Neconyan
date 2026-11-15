@@ -165,13 +165,14 @@ for (const phone of [true, false]) {
         await screenshot(page, phone, 'selection', info);
         const geometry = await block.locator('.neconyan-purrks-toolbar button, .neconyan-purrk-toggle, .neconyan-purrk-label-btn').evaluateAll(nodes => nodes.map(node => {
             const bounds = node.getBoundingClientRect();
-            return { name: node.getAttribute('aria-label') || node.textContent, height: bounds.height, left: bounds.left, right: bounds.right, viewport: window.innerWidth };
+            return { name: node.getAttribute('aria-label') || node.textContent, toggle: node.matches('.neconyan-purrk-toggle'), height: bounds.height, left: bounds.left, right: bounds.right, viewport: window.innerWidth };
         }));
         await info.attach('selection geometry', { body: JSON.stringify(geometry), contentType: 'application/json' });
         for (const control of geometry) {
             expect(control.left).toBeGreaterThanOrEqual(0);
             expect(control.right).toBeLessThanOrEqual(control.viewport);
-            expect(control.height).toBeGreaterThanOrEqual(phone ? 44 : 16);
+            // Desktop checkboxes are 0.96rem (15.36px) app-wide at this viewport width.
+            expect(control.height, JSON.stringify(control)).toBeGreaterThanOrEqual(phone ? 44 : control.toggle ? 15 : 16);
         }
 
         await remove.click();

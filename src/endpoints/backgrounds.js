@@ -148,7 +148,9 @@ router.post('/all', async function (request, response) {
         // Only generate metadata for actual image files; video files are handled client-side.
         const imageFiles = files.filter(file => String(mime.lookup(file) || '').startsWith('image/'));
         const relativePaths = imageFiles.map(file => path.join('backgrounds', file));
-        const { results: metadataMap } = await getOrGenerateMetadataBatch(request.user.directories.root, relativePaths, 'bg');
+        // The gallery only needs each image's size and animation flag to render; decoding every
+        // image for its placeholder color took about 19 seconds on a fresh install.
+        const { results: metadataMap } = await getOrGenerateMetadataBatch(request.user.directories.root, relativePaths, 'bg', { deferColor: true });
 
         // Build response with metadata for each background file.
         const filesWithMetadata = files.map(file => {
