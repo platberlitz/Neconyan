@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.5.6
+
+### Merged Staging PRs
+- PR #694 (2026-11-15) `fix(image-gen): wait for app settings before the first save`
+
 ## v1.5.5
 
 ### Highlights
