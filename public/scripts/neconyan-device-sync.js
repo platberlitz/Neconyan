@@ -28,7 +28,7 @@ export async function mountDeviceSync(root) {
         if (getCurrentUserHandle() !== owner) throw new Error(t`The account changed. Reload before syncing.`);
         const response = await fetch('/api/device-sync/' + route, { method: data === undefined ? 'GET' : 'POST', cache: 'no-store',
             headers: { ...getRequestHeaders(), 'X-Neconyan-Account': owner }, ...(data !== undefined ? { body: JSON.stringify(data) } : {}) });
-        const value = await response.json();
+        const value = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(value.error ? translate(value.error) : t`Device sync could not finish. Try again.`);
         return value;
     };
@@ -186,7 +186,7 @@ export async function mountDeviceSync(root) {
 
         const history = element('section', '', 'nn-sync-history'); history.append(element('h4', 'Last transfer'));
         const last = state.lastResult;
-        history.append(element('p', !last ? 'No transfers yet.' : `${translate(methodLabels[last.method])} · ${new Date(last.at).toLocaleString()} · ${last.ok ? t`${last.imported || 0} imported, ${last.conflicts || 0} conflicts` : translate(last.error)}`));
+        history.append(element('p', !last ? 'No transfers yet.' : `${translate(methodLabels[last.method])} · ${new Date(last.at).toLocaleString()} · ${!last.ok ? translate(last.error) : last.exported ? t`Encrypted package exported` : t`${last.imported || 0} imported, ${last.conflicts || 0} conflicts`}`));
         if (state.recoveryPending) {
             history.append(element('p', 'An interrupted transfer has saved recovery data. Enable its original method, then finish it before starting another.'));
             for (const method of Object.keys(methodLabels).filter(name => state.methods[name].enabled)) history.append(button(t`Recover ${translate(methodLabels[method])}`, () => api('recover', { method })));

@@ -41,8 +41,20 @@ export function entry(relative, bytes) {
     return { path: relative, category: categoryFor(relative), size: bytes.length, hash: hash(bytes), data: bytes.toString('base64') };
 }
 
+const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+const BASE64_CHUNK = 1024 * 1024;
+
+// One pattern over a multi-megabyte string exhausts the regular expression stack.
+function canonical64(value) {
+    for (let start = 0; start < value.length; start += BASE64_CHUNK) {
+        const chunk = value.slice(start, start + BASE64_CHUNK);
+        if (!BASE64.test(chunk) || chunk.endsWith('=') && start + BASE64_CHUNK < value.length) return false;
+    }
+    return true;
+}
+
 export function decode64(value, max) {
-    if (typeof value !== 'string' || value.length > Math.ceil(max / 3) * 4 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) throw fail('Invalid or oversized encoded sync data.', 413);
+    if (typeof value !== 'string' || value.length > Math.ceil(max / 3) * 4 || !canonical64(value)) throw fail('Invalid or oversized encoded sync data.', 413);
     const result = Buffer.from(value, 'base64');
     if (result.length > max) throw fail('The sync data exceeds its size limit.', 413);
     return result;

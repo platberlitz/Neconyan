@@ -26,7 +26,8 @@ describe('Device sync shell and shipping contracts', () => {
         expect(ui).toContain('\'X-Neconyan-Account\': owner');
         expect(ui).toContain('translate(value.error)');
         const catalogue = JSON.parse(read('public/locales/neconyan/en.json'));
-        for (const text of ['Device sync', 'Character cards and solo chats', 'Download encrypted file', 'This sync method is switched off.', 'Remove preserved copies']) expect(catalogue[text]).toBe(text);
+        for (const text of ['Device sync', 'Character cards and solo chats', 'Download encrypted file', 'This sync method is switched off.', 'Remove preserved copies', 'Encrypted package exported',
+            'The receiving installation could not accept the transfer. Check that Direct pairing is switched on there and that it has no interrupted sync or sync already running, then retry.']) expect(catalogue[text]).toBe(text);
     });
 
     test('pre-authentication admission is narrow and independently authenticated, not a broad exemption', () => {

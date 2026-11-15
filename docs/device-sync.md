@@ -13,7 +13,7 @@ Open **Settings → Device sync** on either screen size. All four methods start 
 - PNG, JPEG, WebP and GIF backgrounds.
 - Text size, chat width and blur. I deliberately kept this small rather than copying every setting onto another device.
 
-Choose the categories and press **Save categories** before sharing. The selection also controls what that installation accepts. Chats must include their character card; personas must include their avatar.
+Choose the categories and press **Save categories** before sharing. The selection also controls what that installation accepts. Chats must include their character card; personas must include their avatar. Chats left behind by a character I've deleted stay on that installation and don't stop the export.
 
 A chat with a locked persona or a message using a local persona avatar also needs that persona and avatar. Select **Personas and avatars** on the sending installation; I don't add an unchecked category behind your back. The receiver must select it too unless its required persona and avatar already match exactly. Persona transfers leave local titles, lorebook links, connections, appendices and active selections alone.
 
@@ -77,7 +77,7 @@ If a transfer stops part-way through, its recovery record is saved before public
 
 ## Limits and connection failures
 
-Each snapshot is limited to **1000 files**, **8 MiB per file**, **32 MiB expanded content** and **60 MiB encrypted request**. Images must be at most 64 million pixels. Unsupported names, links, damaged formats and oversized selections are rejected instead of silently publishing a partial export. Network requests time out after 20 seconds. Select fewer categories if a limit is reached.
+Each snapshot is limited to **1000 files**, **8 MiB per file**, **32 MiB expanded content** and **60 MiB encrypted request**. Images must be at most 64 million pixels. Unsupported names, links, damaged formats and oversized selections are rejected instead of silently publishing a partial export. Network requests time out after 20 seconds, except a pairing exchange, which gets five minutes because the receiving installation imports the package before it replies. Select fewer categories if a limit is reached.
 
 Local recovery and preserved-copy storage is capped at 160 MiB. Download and remove resolved copies when it fills up.
 

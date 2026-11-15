@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { exportEnvelope, importEnvelope } from './service.js';
 import { fail, LIMITS, plain } from './protocol.js';
-import { request, checkResponse, targetUrl } from './network.js';
+import { request, checkResponse, checkPairingResponse, targetUrl } from './network.js';
 import { withSync } from './store.js';
 
 export function validateConfig(method, value) {
@@ -51,6 +51,7 @@ export async function webdavSync(context, send = request) {
 }
 
 const GIST_LIMIT = 900 * 1024;
+const PAIRING_TIMEOUT = 5 * 60 * 1000;
 const gistFile = /^neconyan-sync-[a-f0-9-]{36}-[a-f0-9]{32}\.json$/;
 const gistHeaders = token => ({ Authorization: 'Bearer ' + token, 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'Neconyan-device-sync', Accept: 'application/vnd.github+json' });
 
@@ -110,7 +111,8 @@ export async function pairingSync(context, send = request) {
     const headers = { Authorization: 'NeconyanPair ' + peer.token };
     const envelope = await exportEnvelope(context);
     // A grant authenticates exactly this encrypted exchange, never settings or general account APIs.
-    const response = checkResponse(await send(context, url, { method: 'POST', headers, body: { envelope }, pairing: true, max: LIMITS.envelope }), [200]);
+    // The receiving installation imports and exports within this one request.
+    const response = checkPairingResponse(await send(context, url, { method: 'POST', headers, body: { envelope }, pairing: true, max: LIMITS.envelope, timeout: PAIRING_TIMEOUT }));
     const value = response.value();
     const imported = await importEnvelope(context, value.envelope, 'pair:' + peer.url + ':' + peer.id);
     return { ...imported, published: true };
