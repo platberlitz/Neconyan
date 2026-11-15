@@ -1,5 +1,82 @@
 # Full server migration: continuation
 
+### 15 November 2026: 1.5.5 published, staging starts 1.5.6
+
+I published [Neconyan 1.5.5](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.5)
+with annotated tag `v1.5.5` on `680a05f16fa08d5f8dc7b49ca0caa1682d27a33a`.
+PR #691 prepared the release; PR #692 promoted staging to main by fast-forward,
+without a merge commit. The release holds 99 merged PRs, #593 to #691. The
+changelog bot had missed #594, #595 and #622, which I added by hand. The
+running personal instance was not deployed as part of this release.
+
+Verification and retained results:
+
+- Local checks at `52af1a29`, the readiness head, passed 678 Jest suites and
+  9,917 tests, with three existing skips; all 4,262 Node tests; and 129
+  Mewmory checks. Root lint, test lint, frontend budgets, the production build
+  and README mirror passed. Existing test lint warnings remain. The release
+  commit differs from that head only by the merge and one changelog line.
+- Readiness PR checks `43725888758` and exact-head promotion checks
+  `43726854274` passed without retries.
+- Browser run `43726784853` at the release commit supplies all 20 groups:
+  2,804 passes and 38 existing skips. Nothing is reused from earlier commits,
+  because PR #691 changed a stylesheet and the cache version on every page.
+  The two skips beyond the 36 in 1.5.4 are new Mewmory settings checks, which
+  need a disposable Mewmory server. All 25 Mewmory browser checks passed
+  locally at `52af1a29`, with a fresh disposable server for each file.
+- Groups 4 and 18 passed on unchanged retry in attempt 2. Attempt 1 failed
+  three checks: the missing Ollama model preflight never answered in 20
+  seconds, a chat read was reset mid-request, and a synthetic touch drag did
+  not scroll the phone Favourites rail. The preflight check passed ten local
+  repeats. None of the three touches code changed since they last passed, and
+  their causes remain unknown.
+- Earlier full run `43715101359` at `ee62367e` passed 16 groups and exposed
+  two application defects, both reproduced before fixing. The buttons above
+  the Agents list ignored presses until start-up had finished, which failed
+  about 3 runs in 22; they now stay disabled until their handlers are
+  attached, and 24 repeats passed. PR #689's one-row Conversation header left
+  66 pixels for the name at 320 pixels wide; under 360 pixels the action
+  buttons now take their own row.
+- Four browser checks were corrected in the same PR. The sleeper check now
+  expects the smaller 58 by 46 Conversation cat from PR #689. The helper
+  failure check looks only at the Agents warning, because start-up warnings
+  can still be showing when the page stays open. The catch-up check no longer
+  counts the automatic resubmission that follows a settings save, and the
+  preset section check waits for both controls before measuring. The causes
+  of the last two are inferred; neither failed locally. No assertion was
+  weakened and no skip was added.
+- Not fixed: on a brand-new account, Quick Image Gen shows two false warnings
+  about three seconds after the first load, because it tries a confirmed
+  settings save before settings are ready. Both messages already exist in
+  1.5.4. A follow-up todo is recorded.
+- Duplicate full runs `43726854359` and `43734438446` were cancelled because
+  `43726784853` covered the same commit, not to hide failures.
+- Assistant knowledge revision 99 adds 13 topics and 24 retrieval cases. It
+  passed source, budget and retrieval checks, and all nine assistant variants
+  and phone/desktop routes passed the 11 browser checks at `52af1a29`.
+- Android run `43734478209` passed the signed build, WebView fixture and
+  Android 11, 13 and 15 emulator checks on the first attempt. The optional
+  older-release baseline comparison was not requested. These are emulator
+  results, not physical-phone tests.
+- iPhone run `43734480815` passed storage and path checks, the 13 GiB import,
+  unsigned device IPA build and simulator startup and recovery checks on the
+  first attempt. These are simulator results, not physical-iPhone tests.
+- All twelve matching build files passed independent verification: eight
+  Android and two iPhone manifest entries, both APK signatures against the
+  same certificate as 1.5.4, native 16 KiB alignment, and the independent
+  Android and iPhone verifiers, whose output matched the supplied provenance.
+  All 6,056 source ZIP files matched `git archive` of the release commit.
+  The twelve published files were downloaded again; their bytes match the
+  verified build files and their SHA-256 digests match GitHub's records. The
+  release is public and marked latest.
+- The handbook was reworded for plainer reading and updated for 1.5.5 in
+  `0682515`, published by Pages run `43728419263` and checked live at phone
+  and desktop widths. After publication, `7b32313` marked 1.5.5 as published
+  and Pages run `43737678138` put it live.
+- The README on main and staging names 1.5.5 and links its release page; the
+  mirror check passes. Main stays at the release commit. Staging starts 1.5.6
+  in `0821b064`; its four boundary tests and lint passed.
+
 ### 11 November 2026: 1.5.4 published, staging starts 1.5.5
 
 I published [Neconyan 1.5.4](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.4)
