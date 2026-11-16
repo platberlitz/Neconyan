@@ -79,6 +79,15 @@ describe('Scratchpad reply parsing', () => {
         }
         expect(() => normaliseChange({ ...change, action: 'generate' })).toThrow();
     });
+    test.each([
+        { target: 'avatar', character: 'Nova' },
+        { target: 'persona-avatar', persona: 'Kris' },
+        { target: 'persona-note-avatar', persona: 'Kris', noteId: 'harbour' },
+    ])('image edits retain the exact $target replacement destination', destination => {
+        const change = { type: 'image', action: 'edit', ...destination, prompt: 'Repair the ears.',
+            source: { messageId: 'earlier-reply', kind: 'generated', index: 2 } };
+        expect(normaliseChange(change)).toEqual({ ...change, negative: '', reason: '' });
+    });
     test('keeps stable indexed mixed proposals and caps suggestions at 24', () => {
         const reply = Array.from({ length: 27 }, (_, index) => fence(index % 2 ? { type: 'character', action: 'create', character: { name: 'Nova' } }
             : { type: 'image', action: 'generate', target: 'image', prompt: `Scene ${index}` })).join('\n');

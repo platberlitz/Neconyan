@@ -53,11 +53,13 @@ export async function prepareGeneratedImageHistory({ context, material, history,
     fetchModels = fetchChatProfileModels, cache = new Map() }) {
     if (material.backend && material.backend !== 'chat' || !history.some(message => message.generatedImages?.length) || maxBytes <= 0) return history;
     const settings = bindChatInputSettings(mergeChatPresetSettings(material.active, material.preset), material.source, material.profile?.model);
-    if (!settings.media_inlining) return history;
+    // Custom endpoints and CometAPI have no vision detection; their media toggle is the explicit opt-in.
+    if (['custom', 'cometapi'].includes(material.source) && !settings.media_inlining) return history;
     let models = [];
     try {
         if (CATALOGUED.has(material.source)) models = await fetchModels({ context, material });
-        if (!supportsChatImages(settings, { model_list: models })) return history;
+        // Scratchpad supplies its own saved pictures, independently of regular-chat media inlining.
+        if (!supportsChatImages({ ...settings, media_inlining: true }, { model_list: models })) return history;
     } catch {
         return history;
     }

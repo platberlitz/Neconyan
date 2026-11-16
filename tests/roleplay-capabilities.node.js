@@ -10,6 +10,17 @@ const { getJob } = await import('../src/jobs/store.js');
 const { readArtifact } = await import('../src/jobs/artifacts.js');
 const { buildRoleplaySavedHistory } = await import('../src/generation/roleplay-prompt.js');
 
+test('OpenAI vision excludes text-only preview and mini models on every OpenAI route', () => {
+    for (const source of ['openai', 'openai_responses', 'azure_openai']) {
+        for (const [model, expected] of [['gpt-4o', true], ['gpt-4-turbo', true], ['o1', true], ['o3', true], ['o4-mini', true],
+            ['gpt-4-turbo-preview', false], ['o1-preview', false], ['o1-mini', false], ['o3-mini-2025-01-31', false]]) {
+            const settings = { chat_completion_source: source, openai_model: model, azure_openai_model: model, media_inlining: true };
+            assert.equal(supportsChatImages(settings), expected, `${source}: ${model}`);
+            assert.equal(supportsChatImages({ ...settings, media_inlining: false }), false);
+        }
+    }
+});
+
 test('selected model input capabilities are saved once without unrelated catalogue fields', async t => {
     const f = fixture(t);
     const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
