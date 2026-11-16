@@ -20,6 +20,7 @@
 - PR #707 (2026-11-16) `perf(mewmory): cut recall and extraction token use`
 - PR #708 (2026-11-16) `fix(persona): wrap long scenario note labels`
 - PR #709 (2026-11-16) `fix(roleplay): keep model names visible below dates`
+- PR #710 (2026-11-16) `fix(agents): apply new companion links in the current chat`
 
 ## v1.5.5
 
