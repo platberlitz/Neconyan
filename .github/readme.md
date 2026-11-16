@@ -40,7 +40,7 @@ Your character cards, chats, lorebooks and presets use familiar SillyTavern form
   <img src="../docs/readme/banner-modes.webp" alt="Modes">
 </p>
 
-Desktop and phone screenshots captured on 16 November 2026, using demo chats and notes with the bundled assistants and the default Calico Dark colours.
+I captured these desktop and phone screenshots on 16 November 2026, using demo chats and notes with the bundled assistants, the default Calico Dark colours and **Background Visibility at 0%**.
 
 ### Home
 
