@@ -17,7 +17,7 @@ import { getAssistantGender, getAssistantTourSrc, setAssistantGender } from './n
 import { clamp, flashHighlight, getSortableDelay, isElementInViewport, sortMoments, timestampToMoment } from './utils.js';
 import { revealChat, revealUi } from './ui-motion.js';
 import { createForegroundRefreshCoalescer } from './mobile-shell-lifecycle/index.js';
-import { applySimpleMode, getSimpleModePreference, isSimpleModeEnabled, setSimpleModeEnabled, SIMPLE_MODE_EVENT } from './neconyan-simple-mode.js';
+import { applySimpleMode, getSimpleModePreference, isSimpleModeEnabled, setSimpleModeEnabled, SIMPLE_MODE_CLASS, SIMPLE_MODE_EVENT, SIMPLE_MODE_RAIL_LABELS } from './neconyan-simple-mode.js';
 
 const assistantAvatarKey = 'assistant';
 const assistantVariantKey = 'neconyanAssistantVariant';
@@ -1123,6 +1123,11 @@ async function handleWelcomeAction(button) {
         case 'open-import-characters':
             globalThis.NeconyanShell?.openCharacters?.();
             break;
+        case 'find-characters':
+            if (!await globalThis.NeconyanNativeTools?.activate?.(NECONYAN_RAIL_TOOL_ROUTES.botsearcher)) {
+                openShellTab('characters:import');
+            }
+            break;
         case 'open-global-search':
             globalThis.NeconyanShell?.openGlobalSearch?.({ focusInput: true });
             break;
@@ -2123,6 +2128,30 @@ function createNeconyanRailButton({ label, icon, route = '', onClick }) {
         onClick?.();
     });
     return button;
+}
+
+// Simple Mode gives a few sidebar pages a plainer name; the usual name returns with the full sidebar.
+function syncNeconyanRailSimpleLabels() {
+    const simple = document.documentElement.classList.contains(SIMPLE_MODE_CLASS);
+    for (const [route, simpleLabel] of Object.entries(SIMPLE_MODE_RAIL_LABELS)) {
+        for (const button of document.querySelectorAll(`#neconyan-workspace-rail .neconyan-rail-button[data-neconyan-route="${route}"]`)) {
+            const span = button.querySelector('span');
+            if (!span) continue;
+            button.dataset.neconyanRailFullLabel ||= span.textContent;
+            const next = simple ? translate(simpleLabel) : button.dataset.neconyanRailFullLabel;
+            const current = span.textContent;
+            if (current === next) continue;
+            span.textContent = next;
+            button.title = button.title.replace(current, next);
+            button.setAttribute('aria-label', (button.getAttribute('aria-label') || current).replace(current, next));
+        }
+    }
+}
+
+function watchNeconyanRailSimpleLabels() {
+    syncNeconyanRailSimpleLabels();
+    // The class also changes when account settings arrive, which sends no event.
+    new MutationObserver(syncNeconyanRailSimpleLabels).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
 }
 
 function createNeconyanRailModeButton(mode) {
@@ -3333,6 +3362,7 @@ export function initWelcomeScreen() {
     applySimpleMode();
     PinnedChatsManager.init();
     ensureNeconyanRail();
+    watchNeconyanRailSimpleLabels();
     installChatNoteCapture();
     // The tour shows fewer steps in Simple Mode, so redraw an open tour when the choice changes.
     window.addEventListener(SIMPLE_MODE_EVENT, () => {

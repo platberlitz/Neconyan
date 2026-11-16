@@ -297,6 +297,15 @@ async function importDirect(container, status, prepared, inside, request, onBack
         }
         status.remove();
         setText(result, intakeCompletionMessage(added));
+        if (options.onOpened && added.avatar && added.committed === true) {
+            try {
+                await openCharacter(added.avatar);
+                options.onOpened();
+                return;
+            } catch {
+                // The card is in the collection; the buttons below still offer Open and Undo.
+            }
+        }
         bar.append(...afterImport(added, {
             screen,
             onUndone: () => {

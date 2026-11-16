@@ -17,7 +17,7 @@ globalThis.localStorage = {
 const { accountStorage } = await import('../public/scripts/util/AccountStorage.js');
 const simpleMode = await import('../public/scripts/neconyan-simple-mode.js');
 const {
-    SIMPLE_MODE_CLASS, SIMPLE_MODE_EVENT, SIMPLE_MODE_HIDDEN_SELECTORS, SIMPLE_MODE_KEPT_FINE_TUNING_ROUTE, SIMPLE_MODE_KEY,
+    SIMPLE_MODE_CLASS, SIMPLE_MODE_EVENT, SIMPLE_MODE_HIDDEN_SELECTORS, SIMPLE_MODE_KEPT_ROUTES, SIMPLE_MODE_KEY, SIMPLE_MODE_RAIL_LABELS,
     applySimpleMode, buildSimpleModeCss, getSimpleModePreference, isSimpleModeEnabled, setSimpleModeEnabled,
 } = simpleMode;
 
@@ -103,16 +103,19 @@ describe('Simple Mode styles and wiring', () => {
         }
     });
 
-    test('keeps Presets and Workspace pages wherever they sit, and hides the other sidebar pages', () => {
-        expect(SIMPLE_MODE_KEPT_FINE_TUNING_ROUTE).toBe('presets');
+    test('keeps Presets, Persona, the character search and Workspace pages wherever they sit, and hides the other sidebar pages', () => {
+        expect([...SIMPLE_MODE_KEPT_ROUTES]).toEqual(['presets', 'persona', 'botsearcher']);
+        expect({ ...SIMPLE_MODE_RAIL_LABELS }).toEqual({ botsearcher: 'Find characters' });
         expect(SIMPLE_MODE_HIDDEN_SELECTORS).toContain('#neconyan-workspace-rail .neconyan-rail-advanced > .neconyan-rail-section-heading:not(#neconyan-rail-quick-actions-title)');
         expect(SIMPLE_MODE_HIDDEN_SELECTORS).not.toContain('#neconyan-workspace-rail .neconyan-rail-advanced > [data-neconyan-quick-actions]');
-        expect(SIMPLE_MODE_HIDDEN_SELECTORS).toContain('#neconyan-workspace-rail .neconyan-rail-button[data-neconyan-rail-home]:not([data-neconyan-rail-home="primary"], [data-neconyan-rail-home="modes"], [data-neconyan-route="presets"])');
+        expect(SIMPLE_MODE_HIDDEN_SELECTORS).toContain('#neconyan-workspace-rail .neconyan-rail-button[data-neconyan-rail-home]:not([data-neconyan-rail-home="primary"], [data-neconyan-rail-home="modes"], [data-neconyan-route="presets"], [data-neconyan-route="persona"], [data-neconyan-route="botsearcher"])');
         expect(SIMPLE_MODE_HIDDEN_SELECTORS).toContain('#neconyan-workspace-rail .neconyan-rail-button[data-neconyan-rail-home="primary"][data-neconyan-route="mewmory"]');
         expect(SIMPLE_MODE_HIDDEN_SELECTORS.join(' ')).not.toContain('[data-neconyan-primary-nav]');
         const welcome = read('public/scripts/welcome-screen.js');
         expect(welcome).toContain('<section class="neconyan-rail-advanced neconyan-rail-fine-tuning" aria-labelledby="neconyan-rail-advanced-title">');
         expect(welcome).toMatch(/<div data-neconyan-finer-nav><\/div>\s*<\/section>\s*<div class="neconyan-rail-simple-exit" data-neconyan-simple-exit><\/div>/);
+        expect(welcome).toContain('const next = simple ? translate(simpleLabel) : button.dataset.neconyanRailFullLabel;');
+        expect(welcome).toContain('new MutationObserver(syncNeconyanRailSimpleLabels).observe(document.documentElement, { attributes: true, attributeFilter: [\'class\'] });');
         expect(welcome).toMatch(/const SIMPLE_TUTORIAL_STEPS = Object\.freeze\(\[\s*WELCOME_TUTORIAL_STEPS\[0\],\s*WELCOME_TUTORIAL_STEPS\[1\],\s*WELCOME_TUTORIAL_STEPS\[3\],\s*WELCOME_TUTORIAL_STEPS\[4\],\s*WELCOME_TUTORIAL_STEPS\[6\],/);
     });
 

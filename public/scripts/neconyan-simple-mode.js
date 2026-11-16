@@ -16,12 +16,15 @@ const SIMPLE_MODE_STYLE_ID = 'neconyan-simple-mode-style';
 
 const SIMPLE_MODE_HIDDEN_RAIL_ROUTES = Object.freeze(['mewmory', 'chat-archive', 'extensions']);
 
-/* Presets is the one Fine-tuning page Simple Mode keeps; every other page from below Workspace goes, wherever the sidebar order has moved it. */
-export const SIMPLE_MODE_KEPT_FINE_TUNING_ROUTE = 'presets';
+/* Pages from below Workspace that Simple Mode keeps, wherever the sidebar order has moved them: Presets, Persona and the character search. */
+export const SIMPLE_MODE_KEPT_ROUTES = Object.freeze(['presets', 'persona', 'botsearcher']);
+
+/* The character search goes by a plainer name while Simple Mode is on. */
+export const SIMPLE_MODE_RAIL_LABELS = Object.freeze({ botsearcher: 'Find characters' });
 
 export const SIMPLE_MODE_HIDDEN_SELECTORS = Object.freeze([
     '#neconyan-workspace-rail .neconyan-rail-advanced > .neconyan-rail-section-heading:not(#neconyan-rail-quick-actions-title)',
-    `#neconyan-workspace-rail .neconyan-rail-button[data-neconyan-rail-home]:not([data-neconyan-rail-home="primary"], [data-neconyan-rail-home="modes"], [data-neconyan-route="${SIMPLE_MODE_KEPT_FINE_TUNING_ROUTE}"])`,
+    `#neconyan-workspace-rail .neconyan-rail-button[data-neconyan-rail-home]:not([data-neconyan-rail-home="primary"], [data-neconyan-rail-home="modes"], ${SIMPLE_MODE_KEPT_ROUTES.map(route => `[data-neconyan-route="${route}"]`).join(', ')})`,
     '#neconyan-workspace-rail .neconyan-rail-modes-label',
     '#neconyan-workspace-rail [data-neconyan-mode-nav]',
     '#neconyan-workspace-rail [data-neconyan-open-archive]',

@@ -5,12 +5,14 @@
             <button type="button" class="neconyan-cat-toggle" data-neconyan-cat-toggle>Pause cat animation</button>
         </div>
         <h1 id="welcome-home-title">Meowlcome to Neconyan~</h1>
-        <p>Find your purrfect chat pal~! Start with a character already included, or start a temporary chat!</p>
+        <p>Find your purrfect chat pal~! Pick a character you already have, find a new one online, or start a temporary chat!</p>
         <div class="neconyan-home-actions">
             {{#if hasActiveChat}}
             <button type="button" class="menu_button welcomeActionButton neconyan-home-primary" data-action="resume-chat"><i class="fa-solid fa-comment" aria-hidden="true"></i><span>Continue your chat</span><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></button>
             {{/if}}
             <button type="button" class="menu_button welcomeActionButton {{#unless hasActiveChat}}neconyan-home-primary{{/unless}}" data-action="open-characters-menu"><i class="fa-solid fa-address-card" aria-hidden="true"></i><span>Choose a character</span><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></button>
+            <button type="button" class="menu_button welcomeActionButton" data-action="find-characters"><i class="fa-solid fa-binoculars" aria-hidden="true"></i><span>Find characters online<small>Search Chub, JannyAI and other card sites, then add one in a tap.</small></span><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></button>
+            <button type="button" class="menu_button welcomeActionButton" data-action="open-tab" data-action-value="characters:import"><i class="fa-solid fa-file-import" aria-hidden="true"></i><span>Import a character<small>From a file or a link. JanitorAI has no search here, but its links work.</small></span><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></button>
             <button type="button" class="menu_button openTemporaryChat"><i class="fa-solid fa-pen" aria-hidden="true"></i><span>Start a temporary chat<small>Messages are not saved.</small></span><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></button>
             <button type="button" class="menu_button welcomeActionButton" data-action="open-tab" data-action-value="left:api"><i class="fa-solid fa-plug" aria-hidden="true"></i><span>Connect a model</span><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></button>
         </div>

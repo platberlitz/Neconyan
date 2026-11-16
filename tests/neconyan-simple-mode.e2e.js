@@ -1,4 +1,4 @@
-/* global document */
+/* global document, getComputedStyle */
 import { gunzipSync } from 'node:zlib';
 import { expect, test } from '@playwright/test';
 
@@ -57,6 +57,8 @@ const newAccount = { [SEED_KEY]: 'ask', [SIMPLE_KEY]: 'ask', 'NeconyanTutorialSt
 for (const [name, viewport, hasTouch] of [['desktop', { width: 1280, height: 900 }, false], ['phone', { width: 393, height: 852 }, true]]) {
     test.describe(`first run on ${name}`, () => {
         test.use({ viewport, hasTouch, isMobile: hasTouch });
+        // A settings request still in flight when a test ends must not fail it.
+        test.afterEach(async ({ page }) => page.unrouteAll({ behavior: 'ignoreErrors' }));
 
         test('a new account chooses how Miso, Taro and Nori look, then answers the Simple Mode question', async ({ page }) => {
             const state = await account(page, newAccount);
@@ -127,6 +129,42 @@ for (const [name, viewport, hasTouch] of [['desktop', { width: 1280, height: 900
             await page.waitForTimeout(500);
             expect(state.installs).toEqual([]);
             expect(state.saved[SEED_KEY]).toBeUndefined();
+        });
+
+        test('Simple Mode keeps the character search within reach, under a plain name', async ({ page }) => {
+            await account(page, { [SIMPLE_KEY]: 'on', 'NeconyanTutorialStatus.v1': 'completed' });
+            await ready(page);
+            await expect(page.locator('html')).toHaveClass(/neconyan-simple-mode/);
+            const railButton = page.locator('#neconyan-workspace-rail .neconyan-rail-button[data-neconyan-route="botsearcher"]');
+            await expect(railButton).toHaveAttribute('aria-label', 'Find characters');
+            await expect(railButton.locator('span').first()).toHaveText('Find characters');
+            const shown = route => page.locator(`#neconyan-workspace-rail .neconyan-rail-button[data-neconyan-route="${route}"]`)
+                .evaluate(button => !button.hidden && getComputedStyle(button).display !== 'none');
+            expect(await shown('botsearcher')).toBe(true);
+            expect(await shown('persona')).toBe(true);
+            expect(await shown('sampling')).toBe(false);
+
+            const home = page.locator('.neconyan-home-actions');
+            await expect(home.getByRole('button', { name: /^Import a character/ })).toBeVisible();
+            await home.getByRole('button', { name: /^Find characters online/ }).click();
+            const search = page.locator('#sbbs_query');
+            await expect(search).toBeVisible();
+            // With Simple Mode on, a pasted card link is imported directly; the full interface reviews it first.
+            await search.fill('https://chub.ai/characters/example/example-card');
+            await expect(page.locator('#sbbs_go')).toHaveAttribute('aria-label', 'Import card URL');
+        });
+
+        test('with every feature shown the search keeps its own name and reviews cards first', async ({ page }) => {
+            await account(page, { [SIMPLE_KEY]: 'off', 'NeconyanTutorialStatus.v1': 'completed' });
+            await ready(page);
+            const railButton = page.locator('#neconyan-workspace-rail .neconyan-rail-button[data-neconyan-route="botsearcher"]');
+            await expect(railButton.locator('span').first()).toHaveText('BotSearcher');
+            await page.locator('.neconyan-home-actions').getByRole('button', { name: /^Import a character/ }).click();
+            await expect(page.locator('#sbbs_import_action')).toBeVisible();
+            await page.locator('#sbbs_import_action').click();
+            const search = page.locator('#sbbs_query');
+            await search.fill('https://chub.ai/characters/example/example-card');
+            await expect(page.locator('#sbbs_go')).toHaveAttribute('aria-label', 'Review card URL');
         });
     });
 }

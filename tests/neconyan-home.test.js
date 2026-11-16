@@ -51,6 +51,25 @@ describe('Neconyan Home', () => {
         expect(new Set(ids).size).toBe(ids.length);
     });
 
+    test('offers finding and importing a character from Home, and Simple Mode adds a found card without the review screen', () => {
+        const home = Handlebars.compile(read('scripts/templates/welcomePanelOnboarding.html'))({ empty: true, welcomePanelMode: 'full' });
+        expect(home).toContain('Pick a character you already have, find a new one online, or start a temporary chat!');
+        expect(home).not.toContain('already included');
+        expect(home).toContain('data-action="find-characters"');
+        expect(home).toContain('<span>Find characters online<small>Search Chub, JannyAI and other card sites, then add one in a tap.</small></span>');
+        expect(home).toContain('data-action="open-tab" data-action-value="characters:import"');
+        expect(home.indexOf('data-action="find-characters"')).toBeLessThan(home.indexOf('openTemporaryChat'));
+        const welcome = read('scripts/welcome-screen.js');
+        expect(welcome).toMatch(/case 'find-characters':\s*if \(!await globalThis\.NeconyanNativeTools\?\.activate\?\.\(NECONYAN_RAIL_TOOL_ROUTES\.botsearcher\)\) \{\s*openShellTab\('characters:import'\);/);
+        const searcher = name => read(`scripts/extensions/third-party/Neconyan-BotSearcher/client/${name}.js`);
+        expect(searcher('settings')).toContain('return simpleModeActive() || getSettings().skipReview;');
+        expect(searcher('browser')).not.toContain('getSettings().skipReview');
+        expect(searcher('browser')).toContain('const onOpened = direct && simpleModeActive()');
+        expect(searcher('browser')).toContain('globalThis.NeconyanShell?.closeCharacters?.();');
+        expect(searcher('detail')).toContain('actionBar(card, source, onIntake, skipsReview())');
+        expect(searcher('intake')).toMatch(/if \(options\.onOpened && added\.avatar && added\.committed === true\) \{\s*try \{\s*await openCharacter\(added\.avatar\);\s*options\.onOpened\(\);\s*return;/);
+    });
+
     test('pauses and resumes the cat through its real click handler', () => {
         let click;
         class Element {}
@@ -519,7 +538,7 @@ describe('assistant shortcuts without shipped characters', () => {
             let tourResumed = false;
             const context = vm.createContext({
                 releaseChromeAfterBootSkeleton() {}, applySimpleMode() {}, SIMPLE_MODE_EVENT: 'simple', PinnedChatsManager: { init() {} }, ensureNeconyanRail() {},
-                installChatNoteCapture() {},
+                watchNeconyanRailSimpleLabels() {}, installChatNoteCapture() {},
                 window: { addEventListener() {} }, concealWelcomeHome() {},
                 eventSource: { on: (key, handler) => handlers.set(key, handler), makeFirst() {} },
                 event_types: { APP_READY: 'ready' }, getCurrentChatId: () => activeChat ? 'existing' : undefined, chat: [],
