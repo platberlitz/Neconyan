@@ -22109,6 +22109,10 @@ jQuery(async function () {
             '#neconyan-sidebar-toggle',
             // The phone menu drawer opens over the current workspace; its routes decide what replaces it.
             'body.neconyan-rail-drawer-open #neconyan-workspace-rail',
+            // Gallery opens over the current page and returns to it when dismissed.
+            '[data-neconyan-route="gallery"]',
+            '[data-sb-shortcut-target="action:gallery"]',
+            '.qig-popup',
             // Creator must reach the route's displacement handler before an outside press hides it.
             ...(document.getElementById('right-nav-panel')?.dataset.menuType === 'creator' ? ['#neconyan-workspace-rail'] : []),
             '#neconyan-rail-drawer-scrim',

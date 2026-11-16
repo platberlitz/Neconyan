@@ -139,6 +139,7 @@ const NN_SHORTCUT_TARGETS = Object.freeze([
     { value: 'left:agents', label: 'Agents', icon: 'fa-cat' },
     { value: 'left:mewmory', label: 'Mewmory', icon: 'fa-brain' },
     { value: 'action:search', label: 'Search', icon: 'fa-magnifying-glass' },
+    { value: 'action:gallery', label: 'Gallery', icon: 'fa-images' },
     { value: 'right:settings', label: 'Settings', icon: 'fa-screwdriver-wrench' },
     { value: 'right:extensions', label: 'Extensions', icon: 'fa-cubes' },
     { value: 'characters:persona', label: 'Persona', icon: 'fa-face-smile' },
@@ -305,6 +306,10 @@ function isSearchShortcutTarget(target) {
 }
 
 function activateShortcutTarget(target) {
+    if (target === 'action:gallery') {
+        void openNeconyanGallery();
+        return;
+    }
     if (isSearchShortcutTarget(target)) {
         const searchState = getUniversalSearchState();
 
@@ -1369,6 +1374,7 @@ const NN_SEARCH_PAGES = Object.freeze([
     { route: 'pathfinder', label: 'Pawthfinder', description: 'Lets the model choose which lorebook entries matter for each reply.', keywords: ['pathfinder', 'lorebook search'] },
     { route: 'dialogue-colors', label: 'Dialogue Colors', description: 'Give every speaker their own colour.', keywords: ['dialogue colours', 'colours', 'colors', 'speaker colours', 'character colors'] },
     { route: 'quick-image-gen', label: 'Quick Image Gen', description: 'Make pictures of characters and scenes.', keywords: ['image generation', 'images', 'pictures', 'art'] },
+    { route: 'gallery', label: 'Gallery', description: 'Browse your saved Quick Image Gen pictures.', keywords: ['saved images', 'generated images', 'pictures', 'quick image gen gallery'] },
     { route: 'background', label: 'Background', description: 'The picture or video behind your chats.', keywords: ['backgrounds', 'wallpaper', 'animated background', 'video'] },
     { route: 'settings', label: 'Settings', description: 'Appearance, chat behaviour and interface options.', keywords: ['preferences', 'options', 'theme', 'shell style', 'appearance'] },
     { route: 'server', label: 'Server', description: 'Status, updates, restarts and config.yaml.', keywords: ['update', 'restart', 'config', 'version', 'branch'] },
@@ -3222,6 +3228,38 @@ function findNeconyanNativeTool(id) {
     const wanted = normalizeNeconyanNativeToolId(id);
     const definition = NECONYAN_NATIVE_TOOL_DEFINITIONS.find(item => normalizeNeconyanNativeToolId(item.id) === wanted);
     return definition ? resolveNeconyanNativeTool(definition) : null;
+}
+
+async function openNeconyanGallery() {
+    const tool = findNeconyanNativeTool('quick-image-gen');
+    if (!tool?.enabled) {
+        return openNeconyanNativeManage('Quick Image Gen');
+    }
+
+    const trigger = document.activeElement;
+    closeMobileNav();
+    const candidates = [
+        trigger?.closest('#neconyan-workspace-rail') && isMobileViewport()
+            ? document.getElementById('sb-hamburger') : trigger,
+        ...document.querySelectorAll('[data-neconyan-route="gallery"], #sb-hamburger, #sb-shortcut-left, #sb-shortcut-right'),
+    ];
+    const returnFocusElement = candidates.find(element => element instanceof HTMLElement
+        && element !== document.body && !element.closest('[hidden], [inert]')
+        && element.getClientRects().length && getComputedStyle(element).visibility === 'visible');
+    try {
+        const { getExtensionCapability } = await import('./neconyan-conversation/extension-capabilities.js');
+        const capability = getExtensionCapability('quick-image-gen');
+        if (typeof capability?.openGallery !== 'function') {
+            globalThis.toastr?.info?.('Quick Image Gen has not loaded. Check Extensions, then reload.', 'Gallery');
+            return false;
+        }
+        await capability.openGallery(returnFocusElement);
+        return true;
+    } catch (error) {
+        console.error('Could not open Gallery.', error);
+        globalThis.toastr?.error?.('Gallery could not be opened. Try again.', 'Gallery');
+        return false;
+    }
 }
 
 // Switched-off tools go to their row in Extensions, on/off tools flip in place, tools with their own window open it, the rest open their settings page.
@@ -15824,7 +15862,7 @@ function createSleeperCoatSettingsGroup() {
 function createShortcutSettingsGroup() {
     const description = createElement('p', {
         className: 'sb-theme-slider-caption',
-        text: 'Assign a shell tab or universal search to each shortcut button in the top bar.',
+        text: 'Choose a page, Gallery or Search for each shortcut button in the top bar.',
     });
     const rows = createElement('div', {
         className: 'sb-shortcut-rows',
@@ -21968,6 +22006,7 @@ function initAll() {
         editQuickActions: editNeconyanRailQuickActions,
         openExtensionSettings,
         openIncludedTool: openNeconyanIncludedToolPage,
+        openGallery: openNeconyanGallery,
         openTab(shellKey, tabId) {
             if (shellKey === 'characters') {
                 openCharacterPanelTab(tabId);
