@@ -747,6 +747,23 @@ test('the early Companion plan uses the real eligibility rule and never lists hi
     assert.deepEqual(plan.pending.map(item => item.id), ['auto']);
 });
 
+test('Memory Shard waits for the chat to grow by its threshold again after a finished summary', () => {
+    const { agent } = companionPlans();
+    const shard = { ...agent('shard', { minContextTokens: 30000 }), sourceTemplateId: 'tpl-memory-shard-companion' };
+    const plain = agent('plain', { minContextTokens: 30000 });
+    const row = (tokens, extra = {}) => ({ is_user: false, is_system: false, name: 'Nova', mes: 'text', extra: { token_count: tokens, ...extra } });
+    const summary = content => ({ inChatAgentCompanionResults: { shard: { status: 'done', content } } });
+    const plan = records => planRoleplayCompanionStart({ agents: [shard, plain], snapshot: { agents: { hiddenIds: [] }, mediaPolicy: null },
+        pre: { activeIds: ['shard', 'plain'] }, records: [{}, ...records], value: 'A short reply', effect: 'append', assistantName: 'Nova' })
+        .pending.map(item => item.id);
+
+    assert.deepEqual(plan([row(31000)]), ['shard', 'plain']);
+    assert.deepEqual(plan([row(31000), row(500, summary('The story so far.')), row(4000)]), ['plain']);
+    assert.deepEqual(plan([row(31000), row(500, summary('The story so far.')), row(30000)]), ['shard', 'plain']);
+    assert.deepEqual(plan([row(31000), row(500, summary('  ')), row(4000)]), ['shard', 'plain']);
+    assert.deepEqual(plan([row(31000), row(500, { inChatAgentCompanionResults: { shard: { status: 'error', content: 'Failed' } } }), row(4000)]), ['shard', 'plain']);
+});
+
 test('the finished reply announces Agents and pending Companions before the first post-reply Agent call', { timeout: 20000 }, async t => {
     const parent = 'preview-parent';
     const f = prepared(t, [companion('side'), { id: 'edit', name: 'Edit', enabled: true, phase: 'post', prompt: 'EDIT_REPLY',

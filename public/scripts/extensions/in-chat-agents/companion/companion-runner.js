@@ -1985,6 +1985,7 @@ async function runSingleCompanionAgent(agent, messageIndex, generationType, canc
         if (!isTargetCurrent()) return { agentId: agent.id, changed: false, result: null };
         const result = getCompanionResults(message)[agent.id];
         const changed = result?.status === 'done' && previous !== getCompanionResultContent(message, agent.id);
+        if (changed) await tidyAfterMemoryShard(agent, messageIndex);
         return { agentId: agent.id, changed, result };
     } catch (error) { diagnosticOutcome = error?.name === 'AbortError' ? 'cancel' : 'error'; throw error; } finally { try { if (!diagnosticParent) globalThis.NeconyanCrashDiagnostics?.endAgent?.(diagnosticHandle, getAgentGenerationCancelRevision() !== cancelRevision ? 'cancel' : diagnosticOutcome); } catch { /* Optional diagnostics. */ } }
 }
@@ -2194,6 +2195,7 @@ async function runBatchCompanionAgents(agents, messageIndex, generationType, can
                     contextCoverage: getCompanionReferenceIds(agent).includes(MEMORY_SHARD_TEMPLATE_ID) ? contextCapture?.coverage : undefined,
                 });
                 await emitCompanionResultsUpdated(messageIndex, agent.id);
+                if (isTargetCurrent()) await tidyAfterMemoryShard(agent, messageIndex);
             }
 
             for (const { agent, initialOutput = null } of [...missingAgents.map(agent => ({ agent })), ...cleanupAgents]) {
@@ -2260,9 +2262,9 @@ async function runCompanionUnit(unit, messageIndex, generationType, cancelRevisi
 }
 
 /** Rough chat size from the stored per-message token accounting (chars/4 as fallback). */
-export function getChatTokenEstimate(beforeMessageIndex = chat.length) {
+export function getChatTokenEstimate(beforeMessageIndex = chat.length, fromMessageIndex = 0) {
     let total = 0;
-    for (let index = 0; index < Math.min(beforeMessageIndex, chat.length); index++) {
+    for (let index = Math.max(0, fromMessageIndex); index < Math.min(beforeMessageIndex, chat.length); index++) {
         const message = chat[index];
         // Neconyan divergence: skip messages hidden from prompts (is_system). The memory shard
         // companion hides the history it summarizes, so counting hidden messages would keep its
@@ -2282,7 +2284,56 @@ export function getChatTokenEstimate(beforeMessageIndex = chat.length) {
 /** Companions like the memory shard only become useful once the chat is large enough. */
 export function meetsCompanionContextThreshold(agent, messageIndex = chat.length - 1) {
     const minContextTokens = getCompanionConfig(agent).minContextTokens;
-    return !minContextTokens || getChatTokenEstimate(messageIndex + 1) >= minContextTokens;
+    if (!minContextTokens) return true;
+    if (getChatTokenEstimate(messageIndex + 1) < minContextTokens) return false;
+    if (!getCompanionReferenceIds(agent).includes(MEMORY_SHARD_TEMPLATE_ID)) return true;
+    // A finished summary is not rewritten on every reply: the chat has to grow by the
+    // threshold again first, whether or not the summarised messages were hidden.
+    const summarised = getLatestSummarisedMessageIndex(agent.id, messageIndex);
+    return summarised < 0 || getChatTokenEstimate(messageIndex + 1, summarised) >= minContextTokens;
+}
+
+/** The newest earlier message that already carries a finished summary from this Companion. */
+export function getLatestSummarisedMessageIndex(agentId, messageIndex = chat.length - 1) {
+    for (let index = Math.min(messageIndex, chat.length) - 1; index >= 0; index--) {
+        const result = getCompanionResults(chat[index])[agentId];
+        if (result?.status === 'done' && normalizeText(result.content) && !isEmptyOutputSentinel(result.content)) return index;
+    }
+    return -1;
+}
+
+/**
+ * Hides the messages a finished Memory Shard summary covers from prompts, once per summary.
+ * They stay readable in the chat, and Mewmory keeps reading them.
+ */
+export async function hideSummarisedMessages(messageIndex, agentId) {
+    const indices = getCompanionCoveredMessageIndices(messageIndex, agentId);
+    if (!indices.length) return 0;
+    const ranges = [];
+    for (const index of indices) {
+        const last = ranges.at(-1);
+        if (last && last[1] === index - 1) last[1] = index;
+        else ranges.push([index, index]);
+    }
+    // Loaded on demand: the chat tools pull in most of the app, which a Companion run rarely needs.
+    const { hideChatMessageRanges } = await import('../../../chats.js');
+    return await hideChatMessageRanges(ranges, { keepInMewmory: true }) ? indices.length : 0;
+}
+
+const MEMORY_SHARD_NOTICE_KEY = 'NeconyanMemoryShardNotice.v1';
+
+/** After a new summary: tidy the summarised messages away, and say so the first time it happens. */
+async function tidyAfterMemoryShard(agent, messageIndex) {
+    if (!getCompanionReferenceIds(agent).includes(MEMORY_SHARD_TEMPLATE_ID)) return;
+    try {
+        if (!await hideSummarisedMessages(messageIndex, agent.id)) return;
+        const { accountStorage } = await import('../../../util/AccountStorage.js');
+        if (accountStorage.getItem(MEMORY_SHARD_NOTICE_KEY) === 'shown') return;
+        accountStorage.setItem(MEMORY_SHARD_NOTICE_KEY, 'shown');
+        globalThis.toastr?.info?.('The LLM has summarised the earlier part of this chat, and those messages are now tucked away from it. They are still here for you to read.', 'Memory Shard', { timeOut: 12000 });
+    } catch (error) {
+        console.warn('[In-Chat Agents] Summarised messages could not be hidden.', error);
+    }
 }
 
 function getRunnableCompanionAgents(activeAgents = [], { manual = false, messageIndex = chat.length - 1, includeHidden = manual } = {}) {

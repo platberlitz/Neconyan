@@ -10,7 +10,7 @@
 
 import { el, setText, setImgSafe, setLinkSafe } from './render.js';
 import { postRouted, thumbSrc } from './api.js';
-import { getSettings } from './settings.js';
+import { getSettings, simpleModeActive, skipsReview } from './settings.js';
 import { noteBotbooruAccountError } from './account.js';
 import {
     detailErrorMessage,
@@ -227,7 +227,7 @@ export async function showDetail(container, summary, source, onBack, options = {
     container.append(body);
 
     // ---- actions ----
-    container.append(actionBar(card, source, onIntake, settings.skipReview));
+    container.append(actionBar(card, source, onIntake, skipsReview()));
 }
 
 function isExpectedDetail(card, summary, source) {
@@ -300,7 +300,9 @@ function actionBar(card, source, onIntake, skipReview) {
     // With the review switched off the button does what it says, and the note
     // has to say where that was decided rather than promise a screen that will
     // not appear.
-    bar.append(el('p', 'sbbs-trust-note', skipReview
+    bar.append(el('p', 'sbbs-trust-note', simpleModeActive()
+        ? 'Cards come from third-party sites. Simple Mode adds this one and opens its chat straight away, without a report of its contents.'
+        : skipReview
         ? 'Cards come from third-party sites. The review screen is off under Extensions > BotSearcher, so this adds the card without a report of its contents.'
         : 'Cards come from third-party sites. The next screen reports what is inside this one before anything is added to your collection.'));
     return bar;

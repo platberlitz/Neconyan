@@ -327,6 +327,7 @@ describe('Neconyan workspace rail behavior', () => {
             getActiveShellRailMode: () => 'desktop',
             getQuickActionState: () => desktop,
             normalizeMobileQuickAction: item => item,
+            getMobileQuickActionKey: action => [action.type, action.key].filter(Boolean).join('::'),
             createElement: (_tag, options) => new Element(options),
             NN_MOBILE_QUICK_ACTION_ICON_FALLBACK: 'fa-bolt',
             activateMobileNavAction: action => calls.push(action),
@@ -336,6 +337,8 @@ describe('Neconyan workspace rail behavior', () => {
         const button = list.children[0];
         expect(button.children[1].text).toBe('<saved setting>');
         expect(button.children[0].className).toBe('fa-solid fa-bolt');
+        expect(button.dataset.neconyanQuickTarget).toBe('custom::setting:one');
+        expect(list.children[1].attrs).toEqual({ hidden: '', 'data-neconyan-quick-actions-tucked': '' });
         button.click();
         expect(calls).toEqual(desktop);
         context.refreshNeconyanRailQuickActions();
@@ -467,6 +470,7 @@ describe('Neconyan workspace rail behavior', () => {
         const preferences = new Map([['index', '3']]);
         let resolveSave;
         let saves = 0;
+        let seeds = 0;
         const context = vm.createContext({
             HTMLElement: Element, document: { querySelectorAll: () => [] },
             tutorialStatusKey: 'status', tutorialIndexKey: 'index', console: { error() {} },
@@ -475,6 +479,7 @@ describe('Neconyan workspace rail behavior', () => {
             restoreWelcomeUiPreference: (key, value) => value === null ? preferences.delete(key) : preferences.set(key, value),
             setTutorialUiState: (target, index, expanded) => Object.assign(target.dataset, { tutorialIndex: String(index), tutorialExpanded: String(expanded) }),
             showTutorialCoachmark() {}, removeTutorialCoachmark() {},
+            seedBundledAssistants: () => { seeds++; return Promise.resolve(true); },
             saveSettings: () => { saves++; return new Promise(resolve => { resolveSave = resolve; }); },
         });
         vm.runInContext(getWelcomeFunctionSource('dismissTutorial'), context);
@@ -488,11 +493,13 @@ describe('Neconyan workspace rail behavior', () => {
         expect(preferences.has('status')).toBe(false);
         expect(panel.dataset).toEqual({ tutorialExpanded: 'true', tutorialIndex: '3' });
         expect(panel.buttons.map(button => button.disabled)).toEqual([false, true]);
+        expect(seeds).toBe(0);
         const retry = context.dismissTutorial(panel, 'skipped');
         resolveSave(true);
         expect(await retry).toBe(true);
         expect(preferences.get('status')).toBe('skipped');
         expect(panel.dataset.tutorialExpanded).toBe('false');
+        expect(seeds).toBe(1);
     });
 
     test('another account does not inherit a skipped or hidden tutorial from device storage', () => {
