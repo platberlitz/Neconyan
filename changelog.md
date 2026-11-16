@@ -14,6 +14,7 @@
 - PR #701 (2026-11-16) `fix(simple-mode): keep updates within reach`
 - PR #702 (2026-11-16) `docs(readme): refresh desktop and phone screenshots`
 - PR #703 (2026-11-16) `fix(chatroom): remove the duplicate reply label`
+- PR #704 (2026-11-16) `feat(agents): choose companion targets for bulk post-generation`
 
 ## v1.5.5
 
