@@ -13725,7 +13725,7 @@ function renderServerAdminStatus(data) {
     appendServerAdminStat(statusGrid, 'Runtime', data?.runtime || 'Unknown');
     appendServerAdminStat(statusGrid, 'Version', version?.pkgVersion ? `v${version.pkgVersion}` : 'Unknown');
 
-    const branchContainer = createElement('div', { className: 'sb-server-stat' });
+    const branchContainer = createElement('div', { className: 'sb-server-stat sb-advanced-only' });
     const branchLabel = createElement('small', {
         className: 'sb-server-stat-label',
         text: isGitInstall ? 'Git branch' : 'Release source',
@@ -14591,10 +14591,10 @@ function buildServerAdminPanel() {
     const statusDescription = createElement('p', { text: 'Runtime, source, commit, and update state.' });
     const statusPill = createElement('span', { className: 'sb-server-pill', text: 'Checking…' });
     const statusGrid = createElement('div', { className: 'sb-server-grid sb-server-summary-grid' });
-    const folderList = createElement('div', { className: 'sb-server-folder-list', attrs: { hidden: '' } });
+    const folderList = createElement('div', { className: 'sb-server-folder-list sb-advanced-only', attrs: { hidden: '' } });
     const statusNote = createElement('div', { className: 'sb-server-note' });
     const changedFiles = createElement('div', { className: 'sb-server-note', attrs: { hidden: '' } });
-    const sourceDetails = createElement('details', { className: 'sb-server-source-details' });
+    const sourceDetails = createElement('details', { className: 'sb-server-source-details sb-advanced-only' });
     const sourceSummary = createElement('summary', { text: 'More source details' });
     const sourceDetailsGrid = createElement('div', { className: 'sb-server-grid' });
     sourceDetails.append(sourceSummary, sourceDetailsGrid);
@@ -14610,9 +14610,9 @@ function buildServerAdminPanel() {
     const updateActions = createElement('div', { className: 'sb-server-actions' });
     const refreshButton = createElement('button', { className: 'menu_button menu_button_icon sb-server-action', text: 'Check for updates', attrs: { type: 'button' } });
     const updateButton = createElement('button', { className: 'menu_button menu_button_icon sb-server-action menu_button_primary', text: 'Update & Restart', attrs: { type: 'button' } });
-    const restartButton = createElement('button', { className: 'menu_button menu_button_icon sb-server-action', text: 'Restart server', attrs: { type: 'button' } });
+    const restartButton = createElement('button', { className: 'menu_button menu_button_icon sb-server-action sb-advanced-only', text: 'Restart server', attrs: { type: 'button' } });
     const updateNote = createElement('div', { className: 'sb-server-note', text: 'Git fast-forward updates and release ZIP updates restart automatically after preparation finishes.' });
-    const autoStashLabel = createElement('label', { className: 'checkbox_label' });
+    const autoStashLabel = createElement('label', { className: 'checkbox_label sb-advanced-only' });
     const autoStashCheckbox = createElement('input', { attrs: { type: 'checkbox', id: 'auto_stash_before_pull' } });
     const autoStashText = createElement('small', { text: 'Auto-stash local changes before pulling' });
     autoStashLabel.append(autoStashCheckbox, autoStashText);
@@ -14623,7 +14623,7 @@ function buildServerAdminPanel() {
     updateHeader.append(updateCopy);
     updateCard.append(updateHeader, updateActions, autoStashLabel, updateNote, updateOutput);
 
-    const thumbnailCard = createElement('section', { className: 'sb-admin-card sb-server-card sb-thumbnail-card' });
+    const thumbnailCard = createElement('section', { className: 'sb-admin-card sb-server-card sb-thumbnail-card sb-advanced-only' });
     const thumbnailHeader = createElement('div', { className: 'sb-admin-card-header' });
     const thumbnailCopy = createElement('div', { className: 'sb-admin-card-copy' });
     const thumbnailTitle = createElement('strong', { text: 'Thumbnail Quality' });
@@ -14715,7 +14715,7 @@ function buildServerAdminPanel() {
     thumbnailActions.append(thumbnailUseRecommendedButton, thumbnailUseRecommendedMobileButton, thumbnailSaveButton, thumbnailSaveClearButton, thumbnailClearButton);
     thumbnailCard.append(thumbnailHeader, thumbnailControls, thumbnailSizes, thumbnailMobileHeading, thumbnailMobileControls, thumbnailMobileSizes, thumbnailActions, thumbnailNote);
 
-    const configCard = createElement('section', { className: 'sb-admin-card sb-server-card' });
+    const configCard = createElement('section', { className: 'sb-admin-card sb-server-card sb-advanced-only' });
     const configHeader = createElement('div', { className: 'sb-admin-card-header' });
     const configCopy = createElement('div', { className: 'sb-admin-card-copy' });
     const configTitle = createElement('strong', { text: 'config.yaml Editor' });

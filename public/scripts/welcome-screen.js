@@ -2556,7 +2556,14 @@ function ensureNeconyanRail() {
     delete simpleMemory.dataset.neconyanRoute;
     simpleMemory.dataset.neconyanSimpleMemory = 'true';
     simpleMemory.title = t`See what has been written down about this chat so far.`;
-    rail.querySelector('[data-neconyan-simple-exit]')?.append(simpleMemory, simpleExit);
+    const simpleUpdates = createNeconyanRailButton({
+        label: 'Updates',
+        icon: 'fa-cloud-arrow-down',
+        onClick: () => window.NeconyanShell?.openTab?.('right', 'server'),
+    });
+    delete simpleUpdates.dataset.neconyanRoute;
+    simpleUpdates.dataset.neconyanSimpleUpdates = 'true';
+    rail.querySelector('[data-neconyan-simple-exit]')?.append(simpleMemory, simpleUpdates, simpleExit);
 
     const modeNav = rail.querySelector('[data-neconyan-mode-nav]');
     if (modeNav instanceof HTMLElement) {

@@ -265,12 +265,106 @@ for (const [name, viewport, hasTouch] of [['desktop', { width: 1280, height: 900
             await expect(page.locator('#mewmory-workspace')).toBeVisible();
         });
 
-        test('with every feature shown there is no Memory button', async ({ page, isMobile }) => {
+        test('with every feature shown the Simple Mode shortcuts are hidden', async ({ page, isMobile }) => {
             await account(page, { [SIMPLE_KEY]: 'off', 'NeconyanTutorialStatus.v1': 'completed' });
             await ready(page);
             if (isMobile) await page.getByRole('button', { name: 'Open menu' }).click();
             await expect(page.locator('#neconyan-workspace-rail [data-neconyan-route="home"]').first()).toBeVisible();
             await expect(page.locator('#neconyan-workspace-rail [data-neconyan-simple-memory]')).toBeHidden();
+            await expect(page.locator('#neconyan-workspace-rail [data-neconyan-simple-updates]')).toBeHidden();
+        });
+
+        test('Updates stays in Simple Mode and reaches the Git, ZIP and Android updaters', async ({ page, isMobile }) => {
+            await account(page, { [SIMPLE_KEY]: 'on', 'NeconyanTutorialStatus.v1': 'completed' });
+            const repository = { supported: true, isRepo: true, branch: 'main', trackingBranch: 'origin/main',
+                behind: 1, canUpdate: true, message: 'An update is ready.' };
+            let status = { runtime: 'Node.js', version: { pkgVersion: '1.5.0' }, repository };
+            let statusCode = 200;
+            const checks = [], updates = [];
+            await page.route('**/api/server-admin/status', route => {
+                checks.push(route.request().postDataJSON());
+                return route.fulfill({ status: statusCode, json: status });
+            });
+            await page.route(/\/api\/server-admin\/(update|zip-update)$/, route => {
+                updates.push(new URL(route.request().url()).pathname);
+                return route.fulfill({ json: { updated: false, message: 'Fixture update accepted.' } });
+            });
+            await ready(page);
+            await page.addStyleTag({ content: '#nn-update-toast, #toast-container { display: none !important; }' });
+            if (isMobile) await page.getByRole('button', { name: 'Open menu' }).click();
+            const shortcut = page.locator('#neconyan-workspace-rail [data-neconyan-simple-updates]');
+            await expect(shortcut).toHaveAccessibleName('Updates');
+            await expect(shortcut).toBeVisible();
+            const bounds = await shortcut.boundingBox();
+            if (isMobile) expect(bounds.height).toBeGreaterThanOrEqual(44);
+            await shortcut.click();
+            const panel = page.locator('#sb-shell-panel-right-server');
+            const refresh = panel.getByRole('button', { name: 'Check for updates', exact: true });
+            const update = panel.locator('[data-sb-can-update]');
+            await expect(panel).toBeVisible();
+            await expect(update).toBeEnabled();
+            await expect(page.locator('html')).toHaveClass(/neconyan-simple-mode/);
+            if (isMobile) await expect(page.locator('body')).not.toHaveClass(/neconyan-rail-drawer-open/);
+            for (const selector of ['#sb-branch-select', '.sb-server-folder-list', '.sb-server-source-details', '.sb-thumbnail-card', '.sb-server-config-editor', '#auto_stash_before_pull']) {
+                await expect(panel.locator(selector)).toBeHidden();
+            }
+            await expect(panel.getByRole('button', { name: 'Restart server', exact: true })).toBeHidden();
+            await refresh.click();
+            await expect(update).toHaveAttribute('data-sb-update-mode', 'git');
+            await expect(update).toBeEnabled();
+            expect(checks.at(-1).forceRefresh).toBe(true);
+            expect(updates).toEqual([]);
+            await update.click();
+            await expect(panel.getByText('Fixture update accepted.', { exact: true })).toBeVisible();
+            expect(updates).toEqual(['/api/server-admin/update']);
+
+            status = { ...status, repository: { supported: false, isRepo: false },
+                release: { supported: true, checked: true, assetAvailable: true, canUpdate: true, latestVersion: '1.5.1', message: 'Neconyan v1.5.1 is available.' } };
+            await refresh.click();
+            await expect(update).toHaveAttribute('data-sb-update-mode', 'zip');
+            await update.click();
+            await expect(panel.getByText('Fixture update accepted.', { exact: true })).toBeVisible();
+            expect(updates).toEqual(['/api/server-admin/update', '/api/server-admin/zip-update']);
+
+            await page.evaluate(async () => {
+                window.NeconyanAndroid = { installUpdate: (token, version) => {
+                    if (token !== 'a'.repeat(64)) return false;
+                    window.simpleModeApkVersion = version;
+                    return true;
+                } };
+                const { installAndroidNativeBridge } = await import('/scripts/android-native-bridge.js');
+                installAndroidNativeBridge('a'.repeat(64), window.location.origin);
+            });
+            status = { ...status, androidRelease: { supported: true, checked: true, assetAvailable: true, canUpdate: true,
+                latestVersion: '1.5.1', architecture: 'arm64', message: 'Neconyan v1.5.1 is available.' } };
+            await refresh.click();
+            await expect(update).toHaveText('Update APK');
+            await update.click();
+            expect(await page.evaluate(() => window.simpleModeApkVersion)).toBe('1.5.1');
+            expect(updates).toHaveLength(2);
+
+            // A failed check remains readable, and does not leave an install button enabled.
+            statusCode = 403;
+            status = { error: 'Administrator access is required.' };
+            await refresh.click();
+            await expect(panel.getByText('Server tools are only available after an admin session is ready.', { exact: true })).toBeVisible();
+            await expect(update).toBeDisabled();
+            statusCode = 200;
+            status = { runtime: 'Node.js', repository: { ...repository, hasLocalChanges: true, canUpdate: false } };
+            await refresh.click();
+            await expect(panel.getByText(/Update blocked while this checkout has local changes/)).toBeVisible();
+            await expect(update).toBeDisabled();
+            expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false);
+
+            // The same panel returns to its full form as soon as Simple Mode is switched off.
+            await page.evaluate(async () => (await import('/scripts/neconyan-simple-mode.js')).setSimpleModeEnabled(false));
+            await expect(panel.locator('#sb-branch-select')).toBeVisible();
+            await expect(panel.locator('.sb-server-source-details')).toBeVisible();
+            await expect(panel.locator('.sb-thumbnail-card')).toBeVisible();
+            await expect(panel.locator('.sb-server-config-editor')).toBeVisible();
+            await expect(panel.locator('#auto_stash_before_pull')).toBeVisible();
+            await expect(panel.getByRole('button', { name: 'Restart server', exact: true })).toBeVisible();
+            await expect(shortcut).toBeHidden();
         });
 
         test('Simple Mode tucks away the pages and tabs a newcomer does not need, and never strands them there', async ({ page, isMobile }) => {
