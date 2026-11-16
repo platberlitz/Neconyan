@@ -308,24 +308,32 @@ describe('Neconyan Home', () => {
         const defaults = JSON.parse(readFileSync(new URL('../default/content/settings.json', import.meta.url), 'utf8'));
         const values = new Map(Object.entries(defaults.accountStorage));
         let opens = 0;
+        let quietSeeds = 0;
         const asks = [];
+        const meets = [];
         const context = vm.createContext({
             tutorialStatusKey: 'NeconyanTutorialStatus.v1', tutorialHiddenKey: 'NeconyanTutorialHidden.v1',
+            assistantSeedKey: 'NeconyanAssistantSeed.v1',
             getWelcomeUiPreference: key => values.get(key) ?? null,
             getSimpleModePreference: () => values.get('NeconyanSimpleMode.v1') ?? 'off',
-            showTutorialCoachmark: options => { opens++; asks.push(options.askSimpleMode); },
+            showTutorialCoachmark: options => { opens++; asks.push(options.askSimpleMode); meets.push(options.askAssistants); },
+            seedBundledAssistants: () => { quietSeeds++; },
         });
         vm.runInContext(read('scripts/welcome-screen.js').match(/^function resumeTutorial\(\) {[\s\S]*?^}/m)[0], context);
+        expect(defaults.accountStorage['NeconyanAssistantSeed.v1']).toBe('ask');
         context.resumeTutorial();
         expect(opens).toBe(1);
         expect(asks).toEqual([true]);
+        expect(meets).toEqual([true]);
         values.set('NeconyanSimpleMode.v1', 'on');
+        values.set('NeconyanAssistantSeed.v1', 'done');
         for (const status of ['', 'pending']) {
             values.set('NeconyanTutorialStatus.v1', status);
             context.resumeTutorial();
         }
         expect(opens).toBe(3);
         expect(asks).toEqual([true, false, false]);
+        expect(meets).toEqual([true, false, false]);
         for (const status of ['completed', 'skipped', null]) {
             values.set('NeconyanTutorialStatus.v1', status);
             context.resumeTutorial();
@@ -334,6 +342,109 @@ describe('Neconyan Home', () => {
         values.set('NeconyanTutorialHidden.v1', 'true');
         context.resumeTutorial();
         expect(opens).toBe(3);
+        expect(quietSeeds).toBe(0);
+        // A closed tour with the assistants still missing installs them without asking.
+        values.set('NeconyanAssistantSeed.v1', 'ask');
+        context.resumeTutorial();
+        expect(opens).toBe(3);
+        expect(quietSeeds).toBe(1);
+        // Accounts that predate the marker are never asked and never seeded.
+        values.delete('NeconyanAssistantSeed.v1');
+        values.delete('NeconyanTutorialHidden.v1');
+        context.resumeTutorial();
+        expect(meets.at(-1)).toBe(false);
+        expect(quietSeeds).toBe(1);
+    });
+
+    describe('Miso, Taro and Nori move into a new account once', () => {
+        function harness({ marker = 'ask', genders = {}, failFor = null, saveResult = true } = {}) {
+            const storage = new Map(marker === null ? [] : [['NeconyanAssistantSeed.v1', marker]]);
+            const calls = { installs: [], saves: 0, lists: 0, refreshes: 0, warnings: 0 };
+            const extension_settings = {};
+            const context = vm.createContext({
+                assistantSeedKey: 'NeconyanAssistantSeed.v1', assistantSeedPromise: null, assistantCatalogPromise: 'stale',
+                accountStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) },
+                getCurrentUserHandle: () => 'default-user', getRequestHeaders: () => ({}),
+                getAssistantGender: personality => genders[personality] ?? 'neutral',
+                extension_settings,
+                fetch: async (url, options) => {
+                    const { id } = JSON.parse(options.body);
+                    calls.installs.push(id);
+                    if (id.startsWith(`${failFor}-`)) return { ok: false, json: async () => ({ error: 'Assistant could not be installed.' }) };
+                    return { ok: true, json: async () => ({ id, avatar: `${id}.png`, spriteFolder: `assistants/${id}` }) };
+                },
+                saveSettings: async () => { calls.saves++; return saveResult; },
+                getCharacters: async () => { calls.lists++; },
+                refreshWelcomeScreen: async () => { calls.refreshes++; },
+                toastr: { warning: () => { calls.warnings++; } },
+                t: strings => strings[0], console: { error: () => {} }, Promise,
+            });
+            context.globalThis = context;
+            vm.runInContext(read('scripts/welcome-screen.js').match(/^function seedBundledAssistants\(\) {[\s\S]*?^}/m)[0], context);
+            return { context, storage, calls, extension_settings };
+        }
+
+        test('the chosen looks are installed, the marker closes and the cast list reloads', async () => {
+            const { context, storage, calls, extension_settings } = harness({ genders: { miso: 'female', taro: 'male' } });
+            expect(await context.seedBundledAssistants()).toBe(true);
+            expect(calls.installs).toEqual(['miso-female', 'taro-male', 'nori-neutral']);
+            expect(storage.get('NeconyanAssistantSeed.v1')).toBe('done');
+            expect(extension_settings.expressionOverrides).toEqual([
+                { name: 'miso-female', path: 'assistants/miso-female' },
+                { name: 'taro-male', path: 'assistants/taro-male' },
+                { name: 'nori-neutral', path: 'assistants/nori-neutral' },
+            ]);
+            expect(calls).toMatchObject({ saves: 1, lists: 1, refreshes: 1, warnings: 0 });
+            expect(context.assistantCatalogPromise).toBeNull();
+            expect(await context.seedBundledAssistants()).toBe(false);
+            expect(calls.installs).toHaveLength(3);
+        });
+
+        test('with nothing chosen, as when the tour is skipped, all three arrive as Neutral', async () => {
+            const { context, calls } = harness();
+            await context.seedBundledAssistants();
+            expect(calls.installs).toEqual(['miso-neutral', 'taro-neutral', 'nori-neutral']);
+        });
+
+        test('accounts without the marker, and accounts already seeded, are left alone', async () => {
+            for (const marker of [null, 'done']) {
+                const { context, calls } = harness({ marker });
+                expect(await context.seedBundledAssistants()).toBe(false);
+                expect(calls.installs).toEqual([]);
+                expect(calls.saves).toBe(0);
+            }
+        });
+
+        test('a failed install or save keeps the marker so the next start tries again', async () => {
+            for (const options of [{ failFor: 'taro' }, { saveResult: false }]) {
+                const { context, storage, calls } = harness(options);
+                expect(await context.seedBundledAssistants()).toBe(false);
+                expect(storage.get('NeconyanAssistantSeed.v1')).toBe('ask');
+                expect(calls.warnings).toBe(1);
+                expect(calls.refreshes).toBe(0);
+            }
+        });
+
+        test('two callers share one installation', async () => {
+            const { context, calls } = harness();
+            await Promise.all([context.seedBundledAssistants(), context.seedBundledAssistants()]);
+            expect(calls.installs).toHaveLength(3);
+        });
+
+        test('the tour asks before Simple Mode, and skipping still seeds', () => {
+            const source = read('scripts/welcome-screen.js');
+            expect(source).toContain('const step = meeting ? ASSISTANT_MEETING_STEP : asking ? SIMPLE_MODE_QUESTION_STEP : steps[index];');
+            expect(source).toContain('confirm.dataset.tourAssistantsConfirm = \'true\';');
+            expect(source).toMatch(/removeTutorialCoachmark\(\);\s*\/\/ Skipping[^\n]*\n\s*void seedBundledAssistants\(\);\s*return true;/);
+        });
+
+        test('the choice rows are styled from a deferred sheet that fits every look on one screen', () => {
+            expect(read('index.html')).toMatch(/<link href="css\/neconyan-first-run\.css\?v=[^"]+" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">/);
+            const css = read('css/neconyan-first-run.css');
+            expect(css).toContain('grid-template-columns: 40px 3em repeat(3, minmax(0, 1fr));');
+            expect(css).toMatch(/#neconyan-tour-coachmark\.neconyan-tour-meeting \{\s*max-height: min\(92dvh, 720px\);/);
+            expect(css).not.toMatch(/!important|transition|animation|#[0-9a-f]{3,8}\b/i);
+        });
     });
 });
 

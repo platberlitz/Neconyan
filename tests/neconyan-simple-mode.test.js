@@ -139,6 +139,6 @@ describe('Simple Mode styles and wiring', () => {
         const welcome = read('public/scripts/welcome-screen.js');
         expect(welcome).toContain('data-neconyan-simple-exit');
         expect(welcome).toContain('label: \'Show all features\'');
-        expect(welcome).toContain('showTutorialCoachmark({ askSimpleMode: getSimpleModePreference() === \'ask\' });');
+        expect(welcome).toContain('showTutorialCoachmark({ askSimpleMode: getSimpleModePreference() === \'ask\', askAssistants: meetAssistants });');
     });
 });

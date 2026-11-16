@@ -26,6 +26,8 @@ const pinnedChatsKey = 'pinnedChats';
 const tutorialStatusKey = 'NeconyanTutorialStatus.v1';
 const tutorialIndexKey = 'NeconyanTutorialIndex.v1';
 const tutorialHiddenKey = 'NeconyanTutorialHidden.v1';
+// Only new accounts carry this marker ('ask' until Miso, Taro and Nori are installed).
+const assistantSeedKey = 'NeconyanAssistantSeed.v1';
 const welcomePanelModeKey = 'WelcomePage_PanelMode';
 const assistantsCollapsedKey = 'WelcomePage_AssistantsCollapsed';
 
@@ -33,6 +35,7 @@ let activeTutorialPanel = null;
 let welcomeRequestId = 0;
 let assistantCatalogPromise = null;
 let assistantSelectionPending = false;
+let assistantSeedPromise = null;
 
 // Home and the rail can ask for the same recent list during startup. Share only
 // the request already in flight; once it completes, the next consumer fetches
@@ -71,6 +74,19 @@ const SIMPLE_MODE_QUESTION_STEP = Object.freeze({
     body: 'Neconyan has a lot of buttons. Like, a lot. **Simple Mode** keeps the chat, your characters, your connection, presets, lorebooks, Agents, Notebooks and the Scratchpad, and tucks the rest away.',
     hint: 'Change your mind any time in Settings → Appearance.',
 });
+
+const ASSISTANT_MEETING_STEP = Object.freeze({
+    speaker: 'Miso, Taro and Nori',
+    title: 'Who would you like to meet?',
+    body: 'Hi~! We are Miso, Taro and Nori, and we live here. Pick how each of us looks, and we will move into your character list so there is always somebody to talk to.',
+    hint: 'Changed your mind? Home → Choose an assistant lets you pick again any time.',
+});
+
+const ASSISTANT_MEETING_GUIDES = Object.freeze([
+    ['miso', WELCOME_TUTORIAL_STEPS[1]],
+    ['taro', WELCOME_TUTORIAL_STEPS[2]],
+    ['nori', WELCOME_TUTORIAL_STEPS[5]],
+]);
 
 function getActiveTutorialSteps() {
     return isSimpleModeEnabled() ? SIMPLE_TUTORIAL_STEPS : WELCOME_TUTORIAL_STEPS;
@@ -758,12 +774,16 @@ function syncTutorialCoachmark(panel) {
         return;
     }
 
-    const asking = panel.dataset.tutorialAskSimpleMode === 'true';
+    // The meeting question comes first; Nori's Simple Mode question follows it.
+    const meeting = panel.dataset.tutorialAskAssistants === 'true';
+    const asking = meeting || panel.dataset.tutorialAskSimpleMode === 'true';
     const steps = getActiveTutorialSteps();
     const index = clamp(Number.parseInt(panel.dataset.tutorialIndex || '0', 10) || 0, 0, steps.length - 1);
     const count = steps.length;
-    const step = asking ? SIMPLE_MODE_QUESTION_STEP : steps[index];
-    coachmark.classList.toggle('neconyan-tour-ending', Boolean(step.ending));
+    const step = meeting ? ASSISTANT_MEETING_STEP : asking ? SIMPLE_MODE_QUESTION_STEP : steps[index];
+    const everyone = meeting || Boolean(step.ending);
+    coachmark.classList.toggle('neconyan-tour-ending', everyone);
+    coachmark.classList.toggle('neconyan-tour-meeting', meeting);
     coachmark.classList.toggle('neconyan-tour-asking', asking);
     coachmark.querySelector('[data-tour-coach-step]').textContent = asking ? t`Before we start` : t`Step ${index + 1} of ${count}`;
     coachmark.querySelector('[data-tour-coach-title]').textContent = t([step.title]);
@@ -774,20 +794,23 @@ function syncTutorialCoachmark(panel) {
     coachmark.querySelector('[data-tour-coach-speaker]').textContent = step.speaker;
     const portraits = coachmark.querySelector('[data-tour-portraits]');
     portraits.replaceChildren();
-    for (const guide of step.ending ? [WELCOME_TUTORIAL_STEPS[1], WELCOME_TUTORIAL_STEPS[2], WELCOME_TUTORIAL_STEPS[5]] : [step]) {
+    // While meeting, each portrait sits in its own row beside the three looks.
+    for (const guide of meeting ? [] : everyone ? ASSISTANT_MEETING_GUIDES.map(([, entry]) => entry) : [step]) {
         const figure = document.createElement('figure');
         figure.innerHTML = '<div class="neconyan-tour-step-visual"><img width="512" height="768" data-tour-image><span class="neconyan-tour-image-fallback" hidden aria-hidden="true">🐾</span></div><figcaption></figcaption>';
         const image = figure.querySelector('img');
         image.dataset.assistantTourImage = guide.image;
         image.src = getAssistantTourSrc(guide.image);
         image.alt = t`${guide.speaker} speaking`;
-        figure.querySelector('figcaption').textContent = step.ending ? guide.speaker : '';
+        figure.querySelector('figcaption').textContent = everyone ? guide.speaker : '';
         portraits.append(figure);
     }
     bindTourImageFallbacks(coachmark);
     coachmark.querySelector('[data-tour-paw-stamp]').hidden = !step.ending;
     const actionHost = coachmark.querySelector('[data-tour-coach-actions]');
-    if (actionHost instanceof HTMLElement && asking) {
+    if (actionHost instanceof HTMLElement && meeting) {
+        renderAssistantMeetingChoices(panel, actionHost);
+    } else if (actionHost instanceof HTMLElement && asking) {
         actionHost.replaceChildren();
         for (const [label, enabled] of [['Yes, keep it simple', true], ['No, show me everything', false]]) {
             const answer = document.createElement('button');
@@ -844,7 +867,62 @@ function answerSimpleModeQuestion(panel, enabled) {
     setTutorialUiState(panel, 0, true);
 }
 
-function showTutorialCoachmark({ askSimpleMode = false } = {}) {
+function renderAssistantMeetingChoices(panel, host) {
+    host.replaceChildren();
+    for (const [personality, guide] of ASSISTANT_MEETING_GUIDES) {
+        const row = document.createElement('div');
+        row.className = 'neconyan-tour-assistant-row';
+        row.setAttribute('role', 'group');
+        row.setAttribute('aria-label', guide.speaker);
+        const portrait = document.createElement('div');
+        portrait.className = 'neconyan-tour-step-visual';
+        portrait.innerHTML = '<img width="512" height="768" alt="" data-tour-image><span class="neconyan-tour-image-fallback" hidden aria-hidden="true">🐾</span>';
+        const image = portrait.querySelector('img');
+        image.dataset.assistantTourImage = guide.image;
+        image.src = getAssistantTourSrc(guide.image);
+        const name = document.createElement('span');
+        name.textContent = guide.speaker;
+        row.append(portrait, name);
+        const chosen = getAssistantGender(personality);
+        for (const [gender, label] of [['female', 'Female'], ['male', 'Male'], ['neutral', 'Neutral']]) {
+            const choice = document.createElement('button');
+            choice.type = 'button';
+            choice.className = gender === chosen ? 'menu_button menu_button_primary' : 'menu_button';
+            choice.textContent = t([label]);
+            choice.dataset.tourAssistant = personality;
+            choice.dataset.tourAssistantGender = gender;
+            choice.setAttribute('aria-pressed', String(gender === chosen));
+            choice.addEventListener('click', () => {
+                setAssistantGender(personality, gender);
+                row.querySelectorAll('button').forEach((button) => {
+                    const pressed = button === choice;
+                    button.setAttribute('aria-pressed', String(pressed));
+                    button.classList.toggle('menu_button_primary', pressed);
+                });
+            });
+            row.append(choice);
+        }
+        host.append(row);
+    }
+    const confirm = document.createElement('button');
+    confirm.type = 'button';
+    confirm.className = 'menu_button menu_button_primary';
+    confirm.textContent = t`Nice to meet you!`;
+    confirm.dataset.tourAssistantsConfirm = 'true';
+    confirm.addEventListener('click', async () => {
+        const controls = [...host.querySelectorAll('button')];
+        controls.forEach((button) => { button.disabled = true; });
+        // A failed install keeps the marker, so the next start retries; the tour goes on either way.
+        await seedBundledAssistants();
+        if (activeTutorialPanel !== panel) return;
+        delete panel.dataset.tutorialAskAssistants;
+        setTutorialUiState(panel, 0, true);
+    });
+    host.append(confirm);
+    bindTourImageFallbacks(host);
+}
+
+function showTutorialCoachmark({ askSimpleMode = false, askAssistants = false } = {}) {
     let coachmark = document.getElementById('neconyan-tour-coachmark');
     if (!(coachmark instanceof HTMLElement)) {
         coachmark = document.createElement('aside');
@@ -895,19 +973,30 @@ function showTutorialCoachmark({ askSimpleMode = false } = {}) {
     activeTutorialPanel = coachmark;
     document.body.classList.add('neconyan-tour-active');
     const savedIndex = getWelcomeUiPreference(tutorialIndexKey) || 0;
-    if (askSimpleMode && (Number.parseInt(savedIndex, 10) || 0) === 0) {
+    const atStart = (Number.parseInt(savedIndex, 10) || 0) === 0;
+    if (askSimpleMode && atStart) {
         coachmark.dataset.tutorialAskSimpleMode = 'true';
     } else {
         delete coachmark.dataset.tutorialAskSimpleMode;
+    }
+    if (askAssistants && atStart) {
+        coachmark.dataset.tutorialAskAssistants = 'true';
+    } else {
+        delete coachmark.dataset.tutorialAskAssistants;
+        if (askAssistants) void seedBundledAssistants();
     }
     setTutorialUiState(coachmark, savedIndex, true, { persist: false });
 }
 
 function resumeTutorial() {
     const status = getWelcomeUiPreference(tutorialStatusKey);
+    const meetAssistants = getWelcomeUiPreference(assistantSeedKey) === 'ask';
     if (status !== null && !['completed', 'skipped'].includes(status) && getWelcomeUiPreference(tutorialHiddenKey) !== 'true') {
         // Only the automatic first-run tour asks; Replay goes straight to the steps.
-        showTutorialCoachmark({ askSimpleMode: getSimpleModePreference() === 'ask' });
+        showTutorialCoachmark({ askSimpleMode: getSimpleModePreference() === 'ask', askAssistants: meetAssistants });
+    } else if (meetAssistants) {
+        // The tour is closed but the assistants never arrived: install them quietly.
+        void seedBundledAssistants();
     }
 }
 
@@ -950,7 +1039,10 @@ async function dismissTutorial(panel, status) {
         const restoredIndex = Number.parseInt(previousIndex ?? String(currentIndex), 10) || 0;
         setTutorialUiState(panel, restoredIndex, previousExpanded, { persist: false });
         if (previousExpanded) {
-            showTutorialCoachmark(panel);
+            showTutorialCoachmark({
+                askSimpleMode: panel.dataset.tutorialAskSimpleMode === 'true',
+                askAssistants: panel.dataset.tutorialAskAssistants === 'true',
+            });
         } else {
             removeTutorialCoachmark();
         }
@@ -964,6 +1056,8 @@ async function dismissTutorial(panel, status) {
 
     setTutorialUiState(panel, currentIndex, false, { persist: false });
     removeTutorialCoachmark();
+    // Skipping before the meeting question still brings all three in, as Neutral unless chosen.
+    void seedBundledAssistants();
     return true;
 }
 
@@ -1180,6 +1274,53 @@ async function activateInstalledAssistant(assistantId, result, origin) {
         }
         throw error;
     }
+}
+
+/**
+ * Install Miso, Taro and Nori once for a new account, in the look chosen in the tour (Neutral otherwise).
+ * Accounts without the marker are left alone. A failure keeps the marker so the next start retries.
+ */
+function seedBundledAssistants() {
+    if (accountStorage.getItem(assistantSeedKey) !== 'ask') return Promise.resolve(false);
+    assistantSeedPromise ??= (async () => {
+        const account = getCurrentUserHandle();
+        try {
+            const installed = [];
+            for (const personality of ['miso', 'taro', 'nori']) {
+                const response = await fetch('/api/characters/assistants/install', {
+                    method: 'POST', headers: { ...getRequestHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: `${personality}-${getAssistantGender(personality)}` }),
+                });
+                const result = await response.json().catch(() => ({}));
+                if (!response.ok || !result.avatar || !result.spriteFolder) throw new Error(result.error || 'The assistant could not be installed.');
+                installed.push(result);
+            }
+            if (account !== getCurrentUserHandle()) return false;
+            extension_settings.expressionOverrides ??= [];
+            for (const result of installed) {
+                const avatarStem = result.avatar.replace(/\.[^/.]+$/, '');
+                if (!extension_settings.expressionOverrides.some(override => override?.name === avatarStem)) {
+                    extension_settings.expressionOverrides.push({ name: avatarStem, path: result.spriteFolder });
+                }
+            }
+            accountStorage.setItem(assistantSeedKey, 'done');
+            if (await saveSettings(0, { returnResult: true }) !== true) {
+                accountStorage.setItem(assistantSeedKey, 'ask');
+                throw new Error('The assistants were installed, but that could not be saved.');
+            }
+            assistantCatalogPromise = null;
+            await getCharacters();
+            await refreshWelcomeScreen();
+            return true;
+        } catch (error) {
+            console.error('Could not install the bundled assistants:', error);
+            globalThis.toastr?.warning?.(t`Miso, Taro and Nori could not move in yet. Neconyan will try again next time it opens.`);
+            return false;
+        } finally {
+            assistantSeedPromise = null;
+        }
+    })();
+    return assistantSeedPromise;
 }
 
 /** Open a bundled assistant through the same guarded installation path as the Home picker. */

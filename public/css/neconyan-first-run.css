@@ -1,0 +1,35 @@
+/* First-run tour: one row per assistant: portrait, name and its three looks. */
+body.neconyan #neconyan-tour-coachmark .neconyan-tour-assistant-row {
+    display: grid;
+    grid-template-columns: 40px 3em repeat(3, minmax(0, 1fr));
+    align-items: center;
+    gap: 6px;
+    flex: 1 0 100%;
+}
+
+body.neconyan #neconyan-tour-coachmark.neconyan-tour-meeting {
+    max-height: min(92dvh, 720px);
+}
+
+body.neconyan #neconyan-tour-coachmark .neconyan-tour-assistant-row > .neconyan-tour-step-visual {
+    width: 40px;
+}
+
+body.neconyan #neconyan-tour-coachmark .neconyan-tour-assistant-row > span {
+    font-weight: 600;
+}
+
+body.neconyan #neconyan-tour-coachmark .neconyan-tour-assistant-row > button {
+    justify-content: center;
+    width: 100%;
+    margin: 0;
+    padding-inline: 6px;
+}
+
+body.neconyan #neconyan-tour-coachmark [data-tour-assistants-confirm] {
+    margin-left: auto;
+}
+
+body.neconyan #neconyan-tour-coachmark.neconyan-tour-meeting .neconyan-tour-step-copy {
+    padding-right: 0;
+}
