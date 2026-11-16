@@ -4,6 +4,7 @@
 
 ### Merged Staging PRs
 - PR #694 (2026-11-15) `fix(image-gen): wait for app settings before the first save`
+- PR #695 (2026-11-16) `fix(agents): run enabled proofreader on impersonation`
 
 ## v1.5.5
 
