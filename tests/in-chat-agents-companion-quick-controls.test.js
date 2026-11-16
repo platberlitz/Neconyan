@@ -56,8 +56,18 @@ describe('companion quick controls', () => {
         const unlinked = quick.applyCompanionQuickChange(companion('a', 'Alpha', { batchAgentIds: ['b-copy'], batch: true }), { kind: 'link', field: 'batchAgentIds', candidate: target, checked: false });
         expect(unlinked.companion).toMatchObject({ batchAgentIds: [], batch: false });
         const after = quick.applyCompanionQuickChange(agent, { kind: 'link', field: 'dependencies', candidate: target, checked: true });
-        expect(after.companion.dependencies).toEqual(['b-copy']);
+        expect(after.companion).toMatchObject({ dependencies: ['b-copy'], waitForDependencies: true });
         expect(quick.applyCompanionQuickChange(agent, { kind: 'link', field: 'unknown', candidate: target, checked: true })).toBeNull();
+    });
+
+    test('removing a dependency keeps waiting until the last link is cleared', () => {
+        const target = companion('b-copy', 'Beta', {}, { sourceTemplateId: 'b-template' });
+        const agent = companion('a', 'Alpha', { dependencies: ['b-template', 'b-copy', 'c'], waitForDependencies: true });
+        const remaining = quick.applyCompanionQuickChange(agent, { kind: 'link', field: 'dependencies', candidate: target, checked: false });
+        expect(remaining.companion).toMatchObject({ dependencies: ['c'], waitForDependencies: true });
+        const cleared = quick.applyCompanionQuickChange(remaining, { kind: 'link', field: 'dependencies', candidate: companion('c', 'Gamma'), checked: false });
+        expect(cleared.companion).toMatchObject({ dependencies: [], waitForDependencies: false });
+        expect(agent.companion).toEqual({ dependencies: ['b-template', 'b-copy', 'c'], waitForDependencies: true });
     });
 
     test('describes links in plain words', () => {
