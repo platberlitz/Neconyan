@@ -4,7 +4,7 @@ import { getCompanionReferenceIds } from './companion-shared.js';
 
 /** Link lists a companion card can change in place, in the order they are shown. */
 export const COMPANION_QUICK_LINKS = Object.freeze([
-    { field: 'dependencies', title: 'Runs after', help: 'Reads their latest notes first and runs again when they change.', flag: '' },
+    { field: 'dependencies', title: 'Runs after', help: 'Reads their latest notes first and runs again when they change.', flag: 'waitForDependencies' },
     { field: 'contextRecipientAgentIds', title: 'Sends notes to', help: 'They get this companion’s latest note as extra context.', flag: 'sendContextToCompanions' },
     { field: 'batchAgentIds', title: 'Shares one request with', help: 'Runs with them in one request when their connections and models match.', flag: 'batch' },
 ]);

@@ -5545,6 +5545,38 @@ describe('in-chat agent post-processing runner', () => {
         expect(chat[3].extra.inChatAgentCompanionResults['saved-user-stats-generator'].content).toBe('[USER_STATS]\nLevel: 2\n[/USER_STATS]');
     });
 
+    test.each(['sequential', 'parallel'])('uses a new quick dependency on the next reply in the same chat (%s)', async executionMode => {
+        globalSettings.companionExecutionMode = executionMode;
+        const source = createCompanionAgent({ id: 'live-source', name: 'Live Source', prompt: 'Write the source note.' });
+        const target = createCompanionAgent({ id: 'live-target', name: 'Live Target', prompt: 'Write the target note.' });
+        enabledAgents = [target, source];
+        const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        const store = await import('../public/scripts/extensions/in-chat-agents/agent-store.js');
+        const quick = await import('../public/scripts/extensions/in-chat-agents/companion/companion-quick-controls.js');
+        chat.push({ mes: 'An existing reply.', name: 'Assistant', is_user: false, is_system: false, extra: {} });
+        generateQuietPrompt.mockImplementation(async ({ quietPrompt }) => quietPrompt.includes('Write the source note.') ? 'Old source note.' : 'Old target note.');
+        await companionRunner.runCompanionStage({ messageIndex: 0, message: chat[0], activeAgents: store.getEnabledAgents() });
+
+        await store.saveAgent(quick.applyCompanionQuickChange(store.getAgentById(target.id), {
+            kind: 'link', field: 'dependencies', candidate: source, checked: true,
+        }));
+        chat.push(
+            { mes: 'Continue this chat.', name: 'User', is_user: true, is_system: false, extra: {} },
+            { mes: 'The next reply.', name: 'Assistant', is_user: false, is_system: false, extra: {} },
+        );
+        generateQuietPrompt.mockClear();
+        generateQuietPrompt.mockImplementation(async ({ quietPrompt }) => quietPrompt.includes('Write the source note.') ? 'Fresh source note.' : 'Fresh target note.');
+        await companionRunner.runCompanionStage({ messageIndex: 2, message: chat[2], activeAgents: store.getEnabledAgents() });
+
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(2);
+        const [sourceCall, targetCall] = generateQuietPrompt.mock.calls;
+        expect(sourceCall[0].quietPrompt).toContain('Write the source note.');
+        expect(targetCall[0].quietPrompt).toContain('[Completed companion: Live Source]');
+        expect(targetCall[0].quietPrompt).toContain('Fresh source note.');
+        expect(targetCall[0].quietPrompt).not.toContain('Old source note.');
+        expect(chat[0].extra.inChatAgentCompanionResults[source.id].content).toBe('Old source note.');
+    });
+
     test('excludes hidden companions from automatic linked context', async () => {
         generateQuietPrompt.mockResolvedValue('Visible companion note');
         globalSettings.hiddenCompanionAgentIds = ['source-companion'];
