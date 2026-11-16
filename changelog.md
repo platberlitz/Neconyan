@@ -3,6 +3,7 @@
 ## v1.5.6
 
 ### Merged Staging PRs
+- PR #693 (2026-11-16) `fix(locale): keep names people choose as written`
 - PR #694 (2026-11-15) `fix(image-gen): wait for app settings before the first save`
 - PR #695 (2026-11-16) `fix(agents): run enabled proofreader on impersonation`
 - PR #696 (2026-11-16) `feat(simple-mode): make the first hour work for newcomers`
