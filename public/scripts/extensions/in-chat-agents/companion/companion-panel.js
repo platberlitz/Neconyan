@@ -723,7 +723,6 @@ function buildChatroomReplyComposer(state) {
     return `
         <div class="ica--chatonly-composer ica--tpanel-chatroom-reply">
             <label>
-                <span class="ica--chatonly-live ica--tpanel-chatonly-live"><i class="fa-solid fa-comment"></i><span>Respond to the chatroom</span></span>
                 <input type="text" class="text_pole ica--chatonly-input ica--tpanel-chatroom-reply-input" data-role="chatroom-reply-input" maxlength="${CHATROOM_REPLY_MAX_CHARS}" placeholder="Respond to the chatroom..." aria-label="Respond to the chatroom">
             </label>
             <button type="button" class="menu_button menu_button_icon ica--chatonly-send ica--tpanel-chatroom-reply-send" data-action="panel-chatroom-reply-send" title="Send your reply to the chatroom" aria-label="Send reply">
