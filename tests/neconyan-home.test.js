@@ -59,6 +59,8 @@ describe('Neconyan Home', () => {
         expect(home).toContain('<span>Find characters online<small>Search Chub, JannyAI and other card sites, then add one in a tap.</small></span>');
         expect(home).toContain('data-action="open-tab" data-action-value="characters:import"');
         expect(home.indexOf('data-action="find-characters"')).toBeLessThan(home.indexOf('openTemporaryChat'));
+        // Their second lines are long; on a phone they wrap inside the button instead of pushing the icon off its edge.
+        expect(read('css/neconyan-home.css')).toContain('.neconyan-home-actions > button > span { flex: 1; min-width: 0; white-space: normal; }');
         const welcome = read('scripts/welcome-screen.js');
         expect(welcome).toMatch(/case 'find-characters':\s*if \(!await globalThis\.NeconyanNativeTools\?\.activate\?\.\(NECONYAN_RAIL_TOOL_ROUTES\.botsearcher\)\) \{\s*openShellTab\('characters:import'\);/);
         const searcher = name => read(`scripts/extensions/third-party/Neconyan-BotSearcher/client/${name}.js`);

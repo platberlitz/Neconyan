@@ -146,6 +146,19 @@ for (const [name, viewport, hasTouch] of [['desktop', { width: 1280, height: 900
 
             const home = page.locator('.neconyan-home-actions');
             await expect(home.getByRole('button', { name: /^Import a character/ })).toBeVisible();
+            // Every Home button keeps its icon, text and arrow inside its own edges, long second lines included.
+            const spills = await home.evaluate(list => [...list.querySelectorAll(':scope > button')]
+                .filter(button => button.getClientRects().length)
+                .flatMap(button => {
+                    const box = button.getBoundingClientRect();
+                    return [...button.querySelectorAll(':scope > i.fa-solid, :scope > span')]
+                        .filter(child => {
+                            const part = child.getBoundingClientRect();
+                            return part.left < box.left - 1 || part.right > box.right + 1;
+                        })
+                        .map(child => `${button.textContent.trim().slice(0, 24)}: ${child.className || child.tagName}`);
+                }));
+            expect(spills).toEqual([]);
             await home.getByRole('button', { name: /^Find characters online/ }).click();
             const search = page.locator('#sbbs_query');
             await expect(search).toBeVisible();
