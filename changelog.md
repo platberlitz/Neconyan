@@ -13,6 +13,7 @@
 - PR #700 (2026-11-16) `feat(gallery): add workspace and quick access shortcuts`
 - PR #701 (2026-11-16) `fix(simple-mode): keep updates within reach`
 - PR #702 (2026-11-16) `docs(readme): refresh desktop and phone screenshots`
+- PR #703 (2026-11-16) `fix(chatroom): remove the duplicate reply label`
 
 ## v1.5.5
 
