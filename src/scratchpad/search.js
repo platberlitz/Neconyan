@@ -40,6 +40,15 @@ function listNames(directory) {
     }
 }
 
+/** Saved lists from this account, including shared character and group lists. */
+export function* savedSessionListsLocked(lease) {
+    const directory = directoryOf(lease);
+    for (const name of listNames(directory)) {
+        const list = readList(lease, directory, name);
+        if (list) yield list;
+    }
+}
+
 /** A name the owner can recognise: the saved label, or the character or group a shared list belongs to. */
 function whereOf(source) {
     const label = typeof source.label === 'string' ? source.label.trim() : '';

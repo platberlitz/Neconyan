@@ -1584,6 +1584,7 @@ function generateUUID() {
 }
 
 let sessionGallery = [];
+let scratchpadGalleryRequest = null;
 let galleryRepository = null;
 let galleryInitializationPromise = Promise.resolve();
 let accountStorageScope = null;
@@ -11961,6 +11962,8 @@ async function initializeGalleryRepository() {
 }
 
 export function teardownQuickImageGen() {
+    scratchpadGalleryRequest?.abort();
+    scratchpadGalleryRequest = null;
     _automationRevision += 1;
     clearPendingAutoGenerateTimer();
     cancelContextMediaWork({ resetCadence: true });
@@ -12595,11 +12598,18 @@ function displayBatchResults(results, returnFocusElement = null) {
 
 async function showGallery(returnFocusElement = null) {
     await galleryInitializationPromise;
+    scratchpadGalleryRequest?.abort();
+    const controller = new AbortController();
+    scratchpadGalleryRequest = controller;
+    const accountScope = accountStorageScope;
+    let scratchpadImages = [];
+    let scratchpadLoading = true;
+    let scratchpadFailed = false;
     const gallery = createPopup("qig-gallery-popup", "Gallery", `
         <div class="qig-gallery-panel">
             <div class="qig-gallery-toolbar">
                 <h3 id="qig-gallery-count">Gallery (${sessionGallery.length})</h3>
-                <button id="qig-gallery-clear" class="menu_button" type="button">Clear Gallery</button>
+                <button id="qig-gallery-clear" class="menu_button" type="button">Clear local history</button>
             </div>
             <div class="qig-gallery-import">
                 <input id="qig-gallery-import-url" type="text" placeholder="Paste image URL or data URL">
@@ -12607,6 +12617,8 @@ async function showGallery(returnFocusElement = null) {
                 <button id="qig-gallery-import-insert" class="menu_button" type="button">Insert URL</button>
             </div>
             <div class="qig-help">Add URL saves it into QIG Gallery. Insert URL saves it and sends it straight into chat.</div>
+            <div class="qig-help">Saved Scratchpad pictures appear here too. Clearing local history keeps them saved.</div>
+            <p id="qig-gallery-status" class="qig-muted" role="status"></p>
             <div id="qig-gallery-empty" hidden>
                 <p class="qig-muted">No images yet. Generate your first picture or add an image URL; your saved pictures appear here.</p>
                 <button id="qig-gallery-generate" class="menu_button" type="button">Generate image</button>
@@ -12626,11 +12638,16 @@ async function showGallery(returnFocusElement = null) {
         };
 
         const renderGalleryGrid = () => {
+            const items = [...sessionGallery, ...scratchpadImages].sort((a, b) => b.date - a.date);
             const titleEl = gallery.querySelector("#qig-gallery-count");
-            if (titleEl) titleEl.textContent = `Gallery (${sessionGallery.length})`;
+            if (titleEl) titleEl.textContent = `Gallery (${items.length})`;
+            const status = gallery.querySelector("#qig-gallery-status");
+            status.textContent = scratchpadLoading ? "Loading Scratchpad pictures…"
+                : scratchpadFailed ? "Scratchpad pictures could not be loaded. Reopen Gallery to try again." : "";
+            status.hidden = !status.textContent;
             grid.replaceChildren();
-            gallery.querySelector("#qig-gallery-empty").hidden = Boolean(sessionGallery.length);
-            for (const item of sessionGallery) {
+            gallery.querySelector("#qig-gallery-empty").hidden = Boolean(items.length) || scratchpadLoading || scratchpadFailed;
+            for (const item of items) {
                 const card = document.createElement("button");
                 card.type = "button";
                 card.className = "qig-gallery-card";
@@ -12697,7 +12714,7 @@ async function showGallery(returnFocusElement = null) {
         };
 
         gallery.querySelector("#qig-gallery-clear").onclick = async () => {
-            if (!(await qigConfirm("Clear entire gallery?", { okButton: "Clear Gallery" }))) return;
+            if (!(await qigConfirm("Clear this device's gallery history? Saved Scratchpad pictures will still appear.", { okButton: "Clear local history" }))) return;
             try {
                 if (galleryRepository) {
                     await galleryRepository.clear();
@@ -12741,6 +12758,25 @@ async function showGallery(returnFocusElement = null) {
         }
         renderGalleryGrid();
     }, { contentClass: "qig-popup-content--wide", resizable: false, returnFocusElement });
+    try {
+        const response = await fetch("/api/scratchpad/images/gallery", {
+            method: "POST", headers: getSameOriginJsonHeaders(), body: "{}", signal: controller.signal,
+        });
+        if (!response.ok) throw new Error(`Scratchpad gallery returned ${response.status}`);
+        const data = await response.json();
+        if (!Array.isArray(data.images)) throw new Error("Scratchpad gallery returned an invalid image list");
+        scratchpadImages = data.images.map(item => normalizeGenerationEntry(item));
+    } catch (error) {
+        if (controller.signal.aborted) return;
+        scratchpadFailed = true;
+        log(`Scratchpad gallery unavailable: ${error.message}`);
+    } finally {
+        if (scratchpadGalleryRequest === controller && accountStorageScope === accountScope && !controller.signal.aborted) {
+            scratchpadLoading = false;
+            gallery._qigRender?.();
+            scratchpadGalleryRequest = null;
+        }
+    }
 }
 
 function bindAbortDismiss(signal, dismiss) {
