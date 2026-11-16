@@ -118,7 +118,16 @@ describe('Simple Mode styles and wiring', () => {
         expect(welcome).toMatch(/<div data-neconyan-finer-nav><\/div>\s*<\/section>\s*<div class="neconyan-rail-simple-exit" data-neconyan-simple-exit><\/div>/);
         expect(welcome).toContain('const next = simple ? translate(simpleLabel) : button.dataset.neconyanRailFullLabel;');
         expect(welcome).toContain('new MutationObserver(syncNeconyanRailSimpleLabels).observe(document.documentElement, { attributes: true, attributeFilter: [\'class\'] });');
-        expect(welcome).toMatch(/const SIMPLE_TUTORIAL_STEPS = Object\.freeze\(\[\s*WELCOME_TUTORIAL_STEPS\[0\],\s*WELCOME_TUTORIAL_STEPS\[1\],\s*WELCOME_TUTORIAL_STEPS\[3\],\s*WELCOME_TUTORIAL_STEPS\[4\],\s*WELCOME_TUTORIAL_STEPS\[6\],/);
+        // The Simple tour is its own three steps: connect, meet a character, say hello.
+        const simpleTour = welcome.slice(welcome.indexOf('const SIMPLE_TUTORIAL_STEPS'), welcome.indexOf('const SIMPLE_MODE_QUESTION_STEP'));
+        expect(simpleTour.match(/\{ speaker: /g)).toHaveLength(3);
+        expect(simpleTour).not.toContain('WELCOME_TUTORIAL_STEPS[');
+        expect(simpleTour).toContain('type: \'open-tab\', value: \'left:api\'');
+        expect(simpleTour).toContain('type: \'find-characters\'');
+        expect(simpleTour).toContain('title: \'Say hello!\'');
+        expect(simpleTour).toContain('the LLM writes down what happened');
+        expect(simpleTour).toContain('**Show all features**');
+        expect(simpleTour).not.toMatch(/left:sampling|right:extensions|open-meower|open-story/);
     });
 
     test('the Connections page is the same form, shortened to provider, key, model, Connect and Test', () => {

@@ -57,21 +57,18 @@ const WELCOME_TUTORIAL_STEPS = Object.freeze([
     { speaker: 'Miso, Taro and Nori', title: 'We’re here to help!', body: 'You can replay the tour any time from Home → Home layout, and if you have any questions, come chat with any of us. We’re purr-eaty much available 24/7!', ending: true, actions: [] },
 ]);
 
-// Simple Mode keeps only the steps whose destinations stay visible.
+// Simple Mode is three steps: connect, meet a character, say hello.
 const SIMPLE_TUTORIAL_STEPS = Object.freeze([
-    WELCOME_TUTORIAL_STEPS[0],
-    WELCOME_TUTORIAL_STEPS[1],
-    WELCOME_TUTORIAL_STEPS[3],
-    WELCOME_TUTORIAL_STEPS[4],
-    WELCOME_TUTORIAL_STEPS[6],
-    { speaker: 'Miso, Taro and Nori', title: 'That’s all you need!', body: 'Connect, pick a character, chat. That’s the whole recipe; lorebooks, presets, Agents, Notebooks and the Scratchpad are in the sidebar whenever you want them. You can replay the tour any time from Home → Home layout.\nWhen you feel like exploring, press **Show all features** in the sidebar, or turn off Simple Mode in Settings → Appearance. Everything is still there, just napping.', ending: true, actions: [] },
+    { speaker: 'Miso', image: 'img/neconyan/tour/tour-01-miso-connect.webp?v=20260916-assistants', title: 'First paws: connect a model', body: 'Meowlcome~! A character needs an AI model to talk with, so that comes first. Open **Connections**, pick your provider, paste your key, choose a model, then press Connect.', hint: 'No key yet? OpenRouter can sign you in from that page. Press Test when you are done and tell me if it worked, I wanna cheer!', actions: [{ label: 'Open connections', type: 'open-tab', value: 'left:api' }] },
+    { speaker: 'Miso', image: 'img/neconyan/tour/tour-02-miso-characters.webp?v=20260916-assistants', title: 'Meet your chat pal', body: 'Open **Characters** to see who is home; on a new account Taro, Nori and I are already there. Want somebody new? **Find characters** searches card sites and adds one in a tap.', hint: 'Got a card file or a link from somewhere else? Home → Import a character takes those.', actions: [{ label: 'Open characters', type: 'open-characters-menu' }, { label: 'Find characters', type: 'find-characters' }] },
+    { speaker: 'Miso, Taro and Nori', title: 'Say hello!', body: 'Pick a character, press Open chat and send a message. That’s the whole recipe! When a chat gets long, the LLM writes down what happened; **Memory** in the sidebar shows it.\nWant more? **Show all features** in the sidebar brings everything back.', ending: true, actions: [] },
 ]);
 
 const SIMPLE_MODE_QUESTION_STEP = Object.freeze({
     speaker: 'Nori',
     image: 'img/neconyan/tour/tour-06-nori-extensions.webp?v=20260916-assistants',
     title: 'Want to keep things simple?',
-    body: 'Neconyan has a lot of buttons. Like, a lot. **Simple Mode** keeps the chat, your characters, your connection, presets, lorebooks, Agents, Notebooks and the Scratchpad, and tucks the rest away.',
+    body: 'Neconyan has a lot of buttons. Like, a lot. **Simple Mode** keeps the chat, your characters and Persona, Find characters, a short Connections page, Memory, presets, lorebooks, Agents, Notebooks and the Scratchpad, and tucks the rest away.',
     hint: 'Change your mind any time in Settings → Appearance.',
 });
 

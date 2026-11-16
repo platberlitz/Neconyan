@@ -43,7 +43,7 @@ export const MISO_GUIDE_QUESTIONS = Object.freeze([
             Object.freeze({
                 value: 'simple',
                 label: 'Simple Mode',
-                hint: 'Keeps the chat, characters, connections and presets; tucks the rest away.',
+                hint: 'Keeps the chat, characters, a short Connections page, Memory and presets; tucks the rest away.',
                 targets: Object.freeze([target('simpleMode', true, 'You asked for fewer controls on screen.')]),
             }),
             Object.freeze({

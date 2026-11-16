@@ -16951,7 +16951,7 @@ function injectThemePicker() {
         title: 'Simple Mode',
         content: [simpleModeChoice, createElement('p', {
             className: 'sb-theme-slider-caption',
-            text: 'Shows what you need to chat and shape it: characters, connections, presets, lorebooks, Agents, Notebooks, the Scratchpad and settings. Power tools such as Mewmory, Extensions and the rest of Fine-tuning stay tucked away until you turn this off.',
+            text: 'Shows what you need to chat and shape it: characters, Persona, Find characters, a short Connections page, Memory, presets, lorebooks, Agents, Notebooks, the Scratchpad and settings. Power tools such as Mewmory, Extensions and the rest of Fine-tuning stay tucked away until you turn this off.',
         })],
     });
 

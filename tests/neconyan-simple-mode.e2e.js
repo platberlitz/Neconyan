@@ -97,7 +97,7 @@ for (const [name, viewport, hasTouch] of [['desktop', { width: 1280, height: 900
             expect(state.saved[SEED_KEY]).toBe('done');
 
             await tour.locator('[data-tour-simple-mode-answer="on"]').click();
-            await expect(tour.locator('[data-tour-coach-step]')).toHaveText(/^Step 1 of \d+$/);
+            await expect(tour.locator('[data-tour-coach-step]')).toHaveText('Step 1 of 3');
             await expect(page.locator('html')).toHaveClass(/neconyan-simple-mode/);
 
             // A reload does not ask or install again.
