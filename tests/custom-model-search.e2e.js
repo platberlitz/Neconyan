@@ -1,4 +1,4 @@
-/* global document, window */
+/* global document, window, getComputedStyle */
 import { expect, test } from '@playwright/test';
 import { isolateSettingsSaves } from './chat-scroll-regression-helpers.js';
 
@@ -141,15 +141,31 @@ for (const width of [393, 1280]) {
             await page.locator('#custom_model_id').fill('private/unlisted');
             await expect.poll(chosen).toBe('private/unlisted');
             await expect(results.locator('[aria-pressed="true"]')).toHaveAttribute('data-model-id', 'private/unlisted');
-            await page.locator('[data-sb-model-id-favorite-source="custom"]').click();
+            const favouriteButton = page.locator('[data-sb-model-id-favorite-source="custom"]');
+            const favouriteMask = () => favouriteButton.locator('i').evaluate(element => getComputedStyle(element, '::before').maskImage);
+            expect(await favouriteMask()).toContain('#star"');
+            await favouriteButton.click();
+            await expect(favouriteButton).toHaveAttribute('aria-pressed', 'true');
+            expect(await favouriteMask()).toContain('#star-filled"');
             const favouriteRow = results.locator('[data-model-id="private/unlisted"]');
             const star = favouriteRow.locator('[data-model-favourite]');
             await expect(star).toHaveAttribute('aria-label', 'Favourite');
+            expect(await star.evaluate(element => getComputedStyle(element, '::before').maskImage)).toContain('#star-filled"');
             await expect(favouriteRow).not.toContainText('Favourite');
             const [rowBox, starBox] = await Promise.all([favouriteRow.boundingBox(), star.boundingBox()]);
             expect(rowBox.x + rowBox.width - (starBox.x + starBox.width)).toBeLessThanOrEqual(16);
             expect(starBox.y).toBeGreaterThanOrEqual(rowBox.y);
             expect(starBox.y + starBox.height).toBeLessThanOrEqual(rowBox.y + rowBox.height);
+
+            await page.evaluate(() => document.documentElement.dataset.sbKittyless = 'true');
+            expect(await favouriteMask()).toContain('#star-filled-plain"');
+            await favouriteButton.click();
+            await expect(favouriteButton).toHaveAttribute('aria-pressed', 'false');
+            expect(await favouriteMask()).toContain('#star-plain"');
+            await expect(star).toHaveCount(0);
+            await page.evaluate(() => document.documentElement.dataset.sbKittyless = 'false');
+            await favouriteButton.click();
+            await expect(star).toHaveCount(1);
 
             // Large catalogues show every model, and search still finds later entries.
             models = Array.from({ length: 80 }, (_, index) => ({ id: `catalogue-${index}`, name: `Catalogue ${index}` }));

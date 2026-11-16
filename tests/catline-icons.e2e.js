@@ -43,9 +43,13 @@ test('every cat and neutral SVG loads, paints and follows its compatible class',
                     const pixels = ctx.getImageData(0, 0, 24, 24).data;
                     if (!pixels.some((value, index) => index % 4 === 3 && value > 0)) failures.push(`empty: ${url}`);
                     const filledPoints = expected === 'paw.svg' ? [[4, 9], [9, 5], [14, 5], [19, 9], [12, 16]]
-                        : /^(circle-)?stop(-plain)?\.svg$/.test(expected) ? [[9, 9], [12, 12], [14, 14]] : [];
+                        : /^(circle-)?stop(-plain)?\.svg$/.test(expected) ? [[9, 9], [12, 12], [14, 14]]
+                            : /^star-filled(-plain)?\.svg$/.test(expected) ? [[10, 10], [12, 12]] : [];
                     for (const [x, y] of filledPoints) {
                         if (pixels[(y * 24 + x) * 4 + 3] !== 255) failures.push(`unfilled control: ${url} at ${x},${y}`);
+                    }
+                    if (/^star(-plain)?\.svg$/.test(expected) && pixels[(12 * 24 + 12) * 4 + 3] !== 0) {
+                        failures.push(`filled inactive star: ${url}`);
                     }
                     if (/^chevron-(up|down|left|right)(-plain)?\.svg$/.test(expected)) {
                         const painted = [];
@@ -123,6 +127,43 @@ test('the selection badge appears only in character group selection', async ({ p
     expect(await mask()).toContain('#square-check');
     await page.locator('#rm_print_characters_block').evaluate(node => node.classList.remove('group_overlay_mode_select'));
     expect(await mask()).toBe('none');
+});
+
+test('star selection fills favourites and restores the outline when cleared', async ({ page }) => {
+    await page.route('**/catline-star-test', route => route.fulfill({
+        contentType: 'text/html',
+        body: `<!doctype html><html><head><link rel="stylesheet" href="/css/neconyan-icons-map.css"><link rel="stylesheet" href="/css/neconyan-icons.css"></head><body>
+            <div id="character" class="fa-solid fa-star fav_off"></div>
+            <button id="model" aria-pressed="false"><i class="fa-solid fa-star"></i></button>
+            <button id="tab" aria-selected="false"><i class="fa-solid fa-star"></i></button>
+            <button id="agent"><i class="fa-solid fa-star"></i></button>
+            <div id="filter" class="filterByFavorites"><span class="tag_name fa-solid fa-star"></span></div>
+            <i id="badge" class="fa-solid fa-star nn-model-list-favourite"></i>
+            <div aria-selected="true"><div><i id="decorative" class="fa-solid fa-star"></i></div></div>
+        </body></html>`,
+    }));
+    await page.goto('/catline-star-test');
+    for (const plain of [false, true]) {
+        await page.evaluate(plain => document.documentElement.dataset.sbKittyless = String(plain), plain);
+        const suffix = plain ? '-plain' : '';
+        const mask = selector => page.locator(selector).evaluate(node => getComputedStyle(node, '::before').maskImage);
+        for (const active of [false, true, false]) {
+            await page.evaluate(active => {
+                document.querySelector('#character').classList.toggle('fav_on', active);
+                document.querySelector('#character').classList.toggle('fav_off', !active);
+                document.querySelector('#model').setAttribute('aria-pressed', String(active));
+                document.querySelector('#tab').setAttribute('aria-selected', String(active));
+                document.querySelector('#agent').classList.toggle('is-active', active);
+                document.querySelector('#filter').classList.toggle('selected', active);
+                document.querySelector('#filter').classList.toggle('excluded', !active);
+            }, active);
+            for (const selector of ['#character', '#model i', '#tab i', '#agent i', '#filter span']) {
+                expect(await mask(selector)).toContain(`#star${active ? '-filled' : ''}${suffix}"`);
+            }
+            expect(await mask('#badge')).toContain(`#star-filled${suffix}"`);
+            expect(await mask('#decorative')).toContain(`#star${suffix}"`);
+        }
+    }
 });
 
 for (const phone of [false, true]) {
