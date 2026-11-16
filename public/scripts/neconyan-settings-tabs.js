@@ -4,7 +4,7 @@ import { getRequestHeaders } from '../script.js';
 import { accountStorage } from './util/AccountStorage.js';
 import { t } from './i18n.js';
 import { createDefaultLowMemoryPreferences, getLowMemoryState } from './low-memory-mode.js';
-import { getEffectiveFastUiMode, getEffectiveLowMemoryPolicy, power_user, syncLowMemorySettingsUi } from './power-user.js';
+import { BUNDLED_MOVING_UI_NAMES, getEffectiveFastUiMode, getEffectiveLowMemoryPolicy, power_user, syncLowMemorySettingsUi } from './power-user.js';
 import { isSimpleModeEnabled, setSimpleModeEnabled } from './neconyan-simple-mode.js';
 
 /**
@@ -356,6 +356,7 @@ import { isSimpleModeEnabled, setSimpleModeEnabled } from './neconyan-simple-mod
                 const title = document.createElement('span');
                 title.className = 'nn-cw-preset-card-name';
                 title.textContent = name;
+                if (!BUNDLED_MOVING_UI_NAMES.has(name)) title.setAttribute('data-i18n-ignore', '');
                 const description = document.createElement('span');
                 description.className = 'nn-cw-preset-card-desc';
                 description.textContent = info.description;

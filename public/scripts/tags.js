@@ -579,7 +579,7 @@ function getTagBlock(tag, entities, hidden = 0, isUseless = false) {
     const template = FOLDER_TEMPLATE.clone();
     template.addClass(tagFolder.class);
     template.attr({ 'tagid': tag.id, 'id': `BogusFolder${tag.id}` });
-    template.find('.avatar').css({ 'background-color': tag.color, 'color': tag.color2 }).attr('title', `[Folder] ${tag.name}`);
+    template.find('.avatar').css({ 'background-color': tag.color, 'color': tag.color2 }).attr({ title: t`[Folder] ${tag.name}`, 'data-i18n-ignore': '' });
     template.find('.ch_name').text(tag.name).attr('title', `[Folder] ${tag.name}`);
     template.find('.bogus_folder_hidden_counter').text(hidden > 0 ? `${hidden} hidden` : '');
     template.find('.bogus_folder_counter').text(`${count} ` + (count != 1 ? t`characters` : t`character`));
@@ -2523,8 +2523,9 @@ function appendViewTagToList(list, tag, count, record = null) {
     selection.prop('checked', tagManagerState.selectedTagIds.has(String(tag.id)));
     selection.prop('disabled', isMergePrimary);
     selection.attr('aria-label', tagManagerState.mode === 'merge'
-        ? `Merge '${tag.name}' into the kept tag`
-        : `Select '${tag.name}'`);
+        ? t`Merge '${tag.name}' into the kept tag`
+        : t`Select ${`'${tag.name}'`}`);
+    selection.attr('data-i18n-ignore', '');
     selectionWrap.prop('hidden', tagManagerState.mode === 'normal' || isMergePrimary);
     template.toggleClass('is-merge-primary', isMergePrimary);
     template.toggleClass('is-selected', selection.prop('checked'));
@@ -3042,7 +3043,8 @@ function renderTagManagerMergePrimaryOptions() {
 
     const sorted = tags.slice().sort((a, b) => String(a.name).localeCompare(String(b.name), undefined, { sensitivity: 'base' }));
     for (const tag of sorted) {
-        $('<option></option>').attr('value', tag.id).text(tag.name).appendTo(select);
+        // A tag name is data; 'No tags yet' above stays a caption built with t.
+        $('<option></option>').attr('value', tag.id).attr('data-i18n-ignore', '').text(tag.name).appendTo(select);
     }
 
     const primaryExists = tags.some(tag => String(tag.id) === String(tagManagerState.mergePrimaryTagId));

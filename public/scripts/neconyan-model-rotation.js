@@ -158,6 +158,8 @@ function renderModelRotationPanel(panel, profiles) {
         });
         const model = String(profile.model ?? '').trim();
         label.append(input, document.createTextNode(model ? `${profile.name} (${model})` : profile.name));
+        // The label holds a checkbox, the profile's name and its model id in brackets: no caption, so nothing to translate.
+        label.setAttribute('data-i18n-ignore', '');
         list.append(label);
     }
 

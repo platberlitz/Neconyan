@@ -28,7 +28,10 @@ export function initialiseStructuredPrefillUI(power, save, profiles) {
         name.value = ''; refresh(); save();
     };
     const options = (select, entries, selected, empty) => {
-        select.replaceChildren(new Option(empty, ''), ...entries.map(entry => new Option(entry.name, entry.id ?? entry.name)));
+        // The names are data (profiles and saved presets); the 'empty' caption is built with t.
+        const named = entries.map(entry => new Option(entry.name, entry.id ?? entry.name));
+        for (const option of named) option.setAttribute('data-i18n-ignore', '');
+        select.replaceChildren(new Option(empty, ''), ...named);
         select.value = selected;
     };
     const refresh = () => {

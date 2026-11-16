@@ -915,7 +915,8 @@ function renderNoteTargetsAndSummary() {
         activeSources.push(`${personaName || t`Persona`} (${personaView.profile.name})`);
     }
 
-    const $summary = $('#an_in_use');
+    // Every caption the summary can show is built with t; the character, persona and note names inside it are data.
+    const $summary = $('#an_in_use').attr('data-i18n-ignore', '');
     if (!hasChat) {
         $summary.text(personaActive
             ? t`Persona note (${personaView.profile.name}) is ready and will apply once you open a chat.`
@@ -925,7 +926,7 @@ function renderNoteTargetsAndSummary() {
         $summary.text(t`Insertion frequency is 0, so no Author's Note is sent in this chat.`);
         $summary.removeClass('is-active');
     } else if (activeSources.length) {
-        $summary.text(`${t`Active in this chat:`} ${activeSources.join(' + ')}`);
+        $summary.text(t`Active in this chat: ${activeSources.join(' + ')}`);
         $summary.addClass('is-active');
     } else {
         $summary.text(t`No Author's Note text is active for this chat yet.`);

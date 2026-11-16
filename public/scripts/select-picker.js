@@ -1,5 +1,5 @@
 import { matchesChatPickerQuery, resolveChatPickerPlacement } from './chat-picker-model.js';
-import { t } from './i18n.js';
+import { localizeMessage, t } from './i18n.js';
 import { revealUi, setUiVisibility } from './ui-motion.js';
 
 const SEARCH_DELAY_MS = 120;
@@ -159,6 +159,10 @@ export function createSelectPicker(select, {
         if (value.textContent !== text) value.textContent = text;
         button.classList.toggle('is-placeholder', empty);
         button.title = text;
+        // A chosen name (its option or select carries data-i18n-ignore) is shown as written, so the button is protected then. A protected
+        // button is not localised, so its caption is set again here from the caller's t title; an unprotected one keeps upstream's caption.
+        button.toggleAttribute('data-i18n-ignore', !empty && chosen.some(option => option.closest('[data-i18n-ignore]')));
+        if (!label && button.hasAttribute('data-i18n-ignore')) button.setAttribute('aria-label', labels().title);
         button.disabled = select.disabled;
         if (panel) render();
     }
@@ -231,6 +235,9 @@ export function createSelectPicker(select, {
         const row = element('button', `sb-chat-picker-row${current ? ' is-current' : ''}`);
         row.type = 'button';
         row.title = text;
+        // A row that shows a name (its option or select carries data-i18n-ignore) is protected; rows of built-in options still translate.
+        const isName = Boolean(option.closest('[data-i18n-ignore]'));
+        if (isName) row.setAttribute('data-i18n-ignore', '');
         row.disabled = option.disabled && !(multiple && option.selected);
         if (multiple) row.setAttribute('aria-pressed', String(option.selected));
         else if (current) row.setAttribute('aria-current', 'true');
@@ -255,6 +262,13 @@ export function createSelectPicker(select, {
         action.type = 'button';
         action.title = `${rowAction.label}: ${text}`;
         action.setAttribute('aria-label', action.title);
+        // A name's action is protected, so its caption (the caller's t label and the name) is localised here as the localiser would,
+        // with the name kept as written.
+        if (isName) {
+            action.title = localizeMessage(action.title);
+            action.setAttribute('aria-label', action.title);
+            action.setAttribute('data-i18n-ignore', '');
+        }
         action.append(icon(`fa-solid ${rowAction.icon}`));
         action.addEventListener('click', () => {
             close();
@@ -497,7 +511,7 @@ export function createSelectPicker(select, {
     new MutationObserver(() => {
         watchOptions();
         queueSync();
-    }).observe(select, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['selected', 'disabled', 'label', 'hidden'] });
+    }).observe(select, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['selected', 'disabled', 'label', 'hidden', 'aria-label'] });
     select.addEventListener('change', queueSync);
     sync();
 

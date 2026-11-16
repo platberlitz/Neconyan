@@ -3,7 +3,7 @@ import { applyDesktopResponseControls, normaliseDesktopResponseControls } from '
 import { Fuse, Handlebars } from '../lib.js';
 import { accessibleTheme } from './theme-contrast.js';
 import { CHAT_AUTO_NAME_DEFAULT_THRESHOLD, normalizeChatAutoNameThreshold } from './chat-label.js';
-import { createUiThemePicker } from './neconyan-ui-theme-picker.js';
+import { BUNDLED_THEME_NAMES, createUiThemePicker } from './neconyan-ui-theme-picker.js';
 import { createChatStylePicker } from './neconyan-chat-style-picker.js';
 import { resolveCustomStoppingStrings } from './chat-request-controls.js';
 import { fixGeneratedMarkdown } from './generation-format.js';
@@ -740,6 +740,12 @@ function syncUiThemePicker() {
     host.hidden = false;
 }
 let movingUIPresets = [];
+/**
+ * The panel layouts the app ships (default/content/presets/moving-ui), by name. Their names are the app's own captions and
+ * keep translating. A layout with any other name was saved by a person, so the run-time localiser must leave it as written.
+ * tests/user-name-surfaces.test.js checks this list against default/content/index.json.
+ */
+export const BUNDLED_MOVING_UI_NAMES = new Set(['Default', 'Pop-outs on the Right', 'Writing Desk', 'Centred Card', 'Compact Corner']);
 /** @type {ContextSettings[]} */
 export let context_presets = [];
 let customThemeStyleEntries = {};
@@ -3395,6 +3401,7 @@ export async function loadPowerUserSettings(settings, data) {
         const option = document.createElement('option');
         option.value = theme.name;
         option.innerText = theme.name;
+        if (!BUNDLED_THEME_NAMES.has(theme.name)) option.setAttribute('data-i18n-ignore', '');
         option.selected = theme.name == power_user.theme;
         $('#themes').append(option);
     }
@@ -3405,6 +3412,7 @@ export async function loadPowerUserSettings(settings, data) {
         const option = document.createElement('option');
         option.value = movingUIPreset.name;
         option.innerText = movingUIPreset.name;
+        if (!BUNDLED_MOVING_UI_NAMES.has(movingUIPreset.name)) option.setAttribute('data-i18n-ignore', '');
         option.selected = movingUIPreset.name == power_user.movingUIPreset;
         $('#movingUIPresets').append(option);
     }
@@ -4278,6 +4286,7 @@ async function saveTheme(name = undefined, theme = undefined) {
         option.selected = true;
         option.value = name;
         option.innerText = name;
+        if (!BUNDLED_THEME_NAMES.has(name)) option.setAttribute('data-i18n-ignore', '');
         $('#themes').append(option);
     } else {
         themes[themeIndex] = theme;
@@ -4361,6 +4370,7 @@ async function saveMovingUI() {
             option.selected = true;
             option.value = name;
             option.innerText = name;
+            if (!BUNDLED_MOVING_UI_NAMES.has(name)) option.setAttribute('data-i18n-ignore', '');
             $('#movingUIPresets').append(option);
         } else {
             movingUIPresets[movingUIPresetIndex] = movingUIPreset;

@@ -1,0 +1,12 @@
+{
+    "comment": "Entries here are removed from preservation.json by diff-preservation.mjs before it compares two runs. Clock and counter text only.",
+    "patterns": [
+        { "pathRegex": "^#gg_flush_guides_button", "reason": "counter: the guide count in the label ('0 active') appears after a late update" },
+        { "textRegex": "^Read saved chat archive \\u00b7 ", "reason": "clock and state: the archive job row carries a time stamp and a state that moves from accepted to completed" },
+        { "pathRegex": "^#sb-topbar-clock > text\\[1\\]$", "textRegex": "^\\d{1,2}:\\d{2} (AM|PM)$", "reason": "clock: the top bar clock; digits are normalised, but AM/PM changes when a run crosses noon" },
+        { "pathRegex": "^#dc-scope-status > text\\[1\\]$", "textRegex": "^Per card: \\d+ characters?, saved \\d+/\\d+/\\d+, \\d+:\\d+:\\d+ (AM|PM)\\.$", "reason": "clock: the saved time stamp of the character colours scope line; AM/PM changes when a run crosses noon" },
+        { "pathRegex": "^#welcome-recent-chat-list > article\\[\\d+\\] > div\\[2\\] > div\\[1\\] > small\\[1\\]$", "textRegex": "^\\d{1,2}/\\d{1,2}/\\d{4}, \\d{1,2}:\\d{2}:\\d{2} (AM|PM)$", "reason": "clock: the time stamp title of a recent chat on the welcome screen; AM/PM changes when two runs fall either side of noon (M71 A9)" },
+        { "pathRegex": "^#neconyan-notes > div\\[\\d+\\] > nav\\[1\\] > section\\[\\d+\\] > ul\\[1\\] > li\\[\\d+\\] > button\\[1\\] > span\\[2\\] > text\\[1\\]$", "textRegex": "^\\u00b7 [A-Z][a-z]{2} \\d{1,2}, \\d{4}, \\d{1,2}:\\d{2} (AM|PM)$", "reason": "clock: the saved time of a note in the Notes list; AM/PM changes when two runs fall either side of noon (M71 A9)" },
+        { "pathRegex": "^#sb-shell-tab-left-mewmory$", "textRegex": "^Mewmory: Off$", "reason": "state: the Mewmory tab caption is briefly built before its state word is translated, on a different screen in each run (M71 A9)" }
+    ]
+}

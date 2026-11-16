@@ -392,7 +392,9 @@ function refreshAgentReferenceOptions(select, options, savedIds, selection) {
     const available = new Set(options.flatMap(option => option.referenceIds));
     select.empty();
     for (const option of options) {
+        // The label is an agent's name and its order, built with t; a bundled agent's name keeps translating.
         select.append($('<option>').val(option.id).text(option.label)
+            .attr('data-i18n-ignore', option.chosenName ? '' : null)
             .prop('selected', option.referenceIds.some(id => selected.has(id))));
     }
     for (const id of selectedIds) {
@@ -454,7 +456,10 @@ function renderAgentSetupControls() {
     const presets = getAgentSetupPresets();
     select.replaceChildren(new Option('Choose a setup', ''));
     for (const preset of presets.sort((left, right) => left.name.localeCompare(right.name))) {
-        select.appendChild(new Option(preset.name, preset.id));
+        // A setup name is data (the app ships none); 'Choose a setup' above it stays unmarked.
+        const option = new Option(preset.name, preset.id);
+        option.setAttribute('data-i18n-ignore', '');
+        select.appendChild(option);
     }
     select.value = presets.some(preset => preset.id === selectedAgentSetupId) ? selectedAgentSetupId : '';
     const ready = agentSetupListReady && agentLibraryReady;
@@ -739,6 +744,16 @@ async function deleteSelectedAgentSetup() {
 
 /** Built-in templates loaded from JSON files. */
 let templates = [];
+/**
+ * Whether an agent still has the name of the bundled template it came from, which is the app's own caption, and not a name
+ * a person chose. A chosen name is data: the run-time localiser must leave it as written.
+ * @param {{name?: string, sourceTemplateId?: string}|null|undefined} agent
+ * @returns {boolean}
+ */
+function isBundledAgentName(agent) {
+    const sourceId = String(agent?.sourceTemplateId ?? '').trim();
+    return Boolean(sourceId) && templates.some(template => template?.id === sourceId && template?.name === agent.name);
+}
 let templateLoadError = null;
 let templateRegexBundles = {};
 let autoSeededTemplateIds = new Set();
@@ -1009,7 +1024,7 @@ function getChatroomSelectableCharacters() {
 
 function getCompanionAgentOptionLabel(agent) {
     const name = String(agent?.name ?? '').trim() || agent?.id || 'Companion';
-    return `${name} (Order ${getAgentOrderValue(agent)})`;
+    return t`${name} (Order ${getAgentOrderValue(agent)})`;
 }
 
 function getCompanionBatchOptionsForAgent(agent) {
@@ -1023,6 +1038,7 @@ function getCompanionBatchOptionsForAgent(agent) {
             id: candidate.id,
             referenceIds: getCompanionReferenceIds(candidate),
             label: getCompanionAgentOptionLabel(candidate),
+            chosenName: !isBundledAgentName(candidate),
         }))
         .sort((left, right) => left.label.localeCompare(right.label));
 }
@@ -1037,6 +1053,7 @@ function getCompanionDependencyOptionsForAgent(agent) {
             id: candidate.id,
             referenceIds: getCompanionReferenceIds(candidate),
             label: getCompanionAgentOptionLabel(candidate),
+            chosenName: !isBundledAgentName(candidate),
         }))
         .sort((left, right) => left.label.localeCompare(right.label));
 }
@@ -1053,6 +1070,7 @@ function getCompanionOutputTargetOptionsForAgent(agent) {
             id: candidate.id,
             referenceIds: getCompanionReferenceIds(candidate),
             label: getCompanionAgentOptionLabel(candidate),
+            chosenName: !isBundledAgentName(candidate),
         }))
         .sort((left, right) => left.label.localeCompare(right.label));
 }
@@ -3769,7 +3787,7 @@ function renderAgentList() {
                     <div class="ica--card-header">
                         ${selectModeActive ? `<input type="checkbox" class="ica--card-select" title="Select agent" ${selectedAgentIds.has(agent.id) ? 'checked' : ''} />` : `<button type="button" class="ica--card-toggle ${toggleClass}" aria-pressed="${agentEnabled}" aria-label="${escapeHtml(agentEnabled ? t`Disable ${agent.name}` : t`Enable ${agent.name}`)}" title="${agentEnabled ? 'Disable' : 'Enable'}"></button>`}
                         <div class="ica--card-identity">
-                            <span class="ica--card-name">${escapeHtml(agent.name)} <span class="ica--card-pill ica--card-pill--version">v${escapeHtml(getAgentVersionValue(agent))}</span></span>
+                            <span class="ica--card-name"${isBundledAgentName(agent) ? '' : ' data-i18n-ignore'}>${escapeHtml(agent.name)} <span class="ica--card-pill ica--card-pill--version">v${escapeHtml(getAgentVersionValue(agent))}</span></span>
                             <span class="ica--card-mobile-phase">${escapeHtml(getAgentCardPhaseLabel(agent))}${companionExecution ? ' · Companion' : ''}</span>
                             <span class="ica--card-desc">${escapeHtml(desc)}</span>
                         </div>
@@ -4194,7 +4212,9 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
             }
         });
     }
-    editorEl.find('#ica--editor-title').text(existingAgent ? `Edit ${agent.name}` : 'New agent');
+    // Both captions are built with t, so the title can be left alone by the localiser when it holds a name a person chose.
+    editorEl.find('#ica--editor-title').text(existingAgent ? t`Edit ${agent.name}` : t`New agent`)
+        .attr('data-i18n-ignore', existingAgent && !isBundledAgentName(agent) ? '' : null);
     editorEl.find('#ica--editor-summary').text(existingAgent ? buildAgentQuickSummary(agent) : '').prop('hidden', !existingAgent);
 
     // Populate fields
@@ -4448,7 +4468,8 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
         const preferredName = findStyleName(currentName) || findStyleName(savedChatroomCustomStyleName) || customStyles[0].name;
 
         for (const style of customStyles) {
-            select.append($('<option>').val(style.name).text(style.name));
+            // A style name is data; 'Add styles below' above it stays a caption.
+            select.append($('<option>').val(style.name).text(style.name).attr('data-i18n-ignore', ''));
         }
         select.val(preferredName);
     }
@@ -4473,6 +4494,8 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
                 $('<option>')
                     .val(character.avatar)
                     .text(character.label)
+                    // The label is a character's name and file name, with no caption in it.
+                    .attr('data-i18n-ignore', '')
                     .prop('selected', selectedKeys.has(character.avatar.toLowerCase())),
             );
         }
@@ -6701,6 +6724,8 @@ function renderConnectionFallbackList(list) {
             const option = document.createElement('option');
             option.value = id;
             option.textContent = label;
+            // A profile name is data; the placeholder above it stays unmarked.
+            option.setAttribute('data-i18n-ignore', '');
             add.append(option);
         }
     }

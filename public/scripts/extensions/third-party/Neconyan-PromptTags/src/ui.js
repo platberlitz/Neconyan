@@ -231,7 +231,10 @@ function buildSectionRow(section, rules, onEdit, { namespace = 'row', isReadOnly
     const checkboxLabel = el('label', 'checkbox_label promptTags-section-toggle');
     const checkbox = el('input');
     checkbox.type = 'checkbox';
-    checkboxLabel.append(checkbox, el('span', undefined, section.label));
+    const sectionName = el('span', undefined, section.label);
+    // A preset's own prompts carry a name a person chose; the extension's known sections keep their captions.
+    if (section.isKnownSection === false) sectionName.setAttribute('data-i18n-ignore', '');
+    checkboxLabel.append(checkbox, sectionName);
 
     const tagField = el('div', 'promptTags-field promptTags-tag-field');
     const tagInputId = `${idPrefix}-tag`;
@@ -995,7 +998,7 @@ export function renderSettings() {
                 applyPresetFilters();
             });
 
-            const descriptor = { id: prompt.identifier, label: prompt.label, tag: prompt.suggestedTag };
+            const descriptor = { id: prompt.identifier, label: prompt.label, tag: prompt.suggestedTag, isKnownSection: prompt.isKnownSection };
             const row = buildSectionRow(descriptor, presetWorkingRules, () => {
                 const accepted = setPresetRule(prompt.identifier, presetWorkingRules[prompt.identifier]);
                 if (!accepted) {

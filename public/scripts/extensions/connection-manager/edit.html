@@ -3,7 +3,7 @@
     <select id="profile_folder_select" class="text_pole wide100p">
         <option value="" data-i18n="Root (No Folder)">Root (No Folder)</option>
         {{#each folders}}
-        <option value="{{id}}"{{#if selected}} selected{{/if}}>{{name}}</option>
+        <option value="{{id}}"{{#if selected}} selected{{/if}} data-i18n-ignore>{{name}}</option>
         {{/each}}
     </select>
     <h3 data-i18n="Included settings:">Included settings:</h3>

@@ -457,6 +457,7 @@ export function renderCharacterEditorPurrks() {
     for (const profile of getConnectionProfiles()) {
         if (!profile?.id) continue;
         const opt = el('option', '', profile.name || profile.id);
+        opt.setAttribute('data-i18n-ignore', '');
         opt.value = profile.id;
         opt.selected = purrks.autoSceneProfileId === profile.id;
         profileSelect.append(opt);

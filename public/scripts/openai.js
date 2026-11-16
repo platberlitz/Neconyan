@@ -7469,6 +7469,8 @@ function refreshLogitBiasPresetOptions() {
         const option = document.createElement('option');
         option.innerText = preset;
         option.value = preset;
+        // A preset the person made is data. The bundled ones ('Default' and the rest) keep translating.
+        if (!Object.hasOwn(default_bias_presets, preset)) option.setAttribute('data-i18n-ignore', '');
         option.selected = preset === selectedPreset;
         select.append(option);
     }
@@ -9416,6 +9418,8 @@ function appendProxyPresetOption(preset) {
     const option = document.createElement('option');
     option.innerText = getReverseProxyPresetOptionText(normalizedPreset);
     option.value = normalizedPreset.name;
+    // A proxy name is data. The built-in 'None' entry stays unmarked and keeps translating.
+    if (normalizedPreset.name !== 'None') option.setAttribute('data-i18n-ignore', '');
     option.selected = normalizedPreset.name === 'None';
     $('#openai_proxy_preset').append(option);
 }
@@ -9635,6 +9639,8 @@ function appendCustomEndpointPresetOption(preset) {
     const option = document.createElement('option');
     option.innerText = normalizedPreset.name;
     option.value = normalizedPreset.name;
+    // An endpoint name is data. The built-in 'None' entry stays unmarked and keeps translating.
+    if (normalizedPreset.name !== 'None') option.setAttribute('data-i18n-ignore', '');
     option.selected = normalizedPreset.name === 'None';
     $('#custom_endpoint_preset').append(option);
 }

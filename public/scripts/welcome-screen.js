@@ -434,7 +434,8 @@ function buildWelcomeTemplateData(chats, assistantPersonalities = null) {
         : assistantPersonalities;
 
     return {
-        chats,
+        // The open button's caption is built here with t (key 'Open ${0}'), so its span can be marked as holding names.
+        chats: chats.map(chat => ({ ...chat, open_label: t`Open ${`${chat.char_name}: ${chat.chat_name}`}` })),
         assistantPersonalities: pickerPersonalities,
         assistantVariant,
         empty: !chats.length,

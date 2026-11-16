@@ -163,6 +163,8 @@ async function populateProfiles(container) {
         // profile renames. Display name is shown to the user. (#529)
         option.value = profile.id;
         option.textContent = profile.name;
+        // A profile name is data; 'Current profile' above it stays unmarked.
+        option.setAttribute('data-i18n-ignore', '');
         profileSelect.append(option);
     }
 
@@ -199,6 +201,8 @@ async function populatePresets(container) {
         const option = document.createElement('option');
         option.value = preset;
         option.textContent = preset;
+        // A preset name is data; 'No preset switch' above it stays unmarked.
+        option.setAttribute('data-i18n-ignore', '');
         presetSelect.append(option);
     }
     presetSelect.value = settings.presetImpersonate1st ?? '';
