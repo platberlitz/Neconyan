@@ -134,8 +134,8 @@ import {
 } from './profile-utils.js';
 import { describeAgentRunModel } from './model-label.js';
 import { DEFAULT_TRACKER_REPAIR_TIMEOUT_SECONDS, normalizeTrackerRepairTimeoutSeconds } from './tracker-repair-run.js';
-import { captureCompanionResultTarget, collectRecentCompanionResults, getCompanionResults, initCompanionRunner, getLatestValidCompanionMessageIndex, runTrackerCompanionsOnMessage, syncCompanionChatHistoryConfig } from './companion/companion-runner.js';
-import { getCompanionReferenceIds } from './companion/companion-shared.js';
+import { captureCompanionResultTarget, collectRecentCompanionResults, getCompanionResults, initCompanionRunner, getLatestValidCompanionMessageIndex, runCompanionAgentOnMessage, runTrackerCompanionsOnMessage, syncCompanionChatHistoryConfig } from './companion/companion-runner.js';
+import { getCompanionReferenceIds, isEmptyOutputSentinel, MEMORY_SHARD_TEMPLATE_ID } from './companion/companion-shared.js';
 import { stripStateChangingMacros } from './companion/companion-macros.js';
 import { withReadOnlyVariables } from '../../variable-read-only.js';
 import { initCompanionCardUi, refreshCompanionCards, sanitizeCompanionHtml, updateCompanionButtonVisibility } from './companion/companion-ui.js';
@@ -555,6 +555,7 @@ async function finishAgentLibraryInitialization() {
     await migrateStoredLegacyGroups();
     await persistAgentIdentityRepairs();
     await ensureDefaultBundledAgents();
+    await seedMemoryShardForNewAccount();
     const startupCounts = new Map();
     const startupUpdates = [];
     const noteUpdate = (count, singular, plural) => {
@@ -2225,6 +2226,75 @@ const neconyanAgents = Object.assign(globalThis.NeconyanAgents || {}, {
     mountPathfinderSettings: (...args) => mountPathfinderSettings(...args),
 });
 globalThis.NeconyanAgents = neconyanAgents;
+
+// Set to 'on' only in the settings a new account starts with, so existing accounts keep their Agents as they are.
+const MEMORY_SHARD_SEED_KEY = 'NeconyanMemoryShardSeed.v1';
+
+function getMemoryShardAgent() {
+    return getAgents().find(agent => agent?.sourceTemplateId === MEMORY_SHARD_TEMPLATE_ID) ?? null;
+}
+
+async function ensureMemoryShardAgent() {
+    const existing = getMemoryShardAgent();
+    if (existing) return existing;
+    const template = findTemplateById(MEMORY_SHARD_TEMPLATE_ID);
+    if (!template) return null;
+    await saveAgent(buildAgentFromTemplate(template));
+    return getMemoryShardAgent();
+}
+
+async function seedMemoryShardForNewAccount() {
+    if (accountStorage.getItem(MEMORY_SHARD_SEED_KEY) !== 'on') return;
+    try {
+        const had = getMemoryShardAgent();
+        const agent = await ensureMemoryShardAgent();
+        if (!agent) return;
+        if (!had) await saveAgentEnabledState([agent.id], true);
+        accountStorage.setItem(MEMORY_SHARD_SEED_KEY, 'done');
+    } catch (error) {
+        console.warn('[InChatAgents] Memory Shard could not be switched on for this new account yet.', error);
+    }
+}
+
+function getLatestMemoryShardSummary(agent) {
+    for (let index = chat.length - 1; index >= 0; index--) {
+        const result = getCompanionResults(chat[index])?.[agent.id];
+        const content = String(result?.content ?? '').trim();
+        if (result?.status === 'done' && content && !isEmptyOutputSentinel(content)) return { summary: content, messageIndex: index };
+    }
+    return { summary: '', messageIndex: -1 };
+}
+
+neconyanAgents.memoryShard = {
+    getState() {
+        const agent = getMemoryShardAgent();
+        const enabled = Boolean(agent && isAgentEnabledForCurrentScope(agent));
+        return {
+            available: Boolean(agent || findTemplateById(MEMORY_SHARD_TEMPLATE_ID)),
+            enabled,
+            canSummarise: getLatestValidCompanionMessageIndex() >= 0,
+            ...(agent ? getLatestMemoryShardSummary(agent) : { summary: '', messageIndex: -1 }),
+        };
+    },
+    async setEnabled(enabled) {
+        const agent = await ensureMemoryShardAgent();
+        if (!agent) return false;
+        await saveAgentEnabledState([agent.id], Boolean(enabled));
+        persistExtensionState();
+        renderAgentList();
+        refreshCompanionPanel();
+        refreshCompanionCards();
+        updateCompanionButtonVisibility();
+        notifyTaroGuide();
+        return true;
+    },
+    async summariseNow() {
+        const agent = await ensureMemoryShardAgent();
+        const messageIndex = getLatestValidCompanionMessageIndex();
+        if (!agent || messageIndex < 0) return null;
+        return runCompanionAgentOnMessage(agent.id, messageIndex);
+    },
+};
 
 function getComparableAgentSnapshot(agent) {
     const snapshot = structuredClone(agent || {});
@@ -6999,6 +7069,12 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
     }
 
     $('#in_chat_agents_container').append(settingsHtml);
+    // The toolbar is visible before its buttons are wired, so keep them disabled until they respond.
+    const startingToolbarButtons = [...document.querySelectorAll('#ica--settings .ica--toolbar-actions > button:not(:disabled)')];
+    for (const button of startingToolbarButtons) {
+        button.disabled = true;
+        button.setAttribute('aria-busy', 'true');
+    }
     attachTextareaFullscreen($('#ica--settings'));
     await decorateAgentControls(document.getElementById('ica--settings'));
     collapsedCategories = readCollapsedAgentCategories(agentUiPreferences, AGENT_COLLAPSED_CATEGORIES_STORAGE_KEY, AGENT_CATEGORIES);
@@ -7258,6 +7334,10 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
         updateBulkBar();
         renderAgentList();
     });
+    for (const button of startingToolbarButtons) {
+        button.disabled = false;
+        button.removeAttribute('aria-busy');
+    }
     $('#ica--bulkCancel').on('click', exitSelectMode);
     $('#ica--bulkSelectAll').on('click', () => {
         flushPendingAgentListSearchRender();

@@ -13,6 +13,7 @@ const CONVERSATION_STORE_KEY = 'neconyan_conversation';
 const { registerConversationReplyJob } = await import('../src/generation/conversation-jobs.js');
 const { acceptConversationAsideEvent, drawConversationAsideEvent, normalizeConversationAsideEvent } = await import('../src/generation/conversation-aside-events.js');
 const { getJob, listJobs } = await import('../src/jobs/store.js');
+const { readConversationPreview } = await import('../src/generation/conversation-preview.js');
 const { testExports: { runJob }, setDirectoriesResolver } = await import('../src/jobs/runner.js');
 const { testExports: { reconcileConversationJob } } = await import('../src/generation/conversation-worker.js');
 const { cancelAutoSaves } = await import('../src/endpoints/settings.js');
@@ -147,7 +148,15 @@ test('a group mention event is answered by the member the message names, and rep
     assert.equal(repeated.avatar, 'lyra.png');
     assert.equal(repeated.jobId, decided.jobId);
 
+    // A reply that is not streamed still shows its speaker as typing, without counts.
+    let typing = null;
+    registerConversationReplyJob({ generate: async () => {
+        typing = readConversationPreview('tester', decided.jobId).participants;
+        return { text: 'private aside' };
+    } });
     await runFamily(directories, decided.jobId);
+    assert.deepEqual(typing.map(value => [value.avatar, value.name, value.text, value.token_count]), [['lyra.png', 'Lyra', '', undefined]]);
+    assert.deepEqual(readConversationPreview('tester', decided.jobId), { participants: [] });
     const branch = readStore(directories).characters['lyra.png'].branches.main;
     const delivered = branch.messages[branch.messages.length - 1];
     assert.equal(delivered.mes, 'private aside');

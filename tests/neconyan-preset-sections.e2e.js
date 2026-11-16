@@ -68,6 +68,11 @@ async function assertAccentContrast(page) {
             if (colour) root.style.setProperty('--SmartThemeQuoteColor', colour);
             else root.style.removeProperty('--SmartThemeQuoteColor');
             await Promise.all(document.getAnimations().filter(animation => animation instanceof CSSTransition).map(animation => animation.finished.catch(() => {})));
+            // The prompt manager can be replacing its list at this moment, so measure once both controls are back.
+            const selectors = ['.bpt-section-title', '.bpt-section-lock'];
+            for (let frame = 0; frame < 300 && !selectors.every(selector => document.querySelector(selector)); frame += 1) {
+                await new Promise(resolve => setTimeout(resolve, 20));
+            }
             const canvas = document.createElement('canvas').getContext('2d');
             const rgba = value => {
                 canvas.clearRect(0, 0, 1, 1);
@@ -81,7 +86,7 @@ async function assertAccentContrast(page) {
             };
             const luminance = rgb => rgb.slice(0, 3).reduce((sum, value, index) => sum +
                 (value / 255 <= 0.04045 ? value / 255 / 12.92 : ((value / 255 + 0.055) / 1.055) ** 2.4) * [0.2126, 0.7152, 0.0722][index], 0);
-            return ['.bpt-section-title', '.bpt-section-lock'].map(selector => {
+            return selectors.map(selector => {
                 const node = document.querySelector(selector);
                 const parents = [];
                 for (let parent = node; parent; parent = parent.parentElement) parents.unshift(parent);

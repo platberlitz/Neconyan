@@ -46,7 +46,7 @@ import { extension_settings, extensionNames, findExtension, getExtensionManifest
 import { currentUser, getCurrentUserHandle } from './user.js';
 import { bindClearJobHistoryButton } from './job-history-cleanup.js';
 import { getAssistantIconSrc } from './neconyan-assistant-art.js';
-import { isSimpleModeEnabled, setSimpleModeEnabled, SIMPLE_MODE_EVENT } from './neconyan-simple-mode.js';
+import { isSimpleModeEnabled, setSimpleModeEnabled, SIMPLE_MODE_EVENT, SIMPLE_MODE_HIDDEN_PAGE_TABS } from './neconyan-simple-mode.js';
 import { getSleeperCoat, getSleeperCoatPair, setSleeperCoat, setSleeperCoatPair, SLEEPER_COAT_CHANGE_EVENT, SLEEPER_COAT_GROUPS, SLEEPER_COAT_PAIRS, SLEEPER_COATS, sleeperCoatArt } from './neconyan-sleeper-coats.js';
 import { t, translate } from './i18n.js';
 import {
@@ -528,7 +528,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261115-favourites-scroll';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261116-home-buttons-wrap';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -3613,6 +3613,11 @@ function clearUniversalSearch({ blur = false } = {}) {
 
 function isActuallyVisible(element) {
     return Boolean(element) && element.getClientRects().length > 0;
+}
+
+/** Simple Mode tucks some tabs away with CSS; arrow keys must not land on them. */
+function isTabDisplayed(tab) {
+    return tab instanceof HTMLElement && getComputedStyle(tab).display !== 'none';
 }
 
 function getShellState(shellKey) {
@@ -10491,7 +10496,7 @@ function bindCharacterEditorSubTabs() {
             return;
         }
 
-        const buttons = Array.from(tablist.querySelectorAll('[data-sb-character-editor-tab]'));
+        const buttons = Array.from(tablist.querySelectorAll('[data-sb-character-editor-tab]')).filter(isTabDisplayed);
         const currentIndex = buttons.indexOf(targetButton);
         if (currentIndex === -1) {
             return;
@@ -10765,7 +10770,9 @@ function openCharacterPanelTab(tabId, creatorOptions = {}) {
 }
 
 function restoreLastCharacterPanelView() {
-    const lastTab = nnState.characterDrawer.lastTab || 'characters';
+    const rememberedTab = nnState.characterDrawer.lastTab || 'characters';
+    // Simple Mode tucks the Groups and Catelier tabs away, so it does not reopen on them.
+    const lastTab = isSimpleModeEnabled() && ['creator', 'groups'].includes(rememberedTab) ? 'characters' : rememberedTab;
 
     if (lastTab === 'persona') {
         openCharacterPersonaTab();
@@ -16651,6 +16658,7 @@ function updateShortcutButton(side) {
     button.title = t`Quick access: ${translate(config.label)}`;
     button.setAttribute('aria-label', t`Quick access: ${translate(config.label)}`);
     button.dataset.sbUniversalSearchTrigger = String(isSearchShortcutTarget(target));
+    button.dataset.sbShortcutTarget = target;
     syncTopbarIconsOnlyDedupe();
     syncShortcutButtonActiveStates();
     queueTopbarBrandFit();
@@ -16946,7 +16954,7 @@ function injectThemePicker() {
         title: 'Simple Mode',
         content: [simpleModeChoice, createElement('p', {
             className: 'sb-theme-slider-caption',
-            text: 'Shows what you need to chat and shape it: characters, connections, presets, lorebooks, Agents, Notebooks, the Scratchpad and settings. Power tools such as Mewmory, Extensions and the rest of Fine-tuning stay tucked away until you turn this off.',
+            text: 'Shows what you need to chat and shape it: characters, Persona, Find characters, a short Connections page, Memory, presets, lorebooks, Agents, Notebooks, the Scratchpad and settings. Power tools such as Mewmory, Extensions and the rest of Fine-tuning stay tucked away until you turn this off.',
         })],
     });
 
@@ -18271,6 +18279,9 @@ function openShell(shellKey, tabId = null) {
 
     if (tabId) {
         setActiveTab(shellKey, tabId);
+    } else if (shellKey === 'left' && isSimpleModeEnabled() && SIMPLE_MODE_HIDDEN_PAGE_TABS.includes(shellState.activeTabId)) {
+        // Simple Mode: a remembered page whose tab is tucked away would open with no tab to leave it by.
+        setActiveTab(shellKey, 'api');
     }
 
     shellState.lastOpenedAt = performance.now();
@@ -18740,7 +18751,7 @@ function registerShellTab(shellKey, tabConfig, panelBundle, explicitSearchRoot =
 
     button.addEventListener('keydown', event => {
         const buttons = Array.from(shellState.nav.querySelectorAll('.sb-shell-tab[data-sb-tab]')).filter(
-            item => item instanceof HTMLElement && !item.classList.contains('sb-shell-tab-mobile-rail-hidden'),
+            item => item instanceof HTMLElement && !item.classList.contains('sb-shell-tab-mobile-rail-hidden') && isTabDisplayed(item),
         );
         const currentIndex = buttons.indexOf(button);
 
@@ -19342,10 +19353,19 @@ function refreshNeconyanRailQuickActions() {
             createElement('span', { text: action.label }),
         );
         button.addEventListener('click', () => activateMobileNavAction(action));
+        button.dataset.neconyanQuickTarget = getMobileQuickActionKey(action);
         list.appendChild(button);
     }
-    if (!list.children.length) list.appendChild(createElement('p', {
-        className: 'neconyan-rail-empty', text: 'No Quick Actions. Use Edit Quick Actions to add shortcuts.',
+    if (!list.children.length) {
+        list.appendChild(createElement('p', {
+            className: 'neconyan-rail-empty', text: 'No Quick Actions. Use Edit Quick Actions to add shortcuts.',
+        }));
+        return;
+    }
+    // Simple Mode shows this line when every shortcut here repeats a page it already lists.
+    list.appendChild(createElement('p', {
+        className: 'neconyan-rail-empty', text: 'Pin your favourite pages here with the pen.',
+        attrs: { hidden: '', 'data-neconyan-quick-actions-tucked': '' },
     }));
 }
 
@@ -19964,7 +19984,7 @@ function injectCharacterDrawerControls() {
                 }
 
                 const buttons = Array.from(characterNav.querySelectorAll('[data-sb-character-tab]'))
-                    .filter(button => button instanceof HTMLButtonElement && !button.disabled && !button.hidden);
+                    .filter(button => button instanceof HTMLButtonElement && !button.disabled && !button.hidden && isTabDisplayed(button));
                 const currentIndex = buttons.indexOf(targetButton);
                 if (currentIndex === -1) {
                     return;
@@ -20595,6 +20615,7 @@ function applyBottomChatBarButtonLayout() {
             if (host instanceof HTMLElement) {
                 for (const node of nodes) {
                     node.classList.toggle('displayNone', isHidden);
+                    node.dataset.sbBottomUnit = unit.id;
                     host.append(node);
                 }
             }

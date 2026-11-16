@@ -881,19 +881,23 @@ async function runConversationParticipantJob(context, deps) {
         if (automation?.roleplaySource) {
             captureConversationRoleplaySource({ user: { directories } }, automation.roleplaySource, { characterName: speaker.name, userName });
         }
-        const counter = await createMessageTokenCounter(value => publishConversationPreview(context, snapshot, value), { signal: context.signal });
-        const separateSystem = binding.kind === 'active' && snapshot.messages[0]?.role === 'system';
-        const options = { context, jobContext: context, binding, messages: separateSystem ? snapshot.messages.slice(1) : snapshot.messages,
-            maxTokens: settings.reply_max_tokens, userName, characterName: speaker.name,
-            groupNames: snapshot.groupNames || [], rawOptions: separateSystem ? { systemPrompt: snapshot.messages[0].content } : {},
-            macroEnvironment: createMacroEnvironment(snapshot.macros), stream: snapshot.streamPreview === true,
-            onStream: value => counter.publish(value) };
+        // An empty preview shows the speaker as typing from the first moment,
+        // including replies that are not streamed and never publish text.
+        publishConversationPreview(context, snapshot, {});
+        let counter;
         try {
+            counter = await createMessageTokenCounter(value => publishConversationPreview(context, snapshot, value), { signal: context.signal });
+            const separateSystem = binding.kind === 'active' && snapshot.messages[0]?.role === 'system';
+            const options = { context, jobContext: context, binding, messages: separateSystem ? snapshot.messages.slice(1) : snapshot.messages,
+                maxTokens: settings.reply_max_tokens, userName, characterName: speaker.name,
+                groupNames: snapshot.groupNames || [], rawOptions: separateSystem ? { systemPrompt: snapshot.messages[0].content } : {},
+                macroEnvironment: createMacroEnvironment(snapshot.macros), stream: snapshot.streamPreview === true,
+                onStream: value => counter.publish(value) };
             response = snapshot.assistantTools
                 ? await generateConversationAssistantReply(context, snapshot, options, deps.generate)
                 : await deps.generate(options);
         } finally {
-            counter.stop();
+            counter?.stop();
             publishConversationPreview(context, snapshot, null);
         }
         if (response === null) return { waiting: true };
@@ -935,22 +939,29 @@ async function runConversationParticipantJob(context, deps) {
             const delivered = readConversationEffectReceipt(context, target, effectId);
             if (delivered !== undefined) return delivered;
             const delayMs = getReplyDelayMsForStatus(text, settings, activity.status);
-            await waitForConversationJobDelay(context, `bubble-delay:${delivery.chunk}:${delivery.bubble}`, delayMs, deps);
-            assertDeliverable(author.avatar);
-            const narration = await deps.narrate(context, snapshot, text, author, { ...delivery, effectId });
-            assertDeliverable(author.avatar);
-            return appendConversationJobMessage(context, target, effectId, {
-                role: author.avatar === target.avatar ? 'character' : 'partner', name: author.name, mes: text,
-                extra: { ...metadata, ...delivery.extra, ...counts, ...(author.avatar !== target.avatar ? { partner_avatar: author.avatar } : {}),
-                    ...(delivery.attachReplyReference && snapshot.replyReference ? { conversation_reply_to: snapshot.replyReference } : {}) },
-            }, {
-                // The first committed bubble consumes the occurrence and applies
-                // its counters in the same native write as the message.
-                mutate: automation && !bookkeepingApplied
-                    ? (branch, store) => { applyConversationBookkeeping(branch, store, automation.patch, automation.key, deps.now()); bookkeepingApplied = true; }
-                    : undefined,
-                presentation: { narration },
-            });
+            // The bubble's author stays shown as typing through its send delay.
+            const typing = { ...snapshot, speaker: { ...snapshot.speaker, avatar: author.avatar, name: author.name } };
+            publishConversationPreview(context, typing, {});
+            try {
+                await waitForConversationJobDelay(context, `bubble-delay:${delivery.chunk}:${delivery.bubble}`, delayMs, deps);
+                assertDeliverable(author.avatar);
+                const narration = await deps.narrate(context, snapshot, text, author, { ...delivery, effectId });
+                assertDeliverable(author.avatar);
+                return await appendConversationJobMessage(context, target, effectId, {
+                    role: author.avatar === target.avatar ? 'character' : 'partner', name: author.name, mes: text,
+                    extra: { ...metadata, ...delivery.extra, ...counts, ...(author.avatar !== target.avatar ? { partner_avatar: author.avatar } : {}),
+                        ...(delivery.attachReplyReference && snapshot.replyReference ? { conversation_reply_to: snapshot.replyReference } : {}) },
+                }, {
+                    // The first committed bubble consumes the occurrence and applies
+                    // its counters in the same native write as the message.
+                    mutate: automation && !bookkeepingApplied
+                        ? (branch, store) => { applyConversationBookkeeping(branch, store, automation.patch, automation.key, deps.now()); bookkeepingApplied = true; }
+                        : undefined,
+                    presentation: { narration },
+                });
+            } finally {
+                publishConversationPreview(context, typing, null);
+            }
         },
         commitCommands: (parts, avatar, delivery) => {
             assertDeliverable(avatar);

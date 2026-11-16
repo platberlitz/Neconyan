@@ -221,7 +221,7 @@ test('automatic summaries wait quietly for image review and resume without consu
     const thread = store.characters['nova.png'];
     thread.settings.enabled = true;
     thread.branches.main.messages = Array.from({ length: 40 }, (_, i) => ({ id: `m${i}`, role: 'user', mes: `Message ${i}` }));
-    const quote = { messageId: 'missing-source', name: 'Nova', text: 'Unreviewed image description' };
+    const quote = { messageId: 'missing-source', name: 'Nova', text: 'Unreviewed image description', attachmentSummary: '[Attachments: image]' };
     thread.branches.main.messages.at(-1).extra = { conversation_reply_to: quote };
     saved.power_user = { neconyan_prompt_media: { version: 1, images: 'display-only' } };
     const file = path.join(directories.root, SETTINGS_FILE);

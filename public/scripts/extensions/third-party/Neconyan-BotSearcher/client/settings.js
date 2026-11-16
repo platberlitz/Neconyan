@@ -200,6 +200,16 @@ function context() {
 /**
  * Reads settings, repairing anything out of range, so no caller has to re-check.
  */
+/** Simple Mode is the shell's beginner view; it adds a card and opens its chat without the report screen. */
+export function simpleModeActive() {
+    return document.documentElement.classList.contains('neconyan-simple-mode');
+}
+
+/** Whether a chosen card is imported straight away, by preference or because Simple Mode is on. */
+export function skipsReview() {
+    return simpleModeActive() || getSettings().skipReview;
+}
+
 export function getSettings() {
     const ctx = context();
     const store = ctx.extensionSettings;

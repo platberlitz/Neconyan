@@ -73,6 +73,7 @@ export const TARO_GUIDE_QUESTIONS = Object.freeze([
             Object.freeze({ value: 'bonds', label: 'Relationships', hint: 'How each pair feels about each other and why.' }),
             Object.freeze({ value: 'quests', label: 'Quests and things carried', hint: 'Open jobs, promises and the items needed for them.' }),
             Object.freeze({ value: 'offscreen', label: 'What happens off screen', hint: 'What absent characters and the wider world are doing.' }),
+            Object.freeze({ value: 'memory', label: 'A long chat', hint: 'A summary of the story so far, written once the chat gets long.' }),
         ]),
     }),
     Object.freeze({
@@ -339,6 +340,14 @@ const RULES = Object.freeze([
         priority: 2,
         reason: 'You asked to see what happens off screen.',
         select: () => ['tpl-parallel-tracker'],
+    },
+    {
+        id: 'memory',
+        source: 'extras',
+        option: 'memory',
+        priority: 2,
+        reason: 'You asked to keep a long chat remembered.',
+        select: ({ answers }) => answers.budget === 'free' ? [] : ['tpl-memory-shard-companion'],
     },
 ]);
 

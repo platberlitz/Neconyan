@@ -45,7 +45,8 @@ function getFunctionSource(name) {
 describe('Quick Image Gen artifact persistence', () => {
     test('explicit artifact saves flush server-backed backups immediately', () => {
         expect(source).toContain('let extension_settings, getContext, saveSettingsDebounced, saveSettings');
-        expect(source).toContain('saveSettings = scriptModule.saveSettings;');
+        expect(source).toContain('saveSettings = async (...args) => {');
+        expect(source).toContain('return scriptModule.saveSettings(...args);');
 
         for (const name of ['saveBackupToSettings', 'saveLocalStoreBackupNow']) {
             const backupSource = getFunctionSource(name);

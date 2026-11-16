@@ -273,6 +273,11 @@ describe('Taro agent recommendations', () => {
         expect(offscreen.alreadyOn.map(entry => entry.name)).toEqual(['Parallel Off-Screen']);
     });
 
+    test('a long chat picks Memory Shard, unless no extra requests are allowed', () => {
+        expect(names(recommend({ extras: ['memory'], budget: 'light' }))).toEqual(['Memory Shard']);
+        expect(names(recommend({ extras: ['memory'], budget: 'free' }))).toEqual([]);
+    });
+
     test('explicit scenes are opt-in only and respect the budget', () => {
         expect(names(recommend({ budget: 'any' }))).not.toContain('NSFW Enhancer');
         expect(names(recommend({ explicit: true, budget: 'any' }))).toEqual(['NSFW Enhancer']);

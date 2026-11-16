@@ -38,6 +38,8 @@ describe('in-chat agent post-processing runner', () => {
     let reloadCurrentChat;
     let updateMessageBlock;
     let generateQuietPrompt;
+    let hideChatMessageRanges;
+    let accountFlags;
     let generateRaw;
     let generateRawData;
     let runSidecarRetrieval;
@@ -117,6 +119,8 @@ describe('in-chat agent post-processing runner', () => {
         reloadCurrentChat = jest.fn();
         updateMessageBlock = jest.fn();
         generateQuietPrompt = jest.fn(async () => 'quiet result');
+        hideChatMessageRanges = jest.fn(async () => false);
+        accountFlags = new Map();
         generateRaw = jest.fn(async () => 'raw result');
         // Reuse the existing controllable transport responses; production helpers
         // receive only the raw request below, never the quiet chat builder.
@@ -549,6 +553,17 @@ describe('in-chat agent post-processing runner', () => {
             resetAutoSummaryCount: jest.fn(),
             shouldAutoSummarize: jest.fn(() => false),
         }));
+
+        await jest.unstable_mockModule('../public/scripts/chats.js', () => ({
+            hideChatMessageRanges: (...args) => hideChatMessageRanges(...args),
+        }));
+
+        await jest.unstable_mockModule('../public/scripts/util/AccountStorage.js', () => ({
+            accountStorage: {
+                getItem: key => accountFlags.get(key) ?? null,
+                setItem: (key, value) => accountFlags.set(key, value),
+            },
+        }));
     });
 
     afterEach(() => {
@@ -924,6 +939,17 @@ describe('in-chat agent post-processing runner', () => {
                 triggerProbability: 100,
                 generationTypes: ['normal', 'continue', 'impersonate'],
             },
+        }];
+    }
+
+    function useSavedProofreader() {
+        const template = JSON.parse(readFileSync(new URL('../public/scripts/extensions/in-chat-agents/templates/proofreader.json', import.meta.url), 'utf8'));
+        enabledAgents = [{
+            ...template,
+            id: 'saved-proofreader',
+            sourceTemplateId: template.id,
+            enabled: true,
+            postProcess: { ...template.postProcess, promptTransformShowNotifications: false },
         }];
     }
 
@@ -2430,6 +2456,46 @@ describe('in-chat agent post-processing runner', () => {
             expect(runtime.getCompanionCoveredMessageIndices(99, shard.id)).toEqual([]);
         });
 
+        test('a finished shard tucks its summarised messages away on its own and says so once', async () => {
+            const shard = createCompanionAgent({ sourceTemplateId: 'tpl-memory-shard-companion', companion: { contextMessages: 30 } });
+            const runtime = await setup([shard]);
+            chat.splice(0, chat.length, ...Array.from({ length: 100 }, (_, index) => ({
+                name: 'Assistant', mes: `Unique source message ${index}.`, is_user: false, extra: {},
+            })));
+            hideChatMessageRanges.mockResolvedValue(true);
+            generateQuietPrompt.mockResolvedValue('Summary of the selected recent messages.');
+            await runtime.runCompanionAgentOnMessage(shard.id, 99);
+            expect(hideChatMessageRanges).toHaveBeenCalledTimes(1);
+            expect(hideChatMessageRanges).toHaveBeenCalledWith([[70, 98]], { keepInMewmory: true });
+            expect(accountFlags.get('NeconyanMemoryShardNotice.v1')).toBe('shown');
+            expect(globalThis.toastr.info).toHaveBeenCalledTimes(1);
+            expect(globalThis.toastr.info.mock.calls[0][0]).toContain('They are still here for you to read.');
+
+            chat[80].mes = 'Edited after the summary';
+            generateQuietPrompt.mockResolvedValue('A newer summary.');
+            await runtime.runCompanionAgentOnMessage(shard.id, 99);
+            expect(hideChatMessageRanges).toHaveBeenCalledTimes(2);
+            expect(globalThis.toastr.info).toHaveBeenCalledTimes(1);
+        });
+
+        test('nothing is hidden when a shard fails, comes back empty, or belongs to another Companion', async () => {
+            const shard = createCompanionAgent({ sourceTemplateId: 'tpl-memory-shard-companion', companion: { contextMessages: 30 } });
+            const other = createCompanionAgent({ id: 'plain-companion', companion: { contextMessages: 30 } });
+            const runtime = await setup([shard, other]);
+            chat.splice(0, chat.length, ...Array.from({ length: 40 }, (_, index) => ({
+                name: 'Assistant', mes: `Unique source message ${index}.`, is_user: false, extra: {},
+            })));
+            hideChatMessageRanges.mockResolvedValue(true);
+            generateQuietPrompt.mockRejectedValue(new Error('provider is down'));
+            await runtime.runCompanionAgentOnMessage(shard.id, 39).catch(() => {});
+            generateQuietPrompt.mockResolvedValue('   ');
+            await runtime.runCompanionAgentOnMessage(shard.id, 39).catch(() => {});
+            generateQuietPrompt.mockResolvedValue('A note from a different Companion.');
+            await runtime.runCompanionAgentOnMessage(other.id, 39);
+            expect(hideChatMessageRanges).not.toHaveBeenCalled();
+            expect(globalThis.toastr.info).not.toHaveBeenCalled();
+        });
+
         test('manual note validation preserves the old note and captures its exact revision', async () => {
             const agent = createCompanionAgent();
             const runtime = await setup([agent]);
@@ -3884,6 +3950,33 @@ describe('in-chat agent post-processing runner', () => {
         // so the threshold is unmet again until fresh context accrues.
         expect(companionRunner.getChatTokenEstimate()).toBe(15000);
         expect(companionRunner.meetsCompanionContextThreshold(shard, 2)).toBe(false);
+    });
+
+    test('a finished Memory Shard waits for the chat to grow by its threshold again, hidden or not', async () => {
+        const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        const shard = createCompanionAgent({ id: 'my-shard', sourceTemplateId: 'tpl-memory-shard-companion', companion: { minContextTokens: 30000 } });
+        const plain = createCompanionAgent({ id: 'plain-companion', companion: { minContextTokens: 30000 } });
+        const reply = tokens => ({ mes: 'Reply', name: 'Assistant', is_user: false, is_system: false, extra: { token_count: tokens } });
+        chat.splice(0, chat.length, reply(20000), reply(10000));
+
+        expect(companionRunner.getLatestSummarisedMessageIndex(shard.id, 1)).toBe(-1);
+        expect(companionRunner.meetsCompanionContextThreshold(shard, 1)).toBe(true);
+
+        companionRunner.setCompanionResult(chat[1], shard, { status: 'done', content: 'Summary so far.' });
+        companionRunner.setCompanionResult(chat[1], plain, { status: 'done', content: 'A note.' });
+        chat.push(reply(5000));
+        expect(companionRunner.getLatestSummarisedMessageIndex(shard.id, 2)).toBe(1);
+        expect(companionRunner.getChatTokenEstimate(3, 1)).toBe(15000);
+        expect(companionRunner.meetsCompanionContextThreshold(shard, 2)).toBe(false);
+        expect(companionRunner.meetsCompanionContextThreshold(plain, 2)).toBe(true);
+
+        chat.push(reply(15000));
+        expect(companionRunner.meetsCompanionContextThreshold(shard, 3)).toBe(true);
+
+        companionRunner.setCompanionResult(chat[3], shard, { status: 'error', content: '' });
+        chat.push(reply(100));
+        expect(companionRunner.getLatestSummarisedMessageIndex(shard.id, 4)).toBe(1);
+        expect(companionRunner.meetsCompanionContextThreshold(shard, 4)).toBe(true);
     });
 
     test('expands companion context to the minimum token window and skips hidden messages', async () => {
@@ -12219,8 +12312,58 @@ Helper context.`;
         expect(saveChatDebounced).not.toHaveBeenCalled();
     });
 
-    test('runs saved bundled Prose Polisher for guided impersonate output', async () => {
-        useSavedProsePolisherWithoutImpersonateFlag();
+    test.each([false, undefined])('runs enabled Proofreader on impersonation with runOnImpersonate=%s', async (runOnImpersonate) => {
+        useSavedProofreader();
+        enabledAgents[0].conditions.runOnImpersonate = runOnImpersonate;
+        generateQuietPrompt.mockResolvedValue('<assistant_response>Proofread impersonation</assistant_response>');
+
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+        const textarea = { value: 'Draft impersonation', dispatchEvent: jest.fn() };
+        document.querySelector = jest.fn(selector => selector === '#send_textarea' ? textarea : null);
+        chat.push({
+            name: 'Assistant', mes: 'Existing reply', is_user: false, is_system: false,
+            swipe_id: 0, swipes: ['Existing reply'], swipe_info: [{ extra: { inChatAgents: { activeAgentIds: ['earlier-agent'] } } }],
+            extra: { inChatAgents: { activeAgentIds: ['earlier-agent'] } },
+        });
+        const previousChat = structuredClone(chat);
+
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'impersonate', {}, false);
+        await eventSource.emit(eventTypes.GENERATION_AFTER_COMMANDS, 'impersonate', {}, false);
+        await eventSource.emit(eventTypes.IMPERSONATE_READY, 'Draft impersonation');
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'impersonate');
+        await eventSource.emit(eventTypes.CHARACTER_MESSAGE_RENDERED, 0, 'impersonate');
+        await eventSource.emit(eventTypes.GENERATION_ENDED, chat.length);
+
+        await eventSource.emit(eventTypes.GENERATION_STOPPED);
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        expect(generateQuietPrompt.mock.calls[0][0].quietPrompt).toContain('generated impersonation text');
+        expect(textarea.value).toBe('Proofread impersonation');
+        expect(textarea.dispatchEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'input' }));
+        expect(chat).toEqual(previousChat);
+        expect(saveChatDebounced).not.toHaveBeenCalled();
+    });
+
+    test('keeps Proofreader idle on impersonation when Agents are switched off', async () => {
+        useSavedProofreader();
+        globalSettings.enabled = false;
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+        const textarea = { value: 'Draft impersonation', dispatchEvent: jest.fn() };
+        document.querySelector = jest.fn(selector => selector === '#send_textarea' ? textarea : null);
+
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'impersonate', {}, false);
+        await eventSource.emit(eventTypes.GENERATION_AFTER_COMMANDS, 'impersonate', {}, false);
+        await eventSource.emit(eventTypes.IMPERSONATE_READY, 'Draft impersonation');
+
+        expect(generateQuietPrompt).not.toHaveBeenCalled();
+        expect(textarea.value).toBe('Draft impersonation');
+        expect(textarea.dispatchEvent).not.toHaveBeenCalled();
+    });
+
+    test.each(['Prose Polisher', 'Proofreader'])('runs saved bundled %s for guided impersonate output', async (name) => {
+        if (name === 'Proofreader') useSavedProofreader();
+        else useSavedProsePolisherWithoutImpersonateFlag();
         generateQuietPrompt.mockResolvedValue('<assistant_response>Polished guided impersonation</assistant_response>');
 
         const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');

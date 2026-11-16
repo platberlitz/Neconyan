@@ -318,8 +318,10 @@ describe('settings pages open as Neconyan pages with an assistant tour', () => {
 
     test('Mewmory has its stylesheet before the panel first paints', () => {
         const html = read('../public/index.html');
-        expect(html).toMatch(/<link id="mewmory-css" href="css\/mewmory\.css\?v=[^"]+" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">/);
+        const link = html.match(/<link id="mewmory-css" href="(css\/mewmory\.css\?v=[^"]+)" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">/);
+        expect(link).not.toBeNull();
         const source = read('../public/scripts/mewmory/ui.js');
+        expect(source).toContain(`style.href = '${link[1]}';`);
         const mount = source.slice(source.indexOf('export async function mountMewmory'));
         expect(mount.indexOf('await loadMewmoryStyles()')).toBeGreaterThan(-1);
         expect(mount.indexOf('await loadMewmoryStyles()')).toBeLessThan(mount.indexOf('render()'));

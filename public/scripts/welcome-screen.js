@@ -17,7 +17,7 @@ import { getAssistantGender, getAssistantTourSrc, setAssistantGender } from './n
 import { clamp, flashHighlight, getSortableDelay, isElementInViewport, sortMoments, timestampToMoment } from './utils.js';
 import { revealChat, revealUi } from './ui-motion.js';
 import { createForegroundRefreshCoalescer } from './mobile-shell-lifecycle/index.js';
-import { applySimpleMode, getSimpleModePreference, isSimpleModeEnabled, setSimpleModeEnabled, SIMPLE_MODE_EVENT } from './neconyan-simple-mode.js';
+import { applySimpleMode, getSimpleModePreference, isSimpleModeEnabled, setSimpleModeEnabled, SIMPLE_MODE_CLASS, SIMPLE_MODE_EVENT, SIMPLE_MODE_RAIL_LABELS } from './neconyan-simple-mode.js';
 
 const assistantAvatarKey = 'assistant';
 const assistantVariantKey = 'neconyanAssistantVariant';
@@ -26,6 +26,8 @@ const pinnedChatsKey = 'pinnedChats';
 const tutorialStatusKey = 'NeconyanTutorialStatus.v1';
 const tutorialIndexKey = 'NeconyanTutorialIndex.v1';
 const tutorialHiddenKey = 'NeconyanTutorialHidden.v1';
+// Only new accounts carry this marker ('ask' until Miso, Taro and Nori are installed).
+const assistantSeedKey = 'NeconyanAssistantSeed.v1';
 const welcomePanelModeKey = 'WelcomePage_PanelMode';
 const assistantsCollapsedKey = 'WelcomePage_AssistantsCollapsed';
 
@@ -33,6 +35,7 @@ let activeTutorialPanel = null;
 let welcomeRequestId = 0;
 let assistantCatalogPromise = null;
 let assistantSelectionPending = false;
+let assistantSeedPromise = null;
 
 // Home and the rail can ask for the same recent list during startup. Share only
 // the request already in flight; once it completes, the next consumer fetches
@@ -54,23 +57,33 @@ const WELCOME_TUTORIAL_STEPS = Object.freeze([
     { speaker: 'Miso, Taro and Nori', title: 'We’re here to help!', body: 'You can replay the tour any time from Home → Home layout, and if you have any questions, come chat with any of us. We’re purr-eaty much available 24/7!', ending: true, actions: [] },
 ]);
 
-// Simple Mode keeps only the steps whose destinations stay visible.
+// Simple Mode is three steps: connect, meet a character, say hello.
 const SIMPLE_TUTORIAL_STEPS = Object.freeze([
-    WELCOME_TUTORIAL_STEPS[0],
-    WELCOME_TUTORIAL_STEPS[1],
-    WELCOME_TUTORIAL_STEPS[3],
-    WELCOME_TUTORIAL_STEPS[4],
-    WELCOME_TUTORIAL_STEPS[6],
-    { speaker: 'Miso, Taro and Nori', title: 'That’s all you need!', body: 'Connect, pick a character, chat. That’s the whole recipe; lorebooks, presets, Agents, Notebooks and the Scratchpad are in the sidebar whenever you want them. You can replay the tour any time from Home → Home layout.\nWhen you feel like exploring, press **Show all features** in the sidebar, or turn off Simple Mode in Settings → Appearance. Everything is still there, just napping.', ending: true, actions: [] },
+    { speaker: 'Miso', image: 'img/neconyan/tour/tour-01-miso-connect.webp?v=20260916-assistants', title: 'First paws: connect a model', body: 'Meowlcome~! A character needs an AI model to talk with, so that comes first. Open **Connections**, pick your provider, paste your key, choose a model, then press Connect.', hint: 'No key yet? OpenRouter can sign you in from that page. Press Test when you are done and tell me if it worked, I wanna cheer!', actions: [{ label: 'Open connections', type: 'open-tab', value: 'left:api' }] },
+    { speaker: 'Miso', image: 'img/neconyan/tour/tour-02-miso-characters.webp?v=20260916-assistants', title: 'Meet your chat pal', body: 'Open **Characters** to see who is home; on a new account Taro, Nori and I are already there. Want somebody new? **Find characters** searches card sites and adds one in a tap.', hint: 'Got a card file or a link from somewhere else? Home → Import a character takes those.', actions: [{ label: 'Open characters', type: 'open-characters-menu' }, { label: 'Find characters', type: 'find-characters' }] },
+    { speaker: 'Miso, Taro and Nori', title: 'Say hello!', body: 'Pick a character, press Open chat and send a message. That’s the whole recipe! When a chat gets long, the LLM writes down what happened; **Memory** in the sidebar shows it.\nWant more? **Show all features** in the sidebar brings everything back.', ending: true, actions: [] },
 ]);
 
 const SIMPLE_MODE_QUESTION_STEP = Object.freeze({
     speaker: 'Nori',
     image: 'img/neconyan/tour/tour-06-nori-extensions.webp?v=20260916-assistants',
     title: 'Want to keep things simple?',
-    body: 'Neconyan has a lot of buttons. Like, a lot. **Simple Mode** keeps the chat, your characters, your connection, presets, lorebooks, Agents, Notebooks and the Scratchpad, and tucks the rest away.',
+    body: 'Neconyan has a lot of buttons. Like, a lot. **Simple Mode** keeps the chat, your characters and Persona, Find characters, a short Connections page, Memory, presets, lorebooks, Agents, Notebooks and the Scratchpad, and tucks the rest away.',
     hint: 'Change your mind any time in Settings → Appearance.',
 });
+
+const ASSISTANT_MEETING_STEP = Object.freeze({
+    speaker: 'Miso, Taro and Nori',
+    title: 'Who would you like to meet?',
+    body: 'Hi~! We are Miso, Taro and Nori, and we live here. Pick how each of us looks, and we will move into your character list so there is always somebody to talk to.',
+    hint: 'Changed your mind? Home → Choose an assistant lets you pick again any time.',
+});
+
+const ASSISTANT_MEETING_GUIDES = Object.freeze([
+    ['miso', WELCOME_TUTORIAL_STEPS[1]],
+    ['taro', WELCOME_TUTORIAL_STEPS[2]],
+    ['nori', WELCOME_TUTORIAL_STEPS[5]],
+]);
 
 function getActiveTutorialSteps() {
     return isSimpleModeEnabled() ? SIMPLE_TUTORIAL_STEPS : WELCOME_TUTORIAL_STEPS;
@@ -759,12 +772,16 @@ function syncTutorialCoachmark(panel) {
         return;
     }
 
-    const asking = panel.dataset.tutorialAskSimpleMode === 'true';
+    // The meeting question comes first; Nori's Simple Mode question follows it.
+    const meeting = panel.dataset.tutorialAskAssistants === 'true';
+    const asking = meeting || panel.dataset.tutorialAskSimpleMode === 'true';
     const steps = getActiveTutorialSteps();
     const index = clamp(Number.parseInt(panel.dataset.tutorialIndex || '0', 10) || 0, 0, steps.length - 1);
     const count = steps.length;
-    const step = asking ? SIMPLE_MODE_QUESTION_STEP : steps[index];
-    coachmark.classList.toggle('neconyan-tour-ending', Boolean(step.ending));
+    const step = meeting ? ASSISTANT_MEETING_STEP : asking ? SIMPLE_MODE_QUESTION_STEP : steps[index];
+    const everyone = meeting || Boolean(step.ending);
+    coachmark.classList.toggle('neconyan-tour-ending', everyone);
+    coachmark.classList.toggle('neconyan-tour-meeting', meeting);
     coachmark.classList.toggle('neconyan-tour-asking', asking);
     coachmark.querySelector('[data-tour-coach-step]').textContent = asking ? t`Before we start` : t`Step ${index + 1} of ${count}`;
     coachmark.querySelector('[data-tour-coach-title]').textContent = t([step.title]);
@@ -775,20 +792,23 @@ function syncTutorialCoachmark(panel) {
     coachmark.querySelector('[data-tour-coach-speaker]').textContent = step.speaker;
     const portraits = coachmark.querySelector('[data-tour-portraits]');
     portraits.replaceChildren();
-    for (const guide of step.ending ? [WELCOME_TUTORIAL_STEPS[1], WELCOME_TUTORIAL_STEPS[2], WELCOME_TUTORIAL_STEPS[5]] : [step]) {
+    // While meeting, each portrait sits in its own row beside the three looks.
+    for (const guide of meeting ? [] : everyone ? ASSISTANT_MEETING_GUIDES.map(([, entry]) => entry) : [step]) {
         const figure = document.createElement('figure');
         figure.innerHTML = '<div class="neconyan-tour-step-visual"><img width="512" height="768" data-tour-image><span class="neconyan-tour-image-fallback" hidden aria-hidden="true">🐾</span></div><figcaption></figcaption>';
         const image = figure.querySelector('img');
         image.dataset.assistantTourImage = guide.image;
         image.src = getAssistantTourSrc(guide.image);
         image.alt = t`${guide.speaker} speaking`;
-        figure.querySelector('figcaption').textContent = step.ending ? guide.speaker : '';
+        figure.querySelector('figcaption').textContent = everyone ? guide.speaker : '';
         portraits.append(figure);
     }
     bindTourImageFallbacks(coachmark);
     coachmark.querySelector('[data-tour-paw-stamp]').hidden = !step.ending;
     const actionHost = coachmark.querySelector('[data-tour-coach-actions]');
-    if (actionHost instanceof HTMLElement && asking) {
+    if (actionHost instanceof HTMLElement && meeting) {
+        renderAssistantMeetingChoices(panel, actionHost);
+    } else if (actionHost instanceof HTMLElement && asking) {
         actionHost.replaceChildren();
         for (const [label, enabled] of [['Yes, keep it simple', true], ['No, show me everything', false]]) {
             const answer = document.createElement('button');
@@ -845,7 +865,62 @@ function answerSimpleModeQuestion(panel, enabled) {
     setTutorialUiState(panel, 0, true);
 }
 
-function showTutorialCoachmark({ askSimpleMode = false } = {}) {
+function renderAssistantMeetingChoices(panel, host) {
+    host.replaceChildren();
+    for (const [personality, guide] of ASSISTANT_MEETING_GUIDES) {
+        const row = document.createElement('div');
+        row.className = 'neconyan-tour-assistant-row';
+        row.setAttribute('role', 'group');
+        row.setAttribute('aria-label', guide.speaker);
+        const portrait = document.createElement('div');
+        portrait.className = 'neconyan-tour-step-visual';
+        portrait.innerHTML = '<img width="512" height="768" alt="" data-tour-image><span class="neconyan-tour-image-fallback" hidden aria-hidden="true">🐾</span>';
+        const image = portrait.querySelector('img');
+        image.dataset.assistantTourImage = guide.image;
+        image.src = getAssistantTourSrc(guide.image);
+        const name = document.createElement('span');
+        name.textContent = guide.speaker;
+        row.append(portrait, name);
+        const chosen = getAssistantGender(personality);
+        for (const [gender, label] of [['female', 'Female'], ['male', 'Male'], ['neutral', 'Neutral']]) {
+            const choice = document.createElement('button');
+            choice.type = 'button';
+            choice.className = gender === chosen ? 'menu_button menu_button_primary' : 'menu_button';
+            choice.textContent = t([label]);
+            choice.dataset.tourAssistant = personality;
+            choice.dataset.tourAssistantGender = gender;
+            choice.setAttribute('aria-pressed', String(gender === chosen));
+            choice.addEventListener('click', () => {
+                setAssistantGender(personality, gender);
+                row.querySelectorAll('button').forEach((button) => {
+                    const pressed = button === choice;
+                    button.setAttribute('aria-pressed', String(pressed));
+                    button.classList.toggle('menu_button_primary', pressed);
+                });
+            });
+            row.append(choice);
+        }
+        host.append(row);
+    }
+    const confirm = document.createElement('button');
+    confirm.type = 'button';
+    confirm.className = 'menu_button menu_button_primary';
+    confirm.textContent = t`Nice to meet you!`;
+    confirm.dataset.tourAssistantsConfirm = 'true';
+    confirm.addEventListener('click', async () => {
+        const controls = [...host.querySelectorAll('button')];
+        controls.forEach((button) => { button.disabled = true; });
+        // A failed install keeps the marker, so the next start retries; the tour goes on either way.
+        await seedBundledAssistants();
+        if (activeTutorialPanel !== panel) return;
+        delete panel.dataset.tutorialAskAssistants;
+        setTutorialUiState(panel, 0, true);
+    });
+    host.append(confirm);
+    bindTourImageFallbacks(host);
+}
+
+function showTutorialCoachmark({ askSimpleMode = false, askAssistants = false } = {}) {
     let coachmark = document.getElementById('neconyan-tour-coachmark');
     if (!(coachmark instanceof HTMLElement)) {
         coachmark = document.createElement('aside');
@@ -896,19 +971,30 @@ function showTutorialCoachmark({ askSimpleMode = false } = {}) {
     activeTutorialPanel = coachmark;
     document.body.classList.add('neconyan-tour-active');
     const savedIndex = getWelcomeUiPreference(tutorialIndexKey) || 0;
-    if (askSimpleMode && (Number.parseInt(savedIndex, 10) || 0) === 0) {
+    const atStart = (Number.parseInt(savedIndex, 10) || 0) === 0;
+    if (askSimpleMode && atStart) {
         coachmark.dataset.tutorialAskSimpleMode = 'true';
     } else {
         delete coachmark.dataset.tutorialAskSimpleMode;
+    }
+    if (askAssistants && atStart) {
+        coachmark.dataset.tutorialAskAssistants = 'true';
+    } else {
+        delete coachmark.dataset.tutorialAskAssistants;
+        if (askAssistants) void seedBundledAssistants();
     }
     setTutorialUiState(coachmark, savedIndex, true, { persist: false });
 }
 
 function resumeTutorial() {
     const status = getWelcomeUiPreference(tutorialStatusKey);
+    const meetAssistants = getWelcomeUiPreference(assistantSeedKey) === 'ask';
     if (status !== null && !['completed', 'skipped'].includes(status) && getWelcomeUiPreference(tutorialHiddenKey) !== 'true') {
         // Only the automatic first-run tour asks; Replay goes straight to the steps.
-        showTutorialCoachmark({ askSimpleMode: getSimpleModePreference() === 'ask' });
+        showTutorialCoachmark({ askSimpleMode: getSimpleModePreference() === 'ask', askAssistants: meetAssistants });
+    } else if (meetAssistants) {
+        // The tour is closed but the assistants never arrived: install them quietly.
+        void seedBundledAssistants();
     }
 }
 
@@ -951,7 +1037,10 @@ async function dismissTutorial(panel, status) {
         const restoredIndex = Number.parseInt(previousIndex ?? String(currentIndex), 10) || 0;
         setTutorialUiState(panel, restoredIndex, previousExpanded, { persist: false });
         if (previousExpanded) {
-            showTutorialCoachmark(panel);
+            showTutorialCoachmark({
+                askSimpleMode: panel.dataset.tutorialAskSimpleMode === 'true',
+                askAssistants: panel.dataset.tutorialAskAssistants === 'true',
+            });
         } else {
             removeTutorialCoachmark();
         }
@@ -965,6 +1054,8 @@ async function dismissTutorial(panel, status) {
 
     setTutorialUiState(panel, currentIndex, false, { persist: false });
     removeTutorialCoachmark();
+    // Skipping before the meeting question still brings all three in, as Neutral unless chosen.
+    void seedBundledAssistants();
     return true;
 }
 
@@ -1029,6 +1120,11 @@ async function handleWelcomeAction(button) {
         case 'open-characters-menu':
         case 'open-import-characters':
             globalThis.NeconyanShell?.openCharacters?.();
+            break;
+        case 'find-characters':
+            if (!await globalThis.NeconyanNativeTools?.activate?.(NECONYAN_RAIL_TOOL_ROUTES.botsearcher)) {
+                openShellTab('characters:import');
+            }
             break;
         case 'open-global-search':
             globalThis.NeconyanShell?.openGlobalSearch?.({ focusInput: true });
@@ -1181,6 +1277,53 @@ async function activateInstalledAssistant(assistantId, result, origin) {
         }
         throw error;
     }
+}
+
+/**
+ * Install Miso, Taro and Nori once for a new account, in the look chosen in the tour (Neutral otherwise).
+ * Accounts without the marker are left alone. A failure keeps the marker so the next start retries.
+ */
+function seedBundledAssistants() {
+    if (accountStorage.getItem(assistantSeedKey) !== 'ask') return Promise.resolve(false);
+    assistantSeedPromise ??= (async () => {
+        const account = getCurrentUserHandle();
+        try {
+            const installed = [];
+            for (const personality of ['miso', 'taro', 'nori']) {
+                const response = await fetch('/api/characters/assistants/install', {
+                    method: 'POST', headers: { ...getRequestHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: `${personality}-${getAssistantGender(personality)}` }),
+                });
+                const result = await response.json().catch(() => ({}));
+                if (!response.ok || !result.avatar || !result.spriteFolder) throw new Error(result.error || 'The assistant could not be installed.');
+                installed.push(result);
+            }
+            if (account !== getCurrentUserHandle()) return false;
+            extension_settings.expressionOverrides ??= [];
+            for (const result of installed) {
+                const avatarStem = result.avatar.replace(/\.[^/.]+$/, '');
+                if (!extension_settings.expressionOverrides.some(override => override?.name === avatarStem)) {
+                    extension_settings.expressionOverrides.push({ name: avatarStem, path: result.spriteFolder });
+                }
+            }
+            accountStorage.setItem(assistantSeedKey, 'done');
+            if (await saveSettings(0, { returnResult: true }) !== true) {
+                accountStorage.setItem(assistantSeedKey, 'ask');
+                throw new Error('The assistants were installed, but that could not be saved.');
+            }
+            assistantCatalogPromise = null;
+            await getCharacters();
+            await refreshWelcomeScreen();
+            return true;
+        } catch (error) {
+            console.error('Could not install the bundled assistants:', error);
+            globalThis.toastr?.warning?.(t`Miso, Taro and Nori could not move in yet. Neconyan will try again next time it opens.`);
+            return false;
+        } finally {
+            assistantSeedPromise = null;
+        }
+    })();
+    return assistantSeedPromise;
 }
 
 /** Open a bundled assistant through the same guarded installation path as the Home picker. */
@@ -1985,6 +2128,102 @@ function createNeconyanRailButton({ label, icon, route = '', onClick }) {
     return button;
 }
 
+// Simple Mode gives a few sidebar pages a plainer name; the usual name returns with the full sidebar.
+/**
+ * Simple Mode's whole memory page: one switch, one button and the latest summary.
+ * Memory Shard does the work; Mewmory stays one link away for finer control.
+ */
+async function openStorySoFar() {
+    const memory = globalThis.NeconyanAgents?.memoryShard;
+    const page = document.createElement('div');
+    page.className = 'neconyan-story-so-far';
+    const title = document.createElement('h3');
+    title.textContent = t`Story so far`;
+    const intro = document.createElement('p');
+    intro.textContent = t`When a chat gets long, the LLM writes down what happened so your character does not forget.`;
+    const toggle = document.createElement('label');
+    toggle.className = 'checkbox_label';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.dataset.storySoFarEnabled = 'true';
+    const toggleText = document.createElement('span');
+    toggleText.textContent = t`Write down long chats for me`;
+    toggle.append(input, toggleText);
+    const summarise = document.createElement('button');
+    summarise.type = 'button';
+    summarise.className = 'menu_button';
+    summarise.dataset.storySoFarSummarise = 'true';
+    summarise.textContent = t`Summarise now`;
+    const summary = document.createElement('div');
+    summary.className = 'neconyan-story-so-far-summary';
+    summary.dataset.storySoFarSummary = 'true';
+    summary.setAttribute('role', 'status');
+    const finer = document.createElement('button');
+    finer.type = 'button';
+    finer.className = 'menu_button';
+    finer.dataset.storySoFarMewmory = 'true';
+    finer.textContent = t`Want finer control? Open Mewmory`;
+    page.append(title, intro, toggle, summarise, summary, finer);
+
+    const sync = () => {
+        const state = memory?.getState?.() ?? { available: false, enabled: false, canSummarise: false, summary: '' };
+        input.checked = Boolean(state.enabled);
+        input.disabled = !state.available;
+        summarise.disabled = !state.enabled || !state.canSummarise;
+        summary.textContent = state.summary
+            || (state.available ? t`Nothing written down yet. Open a chat and keep talking; the LLM starts once it gets long.` : t`Agents are still loading. Try again in a moment.`);
+    };
+    input.addEventListener('change', async () => {
+        input.disabled = true;
+        if (await memory?.setEnabled?.(input.checked) === false) {
+            toastr.warning(t`That could not be saved. Try again in a moment.`);
+        }
+        sync();
+    });
+    summarise.addEventListener('click', async () => {
+        summarise.disabled = true;
+        summary.textContent = t`Writing it down...`;
+        try {
+            await memory?.summariseNow?.();
+        } catch (error) {
+            console.error('Story so far could not be summarised', error);
+            toastr.warning(t`The LLM could not write it down. Check your connection, then try again.`);
+        }
+        sync();
+    });
+    sync();
+
+    const popup = callGenericPopup(page, POPUP_TYPE.TEXT, '', { okButton: t`Done` });
+    finer.addEventListener('click', () => {
+        page.closest('dialog')?.querySelector('.popup-button-ok')?.click();
+        globalThis.NeconyanShell?.openTab?.('left', 'mewmory');
+    });
+    await popup;
+}
+
+function syncNeconyanRailSimpleLabels() {
+    const simple = document.documentElement.classList.contains(SIMPLE_MODE_CLASS);
+    for (const [route, simpleLabel] of Object.entries(SIMPLE_MODE_RAIL_LABELS)) {
+        for (const button of document.querySelectorAll(`#neconyan-workspace-rail .neconyan-rail-button[data-neconyan-route="${route}"]`)) {
+            const span = button.querySelector('span');
+            if (!span) continue;
+            button.dataset.neconyanRailFullLabel ||= span.textContent;
+            const next = simple ? translate(simpleLabel) : button.dataset.neconyanRailFullLabel;
+            const current = span.textContent;
+            if (current === next) continue;
+            span.textContent = next;
+            button.title = button.title.replace(current, next);
+            button.setAttribute('aria-label', (button.getAttribute('aria-label') || current).replace(current, next));
+        }
+    }
+}
+
+function watchNeconyanRailSimpleLabels() {
+    syncNeconyanRailSimpleLabels();
+    // The class also changes when account settings arrive, which sends no event.
+    new MutationObserver(syncNeconyanRailSimpleLabels).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+}
+
 function createNeconyanRailModeButton(mode) {
     const label = mode === 'story' ? 'Story Mode' : mode[0].toUpperCase() + mode.slice(1);
     const icon = { roleplay: 'fa-masks-theater', conversation: 'fa-comments', meower: 'fa-paw', story: 'fa-feather-pointed' }[mode] || 'fa-circle';
@@ -2299,7 +2538,15 @@ function ensureNeconyanRail() {
     });
     delete simpleExit.dataset.neconyanRoute;
     simpleExit.title = t`Simple Mode is on. Show every feature again.`;
-    rail.querySelector('[data-neconyan-simple-exit]')?.append(simpleExit);
+    const simpleMemory = createNeconyanRailButton({
+        label: 'Memory',
+        icon: 'fa-book-bookmark',
+        onClick: () => void openStorySoFar(),
+    });
+    delete simpleMemory.dataset.neconyanRoute;
+    simpleMemory.dataset.neconyanSimpleMemory = 'true';
+    simpleMemory.title = t`See what has been written down about this chat so far.`;
+    rail.querySelector('[data-neconyan-simple-exit]')?.append(simpleMemory, simpleExit);
 
     const modeNav = rail.querySelector('[data-neconyan-mode-nav]');
     if (modeNav instanceof HTMLElement) {
@@ -3193,6 +3440,7 @@ export function initWelcomeScreen() {
     applySimpleMode();
     PinnedChatsManager.init();
     ensureNeconyanRail();
+    watchNeconyanRailSimpleLabels();
     installChatNoteCapture();
     // The tour shows fewer steps in Simple Mode, so redraw an open tour when the choice changes.
     window.addEventListener(SIMPLE_MODE_EVENT, () => {

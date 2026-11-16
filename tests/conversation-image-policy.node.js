@@ -270,3 +270,23 @@ test('each Conversation refusal says what is wrong and where to choose again, wi
     const reply = { id: 'reply', role: 'user', name: 'User', mes: 'Continue', extra: { conversation_reply_to: { messageId: 'picture', name: 'Nova', text: 'PRIVATE_IMAGE_PROMPT', attachmentSummary: 'PRIVATE_IMAGE_PROMPT' } } };
     await assert.rejects(compose([reply]), { message: quoted, code: 'ROLEPLAY_IMAGE_INPUT', imageIssue: { reason: 'mixed-reply-context', index: 0, mediaIndex: -1, actions: ['review', 'display-only', 'caption'] } });
 });
+
+test('plain text quotes never need image review when their source is trimmed, edited or duplicated', async () => {
+    const source = { id: 'hey', role: 'user', name: 'User', mes: 'PLAIN_QUOTED_PROSE', extra: {} };
+    for (const legacy of [false, true]) {
+        const reply = quote(source, { legacy });
+        const edited = { ...source, mes: 'Rewritten later' };
+        for (const messages of [[reply], [edited, reply], [source, { ...source }, reply]]) {
+            for (const groupId of ['', 'group']) assert.match(JSON.stringify(await compose(messages, { groupId })), /PLAIN_QUOTED_PROSE/);
+        }
+        // A source that gained an image after it was quoted still needs review.
+        const pictured = { ...source, extra: structuredClone(image.extra) };
+        await assert.rejects(compose([pictured, reply]), { code: 'ROLEPLAY_IMAGE_INPUT' });
+        // A saved review choice that no longer matches is never bypassed.
+        const stale = structuredClone(reply);
+        stale.extra.neconyan_image_context = { version: 1, mode: 'omit', source_hash: 'stale' };
+        await assert.rejects(compose([stale]), { code: 'ROLEPLAY_IMAGE_INPUT' });
+    }
+    // A quote of a message with attachments still refuses once its source is gone.
+    await assert.rejects(compose([quote(image)]), { code: 'ROLEPLAY_IMAGE_INPUT' });
+});

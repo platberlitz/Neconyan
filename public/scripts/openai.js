@@ -9125,6 +9125,11 @@ async function onConnectButtonClick(e) {
 
         if (!secret_state[config.key] && (!config.proxy || !oai_settings.reverse_proxy) && !config.keyless) {
             console.log(`No secret key saved for ${oai_settings.chat_completion_source}`);
+            // Neconyan: a person pressing Connect is told what is missing; automatic reconnects stay quiet.
+            if (!e.isTrigger) {
+                toastr.warning(t`Paste your API key into the key box first, then press Connect.`);
+                $(config.selector).trigger('focus');
+            }
             return;
         }
     }
@@ -9226,12 +9231,23 @@ async function testApiConnection() {
         return;
     }
 
+    // Neconyan: the result also stays on the page beside Connect, since a toast is gone in seconds.
+    const showResult = (text, state) => {
+        const line = document.getElementById('neconyan-connection-test-result');
+        if (!line) return;
+        line.textContent = text;
+        line.dataset.state = state;
+    };
+
     try {
+        showResult(t`Sending a test message...`, 'pending');
         const reply = await sendOpenAIRequest('quiet', [{ 'role': 'user', 'content': 'Hi' }], new AbortController().signal);
         console.log(reply);
         toastr.success(t`API connection successful!`);
+        showResult(t`Test passed: the model replied.`, 'success');
     } catch (err) {
         toastr.error(t`Could not get a reply from the AI service. Check your connection settings and API key, then try again.`);
+        showResult(t`Test failed: no reply came back. Check the key and the model, then try again.`, 'error');
     }
 }
 

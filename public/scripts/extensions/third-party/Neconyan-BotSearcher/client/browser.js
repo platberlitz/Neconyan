@@ -21,7 +21,7 @@ import {
 } from './api.js';
 import { el, setText, setImgSafe } from './render.js';
 import {
-    getSettings, updateSettings, isSourceEnabled, rememberQuery,
+    getSettings, updateSettings, isSourceEnabled, rememberQuery, simpleModeActive, skipsReview,
     saveNamedSearch, removeNamedSearch, subscribeSettings, MAX_NAMED_SEARCH_NAME,
     jannyBrowserControl,
 } from './settings.js';
@@ -360,7 +360,7 @@ function wireBrowser(popup, health, options) {
      */
     function handleUrlIntent(raw, { open }) {
         const intent = findUrlImport(raw);
-        const action = intent ? (getSettings().skipReview ? 'Import card URL' : 'Review card URL') : 'Search';
+        const action = intent ? (skipsReview() ? 'Import card URL' : 'Review card URL') : 'Search';
         dom.go.setAttribute('aria-label', action);
         dom.go.title = action;
         dom.go.disabled = Boolean(intent && (!intent.source || !intent.enabled));
@@ -377,7 +377,7 @@ function wireBrowser(popup, health, options) {
         } else if (open) {
             openIntake({ url: String(raw).trim(), source: intent.source }, 'grid');
         } else {
-            setText(dom.state, urlImportReadyMessage(intent.source.label ?? intent.source.id, getSettings().skipReview));
+            setText(dom.state, urlImportReadyMessage(intent.source.label ?? intent.source.id, skipsReview()));
         }
         return true;
     }
@@ -951,8 +951,13 @@ function wireBrowser(popup, health, options) {
     function openIntake(request, returnTo) {
         // A file chosen for inspection is inspected whatever the preference says;
         // the preference is about imports the user has already decided on.
-        const direct = !request.file && getSettings().skipReview;
-        openSubview(returnTo, (container, onBack, signal) => showIntake(container, request, onBack, { signal, direct }),
+        const direct = !request.file && skipsReview();
+        // In Simple Mode the new character's chat opens, and this dialog and the Characters page step aside.
+        const onOpened = direct && simpleModeActive() ? () => {
+            popup.complete(context().POPUP_RESULT.NEGATIVE);
+            globalThis.NeconyanShell?.closeCharacters?.();
+        } : undefined;
+        openSubview(returnTo, (container, onBack, signal) => showIntake(container, request, onBack, { signal, direct, onOpened }),
             [request.source?.id]);
     }
 
