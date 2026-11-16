@@ -40,6 +40,15 @@ body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block.group_ove
     mask: var(--neco-icon, var(--neco-svg-circle-question)) center / contain no-repeat;
 }
 
+/* Selection fills the star body, including Kittyless's neutral counterpart. */
+.fa-star:is(.fav_on, [aria-pressed='true'], [aria-selected='true']),
+:is([aria-pressed='true'], [aria-selected='true'], .is-active) > .fa-star,
+.filterByFavorites.selected > .fa-star,
+.fa-star:is(.ch_fav_icon, .group_fav_icon, .nn-model-list-favourite),
+.neconyan-tag-entity-fav > .fa-star {
+    --neco-icon: var(--neco-svg-star-filled);
+}
+
 .fa-fw { width: 1.25em; text-align: center; }
 .fa-1x { font-size: 1em; }
 .fa-2x { font-size: 2em; }

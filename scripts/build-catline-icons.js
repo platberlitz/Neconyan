@@ -31,7 +31,7 @@ for (const [name, drawings] of Object.entries(icons).sort(([a], [b]) => a.locale
         names.add(alias);
     }
     catalogue.push(group);
-    classes.push(`${group.map(alias => `.${alias}`).join(',')} { --neco-icon: var(--neco-svg-${name}); }`);
+    classes.push(`${group.map(alias => `.${alias}`).join(',')}{--neco-icon:var(--neco-svg-${name})}`);
 }
 for (const name of Object.keys(aliases)) {
     if (!icons[name]) throw new Error(`Missing icon: ${name}`);
