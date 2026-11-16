@@ -927,6 +927,17 @@ describe('in-chat agent post-processing runner', () => {
         }];
     }
 
+    function useSavedProofreader() {
+        const template = JSON.parse(readFileSync(new URL('../public/scripts/extensions/in-chat-agents/templates/proofreader.json', import.meta.url), 'utf8'));
+        enabledAgents = [{
+            ...template,
+            id: 'saved-proofreader',
+            sourceTemplateId: template.id,
+            enabled: true,
+            postProcess: { ...template.postProcess, promptTransformShowNotifications: false },
+        }];
+    }
+
     async function waitFor(condition) {
         for (let i = 0; i < 20; i++) {
             if (condition()) {
@@ -12219,8 +12230,58 @@ Helper context.`;
         expect(saveChatDebounced).not.toHaveBeenCalled();
     });
 
-    test('runs saved bundled Prose Polisher for guided impersonate output', async () => {
-        useSavedProsePolisherWithoutImpersonateFlag();
+    test.each([false, undefined])('runs enabled Proofreader on impersonation with runOnImpersonate=%s', async (runOnImpersonate) => {
+        useSavedProofreader();
+        enabledAgents[0].conditions.runOnImpersonate = runOnImpersonate;
+        generateQuietPrompt.mockResolvedValue('<assistant_response>Proofread impersonation</assistant_response>');
+
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+        const textarea = { value: 'Draft impersonation', dispatchEvent: jest.fn() };
+        document.querySelector = jest.fn(selector => selector === '#send_textarea' ? textarea : null);
+        chat.push({
+            name: 'Assistant', mes: 'Existing reply', is_user: false, is_system: false,
+            swipe_id: 0, swipes: ['Existing reply'], swipe_info: [{ extra: { inChatAgents: { activeAgentIds: ['earlier-agent'] } } }],
+            extra: { inChatAgents: { activeAgentIds: ['earlier-agent'] } },
+        });
+        const previousChat = structuredClone(chat);
+
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'impersonate', {}, false);
+        await eventSource.emit(eventTypes.GENERATION_AFTER_COMMANDS, 'impersonate', {}, false);
+        await eventSource.emit(eventTypes.IMPERSONATE_READY, 'Draft impersonation');
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'impersonate');
+        await eventSource.emit(eventTypes.CHARACTER_MESSAGE_RENDERED, 0, 'impersonate');
+        await eventSource.emit(eventTypes.GENERATION_ENDED, chat.length);
+
+        await eventSource.emit(eventTypes.GENERATION_STOPPED);
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        expect(generateQuietPrompt.mock.calls[0][0].quietPrompt).toContain('generated impersonation text');
+        expect(textarea.value).toBe('Proofread impersonation');
+        expect(textarea.dispatchEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'input' }));
+        expect(chat).toEqual(previousChat);
+        expect(saveChatDebounced).not.toHaveBeenCalled();
+    });
+
+    test('keeps Proofreader idle on impersonation when Agents are switched off', async () => {
+        useSavedProofreader();
+        globalSettings.enabled = false;
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+        const textarea = { value: 'Draft impersonation', dispatchEvent: jest.fn() };
+        document.querySelector = jest.fn(selector => selector === '#send_textarea' ? textarea : null);
+
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'impersonate', {}, false);
+        await eventSource.emit(eventTypes.GENERATION_AFTER_COMMANDS, 'impersonate', {}, false);
+        await eventSource.emit(eventTypes.IMPERSONATE_READY, 'Draft impersonation');
+
+        expect(generateQuietPrompt).not.toHaveBeenCalled();
+        expect(textarea.value).toBe('Draft impersonation');
+        expect(textarea.dispatchEvent).not.toHaveBeenCalled();
+    });
+
+    test.each(['Prose Polisher', 'Proofreader'])('runs saved bundled %s for guided impersonate output', async (name) => {
+        if (name === 'Proofreader') useSavedProofreader();
+        else useSavedProsePolisherWithoutImpersonateFlag();
         generateQuietPrompt.mockResolvedValue('<assistant_response>Polished guided impersonation</assistant_response>');
 
         const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
