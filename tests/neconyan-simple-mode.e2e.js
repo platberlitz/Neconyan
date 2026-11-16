@@ -255,5 +255,54 @@ for (const [name, viewport, hasTouch] of [['desktop', { width: 1280, height: 900
             await expect(page.locator('#neconyan-workspace-rail [data-neconyan-route="home"]').first()).toBeVisible();
             await expect(page.locator('#neconyan-workspace-rail [data-neconyan-simple-memory]')).toBeHidden();
         });
+
+        test('Simple Mode tucks away the pages and tabs a newcomer does not need, and never strands them there', async ({ page, isMobile }) => {
+            await account(page, { [SIMPLE_KEY]: 'on', 'NeconyanTutorialStatus.v1': 'completed' });
+            await ready(page);
+            if (isMobile) await page.getByRole('button', { name: 'Open menu' }).click();
+            await expect(page.locator('#neconyan-workspace-rail [data-neconyan-quick-actions-tucked]')).toHaveText('Pin your favourite pages here with the pen.');
+            await expect(page.locator('#neconyan-workspace-rail [data-neconyan-quick-actions-tucked]')).toBeVisible();
+
+            // A page opened on purpose still opens; reopening the panel without naming a page lands on Connections.
+            await page.evaluate(() => window.NeconyanShell.openTab('left', 'mewmory'));
+            await expect(page.locator('#mewmory-workspace')).toBeVisible();
+            await page.evaluate(() => {
+                window.NeconyanShell.closeMewmory();
+                document.getElementById('sb-left-shell-toggle').click();
+            });
+            await expect(page.locator('#sb-shell-tab-left-api')).toHaveClass(/is-active/);
+            await expect(page.locator('#sb-shell-tab-left-api')).toBeVisible();
+            await expect(page.locator('#sb-shell-tab-left-presets')).toBeVisible();
+            for (const tab of ['sampling', 'advanced-formatting', 'mewmory']) {
+                await expect(page.locator(`#sb-shell-tab-left-${tab}`)).toBeHidden();
+            }
+
+            await page.evaluate(() => window.NeconyanShell.openCharacters());
+            await expect(page.locator('#sb_character_tab_groups')).toBeHidden();
+            await expect(page.locator('#sb_character_tab_creator')).toBeHidden();
+            await expect(page.locator('#sbca_drawer_button')).toBeHidden();
+            expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false);
+        });
+
+        test('with every feature shown those pages and tabs are all there', async ({ page, isMobile }) => {
+            await account(page, { [SIMPLE_KEY]: 'off', 'NeconyanTutorialStatus.v1': 'completed' });
+            await ready(page);
+            if (isMobile) await page.getByRole('button', { name: 'Open menu' }).click();
+            await expect(page.locator('#neconyan-workspace-rail [data-neconyan-route="home"]').first()).toBeVisible();
+            await expect(page.locator('#neconyan-workspace-rail [data-neconyan-quick-actions-tucked]')).toBeHidden();
+            await page.evaluate(() => window.NeconyanShell.openTab('left', 'mewmory'));
+            await page.evaluate(() => {
+                window.NeconyanShell.closeMewmory();
+                document.getElementById('sb-left-shell-toggle').click();
+            });
+            await expect(page.locator('#sb-shell-tab-left-mewmory')).toHaveClass(/is-active/);
+            for (const tab of ['api', 'presets', 'sampling', 'advanced-formatting', 'mewmory']) {
+                await expect(page.locator(`#sb-shell-tab-left-${tab}`)).toBeVisible();
+            }
+            await page.evaluate(() => window.NeconyanShell.openCharacters());
+            await expect(page.locator('#sb_character_tab_groups')).toBeVisible();
+            await expect(page.locator('#sb_character_tab_creator')).toBeVisible();
+            await expect(page.locator('#sbca_drawer_button')).toBeVisible();
+        });
     });
 }

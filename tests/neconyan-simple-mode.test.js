@@ -17,7 +17,9 @@ globalThis.localStorage = {
 const { accountStorage } = await import('../public/scripts/util/AccountStorage.js');
 const simpleMode = await import('../public/scripts/neconyan-simple-mode.js');
 const {
-    SIMPLE_MODE_CLASS, SIMPLE_MODE_EVENT, SIMPLE_MODE_HIDDEN_SELECTORS, SIMPLE_MODE_KEPT_ROUTES, SIMPLE_MODE_KEY, SIMPLE_MODE_RAIL_LABELS,
+    SIMPLE_MODE_CLASS, SIMPLE_MODE_EVENT, SIMPLE_MODE_HIDDEN_CHAT_BAR_UNITS, SIMPLE_MODE_HIDDEN_MESSAGE_ACTIONS, SIMPLE_MODE_HIDDEN_PAGE_TABS,
+    SIMPLE_MODE_HIDDEN_PAGE_TARGETS, SIMPLE_MODE_HIDDEN_SELECTORS, SIMPLE_MODE_KEPT_ROUTES, SIMPLE_MODE_KEY, SIMPLE_MODE_RAIL_LABELS,
+    SIMPLE_MODE_REPEATED_QUICK_ACTIONS,
     applySimpleMode, buildSimpleModeCss, getSimpleModePreference, isSimpleModeEnabled, setSimpleModeEnabled,
 } = simpleMode;
 
@@ -145,10 +147,60 @@ describe('Simple Mode styles and wiring', () => {
         expect(openai).toContain('showResult(t`Test failed: no reply came back. Check the key and the model, then try again.`, \'error\');');
     });
 
+    test('pages, menu items and chat bar extras a newcomer does not need are tucked away, and nothing strands them', () => {
+        expect(SIMPLE_MODE_HIDDEN_PAGE_TABS).toEqual(['sampling', 'advanced-formatting', 'mewmory']);
+        expect(SIMPLE_MODE_HIDDEN_PAGE_TARGETS).toEqual(['left:sampling', 'left:advanced-formatting', 'left:mewmory', 'left:extensions']);
+        expect(SIMPLE_MODE_REPEATED_QUICK_ACTIONS).toEqual(['left:presets', 'left:api', 'left:agents', 'characters:world-info']);
+        expect(SIMPLE_MODE_HIDDEN_CHAT_BAR_UNITS).toEqual(['scroll', 'files', 'rename', 'hideBar']);
+        // Memory Shard hides messages, so the way to show one again has to stay.
+        expect(SIMPLE_MODE_HIDDEN_MESSAGE_ACTIONS).not.toContain('mes_hide');
+        expect(SIMPLE_MODE_HIDDEN_MESSAGE_ACTIONS).not.toContain('mes_unhide');
+        for (const kept of ['mes_translate', 'mes_narrate', 'mes_create_branch', 'mes_screenshot', 'mes_save_note', 'mes_fix_trackers', 'mes_rerun_agents']) {
+            expect(SIMPLE_MODE_HIDDEN_MESSAGE_ACTIONS).not.toContain(kept);
+        }
+
+        const index = read('public/index.html');
+        for (const action of SIMPLE_MODE_HIDDEN_MESSAGE_ACTIONS.filter(name => name.startsWith('mes_'))) expect(index).toContain(`mes_button ${action} `);
+        expect(read('public/scripts/extensions/quick-image-gen/index.js')).toContain('qig-message-generate');
+        expect(index).toContain('data-i18n="[title]Show media as a list"');
+        expect(index).toContain('data-i18n="[title]Show media as a gallery"');
+        expect(index).not.toContain('Toggle media display style');
+
+        for (const selector of [
+            '.sb-shell-tab[data-sb-tab="sampling"]', '.sb-shell-tab[data-sb-tab="advanced-formatting"]', '.sb-shell-tab[data-sb-tab="mewmory"]',
+            '#sb_character_tab_groups', '#sb_character_tab_creator', '#sbca_drawer_button',
+            '#chat .mes_embed', '#chat .mes_create_bookmark', '#chat .qig-message-generate',
+            '[data-sb-bottom-unit="files"]', '[data-sb-bottom-unit="rename"]', '[data-sb-bottom-unit="hideBar"]', '[data-sb-bottom-unit="scroll"]',
+            '#neconyan-workspace-rail [data-neconyan-quick-target="tab::characters::world-info"]',
+            '#neconyan-workspace-rail [data-neconyan-quick-target="tab::left::sampling"]',
+            '[data-sb-shortcut-target="left:mewmory"]',
+            '#result_info_text', '#rm_ch_create_block .extension_token_counter', '#sb_character_open_creator', '#sb_character_editor_tab_metadata',
+        ]) expect(SIMPLE_MODE_HIDDEN_SELECTORS).toContain(selector);
+        // Agents, the summary panel and shortcuts people add themselves stay.
+        const joined = SIMPLE_MODE_HIDDEN_SELECTORS.join('\n');
+        for (const kept of ['ica--tracker-panel', 'left:agents"]', 'action:search', 'characters::creator', 'sb-shortcut-left']) expect(joined).not.toContain(kept);
+
+        const css = buildSimpleModeCss();
+        expect(css).toContain('[data-neconyan-quick-actions]:not(:has(> button:not(');
+        expect(css).toContain('> [data-neconyan-quick-actions-tucked] { display: block !important; }');
+
+        const tabs = read('public/scripts/neconyan-tabs.js');
+        expect(tabs).toContain('button.dataset.neconyanQuickTarget = getMobileQuickActionKey(action);');
+        expect(tabs).toContain('node.dataset.sbBottomUnit = unit.id;');
+        expect(tabs).toContain('button.dataset.sbShortcutTarget = target;');
+        expect(tabs).toContain('data-neconyan-quick-actions-tucked');
+        expect(tabs).toContain('Pin your favourite pages here with the pen.');
+        expect(tabs).toMatch(/else if \(shellKey === 'left' && isSimpleModeEnabled\(\) && SIMPLE_MODE_HIDDEN_PAGE_TABS\.includes\(shellState\.activeTabId\)\) \{\n\s+\/\/[^\n]+\n\s+setActiveTab\(shellKey, 'api'\);/);
+        expect(tabs).toContain('const lastTab = isSimpleModeEnabled() && [\'creator\', \'groups\'].includes(rememberedTab) ? \'characters\' : rememberedTab;');
+        expect(tabs).toContain('getComputedStyle(tab).display !== \'none\'');
+        expect(tabs.match(/isTabDisplayed/g)).toHaveLength(4);
+    });
+
     test('every hidden id still exists, so a rename cannot silently bring a power tool back', () => {
         const sources = [
             'public/index.html', 'public/scripts/neconyan-tabs.js', 'public/scripts/welcome-screen.js',
             'public/scripts/extensions/quick-image-gen/index.js', 'public/scripts/extensions/guided-generations/index.js',
+            'public/scripts/extensions/neconyan-chats-archive/index.js',
         ].map(path => { try { return read(path); } catch { return ''; } }).join('\n');
         const ids = SIMPLE_MODE_HIDDEN_SELECTORS.join(' ').match(/#[\w-]+/g).map(id => id.slice(1));
         for (const id of new Set(ids)) expect({ id, found: sources.includes(id) }).toEqual({ id, found: true });

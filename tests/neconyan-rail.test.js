@@ -327,6 +327,7 @@ describe('Neconyan workspace rail behavior', () => {
             getActiveShellRailMode: () => 'desktop',
             getQuickActionState: () => desktop,
             normalizeMobileQuickAction: item => item,
+            getMobileQuickActionKey: action => [action.type, action.key].filter(Boolean).join('::'),
             createElement: (_tag, options) => new Element(options),
             NN_MOBILE_QUICK_ACTION_ICON_FALLBACK: 'fa-bolt',
             activateMobileNavAction: action => calls.push(action),
@@ -336,6 +337,8 @@ describe('Neconyan workspace rail behavior', () => {
         const button = list.children[0];
         expect(button.children[1].text).toBe('<saved setting>');
         expect(button.children[0].className).toBe('fa-solid fa-bolt');
+        expect(button.dataset.neconyanQuickTarget).toBe('custom::setting:one');
+        expect(list.children[1].attrs).toEqual({ hidden: '', 'data-neconyan-quick-actions-tucked': '' });
         button.click();
         expect(calls).toEqual(desktop);
         context.refreshNeconyanRailQuickActions();

@@ -22,6 +22,23 @@ export const SIMPLE_MODE_KEPT_ROUTES = Object.freeze(['presets', 'persona', 'bot
 /* The character search goes by a plainer name while Simple Mode is on. */
 export const SIMPLE_MODE_RAIL_LABELS = Object.freeze({ botsearcher: 'Find characters' });
 
+/* Page tabs that sit beside a kept page and would otherwise show through. */
+export const SIMPLE_MODE_HIDDEN_PAGE_TABS = Object.freeze(['sampling', 'advanced-formatting', 'mewmory']);
+
+/* The same pages, as the targets of quick-access slots and Quick Actions. */
+export const SIMPLE_MODE_HIDDEN_PAGE_TARGETS = Object.freeze(['left:sampling', 'left:advanced-formatting', 'left:mewmory', 'left:extensions']);
+
+/* Default Quick Actions that only repeat a page the sidebar already lists. */
+export const SIMPLE_MODE_REPEATED_QUICK_ACTIONS = Object.freeze(['left:presets', 'left:api', 'left:agents', 'characters:world-info']);
+
+/* Show and hide stay: Memory Shard hides messages and people need the way back. */
+export const SIMPLE_MODE_HIDDEN_MESSAGE_ACTIONS = Object.freeze([
+    'mes_prompt', 'mes_run_card_scripts', 'mes_media_gallery', 'mes_media_list', 'mes_embed',
+    'mes_swipe_picker', 'mes_create_bookmark', 'qig-message-generate',
+]);
+
+export const SIMPLE_MODE_HIDDEN_CHAT_BAR_UNITS = Object.freeze(['scroll', 'files', 'rename', 'hideBar']);
+
 export const SIMPLE_MODE_HIDDEN_SELECTORS = Object.freeze([
     '#neconyan-workspace-rail .neconyan-rail-advanced > .neconyan-rail-section-heading:not(#neconyan-rail-quick-actions-title)',
     `#neconyan-workspace-rail .neconyan-rail-button[data-neconyan-rail-home]:not([data-neconyan-rail-home="primary"], [data-neconyan-rail-home="modes"], ${SIMPLE_MODE_KEPT_ROUTES.map(route => `[data-neconyan-route="${route}"]`).join(', ')})`,
@@ -45,6 +62,18 @@ export const SIMPLE_MODE_HIDDEN_SELECTORS = Object.freeze([
     '.sb-shell-tab[data-sb-tab="console-logs"]',
     '#chat .mes_mewmory',
     '#chat .mewmory-chips',
+    ...SIMPLE_MODE_HIDDEN_PAGE_TABS.map(tab => `.sb-shell-tab[data-sb-tab="${tab}"]`),
+    '#sb_character_tab_groups',
+    '#sb_character_tab_creator',
+    '#sbca_drawer_button',
+    ...SIMPLE_MODE_HIDDEN_MESSAGE_ACTIONS.map(action => `#chat .${action}`),
+    ...SIMPLE_MODE_HIDDEN_CHAT_BAR_UNITS.map(unit => `[data-sb-bottom-unit="${unit}"]`),
+    ...[...SIMPLE_MODE_REPEATED_QUICK_ACTIONS, ...SIMPLE_MODE_HIDDEN_PAGE_TARGETS].map(target => `#neconyan-workspace-rail [data-neconyan-quick-target="tab::${target.replace(':', '::')}"]`),
+    ...SIMPLE_MODE_HIDDEN_PAGE_TARGETS.map(target => `[data-sb-shortcut-target="${target}"]`),
+    '#result_info_text',
+    '#rm_ch_create_block .extension_token_counter',
+    '#sb_character_open_creator',
+    '#sb_character_editor_tab_metadata',
 ]);
 
 function normalizeSimpleModePreference(value) {
@@ -78,7 +107,11 @@ export function isSimpleModeEnabled() {
 }
 
 export function buildSimpleModeCss() {
+    const tuckedQuickActions = [...SIMPLE_MODE_REPEATED_QUICK_ACTIONS, ...SIMPLE_MODE_HIDDEN_PAGE_TARGETS]
+        .map(target => `[data-neconyan-quick-target="tab::${target.replace(':', '::')}"]`).join(', ');
     return [
+        /* Quick Actions with nothing left to show says how to fill it, instead of sitting empty under its heading. */
+        `html.${SIMPLE_MODE_CLASS}:not([data-neconyan-sidebar="closed"]) #neconyan-workspace-rail [data-neconyan-quick-actions]:not(:has(> button:not(${tuckedQuickActions}))) > [data-neconyan-quick-actions-tucked] { display: block !important; }`,
         `html.${SIMPLE_MODE_CLASS} :is(${SIMPLE_MODE_HIDDEN_SELECTORS.join(', ')}) { display: none !important; }`,
         /* A collapsed section would otherwise take Presets or a moved Workspace page with it, since its heading (the toggle) is hidden. */
         `html.${SIMPLE_MODE_CLASS} #neconyan-workspace-rail .neconyan-rail-advanced { margin-top: 0; }`,
