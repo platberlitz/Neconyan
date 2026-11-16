@@ -39,22 +39,56 @@ test('editing instructions use server-labelled sources, including text-only imag
     assert.match(messages.at(-1).content[0].text, /Image source {"messageId":"upload","kind":"attachment","index":0}/);
 });
 
-test('generated images follow the selected model, saved preset and media setting', async t => {
+test('portrait edit instructions retain avatar targets and require review before replacement', () => {
+    for (const customPrompt of [undefined, 'Be a helpful portrait artist.']) {
+        const system = buildScratchpadSystemPrompt({ assistant: 'miso', customPrompt, imageEditing: true,
+            capabilities: { image: true, avatar: true, persona: { name: 'Kris' } } }).text;
+        assert.match(system, /Character portraits use target "avatar" with character/);
+        assert.match(system, /persona portraits use "persona-avatar" with persona/);
+        assert.match(system, /"action":"edit","target":"persona-note-avatar","persona":"Kris","noteId"/);
+        assert.match(system, /Edit image, then Review avatar and Save change/);
+        assert.match(system, /even when the source was generated as a standalone picture/);
+    }
+    const unavailable = buildScratchpadSystemPrompt({ assistant: 'miso', imageEditing: false,
+        capabilities: { image: true, avatar: true, persona: { name: 'Kris' } } }).text;
+    assert.doesNotMatch(unavailable, /Scenario Note edit example/);
+});
+
+test('generated pictures reach vision models independently of the regular-chat media setting', async t => {
     const input = setup(t);
-    assert.equal(images(await prepareGeneratedImageHistory(input)).length, 1);
     for (const selected of [
-        { ...material, profile: { model: 'gpt-3.5-turbo' } },
-        { ...material, backend: 'text' },
+        material,
+        { ...material, active: {} },
         { ...material, active: { media_inlining: false } },
-        { ...material, preset: { media_inlining: false } },
-    ]) assert.equal(images(await prepareGeneratedImageHistory({ ...input, material: selected })).length, 0);
-    assert.equal(images(await prepareGeneratedImageHistory({ ...input, material: { ...material, active: { media_inlining: false }, preset: { media_inlining: true } } })).length, 1);
+        { ...material, preset: { media_inlining: false, inline_image_quality: 'high' } },
+    ]) {
+        const before = structuredClone(selected);
+        const result = images(await prepareGeneratedImageHistory({ ...input, material: selected }));
+        assert.equal(result.length, 1);
+        assert.equal(result[0].image_url.url, `data:image/png;base64,${png.toString('base64')}`);
+        assert.equal(result[0].image_url.detail, selected.preset?.inline_image_quality ?? 'auto');
+        assert.deepEqual(selected, before);
+    }
     assert.equal(input.history.some(message => message.generatedImageContent), false);
+});
+
+test('text-only models stay text-only and unverified providers still need image opt-in', async t => {
+    const input = setup(t);
+    for (const model of ['gpt-3.5-turbo', 'gpt-4-turbo-preview', 'o1-preview', 'o1-mini', 'o3-mini']) {
+        assert.equal(images(await prepareGeneratedImageHistory({ ...input, material: { ...material, profile: { model } } })).length, 0, model);
+    }
+    assert.equal(images(await prepareGeneratedImageHistory({ ...input, material: { ...material, backend: 'text' } })).length, 0);
+    for (const source of ['custom', 'cometapi']) {
+        for (const enabled of [true, false]) {
+            const selected = { source, profile: { model: 'unverified-model' }, active: { media_inlining: enabled } };
+            assert.equal(images(await prepareGeneratedImageHistory({ ...input, material: selected })).length, Number(enabled), source);
+        }
+    }
 });
 
 test('catalogue vision uses this speaker connection and unavailable catalogues preserve a text reply', async t => {
     const input = setup(t);
-    const selected = { source: 'openrouter', profile: { model: 'provider/vision', 'secret-id': 'selected-key' }, active: { media_inlining: true, openrouter_model: 'other' } };
+    const selected = { source: 'openrouter', profile: { model: 'provider/vision', 'secret-id': 'selected-key' }, active: { media_inlining: false, openrouter_model: 'other' } };
     let calls = 0;
     const fetchModels = async request => {
         assert.equal(request.material, selected);
@@ -64,6 +98,8 @@ test('catalogue vision uses this speaker connection and unavailable catalogues p
     };
     assert.equal(images(await prepareGeneratedImageHistory({ ...input, material: selected, fetchModels })).length, 1);
     assert.equal(calls, 1);
+    assert.equal(images(await prepareGeneratedImageHistory({ ...input, material: selected,
+        fetchModels: async () => [{ id: 'provider/vision', architecture: { input_modalities: ['text'] } }] })).length, 0);
     assert.equal(images(await prepareGeneratedImageHistory({ ...input, material: selected, fetchModels: async () => [] })).length, 0);
     assert.equal(images(await prepareGeneratedImageHistory({ ...input, material: selected, fetchModels: async () => { throw new Error('Offline'); } })).length, 0);
 });

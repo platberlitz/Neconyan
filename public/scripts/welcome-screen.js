@@ -1313,7 +1313,12 @@ function seedBundledAssistants() {
             }
             assistantCatalogPromise = null;
             await getCharacters();
-            await refreshWelcomeScreen();
+            if (document.body.classList.contains('neconyan-home-visible')) {
+                await refreshWelcomeScreen();
+            } else {
+                invalidateRecentChats();
+                await refreshNeconyanRail();
+            }
             return true;
         } catch (error) {
             console.error('Could not install the bundled assistants:', error);

@@ -127,7 +127,7 @@ export function supportsChatImages(oai_settings, { main_api = 'openai', model_li
                 : oai_settings.openai_model;
             return visionSupportedModels.some(model =>
                 modelToCheck.includes(model)
-                && ['gpt-4-turbo-preview', 'o1-mini', 'o3-mini'].some(x => !modelToCheck.includes(x)),
+                && ['gpt-4-turbo-preview', 'o1-preview', 'o1-mini', 'o3-mini'].every(x => !modelToCheck.includes(x)),
             );
         }
         case 'makersuite':
