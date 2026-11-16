@@ -19,6 +19,7 @@
 - PR #706 (2026-11-16) `fix(auth): show an error toast when the login session expires`
 - PR #707 (2026-11-16) `perf(mewmory): cut recall and extraction token use`
 - PR #708 (2026-11-16) `fix(persona): wrap long scenario note labels`
+- PR #709 (2026-11-16) `fix(roleplay): keep model names visible below dates`
 
 ## v1.5.5
 
