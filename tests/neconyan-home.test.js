@@ -378,14 +378,15 @@ describe('Neconyan Home', () => {
     });
 
     describe('Miso, Taro and Nori move into a new account once', () => {
-        function harness({ marker = 'ask', genders = {}, failFor = null, saveResult = true } = {}) {
+        function harness({ marker = 'ask', genders = {}, failFor = null, saveResult = true, homeVisible = true, leaveHome = false } = {}) {
             const storage = new Map(marker === null ? [] : [['NeconyanAssistantSeed.v1', marker]]);
-            const calls = { installs: [], saves: 0, lists: 0, refreshes: 0, warnings: 0 };
+            const calls = { installs: [], saves: 0, lists: 0, refreshes: 0, railRefreshes: 0, invalidations: 0, warnings: 0 };
             const extension_settings = {};
             const context = vm.createContext({
                 assistantSeedKey: 'NeconyanAssistantSeed.v1', assistantSeedPromise: null, assistantCatalogPromise: 'stale',
                 accountStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) },
                 getCurrentUserHandle: () => 'default-user', getRequestHeaders: () => ({}),
+                document: { body: { classList: { contains: name => name === 'neconyan-home-visible' && homeVisible } } },
                 getAssistantGender: personality => genders[personality] ?? 'neutral',
                 extension_settings,
                 fetch: async (url, options) => {
@@ -395,8 +396,10 @@ describe('Neconyan Home', () => {
                     return { ok: true, json: async () => ({ id, avatar: `${id}.png`, spriteFolder: `assistants/${id}` }) };
                 },
                 saveSettings: async () => { calls.saves++; return saveResult; },
-                getCharacters: async () => { calls.lists++; },
+                getCharacters: async () => { calls.lists++; if (leaveHome) homeVisible = false; },
                 refreshWelcomeScreen: async () => { calls.refreshes++; },
+                invalidateRecentChats: () => { calls.invalidations++; },
+                refreshNeconyanRail: async () => { calls.railRefreshes++; },
                 toastr: { warning: () => { calls.warnings++; } },
                 t: strings => strings[0], console: { error: () => {} }, Promise,
             });
@@ -425,6 +428,13 @@ describe('Neconyan Home', () => {
             const { context, calls } = harness();
             await context.seedBundledAssistants();
             expect(calls.installs).toEqual(['miso-neutral', 'taro-neutral', 'nori-neutral']);
+        });
+
+        test.each([{ homeVisible: false }, { leaveHome: true }])('finishing installation preserves the selected workspace: %j', async options => {
+            const { context, calls, storage } = harness(options);
+            expect(await context.seedBundledAssistants()).toBe(true);
+            expect(storage.get('NeconyanAssistantSeed.v1')).toBe('done');
+            expect(calls).toMatchObject({ refreshes: 0, railRefreshes: 1, invalidations: 1 });
         });
 
         test('accounts without the marker, and accounts already seeded, are left alone', async () => {
