@@ -37,8 +37,17 @@ import { notebookContextLocked, withNotebookPreparation, prepareNotebookProposal
 import { acceptScratchpadImage, readScratchpadImageAvailability, prepareScratchpadAvatarReview, saveScratchpadPersonaAvatar } from '../scratchpad/images.js';
 import { captureImageTargetsLocked, capturePersonaTargetLocked } from '../scratchpad/image-targets.js';
 import { updateWebSearchLocked, webSearchState, webSearchStateLocked } from '../scratchpad/web-search.js';
+import { scratchpadGalleryLocked } from '../scratchpad/image-gallery.js';
 
 export const router = express.Router();
+
+router.post('/images/gallery', (request, response) => {
+    try {
+        response.json({ images: withScratchpad(scratchpadAccountBase(request), scratchpadGalleryLocked) });
+    } catch (error) {
+        sendError(response, error);
+    }
+});
 
 router.post('/images/persona-avatar', async (request, response) => {
     try {

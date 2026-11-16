@@ -6,22 +6,12 @@ import { fetchChatProfileModels } from '../generation/service.js';
 import { readRoleplayFile } from '../roleplay-store.js';
 import { decodeServerImage, encodeServerImage } from '../media-codecs.js';
 import { Jimp } from '../jimp.js';
-import { imageChangeHash, imagePart, SCRATCHPAD_IMAGE_URL } from './image-state.js';
+export { generatedImageReceipts } from './image-state.js';
 
 const CATALOGUED = new Set(['openrouter', 'mistralai', 'aimlapi', 'chutes', 'electronhub', 'pollinations', 'moonshot', 'nanogpt', 'workers_ai']);
 const MAX_IMAGE_BYTES = 512 * 1024;
 const MAX_IMAGES = 4;
 export const MAX_GENERATED_HISTORY_BYTES = 1024 * 1024;
-
-/** Only a completed server receipt matching the selected reply version can supply pixels. */
-export function generatedImageReceipts(message) {
-    if (message.role !== 'assistant' || message.state !== 'done') return [];
-    return Object.entries(message.images ?? {}).flatMap(([index, image]) => {
-        const part = imagePart(message.text, Number(index));
-        return image.state === 'done' && SCRATCHPAD_IMAGE_URL.test(image.url) && /^[a-f0-9]{64}$/.test(image.imageHash)
-            && part && imageChangeHash(part.change) === image.changeHash ? [{ ...image, index: Number(index) }] : [];
-    });
-}
 
 async function imageInput(directories, receipt) {
     try {

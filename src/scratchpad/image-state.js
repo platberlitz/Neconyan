@@ -6,6 +6,16 @@ export const imageChangeHash = change => roleplayHash(change);
 export const imagePart = (text, index) => splitReply(text).find(part => part.type === 'change' && part.index === Number(index) && part.change?.type === 'image');
 export const hasPendingImages = message => Object.values(message.images ?? {}).some(image => image.state === 'pending');
 
+/** Only a completed server receipt matching the selected reply version can supply pixels. */
+export function generatedImageReceipts(message) {
+    if (message?.role !== 'assistant' || message.state !== 'done') return [];
+    return Object.entries(message.images ?? {}).flatMap(([index, image]) => {
+        const part = imagePart(message.text, Number(index));
+        return image?.state === 'done' && SCRATCHPAD_IMAGE_URL.test(image.url) && /^[a-f0-9]{64}$/.test(image.imageHash)
+            && part && imageChangeHash(part.change) === image.changeHash ? [{ ...image, index: Number(index) }] : [];
+    });
+}
+
 /** Receipts and target permissions are accepted only from the server's own saved bucket. */
 export function normaliseStoredImages(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
