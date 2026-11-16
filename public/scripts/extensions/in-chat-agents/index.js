@@ -3067,7 +3067,7 @@ function updateBulkBar() {
 
 async function openQuickSettings(ids, view = 'settings') {
     const single = ids.length === 1 ? getAgentById(ids[0]) : null;
-    await openAgentQuickSettings(ids, {
+    const saved = await openAgentQuickSettings(ids, {
         view,
         lockAgent: lockBundledAgentCustomization,
         onSaved: refreshSavedAgents,
@@ -3075,6 +3075,7 @@ async function openQuickSettings(ids, view = 'settings') {
         onOpenEditor: single ? id => openEditor(id) : null,
     });
     updateBulkBar();
+    return saved;
 }
 
 async function setAgentsChatHistory(ids, enabled, depth = null) {
@@ -7385,25 +7386,7 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
         exitSelectMode();
     }));
     $('#ica--bulkEnableOnCompanions').on('click', agentAction(async () => {
-        let eligible = 0;
-        const changed = await editSelectedAgents(agent => {
-            if (!agent || isCompanionAgent(agent) || isToolAgent(agent) || !['post', 'both'].includes(agent.phase)) {
-                return false;
-            }
-            eligible++;
-            agent.conditions ??= {};
-            if (agent.conditions.runOnCompanionOutputs) {
-                return false;
-            }
-            agent.conditions.runOnCompanionOutputs = true;
-        }, 'Change companion notes');
-        if (changed > 0) {
-            toastr.success(`${changed} selected after-reply ${changed === 1 ? 'agent now changes' : 'agents now change'} companion notes too.`);
-        } else if (eligible > 0) {
-            toastr.info('The selected after-reply agents already change companion notes.');
-        } else {
-            toastr.warning('Only after-reply agents that change the prompt or reply can change companion notes.');
-        }
+        if (await openQuickSettings([...selectedAgentIds], 'companion-outputs')) exitSelectMode();
     }));
     $('#ica--bulkDisable').on('click', agentAction(async () => {
         const ids = [...selectedAgentIds];

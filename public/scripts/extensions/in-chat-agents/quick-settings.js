@@ -8,9 +8,11 @@ import {
     getAgents,
     getCompanionConfig,
     isCompanionAgent,
+    isToolAgent,
     LENGTH_TRIMMER_TEMPLATE_ID,
     MAX_PROMPT_TRANSFORM_CONTEXT_MESSAGES,
     normalizePromptTransformContextMessages,
+    normalizeStringIdList,
     saveAgentBatch,
     TRANSLATOR_TEMPLATE_ID,
 } from './agent-store.js';
@@ -35,8 +37,7 @@ export function changeSelectedCompanionLinks(agents, field, enabled) {
     }
 }
 
-function addReferenceChecklist(root, agent, field, title, help, onSelect = () => {}) {
-    const saved = getCompanionConfig(agent)[field];
+function addReferenceChecklist(root, agent, field, title, help, onSelect = () => {}, saved = getCompanionConfig(agent)[field]) {
     const selected = new Set(saved);
     const candidates = getAgents().filter(candidate => candidate.id !== agent.id && isCompanionAgent(candidate))
         .sort((a, b) => a.name.localeCompare(b.name));
@@ -94,21 +95,28 @@ function addReferenceChecklist(root, agent, field, title, help, onSelect = () =>
     update();
     if (!options.length) section.find('[role="status"]').text('No other companions yet.');
     root.append(section);
+    return section;
 }
 
 export async function openAgentQuickSettings(ids, { view = 'settings', lockAgent, onSaved, summary = '', onOpenEditor = null } = {}) {
-    const agents = [...new Set(ids)].map(getAgentById).filter(Boolean);
+    const companionOutputs = view === 'companion-outputs';
+    const agents = [...new Set(ids)].map(getAgentById).filter(agent => agent && (!companionOutputs
+        || (!isCompanionAgent(agent) && !isToolAgent(agent) && ['post', 'both'].includes(agent.phase))));
+    if (companionOutputs && !agents.length) {
+        toastr.warning('Only after-reply agents that change the prompt or reply can change companion notes.');
+        return false;
+    }
     if (!agents.length) return;
     const isCurrent = captureAgentSaveGuard(agents.map(agent => agent.id));
     const bulk = agents.length > 1;
     const companions = agents.filter(isCompanionAgent);
     const first = agents[0];
     const config = getCompanionConfig(companions[0]);
-    const title = view === 'connections' ? 'Batch & connect' : 'Quick settings';
-    const canOpenEditor = !bulk && typeof onOpenEditor === 'function';
+    const title = companionOutputs ? 'On Companions' : view === 'connections' ? 'Batch & connect' : 'Quick settings';
+    const canOpenEditor = !companionOutputs && !bulk && typeof onOpenEditor === 'function';
     const root = $(`<div class="ica--quick-settings"><h3>${title}</h3><p data-selection></p><p class="ica--quick-summary" hidden></p><p role="alert" hidden></p></div>`);
     root.find('[data-selection]').text(bulk ? `${agents.length} agents selected · ${companions.length} companions` : first.name);
-    if (!bulk && summary) root.find('.ica--quick-summary').text(summary).prop('hidden', false);
+    if (!companionOutputs && !bulk && summary) root.find('.ica--quick-summary').text(summary).prop('hidden', false);
     const fields = [];
     const addSelect = (section, key, label, options, value, companion = false) => {
         const row = $('<label></label>').text(label);
@@ -132,7 +140,30 @@ export async function openAgentQuickSettings(ids, { view = 'settings', lockAgent
         return section;
     };
     const yesNo = [[true, 'Yes'], [false, 'No']];
-    if (view === 'settings') {
+    let outputTargets;
+    if (companionOutputs) {
+        root.find('[data-selection]').text(bulk ? `${agents.length} after-reply agents selected` : first.name);
+        root.append('<p class="ica--profile-help">Run these agents automatically on companion notes before they are saved. Agents must be switched on and configured to rewrite or add text, or apply Agent Regex.</p>');
+        const targets = addSection('Companions to change');
+        outputTargets = $('<select class="text_pole" aria-label="Companions to change"></select>');
+        outputTargets.append($('<option>').val(KEEP).text('Keep each agent’s choices'));
+        outputTargets.append($('<option>').val('chosen').text('Chosen companions'));
+        outputTargets.append($('<option>').val('all').text('All companions'));
+        targets.append(outputTargets);
+        const saved = normalizeStringIdList(agents.flatMap(agent => normalizeStringIdList(agent.conditions?.companionOutputTargetAgentIds)));
+        const checklist = addReferenceChecklist(root, first, 'companionOutputTargetAgentIds', 'Chosen companions',
+            'The same choices replace the companion targets for every selected after-reply agent.', () => {}, saved);
+        const help = $('<p class="ica--profile-help">').text('Keep each agent’s saved targets; an empty saved list means all companions.');
+        targets.append(help);
+        const updateTargets = () => {
+            checklist.toggleClass('displayNone', outputTargets.val() !== 'chosen');
+            help.text(outputTargets.val() === 'all' ? 'Includes companions added later.'
+                : outputTargets.val() === 'chosen' ? 'Pick at least one companion below.'
+                    : 'Keep each agent’s saved targets; an empty saved list means all companions.');
+        };
+        outputTargets.on('change', updateTargets);
+        updateTargets();
+    } else if (view === 'settings') {
         const connection = addSection('Connection & timing');
         const profile = addSelect(connection, 'connectionProfile', 'Connection profile', [], first.connectionProfile);
         populateConnectionProfileSelect(profile[0], { selectedValue: first.connectionProfile, emptyLabel: 'Use default connection' });
@@ -232,12 +263,27 @@ export async function openAgentQuickSettings(ids, { view = 'settings', lockAgent
                 root.find('[role="alert"]').text('These agents changed. Cancel and reopen settings.').prop('hidden', false);
                 return false;
             }
+            const chosenTargets = companionOutputs ? normalizeStringIdList(root.find('input[data-link-field="companionOutputTargetAgentIds"]:checked')
+                .toArray().map(input => input.value)) : [];
+            if (companionOutputs && outputTargets.val() === 'chosen' && !chosenTargets.length) {
+                root.find('[role="alert"]').text('Choose at least one companion, or select All companions.').prop('hidden', false);
+                return false;
+            }
             const controls = root.find('input, select, button').toArray();
             const disabled = controls.map(control => control.disabled);
             saving = true;
             controls.forEach(control => { control.disabled = true; });
             try {
                 const drafts = agents.map(agent => structuredClone(agent));
+                if (companionOutputs) {
+                    for (const draft of drafts) {
+                        draft.conditions ??= {};
+                        draft.conditions.runOnCompanionOutputs = true;
+                        if (outputTargets.val() !== KEEP) {
+                            draft.conditions.companionOutputTargetAgentIds = outputTargets.val() === 'all' ? [] : [...chosenTargets];
+                        }
+                    }
+                }
                 for (const field of fields) {
                     let value = field.input.value;
                     if (field.apply ? !field.apply.checked : value === field.initial || value === KEEP || (field.number && value === '' && (!field.nullable || bulk))) continue;
@@ -288,7 +334,8 @@ export async function openAgentQuickSettings(ids, { view = 'settings', lockAgent
     }).show();
     if (result === POPUP_RESULT.AFFIRMATIVE || (result === OPEN_EDITOR && savedChanges)) {
         await onSaved?.(agents.map(agent => agent.id));
-        toastr.success(escapeHtml(bulk ? 'Quick settings saved.' : `Settings saved for ${first.name}.`));
+        toastr.success(escapeHtml(companionOutputs ? 'Companion targets saved.' : bulk ? 'Quick settings saved.' : `Settings saved for ${first.name}.`));
     }
     if (result === OPEN_EDITOR) await onOpenEditor(first.id);
+    return result === POPUP_RESULT.AFFIRMATIVE;
 }

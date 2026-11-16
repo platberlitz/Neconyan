@@ -460,15 +460,8 @@ describe('in-chat agents generation UI wiring', () => {
 
         expect(settingsSource).toContain('ica--bulkEnableOnCompanions');
         expect(settingsSource).toContain('On Companions');
-        expect(handlerSource).toContain('await editSelectedAgents(');
-        expect(handlerSource).toContain('isCompanionAgent(agent)');
-        expect(handlerSource).toContain('isToolAgent(agent)');
-        expect(handlerSource).toContain('[\'post\', \'both\'].includes(agent.phase)');
-        expect(handlerSource).toContain('agent.conditions.runOnCompanionOutputs = true;');
-        const shared = getFunctionSource('editSelectedAgents');
-        expect(shared).toContain('lockBundledAgentCustomization(draft);');
-        expect(shared).toContain('await saveAgentBatch(changes, name);');
-        expect(shared).toContain('exitSelectMode();');
+        expect(handlerSource).toContain('await openQuickSettings([...selectedAgentIds], \'companion-outputs\')');
+        expect(handlerSource).toContain('exitSelectMode();');
     });
 
     test('allows manual agent application to multiple selected targets', () => {
