@@ -2,7 +2,7 @@
 export const RAG_DEFAULTS = Object.freeze({
     mode: 'hybrid', chunkSize: 1800, chunkOverlap: 200, queryMessages: 8,
     semanticWeight: 0.5, minSimilarity: 0, resultLimit: 12,
-    maxPerSource: 3, neighbourChunks: 0, includeFiles: true, batchSize: 10,
+    maxPerSource: 3, neighbourChunks: 0, includeFiles: true, includePassages: false, batchSize: 10,
 });
 
 export const PREFIX_PRESETS = Object.freeze([

@@ -76,6 +76,16 @@ export function searchDocuments(state, asOf = Infinity, config = {}) {
     return documents;
 }
 
+/**
+ * Recall offers saved memory entries. Original chat, card and lore passages stay out of the candidate
+ * pool, and recall does not embed them, unless the author switches them on; attached files remain searchable.
+ */
+export function recallPool(documents, config = {}) {
+    const options = { ...RAG_DEFAULTS, ...config.retrieval };
+    if (options.includePassages) return documents;
+    return documents.filter(document => document.kind !== 'source' || document.dataType === 'file');
+}
+
 export function cosine(left, right) {
     if (left.length !== right.length) return -1;
     let dot = 0, a = 0, b = 0;
@@ -134,15 +144,17 @@ export function expandNeighbours(documents, allDocuments, count = 0) {
 }
 
 /** Build a new vector space separately; queries use lexical recovery until its document side is ready. */
-export async function updateIndex(state, directories, config, { signal, limit = 32, embedFn = embed } = {}) {
+export async function updateIndex(state, directories, config, { signal, limit = 32, embedFn = embed, recallOnly = false } = {}) {
     const version = roleVersion(config, 'embedding');
     if (!config.roles.embedding.enabled) return { usage: [], remaining: 0, paid: {}, version };
     const documents = searchDocuments(state, Infinity, config).filter(document => config.roles.embedding.allowedData.includes(document.dataType));
+    // Recall embeds only what it can offer; a manual rebuild also covers original passages for archive search.
+    const targets = recallOnly ? recallPool(documents, config) : documents;
     const sameVersion = state.index.version === version;
     const existing = sameVersion ? state.index.vectors : state.index.build?.version === version ? state.index.build.vectors : {};
     const next = Object.fromEntries(documents.filter(document => existing[document.id]?.textHash === hash(document.searchText))
         .map(document => [document.id, existing[document.id]]));
-    const missing = documents.filter(document => !next[document.id]);
+    const missing = targets.filter(document => !next[document.id]);
     const usage = [];
     const paid = {};
     const policy = config.roles.embedding.nativePolicy;

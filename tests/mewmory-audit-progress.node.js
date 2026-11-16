@@ -9,7 +9,7 @@ import { setConfigFilePath } from '../src/util.js';
 
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
 const {
-    POLICY_VERSION, hash, newState, putRecord, refKey, syncSources, validateRecord,
+    POLICY_VERSION, READ_EARLIER, hash, newState, putRecord, refKey, syncSources, validateRecord,
 } = await import('../src/mewmory/core.js');
 const { defaultConfig, legacyRoleVersion, publicConfig, readConfig, resolvedRoleIdentity, roleVersion, saveConfig } = await import('../src/mewmory/models.js');
 const { pendingSources, processBatch, processingVersion } = await import('../src/mewmory/processing.js');
@@ -173,7 +173,7 @@ test('a temporarily broken shared profile keeps progress for every role followin
     assert.equal(pendingSources(state, repaired, { checkpoint: true }).length, 0);
 });
 
-test('a same profile id with a changed model or endpoint invalidates processed marks', async t => {
+test('a same profile id with a changed model or endpoint flags processed marks as read earlier', async t => {
     const base = { id: 'p1', name: 'Local', api: 'custom', 'api-url': 'http://127.0.0.1:5000/v1', model: 'model-one' };
     for (const change of [
         profile => ({ ...profile, model: 'model-two' }),
@@ -194,13 +194,15 @@ test('a same profile id with a changed model or endpoint invalidates processed m
         const changed = readConfig(directories);
         const state = loadCurrentStateSync(directories, locator);
         assert.notEqual(storedIdentity(state, changed), before, 'the stored connection identity follows the resolved profile');
-        assert.deepEqual(state.coverage, {});
-        assert.deepEqual(state.checkpoints, {});
+        // The marks stay as 'read earlier': a manual update re-reads them, automatic updates leave them alone.
+        assert.ok(state.timeline.every(ref => state.coverage[refKey(ref)] === READ_EARLIER));
+        assert.ok(state.timeline.every(ref => state.checkpoints[refKey(ref)] === READ_EARLIER));
         assert.equal(pendingSources(state, changed).length, state.timeline.length);
+        assert.equal(pendingSources(state, changed, { unreadOnly: true }).length, 0);
     }
 });
 
-test('a shared profile with a changed model or endpoint also invalidates processed marks', async t => {
+test('a shared profile with a changed model or endpoint also flags processed marks as read earlier', async t => {
     const base = { id: 'shared', name: 'Local', api: 'custom', 'api-url': 'http://127.0.0.1:5000/v1', model: 'model-one' };
     for (const change of [
         profile => ({ ...profile, model: 'model-two' }),
@@ -221,9 +223,10 @@ test('a shared profile with a changed model or endpoint also invalidates process
         const changed = readConfig(directories);
         const state = loadCurrentStateSync(directories, locator);
         assert.notEqual(storedIdentity(state, changed), before);
-        assert.deepEqual(state.coverage, {});
-        assert.deepEqual(state.checkpoints, {});
+        assert.ok(state.timeline.every(ref => state.coverage[refKey(ref)] === READ_EARLIER));
+        assert.ok(state.timeline.every(ref => state.checkpoints[refKey(ref)] === READ_EARLIER));
         assert.equal(pendingSources(state, changed).length, state.timeline.length);
+        assert.equal(pendingSources(state, changed, { unreadOnly: true }).length, 0);
     }
 });
 
@@ -270,7 +273,7 @@ test('an archive without a stored identity seeds one without invalidating progre
     assert.equal(pendingSources(state, changed, { checkpoint: true }).length, 0);
 });
 
-test('automatic hiding waits for a changed profile identity to be reconciled', async t => {
+test('automatic hiding keeps treating messages read by an earlier model as preserved', async t => {
     const records = [
         { is_user: true, name: 'You', send_date: 'h1', mewmory_id: 'h1', mes: 'a'.repeat(20) },
         { is_user: false, name: 'Mara', send_date: 'h2', mewmory_id: 'h2', mes: 'b'.repeat(20) },
@@ -292,10 +295,12 @@ test('automatic hiding waits for a changed profile identity to be reconciled', a
     writeProfiles(directories, [{ ...profile, model: 'model-two' }]);
     const chatRecords = [{ chat_metadata: {} }, ...structuredClone(records)];
     const policy = { limit: 15, count: value => value.length, directories, locator };
-    assert.equal(applyOverflowHiding(chatRecords, policy).hidden, 0, 'old marks must not hide messages for a different resolved model');
+    // Their memories are still saved, so a model change must not pull the whole chat back into replies.
+    const hiddenBefore = applyOverflowHiding(structuredClone(chatRecords), policy).hidden;
+    assert.ok(hiddenBefore > 0, 'messages read by the earlier model stay hideable');
     const reconciled = loadCurrentStateSync(directories, locator);
-    assert.deepEqual(reconciled.coverage, {});
-    assert.equal(applyOverflowHiding(chatRecords, policy).hidden, 0);
+    assert.ok(reconciled.timeline.every(ref => reconciled.coverage[refKey(ref)] === READ_EARLIER));
+    assert.equal(applyOverflowHiding(structuredClone(chatRecords), policy).hidden, hiddenBefore);
 });
 
 test('a profile change during processing discards the batch instead of marking old coverage', async t => {
@@ -392,7 +397,7 @@ test('switching model override A to B and back preserves the marks that belong t
     assert.equal(pendingSources(state, returned, { checkpoint: true }).length, 2);
 });
 
-test('a same-profile model edit clears only the active version marks', async t => {
+test('a same-profile model edit flags only the active version marks as read earlier', async t => {
     const { directories } = disk(t, messages(4));
     const profileA = { id: 'pa', name: 'A', api: 'custom', 'api-url': 'http://127.0.0.1:5000/v1', model: 'model-a' };
     const profileB = { id: 'pb', name: 'B', api: 'custom', 'api-url': 'http://127.0.0.1:6000/v1', model: 'model-b' };
@@ -424,8 +429,9 @@ test('a same-profile model edit clears only the active version marks', async t =
     const edited = readConfig(directories);
     const state = loadCurrentStateSync(directories, locator);
     for (const ref of refs.slice(0, 2)) assert.equal(state.coverage[refKey(ref)], policyB, 'marks from another semantic version are not cleared');
-    for (const ref of refs.slice(2)) assert.equal(state.coverage[refKey(ref)], undefined, 'the edited active version has no old marks left');
+    for (const ref of refs.slice(2)) assert.equal(state.coverage[refKey(ref)], READ_EARLIER, 'the edited active version marks are flagged, not erased');
     assert.equal(pendingSources(state, edited, { checkpoint: true }).length, 4);
+    assert.equal(pendingSources(state, edited, { checkpoint: true, unreadOnly: true }).length, 0);
     assert.equal(storedIdentity(state, edited), resolvedRoleIdentity(edited, 'extractor'));
     assert.notEqual(storedIdentity(state, edited), storedIdentity(stateA, versionA));
 });
@@ -462,8 +468,8 @@ test('a broken profile keeps its last known policy identity for a later model ch
     const repaired = readConfig(directories);
     assert.equal(processingVersion(repaired), policyB);
     const afterRepair = loadCurrentStateSync(directories, locator);
-    assert.ok(refs.every(ref => afterRepair.coverage[refKey(ref)] === undefined), 'the old model marks are cleared when its identity changes');
-    assert.ok(refs.every(ref => afterRepair.checkpoints[refKey(ref)] === undefined));
+    assert.ok(refs.every(ref => afterRepair.coverage[refKey(ref)] === READ_EARLIER), 'the old model marks are flagged when its identity changes');
+    assert.ok(refs.every(ref => afterRepair.checkpoints[refKey(ref)] === READ_EARLIER));
 
     // Returning to the original policy must not resurrect those old marks.
     switched.roles.pawspective.enabled = false;
@@ -641,6 +647,8 @@ test('a background recall cannot restore vectors cleared by an index reset', asy
     const config = defaultConfig();
     Object.assign(config.roles.embedding, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'embedding' });
     config.retrieval.mode = 'keyword';
+    // Original passages are embedded by recall only when the author offers them to recall.
+    config.retrieval.includePassages = true;
     config.writerTokenizer = 'cl100k_base';
     saveConfig(directories, config);
     await loadCurrentState(directories, locator);
@@ -731,6 +739,42 @@ test('a corrected Connection Manager model retries a failed automatic batch on t
     assert.equal(pendingSources(retried, readConfig(directories), { checkpoint: true }).length, 0);
 });
 
+test('a busy model service makes automatic processing wait before it retries, without needing an edit', async t => {
+    const { directories } = disk(t, messages(2));
+    const config = defaultConfig();
+    Object.assign(config.roles.extractor, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'extractor' });
+    config.roles.pawspective.enabled = false;
+    saveConfig(directories, config);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; });
+
+    let calls = 0;
+    const busy = async () => {
+        calls++;
+        throw Object.assign(new Error('The model service is busy.'), { status: 502, retryAt: Date.now() + 120_000 });
+    };
+    await scanProcessing(directories, busy);
+    const failed = await waitForProcessing(directories, locator);
+    assert.equal(failed.processing.status, 'failed');
+    assert.equal(failed.processing.busy, true);
+    assert.ok(failed.processing.retryAt >= Date.now() + 100_000, 'the wait the service asked for is kept');
+
+    await scanProcessing(directories, busy);
+    await waitForProcessing(directories, locator);
+    assert.equal(calls, 1, 'nothing is sent again before the wait ends');
+
+    mutateState(directories, locator, state => { state.processing.retryAt = Date.now() - 1; });
+    await scanProcessing(directories, async (_directories, _config, role) => {
+        calls++;
+        return { value: { records: [], interviews: [], activeNpcIds: [] }, usage: { role } };
+    });
+    const retried = await waitForProcessing(directories, locator);
+    assert.equal(calls, 2, 'once the wait has passed the busy story is retried by itself');
+    assert.equal(retried.processing.status, 'complete');
+    assert.equal(retried.processing.retryAt, undefined);
+    assert.equal(retried.processing.failures, undefined);
+});
+
 test('a rejected preparation does not erase a newer preview with the same fingerprint', async () => {
     const { records, state, config } = prepareFixture();
     let loads = 0;
@@ -757,6 +801,8 @@ test('a partial new embedding model stays staged until a full rebuild completes'
     const config = defaultConfig();
     Object.assign(config.roles.embedding, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'embedding' });
     config.retrieval.mode = 'keyword';
+    // Original passages are embedded by recall only when the author offers them to recall.
+    config.retrieval.includePassages = true;
     config.writerTokenizer = 'cl100k_base';
     saveConfig(directories, config);
     await loadCurrentState(directories, locator);
@@ -795,6 +841,8 @@ test('a background recall keeps vectors it already paid for when a record change
     const config = defaultConfig();
     Object.assign(config.roles.embedding, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'embedding' });
     config.retrieval.mode = 'keyword';
+    // Original passages are embedded by recall only when the author offers them to recall.
+    config.retrieval.includePassages = true;
     config.writerTokenizer = 'cl100k_base';
     saveConfig(directories, config);
     await loadCurrentState(directories, locator);

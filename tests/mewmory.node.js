@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { test } from 'node:test';
+import { beforeEach, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
@@ -13,7 +13,7 @@ import { setConfigFilePath } from '../src/util.js';
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
 const {
     continueState, eligibleRecords, forkState, hash, newState, putRecord, recordEligible,
-    POLICY_VERSION, refKey, ROLE_NAMES, sourceAt, syncSources, undoRecord, validateRecord,
+    POLICY_VERSION, READ_EARLIER, refKey, ROLE_NAMES, sourceAt, syncSources, undoRecord, validateRecord,
 } = await import('../src/mewmory/core.js');
 const { activeReferences, assembleContext, generationFingerprint } = await import('../src/mewmory/context.js');
 const { callJsonRole, defaultConfig, embed, isLocalEndpoint, validateEndpoint, saveConfig } = await import('../src/mewmory/models.js');
@@ -36,6 +36,10 @@ const { getJob: getSavedJob, recoverJobs, updateJob } = await import('../src/job
 const { setDirectoriesResolver, testExports: jobRunner } = await import('../src/jobs/runner.js');
 const { readArtifact } = await import('../src/jobs/artifacts.js');
 const { applyOverflowHiding, planPreservedMessageHiding, planPreservedOverflowHiding, prepareAutomaticHiding, writerTokenizerFromMaterial } = await import('../src/mewmory/hiding.js');
+const { markServiceBusy, markServiceWorking, parseRetryAfter, resetServiceCooldowns, serviceBusyUntil } = await import('../src/mewmory/cooldown.js');
+
+// Fixture providers share URLs, so one test's rate limit must not pause the next test's requests.
+beforeEach(() => resetServiceCooldowns());
 
 test('RAG prefixes preserve whitespace through saving and real custom and native requests', async t => {
     const { directories } = disk(t);
@@ -81,7 +85,7 @@ test('RAG prefixes preserve whitespace through saving and real custom and native
     assert.match(readConfig(directories).roles.embedding.error, /browser embeddings/);
 });
 
-test('memory prompts ask for full, specific records instead of one-line notes', async t => {
+test('memory prompts ask for short, specific records that update instead of repeating', async t => {
     const { directories } = disk(t);
     const provider = await createMewmoryProvider();
     t.after(() => new Promise(resolve => provider.server.close(resolve)));
@@ -90,8 +94,10 @@ test('memory prompts ask for full, specific records instead of one-line notes', 
     saveConfig(directories, config);
     await callJsonRole(directories, readConfig(directories), 'extractor', EXTRACTION_CONTRACT, { sources: [], existing: [] });
     const system = provider.calls.at(-1).messages[0].content;
-    assert.match(system, /Write full, specific records/);
-    assert.match(system, /an event, relationship or commitment takes two to four full sentences/);
+    assert.match(system, /Write short, specific records/);
+    assert.match(system, /an event, relationship or commitment takes one or two sentences/);
+    assert.match(system, /update that record under its existing ID instead of adding a near-duplicate/);
+    assert.doesNotMatch(system, /two to four full sentences|Cover everything a later scene could need/);
     assert.match(system, /An entity’s text always says who they are/);
     assert.match(system, /never write that something is not described, and never fill a gap with a likely detail/);
     assert.match(system, /at the length the contract asks for/);
@@ -146,6 +152,7 @@ test('archive HTTP search combines semantic retrieval, filters, safe fallback an
     assert.ok(fallback.body.matches.some(match => match.id === 'event:gift'));
     assert.equal((await search({ dataType: 'invented' })).status, 400);
     provider.mode.fail = false;
+    resetServiceCooldowns(); // The failure above paused this service; the test moves on as if the wait has passed.
     provider.mode.reply = body => {
         write([{ name: 'Mara', mes: 'The old evidence has been deleted.', is_user: false }]);
         return { data: body.input.map((_, index) => ({ index, embedding: [1, 1, 1] })) };
@@ -270,7 +277,7 @@ test('file retrieval uses native attachment scope, obeys scene boundaries and pu
 test('ranked recall works without a selector and local replies never dispatch model requests', async t => {
     const { directories } = disk(t);
     await loadCurrentState(directories, locator);
-    mutateState(directories, locator, state => { state.enabled = true; });
+    mutateState(directories, locator, state => { state.enabled = true; event(state); });
     const config = defaultConfig();
     config.writerTokenizer = 'cl100k_base'; config.retrieval.resultLimit = 2;
     saveConfig(directories, config);
@@ -287,6 +294,80 @@ test('ranked recall works without a selector and local replies never dispatch mo
     const local = await recall(directories, locator, { local: true, query: 'gift' }, dependencies);
     assert.ok(local.memoryText.length > 0);
     assert.equal(local.inspection.status, 'local');
+});
+
+test('recall offers short saved memory entries, not raw chat passages, unless passages are switched on', async t => {
+    const { directories, write } = disk(t);
+    write([...fixture.messages, { name: 'Mara', is_user: false, send_date: 'long-reply', mes: 'The gift glints. '.repeat(600) }]);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => {
+        state.enabled = true;
+        event(state, { text: 'Mara accepted the gift. ' + 'She turned it over in her hands. '.repeat(60) });
+    });
+    const config = defaultConfig();
+    config.writerTokenizer = 'cl100k_base';
+    Object.assign(config.roles.selector, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'selector' });
+    saveConfig(directories, config);
+    const inputs = [];
+    const dependencies = {
+        embedFn: async () => assert.fail('No embeddings are enabled'),
+        scheduleBackground: false,
+        call: async (_directories, _config, role, _contract, input) => {
+            inputs.push(input);
+            return { value: { status: 'complete', selections: [], rejections: [], needsEvidence: [] }, usage: { role } };
+        },
+    };
+    await recall(directories, locator, { query: 'gift' }, dependencies);
+    const [input] = inputs;
+    const gift = input.candidates.find(candidate => candidate.recordId === 'event:gift');
+    assert.ok(gift, 'the saved entry is offered');
+    assert.equal(input.candidates.filter(candidate => candidate.kind === 'source').length, 0, 'raw chat passages are not offered');
+    assert.ok(gift.excerpt.length <= 801 && gift.excerpt.endsWith('…'), 'a long entry is shortened');
+    assert.ok(input.candidates.every(candidate => !('currentOverviews' in candidate)), 'overviews are not repeated per candidate');
+    assert.ok(input.scene.every(cue => cue.text.length <= 3001), 'long scene messages are trimmed');
+    assert.ok(input.scene.reduce((total, cue) => total + cue.text.length, 0) <= 9100);
+    const saved = readConfig(directories);
+    saved.retrieval.includePassages = true;
+    saveConfig(directories, saved);
+    await recall(directories, locator, { query: 'gift' }, dependencies);
+    assert.ok(inputs[1].candidates.some(candidate => candidate.kind === 'source'), 'switching passages on offers them again');
+});
+
+test('a reply that reuses a current AI pick starts no second background search', async t => {
+    const { directories, write } = disk(t);
+    const config = defaultConfig();
+    config.writerTokenizer = 'cl100k_base';
+    Object.assign(config.roles.selector, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'selector' });
+    saveConfig(directories, config);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; event(state); });
+    const pick = (role, input) => {
+        const candidate = input.candidates.find(item => item.recordId === 'event:gift');
+        return { value: { status: 'complete', selections: candidate ? [{ recordId: candidate.recordId, relevanceType: 'direct',
+            currentCueRefs: [input.scene.at(-1).id], memoryEvidenceRefs: [candidate.sourceRefs[0]], justification: 'Gift' }] : [],
+        rejections: [], needsEvidence: [] }, usage: { role } };
+    };
+    let release;
+    const held = new Promise(resolve => { release = resolve; });
+    t.after(() => release());
+    const counts = { scheduled: 0, fresh: 0 };
+    const embedFn = async () => assert.fail('No embeddings are enabled');
+    const scheduled = { embedFn, call: async (_directories, _config, role, _contract, input) => { counts.scheduled++; await held; return pick(role, input); } };
+    const fresh = { embedFn, call: async (_directories, _config, role, _contract, input) => { counts.fresh++; return pick(role, input); } };
+    await recall(directories, locator, {}, fresh);
+    counts.fresh = 0;
+    const cached = await recall(directories, locator, { local: true }, scheduled);
+    assert.equal(cached.inspection.selections[0].recordId, 'event:gift');
+    await recallInBackground(directories, locator, {}, fresh);
+    assert.deepEqual(counts, { scheduled: 0, fresh: 1 }, 'the cached pick still fits, so the reply scheduled nothing');
+    write([...fixture.messages, { name: 'Mara', is_user: false, send_date: 'new-reply', mes: 'I kept it.' }]);
+    await loadCurrentState(directories, locator);
+    counts.fresh = 0;
+    await recall(directories, locator, { local: true }, scheduled);
+    const job = recallInBackground(directories, locator, {}, fresh);
+    release();
+    await job;
+    assert.deepEqual(counts, { scheduled: 1, fresh: 0 }, 'a new message schedules a fresh background search');
 });
 
 test('recall inspection retains the exact selected text and neighbouring passages', async t => {
@@ -576,7 +657,7 @@ test('finished jobs wake the queue and automatic work leaves capacity for a manu
     const config = defaultConfig();
     Object.assign(config.roles.extractor, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'test' });
     saveConfig(directories, config);
-    const stories = Array.from({ length: 6 }, (_, index) => ({ ...locator, chat: `Queued ${index}` }));
+    const stories = Array.from({ length: 8 }, (_, index) => ({ ...locator, chat: `Queued ${index}` }));
     for (const story of stories) {
         fs.copyFileSync(chatPath(directories, locator), chatPath(directories, story));
         await loadCurrentState(directories, story);
@@ -597,6 +678,12 @@ test('finished jobs wake the queue and automatic work leaves capacity for a manu
         release();
         await Promise.all(stories.slice(0, 3).map(story => waitForProcessing(directories, story)));
     }
+    // Manual updates saved before a restart outnumber the worker's capacity, so draining them needs each finished job to wake the queue.
+    for (const [index, story] of stories.slice(3).entries()) {
+        mutateState(directories, story, state => {
+            state.processing = { id: 'queued-' + index, status: 'running', all: true, checkpoint: false, automatic: false, startedAt: Date.now() };
+        });
+    }
     const stop = startMewmoryWorker(async () => [directories], call);
     try {
         for (let attempt = 0; attempt < 200 && stories.some(story => readState(directories, story).processing?.status !== 'complete'); attempt++) {
@@ -607,6 +694,39 @@ test('finished jobs wake the queue and automatic work leaves capacity for a manu
         stop();
         await Promise.all(stories.map(story => waitForProcessing(directories, story)));
     }
+});
+
+test('automatic updates read only the most recently written chat', async t => {
+    const { directories } = disk(t);
+    const config = defaultConfig();
+    Object.assign(config.roles.extractor, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'test' });
+    config.roles.pawspective.enabled = false;
+    config.autoUpdate = true;
+    saveConfig(directories, config);
+    const older = { ...locator, chat: 'Older chat' };
+    const latest = { ...locator, chat: 'Latest chat' };
+    for (const story of [older, latest]) {
+        fs.copyFileSync(chatPath(directories, locator), chatPath(directories, story));
+        await loadCurrentState(directories, story);
+        mutateState(directories, story, state => { state.enabled = true; });
+    }
+    const now = Date.now() / 1000;
+    fs.utimesSync(chatPath(directories, older), now - 600, now - 600);
+    fs.utimesSync(chatPath(directories, latest), now, now);
+    const chats = [];
+    const call = async (_directories, _config, _role, _contract, input) => {
+        chats.push(input.sources.find(source => source.type === 'chat')?.id);
+        return { value: { records: [], interviews: [], activeNpcIds: [] }, usage: { role: 'extractor' } };
+    };
+    await scanProcessing(directories, call);
+    await Promise.all([older, latest].map(story => waitForProcessing(directories, story)));
+    assert.ok(chats.length > 0);
+    assert.equal(pendingSources(await loadCurrentState(directories, latest), config, { checkpoint: true }).length, 0);
+    const untouched = await loadCurrentState(directories, older);
+    assert.ok(pendingSources(untouched, config, { checkpoint: true }).length > 0);
+    assert.equal(untouched.processing, undefined);
+    await startProcessing(directories, older, { all: true, checkpoint: true }, call);
+    assert.equal(pendingSources(await waitForProcessing(directories, older), config, { checkpoint: true }).length, 0);
 });
 
 test('a delayed worker leaves startup alone, then catches up', async t => {
@@ -944,6 +1064,49 @@ test('fallback connections answer in order after a model failure and respect eac
     });
 });
 
+test('a busy model service is paused for as long as it asks instead of being sent more requests', async t => {
+    const { directories } = disk(t);
+    const provider = await createMewmoryProvider();
+    t.after(() => new Promise(resolve => provider.server.close(resolve)));
+    const config = defaultConfig();
+    Object.assign(config.roles.extractor, { enabled: true, endpoint: provider.url, model: 'extractor' });
+    saveConfig(directories, config);
+    const input = { sources: [], existing: [] };
+    const call = () => callJsonRole(directories, readConfig(directories), 'extractor', 'Extract.', input);
+    Object.assign(provider.mode, { fail: true, failStatus: 429, retryAfter: 120 });
+    await assert.rejects(call(), error => {
+        assert.equal(error.status, 502);
+        assert.match(error.message, /returned error code 429\. Mewmory will wait 2 minutes before sending it another request\./);
+        assert.ok(error.retryAt >= Date.now() + 110_000);
+        return true;
+    });
+    provider.mode.fail = false;
+    const sent = provider.calls.length;
+    await assert.rejects(call(), error => {
+        assert.match(error.message, /is busy or rate limited, so Mewmory is pausing requests to it for 2 minutes/);
+        assert.ok(error.retryAt > Date.now());
+        return true;
+    });
+    assert.equal(provider.calls.length, sent, 'a paused service is sent nothing');
+    resetServiceCooldowns();
+    assert.ok((await call()).value);
+    assert.equal(provider.calls.length, sent + 1);
+});
+
+test('busy pauses double while a service stays busy and end once it answers', () => {
+    resetServiceCooldowns();
+    const now = 1_000_000;
+    assert.equal(markServiceBusy('service', 0, now), now + 30_000);
+    assert.equal(markServiceBusy('service', 0, now + 30_000), now + 90_000, 'a second busy answer waits a minute');
+    assert.equal(serviceBusyUntil('service', now + 60_000), now + 90_000);
+    markServiceWorking('service');
+    assert.equal(serviceBusyUntil('service', now + 60_000), 0);
+    assert.equal(parseRetryAfter('7'), 7000);
+    assert.equal(parseRetryAfter(new Date(now + 45_000).toUTCString(), now), 45_000);
+    assert.equal(parseRetryAfter('soon'), 0);
+    assert.equal(markServiceBusy('other', 30 * 60_000, now), now + 30 * 60_000, 'a longer Retry-After is honoured');
+});
+
 test('a saved main connection that refuses or stalls hands over to the fallbacks and names the reason', async t => {
     const { directories } = disk(t);
     const broken = await createMewmoryProvider();
@@ -969,6 +1132,7 @@ test('a saved main connection that refuses or stalls hands over to the fallbacks
         const result = await callJsonRole(directories, readConfig(directories), 'extractor', 'Extract facts.', input);
         assert.equal(result.usage.fallbackProfileId, 'spare', 'error code ' + status + ' from the main connection moves on');
     }
+    resetServiceCooldowns(); // The 429 above paused the main connection; start the next check after that wait.
 
     broken.mode.failStatus = 400;
     working.mode.fail = true;
@@ -1599,9 +1763,11 @@ test('Mewmory extracts and retrieves completed trackers from only the accepted a
     const state = newState(locator);
     syncSources(state, [message]);
     const input = extractionInput(state, state.timeline, 0, false);
-    assert.equal(input.sources[0].storyText, message.mes);
-    assert.deepEqual(input.sources[0].trackerOutputs.map(output => output.agentId), ['inventory', 'scene']);
+    assert.ok(input.sources[0].text.startsWith(message.mes));
+    assert.equal(input.sources[0].storyText, undefined, 'the story text is sent once, inside text');
+    assert.equal(input.sources[0].trackerOutputs, undefined, 'tracker notes are sent once, labelled inside text');
     assert.match(input.sources[0].text, /brass key/);
+    assert.match(input.sources[0].text, /Location: north gate/);
     assert.doesNotMatch(input.sources[0].text, /Wrong|Unfinished|Failed|tracker-none|Imagined|Rejected/);
     applyExtraction(state, { records: [{ id: 'state:inventory', kind: 'state', entityId: 'npc:mara',
         text: 'Mara has a brass key with her at the north gate.', refs: state.timeline }], activeNpcIds: [] }, input);
@@ -1677,6 +1843,11 @@ test('saved legacy tracker outputs are classified from the Agent library and ret
     assert.match(sourceAt(restored, restored.timeline[0]).text, /quartz compass/);
 });
 
+// The extractor sees tracker output only as the labelled section at the end of the chat text.
+function trackerSection(source) {
+    return source.text.split(/\[Tracker output: [^\]]*\]\n/)[1]?.trim();
+}
+
 test('a tracker finishing after extraction schedules fresh memory processing without a new chat message', async t => {
     const message = { name: 'Mara', mes: 'She waits.', extra: trackerExtra({ inventory: trackerResult('Pending note.', { status: 'pending' }) }) };
     const { directories, write } = disk(t, [message]);
@@ -1690,8 +1861,9 @@ test('a tracker finishing after extraction schedules fresh memory processing wit
     const call = async (_directories, _config, _role, _contract, input) => {
         seen.push(input);
         const refs = input.sources.filter(source => source.type === 'chat');
-        return { value: { records: refs[0].trackerOutputs ? [{ id: 'state:inventory', kind: 'state', entityId: 'npc:mara',
-            text: refs[0].trackerOutputs[0].text, refs }] : [], activeNpcIds: [] }, usage: { role: 'extractor' } };
+        const tracker = trackerSection(refs[0]);
+        return { value: { records: tracker ? [{ id: 'state:inventory', kind: 'state', entityId: 'npc:mara',
+            text: tracker, refs }] : [], activeNpcIds: [] }, usage: { role: 'extractor' } };
     };
     await scanProcessing(directories, call);
     let state = await waitForProcessing(directories, locator);
@@ -1713,7 +1885,7 @@ test('a tracker edit during extraction discards stale results and invalidates co
     await loadCurrentState(directories, locator);
     mutateState(directories, locator, state => { state.enabled = true; });
     const output = input => ({ value: { records: [{ id: 'state:inventory', kind: 'state', entityId: 'npc:mara',
-        text: input.sources[0].trackerOutputs[0].text, refs: input.sources }], activeNpcIds: [] }, usage: { role: 'extractor' } });
+        text: trackerSection(input.sources[0]), refs: input.sources }], activeNpcIds: [] }, usage: { role: 'extractor' } });
     await assert.rejects(processBatch(directories, locator, {}, async (_dirs, _config, _role, _contract, input) => {
         message.extra = trackerExtra({ inventory: trackerResult('New compass.') });
         write([message]);
@@ -1859,6 +2031,52 @@ test('deleted chat purges source copies, dependent memories, search and undo his
     assert.equal(state.records.some(record => record.id === memory.id), false);
     assert.equal(state.audit.some(entry => entry.recordId === memory.id), false);
     assert.deepEqual(state.index.vectors, {});
+});
+
+test('the extractor gets slim existing records, brief entries for absent characters and a shortened card it already read', () => {
+    const state = base();
+    const card = 'Mara keeps a harbour shop and never forgets a debt. '.repeat(60);
+    syncSources(state, structuredClone(fixture.messages), [...fixture.lore,
+        { id: 'character:mara', type: 'character', entityId: 'npc:mara', name: 'Mara', text: card, enabled: true }]);
+    putRecord(state, validateRecord(state, {
+        id: 'entity:oren', kind: 'entity', entityId: 'npc:oren', name: 'Oren', text: 'Oren runs the lighthouse far up the coast and writes long letters to his sister.',
+        isCharacter: true, appearance: 'Tall, grey beard.', speech: 'Slow and warm.', refs: [state.timeline[0]], subjectIds: ['npc:oren'],
+    }, { asOf: 0, origin: 'objective_extractor' }), { automatic: true });
+    event(state);
+    const input = extractionInput(state, state.timeline.slice(0, 3), 2, false);
+    const mara = input.existing.find(item => item.entityId === 'npc:mara');
+    const oren = input.existing.find(item => item.entityId === 'npc:oren');
+    assert.equal(mara.appearance, fixture.expectations.appearance);
+    assert.equal(mara.brief, undefined);
+    assert.equal(oren.brief, true);
+    assert.equal(oren.appearance, undefined);
+    assert.ok(oren.text.length <= 201);
+    for (const item of input.existing) {
+        for (const field of ['refs', 'provenance', 'inputRefs', 'createdAt', 'storyId']) assert.equal(item[field], undefined, field);
+    }
+    const cardSource = input.sources.find(source => source.id === 'character:mara');
+    assert.equal(cardSource.shortened, true);
+    assert.ok(cardSource.text.length <= 1501);
+    for (const source of input.sources) assert.equal(source.hash, undefined);
+});
+
+test('a correction flags earlier reads instead of erasing them, so only new messages are read automatically', () => {
+    const state = base();
+    const config = defaultConfig();
+    const policy = processingVersion(config);
+    for (const ref of state.timeline) state.coverage[refKey(ref)] = state.checkpoints[refKey(ref)] = policy;
+    const memory = event(state);
+    putRecord(state, { ...memory, text: 'Author: Mara accepted the gift slowly.', authorOverride: true });
+    assert.ok(Object.values(state.checkpoints).every(value => value === READ_EARLIER));
+    assert.equal(Object.keys(state.checkpoints).length, state.timeline.length);
+    assert.equal(pendingSources(state, config, { checkpoint: true }).length, state.timeline.length);
+    assert.equal(pendingSources(state, config, { checkpoint: true, unreadOnly: true }).length, 0);
+    const { health } = inspectState(state, config);
+    assert.equal(health.pending, 0);
+    assert.equal(health.rereadPending, state.timeline.length);
+    assert.equal(health.preservedThrough, state.timeline.length - 1);
+    syncSources(state, [...structuredClone(fixture.messages), { name: 'Mara', send_date: 'later', mes: 'Mara wraps the receipt in silk.' }], fixture.lore);
+    assert.deepEqual(pendingSources(state, config, { checkpoint: true, unreadOnly: true }).map(refKey), [refKey(state.timeline.at(-1))]);
 });
 
 test('story scope, copied branch prefix, and explicit continuations isolate later parent history', () => {
@@ -2426,7 +2644,7 @@ test('automatic cast selection is bounded by story position and older backfill c
     assert.ok(activeReferences(branch).text.includes('Mara'));
 });
 
-test('evidence expansion adds an original passage even when more than twelve records share it', async t => {
+test('evidence expansion attaches the original passage to the requested record instead of offering it as a candidate', async t => {
     const { directories } = disk(t, [{ name: 'Mara', mes: 'The sigil', send_date: 'one' }]);
     const config = defaultConfig();
     config.writerTokenizer = 'cl100k_base';
@@ -2439,17 +2657,19 @@ test('evidence expansion adds an original passage even when more than twelve rec
         for (let index = 0; index < 16; index++) event(state, { id: 'event:evidence-' + index, text: 'Mara the sigil detail ' + index,
             searchDescription: 'Mara the sigil', refs: [state.timeline[0]], asOf: 0 });
     });
-    let round = 0;
+    const inputs = [];
     await recall(directories, locator, {}, { call: async (_directories, _config, role, _contract, input) => {
-        round++;
-        if (round === 1) {
-            assert.equal(input.candidates.some(candidate => candidate.kind === 'source'), false);
+        inputs.push(structuredClone(input));
+        if (inputs.length === 1) {
             return { value: { status: 'needs_evidence', selections: [], rejections: [], needsEvidence: [input.candidates[0].recordId] }, usage: { role } };
         }
-        assert.ok(input.candidates.some(candidate => candidate.kind === 'source' && candidate.excerpt === 'The sigil'));
         return { value: { status: 'complete', selections: [], rejections: [], needsEvidence: [] }, usage: { role } };
     } });
-    assert.equal(round, 2);
+    assert.equal(inputs.length, 2);
+    for (const input of inputs) assert.equal(input.candidates.some(candidate => candidate.kind === 'source'), false, 'chat passages are never candidates');
+    const requested = inputs[1].candidates.find(candidate => candidate.recordId === inputs[0].candidates[0].recordId);
+    assert.deepEqual(requested.evidence?.map(item => item.text), ['The sigil']);
+    assert.equal(inputs[1].candidates.filter(candidate => candidate.evidence).length, 1, 'only the requested record receives evidence');
 });
 
 test('punctuation-only commitment cues do not force recall while non-Latin words still match', () => {
@@ -2590,6 +2810,39 @@ test('a reply rewritten after the batch range does not discard the batch', async
     assert.equal(state.jobs.at(-1).status, 'complete');
     assert.equal(eligibleRecords(state).filter(record => record.id === 'event:gift').length, 1);
     assert.equal(pendingSources(state, readConfig(directories)).length, 1);
+});
+
+test('editing a lorebook entry the batch never read keeps its finished result, editing one it read discards it', async t => {
+    const messages = structuredClone(fixture.messages.slice(0, 3));
+    const { directories } = disk(t, messages);
+    const book = { entries: {
+        1: { comment: 'Gifts', content: 'A gift in the harbour city is always accepted.', key: ['gift'] },
+        2: { comment: 'Desert', content: 'Dunes, quasars.', key: ['dune'] },
+    } };
+    const bookFile = path.join(directories.worlds, 'Atlas.json');
+    writeJson(bookFile, book);
+    writeJson(path.join(directories.root, 'settings.json'), { world_info: { globalSelect: ['Atlas'] } });
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; });
+    const extract = edit => async (_directories, _config, role, _contract, input) => {
+        const lore = input.sources.filter(source => source.type === 'lore');
+        assert.deepEqual(lore.map(source => source.text.includes('harbour city')), [true], 'only the matching entry is read');
+        edit();
+        writeJson(bookFile, book);
+        const chat = input.sources.filter(source => source.type === 'chat');
+        return { value: { records: [{ id: 'event:gift', kind: 'event', text: 'The player brought Mara a gift.', subjectIds: ['gift'],
+            refs: [{ id: chat.at(-1).id, revision: chat.at(-1).revision }], evidenceStatus: 'established' }], interviews: [], activeNpcIds: [] },
+        usage: { role } };
+    };
+    let state = await processBatch(directories, locator, {}, extract(() => { book.entries[2].content = 'Dunes, quasars, mirage.'; }));
+    assert.equal(state.jobs.at(-1).status, 'complete', 'an unread entry changing must not waste the paid-for result');
+    assert.equal(eligibleRecords(state).filter(record => record.id === 'event:gift').length, 1);
+    assert.equal(pendingSources(state, readConfig(directories)).length, 0);
+
+    mutateState(directories, locator, current => { current.coverage = {}; });
+    await assert.rejects(processBatch(directories, locator, {}, extract(() => { book.entries[1].content = 'A gift in the harbour city is never accepted.'; })), /discarded/);
+    state = readState(directories, locator);
+    assert.equal(state.jobs.at(-1).status, 'superseded');
 });
 
 test('a failed checkpoint leaves coverage and existing valid memory intact', async t => {
@@ -3115,6 +3368,7 @@ test('HTTP preparation uses only completed preservation and accepts automatic pr
     assert.ok(failed.history.waitingForPreservation);
     assert.deepEqual(readState(directories, locator).checkpoints, {});
     provider.mode.fail = false;
+    resetServiceCooldowns(); // The 503 above paused this service; continue as if the wait has passed.
     const callsBefore = provider.calls.length;
     provider.mode.hold = 'selector';
     try {
@@ -3376,12 +3630,15 @@ test('a daily token limit pauses automatic updates but keeps today\'s total acro
     recordSpend(directories, { role: 'extractor', input: 60, output: 10 }, now);
     recordSpend(directories, { role: 'selector', input: 30, output: 5 }, now);
     recordSpend(directories, { role: 'extractor', input: 999, output: 999, cached: true }, now);
-    assert.deepEqual(spendToday(directories, now), { requests: 2, input: 90, output: 15 }, 'cached answers cost nothing');
+    assert.deepEqual(spendToday(directories, now), {
+        requests: 2, input: 90, output: 15,
+        roles: { extractor: { requests: 1, input: 60, output: 10 }, selector: { requests: 1, input: 30, output: 5 } },
+    }, 'cached answers cost nothing, and each job keeps its own share');
     const status = spendStatus(directories, readConfig(directories), now);
     assert.equal(status.day, dayKey(now));
     assert.equal(status.used, 105);
     assert.equal(status.reached, true);
-    assert.deepEqual(spendToday(directories, now + 86_400_000), { requests: 0, input: 0, output: 0 }, 'a new day starts from zero');
+    assert.deepEqual(spendToday(directories, now + 86_400_000), { requests: 0, input: 0, output: 0, roles: {} }, 'a new day starts from zero');
     for (let day = 1; day <= SPEND_DAYS + 3; day++) recordSpend(directories, { input: 1, output: 0 }, now + day * 86_400_000);
     const ledger = JSON.parse(fs.readFileSync(path.join(directories.root, 'mewmory', 'usage.json'), 'utf8'));
     assert.equal(Object.keys(ledger.days).length, SPEND_DAYS, 'old days are dropped');

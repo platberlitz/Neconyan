@@ -3,7 +3,7 @@ import path from 'node:path';
 import sanitize from 'sanitize-filename';
 import { read as readCharacterCard } from '../character-card-parser.js';
 import { readWorldInfoFile } from '../endpoints/worldinfo.js';
-import { fail, hash, POLICY_VERSION, purgeSources, sourceAt } from './core.js';
+import { fail, hash, POLICY_VERSION, purgeSources, retireCoverage, sourceAt } from './core.js';
 import { readConfig, legacyRoleVersion, resolvedRoleIdentity, roleVersion } from './models.js';
 import { processingVersion } from './processing.js';
 import { captureBranchMemory, readChatShared, readJsonShared, readStateShared, synchronize } from './store.js';
@@ -181,7 +181,7 @@ export function loadCurrentStateSync(directories, locator) {
                 identitiesChanged.push(name);
             } else if (previous !== live) {
                 // The same semantic role version now resolves to a different source or model.
-                // Delete only marks produced with the old connection, never another stored version.
+                // Flag only marks produced with the old connection as read earlier, never another stored version.
                 books[name][key] = live;
                 identitiesChanged.push(name);
                 clearedPolicies.add(policy);
@@ -196,11 +196,7 @@ export function loadCurrentStateSync(directories, locator) {
                 if (coverage[key] === legacyPolicy || coverage[key] === legacyCurrentPolicy) coverage[key] = policy;
             }
         }
-        if (clearedPolicies.size) {
-            for (const coverage of [current.coverage, current.checkpoints]) {
-                for (const key of Object.keys(coverage)) if (clearedPolicies.has(coverage[key])) delete coverage[key];
-            }
-        }
+        if (clearedPolicies.size) retireCoverage(current, value => clearedPolicies.has(value));
         policies[policy] = Object.fromEntries(PROCESSING_ROLES.map(name => {
             const saved = policies[policy]?.[name];
             // A temporary profile failure leaves the live identity null. Keep the last nonempty

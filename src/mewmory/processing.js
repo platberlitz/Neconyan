@@ -1,6 +1,6 @@
 import {
     currentRecords, eligibleRecords, fail, findQuote, hash, id, list, object, POLICY_VERSION,
-    putRecord, recordEligible, recordRevision, refKey, sourceAt, sourceEligible, sourceFingerprint,
+    putRecord, recordEligible, recordRevision, refKey, sourceAt, sourceEligible, sourceFingerprint, sourceRead,
     strings, uniqueRefs, validateRecord, validateRefs,
 } from './core.js';
 import { extractionContract, PAWSPECTIVE_CONTRACT } from './contracts.js';
@@ -19,20 +19,30 @@ export const processingVersion = (config, identities = null) => hash([POLICY_VER
     roleVersion(config, 'extractor'), roleVersion(config, 'pawspective'),
     ...(identities ? [identities.extractor ?? null, identities.pawspective ?? null] : [])]);
 
-function processingFingerprint(state, sourceCount) {
-    return hash([sourceFingerprint({ ...state, timeline: state.timeline.slice(0, sourceCount) }),
-        state.enabled, state.lastDisableId || '', state.activeNpcIds, state.sceneNpcIds, state.castHistory, state.records, state.audit, state.overrides]);
+// What a batch read: the chat up to its newest message plus the cards and lorebook entries it was
+// given. Editing an entry or file it never saw no longer throws away a finished, paid-for result.
+function readFingerprint(state, sourceCount, contextIds) {
+    const context = state.contextSources.filter(ref => contextIds.has(ref.id));
+    return hash([state.storyId, state.branchId, state.enabled, state.lastDisableId || '', state.excludedSources,
+        [...state.timeline.slice(0, sourceCount), ...context].map(ref => [ref, sourceAt(state, ref)?.hash])]);
 }
 
-const memoryFingerprint = state => hash([state.enabled, state.activeNpcIds, state.sceneNpcIds, state.castHistory, state.records, state.audit, state.overrides]);
+// The commit replaces these wholesale, so any change to them still has to discard the batch.
+const memoryFingerprint = state => hash([state.enabled, state.sceneNpcIds, state.castHistory, state.records, state.audit, state.overrides]);
 
 /** True when a batch was discarded only because its chat text changed (an agent or the user rewrote a message), so it can run again straight away. */
 export const isStaleSourceError = error => error?.staleSource === true;
 
-export function pendingSources(state, config, { checkpoint = false, through = Infinity } = {}) {
+/**
+ * Messages a memory update still has to read. unreadOnly leaves out messages that were read under
+ * older settings or before a card, lorebook entry or correction changed: automatic updates use it,
+ * so only an explicit re-read pays to read those again.
+ */
+export function pendingSources(state, config, { checkpoint = false, through = Infinity, unreadOnly = false } = {}) {
     const policy = processingVersion(config);
     const coverage = checkpoint ? state.checkpoints : state.coverage;
-    return state.timeline.filter(ref => sourceEligible(state, ref, through) && coverage[refKey(ref)] !== policy);
+    return state.timeline.filter(ref => sourceEligible(state, ref, through)
+        && (unreadOnly ? !sourceRead(coverage, ref) : coverage[refKey(ref)] !== policy));
 }
 
 export function addUsage(state, entries) {
@@ -74,25 +84,81 @@ function matchScorer(query) {
     return text => matchTerms(text).reduce((sum, term) => sum + Number(terms.has(term)), 0);
 }
 
+const EXTRACTION_LORE_LIMIT = 10;
+const EXTRACTION_RELATED_LIMIT = 24;
+const READ_CARD_CHARS = 1500;
+const BRIEF_ENTITY_CHARS = 200;
+const EXISTING_FIELDS = ['id', 'kind', 'version', 'entityId', 'ownerId', 'subjectIds', 'status', 'text', 'name', 'aliases',
+    'isCharacter', 'appearance', 'speech', 'evidenceStatus', 'method', 'triggerTerms', 'significance', 'excluded'];
+
+/** What the extractor needs to read or update a saved record; sources, provenance and bookkeeping stay on disk. */
+function existingRecord(record) {
+    return Object.fromEntries(EXISTING_FIELDS.filter(key => record[key] !== undefined && record[key] !== '').map(key => [key, record[key]]));
+}
+
+function clipText(value, limit) {
+    const text = String(value || '');
+    return text.length > limit ? text.slice(0, limit).trimEnd() + '…' : text;
+}
+
+/** One copy of each message: tracker notes are already labelled inside text, so storyText and trackerOutputs would repeat them. */
+function extractionSource(ref, type, revision) {
+    return {
+        id: ref.id, revision: ref.revision, type, speaker: revision.speaker,
+        ...(type === 'chat' ? { isPlayer: revision.isPlayer === true, sequence: revision.sequence } : {}),
+        ...(revision.entityId ? { entityId: revision.entityId } : {}),
+        text: revision.text,
+        ...(revision.attachments?.length ? { attachments: revision.attachments } : {}),
+    };
+}
+
+const mentionPattern = name => new RegExp('(^|[^\\p{L}\\p{N}_])' + name.toLocaleLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '($|[^\\p{L}\\p{N}_])', 'u');
+
+/**
+ * Sends only what this batch can use. Entities the batch names, the player, the current cast and card
+ * characters come in full with their current state; everyone else is listed briefly so their IDs stay
+ * stable. A card already read into memory is shortened, because its whole text was sent with every batch.
+ */
 export function extractionInput(state, refs, asOf, checkpoint) {
-    const scene = refs.map(ref => ({ ...ref, type: 'chat', ...sourceAt(state, ref) }));
-    const matchScore = matchScorer(scene.map(source => source.text).join('\n'));
-    const context = state.contextSources.filter(ref => sourceEligible(state, ref))
-        .map(ref => ({ ...ref, type: state.sources[ref.id].type, ...sourceAt(state, ref) }));
-    const lore = context.filter(source => source.type === 'lore')
-        .map(source => ({ source, score: matchScore(source.text) }))
-        .filter(item => item.score > 0).sort((a, b) => b.score - a.score).slice(0, 16).map(item => item.source);
-    const sources = [...scene, ...context.filter(source => source.type === 'character'), ...lore];
+    const scene = refs.map(ref => extractionSource(ref, 'chat', sourceAt(state, ref)));
+    const sceneText = scene.map(source => source.speaker + '\n' + source.text).join('\n');
+    const lowered = sceneText.toLocaleLowerCase();
+    const matchScore = matchScorer(sceneText);
     const records = eligibleRecords(state, { asOf }).filter(record => objectiveKinds.includes(record.kind));
-    const reference = currentRecords(records.filter(record => ['entity', 'state'].includes(record.kind)), record => record.kind + ':' + record.entityId);
+    const entities = currentRecords(records.filter(record => record.kind === 'entity'), record => record.entityId);
+    const readEntities = new Set(entities.filter(record => record.origin !== 'character_card').map(record => record.entityId));
+    const context = state.contextSources.filter(ref => sourceEligible(state, ref))
+        .map(ref => ({ ref, type: state.sources[ref.id].type, revision: sourceAt(state, ref) }));
+    const cards = context.filter(item => item.type === 'character').map(({ ref, type, revision }) => {
+        const source = extractionSource(ref, type, revision);
+        return readEntities.has(revision.entityId) && source.text.length > READ_CARD_CHARS
+            ? { ...source, text: clipText(source.text, READ_CARD_CHARS), shortened: true } : source;
+    });
+    const lore = context.filter(item => item.type === 'lore')
+        .map(item => ({ item, score: matchScore(item.revision.text) }))
+        .filter(entry => entry.score > 0).sort((a, b) => b.score - a.score).slice(0, EXTRACTION_LORE_LIMIT)
+        .map(({ item }) => extractionSource(item.ref, item.type, item.revision));
+    const inScene = new Set(['player', ...(state.sceneNpcIds || []), ...cards.map(card => card.entityId).filter(Boolean)]);
+    for (const entity of entities) {
+        const names = [entity.name, ...(entity.aliases || [])].filter(name => typeof name === 'string' && name.trim().length > 1);
+        if (names.some(name => mentionPattern(name.trim()).test(lowered))) inScene.add(entity.entityId);
+    }
+    const reference = entities.map(record => inScene.has(record.entityId) ? existingRecord(record) : {
+        id: record.id, kind: 'entity', version: record.version, entityId: record.entityId, name: record.name,
+        ...(record.aliases?.length ? { aliases: record.aliases } : {}), isCharacter: record.isCharacter,
+        text: clipText(record.text, BRIEF_ENTITY_CHARS), brief: true,
+    });
+    const states = currentRecords(records.filter(record => record.kind === 'state' && inScene.has(record.entityId)), record => record.entityId)
+        .map(existingRecord);
     const relevant = records.filter(record => !['entity', 'state'].includes(record.kind))
         .map(record => ({ record, score: matchScore(record.text) }))
-        .sort((a, b) => b.score - a.score || b.record.asOf - a.record.asOf).slice(0, 40).map(item => item.record);
+        .sort((a, b) => b.score - a.score || b.record.asOf - a.record.asOf).slice(0, EXTRACTION_RELATED_LIMIT)
+        .map(item => existingRecord(item.record));
     return {
         policy: POLICY_VERSION, mode: checkpoint ? 'preservation_checkpoint' : 'live_update', asOf,
-        sources, existing: [...reference, ...relevant],
+        sources: [...scene, ...cards, ...lore], existing: [...reference, ...states, ...relevant],
         authorOverrides: state.records.filter(record => record.authorOverride && record.asOf <= asOf)
-            .map(record => objectiveKinds.includes(record.kind) && recordEligible(state, record, { asOf }) ? record
+            .map(record => objectiveKinds.includes(record.kind) && recordEligible(state, record, { asOf }) ? existingRecord(record)
                 : { id: record.id, kind: record.kind, excluded: record.excluded, status: record.status }),
     };
 }
@@ -326,14 +392,17 @@ async function runBatch(directories, locator, options, call) {
     await new Promise(resolve => setImmediate(resolve));
     // Extraction reads only up to its newest message, so later replies (and agents rewriting them) cannot make it stale.
     const sourceCount = Math.min(state.timeline.length, asOf + 1);
-    const snapshotFingerprint = processingFingerprint(state, sourceCount);
     const snapshotMemory = memoryFingerprint(state);
+    let contextIds = new Set(state.contextSources.map(ref => ref.id));
+    let snapshotRead = readFingerprint(state, sourceCount, contextIds);
     const auditLength = state.audit.length;
     const usage = [];
     const skipped = [];
     const pawspectiveEnabled = config.roles.pawspective.enabled;
     try {
         const input = extractionInput(state, refs, asOf, options.checkpoint);
+        contextIds = new Set(input.sources.filter(source => source.type !== 'chat').map(source => source.id));
+        snapshotRead = readFingerprint(state, sourceCount, contextIds);
         input.provenance = { policy: POLICY_VERSION, jobId, role: 'extractor', model: config.roles.extractor.model, modelRevision: config.roles.extractor.modelRevision };
         const dataTypes = [...new Set([...input.sources.map(source => source.type), ...(input.existing.length || input.authorOverrides.length ? ['memory'] : [])])];
         assertEnabled();
@@ -388,7 +457,8 @@ async function runBatch(directories, locator, options, call) {
             // its model and URL are tracked per archive instead. Discard a batch built with the old one.
             const identityChanged = Object.entries(identities).some(([name, identity]) => identity
                 && currentIdentities[name] && identity !== currentIdentities[name]);
-            if (processingFingerprint(current, sourceCount) !== snapshotFingerprint
+            if (readFingerprint(current, sourceCount, contextIds) !== snapshotRead
+                || memoryFingerprint(current) !== snapshotMemory
                 || processingVersion(currentConfig) !== policy || identityChanged) {
                 const error = new Error('The chat, Mewmory settings, or a memory you edited changed while this was running, so this result was discarded. It will be tried again.');
                 error.status = 409;

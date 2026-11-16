@@ -108,6 +108,7 @@ test('hiding checks exact proposed source revisions without writing to archive',
 
 test('ordinary raw passages in the retained chat are filtered before recall candidates', async () => {
     const item = fixture(15);
+    item.config.retrieval.includePassages = true;
     const result = await prepare(item);
     assert.ok(result.inspection.retrieval.proposedPassagesSkipped > 0);
     for (const candidate of result.inspection.candidates.filter(value => value.kind === 'source' && value.dataType === 'chat')) {
@@ -119,6 +120,7 @@ test('ordinary raw passages in the retained chat are filtered before recall cand
 test('an aborted selector cannot retry or dispatch a fallback request', async () => {
     const item = fixture(15);
     item.config.retrieval.mode = 'keyword';
+    item.config.retrieval.includePassages = true;
     item.config.roles.selector.enabled = true;
     item.config.roles.fallback.enabled = true;
     const controller = new AbortController();

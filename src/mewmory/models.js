@@ -10,6 +10,7 @@ import { withChatFileLocks } from '../chat-file-lock.js';
 import { fail, hash, list, object, ROLE_NAMES, SOURCE_TYPES, text } from './core.js';
 import { readJson, writeJson } from './store.js';
 import { recordSpend } from './spend.js';
+import { isBusyStatus, markServiceBusy, markServiceWorking, parseRetryAfter, serviceBusyUntil, waitLabel } from './cooldown.js';
 import { getCounter, getTokenizerModel, TOKENIZERS } from './tokens.js';
 import { listModelProfiles, resolveModelProfile } from './connection-profiles.js';
 import { captureVectorPolicy, requestVectorEmbedding } from '../operations/vector-provider.js';
@@ -113,6 +114,7 @@ function validateRetrieval(input = {}) {
         if (typeof result[key] !== 'number' || !Number.isFinite(result[key]) || result[key] < 0 || result[key] > 1) fail(RETRIEVAL_LABELS[key] + ' must be between 0 and 1.');
     }
     if (typeof result.includeFiles !== 'boolean') fail('Attached-file retrieval must be switched on or off.');
+    if (typeof result.includePassages !== 'boolean') fail('Original chat passages in recall must be switched on or off.');
     return Object.fromEntries(Object.keys(RAG_DEFAULTS).map(key => [key, result[key]]));
 }
 
@@ -493,7 +495,8 @@ export function buildDecisionPayload(input) {
         `q_${index}`,
         {
             type: 'noul',
-            instructions: `Is candidate memory "${candidate.recordId}" (${candidate.kind}) relevant and helpful for writing the next reply in the current scene? Memory: ${String(candidate.excerpt || candidate.searchDescription || '').slice(0, 600)}`,
+            // The memory text is already in state under [q_N]; repeating it here doubled every request.
+            instructions: `Is candidate memory q_${index} (id ${candidate.recordId}, ${candidate.kind}) in the state relevant and helpful for writing the next reply in the current scene?`,
             criteria: {
                 true: 'Directly or associatively relevant to the current scene, active characters, unresolved commitments, or continuity.',
                 false: 'Unrelated to the current scene, redundant, or superseded by newer state.',
@@ -593,6 +596,12 @@ async function requestModel(directories, config, name, payload, dataTypes, signa
     const timeout = setTimeout(abort, role.timeoutMs);
     signal?.addEventListener('abort', abort, { once: true });
     const started = Date.now();
+    const serviceKey = hash([url, role.model, key || '']);
+    const busy = (until) => {
+        const error = new Error('The model service for ' + ROLE_LABELS[name] + ' is busy or rate limited, so Mewmory is pausing requests to it for '
+            + waitLabel(until - Date.now()) + ' instead of retrying straight away.');
+        throw Object.assign(error, { status: 502, retryAt: until });
+    };
     try {
         let data;
         let cached = false;
@@ -602,6 +611,7 @@ async function requestModel(directories, config, name, payload, dataTypes, signa
             data = decisionCache.get(cacheKey);
             cached = data !== undefined;
         }
+        if (!cached && serviceBusyUntil(serviceKey)) busy(serviceBusyUntil(serviceKey));
         if (cached) {
             controller.signal.throwIfAborted();
         } else if (role.nativePolicy && name === 'embedding') {
@@ -634,9 +644,16 @@ async function requestModel(directories, config, name, payload, dataTypes, signa
                 headers: { 'Content-Type': 'application/json', ...(key ? { Authorization: 'Bearer ' + key } : {}) },
                 body: JSON.stringify(body),
             });
+            if (!response.ok && isBusyStatus(response.status)) {
+                const until = markServiceBusy(serviceKey, parseRetryAfter(response.headers.get('retry-after')));
+                const error = new Error('The model for ' + ROLE_LABELS[name] + ' returned error code ' + response.status
+                    + '. Mewmory will wait ' + waitLabel(until - Date.now()) + ' before sending it another request.');
+                throw Object.assign(error, { status: 502, retryAt: until });
+            }
             if (!response.ok) fail('The model for ' + ROLE_LABELS[name] + ' returned error code ' + response.status + '. Check its model connection in Mewmory settings and try again.', 502);
             data = await response.json();
         }
+        if (!cached) markServiceWorking(serviceKey);
         if (decision) {
             controller.signal.throwIfAborted();
             checkCurrent();
@@ -660,8 +677,13 @@ async function requestModel(directories, config, name, payload, dataTypes, signa
         if (error.providerStatus !== undefined) {
             const detail = String(error.message || '').trim().replace(/\.$/, '').slice(0, 200);
             const useful = detail && !/could not complete the reply \(HTTP \d+\)$/.test(detail);
-            fail('The model for ' + ROLE_LABELS[name] + ' returned error code ' + (error.providerStatus || error.status)
-                + (useful ? ' (' + detail + ')' : '') + '. Check its model connection in Mewmory settings and try again.', 502);
+            const status = error.providerStatus || error.status;
+            const retryAt = isBusyStatus(status) ? markServiceBusy(serviceKey) : 0;
+            const advice = retryAt ? '. Mewmory will wait ' + waitLabel(retryAt - Date.now()) + ' before sending it another request.'
+                : '. Check its model connection in Mewmory settings and try again.';
+            const failure = new Error('The model for ' + ROLE_LABELS[name] + ' returned error code ' + status
+                + (useful ? ' (' + detail + ')' : '') + advice);
+            throw Object.assign(failure, { status: 502, ...(retryAt ? { retryAt } : {}) });
         }
         // Our own time limit aborts a saved connection as 'client disconnected'; report it as the timeout it is.
         if (error.status && !(error.status === 499 && controller.signal.aborted)) throw error;
@@ -825,6 +847,8 @@ export async function callJsonRole(directories, config, name, contract, input, {
         }
     }
     const { roles: fallbacks, skipped } = fallbackRoles(directories, config, name, dataTypes);
+    // When every connection tried is busy, the earliest of their pauses tells the worker when trying again is worthwhile.
+    let retryAt = primaryError.retryAt || 0;
     for (const fallback of fallbacks) {
         signal?.throwIfAborted();
         try {
@@ -832,6 +856,7 @@ export async function callJsonRole(directories, config, name, contract, input, {
         } catch (error) {
             signal?.throwIfAborted();
             if (error.status !== 502) throw error;
+            retryAt = retryAt && error.retryAt ? Math.min(retryAt, error.retryAt) : 0;
         }
     }
     if (!fallbacks.length && !skipped.length) throw primaryError;
@@ -839,7 +864,7 @@ export async function callJsonRole(directories, config, name, contract, input, {
         fallbacks.length ? (fallbacks.length === 1 ? 'The fallback connection also failed.' : 'All ' + fallbacks.length + ' fallback connections also failed.') : '',
         skippedFallbackNote(directories, skipped),
     ].filter(Boolean);
-    fail(primaryError.message + ' ' + notes.join(' '), primaryError.status);
+    throw Object.assign(new Error(primaryError.message + ' ' + notes.join(' ')), { status: primaryError.status, ...(retryAt ? { retryAt } : {}) });
 }
 
 export async function embed(directories, config, texts, { query = false, dataTypes = SOURCE_TYPES, signal } = {}) {

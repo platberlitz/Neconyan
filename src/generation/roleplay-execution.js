@@ -980,7 +980,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
                     },
                     start: async () => {
                         memoryAccess(() => {});
-                        await startMemoryProcessing(directories, locator, { all: true, checkpoint: true });
+                        await startMemoryProcessing(directories, locator, { all: true, checkpoint: true, unreadOnly: true });
                     },
                 });
             }

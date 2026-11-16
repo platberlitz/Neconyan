@@ -638,7 +638,7 @@ function renderNow(root) {
     }
     const actions = node('div', 'mewmory-actions');
     actions.append(button('Preview next memory', () => act(() => requestMewmory('recall', { tokenizer: getFriendlyTokenizerName() })), { primary: true }),
-        button(mewmory.busy ? 'Updating…' : 'Update now', () => processMewmory({ all: true }), { disabled: mewmory.busy }));
+        button(mewmory.busy ? 'Updating…' : 'Update now', () => processMewmory({ all: true, unreadOnly: true }), { disabled: mewmory.busy }));
     renderPreview(root, { actions });
     renderQuickSetup(root);
     renderStorySnippet(root);
@@ -2147,7 +2147,9 @@ function renderSettings(root) {
         ['neighbourChunks', 'Nearby passages to include on each side', 'Add 0–2 neighbouring passages where useful. Results share the memory allowance.'],
         ['batchSize', 'Passages per meaning-index request', 'How many passages to send to the Embeddings service together, from 1–10. Provider limits can reduce this.'],
     ]) ragFields.append(configField(label, rag[key], value => { rag[key] = value; }, { type: 'number', key: 'rag-' + key, hint }));
-    retrieval.append(ragFields, configCheck('Search attached files and the Data Bank', rag.includeFiles, value => { rag.includeFiles = value; }),
+    retrieval.append(ragFields, configCheck('Also offer original chat passages to recall', rag.includePassages, value => { rag.includePassages = value; }),
+        node('p', 'mewmory-caption', 'Off by default: recall picks saved memory entries only, which keeps each request small. Switch this on to let recall paste raw message, card and lorebook text into replies as well. It costs more tokens and Embeddings calls.'),
+        configCheck('Search attached files and the Data Bank', rag.includeFiles, value => { rag.includeFiles = value; }),
         node('p', 'mewmory-caption', 'Only files attached to this account, character or chat are searched. File passages are references for the writer, not knowledge automatically given to characters. Allow file access separately for each model role.'));
     const model = section('Models used by Mewmory');
     model.id = 'mewmory-settings-models';
@@ -2398,6 +2400,14 @@ function renderHealth(root) {
     node('p', 'mewmory-caption', mewmory.config.historyMode === 'messages'
         ? 'The recent-message window controls which remembered messages can leave the reply. Optional hiding applies the same window to the saved chat.'
         : 'The hiding threshold is separate from the recent chat allowance. At the threshold, older visible messages are hidden together and the latest reply can stay visible.'));
+    if (view.health.rereadPending > 0) {
+        health.append(node('p', 'mewmory-notice', 'Messages read with older settings: ' + view.health.rereadPending + '.'),
+            node('p', 'mewmory-caption', 'They were read before a model, card, lorebook entry, correction or exclusion changed. Their memories still count and automatic updates leave them alone, so nothing is spent on them unless you re-read them.'));
+        const reread = node('div', 'mewmory-actions');
+        reread.append(button('Re-read them', () => openEstimate(mewmory.config.excludeHistory === true, true),
+            { disabled: mewmory.busy || !view.enabled }));
+        health.append(reread);
+    }
     const actions = node('div', 'mewmory-actions');
     actions.append(button('Update memories for the whole chat', () => openEstimate(false), { disabled: mewmory.busy || !view.enabled }),
         button('Review for missed details', () => openEstimate(true), { disabled: mewmory.busy || !view.enabled }),
@@ -2472,12 +2482,12 @@ export function estimateText(estimate) {
     return lines;
 }
 
-function openEstimate(checkpoint) {
+function openEstimate(checkpoint, reread = false) {
     const scope = getMewmoryScope();
-    ui.estimate = { checkpoint, data: null, error: '', scope };
+    ui.estimate = { checkpoint, reread, data: null, error: '', scope };
     render();
-    requestMewmory('estimate', { checkpoint }, { scope }).then(data => {
-        if (ui.estimate?.scope === scope && ui.estimate.checkpoint === checkpoint) ui.estimate.data = data;
+    requestMewmory('estimate', { checkpoint, unreadOnly: !reread }, { scope }).then(data => {
+        if (ui.estimate?.scope === scope && ui.estimate.checkpoint === checkpoint && ui.estimate.reread === reread) ui.estimate.data = data;
     }, error => {
         if (ui.estimate?.scope === scope) ui.estimate.error = error?.message || String(error);
     }).finally(() => render());
@@ -2485,18 +2495,18 @@ function openEstimate(checkpoint) {
 
 function renderEstimate(root) {
     if (!ui.estimate) return;
-    const { checkpoint, data, error } = ui.estimate;
+    const { checkpoint, reread, data, error } = ui.estimate;
     const box = node('div', 'mewmory-estimate');
     box.id = 'mewmory-estimate';
     box.setAttribute('role', 'status');
-    box.append(node('h4', '', checkpoint ? 'Before reviewing for missed details' : 'Before updating the whole chat'));
+    box.append(node('h4', '', reread ? 'Before re-reading older messages' : checkpoint ? 'Before reviewing for missed details' : 'Before updating the whole chat'));
     if (error) box.append(node('p', 'mewmory-caption', error));
     else if (!data) box.append(node('p', 'mewmory-caption', 'Working out how much this update reads…'));
     else for (const line of estimateText(data)) box.append(node('p', 'mewmory-caption', line));
     const actions = node('div', 'mewmory-actions');
-    actions.append(button(checkpoint ? 'Start review' : 'Start update', () => {
+    actions.append(button(reread ? 'Start re-read' : checkpoint ? 'Start review' : 'Start update', () => {
         ui.estimate = null;
-        return processMewmory({ all: true, checkpoint });
+        return processMewmory({ all: true, checkpoint, unreadOnly: !reread });
     }, { primary: true, disabled: !data || !data.messages || !data.enabled || mewmory.busy }),
     button('Cancel', () => { ui.estimate = null; render(); }));
     box.append(actions);
@@ -2510,6 +2520,11 @@ function renderSpend(root) {
         + spend.requests + (spend.requests === 1 ? ' call' : ' calls')
         + (spend.limit ? ' of a ' + tokenCount(spend.limit) + ' daily limit.' : '. No daily limit is set.');
     root.append(node('p', 'mewmory-caption', line));
+    const shares = Object.entries(spend.roles || {}).filter(([, share]) => share.requests > 0)
+        .sort(([, a], [, b]) => (b.input + b.output) - (a.input + a.output))
+        .map(([role, share]) => (roles[role] || 'Other') + ': ' + tokenCount(share.input + share.output) + ' in '
+            + share.requests + (share.requests === 1 ? ' call' : ' calls'));
+    if (shares.length) root.append(node('p', 'mewmory-caption', 'By job: ' + shares.join(', ') + '.'));
     if (spend.reached) root.append(node('p', 'mewmory-notice', 'Daily limit reached. Automatic updates are paused until tomorrow. Buttons you press still work.'));
 }
 

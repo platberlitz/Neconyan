@@ -35,7 +35,14 @@ export function recordSpend(directories, usage, now = new Date()) {
             const ledger = readLedger(directories);
             const key = dayKey(now);
             const day = ledger.days[key] || { requests: 0, input: 0, output: 0 };
-            ledger.days[key] = { requests: count(day.requests) + 1, input: count(day.input) + input, output: count(day.output) + output };
+            const role = typeof usage.role === 'string' && usage.role ? usage.role : 'other';
+            const roles = day.roles && typeof day.roles === 'object' ? day.roles : {};
+            const share = roles[role] || {};
+            ledger.days[key] = {
+                requests: count(day.requests) + 1, input: count(day.input) + input, output: count(day.output) + output,
+                // Split by job so the settings can show which kind of call uses the most.
+                roles: { ...roles, [role]: { requests: count(share.requests) + 1, input: count(share.input) + input, output: count(share.output) + output } },
+            };
             const keep = Object.keys(ledger.days).sort().slice(-SPEND_DAYS);
             ledger.days = Object.fromEntries(keep.map(name => [name, ledger.days[name]]));
             writeJson(filename, ledger);
@@ -53,7 +60,12 @@ export function spendToday(directories, now = new Date()) {
     } catch {
         day = null;
     }
-    return { requests: count(day?.requests), input: count(day?.input), output: count(day?.output) };
+    const roles = day?.roles && typeof day.roles === 'object' ? day.roles : {};
+    return {
+        requests: count(day?.requests), input: count(day?.input), output: count(day?.output),
+        roles: Object.fromEntries(Object.entries(roles).map(([role, share]) => [role,
+            { requests: count(share?.requests), input: count(share?.input), output: count(share?.output) }])),
+    };
 }
 
 /** Today's use against the daily limit. A limit of 0 means no limit. */

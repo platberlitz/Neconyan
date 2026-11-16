@@ -633,7 +633,7 @@ export async function enableMewmoryForNewChat(view, scope = getMewmoryScope()) {
     return awaitPendingEnable(scope);
 }
 
-export async function processMewmory({ all = false, checkpoint = false } = {}) {
+export async function processMewmory({ all = false, checkpoint = false, unreadOnly = false } = {}) {
     if (mewmory.busy) return;
     const locator = getMewmoryLocator();
     if (!locator || !mewmory.view?.enabled) return;
@@ -644,7 +644,7 @@ export async function processMewmory({ all = false, checkpoint = false } = {}) {
     try {
         if (!await flushPendingChatSaves({ silent: true })) throw new Error('This chat has unsaved changes. Save it, then update Mewmory.');
         if (getMewmoryScope() !== currentKey) return;
-        const view = await requestMewmory('process', { locator, checkpoint, all, background: true });
+        const view = await requestMewmory('process', { locator, checkpoint, all, unreadOnly, background: true });
         if (getMewmoryScope() === currentKey) {
             if (!mewmory.view || view.revision >= mewmory.view.revision) mewmory.view = view;
             mewmory.error = '';
@@ -869,7 +869,7 @@ export async function prepareMewmoryGeneration(messages, { signal, mewmoryCatchU
                         return { ready: !result.waiting, pending: result.pending, processing: result.processing };
                     },
                     start: async (_captured, { signal: requestSignal }) => requestMewmory('process',
-                        { locator, all: true, checkpoint: true, background: true }, { signal: requestSignal }),
+                        { locator, all: true, checkpoint: true, unreadOnly: true, background: true }, { signal: requestSignal }),
                     onProgress: status => {
                         if (Number.isSafeInteger(status.pending)) toast?.find('.toast-message').text('Waiting for memory before replying… ' + status.pending + ' older messages still need recording.');
                     },

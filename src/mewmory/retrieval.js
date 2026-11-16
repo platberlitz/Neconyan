@@ -5,7 +5,7 @@ import { SELECTION_CONTRACT } from './contracts.js';
 import { assemblyFingerprint, assembleContext, currentOverviews, generationFingerprint } from './context.js';
 import { callJsonRole, embed, readConfig, roleVersion } from './models.js';
 import { addUsage } from './processing.js';
-import { expandNeighbours, hybridCandidates, mergeVectorIndex, searchDocuments, terms, updateIndex } from './search.js';
+import { expandNeighbours, hybridCandidates, mergeVectorIndex, recallPool, searchDocuments, terms, updateIndex } from './search.js';
 import { RAG_DEFAULTS } from '../../public/scripts/mewmory/rag-settings.js';
 import { loadCurrentState } from './sources.js';
 import { mutateState, statePath } from './store.js';
@@ -85,22 +85,97 @@ export function validateSelection(output, candidates, scene) {
     return { status: output.status, selections, rejections, needsEvidence };
 }
 
-function candidateInput(state, documents, asOf) {
-    const overviews = currentOverviews(state, asOf);
-    return documents.map(document => {
+const CANDIDATE_EXCERPT_CHARS = 800;
+const CANDIDATE_DESCRIPTION_CHARS = 300;
+const EVIDENCE_CHARS = 1500;
+const EVIDENCE_PER_CANDIDATE = 3;
+const EVIDENCE_TOTAL = 12;
+const SCENE_CUE_CHARS = 3000;
+const SCENE_TOTAL_CHARS = 9000;
+
+function clip(value, limit) {
+    const content = String(value || '');
+    return content.length > limit ? content.slice(0, limit - 1).trimEnd() + '…' : content;
+}
+
+/**
+ * The selector sees a short card per candidate. Overviews are listed once and referenced by ID,
+ * so a candidate that shares an owner and subject with others does not repeat the same text.
+ */
+export function candidateInput(state, documents, asOf, evidence = new Map()) {
+    const current = currentOverviews(state, asOf);
+    const overviews = new Map();
+    const candidates = documents.map(document => {
+        const overviewIds = current.filter(item => item.ownerId === document.ownerId
+            && item.subjectIds.some(subject => document.subjectIds.includes(subject))).map(item => {
+            overviews.set(item.id, { id: item.id, ownerId: item.ownerId, subjectIds: item.subjectIds,
+                text: item.text, asOf: item.asOf, status: item.status });
+            return item.id;
+        });
+        const body = String(document.text || '');
+        const description = String(document.searchText || '');
+        const extra = document.kind !== 'source' && description && !body.includes(description.split('\n').at(-1));
+        const supplied = evidence.get(document.id) || [];
+        const significanceEvidence = (document.evidenceRefs || []).map(refKey);
         return {
             recordId: document.id, kind: document.kind, asOf: document.asOf, status: document.status,
             significance: document.significance || 'low',
-            significanceEvidence: (document.evidenceRefs || []).map(refKey),
+            ...(significanceEvidence.length ? { significanceEvidence } : {}),
             ownerId: document.ownerId, subjectIds: document.subjectIds,
-            searchDescription: document.searchText, excerpt: document.text,
+            ...(extra ? { searchDescription: clip(description, CANDIDATE_DESCRIPTION_CHARS) } : {}),
+            ...(document.kind === 'source' ? { sourceName: document.sourceName } : {}),
+            excerpt: clip(body, CANDIDATE_EXCERPT_CHARS),
             sourceRefs: document.refs.map(refKey),
             linkedRecordIds: document.linkedRecordIds || [],
-            currentOverviews: overviews.filter(item => item.ownerId === document.ownerId
-                && item.subjectIds.some(subject => document.subjectIds.includes(subject)))
-                .map(item => ({ id: item.id, text: item.text, asOf: item.asOf, status: item.status })),
+            ...(overviewIds.length ? { overviewIds } : {}),
+            ...(supplied.length ? { evidence: supplied.map(item => ({ ref: item.ref, text: item.text })) } : {}),
         };
     });
+    return { candidates, overviews: [...overviews.values()] };
+}
+
+/** Original passages for the candidates the selector asked about, attached to those candidates only. */
+function evidenceFor(requested, sourceDocuments) {
+    const byRef = new Map();
+    for (const document of sourceDocuments) {
+        if (document.kind !== 'source' || document.refs.length !== 1) continue;
+        const key = refKey(document.refs[0]);
+        byRef.set(key, [...(byRef.get(key) || []), document]);
+    }
+    const evidence = new Map();
+    let total = 0;
+    for (const document of requested) {
+        const wanted = new Set(terms(document.text + '\n' + (document.searchText || '')));
+        const items = [];
+        for (const ref of document.refs) {
+            if (items.length >= EVIDENCE_PER_CANDIDATE || total >= EVIDENCE_TOTAL) break;
+            const passages = byRef.get(refKey(ref)) || [];
+            const best = passages.map(passage => ({ passage, score: terms(passage.text).filter(term => wanted.has(term)).length }))
+                .sort((a, b) => b.score - a.score || a.passage.chunkIndex - b.passage.chunkIndex)[0]?.passage;
+            if (!best) continue;
+            items.push({ ref: refKey(ref), text: clip(best.text, EVIDENCE_CHARS), dataType: best.dataType });
+            total++;
+        }
+        if (items.length) evidence.set(document.id, items);
+    }
+    return evidence;
+}
+
+/** The newest messages matter most; older cues are shortened first so the request stays small. */
+export function sceneForModel(scene) {
+    let budget = SCENE_TOTAL_CHARS;
+    const trimmed = [];
+    for (const cue of [...scene].reverse()) {
+        if (cue.id === 'inspection-query') {
+            trimmed.unshift(cue);
+            continue;
+        }
+        const limit = Math.max(400, Math.min(SCENE_CUE_CHARS, budget));
+        const cueText = cue.text.length > limit ? '…' + cue.text.slice(-(limit - 1)).trimStart() : cue.text;
+        budget = Math.max(0, budget - cueText.length);
+        trimmed.unshift({ ...cue, text: cueText });
+    }
+    return trimmed;
 }
 
 export function forcedMatches(state, documents, query, asOf) {
@@ -115,19 +190,22 @@ export function forcedMatches(state, documents, query, asOf) {
     return documents.filter(document => ids.has(document.recordId));
 }
 
-async function selectMemories(state, directories, config, documents, scene, allDocuments, asOf, signal, call) {
+async function selectMemories(state, directories, config, documents, scene, allDocuments, asOf, signal, call, sourceDocuments = allDocuments) {
     const usage = [];
-    let candidates = candidateInput(state, documents, asOf);
+    let evidence = new Map();
+    let { candidates, overviews } = candidateInput(state, documents, asOf);
     let status = { status: 'uncertain', selections: [], rejections: [], needsEvidence: [] };
     let error = '';
     let fallbackUsed = false;
+    const modelScene = sceneForModel(scene);
     const select = async (role, repair = false) => {
         signal?.throwIfAborted();
         const dataTypes = [...new Set(['chat', ...documents.map(document => document.dataType),
-            ...(candidates.some(candidate => candidate.currentOverviews.length) ? ['memory'] : [])])];
+            ...(overviews.length ? ['memory'] : []),
+            ...[...evidence.values()].flat().map(item => item.dataType)])];
         const result = await call(directories, config, role,
             SELECTION_CONTRACT + (repair ? '\nThe previous attempt failed validation. Follow the exact schema and supplied IDs.' : ''),
-            { scene, candidates }, { dataTypes, signal });
+            { scene: modelScene, candidates, ...(overviews.length ? { overviews } : {}) }, { dataTypes, signal });
         usage.push(result.usage);
         return validateSelection(result.value, candidates, scene);
     };
@@ -145,13 +223,14 @@ async function selectMemories(state, directories, config, documents, scene, allD
     }
     if (!error && status.status === 'needs_evidence') {
         const requested = documents.filter(document => status.needsEvidence.includes(document.id));
-        const refs = new Set(requested.flatMap(document => document.refs.map(refKey)));
         const linkedIds = new Set(candidates.filter(candidate => status.needsEvidence.includes(candidate.recordId)).flatMap(candidate => candidate.linkedRecordIds));
         const supplied = new Set(documents.map(document => document.id));
-        const expansion = allDocuments.filter(document => !supplied.has(document.id) && (document.refs.some(ref => refs.has(refKey(ref)))
-            || linkedIds.has(document.recordId))).sort((a, b) => Number(b.kind === 'source') - Number(a.kind === 'source')).slice(0, 12);
+        // Linked memory entries may join the list; original text only travels as evidence for the entries that asked for it.
+        const expansion = allDocuments.filter(document => !supplied.has(document.id) && document.kind !== 'source'
+            && linkedIds.has(document.recordId)).slice(0, 12);
         documents = [...new Map([...documents, ...expansion].map(document => [document.id, document])).values()];
-        candidates = candidateInput(state, documents, asOf);
+        evidence = evidenceFor(requested.filter(document => document.kind !== 'source'), sourceDocuments);
+        ({ candidates, overviews } = candidateInput(state, documents, asOf, evidence));
         try { status = await select('selector'); } catch (failure) { signal?.throwIfAborted(); error = failure.message; }
     }
     if ((error || status.status !== 'complete') && config.roles.fallback.enabled) {
@@ -191,7 +270,7 @@ export async function recall(directories, locator, {
     let paidVersion = null;
     signal?.throwIfAborted();
     if (!local) try {
-        const indexed = await updateIndex(state, directories, config, { signal, embedFn });
+        const indexed = await updateIndex(state, directories, config, { signal, embedFn, recallOnly: true });
         usage.push(...indexed.usage);
         paidVectors = indexed.paid || {};
         paidVersion = indexed.version || null;
@@ -205,7 +284,9 @@ export async function recall(directories, locator, {
     });
     if (manualQuery) scene.push({ id: 'inspection-query', speaker: 'Author search', text: text(manualQuery, 'Search', 6000) });
     const query = scene.map(cue => cue.speaker + ': ' + cue.text).join('\n');
-    const allDocuments = searchDocuments(state, asOf, config);
+    const sourceDocuments = searchDocuments(state, asOf, config);
+    // Recall offers saved memory entries (and attached files); raw chat, card and lore passages only when switched on.
+    const allDocuments = recallPool(sourceDocuments, config);
     const retainedByRef = new Map(retained.map(item => [refKey(item.ref), String(item.text || '').replace(/\r\n/g, '\n')]));
     const coverageSignature = hash(retained.map(item => [refKey(item.ref), item.text]));
     const matching = allDocuments.filter(document => document.kind === 'source' && document.dataType === 'chat'
@@ -248,7 +329,7 @@ export async function recall(directories, locator, {
             relevanceType: 'direct', currentCueRefs: scene.map(cue => cue.id), memoryEvidenceRefs: document.refs.map(refKey),
             justification: 'Selected by ranked retrieval; AI selection is switched off.' })), rejections: [], needsEvidence: [] },
         documents: candidates, usage: [], fallbackUsed: false, error: '',
-    } : await selectMemories(state, directories, config, candidates, scene, allowedDocuments, asOf, signal, call);
+    } : await selectMemories(state, directories, config, candidates, scene, allowedDocuments, asOf, signal, call, sourceDocuments);
     usage.push(...selection.usage);
     // A prompt caller checks the source and fingerprint again right after this returns, so it can
     // skip this second source sync. Standalone and background recalls keep every check.
@@ -339,7 +420,9 @@ export async function recall(directories, locator, {
             ...(previewId ? { previewId } : {}), ...(previewHistory ? { history: previewHistory } : {}) };
         addUsage(current, usage);
     });
-    if (local && scheduleBackground) recallInBackground(directories, locator, { asOf: Math.min(asOf, timelineLength - 1), query: manualQuery, tokenizer, retained }, { call, embedFn });
+    // A completed pick for exactly these messages is still current, so a second paid pick would repeat it.
+    const pickStillCurrent = cached && !manualQuery && cached.sourceCount === sourceCount;
+    if (local && scheduleBackground && !pickStillCurrent) recallInBackground(directories, locator, { asOf: Math.min(asOf, timelineLength - 1), query: manualQuery, tokenizer, retained }, { call, embedFn });
     return { enabled: true, ...assembly, inspection, fingerprint, validationFingerprint,
         ...(local && marker ? { suppression: { marker, proof, fallbackMemoryText: fallbackAssembly.memoryText, fallbackFactsText: fallbackAssembly.factsText,
             fallbackInterviewText: fallbackAssembly.interviewText,
