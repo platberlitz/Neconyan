@@ -180,6 +180,8 @@ for (const [name, viewport, hasTouch] of [['desktop', { width: 1280, height: 900
             const provider = page.locator('#chat_completion_source');
             const offered = () => provider.evaluate(select => [...select.options].filter(option => !option.hidden).map(option => option.value).sort());
             await expect(api).toHaveClass(/neconyan-connections-short/);
+            // The shared test server may remember a provider from an earlier run.
+            await provider.selectOption('openai');
             expect(await offered()).toEqual(['claude', 'custom', 'deepseek', 'makersuite', 'openai', 'openrouter']);
             await expect(provider.locator('option[value="custom"]')).toHaveText('Proxy or other');
             for (const hidden of ['.neconyan-model-saved', '#main-API-selector-block', '#prompt_post_processing_form']) {
@@ -212,6 +214,8 @@ for (const [name, viewport, hasTouch] of [['desktop', { width: 1280, height: 900
             await more.click();
             await expect(api).toHaveClass(/neconyan-connections-short/);
             expect(await offered()).toContain('mistralai');
+            await provider.selectOption('openai');
+            expect(await offered()).not.toContain('mistralai');
         });
 
         test('with every feature shown Connections is the full page', async ({ page, isMobile }) => {
