@@ -1,4 +1,4 @@
-/* global document, getComputedStyle */
+/* global document, getComputedStyle, window */
 import { gunzipSync } from 'node:zlib';
 import { expect, test } from '@playwright/test';
 
@@ -165,6 +165,65 @@ for (const [name, viewport, hasTouch] of [['desktop', { width: 1280, height: 900
             const search = page.locator('#sbbs_query');
             await search.fill('https://chub.ai/characters/example/example-card');
             await expect(page.locator('#sbbs_go')).toHaveAttribute('aria-label', 'Review card URL');
+        });
+        const openConnections = async (page, isPhone) => {
+            if (isPhone) await page.getByRole('button', { name: 'Open menu' }).click();
+            await page.locator('#neconyan-workspace-rail .neconyan-rail-button[data-neconyan-route="model"]').first().click();
+            await expect(page.locator('#chat_completion_source')).toBeVisible();
+        };
+
+        test('Simple Mode shortens Connections to provider, key, model, Connect and Test', async ({ page, isMobile }) => {
+            await account(page, { [SIMPLE_KEY]: 'on', 'NeconyanTutorialStatus.v1': 'completed' });
+            await ready(page);
+            await openConnections(page, isMobile);
+            const api = page.locator('#rm_api_block');
+            const provider = page.locator('#chat_completion_source');
+            const offered = () => provider.evaluate(select => [...select.options].filter(option => !option.hidden).map(option => option.value).sort());
+            await expect(api).toHaveClass(/neconyan-connections-short/);
+            expect(await offered()).toEqual(['claude', 'custom', 'deepseek', 'makersuite', 'openai', 'openrouter']);
+            await expect(provider.locator('option[value="custom"]')).toHaveText('Proxy or other');
+            for (const hidden of ['.neconyan-model-saved', '#main-API-selector-block', '#prompt_post_processing_form']) {
+                await expect(api.locator(hidden).first()).toBeHidden();
+            }
+
+            await provider.selectOption('openai');
+            for (const kept of ['#api_key_openai', '#api_button_openai', '#test_api_button', '#openai_model_id']) {
+                await expect(api.locator(kept).first()).toBeVisible();
+            }
+            await page.locator('#api_key_openai').fill('');
+            await page.locator('#api_button_openai').click();
+            await expect(page.locator('.toast-warning', { hasText: 'Paste your API key into the key box first' })).toBeVisible();
+
+            await provider.selectOption('openrouter');
+            const signIn = api.locator('.openrouter_authorize[data-source="openrouter"]');
+            await expect(signIn).toBeVisible();
+            expect(await signIn.evaluate(node => Boolean(node.closest('.neconyan-provider-connection')))).toBe(true);
+            expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false);
+
+            const more = api.locator('.neconyan-connections-more');
+            await expect(more).toHaveText('More connection options');
+            await more.click();
+            await expect(more).toHaveText('Fewer connection options');
+            await expect(api).not.toHaveClass(/neconyan-connections-short/);
+            await expect(api.locator('#main-API-selector-block')).toBeVisible();
+            expect((await offered()).length).toBeGreaterThan(6);
+            // A provider outside the short list stays selectable once it is the saved one.
+            await provider.selectOption('mistralai');
+            await more.click();
+            await expect(api).toHaveClass(/neconyan-connections-short/);
+            expect(await offered()).toContain('mistralai');
+        });
+
+        test('with every feature shown Connections is the full page', async ({ page, isMobile }) => {
+            await account(page, { [SIMPLE_KEY]: 'off', 'NeconyanTutorialStatus.v1': 'completed' });
+            await ready(page);
+            await openConnections(page, isMobile);
+            const api = page.locator('#rm_api_block');
+            await expect(api).not.toHaveClass(/neconyan-connections-short/);
+            await expect(api.locator('.neconyan-connections-more')).toBeHidden();
+            await expect(api.locator('#main-API-selector-block')).toBeVisible();
+            await expect(page.locator('#chat_completion_source option[value="custom"]')).toHaveText('Custom (OpenAI-compatible)');
+            expect(await api.locator('.openrouter_authorize[data-source="openrouter"]').evaluate(node => Boolean(node.closest('.neconyan-connection-tools')))).toBe(true);
         });
     });
 }

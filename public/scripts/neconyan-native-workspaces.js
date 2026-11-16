@@ -297,6 +297,103 @@ function organizeConnectionActions(api) {
     }
 }
 
+const SIMPLE_CONNECTION_PROVIDERS = Object.freeze(['openrouter', 'openai', 'claude', 'makersuite', 'deepseek', 'custom']);
+const simpleConnectionProviderLabel = value => value === 'custom' ? t`Proxy or other` : '';
+const SIMPLE_CONNECTION_MODEL_FIELD = 'select[id*="model"], input[id*="model"], .nn-model-list, [id$="_model_picker"]';
+
+function setTextOnce(node, text) {
+    if (node.textContent !== text) node.textContent = text;
+}
+
+/**
+ * Simple Mode shows the same connection form with only provider, key, model,
+ * Connect and Test in view. Fields are marked and a stylesheet hides them (only
+ * the OpenRouter sign-in button moves), so 'More connection options' and leaving
+ * Simple Mode both bring the full page back as it was. Runs under the page's observer, so
+ * every write is skipped when the value already matches.
+ */
+function syncSimpleConnections(api) {
+    const stack = api.querySelector('.neconyan-model-provider-stack');
+    const provider = api.querySelector('#chat_completion_source');
+    if (!(stack instanceof HTMLElement) || !(provider instanceof HTMLSelectElement)) return;
+    const offered = document.documentElement.classList.contains('neconyan-simple-mode')
+        && api.querySelector('#main_api')?.value === 'openai';
+    const short = offered && api.dataset.neconyanConnectionsAll !== 'true';
+
+    let toggle = stack.querySelector(':scope > .neconyan-connections-more');
+    if (!toggle) {
+        toggle = button('', 'menu_button menu_button_icon neconyan-connections-more');
+        toggle.addEventListener('click', () => {
+            if (api.dataset.neconyanConnectionsAll === 'true') delete api.dataset.neconyanConnectionsAll;
+            else api.dataset.neconyanConnectionsAll = 'true';
+            syncSimpleConnections(api);
+        });
+        stack.append(toggle);
+        for (const control of [provider, api.querySelector('#main_api')]) {
+            control?.addEventListener('change', () => syncSimpleConnections(api));
+            globalThis.jQuery?.(control).on('change', () => syncSimpleConnections(api));
+        }
+    }
+    if (toggle.hidden !== !offered) toggle.hidden = !offered;
+    setTextOnce(toggle, short ? t`More connection options` : t`Fewer connection options`);
+    toggle.setAttribute('aria-expanded', String(!short));
+    api.classList.toggle('neconyan-connections-short', short);
+
+    for (const option of provider.options) {
+        const simpleLabel = simpleConnectionProviderLabel(option.value);
+        if (simpleLabel) {
+            if (short && option.dataset.neconyanFullLabel === undefined) option.dataset.neconyanFullLabel = option.textContent;
+            if (option.dataset.neconyanFullLabel !== undefined) setTextOnce(option, short ? simpleLabel : option.dataset.neconyanFullLabel);
+        }
+        // A provider chosen earlier stays in the list even when it is not one of the short ones.
+        option.hidden = short && !SIMPLE_CONNECTION_PROVIDERS.includes(option.value) && option.value !== provider.value;
+    }
+    for (const group of provider.querySelectorAll('optgroup')) {
+        group.hidden = short && [...group.children].every(option => option.hidden);
+    }
+
+    for (const model of api.querySelectorAll('.neconyan-provider-model')) {
+        for (const child of model.children) {
+            child.toggleAttribute('data-neconyan-simple-extra', !(child.matches(`h4, ${SIMPLE_CONNECTION_MODEL_FIELD}`) || child.querySelector(SIMPLE_CONNECTION_MODEL_FIELD)));
+        }
+    }
+
+    const row = api.querySelector('#openai_api .neconyan-connect-actions');
+    if (row && !api.querySelector('#neconyan-connection-test-result')) {
+        const result = element('small', 'neconyan-connection-test-result');
+        result.id = 'neconyan-connection-test-result';
+        result.setAttribute('role', 'status');
+        row.after(result);
+    }
+    // Test sits in a closed 'Connection tools' section; the short page shows it in the open,
+    // and puts the OpenRouter sign-in under the key box it fills in.
+    const tools = row?.querySelector('.neconyan-connection-tools');
+    if (tools && short && !tools.open) {
+        tools.dataset.neconyanSimpleOpened = 'true';
+        tools.open = true;
+    } else if (tools && !short && tools.dataset.neconyanSimpleOpened === 'true') {
+        delete tools.dataset.neconyanSimpleOpened;
+        tools.open = false;
+    }
+    const signIn = api.querySelector('.openrouter_authorize[data-source="openrouter"]');
+    const keyRow = api.querySelector('#api_key_openrouter')?.parentElement;
+    if (signIn && keyRow && tools) {
+        if (short && signIn.previousElementSibling !== keyRow) keyRow.after(signIn);
+        else if (!short && signIn.parentElement !== tools) tools.querySelector(':scope > summary')?.after(signIn);
+    }
+}
+
+let simpleConnectionsWatched = false;
+
+function watchSimpleConnections() {
+    if (simpleConnectionsWatched) return;
+    simpleConnectionsWatched = true;
+    new MutationObserver(() => {
+        const api = document.getElementById('rm_api_block');
+        if (api) syncSimpleConnections(api);
+    }).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+}
+
 function ensureModelConnectionWorkspace(apiRoot) {
     const api = apiRoot.querySelector('#rm_api_block') ?? apiRoot;
     if (!(api instanceof HTMLElement)) return;
@@ -334,6 +431,8 @@ function ensureModelConnectionWorkspace(apiRoot) {
     if (customForm) ensureCustomConnectionWorkflow(customForm);
     for (const form of page.querySelectorAll('form')) organizeProviderFields(form);
     organizeConnectionActions(api);
+    syncSimpleConnections(api);
+    watchSimpleConnections();
     const nav = document.querySelector('#left-nav-panel .sb-model-native-nav-wrapper .sb-shell-nav');
     const connectionTab = nav?.querySelector('[data-sb-tab="api"]');
     if (connectionTab && nav.firstElementChild !== connectionTab) nav.prepend(connectionTab);

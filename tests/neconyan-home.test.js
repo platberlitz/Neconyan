@@ -462,7 +462,9 @@ describe('Neconyan Home', () => {
             const css = read('css/neconyan-first-run.css');
             expect(css).toContain('grid-template-columns: 40px 3em repeat(3, minmax(0, 1fr));');
             expect(css).toMatch(/#neconyan-tour-coachmark\.neconyan-tour-meeting \{\s*max-height: min\(92dvh, 720px\);/);
-            expect(css).not.toMatch(/!important|transition|animation|#[0-9a-f]{3,8}\b/i);
+            expect(css).not.toMatch(/transition|animation|#[0-9a-f]{3,8}\b/i);
+            // Only the Simple Mode hide rule may use it: it has to beat inline display styles.
+            expect(css.match(/!important/g)).toHaveLength(1);
         });
     });
 });

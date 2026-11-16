@@ -119,6 +119,32 @@ describe('Simple Mode styles and wiring', () => {
         expect(welcome).toMatch(/const SIMPLE_TUTORIAL_STEPS = Object\.freeze\(\[\s*WELCOME_TUTORIAL_STEPS\[0\],\s*WELCOME_TUTORIAL_STEPS\[1\],\s*WELCOME_TUTORIAL_STEPS\[3\],\s*WELCOME_TUTORIAL_STEPS\[4\],\s*WELCOME_TUTORIAL_STEPS\[6\],/);
     });
 
+    test('the Connections page is the same form, shortened to provider, key, model, Connect and Test', () => {
+        const workspaces = read('public/scripts/neconyan-native-workspaces.js');
+        expect(workspaces).toContain('const SIMPLE_CONNECTION_PROVIDERS = Object.freeze([\'openrouter\', \'openai\', \'claude\', \'makersuite\', \'deepseek\', \'custom\']);');
+        expect(workspaces).toContain('value === \'custom\' ? t`Proxy or other` : \'\'');
+        // A provider saved earlier is never dropped from the list, and other reply formats keep the full page.
+        expect(workspaces).toContain('option.hidden = short && !SIMPLE_CONNECTION_PROVIDERS.includes(option.value) && option.value !== provider.value;');
+        expect(workspaces).toContain('&& api.querySelector(\'#main_api\')?.value === \'openai\';');
+        expect(workspaces).toContain('api.classList.toggle(\'neconyan-connections-short\', short);');
+        expect(workspaces).toContain('if (short && signIn.previousElementSibling !== keyRow) keyRow.after(signIn);');
+        expect(workspaces).toMatch(/organizeConnectionActions\(api\);\s*syncSimpleConnections\(api\);\s*watchSimpleConnections\(\);/);
+
+        const css = read('public/css/neconyan-first-run.css').replace(/\/\*[\s\S]*?\*\//g, '');
+        const hidden = css.match(/([^{}]*)\{\s*display: none !important;\s*\}/)[1];
+        for (const selector of ['.neconyan-model-saved', '#main-API-selector-block', '#prompt_post_processing_form', '.neconyan-provider-help',
+            '.neconyan-provider-model > [data-neconyan-simple-extra]', '.neconyan-connection-tools > summary']) {
+            expect(hidden).toContain(`#rm_api_block.neconyan-connections-short ${selector}`);
+        }
+        // Nothing is hidden unless the short page is on, so the full interface is untouched.
+        for (const line of hidden.split(',')) expect(line).toContain('.neconyan-connections-short');
+
+        const openai = read('public/scripts/openai.js');
+        expect(openai).toContain('toastr.warning(t`Paste your API key into the key box first, then press Connect.`);');
+        expect(openai).toContain('showResult(t`Test passed: the model replied.`, \'success\');');
+        expect(openai).toContain('showResult(t`Test failed: no reply came back. Check the key and the model, then try again.`, \'error\');');
+    });
+
     test('every hidden id still exists, so a rename cannot silently bring a power tool back', () => {
         const sources = [
             'public/index.html', 'public/scripts/neconyan-tabs.js', 'public/scripts/welcome-screen.js',

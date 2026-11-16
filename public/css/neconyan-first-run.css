@@ -33,3 +33,66 @@ body.neconyan #neconyan-tour-coachmark [data-tour-assistants-confirm] {
 body.neconyan #neconyan-tour-coachmark.neconyan-tour-meeting .neconyan-tour-step-copy {
     padding-right: 0;
 }
+
+/* Simple Mode Connections: provider, key, model, Connect and Test only. The fields are shown and
+   hidden by inline styles as the provider changes, so this one rule has to outrank them. */
+body.neconyan #rm_api_block.neconyan-connections-short .neconyan-model-saved,
+body.neconyan #rm_api_block.neconyan-connections-short #main-API-selector-block,
+body.neconyan #rm_api_block.neconyan-connections-short #openai_api > .inline-drawer,
+body.neconyan #rm_api_block.neconyan-connections-short #openai_api > .range-block,
+body.neconyan #rm_api_block.neconyan-connections-short #prompt_post_processing_form,
+body.neconyan #rm_api_block.neconyan-connections-short .neconyan-provider-help,
+body.neconyan #rm_api_block.neconyan-connections-short .neconyan-provider-connection > .inline-drawer,
+body.neconyan #rm_api_block.neconyan-connections-short .neconyan-provider-model > [data-neconyan-simple-extra],
+body.neconyan #rm_api_block.neconyan-connections-short .neconyan-provider-model .checkbox_label,
+body.neconyan #rm_api_block.neconyan-connections-short .neconyan-provider-model .range-block,
+body.neconyan #rm_api_block.neconyan-connections-short .neconyan-provider-model .inline-drawer,
+body.neconyan #rm_api_block.neconyan-connections-short .neconyan-connection-tools > summary,
+body.neconyan #rm_api_block.neconyan-connections-short #customize_additional_parameters,
+body.neconyan #rm_api_block.neconyan-connections-short > .flex-container {
+    display: none !important;
+}
+
+body.neconyan #left-nav-panel #rm_api_block.neconyan-connections-short #neconyan-model-connections-native {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 640px;
+}
+
+body.neconyan #rm_api_block.neconyan-connections-short .neconyan-connection-tools {
+    grid-column: 2;
+    grid-row: 1;
+    border-top: 0;
+}
+
+body.neconyan #rm_api_block.neconyan-connections-short .neconyan-connection-tools > .menu_button {
+    margin: 0;
+}
+
+body.neconyan #rm_api_block.neconyan-connections-short .neconyan-provider-connection > .openrouter_authorize {
+    width: fit-content;
+    min-height: 44px;
+    margin: 8px 0 0;
+}
+
+body.neconyan #rm_api_block .neconyan-connections-more {
+    align-self: flex-start;
+    min-height: 44px;
+    margin: 12px 0 0;
+}
+
+body.neconyan #rm_api_block .neconyan-connections-more[hidden],
+body.neconyan #rm_api_block .neconyan-connection-test-result:empty {
+    display: none;
+}
+
+body.neconyan #rm_api_block .neconyan-connection-test-result {
+    display: block;
+    margin: 8px 0 0;
+    color: var(--neco-muted);
+    font-size: 13px;
+}
+
+body.neconyan #rm_api_block .neconyan-connection-test-result:is([data-state="success"], [data-state="error"]) {
+    color: var(--neco-ink);
+    font-weight: 600;
+}
