@@ -3759,6 +3759,8 @@ body.neconyan #open_chat_expressions .expression_buttons > .menu_button > span {
 }
 @media (max-width: 768px) {
     body.neconyan #chat .mes .neconyan-edit-action { min-height: 44px; }
+    body.neconyan #ica--settings .ica--companion-quick-history { column-gap: 3px; }
+    body.neconyan #ica--settings .ica--companion-quick-depth input.text_pole { width: max(44px, 3.4em); }
     body.neconyan #ica--settings .ica--card-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-areas: 'run settings' 'more edit'; gap: 6px; }
     body.neconyan #ica--settings .ica--card-actions:not(:has(.ica--btn-run)) { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-areas: 'settings settings' 'edit edit' 'more more'; }
     body.neconyan #ica--settings .ica--card-primary-actions { display: contents; }

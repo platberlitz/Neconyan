@@ -2,9 +2,10 @@
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+import { searchAgentList } from './in-chat-agents-e2e-helpers.js';
 
-for (const phone of [true, false]) {
-    test(`Companion history controls share one row on ${phone ? 'phone' : 'desktop'}`, async ({ app }, info) => {
+for (const { phone, surface } of [true, false].flatMap(phone => ['Companion', 'Agents'].map(surface => ({ phone, surface })))) {
+    test(`${surface} history controls share one row on ${phone ? 'phone' : 'desktop'}`, async ({ app }, info) => {
         test.setTimeout(120000);
         const account = await app.account({ phone, contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {} });
         if (phone) await installIPhoneSafari(account.context);
@@ -14,17 +15,23 @@ for (const phone of [true, false]) {
             companion: { displayMode: 'panel', trigger: 'manual', includeAllChatHistory: true },
         });
         const page = await account.open({ workspace: false });
-        const panel = page.locator('#ica--tracker-panel');
-        await expect(panel).toBeAttached({ timeout: 60000 });
-        await page.evaluate(async () => {
-            (await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js')).openCompanionPanel();
-            window.toastr?.remove();
-        });
+        const panel = page.locator(surface === 'Agents' ? '#ica--settings' : '#ica--tracker-panel');
+        if (surface === 'Agents') {
+            await page.evaluate(() => window.NeconyanShell.openTab('left', 'agents'));
+            await expect(panel).toBeVisible({ timeout: 60000 });
+            await searchAgentList(page, 'Scene Notes', { agentId: 'history-row', count: 1 });
+        } else {
+            await expect(panel).toBeAttached({ timeout: 60000 });
+            await page.evaluate(async () => {
+                (await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js')).openCompanionPanel();
+            });
+        }
+        await page.evaluate(() => window.toastr?.remove());
         if (phone) await applyIOSOnlyCss(page, { inPlace: true });
         const row = panel.locator('[data-agent-id="history-row"] .ica--companion-quick-history');
         await expect(row).toBeVisible();
         await row.scrollIntoViewIfNeeded();
-        await page.screenshot({ path: `../screenshots/companion-history-${phone ? 'phone' : 'desktop'}-${process.env.NECONYAN_SCREENSHOT_PHASE || 'after'}.png`, scale: 'css' });
+        await page.screenshot({ path: `../screenshots/${surface.toLowerCase()}-history-${phone ? 'phone' : 'desktop'}-${process.env.NECONYAN_SCREENSHOT_PHASE || 'after'}.png`, scale: 'css' });
         const geometry = await row.evaluate(element => ({
             row: element.getBoundingClientRect().toJSON(),
             labels: [...element.children].map(label => ({
