@@ -38,7 +38,7 @@ Your character cards, chats, lorebooks and presets use familiar SillyTavern form
   <img src="docs/readme/banner-modes.webp" alt="Modes">
 </p>
 
-Desktop and phone screenshots from 1.5.4 and 1.5.5, using demo chats and notes with the bundled assistants.
+I captured these desktop and phone screenshots on 16 November 2026, using demo chats and notes with the bundled assistants, the default Calico Dark colours and **Background Visibility at 0%**.
 
 ### Home
 
@@ -47,6 +47,15 @@ Pick a character, connect a model or say hi to an assistant.
 <table><tr>
   <td width="72%"><img src="docs/readme/desktop-home.webp" alt="Home on desktop"></td>
   <td width="28%"><img src="docs/readme/phone-home.webp" alt="Home on a phone"></td>
+</tr></table>
+
+### Simple Mode
+
+I'd start here if you're new. Connections keeps the provider, key, model, **Connect** and **Test Message** in view, with the rest behind **More connection options**. The sidebar keeps **Find characters**, **Memory** and **Updates** within reach. **Show all features** brings the full layout back.
+
+<table><tr>
+  <td width="72%"><img src="docs/readme/desktop-simple.webp" alt="Simple Mode on desktop, showing the shorter Connections page"></td>
+  <td width="28%"><img src="docs/readme/phone-simple.webp" alt="Simple Mode on a phone, showing the shorter Connections page"></td>
 </tr></table>
 
 ### Roleplay
@@ -88,16 +97,7 @@ Proofreader checks a reply after it arrives. It can tidy prose and formatting wi
 This staged example runs the real Agent workflow with a fixed sample response. Your connected model writes the edits in normal use, and each pass can cost another request. [Agents and Companions in the handbook](https://platberlitz.github.io/neconyan-docs/helpers/agents/).
 
 <details>
-<summary><b>More screenshots: Simple Mode, Conversation, Meower, Story Mode, Notebooks, Scratchpad and Device sync</b></summary>
-
-### Simple Mode
-
-Fewer controls while you get settled. **Show all features** in the sidebar brings them back; nothing is disabled.
-
-<table><tr>
-  <td width="72%"><img src="docs/readme/desktop-simple.webp" alt="Simple Mode on desktop"></td>
-  <td width="28%"><img src="docs/readme/phone-simple.webp" alt="Simple Mode on a phone"></td>
-</tr></table>
+<summary><b>More screenshots: Conversation, Meower, Story Mode, Notebooks, Scratchpad and Device sync</b></summary>
 
 ### Conversation
 
