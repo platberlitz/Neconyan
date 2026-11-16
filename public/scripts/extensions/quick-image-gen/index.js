@@ -12607,22 +12607,29 @@ async function showGallery(returnFocusElement = null) {
                 <button id="qig-gallery-import-insert" class="menu_button" type="button">Insert URL</button>
             </div>
             <div class="qig-help">Add URL saves it into QIG Gallery. Insert URL saves it and sends it straight into chat.</div>
+            <div id="qig-gallery-empty" hidden>
+                <p class="qig-muted">No images yet. Generate your first picture or add an image URL; your saved pictures appear here.</p>
+                <button id="qig-gallery-generate" class="menu_button" type="button">Generate image</button>
+            </div>
             <div id="qig-gallery-grid" class="qig-gallery-grid"></div>
         </div>`, (gallery) => {
         const grid = gallery.querySelector("#qig-gallery-grid");
         const importInput = gallery.querySelector("#qig-gallery-import-url");
+        gallery.querySelector("#qig-gallery-generate").onclick = () => {
+            if (!globalThis.NeconyanShell?.openIncludedTool?.(extensionName)) return;
+            hidePopup(gallery, { restoreFocus: false });
+            requestAnimationFrame(() => {
+                const prompt = document.getElementById("qig-prompt");
+                prompt?.scrollIntoView({ block: "center", behavior: "instant" });
+                prompt?.focus({ preventScroll: true });
+            });
+        };
 
         const renderGalleryGrid = () => {
             const titleEl = gallery.querySelector("#qig-gallery-count");
             if (titleEl) titleEl.textContent = `Gallery (${sessionGallery.length})`;
             grid.replaceChildren();
-            if (!sessionGallery.length) {
-                const empty = document.createElement("p");
-                empty.className = "qig-muted";
-                empty.textContent = "No images yet. Close this and press Generate to make your first one; every image you generate is kept here.";
-                grid.appendChild(empty);
-                return;
-            }
+            gallery.querySelector("#qig-gallery-empty").hidden = Boolean(sessionGallery.length);
             for (const item of sessionGallery) {
                 const card = document.createElement("button");
                 card.type = "button";
@@ -23509,6 +23516,10 @@ async function handleMetadataDrop(e) {
 
 const quickImageGenCapability = Object.freeze({
     ensureReady: ensureQuickImageGenReady,
+    async openGallery(returnFocusElement) {
+        await ensureQuickImageGenReady();
+        await showGallery(returnFocusElement);
+    },
     generateImage: generateCapabilityImage,
     generateScopedImage,
     getSettingsSnapshot: getCapabilitySettingsSnapshot,

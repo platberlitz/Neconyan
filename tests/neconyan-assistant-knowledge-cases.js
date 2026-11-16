@@ -1,5 +1,9 @@
 // Questions and distinguishing facts shared by Node and real-browser retrieval checks.
 export const refreshedKnowledgeCases = [
+    ['Where do I open Gallery?', 'images.quick-gallery', 'just above Chat Archive'],
+    ['Can I add a Gallery Quick Access shortcut?', 'images.quick-gallery', 'top-bar shortcut'],
+    ['What does Generate image in an empty Gallery do?', 'images.quick-gallery', 'without making a request'],
+    ['Where are my character gallery folders?', 'images.gallery', 'character-associated folders'],
     ['Is Device sync automatic between my phone and desktop?', 'sync.start', 'there are no background timers'],
     ['What passphrase does Device sync need?', 'sync.start', 'at least 12 characters'],
     ['Can Device sync transfer Conversation chats and API keys?', 'sync.categories', 'Conversation and group chats'],

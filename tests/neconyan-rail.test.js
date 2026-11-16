@@ -642,6 +642,17 @@ describe('Neconyan workspace rail behavior', () => {
         expect(routes).toEqual([['left', 'agents']]);
     });
 
+    test('Gallery opens over the current workspace without routing away from it', async () => {
+        const calls = [];
+        const runtime = createWelcomeRuntime();
+        runtime.context.NeconyanShell = { openGallery: async () => { calls.push('gallery'); return true; } };
+        runtime.context.NeconyanNotes = { onRoute: () => calls.push('leave-notes') };
+        runtime.context.NeconyanScratchpad = { onRoute: () => calls.push('leave-scratchpad') };
+        runtime.context.NeconyanNativeTools = { activate: () => calls.push('tool-settings') };
+        expect(await runtime.context.activateNeconyanRailRoute('gallery')).toBe(true);
+        expect(calls).toEqual(['gallery']);
+    });
+
     test('Advanced rail destinations open their existing workspaces', () => {
         const routes = [];
         const runtime = createWelcomeRuntime();
@@ -691,6 +702,7 @@ describe('Neconyan workspace rail behavior', () => {
         const appendCalls = build.split('appendNeconyanRailButtons(').slice(1);
         const groups = Object.fromEntries(appendCalls.map(call => [call.match(/data-neconyan-([a-z]+)-nav|^finerNav/)?.[1] ?? 'finer', routesIn(section(call, '\n    ]);'))]));
         expect(groups.primary).toContain('chat-archive');
+        expect(groups.primary[groups.primary.indexOf('chat-archive') - 1]).toBe('gallery');
         expect(groups.advanced).toEqual(['presets', 'sampling', 'formatting', 'regex', 'preset-tools', 'chat-completion-tabs', 'prompt-tags', 'macro-enhanced', 'prompting-lab', 'deep-swipe']);
         expect(groups.lore).toEqual(['persona', 'expressions', 'quick-image-gen', 'botsearcher', 'pathfinder', 'world-info-lab', 'lorebook-distiller', 'time-machine']);
         expect(groups.appearance).toEqual(['background', 'dialogue-colors', 'termeownal-ui', 'css-snippets', 'regex-agent-themes']);
@@ -724,10 +736,11 @@ describe('Neconyan workspace rail behavior', () => {
         });
         vm.runInContext([railRoutesSource(), getWelcomeFunctionSource('appendNeconyanRailButtons')].join('\n'), context);
         const host = new HTMLElement();
-        context.appendNeconyanRailButtons(host, [['server', 'Server', 'fa-server'], ['debugger', 'Debugger', 'fa-bug-slash']]);
+        context.appendNeconyanRailButtons(host, [['server', 'Server', 'fa-server'], ['debugger', 'Debugger', 'fa-bug-slash'], ['gallery', 'Gallery', 'fa-images']]);
         expect(host.children.map(button => [button.route, button.hidden ?? false, button.dataset.neconyanRailTool])).toEqual([
             ['server', false, undefined],
             ['debugger', true, 'neconyan-debugger'],
+            ['gallery', true, 'quick-image-gen'],
         ]);
     });
 

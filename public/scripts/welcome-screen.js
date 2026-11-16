@@ -2082,6 +2082,7 @@ function setNeconyanRailCollapsed(collapsed) {
 
 // Rail routes that open a bundled extension; the shell hides each button until its extension is installed.
 const NECONYAN_RAIL_TOOL_ROUTES = Object.freeze({
+    'gallery': 'quick-image-gen',
     'chat-archive': 'neconyan-chats-archive',
     'preset-tools': 'third-party/Neconyan-Preset-Tools',
     'chat-completion-tabs': 'third-party/ChatCompletionTabs',
@@ -2275,6 +2276,9 @@ async function openNeconyanRecentChat(recentChat) {
 
 function activateNeconyanRailRoute(route) {
     const shell = globalThis.NeconyanShell;
+    if (route === 'gallery') {
+        return shell?.openGallery?.();
+    }
     globalThis.NeconyanNotes?.onRoute?.(route);
     globalThis.NeconyanScratchpad?.onRoute?.(route);
     globalThis.NeconyanGames?.onRoute?.(route);
@@ -2529,6 +2533,7 @@ function ensureNeconyanRail() {
         ['lorebooks', 'Lorebooks', 'fa-book-atlas'],
         ['notes', 'Notebooks', 'fa-note-sticky'],
         ['scratchpad', 'Scratchpad', 'fa-clipboard-list'],
+        ['gallery', 'Gallery', 'fa-images'],
         ['chat-archive', 'Chat Archive', 'fa-box-archive'],
         ['extensions', 'Extensions', 'fa-cubes'],
     ]);
