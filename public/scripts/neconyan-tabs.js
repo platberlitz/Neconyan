@@ -178,7 +178,7 @@ const NN_PANEL_STYLESHEETS = Object.freeze({
         { href: 'css/world-info.css?v=20261014e-tool-pages', id: 'deferred-world-info-css' },
     ],
     'characters:persona': [
-        { href: 'css/personas.css?v=20261006-personaui1', id: 'deferred-personas-css' },
+        { href: 'css/personas.css?v=20261117-persona-label-wrap', id: 'deferred-personas-css' },
         { href: 'css/neconyan-tool-pages.css?v=20261107-tour-card-pan', id: 'deferred-tool-pages-css' },
     ],
     'characters:creator': [
@@ -533,7 +533,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261116-agents-history-inline';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261117-persona-label-wrap';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
