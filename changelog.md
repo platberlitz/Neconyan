@@ -8,6 +8,7 @@
 - PR #695 (2026-11-16) `fix(agents): run enabled proofreader on impersonation`
 - PR #696 (2026-11-16) `feat(simple-mode): make the first hour work for newcomers`
 - PR #697 (2026-11-16) `fix(catline): fill selected stars`
+- PR #698 (2026-11-16) `fix(agents): keep history controls on one row`
 
 ## v1.5.5
 
