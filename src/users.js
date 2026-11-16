@@ -1046,6 +1046,8 @@ export async function setUserDataMiddleware(request, response, next) {
 
     // If we have the only user and it's not password protected, use it
     if (!handle) {
+        // Mark sign-out before CSRF checks, which may reject a stale token first.
+        response.set('X-Neconyan-Auth', 'required');
         return next();
     }
 
@@ -1054,11 +1056,13 @@ export async function setUserDataMiddleware(request, response, next) {
 
     if (!user) {
         console.error('User not found:', handle);
+        response.set('X-Neconyan-Auth', 'required');
         return next();
     }
 
     if (!user.enabled) {
         console.error('User is disabled:', handle);
+        response.set('X-Neconyan-Auth', 'required');
         return next();
     }
 
@@ -1069,6 +1073,7 @@ export async function setUserDataMiddleware(request, response, next) {
             request.session.csrfToken = null;
             request.session.version = null;
             request.session = null;
+            response.set('X-Neconyan-Auth', 'required');
             return response.sendStatus(403);
         }
     } else {
@@ -1101,6 +1106,7 @@ export function requireLoginMiddleware(request, response, next) {
     }
 
     if (!request.user) {
+        response.set('X-Neconyan-Auth', 'required');
         return response.sendStatus(403);
     }
 

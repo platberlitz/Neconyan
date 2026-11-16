@@ -69,7 +69,7 @@ test('browser sign-in page flow: allowlist, password login, remember choice, no 
         // The sign-in endpoints work without credentials; a plain API route does not.
         const tokenResponse = await fetch(url + '/csrf-token');
         assert.equal(tokenResponse.status, 200);
-        const { token: csrfToken } = await tokenResponse.json();
+        let { token: csrfToken } = await tokenResponse.json();
         storeCookies(tokenResponse);
 
         const status = await fetch(url + '/api/auth/status', { headers: withCookies() });
@@ -88,6 +88,7 @@ test('browser sign-in page flow: allowlist, password login, remember choice, no 
         assert.ok(!navigation.headers.get('www-authenticate'));
         const api = await fetch(url + '/private', { headers: { accept: 'application/json' } });
         assert.equal(api.status, 401);
+        assert.equal(api.headers.get('X-Neconyan-Auth'), 'required');
         assert.ok(!api.headers.get('www-authenticate'));
 
         // Basic credentials are ignored for browser-style requests...
@@ -111,6 +112,7 @@ test('browser sign-in page flow: allowlist, password login, remember choice, no 
 
         const badLogin = await fetch(url + '/api/auth/browser/login', { method: 'POST', headers: withCookies({ 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken }), body: JSON.stringify({ username: 'test-user', password: 'wrong' }) });
         assert.equal(badLogin.status, 401);
+        assert.equal(badLogin.headers.get('X-Neconyan-Auth'), null);
 
         // Browser-session sign-in (remember unchecked): session cookie, short-lived token.
         const login = await fetch(url + '/api/auth/browser/login', { method: 'POST', headers: withCookies({ 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken }), body: JSON.stringify({ username: 'test-user', password: 'test-password', remember: false }) });
@@ -129,6 +131,7 @@ test('browser sign-in page flow: allowlist, password login, remember choice, no 
         // The cookie alone now authenticates the private route.
         const authenticated = await fetch(url + '/private', { headers: withCookies() });
         assert.equal(authenticated.status, 200);
+        assert.equal(authenticated.headers.get('X-Neconyan-Auth'), null);
         const touch = await fetch(url + '/touch', { method: 'POST', headers: withCookies({ 'X-CSRF-Token': csrfToken }) });
         assert.equal(touch.status, 204);
         assert.ok(touch.headers.getSetCookie().every(cookie => !/expires=|max-age=/i.test(cookie)), 'later writes keep a temporary cookie temporary');
@@ -140,6 +143,17 @@ test('browser sign-in page flow: allowlist, password login, remember choice, no 
         assert.equal(statusData.authenticated, true);
         assert.equal(statusData.browserSession, true);
         assert.equal(statusData.username, 'test-user');
+
+        // An expired server token is recognisable even while its cookie still exists.
+        serverSession.expires = Date.now() - 1;
+        const expired = await fetch(url + '/private', { headers: withCookies() });
+        assert.equal(expired.status, 401);
+        assert.equal(expired.headers.get('X-Neconyan-Auth'), 'required');
+        assert.equal(validateSession(tokenBody.basicAuthToken), null);
+
+        const freshToken = await fetch(url + '/csrf-token', { headers: withCookies() });
+        storeCookies(freshToken);
+        csrfToken = (await freshToken.json()).token;
 
         // Remember checked: 30 day token and matching cookie expiry.
         const rememberLogin = await fetch(url + '/api/auth/browser/login', { method: 'POST', headers: withCookies({ 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken }), body: JSON.stringify({ username: 'test-user', password: 'test-password', remember: true }) });
