@@ -16,6 +16,7 @@
 - PR #703 (2026-11-16) `fix(chatroom): remove the duplicate reply label`
 - PR #704 (2026-11-16) `feat(agents): choose companion targets for bulk post-generation`
 - PR #705 (2026-11-16) `fix(gallery): include saved Scratchpad pictures`
+- PR #706 (2026-11-16) `fix(auth): show an error toast when the login session expires`
 
 ## v1.5.5
 
