@@ -7,7 +7,7 @@ import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './i
 
 const name = 'Kaveh & Alhaitham';
 const text = 'The room falls quiet as he sets the book aside.\n\nHe looks towards the window, then turns back to continue their conversation.';
-const generation = { source: 'custom', model: 'gemini-4-carbon', reasoning_effort: 'medium' };
+const generation = { source: 'openrouter', model: 'moonshotai/kimi-k2.5-thinking', reasoning_effort: 'medium' };
 const labels = { preparing: 'Preparing reply', 'waiting-memory': 'Waiting for memory', generating: 'Writing reply',
     agents: 'Running Agents', companions: 'Running Companions', review: 'Waiting for your review',
     translating: 'Translating reply', speech: 'Preparing speech', saving: 'Saving reply' };
@@ -24,9 +24,14 @@ const geometry = page => page.evaluate(() => {
     const row = document.querySelector('#neconyan-roleplay-preview') || [...document.querySelectorAll('#chat .mes[mesid]')].at(-1);
     const header = row.querySelector('.ch_name').getBoundingClientRect();
     const heading = row.querySelector('.neconyan-message-heading').getBoundingClientRect();
+    const timestamp = row.querySelector('.timestamp');
+    const model = row.querySelector('.timestamp-model');
     return { height: header.height, bodyOffset: row.querySelector('.mes_text').getBoundingClientRect().top - header.top,
         actions: row.querySelector('.mes_buttons').getBoundingClientRect().height,
-        overflow: Math.max(0, heading.right - header.right) };
+        overflow: Math.max(0, heading.right - header.right),
+        date: timestamp?.getBoundingClientRect().toJSON(), model: model?.getBoundingClientRect().toJSON(),
+        modelScrollWidth: model?.scrollWidth, modelClientWidth: model?.clientWidth,
+        modelWhiteSpace: model && getComputedStyle(model).whiteSpace, modelText: model?.textContent };
 });
 
 for (const phone of [true, false]) {
@@ -36,10 +41,12 @@ for (const phone of [true, false]) {
         const account = await app.account({ phone, contextOptions: phone ? IPHONE_SAFARI_CONTEXT : { viewport: { width: 1280, height: 900 } }, configureSettings(saved) {
             saved.power_user.timestamp_model_name = true;
             saved.power_user.timestamp_reasoning_effort = true;
+            saved.power_user.timestamp_model_icon = true;
         } });
         if (phone) await installIPhoneSafari(account.context);
         const page = await account.open({ workspace: false, readyTimeout: 60000 });
         if (phone) await applyIOSOnlyCss(page);
+        await page.addStyleTag({ content: '#toast-container, #nn-update-toast { visibility: hidden; }' });
         await page.evaluate(async avatar => {
             const core = await import('/script.js');
             await core.getCharacters();
@@ -52,12 +59,20 @@ for (const phone of [true, false]) {
         await page.waitForTimeout(2800);
         await fs.mkdir(new URL('../screenshots/stable-header/', import.meta.url), { recursive: true });
         const samples = [];
-        for (const scenario of ['new', 'swipe', 'first-swipe', 'document-new', 'document-swipe']) {
+        for (const scenario of ['new', 'swipe', 'first-swipe', 'document-new', 'document-swipe', 'no-timestamps-new', 'no-icon-new', 'icon-only-new', 'short-name-new', 'long-name-new']) {
             const replacement = scenario.includes('swipe');
             const firstSwipe = scenario === 'first-swipe';
+            const currentGeneration = scenario === 'long-name-new' ? { ...generation, model: 'model-' + 'x'.repeat(120) } : generation;
             await page.evaluate(async ({ name, text, generation, replacement, firstSwipe, scenario }) => {
                 const core = await import('/script.js');
+                const { power_user } = await import('/scripts/power-user.js');
                 document.body.classList.toggle('documentstyle', scenario.startsWith('document'));
+                document.body.classList.toggle('no-timestamps', scenario === 'no-timestamps-new');
+                document.body.classList.toggle('no-modelIcons', scenario === 'no-icon-new');
+                power_user.timestamp_model_icon = scenario !== 'no-icon-new';
+                power_user.timestamp_model_name = scenario !== 'icon-only-new';
+                power_user.timestamp_reasoning_effort = scenario !== 'icon-only-new';
+                power_user.timestamp_model_name_short = scenario === 'short-name-new';
                 const index = core.chat.length - 1;
                 const message = { name, mes: text, is_user: false, is_system: false, send_date: new Date().toISOString(),
                     extra: { api: generation.source, model: generation.model, reasoning_effort: generation.reasoning_effort },
@@ -78,17 +93,20 @@ for (const phone of [true, false]) {
                 window.restoreHeaderFetch = () => { window.fetch = originalFetch; };
                 window.headerSavedMessage = message;
                 core.setRoleplayJobControls('header-regression', () => {});
-            }, { name, text, generation, replacement, firstSwipe, scenario });
+            }, { name, text, generation: currentGeneration, replacement, firstSwipe, scenario });
             await expect.poll(() => page.evaluate(() => typeof window.sendHeaderPreview)).toBe('function');
             const run = [];
             for (const [index, [stage, label]] of Object.entries(labels).entries()) {
                 await page.evaluate(({ name, text, generation, stage, index }) => {
                     window.sendHeaderPreview({ childId: 'header', name, text, stage, updatedAt: Date.now(), ...(index > 1 ? { generation } : {}) });
-                }, { name, text, generation, stage, index });
+                }, { name, text, generation: currentGeneration, stage, index });
                 await expect(page.locator('#neconyan-roleplay-preview [role="status"]')).toContainText(label);
                 await expect(page.locator('#neconyan-roleplay-preview .mes_buttons')).toHaveAttribute('inert', '');
                 await expect(page.locator('#neconyan-roleplay-preview .mes_buttons')).toHaveAttribute('aria-disabled', 'true');
                 if (replacement) await expect(page.locator('#neconyan-roleplay-preview .mes_delete_add_swipe')).toBeVisible();
+                if (index > 1 && scenario !== 'no-icon-new' && !scenario.startsWith('document')) {
+                    await expect(page.locator('#neconyan-roleplay-preview .timestamp-icon')).toBeVisible();
+                }
                 await afterPaint(page);
                 run.push({ stage, ...await geometry(page) });
                 if (stage === 'agents' && ['new', 'swipe'].includes(scenario)) {
@@ -113,11 +131,27 @@ for (const phone of [true, false]) {
             samples.push({ scenario, run });
         }
         await info.attach('header-measurements', { body: JSON.stringify(samples, null, 2), contentType: 'application/json' });
-        console.log(viewport, JSON.stringify(samples));
-        for (const { run } of samples) {
+        for (const { scenario, run } of samples) {
             expect(run.every(sample => sample.actions > 0 && sample.overflow <= 0.5)).toBe(true);
-            expect(Math.max(...run.map(sample => sample.height)) - Math.min(...run.map(sample => sample.height))).toBeLessThanOrEqual(0.5);
-            expect(Math.max(...run.map(sample => sample.bodyOffset)) - Math.min(...run.map(sample => sample.bodyOffset))).toBeLessThanOrEqual(0.5);
+            // An unknown, unusually long identifier may need more than the reserved line once it arrives.
+            const stableRun = scenario === 'long-name-new' ? run.slice(2) : run;
+            expect(Math.max(...stableRun.map(sample => sample.height)) - Math.min(...stableRun.map(sample => sample.height)), `${scenario} header height`).toBeLessThanOrEqual(0.5);
+            expect(Math.max(...stableRun.map(sample => sample.bodyOffset)) - Math.min(...stableRun.map(sample => sample.bodyOffset)), `${scenario} reply position`).toBeLessThanOrEqual(0.5);
+            if (scenario === 'icon-only-new') {
+                expect(run.every(sample => !sample.model)).toBe(true);
+                expect(run.at(-1).height).toBeLessThan(samples.find(sample => sample.scenario === 'new').run.at(-1).height);
+            } else if (!scenario.startsWith('document')) {
+                for (const sample of run.slice(2)) {
+                    const model = scenario === 'long-name-new' ? 'model-' + 'x'.repeat(120) : scenario === 'short-name-new' ? 'kimi-k2.5-thinking' : generation.model;
+                    expect(sample.modelText).toBe(`${model} (${generation.reasoning_effort})`);
+                    if (scenario !== 'no-timestamps-new') expect(sample.model.top).toBeGreaterThanOrEqual(sample.date.bottom - 0.5);
+                    expect(sample.modelWhiteSpace).toBe('normal');
+                    expect(sample.modelScrollWidth).toBeLessThanOrEqual(sample.modelClientWidth);
+                }
+                if (scenario === 'long-name-new') expect(run.at(-1).model.height).toBeGreaterThan(run.at(-1).date.height * 1.5);
+            } else {
+                expect(run.every(sample => sample.date.width === 0 && (!sample.model || sample.model.width === 0))).toBe(true);
+            }
         }
         const contrasts = [];
         for (const accent of [null, 'Pearl', 'Midnight Ink']) {

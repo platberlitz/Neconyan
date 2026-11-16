@@ -2238,9 +2238,9 @@ export async function getCharacters() {
         body: JSON.stringify({}),
     });
     if (response.ok) {
+        const getData = await response.json();
         const previousAvatar = this_chid !== undefined ? characters[this_chid]?.avatar : null;
         characters.splice(0, characters.length);
-        const getData = await response.json();
         for (let i = 0; i < getData.length; i++) {
             characters[i] = getData[i];
             characters[i].name = DOMPurify.sanitize(characters[i].name);
@@ -5866,6 +5866,8 @@ function insertModelLabel(mes, extra) {
     // Keep the enabled metadata line ready before a server preview knows its model.
     mes.toggleClass('neconyan-model-line', mes.attr('is_user') === 'false'
         && (power_user.timestamp_model_name || power_user.timestamp_reasoning_effort || power_user.timestamp_model_icon));
+    mes.toggleClass('neconyan-model-text-line', mes.attr('is_user') === 'false'
+        && (power_user.timestamp_model_name || power_user.timestamp_reasoning_effort));
 
     const label = getMessageIconLabel(extra);
 

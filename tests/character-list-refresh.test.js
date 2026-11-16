@@ -59,3 +59,29 @@ test('an already stale read makes no request', async () => {
     expect(await context.getOneCharacter('New card.png', { allowInsert: true, isCurrent: () => false })).toBe(false);
     expect(context.fetch).not.toHaveBeenCalled();
 });
+
+const source = readFileSync(new URL('../public/script.js', import.meta.url), 'utf8');
+const getCharacters = source.match(/^export async function getCharacters\([\s\S]*?^}/m)[0].replace('export ', '');
+
+test('keeps the current character list available until the refreshed response is read', async () => {
+    let resolveJson;
+    let reportJsonRequest;
+    const json = new Promise(resolve => { resolveJson = resolve; });
+    const jsonRequested = new Promise(resolve => { reportJsonRequest = resolve; });
+    const characters = [{ avatar: 'nova.png', name: 'Nova', chat: 'Current chat' }];
+    const context = vm.createContext({
+        characters, this_chid: undefined,
+        fetch: async () => ({ ok: true, json: () => { reportJsonRequest(); return json; } }),
+        getRequestHeaders: () => ({}),
+        DOMPurify: { sanitize: value => value },
+        getGroups: async () => {}, printCharacters: async () => {},
+    });
+    vm.runInContext(getCharacters, context);
+
+    const refresh = context.getCharacters();
+    await jsonRequested;
+    expect(characters[0].avatar).toBe('nova.png');
+    resolveJson([{ avatar: 'nova.png', name: 'Nova', chat: 'Refreshed chat' }]);
+    await refresh;
+    expect(characters[0].chat).toBe('Refreshed chat');
+});

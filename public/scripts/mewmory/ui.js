@@ -2900,7 +2900,7 @@ function loadMewmoryStyles() {
     if (!style) {
         style = document.createElement('link');
         style.id = 'mewmory-css';
-        style.href = 'css/mewmory.css?v=20261117-persona-label-wrap';
+        style.href = 'css/mewmory.css?v=20261117-roleplay-model-header';
         document.head.append(style);
     }
     if (style.rel !== 'stylesheet') {
