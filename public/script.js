@@ -61,6 +61,7 @@ import { availableCharacterChatName, normalizeCharacterChatName, resolveCharacte
 import { getDebouncedChatSaveAbortReason, getQueuedChatSaveAbortReason } from './scripts/chat-save-guard.js';
 import { getChatBackupSaveOptions } from './scripts/chat-backup-sequence.js';
 import { fetchWithCsrfRetry } from './scripts/csrf-token-refresh.js';
+import { installSessionExpiryNotifier } from './scripts/session-expiry.js';
 import { roleplaySaveNotice } from './scripts/roleplay-reply-notice.js';
 import { beginRoleplaySave, bindRoleplayAccount, confirmRoleplayOverwrite, finishRoleplaySave, parseRoleplayRead, rememberRoleplayRead, roleplayAccountStamp, sendRoleplayLifecycle, sendRoleplaySave } from './scripts/roleplay-save-chain.js';
 import { getCharacterDefinitionFormValues, getSuspiciousEmptyCharacterDefinitionSave } from './scripts/character-save-guard.js';
@@ -604,6 +605,15 @@ toastr.subscribe(function (args) {
         $toast.removeAttr('title');
         $toast.addClass('toast-non-interactable');
     }
+});
+
+installSessionExpiryNotifier(window, () => {
+    toastr.error(t`Your login session has expired. Copy any unsaved text, then reload this page to sign in again.`, t`Session expired`, {
+        timeOut: 0,
+        extendedTimeOut: 0,
+        closeButton: true,
+        tapToDismiss: false,
+    });
 });
 
 export const characterGroupOverlay = new BulkEditOverlay();

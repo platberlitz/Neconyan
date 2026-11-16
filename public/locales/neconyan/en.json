@@ -21533,6 +21533,8 @@
   "Scene plan": "Scene plan",
   "---\ntype: scene\ntags: [scene]\n---\n# Scene plan\n\n## Goal\n\n## Who is in it\n\n## Beats\n- [ ] Opening\n- [ ] Turn\n- [ ] Ending\n\n## Notes": "---\ntype: scene\ntags: [scene]\n---\n# Scene plan\n\n## Goal\n\n## Who is in it\n\n## Beats\n- [ ] Opening\n- [ ] Turn\n- [ ] Ending\n\n## Notes",
   "Session journal": "Session journal",
+  "Session expired": "Session expired",
+  "Your login session has expired. Copy any unsaved text, then reload this page to sign in again.": "Your login session has expired. Copy any unsaved text, then reload this page to sign in again.",
   "---\ntype: journal\ntags: [journal]\n---\n# Session journal\n\n## What happened\n\n## Threads to pick up\n\n## Ideas for next time": "---\ntype: journal\ntags: [journal]\n---\n# Session journal\n\n## What happened\n\n## Threads to pick up\n\n## Ideas for next time",
   "Create note: ${0}": "Create note: ${0}",
   "Add to note: ${0}": "Add to note: ${0}",

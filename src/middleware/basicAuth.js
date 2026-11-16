@@ -105,6 +105,7 @@ function sendLoginRedirect(request, response) {
 
 function sendUnauthorized(response) {
     response.set(NO_STORE_HEADERS);
+    response.set('X-Neconyan-Auth', 'required');
     response.vary('Authorization');
     response.vary('Cookie');
     return response.status(401).json({ error: 'You are signed out. Sign in to continue.' });
