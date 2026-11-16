@@ -54,9 +54,35 @@ const fingerprint = (state, config) => hash([sourceFingerprint(state),
 // Reading and saving a large story takes tens of milliseconds each; awaiting a finished promise does not let
 // page requests in, so background work steps aside between those steps.
 const yieldToRequests = () => new Promise(resolve => setImmediate(resolve));
+// Each failure in a row doubles the wait before automatic updates try that chat again, from one minute up to
+// half an hour, and never sooner than a busy model service asked for.
+const retryTime = (error, failures, now = Date.now()) => Math.max(Number(error.retryAt) || 0,
+    now + Math.min(30 * 60 * 1000, 60 * 1000 * 2 ** (failures - 1)));
+const settingsFingerprint = config => hash([processingVersion(config, resolvedIdentities(config)), config.revision]);
+// Changed settings are tried straight away. A busy service clears up by itself, so that failure is retried
+// once its wait is over. Any other failure needs something that affects the result to change, as well as the wait.
+const automaticRetryAllowed = (previous, state, config, now = Date.now()) => {
+    if (previous?.status === 'cancelled') return previous.fingerprint !== fingerprint(state, config);
+    if (previous?.status !== 'failed') return true;
+    if (previous.settings && previous.settings !== settingsFingerprint(config)) return true;
+    if (Number(previous.retryAt) > now) return false;
+    return Boolean(previous.busy) || previous.fingerprint !== fingerprint(state, config);
+};
+// Automatic updates follow the chat being played. Reading every enabled chat in the background spent
+// most of the day's tokens on chats nobody had open; the others catch up when they are next replied in,
+// and Update memories still covers any chat on request.
+function mostRecentChat(directories, stories) {
+    let latest = null;
+    for (const story of stories) {
+        if (!story.enabled) continue;
+        const modified = fileStamp(chatPath(directories, story.locator))?.[2];
+        if (Number.isFinite(modified) && (!latest || modified > latest.modified)) latest = { key: statePath(directories, story.locator), modified };
+    }
+    return latest?.key ?? null;
+}
 
 /** Persist intent before starting work; neither the HTTP connection nor the selected chat owns it. */
-export async function startProcessing(directories, locator, { all = false, checkpoint = false, automatic = false } = {}, call) {
+export async function startProcessing(directories, locator, { all = false, checkpoint = false, automatic = false, unreadOnly = automatic } = {}, call) {
     const key = statePath(directories, locator);
     let state = await loadCurrentState(directories, locator);
     if (running.has(key)) {
@@ -68,8 +94,9 @@ export async function startProcessing(directories, locator, { all = false, check
     if (!state.enabled) return state;
     if (atCapacity(directories, automatic)) fail('Mewmory is busy updating other chats. Try again in a moment.', 429);
     const config = readConfig(directories);
-    const job = { id: randomUUID(), status: 'running', all, checkpoint, automatic,
-        fingerprint: fingerprint(state, config), startedAt: Date.now() };
+    const failures = state.processing?.status === 'failed' ? state.processing.failures || 1 : 0;
+    const job = { id: randomUUID(), status: 'running', all, checkpoint, automatic, unreadOnly: unreadOnly === true,
+        fingerprint: fingerprint(state, config), settings: settingsFingerprint(config), startedAt: Date.now(), ...(failures ? { failures } : {}) };
     state = mutateState(directories, locator, current => {
         current.processing = job;
         for (const batch of current.jobs) {
@@ -90,9 +117,14 @@ export async function startProcessing(directories, locator, { all = false, check
 }
 
 async function run(directories, locator, branchId, job, signal, call) {
-    const finish = (status, error = '', errorStatus = null) => mutateState(directories, locator, current => {
+    const finish = (status, error = '', errorStatus = null, extra = {}) => mutateState(directories, locator, current => {
         if (current.branchId !== branchId || current.processing?.id !== job.id) return;
-        Object.assign(current.processing, { status, error, errorStatus, finishedAt: Date.now() });
+        Object.assign(current.processing, { status, error, errorStatus, finishedAt: Date.now(), ...extra });
+        if (status !== 'failed') {
+            delete current.processing.failures;
+            delete current.processing.retryAt;
+            delete current.processing.busy;
+        }
     }, undefined, { existingOnly: true });
     try {
         for (let staleRetries = 0; ;) {
@@ -107,7 +139,7 @@ async function run(directories, locator, branchId, job, signal, call) {
             }
             let state;
             try {
-                state = await processBatch(directories, locator, { checkpoint: job.checkpoint, signal }, call);
+                state = await processBatch(directories, locator, { checkpoint: job.checkpoint, unreadOnly: job.unreadOnly === true, signal }, call);
                 staleRetries = 0;
             } catch (error) {
                 // Post-generation agents and trackers rewrite the reply just after it is saved; read the new text and go again.
@@ -119,7 +151,9 @@ async function run(directories, locator, branchId, job, signal, call) {
         finish(signal.aborted ? 'cancelled' : 'complete');
     } catch (error) {
         try {
-            finish(signal.aborted ? 'cancelled' : 'failed', error.status ? error.message : 'Mewmory processing failed. Its saved memory has been kept.', error.status || 500);
+            const failures = (job.failures || 0) + 1;
+            finish(signal.aborted ? 'cancelled' : 'failed', error.status ? error.message : 'Mewmory processing failed. Its saved memory has been kept.', error.status || 500,
+                signal.aborted ? {} : { failures, retryAt: retryTime(error, failures), ...(error.retryAt ? { busy: true } : {}) });
         } catch (saveError) {
             console.error('[Mewmory] Could not save processing status:', saveError);
         }
@@ -147,6 +181,7 @@ export async function scanProcessing(directories, call, { reconcile = true } = {
     const shared = reconcile ? sharedInputs(directories, config) : null;
     const stories = (await listStoriesGradually(directories)).sort((a, b) => b.updatedAt - a.updatedAt);
     const seen = new Set();
+    const followed = mostRecentChat(directories, stories);
     for (const [index, story] of stories.entries()) {
         const key = statePath(directories, story.locator);
         seen.add(key);
@@ -164,14 +199,15 @@ export async function scanProcessing(directories, call, { reconcile = true } = {
                     try { resumeVisibilityRestore(base, story.locator); } catch { /* Retry remains visible per chat. */ }
                 }
             }
-            if (story.processing?.status === 'running' && (!story.enabled || (story.processing.automatic && (!config.autoUpdate || capped)))) {
+            const automaticAllowed = config.autoUpdate && !capped && key === followed;
+            if (story.processing?.status === 'running' && (!story.enabled || (story.processing.automatic && !automaticAllowed))) {
                 mutateState(directories, story.locator, state => {
                     if (state.processing?.status === 'running') Object.assign(state.processing, { status: 'complete', finishedAt: Date.now() });
                 }, undefined, { existingOnly: true });
                 continue;
             }
             if (!story.enabled || atCapacity(directories, story.processing?.status !== 'running' || story.processing.automatic)) continue;
-            if (story.processing?.status !== 'running' && !(config.autoUpdate && config.roles.extractor.enabled)) continue;
+            if (story.processing?.status !== 'running' && !(automaticAllowed && config.roles.extractor.enabled)) continue;
             let state;
             let chat;
             if (reconcile) {
@@ -187,11 +223,11 @@ export async function scanProcessing(directories, call, { reconcile = true } = {
             if (running.has(key) || atCapacity(directories, story.processing?.status !== 'running' || story.processing.automatic)) continue;
             const previous = state.processing;
             let idle = false;
-            if (previous?.status === 'running' && (!previous.automatic || (config.autoUpdate && !capped))) {
+            if (previous?.status === 'running' && (!previous.automatic || automaticAllowed)) {
                 await startProcessing(directories, story.locator, previous, call);
-            } else if (config.autoUpdate && !capped && config.roles.extractor.enabled
-                && pendingSources(state, config, { checkpoint: config.excludeHistory }).length
-                && (!['failed', 'cancelled'].includes(previous?.status) || previous.fingerprint !== fingerprint(state, config))) {
+            } else if (automaticAllowed && config.roles.extractor.enabled
+                && pendingSources(state, config, { checkpoint: config.excludeHistory, unreadOnly: true }).length
+                && automaticRetryAllowed(previous, state, config)) {
                 await startProcessing(directories, story.locator, { all: true, checkpoint: config.excludeHistory, automatic: true }, call);
             } else {
                 idle = true;

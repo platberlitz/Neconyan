@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { fail, hash, list, refKey, sourceEligible, text } from './core.js';
+import { fail, hash, list, sourceEligible, sourceRead, text } from './core.js';
 import { generationFingerprint } from './context.js';
 import { readConfig } from './models.js';
 import { processingVersion } from './processing.js';
@@ -55,9 +55,12 @@ export async function prepareMewmoryPrompt(directories, body, signal, {
     let excludedMessages = 0;
     let excludedToolRows = 0;
     let desiredIndices = [];
+    // A message read under older settings, or before a card or lorebook entry
+    // changed, still has its memories, so it stays out of the prompt until the
+    // author chooses to re-read it.
     const isPreserved = index => {
         const ref = state.timeline[index + offset];
-        return Boolean(ref && (!sourceEligible(state, ref) || state.checkpoints[refKey(ref)] === policy));
+        return Boolean(ref && (!sourceEligible(state, ref) || sourceRead(state.checkpoints, ref)));
     };
     if (config.excludeHistory && config.historyMode === 'messages') {
         const ordinary = history.filter(item => {
@@ -107,7 +110,7 @@ export async function prepareMewmoryPrompt(directories, body, signal, {
         }
         if (waitingForPreservation) {
             return { enabled: true, waiting: true, waitSnapshot,
-                pending: eligibleRefs.filter(ref => state.checkpoints[refKey(ref)] !== policy).length,
+                pending: eligibleRefs.filter(ref => !sourceRead(state.checkpoints, ref)).length,
                 processing: state.processing || null, extractorEnabled: Boolean(config.roles.extractor.enabled) };
         }
     }

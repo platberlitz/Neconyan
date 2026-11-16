@@ -6,10 +6,9 @@ import { captureGenerationBinding, resolveGenerationProfile } from '../generatio
 import { createRoleplayChatCounter, createRoleplayTextCounter } from '../generation/roleplay-budget.js';
 import { resolveTextTokenizer } from '../generation/text-request.js';
 import { captureSavedTokenizer } from '../generation/saved-token-counter.js';
-import { hash, refKey, sourceEligible, syncSources } from './core.js';
+import { hash, sourceEligible, sourceRead, syncSources } from './core.js';
 import { readConfig } from './models.js';
-import { processingVersion } from './processing.js';
-import { readContextSourcesSync, roleIdentityChanged } from './sources.js';
+import { readContextSourcesSync } from './sources.js';
 import { readJsonShared, readStateShared, sourceSyncOptions } from './store.js';
 import { getCounter, getTokenizerModel } from './tokens.js';
 
@@ -175,10 +174,8 @@ function preservationCheck(records, archivedState, config, contextSources, sourc
     const messages = records.slice(1);
     syncSources(shadow, messages, contextSources, sourceOptions);
     const offset = shadow.inheritedTimeline?.length || 0;
-    const policy = processingVersion(config);
-    // Hiding can run without loadCurrentStateSync, so it must apply the same identity check.
-    // A changed profile source or model means the stored marks belong to another reader.
-    const identityChanged = roleIdentityChanged(archivedState, config);
+    // A message read with an older model or settings keeps its memories, so it
+    // still counts as preserved; re-reading it is the author's choice.
     // Message-mode hiding always needs preservation checkpoints. Token-mode hiding
     // normally has no checkpoints when history exclusion is off, so it uses the
     // ordinary processed marks the worker writes for every finished batch.
@@ -186,9 +183,8 @@ function preservationCheck(records, archivedState, config, contextSources, sourc
     return {
         messages,
         isPreserved: index => {
-            if (identityChanged) return false;
             const ref = shadow.timeline[index + offset];
-            return Boolean(ref && (!sourceEligible(shadow, ref) || marks[refKey(ref)] === policy));
+            return Boolean(ref && (!sourceEligible(shadow, ref) || sourceRead(marks, ref)));
         },
     };
 }

@@ -96,6 +96,36 @@ export function sourceAt(state, ref) {
     return source?.revisions.find(revision => revision.revision === ref.revision);
 }
 
+/** The mark a whole-chat change leaves on a message that was already read into memory. */
+export const READ_EARLIER = 'read-earlier';
+
+/** True once a message has been read into memory, under the current settings or earlier ones. */
+export const sourceRead = (marks, ref) => Object.hasOwn(marks || {}, refKey(ref));
+
+/**
+ * A card, lorebook entry, correction, exclusion or model change used to erase every
+ * mark, so automatic updates re-read the whole chat at full price. The marks stay
+ * instead, flagged as read earlier: the memories still count, and only an explicit
+ * re-read replaces them. Marks for messages no longer in the chat are dropped.
+ */
+export function retireCoverage(state, retire = () => true) {
+    const current = new Set(state.timeline.map(refKey));
+    for (const marks of [state.coverage, state.checkpoints]) {
+        for (const key of Object.keys(marks)) {
+            if (!current.has(key)) delete marks[key];
+            else if (retire(marks[key])) marks[key] = READ_EARLIER;
+        }
+    }
+}
+
+/** Messages read in the same batch as records that are going away lose their memories too, so they are read again. */
+export function forgetReaders(records, state) {
+    for (const key of new Set(records.flatMap(record => record.inputRefs || []).map(refKey))) {
+        delete state.coverage[key];
+        delete state.checkpoints[key];
+    }
+}
+
 export function sourceEligible(state, ref, asOf = Infinity) {
     const source = state.sources[ref?.id];
     const revision = source && sourceAt(state, ref);
@@ -284,8 +314,7 @@ export function syncSources(state, messages, context = [], { trackerAgentIds = [
     state.contextSources = contextSources;
     const changedAt = timeline.findIndex((ref, index) => previousTimeline[index] && refKey(ref) !== refKey(previousTimeline[index]));
     if (previousContext !== extractionContext(contextSources)) {
-        state.coverage = {};
-        state.checkpoints = {};
+        retireCoverage(state);
     } else if (changedAt >= 0) {
         const changedIds = new Set(timeline.filter((ref, index) => previousTimeline[index]
             && refKey(ref) !== refKey(previousTimeline[index])).map(ref => ref.id));
@@ -340,8 +369,8 @@ export function purgeSources(state, sourceIds) {
     state.recalls = [];
     state.preview = null;
     state.index = { version: '', vectors: {}, pending: true };
-    state.coverage = {};
-    state.checkpoints = {};
+    forgetReaders(revisions.filter(record => removedVersions.has(record.id + '@' + record.version)), state);
+    retireCoverage(state);
 }
 
 export function sourceFingerprint(state) {
@@ -555,8 +584,7 @@ export function putRecord(state, record, { automatic = false, force = false } = 
         const signatures = [...new Set([...(state.overrides.find(override => override.id === record.id)?.signatures || []), ...correctionSignatures(state, record.id)])];
         state.overrides = state.overrides.filter(override => override.id !== record.id);
         state.overrides.push({ id: record.id, signatures });
-        state.coverage = {};
-        state.checkpoints = {};
+        retireCoverage(state);
     }
     state.index.pending = true;
     state.recalls = [];

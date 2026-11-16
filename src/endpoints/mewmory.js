@@ -2,12 +2,12 @@ import { prepareMewmoryPrompt } from '../mewmory/prepare.js';
 import express from 'express';
 import { abortOnRequestClose } from '../util.js';
 import {
-    continueState, eligibleRecords, fail, hash, list, object, putRecord, recordEligible, recordRevision,
-    refKey, sourceAt, sourceEligible, SOURCE_TYPES, strings, syncSources, text, undoRecord, validateRecord,
+    continueState, eligibleRecords, fail, forgetReaders, hash, list, object, putRecord, recordEligible, recordRevision,
+    refKey, retireCoverage, sourceAt, sourceEligible, sourceRead, SOURCE_TYPES, strings, syncSources, text, undoRecord, validateRecord,
 } from '../mewmory/core.js';
 import { activeReferences, assemblyFingerprint, currentOverviews, generationFingerprint, playerReferences } from '../mewmory/context.js';
 import { embed, publicConfig, readConfig, roleVersion, saveConfig } from '../mewmory/models.js';
-import { addUsage, pendingSources, processingVersion } from '../mewmory/processing.js';
+import { addUsage, pendingSources } from '../mewmory/processing.js';
 import { cancelProcessing, startProcessing, waitForProcessing } from '../mewmory/worker.js';
 import { recall } from '../mewmory/retrieval.js';
 import { hybridCandidates, searchDocuments, updateIndex } from '../mewmory/search.js';
@@ -166,12 +166,16 @@ export function inspectState(state, config, { query = '', kind = '', ownerId = '
         && (!search || JSON.stringify(record).toLocaleLowerCase().includes(search)))
         .sort(Object.hasOwn(RECORD_SORTS, sort) ? RECORD_SORTS[sort] : RECORD_SORTS.story);
     const page = Number.isSafeInteger(offset) && offset >= 0 ? offset : 0;
-    const policy = processingVersion(config);
     let watermark = -1;
     for (const ref of state.timeline) {
-        if (sourceEligible(state, ref) && state.checkpoints[refKey(ref)] !== policy) break;
+        if (sourceEligible(state, ref) && !sourceRead(state.checkpoints, ref)) break;
         watermark = sourceAt(state, ref)?.sequence ?? watermark;
     }
+    const followCheckpoints = config.excludeHistory === true;
+    const unread = pendingSources(state, config, { unreadOnly: true }).length;
+    const checkpointUnread = pendingSources(state, config, { checkpoint: true, unreadOnly: true }).length;
+    const rereadPending = pendingSources(state, config, { checkpoint: followCheckpoints }).length
+        - (followCheckpoints ? checkpointUnread : unread);
     return {
         locator: state.locator, revision: state.revision, storyId: state.storyId, branchId: state.branchId,
         parent: state.parent, enabled: state.enabled, activeNpcIds: state.activeNpcIds,
@@ -196,8 +200,8 @@ export function inspectState(state, config, { query = '', kind = '', ownerId = '
         }),
         health: {
             processing: state.processing || null,
-            pending: pendingSources(state, config).length, totalMessages: state.timeline.length,
-            preservedThrough: watermark, checkpointPending: pendingSources(state, config, { checkpoint: true }).length,
+            pending: unread, totalMessages: state.timeline.length,
+            preservedThrough: watermark, checkpointPending: checkpointUnread, rereadPending,
             indexVersion: state.index.version, indexPending: state.index.pending, jobs: state.jobs.slice(-10),
             indexStatus: !config.roles.embedding.enabled ? 'lexical'
                 : state.index.version === roleVersion(config, 'embedding') && !state.index.pending ? 'ready' : 'building',
@@ -403,8 +407,9 @@ route('/source/exclude', async (directories, body) => {
     const state = mutateState(directories, locator, state => {
         state.excludedSources = state.excludedSources.filter(id => id !== body.id);
         if (body.exclude === true) state.excludedSources.push(body.id);
-        state.coverage = {};
-        state.checkpoints = {};
+        forgetReaders(state.records.filter(record => [...record.refs, ...(record.inputRefs || []), ...(record.evidenceRefs || [])]
+            .some(ref => ref.id === body.id)), state);
+        retireCoverage(state);
         state.preview = null;
         state.index.pending = true;
     }, current.revision);
@@ -412,8 +417,8 @@ route('/source/exclude', async (directories, body) => {
 });
 
 /** What a whole-chat update will read, from this chat's own past model calls. Mewmory knows no prices, so it counts tokens. */
-export async function estimateUpdate(directories, state, config, { checkpoint = false } = {}) {
-    const pending = pendingSources(state, config, { checkpoint });
+export async function estimateUpdate(directories, state, config, { checkpoint = false, unreadOnly = false } = {}) {
+    const pending = pendingSources(state, config, { checkpoint, unreadOnly });
     const role = config.roles.extractor;
     const counter = await getCounter(role.tokenizer, { tokenizerKey: 'openai', tokenizerName: role.model });
     const messageTokens = pending.reduce((sum, ref) => sum + counter.count(sourceAt(state, ref)?.text || ''), 0);
@@ -433,12 +438,16 @@ export async function estimateUpdate(directories, state, config, { checkpoint = 
 
 route('/estimate', async (directories, body) => {
     const state = await loadCurrentState(directories, normalizeLocator(body.locator));
-    return estimateUpdate(directories, state, readConfig(directories), { checkpoint: body.checkpoint === true });
+    return estimateUpdate(directories, state, readConfig(directories), {
+        checkpoint: body.checkpoint === true, unreadOnly: body.unreadOnly === true,
+    });
 });
 
 route('/process', async (directories, body) => {
     const locator = normalizeLocator(body.locator);
-    let state = await startProcessing(directories, locator, { all: body.all === true, checkpoint: body.checkpoint === true });
+    let state = await startProcessing(directories, locator, {
+        all: body.all === true, checkpoint: body.checkpoint === true, unreadOnly: body.unreadOnly === true,
+    });
     if (body.background !== true && state.processing?.status === 'running') {
         state = await waitForProcessing(directories, locator);
         if (state.processing?.status === 'failed') fail(state.processing.error, state.processing.errorStatus || 500);
@@ -652,8 +661,7 @@ export function restoreRecords(state, backup) {
         }
     }
     skipped.push(...pending.map(item => ({ id: item.id, reason: 'A required linked memory could not be restored.' })));
-    state.coverage = {};
-    state.checkpoints = {};
+    retireCoverage(state);
     state.preview = null;
     return { restored: [...imported.values()].map(record => record.id), skipped };
 }

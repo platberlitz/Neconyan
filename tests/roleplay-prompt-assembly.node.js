@@ -396,7 +396,8 @@ test('native wait starts one worker and dispatches once when its older prefix is
     let calls = 0;
     job.options.startMemoryProcessing = async (directories, locator, options) => {
         starts++;
-        assert.deepEqual(options, { all: true, checkpoint: true });
+        // A reply waits only for messages Mewmory has never read; older reads still count.
+        assert.deepEqual(options, { all: true, checkpoint: true, unreadOnly: true });
         const policy = processingVersion(readConfig(directories));
         mutateState(directories, locator, state => {
             for (const ref of state.timeline.slice(0, 5)) state.checkpoints[refKey(ref)] = policy;
