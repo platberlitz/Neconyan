@@ -20,6 +20,120 @@ test.setTimeout(180000);
 for (const width of [393, 1280]) {
     test.describe(`Agent shortcuts at ${width}px`, () => {
         test.use({ viewport: { width, height: width === 393 ? 852 : 900 }, hasTouch: width === 393, isMobile: width === 393 });
+        test('bulk companion targets preserve choices, validate selection and persist chosen or all companions', async ({ page }, info) => {
+            const errors = [];
+            page.on('pageerror', error => errors.push(error.message));
+            await page.goto('/', { waitUntil: 'domcontentloaded' });
+            await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'));
+            const skip = page.getByRole('region', { name: 'Neconyan interactive tutorial' }).getByRole('button', { name: 'Skip', exact: true });
+            if (await skip.isVisible()) await skip.click();
+            const prefix = `targets-${width}-${Date.now()}`;
+            const ids = ['rewrite', 'both', 'pre', 'tool', 'scene', 'story'].map(suffix => `${prefix}-${suffix}`);
+            const readAgents = () => page.evaluate(async ids => {
+                const store = await import('/scripts/extensions/in-chat-agents/agent-store.js');
+                return ids.map(id => store.getAgentById(id));
+            }, ids);
+            const openPicker = async () => {
+                await page.locator('#ica--selectMode').click();
+                await page.locator('#ica--bulkSelectAll').click();
+                const more = page.locator('#ica--bulkBar details');
+                if (!await more.evaluate(details => details.open)) await more.locator('summary').click();
+                await page.locator('#ica--bulkEnableOnCompanions').click();
+            };
+            const dialog = page.getByRole('dialog', { name: 'On Companions', exact: true });
+            const mode = dialog.getByLabel('Companions to change', { exact: true });
+            try {
+                await page.evaluate(async ({ ids, prefix }) => {
+                    const store = await import('/scripts/extensions/in-chat-agents/agent-store.js');
+                    const names = ['Polish prose', 'Check continuity', 'Before reply', 'Utility tool', 'Scene notes', 'Story notes'];
+                    for (const [i, id] of ids.entries()) {
+                        await store.saveAgent({ ...store.createDefaultAgent(), id, name: names[i], tags: [prefix],
+                            phase: i === 1 ? 'both' : i === 2 ? 'pre' : 'post', category: i === 3 ? 'tool' : 'custom',
+                            execution: i >= 4 ? 'companion' : 'inline', enabled: false,
+                            sourceTemplateId: i === 4 ? `${prefix}-template` : '',
+                            conditions: { runOnCompanionOutputs: i === 1, companionOutputTargetAgentIds: i === 0 ? [`${prefix}-template`, 'unavailable-companion'] : i === 1 ? [ids[5]] : [] },
+                        });
+                    }
+                    window.NeconyanShell.openTab('left', 'agents');
+                }, { ids, prefix });
+                await expect(page.locator('#ica--settings')).toBeVisible();
+                await page.locator('#ica--agentTabs [data-tab="all"]').click();
+                await page.locator('#ica--search').fill(prefix);
+                await expect(page.locator('#ica--agentList .ica--agent-card')).toHaveCount(6);
+                const original = await readAgents();
+                await openPicker();
+                await expect(dialog.locator('[data-selection]')).toHaveText('2 after-reply agents selected');
+                await mode.selectOption('all');
+                await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+                expect(await readAgents()).toEqual(original);
+                await page.locator('#ica--bulkEnableOnCompanions').click();
+                await dialog.getByRole('button', { name: 'Save changes' }).click();
+                await expect(dialog).toHaveCount(0);
+                const kept = await readAgents();
+                expect(kept.slice(0, 2).map(agent => agent.conditions.runOnCompanionOutputs)).toEqual([true, true]);
+                expect(kept[0].conditions.companionOutputTargetAgentIds).toEqual([`${prefix}-template`, 'unavailable-companion']);
+                expect(kept[1].conditions.companionOutputTargetAgentIds).toEqual([ids[5]]);
+                expect(kept.slice(2)).toEqual(original.slice(2));
+                await openPicker();
+                await mode.selectOption('chosen');
+                const list = dialog.getByRole('group', { name: 'Chosen companions', exact: true });
+                await expect(list.getByLabel('Scene notes', { exact: true })).toBeChecked();
+                await expect(list.getByLabel('Unavailable: unavailable-companion', { exact: true })).toBeChecked();
+                await list.getByRole('button', { name: 'Clear shown' }).click();
+                await dialog.getByRole('button', { name: 'Save changes' }).click();
+                await expect(dialog.getByRole('alert')).toHaveText('Choose at least one companion, or select All companions.');
+                expect(await readAgents()).toEqual(kept);
+                await list.getByLabel('Find a companion').fill('Scene notes');
+                await list.getByRole('button', { name: 'Select shown' }).click();
+                await expect(list.locator('input:checked')).toHaveCount(1);
+                await list.getByLabel('Find a companion').fill('');
+                // An unrelated edit while the picker is open must not be overwritten.
+                await page.evaluate(async id => {
+                    const store = await import('/scripts/extensions/in-chat-agents/agent-store.js');
+                    await store.saveAgent({ ...store.getAgentById(id), description: 'Changed elsewhere.' });
+                }, ids[0]);
+                await dialog.getByRole('button', { name: 'Save changes' }).click();
+                await expect(dialog.getByRole('alert')).toHaveText('These agents changed. Cancel and reopen settings.');
+                await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+                await page.locator('#ica--bulkEnableOnCompanions').click();
+                await mode.selectOption('chosen');
+                await list.getByRole('button', { name: 'Clear shown' }).click();
+                await list.getByLabel('Scene notes', { exact: true }).check();
+                const geometry = await dialog.evaluate(root => ({
+                    width: root.clientWidth, scroll: root.scrollWidth, document: document.documentElement.scrollWidth,
+                    targets: [...root.querySelectorAll('.ica--link-option')].map(row => row.getBoundingClientRect().height),
+                }));
+                expect(geometry.document).toBeLessThanOrEqual(width + 1);
+                expect(geometry.scroll).toBeLessThanOrEqual(geometry.width + 1);
+                expect(geometry.targets.every(height => height >= 44)).toBe(true);
+                await page.evaluate(() => window.toastr?.remove());
+                await page.screenshot({ path: info.outputPath('companion-targets.png') });
+                await dialog.getByRole('button', { name: 'Save changes' }).click();
+                await expect(dialog).toHaveCount(0);
+                const chosen = await readAgents();
+                expect(chosen.slice(0, 2).map(agent => agent.conditions.companionOutputTargetAgentIds)).toEqual([[ids[4]], [ids[4]]]);
+                expect(chosen.every(agent => !agent.enabled)).toBe(true);
+                expect(chosen.slice(2)).toEqual(original.slice(2));
+                await page.reload({ waitUntil: 'domcontentloaded' });
+                await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'));
+                await page.evaluate(() => window.NeconyanShell.openTab('left', 'agents'));
+                await expect(page.locator('#ica--settings')).toBeVisible();
+                await page.locator('#ica--search').fill(prefix);
+                await expect(page.locator('#ica--agentList .ica--agent-card')).toHaveCount(6);
+                expect((await readAgents()).slice(0, 2).map(agent => agent.conditions.companionOutputTargetAgentIds)).toEqual([[ids[4]], [ids[4]]]);
+                await openPicker();
+                await mode.selectOption('all');
+                await dialog.getByRole('button', { name: 'Save changes' }).click();
+                await expect(dialog).toHaveCount(0);
+                expect((await readAgents()).slice(0, 2).map(agent => agent.conditions.companionOutputTargetAgentIds)).toEqual([[], []]);
+                expect(errors).toEqual([]);
+            } finally {
+                await page.evaluate(async ids => {
+                    const store = await import('/scripts/extensions/in-chat-agents/agent-store.js');
+                    for (const id of ids) await store.deleteAgent(id);
+                }, ids);
+            }
+        });
         test('history, filtered batches, links and quick settings persist without opening the editor', async ({ page }, info) => {
             const errors = [];
             const timings = {};

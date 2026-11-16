@@ -1,5 +1,8 @@
 // Questions and distinguishing facts shared by Node and real-browser retrieval checks.
 export const refreshedKnowledgeCases = [
+    ['How do I auto-run post-gen agents on chosen companions?', 'agents.companion-output-targets', 'Chosen companions'],
+    ['Does On Companions switch disabled agents on?', 'agents.companion-output-targets', 'does not process old notes or switch disabled agents on'],
+    ['What does Keep each agent’s choices do in On Companions?', 'agents.companion-output-targets', 'preserving each saved target list'],
     ['Where do I open Gallery?', 'images.quick-gallery', 'just above Chat Archive'],
     ['Can I add a Gallery Quick Access shortcut?', 'images.quick-gallery', 'top-bar shortcut'],
     ['What does Generate image in an empty Gallery do?', 'images.quick-gallery', 'without making a request'],
