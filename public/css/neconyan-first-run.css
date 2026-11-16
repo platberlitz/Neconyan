@@ -96,3 +96,37 @@ body.neconyan #rm_api_block .neconyan-connection-test-result:is([data-state="suc
     color: var(--neco-ink);
     font-weight: 600;
 }
+
+/* Simple Mode: the 'Story so far' memory popup. */
+body.neconyan .neconyan-story-so-far {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    text-align: left;
+}
+
+body.neconyan .neconyan-story-so-far > :is(h3, p) {
+    margin: 0;
+}
+
+body.neconyan .neconyan-story-so-far > .checkbox_label {
+    min-height: 44px;
+    align-items: center;
+}
+
+body.neconyan .neconyan-story-so-far > .menu_button {
+    min-height: 44px;
+    margin: 0;
+}
+
+body.neconyan .neconyan-story-so-far-summary {
+    align-self: stretch;
+    max-height: 40dvh;
+    overflow-y: auto;
+    padding: 10px 12px;
+    border: 1px solid var(--neco-line);
+    border-radius: 10px;
+    color: var(--neco-muted);
+    white-space: pre-wrap;
+}

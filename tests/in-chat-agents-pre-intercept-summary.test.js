@@ -262,6 +262,7 @@ beforeAll(async () => {
         hasConnectedCompanionAgents: jest.fn(() => false),
         initCompanionRunner: jest.fn(),
         runConnectedCompanionsOnMessage: jest.fn(async () => []),
+        runCompanionAgentOnMessage: jest.fn(async () => null),
         runTrackerCompanionsOnMessage: jest.fn(async () => []),
         syncCompanionChatHistoryConfig: jest.fn(() => 0),
     }));

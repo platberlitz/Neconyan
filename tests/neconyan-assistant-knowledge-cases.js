@@ -209,6 +209,8 @@ export const refreshedKnowledgeCases = [
     ['How do I start the Taro Agents tour?', 'agents.tour', 'without saving changes, running agents'],
     ['How do I hide all tour buttons?', 'navigation.page-tours', 'Settings → Appearance → Page tours'],
     ['How do I turn off Simple Mode?', 'start.simple-mode', 'Show all features in the sidebar'],
+    ['Where is memory in Simple Mode?', 'agents.memory-shard', 'opens Story so far'],
+    ['Does Memory Shard hide messages by itself?', 'agents.memory-shard', 'hidden from the model automatically'],
     ['Why is Persona missing in Simple Mode?', 'start.simple-mode', 'including Persona'],
     ['Where did the Extensions button go? There are too many buttons anyway', 'start.simple-mode', 'Nothing is deleted or disabled'],
     ['Do greetings show a token count?', 'characters.greetings', 'without waiting for a generated reply'],

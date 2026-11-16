@@ -170,4 +170,27 @@ describe('Simple Mode styles and wiring', () => {
         expect(welcome).toContain('label: \'Show all features\'');
         expect(welcome).toContain('showTutorialCoachmark({ askSimpleMode: getSimpleModePreference() === \'ask\', askAssistants: meetAssistants });');
     });
+
+    test('memory looks after itself: new accounts start with Memory Shard on and Simple Mode shows one Memory button', () => {
+        const defaults = JSON.parse(read('default/content/settings.json'));
+        expect(defaults.accountStorage['NeconyanMemoryShardSeed.v1']).toBe('on');
+
+        const agents = read('public/scripts/extensions/in-chat-agents/index.js');
+        expect(agents).toContain('const MEMORY_SHARD_SEED_KEY = \'NeconyanMemoryShardSeed.v1\';');
+        expect(agents).toMatch(/await ensureDefaultBundledAgents\(\);\s+await seedMemoryShardForNewAccount\(\);/);
+        expect(agents).toContain('if (accountStorage.getItem(MEMORY_SHARD_SEED_KEY) !== \'on\') return;');
+        // An account that already made its own Memory Shard keeps the state it chose.
+        expect(agents).toContain('if (!had) await saveAgentEnabledState([agent.id], true);');
+        expect(agents).toContain('neconyanAgents.memoryShard = {');
+
+        const welcome = read('public/scripts/welcome-screen.js');
+        expect(welcome).toContain('simpleMemory.dataset.neconyanSimpleMemory = \'true\';');
+        // The button shares the container that is hidden outside Simple Mode.
+        expect(welcome).toContain('rail.querySelector(\'[data-neconyan-simple-exit]\')?.append(simpleMemory, simpleExit);');
+        expect(welcome).toContain('When a chat gets long, the LLM writes down what happened so your character does not forget.');
+        expect(welcome).toContain('globalThis.NeconyanShell?.openTab?.(\'left\', \'mewmory\')');
+
+        const runner = read('public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        expect(runner).toContain('{ keepInMewmory: true }');
+    });
 });

@@ -2131,6 +2131,78 @@ function createNeconyanRailButton({ label, icon, route = '', onClick }) {
 }
 
 // Simple Mode gives a few sidebar pages a plainer name; the usual name returns with the full sidebar.
+/**
+ * Simple Mode's whole memory page: one switch, one button and the latest summary.
+ * Memory Shard does the work; Mewmory stays one link away for finer control.
+ */
+async function openStorySoFar() {
+    const memory = globalThis.NeconyanAgents?.memoryShard;
+    const page = document.createElement('div');
+    page.className = 'neconyan-story-so-far';
+    const title = document.createElement('h3');
+    title.textContent = t`Story so far`;
+    const intro = document.createElement('p');
+    intro.textContent = t`When a chat gets long, the LLM writes down what happened so your character does not forget.`;
+    const toggle = document.createElement('label');
+    toggle.className = 'checkbox_label';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.dataset.storySoFarEnabled = 'true';
+    const toggleText = document.createElement('span');
+    toggleText.textContent = t`Write down long chats for me`;
+    toggle.append(input, toggleText);
+    const summarise = document.createElement('button');
+    summarise.type = 'button';
+    summarise.className = 'menu_button';
+    summarise.dataset.storySoFarSummarise = 'true';
+    summarise.textContent = t`Summarise now`;
+    const summary = document.createElement('div');
+    summary.className = 'neconyan-story-so-far-summary';
+    summary.dataset.storySoFarSummary = 'true';
+    summary.setAttribute('role', 'status');
+    const finer = document.createElement('button');
+    finer.type = 'button';
+    finer.className = 'menu_button';
+    finer.dataset.storySoFarMewmory = 'true';
+    finer.textContent = t`Want finer control? Open Mewmory`;
+    page.append(title, intro, toggle, summarise, summary, finer);
+
+    const sync = () => {
+        const state = memory?.getState?.() ?? { available: false, enabled: false, canSummarise: false, summary: '' };
+        input.checked = Boolean(state.enabled);
+        input.disabled = !state.available;
+        summarise.disabled = !state.enabled || !state.canSummarise;
+        summary.textContent = state.summary
+            || (state.available ? t`Nothing written down yet. Open a chat and keep talking; the LLM starts once it gets long.` : t`Agents are still loading. Try again in a moment.`);
+    };
+    input.addEventListener('change', async () => {
+        input.disabled = true;
+        if (await memory?.setEnabled?.(input.checked) === false) {
+            toastr.warning(t`That could not be saved. Try again in a moment.`);
+        }
+        sync();
+    });
+    summarise.addEventListener('click', async () => {
+        summarise.disabled = true;
+        summary.textContent = t`Writing it down...`;
+        try {
+            await memory?.summariseNow?.();
+        } catch (error) {
+            console.error('Story so far could not be summarised', error);
+            toastr.warning(t`The LLM could not write it down. Check your connection, then try again.`);
+        }
+        sync();
+    });
+    sync();
+
+    const popup = callGenericPopup(page, POPUP_TYPE.TEXT, '', { okButton: t`Done` });
+    finer.addEventListener('click', () => {
+        page.closest('dialog')?.querySelector('.popup-button-ok')?.click();
+        globalThis.NeconyanShell?.openTab?.('left', 'mewmory');
+    });
+    await popup;
+}
+
 function syncNeconyanRailSimpleLabels() {
     const simple = document.documentElement.classList.contains(SIMPLE_MODE_CLASS);
     for (const [route, simpleLabel] of Object.entries(SIMPLE_MODE_RAIL_LABELS)) {
@@ -2468,7 +2540,15 @@ function ensureNeconyanRail() {
     });
     delete simpleExit.dataset.neconyanRoute;
     simpleExit.title = t`Simple Mode is on. Show every feature again.`;
-    rail.querySelector('[data-neconyan-simple-exit]')?.append(simpleExit);
+    const simpleMemory = createNeconyanRailButton({
+        label: 'Memory',
+        icon: 'fa-book-bookmark',
+        onClick: () => void openStorySoFar(),
+    });
+    delete simpleMemory.dataset.neconyanRoute;
+    simpleMemory.dataset.neconyanSimpleMemory = 'true';
+    simpleMemory.title = t`See what has been written down about this chat so far.`;
+    rail.querySelector('[data-neconyan-simple-exit]')?.append(simpleMemory, simpleExit);
 
     const modeNav = rail.querySelector('[data-neconyan-mode-nav]');
     if (modeNav instanceof HTMLElement) {

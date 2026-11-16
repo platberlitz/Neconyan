@@ -162,9 +162,22 @@ export function planRoleplayCompanionStart({ agents, snapshot, pre, records, val
     const preparedRecords = companionHostRecords(projectPromptMediaRecords(records, snapshot.mediaPolicy, { hash: roleplayHash }), value, effect, assistantName);
     const messages = preparedRecords.slice(1);
     const hostResults = getActiveCompanionResults(messages.at(-1));
-    const availableTokens = messages.filter(message => !message.is_system).reduce((total, message) => total + companionMessageTokens(message), 0);
+    const tokensFrom = start => messages.slice(start).filter(message => !message.is_system).reduce((total, message) => total + companionMessageTokens(message), 0);
+    const availableTokens = tokensFrom(0);
+    // Same rule as the browser: a finished Memory Shard summary is not rewritten
+    // on every reply. The chat has to grow by the threshold again first.
+    const grownSinceSummary = agent => {
+        if (!agent.companion.minContextTokens || !references(agent).includes(MEMORY_SHARD_TEMPLATE_ID)) return true;
+        for (let index = messages.length - 2; index >= 0; index--) {
+            const result = getActiveCompanionResults(messages[index])[agent.id];
+            const content = clean(result?.content);
+            if (result?.status === 'done' && content && !isEmptyOutputSentinel(content)) return tokensFrom(index) >= agent.companion.minContextTokens;
+        }
+        return true;
+    };
     const pending = selectedAgentIds ? sources.filter(agent => selectedAgentIds.some(id => references(agent).includes(id)))
-        : sources.filter(agent => pre.activeIds.includes(agent.id) && agent.companion.trigger === 'auto' && availableTokens >= agent.companion.minContextTokens);
+        : sources.filter(agent => pre.activeIds.includes(agent.id) && agent.companion.trigger === 'auto'
+            && availableTokens >= agent.companion.minContextTokens && grownSinceSummary(agent));
     return { sources, preparedRecords, messages, hostResults, pending };
 }
 

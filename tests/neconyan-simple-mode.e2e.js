@@ -225,5 +225,35 @@ for (const [name, viewport, hasTouch] of [['desktop', { width: 1280, height: 900
             await expect(page.locator('#chat_completion_source option[value="custom"]')).toHaveText('Custom (OpenAI-compatible)');
             expect(await api.locator('.openrouter_authorize[data-source="openrouter"]').evaluate(node => Boolean(node.closest('.neconyan-connection-tools')))).toBe(true);
         });
+
+        test('Simple Mode has one Memory button that opens Story so far and still reaches Mewmory', async ({ page, isMobile }) => {
+            await account(page, { [SIMPLE_KEY]: 'on', 'NeconyanTutorialStatus.v1': 'completed' });
+            await ready(page);
+            if (isMobile) await page.getByRole('button', { name: 'Open menu' }).click();
+            await page.locator('#neconyan-workspace-rail [data-neconyan-simple-memory]').click();
+            const story = page.locator('.neconyan-story-so-far');
+            await expect(story.getByRole('heading', { name: 'Story so far' })).toBeVisible();
+            await expect(story).toContainText('the LLM writes down what happened');
+            const toggle = story.locator('[data-story-so-far-enabled]');
+            await expect(toggle).toBeEnabled();
+            const before = await toggle.isChecked();
+            await toggle.click();
+            await expect.poll(() => page.evaluate(() => window.NeconyanAgents.memoryShard.getState().enabled)).toBe(!before);
+            await toggle.click();
+            await expect.poll(() => page.evaluate(() => window.NeconyanAgents.memoryShard.getState().enabled)).toBe(before);
+            await expect(story.locator('[data-story-so-far-summarise]')).toBeDisabled();
+            expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false);
+            await story.locator('[data-story-so-far-mewmory]').click();
+            await expect(story).toBeHidden();
+            await expect(page.locator('#mewmory-workspace')).toBeVisible();
+        });
+
+        test('with every feature shown there is no Memory button', async ({ page, isMobile }) => {
+            await account(page, { [SIMPLE_KEY]: 'off', 'NeconyanTutorialStatus.v1': 'completed' });
+            await ready(page);
+            if (isMobile) await page.getByRole('button', { name: 'Open menu' }).click();
+            await expect(page.locator('#neconyan-workspace-rail [data-neconyan-route="home"]').first()).toBeVisible();
+            await expect(page.locator('#neconyan-workspace-rail [data-neconyan-simple-memory]')).toBeHidden();
+        });
     });
 }
