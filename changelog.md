@@ -10,6 +10,7 @@
 - PR #697 (2026-11-16) `fix(catline): fill selected stars`
 - PR #698 (2026-11-16) `fix(agents): keep history controls on one row`
 - PR #699 (2026-11-16) `fix(scratchpad): reuse saved pictures for vision and avatar edits`
+- PR #700 (2026-11-16) `feat(gallery): add workspace and quick access shortcuts`
 
 ## v1.5.5
 
