@@ -465,6 +465,60 @@ for (const phone of [false, true]) {
         });
     }
 
+    test(`${viewport} an interrupted reply kept in the chat offers Rerun agents`, async ({ app }) => {
+        app.provider.mode.streamReply = { first: 'The server ', rest: 'wrote this reply.' };
+        const account = await app.account({ phone, activeConnection: true,
+            contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {}, configureSettings(settings) {
+                settings.oai_settings.stream_openai = true;
+                settings.extension_settings.inChatAgents = { globalSettings: { enabled: true, separateRecentChats: false,
+                    connectionProfile: 'durable' } };
+            } });
+        if (phone) await installIPhoneSafari(account.context);
+        const native = owned(app);
+        await fs.mkdir(native.directories.inChatAgents, { recursive: true });
+        await fs.writeFile(path.join(native.directories.inChatAgents, 'interrupted-reviser.json'), JSON.stringify({
+            id: 'interrupted-reviser', name: 'Interrupted reviser', enabled: true, phase: 'post',
+            prompt: 'Revise the reply.', postProcess: { enabled: false, promptTransformEnabled: true },
+        }));
+        const locator = await savedChat(account, `Interrupted rerun ${viewport}`);
+        const page = await account.open({ workspace: false, readyTimeout: 120000 });
+        await openChat(page, locator);
+        if (phone) await applyIOSOnlyCss(page);
+        const submitted = page.waitForResponse(acceptedSubmission);
+        await page.locator('#send_textarea').fill('Keep my reply when the chat changes.');
+        await startNativeReply(page);
+        const { jobId } = await (await submitted).json();
+        try {
+            await expect(page.locator('#neconyan-roleplay-preview')).toContainText('The server', { timeout: 60000 });
+            // A concurrent saved edit makes the server refuse its final write and keep the text instead.
+            const source = readRoleplayChat(native.scope, locator);
+            source.records.at(-1).mes += ' Edited while replying.';
+            const { instanceId, revision, rawHash } = source;
+            await account.post('/api/chats/save', { avatar_url: locator.avatar, file_name: locator.chat, chat: source.records,
+                roleplay: { account: native.account, source: { instanceId, revision, rawHash }, operationKey: randomUUID() } });
+            app.provider.mode.finishStream();
+            expect((await terminal(account, jobId)).state).toBe('interrupted');
+            const notice = page.locator('.toast-error').filter({ hasText: 'Reply interrupted' });
+            await expect(notice).toContainText('The text written so far was saved in this chat.', { timeout: 30000 });
+            await dismissTour(page);
+            await page.screenshot({ path: path.join('..', 'screenshots', `interrupted-rerun-${viewport}.png`) });
+            const rerun = notice.getByRole('button', { name: 'Rerun agents', exact: true });
+            await expect(rerun).toBeVisible();
+            // The notice waits for a choice instead of timing out under the reader.
+            await delay(6000);
+            await expect(rerun).toBeVisible();
+            const calls = app.provider.calls.length;
+            app.provider.mode.reply = { choices: [{ message: { role: 'assistant', content: `${ANSWER} Revised by the after-reply Agent.` } }] };
+            await rerun.click();
+            await expect(notice).toHaveCount(0);
+            await expect(page.locator('#chat .mes').last()).toContainText('Revised by the after-reply Agent.', { timeout: 30000 });
+            expect(app.provider.calls.length).toBeGreaterThan(calls);
+        } finally {
+            app.provider.mode.finishStream?.();
+            await app.release();
+        }
+    });
+
     for (const departure of ['closed', 'another chat', 'hidden']) {
         test(`${viewport} a reply stopped with the page ${departure} is kept by the server exactly once`, async ({ app }, info) => {
             app.provider.mode.streamReply = { first: 'The server ', rest: 'wrote this reply.' };

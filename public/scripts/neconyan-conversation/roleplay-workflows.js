@@ -516,15 +516,53 @@ function warnAgentFailure(receipt, id, { account, locator }) {
         return savedReply?.rootJobId === receipt.jobId && savedReply?.childJobId === receipt.result.childJobId;
     });
     const message = chat[messageIndex];
-    const canRerun = message && !message.is_user && !message.is_system;
-    let dismissed = false;
-    const toast = globalThis.toastr?.warning?.(
+    const target = message && !message.is_user && !message.is_system ? { message, messageIndex, account, locator } : null;
+    showRerunAgentsToast(options => globalThis.toastr?.warning?.(
         t`Your reply was saved, but some Agents could not finish. Unfinished Agent changes were skipped.`,
         t`Agents did not finish`,
-        canRerun ? { timeOut: 0, extendedTimeOut: 0, tapToDismiss: false, closeButton: true, onCloseClick: () => { dismissed = true; } } : undefined,
-    );
-    if (!canRerun || !toast) return;
+        options,
+    ), target);
+}
 
+/**
+ * The reply a stopped-reply notice can offer Rerun agents for: the saved
+ * model reply, while this chat is open and Agents would run on it.
+ */
+async function keptReplyRerunTarget(messageIndex, { account, locator }) {
+    const message = Number.isSafeInteger(messageIndex) ? chat[messageIndex] : null;
+    if (!message || message.is_user || message.is_system) return null;
+    try {
+        const { hasSavedReplyAgentWork } = await import('../extensions/in-chat-agents/agent-runner.js');
+        if (!await hasSavedReplyAgentWork(messageIndex)) return null;
+    } catch (error) {
+        console.warn('[roleplay-workflow] Could not check Agents for the saved reply.', error);
+        return null;
+    }
+    if (chat[messageIndex] !== message || account !== getCurrentUserHandle() || !matchesCurrentWorkflowLocator(locator)) return null;
+    return { message, messageIndex, account, locator };
+}
+
+/** A stopped reply's notice; a reply kept in the chat can rerun its Agents from it. */
+async function showStoppedReplyNotice(failure, { kept = false, messageIndex = null, account, locator }) {
+    const notice = roleplayReplyNotice(failure.error, failure.state, { kept });
+    const target = kept ? await keptReplyRerunTarget(messageIndex, { account, locator }) : null;
+    if (!target) {
+        globalThis.toastr?.error?.(notice.message, notice.title);
+        return;
+    }
+    showRerunAgentsToast(options => globalThis.toastr?.error?.(notice.message, notice.title, options), target);
+}
+
+/**
+ * Shows a toast about one saved reply. With a target it stays up and carries
+ * Rerun agents, which runs only while that reply is selected and unchanged.
+ */
+function showRerunAgentsToast(show, target) {
+    let dismissed = false;
+    const toast = show(target ? { timeOut: 0, extendedTimeOut: 0, tapToDismiss: false, closeButton: true, onCloseClick: () => { dismissed = true; } } : undefined);
+    if (!target || !toast) return;
+
+    const { message, messageIndex, account, locator } = target;
     const revision = getRoleplaySourceMessageRevision(message);
     const swipeId = message.swipe_id ?? 0;
     const isCurrent = () => account === getCurrentUserHandle() && matchesCurrentWorkflowLocator(locator)
@@ -752,8 +790,8 @@ async function flushPendingKeptReply() {
             const notice = roleplayKeptReplyNotice({ state: entry.failure?.state ?? 'failed', error: kept.error });
             globalThis.toastr?.error?.(notice.message, notice.title);
         } else if (entry.failure && entry.failure.state !== 'cancelled') {
-            const notice = roleplayReplyNotice(entry.failure.error, entry.failure.state, { kept: kept?.state === 'done' });
-            globalThis.toastr?.error?.(notice.message, notice.title);
+            await showStoppedReplyNotice(entry.failure, { kept: kept?.state === 'done', messageIndex: kept?.messageIndex,
+                account: entry.account, locator: entry.locator });
         }
         return true;
     }
@@ -921,6 +959,7 @@ async function keepUnsavedReply(reply, { name, messageIndex, locator, account, i
     const anchor = Number.isSafeInteger(messageIndex) ? chat[messageIndex] : null;
     const answersModel = anchor && anchor.is_user !== true && anchor.is_system !== true;
     const lastModel = [...chat].reverse().find(message => message && message.is_user !== true && message.is_system !== true);
+    let keptIndex = null;
     try {
         if (KEEP_AS_CONTINUATION.has(name) && anchor) {
             const base = String(anchor.mes ?? '');
@@ -943,14 +982,14 @@ async function keepUnsavedReply(reply, { name, messageIndex, locator, account, i
                     chat.push(message);
                     addOneMessage(message);
                     await saveChatConditional({ account });
-                    return true;
+                    return { messageIndex: chat.length - 1 };
                 }
             } else if (anchor.mes !== base) {
                 const message = keptReplyMessage(reply, reply.text, false);
                 chat.push(message);
                 addOneMessage(message);
                 await saveChatConditional({ account });
-                return true;
+                return { messageIndex: chat.length - 1 };
             } else {
                 anchor.mes = expected;
             }
@@ -968,12 +1007,14 @@ async function keepUnsavedReply(reply, { name, messageIndex, locator, account, i
             }
             if (anchor.extra) delete anchor.extra.display_text;
             syncMesToSwipe(messageIndex);
+            keptIndex = messageIndex;
             await updateMessageBlock(messageIndex, anchor);
         } else if (holds(reply.text)) {
             return false;
         } else if (ROLEPLAY_WORKFLOW_ANCHORS[name] && ROLEPLAY_WORKFLOW_ANCHORS[name] !== 'end' && answersModel) {
             if (holdsLongerAtTarget(anchor, reply.text)) return false;
             addKeptSwipe(anchor, keptReplyMessage(reply, reply.text, false));
+            keptIndex = messageIndex;
             await updateMessageBlock(messageIndex, anchor);
             refreshSwipeButtons(true);
         } else if (holdsLongerAtTarget(lastModel, reply.text) && sameGeneration(lastModel)) {
@@ -981,13 +1022,14 @@ async function keepUnsavedReply(reply, { name, messageIndex, locator, account, i
         } else {
             const message = keptReplyMessage(reply, reply.text, Boolean(locator?.group));
             chat.push(message);
+            keptIndex = chat.length - 1;
             addOneMessage(message);
         }
     } catch (error) {
         console.warn('The stopped Roleplay reply could not be shown in the chat.', error);
     }
     await saveChatConditional({ account });
-    return true;
+    return { messageIndex: keptIndex };
 }
 
 /** Watch an accepted root job and read its receipt back once it settles. */
@@ -1048,14 +1090,12 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, messageI
         onStop: async (reason) => {
             ended = true;
             const cancelled = reason === 'cancelled' || terminalFailure?.state === 'cancelled';
-            const showTerminalFailure = ({ kept = false } = {}) => {
-                if (!terminalFailure || cancelled) return false;
-                const notice = roleplayReplyNotice(terminalFailure.error, terminalFailure.state, { kept });
-                globalThis.toastr?.error?.(notice.message, notice.title);
-                return true;
+            const showTerminalFailure = async ({ kept = false, messageIndex = null } = {}) => {
+                if (!terminalFailure || cancelled) return;
+                await showStoppedReplyNotice(terminalFailure, { kept, messageIndex, account, locator });
             };
             if (memoryWaitFailure) {
-                showTerminalFailure();
+                void showTerminalFailure();
                 stopPreview();
                 restore();
                 settleFinished(key, memoryWaitFailure);
@@ -1105,9 +1145,9 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, messageI
                     } else if (showNow && kept?.state === 'done') {
                         // A real interruption reason still matters; never let a
                         // truncated kept reply look like a clean success.
-                        showTerminalFailure({ kept: true });
+                        void showTerminalFailure({ kept: true, messageIndex: kept.messageIndex });
                     } else if (showNow && (!receipt || (!kept && !receipt.keptReplyPending))) {
-                        showTerminalFailure();
+                        void showTerminalFailure();
                     }
                     stopPreview();
                     restore();
@@ -1121,8 +1161,8 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, messageI
                 const reply = TERMINAL.has(reason) ? stopPreview.reply?.() : null;
                 stopPreview();
                 restore();
-                const keptByPage = reply ? await keepUnsavedReply(reply, { name, messageIndex, locator, account, isCurrent }) : false;
-                showTerminalFailure({ kept: keptByPage === true });
+                const keptByPage = reply ? await keepUnsavedReply(reply, { name, messageIndex, locator, account, isCurrent }) : null;
+                void showTerminalFailure({ kept: Boolean(keptByPage), messageIndex: keptByPage?.messageIndex ?? null });
                 announce({ key, name, state: reason, result: null, jobId });
                 // A refused or lost job must not leave a caller waiting for a write
                 // that will never arrive.

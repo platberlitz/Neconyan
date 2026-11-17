@@ -7633,6 +7633,20 @@ export async function rerunPostGenerationAgentsOnMessage(messageIndex, { cancelR
 }
 
 /** Rerun the saved reply's after-reply Agents, then its enabled automatic Companions. */
+/**
+ * Whether rerunning a saved reply's Agents would run anything: after-reply
+ * prompt Agents or automatic Companions.
+ * @param {number} messageIndex
+ * @returns {Promise<boolean>}
+ */
+export async function hasSavedReplyAgentWork(messageIndex) {
+    const message = chat[messageIndex];
+    if (!message || message.is_user || message.is_system || !areAgentsGloballyEnabled()) return false;
+    if (getPromptTransformAgents(getEnabledAgents().filter(isAgentRuntimeAllowed)).length > 0) return true;
+    const { getAutomaticCompanionAgents } = await import('./companion/companion-runner.js');
+    return getAutomaticCompanionAgents(messageIndex).length > 0;
+}
+
 export async function rerunSavedReplyAgentsOnMessage(messageIndex, { isCurrent = () => true } = {}) {
     const message = chat[messageIndex];
     if (!message || message.is_user || message.is_system) return;
