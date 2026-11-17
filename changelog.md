@@ -32,6 +32,7 @@
 - PR #719 (2026-11-17) `fix(chat): keep Copy on the message action row on phones`
 - PR #720 (2026-11-17) `fix(shell): restore readable reading panels in every shell style`
 - PR #721 (2026-11-17) `feat(botsearcher): add Sources and logins inside the search window`
+- PR #722 (2026-11-17) `fix(botsearcher): wait for the JanitorAI sign-in before fetching lists`
 
 ## v1.5.5
 
