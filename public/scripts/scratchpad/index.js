@@ -2489,6 +2489,7 @@ function renderContext({ force = true } = {}) {
     const key = contextKey();
     if (!force && key === app.contextKey && panel.childElementCount) return;
     app.contextKey = key;
+    const scrollTop = panel.scrollTop;
     clear(panel);
     panel.append(h('section', { class: 'scratchpad-section' },
         h('h3', { class: 'scratchpad-section-title', text: t`Global user instructions` }),
@@ -2507,6 +2508,7 @@ function renderContext({ force = true } = {}) {
     panel.append(...[renderDictationSettings()].filter(Boolean));
     if (!app.source) {
         panel.append(h('p', { class: 'scratchpad-empty', text: t`Open a chat to choose what Scratchpad reads.` }));
+        panel.scrollTop = scrollTop;
         return;
     }
     const settings = currentSettings();
@@ -2617,6 +2619,7 @@ function renderContext({ force = true } = {}) {
         notebook || (general && !settings.lorebook) ? null : renderLore(settings),
         renderPreview(),
     ]);
+    panel.scrollTop = scrollTop;
 }
 
 /* Mirrors CONTEXT_SETUP_KEYS on the server: only choices that mean the same in every chat are saved. */
@@ -2630,7 +2633,7 @@ function findContextSetup(name) {
 function showContextSetups(focus) {
     if (!app.open) return;
     renderContext();
-    app.el.panels.context.querySelector(focus)?.focus();
+    app.el.panels.context.querySelector(focus)?.focus({ preventScroll: true });
 }
 
 async function writeContextSetups(setups, fallback) {
@@ -2664,9 +2667,9 @@ async function applyContextSetup() {
     const setup = findContextSetup(app.contextSetup);
     if (!setup) return;
     try {
-        await updateSettings(structuredClone(setup.settings), { rerenderContext: true });
+        if (!await updateSettings(structuredClone(setup.settings), { rerenderContext: true })) return;
         toastr.success(t`Setup applied to this session.`);
-        app.el.panels.context.querySelector('.scratchpad-setup-apply')?.focus();
+        app.el.panels.context.querySelector('.scratchpad-setup-apply')?.focus({ preventScroll: true });
     } catch { /* updateSettings already reported the failure. */ }
 }
 
@@ -2686,12 +2689,16 @@ function renderContextSetups() {
     if (!findContextSetup(app.contextSetup)) app.contextSetup = setups[0]?.name ?? '';
     const select = h('select', {
         class: 'text_pole', id: 'scratchpad-setup', 'data-i18n-ignore': '',
-        onchange: event => { app.contextSetup = event.currentTarget.value; writePrefs(); },
+        onchange: event => {
+            app.contextSetup = event.currentTarget.value;
+            writePrefs();
+            if (!activeSession()) showContextSetups('#scratchpad-setup');
+        },
     }, setups.map(setup => h('option', { value: setup.name, text: setup.name })));
     select.value = app.contextSetup;
     return h('section', { class: 'scratchpad-section scratchpad-setups' },
         h('h3', { class: 'scratchpad-section-title', text: t`Saved setups` }),
-        h('p', { class: 'scratchpad-muted', text: t`Keep the choices on this tab under a name and apply them to any session: how many messages to read, what else to share, reply length, streaming, web search, reading links and prefills. Picked messages, lorebook entry choices, saved notes and connections belong to one chat, so they are not saved.` }),
+        h('p', { class: 'scratchpad-muted', text: t`The selected setup applies to every new session. Apply setup changes this session. Save current choices keeps how many messages to read, what else to share, reply length, streaming, web search, reading links and prefills. Picked messages, lorebook entry choices, saved notes and connections are not saved.` }),
         setups.length ? h('div', { class: 'scratchpad-field' }, h('label', { for: 'scratchpad-setup', text: t`Saved setup` }), select)
             : h('p', { class: 'scratchpad-muted', text: t`You have no saved setups yet.` }),
         h('div', { class: 'scratchpad-note-actions' },

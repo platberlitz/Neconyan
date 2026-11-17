@@ -28,6 +28,7 @@ class Element {
         }
     }
     replaceChildren(...children) {
+        this.scrollTop = 0;
         for (const child of this.children) child.parent = null;
         this.children = [];
         this.append(...children);
@@ -93,6 +94,13 @@ function imageJobFixture({ markers = [], card } = {}) {
 }
 
 describe('Scratchpad Context refresh lifecycle', () => {
+    test('keeps the Context scroll position when its controls are rebuilt', () => {
+        const { runtime, panel } = fixture();
+        panel.scrollTop = 970;
+        runtime.renderContext();
+        expect(panel.scrollTop).toBe(970);
+    });
+
     test('both Home visibility events check the live source after visibility changes, only while open', () => {
         const listeners = new Map();
         const tasks = [];

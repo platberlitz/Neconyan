@@ -23000,6 +23000,7 @@
   "Delete setup": "Delete setup",
   "Scratchpad could not delete that setup.": "Scratchpad could not delete that setup.",
   "Keep the choices on this tab under a name and apply them to any session: how many messages to read, what else to share, reply length, streaming, web search, reading links and prefills. Picked messages, lorebook entry choices, saved notes and connections belong to one chat, so they are not saved.": "Keep the choices on this tab under a name and apply them to any session: how many messages to read, what else to share, reply length, streaming, web search, reading links and prefills. Picked messages, lorebook entry choices, saved notes and connections belong to one chat, so they are not saved.",
+  "The selected setup applies to every new session. Apply setup changes this session. Save current choices keeps how many messages to read, what else to share, reply length, streaming, web search, reading links and prefills. Picked messages, lorebook entry choices, saved notes and connections are not saved.": "The selected setup applies to every new session. Apply setup changes this session. Save current choices keeps how many messages to read, what else to share, reply length, streaming, web search, reading links and prefills. Picked messages, lorebook entry choices, saved notes and connections are not saved.",
   "Saved setup": "Saved setup",
   "You have no saved setups yet.": "You have no saved setups yet.",
   "Apply setup": "Apply setup",
