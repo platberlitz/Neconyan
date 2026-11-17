@@ -5,12 +5,19 @@ import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 
 async function openEditor(page, avatar) {
+    await page.waitForFunction(() => window.associationAppReady === true);
     await page.evaluate(async target => {
         const context = window.SillyTavern.getContext();
         await context.selectCharacterById(context.characters.findIndex(character => character.avatar === target));
         window.NeconyanShell.openTab('characters', 'characters');
     }, avatar);
+    await page.evaluate(() => {
+        const context = window.SillyTavern.getContext();
+        // The form already contains this character before the asynchronous editor refresh finishes.
+        window.associationEditorOpened = new Promise(resolve => context.eventSource.once(context.eventTypes.CHARACTER_EDITOR_OPENED, resolve));
+    });
     await page.getByRole('button', { name: 'Edit Durable Nova', exact: true }).click();
+    await page.evaluate(() => window.associationEditorOpened);
     await expect(page.locator('#form_create')).toHaveAttribute('actiontype', 'editcharacter');
     await expect(page.locator('#character_name_pole')).toHaveValue('Durable Nova');
     await expect.poll(() => page.evaluate(async () => (await import('/script.js')).flushCharacterSaveDebounced())).toBe(true);
@@ -18,6 +25,7 @@ async function openEditor(page, avatar) {
 
 async function installObserver(context) {
     await context.addInitScript(() => {
+        window.addEventListener('neconyan:ready', () => { window.associationAppReady = true; }, { once: true });
         const original = window.fetch.bind(window);
         window.associationEdits = [];
         window.fetch = function (input, init) {
@@ -35,6 +43,14 @@ async function installObserver(context) {
             return promise;
         };
     });
+}
+
+async function associationAccount(app, phone = false) {
+    const account = await app.account({ phone, activeConnection: true, configureSettings(saved) {
+        saved.accountStorage = { ...saved.accountStorage, 'NeconyanAssistantSeed.v1': 'done' };
+    } });
+    await installObserver(account.context);
+    return account;
 }
 
 async function moveName(page, mode = 'valid') {
@@ -79,8 +95,7 @@ async function cardBytes(app, avatar) { return fs.readFile(path.join(app.dataRoo
 for (const phone of [false, true]) {
     test(`moved valid character name saves to its own card on ${phone ? 'touch phone' : 'desktop'}`, async ({ app }) => {
         test.setTimeout(120000);
-        const account = await app.account({ phone, activeConnection: true });
-        await installObserver(account.context);
+        const account = await associationAccount(app, phone);
         const otherResponse = await account.context.request.post('/api/characters/create', { headers: account.headers,
             data: { ch_name: 'Association Other', description: 'Other card.', first_mes: 'Hello.' } });
         expect(otherResponse.ok()).toBe(true);
@@ -124,8 +139,7 @@ for (const phone of [false, true]) {
 for (const mode of ['empty', 'dot', 'disabled']) {
     test(`moved ${mode} character name remains refused and recovers`, async ({ app }) => {
         test.setTimeout(120000);
-        const account = await app.account({ activeConnection: true });
-        await installObserver(account.context);
+        const account = await associationAccount(app);
         const page = await account.open({ workspace: false });
         await openEditor(page, account.avatar);
         const beforeBytes = await cardBytes(app, account.avatar);

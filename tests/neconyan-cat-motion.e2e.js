@@ -16,6 +16,27 @@ async function useCalico(page) {
     await expect(page.locator('link[data-sb-shell-style]')).toHaveCount(0);
 }
 
+async function openMotionHome(page) {
+    await page.addInitScript(() => {
+        window.addEventListener('neconyan:ready', () => { window.catMotionAppReady = true; }, { once: true });
+    });
+    await page.addLocatorHandler(page.locator('#qig-setup-wizard'), async wizard => {
+        await wizard.getByRole('button', { name: 'Skip', exact: true }).click();
+    });
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => window.catMotionAppReady === true);
+    await expect(page.locator('body')).not.toHaveClass(/neconyan-home-booting/);
+    await useCalico(page);
+    await page.evaluate(() => document.fonts.ready);
+    // First-run notices are unrelated to decoration and can cover the ear on phones.
+    await page.addStyleTag({ content: '#toast-container, #nn-update-toast { display: none !important; }' });
+    await expect(page.locator('[data-neconyan-cat]')).toBeVisible();
+    await expect.poll(() => page.locator('.neconyan-home-intro').evaluate(element => {
+        const ear = window.getComputedStyle(element, '::before');
+        return Number.parseFloat(ear.width) > 0 && Number.parseFloat(ear.height) > 0;
+    })).toBe(true);
+}
+
 test('generated mascot rasters keep their recorded frame timing and dimensions', async ({ page }, testInfo) => {
     const artwork = JSON.parse(readFileSync(new URL('../public/img/neconyan/artwork-provenance.json', import.meta.url), 'utf8'));
     const output = path => artwork.outputs.find(entry => entry.path === `public/${path}`);
@@ -207,16 +228,17 @@ for (const tone of ['Dark', 'Light']) {
             if (typeof data.settings !== 'string') return route.fulfill({ response });
             const settings = JSON.parse(data.settings);
             settings.extension_settings.disabledExtensions = [...new Set([...(settings.extension_settings.disabledExtensions || []), 'third-party/Neconyan-Time-Machine'])];
-            settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped' };
+            // This checks decoration, not first-run installation. Installing the
+            // assistants refreshes Home and replaces the element held by the mouse.
+            settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped', 'NeconyanAssistantSeed.v1': 'done' };
             Object.assign(settings.power_user, theme, { theme: name, reduced_motion: false });
             data.settings = JSON.stringify(settings);
             await route.fulfill({ response, json: data });
         });
-        await page.goto('/', { waitUntil: 'domcontentloaded' });
+        await openMotionHome(page);
         const cat = page.locator('[data-neconyan-cat]');
         const toggle = page.locator('[data-neconyan-cat-toggle]');
         await expect(cat).toBeVisible({ timeout: 45000 });
-        await useCalico(page);
         await expect(page.locator('body')).toHaveCSS('color-scheme', tone.toLowerCase());
         await expect(page.locator('#themes')).toHaveCSS('color-scheme', tone.toLowerCase());
         if (tone === 'Dark') await expect(page.locator('#neconyan-workspace-rail')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0.68)');
@@ -334,24 +356,18 @@ for (const width of [320, 390]) {
                 const filename = tone === 'Dark' ? 'Neconyan Calico Dark.json' : 'Neconyan Calico.json';
                 const { name, ...theme } = JSON.parse(readFileSync(new URL(`../default/content/themes/${filename}`, import.meta.url), 'utf8'));
                 await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
-                // The update toast would cover the ear this test presses.
-                await page.route('**/api/server-admin/status', async route => {
-                    const response = await route.fetch({ maxRetries: 2 });
-                    const data = await response.json();
-                    await route.fulfill({ response, json: { ...data, repository: { ...data.repository, behind: 0 } } });
-                });
                 await page.route('**/api/settings/get', async route => {
                     const response = await route.fetch({ maxRetries: 2 });
                     const data = await response.json();
                     if (typeof data.settings !== 'string') return route.fulfill({ response });
                     const settings = JSON.parse(data.settings);
                     settings.extension_settings.disabledExtensions = [...new Set([...(settings.extension_settings.disabledExtensions || []), 'third-party/Neconyan-Time-Machine'])];
-                    settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped' };
+                    settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped', 'NeconyanAssistantSeed.v1': 'done' };
                     Object.assign(settings.power_user, theme, { theme: name, reduced_motion: false });
                     data.settings = JSON.stringify(settings);
                     await route.fulfill({ response, json: data });
                 });
-                await page.goto('/', { waitUntil: 'domcontentloaded' });
+                await openMotionHome(page);
                 await expect(page.locator('[data-neconyan-cat]')).toBeVisible({ timeout: 45000 });
                 const panel = page.locator('.neconyan-home-intro');
                 const point = await panel.evaluate(element => {
