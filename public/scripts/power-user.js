@@ -2024,6 +2024,12 @@ function syncNeconyanPaletteAttribute() {
     document.documentElement.dataset.neconyanPalette = isCalico ? 'calico' : 'custom';
     document.documentElement.dataset.neconyanCalicoTone = isDarkCalico ? 'dark' : isLightCalico ? 'light' : 'custom';
     document.documentElement.dataset.neconyanAccent = isThemeAccent ? 'theme' : 'custom';
+    // 'theme' while the accent is still the one the active theme ships with, before or after the contrast pass.
+    const activeTheme = Array.isArray(themes) ? themes.find(theme => theme?.name === activeThemeName) : null;
+    const isOwnThemeAccent = isThemeAccent || (!!activeTheme
+        && accentKeys.every(key => Object.hasOwn(activeTheme, key))
+        && [activeTheme, accessibleTheme(activeTheme)].some(theme => accentKeys.every(key => themeValuesEqual(power_user[key], theme[key]))));
+    document.documentElement.dataset.neconyanAccentSource = isOwnThemeAccent ? 'theme' : 'user';
     // Shell styles key bundled colour schemes on this slug, e.g. 'windows-xp-silver' for 'Windows XP Silver'.
     document.documentElement.dataset.neconyanUiTheme = activeThemeName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }

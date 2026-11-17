@@ -26,8 +26,23 @@ describe('Windows 98 shell style stays readable with custom colours', () => {
     test('bright text on a light surface switches the faces to dark grey', () => {
         const rule = css.match(/\[data-sb-surface-tone='light'\]\[data-sb-text-tone='light'\] body\.neconyan:not\(\.sbterm\) \{([^}]*)\}/);
         expect(rule).not.toBeNull();
-        expect(rule[1]).toContain('--w98-face: #3c3c3c;');
+        expect(rule[1]).toContain('--w98-face: color-mix(in srgb, var(--neco-ginger) var(--w98-tint), #3c3c3c);');
+        expect(rule[1]).toContain('--w98-field: #1e1e1e;');
         expect(rule[1]).toContain('--neco-muted: color-mix(in srgb, var(--neco-ink) 78%, var(--w98-face));');
+    });
+
+    test('an accent the user picks tints the grey faces and bevels, while a theme\'s own accent keeps classic silver', () => {
+        expect(powerUser).toContain('document.documentElement.dataset.neconyanAccentSource = isOwnThemeAccent ? \'theme\' : \'user\';');
+        const base = css.match(/:root\[data-sb-theme='windows-98'\] body\.neconyan:not\(\.sbterm\) \{([^}]*)\}/);
+        expect(base[1]).toContain('--w98-tint: 0%;');
+        expect(base[1]).toContain('--w98-face: color-mix(in srgb, var(--neco-ginger) var(--w98-tint), color-mix(in srgb, var(--neco-canvas) 72%, #808080));');
+        const silver = css.match(/\[data-sb-surface-tone='light'\]:not\(\[data-sb-text-tone='light'\]\) body\.neconyan:not\(\.sbterm\) \{([^}]*)\}/);
+        expect(silver[1]).toContain('--w98-face: color-mix(in srgb, var(--neco-ginger) var(--w98-tint), #c0c0c0);');
+        expect(silver[1]).toContain('--w98-shadow: color-mix(in srgb, var(--neco-ginger) var(--w98-tint), #808080);');
+        expect(silver[1]).toContain('--w98-field: #fff;');
+        const tint = css.match(/:root\[data-sb-theme='windows-98'\]\[data-neconyan-accent-source='user'\] body\.neconyan:not\(\.sbterm\) \{([^}]*)\}/);
+        expect(tint).not.toBeNull();
+        expect(tint[1].trim()).toBe('--w98-tint: 12%;');
     });
 
     test('custom accent captions use the deep accent colours', () => {

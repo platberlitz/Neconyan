@@ -13,7 +13,8 @@
     --w98-title: #000080;
     --w98-title-end: #1084d0;
     --w98-title-ink: #fff;
-    --w98-face: color-mix(in srgb, var(--neco-canvas) 72%, #808080);
+    --w98-tint: 0%;
+    --w98-face: color-mix(in srgb, var(--neco-ginger) var(--w98-tint), color-mix(in srgb, var(--neco-canvas) 72%, #808080));
     --w98-field: color-mix(in srgb, var(--neco-canvas) 88%, #000);
     --w98-light: color-mix(in srgb, var(--w98-face) 55%, #fff);
     --w98-hilite: color-mix(in srgb, var(--w98-face) 80%, #fff);
@@ -45,21 +46,21 @@
 
 /* Light surfaces take the real Windows 98 silver and white edit fields. */
 :root[data-sb-theme='windows-98'][data-sb-surface-tone='light']:not([data-sb-text-tone='light']) body.neconyan:not(.sbterm) {
-    --w98-face: #c0c0c0;
+    --w98-face: color-mix(in srgb, var(--neco-ginger) var(--w98-tint), #c0c0c0);
     --w98-field: #fff;
     --w98-light: #fff;
-    --w98-hilite: #dfdfdf;
-    --w98-shadow: #808080;
+    --w98-hilite: color-mix(in srgb, var(--neco-ginger) var(--w98-tint), #dfdfdf);
+    --w98-shadow: color-mix(in srgb, var(--neco-ginger) var(--w98-tint), #808080);
     --neco-muted: color-mix(in srgb, var(--neco-ink) 78%, var(--w98-face));
 }
 
 /* Bright text on a light surface would vanish on silver, so the faces go dark grey instead. */
 :root[data-sb-theme='windows-98'][data-sb-surface-tone='light'][data-sb-text-tone='light'] body.neconyan:not(.sbterm) {
-    --w98-face: #3c3c3c;
+    --w98-face: color-mix(in srgb, var(--neco-ginger) var(--w98-tint), #3c3c3c);
     --w98-field: #1e1e1e;
-    --w98-light: #707070;
-    --w98-hilite: #545454;
-    --w98-shadow: #202020;
+    --w98-light: color-mix(in srgb, var(--neco-ginger) var(--w98-tint), #707070);
+    --w98-hilite: color-mix(in srgb, var(--neco-ginger) var(--w98-tint), #545454);
+    --w98-shadow: color-mix(in srgb, var(--neco-ginger) var(--w98-tint), #202020);
     --neco-muted: color-mix(in srgb, var(--neco-ink) 78%, var(--w98-face));
 }
 
@@ -75,6 +76,12 @@
 :root[data-sb-theme='windows-98'][data-neconyan-accent='custom'] body.neconyan:not(.sbterm) {
     --w98-title: var(--neco-accent-deep, color-mix(in srgb, var(--neco-ginger) 70%, #000));
     --w98-title-end: var(--neco-accent-secondary-deep, color-mix(in srgb, var(--neco-accent-secondary) 60%, var(--neco-ginger)));
+}
+
+/* An accent you pick yourself also tints the grey faces and bevels, as Windows XP does;
+   a theme's own accent keeps the classic greys. */
+:root[data-sb-theme='windows-98'][data-neconyan-accent-source='user'] body.neconyan:not(.sbterm) {
+    --w98-tint: 12%;
 }
 
 /* Wallpaper: a 256-colour sky with cats hidden in the clouds. */
