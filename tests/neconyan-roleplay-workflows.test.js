@@ -56,7 +56,8 @@ const restoreDisplay = jest.fn();
 const beginRoleplayReplacement = jest.fn(() => restoreDisplay);
 jest.unstable_mockModule('../public/scripts/neconyan-conversation/roleplay-replacement.js', () => ({ beginRoleplayReplacement }));
 const rerunSavedReplyAgentsOnMessage = jest.fn(async () => {});
-jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/agent-runner.js', () => ({ rerunSavedReplyAgentsOnMessage }));
+const hasSavedReplyAgentWork = jest.fn(async () => false);
+jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/agent-runner.js', () => ({ rerunSavedReplyAgentsOnMessage, hasSavedReplyAgentWork }));
 const toastAppend = jest.fn();
 const warningToast = { find: jest.fn(() => ({ append: toastAppend })) };
 
@@ -203,6 +204,7 @@ beforeEach(() => {
     globalThis.toastr = { error: jest.fn(), warning: jest.fn(() => warningToast), info: jest.fn(), clear: jest.fn() };
     toastAppend.mockClear();
     rerunSavedReplyAgentsOnMessage.mockClear();
+    hasSavedReplyAgentWork.mockReset().mockResolvedValue(false);
     listJobs.mockClear();
     cancelJob.mockClear();
     serviceVectorBrowserWork.mockClear();
@@ -447,6 +449,56 @@ describe('a reply the server did not save stays in the chat', () => {
         expect(title).toBe('Reply failed');
         expect(message).toContain('The connection to your model provider closed.');
         expect(message).toContain('saved in this chat');
+    });
+
+    const sourceChanged = { code: 'ROLEPLAY_WORKFLOW_CHILD',
+        message: 'The chat was saved by another change (an edit, a new message, or an extension rewriting messages) after this was requested, so it was stopped instead of saving over that change. Try again.' };
+
+    async function keptInterruption() {
+        const accepted = await workflows.submitRoleplayWorkflow({ name: 'roleplay.reply' });
+        await waitFor(() => previews.has(accepted.jobId));
+        previews.get(accepted.jobId).stop.reply = jest.fn(() => shown('Half a reply'));
+        reloadHandler = () => { chat.push({ name: 'Nova', mes: 'Half a reply' }); };
+        receiptHandler = () => response(200, { key: 'k', accepted: true, state: 'accepted', jobId: accepted.jobId,
+            result: null, capabilities: { keptReply: 1 }, keptReply: { state: 'done', messageIndex: 2, reason: 'failed' } });
+        globalThis.toastr.error.mockReturnValue(warningToast);
+        await observers.get(accepted.jobId).onSnapshot({ state: 'interrupted', error: sourceChanged });
+    }
+
+    test('an interrupted reply kept in the chat offers Rerun agents for that reply', async () => {
+        hasSavedReplyAgentWork.mockResolvedValue(true);
+        await keptInterruption();
+        await waitFor(() => toastAppend.mock.calls.length === 1);
+        expect(hasSavedReplyAgentWork).toHaveBeenCalledWith(2);
+        const [message, title, options] = globalThis.toastr.error.mock.calls[0];
+        expect(title).toBe('Reply interrupted');
+        expect(message).toContain('saved in this chat');
+        expect(options).toMatchObject({ timeOut: 0, extendedTimeOut: 0, tapToDismiss: false, closeButton: true });
+        const button = toastAppend.mock.calls[0][0];
+        expect(button.textContent).toBe('Rerun agents');
+        button.dispatchEvent(new Event('click'));
+        await waitFor(() => rerunSavedReplyAgentsOnMessage.mock.calls.length === 1);
+        expect(rerunSavedReplyAgentsOnMessage).toHaveBeenCalledWith(2, { isCurrent: expect.any(Function) });
+        expect(globalThis.toastr.clear).toHaveBeenCalledWith(warningToast, { force: true });
+    });
+
+    test('an interrupted reply with no Agents to run keeps the plain notice', async () => {
+        await keptInterruption();
+        await waitFor(() => globalThis.toastr.error.mock.calls.length === 1);
+        expect(globalThis.toastr.error.mock.calls[0]).toHaveLength(2);
+        expect(toastAppend).not.toHaveBeenCalled();
+    });
+
+    test('a reply this page kept after the chat changed offers Rerun agents for its new swipe', async () => {
+        hasSavedReplyAgentWork.mockResolvedValue(true);
+        globalThis.toastr.error.mockReturnValue(warningToast);
+        await stopWith('roleplay.swipe', 'failed', 'New answer', { ...sourceChanged, code: 'ROLEPLAY_SOURCE_CHANGED' });
+        await waitFor(() => toastAppend.mock.calls.length === 1);
+        expect(chat[1]).toMatchObject({ mes: 'New answer', swipe_id: 2 });
+        expect(globalThis.toastr.error.mock.calls[0][1]).toBe('Reply failed');
+        toastAppend.mock.calls[0][0].dispatchEvent(new Event('click'));
+        await waitFor(() => rerunSavedReplyAgentsOnMessage.mock.calls.length === 1);
+        expect(rerunSavedReplyAgentsOnMessage).toHaveBeenCalledWith(1, { isCurrent: expect.any(Function) });
     });
 
     test('a kept cancellation stays quiet', async () => {
