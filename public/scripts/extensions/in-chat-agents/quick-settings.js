@@ -200,7 +200,10 @@ export async function openAgentQuickSettings(ids, { view = 'settings', lockAgent
             }
             addNumber(rewrite, 'promptTransformContextMessages', 'Recent messages to read', normalizePromptTransformContextMessages(first.postProcess.promptTransformContextMessages), 0, MAX_PROMPT_TRANSFORM_CONTEXT_MESSAGES);
             fields.at(-1).postProcess = true;
+            addSelect(rewrite, 'promptTransformSkipUserMessages', 'Skip user messages', yesNo, Boolean(first.postProcess.promptTransformSkipUserMessages));
+            fields.at(-1).postProcess = true;
             rewrite.append('<p class="ica--profile-help">Earlier chat messages this rewrite can read, so it can catch repeats and slips. They are never changed. 0 sends the reply alone.</p>');
+            rewrite.append('<p class="ica--profile-help">Skip user messages counts replies only.</p>');
         }
         if (companions.length) {
             const history = addSection('Chat history');
@@ -217,6 +220,7 @@ export async function openAgentQuickSettings(ids, { view = 'settings', lockAgent
             addSelect(behaviour, 'trigger', 'Run companion', [['auto', 'Automatically after replies'], ['manual', 'Only when I run it']], config.trigger, true);
             addSelect(behaviour, 'displayMode', 'Show notes', [['panel', 'Companion panel'], ['card', 'Under replies'], ['hidden', 'Hidden']], config.displayMode, true);
             addNumber(behaviour, 'contextMessages', 'Chat messages to read', config.contextMessages, 1, null, true);
+            addSelect(behaviour, 'skipUserMessages', 'Skip user messages', yesNo, Boolean(config.skipUserMessages), true);
             addNumber(behaviour, 'historyDepth', 'Previous notes to read', config.historyDepth, 1, 10, true);
             addNumber(behaviour, 'maxTokens', 'Maximum output tokens', config.maxTokens, 16, 64000, true);
         }
@@ -302,7 +306,7 @@ export async function openAgentQuickSettings(ids, { view = 'settings', lockAgent
                                 draft.companion.includeInChatHistory = true;
                             }
                         } else if (field.key === 'order') draft.injection = { ...draft.injection, order: value };
-                        else if (field.postProcess) draft.postProcess = { ...draft.postProcess, [field.key]: normalizePromptTransformContextMessages(value) };
+                        else if (field.postProcess) draft.postProcess = { ...draft.postProcess, [field.key]: field.number ? normalizePromptTransformContextMessages(value) : value === 'true' };
                         else if (field.setting) draft.settings = { ...draft.settings, [field.key]: String(value).trim() || field.fallback };
                         else draft[field.key] = value;
                     }

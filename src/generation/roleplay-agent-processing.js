@@ -239,7 +239,8 @@ async function modelRun(context, options, agent, text, name, intercept = false, 
     const isNote = options.companionAgent || request?.agent?.mode === 'companion-output';
     const endIndex = !isNote && ['continue', 'agent'].includes(effect) && Number.isInteger(source?.message?.index)
         ? source.message.index + 1 : records.length;
-    const recentChat = intercept ? '' : buildPromptTransformRecentChat(records.slice(1, endIndex), agent.postProcess.promptTransformContextMessages, unwrap);
+    const recentChat = intercept ? '' : buildPromptTransformRecentChat(records.slice(1, endIndex), agent.postProcess.promptTransformContextMessages, unwrap,
+        { skipUserMessages: agent.postProcess.promptTransformSkipUserMessages });
     const postTransform = !intercept && !options.thinkingRecovery;
     const isRefusal = output => snapshot.agents.refusalGuard !== false && isLikelyPromptTransformRefusal(unwrap(output), text);
     const result = await runAgentModelStep(context, { base, account: snapshot.account, name,

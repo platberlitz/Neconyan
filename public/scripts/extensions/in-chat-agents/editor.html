@@ -271,6 +271,7 @@
             </label>
         </div>
         <div class="ica--companion-toggle-grid">
+            <label class="checkbox_label" title="Leave user messages out, so every message counted in 'Chat messages to read' is a reply."><input type="checkbox" id="ica--editor-companion-skipUserMessages" /><span>Skip user messages</span></label>
             <label class="checkbox_label"><input type="checkbox" id="ica--editor-companion-includeCharacterCard" /><span>Include character card</span></label>
             <label class="checkbox_label"><input type="checkbox" id="ica--editor-companion-includePersona" /><span>Include persona</span></label>
             <label class="checkbox_label"><input type="checkbox" id="ica--editor-companion-includeWorldInfo" /><span>Include World Info</span></label>
@@ -495,6 +496,10 @@
                     <input type="number" id="ica--editor-pp-promptContextMessages" class="text_pole" min="0" max="30" step="1" value="0" />
                 </label>
             </div>
+            <label class="checkbox_label" title="Leave user messages out, so every message counted in 'Recent messages' is a reply.">
+                <input type="checkbox" id="ica--editor-pp-promptSkipUserMessages" />
+                <span>Skip user messages in recent messages</span>
+            </label>
             <label class="checkbox_label">
                 <input type="checkbox" id="ica--editor-pp-promptShowNotifications" />
                 <span>Show a notification while it works</span>

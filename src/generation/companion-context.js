@@ -61,7 +61,7 @@ export function recentCompanionContext(options, agent) {
     let tokens = 0;
     for (let index = options.messages.length - 1; index >= 0; index--) {
         const message = options.messages[index];
-        if (message.is_system) continue;
+        if (message.is_system || (agent.companion.skipUserMessages && message.is_user)) continue;
         selected.push({ index, message });
         tokens += companionMessageTokens(message);
         if (selected.length >= agent.companion.contextMessages && tokens >= agent.companion.minContextTokens) break;
