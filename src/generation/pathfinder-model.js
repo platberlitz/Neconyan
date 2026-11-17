@@ -2,6 +2,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import fetch from 'node-fetch';
 import { decisionCache } from '../decision-cache.js';
+import { requestDecisionBatches } from '../decision-batches.js';
 import { readJsonShared } from '../mewmory/store.js';
 import { resolveModelProfile } from '../mewmory/connection-profiles.js';
 import { extractDecisionScore, resolveDecisionUrl, validateDecisionModel, validateEndpoint } from '../mewmory/models.js';
@@ -113,11 +114,16 @@ export async function requestPathfinderModel(model, { messages, candidates, maxT
         ? decisionCache.key(['pathfinder', model.cacheScope, model.url, model.key || '', body]) : null;
     const cached = cacheKey ? decisionCache.get(cacheKey) : undefined;
     if (cached !== undefined) return raw ? { data: cached } : parsePathfinderResponse(model, cached, candidates);
-    const response = await fetch(model.url, { method: 'POST', redirect: 'error', size: 4 * 1024 * 1024,
-        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(120000)]) : AbortSignal.timeout(120000),
-        headers: { 'Content-Type': 'application/json', ...(model.key ? { Authorization: `Bearer ${model.key}` } : {}) }, body: JSON.stringify(body) });
-    if (!response.ok) throw Object.assign(new Error(`Pawthfinder model returned HTTP ${response.status}.`), { status: response.status, providerStatus: response.status });
-    const data = await response.json();
+    const requestSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(120000)]) : AbortSignal.timeout(120000);
+    const dispatch = async body => {
+        requestSignal.throwIfAborted();
+        const response = await fetch(model.url, { method: 'POST', redirect: 'error', size: 4 * 1024 * 1024,
+            signal: requestSignal,
+            headers: { 'Content-Type': 'application/json', ...(model.key ? { Authorization: `Bearer ${model.key}` } : {}) }, body: JSON.stringify(body) });
+        if (!response.ok) throw Object.assign(new Error(`Pawthfinder model returned HTTP ${response.status}.`), { status: response.status, providerStatus: response.status });
+        return response.json();
+    };
+    const data = model.protocol === 'decision' ? await requestDecisionBatches(model.url, body, dispatch) : await dispatch(body);
     signal?.throwIfAborted();
     if (cacheKey) {
         try {

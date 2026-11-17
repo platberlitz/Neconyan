@@ -78,6 +78,23 @@ test('saved chat profiles keep chat behaviour and explicit stage profiles overri
     assert.equal(resolved.url, 'http://127.0.0.1:8080/v1/systemone');
 });
 
+test('Nano-GPT manual and saved Custom connections detect all decision families', t => {
+    const { scope: { directories } } = fixture(t);
+    for (const model of ['jaredpalmer/kev-9b', 'vllm-sr/decision-large', 'subq/subq-snap-1.1', 'eu-jev/eu-jeff-latest', 'typesafe/jev-1.14']) {
+        const endpoint = 'https://api.nano-gpt.com/api/v1';
+        const manual = resolvePathfinderModel(directories, { modelConnection: 'manual', modelEndpoint: endpoint, modelOverride: model }, { agentId: 'nano' });
+        assert.equal(manual.url, endpoint + '/systemone');
+        assert.equal(manual.protocol, 'decision');
+        assert.equal(manual.model, model);
+        fs.writeFileSync(path.join(directories.root, 'settings.json'), JSON.stringify({ oai_settings: {}, extension_settings: {
+            connectionManager: { profiles: [{ id: 'nano', api: 'custom', model, 'api-url': endpoint }] },
+        } }));
+        const saved = resolvePathfinderModel(directories, { connectionProfile: 'nano' });
+        assert.equal(saved.url, manual.url);
+        assert.equal(saved.protocol, 'decision');
+    }
+});
+
 test('real HTTP requests use decision payloads, propagate cancellation and never follow redirects', async t => {
     const requests = [];
     const server = http.createServer(async (req, res) => {

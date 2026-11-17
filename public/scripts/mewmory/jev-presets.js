@@ -7,6 +7,40 @@ export const DECISION_ROLES = Object.freeze(['selector', 'fallback']);
 export const DECISION_MODES = Object.freeze(['auto', 'chat', 'decision']);
 export const EXTRACTION_FOCUS_MODES = Object.freeze(['every', 'balanced', 'compact']);
 
+// Nano-GPT's decision catalogue is separate from its chat model list. All
+// entries accept named noul questions through the System One endpoint.
+export const NANOGPT_DECISION_PRESETS = Object.freeze([
+    ['d3', 'd3 (Decision Large)', 'vllm-sr/decision-large', 64],
+    ['d3-flash', 'd3 Flash (Decision Medium)', 'vllm-sr/decision-medium', 64],
+    ['d3-mini', 'd3 Mini (Decision Small)', 'vllm-sr/decision-small', 64],
+    ['kev-9b', 'Kev 9B', 'jaredpalmer/kev-9b', 128],
+    ['kev-4b', 'Kev 4B TEE', 'jaredpalmer/kev-4b', 128],
+    ['pplx-decider-v1.2', 'PPLX Decider v1.2', 'perplexity/pplx-decider-v1.2', 128],
+    ['clef', 'Clef', 'cloudflare/clef', 128],
+    ['clef-omni', 'Clef Omni', 'cloudflare/clef-omni', 128],
+    ['clef-flash', 'Clef Flash', 'cloudflare/clef-flash', 128],
+    ['gpt-6-luna-decisions', 'GPT-6 Luna Decisions', 'openai/gpt-6-luna-decisions', 128],
+    ['eu-jeff-1.0.0', 'eu/jev Jeff 1.0.0', 'eu-jev/eu-jeff-1.0.0', 8],
+    ['eu-jeff-latest', 'eu/jev Jeff Latest', 'eu-jev/eu-jeff-latest', 8],
+    ['rune-26b-a4b', 'Rune 26B-A4B', 'surogate/rune-26b-a4b', 256],
+    ['subq-snap-1.1', 'SubQ Snap 1.1', 'subq/subq-snap-1.1', 128],
+    ['subq-snap-preview', 'SubQ Snap Preview', 'subq/subq-snap-preview', 128],
+    ['liquid-d1', 'Liquid D1', 'liquid/d1', 128],
+    ['jev-1.13', 'Jev 1.13', 'typesafe/jev-1.13', 128],
+    ['jev-1.14', 'Jev 1.14', 'typesafe/jev-1.14', 128],
+    ['jev-latest', 'Jev Latest', 'typesafe/jev-latest', 128],
+    ['drex-max-finance', 'Drex Max Finance', 'nace-ai/drex-max-finance', 64],
+].map(([id, shortLabel, model, maxQuestions]) => Object.freeze({
+    id: 'nanogpt-' + id,
+    label: 'Nano-GPT: ' + shortLabel + ' (' + model + ')',
+    shortLabel,
+    model,
+    endpoint: 'https://api.nano-gpt.com/api/v1/systemone',
+    threshold: 0.5,
+    family: 'Nano-GPT',
+    maxQuestions,
+})));
+
 export const JEV_DECISION_PRESETS = Object.freeze([
     {
         id: 'jev-latest',
@@ -161,6 +195,7 @@ export const JEV_DECISION_PRESETS = Object.freeze([
         threshold: 0.5,
         family: 'Self-hosted / Open-weights',
     },
+    ...NANOGPT_DECISION_PRESETS,
 ]);
 
 export const MESSAGE_WINDOW_PRESETS = Object.freeze([
@@ -236,7 +271,8 @@ const DECISION_ENDPOINT_PATTERN = /\/(?:systemone|decisions|decide)(?:\/|$)/i;
 export function isDecisionModel(model = '', endpoint = '') {
     const modelText = String(model || '').trim();
     const endpointText = String(endpoint || '').trim();
-    return DECISION_MODEL_PATTERN.test(modelText) || DECISION_ENDPOINT_PATTERN.test(endpointText);
+    return DECISION_MODEL_PATTERN.test(modelText) || DECISION_ENDPOINT_PATTERN.test(endpointText)
+        || NANOGPT_DECISION_PRESETS.some(preset => preset.model.toLowerCase() === modelText.toLowerCase());
 }
 
 export function defaultDecisionThreshold(model = '') {
@@ -249,10 +285,22 @@ export function effectiveDecisionMode(role = {}) {
     return isDecisionModel(role?.model || role?.modelOverride || '', role?.endpoint || '') ? 'decision' : 'chat';
 }
 
-export function findDecisionPreset(modelOrId = '') {
+export function findDecisionPreset(modelOrId = '', endpoint = '') {
     const trimmed = String(modelOrId || '').trim().toLowerCase();
     if (!trimmed) return null;
-    return JEV_DECISION_PRESETS.find(preset => preset.id.toLowerCase() === trimmed || preset.model.toLowerCase() === trimmed) || null;
+    const byId = JEV_DECISION_PRESETS.find(preset => preset.id.toLowerCase() === trimmed);
+    if (byId) return byId;
+    const matches = JEV_DECISION_PRESETS.filter(preset => preset.model.toLowerCase() === trimmed);
+    if (endpoint) {
+        try {
+            const host = new URL(endpoint).host.toLowerCase().replace(/^api\.nano-gpt\.com$/, 'nano-gpt.com');
+            const match = matches.find(preset => new URL(preset.endpoint).host.toLowerCase().replace(/^api\.nano-gpt\.com$/, 'nano-gpt.com') === host);
+            if (match) return match;
+        } catch {
+            // Unfinished manual URLs keep the existing model-only match.
+        }
+    }
+    return matches[0] || null;
 }
 
 export function detectMessageWindowPreset(config = {}) {

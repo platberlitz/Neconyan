@@ -4,6 +4,7 @@ import net from 'node:net';
 import ipaddr from 'ipaddr.js';
 import fetch from 'node-fetch';
 import { decisionCache } from '../decision-cache.js';
+import { requestDecisionBatches } from '../decision-batches.js';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
 import { readSecret, writeSecret, SecretManager, SECRETS_FILE } from '../endpoints/secrets.js';
 import { withChatFileLocks } from '../chat-file-lock.js';
@@ -470,6 +471,7 @@ export function resolveDecisionUrl(endpoint, connection) {
         const parsed = new URL(raw);
         const pathname = parsed.pathname.replace(/\/+$/, '').replace(/\/(?:chat\/completions|embeddings)$/i, '');
         if (parsed.hostname === 'openrouter.ai' && /^\/api(?:\/v1)?$/i.test(pathname)) parsed.pathname = '/api/alpha/decisions';
+        else if (['nano-gpt.com', 'api.nano-gpt.com'].includes(parsed.hostname) && /^(?:\/api)?(?:\/v1)?$/i.test(pathname)) parsed.pathname = '/api/v1/systemone';
         else if (/\/v1$/i.test(pathname)) parsed.pathname = pathname + '/systemone';
         else if (!pathname) parsed.pathname = '/v1/systemone';
         else parsed.pathname = pathname;
@@ -639,20 +641,24 @@ async function requestModel(directories, config, name, payload, dataTypes, signa
                 body.messages = seedKimiK3PartialReasoning(body.messages.map(message => ({ ...message })),
                     { stockReasoning: !/(?:^|[/:])smol-alibaba\//i.test(String(role.model)) });
             }
-            const response = await send(url, {
-                method: 'POST', redirect: 'error', size: 4 * 1024 * 1024,
-                signal: controller.signal,
-                headers: { 'Content-Type': 'application/json', ...(key ? { Authorization: 'Bearer ' + key } : {}) },
-                body: JSON.stringify(body),
-            });
-            if (!response.ok && isBusyStatus(response.status)) {
-                const until = markServiceBusy(serviceKey, parseRetryAfter(response.headers.get('retry-after')));
-                const error = new Error('The model for ' + ROLE_LABELS[name] + ' returned error code ' + response.status
-                    + '. Mewmory will wait ' + waitLabel(until - Date.now()) + ' before sending it another request.');
-                throw Object.assign(error, { status: 502, retryAt: until });
-            }
-            if (!response.ok) fail('The model for ' + ROLE_LABELS[name] + ' returned error code ' + response.status + '. Check its model connection in Mewmory settings and try again.', 502);
-            data = await response.json();
+            const dispatch = async body => {
+                controller.signal.throwIfAborted();
+                const response = await send(url, {
+                    method: 'POST', redirect: 'error', size: 4 * 1024 * 1024,
+                    signal: controller.signal,
+                    headers: { 'Content-Type': 'application/json', ...(key ? { Authorization: 'Bearer ' + key } : {}) },
+                    body: JSON.stringify(body),
+                });
+                if (!response.ok && isBusyStatus(response.status)) {
+                    const until = markServiceBusy(serviceKey, parseRetryAfter(response.headers.get('retry-after')));
+                    const error = new Error('The model for ' + ROLE_LABELS[name] + ' returned error code ' + response.status
+                        + '. Mewmory will wait ' + waitLabel(until - Date.now()) + ' before sending it another request.');
+                    throw Object.assign(error, { status: 502, retryAt: until });
+                }
+                if (!response.ok) fail('The model for ' + ROLE_LABELS[name] + ' returned error code ' + response.status + '. Check its model connection in Mewmory settings and try again.', 502);
+                return response.json();
+            };
+            data = decision ? await requestDecisionBatches(url, body, dispatch) : await dispatch(body);
         }
         if (!cached) markServiceWorking(serviceKey);
         if (decision) {

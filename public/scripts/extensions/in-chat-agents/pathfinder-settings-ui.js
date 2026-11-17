@@ -629,7 +629,7 @@ function loadRetrievalModelUI() {
         select.append(group);
     }
     select.append(new Option('Custom Jev / System One model…', 'custom'));
-    select.val(findDecisionPreset(s.modelOverride)?.id || (s.decisionMode === 'decision' ? 'custom' : ''));
+    select.val(findDecisionPreset(s.modelOverride, s.modelEndpoint)?.id || (s.decisionMode === 'decision' ? 'custom' : ''));
     for (const [id, key] of [['model-connection', 'modelConnection'], ['model-endpoint', 'modelEndpoint'], ['model-override', 'modelOverride'], ['decision-mode', 'decisionMode']]) {
         settingsEl.find(`#pf--${id}`).val(s[key] ?? SETTING_DEFAULTS[key]);
     }
