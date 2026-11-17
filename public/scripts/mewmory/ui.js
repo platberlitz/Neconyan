@@ -2913,7 +2913,7 @@ function loadMewmoryStyles() {
     if (!style) {
         style = document.createElement('link');
         style.id = 'mewmory-css';
-        style.href = 'css/mewmory.css?v=20261117-botsearcher-quick-settings';
+        style.href = 'css/mewmory.css?v=20261117-simple-dialogue-colors';
         document.head.append(style);
     }
     if (style.rel !== 'stylesheet') {

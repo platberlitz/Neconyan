@@ -105,12 +105,12 @@ describe('Simple Mode styles and wiring', () => {
         }
     });
 
-    test('keeps Presets, Persona, the character search and Workspace pages wherever they sit, and hides the other sidebar pages', () => {
-        expect([...SIMPLE_MODE_KEPT_ROUTES]).toEqual(['presets', 'persona', 'botsearcher']);
+    test('keeps Presets, Persona, the character search, Dialogue Colors and Workspace pages wherever they sit', () => {
+        expect([...SIMPLE_MODE_KEPT_ROUTES]).toEqual(['presets', 'persona', 'botsearcher', 'dialogue-colors']);
         expect({ ...SIMPLE_MODE_RAIL_LABELS }).toEqual({ botsearcher: 'Find characters' });
         expect(SIMPLE_MODE_HIDDEN_SELECTORS).toContain('#neconyan-workspace-rail .neconyan-rail-advanced > .neconyan-rail-section-heading:not(#neconyan-rail-quick-actions-title)');
         expect(SIMPLE_MODE_HIDDEN_SELECTORS).not.toContain('#neconyan-workspace-rail .neconyan-rail-advanced > [data-neconyan-quick-actions]');
-        expect(SIMPLE_MODE_HIDDEN_SELECTORS).toContain('#neconyan-workspace-rail .neconyan-rail-button[data-neconyan-rail-home]:not([data-neconyan-rail-home="primary"], [data-neconyan-rail-home="modes"], [data-neconyan-route="presets"], [data-neconyan-route="persona"], [data-neconyan-route="botsearcher"])');
+        expect(SIMPLE_MODE_HIDDEN_SELECTORS).toContain('#neconyan-workspace-rail .neconyan-rail-button[data-neconyan-rail-home]:not([data-neconyan-rail-home="primary"], [data-neconyan-rail-home="modes"], [data-neconyan-route="presets"], [data-neconyan-route="persona"], [data-neconyan-route="botsearcher"], [data-neconyan-route="dialogue-colors"])');
         expect(SIMPLE_MODE_HIDDEN_SELECTORS).toContain('#neconyan-workspace-rail .neconyan-rail-button[data-neconyan-rail-home="primary"][data-neconyan-route="mewmory"]');
         expect(SIMPLE_MODE_HIDDEN_SELECTORS.join(' ')).not.toContain('[data-neconyan-primary-nav]');
         const welcome = read('public/scripts/welcome-screen.js');
