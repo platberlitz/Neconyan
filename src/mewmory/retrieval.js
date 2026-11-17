@@ -278,7 +278,8 @@ export async function recall(directories, locator, {
         signal?.throwIfAborted();
         indexError = error.message;
     }
-    const scene = state.timeline.filter(ref => sourceEligible(state, ref, asOf)).slice(-retrieval.queryMessages).map(ref => {
+    const scene = state.timeline.filter(ref => sourceEligible(state, ref, asOf)
+        && !(retrieval.skipUserMessages && sourceAt(state, ref)?.isPlayer)).slice(-retrieval.queryMessages).map(ref => {
         const source = sourceAt(state, ref);
         return { id: refKey(ref), speaker: source.speaker, text: source.text.slice(-6000) };
     });

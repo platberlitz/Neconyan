@@ -2147,7 +2147,9 @@ function renderSettings(root) {
         ['neighbourChunks', 'Nearby passages to include on each side', 'Add 0–2 neighbouring passages where useful. Results share the memory allowance.'],
         ['batchSize', 'Passages per meaning-index request', 'How many passages to send to the Embeddings service together, from 1–10. Provider limits can reduce this.'],
     ]) ragFields.append(configField(label, rag[key], value => { rag[key] = value; }, { type: 'number', key: 'rag-' + key, hint }));
-    retrieval.append(ragFields, configCheck('Also offer original chat passages to recall', rag.includePassages, value => { rag.includePassages = value; }),
+    retrieval.append(ragFields, configCheck('Skip user messages in search cues', rag.skipUserMessages, value => { rag.skipUserMessages = value; }),
+        node('p', 'mewmory-caption', 'Search cues come from replies only, so every recent message counted above is a reply. Memory updates still read the whole chat.'),
+        configCheck('Also offer original chat passages to recall', rag.includePassages, value => { rag.includePassages = value; }),
         node('p', 'mewmory-caption', 'Off by default: recall picks saved memory entries only, which keeps each request small. Switch this on to let recall paste raw message, card and lorebook text into replies as well. It costs more tokens and Embeddings calls.'),
         configCheck('Search attached files and the Data Bank', rag.includeFiles, value => { rag.includeFiles = value; }),
         node('p', 'mewmory-caption', 'Only files attached to this account, character or chat are searched. File passages are references for the writer, not knowledge automatically given to characters. Allow file access separately for each model role.'));

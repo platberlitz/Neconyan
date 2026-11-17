@@ -1,6 +1,6 @@
 /** Shared defaults keep saved settings, retrieval and the settings form in agreement. */
 export const RAG_DEFAULTS = Object.freeze({
-    mode: 'hybrid', chunkSize: 1800, chunkOverlap: 200, queryMessages: 8,
+    mode: 'hybrid', chunkSize: 1800, chunkOverlap: 200, queryMessages: 8, skipUserMessages: false,
     semanticWeight: 0.5, minSimilarity: 0, resultLimit: 12,
     maxPerSource: 3, neighbourChunks: 0, includeFiles: true, includePassages: false, batchSize: 10,
 });
