@@ -1554,8 +1554,61 @@ button.ica--card-pill--version-update {
 
 .ica--tpanel-search small:empty,
 .ica--tpanel-agent[hidden],
-.ica--tpanel [data-role="panel-search-empty"][hidden] {
+.ica--tpanel [data-role="panel-search-empty"][hidden],
+.ica--tpanel .ica--tpanel-jump[hidden] {
     display: none;
+}
+
+.ica--tpanel-jump {
+    position: sticky;
+    bottom: calc(4px + env(safe-area-inset-bottom, 0px));
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-self: flex-end;
+    pointer-events: none;
+}
+
+.ica--tpanel-jump .ica--tpanel-jump-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    margin: 0;
+    padding: 0;
+    color: var(--neco-ink);
+    background: color-mix(in srgb, var(--neco-surface) 92%, transparent);
+    border: 1px solid var(--neco-ginger);
+    border-radius: 999px;
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--neco-ink) 18%, transparent);
+    cursor: pointer;
+    pointer-events: auto;
+}
+
+@media (hover: hover) {
+    .ica--tpanel-jump .ica--tpanel-jump-btn:hover:not([aria-disabled="true"]) {
+        color: var(--neco-on-accent);
+        background: var(--neco-ginger);
+    }
+}
+
+.ica--tpanel-jump .ica--tpanel-jump-btn[aria-disabled="true"] {
+    opacity: 0.45;
+    cursor: default;
+}
+
+.ica--tpanel-jump .ica--tpanel-jump-btn:focus-visible {
+    outline: 2px solid var(--neco-ginger);
+    outline-offset: 2px;
+}
+
+@media (pointer: coarse) {
+    .ica--tpanel-jump .ica--tpanel-jump-btn {
+        width: 44px;
+        height: 44px;
+    }
 }
 
 .ica--tpanel-agent {

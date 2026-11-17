@@ -951,7 +951,79 @@ export function buildPanelHtml() {
         ${buildPanelRunButtonsHtml()}
         <div class="ica--tpanel-body" id="ica--tpanel-results">${body}</div>
         <div class="ica--cdash-empty" data-role="panel-search-empty" hidden>${t`No companions match. Try another name or clear the search.`}</div>
+        <div class="ica--tpanel-jump" data-role="panel-jump" role="group" aria-label="${escapeHtml(t`Jump through the panel`)}" hidden>
+            <button type="button" class="ica--tpanel-jump-btn" data-action="panel-scroll-top" title="${escapeHtml(t`Jump to top`)}" aria-label="${escapeHtml(t`Jump to top`)}" aria-disabled="true"><i class="fa-solid fa-arrow-up" aria-hidden="true"></i></button>
+            <button type="button" class="ica--tpanel-jump-btn" data-action="panel-scroll-bottom" title="${escapeHtml(t`Jump to bottom`)}" aria-label="${escapeHtml(t`Jump to bottom`)}"><i class="fa-solid fa-arrow-down" aria-hidden="true"></i></button>
+        </div>
     `;
+}
+
+// Within this many pixels of an end, the matching jump button has nothing left to do.
+const PANEL_JUMP_EDGE_SLACK = 4;
+let panelJumpFrame = 0;
+let panelJumpResizeObserver = null;
+
+function shouldReducePanelMotion() {
+    return Boolean(document.body?.classList?.contains('reduced-motion')
+        || globalThis.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches);
+}
+
+/** Shows the jump buttons only while the panel scrolls, and marks the one already at its end. */
+function syncPanelJumpButtons() {
+    const panel = document.getElementById?.('ica--tracker-panel');
+    const group = panel?.querySelector?.('[data-role="panel-jump"]');
+    if (!group) return;
+    // The group reserves its own space at the end, so leave it out when asking whether the panel overflows.
+    const reserved = group.hidden ? 0 : (Number(group.offsetHeight) || 0) + 12;
+    const maxScroll = Math.max(0, (Number(panel.scrollHeight) || 0) - (Number(panel.clientHeight) || 0));
+    const hidden = !panelOpen || maxScroll - reserved <= PANEL_JUMP_EDGE_SLACK;
+    if (group.hidden !== hidden) group.hidden = hidden;
+    if (hidden) return;
+    const scrollTop = Number(panel.scrollTop) || 0;
+    const ends = {
+        'panel-scroll-top': scrollTop <= PANEL_JUMP_EDGE_SLACK,
+        'panel-scroll-bottom': scrollTop >= maxScroll - PANEL_JUMP_EDGE_SLACK,
+    };
+    for (const [action, atEnd] of Object.entries(ends)) {
+        // aria-disabled rather than disabled, so a keyboard user keeps focus on the button they pressed.
+        const button = group.querySelector(`[data-action="${action}"]`);
+        if (button && button.getAttribute('aria-disabled') !== String(atEnd)) button.setAttribute('aria-disabled', String(atEnd));
+    }
+}
+
+function schedulePanelJumpSync() {
+    if (panelJumpFrame) return;
+    if (typeof globalThis.requestAnimationFrame !== 'function') {
+        syncPanelJumpButtons();
+        return;
+    }
+    panelJumpFrame = globalThis.requestAnimationFrame(() => {
+        panelJumpFrame = 0;
+        syncPanelJumpButtons();
+    });
+}
+
+// Expanding history, filtering and pending cards all change the body's height without a scroll.
+function observePanelJumpSize(panel) {
+    if (!panel || typeof globalThis.ResizeObserver !== 'function') return;
+    panelJumpResizeObserver ??= new globalThis.ResizeObserver(schedulePanelJumpSync);
+    panelJumpResizeObserver.disconnect();
+    panelJumpResizeObserver.observe(panel);
+    const body = panel.querySelector?.('.ica--tpanel-body');
+    if (body) panelJumpResizeObserver.observe(body);
+}
+
+function jumpPanel(direction) {
+    const panel = document.getElementById?.('ica--tracker-panel');
+    if (!panel) return;
+    const top = direction === 'top' ? 0 : panel.scrollHeight;
+    const behavior = shouldReducePanelMotion() ? 'auto' : 'smooth';
+    if (typeof panel.scrollTo === 'function') {
+        panel.scrollTo({ top, behavior });
+    } else {
+        panel.scrollTop = top;
+    }
+    schedulePanelJumpSync();
 }
 
 /** Filter existing sections so private drafts and expanded notes survive each keystroke. */
@@ -1017,6 +1089,8 @@ function renderPanel() {
 
     restoreVisibleMessageAnchor(panel, anchor, PANEL_ANCHOR_OPTIONS);
     setupPanelSortable();
+    observePanelJumpSize(panel);
+    syncPanelJumpButtons();
 }
 
 /** Persists the panel's visual order onto injection.order so the agents page stays in step. */
@@ -1179,6 +1253,8 @@ export function openCompanionPanel() {
     $('#ica--tracker-panel-handle').attr('aria-expanded', 'true');
     globalThis.document?.getElementById?.(TOPBAR_LAUNCHER_ID)?.setAttribute('aria-expanded', 'true');
     notifyDiceCompanionHostsChanged();
+    // The panel only gains its height once it is shown, so measure again on the next frame.
+    schedulePanelJumpSync();
     document.querySelector('#ica--tracker-panel [data-action="panel-close"]')?.focus({ preventScroll: true });
 }
 
@@ -1238,6 +1314,11 @@ async function handlePanelAction(event) {
 
     if (action === 'panel-close') {
         closeCompanionPanel();
+        return;
+    }
+
+    if (action === 'panel-scroll-top' || action === 'panel-scroll-bottom') {
+        jumpPanel(action === 'panel-scroll-top' ? 'top' : 'bottom');
         return;
     }
 
@@ -1662,6 +1743,7 @@ export function initCompanionPanel() {
     });
     // 'toggle' does not bubble, so listen in the capture phase for every history list.
     $('#ica--tracker-panel')[0]?.addEventListener('toggle', handlePanelHistoryToggle, true);
+    $('#ica--tracker-panel')[0]?.addEventListener('scroll', schedulePanelJumpSync, { passive: true });
     $('#ica--tracker-panel').on('click', '[data-action]', event =>
         runCompanionViewAction(event.currentTarget, () => handlePanelAction(event)).catch(error => {
             console.error('[InChatAgents] Companion panel action failed:', error);
