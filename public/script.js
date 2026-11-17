@@ -19427,9 +19427,10 @@ export async function swipe(event, direction, { source, repeated, message = chat
 
     /**
      * Waits for the generation to end, reverts the swipe if swipe_id has not changed.
-     * @param {boolean} revert Attept to revert the swipe without saving.
+     * @param {boolean} revert Attempt to restore the previous valid swipe.
      */
     async function endSwipe(revert = false) {
+        let restoredViewportUpdate = null;
         //Wait for the generation to end.
         try {
             //`mes_buttons` need to be hidden until the animation completes.
@@ -19470,9 +19471,10 @@ export async function swipe(event, direction, { source, repeated, message = chat
                 source = SWIPE_SOURCE.BACK;
                 chat[mesId].swipe_id = clampedId;
 
-                //Update the chat.
+                // Restore the reply without letting its temporary removal move the reading position.
+                restoredViewportUpdate = getSwipeReplacementViewportUpdate({ isLastMessageSwipe: mesId === chat.length - 1, useLifecycleRoute: true });
                 await loadFromSwipeId(mesId, chat[mesId].swipe_id);
-                await redisplayChat({ startIndex: mesId });
+                await redisplayChat({ startIndex: mesId, atomic: true });
             } else {
                 await Popup.show.confirm(
                     t`ERROR: <code>syncSwipeToMes</code> has failed to revert the failed ${direction} swipe on message #${mesId}.`,
@@ -19482,7 +19484,6 @@ export async function swipe(event, direction, { source, repeated, message = chat
                 console.trace(`Error! Recursion detected when reverting failed ${direction} swipe on message #${mesId}. Something has broken.`);
                 await reloadCurrentChat();
             }
-            //Out of bounds swipes should not be saved.
         } else if (source != SWIPE_SOURCE.BACK) {
             //Save the chat if swipe_id has changed.
             saveChatDebounced();
@@ -19492,6 +19493,14 @@ export async function swipe(event, direction, { source, repeated, message = chat
         swipeState = SWIPE_STATE.NONE;
         delete document.body.dataset.swiping;
         showSwipeButtons();
+
+        if (restoredViewportUpdate) {
+            // Position the reply after its swipe controls have regained their height.
+            if (restoredViewportUpdate.scrollWithAddOneMessage) scrollChatToBottom({ waitForFrame: true });
+            await applySwipeReplacementViewportUpdate(restoredViewportUpdate);
+            // Replace the saved generation-recovery placeholder with the restored reply.
+            await saveChatConditional();
+        }
     }
 
     async function standardSwipe(newSwipeId) {
