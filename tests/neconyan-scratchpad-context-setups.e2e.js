@@ -1,8 +1,15 @@
 /* global document, window, getComputedStyle */
 /* eslint-disable playwright/no-conditional-in-test -- Both viewport variants share the same checks with optional iOS emulation. */
 import { expect } from '@playwright/test';
-import { test } from './neconyan-conversation-durable-fixture.js';
+import { test as base } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+
+// Account boot uses the durable fixture's startup limits, not the interaction budget.
+const test = base.extend({
+    preparedSetups: [async ({ app }, use, testInfo) => {
+        await use(await setupAccount(app, testInfo.title.startsWith('phone')));
+    }, { timeout: 120000 }],
+});
 
 async function setupAccount(app, phone) {
     const account = await app.account({ phone });
@@ -19,9 +26,9 @@ async function setupAccount(app, phone) {
 }
 
 for (const phone of [false, true]) {
-    test(`${phone ? 'phone' : 'desktop'} current Saved setup follows every new session and survives reopening`, async ({ app }) => {
+    test(`${phone ? 'phone' : 'desktop'} current Saved setup follows every new session and survives reopening`, async ({ preparedSetups }) => {
         test.setTimeout(90000);
-        const { page, open } = await setupAccount(app, phone);
+        const { page, open } = preparedSetups;
         await page.locator('#scratchpad-setup').selectOption('Quiet replies');
         const updated = page.waitForResponse('**/api/scratchpad/session/update');
         await page.locator('#scratchpad-depth').fill('3');
@@ -37,7 +44,7 @@ for (const phone of [false, true]) {
         };
         await create(false);
         await page.reload({ waitUntil: 'domcontentloaded' });
-        await page.locator('body.neconyan-rail-ready').waitFor();
+        await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'), undefined, { timeout: 60000 });
         await open('context');
         await expect(page.locator('#scratchpad-setup')).toHaveValue('Quiet replies');
         await create(true);
@@ -48,8 +55,8 @@ for (const phone of [false, true]) {
         await create(false);
     });
 
-    test(`${phone ? 'phone' : 'desktop'} Saved setup buttons keep the current viewport position`, async ({ app }) => {
-        const { page } = await setupAccount(app, phone);
+    test(`${phone ? 'phone' : 'desktop'} Saved setup buttons keep the current viewport position`, async ({ preparedSetups }) => {
+        const { page } = preparedSetups;
         const section = page.locator('.scratchpad-setups');
         const button = name => section.getByRole('button', { name, exact: true });
         const position = () => button('Save current choices').evaluate(element => ({

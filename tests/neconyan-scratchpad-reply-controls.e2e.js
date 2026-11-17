@@ -2,8 +2,20 @@
 /* eslint-disable playwright/no-conditional-in-test -- The same checks cover phone and desktop. */
 import fs from 'node:fs/promises';
 import { expect } from '@playwright/test';
-import { test } from './neconyan-conversation-durable-fixture.js';
+import { test as base } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+
+// Keep the standard account startup limits separate from each interaction check.
+const test = base.extend({
+    readyAccount: [async ({ app }, use, testInfo) => {
+        const phone = testInfo.title.startsWith('phone');
+        const ios = testInfo.title.includes('gestures');
+        const account = await app.account({ phone, contextOptions: ios ? IPHONE_SAFARI_CONTEXT : {} });
+        if (ios) await installIPhoneSafari(account.context, { standalone: true });
+        const page = await account.open({ workspace: false });
+        await use({ account, page });
+    }, { timeout: 120000 }],
+});
 
 const question = 'Suggest a quiet opening for the garden scene.';
 const answer = 'Start with the garden gate left open. Nova notices the fresh footprints before anyone speaks.';
@@ -24,8 +36,7 @@ async function picture(page, name, phone) {
         style: '#toast-container > :not(.toast-warning) { visibility: hidden; }' });
 }
 
-async function seed(account) {
-    const page = await account.open({ workspace: false });
+async function seed(account, page) {
     const source = await open(page);
     await account.post('/api/scratchpad/session/import', { source, session: {
         name: 'Garden ideas', assistant: 'miso', settings: { connection: { kind: 'profile', profileId: 'durable' } },
@@ -71,12 +82,8 @@ async function swipe(page, direction) {
 }
 
 for (const phone of [true, false]) {
-    test(`${phone ? 'phone' : 'desktop'} General Scratchpad warns once per visit when no persona is selected`, async ({ app }) => {
-        const account = await app.account({ phone, configureSettings: settings => {
-            settings.power_user.personas = {};
-            settings.power_user.default_persona = '';
-        } });
-        const page = await account.open({ workspace: false });
+    test(`${phone ? 'phone' : 'desktop'} General Scratchpad warns once per visit when no persona is selected`, async ({ readyAccount }) => {
+        const { page } = readyAccount;
         await page.evaluate(async () => {
             // Startup creates the fallback User persona; remove it to represent an unequipped persona.
             const { power_user } = await import('/scripts/power-user.js');
@@ -106,9 +113,9 @@ for (const phone of [true, false]) {
         await expect(toast).toHaveCount(0);
     });
 
-    test(`${phone ? 'phone' : 'desktop'} empty Send answers the remaining user message without duplicating it`, async ({ app }) => {
-        const account = await app.account({ phone });
-        const { page, source } = await seed(account);
+    test(`${phone ? 'phone' : 'desktop'} empty Send answers the remaining user message without duplicating it`, async ({ app, readyAccount }) => {
+        const { account, page } = readyAccount;
+        const { source } = await seed(account, page);
         const original = (await account.post('/api/scratchpad/bucket', { source })).bucket.sessions[0].messages[0];
         await page.locator('.scratchpad-message.is-assistant summary[aria-label="Message actions"]').click();
         await page.locator('.scratchpad-message.is-assistant').getByRole('button', { name: 'Delete', exact: true }).click();
@@ -133,10 +140,9 @@ for (const phone of [true, false]) {
     });
 }
 
-test('phone gestures generate a new reply and browse both saved versions', async ({ app }) => {
-    const account = await app.account({ phone: true, contextOptions: IPHONE_SAFARI_CONTEXT });
-    await installIPhoneSafari(account.context, { standalone: true });
-    const { page, source } = await seed(account);
+test('phone gestures generate a new reply and browse both saved versions', async ({ app, readyAccount }) => {
+    const { account, page } = readyAccount;
+    const { source } = await seed(account, page);
     await applyIOSOnlyCss(page);
     await page.evaluate(() => window.toastr.clear());
     await picture(page, 'gestures', true);
