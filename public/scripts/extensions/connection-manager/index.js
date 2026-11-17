@@ -1145,16 +1145,15 @@ function renderConnectionProfiles(profiles) {
     /**
      * Creates an option element for a profile.
      * @param {ConnectionProfile} profile Connection profile
-     * @param {boolean} [allowSelected] Whether this option can become the visible selected option
      * @returns {HTMLOptionElement} Profile option
      */
-    function createProfileOption(profile, allowSelected = true) {
+    function createProfileOption(profile) {
         const option = document.createElement('option');
         option.value = profile.id;
         option.textContent = `${profile.fav ? '★ ' : ''}${profile.name}`;
         // A profile name is data. The '<None>' option beside it is a caption and stays unmarked.
         option.setAttribute('data-i18n-ignore', '');
-        option.selected = allowSelected && profile.id === selectedProfileId;
+        option.selected = profile.id === selectedProfileId;
         option.dataset.folderId = profile.folderId ?? '';
         option.dataset.favorite = String(Boolean(profile.fav));
         return option;
@@ -1167,18 +1166,18 @@ function renderConnectionProfiles(profiles) {
         const favoritesGroup = document.createElement('optgroup');
         favoritesGroup.label = t`★ Favorites`;
         for (const profile of favoriteProfiles) {
-            favoritesGroup.appendChild(createProfileOption(profile, false));
+            favoritesGroup.appendChild(createProfileOption(profile));
         }
         profiles.appendChild(favoritesGroup);
     }
 
-    const rootProfiles = sortedProfiles.filter(profile => !profile.folderId);
+    const rootProfiles = sortedProfiles.filter(profile => !profile.fav && !profile.folderId);
     for (const profile of rootProfiles) {
         profiles.appendChild(createProfileOption(profile));
     }
 
     for (const folder of getSortedFolders()) {
-        const folderProfiles = sortedProfiles.filter(profile => profile.folderId === folder.id);
+        const folderProfiles = sortedProfiles.filter(profile => !profile.fav && profile.folderId === folder.id);
         if (folderProfiles.length === 0) {
             continue;
         }
