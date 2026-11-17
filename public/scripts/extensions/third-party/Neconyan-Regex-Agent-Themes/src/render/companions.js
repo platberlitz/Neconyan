@@ -7,9 +7,14 @@
  * also uses `.rat-tw…`. Both get rewritten to `custom-rat-tw…`, the markup by the
  * DOMPurify hook (chats.js:1916) and the selector by decodeStyleTags (chats.js:592), so
  * they still match. Prefixing either side by hand would break the pair.
+ *
+ * The Chatroom shell is the other: it carries the platform looks (4chan, Reddit, X and
+ * the rest) as a theme-scoped `<style>` block, and its rows keep the stock `chatroom-*`
+ * class names those rules select on. See chatroom.js.
  */
 
 import { accentAt, alpha } from '../tokens.js';
+import { chatroomPlatformCss, chatroomScopeClass } from './chatroom.js';
 import {
     decl, dynamicBackground, layeredBackground, part, radiusCorners, rootAttrs,
     surfaceBackground, surfaceFill,
@@ -145,6 +150,15 @@ export function renderStream(spec, tokens, options) {
     }
 }
 
+/** Stock chatroom class names, emitted only for the Chatroom set so the platform rules can find them. */
+function chatroomClass(spec, name) {
+    return spec.set === 'chatroom' ? ` class="${name}"` : '';
+}
+
+function chatroomRowClasses(spec, ...names) {
+    return spec.set === 'chatroom' ? names : [];
+}
+
 function streamShell(spec, tokens) {
     const accent = accentAt(tokens, spec.accent);
 
@@ -188,23 +202,23 @@ function streamShell(spec, tokens) {
         ? `${spec.meta.label}: $${spec.meta.g}`
         : (spec.meta ? `$${spec.meta.g}` : '');
     const badge = spec.badge
-        ? `<span${decl({
+        ? `<span${chatroomClass(spec, 'chatroom-live')}${decl({
             'font-size': tokens.type.labelSize, 'font-weight': '700', padding: tokens.space.pillPad,
             'border-radius': tokens.radius.pill,
             background: surfaceFill(tokens, alpha(accent, 0.22)), color: tokens.on.strong,
         })}>${spec.badge}</span>`
         : '';
 
-    const header = `<div${part('chrome')}${decl({
+    const header = `<div${chatroomClass(spec, 'chatroom-header')}${part('chrome')}${decl({
         display: 'flex', 'align-items': 'center', 'justify-content': 'space-between',
         gap: tokens.space.gap, 'margin-bottom': tokens.space.gap,
         position: spec.chrome === 'texture' ? 'relative' : '',
         'padding-bottom': spec.chrome === 'texture' ? tokens.space.rowPadY : '',
         'border-bottom': spec.chrome === 'texture' ? `1px solid ${alpha(accent, 0.28)}` : '',
     })}>`
-        + `<div${decl({ 'font-weight': '700', 'letter-spacing': '0.02em', 'min-width': '0' })}>${titleText}</div>`
+        + `<div${chatroomClass(spec, 'chatroom-title')}${decl({ 'font-weight': '700', 'letter-spacing': '0.02em', 'min-width': '0' })}>${titleText}</div>`
         + `<div${decl({ display: 'flex', gap: '6px', 'align-items': 'center', 'flex-wrap': 'wrap' })}>`
-        + (metaText ? `<span${decl({ 'font-size': tokens.type.labelSize, color: tokens.on.muted })}>${metaText}</span>` : '')
+        + (metaText ? `<span${chatroomClass(spec, 'chatroom-style-label')}${decl({ 'font-size': tokens.type.labelSize, color: tokens.on.muted })}>${metaText}</span>` : '')
         + badge
         + '</div></div>';
 
@@ -217,10 +231,20 @@ function streamShell(spec, tokens) {
         })}>`
         : '';
 
-    const column = `<div role="feed"${part('stream-body')}${decl({
+    const column = `<div role="feed"${chatroomClass(spec, 'chatroom-posts')}${part('stream-body')}${decl({
         display: 'flex', 'flex-direction': 'column', gap: tokens.space.gap,
         position: spec.chrome === 'texture' ? 'relative' : '',
     })}>`;
+
+    // The Chatroom keys its platform look (4chan, Reddit, X...) off the style capture,
+    // the same way the stock shell does.
+    if (spec.set === 'chatroom' && spec.meta?.g) {
+        const scopeClass = chatroomScopeClass(spec, tokens);
+        const css = chatroomPlatformCss(`.${scopeClass}`, tokens);
+        return `<style>${css}</style>`
+            + `<div${rootAttrs(spec, tokens, [scopeClass])} data-chatroom-style="$${spec.meta.g}"${part('root')}${outer}>`
+            + notch + texture + screenOpen + header + column;
+    }
 
     return `<div${rootAttrs(spec, tokens)}${part('root')}${outer}>`
         + notch + texture + screenOpen + header + column;
@@ -263,16 +287,23 @@ function streamRow(spec, tokens, options) {
         'box-shadow': spec.variant === 'bubble' && tokens.shadow.chip !== 'none' ? tokens.shadow.chip : '',
     });
 
-    const bodySpan = `<span${part('stream-text')}${bodyStyle}>$${spec.body.g}</span>`;
+    const bodySpan = `<span${chatroomClass(spec, 'chatroom-body')}${part('stream-text')}${bodyStyle}>$${spec.body.g}</span>`;
+
+    const postClasses = chatroomRowClasses(spec, 'chatroom-post',
+        ...(isGreen ? ['chatroom-post--green'] : []),
+        ...(spec.variant === 'greentext-cont' ? ['chatroom-post--cont'] : []),
+        ...(spec.replyTo ? ['chatroom-post--reply'] : []));
+    const postAttrs = rootAttrs(spec, tokens, postClasses);
+    const speakerHue = spec.set === 'chatroom' && spec.hue ? `$${spec.hue.g}` : '';
 
     if (!spec.speaker) {
-        return `<article${rootAttrs(spec, tokens)}${part('stream-row')}${decl({
+        return `<article${postAttrs}${part('stream-row')}${decl({
             display: 'flex', 'flex-direction': 'column', gap: tokens.space.rowGap,
             'align-items': 'flex-start', 'max-width': '100%',
         })}>${bodySpan}</article>`;
     }
 
-    const name = `<b${part('stream-name')}${decl({
+    const name = `<b${chatroomClass(spec, 'chatroom-name')}${part('stream-name')}${decl({
         display: 'inline-block',
         'max-width': '170px',
         overflow: 'hidden',
@@ -286,18 +317,24 @@ function streamRow(spec, tokens, options) {
     })}>$${spec.speaker.g}</b>`;
 
     const meta = spec.meta
-        ? `<small${part('stream-meta')}${decl({
+        ? `<small${chatroomClass(spec, 'chatroom-meta')}${part('stream-meta')}${decl({
             color: tokens.on.muted, 'font-size': tokens.type.labelSize, overflow: 'hidden',
             'text-overflow': 'ellipsis', 'white-space': 'nowrap',
         })}>$${spec.meta.g}</small>`
         : '';
 
+    // The Chatroom splits the reply line into the same parts as stock, so a platform can
+    // swap the wording ('Replying to', '>>', 'u/') without touching the captured name.
+    const replyText = spec.set === 'chatroom'
+        ? '<span class="chatroom-replyto-label">↪ replying to </span>'
+            + `<b class="chatroom-replyto-target"><span class="chatroom-replyto-at">@</span>$${spec.replyTo?.g}</b>`
+        : `↪ replying to <b>@$${spec.replyTo?.g}</b>`;
     const replyLine = spec.replyTo
-        ? `<small${part('stream-reply')}${decl({
+        ? `<small${chatroomClass(spec, 'chatroom-replyto')}${part('stream-reply')}${decl({
             display: 'block', 'max-width': '100%', color: tokens.on.muted,
             'font-size': tokens.type.labelSize, overflow: 'hidden',
             'text-overflow': 'ellipsis', 'white-space': 'nowrap',
-        })}>↪ replying to <b>@$${spec.replyTo.g}</b></small>`
+        })}>${replyText}</small>`
         : '';
 
     const replyBorder = spec.replyTo
@@ -318,13 +355,14 @@ function streamRow(spec, tokens, options) {
             + bodySpan + '</article>';
     }
 
-    return `<article${rootAttrs(spec, tokens)}${part('stream-row')}${decl({
+    return `<article${postAttrs}${part('stream-row')}${decl({
+        '--chatroom-hue': speakerHue,
         display: 'flex', 'flex-direction': 'column', gap: tokens.space.rowGap,
         'align-items': 'flex-start', 'max-width': '100%',
         'padding-left': spec.replyTo ? '10px' : '',
         'border-left': replyBorder,
     })}>`
-        + `<div${decl({ display: 'flex', 'align-items': 'center', gap: '6px', 'max-width': '100%', 'min-width': '0' })}>`
+        + `<div${chatroomClass(spec, 'chatroom-head')}${decl({ display: 'flex', 'align-items': 'center', gap: '6px', 'max-width': '100%', 'min-width': '0' })}>`
         + name + meta + '</div>'
         + replyLine
         + bodySpan + '</article>';
@@ -333,20 +371,20 @@ function streamRow(spec, tokens, options) {
 function streamViewerRow(spec, tokens) {
     const accent = accentAt(tokens, spec.accent);
     const nameBackground = dynamicBackground(tokens, [alpha(accent, 0.28)]);
-    return `<article${rootAttrs(spec, tokens)}${part('stream-row')}${decl({
+    return `<article${rootAttrs(spec, tokens, chatroomRowClasses(spec, 'chatroom-post', 'chatroom-post--viewer'))}${part('stream-row')}${decl({
         display: 'flex', 'flex-direction': 'column', gap: tokens.space.rowGap,
         'align-items': 'flex-end', 'max-width': '100%', 'margin-left': 'auto',
     })}>`
-        + `<div${decl({ display: 'flex', 'align-items': 'center', gap: '6px', 'max-width': '100%', 'min-width': '0' })}>`
-        + `<small${part('stream-meta')}${decl({ color: tokens.on.muted, 'font-size': tokens.type.labelSize })}>you</small>`
-        + `<b${part('stream-name')}${decl({
+        + `<div${chatroomClass(spec, 'chatroom-head')}${decl({ display: 'flex', 'align-items': 'center', gap: '6px', 'max-width': '100%', 'min-width': '0' })}>`
+        + `<small${chatroomClass(spec, 'chatroom-meta')}${part('stream-meta')}${decl({ color: tokens.on.muted, 'font-size': tokens.type.labelSize })}>you</small>`
+        + `<b${chatroomClass(spec, 'chatroom-name')}${part('stream-name')}${decl({
             display: 'inline-block', 'max-width': '170px', overflow: 'hidden',
             'text-overflow': 'ellipsis', 'white-space': 'nowrap',
             padding: tokens.space.chipPad, 'border-radius': tokens.radius.pill,
             background: nameBackground, border: `1px solid ${alpha(accent, 0.55)}`,
             color: tokens.on.safety,
         })}>$${spec.speaker.g}</b></div>`
-        + `<span${part('stream-text')}${decl({
+        + `<span${chatroomClass(spec, 'chatroom-body')}${part('stream-text')}${decl({
             display: 'block', 'max-width': '92%',
             padding: `${tokens.space.rowPadY} ${tokens.space.rowPadX}`,
             'border-radius': tokens.radius.row,
@@ -360,7 +398,7 @@ function streamViewerRow(spec, tokens) {
 
 function streamPollCard(spec, tokens) {
     const accent = accentAt(tokens, spec.accent);
-    return `<div${rootAttrs(spec, tokens)}${part('stream-poll')}${decl({
+    return `<div${rootAttrs(spec, tokens, chatroomRowClasses(spec, 'chatroom-poll'))}${part('stream-poll')}${decl({
         display: 'flex', 'flex-direction': 'column', gap: '4px', 'max-width': '100%',
         'margin-top': '4px', padding: `${tokens.space.rowPadY} ${tokens.space.rowPadX}`,
         'border-radius': tokens.radius.row,
@@ -396,14 +434,15 @@ function streamPollOption(spec, tokens) {
 
 function streamEventRow(spec, tokens) {
     const accent = accentAt(tokens, spec.accent);
-    return `<div${rootAttrs(spec, tokens)}${part('stream-event')}${decl({
+    const icon = spec.set === 'chatroom' ? '<span class="chatroom-event-icon">⚡ </span>' : '⚡ ';
+    return `<div${rootAttrs(spec, tokens, chatroomRowClasses(spec, 'chatroom-event'))}${part('stream-event')}${decl({
         'align-self': 'center', 'max-width': '94%',
         padding: tokens.space.pillPad, 'border-radius': tokens.radius.pill,
         border: `1px dashed ${alpha(accent, 0.45)}`,
         background: surfaceFill(tokens, alpha(accent, 0.1)),
         color: tokens.on.muted, 'font-size': tokens.type.labelSize,
         'text-align': 'center', 'overflow-wrap': 'anywhere',
-    })}>⚡ $${spec.body.g}</div>`;
+    })}>${icon}$${spec.body.g}</div>`;
 }
 
 /** Archetype I: one speaker-labelled turn in a plain transcript. */
