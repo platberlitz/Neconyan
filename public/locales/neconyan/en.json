@@ -1509,6 +1509,8 @@
   "This setting affects visibility only.": "This setting affects visibility only.",
   "Constrains effort on reasoning for reasoning models.": "Constrains effort on reasoning for reasoning models.\nReducing reasoning effort can result in faster responses and fewer tokens used on reasoning in a response.",
   "Reasoning Effort": "Reasoning Effort",
+  "No listed reasoning effort is available for this model.": "No listed reasoning effort is available for this model.",
+  "None is unavailable for this model. No reasoning effort override is sent.": "None is unavailable for this model. No reasoning effort override is sent.",
   "openai_reasoning_effort_auto": "openai_reasoning_effort_auto",
   "openai_reasoning_effort_minimum": "Minimum",
   "openai_reasoning_effort_low": "Low",

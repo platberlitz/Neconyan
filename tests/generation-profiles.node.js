@@ -154,7 +154,7 @@ for (const preset of [false, true]) test(`metadata-free native Groq ${preset ? '
     const result = await runChatProfile(options);
     assert.equal(result.text, 'Native reply.');
     assert.equal(result.generation.reasoning_effort, 'high');
-    await assert.rejects(runChatProfile({ ...options, overridePayload: { reasoning_effort: 'none' } }), /not available/);
+    await assert.rejects(runChatProfile({ ...options, overridePayload: { reasoning_effort: 'max' } }), /not available/);
     assert.equal(calls, 1);
     assert.equal(fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8'), before);
 });
@@ -164,7 +164,7 @@ test('prepared metadata-free Groq quiet request rejects an unavailable effort af
     const binding = captureChatProfile(fixture.directories, 'groq');
     const before = fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8');
     const job = acceptJob(fixture.directories, { owner: 'tester', type: 'test.profile', submissionKey: 'groq-prepared', intent: {} }).job;
-    const options = { ...fixture.options, binding, generationType: 'quiet', overridePayload: { reasoning_effort: 'none' },
+    const options = { ...fixture.options, binding, generationType: 'quiet', overridePayload: { reasoning_effort: 'max' },
         jobContext: { directories: fixture.directories, job, signal: new AbortController().signal },
         fetch: () => assert.fail('An unavailable prepared request must not reach inference') };
     await assert.rejects(runChatProfile({ ...options, onProviderStep: () => { throw new Error('Owned stop before dispatch'); } }), /Owned stop/);
@@ -176,10 +176,103 @@ test('metadata-free captured active Groq rejects an unavailable effort before di
     const fixture = nativeGroqFixture(t);
     const binding = captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 7 });
     const before = fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8');
-    const options = { ...fixture.options, binding, overridePayload: { reasoning_effort: 'none' },
+    const options = { ...fixture.options, binding, overridePayload: { reasoning_effort: 'max' },
         fetch: () => assert.fail('An unavailable effort must not reach inference') };
     await assert.rejects(runChatProfile(options), /not available/);
     assert.equal(fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8'), before);
+});
+
+test('Nano thinking omits known-invalid None while an unknown model keeps an explicit override', async t => {
+    const fixture = nanoReasoningFixture(t);
+    for (const scenario of [
+        { name: 'local None over profile High', kind: 'profile', local: 'none', profile: 'high', active: 'high' },
+        { name: 'inherited profile None', kind: 'profile', local: '', profile: 'none', active: 'high' },
+        { name: 'inherited active None', kind: 'active', local: '', profile: 'high', active: 'none' },
+        { name: 'unknown Nano model local None', kind: 'profile', local: 'none', profile: 'high', active: 'high', unknown: true },
+    ]) {
+        const model = scenario.unknown ? 'fixture/model:thinkingish' : 'fixture/model:thinking';
+        fixture.profile.model = model;
+        fixture.profile['reasoning-effort'] = scenario.profile;
+        fixture.settings.active_generation.model = model;
+        fixture.settings.oai_settings.nanogpt_model = model;
+        fixture.settings.oai_settings.reasoning_effort = scenario.active;
+        fixture.save();
+        const bodies = [];
+        const generate = async effort => {
+            const binding = captureGenerationBinding(fixture.directories, scenario.kind === 'active'
+                ? { kind: 'active' } : { kind: 'profile', profileId: 'nano' }, { settingsRevision: 7 });
+            const material = resolveGenerationProfile(fixture.directories, binding);
+            assert.equal(material.active.model_sampler_metadata, undefined, 'this interaction has no cached declaration');
+            const overridePayload = effort ? { reasoning_effort: effort } : {};
+            await runChatProfile({ ...fixture.options, binding, overridePayload, maxTokens: 32768,
+                rawOptions: scenario.kind === 'profile' ? { includePreset: false } : {}, fetch: async (_url, request) => {
+                    assert.equal(String(request.method).toUpperCase(), 'POST', 'no catalogue request is added');
+                    bodies.push(JSON.parse(request.body));
+                    return new Response(JSON.stringify({ choices: [{ message: { content: 'Fixture reply.' } }] }));
+                } });
+        };
+        const saved = fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8');
+        await generate(scenario.local);
+        assert.equal(fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8'), saved, scenario.name);
+        delete fixture.profile['reasoning-effort'];
+        delete fixture.settings.oai_settings.reasoning_effort;
+        fixture.save();
+        await generate('');
+        assert.equal(bodies.length, 2, scenario.name);
+        assert.equal(bodies[0].max_tokens, 32768, scenario.name);
+        if (scenario.unknown) {
+            assert.equal(bodies[0].reasoning.effort, 'none', scenario.name);
+            assert.equal(bodies[1].reasoning?.effort, undefined, scenario.name);
+        } else {
+            assert.deepEqual(bodies[0], bodies[1], `${scenario.name} must match the absent-effort provider body`);
+            assert.equal(bodies[0].reasoning?.effort, undefined, scenario.name);
+            assert.notEqual(bodies[0].reasoning?.enabled, false, scenario.name);
+            assert.notEqual(bodies[0].thinking?.type, 'disabled', scenario.name);
+        }
+    }
+});
+
+for (const scenario of [
+    { name: 'active None', active: true, activeEffort: 'none' },
+    { name: 'profile None over preset High', profileEffort: 'none', presetEffort: 'high' },
+    { name: 'preset None fallback', presetEffort: 'none' },
+    { name: 'explicit raw None over profile High', profileEffort: 'high', presetEffort: 'high', overrideEffort: 'none' },
+    { name: 'profile High over preset None', profileEffort: 'high', presetEffort: 'none', expected: 'high' },
+    { name: 'explicit High over profile None', profileEffort: 'none', presetEffort: 'none', overrideEffort: 'high', expected: 'high' },
+]) test(`known native None suppression preserves ${scenario.name} precedence and saved bytes`, async t => {
+    const fixture = nativeGroqFixture(t, { preset: !scenario.active });
+    fixture.settings.oai_settings.reasoning_effort = scenario.activeEffort ?? 'max';
+    fixture.profile['request-reasoning'] = false;
+    if (scenario.profileEffort === undefined) delete fixture.profile['reasoning-effort'];
+    else fixture.profile['reasoning-effort'] = scenario.profileEffort;
+    const presetPath = scenario.active ? null : path.join(fixture.directories.openAI_Settings, 'reasoning.json');
+    if (presetPath) fs.writeFileSync(presetPath, JSON.stringify({ reasoning_effort: scenario.presetEffort, temperature: 0.35 }));
+    fixture.save();
+    const settingsPath = path.join(fixture.root, 'settings.json');
+    const settingsBytes = fs.readFileSync(settingsPath);
+    const presetBytes = presetPath ? fs.readFileSync(presetPath) : null;
+    const binding = scenario.active
+        ? captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 7 })
+        : captureChatProfile(fixture.directories, 'groq');
+    let calls = 0;
+    const result = await runChatProfile({ ...fixture.options, binding,
+        overridePayload: scenario.overrideEffort === undefined ? {} : { reasoning_effort: scenario.overrideEffort },
+        fetch: async (url, request) => {
+            calls++;
+            assert.equal(String(url), 'https://api.groq.com/openai/v1/chat/completions');
+            const body = JSON.parse(request.body);
+            if (scenario.expected) assert.equal(body.reasoning_effort, scenario.expected);
+            else assert.equal(Object.hasOwn(body, 'reasoning_effort'), false);
+            assert.equal(Object.hasOwn(body, 'reasoning'), false);
+            assert.equal(body.max_tokens, 128);
+            assert.equal(body.stream, false);
+            return new Response(JSON.stringify({ choices: [{ message: { content: 'Preserved reply.' } }] }));
+        } });
+    assert.equal(result.text, 'Preserved reply.');
+    assert.equal(calls, 1);
+    assert.deepEqual(fs.readFileSync(settingsPath), settingsBytes);
+    if (presetPath) assert.deepEqual(fs.readFileSync(presetPath), presetBytes);
+    assert.equal(resolveGenerationProfile(fixture.directories, binding).fingerprint, binding.fingerprint);
 });
 
 function futureGroqFixture(t, { preset = false } = {}) {

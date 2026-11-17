@@ -1,5 +1,5 @@
 import { describe, expect, test } from '@jest/globals';
-import { checkChatReasoningEffort, getChatReasoningCapabilities, getNativeReasoningRoute } from '../public/scripts/chat-reasoning-capabilities.js';
+import { checkChatReasoningEffort, getChatReasoningCapabilities, getNativeReasoningRoute, resolveKnownInvalidNoneEffort } from '../public/scripts/chat-reasoning-capabilities.js';
 import { resolveChatReasoningEffort } from '../public/scripts/chat-request-controls.js';
 
 const openai = [
@@ -32,6 +32,7 @@ describe('unverified native fallback transport', () => {
             const settings = { chat_completion_source: source, reasoning_effort: 'none' };
             const identity = { source, model: 'future-neutral-model', route: route(source) };
             expect(getChatReasoningCapabilities(identity)).toMatchObject({ state: 'unknown', provenance: null, nativeFallback: true });
+            expect(resolveKnownInvalidNoneEffort({ ...identity, effort: 'none' })).toBe('none');
             expect(resolveChatReasoningEffort(settings, identity.model, undefined, undefined, identity.route)).toBe('none');
             expect(getChatReasoningCapabilities({ ...identity, route: { ...identity.route, reverseProxy: 'https://fixture.invalid' } }).nativeFallback).toBe(false);
             expect(getChatReasoningCapabilities({ ...identity, model: '' }).nativeFallback).toBe(false);
@@ -66,6 +67,10 @@ describe('finite native reasoning contracts', () => {
             expect(checkChatReasoningEffort({ ...identity, effort: value }).supported).toBe(supportedEfforts.includes(value));
         }
         expect(checkChatReasoningEffort({ ...identity, effort: 'auto' }).supported).toBe(true);
+        expect(resolveKnownInvalidNoneEffort({ ...identity, effort: ' None ' })).toBe(supportedEfforts.includes('none') ? ' None ' : undefined);
+        expect(resolveKnownInvalidNoneEffort({ ...identity, effort: 'max' })).toBe('max');
+        expect(resolveKnownInvalidNoneEffort({ ...identity, effort: 'none', route: { ...identity.route, reverseProxy: 'https://proxy.invalid' } })).toBe('none');
+        expect(resolveKnownInvalidNoneEffort({ ...identity, effort: 'none', route: undefined })).toBe('none');
         expect(checkChatReasoningEffort({ ...identity, model: `${model}:unlisted` }).state).toBe('unknown');
         expect(checkChatReasoningEffort({ ...identity, route: { ...identity.route, reverseProxy: 'https://proxy.invalid' } }).state).toBe('unknown');
     });
@@ -95,11 +100,11 @@ describe('finite native reasoning contracts', () => {
         }
     });
 
-    test('preserves a native unsupported None until the final guard and leaves proxy compatibility alone', () => {
+    test('suppresses a native unsupported None and leaves proxy compatibility alone', () => {
         const settings = { chat_completion_source: 'openai', reasoning_effort: 'none' };
-        expect(resolveChatReasoningEffort(settings, 'gpt-5')).toBe('none');
+        expect(resolveChatReasoningEffort(settings, 'gpt-5')).toBeUndefined();
         expect(checkChatReasoningEffort({ source: 'openai', model: 'gpt-5', route: route('openai'), effort: 'none' }).supported).toBe(false);
         expect(resolveChatReasoningEffort({ ...settings, reverse_proxy: 'https://proxy.invalid' }, 'gpt-5')).toBeUndefined();
-        expect(resolveChatReasoningEffort({ chat_completion_source: 'makersuite', reasoning_effort: 'none' }, 'gemini-3.8-flash')).toBe('none');
+        expect(resolveChatReasoningEffort({ chat_completion_source: 'makersuite', reasoning_effort: 'none' }, 'gemini-3.8-flash', undefined, undefined, route('makersuite'))).toBeUndefined();
     });
 });

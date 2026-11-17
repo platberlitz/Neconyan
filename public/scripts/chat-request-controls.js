@@ -1,11 +1,11 @@
-import { getChatReasoningCapabilities, getNativeReasoningRoute } from './chat-reasoning-capabilities.js';
+import { getChatReasoningCapabilities, getNativeReasoningRoute, resolveKnownInvalidNoneEffort } from './chat-reasoning-capabilities.js';
 export { getNanoGptReasoningCapabilities, checkNanoGptReasoningEffort } from './chat-reasoning-capabilities.js';
 
 export const REVERSE_PROXY_SUPPORTED_SOURCES = ['claude', 'openai', 'openai_responses', 'mistralai', 'makersuite', 'vertexai', 'deepseek', 'xai', 'zai', 'moonshot'];
 
 export function resolveChatReasoningEffort(settings, model, modelList, metadata = settings.model_sampler_metadata, route = getNativeReasoningRoute(settings)) {
     const source = settings.chat_completion_source;
-    let effort = settings.reasoning_effort;
+    let effort = resolveKnownInvalidNoneEffort({ effort: settings.reasoning_effort, source, model, metadata, route });
     const capability = getChatReasoningCapabilities({ source, model, metadata, route });
     if (capability.state === 'no-selector') return undefined;
     if (source !== 'nanogpt' && (capability.state === 'effort-list' || capability.forbiddenEfforts.length || capability.nativeFallback)) return effort;

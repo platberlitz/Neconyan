@@ -6,6 +6,7 @@ import {
 
 describe('reasoning effort quick switch helpers', () => {
     test('short labels stay compact for the bottom bar', () => {
+        expect(getReasoningEffortShortLabel('auto')).toBe('Auto');
         expect(getReasoningEffortShortLabel('medium')).toBe('Med');
         expect(getReasoningEffortShortLabel('xhigh')).toBe('XHigh');
         expect(getReasoningEffortShortLabel('custom')).toBe('custom');

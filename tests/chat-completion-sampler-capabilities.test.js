@@ -74,13 +74,20 @@ describe('NanoGPT declared reasoning capabilities', () => {
         expect(check(effort).supported).toBe(true);
     });
 
-    test('recognises Minimum aliases, explicit None and exact opaque mixed values without mutation', () => {
+    test('recognises Minimum aliases and opaque values while forbidding None on the exact thinking variant', () => {
         const declaration = Object.freeze({ source: 'nanogpt', model,
             reasoning_efforts: Object.freeze(['minimal', ' None ', 'HIGH', 'FutureRung', 'high']) });
         expect(getNanoGptReasoningCapabilities({ source: 'nanogpt', model, metadata: declaration })).toEqual({
+            known: true, declaredEfforts: ['min', 'none', 'high', 'FutureRung'], supportedEfforts: ['min', 'high'],
+        });
+        for (const effort of ['min', 'MINIMAL', 'FutureRung']) expect(check(effort, declaration).supported).toBe(true);
+        expect(check('none', declaration).supported).toBe(false);
+        const ordinaryModel = 'z-ai/glm-5.2';
+        const ordinary = { source: 'nanogpt', model: ordinaryModel, metadata: { ...declaration, model: ordinaryModel } };
+        expect(getNanoGptReasoningCapabilities(ordinary)).toEqual({
             known: true, declaredEfforts: ['min', 'none', 'high', 'FutureRung'], supportedEfforts: ['none', 'min', 'high'],
         });
-        for (const effort of ['min', 'MINIMAL', 'none', 'FutureRung']) expect(check(effort, declaration).supported).toBe(true);
+        expect(checkNanoGptReasoningEffort({ ...ordinary, effort: 'none' }).supported).toBe(true);
         expect(check('futurerung', declaration).supported).toBe(false);
         expect(declaration.reasoning_efforts).toEqual(['minimal', ' None ', 'HIGH', 'FutureRung', 'high']);
     });

@@ -12,7 +12,7 @@ import { capturePresetPrompts, setPreparedPresetPrompts } from './extensions/in-
 */
 import { Fuse, DOMPurify } from '../lib.js';
 import { REVERSE_PROXY_SUPPORTED_SOURCES, resolveChatReasoningEffort } from './chat-request-controls.js';
-import { checkChatReasoningEffort, getNativeReasoningRoute } from './chat-reasoning-capabilities.js';
+import { checkChatReasoningEffort, getNativeReasoningRoute, resolveKnownInvalidNoneEffort } from './chat-reasoning-capabilities.js';
 import { isImageInputIssue } from './prompt-media-policy.js';
 
 import {
@@ -363,6 +363,7 @@ const openrouter_middleout_types = {
 };
 
 export const reasoning_effort_types = {
+    auto: 'auto',
     none: 'none',
     low: 'low',
     medium: 'medium',
@@ -3805,6 +3806,7 @@ function updateChatCompletionReasoningAvailability() {
         $(this).toggle(sources.includes(source) && support.state !== 'effort-list' && !support.nativeFallback);
     });
     const labels = {
+        auto: translate('Auto'),
         none: translate('None', 'openai_reasoning_effort_none'),
         min: translate('Minimum', 'openai_reasoning_effort_minimum'),
         low: translate('Low', 'openai_reasoning_effort_low'),
@@ -3820,7 +3822,7 @@ function updateChatCompletionReasoningAvailability() {
     for (const option of select.options) {
         const label = labels[option.value] ?? option.textContent;
         option.disabled = support.state === 'no-selector' || support.forbiddenEfforts.includes(option.value)
-            || (support.state === 'effort-list' && !support.supportedEfforts.includes(option.value));
+            || (option.value !== 'auto' && support.state === 'effort-list' && !support.supportedEfforts.includes(option.value));
         option.hidden = option.disabled;
         option.textContent = option.disabled
             ? translate('${0} (unavailable)', 'scoped.nanogpt.reasoning.unavailable').replace('${0}', () => label) : label;
@@ -3835,19 +3837,24 @@ function updateChatCompletionReasoningAvailability() {
     select.dataset.reasoningUnavailable = String(unavailable);
     const noSelectorMessage = t`This model does not expose an effort setting. Your saved choice is kept for other models.`;
     const mandatoryMessage = t`Reasoning cannot be disabled for this model. Choose another model to turn it off.`;
-    select.dataset.reasoningTitle = support.state === 'no-selector' ? noSelectorMessage
+    const invalidNone = oai_settings.reasoning_effort != null && resolveKnownInvalidNoneEffort({ source, model,
+        metadata: getChatCompletionSamplerMetadata(oai_settings, model), route: getChatReasoningRoute(oai_settings), effort: oai_settings.reasoning_effort }) === undefined;
+    const omittedNoneMessage = t`None is unavailable for this model. No reasoning effort override is sent.`;
+    select.dataset.reasoningTitle = invalidNone ? omittedNoneMessage : support.state === 'no-selector' ? noSelectorMessage
         : unavailable && support.state === 'unknown' && support.forbidden ? mandatoryMessage
-            : unavailable ? t`Reasoning Effort: ${label}, unavailable for this model. Choose ${choices}.`
-                : `${t`Reasoning Effort`}: ${label}`;
+            : unavailable && !names.length ? t`No listed reasoning effort is available for this model.`
+                : unavailable ? t`Reasoning Effort: ${label}, unavailable for this model. Choose ${choices}.`
+                    : `${t`Reasoning Effort`}: ${label}`;
     const hint = document.getElementById(source === 'openrouter' ? 'openrouter_reasoning_effort_hint'
         : source === 'nanogpt' ? 'nanogpt_reasoning_effort_hint' : 'native_reasoning_effort_hint');
     if (hint) {
-        hint.textContent = support.state === 'no-selector' ? noSelectorMessage
+        hint.textContent = invalidNone ? omittedNoneMessage : support.state === 'no-selector' ? noSelectorMessage
             : support.state === 'unknown' && support.forbiddenEfforts.length ? mandatoryMessage
-                : support.state === 'effort-list'
-                    ? (unavailable ? t`This model supports ${supportedList}. Choose one before sending.` : t`This model supports ${supportedList}.`)
-                    : source === 'nanogpt' ? t`Reasoning efforts are sent exactly, aside from minimum which is sent as 'minimal'.`
-                        : t`Available reasoning levels are not known for this model.`;
+                : support.state === 'effort-list' && !names.length ? t`No listed reasoning effort is available for this model.`
+                    : support.state === 'effort-list'
+                        ? (unavailable ? t`This model supports ${supportedList}. Choose one before sending.` : t`This model supports ${supportedList}.`)
+                        : source === 'nanogpt' ? t`Reasoning efforts are sent exactly, aside from minimum which is sent as 'minimal'.`
+                            : t`Available reasoning levels are not known for this model.`;
     }
     $('#native_reasoning_effort_hint').toggle(support.nativeFallback || (support.state === 'effort-list' && !['nanogpt', 'openrouter'].includes(source)));
     const signature = JSON.stringify([source, model, support.nativeFallback, support.state, support.supportedEfforts, support.forbiddenEfforts, select.value, unavailable, controlAvailable]);
@@ -6793,7 +6800,6 @@ function migrateChatCompletionSettings(settings) {
         { oldKey: 'claude_use_sysprompt', oldValue: true, newKey: 'use_sysprompt', newValue: true },
         { oldKey: 'use_makersuite_sysprompt', oldValue: true, newKey: 'use_sysprompt', newValue: true },
         { oldKey: 'mistralai_model', oldValue: /^(mistral-medium|mistral-small)$/, newKey: 'mistralai_model', newValue: (settings.mistralai_model + '-latest') },
-        { oldKey: 'reasoning_effort', oldValue: 'auto', newKey: 'reasoning_effort', newValue: reasoning_effort_types.none },
     ];
 
     for (const migration of migrateMap) {
