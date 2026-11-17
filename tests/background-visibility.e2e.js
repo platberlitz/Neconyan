@@ -470,34 +470,33 @@ for (const phone of [true, false]) {
             await seed.close();
             const page = await account.open({ workspace: false, timeout: 60000 });
             await expect(page.locator('#sb-surface-transparency-input')).toHaveValue(String(value));
-            expect(await canvasState(page)).toEqual({ stored: String(value), value, alpha: expect.closeTo(1 - value / 100, 2) });
+            expect(await canvasState(page)).toEqual({ stored: String(value), value, alpha: 0 });
+            expect(await page.evaluate(() => Number(getComputedStyle(document.documentElement).getPropertyValue('--sb-shell-surface-opacity')))).toBeCloseTo(1 - value / 100, 2);
             if (value === 0) await page.evaluate(() => window.NeconyanShell.setSurfaceTransparency(0));
             await expect.poll(() => page.evaluate(() => localStorage.getItem('sb-surface-transparency'))).toBe(String(value));
             await page.reload({ waitUntil: 'domcontentloaded' });
             await expect(page.locator('#sb-surface-transparency-input')).toHaveValue(String(value));
-            expect(await canvasState(page)).toEqual({ stored: String(value), value, alpha: expect.closeTo(1 - value / 100, 2) });
+            expect(await canvasState(page)).toEqual({ stored: String(value), value, alpha: 0 });
+            expect(await page.evaluate(() => Number(getComputedStyle(document.documentElement).getPropertyValue('--sb-shell-surface-opacity')))).toBeCloseTo(1 - value / 100, 2);
         });
     }
 }
 
 for (const phone of [false, true]) {
-    test(`Background controls change the Home and chat canvas on ${phone ? 'phone' : 'desktop'}`, async ({ app }, info) => {
-        test.setTimeout(180000);
+    test(`Background Visibility leaves the wallpaper showing on Home and chat on ${phone ? 'phone' : 'desktop'}`, async ({ app }, info) => {
+        test.setTimeout(240000);
         const account = await app.account({ phone });
         const page = await account.open({ workspace: false, timeout: 60000 });
+        await readyArtwork(page, 'calico');
         await seedChat(page, account.avatar);
         for (const home of [false, true]) {
             if (home) await page.evaluate(() => window.NeconyanShell.showHome());
             for (const value of [0, 50, 100]) {
                 await setVisibility(page, value);
-                await expect.poll(() => page.locator('#sheld').evaluate(element => {
-                    const canvas = document.createElement('canvas');
-                    canvas.width = canvas.height = 1;
-                    const context = canvas.getContext('2d');
-                    context.fillStyle = getComputedStyle(element).backgroundColor;
-                    context.fillRect(0, 0, 1, 1);
-                    return context.getImageData(0, 0, 1, 1).data[3] / 255;
-                })).toBeCloseTo(1 - value / 100, 2);
+                await expect.poll(() => page.evaluate(() => Number(getComputedStyle(document.documentElement).getPropertyValue('--sb-shell-surface-opacity')))).toBeCloseTo(1 - value / 100, 2);
+                // The caption promises the picture shows through: the chat column itself never paints over it.
+                expect((await canvasState(page)).alpha, `#sheld at ${value}`).toBe(0);
+                await compareArtwork(page, info, `${phone ? 'phone' : 'desktop'}-${home ? 'home' : 'chat'}-visibility-${value}`);
             }
         }
         for (const value of [1, 0.5, 0]) {
