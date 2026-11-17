@@ -42,6 +42,7 @@ const PAGE_SIZES = [12, 24, 48];
 const MAX_ENABLED_SOURCES = 64;
 const MAX_SORTS = 64;
 const MAX_SOURCE_OPTIONS = 64;
+const SAUCEPAN_CATALOG_NOTE_PREFIXES = new Set(['sbbs_saucepan', 'sbbs_quick_saucepan']);
 const settingsListeners = new Set();
 
 const AVAILABLE_IMAGE_MODES = IMAGE_MODES;
@@ -433,9 +434,10 @@ export async function mountSettings() {
     content.id = 'sbbs_settings_content';
     const settings = getSettings();
     let sources = [];
+    const preferencesHeading = el('label', undefined, 'Preferences');
 
     content.append(
-        el('label', undefined, 'Preferences'),
+        preferencesHeading,
         checkbox('sbbs_set_sfw', 'Request SFW results by default', settings.sfwOnlyDefault, (v) => updateSettings({ sfwOnlyDefault: v })),
         checkbox('sbbs_set_hide_ai', 'Hide AI-generated cards when the source supports it', settings.hideAiDefault, (v) => updateSettings({ hideAiDefault: v })),
         checkbox('sbbs_set_blur', 'Blur sensitive and unrated thumbnails until revealed', settings.blurNsfw, (v) => updateSettings({ blurNsfw: v })),
@@ -527,35 +529,97 @@ export async function mountSettings() {
     });
 
     // Source list comes from the server, so it stays correct as adapters are
-    // added. Appended after mounting so a missing plugin does not block the
-    // rest of the panel.
+    // added. Inserted after mounting so a missing plugin does not block the
+    // rest of the panel. Sources and logins go above Preferences: they are
+    // what people open this panel for.
     try {
         const availability = await getAvailability();
         if (!container.isConnected) {
             return;
         }
-        const { health } = availability;
-        sources = Array.isArray(health?.sources) ? health.sources.filter((source) => source && typeof source === 'object') : [];
-        if (sources.length > 0) {
-            content.append(sourceList(sources));
-        }
-        const botbooru = sources.find((source) => source?.id === 'botbooru');
-        if (availability.status === AVAILABILITY.OK && botbooru?.capabilities?.accountLogin === true) {
-            content.append(collapsedAccount(botbooruAccountControl()));
-        }
-        const saucepan = sources.find((source) => source?.id === 'saucepan');
-        if (availability.status === AVAILABILITY.OK && saucepan?.capabilities?.accountLogin === true) {
-            content.append(collapsedAccount(saucepanAccountControl()));
-        }
-        const janny = sources.find((source) => JANNY_BROWSER_SOURCES.has(source?.id));
-        if (availability.status === AVAILABILITY.OK && janny?.capabilities?.browserImport === true) {
-            content.append(collapsedAccount(jannyBrowserControl('sbbs_janny', health?.capabilities?.jannyBrowser)));
-        }
+        sources = reportedSources(availability.health);
+        preferencesHeading.before(
+            ...(sources.length > 0 ? [sourceList(sources)] : []),
+            ...accountSections(availability, sources, 'sbbs'),
+        );
         content.append(serverPluginControl(availability));
         refreshControls(getSettings());
     } catch {
         // Plugin not installed yet; the rest of the panel still works.
     }
+}
+
+/**
+ * The 'Sources and logins' screen inside the search dialog.
+ *
+ * The same source list and account sections as the Extensions panel, built
+ * fresh each time it opens, so it never shows a stale tick or login. Account
+ * controls use their own id prefix, because the Extensions panel can be
+ * mounted at the same time.
+ *
+ * @param {{ health: any, onBack: () => void, onOpenAll?: (() => void) | null }} options
+ * @returns {HTMLElement[]}
+ */
+export function buildQuickSettings({ health, onBack, onOpenAll = null }) {
+    const sources = reportedSources(health);
+
+    const header = el('div', 'sbbs-detail-header sbbs-settings-view-header');
+    const back = el('button', 'menu_button sbbs-back');
+    back.type = 'button';
+    const backIcon = el('i', 'fa-solid fa-arrow-left');
+    backIcon.setAttribute('aria-hidden', 'true');
+    back.append(backIcon, el('span', undefined, 'Back'));
+    back.addEventListener('click', () => onBack());
+    header.append(back, el('h3', 'sbbs-settings-view-title', 'Sources and logins'));
+
+    const body = el('div', 'sbbs-settings sbbs-settings-quick');
+    if (sources.length > 0) {
+        const list = sourceList(sources);
+        list.append(el('span', 'sbbs-setting-note', 'Tick the sites BotSearcher should use. Changes apply when you go back to the results.'));
+        body.append(list);
+    } else {
+        body.append(el('p', 'sbbs-setting-note', 'The server did not report any sources.'));
+    }
+    body.append(...accountSections({ status: AVAILABILITY.OK, health }, sources, 'sbbs_quick'));
+
+    const nodes = [header, body];
+    if (onOpenAll) {
+        const all = el('button', 'menu_button sbbs-settings-view-all');
+        all.type = 'button';
+        const allIcon = el('i', 'fa-solid fa-sliders');
+        allIcon.setAttribute('aria-hidden', 'true');
+        all.append(allIcon, el('span', undefined, 'All BotSearcher settings'));
+        all.addEventListener('click', () => onOpenAll());
+        const footer = el('div', 'sbbs-settings-view-footer');
+        footer.append(all, el('span', 'sbbs-setting-note', 'Thumbnails, history, page size and the other preferences.'));
+        nodes.push(footer);
+    }
+    return nodes;
+}
+
+function reportedSources(health) {
+    return Array.isArray(health?.sources) ? health.sources.filter((source) => source && typeof source === 'object') : [];
+}
+
+/** Login sections for the sources that have them, folded so the list stays short. */
+function accountSections(availability, sources, idPrefix) {
+    if (availability?.status !== AVAILABILITY.OK) {
+        return [];
+    }
+    const sections = [];
+    const botbooru = sources.find((source) => source?.id === 'botbooru');
+    if (botbooru?.capabilities?.accountLogin === true) {
+        sections.push(collapsedAccount(botbooruAccountControl(`${idPrefix}_botbooru`)));
+    }
+    const saucepan = sources.find((source) => source?.id === 'saucepan');
+    if (saucepan?.capabilities?.accountLogin === true) {
+        sections.push(collapsedAccount(saucepanAccountControl(`${idPrefix}_saucepan`)));
+    }
+    const janny = sources.find((source) => JANNY_BROWSER_SOURCES.has(source?.id));
+    if (janny?.capabilities?.browserImport === true) {
+        sections.push(collapsedAccount(jannyBrowserControl(`${idPrefix}_janny`, availability.health?.capabilities?.jannyBrowser)));
+    }
+    return sections;
 }
 
 function collapsedAccount(control) {
@@ -826,8 +890,8 @@ export function saucepanAccountControl(idPrefix = 'sbbs_saucepan') {
         'Saucepan.ai has no catalog search. Paste a companion URL into BotSearcher\'s search box to review and import it.',
     );
     // Someone reading this inside the import flow has already found the paste
-    // gesture; the how-to note is for the drawer only.
-    catalogNote.hidden = idPrefix !== 'sbbs_saucepan';
+    // gesture; the how-to note is for the settings panels only.
+    catalogNote.hidden = !SAUCEPAN_CATALOG_NOTE_PREFIXES.has(idPrefix);
     wrapper.append(heading, catalogNote, status, loginForm, tokenForm, note, logout);
 
     let pending = false;

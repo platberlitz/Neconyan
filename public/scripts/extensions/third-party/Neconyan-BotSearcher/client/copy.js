@@ -298,7 +298,7 @@ export function jannyCloudflareHint() {
 
 /** The pasted URL belongs to a source the user has switched off. */
 export function urlImportDisabledMessage(sourceLabel) {
-    return `Enable ${sourceLabel} under Extensions > BotSearcher > Sources to import cards from this address.`;
+    return `Turn on ${sourceLabel} under Sources and logins to import cards from this address.`;
 }
 
 /** The pasted URL belongs to no source at all. */
@@ -313,7 +313,7 @@ export function urlImportUnsupportedMessage() {
  */
 export function searchUnavailableMessage(urlSourceLabels) {
     if (urlSourceLabels.length === 0) {
-        return 'No sources are enabled. Enable one in Extensions > BotSearcher > Sources.';
+        return 'No sources are turned on. Press Choose sources to turn one on.';
     }
     return `No searchable source is enabled. Paste a card URL from ${list(urlSourceLabels)} to review and import it.`;
 }
@@ -327,7 +327,7 @@ export function searchUnavailableMessage(urlSourceLabels) {
 export function janitorListErrorMessage(code) {
     switch (code) {
         case 'janny_login_required':
-            return 'JanitorAI\'s lists are not available right now: the server\'s JanitorAI browser window is signed out or waiting for a security check. A Neconyan administrator can open it under Extensions > BotSearcher with "Open JannyAI login window".';
+            return 'JanitorAI\'s lists are not available right now: the server\'s JanitorAI browser window is signed out or waiting for a security check. A Neconyan administrator can open it under Sources and logins with "Open JannyAI login window".';
         case 'janny_browser_unavailable':
             return 'JanitorAI\'s lists need a browser running on the Neconyan server, and this server does not have one set up. The server owner needs to install Playwright and Chromium (tools that let the server run a web browser).';
         case 'janny_browser_request_failed':
@@ -344,11 +344,11 @@ export function searchErrorMessage(error, sourceLabel) {
     }
     switch (error?.code) {
         case 'botbooru_login_required':
-            return 'Log in to BotBooru under Extensions > BotSearcher to search non-SFW results.';
+            return 'Log in to BotBooru under Sources and logins to search non-SFW results.';
         case 'botbooru_session_expired':
-            return 'Your BotBooru login expired. Log in again under Extensions > BotSearcher.';
+            return 'Your BotBooru login expired. Log in again under Sources and logins.';
         case 'botbooru_nsfw_disabled':
-            return 'Enable NSFW for the BotBooru account under Extensions > BotSearcher, or search SFW only.';
+            return 'Enable NSFW for the BotBooru account under Sources and logins, or search SFW only.';
         case 'botbooru_auth_unavailable':
             return 'BotBooru account access is unavailable. Try again shortly.';
         case 'account_profile_required':
@@ -396,9 +396,9 @@ export function searchErrorMessage(error, sourceLabel) {
 export function detailErrorMessage(error, sourceLabel) {
     switch (error?.code) {
         case 'botbooru_login_required':
-            return 'Log in to BotBooru under Extensions > BotSearcher to load this card.';
+            return 'Log in to BotBooru under Sources and logins to load this card.';
         case 'botbooru_session_expired':
-            return 'Your BotBooru login expired. Log in again under Extensions > BotSearcher.';
+            return 'Your BotBooru login expired. Log in again under Sources and logins.';
         case 'botbooru_auth_unavailable':
             return 'BotBooru account access is unavailable. Try again shortly.';
         case 'botbooru_nsfw_disabled':

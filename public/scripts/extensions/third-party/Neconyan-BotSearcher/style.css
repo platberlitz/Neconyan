@@ -99,6 +99,14 @@ body.neconyan .sbbs-root,
     display: none;
 }
 
+.sbbs-root[data-view="settings"] > header,
+.sbbs-root[data-view="settings"] > .sbbs-body,
+.sbbs-root[data-view="settings"] > .sbbs-detail,
+.sbbs-root[data-view="settings"] > .sbbs-intake,
+.sbbs-root:not([data-view="settings"]) > .sbbs-settings-view {
+    display: none;
+}
+
 .sbbs-body {
     display: flex;
     flex-direction: column;
@@ -470,6 +478,8 @@ body.neconyan .sbbs-root button.sbbs-go.menu_button,
 }
 
 .sbbs-filters-toggle.menu_button,
+.sbbs-settings-open.menu_button,
+.sbbs-choose-sources.menu_button,
 .sbbs-refresh.menu_button,
 .sbbs-filters-clear.menu_button,
 .sbbs-reload-source.menu_button,
@@ -906,6 +916,10 @@ body.neconyan .sbbs-root :is(.sbbs-file-actions, .sbbs-named-searches, .sbbs-sho
 
 .sbbs-state:empty {
     display: none;
+}
+
+.sbbs-choose-sources.menu_button {
+    align-self: center;
 }
 
 .sbbs-partial,
@@ -1358,7 +1372,8 @@ body.neconyan .sbbs-root .sbbs-card button.sbbs-shortlist-toggle.menu_button,
 
 /* --- Detail & Intake Views --- */
 .sbbs-detail,
-.sbbs-intake {
+.sbbs-intake,
+.sbbs-settings-view {
     display: flex;
     flex-direction: column;
     gap: 14px;
@@ -1373,7 +1388,8 @@ body.neconyan .sbbs-root .sbbs-card button.sbbs-shortlist-toggle.menu_button,
 }
 
 .sbbs-back.menu_button,
-.sbbs-intake-back.menu_button {
+.sbbs-intake-back.menu_button,
+.sbbs-settings-view-all.menu_button {
     width: auto;
     min-height: 36px;
     margin: 0;
@@ -1382,6 +1398,28 @@ body.neconyan .sbbs-root .sbbs-card button.sbbs-shortlist-toggle.menu_button,
     align-items: center;
     gap: 7px;
     font-size: 0.82rem;
+}
+
+.sbbs-settings-view-title {
+    margin: 0;
+    padding: 0;
+    font-family: var(--sbbs-font-display);
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--sbbs-ink);
+}
+
+.sbbs-settings.sbbs-settings-quick {
+    padding: 0;
+}
+
+.sbbs-settings-view-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--sbbs-border-subtle);
 }
 
 .sbbs-detail-body {
@@ -2112,10 +2150,20 @@ p.sbbs-intake-warn,
         min-height: 40px;
     }
 
-    .sbbs-filters-toggle.menu_button {
-        grid-column: 1 / -1;
+    body.neconyan .sbbs-root .sbbs-bar-row-secondary .sbbs-filters-toggle.menu_button,
+    body.neconyan .sbbs-root .sbbs-bar-row-secondary .sbbs-settings-open.menu_button,
+    .sbbs-filters-toggle.menu_button,
+    .sbbs-settings-open.menu_button {
         justify-content: center;
+        min-width: 0;
         min-height: 40px;
+    }
+
+    .sbbs-settings-open.menu_button {
+        padding: 2px 10px;
+        white-space: normal;
+        line-height: 1.15;
+        text-align: center;
     }
 
     .sbbs-content-controls {

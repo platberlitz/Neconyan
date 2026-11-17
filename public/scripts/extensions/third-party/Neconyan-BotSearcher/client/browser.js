@@ -23,7 +23,7 @@ import { el, setText, setImgSafe } from './render.js';
 import {
     getSettings, updateSettings, isSourceEnabled, rememberQuery, simpleModeActive, skipsReview,
     saveNamedSearch, removeNamedSearch, subscribeSettings, MAX_NAMED_SEARCH_NAME,
-    jannyBrowserControl,
+    jannyBrowserControl, buildQuickSettings,
 } from './settings.js';
 import { createResultCache } from './cache.js';
 import { showDetail } from './detail.js';
@@ -141,6 +141,7 @@ async function openBrowserOnce(options) {
     // how this extension stays free of HTML parsing in its own code.
     let dispose = () => {};
     let reopenAfterClose = false;
+    let openSettingsAfterClose = false;
     const popup = new ctx.Popup(html, ctx.POPUP_TYPE.DISPLAY, '', {
         large: true,
         wide: true,
@@ -159,8 +160,8 @@ async function openBrowserOnce(options) {
             }
             const root = popup.content?.querySelector?.('.sbbs-root');
             const view = root?.dataset.view;
-            if (view === 'detail' || view === 'intake') {
-                popup.content.querySelector(`.sbbs-${view} .sbbs-back`)?.click();
+            if (view === 'detail' || view === 'intake' || view === 'settings') {
+                popup.content.querySelector(`#sbbs_${view === 'settings' ? 'settings_view' : view} .sbbs-back`)?.click();
                 return false;
             }
             // Selecting cards is a mode of the grid; Esc leaves the mode before
@@ -180,7 +181,22 @@ async function openBrowserOnce(options) {
     const closed = popup.show();
 
     if (connected) {
-        dispose = wireBrowser(popup, availability.health, options);
+        // An untouched copy of the dialog, taken before any wiring, so a change
+        // of sources can rebuild it in place without parsing HTML again.
+        const pristine = popup.content.querySelector('.sbbs-root')?.cloneNode(true);
+        const openIncludedTool = globalThis.NeconyanShell?.openIncludedTool;
+        const hooks = {
+            rebuild: pristine ? (nextOptions) => {
+                dispose();
+                popup.content.querySelector('.sbbs-root')?.replaceWith(pristine.cloneNode(true));
+                dispose = wireBrowser(popup, availability.health, nextOptions, hooks);
+            } : null,
+            openAllSettings: typeof openIncludedTool === 'function' ? () => {
+                openSettingsAfterClose = true;
+                popup.complete(ctx.POPUP_RESULT.NEGATIVE);
+            } : null,
+        };
+        dispose = wireBrowser(popup, availability.health, options, hooks);
     } else {
         dispose = wireInstallPanel(popup, availability, () => {
             reopenAfterClose = true;
@@ -188,6 +204,10 @@ async function openBrowserOnce(options) {
     }
 
     await closed;
+    if (openSettingsAfterClose
+        && !globalThis.NeconyanShell?.openIncludedTool?.('third-party/Neconyan-BotSearcher')) {
+        toastr.info('Open Extensions to find the BotSearcher settings.', 'BotSearcher');
+    }
     if (reopenAfterClose) {
         setTimeout(() => {
             openBrowser().catch((error) => console.error(`[${LOG_TAG}]`, error));
@@ -198,12 +218,16 @@ async function openBrowserOnce(options) {
 /**
  * @param {any} popup
  * @param {any} health
- * @param {{ query?: string }} options
+ * @param {{ query?: string, shortlist?: Array<[string, any]>, focus?: 'settings',
+ *     source?: string, sfw?: boolean, hideAi?: boolean }} options
+ * @param {{ rebuild?: ((options: object) => void) | null, openAllSettings?: (() => void) | null }} [hooks]
  */
-function wireBrowser(popup, health, options) {
+function wireBrowser(popup, health, options, hooks = {}) {
     const root = popup.content;
     const dom = {
         root: root.querySelector('.sbbs-root'),
+        settingsOpen: root.querySelector('#sbbs_settings_open'),
+        settingsView: root.querySelector('#sbbs_settings_view'),
         form: root.querySelector('#sbbs_search_form'),
         bar: root.querySelector('.sbbs-bar'),
         source: root.querySelector('#sbbs_source'),
@@ -276,9 +300,12 @@ function wireBrowser(popup, health, options) {
     /** Card element -> record and immutable source snapshot. */
     const records = new Map();
 
-    const initialSource = settings.defaultSource === ALL_SOURCES && mergeable.length > 1
+    const wantedSource = options.source ?? settings.defaultSource;
+    const initialSource = wantedSource === ALL_SOURCES && mergeable.length > 1
         ? mergedSourceEntry(mergeable)
-        : (usable.find((entry) => entry.id === settings.defaultSource) ?? usable[0]);
+        : (usable.find((entry) => entry.id === wantedSource)
+            ?? usable.find((entry) => entry.id === settings.defaultSource)
+            ?? usable[0]);
     const state = {
         source: initialSource,
         nextCursor: null,
@@ -314,6 +341,68 @@ function wireBrowser(popup, health, options) {
     };
 
     const urlSourceLabels = urlSources.map((entry) => entry.label ?? entry.id);
+
+    // Picks survive a rebuild after the sources change, except those from a
+    // source that is now off.
+    const enabledIds = new Set(enabledSources.map((entry) => entry.id));
+    for (const [key, record] of options.shortlist ?? []) {
+        if (enabledIds.has(record?.source?.id)) {
+            state.shortlist.set(key, record);
+        }
+    }
+
+    const enabledKey = (value) => sources
+        .filter((entry) => isSourceEnabled(entry, value.enabledSources))
+        .map((entry) => entry.id)
+        .join(',');
+    const openedWithSources = enabledKey(settings);
+    let settingsReturnFocus = null;
+
+    /** Shows 'Sources and logins' in place of the results. */
+    function openSettingsView(returnFocus) {
+        if (state.disposed) {
+            return;
+        }
+        settingsReturnFocus = returnFocus;
+        clearTimeout(state.typingTimer);
+        dom.settingsView.replaceChildren(...buildQuickSettings({
+            health,
+            onBack: closeSettingsView,
+            onOpenAll: hooks.openAllSettings ?? null,
+        }));
+        dom.root.dataset.view = 'settings';
+        dom.settingsView.querySelector('.sbbs-back')?.focus();
+    }
+
+    /**
+     * Back to the results. Every list, picker and label below is computed from
+     * the enabled sources once, so a changed set rebuilds the dialog rather
+     * than patching each of them.
+     */
+    function closeSettingsView() {
+        if (state.disposed) {
+            return;
+        }
+        if (hooks.rebuild && enabledKey(getSettings()) !== openedWithSources) {
+            hooks.rebuild({
+                query: dom.query.value,
+                shortlist: [...state.shortlist],
+                focus: 'settings',
+                source: dom.source.value || undefined,
+                sfw: dom.sfw.disabled ? undefined : dom.sfw.checked,
+                hideAi: dom.hideAi.checked,
+            });
+            return;
+        }
+        dom.root.dataset.view = 'grid';
+        dom.settingsView.replaceChildren();
+        const target = settingsReturnFocus?.isConnected && settingsReturnFocus.getClientRects().length > 0
+            ? settingsReturnFocus
+            : dom.query;
+        target.focus();
+    }
+
+    dom.settingsOpen.addEventListener('click', () => openSettingsView(dom.settingsOpen));
 
     /**
      * Resolves a pasted card URL to the source that can import it.
@@ -423,6 +512,10 @@ function wireBrowser(popup, health, options) {
         }
         event.preventDefault();
         event.stopPropagation();
+        if (dom.root.dataset.view === 'settings') {
+            event.dataTransfer.dropEffect = 'none';
+            return;
+        }
         event.dataTransfer.dropEffect = 'copy';
         dom.root.classList.add('sbbs-dragging');
     });
@@ -437,6 +530,9 @@ function wireBrowser(popup, health, options) {
         event.preventDefault();
         event.stopPropagation();
         dom.root.classList.remove('sbbs-dragging');
+        if (dom.root.dataset.view === 'settings') {
+            return;
+        }
         openIntake({ file }, dom.root.dataset.view === 'detail' ? 'detail' : 'grid');
     });
 
@@ -454,6 +550,30 @@ function wireBrowser(popup, health, options) {
         setText(dom.state, !serverHasSearchOrUrlSource
             ? 'The server did not report any searchable or URL-import sources.'
             : searchUnavailableMessage(urlSourceLabels));
+        // The source switches are behind the hidden bar row, so offer them here.
+        let chooser = null;
+        if (sources.length > 0) {
+            chooser = el('button', 'menu_button sbbs-choose-sources');
+            chooser.type = 'button';
+            chooser.setAttribute('aria-controls', 'sbbs_settings_view');
+            const icon = el('i', 'fa-solid fa-gear');
+            icon.setAttribute('aria-hidden', 'true');
+            chooser.append(icon, el('span', undefined, 'Choose sources'));
+            chooser.addEventListener('click', () => openSettingsView(chooser));
+            dom.state.after(chooser);
+        }
+        // Kept even while the row is hidden, so turning a source back on
+        // returns to the same search.
+        if (options.query) {
+            dom.query.value = String(options.query).slice(0, 512);
+        }
+        if (chooser && options.focus === 'settings') {
+            requestAnimationFrame(() => {
+                if (!state.disposed) {
+                    chooser.focus();
+                }
+            });
+        }
         if (urlSources.length > 0) {
             dom.form.addEventListener('submit', (event) => {
                 event.preventDefault();
@@ -466,11 +586,13 @@ function wireBrowser(popup, health, options) {
                     setText(dom.state, searchUnavailableMessage(urlSourceLabels));
                 }
             });
-            requestAnimationFrame(() => {
-                if (!state.disposed) {
-                    dom.query.focus();
-                }
-            });
+            if (!(chooser && options.focus === 'settings')) {
+                requestAnimationFrame(() => {
+                    if (!state.disposed) {
+                        dom.query.focus();
+                    }
+                });
+            }
         }
         return () => {
             state.disposed = true;
@@ -501,8 +623,8 @@ function wireBrowser(popup, health, options) {
     }
     dom.source.value = state.source.id;
 
-    dom.sfw.checked = settings.sfwOnlyDefault;
-    dom.hideAi.checked = settings.hideAiDefault;
+    dom.sfw.checked = options.sfw ?? settings.sfwOnlyDefault;
+    dom.hideAi.checked = options.hideAi ?? settings.hideAiDefault;
     applySourceCapabilities();
 
     if (typeof options.query === 'string' && options.query !== '') {
@@ -659,7 +781,7 @@ function wireBrowser(popup, health, options) {
         const source = saved.source === ALL_SOURCES && enabledMergeable.length > 1
             ? mergedSourceEntry(enabledMergeable) : enabled.find((entry) => entry.id === saved.source);
         if (!source) {
-            setText(dom.namedStatus, 'Enable this search source under Extensions > BotSearcher, then reopen BotSearcher search.');
+            setText(dom.namedStatus, 'Turn this search\'s source on under Sources and logins, then load the search again.');
             return;
         }
         state.source = source;
@@ -795,10 +917,13 @@ function wireBrowser(popup, health, options) {
 
     // Browsing is useful without a query. Start immediately, then leave the
     // search field focused so the user can replace the catalogue view.
+    if (state.shortlist.size > 0) {
+        updateShortlist();
+    }
     void runSearch({ append: false });
     requestAnimationFrame(() => {
         if (!state.disposed) {
-            dom.query.focus();
+            (options.focus === 'settings' ? dom.settingsOpen : dom.query).focus();
         }
     });
 
@@ -934,9 +1059,9 @@ function wireBrowser(popup, health, options) {
         }
         if (selectionUsesBotbooru() && !dom.sfw.checked) {
             if (!state.account.loggedIn) {
-                notes.push('BotBooru requires a login under Extensions > BotSearcher for non-SFW results.');
+                notes.push('BotBooru needs a login under Sources and logins for non-SFW results.');
             } else if (!state.account.nsfwEnabled) {
-                notes.push('Enable NSFW for the BotBooru account under Extensions > BotSearcher.');
+                notes.push('Enable NSFW for the BotBooru account under Sources and logins.');
             } else if (state.account.nsflEnabled && state.account.nsflActive === true) {
                 notes.push('NSFL is active for the BotBooru account, so non-SFW searches may include NSFL content.');
             } else if (state.account.nsflEnabled && state.account.nsflActive === null) {
