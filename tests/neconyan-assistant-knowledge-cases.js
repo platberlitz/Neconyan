@@ -513,7 +513,7 @@ export const refreshedKnowledgeCases = [
     ['Can I run Neconyan with Node 24 instead of Bun?', 'start.desktop-install', 'start with Node 24 instead'],
     ['Why are the Scratchpad header buttons below the title?', 'scratchpad.start', 'header actions wrap below the title'],
     ['Why did my Roleplay chat go blank after opening?', 'chat.reveal', 'no longer blanks after its messages appear'],
-    ['Is the Conversation message timeline translucent?', 'conversation.layout', 'inset, translucent scroll pane'],
+    ['Is the Conversation message timeline translucent?', 'conversation.layout', 'opaque at 0% to transparent at 100%'],
     ['Where does a resumed Roleplay preview appear after a reload?', 'chat.resumed-preview', 'waits below the last saved message'],
     ['Which CSS variable colours active tabs and selected rows?', 'appearance.custom-css-design', '--neco-accent-secondary'],
     ['How do I keep the wallpaper visible from Custom CSS?', 'appearance.custom-css-design', '--sb-shell-surface-opacity'],

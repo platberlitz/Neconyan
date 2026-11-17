@@ -45,9 +45,11 @@ async function paint(row) {
         const rowStyle = getComputedStyle(element);
         const block = element.querySelector('.mes_block');
         const blockStyle = getComputedStyle(block);
+        const ink = getComputedStyle(element.querySelector('.mes_text'));
+        const stroke = parseFloat(ink.webkitTextStrokeWidth) >= 2 && ink.paintOrder.startsWith('stroke') ? rgba(ink.webkitTextStrokeColor) : [0, 0, 0, 0];
         const pseudo = getComputedStyle(element, '::before');
         return {
-            row: rgba(rowStyle.backgroundColor), block: rgba(blockStyle.backgroundColor),
+            stroke, row: rgba(rowStyle.backgroundColor), block: rgba(blockStyle.backgroundColor),
             border: rgba(blockStyle.borderTopColor), pseudo: rgba(pseudo.backgroundColor),
             pseudoOpacity: Number(pseudo.opacity), text: rgba(getComputedStyle(element.querySelector('.mes_text')).color),
             rowBox: element.getBoundingClientRect().toJSON(), blockBox: block.getBoundingClientRect().toJSON(),
@@ -225,6 +227,12 @@ async function renderedTextContrast(page, target) {
         context.fillStyle = computed.color;
         context.fillRect(0, 0, 1, 1);
         const text = [...context.getImageData(0, 0, 1, 1).data];
+        // A stroke painted behind the fill is the immediate backdrop of the glyph.
+        const stroked = parseFloat(computed.webkitTextStrokeWidth) >= 2 && computed.paintOrder.startsWith('stroke');
+        context.clearRect(0, 0, 1, 1);
+        context.fillStyle = computed.webkitTextStrokeColor;
+        context.fillRect(0, 0, 1, 1);
+        const stroke = stroked ? [...context.getImageData(0, 0, 1, 1).data] : [0, 0, 0, 0];
         const ancestorOpacity = [];
         for (let parent = element.parentElement; parent; parent = parent.parentElement) {
             const opacity = Number(getComputedStyle(parent).opacity);
@@ -247,7 +255,7 @@ async function renderedTextContrast(page, target) {
             target.style.setProperty('-webkit-text-fill-color', 'transparent', 'important');
             target.style.setProperty('text-shadow', 'none', 'important');
         }
-        return { text, opacity, ancestorOpacity, ownBackgroundAlpha, styles, clip: { x, y, width: 6, height: 6 }, box: element.getBoundingClientRect().toJSON() };
+        return { text, stroke, opacity, ancestorOpacity, ownBackgroundAlpha, styles, clip: { x, y, width: 6, height: 6 }, box: element.getBoundingClientRect().toJSON() };
     });
     let background;
     try { background = PNG.sync.read(await page.screenshot({ clip: sample.clip, animations: 'disabled', scale: 'css' })); }
@@ -263,7 +271,7 @@ async function renderedTextContrast(page, target) {
     if (sample.opacity !== 1) expect(sample.ownBackgroundAlpha, 'Partially opaque text target has a transparent own background').toBe(0);
     let ratio = Infinity;
     for (let i = 0; i < background.data.length; i += 4) {
-        const under = [...background.data.slice(i, i + 3)];
+        const under = composite(sample.stroke, [...background.data.slice(i, i + 3)]);
         ratio = Math.min(ratio, contrastRatio(colour(composite(sample.text, under, sample.opacity)), colour(under)));
     }
     return { ...sample, ratio };
@@ -559,8 +567,8 @@ for (const phone of [false, true]) {
                 await page.locator('#chat_display').selectOption(style, { force: true });
                 for (const value of [0, 5, 50, 100]) {
                     await setVisibility(page, value);
-                    const expectedOpacity = 1 - value / 500;
-                    await expect.poll(() => page.evaluate(() => Number(getComputedStyle(document.documentElement).getPropertyValue('--sb-message-surface-opacity')))).toBeCloseTo(expectedOpacity, 3);
+                    const expectedOpacity = 1 - value / 100;
+                    await expect.poll(() => page.evaluate(() => Number(getComputedStyle(document.documentElement).getPropertyValue('--sb-shell-surface-opacity')))).toBeCloseTo(expectedOpacity, 3);
                     if (style === '1') await expect.poll(async () => (await paint(rows.first())).pseudoOpacity).toBeCloseTo(expectedOpacity, 2);
                     for (const index of [0, 1]) {
                         const sample = await paint(rows.nth(index));
@@ -581,7 +589,7 @@ for (const phone of [false, true]) {
                         background = composite(sample.row, background);
                         if (style === '1') background = composite(sample.pseudo, background, sample.pseudoOpacity);
                         background = composite(sample.block, background);
-                        const ratio = contrastRatio(colour(sample.text), colour(background));
+                        const ratio = contrastRatio(colour(sample.text), colour(composite(sample.stroke, background)));
                         expect(ratio, `${theme} style ${style} value ${value} role ${index}`).toBeGreaterThanOrEqual(4.5);
                     }
                 }
@@ -591,7 +599,7 @@ for (const phone of [false, true]) {
         await page.locator('#chat_display').selectOption('0', { force: true });
         await setVisibility(page, 50);
         await page.reload({ waitUntil: 'domcontentloaded' });
-        await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--sb-message-surface-opacity').trim())).toBe('0.900');
+        await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--sb-shell-surface-opacity').trim())).toBe('0.50');
         await expect(page.locator('#sb-surface-transparency-input')).toHaveValue('50');
         await setVisibility(page, 0);
         await expect.poll(() => page.evaluate(() => document.documentElement.dataset.sbSurfaceTransparent)).toBe('false');

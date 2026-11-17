@@ -1664,7 +1664,7 @@ body.bubblechat .mes::before {
     border-radius: inherit;
     pointer-events: none;
     background: var(--SmartThemeBotMesBlurTintColor);
-    opacity: var(--sb-message-surface-opacity, 1);
+    opacity: var(--sb-shell-surface-opacity, 1);
 }
 
 body.bubblechat .mes[is_user='true']::before {

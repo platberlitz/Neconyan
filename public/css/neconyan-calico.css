@@ -116,7 +116,7 @@ body.neconyan #sb-topbar-inner { background: transparent; }
 }
 
 :root[data-neconyan-palette='calico'] body.neconyan .neconyan-home-actions > button {
-    background: var(--neco-panel-gradient);
+    background: var(--neco-surface);
     border-color: color-mix(in oklch, var(--neco-border) 80%, var(--neco-ginger));
 }
 
