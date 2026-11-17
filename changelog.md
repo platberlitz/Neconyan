@@ -27,6 +27,7 @@
 - PR #714 (2026-11-17) `fix(chat): even out spacing between name, date and model`
 - PR #715 (2026-11-17) `feat(roleplay): offer rerun agents on interrupted reply notices`
 - PR #716 (2026-11-17) `feat(botsearcher): list JanitorAI trending cards`
+- PR #717 (2026-11-17) `feat(companions): add jump to top and bottom buttons to the panel`
 
 ## v1.5.5
 
