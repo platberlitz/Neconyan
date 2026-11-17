@@ -33,6 +33,7 @@
 - PR #720 (2026-11-17) `fix(shell): restore readable reading panels in every shell style`
 - PR #721 (2026-11-17) `feat(botsearcher): add Sources and logins inside the search window`
 - PR #722 (2026-11-17) `fix(botsearcher): wait for the JanitorAI sign-in before fetching lists`
+- PR #723 (2026-11-17) `feat(simple-mode): add dialogue colors to sidebar`
 
 ## v1.5.5
 
