@@ -26,15 +26,25 @@ function character(index, extra = {}) {
     };
 }
 
-function fakeBrowser({ payload = () => ({ data: [character(1)] }), clock } = {}) {
+const HOUR = 60 * 60 * 1000;
+
+function fakeBrowser({ payload = () => ({ data: [character(1)] }), clock, session = () => Date.now() + HOUR, sessionWaitMs } = {}) {
     const reads = [];
+    const probes = [];
+    const visits = [];
     const page = {
         url: () => 'https://janitorai.com/',
-        goto: async () => {},
+        goto: async (url) => {
+            visits.push(url);
+        },
         setDefaultTimeout: () => {},
         close: async () => {},
         context: () => ({ on: () => {}, off: () => {} }),
         evaluate: async (_fn, arg) => {
+            if (arg?.probe) {
+                probes.push(visits.length);
+                return { expiresAt: session(probes.length, visits.length) };
+            }
             if (typeof arg?.target !== 'string') {
                 return null;
             }
@@ -48,8 +58,9 @@ function fakeBrowser({ payload = () => ({ data: [character(1)] }), clock } = {})
         profileDir: '/tmp/opencode/janitorai-test-profile',
         launchContext: async () => ({ pages: () => [page], newPage: async () => page, on: () => {}, close: async () => {} }),
         now: clock ?? Date.now,
+        ...(sessionWaitMs === undefined ? {} : { sessionWaitMs }),
     });
-    return { browser, reads };
+    return { browser, reads, probes, visits };
 }
 
 test('JanitorAI front page reads ask for the right list and page', async () => {
@@ -100,6 +111,54 @@ test('a failed list read is not kept', async () => {
     fail = false;
     assert.deepEqual(await browser.frontpage('popular'), { data: [] });
     assert.equal(reads.length, 2);
+});
+
+// JanitorAI answers an expired or missing token with its signed-out list and
+// HTTP 200, so the list must wait for a live session rather than trust 200.
+test('a list waits until a freshly launched browser has renewed its session', async () => {
+    const { browser, reads, probes } = fakeBrowser({
+        session: (probe) => (probe < 3 ? Date.now() - HOUR : Date.now() + HOUR),
+    });
+    await browser.frontpage('trending24');
+    assert.equal(probes.length, 3);
+    assert.equal(reads.length, 1, 'the list is read once, after the session renewed');
+});
+
+test('a token about to expire counts as expired', async () => {
+    const { browser, reads, probes } = fakeBrowser({
+        session: (probe) => Date.now() + (probe === 1 ? 30 * 1000 : HOUR),
+    });
+    await browser.frontpage('trending24');
+    assert.equal(probes.length, 2);
+    assert.equal(reads.length, 1);
+});
+
+test('a session that is never renewed asks for a login and is not cached', async () => {
+    let renewed = false;
+    const { browser, reads, visits } = fakeBrowser({
+        session: () => Date.now() + (renewed ? HOUR : -HOUR),
+        sessionWaitMs: 1500,
+    });
+    await assert.rejects(browser.frontpage('trending24'), (error) => {
+        assert.ok(error instanceof JannyBrowserError);
+        assert.equal(error.code, 'janny_login_required');
+        assert.equal(error.status, 401);
+        return true;
+    });
+    assert.equal(reads.length, 0, 'no signed-out list is read');
+    assert.deepEqual(visits, ['https://janitorai.com'], 'the site is loaded again once to start renewal');
+    renewed = true;
+    await browser.frontpage('trending24');
+    assert.equal(reads.length, 1, 'the next request reads the list instead of a kept failure');
+});
+
+test('a browser with no session asks for a login without the full wait', async () => {
+    const { browser, reads, visits } = fakeBrowser({ session: () => null, sessionWaitMs: 60 * 1000 });
+    const started = Date.now();
+    await assert.rejects(browser.frontpage('popular'), (error) => error.code === 'janny_login_required');
+    assert.ok(Date.now() - started < 5000);
+    assert.equal(reads.length, 0);
+    assert.deepEqual(visits, []);
 });
 
 test('JanitorAI is registered as a list-only source', () => {
