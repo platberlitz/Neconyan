@@ -49,7 +49,8 @@ test('Popular uses the existing serialised Janitor browser and a private fixed r
         assert.deepEqual((await get()).data, payload);
         assert.equal((await get()).status, 200);
         assert.equal(launches, 1);
-        assert.equal(reads, 2);
+        // The second request is served from the shared five-minute copy.
+        assert.equal(reads, 1);
         assert.match((await get('/filters')).data.sections.trending24, /24 hours/);
         for (const section of ['popular', 'trending24', 'trending', 'latest']) {
             assert.equal((await get(`/characters?section=${section}&mode=sfw`)).status, 200);
@@ -65,7 +66,7 @@ test('Popular uses the existing serialised Janitor browser and a private fixed r
         assert.equal((await get('/popular?url=https://example.com')).status, 404);
         assert.equal((await get('/popular', 'POST')).status, 404);
         await assert.rejects(startBeauBridge(browser, socketPath), /already active/);
-        assert.equal(reads, 6);
+        assert.equal(reads, 5);
         await assert.rejects(browser.frontpage('favorites'), /Unsupported/);
     } finally {
         await bridge?.close();

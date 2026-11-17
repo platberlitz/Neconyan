@@ -69,6 +69,8 @@ const HARD_MAX_THUMB_BYTES = 6 * 1024 * 1024;
 const MULTI_CURSOR_SCOPE = 'cursor:multi';
 const BOTBOORU_ACCOUNT_SCOPE = 'account-result:botbooru';
 const MAX_CARRIED_DEDUPE = 64;
+const JANNY_BROWSER_SOURCES = new Set(['jannyai', 'janitorai']);
+const JANNY_BROWSER_STATE_CODES = new Set(['janny_login_required', 'janny_browser_unavailable']);
 const TERMINAL_ACCOUNT_PARTIALS = new Set([
     'account_profile_required',
     'botbooru_login_required',
@@ -96,7 +98,7 @@ export function createRouter(router, state) {
             version: VERSION,
             uptimeMs: Date.now() - state.startedAt,
             capabilities: { jannyBrowser: jannyCapability },
-            sources: describeSources(stateOf, reasonOf).map((source) => source.id === 'jannyai'
+            sources: describeSources(stateOf, reasonOf).map((source) => JANNY_BROWSER_SOURCES.has(source.id)
                 ? { ...source, bridgeAllowed: request.user?.profile?.admin === true }
                 : source),
         });
@@ -426,7 +428,7 @@ export function createRouter(router, state) {
                 fail(response, 400, 'bad_source');
                 return;
             }
-            await searchMany(request, response, many, accounts);
+            await searchMany(request, response, many, accounts, jannyBrowser);
             return;
         }
 
@@ -480,7 +482,7 @@ export function createRouter(router, state) {
         let sourceRequest;
         try {
             try {
-                sourceRequest = await searchRequestFor(accounts, request, adapter, args);
+                sourceRequest = await searchRequestFor(accounts, request, adapter, args, jannyBrowser);
             } catch (error) {
                 if (sendAccountError(response, error)) {
                     return;
@@ -502,6 +504,11 @@ export function createRouter(router, state) {
                 }
                 if (canReroute(adapter, error)) {
                     respondWithDirectPlan(response, adapter, 'search', args);
+                    return;
+                }
+                const janny = jannySearchFailure(error);
+                if (janny) {
+                    fail(response, janny.status, janny.code);
                     return;
                 }
                 const translated = authenticatedFailure(accounts, request, sourceRequest, error);
@@ -704,7 +711,7 @@ export function createRouter(router, state) {
             return;
         }
         const { adapter } = resolved;
-        const janny = adapter.id === 'jannyai';
+        const janny = JANNY_BROWSER_SOURCES.has(adapter.id);
         if (janny && !requireJannyAdmin(request, response)) {
             logJannyUrlCardFailure('janny_admin_required');
             return;
@@ -736,7 +743,7 @@ export function createRouter(router, state) {
             let avatarPng = null;
             let sourceRequest;
             try {
-                if (adapter.id === 'jannyai') {
+                if (JANNY_BROWSER_SOURCES.has(adapter.id)) {
                     ({ card, avatarPng = null } = await jannyBrowser.fetchCard(rawUrl));
                 } else if (adapter.id === 'saucepan') {
                     const handle = accountProfileHandle(request);
@@ -1108,7 +1115,7 @@ function readSourceIds(body) {
  * search. One site being down should cost the user that site's results, not
  * their query.
  */
-async function searchMany(request, response, ids, accounts) {
+async function searchMany(request, response, ids, accounts, jannyBrowser) {
     const body = request.body;
     const rawCursor = own(body, 'cursor');
     const limit = clampInt(own(body, 'limit'), 1, FIELD_LIMITS.itemsPerPage, 24);
@@ -1205,7 +1212,7 @@ async function searchMany(request, response, ids, accounts) {
         let sourceRequest;
         try {
             try {
-                sourceRequest = await searchRequestFor(accounts, request, adapter, args);
+                sourceRequest = await searchRequestFor(accounts, request, adapter, args, jannyBrowser);
             } catch (error) {
                 return { id, error: partialErrorCode(error) };
             }
@@ -1304,10 +1311,24 @@ async function gateSource(caller, sourceId, signal) {
     return { ok: true, release };
 }
 
+function jannySearchFailure(error) {
+    if (!(error instanceof JannyBrowserError)) {
+        return null;
+    }
+    if (JANNY_BROWSER_STATE_CODES.has(error.code) || error.code === 'janny_browser_request_failed') {
+        return { status: error.status, code: error.code };
+    }
+    return { status: 502, code: 'http_error' };
+}
+
 /** The classification a partial failure may carry, with details stripped. */
 function partialErrorCode(error) {
     if (error instanceof AccountError) {
         return error.code;
+    }
+    const janny = jannySearchFailure(error);
+    if (janny) {
+        return janny.code;
     }
     if (error instanceof BadCursorError || error?.code === 'bad_cursor') {
         return 'bad_cursor';
@@ -1395,7 +1416,21 @@ function accountHandle(request, response) {
     return handle;
 }
 
-async function searchRequestFor(accounts, request, adapter, args) {
+async function searchRequestFor(accounts, request, adapter, args, jannyBrowser) {
+    if (adapter.id === 'janitorai') {
+        // JanitorAI answers only the signed-in browser window, so the list
+        // reader comes from there rather than from a plain HTTP context.
+        const context = contextFor(adapter, { signal: request.sbbsSignal });
+        return {
+            context: Object.freeze({
+                ...context,
+                frontpage: typeof jannyBrowser?.frontpage === 'function'
+                    ? (section, mode, page) => jannyBrowser.frontpage(section, mode, page)
+                    : undefined,
+            }),
+            sessionNonce: null,
+        };
+    }
     if (adapter.id !== 'botbooru' || adapter.capabilities.nsfwRequiresAccount !== true) {
         return { context: contextFor(adapter, { signal: request.sbbsSignal }), sessionNonce: null };
     }
@@ -1506,7 +1541,11 @@ async function callAdapter(adapter, fn, { trackHealth = true, ignoreAuthenticati
             && error instanceof UpstreamError
             && error.code === 'http_error'
             && ['401', '403'].includes(String(error.detail));
-        if (trackHealth && !authenticationFailure) {
+        // A signed-out or missing browser window is reported as such; it is
+        // not the site being down, so it must not trip the cooldown.
+        const browserNotReady = error instanceof JannyBrowserError
+            && JANNY_BROWSER_STATE_CODES.has(error.code);
+        if (trackHealth && !authenticationFailure && !browserNotReady) {
             markFailure(adapter.id, error);
         }
         throw error;

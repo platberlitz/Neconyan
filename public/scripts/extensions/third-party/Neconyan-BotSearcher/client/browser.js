@@ -36,6 +36,7 @@ import {
     formatResultCount,
     JANNY_CLOUDFLARE_HINT_TITLE,
     jannyCloudflareHint,
+    listOnlyQueryNote,
     NAMED_SEARCH_COPY,
     searchErrorMessage,
     searchUnavailableMessage,
@@ -268,12 +269,15 @@ function wireBrowser(popup, health, options) {
     // currently has in cooldown. Selecting it explains why and offers a reload,
     // which is more useful than the source not being there to select.
     const usable = searchable;
+    // A source that only lists its own front page (JanitorAI) cannot answer a
+    // text query, so it stays out of an all-sources search.
+    const mergeable = usable.filter((source) => source?.capabilities?.query !== false);
 
     /** Card element -> record and immutable source snapshot. */
     const records = new Map();
 
-    const initialSource = settings.defaultSource === ALL_SOURCES && usable.length > 1
-        ? mergedSourceEntry(usable)
+    const initialSource = settings.defaultSource === ALL_SOURCES && mergeable.length > 1
+        ? mergedSourceEntry(mergeable)
         : (usable.find((entry) => entry.id === settings.defaultSource) ?? usable[0]);
     const state = {
         source: initialSource,
@@ -477,12 +481,12 @@ function wireBrowser(popup, health, options) {
     // "All sources" is a synthetic entry, not a source. It is only worth
     // offering when there is more than one thing to merge — and when the fan-out
     // cap excludes some sources, the label must not claim they are included.
-    if (usable.length > 1) {
+    if (mergeable.length > 1) {
         const option = document.createElement('option');
         option.value = ALL_SOURCES;
-        setText(option, usable.length > MAX_FANOUT
+        setText(option, mergeable.length > MAX_FANOUT
             ? `First ${MAX_FANOUT} sources`
-            : `All sources (${usable.length})`);
+            : `All sources (${mergeable.length})`);
         dom.source.append(option);
     }
     for (const source of usable) {
@@ -509,7 +513,7 @@ function wireBrowser(popup, health, options) {
 
     dom.source.addEventListener('change', () => {
         const next = dom.source.value === ALL_SOURCES
-            ? mergedSourceEntry(usable)
+            ? mergedSourceEntry(mergeable)
             : usable.find((entry) => entry.id === dom.source.value);
         if (!next) {
             return;
@@ -651,8 +655,9 @@ function wireBrowser(popup, health, options) {
             return;
         }
         const enabled = usable.filter((entry) => isSourceEnabled(entry, latest.enabledSources));
-        const source = saved.source === ALL_SOURCES && enabled.length > 1
-            ? mergedSourceEntry(enabled) : enabled.find((entry) => entry.id === saved.source);
+        const enabledMergeable = enabled.filter((entry) => mergeable.includes(entry));
+        const source = saved.source === ALL_SOURCES && enabledMergeable.length > 1
+            ? mergedSourceEntry(enabledMergeable) : enabled.find((entry) => entry.id === saved.source);
         if (!source) {
             setText(dom.namedStatus, 'Enable this search source under Extensions > BotSearcher, then reopen BotSearcher search.');
             return;
@@ -815,6 +820,11 @@ function wireBrowser(popup, health, options) {
         // so one control could not set the same thing on all of them. Each keeps
         // the sort it was last given on its own.
         dom.sort.hidden = sorts.length <= 1;
+
+        state.queryPlaceholder ??= dom.query.getAttribute('placeholder') ?? '';
+        dom.query.setAttribute('placeholder', state.source.capabilities?.query === false
+            ? 'Paste a card URL'
+            : state.queryPlaceholder);
 
         // Never imply filtering that the source cannot actually do.
         const canFilter = state.source.capabilities?.sfwToggle === true;
@@ -1203,7 +1213,9 @@ function wireBrowser(popup, health, options) {
         const generation = ++state.requestGeneration;
         const accountRevision = state.account.revision;
         const source = state.source;
-        const query = dom.query.value.trim();
+        const typed = dom.query.value.trim();
+        const listOnly = source.capabilities?.query === false;
+        const query = listOnly ? '' : typed;
         const sort = dom.sort.value;
         const cursor = append ? state.nextCursor : null;
         // Read once and reuse for the request and the empty-result message, so
@@ -1315,7 +1327,7 @@ function wireBrowser(popup, health, options) {
             if (state.items.length === 0) {
                 setText(dom.state, emptyResultMessage(source.label, query, Object.keys(filters).length));
             } else {
-                setText(dom.state, '');
+                setText(dom.state, listOnly && typed !== '' ? listOnlyQueryNote(source.label) : '');
             }
 
             // Which sources in a merged search did not answer. Stated rather
