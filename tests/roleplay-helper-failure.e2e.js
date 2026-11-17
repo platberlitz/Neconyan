@@ -13,12 +13,88 @@ const displayScript = { id: 'thought', findRegex: '/\\[THOUGHT\\]([\\s\\S]*?)\\[
 
 async function openRoleplay(account) {
     const page = await account.open({ workspace: false });
+    await expect(page.locator('#ica--setupSave')).toBeEnabled();
+    await selectRoleplayCharacter(page, account.avatar);
+    return page;
+}
+
+async function selectRoleplayCharacter(page, avatar) {
     await page.evaluate(async avatar => {
         const core = await import('/script.js');
         await core.getCharacters();
         await core.selectCharacterById(core.characters.findIndex(character => character.avatar === avatar), { switchMenu: false });
-    }, account.avatar);
-    return page;
+    }, avatar);
+}
+
+for (const phone of [true, false]) {
+    const viewport = phone ? 'phone' : 'desktop';
+    test(`${viewport} reports a blocked Companion on its card without a late workflow warning`, async ({ app }) => {
+        test.setTimeout(180000);
+        app.provider.mode.reply = body => body.model === 'blocked-companion'
+            ? { choices: [{ finish_reason: 'content_filter', message: { role: 'assistant', content: '' } }] }
+            : { choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: body.model === MODEL ? prose : 'The healthy Companion finished.' } }] };
+        const account = await app.account({ phone, activeConnection: true, configureSettings(saved) {
+            saved.oai_settings.stream_openai = false;
+            saved.extension_settings.connectionManager.profiles.push({ id: 'blocked', name: 'Blocked Companion',
+                api: 'custom', mode: 'cc', model: 'blocked-companion', 'api-url': app.provider.url });
+            saved.extension_settings.connectionManager.profiles.push({ id: 'healthy', name: 'Healthy Companion',
+                api: 'custom', mode: 'cc', model: 'healthy-companion', 'api-url': app.provider.url });
+            saved.extension_settings.inChatAgents = { globalSettings: { enabled: true, separateRecentChats: false,
+                connectionProfile: 'healthy', companionExecutionMode: 'parallel', trackerCompanionAutoLoopVersion: 4 } };
+        } });
+        const directory = path.join(app.dataRoot, 'default-user', 'InChatAgents');
+        await fs.mkdir(directory, { recursive: true });
+        for (const id of ['blocked', 'healthy', 'dependent']) {
+            await fs.writeFile(path.join(directory, `${id}.json`), JSON.stringify({ id, name: `${id} Companion`, enabled: true,
+                execution: 'companion', category: 'companion', phase: 'post', prompt: `Write the ${id} note.`,
+                connectionProfile: id === 'blocked' ? 'blocked' : 'healthy', companion: { trigger: 'auto', displayMode: 'card',
+                    format: 'markdown', contextMessages: 10, dependencies: id === 'dependent' ? ['blocked'] : [], waitForDependencies: id === 'dependent' } }));
+        }
+        const page = await openRoleplay(account);
+        try {
+            await acknowledgeActiveSettings(page);
+            const submitted = page.waitForResponse(response => response.url().endsWith('/api/roleplay/workflow/submit') && response.status() !== 409);
+            await page.locator('#send_textarea').fill('Let every Companion report its own result.');
+            await startNativeReply(page);
+            const response = await submitted;
+            expect(response.ok(), await response.text()).toBe(true);
+            const { jobId } = await response.json();
+            const settled = await account.settled(jobId);
+            await expect(page.locator('#chat .mes[mesid]').last()).toContainText(prose);
+            await expect(page.locator('#neconyan-roleplay-preview')).toHaveCount(0);
+            await page.evaluate(async () => (await import('/scripts/neconyan-conversation/roleplay-workflows.js')).resumeNativeRoleplayWorkflowObservation());
+            const healthy = page.locator('#chat .ica--companion-card[data-agent-id="healthy"]');
+            const blocked = page.locator('#chat .ica--companion-card[data-agent-id="blocked"]');
+            const dependent = page.locator('#chat .ica--companion-card[data-agent-id="dependent"]');
+            await expect(healthy).toContainText('The healthy Companion finished.');
+            await expect(blocked).toContainText('The model refused to write this note.');
+            await expect(dependent).toContainText('A required companion did not complete.');
+            expect(settled.result?.agentsFailed ?? settled.result?.result?.agentsFailed ?? false).toBe(false);
+            await expect(page.locator('.toast-warning').filter({ hasText: 'Agents did not finish' })).toHaveCount(0);
+            expect(app.provider.calls.filter(call => call.model === 'blocked-companion')).toHaveLength(1);
+            expect(app.provider.calls.filter(call => call.model === 'healthy-companion')).toHaveLength(1);
+            await page.reload();
+            await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'));
+            await expect(page.locator('#ica--setupSave')).toBeEnabled();
+            await selectRoleplayCharacter(page, account.avatar);
+            await expect(page.locator('#chat .ica--companion-card[data-agent-id="blocked"]')).toContainText('The model refused to write this note.');
+            await expect(page.locator('.toast-warning').filter({ hasText: 'Agents did not finish' })).toHaveCount(0);
+            const widths = await page.locator('#chat .ica--companion-card').evaluateAll(cards => cards.map(card => {
+                const rect = card.getBoundingClientRect();
+                return { width: rect.width, left: rect.left, right: rect.right, overflow: card.scrollWidth - card.clientWidth };
+            }));
+            for (const card of widths) {
+                expect(card.width).toBeGreaterThan(0);
+                expect(card.left).toBeGreaterThanOrEqual(0);
+                expect(card.right).toBeLessThanOrEqual(page.viewportSize().width);
+                expect(card.overflow).toBeLessThanOrEqual(1);
+            }
+        } finally {
+            await page.locator('#chat').evaluate(chat => { chat.scrollTop = chat.scrollHeight; });
+            await fs.mkdir('../screenshots', { recursive: true });
+            await page.screenshot({ path: `../screenshots/blocked-companion-${viewport}-${process.env.NECONYAN_SCREENSHOT_PHASE || 'after'}.png`, scale: 'css' });
+        }
+    });
 }
 
 for (const phone of [false, true]) for (const change of ['agent', 'settings', 'agent and restarting', 'settings with page open']) {
@@ -129,6 +205,8 @@ for (const phone of [false, true]) for (const change of ['agent', 'settings', 'a
         // eslint-disable-next-line playwright/no-conditional-in-test -- The open-page cases accept; reopened cases decline.
         if (staysOpen) {
             await verifyRerunButton(reopened, rerun, phone, info);
+            await reopened.locator('#chat .mes[mesid]').last().locator('.mes_edit').dispatchEvent('click');
+            await expect(reopened.locator('#chat .mes[mesid]').last().locator('.edit_textarea')).toBeVisible();
             app.provider.mode.fail = false;
             app.provider.mode.reply = body => ({ choices: [{ message: { role: 'assistant',
                 content: body.model === 'automatic-companion' ? 'The automatic Companion was rerun.' : `${answer}\n\nRevised by the after-reply Agent.` } }] });
