@@ -60,7 +60,7 @@ function fixture() {
         world_names: [],
         renderContextSetups: () => h('section', { class: 'scratchpad-setups' }),
         renderDictationSettings: () => null,
-        sameSourceBucket, sameSourceContext, currentSource: () => app.source, stopWatchers() {},
+        sameSourceBucket, sameSourceContext, currentSource: () => app.source, stopWatchers() {}, warnMissingPersona() {},
         isCurrentSource: value => sameSourceContext(value, app.source),
         api: { readNotebookContext: (_source, sessionId) => new Promise((resolve, reject) => requests.push({ sessionId, resolve, reject })) },
     });
@@ -162,7 +162,7 @@ describe('Scratchpad Context refresh lifecycle', () => {
         let live = general;
         const requests = [];
         const runtime = vm.createContext({ app, sameSourceBucket, sameSourceContext, PICK_PAGE: 30,
-            currentSource: () => live, getCurrentUserHandle: () => owner, stopWatchers() {}, syncWatchers() {}, closeComposeMenu() {}, reportError: error => { throw error; },
+            currentSource: () => live, getCurrentUserHandle: () => owner, stopWatchers() {}, syncWatchers() {}, closeComposeMenu() {}, warnMissingPersona() {}, reportError: error => { throw error; },
             t: parts => parts.join(''), api: { readBucket: source => new Promise(resolve => requests.push({ source, resolve })) }, wireSource: value => value,
             render() { runtime.syncDraft(); },
         });

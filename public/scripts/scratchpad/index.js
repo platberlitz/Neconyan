@@ -141,6 +141,7 @@ const app = {
     tab: 'chat',
     overviewCollapsed: false,
     source: null,
+    personaWarning: false,
     bucket: null,
     ticket: 0,
     sending: false,
@@ -629,9 +630,17 @@ async function reload() {
     }
 }
 
+function warnMissingPersona(source) {
+    if (!app.open) return;
+    const missing = source?.kind === 'general' && !sourcePersona(source);
+    if (missing && !app.personaWarning) toastr.warning(t`No persona is selected. Pick one in Personas if you want General Scratchpad to use it.`);
+    app.personaWarning = missing;
+}
+
 function checkSource() {
     if (app.open && Date.now() - app.imageCheck > 10000) void refreshImageAvailability();
     const next = currentSource();
+    warnMissingPersona(next);
     if (sameSourceBucket(next, app.source)) {
         if (next) {
             const changed = next.label !== app.source?.label || !sameSourceContext(next, app.source);
@@ -3263,6 +3272,7 @@ export async function openScratchpad({ tab = '', note = null } = {}) {
     applyLayout();
     selectTab(tab || app.tab);
     const next = currentSource();
+    warnMissingPersona(next);
     if (!sameSourceBucket(next, app.source) || !app.bucket) {
         stopWatchers();
         app.source = next;
@@ -3293,6 +3303,7 @@ export function hideScratchpad() {
     closeComposeMenu();
     if (!app.open) return;
     app.open = false;
+    app.personaWarning = false;
     stopReadAloud();
     cancelDictation();
     app.openMenus.clear();
