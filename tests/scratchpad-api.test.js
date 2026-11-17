@@ -69,6 +69,19 @@ test('an uncertain send keeps its files but does not replace a later selection',
     expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual(first);
 });
 
+test('an uncertain empty Send retries its original user message, not a different unanswered one', async () => {
+    const first = { ...request(), text: '', replyTo: 'first-question' };
+    fetchMock.mockRejectedValueOnce(new Error('Offline'));
+    await expect(sendReply(first)).rejects.toThrow();
+    const next = { ...first, submissionKey: 'next-question', replyTo: 'next-question' };
+    fetchMock.mockResolvedValueOnce(Response.json(receipt(next)));
+    await sendReply(next);
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual(next);
+    fetchMock.mockResolvedValueOnce(Response.json(receipt(first)));
+    await sendReply({ ...first, submissionKey: 'retry-question', context: 'changed' });
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual(first);
+});
+
 test.each(['network', 'server', 'unreadable'])('a lost image %s acceptance retains its exact original submission and acknowledgement', async failure => {
     const body = { submissionKey: `image-${++sequence}`, source: { kind: 'general', key: 'general', avatar: 'Nova.png' },
         sessionId: `session-${sequence}`, messageId: 'reply', index: 0, acknowledgement: { settingsRevision: 7 } };

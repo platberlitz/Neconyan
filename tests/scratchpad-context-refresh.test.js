@@ -28,6 +28,7 @@ class Element {
         }
     }
     replaceChildren(...children) {
+        this.scrollTop = 0;
         for (const child of this.children) child.parent = null;
         this.children = [];
         this.append(...children);
@@ -52,7 +53,7 @@ function fixture() {
         h, append: (element, children) => element.append(children), clear: element => element.replaceChildren(),
         t: (strings, ...values) => strings.reduce((text, part, index) => text + part + (values[index] ?? ''), ''),
         renderHeader() {}, renderChat() {}, renderSessions() {}, syncDraft() {}, syncWatchers() {},
-        rememberedConnections: () => ({}), connectionProfiles: () => [],
+        sessionInput: () => ({ settings: { assistantConnections: {} } }), connectionProfiles: () => [],
         checkbox: () => h('label'), presetCheckbox: () => h('label', { text: `Current preset: ${preset.name}` }),
         currentPresetName: () => preset.name, renderPicks: () => h('section'), renderLore: () => h('section'), renderPreview: () => h('section'),
         iconButton: (text, onclick) => h('button', { text, onclick }), wireSource: value => value,
@@ -60,7 +61,7 @@ function fixture() {
         world_names: [],
         renderContextSetups: () => h('section', { class: 'scratchpad-setups' }),
         renderDictationSettings: () => null,
-        sameSourceBucket, sameSourceContext, currentSource: () => app.source, stopWatchers() {},
+        sameSourceBucket, sameSourceContext, currentSource: () => app.source, stopWatchers() {}, warnMissingPersona() {},
         isCurrentSource: value => sameSourceContext(value, app.source),
         api: { readNotebookContext: (_source, sessionId) => new Promise((resolve, reject) => requests.push({ sessionId, resolve, reject })) },
     });
@@ -93,6 +94,13 @@ function imageJobFixture({ markers = [], card } = {}) {
 }
 
 describe('Scratchpad Context refresh lifecycle', () => {
+    test('keeps the Context scroll position when its controls are rebuilt', () => {
+        const { runtime, panel } = fixture();
+        panel.scrollTop = 970;
+        runtime.renderContext();
+        expect(panel.scrollTop).toBe(970);
+    });
+
     test('both Home visibility events check the live source after visibility changes, only while open', () => {
         const listeners = new Map();
         const tasks = [];
@@ -162,7 +170,7 @@ describe('Scratchpad Context refresh lifecycle', () => {
         let live = general;
         const requests = [];
         const runtime = vm.createContext({ app, sameSourceBucket, sameSourceContext, PICK_PAGE: 30,
-            currentSource: () => live, getCurrentUserHandle: () => owner, stopWatchers() {}, syncWatchers() {}, closeComposeMenu() {}, reportError: error => { throw error; },
+            currentSource: () => live, getCurrentUserHandle: () => owner, stopWatchers() {}, syncWatchers() {}, closeComposeMenu() {}, warnMissingPersona() {}, reportError: error => { throw error; },
             t: parts => parts.join(''), api: { readBucket: source => new Promise(resolve => requests.push({ source, resolve })) }, wireSource: value => value,
             render() { runtime.syncDraft(); },
         });

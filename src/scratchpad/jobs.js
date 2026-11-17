@@ -105,17 +105,22 @@ export function normaliseReplyRequest(body = {}) {
     const source = normaliseSource(body.source);
     const sessionId = requireId(body.sessionId, 'session');
     const regenerate = body.regenerate ? requireId(body.regenerate, 'reply') : null;
+    const replyTo = body.replyTo ? requireId(body.replyTo, 'message') : null;
     const attachments = regenerate ? [] : normaliseAttachments(body.attachments);
+    const typed = regenerate ? '' : boundedText(body.text, MAX_INPUT_BYTES, 'The message');
+    if (replyTo && (regenerate || body.discuss === true || body.rehearsal === true || typed.trim() || attachments.length)) {
+        throw fail('SCRATCHPAD_REPLY_TO_INVALID', 'Send an empty message to answer the last unanswered message.');
+    }
     const rehearsal = !regenerate && body.rehearsal === true;
     if (rehearsal && (!canRehearse(source) || body.discuss === true)) throw fail('SCRATCHPAD_REHEARSAL_INVALID', 'Open a story chat to rehearse its next reply.');
-    const typed = regenerate ? '' : boundedText(body.text, MAX_INPUT_BYTES, 'The message');
     const text = rehearsal && !typed.trim() ? REHEARSAL_REQUEST : typed;
-    if (!regenerate && !text.trim() && !attachments.length) throw fail('SCRATCHPAD_TEXT_REQUIRED', 'Write a message or attach a file first.');
+    if (!regenerate && !replyTo && !text.trim() && !attachments.length) throw fail('SCRATCHPAD_TEXT_REQUIRED', 'Write a message or attach a file first.');
     return {
         submissionKey,
         source,
         sessionId,
         regenerate,
+        replyTo,
         discuss: !regenerate && body.discuss === true,
         rehearsal,
         text,
@@ -163,15 +168,25 @@ export function planReply(session, request, chooseIndex = randomInt) {
     if (hasPending(session)) throw fail('SCRATCHPAD_REPLY_PENDING', 'This session is still replying. Wait for it or press Stop.', 409);
     const messages = session.messages;
     if (!request.regenerate) {
+        const unanswered = request.replyTo ? messages.at(-1) : null;
+        if (request.replyTo && (unanswered?.id !== request.replyTo || unanswered?.role !== 'user')) {
+            throw fail('SCRATCHPAD_REPLY_TO_INVALID', 'Only the last unanswered message can receive a reply.', 409);
+        }
+        if (unanswered && (request.source?.scope || request.source?.kind === 'general') && !sameSourceContext(request.source, unanswered.contextSource)) {
+            throw fail('SCRATCHPAD_REPLY_TO_INVALID', request.source.kind === 'general'
+                ? 'Return to the original Scratchpad context before answering this message.' : 'Open the original chat before answering this message.', 409);
+        }
+        if (unanswered?.rehearsal && !canRehearse(request.source)) throw fail('SCRATCHPAD_REHEARSAL_INVALID', 'Open the original story chat to rehearse this reply again.');
         const participants = sessionAssistants(session);
         if (request.discuss && !roundToDiscuss(session).length) {
             throw fail('SCRATCHPAD_DISCUSS_INVALID', 'A discussion needs a round table and finished answers from at least two assistants to your latest message.', 409);
         }
         const assistants = session.settings.roundTable && session.settings.randomReply
             ? [participants[chooseIndex(participants.length)]] : participants;
-        if (messages.length + 1 + assistants.length > MAX_MESSAGES) throw fail('SCRATCHPAD_SESSION_FULL', 'This session is full. Start a new session to keep talking.', 409);
-        const compact = planSummary(session, messages);
-        return { userMessageId: newScratchpadId(), prompt: request.text, rehearsal: request.rehearsal === true, attachments: request.attachments ?? [], history: historyFrom(compact.messages), summary: compact.summary, replace: null, assistants };
+        if (messages.length + (unanswered ? 0 : 1) + assistants.length > MAX_MESSAGES) throw fail('SCRATCHPAD_SESSION_FULL', 'This session is full. Start a new session to keep talking.', 409);
+        const compact = planSummary(session, unanswered ? messages.slice(0, -1) : messages);
+        return { userMessageId: unanswered?.id ?? newScratchpadId(), prompt: unanswered?.text ?? request.text, rehearsal: unanswered ? unanswered.rehearsal === true : request.rehearsal === true,
+            attachments: unanswered?.attachments ?? request.attachments ?? [], history: historyFrom(compact.messages), summary: compact.summary, replace: null, assistants };
     }
     const replyIndex = messages.findIndex(message => message.id === request.regenerate && message.role === 'assistant');
     // The message this reply answered, which need not be the latest one. Later messages stay as they are.
@@ -214,6 +229,7 @@ export async function acceptScratchpadReply(request, body = {}) {
     const { directories, owner } = base;
     const input = normaliseReplyRequest(body);
     const requestHash = hash({ source: input.source, sessionId: input.sessionId, regenerate: input.regenerate, text: input.text, ...(input.discuss ? { discuss: true } : {}),
+        ...(input.replyTo ? { replyTo: input.replyTo } : {}),
         ...(input.attachments.length ? { attachments: input.attachments } : {}),
         ...(input.rehearsal ? { rehearsal: true } : {}),
         context: input.context, help: input.help, capabilities: input.capabilities, names: input.names, chatProfileId: input.chatProfileId, genders: input.genders,
@@ -340,9 +356,9 @@ export async function acceptScratchpadReply(request, body = {}) {
             const created = new Date().toISOString();
             const contextSource = Object.fromEntries(Object.entries(input.source).filter(([key]) => key !== 'scope'));
             const shared = input.source.kind === 'general' && input.capabilities.character ? { sharedAvatar: input.source.avatar } : {};
-            if (!input.regenerate) nameFromFirstMessage(session, input.text);
+            if (!input.regenerate && !input.replyTo) nameFromFirstMessage(session, input.text);
             const mode = planned.rehearsal ? { rehearsal: true } : {};
-            if (!input.regenerate) session.messages.push({ id: planned.userMessageId, role: 'user', text: input.text, ...mode, ...(input.attachments.length ? { attachments: input.attachments } : {}), created, contextSource });
+            if (!input.regenerate && !input.replyTo) session.messages.push({ id: planned.userMessageId, role: 'user', text: input.text, ...mode, ...(input.attachments.length ? { attachments: input.attachments } : {}), created, contextSource });
             const pending = replies.map(reply => ({ id: reply.replyId, role: 'assistant', text: '', created, contextSource, ...shared,
                 targets: planned.targets, sharedPersona: planned.sharedPersona, sharedPreset: planned.sharedPreset, imageNames: input.names, imagePersonaId: planned.imagePersonaId,
                 ...mode, state: 'pending', jobId: job.id, assistant: reply.assistant, assistantName: reply.characterName, gender: reply.gender }));

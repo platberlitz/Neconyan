@@ -1,10 +1,95 @@
-/* global document, getComputedStyle */
+/* global document, window, getComputedStyle */
 /* eslint-disable playwright/no-conditional-in-test -- Both viewport variants share the same checks with optional iOS emulation. */
 import { expect } from '@playwright/test';
-import { test } from './neconyan-conversation-durable-fixture.js';
+import { test as base } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
 
+// Account boot uses the durable fixture's startup limits, not the interaction budget.
+const test = base.extend({
+    preparedSetups: [async ({ app }, use, testInfo) => {
+        await use(await setupAccount(app, testInfo.title.startsWith('phone')));
+    }, { timeout: 120000 }],
+});
+
+async function setupAccount(app, phone) {
+    const account = await app.account({ phone });
+    const library = await account.post('/api/scratchpad/context-setups', {});
+    await account.post('/api/scratchpad/context-setups/update', { expectedRevision: library.contextSetups.revision, setups: [
+        { name: 'Quick look', settings: { depth: 7 } },
+        { name: 'Quiet replies', settings: { depth: 9, stream: false } },
+    ] });
+    const page = await account.open();
+    const open = tab => page.evaluate(async tab => (await import('/scripts/scratchpad/index.js')).openScratchpad({ tab }), tab);
+    await open('context');
+    await expect(page.locator('.scratchpad-web-status')).not.toContainText('Web search settings are loading.');
+    return { account, page, open };
+}
+
 for (const phone of [false, true]) {
+    test(`${phone ? 'phone' : 'desktop'} current Saved setup follows every new session and survives reopening`, async ({ preparedSetups }) => {
+        test.setTimeout(90000);
+        const { page, open } = preparedSetups;
+        await page.locator('#scratchpad-setup').selectOption('Quiet replies');
+        const updated = page.waitForResponse('**/api/scratchpad/session/update');
+        await page.locator('#scratchpad-depth').fill('3');
+        await page.locator('#scratchpad-depth').dispatchEvent('change');
+        expect((await updated).ok()).toBe(true);
+        const create = async temporary => {
+            await open('sessions');
+            const response = page.waitForResponse('**/api/scratchpad/session/create');
+            await page.getByRole('button', { name: temporary ? 'Temporary session' : 'New session', exact: true }).click();
+            const body = await (await response).json();
+            const session = body.bucket.sessions.find(item => item.id === body.bucket.activeSessionId);
+            expect(session.settings).toMatchObject({ depth: 9, stream: false });
+        };
+        await create(false);
+        await page.reload({ waitUntil: 'domcontentloaded' });
+        await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'), undefined, { timeout: 60000 });
+        await open('context');
+        await expect(page.locator('#scratchpad-setup')).toHaveValue('Quiet replies');
+        await create(true);
+        await page.evaluate(() => window.dispatchEvent(new Event('neconyan:navigate-home')));
+        await open('context');
+        await expect(page.locator('#scratchpad-setup')).toHaveValue('Quiet replies');
+        await expect(page.locator('#neconyan-scratchpad').getByRole('checkbox', { name: 'Stream replies' })).not.toBeChecked();
+        await create(false);
+    });
+
+    test(`${phone ? 'phone' : 'desktop'} Saved setup buttons keep the current viewport position`, async ({ preparedSetups }) => {
+        const { page } = preparedSetups;
+        const section = page.locator('.scratchpad-setups');
+        const button = name => section.getByRole('button', { name, exact: true });
+        const position = () => button('Save current choices').evaluate(element => ({
+            y: element.getBoundingClientRect().y,
+            document: document.scrollingElement.scrollTop,
+        }));
+        await button('Save current choices').scrollIntoViewIfNeeded();
+        await button('Save current choices').evaluate(element => { element.closest('.scratchpad-panel').scrollTop += 100; });
+        await expect(button('Save current choices')).toBeInViewport();
+        const before = await position();
+        const applied = page.waitForResponse('**/api/scratchpad/session/update');
+        await button('Apply setup').click();
+        expect((await applied).ok()).toBe(true);
+        await expect(button('Apply setup')).toBeFocused();
+        await page.screenshot({ path: `../screenshots/scratchpad-setup-position-${phone ? 'phone' : 'desktop'}-${process.env.NECONYAN_SCRATCHPAD_SCREENSHOT_LABEL || 'after'}.png` });
+        await expect.poll(async () => Math.abs((await position()).y - before.y)).toBeLessThan(2);
+        expect((await position()).document).toBe(before.document);
+        await button('Save current choices').click();
+        const dialog = page.locator('dialog[open]');
+        await dialog.locator('.popup-input').fill('Quick look');
+        const saved = page.waitForResponse('**/api/scratchpad/context-setups/update');
+        await dialog.locator('.popup-button-ok').click();
+        expect((await saved).ok()).toBe(true);
+        await expect(button('Save current choices')).toBeFocused();
+        await expect.poll(async () => Math.abs((await position()).y - before.y)).toBeLessThan(2);
+        await button('Delete setup').click();
+        const removed = page.waitForResponse('**/api/scratchpad/context-setups/update');
+        await dialog.locator('.popup-button-ok').click();
+        expect((await removed).ok()).toBe(true);
+        await expect(button('Save current choices')).toBeFocused();
+        await expect.poll(async () => Math.abs((await position()).y - before.y)).toBeLessThan(2);
+    });
+
     test(`${phone ? 'phone' : 'desktop'} Scratchpad Context choices can be saved as a setup and applied to another session`, async ({ app }) => {
         test.setTimeout(180000);
         const account = await app.account({ phone, contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {} });
@@ -72,12 +157,14 @@ for (const phone of [false, true]) {
         expect(selectBox.height).toBeGreaterThanOrEqual(phone ? 44 : 30);
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 
-        // A new session starts from its own choices; applying the setup brings the saved ones in.
+        // New sessions start with the setup; Apply restores it after changing this session.
         await page.evaluate(async () => (await import('/scripts/scratchpad/index.js')).openScratchpad({ tab: 'sessions' }));
         const created = page.waitForResponse('**/api/scratchpad/session/create');
         await page.locator('#neconyan-scratchpad .scratchpad-panel:not([hidden])').getByRole('button', { name: 'New session', exact: true }).click();
         expect((await created).ok()).toBe(true);
         await openContext();
+        await expect(depth).toHaveValue('7');
+        await expect(stream).not.toBeChecked();
         await setDepth(3);
         if (!await stream.isChecked()) await saved(() => stream.check());
         await expect(select).toHaveValue('Quick look');

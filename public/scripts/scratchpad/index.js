@@ -141,6 +141,7 @@ const app = {
     tab: 'chat',
     overviewCollapsed: false,
     source: null,
+    personaWarning: false,
     bucket: null,
     ticket: 0,
     sending: false,
@@ -198,6 +199,7 @@ function readPrefs() {
         if (Number.isFinite(saved.width)) app.width = saved.width;
         if (allAssistants().some(item => item.id === saved.assistant)) app.assistant = saved.assistant;
         if (typeof saved.collapsed === 'boolean') app.overviewCollapsed = saved.collapsed;
+        if (typeof saved.contextSetup === 'string') app.contextSetup = saved.contextSetup;
         if (DICTATION_SERVICES.some(service => service.id === saved.dictation)) app.dictation = saved.dictation;
         for (const { id } of allAssistants()) {
             const connection = saved.connections?.[id];
@@ -219,6 +221,7 @@ function writePrefs() {
         collapsed: app.overviewCollapsed,
         connections: app.connections,
         dictation: app.dictation,
+        contextSetup: app.contextSetup,
     }));
 }
 
@@ -231,7 +234,9 @@ function rememberedConnections() {
 
 function sessionInput(extra = {}) {
     const input = { assistant: app.assistant, gender: getAssistantGender(app.assistant), ...extra };
-    if (!activeSession()) input.settings = { assistantConnections: rememberedConnections() };
+    const setup = findContextSetup(app.contextSetup) ?? app.contextSetups.setups[0];
+    if (setup) input.settings = structuredClone(setup.settings);
+    if (!activeSession()) input.settings = { ...input.settings, assistantConnections: rememberedConnections() };
     return input;
 }
 
@@ -282,7 +287,7 @@ function activeSession() {
 }
 
 function currentSettings() {
-    return activeSession()?.settings ?? { ...structuredClone(DEFAULT_SETTINGS), assistantConnections: rememberedConnections() };
+    return activeSession()?.settings ?? { ...structuredClone(DEFAULT_SETTINGS), ...sessionInput().settings };
 }
 
 function assistantConnection(settings, assistant) {
@@ -349,6 +354,7 @@ function applyLayout() {
     document.body.classList.toggle('neconyan-scratchpad-open', app.open);
     document.body.classList.toggle('neconyan-scratchpad-beside', app.open && layout === 'beside');
     document.body.style.setProperty('--neco-scratchpad-width', `${clampWidth(app.width, dockedWidth())}px`);
+    document.dispatchEvent(new Event('neconyan:scratchpad-visibility'));
 }
 
 function startResize(event) {
@@ -629,9 +635,17 @@ async function reload() {
     }
 }
 
+function warnMissingPersona(source) {
+    if (!app.open) return;
+    const missing = source?.kind === 'general' && !sourcePersona(source);
+    if (missing && !app.personaWarning) toastr.warning(t`No persona is selected. Pick one in Personas if you want General Scratchpad to use it.`);
+    app.personaWarning = missing;
+}
+
 function checkSource() {
     if (app.open && Date.now() - app.imageCheck > 10000) void refreshImageAvailability();
     const next = currentSource();
+    warnMissingPersona(next);
     if (sameSourceBucket(next, app.source)) {
         if (next) {
             const changed = next.label !== app.source?.label || !sameSourceContext(next, app.source);
@@ -997,7 +1011,9 @@ async function send({ regenerate = '', discuss = false, rehearsal = false } = {}
     const text = regenerate ? '' : discuss ? [request, typed].filter(Boolean).join('\n\n') : typed;
     const attachedDraft = app.attachments;
     const attachments = regenerate || discuss ? [] : [...attachedDraft];
-    if (!regenerate && !rehearsal && !text && !attachments.length) {
+    const empty = !regenerate && !rehearsal && !text && !attachments.length;
+    const replyTo = empty ? activeSession()?.messages.at(-1) : null;
+    if (empty && replyTo?.role !== 'user') {
         app.el.composer.focus();
         return;
     }
@@ -1008,24 +1024,28 @@ async function send({ regenerate = '', discuss = false, rehearsal = false } = {}
         requireScope(source, initialSessionId);
         const session = await ensureSession(source);
         if (!session) return;
+        if (replyTo && session.messages.at(-1)?.id !== replyTo.id) throw new Error(t`The Scratchpad settings or messages changed. Try sending again.`);
         const draftKey = app.draftKey;
         const snapshot = JSON.stringify(session);
         const settings = session.settings;
         const chatProfileId = sourceConnectionProfile(source);
         const retried = regenerate ? session.messages.find(message => message.id === regenerate) : null;
+        if (replyTo && (source.scope || source.kind === 'general') && !sameChat(replyTo.contextSource, source)) {
+            throw new Error(source.kind === 'general' ? t`Return to the original Scratchpad context before answering this message.` : t`Open the original chat before answering this message.`);
+        }
         if (retried && (source.scope || source.kind === 'general') && !sameChat(retried.contextSource, source)) {
             throw new Error(source.kind === 'general' ? t`Return to the original Scratchpad context before trying this reply again.` : t`Open the original chat before trying this reply again.`);
         }
         const assistants = retried ? [retried.assistant || session.assistant] : sessionAssistants(session);
         const genders = Object.fromEntries(ASSISTANTS.map(item => [item.id, getAssistantGender(item.id)]));
-        const query = regenerate ? (session.messages.slice(0, session.messages.indexOf(retried)).findLast(item => item.role === 'user')?.text ?? '') : text;
+        const query = regenerate ? (session.messages.slice(0, session.messages.indexOf(retried)).findLast(item => item.role === 'user')?.text ?? '') : replyTo?.text ?? text;
         const context = await buildContext({ source, settings, pendingText: query, sessionText: sessionText(session) });
         await refreshImageAvailability();
         const help = [...new Set(await Promise.all(assistants.map(assistant => buildHelp({ assistant, gender: genders[assistant], text: query }))))].filter(Boolean).join('\n\n');
         requireScope(source, session.id);
         const connectionsSaved = !(chatProfileId || assistants.every(assistant => assistantConnection(settings, assistant).kind === 'profile'));
         const acknowledgement = connectionsSaved ? await acknowledge() : undefined;
-        const personaSaved = rehearsal || retried?.rehearsal || !context.capabilities.persona || !needsSavedPersonaSelection(source, connectionsSaved) || await saveSelectedPersona();
+        const personaSaved = rehearsal || retried?.rehearsal || replyTo?.rehearsal || !context.capabilities.persona || !needsSavedPersonaSelection(source, connectionsSaved) || await saveSelectedPersona();
         if (!personaSaved) toastr.warning(t`Scratchpad could not save your persona, so Scenario Note suggestions for it are left out of this reply.`);
         const capabilities = personaSaved ? context.capabilities : Object.fromEntries(Object.entries(context.capabilities).filter(([key]) => key !== 'persona'));
         await app.queue;
@@ -1038,6 +1058,7 @@ async function send({ regenerate = '', discuss = false, rehearsal = false } = {}
             source: wireSource(source),
             sessionId: session.id,
             regenerate: regenerate || undefined,
+            replyTo: replyTo?.id,
             discuss: discuss || undefined,
             rehearsal: rehearsal || undefined,
             text,
@@ -2468,6 +2489,7 @@ function renderContext({ force = true } = {}) {
     const key = contextKey();
     if (!force && key === app.contextKey && panel.childElementCount) return;
     app.contextKey = key;
+    const scrollTop = panel.scrollTop;
     clear(panel);
     panel.append(h('section', { class: 'scratchpad-section' },
         h('h3', { class: 'scratchpad-section-title', text: t`Global user instructions` }),
@@ -2486,6 +2508,7 @@ function renderContext({ force = true } = {}) {
     panel.append(...[renderDictationSettings()].filter(Boolean));
     if (!app.source) {
         panel.append(h('p', { class: 'scratchpad-empty', text: t`Open a chat to choose what Scratchpad reads.` }));
+        panel.scrollTop = scrollTop;
         return;
     }
     const settings = currentSettings();
@@ -2596,6 +2619,7 @@ function renderContext({ force = true } = {}) {
         notebook || (general && !settings.lorebook) ? null : renderLore(settings),
         renderPreview(),
     ]);
+    panel.scrollTop = scrollTop;
 }
 
 /* Mirrors CONTEXT_SETUP_KEYS on the server: only choices that mean the same in every chat are saved. */
@@ -2609,7 +2633,7 @@ function findContextSetup(name) {
 function showContextSetups(focus) {
     if (!app.open) return;
     renderContext();
-    app.el.panels.context.querySelector(focus)?.focus();
+    app.el.panels.context.querySelector(focus)?.focus({ preventScroll: true });
 }
 
 async function writeContextSetups(setups, fallback) {
@@ -2634,6 +2658,7 @@ async function saveContextSetup() {
         : [...app.contextSetups.setups, setup];
     if (!await writeContextSetups(setups, t`Scratchpad could not save that setup.`)) return;
     app.contextSetup = findContextSetup(name)?.name ?? '';
+    writePrefs();
     toastr.success(t`Setup saved. You can apply it in any Scratchpad session.`);
     showContextSetups('.scratchpad-setup-save');
 }
@@ -2642,9 +2667,9 @@ async function applyContextSetup() {
     const setup = findContextSetup(app.contextSetup);
     if (!setup) return;
     try {
-        await updateSettings(structuredClone(setup.settings), { rerenderContext: true });
+        if (!await updateSettings(structuredClone(setup.settings), { rerenderContext: true })) return;
         toastr.success(t`Setup applied to this session.`);
-        app.el.panels.context.querySelector('.scratchpad-setup-apply')?.focus();
+        app.el.panels.context.querySelector('.scratchpad-setup-apply')?.focus({ preventScroll: true });
     } catch { /* updateSettings already reported the failure. */ }
 }
 
@@ -2654,7 +2679,8 @@ async function deleteContextSetup() {
     const confirmed = await callGenericPopup(t`Delete the saved setup '${setup.name}'? Sessions that already use its choices keep them.`, POPUP_TYPE.CONFIRM, '', { okButton: t`Delete setup`, cancelButton: t`Cancel` });
     if (confirmed !== POPUP_RESULT.AFFIRMATIVE) return;
     if (!await writeContextSetups(app.contextSetups.setups.filter(item => item !== setup), t`Scratchpad could not delete that setup.`)) return;
-    app.contextSetup = '';
+    app.contextSetup = app.contextSetups.setups[0]?.name ?? '';
+    writePrefs();
     showContextSetups('.scratchpad-setup-save');
 }
 
@@ -2663,12 +2689,16 @@ function renderContextSetups() {
     if (!findContextSetup(app.contextSetup)) app.contextSetup = setups[0]?.name ?? '';
     const select = h('select', {
         class: 'text_pole', id: 'scratchpad-setup', 'data-i18n-ignore': '',
-        onchange: event => { app.contextSetup = event.currentTarget.value; },
+        onchange: event => {
+            app.contextSetup = event.currentTarget.value;
+            writePrefs();
+            if (!activeSession()) showContextSetups('#scratchpad-setup');
+        },
     }, setups.map(setup => h('option', { value: setup.name, text: setup.name })));
     select.value = app.contextSetup;
     return h('section', { class: 'scratchpad-section scratchpad-setups' },
         h('h3', { class: 'scratchpad-section-title', text: t`Saved setups` }),
-        h('p', { class: 'scratchpad-muted', text: t`Keep the choices on this tab under a name and apply them to any session: how many messages to read, what else to share, reply length, streaming, web search, reading links and prefills. Picked messages, lorebook entry choices, saved notes and connections belong to one chat, so they are not saved.` }),
+        h('p', { class: 'scratchpad-muted', text: t`The selected setup applies to every new session. Apply setup changes this session. Save current choices keeps how many messages to read, what else to share, reply length, streaming, web search, reading links and prefills. Picked messages, lorebook entry choices, saved notes and connections are not saved.` }),
         setups.length ? h('div', { class: 'scratchpad-field' }, h('label', { for: 'scratchpad-setup', text: t`Saved setup` }), select)
             : h('p', { class: 'scratchpad-muted', text: t`You have no saved setups yet.` }),
         h('div', { class: 'scratchpad-note-actions' },
@@ -3263,6 +3293,7 @@ export async function openScratchpad({ tab = '', note = null } = {}) {
     applyLayout();
     selectTab(tab || app.tab);
     const next = currentSource();
+    warnMissingPersona(next);
     if (!sameSourceBucket(next, app.source) || !app.bucket) {
         stopWatchers();
         app.source = next;
@@ -3293,6 +3324,7 @@ export function hideScratchpad() {
     closeComposeMenu();
     if (!app.open) return;
     app.open = false;
+    app.personaWarning = false;
     stopReadAloud();
     cancelDictation();
     app.openMenus.clear();
