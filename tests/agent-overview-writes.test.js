@@ -93,6 +93,8 @@ function createRuntime() {
         getLastAssistantMessageIndex: () => state.lastAssistantIndex,
         isCurrentAgentWorkspace: () => state.currentWorkspace,
         lastManualRunFeedback: null,
+        agentLibraryLoading: false,
+        agentLibraryReady: true,
         document: {
             getElementById: id => byId.get(id) ?? null,
             querySelector: selector => {

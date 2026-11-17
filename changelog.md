@@ -34,6 +34,9 @@
 - PR #721 (2026-11-17) `feat(botsearcher): add Sources and logins inside the search window`
 - PR #722 (2026-11-17) `fix(botsearcher): wait for the JanitorAI sign-in before fetching lists`
 - PR #723 (2026-11-17) `feat(simple-mode): add dialogue colors to sidebar`
+- PR #724 (2026-11-17) `fix(startup): load the styles the app needs before revealing it`
+- PR #725 (2026-11-17) `feat: add tracker override search`
+- PR #726 (2026-11-17) `feat(regex-agent-themes): keep chatroom platform looks in themed feeds`
 
 ## v1.5.5
 

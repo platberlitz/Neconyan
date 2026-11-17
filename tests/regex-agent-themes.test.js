@@ -197,6 +197,32 @@ describe('bundled tracker contracts', () => {
         expect(first).not.toContain(`.ratvm-${THEMES[1].slug}-place`);
         expect(second).not.toContain(`.ratvm-${THEMES[0].slug}-place`);
     });
+
+    test('every theme keeps each chatroom platform look, scoped to that theme', () => {
+        const id = 'tpl-chatroom-companion';
+        const feed = SAMPLES.chatroom.full.replace('dockside', 'thread-board/4chan')
+            .replace('notice\n', 'notice\n>be me\nchatroom-you|ezra|I will take the south gate.\n');
+        for (const selected of THEMES) {
+            const html = applyList(feed, buildAgentScripts(id, scriptsFor(id), selected).scripts);
+            const scope = `.rat-cr-chatroom-${selected.slug}`;
+            expect(html).toContain(`class="rat rat-stream rat-k-chatroom rat-tm-${selected.slug} ${scope.slice(1)}" data-chatroom-style="thread-board/4chan"`);
+            for (const platform of ['4chan', 'reddit', 'twitter', 'discord', 'ao3', 'newsroom', 'infomercial']) {
+                expect(html).toContain(`${scope}[data-chatroom-style*="${platform}" i]`);
+            }
+            for (const marker of ['content:">>"', 'content:" (You)"', 'content:"u/"', 'content:"Replying to "', 'content:"╭ "', 'content:"Reply · Thread · Parent"', 'content:"Breaking · "', 'content:" ☎ "']) {
+                expect(html).toContain(marker);
+            }
+            for (const name of ['chatroom-post chatroom-post--green', 'chatroom-post--reply', 'chatroom-post--viewer', 'chatroom-replyto-target', 'chatroom-poll', 'chatroom-event-icon']) {
+                expect(html).toContain(name);
+            }
+            expect(html).toContain('--chatroom-hue:312');
+            expect(html).toMatch(/class="[^"]*chatroom-poll-option[^"]*"/);
+            expect(html).toContain('<span class="chatroom-poll-label"');
+            expect(html).not.toContain('class="chatroom-feed"');
+            expect(html).not.toMatch(/^(?:CHATROOM|chatroom-)/m);
+            expect(html.split('\n').filter(line => line.includes('<style>'))).toHaveLength(1);
+        }
+    }, 30000);
 });
 
 describe('tracker-family selection through the real apply path', () => {

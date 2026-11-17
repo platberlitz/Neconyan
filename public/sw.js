@@ -50,8 +50,15 @@ function isSameOrigin(url) {
     return url.origin === self.location.origin;
 }
 
+// A stylesheet without a ?v= label keeps the same URL across updates, so a cached
+// copy would paint the previous release's rules on the first open after an update.
+function isUnversionedStylesheet(url) {
+    return url.pathname.endsWith('.css') && !url.searchParams.has('v');
+}
+
 function shouldStaleWhileRevalidate(url) {
-    return NN_STALE_WHILE_REVALIDATE_PREFIXES.some(prefix => url.pathname.startsWith(prefix));
+    return NN_STALE_WHILE_REVALIDATE_PREFIXES.some(prefix => url.pathname.startsWith(prefix))
+        && !isUnversionedStylesheet(url);
 }
 
 function isFrontendAsset(url) {
@@ -191,7 +198,7 @@ self.addEventListener('fetch', (event) => {
     if (shouldStaleWhileRevalidate(url)) {
         event.respondWith(staleWhileRevalidate(request));
     }
-    // Everything else, including unhashed application .js/.mjs modules, is left to
-    // the browser HTTP cache so the service worker does not rewrite a cache entry
-    // on every reload.
+    // Everything else, including unhashed application .js/.mjs modules and unversioned
+    // stylesheets, is left to the browser HTTP cache, which revalidates them with the
+    // server, so the service worker does not rewrite a cache entry on every reload.
 });

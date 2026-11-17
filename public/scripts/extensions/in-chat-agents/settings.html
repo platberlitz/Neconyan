@@ -34,7 +34,7 @@
         <div class="ica--workspace-main neconyan-cat-panel">
         <div class="ica--overview">
             <div class="ica--overview-copy">
-                <strong id="ica--run-status" role="status">Ready</strong>
+                <strong id="ica--run-status" role="status">Loading your agents...</strong>
                 <span class="ica--overview-stats">
                     <span class="ica--overview-stat"><strong id="ica--agent-count">0</strong><span>agents</span></span>
                     <span class="ica--overview-stat"><strong id="ica--enabled-count">0</strong><span>switched on</span></span>
@@ -193,7 +193,11 @@
                 </div>
                 <small class="ica--bulk-help">Batching and chat history apply to companions. Settings apply to every selected agent.</small>
             </div>
-            <div id="ica--agentList" class="ica--agentList"></div>
+            <div id="ica--agentList" class="ica--agentList">
+                <div class="ica--empty-state ica--agent-list-loading" role="status">
+                    <p>Loading your agents...</p>
+                </div>
+            </div>
             </div>
             </div>
         </section>

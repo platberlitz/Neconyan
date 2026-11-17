@@ -84,6 +84,7 @@ const uiState = {
     family: 'all',
     mode: 'all',
     query: '',
+    scopeQuery: '',
     optionsDirty: false,
     result: null,
 };
@@ -1306,10 +1307,68 @@ function statusBadge(status, { id } = {}) {
     });
 }
 
+function filterScope() {
+    const search = view?.scopeSearch;
+    if (!search) {
+        return;
+    }
+    const terms = uiState.scopeQuery.toLowerCase().trim().split(/\s+/).filter(Boolean);
+    let shown = 0;
+    // Only change visibility. Re-inspecting scripts and rebuilding thousands of
+    // theme options here would block typing and reset the controls below.
+    for (const { card, text } of search.entries) {
+        const matches = terms.every(term => text.includes(term));
+        const display = matches ? '' : 'none';
+        if (card.style.display !== display) {
+            card.style.display = display;
+        }
+        if (matches) shown++;
+    }
+    const message = `Trackers shown: ${shown} of ${search.entries.length}`;
+    if (search.status.textContent !== message) {
+        search.status.textContent = message;
+    }
+    const emptyDisplay = shown ? 'none' : '';
+    if (search.empty.style.display !== emptyDisplay) {
+        search.empty.style.display = emptyDisplay;
+    }
+}
+
+function createScopeSearch() {
+    const input = el('input', {
+        id: 'rat_scope_search',
+        class: 'text_pole',
+        type: 'search',
+        placeholder: 'Search by tracker or agent name',
+        'data-focus-key': 'rat_scope_search',
+        'aria-controls': 'rat_scope_list',
+    });
+    input.value = uiState.scopeQuery;
+    input.addEventListener('input', () => {
+        uiState.scopeQuery = input.value;
+        filterScope();
+    });
+    return {
+        field: fieldRow('Search tracker overrides', input),
+        status: el('p', { class: 'rat-note', role: 'status', 'aria-atomic': 'true' }),
+        empty: el('div', { class: 'rat-empty' }, [
+            el('strong', { text: 'No matching trackers' }),
+            el('p', { text: 'Try a different tracker or installed agent name.' }),
+        ]),
+        entries: [],
+    };
+}
+
 function renderScope(settings, host, agents) {
     const content = view.sections.scope.content;
-    content.textContent = '';
+    // Keep the search field mounted across settings refreshes, including while
+    // a phone keyboard is composing text.
+    for (const child of [...content.childNodes]) {
+        if (child !== view.scopeSearch?.field) child.remove();
+    }
+    if (view.scopeSearch) view.scopeSearch.entries = [];
     if (!host.ok) {
+        view.scopeSearch?.field.remove();
         content.append(el('div', {
             class: 'rat-callout',
             'data-tone': 'warning',
@@ -1318,6 +1377,7 @@ function renderScope(settings, host, agents) {
         return;
     }
     if (!agents.length) {
+        view.scopeSearch?.field.remove();
         content.append(el('div', { class: 'rat-empty' }, [
             el('strong', { text: 'No compatible trackers installed' }),
             el('p', { text: 'Install a bundled In-Chat Agent tracker to set an override.' }),
@@ -1334,11 +1394,13 @@ function renderScope(settings, host, agents) {
         byTemplate.get(templateId).push(agent);
     }
 
-    content.append(el('p', {
+    const search = view.scopeSearch ??= createScopeSearch();
+    if (search.field.parentNode !== content) content.append(search.field);
+    content.append(search.status, el('p', {
         class: 'rat-note',
         text: 'Overrides affect every installed agent from that tracker template. Expand duplicate entries to review each agent.',
     }));
-    const list = el('div', { class: 'rat-scope-list' });
+    const list = el('div', { id: 'rat_scope_list', class: 'rat-scope-list' });
     for (const templateId of THEMABLE_TEMPLATE_IDS) {
         const templateAgents = byTemplate.get(templateId) ?? [];
         if (!templateAgents.length) {
@@ -1416,7 +1478,7 @@ function renderScope(settings, host, agents) {
         }
         actions.append(restoreButton);
 
-        list.append(el('article', {
+        const card = el('article', {
             class: 'rat-scope-card',
             'data-status': worst,
             'aria-labelledby': titleId,
@@ -1435,9 +1497,15 @@ function renderScope(settings, host, agents) {
             fieldRow(`Theme for ${label}`, themeSelect, inScope ? '' : 'Excluded by Apply to trackers. This override is saved for when you select this family again.'),
             agentDetail,
             actions,
-        ]));
+        ]);
+        search.entries.push({
+            card,
+            text: [label, templateId, ...templateAgents.map(agent => agent.name ?? '')].join(' ').toLowerCase(),
+        });
+        list.append(card);
     }
-    content.append(list);
+    content.append(list, search.empty);
+    filterScope();
 }
 
 function exportThemes(settings) {

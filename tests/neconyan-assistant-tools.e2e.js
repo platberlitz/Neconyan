@@ -12,7 +12,7 @@ async function ready(page, navigate) {
     await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'), undefined, { timeout: 60000 });
     const skip = page.locator('#neconyan-tour-coachmark [data-tour-coach-skip]');
     if (await skip.isVisible()) await skip.click();
-    await expect(page.locator('#ica--run-status')).not.toHaveText('Ready', { timeout: 45000 });
+    await expect(page.locator('#ica--run-status')).not.toHaveText('Loading your agents...', { timeout: 45000 });
 }
 
 async function invoke(page, name, input = {}) {
