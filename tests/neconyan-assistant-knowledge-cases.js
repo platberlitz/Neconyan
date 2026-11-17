@@ -538,4 +538,6 @@ export const refreshedKnowledgeCases = [
     ['Why does a direct pairing exchange take a long time?', 'sync.pairing', 'up to five minutes'],
     ['Does Rerun agents under the saved reply warning run Companions too?', 'agents.rerun-saved-reply', 'then its enabled automatic Companions'],
     ['A Reply interrupted notice saved my text but my Agents never ran, can I rerun them?', 'agents.rerun-saved-reply', 'Reply interrupted notice'],
+    ['How do I log in to BotBooru in BotSearcher?', 'tools.botsearcher', 'holds the BotBooru, Saucepan.ai and JannyAI logins'],
+    ['How do I turn a BotSearcher source off?', 'tools.botsearcher', 'ticks which sites BotSearcher uses'],
 ];
