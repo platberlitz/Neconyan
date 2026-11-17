@@ -938,6 +938,21 @@ describe('companion tracker panel', () => {
         expect(dashboardMenuElement.toggle).toHaveBeenLastCalledWith(true);
     });
 
+    test('hides the story handle while Scratchpad is open, then restores it', async () => {
+        agents = [{ id: 'tracker-1', name: 'Scene Tracker', execution: 'companion', enabled: true }];
+        let scratchpadOpen = true;
+        globalThis.document.body.classList = { contains: name => name === 'neconyan-scratchpad-open' && scratchpadOpen };
+        globalThis.matchMedia = jest.fn(() => ({ matches: true }));
+        const panel = await importPanel();
+        expect(panel.shouldShowCompanionPanelHandle()).toBe(false);
+        scratchpadOpen = false;
+        expect(panel.shouldShowCompanionPanelHandle()).toBe(true);
+        scratchpadOpen = true;
+        globalThis.matchMedia = jest.fn(() => ({ matches: false }));
+        expect(panel.shouldShowCompanionPanelHandle()).toBe(false);
+        delete globalThis.matchMedia;
+    });
+
     test('a real MutationObserver drives both wand items across Conversation Mode changes without stacking observers', async () => {
         agents = [{ id: 'tracker-1', name: 'Scene Tracker', execution: 'companion', enabled: true }];
         const observers = [];

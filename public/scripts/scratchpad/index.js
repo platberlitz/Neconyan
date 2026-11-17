@@ -350,6 +350,7 @@ function applyLayout() {
     document.body.classList.toggle('neconyan-scratchpad-open', app.open);
     document.body.classList.toggle('neconyan-scratchpad-beside', app.open && layout === 'beside');
     document.body.style.setProperty('--neco-scratchpad-width', `${clampWidth(app.width, dockedWidth())}px`);
+    document.dispatchEvent(new Event('neconyan:scratchpad-visibility'));
 }
 
 function startResize(event) {

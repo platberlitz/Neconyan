@@ -631,7 +631,8 @@ function hasCompanionPanelLauncherContent() {
 }
 
 export function shouldShowCompanionPanelHandle() {
-    if (panelLauncher !== 'handle' || handleHidden) {
+    if (panelLauncher !== 'handle' || handleHidden
+        || globalThis.document?.body?.classList?.contains('neconyan-scratchpad-open')) {
         return false;
     }
 
@@ -1883,5 +1884,7 @@ export function initCompanionPanel() {
     });
 
     observeConversationModeState();
+    // The story's handle must not cover Scratchpad messages, including the beside-chat layout.
+    document.addEventListener('neconyan:scratchpad-visibility', updateCompanionPanelHandleVisibility);
     syncConversationModePanelVisibility();
 }
