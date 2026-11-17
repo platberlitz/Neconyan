@@ -31,6 +31,7 @@
 - PR #718 (2026-11-17) `fix(connections): avoid duplicate favourite profiles`
 - PR #719 (2026-11-17) `fix(chat): keep Copy on the message action row on phones`
 - PR #720 (2026-11-17) `fix(shell): restore readable reading panels in every shell style`
+- PR #721 (2026-11-17) `feat(botsearcher): add Sources and logins inside the search window`
 
 ## v1.5.5
 
