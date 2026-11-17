@@ -16,8 +16,8 @@ const SIMPLE_MODE_STYLE_ID = 'neconyan-simple-mode-style';
 
 const SIMPLE_MODE_HIDDEN_RAIL_ROUTES = Object.freeze(['mewmory', 'chat-archive', 'extensions']);
 
-/* Pages from below Workspace that Simple Mode keeps, wherever the sidebar order has moved them: Presets, Persona and the character search. */
-export const SIMPLE_MODE_KEPT_ROUTES = Object.freeze(['presets', 'persona', 'botsearcher']);
+/* Pages from below Workspace that Simple Mode keeps, wherever the sidebar order has moved them. */
+export const SIMPLE_MODE_KEPT_ROUTES = Object.freeze(['presets', 'persona', 'botsearcher', 'dialogue-colors']);
 
 /* The character search goes by a plainer name while Simple Mode is on. */
 export const SIMPLE_MODE_RAIL_LABELS = Object.freeze({ botsearcher: 'Find characters' });

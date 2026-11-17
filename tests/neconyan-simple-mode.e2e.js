@@ -167,6 +167,74 @@ for (const [name, viewport, hasTouch] of [['desktop', { width: 1280, height: 900
             await expect(page.locator('#sbbs_go')).toHaveAttribute('aria-label', 'Import card URL');
         });
 
+        test('Simple Mode opens Dialogue Colors and lets me add a speaker', async ({ page, isMobile }, info) => {
+            await account(page, { [SIMPLE_KEY]: 'on', 'NeconyanTutorialStatus.v1': 'completed' });
+            await ready(page);
+            if (isMobile) await page.getByRole('button', { name: 'Open menu' }).click();
+            const button = page.locator('#neconyan-workspace-rail [data-neconyan-route="dialogue-colors"]');
+            await expect(button).toBeVisible();
+            await expect(button).toHaveAccessibleName('Dialogue Colors');
+            // Wait for the phone drawer to finish moving before measuring its contents.
+            await button.click({ trial: true });
+            const bounds = await button.evaluate(element => {
+                const box = element.getBoundingClientRect();
+                return { height: box.height, left: box.left, right: box.right, width: window.innerWidth };
+            });
+            if (isMobile) expect(bounds.height).toBeGreaterThanOrEqual(44);
+            expect(bounds.left).toBeGreaterThanOrEqual(0);
+            expect(bounds.right).toBeLessThanOrEqual(bounds.width);
+            await page.addStyleTag({ content: '#toast-container, #nn-update-toast { visibility: hidden; }' });
+            await page.screenshot({ path: info.outputPath('simple-dialogue-sidebar.png') });
+            await button.click();
+            const name = page.locator('#dc-add-name');
+            await expect(name).toBeVisible();
+            await name.fill('Simple Mode Test');
+            await page.locator('#dc-add-btn').click();
+            await expect(name).toHaveValue('');
+            await expect(page.locator('#dc-ext')).toContainText('Simple Mode Test');
+            expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false);
+        });
+
+        test('a moved Dialogue Colors button stays in its collapsed section without changing the saved layout', async ({ page, isMobile }) => {
+            const orderKey = 'NeconyanWorkspaceRailOrder.v1';
+            const sectionsKey = 'NeconyanWorkspaceRailSections.v1';
+            const order = JSON.stringify({ enabled: false, advanced: ['dialogue-colors', 'presets'], removed: [] });
+            const sections = JSON.stringify({ advanced: true, appearance: true });
+            await account(page, { [SIMPLE_KEY]: 'on', 'NeconyanTutorialStatus.v1': 'completed', [orderKey]: order, [sectionsKey]: sections });
+            await ready(page);
+            if (isMobile) await page.getByRole('button', { name: 'Open menu' }).click();
+            const group = page.locator('#neconyan-workspace-rail [data-neconyan-advanced-nav]');
+            const button = group.locator('[data-neconyan-route="dialogue-colors"]');
+            await expect(group).toHaveAttribute('hidden', '');
+            await expect(button).toBeVisible();
+            await expect(group.locator('button').first()).toHaveAttribute('data-neconyan-route', 'dialogue-colors');
+            const savedLayout = () => page.evaluate(async ([orderName, sectionsName]) => {
+                const { accountStorage } = await import('/scripts/util/AccountStorage.js');
+                return [accountStorage.getItem(orderName), accountStorage.getItem(sectionsName)];
+            }, [orderKey, sectionsKey]);
+            expect(await savedLayout()).toEqual([order, sections]);
+
+            await page.evaluate(async () => (await import('/scripts/neconyan-simple-mode.js')).setSimpleModeEnabled(false));
+            await expect(button).toBeHidden();
+            await expect(page.locator('[data-neconyan-section-toggle="advanced"]')).toHaveAttribute('aria-expanded', 'false');
+            expect(await savedLayout()).toEqual([order, sections]);
+            await page.locator('[data-neconyan-section-toggle="advanced"]').click();
+            await expect(button).toBeVisible();
+        });
+
+        test('a removed Dialogue Colors button stays removed in both modes', async ({ page, isMobile }) => {
+            const order = JSON.stringify({ enabled: false, removed: ['dialogue-colors'] });
+            await account(page, { [SIMPLE_KEY]: 'on', 'NeconyanTutorialStatus.v1': 'completed', 'NeconyanWorkspaceRailOrder.v1': order });
+            await ready(page);
+            if (isMobile) await page.getByRole('button', { name: 'Open menu' }).click();
+            const button = page.locator('#neconyan-workspace-rail [data-neconyan-route="dialogue-colors"]');
+            await expect(button).toHaveAttribute('data-neconyan-rail-removed', '');
+            await expect(button).toBeHidden();
+            await page.evaluate(async () => (await import('/scripts/neconyan-simple-mode.js')).setSimpleModeEnabled(false));
+            await expect(button).toBeHidden();
+            expect(await page.evaluate(async () => (await import('/scripts/util/AccountStorage.js')).accountStorage.getItem('NeconyanWorkspaceRailOrder.v1'))).toBe(order);
+        });
+
         test('with every feature shown the search keeps its own name and reviews cards first', async ({ page }) => {
             await account(page, { [SIMPLE_KEY]: 'off', 'NeconyanTutorialStatus.v1': 'completed' });
             await ready(page);

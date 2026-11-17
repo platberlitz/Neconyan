@@ -442,6 +442,7 @@ export const refreshedKnowledgeCases = [
     ['Why does the model icon not appear beside Running Companions?', 'appearance.message-statistics', 'Running Companions status line never gets a second copy'],
     ['Where are the Hush message actions and statistics?', 'appearance.hush-layout', 'full-width row underneath'],
     ['Why is my other persona missing from Dialogue Colors?', 'appearance.dialogue', 'only the equipped persona'],
+    ['Where is Dialogue Colors in Simple Mode?', 'appearance.dialogue', 'choose Dialogue Colors directly in the sidebar'],
     ['Can a Scenario Note have its own avatar?', 'personas.scenario-notes', 'messages already sent keep their portrait'],
     ['Android app says the local server could not start and no cause is shown', 'start.android-start-cause', 'reason the server recorded'],
     ['Why was my connection profile not saved after I declined Connecting To Proxy?', 'connections.proxy-confirmation', 'Connection profile not saved. Confirm its proxy address to save it.'],
