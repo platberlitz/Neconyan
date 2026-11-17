@@ -664,7 +664,7 @@ body.neconyan #sheld #sb_conversation_pals_rail {
 }
 body.neconyan #sheld #sb_conversation_pals_rail[data-open='true'] { visibility: visible; pointer-events: auto; }
 body.neconyan #sheld #sb_conversation_pals_rail .sb-conversation-rail-close { display: inline-flex; }
-body.neconyan .sb-conversation-timeline { padding: 24px max(var(--neco-gutter), calc((100% - var(--neco-reading-width)) / 2)); gap: 24px; margin: 8px 10px 4px; border: 1px solid var(--neco-border); border-radius: var(--sb-radius-lg, 18px); background: color-mix(in srgb, var(--neco-surface) 82%, transparent); }
+body.neconyan .sb-conversation-timeline { padding: 24px max(var(--neco-gutter), calc((100% - var(--neco-reading-width)) / 2)); gap: 24px; margin: 8px 10px 4px; border: 1px solid var(--neco-border); border-radius: var(--sb-radius-lg, 18px); background: color-mix(in srgb, var(--neco-surface) var(--sb-shell-surface-opacity-percent), transparent); }
 .sb-conversation-pals-list > .sb-conversation-empty { display: grid; place-items: center; gap: 12px; text-align: center; }
 .sb-conversation-pals-list > .sb-conversation-empty > span { max-inline-size: 24ch; }
 body.neconyan .sb-conversation-message-bubble { padding: 8px 0; background: transparent; color: var(--neco-ink); border: 0; border-radius: 0; box-shadow: none; }
@@ -3612,3 +3612,13 @@ body.neconyan:is(.whisperstyle, .hushstyle)[data-neconyan-chat-mode='roleplay']:
 #chat > .mes[data-nn-offscreen] *,
 #chat > .mes[data-nn-offscreen] *::before,
 #chat > .mes[data-nn-offscreen] *::after { animation-play-state: paused !important; }
+
+/* Keep the picture sharp and put contrast at the letters, not across the canvas. */
+:root[data-sb-surface-transparent='true'] body.neconyan:not(.sbterm) :is(#chat .mes_text, .sb-conversation-message-text, #neconyan-home-host :is(h1, h2, h3, p)) {
+    -webkit-text-stroke: 2px var(--neco-surface);
+    paint-order: stroke fill;
+}
+body.neconyan:not(.sbterm) #neconyan-home-host :is(.neconyan-home-intro, .neconyan-assistant-picker, .welcomeRecentShell, .neconyan-home-layout-bar) {
+    background: rgb(from var(--neco-surface) r g b / var(--sb-shell-surface-opacity)) !important;
+    backdrop-filter: none;
+}

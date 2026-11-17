@@ -127,7 +127,6 @@ test('kitty clouds remain visible behind Home and Conversation, while Characters
     expect(layer.pointerEvents).toBe('none');
     await expect(page.locator('#top-bar')).toHaveCSS('background-color', /(?:,\s*|\/\s*)0\.9\)$/);
     await expect(page.locator('#sb-topbar-inner')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
-    await expect(page.locator('.neconyan-home-intro')).toHaveCSS('background-color', /(?:,\s*|\/\s*)0\.9\)$/);
     await expect(page.locator('[data-neconyan-cat]')).toHaveAttribute('src', /neconyan-pixel-cat-rest\.webp/);
     await expect(page.locator('#qig-input-btn')).toBeAttached();
 
@@ -140,6 +139,8 @@ test('kitty clouds remain visible behind Home and Conversation, while Characters
     await expect.poll(() => page.evaluate(() =>
         window.getComputedStyle(document.documentElement).getPropertyValue('--sb-shell-surface-opacity').trim(),
     )).toBe('0.00');
+
+    await expect(page.locator('.neconyan-home-intro')).toHaveCSS('background-color', /(?:,\s*|\/\s*)0\)$/);
 
     const checkCanvas = async (name, selectors) => {
         const backgrounds = await page.locator(selectors).evaluateAll(elements => elements
@@ -187,10 +188,9 @@ test('kitty clouds remain visible behind Home and Conversation, while Characters
     await page.evaluate(() => window.NeconyanShell.closeWorkspace());
     await expect(page.locator('#sb_conversation_stage')).toBeVisible();
     await expect(page.locator('.sb-conversation-composer')).toHaveClass(/neconyan-cat-panel/);
-    // The stage is intentionally transparent so the clouds read through it. The
-    // translucent message surface lives on the timeline pane at 82% opacity.
+    // At maximum visibility the timeline also lets the clouds through.
     await expect(page.locator('#sb_conversation_stage')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
-    await expect(page.locator('.sb-conversation-timeline')).toHaveCSS('background-color', /(?:,\s*|\/\s*)0\.82\)$/);
+    await expect(page.locator('.sb-conversation-timeline')).toHaveCSS('background-color', /(?:,\s*|\/\s*)0\)$/);
     await checkCanvas('conversation', '#sheld');
     await expect(page.locator('#send_textarea')).toHaveValue('Keep this draft while checking the background.');
     expect(modelRequests).toEqual([]);
