@@ -533,7 +533,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261117-remove-dead-css';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261117-restore-panel-backing';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -5816,8 +5816,6 @@ function setSurfaceTransparency(value, { persist = true } = {}) {
 
     document.documentElement.style.setProperty('--sb-shell-surface-opacity', surfaceOpacity.toFixed(2));
     document.documentElement.style.setProperty('--sb-shell-surface-opacity-percent', `${(surfaceOpacity * 100).toFixed(0)}%`);
-    if (surfaceOpacity === 0) document.documentElement.style.setProperty('--sb-shell-surface-backdrop', 'none');
-    else document.documentElement.style.removeProperty('--sb-shell-surface-backdrop');
     document.documentElement.style.setProperty('--sb-message-surface-opacity', messageOpacity.toFixed(3));
     document.documentElement.style.setProperty('--sb-message-surface-opacity-percent', `${(messageOpacity * 100).toFixed(1)}%`);
     document.documentElement.dataset.sbSurfaceTransparent = String(nextTransparency > 0);
@@ -16830,7 +16828,7 @@ function injectThemePicker() {
         max: NN_SURFACE_TRANSPARENCY.max,
         step: NN_SURFACE_TRANSPARENCY.step,
         ariaLabel: 'Background visibility',
-        caption: 'Show more of your background through Home, chat, reading panels and category navigation. At 100%, their backing is fully transparent.',
+        caption: 'Higher values make the home and chat surfaces more transparent so your selected background picture shows through.',
         onInput: nextValue => setSurfaceTransparency(nextValue),
         className: 'sb-interface-settings-group',
     });

@@ -20005,7 +20005,7 @@
   "Switch the navigation shell between built-in visual directions.": "Switch the navigation shell between built-in visual directions.",
   "Background Visibility": "Background Visibility",
   "Background visibility": "Background visibility",
-  "Show more of your background through Home, chat, reading panels and category navigation. At 100%, their backing is fully transparent.": "Show more of your background through Home, chat, reading panels and category navigation. At 100%, their backing is fully transparent.",
+  "Higher values make the home and chat surfaces more transparent so your selected background picture shows through.": "Higher values make the home and chat surfaces more transparent so your selected background picture shows through.",
   "Bottom Bar Size": "Bottom Bar Size",
   "Bottom bar size": "Bottom bar size",
   "Resize the bottom chat bar, send form, and action buttons without editing CSS.": "Resize the bottom chat bar, send form, and action buttons without editing CSS.",
