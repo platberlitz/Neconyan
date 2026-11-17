@@ -26,6 +26,7 @@
 - PR #713 (2026-11-17) `feat(windows-98): tint grey faces with the accent you pick`
 - PR #714 (2026-11-17) `fix(chat): even out spacing between name, date and model`
 - PR #715 (2026-11-17) `feat(roleplay): offer rerun agents on interrupted reply notices`
+- PR #716 (2026-11-17) `feat(botsearcher): list JanitorAI trending cards`
 
 ## v1.5.5
 
