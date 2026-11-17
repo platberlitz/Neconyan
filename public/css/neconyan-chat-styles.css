@@ -68,6 +68,11 @@ body.sb-sheld-blur #sheld::before {
     -webkit-backdrop-filter: blur(calc(var(--sheldBlurStrength, 0) * 1px));
 }
 
+:root[data-sb-surface-transparent='true'] body.neconyan:not(.sbterm) #chat :is(.mes, .mes_block) {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
 body:not(.bubblechat):not(.echostyle):not(.whisperstyle):not(.hushstyle):not(.ripplestyle):not(.tidestyle):not(.nnchat) #chat .mes:not(.smallSysMes) .mes_block {
     background-color: var(--nn-flat-inner-background, var(--moonlit-sb-bot-message-bg));
 }
@@ -2221,9 +2226,4 @@ body.tidestyle #chat .mes:not(.smallSysMes) .ica--companion-ledger > .ica--compa
         --moonlit-sb-swipe-control-size: 36px;
         --moonlit-sb-swipe-counter-width: 44px;
     }
-}
-
-:root[data-sb-surface-transparent='true'] body.neconyan:not(.sbterm) #chat :is(.mes, .mes_block) {
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
 }
