@@ -1,8 +1,8 @@
-<!-- Translated from README.md at commit 19874db1 (Neconyan 1.5.4). Keep the structure in step with the English README. -->
+<!-- Translated from README.md at commit 31d628fa (Neconyan 1.5.5). Keep the structure in step with the English README. -->
 
 # Neconyan~
 
-最新バージョンは[1.5.4](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.4)です。
+最新バージョンは[1.5.5](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.5)です。
 
 **お使いの言語で読む：** [English](../README.md) · [Deutsch](readme-de_de.md) · [Español](readme-es_es.md) · [Français](readme-fr_fr.md) · [Italiano](readme-it_it.md) · [Nederlands](readme-nl_nl.md) · [Português](readme-pt_pt.md) · [Íslenska](readme-is_is.md) · [Русский](readme-ru_ru.md) · [Українська](readme-uk_ua.md) · [العربية](readme-ar_sa.md) · [ไทย](readme-th_th.md) · [Tiếng Việt](readme-vi_vn.md) · [한국어](readme-ko_kr.md) · [简体中文](readme-zh_cn.md) · [繁體中文](readme-zh_tw.md)
 
@@ -12,7 +12,7 @@
   <img src="../docs/readme/banner-neconyan.webp" alt="Neconyan - いちばんかわいいLLMロールプレイ用フロントエンド">
 </p>
 
-Neconyanは、[SillyTavern](https://github.com/SillyTavern/SillyTavern)と[SillyBunny](https://github.com/SillyBunnyTeam/SillyBunny)をもとに私が作った、猫がテーマのフォークです。パソコンでもスマホでも、AIキャラクターとのチャットやロールプレイを楽しめます。APIキーやローカルモデルはご自分で用意してください。アプリには、モデルへのアクセス権もクレジットも含まれていません。
+ようこそ、いらっしゃいませ！Neconyanは、[SillyTavern](https://github.com/SillyTavern/SillyTavern)と[SillyBunny](https://github.com/SillyBunnyTeam/SillyBunny)をもとに私が作った、猫がテーマのフォークです。パソコンでもスマホでも、AIキャラクターとのチャットやロールプレイを楽しめます。居心地よく使えて、スマホでもちゃんと動いて、ほぼどのページにも猫がいるフロントエンドが欲しくて作りました。APIキーやローカルモデルはご自分で用意してください。アプリには、モデルへのアクセス権もクレジットも含まれていません。
 
 **[Neconyanをダウンロード](https://github.com/platberlitz/Neconyan/releases/latest)** · **[ハンドブックを読む](https://platberlitz.github.io/neconyan-docs/)** · **[困ったときは](https://platberlitz.github.io/neconyan-docs/help/troubleshooting/)**
 
@@ -24,15 +24,67 @@ Neconyanは、[SillyTavern](https://github.com/SillyTavern/SillyTavern)と[Silly
   <img src="../docs/readme/banner-why.webp" alt="Neconyanを選ぶ理由">
 </p>
 
-- **チャットの楽しみ方は4通り**：定番の「ロールプレイ」、メッセンジャー風の「会話」、MeowerというSNS風のタイムライン、そしてひと続きの文章で読める「ストーリーモード」です。
-- **スマホ向けに作ったレイアウト**です。ラベル付きのボタン、画面下のチャットバー、スライドして出てくるメニューがあります。**Simple Mode**にすると、あまり使わないボタンを必要になるまで隠せます。
-- **Mewmory**は物語の出来事やキャラクターを覚えておきます。**エージェント**は、トラッカーを管理したり、返信をチェックしたり、「コンパニオンノート」を別に書いたりできます。
+- **チャットの楽しみ方は4通り**：定番の「ロールプレイ」、メッセンジャー風の「会話」、MeowerというSNS風のタイムライン、そしてひと続きの文章で読める「ストーリーモード」です。その日の気分で選んでください。
+- **スマホ向けに作ったレイアウト**です。ラベル付きのボタン、画面下のチャットバー、スライドして出てくるメニューがあります。小さな画面で、デスクトップ用の小さなボタンに目を細める必要はもうありません。
+- **[シンプルモード](#シンプルモード)**：コックピット並みのボタンに囲まれずに、とにかくロールプレイだけしたいときのためのモードです。すごく自信作なので、下で詳しく紹介させてください。
+- **Mewmory**は物語の出来事やキャラクターを覚えておくので、相手が大事なところを忘れません。**エージェント**は、トラッカーを管理したり、返信をチェックしたり、「コンパニオンノート」を別に書いたりできます。
 - **Catelier**は、キャラクターカードやロアブックを書くのを手伝ってくれます。**ノートブック**ならメモをすぐ手元に置いておけますし、**Scratchpad**では別のチャットでアイデアを相談できます。
-- **Miso、Taro、Nori**が探し物を手伝ってくれます。許可すれば、対応している編集もしてくれます。
-- **Device sync**は、暗号化ファイル、WebDAV、シークレットGitHub Gist、直接ペアリングのいずれかで、別々のインストール間で選んだデータを移します。転送は、実行を指示したときに行われます。
+- **Miso、Taro、Nori**は、ここに住んでいるアシスタントです。探し物を手伝ってくれて、許可すれば、対応している編集もしてくれます。
+- **デバイス間の同期**は、暗号化ファイル、WebDAV、シークレットGitHub Gist、直接ペアリングのいずれかで、別々のインストール間で選んだデータを移します。転送は、実行を指示したときに行われます。
 - **テーマ、アクセントカラー、そして猫**。猫はかなりたくさんいます。隠すこともできますが、なぜ隠したくなるのか、私には想像がつきません。
 
-キャラクターカード、チャット、ロアブック、プリセットには、SillyTavernでおなじみの形式を使っています。テレメトリーはありません。本家の機能や拡張機能には、ここでは動作が違うものがあります。私が欲しい部分だけを取り込んでいるためです。Neconyanに同梱しているプロジェクトのクレジットは、[同梱ツールの一覧](../docs/neconyan-native-tools.md)に載せています。
+キャラクターカード、チャット、ロアブック、プリセットには、SillyTavernでおなじみの形式を使っているので、そのまま持ってこられます。テレメトリーはありません。本家の機能や拡張機能には、ここでは動作が違うものがあります。私が欲しい部分だけを取り込んでいるためです。Neconyanに同梱しているプロジェクトのクレジットは、[同梱ツールの一覧](../docs/neconyan-native-tools.md)に載せています。
+
+## シンプルモード
+
+<p align="center">
+  <img src="../docs/readme/banner-simple-mode.webp" alt="シンプルモード？！">
+</p>
+
+上級者向けの機能には興味がない？ただロールプレイを楽しみたいだけなのに、山ほどのボタンをかき分けるのはごめんだ？そんなあなたに、ぴったりのモードがあるんです！
+
+**シンプルモード**は、とにかくRPがしたい人のためのNeconyanです。Neconyanを*Neconyan*らしくしているものは、全部そのまま残ります。猫たち、スマホで使いやすいレイアウト、Miso、Taro、Nori、物語を追いかけてくれるメモリ、そして裏で働き続けるエージェントたち。なくなるのは、ごちゃごちゃした部分だけです。サンプラー、プロンプトの書式設定、トークンカウンター、拡張機能のメニュー、そのほか、ほとんどの人が一度も触らないつまみの数々です。
+
+しかも、ここがいちばんのポイント。削除されるものも、オフになるものも、ひとつもありません。隠れたボタンは捨てたわけではなく、しまってあるだけなので、使いたくなったらすぐに戻ってきます。
+
+### 始めるのは、これ以上ないほどかんたん
+
+いちばん最初に開いたとき、Noriがひとつだけ質問します：**Want to keep things simple?** **Yes, keep it simple**を押すと、3ステップのツアーが始まって、モデルの接続、キャラクターとの出会い、最初のあいさつまで案内してくれます。以上です。セットアップはこれで全部です。
+
+もうフルのレイアウトで使っている？それなら、**設定 → 外観 → シンプルモード**からいつでもオンにできます。
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-simple-ask.webp" alt="新しいアカウントのデスクトップで、Noriが「Want to keep things simple?」と聞いているところ"></td>
+  <td width="28%"><img src="../docs/readme/phone-simple-ask.webp" alt="スマホで、Noriが「Want to keep things simple?」と聞いているところ"></td>
+</tr></table>
+
+### 主役はあなたのチャット
+
+画面の広さはチャットと入力欄のために使い、サイドバーには本当に開くページだけが短く並びます：キャラクター、接続、エージェント、ロアブック、ノートブック、Scratchpad、ギャラリー、プリセット、ペルソナ、ダイアログカラー。さらに、便利なボタンが3つ付いてきます：
+
+- **Find characters**は新しいカードを探します。ひとつ選べばすぐにそのチャットが開いて、準備完了です。
+- **メモリ**を押すと**Story so far**が開きます。スイッチがひとつ、**Summarise now**ボタン、そしてチャットの最新の要約が入っています。
+- **Updates**は新しいバージョンを確認して、シンプルモードのままインストールしてくれます。
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-simple-chat.webp" alt="デスクトップのシンプルモードでのロールプレイのチャット。サイドバーが短くなっています"></td>
+  <td width="28%"><img src="../docs/readme/phone-simple-menu.webp" alt="スマホでの短くなったシンプルモードのメニュー。メモリ、Updates、すべての機能を表示が並んでいます"></td>
+</tr></table>
+
+### 宿題なしで接続
+
+接続ページに出てくるのは、プロバイダー、キー、モデル、**接続**、**テストメッセージ**だけです。そのほかはすべて**More connection options**の奥で、あなたが気になる日を待っています。
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-simple.webp" alt="デスクトップでのシンプルモード。短くなった接続ページを表示しています"></td>
+  <td width="28%"><img src="../docs/readme/phone-simple.webp" alt="スマホでのシンプルモード。短くなった接続ページを表示しています"></td>
+</tr></table>
+
+### 気が変わった？だいじょうぶ
+
+サイドバーの**すべての機能を表示**を押すか、**設定 → 外観**でオフにすれば、すべてのボタンが元の場所にちゃんと戻ってきます。チャットも、キャラクターも、ロアも、エージェントも、何ひとつ気づきません。
+
+[ハンドブックのシンプルモード](https://platberlitz.github.io/neconyan-docs/workspace/#keep-the-sidebar-simple)
 
 ## 見てみましょう
 
@@ -40,11 +92,11 @@ Neconyanは、[SillyTavern](https://github.com/SillyTavern/SillyTavern)と[Silly
   <img src="../docs/readme/banner-modes.webp" alt="モード">
 </p>
 
-1.5.4のデスクトップとスマホのスクリーンショットです。同梱のアシスタントとのデモ用チャットとノートを使っています。
+ここからは、ほかの機能もご案内します！以下のデスクトップとスマホのスクリーンショットは、2026年11月17日に撮りました。同梱のアシスタントとのデモ用チャットとノート、デフォルトのCalico Darkの配色を使い、**背景の可視性**は0%にしています。
 
 ### ホーム
 
-キャラクターを選んだり、モデルを接続したり、アシスタントにあいさつしたりできます。
+キャラクターを選んだり、モデルを接続したり、アシスタントにあいさつしたりできます。猫たちも、あなたに会えて大喜びです。
 
 <table><tr>
   <td width="72%"><img src="../docs/readme/desktop-home.webp" alt="デスクトップでのホーム"></td>
@@ -53,7 +105,7 @@ Neconyanは、[SillyTavern](https://github.com/SillyTavern/SillyTavern)と[Silly
 
 ### ロールプレイ
 
-シーンを書いたり、別の返信を試したり、古いチャットの続きから再開したりできます。
+シーンを書いたり、別の返信を試したり、古いチャットを中断したところからそのまま再開したりできます。
 
 <table><tr>
   <td width="72%"><img src="../docs/readme/desktop-roleplay.webp" alt="デスクトップでのロールプレイ"></td>
@@ -90,20 +142,11 @@ Proofreaderは、届いた返信をあとからチェックします。メイン
 この演出用の例では、決まったサンプル応答を使って、実際のエージェントの流れを動かしています。普段は、接続したモデルが編集を書き、1回ごとにリクエストがもう1回かかることがあります。[ハンドブックのエージェントとコンパニオン](https://platberlitz.github.io/neconyan-docs/helpers/agents/)
 
 <details>
-<summary><b>スクリーンショットをもっと見る：Simple Mode、会話、Meower、ストーリーモード、ノートブック、Scratchpad、Device sync</b></summary>
-
-### Simple Mode
-
-慣れるまでは、表示するボタンを減らしておけます。サイドバーの**Show all features**を押すと元に戻ります。機能が無効になっているわけではありません。
-
-<table><tr>
-  <td width="72%"><img src="../docs/readme/desktop-simple.webp" alt="デスクトップでのSimple Mode"></td>
-  <td width="28%"><img src="../docs/readme/phone-simple.webp" alt="スマホでのSimple Mode"></td>
-</tr></table>
+<summary><b>スクリーンショットをもっと見る：会話、Meower、ストーリーモード、ノートブック、Scratchpad、デバイス間の同期</b></summary>
 
 ### 会話
 
-キャラクターにメッセージを送ったり、グループチャットを作ったりできます。キャラクターが忙しかったり、オフラインだったりするように設定することもできます。
+キャラクターにメッセージを送ったり、グループチャットを作ったりできます。本物の友だちみたいに、キャラクターが忙しかったり、オフラインだったりするように設定することもできます。
 
 <table><tr>
   <td width="72%"><img src="../docs/readme/desktop-conversation.webp" alt="デスクトップでの会話"></td>
@@ -112,7 +155,7 @@ Proofreaderは、届いた返信をあとからチェックします。メイン
 
 ### Meower
 
-キャラクターたちが投稿したり、返信したり、アンケートを取ったりするSNS風のタイムラインです。
+キャラクターたちが投稿したり、返信したり、アンケートを取ったりするSNS風のタイムラインです。中はなかなかのカオスですが、それがまたいいんです。
 
 <table><tr>
   <td width="72%"><img src="../docs/readme/desktop-meower.webp" alt="デスクトップでのMeower"></td>
@@ -121,7 +164,7 @@ Proofreaderは、届いた返信をあとからチェックします。メイン
 
 ### ストーリーモード
 
-チャットをひと続きの文章として読めます。
+チャットを、一緒に書いた本のように、ひと続きの文章として読めます。
 
 <table><tr>
   <td width="72%"><img src="../docs/readme/desktop-story.webp" alt="デスクトップでのストーリーモード"></td>
@@ -146,13 +189,13 @@ Proofreaderは、届いた返信をあとからチェックします。メイン
   <td width="28%"><img src="../docs/readme/phone-scratchpad.webp" alt="スマホでのScratchpad"></td>
 </tr></table>
 
-### Device sync
+### デバイス間の同期
 
 選んだライブラリを、別々のインストール間で移します。暗号化ファイル、WebDAV、シークレットGitHub Gist、直接ペアリングから方法を選べます。転送は、実行を指示したときに始まります。[ハンドブックのセットアップと復旧](https://platberlitz.github.io/neconyan-docs/help/device-sync/)
 
 <table><tr>
-  <td width="72%"><img src="../docs/readme/desktop-device-sync.webp" alt="デスクトップでのDevice syncの設定"></td>
-  <td width="28%"><img src="../docs/readme/phone-device-sync.webp" alt="スマホでのDevice syncの設定"></td>
+  <td width="72%"><img src="../docs/readme/desktop-device-sync.webp" alt="デスクトップでのデバイス間の同期の設定"></td>
+  <td width="28%"><img src="../docs/readme/phone-device-sync.webp" alt="スマホでのデバイス間の同期の設定"></td>
 </tr></table>
 
 </details>
@@ -163,13 +206,15 @@ Proofreaderは、届いた返信をあとからチェックします。メイン
   <img src="../docs/readme/banner-getting-started.webp" alt="はじめかた">
 </p>
 
+さっそく試してみませんか？使いたい端末を選んでください。
+
 ### パソコンで使う
 
 1. [最新リリース](https://github.com/platberlitz/Neconyan/releases/latest)から、**-source.zip** で終わるファイルをダウンロードします。先に展開してください。Windowsでは、右クリックして**すべて展開**を選びます。
 2. フォルダを開き、Windowsでは**Start.bat**を、macOSでは**Start.command**を実行します。Linuxでは、ターミナルで**bash start.sh**を実行します。
 3. 初回の起動では、必要なものをインストールするために数分かかります。Neconyanを使っている間は、ターミナルのウィンドウを開いたままにしておいてください。
 4. ブラウザが自動で開くはずです。開かないときは **http://127.0.0.1:4433/** にアクセスしてください。
-5. **接続**を開き、プロバイダーとモデルを選んで、APIキーかローカルモデルのアドレスを入力します。そのあと、ホームでキャラクターかアシスタントを開いてください。
+5. **接続**を開き、プロバイダーとモデルを選んで、APIキーかローカルモデルのアドレスを入力します。そのあと、ホームでキャラクターかアシスタントを開けば、さあ出発です！
 
 次からは、同じ起動スクリプトを実行するだけです。Neconyanを止めるには、そのターミナルで**Ctrl+C**を押します。
 
@@ -185,7 +230,7 @@ git clone https://github.com/platberlitz/Neconyan.git
 
 [最新リリース](https://github.com/platberlitz/Neconyan/releases/latest)から **-android-arm64.apk** をダウンロードして開いてください。Androidに聞かれたら、ブラウザからのインストールを許可してください。**Android 11以降**、**Android System WebView 124以降**、そして約**2 GiB**の空き容量が必要です。
 
-アプリはスマホの中で動くので、Termuxもパソコンも要りません。初回の起動時は展開が終わるまで少し待ってから、**接続**を設定してください。アップデートは、今のアプリの上からインストールすれば、チャットが残ります。
+アプリはスマホ本体の中で動くので、Termuxもパソコンも要りません。初回の起動時は展開が終わるまで少し待ってから、**接続**を設定してください。アップデートは、今のアプリの上からインストールすれば、チャットが残ります。
 
 [Androidのセットアップ](https://platberlitz.github.io/neconyan-docs/start/android/) · [ビルド手順](../android/README.md)
 
@@ -204,17 +249,17 @@ git clone https://github.com/platberlitz/Neconyan.git
 
 ## アップデート、バックアップ、チャットの移動
 
-**サーバー → アップデートと再起動 → アップデートを確認**を開きます。Gitでのインストールと、対応しているソースZIPでのインストールでは、**アップデートして再起動**が表示されます。Androidでは**Update APK**が表示され、インストールの承認を求められます。アップデート機能のない古いZIPのコピーは、[新しいフォルダへ手動で移す](https://platberlitz.github.io/neconyan-docs/help/backups/#update-a-zip-installation)必要があります。
+**サーバー → アップデートと再起動 → アップデートを確認**を開きます。Gitでのインストールと、対応しているソースZIPでのインストールでは、**アップデートして再起動**が表示されます。Androidでは**Update APK**が表示され、インストールの承認を求められます。シンプルモードでは、サイドバーの**Updates**ボタンから同じ場所に行けます。アップデート機能のない古いZIPのコピーは、[新しいフォルダへ手動で移す](https://platberlitz.github.io/neconyan-docs/help/backups/#update-a-zip-installation)必要があります。
 
 Gitでインストールしたものは、起動時にもアップデートを確認します。アプリ自体のファイルを変更していると、自動アップデートができなくなることがあります。チャットや設定は、これには含まれません。
 
-SillyTavernやSillyBunnyから移ってきた方は、**先にバックアップを取り**、Neconyanには専用のデータフォルダを用意してから、[データをインポートする](https://platberlitz.github.io/neconyan-docs/start/imports/)の手順に進んでください。何かを削除する前に、キャラクターとチャットを確認してください。拡張機能によっては、手直しが必要になることがあります。
+SillyTavernやSillyBunnyから移ってきた方、ようこそ！**先にバックアップを取り**、Neconyanには専用のデータフォルダを用意してから、[データをインポートする](https://platberlitz.github.io/neconyan-docs/start/imports/)の手順に進んでください。何かを削除する前に、キャラクターとチャットを確認してください。拡張機能によっては、手直しが必要になることがあります。
 
 [バックアップと復元](https://platberlitz.github.io/neconyan-docs/help/backups/) · [端末間でのデータの移動](../docs/data-portability.md)
 
 ## 困ったときは
 
-私なら、まず[ハンドブック](https://platberlitz.github.io/neconyan-docs/)を見るか、ホームでMiso、Taro、Noriに聞いてみます。彼らも間違えることがあるので、元に戻せない変更をする前に、そのアドバイスをよく確認してください。
+私なら、まず[ハンドブック](https://platberlitz.github.io/neconyan-docs/)を見るか、ホームでMiso、Taro、Noriに聞いてみます。みんな、いつでも喜んで手伝ってくれます。ただ、彼らも間違えることがあるので、元に戻せない変更をする前に、そのアドバイスをよく確認してください。
 
 見つからない設定は、サイドバーの**検索**で探してみてください。エラーが出たときは、[トラブルシューティングガイド](https://platberlitz.github.io/neconyan-docs/help/troubleshooting/)を参照するか、何をしていたかと表示されたエラーを添えて[issueを報告](https://github.com/platberlitz/Neconyan/issues)してください。
 
@@ -226,6 +271,8 @@ SillyTavernやSillyBunnyから移ってきた方は、**先にバックアップ
 
 Neconyanは、SillyTavernとSillyBunnyを作ってきたすべての人の仕事の上に成り立っています。その人たちがいなければ、ここにあるものは何ひとつ存在しなかったはずです。元の作者たちのクレジットは、[同梱ツールの一覧](../docs/neconyan-native-tools.md)に載せています。
 
-作者は[Platberlitz](https://github.com/platberlitz)です。ライセンスは[GNU AGPL v3](../LICENSE)なので、再配布するときは著作権表示などの表記とライセンス文をそのまま残してください。
+[Platberlitz](https://github.com/platberlitz)が愛を込めて作りました。ライセンスは[GNU AGPL v3](../LICENSE)なので、再配布するときは著作権表示などの表記とライセンス文をそのまま残してください。
 
 特別な感謝を**El Topo**に。私のいちばんの助っ人であり、コントリビューターでもあります。Neconyanに注いでくれたすべての作業に、心から感謝しています。
+
+楽しんでくださいね。猫たちにもよろしく！
