@@ -29,6 +29,7 @@
 - PR #716 (2026-11-17) `feat(botsearcher): list JanitorAI trending cards`
 - PR #717 (2026-11-17) `feat(companions): add jump to top and bottom buttons to the panel`
 - PR #718 (2026-11-17) `fix(connections): avoid duplicate favourite profiles`
+- PR #719 (2026-11-17) `fix(chat): keep Copy on the message action row on phones`
 
 ## v1.5.5
 
