@@ -43,6 +43,7 @@
 - PR #730 (2026-11-17) `docs(readme): give Simple Mode its own section and refresh the screenshots`
 - PR #731 (2026-11-17) `fix(backgrounds): keep the wallpaper visible at every Background Visibility`
 - PR #733 (2026-11-17) `fix(chat): let background visibility fade message surfaces fully`
+- PR #736 (2026-11-17) `fix(chat): preserve dialogue gradients over visible backgrounds`
 
 ## v1.5.5
 
