@@ -87,7 +87,7 @@ function linkedContext(options, agent, sources, index, completed) {
 function units(agents, linked, binding) {
     const compatible = agent => roleplayHash({ binding: agent.binding ?? binding, model: agent.binding ? agent.modelOverride : '',
         ...(agent.fallbacks?.length ? { fallbacks: agent.fallbacks.map(fallback => fallback.binding) } : {}),
-        context: Object.fromEntries(['contextMessages', 'minContextTokens', 'includeCharacterCard', 'includePersona', 'includeWorldInfo',
+        context: Object.fromEntries(['contextMessages', 'skipUserMessages', 'minContextTokens', 'includeCharacterCard', 'includePersona', 'includeWorldInfo',
             'includeAuthorsNote', 'includeSystemPrompt', 'includeHistory', 'historyDepth'].map(key => [key, agent.companion[key]])), linked: linked.get(agent.id) ?? [] });
     const ids = referenceMap(agents), edges = new Map(agents.map(agent => [agent.id, new Set()]));
     for (const agent of agents.filter(item => item.companion.batch)) {

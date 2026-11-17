@@ -115,6 +115,7 @@ function validateRetrieval(input = {}) {
     }
     if (typeof result.includeFiles !== 'boolean') fail('Attached-file retrieval must be switched on or off.');
     if (typeof result.includePassages !== 'boolean') fail('Original chat passages in recall must be switched on or off.');
+    if (typeof result.skipUserMessages !== 'boolean') fail('Skipping user messages in search cues must be switched on or off.');
     return Object.fromEntries(Object.keys(RAG_DEFAULTS).map(key => [key, result[key]]));
 }
 

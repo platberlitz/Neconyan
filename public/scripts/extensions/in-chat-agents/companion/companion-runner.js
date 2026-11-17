@@ -870,7 +870,8 @@ function getRecentConversationSection(messageIndex, companion, contextCapture = 
 
     for (let index = Math.min(messageIndex, chat.length - 1); index >= 0; index--) {
         const message = chat[index];
-        if (!isValidCompanionMessage(message) || !canGroupTargetSee(message, chat[messageIndex])) {
+        if (!isValidCompanionMessage(message) || !canGroupTargetSee(message, chat[messageIndex])
+            || (companion.skipUserMessages && message.is_user)) {
             continue;
         }
 
@@ -1442,6 +1443,7 @@ function getBatchKey(agent, messageIndex) {
         profile: resolveAgentConnectionProfile(agent),
         model: String(agent.modelOverride ?? '').trim(),
         contextMessages: companion.contextMessages,
+        skipUserMessages: Boolean(companion.skipUserMessages),
         minContextTokens: companion.minContextTokens,
         includeCharacterCard: companion.includeCharacterCard,
         includePersona: companion.includePersona,

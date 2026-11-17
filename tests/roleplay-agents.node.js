@@ -6,6 +6,7 @@ import { after, test } from 'node:test';
 import { fixture } from './roleplay-transactions-fixture.js';
 
 const { nativeAgentDefinition } = await import('../src/generation/agent-definition.js');
+const { recentCompanionContext } = await import('../src/generation/companion-context.js');
 const { captureRoleplayAgents, readRoleplayAgents, readRoleplayAgentsLocked } = await import('../src/generation/roleplay-agents-source.js');
 const { readRoleplaySettingsJson } = await import('../src/generation/settings-cache.js');
 const { runAgentModelStep } = await import('../src/generation/agent-model-step.js');
@@ -314,6 +315,39 @@ test('reply context ignores hidden and empty messages and resolves the default l
     }
 });
 
+test('a rewrite that skips user messages fills its recent messages with replies only', async t => {
+    const f = prepared(t, [{ id: 'rewrite', enabled: true, phase: 'post', prompt: 'Rewrite',
+        postProcess: { enabled: false, promptTransformEnabled: true, promptTransformContextMessages: 2, promptTransformSkipUserMessages: true } }]);
+    const options = phases(f);
+    options.records = [f.records[0], { name: 'Nova', mes: 'Earlier reply' }, { name: 'User', is_user: true, mes: 'Middle question' }, ...f.records.slice(1)];
+    prepareRoleplayAgentContributions(f.context, options);
+    let calls = 0;
+    await runRoleplayAgentPostprocessing(f.context, { ...options, value: 'Current reply', generate: modelResponse(({ messages }) => {
+        calls++;
+        assert.match(messages[1].content, /<recent_chat>\nNova: Earlier reply\n\nNova: Answer\n<\/recent_chat>/);
+        assert.doesNotMatch(messages[1].content, /Original|Middle question/);
+        return { text: 'Rewritten' };
+    }) });
+    assert.equal(calls, 1);
+});
+
+test('a Companion that skips user messages counts only replies towards its recent messages', () => {
+    const messages = [
+        { name: 'Nova', mes: 'First reply' },
+        { name: 'Ari', is_user: true, mes: 'Question one' },
+        { name: 'Nova', mes: 'Second reply' },
+        { name: 'Ari', is_user: true, mes: 'Question two' },
+        { name: 'Nova', mes: 'Hidden', is_system: true },
+        { name: 'Nova', mes: 'Third reply' },
+    ];
+    const companion = { contextMessages: 2, minContextTokens: 0 };
+    const all = recentCompanionContext({ messages }, { companion });
+    assert.equal(all.text, 'Ari: Question two\n\nNova: Third reply');
+    const replies = recentCompanionContext({ messages }, { companion: { ...companion, skipUserMessages: true } });
+    assert.equal(replies.text, 'Nova: Second reply\n\nNova: Third reply');
+    assert.deepEqual(replies.coverage.map(entry => entry.index), [2, 5]);
+});
+
 test('post-generation rewrites receive Mewmory and group card macros in both macro modes', async t => {
     for (const experimentalMacroEngine of [true, false]) {
         const f = prepared(t, [{ id: 'authenticity', enabled: true, phase: 'post',
@@ -358,6 +392,10 @@ test('native Agent defaults retain explicit regex identities and unbounded saved
     assert.equal(nativeAgentDefinition({ ...raw, companion: { chatHistoryPlacement: 'block' } }).companion.chatHistoryPlacement, 'block');
     assert.equal(nativeAgentDefinition({ ...raw, companion: { chatHistoryPlacement: 'elsewhere' } }).companion.chatHistoryPlacement, 'latest');
     assert.equal(first.companion.chatHistoryInsertDepth, null);
+    assert.equal(first.companion.skipUserMessages, false);
+    assert.equal(first.postProcess.promptTransformSkipUserMessages, false);
+    assert.equal(nativeAgentDefinition({ ...raw, companion: { skipUserMessages: true } }).companion.skipUserMessages, true);
+    assert.equal(nativeAgentDefinition({ id: 'rewrite', postProcess: { promptTransformSkipUserMessages: true } }).postProcess.promptTransformSkipUserMessages, true);
     assert.equal(nativeAgentDefinition({ ...raw, companion: { chatHistoryInsertDepth: '7' } }).companion.chatHistoryInsertDepth, 7);
     assert.equal(nativeAgentDefinition({ ...raw, companion: { chatHistoryInsertDepth: 200 } }).companion.chatHistoryInsertDepth, 99);
     assert.equal(nativeAgentDefinition({ ...raw, companion: { chatHistoryInsertDepth: -1 } }).companion.chatHistoryInsertDepth, 0);

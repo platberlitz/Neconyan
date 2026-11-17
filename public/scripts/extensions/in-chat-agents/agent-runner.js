@@ -3437,7 +3437,8 @@ function getPromptTransformRecentChat(agent, message, messageIndex) {
         endIndex = foundIndex >= 0 ? foundIndex : chat.length;
     }
 
-    return buildPromptTransformRecentChat(filterGroupTargetMessages(chat.slice(0, endIndex), message), limit, unwrapAssistantResponseWrapper);
+    return buildPromptTransformRecentChat(filterGroupTargetMessages(chat.slice(0, endIndex), message), limit, unwrapAssistantResponseWrapper,
+        { skipUserMessages: Boolean(agent?.postProcess?.promptTransformSkipUserMessages) });
 }
 
 function buildPromptTransformMessages(agentPrompt, messageText, assistantName, generationType, mode, recentChat = '') {

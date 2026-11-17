@@ -25,12 +25,12 @@ export function isTranslatorAgent(agent) {
 }
 
 /** The caller supplies only messages preceding the target, never later chat. */
-export function buildPromptTransformRecentChat(records, count, unwrap = value => value) {
+export function buildPromptTransformRecentChat(records, count, unwrap = value => value, { skipUserMessages = false } = {}) {
     const limit = normalizePromptTransformContextMessages(count);
     const lines = [];
     for (let index = records.length - 1; index >= 0 && lines.length < limit; index--) {
         const entry = records[index];
-        if (!entry || entry.is_system) continue;
+        if (!entry || entry.is_system || (skipUserMessages && entry.is_user)) continue;
         const text = unwrap(String(entry.mes ?? '')).trim();
         if (!text) continue;
         const name = String(entry.name ?? '').trim() || (entry.is_user ? 'User' : 'Assistant');
