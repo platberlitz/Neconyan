@@ -192,6 +192,12 @@
     background: transparent;
 }
 
+/* Glass frame, solid pane: this fill ignores Background visibility (neconyan-calico.css reads --sb-reading-pane). */
+:root[data-sb-theme='macos-minimal'] body.neconyan:not(.sbterm) .sb-shell-panel-scroller {
+    --sb-reading-pane: color-mix(in srgb, var(--neco-surface) 92%, transparent);
+    background: var(--sb-reading-pane);
+}
+
 :root[data-sb-theme='macos-minimal'] body.neconyan:not(.sbterm) .sb-shell-header {
     border-bottom: 1px solid var(--mac-hairline);
 }

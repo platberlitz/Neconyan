@@ -204,8 +204,10 @@
     text-shadow: none;
 }
 
+/* Glass frame, solid pane: this fill ignores Background visibility (neconyan-calico.css reads --sb-reading-pane). */
 :root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) .sb-shell-panel-scroller {
-    background: color-mix(in srgb, var(--neco-surface) 92%, transparent);
+    --sb-reading-pane: color-mix(in srgb, var(--neco-surface) 92%, transparent);
+    background: var(--sb-reading-pane);
     border: 1px solid rgb(0 0 0 / 0.25);
     border-radius: 3px;
 }

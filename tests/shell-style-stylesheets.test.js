@@ -335,6 +335,13 @@ describe('shell style runtime stylesheets', () => {
         expect(auditImportantDeclarations('/* !important */', 'windows-xp')).toEqual([]);
     });
 
+    test('only the glass shells set the reading-pane hook that the Calico slider rule reads', () => {
+        const calico = stripCssBlockComments(readSource('public', 'css', 'neconyan-calico.css'));
+        expect(calico).toContain('background-color: var(--sb-reading-pane, color-mix(in srgb, var(--neco-surface) calc(var(--sb-shell-surface-opacity) * 90%), transparent)) !important;');
+        const setters = runtimeIds.filter(id => stripCssBlockComments(readSource('public', 'css', 'shell-styles', `${id}.css`)).includes('--sb-reading-pane:'));
+        expect([...setters].sort()).toEqual([...backedLibraryStyles].sort());
+    });
+
     test('Windows XP dark faces tint raised cards and tabs with the scheme colour', () => {
         const source = stripCssBlockComments(readSource('public', 'css', 'shell-styles', 'windows-xp.css'));
         const dark = source.match(/\[data-sb-surface-tone='dark'\] body\.neconyan:not\(\.sbterm\) \{([^}]*)\}/);
