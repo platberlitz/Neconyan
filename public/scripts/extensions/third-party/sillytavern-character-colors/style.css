@@ -1571,6 +1571,8 @@ body.dc-mark-uncertain [data-dc-colored][data-dc-confidence="low"] {
     background-clip: text;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
+    /* An inherited outline paints over the clipped gradient. */
+    -webkit-text-stroke-width: 0;
     box-decoration-break: clone;
     -webkit-box-decoration-break: clone;
 }
