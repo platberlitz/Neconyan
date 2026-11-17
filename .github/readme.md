@@ -92,7 +92,7 @@ Press **Show all features** in the sidebar, or turn it off in **Settings → App
   <img src="../docs/readme/banner-modes.webp" alt="Modes">
 </p>
 
-Here's the rest of the tour! I captured these desktop and phone screenshots on 17 November 2026, using demo chats and notes with the bundled assistants, the default Calico Dark colours and **Background Visibility at 0%**.
+I captured these desktop and phone screenshots using demo chats and notes with the bundled assistants, the default Calico Dark colours and **Background Visibility at 0%**.
 
 ### Home
 
@@ -102,6 +102,13 @@ Pick a character, connect a model or say hi to an assistant. The cats will be th
   <td width="72%"><img src="../docs/readme/desktop-home.webp" alt="Home on desktop"></td>
   <td width="28%"><img src="../docs/readme/phone-home.webp" alt="Home on a phone"></td>
 </tr></table>
+
+<details>
+<summary>See the workspace menu on a phone</summary>
+
+<img src="../docs/readme/phone-workspace-menu.webp" width="260" alt="The phone workspace menu, with three stacked cat heads next to Extensions">
+
+</details>
 
 ### Roleplay
 
