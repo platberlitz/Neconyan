@@ -1201,6 +1201,124 @@ describe('companion tracker panel', () => {
         expect(handleElement.toggle).toHaveBeenLastCalledWith(true);
     });
 
+    test('jumps the panel to its top and bottom and hides the jump buttons when nothing scrolls', async () => {
+        agents = [{ id: 'tracker-1', name: 'Scene Tracker', execution: 'companion', enabled: true, companion: { displayMode: 'panel' } }];
+        const panel = await importPanel();
+        const createButton = () => {
+            const attributes = new Map();
+            return {
+                getAttribute: jest.fn(name => attributes.get(name) ?? null),
+                setAttribute: jest.fn((name, value) => attributes.set(name, String(value))),
+            };
+        };
+        const buttons = { 'panel-scroll-top': createButton(), 'panel-scroll-bottom': createButton() };
+        const group = {
+            hidden: true,
+            offsetHeight: 78,
+            querySelector: jest.fn(selector => buttons[selector.match(/data-action="([^"]+)"/)?.[1]] ?? null),
+        };
+        let scrollTop = 0;
+        const panelNode = {
+            scrollHeight: 1200,
+            clientHeight: 400,
+            dataset: {},
+            addEventListener: jest.fn(),
+            querySelector: jest.fn(selector => (selector === '[data-role="panel-jump"]' ? group : null)),
+            querySelectorAll: jest.fn(() => []),
+            getBoundingClientRect: () => ({ top: 0, bottom: 400, height: 400 }),
+            scrollTo: jest.fn(({ top }) => {
+                panelNode.scrollTop = top;
+            }),
+        };
+        Object.defineProperty(panelNode, 'scrollTop', {
+            get: () => scrollTop,
+            set: value => {
+                scrollTop = Math.max(0, Math.min(Number(value), panelNode.scrollHeight - panelNode.clientHeight));
+            },
+        });
+        const panelElement = {
+            0: panelNode,
+            length: 1,
+            on: jest.fn(() => panelElement),
+            html: jest.fn(() => {
+                group.hidden = true;
+                return panelElement;
+            }),
+            toggle: jest.fn(() => panelElement),
+            attr: jest.fn(() => panelElement),
+            addClass: jest.fn(() => panelElement),
+            removeClass: jest.fn(() => panelElement),
+        };
+        const handleElement = { on: jest.fn(() => handleElement), toggle: jest.fn(() => handleElement), attr: jest.fn(() => handleElement) };
+        let pressedAction = '';
+        const actionButton = {};
+        globalThis.document.getElementById = jest.fn(id => (id === 'ica--tracker-panel' ? panelNode : null));
+        globalThis.$ = jest.fn(arg => {
+            if (arg === globalThis.document.body) return { append: jest.fn() };
+            if (arg === '#ica--tracker-panel') return panelElement;
+            if (arg === '#ica--tracker-panel-handle') return handleElement;
+            if (arg === '#ica_tracker_panel_wand_item') return { length: 1 };
+            if (arg === actionButton) {
+                return {
+                    attr: jest.fn(name => (name === 'data-action' ? pressedAction : undefined)),
+                    closest: jest.fn(() => ({ attr: jest.fn() })),
+                };
+            }
+            return { length: 0, on: jest.fn(), append: jest.fn(), html: jest.fn(), toggle: jest.fn() };
+        });
+        const frames = [];
+        const previousFrame = globalThis.requestAnimationFrame;
+        globalThis.requestAnimationFrame = jest.fn(callback => frames.push(callback));
+        const flushFrames = () => frames.splice(0).forEach(callback => callback());
+
+        try {
+            const html = panel.buildPanelHtml();
+            expect(html).toContain('data-action="panel-scroll-top"');
+            expect(html).toContain('data-action="panel-scroll-bottom"');
+            expect(translatedKeys).toEqual(expect.arrayContaining(['Jump through the panel', 'Jump to top', 'Jump to bottom']));
+
+            panel.initCompanionPanel();
+            const scrollListener = panelNode.addEventListener.mock.calls.find(([type]) => type === 'scroll');
+            expect(scrollListener?.[2]).toEqual({ passive: true });
+            const actionHandler = panelElement.on.mock.calls.find(([, selector]) => selector === '[data-action]')[2];
+            const press = async action => {
+                pressedAction = action;
+                await actionHandler({ preventDefault: jest.fn(), stopPropagation: jest.fn(), currentTarget: actionButton });
+                flushFrames();
+            };
+
+            panel.openCompanionPanel();
+            flushFrames();
+            expect(group.hidden).toBe(false);
+            expect(buttons['panel-scroll-top'].getAttribute('aria-disabled')).toBe('true');
+            expect(buttons['panel-scroll-bottom'].getAttribute('aria-disabled')).toBe('false');
+
+            await press('panel-scroll-bottom');
+            expect(panelNode.scrollTo).toHaveBeenLastCalledWith({ top: 1200, behavior: 'smooth' });
+            expect(scrollTop).toBe(800);
+            expect(buttons['panel-scroll-top'].getAttribute('aria-disabled')).toBe('false');
+            expect(buttons['panel-scroll-bottom'].getAttribute('aria-disabled')).toBe('true');
+
+            globalThis.document.body.classList = { contains: name => name === 'reduced-motion' };
+            await press('panel-scroll-top');
+            expect(panelNode.scrollTo).toHaveBeenLastCalledWith({ top: 0, behavior: 'auto' });
+            expect(buttons['panel-scroll-top'].getAttribute('aria-disabled')).toBe('true');
+
+            scrollTop = 300;
+            scrollListener[1]();
+            flushFrames();
+            expect(buttons['panel-scroll-top'].getAttribute('aria-disabled')).toBe('false');
+            expect(buttons['panel-scroll-bottom'].getAttribute('aria-disabled')).toBe('false');
+
+            panelNode.scrollHeight = 402;
+            scrollTop = 0;
+            panel.refreshCompanionPanel();
+            expect(group.hidden).toBe(true);
+        } finally {
+            globalThis.requestAnimationFrame = previousFrame;
+        }
+    });
+
     test('keeps the handle hidden on load until the panel is opened', async () => {
         accountStorageValues.set('ica--tracker-panel-handle-hidden', 'true');
         agents = [{ id: 'tracker-1', name: 'Scene Tracker', execution: 'companion', enabled: true }];
