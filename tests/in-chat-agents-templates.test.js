@@ -1045,6 +1045,8 @@ describe('in-chat agent bundled templates', () => {
         expect(html).toContain('class="chatroom-feed" data-chatroom-style="thread-board/4chan"');
         expect(html).toContain('.chatroom-feed[data-chatroom-style*="4chan"]');
         expect(html).toContain('.chatroom-feed[data-chatroom-style*="reddit"]');
+        expect(html).toMatch(/class="chatroom-header" style="[^"]*flex-wrap:wrap/);
+        expect(html).toMatch(/class="chatroom-title" style="flex-shrink:0;/);
         expect(html).toContain('class="chatroom-post chatroom-post--green"');
         expect(html).toContain('class="chatroom-post chatroom-post--reply"');
         expect(html).toContain('--chatroom-hue:42');
