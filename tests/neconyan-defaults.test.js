@@ -294,6 +294,31 @@ describe('Neconyan Calico defaults', () => {
         expect(lightRuntime.context.document.documentElement.dataset.neconyanAccent).toBe('theme');
     });
 
+    test('tells a theme\'s own accent apart from one the user picked', () => {
+        const dataset = runtime => runtime.context.document.documentElement.dataset;
+        const calicoRuntime = createPaletteRuntime();
+        calicoRuntime.context.syncNeconyanPaletteAttribute();
+        expect(dataset(calicoRuntime).neconyanAccentSource).toBe('theme');
+        calicoRuntime.context.applyAccentColors('rgba(126, 34, 206, 1)', 'rgba(7, 8, 9, 1)');
+        expect(dataset(calicoRuntime).neconyanAccentSource).toBe('user');
+
+        // Other bundled themes are never Calico, so data-neconyan-accent stays 'custom' while the source follows the theme file.
+        const retroTheme = { name: 'Windows 98', blur_tint_color: 'rgba(192, 192, 192, 1)', quote_text_color: 'rgba(0, 0, 182, 1)', underline_text_color: 'rgba(0, 0, 128, 1)' };
+        const retroRuntime = createPaletteRuntime({ ...retroTheme, theme: retroTheme.name });
+        retroRuntime.context.themes.push(retroTheme);
+        retroRuntime.context.syncNeconyanPaletteAttribute();
+        expect(dataset(retroRuntime)).toMatchObject({ neconyanAccent: 'custom', neconyanAccentSource: 'theme' });
+        retroRuntime.context.applyAccentColors('rgba(110, 231, 183, 1)', 'rgba(0, 0, 128, 1)');
+        expect(dataset(retroRuntime)).toMatchObject({ neconyanAccent: 'custom', neconyanAccentSource: 'user' });
+        retroRuntime.context.applyAccentColors('rgba(0, 0, 182, 1)', 'rgba(0, 0, 128, 1)');
+        expect(dataset(retroRuntime).neconyanAccentSource).toBe('theme');
+
+        // A theme that is no longer in the list has no accent to compare against.
+        const missingRuntime = createPaletteRuntime({ theme: 'Deleted theme', quote_text_color: 'rgba(1, 2, 3, 1)' });
+        missingRuntime.context.syncNeconyanPaletteAttribute();
+        expect(dataset(missingRuntime).neconyanAccentSource).toBe('user');
+    });
+
     test('recognises stock Calico Light after the contrast pass repaints it', () => {
         // Picking the theme or reloading stores accessibleTheme() output, never the raw theme file.
         const appliedLight = accessibleTheme(calicoTheme);
