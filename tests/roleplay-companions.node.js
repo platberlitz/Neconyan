@@ -19,7 +19,7 @@ const { runRoleplayCompanions, planRoleplayCompanionStart, pendingRoleplayCompan
 const { prepareRoleplayAgentContributions } = await import('../src/generation/roleplay-agent-processing.js');
 const { subscribeRoleplayPreview } = await import('../src/generation/roleplay-preview.js');
 const { createFreshnessGate } = await import('../src/generation/roleplay-freshness-gate.js');
-const { requestRoleplayAgentStop } = await import('../src/generation/roleplay-agent-stop.js');
+const { requestRoleplayAgentStop, roleplayAgentsFailed } = await import('../src/generation/roleplay-agent-stop.js');
 const { savedRoleplayMacroSnapshot } = await import('../src/generation/roleplay-prompt.js');
 const { getRegexScriptRevision } = await import('../public/scripts/extensions/in-chat-agents/regex-snapshot-store.js');
 const { MEMORY_SHARD_TEMPLATE_ID } = await import('../public/scripts/extensions/in-chat-agents/companion/companion-shared.js');
@@ -418,6 +418,67 @@ test('a companion refusal fails the run instead of saving the refusal as a note'
     assert.equal(result.content, '');
     assert.equal(result.failureKind, 'refusal');
     assert.match(result.error, /refused to write this note/);
+});
+
+for (const mode of ['sequential', 'parallel']) {
+    test(`a provider-blocked Companion keeps its failure visible without stopping ${mode} siblings`, async t => {
+        const f = prepared(t, [companion('blocked'), companion('healthy'),
+            companion('dependent', { dependencies: ['blocked'], waitForDependencies: true })], { global: { companionExecutionMode: mode } });
+        const calls = [];
+        await f.run({ generate: paid('main', 'Main reply'), generateAgent: paid('agent', ({ messages }) => {
+            const blocked = JSON.stringify(messages).includes('TASK_BLOCKED');
+            calls.push(blocked ? 'blocked' : 'healthy');
+            return blocked ? { text: '', response: { choices: [{ finish_reason: 'content_filter', message: { content: '' } }] } }
+                : { text: 'Healthy note' };
+        }) });
+        const results = f.rows().at(-1).extra.inChatAgentCompanionResults;
+        assert.equal(results.blocked?.status, 'error');
+        assert.equal(results.blocked.failureKind, 'refusal');
+        assert.equal(results.healthy?.content, 'Healthy note');
+        assert.equal(results.dependent?.failureKind, 'dependency');
+        assert.deepEqual(calls.sort(), ['blocked', 'healthy']);
+        assert.equal(roleplayAgentsFailed(f.context()), false, 'The cards report known note failures without a misleading whole-workflow warning');
+    });
+}
+
+test('a provider-blocked Companion batch retains prior notes and lets another unit finish', async t => {
+    const f = prepared(t, [companion('a', { batch: true, batchAgentIds: ['b'] }), companion('b'), companion('healthy')], {
+        effect: 'continue', changeRecords(records) {
+            records[2].extra.inChatAgentCompanionResults = { a: { status: 'done', content: 'Last good note', includeInChatHistory: false } };
+        },
+    });
+    let calls = 0;
+    await f.run({ generate: paid('main', ' again'), generateAgent: paid('agent', ({ messages }) => {
+        calls++;
+        return JSON.stringify(messages).includes('[Tasks]')
+            ? { text: '', response: { choices: [{ finish_reason: 'content_filter', message: { content: '' } }] } }
+            : { text: 'Healthy note' };
+    }) });
+    const results = f.rows().at(-1).extra.inChatAgentCompanionResults;
+    assert.equal(results.a.content, 'Last good note');
+    assert.equal(results.a.lastRunFailureKind, 'refusal');
+    assert.equal(results.b.failureKind, 'refusal');
+    assert.equal(results.healthy.content, 'Healthy note');
+    assert.equal(calls, 2);
+    assert.equal(roleplayAgentsFailed(f.context()), false);
+});
+
+test('a blocked output pass keeps the raw notes from a completed Companion batch', async t => {
+    const f = prepared(t, [companion('a', { batch: true, batchAgentIds: ['b'] }), companion('b'),
+        { id: 'note-pass', name: 'Note pass', enabled: true, phase: 'post', prompt: 'EDIT_NOTE',
+            conditions: { generationTypes: ['unused'], runOnCompanionOutputs: true, companionOutputTargetAgentIds: ['a'] },
+            postProcess: { enabled: true, promptTransformEnabled: true } }]);
+    let calls = 0;
+    await f.run({ generate: paid('main', 'Main reply'), generateAgent: paid('agent', ({ messages }) => {
+        calls++;
+        if (JSON.stringify(messages).includes('EDIT_NOTE')) return { text: '', response: { choices: [{ finish_reason: 'content_filter', message: { content: '' } }] } };
+        return { text: '<<<companion:a>>>A note<<<end:a>>>\n<<<companion:b>>>B note<<<end:b>>>' };
+    }) });
+    const results = f.rows().at(-1).extra.inChatAgentCompanionResults;
+    assert.equal(results.a.content, 'A note');
+    assert.equal(results.b.content, 'B note');
+    assert.equal(calls, 2);
+    assert.equal(roleplayAgentsFailed(f.context()), false);
 });
 
 test('a companion refusal on a rerun keeps the last good note', async t => {

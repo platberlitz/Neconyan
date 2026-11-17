@@ -471,17 +471,28 @@ for (const phone of [false, true]) {
             contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {}, configureSettings(settings) {
                 settings.oai_settings.stream_openai = true;
                 settings.extension_settings.inChatAgents = { globalSettings: { enabled: true, separateRecentChats: false,
-                    connectionProfile: 'durable' } };
+                    connectionProfile: 'durable', hiddenCompanionAgentIds: ['hidden-companion'] } };
+                settings.extension_settings.connectionManager.profiles.push({ id: 'companion', name: 'Automatic Companion',
+                    api: 'custom', mode: 'cc', model: 'automatic-companion', 'api-url': app.provider.url });
+                settings.extension_settings.connectionManager.profiles.push({ id: 'reviser', name: 'After-reply Agent',
+                    api: 'custom', mode: 'cc', model: 'post-reviser', 'api-url': app.provider.url });
             } });
         if (phone) await installIPhoneSafari(account.context);
         const native = owned(app);
         await fs.mkdir(native.directories.inChatAgents, { recursive: true });
         await fs.writeFile(path.join(native.directories.inChatAgents, 'interrupted-reviser.json'), JSON.stringify({
             id: 'interrupted-reviser', name: 'Interrupted reviser', enabled: true, phase: 'post',
-            prompt: 'Revise the reply.', postProcess: { enabled: false, promptTransformEnabled: true },
+            connectionProfile: 'reviser', prompt: 'Revise the reply.', postProcess: { enabled: false, promptTransformEnabled: true },
         }));
+        for (const [id, trigger, enabled] of [['auto-companion', 'auto', true], ['manual-companion', 'manual', true],
+            ['hidden-companion', 'auto', true], ['disabled-companion', 'auto', false]]) {
+            await fs.writeFile(path.join(native.directories.inChatAgents, `${id}.json`), JSON.stringify({ id, name: id, enabled,
+                execution: 'companion', category: 'companion', phase: 'post', prompt: `Write a note for ${id}.`,
+                connectionProfile: 'companion', companion: { trigger, contextMessages: 10, format: 'markdown', displayMode: 'card' } }));
+        }
         const locator = await savedChat(account, `Interrupted rerun ${viewport}`);
         const page = await account.open({ workspace: false, readyTimeout: 120000 });
+        await expect(page.locator('#ica--setupSave')).toBeEnabled();
         await openChat(page, locator);
         if (phone) await applyIOSOnlyCss(page);
         const submitted = page.waitForResponse(acceptedSubmission);
@@ -507,12 +518,20 @@ for (const phone of [false, true]) {
             // The notice waits for a choice instead of timing out under the reader.
             await delay(6000);
             await expect(rerun).toBeVisible();
+            await page.locator('#chat .mes').last().locator('.mes_edit').dispatchEvent('click');
+            await expect(page.locator('#chat .mes').last().locator('.edit_textarea')).toBeVisible();
             const calls = app.provider.calls.length;
-            app.provider.mode.reply = { choices: [{ message: { role: 'assistant', content: `${ANSWER} Revised by the after-reply Agent.` } }] };
+            app.provider.mode.streamReply = null;
+            app.provider.mode.reply = body => ({ choices: [{ message: { role: 'assistant',
+                content: body.model === 'automatic-companion' ? 'The automatic Companion was rerun.' : `${ANSWER} Revised by the after-reply Agent.` } }] });
             await rerun.click();
             await expect(notice).toHaveCount(0);
             await expect(page.locator('#chat .mes').last()).toContainText('Revised by the after-reply Agent.', { timeout: 30000 });
-            expect(app.provider.calls.length).toBeGreaterThan(calls);
+            await expect.poll(() => page.evaluate(async () => (await import('/script.js')).chat.at(-1)
+                ?.extra?.inChatAgentCompanionResults?.['auto-companion']?.content)).toBe('The automatic Companion was rerun.');
+            const retryCalls = app.provider.calls.slice(calls);
+            expect(retryCalls.map(call => call.model)).toEqual(['post-reviser', 'automatic-companion']);
+            expect(JSON.stringify(retryCalls[1])).toContain('Revised by the after-reply Agent.');
         } finally {
             app.provider.mode.finishStream?.();
             await app.release();

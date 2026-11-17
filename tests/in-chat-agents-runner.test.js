@@ -253,6 +253,7 @@ describe('in-chat agent post-processing runner', () => {
             extension_prompts: extensionPrompts,
             eventSource,
             event_types: eventTypes,
+            messageEditDone: jest.fn(async button => button.trigger('click')),
             setExtensionPrompt: jest.fn((key, value, position, depth, scan, role, _filter = null, name = null) => {
                 const promptName = typeof name === 'string' ? name.trim() : '';
                 extensionPrompts[key] = { value, ...(promptName && { name: promptName }) };
@@ -8982,6 +8983,30 @@ describe('in-chat agent post-processing runner', () => {
         expect(chat[0].extra.inChatAgentCompanionResults.auto.content).toBe('Automatic note');
     });
 
+    test.each([0, 8])('saved-reply rerun includes Companions after committing an open reply editor with %s earlier edit listeners', async listeners => {
+        usePromptTransformPostAgent();
+        enabledAgents.push(createCompanionAgent());
+        chat.push({ mes: 'Saved reply', is_user: false, is_system: false, extra: {} });
+        generateQuietPrompt.mockResolvedValueOnce('Revised reply').mockResolvedValue('Automatic note');
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        for (let index = 0; index < listeners; index++) eventSource.on(eventTypes.MESSAGE_EDITED, async () => {});
+        runner.initAgentRunner();
+        const jquery = globalThis.$;
+        const done = { length: 1, trigger: jest.fn(() => {
+            done.length = 0;
+            return eventSource.emit(eventTypes.MESSAGE_EDITED, 0);
+        }) };
+        globalThis.$ = jest.fn(selector => selector === '.mes[mesid="0"] .mes_edit_done:visible'
+            ? { first: () => done } : jquery(selector));
+
+        await runner.rerunSavedReplyAgentsOnMessage(0);
+
+        expect(done.trigger).toHaveBeenCalledWith('click');
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(2);
+        expect(generateQuietPrompt.mock.calls[1][0].quietPrompt).toContain('Revised reply');
+        expect(chat[0].extra.inChatAgentCompanionResults['agent-companion'].content).toBe('Automatic note');
+    });
+
     test('saved-reply rerun works when only automatic Companions are enabled', async () => {
         enabledAgents = [createCompanionAgent()];
         chat.push({ mes: 'Saved reply', is_user: false, is_system: false, extra: {} });
@@ -8993,7 +9018,7 @@ describe('in-chat agent post-processing runner', () => {
         expect(globalThis.toastr.info).not.toHaveBeenCalledWith('No enabled after-reply prompt agents found.');
     });
 
-    test.each(['stop', 'edit', 'swipe', 'account'])('saved-reply rerun does not start Companions after a %s during the after-reply run', async change => {
+    test.each(['stop', 'edit', 'edit and revert', 'swipe', 'account'])('saved-reply rerun does not start Companions after a %s during the after-reply run', async change => {
         usePromptTransformPostAgent();
         enabledAgents.push(createCompanionAgent());
         chat.push({ mes: 'Saved reply', is_user: false, is_system: false, extra: {} });
@@ -9002,14 +9027,25 @@ describe('in-chat agent post-processing runner', () => {
         const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
         let current = true;
         runner.initAgentRunner();
+        const jquery = globalThis.$;
+        const done = { length: 1, trigger: () => {
+            done.length = 0;
+            return eventSource.emit(eventTypes.MESSAGE_EDITED, 0);
+        } };
+        globalThis.$ = jest.fn(selector => selector === '.mes[mesid="0"] .mes_edit_done:visible'
+            ? { first: () => done } : jquery(selector));
         const run = runner.rerunSavedReplyAgentsOnMessage(0, { isCurrent: () => current });
         await waitFor(() => releases.length === 1);
         if (change === 'stop') runner.cancelAgentGeneration();
         if (change === 'swipe') chat[0].swipe_id = 1;
         if (change === 'account') current = false;
-        if (change === 'edit') {
+        if (change.startsWith('edit')) {
             chat[0].mes = 'My edit';
             await eventSource.emit(eventTypes.MESSAGE_EDITED, 0);
+            if (change === 'edit and revert') {
+                chat[0].mes = 'Saved reply';
+                await eventSource.emit(eventTypes.MESSAGE_EDITED, 0);
+            }
         }
         releases.shift()('Revised reply');
         await run;

@@ -280,6 +280,14 @@ export async function runRoleplayCompanions(context, options) {
             : { ...baseRecord(agent, model), status: 'error', content: '', error: reason, failureKind, tokenUsage: null, updatedAt: Date.now() };
         return storeResult(agent, runIdentity, record, false);
     };
+    const withRefusalResult = async (agent, runIdentity, run) => {
+        try { return await run(); } catch (error) {
+            // Provider-level refusals belong on this note, just like a refusal in its text.
+            // Other failures still use the workflow's recovery and source-safety checks.
+            if (error?.code !== 'GENERATION_BLOCKED') throw error;
+            return failedResult(agent, runIdentity, COMPANION_FAILURE_MESSAGES.refusal);
+        }
+    };
     const usageOf = async (prompt, raw) => ({ inputTokens: await count(JSON.stringify(prompt.messages)),
         outputTokens: await count(JSON.stringify({ role: 'assistant', content: content(raw) })) });
     // A refusal is a failed run, not a Companion note. The setting that discards refusals
@@ -387,8 +395,10 @@ export async function runRoleplayCompanions(context, options) {
                 ? !!normalizeCompanionTrackerRepairPayload(agent, value, { ...trackerDisplayOptions(agent), previousText: prior?.content }).payload
                 : inspectCompanionTrackerOutput(agent, value, trackerDisplayOptions(agent)).action === 'keep';
         };
-        const model = await runModel(agent, stepName, prompt, agent.companion.maxTokens, [agent], acceptOutput);
-        return finishResult(agent, model.text, model, prompt, runIdentity, null, prompt.coverage, sections, stepName);
+        return withRefusalResult(agent, runIdentity, async () => {
+            const model = await runModel(agent, stepName, prompt, agent.companion.maxTokens, [agent], acceptOutput);
+            return finishResult(agent, model.text, model, prompt, runIdentity, null, prompt.coverage, sections, stepName);
+        });
     };
     const runUnit = async (group, sections) => {
         if (group.length === 1 || group.some(isRepairTarget)) {
@@ -399,7 +409,14 @@ export async function runRoleplayCompanions(context, options) {
         if (group[0].companion.includeWorldInfo) input.worldInfo = await worldInfoText();
         const linked = sections.get(group[0].id), prompt = batchCompanionPrompt(input, group, linked);
         const name = `companion-batch:${roleplayHash(group.map(agent => agent.id))}`;
-        const model = await runModel(group[0], name, prompt, Math.min(64000, group.reduce((total, agent) => total + agent.companion.maxTokens, 0)), group);
+        let model;
+        try {
+            model = await runModel(group[0], name, prompt, Math.min(64000, group.reduce((total, agent) => total + agent.companion.maxTokens, 0)), group);
+        } catch (error) {
+            if (error?.code !== 'GENERATION_BLOCKED') throw error;
+            return group.map(agent => failedResult(agent,
+                roleplayHash({ identity, agent: agent.id, batch: name, sections: sections.get(agent.id) }), COMPANION_FAILURE_MESSAGES.refusal));
+        }
         const parsed = parseBatch(model.text);
         const taskCounts = await Promise.all(prompt.tasks.map(task => count(task.content)));
         const total = await count(JSON.stringify(prompt.messages)), sharedTokens = Math.max(0, total - taskCounts.reduce((sum, value) => sum + value, 0)) / group.length;
@@ -408,9 +425,9 @@ export async function runRoleplayCompanions(context, options) {
             const agent = group[offset], runIdentity = roleplayHash({ identity, agent: agent.id, batch: name, sections: sections.get(agent.id) });
             if (model.lengthLimited) outputs.push(failedResult(agent, runIdentity, 'The reply reached its output limit.', model));
             else if (!parsed.get(agent.id)) outputs.push(await runSingle(agent, sections.get(agent.id), ':missing-batch-result'));
-            else outputs.push(await finishResult(agent, parsed.get(agent.id), model, prompt, runIdentity, {
+            else outputs.push(await withRefusalResult(agent, runIdentity, async () => finishResult(agent, parsed.get(agent.id), model, prompt, runIdentity, {
                 inputTokens: Math.round(taskCounts[offset] + sharedTokens), outputTokens: await count(JSON.stringify({ role: 'assistant', content: parsed.get(agent.id) })) },
-            prompt.coverage, sections.get(agent.id), `${name}:${agent.id}`));
+            prompt.coverage, sections.get(agent.id), `${name}:${agent.id}`)));
         }
         return outputs;
     };

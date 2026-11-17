@@ -2957,8 +2957,9 @@ async function commitOpenEditorForMessage(messageIndex) {
         return;
     }
 
-    editorDoneButton.trigger('click');
-    await Promise.resolve();
+    // Wait for every edit listener and the save, not just the click handler's first await.
+    const { messageEditDone } = await import('../../../script.js');
+    await messageEditDone(editorDoneButton);
 }
 
 function syncPromptTransformMessageState(message, messageIndex) {
@@ -7632,7 +7633,6 @@ export async function rerunPostGenerationAgentsOnMessage(messageIndex, { cancelR
     return await enqueueManualOperation(manualAgentRunQueues[0], target, () => executeRerunPostGenerationAgentsOnMessage(target, cancelRevision), cancelRevision);
 }
 
-/** Rerun the saved reply's after-reply Agents, then its enabled automatic Companions. */
 /**
  * Whether rerunning a saved reply's Agents would run anything: after-reply
  * prompt Agents or automatic Companions.
@@ -7647,6 +7647,7 @@ export async function hasSavedReplyAgentWork(messageIndex) {
     return getAutomaticCompanionAgents(messageIndex).length > 0;
 }
 
+/** Rerun the saved reply's after-reply Agents, then its enabled automatic Companions. */
 export async function rerunSavedReplyAgentsOnMessage(messageIndex, { isCurrent = () => true } = {}) {
     const message = chat[messageIndex];
     if (!message || message.is_user || message.is_system) return;
@@ -7658,15 +7659,15 @@ export async function rerunSavedReplyAgentsOnMessage(messageIndex, { isCurrent =
         warnRerunAlreadyProcessing();
         return;
     }
-    const state = captureMessageTargetState(message, messageIndex);
+    const target = { kind: 'message', messageIndex, message, state: captureMessageTargetState(message, messageIndex), isCurrent };
     const cancelRevision = agentGenerationCancelRevision;
     const canContinue = () => isCurrent() && areAgentsGloballyEnabled() && !isMainGenerationStillActive()
         && agentGenerationCancelRevision === cancelRevision
-        && isMessageTargetCurrent(message, state, messageIndex, { text: false });
+        && isMessageTargetCurrent(message, target.state, messageIndex, { text: false });
     const { runAutomaticCompanionsOnMessage } = await import('./companion/companion-runner.js');
-    if (!canContinue() || !isMessageTargetCurrent(message, state, messageIndex)) return;
+    if (!canContinue() || !isMessageTargetCurrent(message, target.state, messageIndex)) return;
     if (getPromptTransformAgents(getEnabledAgents().filter(isAgentRuntimeAllowed)).length > 0) {
-        await rerunPostGenerationAgentsOnMessage(messageIndex, { cancelRevision, isCurrent });
+        await enqueueManualOperation(manualAgentRunQueues[0], target, () => executeRerunPostGenerationAgentsOnMessage(target, cancelRevision), cancelRevision);
     }
     if (canContinue()) await runAutomaticCompanionsOnMessage(messageIndex);
 }
@@ -7717,6 +7718,9 @@ async function executeRerunPostGenerationAgentsOnMessage(submittedTarget, cancel
     const preRerunText = message.mes;
     const baselineText = getRerunPostGenerationBaselineText(message);
     const target = captureMessageTargetState(message);
+    // Accept only the editor commit made above. The saved-reply batch shares
+    // this target so Companions continue after that commit, but not a later edit.
+    submittedTarget.state = target;
     const isRerunCancelled = () => agentGenerationCancelRevision !== cancelRevision;
     const isRerunTargetCurrent = () => !isRerunCancelled() && submittedTarget.isCurrent() && isMessageTargetCurrent(message, target, messageIndex);
     const warnIfRerunTargetChanged = stage => {
