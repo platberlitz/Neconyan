@@ -37,6 +37,7 @@
 - PR #724 (2026-11-17) `fix(startup): load the styles the app needs before revealing it`
 - PR #725 (2026-11-17) `feat: add tracker override search`
 - PR #726 (2026-11-17) `feat(regex-agent-themes): keep chatroom platform looks in themed feeds`
+- PR #727 (2026-11-17) `fix(scratchpad): recover replies and honour saved setups`
 
 ## v1.5.5
 
