@@ -44,7 +44,7 @@ for (const phone of [false, true]) {
         await page.evaluate(() => window.dispatchEvent(new Event('neconyan:navigate-home')));
         await open('context');
         await expect(page.locator('#scratchpad-setup')).toHaveValue('Quiet replies');
-        await expect(page.locator('#neconyan-scratchpad').getByRole('checkbox', { name: 'Stream replies', exact: true })).not.toBeChecked();
+        await expect(page.locator('#neconyan-scratchpad').getByRole('checkbox', { name: 'Stream replies' })).not.toBeChecked();
         await create(false);
     });
 
