@@ -420,7 +420,13 @@ path('tags', 'M3 4.5V11l9 9a1.5 1.5 0 0 0 2.1 0l5.4-5.4a1.5 1.5 0 0 0 0-2.1l-9-9
 path('puzzle-piece', 'M4 9h4.2a2.6 2.6 0 1 1 4.6 0H17v4.2a2.6 2.6 0 1 1 0 4.6V21H4Z');
 const cube = (cx, cy, h) => `M${cx} ${n(cy - h)}l${n(h * .87)} ${n(h / 2)}v${h}l${n(-h * .87)} ${n(h / 2)}${n(-h * .87)} ${n(-h / 2)}v${-h}ZM${n(cx - h * .87)} ${n(cy - h / 2)}l${n(h * .87)} ${n(h / 2)} ${n(h * .87)} ${n(-h / 2)}M${cx} ${cy}v${h}`;
 path('cube', 'M12 3 4 7.5v9l8 4.5 8-4.5v-9ZM4 7.5l8 4.5 8-4.5M12 12v9');
-path('cubes', cube(12, 6.7, 3.7) + cube(7.2, 15.2, 3.7) + cube(16.8, 15.2, 3.7));
+const cubeStack = p(cube(12, 6.7, 3.7) + cube(7.2, 15.2, 3.7) + cube(16.8, 15.2, 3.7));
+add('cubes-stacked', cubeStack);
+// Extensions: a pile of cats. Mouths blur at this size, so each cat gets eyes only.
+const catPile = [[12, 7.3], [6.6, 16.7], [17.4, 16.7]];
+add('cubes', cubeStack,
+    p(catPile.map(([x, y]) => catHead(x, y, 3.6)).join(''))
+    + filled(catPile.map(([x, y]) => c(n(x - 1.25), n(y + .2), .6) + c(n(x + 1.25), n(y + .2), .6)).join('')));
 add('shapes', p('M7.5 3.5 11.5 10h-8Z') + r(14, 3.5, 6.5, 6.5, 1.5) + c(7.5, 17, 3.8), p('M7.5 3.5 11.5 10h-8Z' + catHead(7.5, 17.3, 3.7)) + r(14, 3.5, 6.5, 6.5, 1.5));
 add('globe', c(12, 12, 9) + p('M3 12h18M12 3c-3 2.5-4 5.5-4 9s1 6.5 4 9c3-2.5 4-5.5 4-9s-1-6.5-4-9Z'),
     p(head + 'M3.5 12.8h17M12 4.3c-2.8 2.4-3.8 5.2-3.8 8.5s1 6.1 3.8 8.5c2.8-2.4 3.8-5.2 3.8-8.5s-1-6.1-3.8-8.5Z'));
@@ -545,7 +551,7 @@ export const aliases = {
     'id-badge': ['image-portrait'], 'table-cells-large': ['table-cells'],
     'calendar-days': ['calendar'], crosshairs: ['location-crosshairs'],
     link: ['chain'], 'link-slash': ['chain-broken'], thumbtack: ['thumb-tack'],
-    comment: ['message'], spinner: ['circle-notch'], cubes: ['cubes-stacked'], shapes: ['icons'],
+    comment: ['message'], spinner: ['circle-notch'], shapes: ['icons'],
 };
 
 export function renderIcon(body) {
