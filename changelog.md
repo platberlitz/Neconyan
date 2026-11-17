@@ -38,6 +38,7 @@
 - PR #725 (2026-11-17) `feat: add tracker override search`
 - PR #726 (2026-11-17) `feat(regex-agent-themes): keep chatroom platform looks in themed feeds`
 - PR #727 (2026-11-17) `fix(scratchpad): recover replies and honour saved setups`
+- PR #728 (2026-11-17) `fix(agents): rerun companions and retain blocked note errors`
 
 ## v1.5.5
 
