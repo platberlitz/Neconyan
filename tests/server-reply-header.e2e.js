@@ -29,6 +29,7 @@ const geometry = page => page.evaluate(() => {
     return { height: header.height, bodyOffset: row.querySelector('.mes_text').getBoundingClientRect().top - header.top,
         actions: row.querySelector('.mes_buttons').getBoundingClientRect().height,
         overflow: Math.max(0, heading.right - header.right),
+        name: row.querySelector('.name_text').getBoundingClientRect().toJSON(),
         date: timestamp?.getBoundingClientRect().toJSON(), model: model?.getBoundingClientRect().toJSON(),
         modelScrollWidth: model?.scrollWidth, modelClientWidth: model?.clientWidth,
         modelWhiteSpace: model && getComputedStyle(model).whiteSpace, modelText: model?.textContent };
@@ -144,7 +145,13 @@ for (const phone of [true, false]) {
                 for (const sample of run.slice(2)) {
                     const model = scenario === 'long-name-new' ? 'model-' + 'x'.repeat(120) : scenario === 'short-name-new' ? 'kimi-k2.5-thinking' : generation.model;
                     expect(sample.modelText).toBe(`${model} (${generation.reasoning_effort})`);
-                    if (scenario !== 'no-timestamps-new') expect(sample.model.top).toBeGreaterThanOrEqual(sample.date.bottom - 0.5);
+                    if (scenario !== 'no-timestamps-new') {
+                        expect(sample.model.top).toBeGreaterThanOrEqual(sample.date.bottom - 0.5);
+                        const nameGap = sample.date.top - sample.name.bottom;
+                        const modelGap = sample.model.top - sample.date.bottom;
+                        expect(nameGap, `${scenario} name to date gap`).toBeGreaterThan(1);
+                        expect(Math.abs(nameGap - modelGap), `${scenario} header row gaps`).toBeLessThanOrEqual(0.5);
+                    }
                     expect(sample.modelWhiteSpace).toBe('normal');
                     expect(sample.modelScrollWidth).toBeLessThanOrEqual(sample.modelClientWidth);
                 }

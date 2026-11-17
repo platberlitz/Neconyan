@@ -796,7 +796,7 @@ describe('Character Tag Manager template, wiring and styling contracts', () => {
     });
 
     test('bumps every stylesheet cache version together', () => {
-        expect(cacheVersion).toBe('20261117-win98-accent-greys');
+        expect(cacheVersion).toBe('20261117-message-header-spacing');
         expect(tabsJs).toContain(`NN_SHELL_STYLE_STYLESHEET_VERSION = '${cacheVersion}'`);
         expect(indexHtml).not.toContain('20261101-faithful-trackers');
         expect(indexHtml).not.toContain('20261104-agents-prefill');
