@@ -740,7 +740,7 @@ body.neconyan :is(#neconyan-tour-coachmark [data-tour-coach-actions], .neconyan-
 body.neconyan #neconyan-tour-coachmark button { min-height: 44px; margin: 0; padding: 8px 12px; }
 body.neconyan #neconyan-tour-coachmark [data-tour-coach-next] { margin-left: auto; border-color: var(--neco-ginger); }
 body.neconyan #neconyan-tour-coachmark [data-tour-content] { min-height: 0; overflow: auto; overscroll-behavior: contain; }
-body.neconyan #neconyan-tour-coachmark [data-tour-coach-actions]:not(:empty) { padding-top: 10px; }
+body.neconyan #neconyan-tour-coachmark [data-tour-coach-actions]:not(:empty) { position: sticky; bottom: 0; padding-top: 10px; background: var(--neco-surface); }
 body.neconyan #neconyan-tour-coachmark button:focus-visible { outline: 2px solid var(--neco-ginger); outline-offset: -3px; }
 
 @media (min-width: 769px) {

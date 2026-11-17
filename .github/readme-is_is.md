@@ -1,8 +1,8 @@
-<!-- Translated from README.md at commit 19874db1 (Neconyan 1.5.4). Keep the structure in step with the English README. -->
+<!-- Translated from README.md at commit 31d628fa (Neconyan 1.5.5). Keep the structure in step with the English README. -->
 
 # Neconyan~
 
-Nýjasta útgáfan er [1.5.4](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.4).
+Nýjasta útgáfan er [1.5.5](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.5).
 
 **Lestu á þínu tungumáli:** [English](../README.md) · [Deutsch](readme-de_de.md) · [Español](readme-es_es.md) · [Français](readme-fr_fr.md) · [Italiano](readme-it_it.md) · [Nederlands](readme-nl_nl.md) · [Português](readme-pt_pt.md) · [Русский](readme-ru_ru.md) · [Українська](readme-uk_ua.md) · [العربية](readme-ar_sa.md) · [ไทย](readme-th_th.md) · [Tiếng Việt](readme-vi_vn.md) · [日本語](readme-ja_jp.md) · [한국어](readme-ko_kr.md) · [简体中文](readme-zh_cn.md) · [繁體中文](readme-zh_tw.md)
 
@@ -12,7 +12,7 @@ Nýjasta útgáfan er [1.5.4](https://github.com/platberlitz/Neconyan/releases/t
   <img src="../docs/readme/banner-neconyan.webp" alt="Neconyan - krúttlegasti framendinn fyrir hlutverkaleiki með mállíkönum">
 </p>
 
-Neconyan er afleggjarinn minn af [SillyTavern](https://github.com/SillyTavern/SillyTavern) og [SillyBunny](https://github.com/SillyBunnyTeam/SillyBunny), með kattaþema, til að spjalla og fara í hlutverkaleiki með gervigreindarpersónum, í tölvunni eða í símanum. API-lykill eða staðbundið líkan kemur frá þér; appið inniheldur hvorki aðgang að líkani né inneign.
+Hæ, gakktu í bæinn! Neconyan er afleggjarinn minn af [SillyTavern](https://github.com/SillyTavern/SillyTavern) og [SillyBunny](https://github.com/SillyBunnyTeam/SillyBunny), með kattaþema, til að spjalla og fara í hlutverkaleiki með gervigreindarpersónum, í tölvunni eða í símanum. Ég bjó það til af því að mig langaði í framenda sem er notalegt að nota, virkar almennilega í síma og er með kött á nánast hverri síðu. API-lykill eða staðbundið líkan kemur frá þér; appið inniheldur hvorki aðgang að líkani né inneign.
 
 **[Sæktu Neconyan](https://github.com/platberlitz/Neconyan/releases/latest)** · **[Lestu handbókina](https://platberlitz.github.io/neconyan-docs/)** · **[Fáðu hjálp](https://platberlitz.github.io/neconyan-docs/help/troubleshooting/)**
 
@@ -24,15 +24,67 @@ Neconyan er afleggjarinn minn af [SillyTavern](https://github.com/SillyTavern/Si
   <img src="../docs/readme/banner-why.webp" alt="Af hverju Neconyan?">
 </p>
 
-- **Fjórar leiðir til að spjalla:** klassískur Hlutverkaleikur, Samtal í anda skilaboðaforrita, samfélagsmiðlastraumur sem heitir Meower og Söguháttur fyrir samfellda frásögn.
-- **Viðmót sem er gert fyrir síma**, með merktum stjórntækjum, spjallstiku neðst og valmynd sem rennur inn. **Simple Mode** felur minna notuð stjórntæki þangað til þú vilt fá þau.
-- **Mewmory** man atburði og persónur í sögunni. **Umboðsmenn** geta haldið utan um vaktara, athugað svar eða skrifað sérstakt Fylgiskjal.
+- **Fjórar leiðir til að spjalla:** klassískur Hlutverkaleikur, Samtal í anda skilaboðaforrita, samfélagsmiðlastraumur sem heitir Meower og Söguháttur fyrir samfellda frásögn. Veldu það sem hentar stemningunni.
+- **Viðmót sem er gert fyrir síma**, með merktum stjórntækjum, spjallstiku neðst og valmynd sem rennur inn. Ekkert meira rýnt í pínulitla tölvutakka á litlum skjá.
+- **[Einfaldur háttur](#einfaldur-háttur)**, fyrir þegar þú vilt bara fara í hlutverkaleik án heils flugstjórnarklefa af tökkum. Meira um hann hér fyrir neðan, því hann er stolt mitt og yndi.
+- **Mewmory** man atburði og persónur í sögunni, svo félaginn þinn gleymi ekki því sem skiptir máli. **Umboðsmenn** geta haldið utan um vaktara, athugað svar eða skrifað sérstakt Fylgiskjal.
 - **Catelier** hjálpar þér að skrifa persónuspjöld og fræðibækur. **Minnisbækur** hafa glósurnar þínar innan seilingar og **Scratchpad** gefur þér sérstakt spjall til að ræða hugmyndir.
-- **Miso, Taro og Nori** hjálpa þér að finna hluti og geta gert breytingar sem appið styður, ef þú leyfir það.
-- **Device sync** flytur valin gögn á milli aðskildra uppsetninga með dulkóðuðum skrám, WebDAV, leynilegum GitHub Gists eða beinni pörun. Flutningar fara fram þegar þú biður um þá.
+- **Miso, Taro og Nori** eru aðstoðarmennirnir á heimilinu. Þau hjálpa þér að finna hluti og geta gert breytingar sem appið styður, ef þú leyfir það.
+- **Samstilling tækja** flytur valin gögn á milli aðskildra uppsetninga með dulkóðuðum skrám, WebDAV, leynilegum GitHub Gists eða beinni pörun. Flutningar fara fram þegar þú biður um þá.
 - **Þemu, áherslulitir og kettir.** Ansi margir kettir. Þú getur falið þá, þótt ég geti ekki ímyndað mér hvers vegna þú vildir það.
 
-Persónuspjöldin þín, spjöllin, fræðibækurnar og forstillingarnar nota kunnugleg SillyTavern-snið. Það er engin fjarmæling. Sumir eiginleikar og viðbætur úr upprunaverkefninu haga sér öðruvísi hér; ég tek bara inn þá hluta sem ég vil. Í [listanum yfir verkfærin sem fylgja með](../docs/neconyan-native-tools.md) er getið verkefnanna sem fylgja Neconyan.
+Persónuspjöldin þín, spjöllin, fræðibækurnar og forstillingarnar nota kunnugleg SillyTavern-snið, svo þau fylgja þér beint yfir. Það er engin fjarmæling. Sumir eiginleikar og viðbætur úr upprunaverkefninu haga sér öðruvísi hér; ég tek bara inn þá hluta sem ég vil. Í [listanum yfir verkfærin sem fylgja með](../docs/neconyan-native-tools.md) er getið verkefnanna sem fylgja Neconyan.
+
+## Einfaldur háttur
+
+<p align="center">
+  <img src="../docs/readme/banner-simple-mode.webp" alt="Einfaldur háttur?!">
+</p>
+
+Ekki mikið fyrir flókna stórnotendadótið? Nennirðu ekki að vaða í gegnum endalausa takka bara til að fara í hlutverkaleik og skemmta þér? Heyrðu, þá er ég sko með rétta háttinn fyrir þig!
+
+**Einfaldur háttur** er Neconyan fyrir þau sem vilja bara fara í RP. Þú heldur öllu sem gerir Neconyan að *Neconyan*: köttunum, símavæna viðmótinu, Miso, Taro og Nori, Minni sem heldur utan um söguna þína og umboðsmönnunum þínum sem halda áfram að vinna í bakgrunni. Það sem hverfur er draslið: samplerar, kvaðningasnið, tókateljarar, viðbótavalmyndir og allir hinir takkarnir sem flestir snerta aldrei.
+
+Og nú kemur það besta: engu er eytt og ekki er slökkt á neinu. Hvert falið stjórntæki er bara sett til hliðar, ekki hent, og kemur strax aftur um leið og þú vilt fá það.
+
+### Auðveldara gæti það ekki verið
+
+Í allra fyrstu heimsókninni spyr Nori einnar spurningar: **Want to keep things simple?** Ýttu á **Yes, keep it simple** og þriggja skrefa kynningarferð leiðir þig í gegnum að tengja líkan, hitta persónu og heilsa. Það er allt og sumt. Þetta er öll uppsetningin.
+
+Ertu nú þegar að nota fulla viðmótið? Kveiktu á honum hvenær sem er í **Stillingar → Útlit → Einfaldur háttur**.
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-simple-ask.webp" alt="Nori spyr „Want to keep things simple?“ í tölvu, á nýjum aðgangi"></td>
+  <td width="28%"><img src="../docs/readme/phone-simple-ask.webp" alt="Nori spyr „Want to keep things simple?“ í síma"></td>
+</tr></table>
+
+### Spjallið þitt í forgrunni
+
+Spjallið og innsláttarreiturinn fá plássið, og hliðarstikan heldur stuttum lista yfir síður sem þú opnar í alvöru: Persónur, Tengingar, Umboðsmenn, Fræðibækur, Minnisbækur, Scratchpad, Gallerí, Forstillingar, Persónugervi og Samræðulitir. Ofan á það færðu þrjá handhæga takka:
+
+- **Find characters** leitar að nýjum spjöldum. Veldu eitt og spjallið við það opnast strax, tilbúið til notkunar.
+- **Minni** opnar **Story so far**, með einum rofa, takkanum **Summarise now** og nýjustu samantektinni af spjallinu þínu.
+- **Updates** athugar hvort ný útgáfa sé komin og setur hana upp án þess að þú farir úr Einföldum hætti.
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-simple-chat.webp" alt="Hlutverkaleikjaspjall í Einföldum hætti í tölvu, með styttri hliðarstikunni"></td>
+  <td width="28%"><img src="../docs/readme/phone-simple-menu.webp" alt="Styttri valmynd Einfalds háttar í síma, með Minni, Updates og Sýna alla eiginleika"></td>
+</tr></table>
+
+### Að tengjast án heimavinnu
+
+Tengingar sýna bara þjónustuveitandann, lykilinn þinn, líkanið, **Tengjast** og **Prufu skilaboð**. Allt hitt bíður á bak við **More connection options**, þangað til forvitnin tekur völdin.
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-simple.webp" alt="Einfaldur háttur í tölvu, með styttri síðunni Tengingar"></td>
+  <td width="28%"><img src="../docs/readme/phone-simple.webp" alt="Einfaldur háttur í síma, með styttri síðunni Tengingar"></td>
+</tr></table>
+
+### Skiptirðu um skoðun? Ekkert mál
+
+Ýttu á **Sýna alla eiginleika** í hliðarstikunni, eða slökktu á honum í **Stillingar → Útlit**, og allir takkarnir koma strax aftur þangað sem þú skildir við þá. Spjöllin þín, persónurnar, fræðin og umboðsmennirnir taka ekki einu sinni eftir neinu.
+
+[Einfaldur háttur í handbókinni](https://platberlitz.github.io/neconyan-docs/workspace/#keep-the-sidebar-simple)
 
 ## Kíktu á þetta
 
@@ -40,11 +92,11 @@ Persónuspjöldin þín, spjöllin, fræðibækurnar og forstillingarnar nota ku
   <img src="../docs/readme/banner-modes.webp" alt="Hamir">
 </p>
 
-Skjámyndir úr tölvu og síma frá útgáfu 1.5.4, með sýnispjöllum, glósum og innbyggðu aðstoðarmönnunum.
+Og hér er restin af kynningarferðinni! Ég tók þessar skjámyndir úr tölvu og síma 17. nóvember 2026, með sýnispjöllum, glósum og innbyggðu aðstoðarmönnunum, sjálfgefnu Calico Dark-litunum og **Sýnileiki bakgrunns í 0%**.
 
 ### Heim
 
-Veldu persónu, tengdu líkan eða heilsaðu upp á aðstoðarmann.
+Veldu persónu, tengdu líkan eða heilsaðu upp á aðstoðarmann. Kettirnir verða himinlifandi að sjá þig.
 
 <table><tr>
   <td width="72%"><img src="../docs/readme/desktop-home.webp" alt="Heim í tölvu"></td>
@@ -53,7 +105,7 @@ Veldu persónu, tengdu líkan eða heilsaðu upp á aðstoðarmann.
 
 ### Hlutverkaleikur
 
-Skrifaðu senu, prófaðu annað svar eða haltu áfram með gamalt spjall.
+Skrifaðu senu, prófaðu annað svar eða haltu áfram með gamalt spjall nákvæmlega þar sem frá var horfið.
 
 <table><tr>
   <td width="72%"><img src="../docs/readme/desktop-roleplay.webp" alt="Hlutverkaleikur í tölvu"></td>
@@ -80,7 +132,7 @@ Veldu aðstoðarmann, ákveddu hvenær hann keyrir og gefðu honum tengingu. Ég
 
 ### Proofreader eftir myndun
 
-Proofreader fer yfir svar eftir að það berst og getur lagað texta og snið án þess að biðja aðallíkanið um að skrifa senuna upp á nýtt. Opnaðu **Breytingar agents** til að bera breytinguna saman og afturkalla hana ef þú vilt frekar upprunalega textann.
+Proofreader fer yfir svar eftir að það berst og getur lagað texta og snið án þess að biðja aðallíkanið um að skrifa senuna upp á nýtt. Opnaðu **Agent-breytingar** til að bera breytinguna saman og afturkalla hana ef þú vilt frekar upprunalega textann.
 
 <table><tr>
   <td width="72%"><img src="../docs/readme/desktop-proofreader.webp" alt="Breytingasaga Proofreader í tölvu, þar sem upprunalega svarið er borið saman við breyttu útgáfuna"></td>
@@ -90,20 +142,11 @@ Proofreader fer yfir svar eftir að það berst og getur lagað texta og snið �
 Þetta sviðsetta dæmi keyrir raunverulegt vinnuflæði umboðsmanna með föstu sýnisvari. Tengda líkanið þitt skrifar breytingarnar við venjulega notkun og hver yfirferð getur kostað aðra beiðni. [Umboðsmenn og fylgdarliðar í handbókinni](https://platberlitz.github.io/neconyan-docs/helpers/agents/).
 
 <details>
-<summary><b>Fleiri skjámyndir: Simple Mode, Samtal, Meower, Söguháttur, Minnisbækur, Scratchpad og Device sync</b></summary>
-
-### Simple Mode
-
-Færri stjórntæki á meðan þú ert að koma þér fyrir. **Show all features** í hliðarstikunni sýnir þau aftur; það er ekki slökkt á neinu.
-
-<table><tr>
-  <td width="72%"><img src="../docs/readme/desktop-simple.webp" alt="Simple Mode í tölvu"></td>
-  <td width="28%"><img src="../docs/readme/phone-simple.webp" alt="Simple Mode í síma"></td>
-</tr></table>
+<summary><b>Fleiri skjámyndir: Samtal, Meower, Söguháttur, Minnisbækur, Scratchpad og Samstilling tækja</b></summary>
 
 ### Samtal
 
-Sendu persónunum þínum skilaboð, búðu til hópspjöll og láttu þær vera uppteknar eða ótengdar.
+Sendu persónunum þínum skilaboð, búðu til hópspjöll og láttu þær vera uppteknar eða ótengdar, alveg eins og alvöru vinir.
 
 <table><tr>
   <td width="72%"><img src="../docs/readme/desktop-conversation.webp" alt="Samtal í tölvu"></td>
@@ -112,7 +155,7 @@ Sendu persónunum þínum skilaboð, búðu til hópspjöll og láttu þær vera
 
 ### Meower
 
-Samfélagsmiðlastraumur þar sem persónurnar þínar birta færslur, svara og halda skoðanakannanir.
+Samfélagsmiðlastraumur þar sem persónurnar þínar birta færslur, svara og halda skoðanakannanir. Þar getur orðið ansi mikil ringulreið, á allra besta hátt.
 
 <table><tr>
   <td width="72%"><img src="../docs/readme/desktop-meower.webp" alt="Meower í tölvu"></td>
@@ -121,7 +164,7 @@ Samfélagsmiðlastraumur þar sem persónurnar þínar birta færslur, svara og 
 
 ### Söguháttur
 
-Lestu spjallið þitt sem samfellda frásögn.
+Lestu spjallið þitt sem samfellda frásögn, eins og bók sem þið skrifuðuð saman.
 
 <table><tr>
   <td width="72%"><img src="../docs/readme/desktop-story.webp" alt="Söguháttur í tölvu"></td>
@@ -146,13 +189,13 @@ Ræddu söguna við aðstoðarmann eða hringborð persóna, án þess að umræ
   <td width="28%"><img src="../docs/readme/phone-scratchpad.webp" alt="Scratchpad í síma"></td>
 </tr></table>
 
-### Device sync
+### Samstilling tækja
 
 Færðu valin söfn á milli aðskildra uppsetninga. Veldu dulkóðaðar skrár, WebDAV, leynilegt GitHub Gist eða beina pörun; flutningar hefjast þegar þú biður um þá. [Uppsetning og endurheimt í handbókinni](https://platberlitz.github.io/neconyan-docs/help/device-sync/).
 
 <table><tr>
-  <td width="72%"><img src="../docs/readme/desktop-device-sync.webp" alt="Stillingar Device sync í tölvu"></td>
-  <td width="28%"><img src="../docs/readme/phone-device-sync.webp" alt="Stillingar Device sync í síma"></td>
+  <td width="72%"><img src="../docs/readme/desktop-device-sync.webp" alt="Stillingar fyrir Samstillingu tækja í tölvu"></td>
+  <td width="28%"><img src="../docs/readme/phone-device-sync.webp" alt="Stillingar fyrir Samstillingu tækja í síma"></td>
 </tr></table>
 
 </details>
@@ -163,13 +206,15 @@ Færðu valin söfn á milli aðskildra uppsetninga. Veldu dulkóðaðar skrár,
   <img src="../docs/readme/banner-getting-started.webp" alt="Fyrstu skrefin">
 </p>
 
+Langar þig að prófa? Veldu bara það tæki sem þú vilt nota.
+
 ### Á tölvu
 
 1. Sæktu skrána sem endar á **-source.zip** af [nýjustu útgáfunni](https://github.com/platberlitz/Neconyan/releases/latest). Afþjappaðu hana fyrst; í Windows skaltu hægrismella og velja **Extract All**.
 2. Opnaðu möppuna. Keyrðu **Start.bat** í Windows, **Start.command** í macOS eða **bash start.sh** í skipanalínu í Linux.
 3. Gefðu fyrstu ræsingunni nokkrar mínútur til að setja upp það sem hún þarf. Hafðu skipanalínugluggann opinn á meðan þú notar Neconyan.
 4. Vafrinn ætti að opnast af sjálfu sér. Ef hann gerir það ekki skaltu fara á **http://127.0.0.1:4433/**.
-5. Opnaðu **Tengingar**, veldu þjónustuveitanda og líkan og sláðu inn API-lykilinn þinn eða vistfang staðbundna líkansins. Opnaðu svo persónu eða aðstoðarmann á síðunni Heim.
+5. Opnaðu **Tengingar**, veldu þjónustuveitanda og líkan og sláðu inn API-lykilinn þinn eða vistfang staðbundna líkansins. Opnaðu svo persónu eða aðstoðarmann á síðunni Heim, og þá er bara að byrja!
 
 Í næsta skipti keyrirðu sama ræsiforritið. Til að stöðva Neconyan ýtirðu á **Ctrl+C** í skipanalínunni þess.
 
@@ -185,7 +230,7 @@ git clone https://github.com/platberlitz/Neconyan.git
 
 Sæktu skrána **-android-arm64.apk** af [nýjustu útgáfunni](https://github.com/platberlitz/Neconyan/releases/latest) og opnaðu hana. Leyfðu uppsetningu úr vafranum ef Android biður um það. Þú þarft **Android 11 eða nýrra**, **Android System WebView 124 eða nýrra** og um **2 GiB** af lausu plássi.
 
-Appið keyrir í símanum, án Termux eða tölvu. Gefðu því tíma til að pakka sér út þegar þú opnar það í fyrsta sinn og settu svo upp **Tengingar**. Settu uppfærslur upp yfir núverandi app til að halda spjöllunum þínum.
+Appið keyrir í símanum sjálfum, án Termux eða tölvu. Gefðu því tíma til að pakka sér út þegar þú opnar það í fyrsta sinn og settu svo upp **Tengingar**. Settu uppfærslur upp yfir núverandi app til að halda spjöllunum þínum.
 
 [Uppsetning á Android](https://platberlitz.github.io/neconyan-docs/start/android/) · [Leiðbeiningar um smíði](../android/README.md)
 
@@ -204,17 +249,17 @@ Með ókeypis Apple-aðgangi þarf að undirrita appið aftur á sjö daga frest
 
 ## Uppfærslur, öryggisafrit og flutningur á spjöllunum þínum
 
-Opnaðu **Þjónn → Uppfærslur og endurræsing → Athuga með uppfærslur**. Git-uppsetningar og studdar uppsetningar úr ZIP-skrá með frumkóða bjóða upp á **Uppfæra og endurræsa**. Android býður upp á **Update APK** og biður þig um að samþykkja uppsetninguna. Eldri ZIP-uppsetningar án uppfærslutóls þurfa [handvirkan flutning í nýrri möppuna](https://platberlitz.github.io/neconyan-docs/help/backups/#update-a-zip-installation).
+Opnaðu **Þjónn → Uppfærslur og endurræsing → Athuga með uppfærslur**. Git-uppsetningar og studdar uppsetningar úr ZIP-skrá með frumkóða bjóða upp á **Uppfæra og endurræsa**. Android býður upp á **Update APK** og biður þig um að samþykkja uppsetninguna. Í Einföldum hætti fer takkinn **Updates** í hliðarstikunni með þig beint á sama stað. Eldri ZIP-uppsetningar án uppfærslutóls þurfa [handvirkan flutning í nýrri möppuna](https://platberlitz.github.io/neconyan-docs/help/backups/#update-a-zip-installation).
 
 Git-uppsetningar athuga líka með uppfærslur þegar þær eru ræstar. Breytingar sem þú hefur gert á skrám appsins sjálfs geta komið í veg fyrir sjálfvirka uppfærslu; spjöllin þín og stillingar teljast ekki með.
 
-Kemurðu frá SillyTavern eða SillyBunny? **Taktu fyrst öryggisafrit**, láttu Neconyan hafa sína eigin gagnamöppu og fylgdu svo leiðbeiningunum [Að flytja inn gögnin þín](https://platberlitz.github.io/neconyan-docs/start/imports/). Athugaðu persónurnar þínar og spjöllin áður en þú eyðir einhverju. Sumar viðbætur gætu þurft lagfæringar.
+Kemurðu frá SillyTavern eða SillyBunny? Gaman að sjá þig! **Taktu fyrst öryggisafrit**, láttu Neconyan hafa sína eigin gagnamöppu og fylgdu svo leiðbeiningunum [Að flytja inn gögnin þín](https://platberlitz.github.io/neconyan-docs/start/imports/). Athugaðu persónurnar þínar og spjöllin áður en þú eyðir einhverju. Sumar viðbætur gætu þurft lagfæringar.
 
 [Öryggisafrit og endurheimt](https://platberlitz.github.io/neconyan-docs/help/backups/) · [Að flytja gögn á milli tækja](../docs/data-portability.md)
 
 ## Vantar þig hjálp?
 
-Ég myndi byrja á [handbókinni](https://platberlitz.github.io/neconyan-docs/) eða spyrja Miso, Taro eða Nori á síðunni Heim. Aðstoðarmennirnir geta haft rangt fyrir sér, svo athugaðu ráðin þeirra áður en þú gerir breytingu sem þú getur ekki tekið til baka.
+Ég myndi byrja á [handbókinni](https://platberlitz.github.io/neconyan-docs/) eða spyrja Miso, Taro eða Nori á síðunni Heim; þau eru alltaf boðin og búin að hjálpa. Þau geta samt haft rangt fyrir sér, svo athugaðu ráðin þeirra áður en þú gerir breytingu sem þú getur ekki tekið til baka.
 
 Ef þú finnur ekki stillingu skaltu prófa **Leita** í hliðarstikunni. Ef villur koma upp skaltu nota [leiðbeiningarnar um bilanaleit](https://platberlitz.github.io/neconyan-docs/help/troubleshooting/) eða [tilkynna vandamál](https://github.com/platberlitz/Neconyan/issues) og segja hvað þú varst að gera og hvaða villa birtist.
 
@@ -226,6 +271,8 @@ Ef þú finnur ekki stillingu skaltu prófa **Leita** í hliðarstikunni. Ef vil
 
 Neconyan byggir á vinnu allra sem standa að SillyTavern og SillyBunny; ekkert af þessu væri til án þeirra. Í [listanum yfir verkfærin sem fylgja með](../docs/neconyan-native-tools.md) er getið upphaflegra höfunda þeirra.
 
-Gert af [Platberlitz](https://github.com/platberlitz). Gefið út undir [GNU AGPL v3](../LICENSE). Haltu tilkynningum og leyfisskilmálum á sínum stað ef þú dreifir því áfram.
+Gert með ást af [Platberlitz](https://github.com/platberlitz). Gefið út undir [GNU AGPL v3](../LICENSE). Haltu tilkynningum og leyfisskilmálum á sínum stað ef þú dreifir því áfram.
 
 Sérstakar þakkir til **El Topo**, helsta aðstoðarmanns míns og þátttakanda. Ég kann virkilega að meta alla vinnuna sem þú hefur lagt í Neconyan.
+
+Góða skemmtun, og skilaðu kveðju til kattanna frá mér!
