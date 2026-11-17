@@ -333,6 +333,35 @@ test('recall offers short saved memory entries, not raw chat passages, unless pa
     assert.ok(inputs[1].candidates.some(candidate => candidate.kind === 'source'), 'switching passages on offers them again');
 });
 
+test('search cues can leave user messages out so every recent cue is a reply', async t => {
+    const { directories } = disk(t);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; event(state); });
+    const config = defaultConfig();
+    config.writerTokenizer = 'cl100k_base';
+    config.retrieval.queryMessages = 3;
+    Object.assign(config.roles.selector, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'selector' });
+    saveConfig(directories, config);
+    const scenes = [];
+    const dependencies = {
+        embedFn: async () => assert.fail('No embeddings are enabled'),
+        scheduleBackground: false,
+        call: async (_directories, _config, role, _contract, input) => {
+            scenes.push(input.scene);
+            return { value: { status: 'complete', selections: [], rejections: [], needsEvidence: [] }, usage: { role } };
+        },
+    };
+    await recall(directories, locator, {}, dependencies);
+    assert.deepEqual(scenes[0].map(cue => cue.speaker), ['Player', 'Mara', 'Player']);
+    const saved = readConfig(directories);
+    assert.equal(saved.retrieval.skipUserMessages, false, 'older settings read user messages as before');
+    saved.retrieval.skipUserMessages = true;
+    saveConfig(directories, saved);
+    await recall(directories, locator, {}, dependencies);
+    assert.deepEqual(scenes[1].map(cue => cue.speaker), ['Mara', 'Narrator', 'Mara']);
+    assert.throws(() => saveConfig(directories, { ...saved, retrieval: { ...saved.retrieval, skipUserMessages: 'yes' } }), /switched on or off/);
+});
+
 test('a reply that reuses a current AI pick starts no second background search', async t => {
     const { directories, write } = disk(t);
     const config = defaultConfig();

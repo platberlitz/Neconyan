@@ -444,6 +444,7 @@ describe('in-chat agent post-processing runner', () => {
                 rawPrompt: Boolean(agent?.companion?.rawPrompt),
                 minContextTokens: Number(agent?.companion?.minContextTokens) || 0,
                 contextMessages: Number(agent?.companion?.contextMessages) || 10,
+                skipUserMessages: Boolean(agent?.companion?.skipUserMessages),
                 includeCharacterCard: Boolean(agent?.companion?.includeCharacterCard),
                 includePersona: Boolean(agent?.companion?.includePersona),
                 includeWorldInfo: Boolean(agent?.companion?.includeWorldInfo),
@@ -4005,6 +4006,29 @@ describe('in-chat agent post-processing runner', () => {
         expect(prompt.indexOf('User: Visible recent setup.')).toBeLessThan(prompt.indexOf('Assistant: Visible latest reply.'));
     });
 
+    test('a companion that skips user messages fills its recent messages with replies only', async () => {
+        const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        const companion = createCompanionAgent({
+            id: 'replies-only',
+            companion: { contextMessages: 2, minContextTokens: 0, skipUserMessages: true },
+        });
+
+        chat.push(
+            { mes: 'Earlier reply.', name: 'Assistant', is_user: false, is_system: false, extra: {} },
+            { mes: 'First question.', name: 'User', is_user: true, is_system: false, extra: {} },
+            { mes: 'Middle reply.', name: 'Assistant', is_user: false, is_system: false, extra: {} },
+            { mes: 'Second question.', name: 'User', is_user: true, is_system: false, extra: {} },
+            { mes: 'Latest reply.', name: 'Assistant', is_user: false, is_system: false, extra: {} },
+        );
+
+        const prompt = (await companionRunner.buildCompanionPromptMessages(companion, 4))[1].content;
+
+        expect(prompt).toContain('Assistant: Middle reply.');
+        expect(prompt).toContain('Assistant: Latest reply.');
+        expect(prompt).not.toContain('question.');
+        expect(prompt).not.toContain('Earlier reply.');
+    });
+
     test('excludes hidden messages from companion world info scans', async () => {
         const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
         const worldInfoCompanion = createCompanionAgent({
@@ -5902,6 +5926,25 @@ describe('in-chat agent post-processing runner', () => {
         const prompt = generateQuietPrompt.mock.calls[1][0].quietPrompt;
         expect(prompt).toContain('<recent_chat>\nUser: Earlier question\n\nAssistant: Host reply\n</recent_chat>');
         expect(prompt).not.toContain('Future');
+    });
+
+    test('a rewrite that skips user messages reads only replies as recent messages', async () => {
+        generateQuietPrompt.mockResolvedValueOnce('Raw note').mockResolvedValueOnce('Edited note');
+        const companionAgent = createCompanionAgent({ id: 'replies-only-companion' });
+        const transformer = createCompanionOutputTransformAgent();
+        transformer.postProcess.promptTransformContextMessages = 2;
+        transformer.postProcess.promptTransformSkipUserMessages = true;
+        enabledAgents = [companionAgent, transformer];
+        const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        chat.push(
+            { name: 'Assistant', mes: 'Opening reply', is_user: false, extra: {} },
+            { name: 'User', mes: 'A question', is_user: true, extra: {} },
+            { name: 'Assistant', mes: 'Host reply', is_user: false, extra: {} },
+        );
+        await companionRunner.runCompanionAgentOnMessage(companionAgent.id, 2);
+        const prompt = generateQuietPrompt.mock.calls[1][0].quietPrompt;
+        expect(prompt).toContain('<recent_chat>\nAssistant: Opening reply\n\nAssistant: Host reply\n</recent_chat>');
+        expect(prompt).not.toContain('A question');
     });
 
     test('keeps the raw companion output when a later post pass fails', async () => {

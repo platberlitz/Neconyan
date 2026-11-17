@@ -36,6 +36,7 @@ import {
  * @property {'card'|'panel'|'hidden'} displayMode
  * @property {'markdown'|'html'|'text'} format
  * @property {number} contextMessages
+ * @property {boolean} skipUserMessages - Read only non-user messages, so every counted message is a reply
  * @property {boolean} includeCharacterCard
  * @property {boolean} includePersona
  * @property {boolean} includeWorldInfo
@@ -85,6 +86,7 @@ import {
  * @property {'rewrite'|'append'} promptTransformMode
  * @property {number} promptTransformMaxTokens
  * @property {number} promptTransformContextMessages - Recent chat messages shown to the rewrite as read-only context
+ * @property {boolean} promptTransformSkipUserMessages - Leave user messages out of that recent chat
  */
 
 /**
@@ -1070,6 +1072,7 @@ export function createDefaultCompanionConfig() {
         inlinePhase: '',
         minContextTokens: 0,
         contextMessages: 10,
+        skipUserMessages: false,
         includeCharacterCard: true,
         includePersona: true,
         includeWorldInfo: true,
@@ -1127,6 +1130,7 @@ export function normalizeCompanionConfig(raw = {}) {
         // Neconyan: no upper bound. These are "how far back to look" dials, and a hard ceiling
         // silently rewrote whatever the user saved (200 came back as 50) with no way to tell.
         contextMessages: clampNumber(rawConfig.contextMessages, defaults.contextMessages, 1, Infinity),
+        skipUserMessages: Boolean(rawConfig.skipUserMessages),
         includeCharacterCard: rawConfig.includeCharacterCard === undefined ? defaults.includeCharacterCard : Boolean(rawConfig.includeCharacterCard),
         includePersona: rawConfig.includePersona === undefined ? defaults.includePersona : Boolean(rawConfig.includePersona),
         includeWorldInfo: rawConfig.includeWorldInfo === undefined ? defaults.includeWorldInfo : Boolean(rawConfig.includeWorldInfo),
@@ -1382,6 +1386,7 @@ export function createDefaultAgent() {
             promptTransformMode: 'rewrite',
             promptTransformMaxTokens: DEFAULT_AGENT_MAX_TOKENS,
             promptTransformContextMessages: 0,
+            promptTransformSkipUserMessages: false,
         },
         regexScripts: [],
         enabled: false,
@@ -1514,6 +1519,7 @@ export function normalizeAgent(rawAgent = {}) {
                 ? Math.max(16, Math.min(MAX_AGENT_MAX_TOKENS, Number(rawPostProcess.promptTransformMaxTokens)))
                 : defaults.postProcess.promptTransformMaxTokens,
             promptTransformContextMessages: normalizePromptTransformContextMessages(rawPostProcess.promptTransformContextMessages),
+            promptTransformSkipUserMessages: Boolean(rawPostProcess.promptTransformSkipUserMessages),
         },
         regexScripts: Array.isArray(rawAgent.regexScripts)
             ? normalizeAgentRegexIdentities(rawAgent.regexScripts)

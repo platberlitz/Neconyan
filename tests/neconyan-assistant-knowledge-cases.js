@@ -1,5 +1,9 @@
 // Questions and distinguishing facts shared by Node and real-browser retrieval checks.
 export const refreshedKnowledgeCases = [
+    ['How do I make a companion skip user messages?', 'agents.skip-user-messages', 'counts replies only'],
+    ['Where is Skip user messages in recent messages for a reply rewriter?', 'agents.skip-user-messages', 'Skip user messages in recent messages'],
+    ['How do I skip user messages in Mewmory search cues?', 'mewmory.skip-user-cues', 'last eight non-user messages'],
+    ['Does Skip user messages in search cues stop Mewmory memory updates reading my messages?', 'mewmory.skip-user-cues', 'Memory updates still read the whole chat'],
     ['How do I auto-run post-gen agents on chosen companions?', 'agents.companion-output-targets', 'Chosen companions'],
     ['Does On Companions switch disabled agents on?', 'agents.companion-output-targets', 'does not process old notes or switch disabled agents on'],
     ['What does Keep each agent’s choices do in On Companions?', 'agents.companion-output-targets', 'preserving each saved target list'],

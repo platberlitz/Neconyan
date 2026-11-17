@@ -81,6 +81,11 @@ describe('in-chat agent scoped enabled state', () => {
         };
 
         expect(store.createDefaultAgent().postProcess.promptTransformContextMessages).toBe(0);
+        expect(store.createDefaultAgent().postProcess.promptTransformSkipUserMessages).toBe(false);
+        expect(store.createDefaultAgent().companion.skipUserMessages).toBe(false);
+        store.loadAgents([{ id: 'replies', name: 'Replies', companion: { skipUserMessages: 1 }, postProcess: { promptTransformSkipUserMessages: 'yes' } }], { account: 'alice' });
+        expect(store.getAgentById('replies').companion.skipUserMessages).toBe(true);
+        expect(store.getAgentById('replies').postProcess.promptTransformSkipUserMessages).toBe(true);
         expect(contextFor(undefined)).toBe(0);
         expect(contextFor('6')).toBe(6);
         expect(contextFor(3.9)).toBe(3);
@@ -452,6 +457,7 @@ describe('in-chat agent scoped enabled state', () => {
             inlinePhase: '',
             minContextTokens: 0,
             contextMessages: 10,
+            skipUserMessages: false,
             includeCharacterCard: true,
             includePersona: true,
             includeWorldInfo: true,

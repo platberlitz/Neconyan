@@ -4237,6 +4237,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
     editorEl.find('#ica--editor-companion-displayMode').val(companion.displayMode);
     editorEl.find('#ica--editor-companion-format').val(companion.format);
     editorEl.find('#ica--editor-companion-contextMessages').val(companion.contextMessages);
+    editorEl.find('#ica--editor-companion-skipUserMessages').prop('checked', Boolean(companion.skipUserMessages));
     editorEl.find('#ica--editor-companion-minContextTokens').val(companion.minContextTokens);
     editorEl.find('#ica--editor-companion-historyDepth').val(companion.historyDepth);
     editorEl.find('#ica--editor-companion-maxTokens').val(companion.maxTokens);
@@ -4318,6 +4319,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
     editorEl.find('#ica--editor-pp-promptMode').val(getPromptTransformMode(agent));
     editorEl.find('#ica--editor-pp-promptMaxTokens').val(agent.postProcess.promptTransformMaxTokens ?? DEFAULT_AGENT_MAX_TOKENS);
     editorEl.find('#ica--editor-pp-promptContextMessages').val(normalizePromptTransformContextMessages(agent.postProcess.promptTransformContextMessages));
+    editorEl.find('#ica--editor-pp-promptSkipUserMessages').prop('checked', Boolean(agent.postProcess.promptTransformSkipUserMessages));
     editorEl.find('#ica--editor-pp-promptShowNotifications').prop('checked', Boolean(agent.postProcess.promptTransformShowNotifications));
     editorEl.find('#ica--editor-pp-runOnImpersonate').prop('checked', Boolean(agent.conditions.runOnImpersonate));
     editorEl.find('#ica--editor-pp-runOnCompanionOutputs').prop('checked', Boolean(agent.conditions.runOnCompanionOutputs));
@@ -4610,6 +4612,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
                 : 'markdown',
             rawPrompt: root.find('#ica--editor-companion-rawPrompt').prop('checked'),
             contextMessages: Number(root.find('#ica--editor-companion-contextMessages').val()) || current.contextMessages,
+            skipUserMessages: root.find('#ica--editor-companion-skipUserMessages').prop('checked'),
             minContextTokens: Number.isFinite(Number(root.find('#ica--editor-companion-minContextTokens').val()))
                 ? Number(root.find('#ica--editor-companion-minContextTokens').val())
                 : current.minContextTokens,
@@ -4647,6 +4650,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
         editorEl.find('#ica--editor-companion-displayMode').val(nextCompanion.displayMode);
         editorEl.find('#ica--editor-companion-format').val(nextCompanion.format);
         editorEl.find('#ica--editor-companion-contextMessages').val(nextCompanion.contextMessages);
+        editorEl.find('#ica--editor-companion-skipUserMessages').prop('checked', Boolean(nextCompanion.skipUserMessages));
         editorEl.find('#ica--editor-companion-minContextTokens').val(nextCompanion.minContextTokens);
         editorEl.find('#ica--editor-companion-historyDepth').val(nextCompanion.historyDepth);
         editorEl.find('#ica--editor-companion-maxTokens').val(nextCompanion.maxTokens);
@@ -5185,6 +5189,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
         agent.postProcess.promptTransformMode = editorEl.find('#ica--editor-pp-promptMode').val()?.toString() === 'append' ? 'append' : 'rewrite';
         agent.postProcess.promptTransformMaxTokens = Number(editorEl.find('#ica--editor-pp-promptMaxTokens').val()) || DEFAULT_AGENT_MAX_TOKENS;
         agent.postProcess.promptTransformContextMessages = normalizePromptTransformContextMessages(editorEl.find('#ica--editor-pp-promptContextMessages').val());
+        agent.postProcess.promptTransformSkipUserMessages = editorEl.find('#ica--editor-pp-promptSkipUserMessages').prop('checked');
         agent.regexScripts = regexScripts.map(script => normalizeRegexScript(script));
         agent.conditions.runOnImpersonate = editorEl.find('#ica--editor-pp-runOnImpersonate').prop('checked');
         agent.conditions.runOnCompanionOutputs = editorEl.find('#ica--editor-pp-runOnCompanionOutputs').prop('checked');
