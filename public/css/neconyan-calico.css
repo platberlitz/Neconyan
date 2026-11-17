@@ -339,9 +339,7 @@ body.neconyan::before {
 :root[data-neconyan-calico-tone='dark'] body.neconyan::before {
     background-image: url('../img/neconyan/kitty-clouds-dark.webp?v=20260923a');
 }
-body.neconyan:not(.sbterm) #sheld {
-    background-color: rgb(from var(--neco-canvas) r g b / var(--sb-shell-surface-opacity, 1)) !important;
-}
+body.neconyan:not(.sbterm) #sheld,
 body.neconyan:not(.sbterm) #form_sheld,
 body.neconyan:not(.sbterm) #neconyan-home-host {
     background-color: transparent !important;
