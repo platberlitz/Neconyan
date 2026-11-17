@@ -40,6 +40,7 @@
 - PR #727 (2026-11-17) `fix(scratchpad): recover replies and honour saved setups`
 - PR #728 (2026-11-17) `fix(agents): rerun companions and retain blocked note errors`
 - PR #729 (2026-11-17) `fix(roleplay): keep failed swipes on the existing reply`
+- PR #730 (2026-11-17) `docs(readme): give Simple Mode its own section and refresh the screenshots`
 
 ## v1.5.5
 
