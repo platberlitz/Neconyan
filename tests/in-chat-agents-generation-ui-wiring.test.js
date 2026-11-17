@@ -512,7 +512,7 @@ describe('in-chat agents generation UI wiring', () => {
     });
 
     test('keeps the toolbar buttons disabled until their handlers are attached', () => {
-        const mounted = indexSource.indexOf('$(\'#in_chat_agents_container\').append(settingsHtml);');
+        const mounted = indexSource.indexOf('$(container).append(settingsHtml);');
         const held = indexSource.indexOf('#ica--settings .ica--toolbar-actions > button:not(:disabled)', mounted);
         const firstWait = indexSource.indexOf('await decorateAgentControls(document.getElementById(\'ica--settings\'));', mounted);
         const released = indexSource.indexOf('for (const button of startingToolbarButtons) {\n        button.disabled = false;', mounted);

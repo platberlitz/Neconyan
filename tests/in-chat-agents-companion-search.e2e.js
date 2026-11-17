@@ -16,7 +16,7 @@ for (const width of [393, 1280]) {
             });
             await page.goto('/');
             await page.waitForFunction(() => window.NeconyanShell && document.body.classList.contains('neconyan-rail-ready'));
-            await expect(page.locator('#ica--run-status')).not.toHaveText('Ready');
+            await expect(page.locator('#ica--run-status')).not.toHaveText('Loading your agents...');
             await page.evaluate(async prefix => {
                 const store = await import('/scripts/extensions/in-chat-agents/agent-store.js');
                 for (const [index, name] of ['Search Scout', 'Private chat', 'Search Guide'].entries()) {

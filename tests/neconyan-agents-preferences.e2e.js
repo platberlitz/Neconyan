@@ -10,7 +10,7 @@ async function openAgents(page, reload = false) {
     else await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 90000 });
     await expect(page.locator('[data-neconyan-cat]')).toBeVisible({ timeout: 120000 });
     await page.waitForFunction(() => window.NeconyanShell && document.body.classList.contains('neconyan-rail-ready'), {}, { timeout: 120000 });
-    await expect(page.locator('#ica--run-status')).not.toHaveText('Ready', { timeout: 45000 });
+    await expect(page.locator('#ica--run-status')).not.toHaveText('Loading your agents...', { timeout: 45000 });
     await page.evaluate(() => window.NeconyanShell.openTab('left', 'agents'));
     await expect(page.locator('#ica--settings')).toBeVisible();
 }

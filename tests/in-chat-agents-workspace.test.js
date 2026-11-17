@@ -260,6 +260,8 @@ describe('agent workbench state', () => {
             getLastAssistantMessageIndex: () => 0,
             getCurrentChatId: () => 'chat',
             lastManualRunFeedback: null,
+            agentLibraryLoading: false,
+            agentLibraryReady: true,
             isAgentGenerationActive: () => state.active,
             areAgentsGloballyEnabled: () => state.enabled,
             getGlobalSettings: () => ({ enabled: state.enabled, separateRecentChats: false }),
@@ -277,6 +279,36 @@ describe('agent workbench state', () => {
         state.enabled = true;
         runtime.updateAgentOverview(agents);
         expect(elements.get('#ica--run-status').textContent).toBe('Ready for the next reply');
+    });
+
+    test('says the library is loading instead of showing an empty workspace', () => {
+        const elements = new Map();
+        const runtime = vm.createContext({
+            document: { querySelectorAll: () => [], querySelector: selector => {
+                if (!elements.has(selector)) elements.set(selector, { textContent: '' });
+                return elements.get(selector);
+            } },
+            isAgentEnabledForCurrentScope: agent => agent.enabled,
+            isCompanionAgent: () => false,
+            getLastAssistantMessageIndex: () => -1,
+            lastManualRunFeedback: null,
+            agentLibraryLoading: true,
+            agentLibraryReady: false,
+            isAgentGenerationActive: () => false,
+            areAgentsGloballyEnabled: () => true,
+            getGlobalSettings: () => ({ enabled: true, separateRecentChats: false }),
+            getAgentChatScopeLabel: () => 'Individual chats',
+            updatePathfinderStatusLine() {},
+        });
+        vm.runInContext(getFunction('updateAgentOverview'), runtime);
+        runtime.updateAgentOverview([]);
+        expect(elements.get('#ica--run-status').textContent).toBe('Loading your agents...');
+        runtime.agentLibraryLoading = false;
+        runtime.agentLibraryReady = true;
+        runtime.updateAgentOverview([]);
+        expect(elements.get('#ica--run-status').textContent).toBe('No automatic agents enabled');
+        expect(readFileSync(new URL('../public/scripts/extensions/in-chat-agents/settings.html', import.meta.url), 'utf8'))
+            .toContain('<strong id="ica--run-status" role="status">Loading your agents...</strong>');
     });
 
     test('the master switch persists off even when recovery blocks Agent execution', () => {
