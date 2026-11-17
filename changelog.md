@@ -24,6 +24,7 @@
 - PR #711 (2026-11-17) `feat(agents): let agents and mewmory skip user messages`
 - PR #712 (2026-11-17) `feat: add Nano-GPT decisions to Mewmory and Pawthfinder`
 - PR #713 (2026-11-17) `feat(windows-98): tint grey faces with the accent you pick`
+- PR #714 (2026-11-17) `fix(chat): even out spacing between name, date and model`
 
 ## v1.5.5
 
