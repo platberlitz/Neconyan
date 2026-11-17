@@ -2481,11 +2481,19 @@ export function registerFileConverter(mimeType, converter) {
 }
 
 export function addDOMPurifyHooks() {
-    // Allow target="_blank" in links
-    DOMPurify.addHook('afterSanitizeAttributes', function (node) {
+    DOMPurify.addHook('afterSanitizeAttributes', function (node, _, config) {
+        // Allow target="_blank" in links.
         if ('target' in node) {
             node.setAttribute('target', '_blank');
             node.setAttribute('rel', 'noopener');
+        }
+
+        // Mark message-authored styles here, before extensions add their own formatting.
+        if (config.MESSAGE_SANITIZE && node instanceof Element && (
+            node.getAttribute('style')?.trim() ||
+            (node.classList.length && Array.from(node.classList).some(name => name.startsWith('custom-')))
+        )) {
+            node.setAttribute('data-nn-message-style', '');
         }
     });
 

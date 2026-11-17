@@ -588,6 +588,45 @@ for (const phone of [false, true]) {
         }
     });
 
+    test(`Background Visibility preserves styled HTML on ${phone ? 'phone' : 'desktop'}`, async ({ app }, info) => {
+        const account = await app.account({ phone, contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {} });
+        if (phone) await installIPhoneSafari(account.context);
+        const page = await account.open({ workspace: false });
+        await seedChat(page, account.avatar, [
+            'Sara *unfolded* the handout.',
+            '<style>.handout { padding: 1em; background: #f6f2e8; color: #252320; font-family: monospace; } .handout-stamp { -webkit-text-stroke: 1px #7e3c28; }</style>',
+            '<div class="handout"><b>ATELIER NOTES</b><br>Cut a test pattern before touching the good linen.',
+            '<table><tr><td>Waist</td><td>Measure at the natural crease</td></tr><tr><td>Back</td><td>Measure across the shoulders</td></tr></table>',
+            '<span class="handout-stamp"><span style="font-style: italic">Sample only</span></span></div>',
+            'She had underlined <span style="background-color: #f6f2e8; color: #252320">test pattern</span> twice.',
+        ].join('\n\n'));
+        if (phone) await applyIOSOnlyCss(page);
+        const text = page.locator('#chat > .mes[mesid="0"] .mes_text');
+        const card = text.locator('.custom-handout');
+        const heading = card.getByText('ATELIER NOTES', { exact: true });
+        const cell = card.getByRole('cell', { name: 'Waist', exact: true });
+        const stamp = card.getByText('Sample only', { exact: true });
+        const inline = text.getByText('test pattern', { exact: true });
+        const prose = text.getByText('unfolded', { exact: true });
+        await expect(card).toHaveCSS('background-color', 'rgb(246, 242, 232)');
+
+        for (const value of [100, 50, 5, 0]) {
+            await setVisibility(page, value);
+            if (value === 100) {
+                await text.screenshot({
+                    path: info.outputPath('html-message.png'), animations: 'disabled', scale: 'css',
+                    style: '#nn-update-toast, #toast-container { visibility: hidden !important; }',
+                });
+            }
+            await expect(prose).toHaveCSS('-webkit-text-stroke-width', value === 0 ? '0px' : '2px');
+            await expect(heading).toHaveCSS('-webkit-text-stroke-width', '0px');
+            await expect(heading).toHaveCSS('paint-order', 'normal');
+            await expect(cell).toHaveCSS('-webkit-text-stroke-width', '0px');
+            await expect(inline).toHaveCSS('-webkit-text-stroke-width', '0px');
+            await expect(stamp).toHaveCSS('-webkit-text-stroke-width', '1px');
+        }
+    });
+
     test(`Background Visibility keeps message surfaces readable on ${phone ? 'phone' : 'desktop'}`, async ({ app }) => {
         test.setTimeout(300000);
         const account = await app.account({ phone });
