@@ -26,6 +26,7 @@ const { processingVersion } = await import('../src/mewmory/processing.js');
 const { validateSelection } = await import('../src/mewmory/retrieval.js');
 const {
     JEV_DECISION_PRESETS,
+    NANOGPT_DECISION_PRESETS,
     MESSAGE_WINDOW_PRESETS,
     defaultDecisionThreshold,
     detectMessageWindowPreset,
@@ -79,6 +80,27 @@ test('message-window presets detect recommended, tight, deep, token and custom w
         historyBatchMessages: 7,
         batchMessages: 12,
     }), 'custom');
+});
+
+test('Nano-GPT presets cover its decision catalogue without losing provider identity', () => {
+    assert.equal(NANOGPT_DECISION_PRESETS.length, 20);
+    assert.equal(new Set(JEV_DECISION_PRESETS.map(preset => preset.id)).size, JEV_DECISION_PRESETS.length);
+    for (const preset of NANOGPT_DECISION_PRESETS) {
+        assert.equal(preset.endpoint, 'https://api.nano-gpt.com/api/v1/systemone');
+        assert.equal(preset.threshold, 0.5);
+        assert.equal(effectiveDecisionMode({ model: preset.model }), 'decision');
+        assert.equal(findDecisionPreset(preset.id), preset);
+        assert.equal(findDecisionPreset(preset.model, preset.endpoint), preset);
+        assert.equal(findDecisionPreset(preset.model, 'https://nano-gpt.com/api/v1'), preset);
+    }
+    assert.equal(findDecisionPreset('typesafe/jev-1.14', 'https://openrouter.ai/api/v1').id, 'jev-1.14');
+    assert.equal(findDecisionPreset('typesafe/jev-1.14').id, 'jev-1.14');
+    for (const host of ['nano-gpt.com', 'api.nano-gpt.com']) {
+        for (const pathname of ['', '/', '/api', '/v1', '/api/v1', '/api/v1/chat/completions', '/api/v1/systemone']) {
+            assert.equal(resolveDecisionUrl(`https://${host}${pathname}?route=test`), `https://${host}/api/v1/systemone?route=test`);
+        }
+        assert.equal(resolveDecisionUrl(`https://${host}/api/v1/decisions`), `https://${host}/api/v1/decisions`);
+    }
 });
 
 test('extractionContract preserves base contract and appends focus and custom instructions', () => {

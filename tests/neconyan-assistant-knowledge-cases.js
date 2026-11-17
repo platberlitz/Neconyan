@@ -64,6 +64,8 @@ export const refreshedKnowledgeCases = [
     ['What are Character Purrks?', 'characters.purrks', 'adds them switched off'],
     ['How do I choose a Mewmory Jev model?', 'mewmory.jev', 'does not write the reply'],
     ['How do I set up Pawthfinder Jev?', 'pathfinder.jev', 'Summary writing still uses your chat model'],
+    ['How do I use Mewmory Nano-GPT recall?', 'mewmory.jev', 'Nano-GPT'],
+    ['How do I set up Pawthfinder Nano-GPT lore?', 'pathfinder.jev', 'Nano-GPT'],
     ['How do I install the standalone iPhone app?', 'start.iphone-app', 're-signing every seven days'],
     ['Can I update a source ZIP installation inside Neconyan?', 'start.updates', 'downloads and verifies the official release'],
     ['Can Miso save browser macros for me?', 'tools.browser-macro-authoring', 'complete definition and an isolated preview'],

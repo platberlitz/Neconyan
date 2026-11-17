@@ -455,6 +455,16 @@ function applyDecisionPresetToRole(draft, roleName, presetId) {
         role.useShared = false;
         role.profileId = draft.sharedProfileId || '';
     }
+    if (preset.family === 'Nano-GPT') {
+        // A provider-specific choice must not use an unrelated saved connection.
+        role.profileId = '';
+        role.modelOverride = '';
+        if (role.endpoint !== preset.endpoint) {
+            role.endpoint = preset.endpoint;
+            role.apiKey = '';
+            role.hasKey = false;
+        }
+    }
     if (role.profileId) {
         role.modelOverride = preset.model;
     } else {
@@ -503,7 +513,7 @@ function renderQuickSetup(root) {
         button('All model settings', () => showSettingsSection('models')));
     quick.id = 'mewmory-now-quick-controls';
     quick.classList.add('mewmory-quick-controls');
-    const matchedDecision = findDecisionPreset(selectorModel);
+    const matchedDecision = findDecisionPreset(selectorModel, selectorEndpoint);
     const presetSelectValue = matchedDecision?.id || (selectorDecision ? 'custom' : '');
     const windowPresetId = detectMessageWindowPreset(draft);
     const focusOption = EXTRACTION_FOCUS_OPTIONS.find(item => item.value === (draft.extractionFocus || 'balanced')) || EXTRACTION_FOCUS_OPTIONS[1];
@@ -2257,9 +2267,10 @@ function renderSettings(root) {
     const usedOverride = usesShared ? draft.sharedModelOverride : role.modelOverride;
     const modelName = usedProfileId ? usedOverride || selectedProfile?.model : role.model;
     if (DECISION_ROLES.includes(ui.role) && !native) {
-        const matchedPreset = findDecisionPreset(modelName);
-        const autoDecision = isDecisionModel(modelName, role.endpoint);
-        const activeProtocol = effectiveDecisionMode({ ...role, model: modelName });
+        const { endpoint } = resolvedDraftRoleModel(draft, ui.role);
+        const matchedPreset = findDecisionPreset(modelName, endpoint);
+        const autoDecision = isDecisionModel(modelName, endpoint);
+        const activeProtocol = effectiveDecisionMode({ ...role, model: modelName, endpoint });
         const presetValue = matchedPreset?.id || (role.decisionMode === 'decision' ? 'custom' : '');
         fields.append(
             configField('Jev / decision model preset', presetValue, value => {

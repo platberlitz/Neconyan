@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
-import { dismissOnboardingIfPresent, dismissOpenDialogIfPresent } from './chat-scroll-regression-helpers.js';
+import { acknowledgeSettingsSave, dismissOnboardingIfPresent, dismissOpenDialogIfPresent } from './chat-scroll-regression-helpers.js';
 
 test.use({ serviceWorkers: 'block', reducedMotion: 'reduce', hasTouch: true });
 test.setTimeout(120000);
@@ -24,6 +24,7 @@ async function openSettings(page, baseURL) {
         const request = route.request();
         const url = new URL(request.url());
         if (url.origin !== origin) return route.abort();
+        if (url.pathname === '/api/settings/save') return acknowledgeSettingsSave(route);
         if (url.pathname === '/api/in-chat-agents/pathfinder/key') {
             state.keys.push(request.postDataJSON());
             return route.fulfill({ json: { hasKey: Boolean(request.postDataJSON().key) } });
@@ -76,7 +77,7 @@ async function openSettings(page, baseURL) {
     await page.addLocatorHandler(page.locator('#qig-setup-wizard'), async wizard => {
         await wizard.getByRole('button', { name: 'Skip', exact: true }).click();
     });
-    await page.waitForFunction(async () => (await import('/script.js')).settingsReady, null, { timeout: 60000 });
+    await expect.poll(() => page.evaluate(async () => (await import('/script.js')).settingsReady), { timeout: 60000 }).toBe(true);
     await page.waitForFunction(() => typeof window.SillyTavern?.getContext === 'function');
     await page.waitForFunction(() => typeof window.NeconyanAgents?.mountPathfinderSettings === 'function', null, { timeout: 60000 });
 
@@ -197,6 +198,36 @@ test('Pawthfinder Jev presets, threshold and protected key controls', async ({ p
 });
 
 for (const width of [393, 1280]) {
+    test(`Nano-GPT decision presets keep provider and key destination at ${width}px`, async ({ page, baseURL }) => {
+        await page.setViewportSize({ width, height: width === 393 ? 852 : 900 });
+        const state = await openSettings(page, baseURL);
+        const preset = page.getByLabel('Jev / decision model preset', { exact: true });
+        await expect(preset.locator('optgroup[label="Nano-GPT"] option')).toHaveCount(20);
+        await preset.selectOption('nanogpt-jev-1.14');
+        await expect(preset).toHaveValue('nanogpt-jev-1.14');
+        await expect(page.getByLabel('Retrieval connection', { exact: true })).toHaveValue('manual');
+        await expect(page.locator('#pf--model-endpoint')).toHaveValue('https://api.nano-gpt.com/api/v1/systemone');
+        await expect(page.getByLabel('Model / model override', { exact: true })).toHaveValue('typesafe/jev-1.14');
+        await page.getByLabel('API key for this endpoint', { exact: true }).fill('nano-test-only');
+        await page.getByRole('button', { name: 'Save API key', exact: true }).click();
+        await expect(page.locator('#pf--model-key-status')).toHaveText('API key saved.');
+        expect(state.keys.at(-1)).toMatchObject({ endpoint: 'https://api.nano-gpt.com/api/v1/systemone', key: 'nano-test-only' });
+        expect(JSON.stringify(state.saves)).not.toContain('nano-test-only');
+        await preset.selectOption('nanogpt-kev-9b');
+        await expect(preset).toHaveValue('nanogpt-kev-9b');
+        await preset.selectOption('nanogpt-jev-1.14');
+        await expect(preset).toHaveValue('nanogpt-jev-1.14');
+        await expect.poll(() => state.saves.at(-1)?.settings.modelEndpoint).toBe('https://api.nano-gpt.com/api/v1/systemone');
+        await page.locator('#pf--retrieval-model').scrollIntoViewIfNeeded();
+        expect(await page.locator('#pf-e2e-host').evaluate(host => host.scrollWidth > host.clientWidth)).toBe(false);
+        fs.mkdirSync(path.resolve('../screenshots'), { recursive: true });
+        await page.addStyleTag({ content: '#neconyan-tour-coachmark, #nn-update-toast, #toast-container { display:none !important; }' });
+        await page.screenshot({ path: path.resolve(`../screenshots/nanogpt-pawthfinder-after-${width}.png`) });
+        await preset.selectOption('jev-1.14');
+        await expect(preset).toHaveValue('jev-1.14');
+        await expect(page.locator('#pf--model-endpoint')).toHaveValue('https://openrouter.ai/api/alpha/decisions');
+    });
+
     test(`server retrieval log survives reopening at ${width}px`, async ({ page, baseURL }) => {
         await page.setViewportSize({ width, height: width === 393 ? 852 : 900 });
         await openSettings(page, baseURL);
