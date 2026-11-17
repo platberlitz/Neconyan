@@ -23,6 +23,10 @@ export const FRONTPAGE_SECTIONS = Object.freeze(['popular', 'trending24', 'trend
 export const FRONTPAGE_MAX_PAGE = 50;
 const FRONTPAGE_CACHE_MS = 5 * 60 * 1000;
 const FRONTPAGE_CACHE_ENTRIES = 64;
+const SESSION_MARGIN_MS = 60 * 1000;
+const SESSION_WAIT_MS = 20 * 1000;
+const SESSION_ABSENT_WAIT_MS = 2000;
+const SESSION_POLL_MS = 500;
 
 let playwrightImport;
 
@@ -142,8 +146,8 @@ async function withTimeout(promise, timeoutMs = REQUEST_TIMEOUT_MS) {
     }
 }
 
-async function inPageFetch(page, url, init = {}) {
-    const pending = page.evaluate(async ({ target, request, timeoutMs }) => {
+async function inPageFetch(page, url, init = {}, { probe = false } = {}) {
+    const pending = page.evaluate(async ({ target, request, timeoutMs, probe }) => {
         function decode(raw) {
             try {
                 return decodeURIComponent(raw);
@@ -232,6 +236,14 @@ async function inPageFetch(page, url, init = {}) {
                 // Let the request answer the actual authentication state.
             }
         }
+        if (probe) {
+            try {
+                const claims = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+                return { expiresAt: Number.isFinite(claims?.exp) ? claims.exp * 1000 : null };
+            } catch {
+                return { expiresAt: null };
+            }
+        }
 
         const headers = { accept: 'application/json, text/plain, */*', ...(request.headers || {}) };
         if (token) {
@@ -250,7 +262,7 @@ async function inPageFetch(page, url, init = {}) {
         } finally {
             clearTimeout(timer);
         }
-    }, { target: url, request: init, timeoutMs: REQUEST_TIMEOUT_MS });
+    }, { target: url, request: init, timeoutMs: REQUEST_TIMEOUT_MS, probe });
     try {
         // Also bound an unresponsive renderer, whose own abort timer cannot run.
         return await withTimeout(pending, REQUEST_TIMEOUT_MS + 1000);
@@ -274,6 +286,38 @@ async function jsonFromPage(page, url, init = {}) {
         return JSON.parse(result.body);
     } catch {
         throw new JannyBrowserError('janny_card_unavailable', 502, 'JanitorAI answer was not JSON');
+    }
+}
+
+/**
+ * Waits until the page holds a JanitorAI session token that is not about to
+ * expire. JanitorAI answers a missing, expired or invalid token with its
+ * signed-out list (HTTP 200, not 401), so a list read before the site renews
+ * a freshly launched browser's token would show guest picks as Trending.
+ */
+async function awaitSignedInSession(page, { now, waitMs }) {
+    const started = Date.now();
+    let sawToken = false;
+    let reloaded = false;
+    for (;;) {
+        const expiresAt = (await inPageFetch(page, null, {}, { probe: true }))?.expiresAt;
+        if (Number.isFinite(expiresAt)) {
+            if (expiresAt - now() > SESSION_MARGIN_MS) {
+                return;
+            }
+            sawToken = true;
+        }
+        const waited = Date.now() - started;
+        if (waited >= (sawToken ? waitMs : Math.min(waitMs, SESSION_ABSENT_WAIT_MS))) {
+            throw new JannyBrowserError('janny_login_required', 401,
+                sawToken ? 'JanitorAI session token expired and was not renewed' : 'no JanitorAI session token');
+        }
+        if (sawToken && !reloaded && waited >= waitMs / 3) {
+            // A fresh load of the site starts its own token renewal.
+            reloaded = true;
+            await page.goto(ORIGIN, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+        }
+        await new Promise((resolve) => setTimeout(resolve, SESSION_POLL_MS));
     }
 }
 
@@ -934,13 +978,14 @@ async function capturePrivateCard(page, id, meta, recovery) {
 }
 
 /**
- * @param {{ profileDir?: string, launchContext?: typeof openPersistentContext, fetchAvatar?: typeof nodeFetch, now?: () => number }} [options]
+ * @param {{ profileDir?: string, launchContext?: typeof openPersistentContext, fetchAvatar?: typeof nodeFetch, now?: () => number, sessionWaitMs?: number }} [options]
  */
 export function createJannyBrowser({
     profileDir: configuredProfileDir,
     launchContext = openPersistentContext,
     fetchAvatar = nodeFetch,
     now = Date.now,
+    sessionWaitMs = SESSION_WAIT_MS,
 } = {}) {
     const directory = path.resolve(configuredProfileDir || profileDir());
     const frontpageCache = new Map();
@@ -1123,6 +1168,7 @@ export function createJannyBrowser({
                 if (new URL(page.url()).origin !== ORIGIN) {
                     await page.goto(ORIGIN, { waitUntil: 'domcontentloaded', timeout: 30000 });
                 }
+                await awaitSignedInSession(page, { now, waitMs: sessionWaitMs });
                 const query = new URLSearchParams({ page: String(pageNumber), language: 'en', mode, count_mode: 'bounded', include_top_custom_tags: 'false' });
                 query.set(section.startsWith('trending') ? 'special_mode' : 'sort', section);
                 return jsonFromPage(page, `${ORIGIN}/hampter/characters?${query}`);

@@ -20,6 +20,9 @@ test('Popular uses the existing serialised Janitor browser and a private fixed r
         async goto(url) { assert.equal(url, 'https://janitorai.com'); },
         async waitForFunction() {},
         async evaluate(_operation, args) {
+            if (args.probe) {
+                return { expiresAt: Date.now() + 60 * 60 * 1000 };
+            }
             reads++;
             const target = new URL(args.target);
             assert.equal(target.origin + target.pathname, 'https://janitorai.com/hampter/characters');
