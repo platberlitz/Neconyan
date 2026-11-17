@@ -177,8 +177,14 @@
 /* Drawers: a glass window frame with a caption bar and the red Win7 close. */
 :root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) :is(.sb-shell-root, #right-nav-panel).openDrawer {
     --neco-rail: var(--aero-glass-strong);
-    backdrop-filter: var(--sb-shell-surface-backdrop, blur(18px) saturate(160%));
-    -webkit-backdrop-filter: var(--sb-shell-surface-backdrop, blur(18px) saturate(160%));
+    backdrop-filter: blur(18px) saturate(160%);
+    -webkit-backdrop-filter: blur(18px) saturate(160%);
+}
+
+@media (min-width: 769px) {
+    :root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) #right-nav-panel.openDrawer:is([data-menu-type='characters'], [data-menu-type='world-info']) {
+        background: linear-gradient(var(--neco-rail), var(--neco-rail)), var(--neco-surface) !important;
+    }
 }
 
 :root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) :is(.sb-shell-frame, .sb-shell-main, .sb-shell-nav, .sb-character-shell-nav) {
@@ -198,8 +204,10 @@
     text-shadow: none;
 }
 
+/* Glass frame, solid pane: this fill ignores Background visibility (neconyan-calico.css reads --sb-reading-pane). */
 :root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) .sb-shell-panel-scroller {
-    background: color-mix(in srgb, var(--neco-surface) 92%, transparent);
+    --sb-reading-pane: color-mix(in srgb, var(--neco-surface) 92%, transparent);
+    background: var(--sb-reading-pane);
     border: 1px solid rgb(0 0 0 / 0.25);
     border-radius: 3px;
 }
