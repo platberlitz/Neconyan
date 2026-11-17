@@ -4,13 +4,16 @@ import os from 'node:os';
 import path from 'node:path';
 import test, { after } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
+import { getChatFileLockPath } from '../src/chat-file-lock.js';
 import { setConfigFilePath } from '../src/util.js';
 
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
 const { acceptMeowerJob, createMeowerJobHandler, finalizeMeowerSubmission } = await import('../src/generation/meower-jobs.js');
 const { readMeowerStore, mutateMeowerStore } = await import('../public/scripts/extensions/third-party/Neconyan-Hopper/server/index.js');
 const { normalizeSettings, normalizeSession } = await import('../public/scripts/extensions/third-party/Neconyan-Hopper/src/core.js');
-const { readArtifact, writeArtifact, providerStep } = await import('../src/jobs/artifacts.js');
+const { readArtifact, writeArtifact, providerStep, providerRefused } = await import('../src/jobs/artifacts.js');
 const { getJob, updateJob, markProviderUncertain } = await import('../src/jobs/store.js');
 const { cancelAutoSaves } = await import('../src/endpoints/settings.js');
 const { write: writeCard } = await import('../src/character-card-parser.js');
@@ -54,6 +57,190 @@ async function fixture(owner = 'tester', options = {}) {
 
 const postText = JSON.stringify({ posts: [{ authorHandle: 'nova', tempId: 'post1', content: 'Moon garden', imagePrompt: null }], interactions: [], follows: [], strangers: [], trends: [] });
 const getFeed = async fixture => (await readMeowerStore(fixture.directories, fixture.owner)).store.feeds.one;
+
+test('Meower effort normalises legacy input and captures each explicit chat override', async () => {
+    for (const invalid of [undefined, null, {}, [], 'XHigh', 'minimal', 'injected']) assert.equal(normalizeSettings({ reasoningEffort: invalid }).reasoningEffort, '');
+    for (const effort of ['', 'auto', 'none', 'min', 'low', 'medium', 'high', 'xhigh', 'max']) {
+        assert.equal(normalizeSettings({ reasoningEffort: effort }).reasoningEffort, effort);
+        const f = await fixture('tester', { reasoningEffort: effort });
+        assert.deepEqual(readArtifact(f.directories, f.context.job.id, 'plan').overridePayload, effort ? { reasoning_effort: effort } : {});
+    }
+});
+
+for (const incremental of [false, true]) test(`captured local effort reaches ${incremental ? 'incremental posts/reactions' : 'batch and correction'} unchanged after settings edits`, async () => {
+    const f = await fixture('tester', { reasoningEffort: 'xhigh', incremental, quotas: { posts: 1, replies: incremental ? 1 : 0, reposts: 0, likes: 0 } });
+    await mutateMeowerStore(f.directories, f.owner, store => { store.settings.reasoningEffort = 'low'; });
+    const records = [];
+    const handler = createMeowerJobHandler({ generate: async options => {
+        records.push(options);
+        return { text: !incremental && records.length === 1 ? 'not JSON' : postText };
+    } });
+    await handler(f.context);
+    assert.equal(records.length, 2);
+    assert.ok(records.every(options => options.overridePayload.reasoning_effort === 'xhigh' && options.maxTokens === 32768 && options.rawOptions.includePreset === false));
+    if (incremental) assert.ok(records.every(options => /meower:wave:/.test(options.stepNamespace)));
+    else assert.match(records[1].messages.at(-1).content, /JSON|correct|format/i);
+    await handler(f.context);
+    assert.equal(records.length, 2, 'artifact/receipt reuse does not generate again');
+});
+
+for (const mode of ['persona', 'character', 'all']) test(`captured local effort reaches ${mode} profile generation`, async () => {
+    const f = await fixture('tester', { reasoningEffort: 'high' });
+    const accepted = await acceptMeowerJob(f.request, { ...f.body, submissionKey: `profile-${mode}`, mode, accountKey: 'character:nova.png' }, 'profile');
+    await mutateMeowerStore(f.directories, f.owner, store => { store.settings.reasoningEffort = 'low'; });
+    const records = [];
+    await createMeowerJobHandler({ generate: async options => {
+        records.push(options);
+        return { text: JSON.stringify({ profiles: [{ entityId: mode === 'persona' ? 'user.png' : 'nova.png', name: 'Moon gardener', handle: 'moon_gardener', bio: 'Flowers', location: 'Moon' }] }) };
+    } })({ ...f.context, job: accepted.job });
+    assert.equal(records.length, 1);
+    assert.deepEqual(records[0].overridePayload, { reasoning_effort: 'high' });
+    assert.equal(records[0].rawOptions.includePreset, false);
+});
+
+test('missing cast profiles and later activity share the captured local effort', async () => {
+    const f = await fixture('tester', { reasoningEffort: 'high', profiles: {} });
+    const records = [];
+    await createMeowerJobHandler({ generate: async options => {
+        records.push(options);
+        return { text: options.stepNamespace.endsWith(':profiles') ? JSON.stringify({ profiles: [{ entityId: 'nova.png', name: 'Nova', handle: 'nova', bio: 'Space', location: 'Moon' }] }) : postText };
+    } })(f.context);
+    assert.equal(records.length, 2);
+    assert.ok(records.every(options => options.overridePayload.reasoning_effort === 'high'));
+});
+
+test('accepting a text plan leaves the stored local chat effort inactive', async () => {
+    const f = await fixture('tester', { reasoningEffort: 'xhigh' });
+    const filename = path.join(f.directories.root, 'settings.json');
+    const settings = JSON.parse(fs.readFileSync(filename, 'utf8'));
+    Object.assign(settings.extension_settings.connectionManager.profiles[0], { api: 'llamacpp', mode: 'tc', 'api-url': 'http://127.0.0.1:5000' });
+    settings.max_context = 8192;
+    settings.textgenerationwebui_settings = { type: 'llamacpp', banned_tokens: '', global_banned_tokens: '', dry_sequence_breakers: '[]', negative_prompt: '', logit_bias: [] };
+    fs.writeFileSync(filename, JSON.stringify(settings));
+    const accepted = await acceptMeowerJob(f.request, { ...f.body, submissionKey: 'text' });
+    const plan = readArtifact(f.directories, accepted.job.id, 'plan');
+    assert.equal(plan.binding.backend, 'text');
+    assert.equal(plan.settings.reasoningEffort, 'xhigh');
+    assert.deepEqual(plan.overridePayload, {});
+});
+
+test('a manual replacement gets current settings while both accepted identities remain idempotent', async () => {
+    const f = await fixture();
+    updateJob(f.directories, f.context.job.id, { state: 'failed', recoverability: 'settled', resume: null, recoveryStep: null, recoverySteps: [], error: { status: 400 } });
+    await mutateMeowerStore(f.directories, f.owner, store => { store.settings.reasoningEffort = 'xhigh'; });
+    const body = { ...f.body, submissionKey: 'replacement', previousJobId: f.context.job.id };
+    const replacement = await acceptMeowerJob(f.request, body);
+    assert.notEqual(replacement.job.id, f.context.job.id);
+    assert.equal(readArtifact(f.directories, replacement.job.id, 'plan').overridePayload.reasoning_effort, 'xhigh');
+    updateJob(f.directories, f.context.job.id, { state: 'running', recoverability: 'unknown-outcome' });
+    assert.equal((await acceptMeowerJob(f.request, body)).job.id, replacement.job.id);
+    assert.equal((await acceptMeowerJob(f.request, f.body)).job.id, f.context.job.id);
+    await assert.rejects(acceptMeowerJob(f.request, { ...body, previousJobId: 'changed' }), /submission key/);
+});
+
+for (const patch of [
+    { state: 'interrupted' }, { state: 'waiting' }, { state: 'running' },
+    { recoverability: 'unknown-outcome' }, { recoverySteps: 'damaged' }, { recoverySteps: [42] },
+    { resume: 'provider:missing' }, { recoverySteps: ['provider:missing'] },
+    { type: 'other' }, { owner: 'someone-else' }, { target: { kind: 'meower', id: 'other' } },
+    { state: 'cancelled', recoverability: 'unknown-outcome', recoverySteps: ['provider:missing'] },
+]) test(`replacement retains unsafe or unrelated prior work: ${JSON.stringify(patch)}`, async () => {
+    const f = await fixture();
+    updateJob(f.directories, f.context.job.id, { state: 'failed', recoverability: 'settled', resume: null, recoveryStep: null, recoverySteps: [], ...patch });
+    await assert.rejects(acceptMeowerJob(f.request, { ...f.body, submissionKey: 'replacement', previousJobId: f.context.job.id }), /Jobs|recovery|repair/i);
+});
+
+test('profile replacements cannot cross profile mode or chosen character identity', async () => {
+    const f = await fixture();
+    const prior = await acceptMeowerJob(f.request, { ...f.body, submissionKey: 'profile-old', mode: 'character', accountKey: 'character:nova.png' }, 'profile');
+    updateJob(f.directories, prior.job.id, { state: 'failed', recoverability: 'settled', resume: null, recoveryStep: null, recoverySteps: [] });
+    for (const input of [{ mode: 'all' }, { mode: 'persona' }, { mode: 'character', accountKey: 'character:other.png' }]) {
+        await assert.rejects(acceptMeowerJob(f.request, { sessionId: 'one', submissionKey: JSON.stringify(input), previousJobId: prior.job.id, ...input }, 'profile'), /Jobs|recovery/i);
+    }
+});
+
+for (const damaged of ['intent', 'receipt']) test(`replacement refuses damaged ${damaged} evidence without accepting a new key`, async () => {
+    const f = await fixture();
+    const previous = getJob(f.directories, f.context.job.id);
+    updateJob(f.directories, previous.id, { state: 'failed', recoverability: 'settled', resume: null, recoveryStep: null, recoverySteps: [],
+        ...(damaged === 'intent' ? { intent: { ...previous.intent, plan: { ...previous.intent.plan, settings: { ...previous.intent.plan.settings, reasoningEffort: 'low' } } } } : {}) });
+    if (damaged === 'receipt') await mutateMeowerStore(f.directories, f.owner, (_store, receipts) => { receipts[receiptKey(f.owner, f.body.submissionKey)].requestHash = 'damaged'; });
+    const before = (await readMeowerStore(f.directories, f.owner)).receipts;
+    await assert.rejects(acceptMeowerJob(f.request, { ...f.body, submissionKey: 'replacement', previousJobId: previous.id }), /Jobs|recovery/i);
+    assert.deepEqual((await readMeowerStore(f.directories, f.owner)).receipts, before);
+});
+
+test('a settled provider artifact permits replacement after partial successful activity', async () => {
+    const f = await fixture();
+    await createMeowerJobHandler({ generate: async () => ({ text: postText }) })(f.context);
+    writeArtifact(f.directories, f.context.job.id, 'provider:successful-sibling', { text: postText });
+    updateJob(f.directories, f.context.job.id, { state: 'failed', recoverability: 'resumable', resume: 'provider:successful-sibling', recoveryStep: null, recoverySteps: [] });
+    const before = await getFeed(f);
+    await acceptMeowerJob(f.request, { ...f.body, submissionKey: 'replacement', previousJobId: f.context.job.id });
+    assert.deepEqual(await getFeed(f), before);
+});
+
+for (const partial of ['profiles', 'activity']) test(`real provider settlement permits manual replacement after saved ${partial} and a definite refusal`, async () => {
+    const f = await fixture('tester', partial === 'profiles' ? { profiles: {} } : { concurrency: 2, quotas: { posts: 2, replies: 0, reposts: 0, likes: 0 } });
+    let calls = 0;
+    const handler = createMeowerJobHandler({ generate: options => providerStep(options.jobContext, options.stepNamespace, async () => {
+        calls++;
+        if (calls === 2) throw providerRefused(Object.assign(new Error('The selected effort is unavailable.'), { status: 400 }));
+        return { text: partial === 'profiles' ? JSON.stringify({ profiles: [{ entityId: 'nova.png', name: 'Nova', handle: 'nova', bio: 'Saved before refusal', location: 'Moon' }] }) : postText };
+    }) });
+    await assert.rejects(handler(f.context), /selected effort/);
+    const previous = getJob(f.directories, f.context.job.id);
+    assert.equal(calls, 2);
+    assert.notEqual(previous.recoverability, 'unknown-outcome');
+    assert.deepEqual(previous.recoverySteps, []);
+    assert.equal(previous.recoveryStep, null);
+    if (previous.resume?.startsWith('provider:')) assert.notEqual(readArtifact(f.directories, previous.id, previous.resume), undefined);
+    updateJob(f.directories, previous.id, { state: 'failed' });
+    const before = (await readMeowerStore(f.directories, f.owner)).store;
+    if (partial === 'profiles') assert.equal(before.settings.profiles['character:nova.png'].bio, 'Saved before refusal');
+    else assert.equal(before.feeds.one.posts.length, 1);
+    const replacement = await acceptMeowerJob(f.request, { ...f.body, submissionKey: 'replacement', previousJobId: previous.id });
+    assert.equal(replacement.created, true);
+    const after = (await readMeowerStore(f.directories, f.owner)).store;
+    assert.deepEqual(after.feeds, before.feeds);
+    assert.deepEqual(after.settings.profiles, before.settings.profiles);
+});
+
+test('a different process winning the Jobs lock before no-Labs replacement admission prevents replacement', async () => {
+    const f = await fixture();
+    updateJob(f.directories, f.context.job.id, { state: 'failed', recoverability: 'settled', resume: null, recoveryStep: null, recoverySteps: [] });
+    assert.equal(fs.existsSync(path.join(roleplayStoreDirectory({ owner: f.owner, directories: f.directories }), 'labs')), false);
+    // Resolve the production dependency, rather than Jest's independent tests/node_modules copy.
+    const lockFs = createRequire(new URL('../src/chat-file-lock.js', import.meta.url))('graceful-fs');
+    const originalMkdir = lockFs.mkdirSync;
+    const lockPath = getChatFileLockPath(path.join(f.directories.root, 'jobs/index.json'));
+    let childStatus;
+    let changed = false;
+    lockFs.mkdirSync = function (filename, ...args) {
+        if (!changed && filename === lockPath) {
+            changed = true;
+            const child = spawnSync(process.execPath, ['--input-type=module', '-e', `
+                import { setConfigFilePath } from './src/util.js';
+                setConfigFilePath(${JSON.stringify(fileURLToPath(new URL('../default/config.yaml', import.meta.url)))});
+                const { updateJob, explicitRetryRecovery } = await import('./src/jobs/store.js');
+                updateJob(${JSON.stringify(f.directories)}, ${JSON.stringify(f.context.job.id)}, job => ({ state: 'queued', ...explicitRetryRecovery(job) }));
+            `], { cwd: fileURLToPath(new URL('../', import.meta.url)), timeout: 15000, encoding: 'utf8', windowsHide: true });
+            childStatus = child.status;
+            assert.equal(child.error, undefined);
+            assert.equal(child.signal, null);
+            assert.equal(child.status, 0, child.stderr);
+        }
+        return originalMkdir.call(this, filename, ...args);
+    };
+    const before = (await readMeowerStore(f.directories, f.owner)).receipts;
+    try {
+        await assert.rejects(acceptMeowerJob(f.request, { ...f.body, submissionKey: 'replacement', previousJobId: f.context.job.id }), /Jobs|recovery/i);
+    } finally { lockFs.mkdirSync = originalMkdir; }
+    assert.equal(changed, true, 'the production Jobs lock acquisition was intercepted');
+    assert.equal(childStatus, 0, 'a real child performed the prior Jobs mutation');
+    assert.equal(getJob(f.directories, f.context.job.id).state, 'queued');
+    assert.deepEqual((await readMeowerStore(f.directories, f.owner)).receipts, before);
+});
 
 test('account reset retains Meower completion proof without retaining deleted feed content', async () => {
     const f = await fixture();
@@ -306,6 +493,9 @@ test('successful concurrent activity commits beside an unknown sibling without r
     assert.equal((await getFeed(f)).posts.length, 1);
     await assert.rejects(run(f.context), /unknown.*automatically/);
     assert.equal(entered, 2);
+    assert.equal((await getFeed(f)).posts.length, 1);
+    updateJob(f.directories, f.context.job.id, { state: 'failed' });
+    await assert.rejects(acceptMeowerJob(f.request, { ...f.body, submissionKey: 'unsafe-replacement', previousJobId: f.context.job.id }), /Jobs|recovery/i);
     assert.equal((await getFeed(f)).posts.length, 1);
 });
 

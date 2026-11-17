@@ -1168,7 +1168,7 @@ test('a saved main connection that refuses or stalls hands over to the fallbacks
     working.mode.failStatus = 400;
     await assert.rejects(callJsonRole(directories, readConfig(directories), 'extractor', 'Extract.', input), error => {
         assert.equal(error.status, 502);
-        assert.match(error.message, /^The model for Facts and events returned error code 400 \(Bad Request\)\. Check its model connection in Mewmory settings and try again\. The fallback connection also failed\.$/);
+        assert.match(error.message, /^The model for Facts and events returned error code 400 \(Fixture provider unavailable\)\. Check its model connection in Mewmory settings and try again\. The fallback connection also failed\.$/);
         return true;
     });
     working.mode.fail = false;

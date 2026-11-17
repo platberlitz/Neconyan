@@ -1,6 +1,7 @@
 import { hash } from '../mewmory/core.js';
+import { uiText } from '../../public/scripts/ui-text.js';
 import { acceptJob, getJob, listJobs, releaseJob, validateOwner } from '../jobs/store.js';
-import { createProviderScope, readArtifact, writeArtifact } from '../jobs/artifacts.js';
+import { createProviderScope, readArtifact, unresolvedProviderStep, writeArtifact } from '../jobs/artifacts.js';
 import { noteOwner, registerHandler } from '../jobs/runner.js';
 import { readRoleplayFile, roleplayStoreDirectory, withRoleplayAccount } from '../roleplay-store.js';
 import { findRetiredMeowerReceipt } from '../meower-retirement.js';
@@ -59,6 +60,29 @@ export async function finalizeMeowerSubmission(context) {
     releaseJob(directories, job.id);
 }
 
+/** Read-only: the final call runs inside acceptJob's Jobs ledger lock. */
+function checkReplacement({ directories, owner }, input, account, receipts) {
+    if (!input.previousJobId) return;
+    const previous = getJob(directories, input.previousJobId);
+    const oldInput = previous?.intent?.plan?.input;
+    const refuse = () => { throw meowerError(uiText('The earlier Meower operation needs recovery. Review it in Jobs before retrying.')); };
+    if (!previous || previous.owner !== owner || previous.type !== `meower.${input.kind}` || previous.target?.kind !== 'meower'
+        || previous.target.id !== input.sessionId || oldInput?.kind !== input.kind || oldInput.sessionId !== input.sessionId
+        || input.kind === 'profile' && (oldInput.mode !== input.mode || input.mode === 'character' && oldInput.accountKey !== input.accountKey)
+        || !['failed', 'cancelled'].includes(previous.state)
+        || !['settled', 'resumable', 'terminal', 'needs-retry'].includes(previous.recoverability)
+        || !(previous.resume === null || typeof previous.resume === 'string' && previous.resume.length > 0)
+        || !(previous.recoveryStep === null || typeof previous.recoveryStep === 'string' && /^provider:.+/.test(previous.recoveryStep))
+        || !Array.isArray(previous.recoverySteps) || previous.recoverySteps.some(step => typeof step !== 'string' || !/^provider:.+/.test(step))
+        || hash(previous.intent.plan.account) !== hash(account)) refuse();
+    const receipt = receipts[receiptKey(owner, previous.submissionKey)];
+    const plan = readArtifact(directories, previous.id, 'plan');
+    if (!receipt || receipt.jobId !== previous.id || receipt.planHash !== previous.config?.planHash
+        || receipt.requestHash !== previous.intent.requestHash || hash(previous.intent.plan.input) !== previous.intent.requestHash
+        || hash(previous.intent.plan) !== previous.config?.planHash || !plan || hash(plan) !== previous.config?.planHash
+        || unresolvedProviderStep(directories, previous.id)) refuse();
+}
+
 export async function acceptMeowerJob(request, body = {}, kind = 'refresh') {
     const owner = validateOwner(request.user?.profile?.handle);
     const directories = request.user.directories;
@@ -84,6 +108,7 @@ export async function acceptMeowerJob(request, body = {}, kind = 'refresh') {
             return { unchanged: true };
         }
         checkMeowerReceipts(receipts, RECEIPT_LIMIT);
+        checkReplacement(base, input, account, receipts);
         const plan = await captureMeowerPlan({ owner, directories }, store, input);
         const planHash = hash(plan);
         accepted = withRoleplayAccount(base, account, () => {
@@ -92,7 +117,8 @@ export async function acceptMeowerJob(request, body = {}, kind = 'refresh') {
             }
             return acceptJob(directories, { owner, type: `meower.${kind}`, submissionKey: body.submissionKey,
                 intent: { requestHash, plan }, target: { kind: 'meower', id: input.sessionId }, config: { planHash },
-                credentialRef: plan.binding, mutating: true, paused: true, label: kind === 'refresh' ? 'Meower refresh' : 'Meower profiles' });
+                credentialRef: plan.binding, mutating: true, paused: true, label: kind === 'refresh' ? 'Meower refresh' : 'Meower profiles' },
+            { beforeAccept: input.previousJobId ? () => checkReplacement(base, input, account, receipts) : undefined });
         });
         receipts[key] = { version: 1, jobId: accepted.job.id, requestHash, planHash, units: {}, closed: false };
     });

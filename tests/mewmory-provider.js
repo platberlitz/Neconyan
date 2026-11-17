@@ -27,11 +27,16 @@ export async function createMewmoryProvider(port = 0) {
         }
         // Image requests also carry a string prompt, and tests hold them by their model.
         const name = typeof body.prompt === 'string' && !request.url.includes('/images/') ? 'text-writer' : body.model;
-        const call = { model: name, stream: body.stream, max_tokens: body.max_tokens, messages: body.messages, prompt: body.prompt, input: body.input, tools: body.tools, headers: request.headers, url: request.url, startedAt: Date.now(), completedAt: null };
+        const call = { model: name, stream: body.stream, max_tokens: body.max_tokens, reasoning: body.reasoning, reasoning_effort: body.reasoning_effort,
+            body, messages: body.messages, prompt: body.prompt, input: body.input, tools: body.tools, headers: request.headers, url: request.url, startedAt: Date.now(), completedAt: null };
         calls.push(call);
         if ([].concat(mode.hold).includes(name)) await new Promise(resolve => held.add(resolve));
         call.completedAt = Date.now();
         if (mode.disconnect) return response.destroy();
+        if (mode.httpError) {
+            response.statusCode = mode.httpError.status;
+            return response.end(JSON.stringify(mode.httpError.body));
+        }
         if (mode.redirect) {
             response.writeHead(mode.redirectStatus || 307, { Location: mode.redirect });
             return response.end('{}');

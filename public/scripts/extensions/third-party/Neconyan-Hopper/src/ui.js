@@ -58,6 +58,7 @@ const state = {
     profileKey: null,
     replyingTo: null,
     status: '',
+    statusType: 'info',
     busy: false,
     opening: false,
     loadFailure: null,
@@ -119,7 +120,7 @@ function stopWork() {
         return;
     }
     workController?.abort('user-stop');
-    state.status = 'Stopping...';
+    setStatus('Stopping...');
     patchStatus();
 }
 
@@ -202,8 +203,13 @@ function toast(message, type = 'info') {
     globalThis.toastr?.[type]?.(String(message), 'Meower', { escapeHtml: true });
 }
 
-function report(message, type = 'info') {
+function setStatus(message, type = 'info') {
     state.status = String(message);
+    state.statusType = type;
+}
+
+function report(message, type = 'info') {
+    setStatus(message, type);
     patchStatus();
     toast(message, type);
 }
@@ -264,17 +270,31 @@ function loadDraft(session) {
     }
 }
 
+function saveStatus() {
+    const saved = api.getSaveStatus(state.session?.id);
+    return { state: state.draftError || state.syncError ? 'error' : saved.state,
+        message: state.draftError || state.syncError || saved.message || ({ saved: 'Saved', saving: 'Saving...', error: 'Changes could not be saved.' })[saved.state] };
+}
+
+function saveStatusElement() {
+    const saved = saveStatus();
+    return el('span', { className: 'sbtw-save-status', text: saved.message,
+        attrs: { role: 'status', 'aria-live': 'polite', 'data-state': saved.state } });
+}
+
 function patchStatus() {
     if (!state.body) {
         return;
     }
     const saved = api.getSaveStatus(state.session?.id);
-    const saveState = state.draftError || state.syncError ? 'error' : saved.state;
+    const saveStatusValue = saveStatus();
+    const saveState = saveStatusValue.state;
     if (state.body.dataset) {
         state.body.dataset.saveState = saveState;
     }
-    const message = state.draftError || state.syncError || saved.message || ({ saved: 'Saved', saving: 'Saving...', error: 'Changes could not be saved.' })[saved.state];
+    const message = saveStatusValue.message;
     for (const status of state.body.querySelectorAll('.sbtw-status')) {
+        status.dataset.state = state.statusType;
         if (status.textContent !== state.status) {
             status.textContent = state.status;
         }
@@ -395,8 +415,8 @@ function recoveryControls() {
     ]);
 
     const statusLines = el('div', { className: 'sbtw-status-lines' }, [
-        el('span', { className: 'sbtw-status', text: state.status, attrs: { role: 'status', 'aria-live': 'polite' } }),
-        el('span', { className: 'sbtw-save-status', attrs: { role: 'status', 'aria-live': 'polite' } }),
+        el('span', { className: 'sbtw-status', text: state.status, attrs: { role: 'status', 'aria-live': 'polite', 'data-state': state.statusType } }),
+        saveStatusElement(),
         retrySaveButton(),
     ]);
 
@@ -1563,7 +1583,7 @@ function composerBar(canPost, postField = null) {
                 focusKey: 'refresh',
                 disabled: !state.opening && workController?.signal.aborted,
             })
-            : button('Refresh', 'sbtw-btn', () => void refresh(), {
+            : button('Refresh', 'sbtw-btn', () => void refresh({ manual: true }), {
                 iconName: 'fa-rotate',
                 title: 'Ask the model for new activity',
                 ariaLabel: 'Refresh timeline',
@@ -1575,9 +1595,9 @@ function composerBar(canPost, postField = null) {
         el('span', {
             className: 'sbtw-status',
             text: state.status,
-            attrs: { role: 'status', 'aria-live': 'polite' },
+            attrs: { role: 'status', 'aria-live': 'polite', 'data-state': state.statusType },
         }),
-        el('span', { className: 'sbtw-save-status', attrs: { role: 'status', 'aria-live': 'polite' } }),
+        saveStatusElement(),
         retrySaveButton(),
         canPost && postField ? button('Post', 'sbtw-btn sbtw-btn-primary', () => publish(postField.value), { focusKey: 'publish', disabled: state.imagePending || Boolean(mutationTask) }) : null,
     ]);
@@ -1782,7 +1802,7 @@ function timelineView() {
                 className: 'sbtw-trend',
                 attrs: { type: 'button', title: `Write a round of posts about ${trend.topic}`, disabled: state.busy || mutationTask ? 'disabled' : null, 'data-focus-key': `trend:${trend.topic}` },
                 // A tap runs a refresh about the topic (same post cap as Refresh) and shows the matches in Main as they land.
-                on: { click: () => { if (state.busy || mutationTask) { return; } state.tab = 'main'; state.timelineSearch = trend.topic; state.revealTarget = null; void refresh({ topic: trend.topic }); } },
+                on: { click: () => { if (state.busy || mutationTask) { return; } state.tab = 'main'; state.timelineSearch = trend.topic; state.revealTarget = null; void refresh({ topic: trend.topic, manual: true }); } },
             }, [
                 el('span', { className: 'sbtw-trend-topic', text: trend.topic }),
                 el('span', { className: 'sbtw-trend-count', text: `${formatCount(trend.posts)} posts` }),
@@ -1900,10 +1920,10 @@ async function writePersonaProfile() {
     const revision = personaProfileRevision;
     const { epoch, signal } = freshSignal();
     state.busy = true;
-    state.status = 'Writing your profile...';
+    setStatus('Writing your profile...');
     render();
     try {
-        const profile = await api.generatePersonaProfile(sessionId, { signal });
+        const profile = await api.generatePersonaProfile(sessionId, { signal, manual: true });
         if (!isLive(epoch) || state.session?.id !== sessionId) {
             return;
         }
@@ -1962,11 +1982,11 @@ async function rewriteAllProfiles() {
     const sessionId = state.session.id;
     const { epoch, signal } = freshSignal();
     state.busy = true;
-    state.status = 'Writing new profiles...';
+    setStatus('Writing new profiles...');
     let saved = false;
     render();
     try {
-        const written = await api.regenerateAllProfiles(sessionId, { signal });
+        const written = await api.regenerateAllProfiles(sessionId, { signal, manual: true });
         if (!isLive(epoch)) {
             return;
         }
@@ -2006,11 +2026,11 @@ async function rewriteProfile(accountKey) {
     const sessionId = state.session.id;
     const { epoch, signal } = freshSignal();
     state.busy = true;
-    state.status = 'Writing a new profile...';
+    setStatus('Writing a new profile...');
     let saved = false;
     render();
     try {
-        const profile = await api.regenerateProfile(accountKey, sessionId, { signal });
+        const profile = await api.regenerateProfile(accountKey, sessionId, { signal, manual: true });
         if (!isLive(epoch)) {
             return;
         }
@@ -2391,6 +2411,19 @@ function settingsView() {
         })),
     ]);
 
+    const reasoning = api.reasoningConnection(settings.profileId);
+    const effortSelect = reasoning.chat ? el('select', {
+        className: 'sbtw-input',
+        attrs: { 'aria-label': 'Reasoning effort' },
+        on: { change: event => save({ reasoningEffort: event.target.value }) },
+    }, [['', 'Use connection setting'], ['auto', 'Provider default'], ['none', 'None'], ['min', 'Minimum'],
+        ['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['xhigh', 'Extra High'], ['max', 'Maximum']].map(([value, label]) => {
+        const unsupported = Boolean(value) && !api.reasoningChoiceSupported(reasoning, value);
+        return el('option', { text: label,
+            attrs: { value, selected: value === settings.reasoningEffort ? 'selected' : null,
+                disabled: unsupported ? 'disabled' : null } });
+    })) : null;
+
     // Invites change in place. A full re-render would rebuild the scroller under the
     // finger, dropping the reader's place and the focused checkbox; nothing else on this
     // view depends on the invite list, and the account roster refreshes quietly behind it.
@@ -2599,6 +2632,11 @@ function settingsView() {
         settingsGroup('Generation', 'Which connection writes, how much each refresh makes, pictures, tone and memory.', () => [
         el('h4', { text: 'Connection' }),
         field('Write posts with', profileSelect, 'A cheap model is fine here. One refresh writes the whole batch, or one activity per request with the option below.'),
+        effortSelect
+            ? field('Reasoning effort', effortSelect, 'Uses the selected connection unless overridden here. Available levels depend on the model.')
+            : el('p', { className: 'sbtw-hint', text: 'Reasoning effort applies to Chat Completion connections. Your saved choice stays inactive for this connection.' }),
+        ...(effortSelect && settings.reasoningEffort && !api.reasoningChoiceSupported(reasoning, settings.reasoningEffort)
+            ? [el('p', { className: 'sbtw-hint', text: 'Your saved effort is unavailable for this model. Choose another level or use the connection setting.' })] : []),
         field('Reply budget (tokens)', numberInput(settings.maxTokens, 256, 1000000, value => save({ maxTokens: value })),
             'The most one reply may run to. Thinking models (Kimi, GLM, DeepSeek, Qwen...) spend part of it on their reasoning, and a budget that runs out mid-reply leaves a broken reply - so it is generous. Lower it only if your provider refuses the request.'),
 
@@ -3456,14 +3494,14 @@ async function openImage(url, description = '') {
  * A refresh belongs to its server job. Closing the workspace stops observation; only Stop
  * cancels the job. Staleness checks keep detached observers out of the current view.
  */
-async function refresh({ topic = '' } = {}) {
+async function refresh({ topic = '', manual = false } = {}) {
     if (state.busy || state.opening || mutationTask || !state.feed || !state.session) {
         return;
     }
     state.busy = true;
     // Whatever is on screen has been seen by the time you ask for more: the badge counts what this refresh brings.
     markTimelineVisit();
-    state.status = topic ? `Writing posts about ${topic}...` : 'Thinking...';
+    setStatus(topic ? `Writing posts about ${topic}...` : 'Thinking...');
     const sessionId = state.session.id;
     const { epoch, signal } = freshSignal();
     const runs = ++refreshRuns;
@@ -3476,6 +3514,7 @@ async function refresh({ topic = '' } = {}) {
             sessionId,
             feed: state.feed,
             signal,
+            manual,
             topic,
             onProgress: (message) => {
                 if (!isLive(epoch) || signal.aborted) {
@@ -3483,7 +3522,7 @@ async function refresh({ topic = '' } = {}) {
                 }
                 // Progress patches only the status line: a full rerender here would
                 // destroy scroll position, focus, and drafts on every image drawn.
-                state.status = message;
+                setStatus(message);
                 patchStatus();
             },
             // One-post-at-a-time mode: each committed post is shown as it lands.
@@ -3578,7 +3617,7 @@ async function resetTimeline() {
     }
     invalidateWork();
     clearUndo();
-    state.status = 'Resetting the timeline...';
+    setStatus('Resetting the timeline...');
     const task = (async () => {
         try {
             await syncingFeed;
@@ -3681,7 +3720,7 @@ function closeFeedInternal(cancelTransition, allowExpectedPersonaSwitch = false)
         state.feed = null;
         setAccounts([]);
         state.replyingTo = null;
-        state.status = '';
+        setStatus('');
         state.busy = false;
         state.opening = false;
         state.loadFailure = null;
@@ -3825,7 +3864,7 @@ async function startFeed() {
     opener = document.activeElement;
     state.opening = true;
     state.loadFailure = null;
-    state.status = 'Reading the saved timeline...';
+    setStatus('Reading the saved timeline...');
     const body = el('div', {
         className: 'sbtw-shell sbtw-shell-error',
         attrs: { role: 'region', 'aria-label': 'Meower', tabindex: '-1' },
@@ -3893,7 +3932,7 @@ async function startFeed() {
     setAccounts(accounts);
     state.feedEpoch += 1;
     state.opening = false;
-    state.status = '';
+    setStatus('');
     state.loadFailure = failure;
     state.view = 'timeline';
     state.tab = 'main';

@@ -96,7 +96,7 @@ import { addLocaleData, getCurrentLocale, t, translate } from './i18n.js';
 import { hideLoader, showLoader } from './loader.js';
 import { loader } from './action-loader.js';
 import { MacrosParser } from './macros.js';
-import { getChatCompletionModel, oai_settings, promptManager } from './openai.js';
+import { getChatCompletionModel, getChatCompletionSamplerMetadata, oai_settings, promptManager } from './openai.js';
 import { callGenericPopup, Popup, POPUP_RESULT, POPUP_TYPE } from './popup.js';
 import { power_user, registerDebugFunction } from './power-user.js';
 import { getPresetManager } from './preset-manager.js';
@@ -325,6 +325,7 @@ export function getContext() {
         extractMessageFromData,
         getPresetManager,
         getChatCompletionModel,
+        getChatCompletionSamplerMetadata: (settings, model) => structuredClone(getChatCompletionSamplerMetadata(settings, model)),
         printMessages,
         clearChat,
         ChatCompletionService,
