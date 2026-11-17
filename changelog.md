@@ -23,6 +23,7 @@
 - PR #710 (2026-11-16) `fix(agents): apply new companion links in the current chat`
 - PR #711 (2026-11-17) `feat(agents): let agents and mewmory skip user messages`
 - PR #712 (2026-11-17) `feat: add Nano-GPT decisions to Mewmory and Pawthfinder`
+- PR #713 (2026-11-17) `feat(windows-98): tint grey faces with the accent you pick`
 
 ## v1.5.5
 
