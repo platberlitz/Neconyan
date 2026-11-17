@@ -3419,6 +3419,12 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
         min-block-size: var(--sb-message-icon-size);
     }
 
+    /* More, Edit, Delete and Copy share one row even in the narrow flat and Ripple columns. */
+    body.neconyan #chat .mes .mes_buttons .neconyan-message-action {
+        gap: 4px;
+        padding-inline: 5px;
+    }
+
     body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .mes:not(.smallSysMes) {
         --moonlit-sb-avatar-column-width: max(var(--custom-ChatAvatar, 40px), 50px);
         --messageLineHeight: calc(var(--mainFontSize) + var(--lineSpacingMobileLeading, 0.35rem));
