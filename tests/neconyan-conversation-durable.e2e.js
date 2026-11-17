@@ -5,7 +5,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import archiver from 'archiver';
-import { test, MODEL, send, noLateEffects } from './neconyan-conversation-durable-fixture.js';
+import { test, MODEL, send, noLateEffects, acknowledgeActiveSettings } from './neconyan-conversation-durable-fixture.js';
 
 // Each case owns its server and data. Let release shards divide this large file.
 test.describe.configure({ mode: 'parallel' });
@@ -1008,8 +1008,16 @@ for (const phone of [false, true]) {
     });
     for (const { control, textProfile, activeConnection } of ['Send', 'Enter', 'Ask for reply', 'Branch from here'].flatMap(control => [false, true].flatMap(textProfile => [false, true].map(activeConnection => ({ control, textProfile, activeConnection }))))) {
         test(`${phone ? 'phone' : 'desktop'} ${activeConnection ? 'active ' + (textProfile ? 'text ' : 'chat ') : textProfile ? 'saved text ' : ''}${control}: zero-page completion and repeat-safe reopening`, async ({ app, browser }, info) => {
-            const account = await app.account({ phone, textProfile, activeConnection });
+            const account = await app.account({ phone, textProfile, activeConnection, configureSettings(saved) {
+                // Installing bundled assistants can change the active character while this fixture starts.
+                saved.accountStorage = { ...saved.accountStorage, 'NeconyanAssistantSeed.v1': 'done' };
+            } });
+            await account.context.addInitScript(() => {
+                window.addEventListener('neconyan:ready', () => { window.durableAppReady = true; }, { once: true });
+            });
             const page = await account.open();
+            await page.waitForFunction(() => window.durableAppReady === true);
+            if (activeConnection) await acknowledgeActiveSettings(page);
             app.provider.mode.hold = textProfile ? 'text-writer' : MODEL;
             const original = await account.branch('main');
             if (control === 'Ask for reply') await page.locator('#sb_conversation_toggle_tools').click();
