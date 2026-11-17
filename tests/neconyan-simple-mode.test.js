@@ -220,6 +220,12 @@ describe('Simple Mode styles and wiring', () => {
         expect(defaults.accountStorage[SIMPLE_MODE_KEY]).toBe('ask');
     });
 
+    test('the tour question keeps its answers in view when the card has to scroll on a short screen', () => {
+        const css = read('public/css/neconyan.css');
+        expect(css).toContain('body.neconyan #neconyan-tour-coachmark [data-tour-content] { min-height: 0; overflow: auto;');
+        expect(css).toContain('body.neconyan #neconyan-tour-coachmark [data-tour-coach-actions]:not(:empty) { position: sticky; bottom: 0; padding-top: 10px; background: var(--neco-surface); }');
+    });
+
     test('Settings → Appearance carries the switch and the rail carries the way back', () => {
         const tabs = read('public/scripts/neconyan-tabs.js');
         expect(tabs).toContain('id: \'sb-simple-mode-drawer\'');
