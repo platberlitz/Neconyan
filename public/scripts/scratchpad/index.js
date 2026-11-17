@@ -199,6 +199,7 @@ function readPrefs() {
         if (Number.isFinite(saved.width)) app.width = saved.width;
         if (allAssistants().some(item => item.id === saved.assistant)) app.assistant = saved.assistant;
         if (typeof saved.collapsed === 'boolean') app.overviewCollapsed = saved.collapsed;
+        if (typeof saved.contextSetup === 'string') app.contextSetup = saved.contextSetup;
         if (DICTATION_SERVICES.some(service => service.id === saved.dictation)) app.dictation = saved.dictation;
         for (const { id } of allAssistants()) {
             const connection = saved.connections?.[id];
@@ -220,6 +221,7 @@ function writePrefs() {
         collapsed: app.overviewCollapsed,
         connections: app.connections,
         dictation: app.dictation,
+        contextSetup: app.contextSetup,
     }));
 }
 
@@ -232,7 +234,9 @@ function rememberedConnections() {
 
 function sessionInput(extra = {}) {
     const input = { assistant: app.assistant, gender: getAssistantGender(app.assistant), ...extra };
-    if (!activeSession()) input.settings = { assistantConnections: rememberedConnections() };
+    const setup = findContextSetup(app.contextSetup) ?? app.contextSetups.setups[0];
+    if (setup) input.settings = structuredClone(setup.settings);
+    if (!activeSession()) input.settings = { ...input.settings, assistantConnections: rememberedConnections() };
     return input;
 }
 
@@ -283,7 +287,7 @@ function activeSession() {
 }
 
 function currentSettings() {
-    return activeSession()?.settings ?? { ...structuredClone(DEFAULT_SETTINGS), assistantConnections: rememberedConnections() };
+    return activeSession()?.settings ?? { ...structuredClone(DEFAULT_SETTINGS), ...sessionInput().settings };
 }
 
 function assistantConnection(settings, assistant) {
@@ -2651,6 +2655,7 @@ async function saveContextSetup() {
         : [...app.contextSetups.setups, setup];
     if (!await writeContextSetups(setups, t`Scratchpad could not save that setup.`)) return;
     app.contextSetup = findContextSetup(name)?.name ?? '';
+    writePrefs();
     toastr.success(t`Setup saved. You can apply it in any Scratchpad session.`);
     showContextSetups('.scratchpad-setup-save');
 }
@@ -2671,7 +2676,8 @@ async function deleteContextSetup() {
     const confirmed = await callGenericPopup(t`Delete the saved setup '${setup.name}'? Sessions that already use its choices keep them.`, POPUP_TYPE.CONFIRM, '', { okButton: t`Delete setup`, cancelButton: t`Cancel` });
     if (confirmed !== POPUP_RESULT.AFFIRMATIVE) return;
     if (!await writeContextSetups(app.contextSetups.setups.filter(item => item !== setup), t`Scratchpad could not delete that setup.`)) return;
-    app.contextSetup = '';
+    app.contextSetup = app.contextSetups.setups[0]?.name ?? '';
+    writePrefs();
     showContextSetups('.scratchpad-setup-save');
 }
 
@@ -2680,7 +2686,7 @@ function renderContextSetups() {
     if (!findContextSetup(app.contextSetup)) app.contextSetup = setups[0]?.name ?? '';
     const select = h('select', {
         class: 'text_pole', id: 'scratchpad-setup', 'data-i18n-ignore': '',
-        onchange: event => { app.contextSetup = event.currentTarget.value; },
+        onchange: event => { app.contextSetup = event.currentTarget.value; writePrefs(); },
     }, setups.map(setup => h('option', { value: setup.name, text: setup.name })));
     select.value = app.contextSetup;
     return h('section', { class: 'scratchpad-section scratchpad-setups' },

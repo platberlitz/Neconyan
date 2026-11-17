@@ -52,7 +52,7 @@ function fixture() {
         h, append: (element, children) => element.append(children), clear: element => element.replaceChildren(),
         t: (strings, ...values) => strings.reduce((text, part, index) => text + part + (values[index] ?? ''), ''),
         renderHeader() {}, renderChat() {}, renderSessions() {}, syncDraft() {}, syncWatchers() {},
-        rememberedConnections: () => ({}), connectionProfiles: () => [],
+        sessionInput: () => ({ settings: { assistantConnections: {} } }), connectionProfiles: () => [],
         checkbox: () => h('label'), presetCheckbox: () => h('label', { text: `Current preset: ${preset.name}` }),
         currentPresetName: () => preset.name, renderPicks: () => h('section'), renderLore: () => h('section'), renderPreview: () => h('section'),
         iconButton: (text, onclick) => h('button', { text, onclick }), wireSource: value => value,
