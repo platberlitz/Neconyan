@@ -145,6 +145,7 @@ import { attachTextareaFullscreen } from './textarea-fullscreen.js';
 import { openAgentQuickSettings } from './quick-settings.js';
 import { bindCompanionQuickControls, buildCompanionQuickControlsHtml } from './companion/companion-quick-controls.js';
 import { renderTemplateAsync } from '../../templates.js';
+import { registerStartupTask } from '../../startup-readiness.js';
 import { TARO_GUIDE_MAX_NEW_PICKS, chooseInstalledCopy, copiesForTemplate, getTaroUndoBlockReason } from './agent-recommendations.js';
 
 const MODULE_NAME = 'in-chat-agents';
@@ -3603,10 +3604,12 @@ function updateAgentOverview(agentList = getVisibleInChatAgents()) {
     const enabled = areAgentsGloballyEnabled();
     const blocked = !enabled && getGlobalSettings().enabled !== false;
     const feedback = lastManualRunFeedback && isCurrentAgentWorkspace(lastManualRunFeedback.identity) ? lastManualRunFeedback : null;
+    const loading = agentLibraryLoading && !agentLibraryReady;
     const status = active
         ? (enabled ? 'Running an agent…' : 'Running; future runs paused')
-        : feedback ? feedback.text : blocked ? 'Agent setup or library needs recovery' : !enabled ? 'Agents paused'
-            : enabledCount ? 'Ready for the next reply' : 'No automatic agents enabled';
+        : loading ? 'Loading your agents...'
+            : feedback ? feedback.text : blocked ? 'Agent setup or library needs recovery' : !enabled ? 'Agents paused'
+                : enabledCount ? 'Ready for the next reply' : 'No automatic agents enabled';
     const scope = getGlobalSettings().separateRecentChats ? getAgentChatScopeLabel().toLowerCase() : 'all chats';
     const hasReply = getLastAssistantMessageIndex() >= 0;
     values.push(['#ica--run-status', status], ['#ica--scope-description', `Agent switches apply to ${scope}.${hasReply ? '' : ' Open a chat to run an agent on its latest reply.'}`]);
@@ -7067,14 +7070,78 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
 
 // ===================== Initialization =====================
 
+const AGENT_PANEL_MOUNT_WAIT_MS = 5000;
+const AGENT_SETTINGS_TEMPLATE_URL = '/scripts/extensions/in-chat-agents/settings.html?v=20261117-startup-styles';
+
+/**
+ * Resolves with the shell's Agents box once it exists, or null after the wait.
+ * @returns {Promise<HTMLElement|null>}
+ */
+function waitForAgentPanelContainer() {
+    const find = () => document.getElementById('in_chat_agents_container');
+    const existing = find();
+    if (existing || !document.body) return Promise.resolve(existing);
+    return new Promise(resolve => {
+        const finish = () => {
+            observer.disconnect();
+            clearTimeout(timer);
+            resolve(find());
+        };
+        const observer = new MutationObserver(() => {
+            if (find()) finish();
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+        const timer = setTimeout(finish, AGENT_PANEL_MOUNT_WAIT_MS);
+    });
+}
+
+/**
+ * Resolves once this extension's stylesheet has loaded or failed, so the panel never shows unstyled.
+ * @returns {Promise<void>}
+ */
+function waitForAgentStylesheet() {
+    const link = document.getElementById('in-chat-agents-css');
+    if (!(link instanceof HTMLLinkElement) || link.sheet || link.dataset.loaded === 'true') return Promise.resolve();
+    return new Promise(resolve => {
+        const finish = () => {
+            clearTimeout(timer);
+            link.removeEventListener('load', finish);
+            link.removeEventListener('error', finish);
+            resolve();
+        };
+        link.addEventListener('load', finish);
+        link.addEventListener('error', finish);
+        const timer = setTimeout(finish, AGENT_PANEL_MOUNT_WAIT_MS);
+        if (link.sheet) finish();
+    });
+}
+
+async function renderAgentSettingsTemplate() {
+    const html = await renderTemplateAsync(AGENT_SETTINGS_TEMPLATE_URL, {}, true, true, true);
+    if (html) return html;
+    // One retry, so a dropped request at startup does not leave the Agents page empty until a reload.
+    await new Promise(resolve => setTimeout(resolve, 800));
+    return await renderTemplateAsync(AGENT_SETTINGS_TEMPLATE_URL, {}, true, true, true);
+}
+
+let resolveAgentPanelMounted = () => {};
+// The startup loader waits for this (capped), so the Agents page is styled and filled in on first open.
+registerStartupTask('in-chat-agents panel', new Promise(resolve => { resolveAgentPanelMounted = resolve; }));
+
 (async function () {
-    const settingsHtml = await renderTemplateAsync('/scripts/extensions/in-chat-agents/settings.html?v=20261030b-rail-targets', {}, true, true, true);
+    const settingsHtml = await renderAgentSettingsTemplate();
     if (!settingsHtml) {
         console.warn('[InChatAgents] Could not load the settings template.');
         return;
     }
+    // The stylesheet started downloading alongside this script, so this wait rarely adds time.
+    const [container] = await Promise.all([waitForAgentPanelContainer(), waitForAgentStylesheet()]);
+    if (!container) {
+        console.warn('[InChatAgents] The Agents panel container never appeared.');
+        return;
+    }
 
-    $('#in_chat_agents_container').append(settingsHtml);
+    $(container).append(settingsHtml);
     // The toolbar is visible before its buttons are wired, so keep them disabled until they respond.
     const startingToolbarButtons = [...document.querySelectorAll('#ica--settings .ica--toolbar-actions > button:not(:disabled)')];
     for (const button of startingToolbarButtons) {
@@ -7163,6 +7230,7 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
         setAgentWorkspaceView(initialWorkspaceView);
         renderAgentSetupControls();
     }
+    resolveAgentPanelMounted();
 
     const savedState = extension_settings.inChatAgents;
     let removedAutoSeededTemplateIds = false;
@@ -7770,4 +7838,4 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
     updateRerunAgentsButtonVisibility();
     updateCompanionButtonVisibility();
     updateAgentTokenCounter();
-})();
+})().finally(() => resolveAgentPanelMounted());

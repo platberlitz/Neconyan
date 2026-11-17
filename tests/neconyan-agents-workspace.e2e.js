@@ -23,7 +23,7 @@ async function openAgents(page, withChat = false, navigate = action => action())
     await navigate(() => page.goto('/', { waitUntil: 'domcontentloaded' }));
     await expect(page.locator('[data-neconyan-cat]')).toBeVisible({ timeout: 45000 });
     await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'));
-    await expect(page.locator('#ica--run-status')).not.toHaveText('Ready', { timeout: 45000 });
+    await expect(page.locator('#ica--run-status')).not.toHaveText('Loading your agents...', { timeout: 45000 });
     if (withChat) {
         const assistant = page.locator('[data-assistant-personality="miso"]');
         await assistant.locator('input[value="miso-male"]').check();

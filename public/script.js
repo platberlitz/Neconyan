@@ -347,6 +347,7 @@ import { initCustomSelectedSamplers, validateDisabledSamplers } from './scripts/
 import { DragAndDropHandler } from './scripts/dragdrop.js';
 import { INTERACTABLE_CONTROL_CLASS, initKeyboard } from './scripts/keyboard.js';
 import { loadStylesheetAsync, initDynamicStyles } from './scripts/dynamic-styles.js';
+import { waitForStartupReadiness } from './scripts/startup-readiness.js';
 import { initInputMarkdown } from './scripts/input-md-formatting.js';
 import { AbortReason } from './scripts/util/AbortReason.js';
 import { initSystemPrompts } from './scripts/sysprompt.js';
@@ -1444,21 +1445,23 @@ function registerNeconyanServiceWorker() {
     window.addEventListener('load', register, { once: true });
 }
 
-function scheduleDeferredStartupStylesheets() {
-    const loadStylesheets = () => {
-        for (const stylesheet of DEFERRED_STARTUP_STYLESHEETS) {
-            loadStylesheetAsync(stylesheet.href, { id: stylesheet.id }).catch(error => {
-                console.warn('Failed to load deferred stylesheet:', stylesheet.href, error);
-            });
-        }
-    };
-
-    if ('requestIdleCallback' in window) {
-        window.requestIdleCallback(loadStylesheets, { timeout: 2500 });
-        return;
+function loadDeferredStartupStylesheets() {
+    for (const stylesheet of DEFERRED_STARTUP_STYLESHEETS) {
+        loadStylesheetAsync(stylesheet.href, { id: stylesheet.id }).catch(error => {
+            console.warn('Failed to load deferred stylesheet:', stylesheet.href, error);
+        });
     }
+}
 
-    window.setTimeout(loadStylesheets, 800);
+// Holds the startup loader until the page underneath has every stylesheet and panel it
+// shows first, so it never opens unstyled. Capped so one slow request cannot hold startup.
+async function waitForStartupStyles() {
+    loadDeferredStartupStylesheets();
+    try {
+        await waitForStartupReadiness({ activateDeferredStyles: globalThis.NeconyanLoadStylesheet });
+    } catch (error) {
+        console.warn('Startup readiness check failed.', error);
+    }
 }
 
 //MARK: firstLoadInit
@@ -1573,13 +1576,15 @@ async function firstLoadInit() {
         await initSystemMessages();
         // Settings and extensions count prompts during startup. Load their saved cache first.
         await initTokenizers();
+        // Low priority, so these load alongside settings without competing with them.
+        loadDeferredStartupStylesheets();
         await getSettings(initLoaderHandle, initialSettingsData);
         await checkOpenRouterAuth();
         initKeyboard();
         initDynamicStyles();
         initTags();
         initBookmarks();
-        scheduleDeferredStartupStylesheets();
+        await waitForStartupStyles();
         await releaseStartupLoader('startup loader release');
         await getUserAvatars(true, user_avatar);
         await getCharacters();

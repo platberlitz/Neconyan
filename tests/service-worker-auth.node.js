@@ -125,11 +125,12 @@ test('content-hashed frontend assets remain cache-first', async () => {
     assert.match(worker.opened[0], /-static$/);
 });
 
-test('library, stylesheet, image and font requests stay stale-while-revalidate', async () => {
+test('library, versioned stylesheet, image and font requests stay stale-while-revalidate', async () => {
     const worker = loadWorker();
     const paths = [
         '/lib/jquery-3.7.1.min.js',
-        '/css/neconyan.css',
+        '/css/neconyan.css?v=20261117-startup',
+        '/css/shell-styles/windows-98.css?v=20261117-startup',
         '/img/neconyan-pixel-cat-running.webp',
         '/webfonts/Nunito/Nunito[wght].woff2',
     ];
@@ -143,6 +144,26 @@ test('library, stylesheet, image and font requests stay stale-while-revalidate',
     const resolved = await Promise.all(responses);
     assert.equal(resolved.length, paths.length);
     assert.deepEqual(worker.fetched, paths.map(pathname => `${ORIGIN}${pathname}`));
+});
+
+test('unversioned stylesheets are revalidated by the browser so an update never paints old rules', () => {
+    const worker = loadWorker({
+        cache: new Map([[`${ORIGIN}/css/toggle-dependent.css`, makeResponse('previous release')]]),
+    });
+    for (const pathname of [
+        '/css/toggle-dependent.css',
+        '/css/st-tailwind.css',
+        '/css/user.css',
+        '/css/macros.css',
+        '/lib/some-widget.css',
+        '/webfonts/NotoSans/stylesheet.css',
+    ]) {
+        worker.listeners.fetch({
+            request: requestFor(pathname),
+            respondWith: () => assert.fail(`${pathname} must not be served from the service-worker cache`),
+        });
+    }
+    assert.deepEqual(worker.fetched, []);
 });
 
 test('a stale library response is served while its newer copy is fetched', async () => {
