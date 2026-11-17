@@ -1006,7 +1006,9 @@ async function send({ regenerate = '', discuss = false, rehearsal = false } = {}
     const text = regenerate ? '' : discuss ? [request, typed].filter(Boolean).join('\n\n') : typed;
     const attachedDraft = app.attachments;
     const attachments = regenerate || discuss ? [] : [...attachedDraft];
-    if (!regenerate && !rehearsal && !text && !attachments.length) {
+    const empty = !regenerate && !rehearsal && !text && !attachments.length;
+    const replyTo = empty ? activeSession()?.messages.at(-1) : null;
+    if (empty && replyTo?.role !== 'user') {
         app.el.composer.focus();
         return;
     }
@@ -1017,24 +1019,28 @@ async function send({ regenerate = '', discuss = false, rehearsal = false } = {}
         requireScope(source, initialSessionId);
         const session = await ensureSession(source);
         if (!session) return;
+        if (replyTo && session.messages.at(-1)?.id !== replyTo.id) throw new Error(t`The Scratchpad settings or messages changed. Try sending again.`);
         const draftKey = app.draftKey;
         const snapshot = JSON.stringify(session);
         const settings = session.settings;
         const chatProfileId = sourceConnectionProfile(source);
         const retried = regenerate ? session.messages.find(message => message.id === regenerate) : null;
+        if (replyTo && (source.scope || source.kind === 'general') && !sameChat(replyTo.contextSource, source)) {
+            throw new Error(source.kind === 'general' ? t`Return to the original Scratchpad context before answering this message.` : t`Open the original chat before answering this message.`);
+        }
         if (retried && (source.scope || source.kind === 'general') && !sameChat(retried.contextSource, source)) {
             throw new Error(source.kind === 'general' ? t`Return to the original Scratchpad context before trying this reply again.` : t`Open the original chat before trying this reply again.`);
         }
         const assistants = retried ? [retried.assistant || session.assistant] : sessionAssistants(session);
         const genders = Object.fromEntries(ASSISTANTS.map(item => [item.id, getAssistantGender(item.id)]));
-        const query = regenerate ? (session.messages.slice(0, session.messages.indexOf(retried)).findLast(item => item.role === 'user')?.text ?? '') : text;
+        const query = regenerate ? (session.messages.slice(0, session.messages.indexOf(retried)).findLast(item => item.role === 'user')?.text ?? '') : replyTo?.text ?? text;
         const context = await buildContext({ source, settings, pendingText: query, sessionText: sessionText(session) });
         await refreshImageAvailability();
         const help = [...new Set(await Promise.all(assistants.map(assistant => buildHelp({ assistant, gender: genders[assistant], text: query }))))].filter(Boolean).join('\n\n');
         requireScope(source, session.id);
         const connectionsSaved = !(chatProfileId || assistants.every(assistant => assistantConnection(settings, assistant).kind === 'profile'));
         const acknowledgement = connectionsSaved ? await acknowledge() : undefined;
-        const personaSaved = rehearsal || retried?.rehearsal || !context.capabilities.persona || !needsSavedPersonaSelection(source, connectionsSaved) || await saveSelectedPersona();
+        const personaSaved = rehearsal || retried?.rehearsal || replyTo?.rehearsal || !context.capabilities.persona || !needsSavedPersonaSelection(source, connectionsSaved) || await saveSelectedPersona();
         if (!personaSaved) toastr.warning(t`Scratchpad could not save your persona, so Scenario Note suggestions for it are left out of this reply.`);
         const capabilities = personaSaved ? context.capabilities : Object.fromEntries(Object.entries(context.capabilities).filter(([key]) => key !== 'persona'));
         await app.queue;
@@ -1047,6 +1053,7 @@ async function send({ regenerate = '', discuss = false, rehearsal = false } = {}
             source: wireSource(source),
             sessionId: session.id,
             regenerate: regenerate || undefined,
+            replyTo: replyTo?.id,
             discuss: discuss || undefined,
             rehearsal: rehearsal || undefined,
             text,

@@ -22622,6 +22622,8 @@
   "General Scratchpad": "General Scratchpad",
   "No persona is selected. Pick one in Personas if you want General Scratchpad to use it.": "No persona is selected. Pick one in Personas if you want General Scratchpad to use it.",
   "The Scratchpad context changed. Return to it before sending.": "The Scratchpad context changed. Return to it before sending.",
+  "Return to the original Scratchpad context before answering this message.": "Return to the original Scratchpad context before answering this message.",
+  "Open the original chat before answering this message.": "Open the original chat before answering this message.",
   "Lorebook shared by hand for this session: ${0}": "Lorebook shared by hand for this session: ${0}",
   "Lorebooks active in this chat: ${0}": "Lorebooks active in this chat: ${0}",
   "Greeting ${0}:\n${1}": "Greeting ${0}:\n${1}",

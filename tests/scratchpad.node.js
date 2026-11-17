@@ -1845,6 +1845,65 @@ test('any reply to one of your messages can be regenerated, seeing only the turn
         error => error.code === 'SCRATCHPAD_REGENERATE_INVALID');
 });
 
+test('empty Send answers the last unanswered user message, preserving its identity and attachments', async t => {
+    const a = account(t);
+    const session = startSession(a);
+    const prompts = [];
+    registerScratchpadJobs({ generate: async options => {
+        prompts.push(options.messages);
+        return { text: 'A fresh answer.' };
+    } });
+    const body = sendBody(session, { attachments: [{ kind: 'text', name: 'garden.txt', size: 17, text: 'The gate is open.' }] });
+    const first = await acceptScratchpadReply(a.request(body), body);
+    await runJob(getJob(a.directories, first.job.id));
+    const before = a.read(SOURCE).sessions[0].messages;
+    a.mutate(SOURCE, bucket => store.deleteMessage(bucket, session.id, before[1].id));
+    const next = sendBody(session, { text: '', replyTo: before[0].id });
+    const accepted = await acceptScratchpadReply(a.request(next), next);
+    const duplicate = await acceptScratchpadReply(a.request(next), next);
+    assert.equal(duplicate.job.id, accepted.job.id);
+    await runJob(getJob(a.directories, accepted.job.id));
+    const after = a.read(SOURCE).sessions[0].messages;
+    assert.equal(after.length, 2);
+    assert.deepEqual(after[0], before[0]);
+    assert.equal(after[1].text, 'A fresh answer.');
+    assert.deepEqual(prompts[1], prompts[0]);
+    const stale = sendBody(session, { text: '', replyTo: before[0].id });
+    await assert.rejects(acceptScratchpadReply(a.request(stale), stale), error => error.code === 'SCRATCHPAD_REPLY_TO_INVALID');
+});
+
+test('answering an existing user message rejects stale contexts and conflicting send modes', () => {
+    const user = { id: 'question', role: 'user', text: 'A question', contextSource: GENERAL };
+    const session = { assistant: 'miso', settings: store.defaultSettings(), messages: [user] };
+    const request = { source: GENERAL, replyTo: user.id, text: '', attachments: [] };
+    assert.equal(jobs.planReply(session, request).prompt, user.text);
+    for (const messages of [[], [{ ...user, id: 'different' }], [user, { role: 'assistant', text: 'Answered', state: 'done' }]]) {
+        assert.throws(() => jobs.planReply({ ...session, messages }, request), error => error.code === 'SCRATCHPAD_REPLY_TO_INVALID');
+    }
+    assert.throws(() => jobs.planReply(session, { ...request, source: { ...GENERAL, personaId: 'Other.png' } }), error => error.code === 'SCRATCHPAD_REPLY_TO_INVALID');
+    for (const extra of [{ text: 'New question' }, { regenerate: 'reply' }, { discuss: true }, { rehearsal: true }, { attachments: [{ kind: 'text', name: 'note.txt', size: 8, text: 'New text' }] }]) {
+        assert.throws(() => jobs.normaliseReplyRequest(sendBody({ id: 'session' }, { text: '', replyTo: 'question', ...extra })), error => error.code === 'SCRATCHPAD_REPLY_TO_INVALID');
+    }
+});
+
+test('answering an existing user message keeps attachments, rehearsal mode and round-table selection', () => {
+    const attachment = { kind: 'text', name: 'garden.txt', size: 17, text: 'The gate is open.' };
+    const user = { id: 'question', role: 'user', text: '', attachments: [attachment], rehearsal: true };
+    const earlier = [{ id: 'earlier-user', role: 'user', text: 'An earlier question' }, { id: 'earlier-reply', role: 'assistant', state: 'done', text: 'An earlier answer' }];
+    const settings = { ...store.defaultSettings(), roundTable: true, participants: ['miso', 'taro'], randomReply: false };
+    const session = { assistant: 'miso', settings, messages: [...earlier, user] };
+    const request = { source: SOURCE, replyTo: user.id, text: '', attachments: [] };
+    const plan = jobs.planReply(session, request);
+    assert.equal(plan.userMessageId, user.id);
+    assert.equal(plan.prompt, '');
+    assert.equal(plan.rehearsal, true);
+    assert.deepEqual(plan.attachments, [attachment]);
+    assert.equal(plan.history.length, 2);
+    assert.deepEqual(plan.assistants, ['miso', 'taro']);
+    assert.deepEqual(jobs.planReply({ ...session, settings: { ...settings, randomReply: true } }, request, () => 1).assistants, ['taro']);
+    assert.throws(() => jobs.planReply(session, { ...request, source: { kind: 'notebook', key: 'note' } }), error => error.code === 'SCRATCHPAD_REHEARSAL_INVALID');
+});
+
 test('shared sessions keep pending replies and retries tied to their original chat', async t => {
     const a = account(t);
     const source = { kind: 'roleplay', key: 'character:Nova.png:Source', scope: { kind: 'character', id: 'Nova.png' } };
