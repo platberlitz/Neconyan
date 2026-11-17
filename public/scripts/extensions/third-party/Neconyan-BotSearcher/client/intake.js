@@ -32,7 +32,7 @@ import {
     readLocalCardFile,
     removeCharacter,
 } from './importer.js';
-import { botbooruAccountControl, jannyBrowserControl, saucepanAccountControl } from './settings.js';
+import { JANNY_BROWSER_SOURCES, botbooruAccountControl, jannyBrowserControl, saucepanAccountControl } from './settings.js';
 import {
     additionalImportContents,
     bulkImportSummary,
@@ -458,7 +458,7 @@ function showNotInspected(container, status, request, error, onBack, screen, opt
     if (request.source?.id === 'saucepan' && ['saucepan_login_required', 'saucepan_session_expired'].includes(code)) {
         actions.append(saucepanAccountControl('sbbs_intake_saucepan'));
     }
-    if (request.source?.id === 'jannyai' && code === 'janny_login_required') {
+    if (JANNY_BROWSER_SOURCES.has(request.source?.id) && code === 'janny_login_required') {
         actions.append(jannyBrowserControl('sbbs_intake_janny'));
     }
     if (request.source?.nativeImport === true && request.card) {
@@ -535,20 +535,23 @@ function showNotInspected(container, status, request, error, onBack, screen, opt
 
 function nativeRecovery(request, error) {
     if ((error?.message ?? error?.code) !== 'native_download_failed'
-        || request.source?.id !== 'jannyai') {
+        || !JANNY_BROWSER_SOURCES.has(request.source?.id)) {
         return null;
     }
 
+    const janitor = request.source.id === 'janitorai';
     const recovery = el('div', 'sbbs-intake-recovery');
     const instructions = el(
         'p',
         undefined,
-        'Download the card from JannyAI, then return to the browse dialog, open “Inspect a card file” and choose a file.',
+        janitor
+            ? 'Download the card from JanitorAI, then return to the browse dialog, open “Inspect a card file” and choose a file.'
+            : 'Download the card from JannyAI, then return to the browse dialog, open “Inspect a card file” and choose a file.',
     );
     const pageUrl = request.card?.pageUrl;
     if (typeof pageUrl === 'string' && pageUrl !== '') {
         const link = document.createElement('a');
-        setText(link, 'Open JannyAI page');
+        setText(link, janitor ? 'Open JanitorAI page' : 'Open JannyAI page');
         if (setLinkSafe(link, pageUrl, request.source.clientHosts)) {
             instructions.append(document.createTextNode(' '), link);
         }

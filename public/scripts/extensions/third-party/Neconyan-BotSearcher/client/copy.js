@@ -45,6 +45,9 @@ export const SORT_LABELS = Object.freeze({
     oldest: 'Oldest',
     tokens_desc: 'Most tokens',
     tokens_asc: 'Fewest tokens',
+    trending_day: 'Trending 24h',
+    trending_week: 'Trending 7d',
+    popular: 'Popular',
 });
 
 const STAT_FIELDS = Object.freeze({
@@ -78,6 +81,10 @@ const STAT_FIELDS = Object.freeze({
     ]),
     jannyai: Object.freeze([
         ['tokens', 'token'],
+    ]),
+    janitorai: Object.freeze([
+        ['tokens', 'token'],
+        ['views', 'chat'],
     ]),
 });
 
@@ -227,6 +234,17 @@ export function emptyResultMessage(sourceLabel, query, activeFilters = 0) {
 }
 
 /**
+ * Shown under a list-only source's cards when text is typed, so the unchanged
+ * list does not look like the answer to that text.
+ *
+ * @param {string} sourceLabel
+ * @returns {string}
+ */
+export function listOnlyQueryNote(sourceLabel) {
+    return `${sourceLabel} shows its own lists and cannot search by text. Pick a list from the sort menu, or choose another source to search.`;
+}
+
+/**
  * Why a source could not be reached, in the words that fit what happened.
  *
  * "Not responding" is wrong for a refusal: the site answered, and it said no.
@@ -300,7 +318,30 @@ export function searchUnavailableMessage(urlSourceLabels) {
     return `No searchable source is enabled. Paste a card URL from ${list(urlSourceLabels)} to review and import it.`;
 }
 
+/**
+ * Why the JanitorAI lists cannot load, for codes from the server's browser window.
+ *
+ * @param {string} code
+ * @returns {string}
+ */
+export function janitorListErrorMessage(code) {
+    switch (code) {
+        case 'janny_login_required':
+            return 'JanitorAI\'s lists are not available right now: the server\'s JanitorAI browser window is signed out or waiting for a security check. A Neconyan administrator can open it under Extensions > BotSearcher with "Open JannyAI login window".';
+        case 'janny_browser_unavailable':
+            return 'JanitorAI\'s lists need a browser running on the Neconyan server, and this server does not have one set up. The server owner needs to install Playwright and Chromium (tools that let the server run a web browser).';
+        case 'janny_browser_request_failed':
+            return 'JanitorAI did not answer the server\'s browser window in time. Try again in a minute.';
+        default:
+            return '';
+    }
+}
+
 export function searchErrorMessage(error, sourceLabel) {
+    if (sourceLabel === 'JanitorAI') {
+        const message = janitorListErrorMessage(error?.code);
+        if (message) return message;
+    }
     switch (error?.code) {
         case 'botbooru_login_required':
             return 'Log in to BotBooru under Extensions > BotSearcher to search non-SFW results.';
@@ -980,9 +1021,27 @@ export const JANNY_CARD_ERRORS = Object.freeze([
     'janny_card_unavailable',
 ]);
 
+/** JanitorAI cards go through the same server browser as JannyAI, but name their own site. */
+function janitorIntakeErrorMessage(code) {
+    switch (code) {
+        case 'native_download_failed':
+            return 'Neconyan could not download this JanitorAI card. JanitorAI\'s Cloudflare security check is probably blocking the server.';
+        case 'janny_login_required':
+            return 'JanitorAI\'s Cloudflare security check has not been passed yet. Press "Open JannyAI login window" below, finish the check (and log in if asked), then press Try again.';
+        case 'janny_card_unavailable':
+            return 'JanitorAI could not return this card. Check that the link opens a public character on JanitorAI, or download the card and import the file.';
+        default:
+            return '';
+    }
+}
+
 export function intakeErrorMessage(error, sourceId) {
     if (error?.name === 'TimeoutError') {
         return 'The card request took too long. Try again.';
+    }
+    if (sourceId === 'janitorai') {
+        const message = janitorIntakeErrorMessage(error?.code ?? error?.message);
+        if (message) return message;
     }
     switch (error?.code ?? error?.message) {
         case 'botbooru_login_required':

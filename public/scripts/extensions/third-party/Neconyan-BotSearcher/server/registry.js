@@ -14,6 +14,7 @@ import { quillgen } from './sources/quillgen.js';
 import { wyvern } from './sources/wyvern.js';
 import { charactertavern } from './sources/charactertavern.js';
 import { jannyai } from './sources/jannyai.js';
+import { janitorai } from './sources/janitorai.js';
 import { saucepan } from './sources/saucepan.js';
 
 /** @type {Readonly<Record<string, any>>} */
@@ -26,6 +27,7 @@ export const SOURCES = Object.freeze({
     wyvern,
     charactertavern,
     jannyai,
+    janitorai,
     saucepan,
 });
 

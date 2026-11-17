@@ -102,6 +102,7 @@ const NAMED_SEARCH_SORTS = {
     wyvern: ['default'],
     charactertavern: ['default'],
     jannyai: ['relevant', 'newest', 'oldest', 'tokens_desc', 'tokens_asc'],
+    janitorai: ['trending_day', 'trending_week', 'popular', 'latest'],
     saucepan: ['default'],
 };
 const NAMED_SEARCH_FILTERS = {
@@ -111,6 +112,9 @@ const NAMED_SEARCH_FILTERS = {
     },
     chub: { tags: 'tags', excludeTags: 'tags', creator: 'text', minTokens: 'number', maxTokens: 'number' },
 };
+
+/** Sources whose cards and lists come through the server's JanitorAI browser window. */
+export const JANNY_BROWSER_SOURCES = new Set(['jannyai', 'janitorai']);
 
 function namedSearchText(value, limit) {
     if (typeof value !== 'string'
@@ -543,7 +547,7 @@ export async function mountSettings() {
         if (availability.status === AVAILABILITY.OK && saucepan?.capabilities?.accountLogin === true) {
             content.append(collapsedAccount(saucepanAccountControl()));
         }
-        const janny = sources.find((source) => source?.id === 'jannyai');
+        const janny = sources.find((source) => JANNY_BROWSER_SOURCES.has(source?.id));
         if (availability.status === AVAILABILITY.OK && janny?.capabilities?.browserImport === true) {
             content.append(collapsedAccount(jannyBrowserControl('sbbs_janny', health?.capabilities?.jannyBrowser)));
         }

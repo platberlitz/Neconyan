@@ -19,6 +19,10 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PROFILE_ENV = 'SBBS_JANNY_PROFILE_DIR';
 const REQUEST_TIMEOUT_MS = 30000;
 const CLOSE_TIMEOUT_MS = 5000;
+export const FRONTPAGE_SECTIONS = Object.freeze(['popular', 'trending24', 'trending', 'latest']);
+export const FRONTPAGE_MAX_PAGE = 50;
+const FRONTPAGE_CACHE_MS = 5 * 60 * 1000;
+const FRONTPAGE_CACHE_ENTRIES = 64;
 
 let playwrightImport;
 
@@ -930,14 +934,16 @@ async function capturePrivateCard(page, id, meta, recovery) {
 }
 
 /**
- * @param {{ profileDir?: string, launchContext?: typeof openPersistentContext, fetchAvatar?: typeof nodeFetch }} [options]
+ * @param {{ profileDir?: string, launchContext?: typeof openPersistentContext, fetchAvatar?: typeof nodeFetch, now?: () => number }} [options]
  */
 export function createJannyBrowser({
     profileDir: configuredProfileDir,
     launchContext = openPersistentContext,
     fetchAvatar = nodeFetch,
+    now = Date.now,
 } = {}) {
     const directory = path.resolve(configuredProfileDir || profileDir());
+    const frontpageCache = new Map();
     let context = null;
     let starting = null;
     let closing = null;
@@ -1026,6 +1032,7 @@ export function createJannyBrowser({
         },
 
         async login() {
+            frontpageCache.clear();
             return exclusive(async () => {
                 const opened = await ensureContext();
                 const page = await pageFor(opened);
@@ -1035,6 +1042,7 @@ export function createJannyBrowser({
         },
 
         async logout() {
+            frontpageCache.clear();
             return exclusive(async () => {
                 const opened = await ensureContext();
                 // Restore while credentials still exist. A failed restore must
@@ -1098,19 +1106,39 @@ export function createJannyBrowser({
             });
         },
 
-        async frontpage(section = 'popular', mode = 'all') {
-            if (!['popular', 'trending24', 'trending', 'latest'].includes(section) || !['all', 'sfw'].includes(mode)) {
+        async frontpage(section = 'popular', mode = 'all', pageNumber = 1) {
+            if (!FRONTPAGE_SECTIONS.includes(section) || !['all', 'sfw'].includes(mode)
+                || !Number.isSafeInteger(pageNumber) || pageNumber < 1 || pageNumber > FRONTPAGE_MAX_PAGE) {
                 throw new Error('Unsupported public JanitorAI filter.');
             }
-            return exclusive(async () => {
+            // Beau and BotSearcher read the same lists; one shared copy keeps
+            // the signed-in browser from hitting JanitorAI for every viewer.
+            const key = `${section}:${mode}:${pageNumber}`;
+            const cached = frontpageCache.get(key);
+            if (cached && now() - cached.at < FRONTPAGE_CACHE_MS) {
+                return cached.value;
+            }
+            const value = exclusive(async () => {
                 const page = await pageFor(await ensureContext());
                 if (new URL(page.url()).origin !== ORIGIN) {
                     await page.goto(ORIGIN, { waitUntil: 'domcontentloaded', timeout: 30000 });
                 }
-                const query = new URLSearchParams({ page: '1', language: 'en', mode, count_mode: 'bounded', include_top_custom_tags: 'false' });
+                const query = new URLSearchParams({ page: String(pageNumber), language: 'en', mode, count_mode: 'bounded', include_top_custom_tags: 'false' });
                 query.set(section.startsWith('trending') ? 'special_mode' : 'sort', section);
                 return jsonFromPage(page, `${ORIGIN}/hampter/characters?${query}`);
             });
+            const entry = { at: now(), value };
+            frontpageCache.delete(key);
+            frontpageCache.set(key, entry);
+            while (frontpageCache.size > FRONTPAGE_CACHE_ENTRIES) {
+                frontpageCache.delete(frontpageCache.keys().next().value);
+            }
+            value.catch(() => {
+                if (frontpageCache.get(key) === entry) {
+                    frontpageCache.delete(key);
+                }
+            });
+            return value;
         },
 
         async close() {
