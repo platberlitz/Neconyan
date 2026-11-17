@@ -74,6 +74,20 @@ describe('Catline SVG icon replacement', () => {
         expect(plain('path[d="M8 15q4 4 8 0"]').length).toBe(1);
     });
 
+    test('Extensions shows a pile of cats while Batch import and Kittyless keep the cubes', () => {
+        const html = load(read('public/index.html'));
+        expect(html('#extensions-settings-button .drawer-icon').hasClass('fa-cubes')).toBe(true);
+        expect(read('public/index.html')).toContain('fa-cubes-stacked');
+        const [cat, plain] = icons.cubes.map(drawing => load(renderIcon(drawing), { xmlMode: true }));
+        expect(cat('path').attr('d').match(/Z/g)).toHaveLength(3);
+        expect(cat('g[fill="currentColor"] circle').length).toBe(6);
+        expect(plain('circle').length).toBe(0);
+        expect(icons.cubes[1]).toBe(icons['cubes-stacked'][1]);
+        expect(icons['cubes-stacked'][0]).toBe(icons['cubes-stacked'][1]);
+        expect(catalogue).toContainEqual(['fa-cubes']);
+        expect(catalogue).toContainEqual(['fa-cubes-stacked']);
+    });
+
     test('legacy CSS glyphs are replaced at their source', () => {
         const glyphs = sources('public').filter(name => name.endsWith('.css')).flatMap(name => /content:\s*['"]\\[fe][0-9a-f]{3}/i.test(read(name)) ? [name] : []);
         expect(glyphs).toEqual([]);
