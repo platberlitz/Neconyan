@@ -448,8 +448,8 @@ export function isPinnedPersonaEntry(entry) {
     });
 }
 
-// Keep stored styles, but hide excluded speakers and personas other than the
-// equipped persona in the editing list and legends.
+// Keep stored styles for excluded speakers and other personas, but hide excluded
+// speakers and only show the equipped persona in the editing list and legends.
 function getPersonaVisibleEntries() {
     const activeIdentity = normalizeRegistryIdentity(getPersonaName());
     const personaIdentities = new Set([
