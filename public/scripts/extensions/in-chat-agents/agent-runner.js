@@ -4897,6 +4897,10 @@ function onGenerationEnded(_chatLength, generationContext) {
     clearPathfinderRetrievalToast();
     releaseToolAgentRegistrations();
 
+    // A generation that began before the Agents started left no record of the reply it
+    // followed, so the latest reply here may be an older one, such as the greeting.
+    if (postProcessingGenerationRunId === 0) return;
+
     if (isNativeRoleplayGeneration || stoppedGenerationRunId === postProcessingGenerationRunId) {
         isGenerationInProgress = false;
         lastMainGenerationEndedAt = Date.now();

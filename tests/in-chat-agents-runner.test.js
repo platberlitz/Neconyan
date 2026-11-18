@@ -12349,6 +12349,20 @@ Helper context.`;
         expect(textarea.value).toBe('Polished impersonation');
     });
 
+    test('a generation that ended before the Agents saw it start leaves the earlier reply alone', async () => {
+        useManualTransformAgents();
+        for (const agent of enabledAgents) agent.postProcess.enabled = true;
+        generateQuietPrompt.mockResolvedValue('Rewritten greeting');
+        chat.push({ name: 'Assistant', mes: 'Greeting', is_user: false, is_system: false, send_date: 'greeting-date', extra: {} });
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+        await eventSource.emit(eventTypes.GENERATION_ENDED, chat.length);
+        await new Promise(resolve => setTimeout(resolve, 300));
+        expect(generateQuietPrompt).not.toHaveBeenCalled();
+        expect(chat[0].mes).toBe('Greeting');
+        expect(chat[0].extra.inChatAgentPostRuns).toBeUndefined();
+    });
+
     test('a reply processed under an older Agent order is not processed again', async () => {
         useManualTransformAgents();
         for (const agent of enabledAgents) agent.postProcess.enabled = true;
