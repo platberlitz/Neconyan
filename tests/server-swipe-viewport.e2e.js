@@ -52,7 +52,10 @@ async function setupSwipeFixture(app, { phone, chatName, oldReply, mainReply, po
             : body.model === 'post-held' ? postReply : companionReply;
         return { choices: [{ finish_reason: 'stop', message: { role: 'assistant', content } }] };
     };
-    app.provider.mode.streamReply = () => ({ first: lines[0], rest: '' });
+    app.provider.mode.streamReply = () => {
+        app.provider.mode.hold = [...holdModels];
+        return { first: lines[0], rest: '' };
+    };
 
     const account = await app.account({
         phone,
@@ -211,7 +214,8 @@ function findBeforeSwapSample(samples, firstPreviewIndex) {
         ?? samples[firstPreviewIndex - 1];
 }
 
-async function streamAndCompleteJob(app, account, page, remainingParagraphs, { onBeforeStreamEnd } = {}) {
+async function streamAndCompleteJob(app, account, page, remainingParagraphs, { onBeforeFirstToken, onBeforeStreamEnd } = {}) {
+    if (onBeforeFirstToken) app.provider.mode.hold = [MODEL];
     const submitted = page.waitForResponse(
         response => response.url().endsWith('/api/roleplay/workflow/submit') && response.status() !== 409,
     );
@@ -219,6 +223,11 @@ async function streamAndCompleteJob(app, account, page, remainingParagraphs, { o
     const { jobId } = await (await submitted).json();
 
     await expect.poll(() => app.provider.calls.length, { timeout: 40000 }).toBe(1);
+    if (onBeforeFirstToken) {
+        await expect(page.locator('#chat [data-roleplay-replacement]')).toHaveCount(1);
+        await onBeforeFirstToken();
+        await app.release();
+    }
     await expect.poll(() => typeof app.provider.mode.finishStream, { timeout: 20000 }).toBe('function');
     for (const paragraph of remainingParagraphs) {
         app.provider.mode.writeStream(`\n\n${paragraph}`);
@@ -391,6 +400,14 @@ for (const phone of [true, false]) {
 
         await startPostPaintSampler(page);
         await streamAndCompleteJob(app, account, page, remainingStreamParagraphs, {
+            async onBeforeFirstToken() {
+                // Scroll after the old row collapses. At the very bottom a shorter draft can
+                // move the scroll limit, so leave room to test the reading anchor itself.
+                await page.evaluate(() => {
+                    document.querySelector('#chat').scrollTop -= 64;
+                });
+                await waitForPostPaintFrames(page, 3);
+            },
             async onBeforeStreamEnd() {
                 // Position the reader looking above the short reply so the previous user message is in view through saving and handover.
                 await page.evaluate(() => {
@@ -409,6 +426,7 @@ for (const phone of [true, false]) {
         expect(firstPreviewIndex).toBeGreaterThan(0);
         const beforeSwap = findBeforeSwapSample(samples, firstPreviewIndex);
         const firstPreview = samples[firstPreviewIndex];
+        expect(beforeSwap.gap, 'the reader is above the bottom when the draft replaces the placeholder').toBeGreaterThan(16);
         expect(beforeSwap.tailTop, 'short old reply top must be visible before swap').toBeGreaterThan(80);
         expect(Math.abs(firstPreview.tailTop - beforeSwap.tailTop), 'row top does not move at the swap').toBeLessThanOrEqual(2);
 
