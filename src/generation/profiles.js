@@ -21,14 +21,23 @@ const novelNumericControls = ['temperature', 'min_length', 'tail_free_sampling',
     'repetition_penalty_presence', 'top_a', 'top_p', 'top_k', 'min_p', 'math1_temp',
     'math1_quad', 'math1_quad_entropy_scale', 'typical_p'];
 
+/** Saved preferences that shape a model request or how its reply is cleaned. */
+const CONNECTION_POWER_KEYS = ['instruct', 'context', 'sysprompt', 'reasoning', 'tokenizer', 'token_padding',
+    'custom_stopping_strings', 'custom_stopping_strings_macro', 'request_token_probabilities', 'console_log_prompts',
+    'experimental_macro_engine', 'structured_prefill', 'max_context_unlocked', 'collapse_newlines', 'trim_spaces',
+    'trim_sentences', 'single_line', 'auto_fix_generated_markdown', 'allow_name1_display', 'allow_name2_display',
+    'always_force_name2', 'disable_group_trimming', 'user_prompt_bias', 'pin_examples', 'strip_examples',
+    'prefer_character_prompt', 'prefer_character_jailbreak', 'ooc_context_depth', 'html_context_depth',
+    'auto_continue', 'auto_swipe', 'auto_swipe_minimum_length', 'auto_swipe_blacklist', 'auto_swipe_blacklist_threshold'];
+
 /**
- * The reply location is read before a job is accepted. Changing it during a
- * running reply must not invalidate the accepted connection or its Agent work.
+ * Persona text, appearance and reply routing are saved while a reply runs.
+ * They are not part of the accepted connection, so changing them must not
+ * invalidate it or the Agent work that follows the reply.
  */
 function connectionPowerEvidence(powerUser) {
-    const power = { ...(powerUser && typeof powerUser === 'object' && !Array.isArray(powerUser) ? powerUser : {}) };
-    delete power.reply_generation_location;
-    return power;
+    const power = powerUser && typeof powerUser === 'object' && !Array.isArray(powerUser) ? powerUser : {};
+    return Object.fromEntries(CONNECTION_POWER_KEYS.filter(key => power[key] !== undefined).map(key => [key, power[key]]));
 }
 
 function readPreset(directory, name, label) {
