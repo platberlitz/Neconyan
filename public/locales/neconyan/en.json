@@ -20027,6 +20027,8 @@
   "Top bar custom text": "Top bar custom text",
   "Tap The Title To Switch Label": "Tap The Title To Switch Label",
   "When enabled, tapping the label switches between character name, context size and custom text and saves the choice for this device. When disabled, tapping the label returns to the chat.": "When enabled, tapping the label switches between character name, context size and custom text and saves the choice for this device. When disabled, tapping the label returns to the chat.",
+  "Scroll long labels": "Scroll long labels",
+  "Slide the top bar label when it doesn’t fit. Reduced motion keeps it still.": "Slide the top bar label when it doesn’t fit. Reduced motion keeps it still.",
   "Top Bar Label": "Top Bar Label",
   "Switch the navigation shell between built-in visual directions.": "Switch the navigation shell between built-in visual directions.",
   "Background Visibility": "Background Visibility",
