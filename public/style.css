@@ -3391,23 +3391,6 @@ select option[disabled]:not(:checked) {
     padding-right: 15px;
 }
 
-#rm_characters_topbar {
-    display: flex;
-    flex-direction: column;
-}
-
-#rm_characters_topbar_buttons {
-    margin-top: 0;
-    margin-bottom: 10px;
-    display: flex;
-    flex-direction: row;
-    align-items: baseline;
-}
-
-#rm_characters_topbar_expander {
-    flex-grow: 1;
-}
-
 #charListFixedTop {
     padding: 0 5px 5px;
 }
@@ -4242,17 +4225,6 @@ grammarly-extension {
     top: 0;
 }
 
-#bgtest {
-    display: none;
-    width: 100vw;
-    width: 100dvw;
-    height: 100vh;
-    height: 100dvh;
-    position: absolute;
-    z-index: -100;
-    background-color: red;
-}
-
 .prompt_order {
     display: flex;
     flex-direction: column;
@@ -4367,14 +4339,6 @@ grammarly-extension {
     /* Make the drag handle not selectable in most browsers */
     -webkit-user-select: none;
     user-select: none;
-}
-
-#form_rename_chat {
-    display: flex;
-    align-items: center;
-    flex: 1;
-    opacity: 0.8;
-    gap: 5px;
 }
 
 
@@ -6459,12 +6423,6 @@ body:not(.movingUI) .drawer-content.maximized {
 }
 
 /* Pagination */
-.paginationsjs-pages {
-    margin: 0.5em 0;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-}
 
 .paginationjs-pages ul {
     list-style-type: none;

@@ -74,6 +74,9 @@ export function createBubblesBottomBoundary({ chat, toolbar, getMode, documentRe
     const queue = () => {
         if (!disposed && !frame) frame = windowRef.requestAnimationFrame(update);
     };
+    // A clip on #chat makes it the backdrop root, so the rows' blur would stop seeing the wallpaper.
+    // While message blur is on (Settings > Appearance > Panels), rows meet the bar with a straight cut.
+    const isMessageBlurOn = () => (documentRef.documentElement.dataset.sbPanelBlur || '').split(' ').includes('message');
     const resize = new windowRef.ResizeObserver(queue);
     for (const element of [chat, toolbar, chat.parentElement, documentRef.getElementById('send_form')]) {
         if (element) resize.observe(element);
@@ -111,6 +114,7 @@ export function createBubblesBottomBoundary({ chat, toolbar, getMode, documentRe
         const cardStyle = !echo && ['whisperstyle', 'hushstyle', 'ripplestyle'].find(name => body.classList?.contains(name));
         if (windowRef.innerWidth <= 768 || !body.matches(echo ? '.neconyan.echostyle:not(.sbterm):not(.sbstory)' : tide ? '.neconyan.tidestyle:not(.sbterm):not(.sbstory)' : cardStyle ? `.neconyan.${cardStyle}:not(.sbterm):not(.sbstory)` : '.neconyan.bubblechat:not(.sbterm):not(.sbstory)')
             || getMode() !== 'roleplay' || sheld?.dataset.sbtwMode === 'on' || sheld?.dataset.sbConversationMode === 'on'
+            || isMessageBlurOn()
             || windowRef.getComputedStyle(chat).clipPath !== 'none') {
             setRow(null); return;
         }
@@ -211,7 +215,7 @@ export function createBubblesBottomBoundary({ chat, toolbar, getMode, documentRe
         const echo = body.classList?.contains('echostyle') === true;
         const tide = !echo && body.classList?.contains('tidestyle') === true;
         const cardStyle = !echo && ['whisperstyle', 'hushstyle', 'ripplestyle'].find(name => body.classList?.contains(name));
-        if (windowRef.innerWidth <= 768 || getMode() !== 'roleplay' || sheld?.dataset.sbtwMode === 'on' || sheld?.dataset.sbConversationMode === 'on') {
+        if (windowRef.innerWidth <= 768 || getMode() !== 'roleplay' || sheld?.dataset.sbtwMode === 'on' || sheld?.dataset.sbConversationMode === 'on' || isMessageBlurOn()) {
             return false;
         }
         return body.matches(echo ? '.neconyan.echostyle:not(.sbterm):not(.sbstory)' : tide ? '.neconyan.tidestyle:not(.sbterm):not(.sbstory)' : cardStyle ? `.neconyan.${cardStyle}:not(.sbterm):not(.sbstory)` : '.neconyan.bubblechat:not(.sbterm):not(.sbstory)');
@@ -223,7 +227,7 @@ export function createBubblesBottomBoundary({ chat, toolbar, getMode, documentRe
     });
     observer.observe(chat, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['class', 'style', 'hidden', 'is_user', 'is_system', 'open'] });
     for (const element of [documentRef.documentElement, documentRef.body, documentRef.getElementById('sheld'), documentRef.getElementById('sbstory-bar'), toolbar]) {
-        if (element) observer.observe(element, { attributes: true, attributeFilter: ['class', 'style', 'hidden', 'data-sb-theme', 'data-neconyan-palette', 'data-neconyan-calico-tone', 'data-neconyan-accent', 'data-neconyan-ui-theme', 'data-neconyan-chat-mode', 'data-sbtw-mode', 'data-sb-conversation-mode'] });
+        if (element) observer.observe(element, { attributes: true, attributeFilter: ['class', 'style', 'hidden', 'data-sb-theme', 'data-neconyan-palette', 'data-neconyan-calico-tone', 'data-neconyan-accent', 'data-neconyan-ui-theme', 'data-neconyan-chat-mode', 'data-sbtw-mode', 'data-sb-conversation-mode', 'data-sb-panel-blur'] });
     }
     const onStylesheet = event => { if (event.target.matches?.('link[rel="stylesheet"]') || chat.contains(event.target)) queue(); };
     documentRef.addEventListener('load', onStylesheet, true);

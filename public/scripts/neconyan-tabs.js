@@ -79,7 +79,9 @@ const NN_STORAGE_KEYS = Object.freeze({
     themeAccount: 'sb-theme-account',
     kittyless: 'sb-kittyless',
     tourButtonsHidden: 'sb-tour-buttons-hidden',
+    // Read once, by the Panels migration, and removed when the person answers the Home note.
     surfaceTransparency: 'sb-surface-transparency',
+    panelLook: 'sb-panel-look',
     topbarScaleDesktop: 'sb-topbar-scale-desktop',
     topbarScaleMobile: 'sb-topbar-scale-mobile',
     topbarLabelDesktopParts: 'sb-topbar-label-desktop-parts',
@@ -457,12 +459,18 @@ const NN_MOBILE_MEDIA_QUERY = '(max-width: 768px)';
 // One app resume can fire focus, visibilitychange and pageshow together, so
 // foreground shell refreshes share a single window instead of repeating work.
 const NN_FOREGROUND_REFRESH_COALESCE_MS = 500;
-const NN_SURFACE_TRANSPARENCY = Object.freeze({
-    min: 0,
-    max: 100,
-    step: 5,
-    defaultValue: 100,
+// Panels (M75): reading surfaces take their opacity and blur from tokens. Each shell style sets its own
+// defaults in CSS; a person's values are stored per style on this device and written inline on <html>.
+const NN_PANEL_SURFACES = Object.freeze(['message', 'home', 'side']);
+const NN_PANEL_LOOK = Object.freeze({
+    version: 1,
+    position: Object.freeze({ min: -100, max: 100, step: 1 }),
+    knobSteps: 20,
+    opacity: Object.freeze({ min: 0, max: 100, step: 5 }),
+    blur: Object.freeze({ min: 0, max: 40, step: 2 }),
+    notices: Object.freeze(['follow', 'choice']),
 });
+const NN_TEXT_OUTLINE = Object.freeze({ min: 1, max: 3, step: 0.5, defaultWidth: 2, colours: Object.freeze(['auto', 'light', 'dark']) });
 const NN_TOPBAR_SCALE = Object.freeze({
     min: 70,
     max: 150,
@@ -535,7 +543,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261118-view-agent-changes-r1';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261118-panel-transparency-r2';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -1489,10 +1497,12 @@ const nnState = {
     landingPageSyncFrame: 0,
     inlineDrawerAutoClose: normalizeStoredBoolean(safeGetItem(NN_STORAGE_KEYS.settingsDrawerAutoClose), false),
     theme: normalizeTheme(safeGetItem(NN_STORAGE_KEYS.theme)),
+    // Read before this start-up can write the sb-theme mirror: its presence means this device ran Neconyan before.
+    hadDeviceTheme: safeGetItem(NN_STORAGE_KEYS.theme) !== null,
     kittyless: normalizeStoredBoolean(safeGetItem(NN_STORAGE_KEYS.kittyless), false),
     tourButtonsHidden: normalizeStoredBoolean(safeGetItem(NN_STORAGE_KEYS.tourButtonsHidden), false),
     frontendIcon: normalizeFrontendIcon(safeGetItem(NN_STORAGE_KEYS.frontendIcon)),
-    surfaceTransparency: normalizeSurfaceTransparency(safeGetItem(NN_STORAGE_KEYS.surfaceTransparency)),
+    panelLook: null,
     paperTextureEnabled: normalizeStoredBoolean(safeGetItem(NN_STORAGE_KEYS.paperTextureEnabled), false),
     paperTextureOpacity: normalizePaperTextureOpacity(safeGetItem(NN_STORAGE_KEYS.paperTextureOpacity)),
     compactMode: normalizeStoredBoolean(safeGetItem(NN_STORAGE_KEYS.compactMode), false),
@@ -1899,23 +1909,168 @@ function normalizeShellSize(value) {
     };
 }
 
-function normalizeSurfaceTransparency(value) {
-    if (value === null || value === undefined || (typeof value === 'string' && value.trim() === '')) {
-        return NN_SURFACE_TRANSPARENCY.defaultValue;
-    }
-
-    const numericValue = Number(value);
-
+// Panels store helpers. Pure (no DOM, no storage) so tests/panel-look-store.test.js can slice them.
+function snapPanelLookValue(value, range) {
+    const numericValue = typeof value === 'number' ? value
+        : typeof value === 'string' && value.trim() !== '' ? Number(value) : Number.NaN;
     if (!Number.isFinite(numericValue)) {
-        return NN_SURFACE_TRANSPARENCY.defaultValue;
+        return null;
     }
-
-    const snappedValue = Math.round(numericValue / NN_SURFACE_TRANSPARENCY.step) * NN_SURFACE_TRANSPARENCY.step;
-    return Math.min(NN_SURFACE_TRANSPARENCY.max, Math.max(NN_SURFACE_TRANSPARENCY.min, snappedValue));
+    const snapped = Math.round(numericValue / range.step) * range.step;
+    return Math.min(range.max, Math.max(range.min, Number(snapped.toFixed(2))));
 }
 
-function formatSurfaceTransparency(value) {
-    return `${normalizeSurfaceTransparency(value)}%`;
+function normalizePanelLookOutline(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return null;
+    }
+    const outline = {};
+    if (typeof value.on === 'boolean') outline.on = value.on;
+    const width = snapPanelLookValue(value.width, NN_TEXT_OUTLINE);
+    if (width !== null) outline.width = width;
+    if (NN_TEXT_OUTLINE.colours.includes(value.colour)) outline.colour = value.colour;
+    return Object.keys(outline).length ? outline : null;
+}
+
+function normalizePanelLookStyle(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return null;
+    }
+    const style = {};
+    const position = snapPanelLookValue(value.position, NN_PANEL_LOOK.position);
+    if (position) style.position = position;
+    const blur = snapPanelLookValue(value.blur, NN_PANEL_LOOK.blur);
+    if (blur !== null) style.blur = blur;
+    for (const surface of NN_PANEL_SURFACES) {
+        const entry = value[surface];
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+        const own = {};
+        // 'default' holds a surface at the style's own default (written by the migration for side panels).
+        const opacity = entry.opacity === 'default' ? 'default' : snapPanelLookValue(entry.opacity, NN_PANEL_LOOK.opacity);
+        if (opacity !== null) own.opacity = opacity;
+        const ownBlur = snapPanelLookValue(entry.blur, NN_PANEL_LOOK.blur);
+        if (ownBlur !== null) own.blur = ownBlur;
+        if (Object.keys(own).length) style[surface] = own;
+    }
+    const outline = normalizePanelLookOutline(value.outline);
+    if (outline) style.outline = outline;
+    return Object.keys(style).length ? style : null;
+}
+
+function normalizePanelLookStore(value, styleIds) {
+    let raw = value;
+    if (typeof raw === 'string') {
+        try {
+            raw = JSON.parse(raw);
+        } catch {
+            raw = null;
+        }
+    }
+    const store = { version: NN_PANEL_LOOK.version, styles: {} };
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        return store;
+    }
+    if (raw.version !== undefined && raw.version !== NN_PANEL_LOOK.version) {
+        return store;
+    }
+    const styles = raw.styles && typeof raw.styles === 'object' && !Array.isArray(raw.styles) ? raw.styles : {};
+    for (const styleId of styleIds) {
+        if (!Object.hasOwn(styles, styleId)) continue;
+        const style = normalizePanelLookStyle(styles[styleId]);
+        if (style) store.styles[styleId] = style;
+    }
+    if (NN_PANEL_LOOK.notices.includes(raw.notice)) {
+        store.notice = raw.notice;
+    }
+    return store;
+}
+
+// The first store of a device that ran the release with the global Background Visibility slider (0 to 100,
+// default 100, an absolute see-through amount). No saved value follows the new defaults; a saved
+// value maps to the nearest Panel opacity position for every style and asks the person to choose.
+// The old slider never made side panels clear, so they are held at each style's own default.
+function migratePanelLookStore(oldValue, hadDeviceTheme, styleIds) {
+    const oldNumber = typeof oldValue === 'number' ? oldValue
+        : typeof oldValue === 'string' && oldValue.trim() !== '' ? Number(oldValue) : Number.NaN;
+    if (!Number.isFinite(oldNumber)) {
+        return hadDeviceTheme
+            ? { version: NN_PANEL_LOOK.version, styles: {}, notice: 'follow' }
+            : { version: NN_PANEL_LOOK.version, styles: {} };
+    }
+    const snapped = Math.min(100, Math.max(0, Math.round(oldNumber / 5) * 5));
+    const position = Math.round((100 - 2 * snapped) / 10) * 10;
+    if (position === 0) {
+        return { version: NN_PANEL_LOOK.version, styles: {}, notice: 'follow' };
+    }
+    const styles = {};
+    for (const styleId of styleIds) {
+        styles[styleId] = { position, side: { opacity: 'default' } };
+    }
+    return { version: NN_PANEL_LOOK.version, styles, notice: 'choice' };
+}
+
+function applyPanelLookNoticeAnswer(store, answer) {
+    const next = { ...store, styles: { ...(store?.styles || {}) } };
+    if (!['seen', 'keep', 'defaults'].includes(answer)) {
+        return next;
+    }
+    delete next.notice;
+    if (answer === 'defaults') {
+        for (const [styleId, style] of Object.entries(next.styles)) {
+            const rest = { ...style };
+            delete rest.position;
+            for (const surface of NN_PANEL_SURFACES) {
+                if (rest[surface]?.opacity !== 'default') continue;
+                const own = { ...rest[surface] };
+                delete own.opacity;
+                if (Object.keys(own).length) {
+                    rest[surface] = own;
+                } else {
+                    delete rest[surface];
+                }
+            }
+            if (Object.keys(rest).length) {
+                next.styles[styleId] = rest;
+            } else {
+                delete next.styles[styleId];
+            }
+        }
+    }
+    return next;
+}
+
+function panelLookHasOwnOpacity(own) {
+    return Number.isFinite(own?.opacity) || own?.opacity === 'default';
+}
+
+// Panel opacity knob: a track of NN_PANEL_LOOK.knobSteps + 1 positions from 'Fully clear' to 'Fully solid', with the
+// 'Style default' mark at the step nearest the mean default opacity of the surfaces it moves. The stored value stays
+// the relative position (-100 to 100), so a mark that moves with tone, viewport or Separate surfaces keeps the choice.
+function panelLookKnobMark(defaults) { // opacities 0 to 1 of the surfaces the slider moves
+    const N = NN_PANEL_LOOK.knobSteps;
+    if (!defaults.length) return N;
+    const mean = Math.round(defaults.reduce((sum, value) => sum + value, 0) / defaults.length * 1000) / 1000;
+    if (mean >= 0.999) return N;
+    if (mean <= 0.001) return 0;
+    return Math.min(N - 1, Math.max(1, Math.round(mean * N)));
+}
+
+function panelLookIndexToPosition(index, mark) {
+    const N = NN_PANEL_LOOK.knobSteps;
+    const i = Math.min(N, Math.max(0, Math.round(index)));
+    if (i === mark) return 0;
+    return i < mark ? Math.round(100 * (i - mark) / mark) : Math.round(100 * (i - mark) / (N - mark));
+}
+
+function panelLookPositionToIndex(position, mark) {
+    const N = NN_PANEL_LOOK.knobSteps;
+    if (!position) return mark;
+    if (position < 0) {
+        if (mark === 0 || position <= -100) return 0;
+        return Math.min(mark - 1, Math.max(mark > 1 ? 1 : 0, mark + Math.round(position * mark / 100)));
+    }
+    if (mark === N || position >= 100) return N;
+    return Math.min(N - 1 >= mark + 1 ? N - 1 : N, Math.max(mark + 1, mark + Math.round(position * (N - mark) / 100)));
 }
 
 function normalizePaperTextureOpacity(value) {
@@ -5486,6 +5641,8 @@ function syncShellStyleStylesheet(themeId) {
 
     if (current) {
         links.filter(link => link !== current).forEach(link => link.remove());
+        // The head script may have started this sheet before start-up; its Panels defaults count once it loads.
+        if (!current.sheet) current.addEventListener('load', () => applyPanelLook(), { once: true });
         return;
     }
 
@@ -5502,6 +5659,8 @@ function syncShellStyleStylesheet(themeId) {
         document.querySelectorAll('link[data-sb-shell-style]').forEach(link => {
             if (link !== stylesheet) link.remove();
         });
+        // The style's Panels defaults arrive with its sheet.
+        applyPanelLook();
     };
     stylesheet.addEventListener('load', settle, { once: true });
     stylesheet.addEventListener('error', settle, { once: true });
@@ -5657,6 +5816,7 @@ function setShellTheme(themeId, { persist = true } = {}) {
     updateThemePickerUi();
     updateThemeBadge();
     syncShellStyleAssistantArt();
+    applyPanelLook();
 }
 
 function isKittylessActive() {
@@ -5809,31 +5969,261 @@ function setFrontendIconPreference(iconId, { persist = true } = {}) {
     updateThemePickerUi();
 }
 
-function setSurfaceTransparency(value, { persist = true } = {}) {
-    const nextTransparency = normalizeSurfaceTransparency(value);
-    const surfaceOpacity = Math.max(0, 1 - (nextTransparency / 100));
-    const cardOpacity = Math.min(1, surfaceOpacity + 0.12);
-    const controlOpacity = Math.min(1, surfaceOpacity + 0.22);
-    const overlayOpacity = Math.min(1, surfaceOpacity + 0.08);
-    nnState.surfaceTransparency = nextTransparency;
+const NN_PANEL_THEME_IDS = Object.freeze(NN_THEMES.map(theme => theme.id));
+let panelLookObserversBound = false;
+let panelLookNoticePending = false;
 
-    document.documentElement.style.setProperty('--sb-shell-surface-opacity', surfaceOpacity.toFixed(2));
-    document.documentElement.style.setProperty('--sb-shell-surface-opacity-percent', `${(surfaceOpacity * 100).toFixed(0)}%`);
-    document.documentElement.dataset.sbSurfaceTransparent = String(nextTransparency > 0);
-    document.documentElement.style.setProperty('--sb-shell-card-opacity', '1');
-    document.documentElement.style.setProperty('--sb-shell-control-opacity', '1');
-    document.documentElement.style.setProperty('--sb-shell-overlay-opacity', '1');
-    document.documentElement.style.setProperty('--sb-page-surface-opacity', surfaceOpacity.toFixed(2));
-    document.documentElement.style.setProperty('--sb-page-card-opacity', cardOpacity.toFixed(2));
-    document.documentElement.style.setProperty('--sb-page-control-opacity', controlOpacity.toFixed(2));
-    document.documentElement.style.setProperty('--sb-page-overlay-opacity', overlayOpacity.toFixed(2));
-    document.documentElement.style.setProperty('--sb-composer-surface-opacity', '1');
-
-    if (persist) {
-        safeSetItem(NN_STORAGE_KEYS.surfaceTransparency, String(nextTransparency));
+// Registered so getComputedStyle returns evaluated numbers and lengths, and an invalid value falls back to solid and unblurred.
+function registerPanelLookProperties() {
+    if (typeof CSS === 'undefined' || typeof CSS.registerProperty !== 'function') {
+        return;
     }
+    for (const surface of NN_PANEL_SURFACES) {
+        try {
+            CSS.registerProperty({ name: `--sb-${surface}-opacity`, syntax: '<number>', inherits: true, initialValue: '1' });
+        } catch {
+            // Already registered.
+        }
+        try {
+            CSS.registerProperty({ name: `--sb-${surface}-blur`, syntax: '<length>', inherits: true, initialValue: '0px' });
+        } catch {
+            // Already registered.
+        }
+    }
+}
 
-    updateThemePickerUi();
+function persistPanelLook() {
+    safeSetItem(NN_STORAGE_KEYS.panelLook, JSON.stringify(nnState.panelLook));
+}
+
+// Runs once per start-up. A missing store means this is the first start of the Panels release on this device.
+function initPanelLookStore() {
+    const stored = safeGetItem(NN_STORAGE_KEYS.panelLook);
+    if (stored !== null) {
+        nnState.panelLook = normalizePanelLookStore(stored, NN_PANEL_THEME_IDS);
+        persistPanelLook();
+        return;
+    }
+    const oldValue = safeGetItem(NN_STORAGE_KEYS.surfaceTransparency);
+    nnState.panelLook = migratePanelLookStore(oldValue, nnState.hadDeviceTheme, NN_PANEL_THEME_IDS);
+    if (oldValue !== null && !Number.isFinite(oldValue.trim() === '' ? Number.NaN : Number(oldValue))) {
+        safeRemoveItem(NN_STORAGE_KEYS.surfaceTransparency);
+    }
+    persistPanelLook();
+    panelLookNoticePending = true;
+}
+
+function getPanelLookStyleEntry(themeId = nnState.theme) {
+    return nnState.panelLook?.styles?.[themeId] || {};
+}
+
+function isPanelLookPhone() {
+    return window.matchMedia?.(NN_MOBILE_MEDIA_QUERY).matches === true;
+}
+
+function readPanelLookNumber(style, name, fallback) {
+    const value = Number.parseFloat(style.getPropertyValue(name));
+    return Number.isFinite(value) ? value : fallback;
+}
+
+function readPanelLookResolved() {
+    const style = window.getComputedStyle(document.body);
+    return Object.fromEntries(NN_PANEL_SURFACES.map(surface => [surface, {
+        opacity: readPanelLookNumber(style, `--sb-${surface}-opacity`, 1),
+        blur: readPanelLookNumber(style, `--sb-${surface}-blur`, 0),
+    }]));
+}
+
+// The style's own values; side panels on phones start solid and unblurred in every style.
+function readPanelLookDefaults() {
+    const style = window.getComputedStyle(document.body);
+    const phone = isPanelLookPhone();
+    return Object.fromEntries(NN_PANEL_SURFACES.map(surface => [surface, {
+        opacity: phone && surface === 'side' ? 1 : readPanelLookNumber(style, `--sb-panel-${surface}-opacity`, 1),
+        blur: phone && surface === 'side' ? 0 : readPanelLookNumber(style, `--sb-panel-${surface}-blur`, 0),
+    }]));
+}
+
+function getEffectiveTextOutline(entry = getPanelLookStyleEntry()) {
+    const outline = entry.outline || {};
+    return {
+        on: outline.on === true,
+        width: Number.isFinite(outline.width) ? outline.width : NN_TEXT_OUTLINE.defaultWidth,
+        colour: outline.colour || 'auto',
+    };
+}
+
+// Surfaces the main Panel opacity slider moves: not set separately, and never side panels on phones.
+function getPanelLookMainSurfaces(entry = getPanelLookStyleEntry()) {
+    const phone = isPanelLookPhone();
+    return NN_PANEL_SURFACES.filter(surface => !(phone && surface === 'side') && !panelLookHasOwnOpacity(entry[surface]));
+}
+
+function formatPanelLookNumber(value) {
+    return String(Number(value.toFixed(4)));
+}
+
+function syncPanelBlurGate() {
+    if (!document.body) return;
+    const resolved = readPanelLookResolved();
+    const noBlur = document.body.classList.contains('no-blur');
+    const surfaces = noBlur ? [] : NN_PANEL_SURFACES.filter(surface => resolved[surface].blur > 0 && resolved[surface].opacity < 1);
+    const next = surfaces.join(' ');
+    if (document.documentElement.dataset.sbPanelBlur !== next) {
+        document.documentElement.dataset.sbPanelBlur = next;
+    }
+}
+
+function applyPanelLook() {
+    if (!nnState.panelLook) return;
+    const root = document.documentElement;
+    const entry = getPanelLookStyleEntry();
+    const setToken = (name, value) => {
+        if (value === null) {
+            root.style.removeProperty(name);
+        } else {
+            root.style.setProperty(name, value);
+        }
+    };
+    const position = Number.isFinite(entry.position) ? entry.position : 0;
+    setToken('--sb-user-panel-k', position === 0 ? null : formatPanelLookNumber(position < 0 ? 1 + position / 100 : 1 - position / 100));
+    setToken('--sb-user-panel-m', position === 0 ? null : formatPanelLookNumber(position > 0 ? position / 100 : 0));
+    setToken('--sb-user-panel-blur', Number.isFinite(entry.blur) ? `${entry.blur}px` : null);
+    const defaults = readPanelLookDefaults();
+    for (const surface of NN_PANEL_SURFACES) {
+        const own = entry[surface] || {};
+        const opacity = own.opacity === 'default' ? defaults[surface].opacity : Number.isFinite(own.opacity) ? own.opacity / 100 : null;
+        setToken(`--sb-user-panel-${surface}-opacity`, opacity === null ? null : formatPanelLookNumber(opacity));
+        setToken(`--sb-user-panel-${surface}-blur`, Number.isFinite(own.blur) ? `${own.blur}px` : null);
+    }
+    const outline = getEffectiveTextOutline(entry);
+    if (outline.on) {
+        root.dataset.sbTextOutline = outline.colour;
+        root.style.setProperty('--sb-user-text-outline-width', `${outline.width}px`);
+    } else {
+        delete root.dataset.sbTextOutline;
+        root.style.removeProperty('--sb-user-text-outline-width');
+    }
+    syncPanelBlurGate();
+    updatePanelLookUi();
+    bindPanelLookObservers();
+}
+
+function updatePanelLookStyle(mutate) {
+    if (!nnState.panelLook) return;
+    const themeId = nnState.theme;
+    const entry = JSON.parse(JSON.stringify(getPanelLookStyleEntry(themeId)));
+    mutate(entry);
+    const normalized = normalizePanelLookStyle(entry);
+    const styles = { ...nnState.panelLook.styles };
+    if (normalized) {
+        styles[themeId] = normalized;
+    } else {
+        delete styles[themeId];
+    }
+    nnState.panelLook = { ...nnState.panelLook, styles };
+    persistPanelLook();
+    applyPanelLook();
+}
+
+function setPanelLook(surface, values = {}) {
+    if (surface !== null && !NN_PANEL_SURFACES.includes(surface)) return;
+    updatePanelLookStyle(entry => {
+        if (surface !== null && !entry[surface]) entry[surface] = {};
+        const target = surface === null ? entry : entry[surface];
+        if (surface === null && values.position !== undefined) target.position = values.position;
+        if (surface !== null && values.opacity !== undefined) target.opacity = values.opacity;
+        if (values.blur !== undefined) target.blur = values.blur;
+    });
+}
+
+// Clears the main value and that property's per-surface values for the current style (property null: both).
+function resetPanelLook(surface = null, property = null) {
+    if (surface !== null && !NN_PANEL_SURFACES.includes(surface)) return;
+    const properties = property === null ? ['opacity', 'blur'] : [property];
+    updatePanelLookStyle(entry => {
+        if (surface !== null) {
+            for (const name of properties) delete entry[surface]?.[name];
+            return;
+        }
+        for (const name of properties) {
+            delete entry[name === 'opacity' ? 'position' : 'blur'];
+            for (const each of NN_PANEL_SURFACES) delete entry[each]?.[name];
+        }
+    });
+}
+
+function setTextOutline(values = {}) {
+    updatePanelLookStyle(entry => {
+        const outline = entry.outline || {};
+        if (values.on !== undefined) outline.on = Boolean(values.on);
+        if (values.width !== undefined) outline.width = values.width;
+        if (values.colour !== undefined) outline.colour = values.colour;
+        entry.outline = outline;
+    });
+}
+
+// The knob's mark is taken over the surfaces the main slider moves; when it moves none, over every surface that applies.
+function getPanelLookKnob(entry, defaults, mainSurfaces) {
+    const phone = isPanelLookPhone();
+    const surfaces = mainSurfaces.length ? mainSurfaces : NN_PANEL_SURFACES.filter(surface => !(phone && surface === 'side'));
+    const mark = panelLookKnobMark(surfaces.map(surface => defaults[surface].opacity));
+    const position = Number.isFinite(entry.position) ? entry.position : 0;
+    return { steps: NN_PANEL_LOOK.knobSteps, mark, index: panelLookPositionToIndex(position, mark) };
+}
+
+function getPanelLook() {
+    const entry = getPanelLookStyleEntry();
+    const defaults = readPanelLookDefaults();
+    const mainSurfaces = getPanelLookMainSurfaces(entry);
+    return {
+        style: nnState.theme,
+        stored: JSON.parse(JSON.stringify(entry)),
+        defaults,
+        resolved: readPanelLookResolved(),
+        mainSurfaces,
+        knob: getPanelLookKnob(entry, defaults, mainSurfaces),
+        outline: { stored: entry.outline ? { ...entry.outline } : null, effective: getEffectiveTextOutline(entry) },
+    };
+}
+
+function getPanelLookNotice() {
+    return nnState.panelLook?.notice || null;
+}
+
+function answerPanelLookNotice(answer) {
+    if (!nnState.panelLook || !['seen', 'keep', 'defaults'].includes(answer)) return;
+    nnState.panelLook = applyPanelLookNoticeAnswer(nnState.panelLook, answer);
+    persistPanelLook();
+    safeRemoveItem(NN_STORAGE_KEYS.surfaceTransparency);
+    flushNnStorageWrites();
+    applyPanelLook();
+    window.dispatchEvent(new CustomEvent('sb:panel-look-notice'));
+}
+
+// Reveals the first control inside the drawer, so the drawer itself expands (as editNeconyanRailQuickActions does).
+function openPanelLookSettings() {
+    const element = document.getElementById('sb-panel-opacity-group') || document.getElementById('sb-panel-look-drawer');
+    if (element) {
+        revealSearchMatch('right', { tabId: 'settings', element });
+    }
+}
+
+// Re-resolve when anything the CSS defaults depend on changes: tone, viewport, No Blur Effect.
+function bindPanelLookObservers() {
+    if (panelLookObserversBound || !document.body) return;
+    panelLookObserversBound = true;
+    let noBlur = document.body.classList.contains('no-blur');
+    new MutationObserver(() => applyPanelLook()).observe(document.documentElement, { attributes: true, attributeFilter: ['data-sb-surface-tone'] });
+    new MutationObserver(() => {
+        const next = document.body.classList.contains('no-blur');
+        if (next !== noBlur) {
+            noBlur = next;
+            applyPanelLook();
+        }
+    }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    window.matchMedia?.(NN_MOBILE_MEDIA_QUERY).addEventListener?.('change', () => applyPanelLook());
+    document.getElementById('fast_ui_mode')?.addEventListener('change', () => window.requestAnimationFrame(() => applyPanelLook()));
 }
 
 function applyPaperTextureOpacity() {
@@ -15813,6 +16203,271 @@ function createThemeSliderGroup({ title, valueId, inputId, value, min, max, step
     return sliderGroup;
 }
 
+const NN_PANEL_LOOK_SURFACE_COPY = Object.freeze({
+    message: Object.freeze({ title: 'Messages', opacity: 'Message opacity', blur: 'Message blur' }),
+    home: Object.freeze({ title: 'Home cards', opacity: 'Home card opacity', blur: 'Home card blur' }),
+    side: Object.freeze({ title: 'Side panels', opacity: 'Side panel opacity', blur: 'Side panel blur' }),
+});
+let panelLookUiStyle = null;
+
+function createPanelLookSlider({ id, title, min, max, step, ariaLabel, onInput, resetLabel = '', onReset = null }) {
+    const group = createElement('div', { id: `${id}-group`, className: 'sb-theme-slider-group sb-panel-look-slider' });
+    const header = createElement('div', { className: 'sb-theme-slider-header' });
+    const label = createElement('label', { text: title, attrs: { for: `${id}-input` } });
+    const value = createElement('span', { id: `${id}-value`, className: 'sb-theme-slider-value', attrs: { 'aria-hidden': 'true' } });
+    header.append(label, value);
+    if (onReset) {
+        const reset = createElement('button', {
+            id: `${id}-reset`,
+            className: 'menu_button sb-panel-look-reset',
+            text: 'Reset',
+            attrs: { type: 'button', 'aria-label': resetLabel, title: resetLabel },
+        });
+        reset.addEventListener('click', onReset);
+        header.append(reset);
+    }
+    const input = createElement('input', {
+        id: `${id}-input`,
+        className: 'sb-theme-slider-input',
+        attrs: { type: 'range', min: String(min), max: String(max), step: String(step), 'aria-label': ariaLabel },
+    });
+    input.addEventListener('input', event => onInput(Number(event.currentTarget?.value)));
+    group.append(header, input);
+    return group;
+}
+
+function createPanelLookControls() {
+    const opacity = createPanelLookSlider({
+        id: 'sb-panel-opacity',
+        title: 'Panel opacity',
+        min: 0,
+        max: NN_PANEL_LOOK.knobSteps,
+        step: 1,
+        ariaLabel: 'Panel opacity',
+        onInput: value => setPanelLook(null, { position: panelLookIndexToPosition(value, getPanelLook().knob.mark) }),
+        resetLabel: 'Reset Panel opacity to this style\'s default',
+        onReset: () => resetPanelLook(null, 'opacity'),
+    });
+    const scale = createElement('div', { className: 'sb-panel-look-scale', attrs: { 'aria-hidden': 'true' } });
+    scale.append(
+        createElement('span', { className: 'sb-panel-look-tick', attrs: { 'aria-hidden': 'true' } }),
+        createElement('span', { text: 'Clear' }),
+        createElement('span', { text: 'Solid' }),
+    );
+    const opacityCaption = createElement('p', { id: 'sb-panel-opacity-caption', className: 'sb-theme-slider-caption' });
+    opacity.append(scale, opacityCaption);
+
+    const blur = createPanelLookSlider({
+        id: 'sb-panel-blur',
+        title: 'Panel blur',
+        ...NN_PANEL_LOOK.blur,
+        ariaLabel: 'Panel blur',
+        onInput: value => setPanelLook(null, { blur: value }),
+        resetLabel: 'Reset Panel blur to this style\'s default',
+        onReset: () => resetPanelLook(null, 'blur'),
+    });
+    blur.append(createElement('p', { id: 'sb-panel-blur-caption', className: 'sb-theme-slider-caption' }));
+
+    const disclosure = createElement('button', {
+        id: 'sb-panel-surfaces-toggle',
+        className: 'menu_button sb-panel-look-disclosure',
+        attrs: { type: 'button', 'aria-expanded': 'false', 'aria-controls': 'sb-panel-surfaces' },
+    });
+    disclosure.append(
+        createElement('i', { className: 'fa-solid fa-chevron-down', attrs: { 'aria-hidden': 'true' } }),
+        createElement('span', { text: 'Separate surfaces' }),
+    );
+    const surfaces = createElement('div', { id: 'sb-panel-surfaces', className: 'sb-panel-look-surfaces' });
+    surfaces.hidden = true;
+    disclosure.addEventListener('click', () => {
+        const open = disclosure.getAttribute('aria-expanded') !== 'true';
+        disclosure.setAttribute('aria-expanded', String(open));
+        surfaces.hidden = !open;
+    });
+    for (const surface of NN_PANEL_SURFACES) {
+        const copy = NN_PANEL_LOOK_SURFACE_COPY[surface];
+        const group = createElement('section', { id: `sb-panel-${surface}`, className: 'sb-panel-look-surface', attrs: { 'aria-labelledby': `sb-panel-${surface}-title` } });
+        const head = createElement('div', { className: 'sb-panel-look-surface-head' });
+        head.append(
+            createElement('strong', { id: `sb-panel-${surface}-title`, text: copy.title }),
+            createElement('span', { id: `sb-panel-${surface}-separate`, className: 'sb-panel-look-badge', text: 'Set separately' }),
+        );
+        const useMain = createElement('button', {
+            id: `sb-panel-${surface}-use-main`,
+            className: 'menu_button sb-panel-look-use-main',
+            text: 'Use main settings',
+            attrs: { type: 'button' },
+        });
+        useMain.addEventListener('click', () => resetPanelLook(surface, null));
+        head.append(useMain);
+        group.append(
+            head,
+            createPanelLookSlider({
+                id: `sb-panel-${surface}-opacity`,
+                title: 'Opacity',
+                ...NN_PANEL_LOOK.opacity,
+                ariaLabel: copy.opacity,
+                onInput: value => setPanelLook(surface, { opacity: value }),
+            }),
+            createPanelLookSlider({
+                id: `sb-panel-${surface}-blur`,
+                title: 'Blur',
+                ...NN_PANEL_LOOK.blur,
+                ariaLabel: copy.blur,
+                onInput: value => setPanelLook(surface, { blur: value }),
+            }),
+        );
+        if (surface === 'side') {
+            group.append(createElement('p', {
+                id: 'sb-panel-side-phone-note',
+                className: 'sb-theme-slider-caption sb-mobile-only-setting',
+                text: 'On phones, side panels start solid and change only here.',
+            }));
+        }
+        surfaces.append(group);
+    }
+
+    const outline = createElement('section', { id: 'sb-panel-outline', className: 'sb-panel-look-outline', attrs: { 'aria-labelledby': 'sb-panel-outline-title' } });
+    const outlineChoice = createMobileNavChoice({
+        id: 'sb-panel-outline-input',
+        type: 'checkbox',
+        value: 'letter-outline',
+        label: 'Letter outline',
+        icon: 'fa-font',
+        onChange: input => setTextOutline({ on: input.checked }),
+    });
+    const width = createPanelLookSlider({
+        id: 'sb-panel-outline-width',
+        title: 'Thickness',
+        min: NN_TEXT_OUTLINE.min,
+        max: NN_TEXT_OUTLINE.max,
+        step: NN_TEXT_OUTLINE.step,
+        ariaLabel: 'Thickness',
+        onInput: value => setTextOutline({ width: value }),
+    });
+    const colours = createElement('fieldset', { id: 'sb-panel-outline-colour', className: 'sb-panel-look-colours' });
+    colours.append(createElement('legend', { text: 'Outline colour' }));
+    for (const [colour, text] of [['auto', 'Auto (panel colour)'], ['light', 'Light'], ['dark', 'Dark']]) {
+        const option = createElement('label', { className: 'sb-panel-look-colour' });
+        const radio = createElement('input', { attrs: { type: 'radio', name: 'sb-panel-outline-colour', value: colour } });
+        radio.addEventListener('change', () => {
+            if (radio.checked) setTextOutline({ colour });
+        });
+        option.append(radio, createElement('span', { text }));
+        colours.append(option);
+    }
+    outline.append(
+        createElement('strong', { id: 'sb-panel-outline-title', text: 'Letter outline' }),
+        outlineChoice,
+        createElement('p', { className: 'sb-theme-slider-caption', text: 'Adds a thin edge around text on messages and Home cards so it stands out from busy wallpaper.' }),
+        width,
+        colours,
+    );
+    return [opacity, blur, disclosure, surfaces, outline];
+}
+
+// Steps are counted on each side of the mark: the left side has `mark` steps, the right side `steps - mark`.
+function formatPanelLookKnob(index, mark) {
+    const steps = NN_PANEL_LOOK.knobSteps;
+    if (index === mark) return t`Style default`;
+    if (index <= 0) return t`Fully clear`;
+    if (index >= steps) return t`Fully solid`;
+    if (index < mark) {
+        const step = mark - index;
+        const of = mark;
+        return t`Clearer, step ${step} of ${of}`;
+    }
+    const step = index - mark;
+    const of = steps - mark;
+    return t`More solid, step ${step} of ${of}`;
+}
+
+function updatePanelLookUi() {
+    const opacityInput = document.getElementById('sb-panel-opacity-input');
+    if (!(opacityInput instanceof HTMLInputElement) || !nnState.panelLook) {
+        return;
+    }
+    const look = getPanelLook();
+    const entry = look.stored;
+    const noBlur = document.body.classList.contains('no-blur');
+    const setText = (id, text) => {
+        const element = document.getElementById(id);
+        if (element && element.textContent !== text) element.textContent = text;
+    };
+    const setDisabled = (id, disabled) => {
+        const element = document.getElementById(id);
+        if (element) element.disabled = disabled;
+    };
+    const setValue = (input, value) => {
+        if (input instanceof HTMLInputElement && document.activeElement !== input) input.value = String(value);
+    };
+
+    const mainSurfaces = look.mainSurfaces;
+    const { mark, index, steps } = look.knob;
+    const readout = formatPanelLookKnob(index, mark);
+    setValue(opacityInput, index);
+    opacityInput.setAttribute('aria-valuetext', readout);
+    opacityInput.disabled = mainSurfaces.length === 0;
+    setText('sb-panel-opacity-value', readout);
+    document.getElementById('sb-panel-opacity-group')?.style.setProperty('--sb-panel-mark', formatPanelLookNumber(mark / steps));
+    const separate = NN_PANEL_SURFACES.filter(surface => panelLookHasOwnOpacity(entry[surface]) || Number.isFinite(entry[surface]?.blur));
+    setText('sb-panel-opacity-caption', mainSurfaces.length === 0 ? t`Every surface is set separately.`
+        : separate.length ? t`Surfaces set separately keep their own values.` : '');
+    setDisabled('sb-panel-opacity-reset', !Number.isFinite(entry.position) && !NN_PANEL_SURFACES.some(surface => panelLookHasOwnOpacity(entry[surface])));
+
+    const blurInput = document.getElementById('sb-panel-blur-input');
+    const blurValue = Number.isFinite(entry.blur) ? entry.blur : look.defaults.home.blur;
+    setValue(blurInput, blurValue);
+    blurInput?.setAttribute('aria-valuetext', t`${blurValue} px`);
+    setText('sb-panel-blur-value', t`${blurValue} px`);
+    setDisabled('sb-panel-blur-input', noBlur);
+    setText('sb-panel-blur-caption', noBlur ? t`Blur is off while No Blur Effect is on.` : t`Softens the wallpaper behind see-through panels. Solid panels are not blurred.`);
+    setDisabled('sb-panel-blur-reset', !Number.isFinite(entry.blur) && !NN_PANEL_SURFACES.some(surface => Number.isFinite(entry[surface]?.blur)));
+
+    for (const surface of NN_PANEL_SURFACES) {
+        const own = entry[surface] || {};
+        const isSeparate = separate.includes(surface);
+        const opacityPercent = Math.round(look.resolved[surface].opacity * 100);
+        const surfaceBlur = Math.round(look.resolved[surface].blur);
+        const surfaceOpacityInput = document.getElementById(`sb-panel-${surface}-opacity-input`);
+        setValue(surfaceOpacityInput, Number.isFinite(own.opacity) ? own.opacity : opacityPercent);
+        surfaceOpacityInput?.setAttribute('aria-valuetext', `${opacityPercent}%`);
+        setText(`sb-panel-${surface}-opacity-value`, `${opacityPercent}%`);
+        const surfaceBlurInput = document.getElementById(`sb-panel-${surface}-blur-input`);
+        setValue(surfaceBlurInput, Number.isFinite(own.blur) ? own.blur : surfaceBlur);
+        surfaceBlurInput?.setAttribute('aria-valuetext', t`${surfaceBlur} px`);
+        setText(`sb-panel-${surface}-blur-value`, t`${surfaceBlur} px`);
+        setDisabled(`sb-panel-${surface}-blur-input`, noBlur);
+        const badge = document.getElementById(`sb-panel-${surface}-separate`);
+        if (badge) badge.hidden = !isSeparate;
+        setDisabled(`sb-panel-${surface}-use-main`, !isSeparate);
+    }
+
+    const toggle = document.getElementById('sb-panel-surfaces-toggle');
+    const surfaces = document.getElementById('sb-panel-surfaces');
+    if (toggle && surfaces && panelLookUiStyle !== look.style) {
+        panelLookUiStyle = look.style;
+        if (separate.length) {
+            toggle.setAttribute('aria-expanded', 'true');
+            surfaces.hidden = false;
+        }
+    }
+
+    const outline = look.outline.effective;
+    const outlineInput = document.getElementById('sb-panel-outline-input');
+    if (outlineInput instanceof HTMLInputElement) outlineInput.checked = outline.on;
+    const widthInput = document.getElementById('sb-panel-outline-width-input');
+    setValue(widthInput, outline.width);
+    widthInput?.setAttribute('aria-valuetext', t`${outline.width} px`);
+    setText('sb-panel-outline-width-value', t`${outline.width} px`);
+    setDisabled('sb-panel-outline-width-input', !outline.on);
+    for (const radio of document.querySelectorAll('input[name="sb-panel-outline-colour"]')) {
+        radio.checked = radio.value === outline.colour;
+        radio.disabled = !outline.on;
+    }
+    document.getElementById('sb-panel-outline-colour')?.toggleAttribute('disabled', !outline.on);
+}
+
 function createTopbarLabelOption(mode, part) {
     const inputId = `sb-topbar-label-${mode}-${part.id}`;
     const option = createElement('label', {
@@ -16899,19 +17554,6 @@ function injectThemePicker() {
     const card = createElement('div', { id: 'sb-theme-card', className: 'sb-theme-card' });
     const description = createElement('p', { text: 'Switch the navigation shell between built-in visual directions.' });
     const optionRow = createElement('div', { className: 'sb-theme-option-row' });
-    const surfaceSliderGroup = createThemeSliderGroup({
-        title: 'Background Visibility',
-        valueId: 'sb-surface-transparency-value',
-        inputId: 'sb-surface-transparency-input',
-        value: nnState.surfaceTransparency,
-        min: NN_SURFACE_TRANSPARENCY.min,
-        max: NN_SURFACE_TRANSPARENCY.max,
-        step: NN_SURFACE_TRANSPARENCY.step,
-        ariaLabel: 'Background visibility',
-        caption: 'Higher values make the home and chat surfaces more transparent so your selected background picture shows through.',
-        onInput: nextValue => setSurfaceTransparency(nextValue),
-        className: 'sb-interface-settings-group',
-    });
     const bottomBarSliderGroup = createThemeSliderGroup({
         title: 'Bottom Bar Size',
         valueId: 'sb-bottom-bar-scale-value',
@@ -17015,7 +17657,12 @@ function injectThemePicker() {
     const interfaceSettingsGroup = createThemeSettingsDrawer({
         id: 'sb-interface-drawer',
         title: 'Interface',
-        content: [frontendIconSettingsGroup, surfaceSliderGroup, bottomBarSliderGroup],
+        content: [frontendIconSettingsGroup, bottomBarSliderGroup],
+    });
+    const panelLookSettingsGroup = createThemeSettingsDrawer({
+        id: 'sb-panel-look-drawer',
+        title: 'Panels',
+        content: createPanelLookControls(),
     });
     const restoreTourInvites = createElement('button', {
         id: 'sb-restore-tour-invitations',
@@ -17106,7 +17753,7 @@ function injectThemePicker() {
         );
     }
 
-    const themeSettingsDrawers = [simpleModeSettingsGroup, shellStyleSettingsGroup, interfaceSettingsGroup, topbarLabelSettingsGroup, shortcutSettingsGroup, tourSettingsGroup];
+    const themeSettingsDrawers = [simpleModeSettingsGroup, shellStyleSettingsGroup, panelLookSettingsGroup, interfaceSettingsGroup, topbarLabelSettingsGroup, shortcutSettingsGroup, tourSettingsGroup];
     if (!(desktopSettingsOutlet instanceof HTMLElement)) {
         card.append(
             desktopNavLayoutSettingsGroup,
@@ -17140,6 +17787,7 @@ function injectThemePicker() {
     }
     themeBlock.dataset.themePickerInitialized = 'true';
     updateThemePickerUi();
+    updatePanelLookUi();
 }
 
 function placeThemeSettingsDrawers(themeBlock, card, drawers) {
@@ -17152,6 +17800,7 @@ function placeThemeSettingsDrawers(themeBlock, card, drawers) {
     const icons = {
         'sb-simple-mode-drawer': 'fa-seedling',
         'sb-shell-style-drawer': 'fa-paw',
+        'sb-panel-look-drawer': 'fa-layer-group',
         'sb-interface-drawer': 'fa-sliders',
         'sb-topbar-label-drawer': 'fa-heading',
         'sb-quick-access-shortcuts-drawer': 'fa-bolt',
@@ -17175,8 +17824,6 @@ function placeThemeSettingsDrawers(themeBlock, card, drawers) {
 }
 
 function updateThemePickerUi() {
-    const sliderInput = document.getElementById('sb-surface-transparency-input');
-    const sliderValue = document.getElementById('sb-surface-transparency-value');
     const desktopTopbarScaleInput = document.getElementById('sb-topbar-scale-desktop-input');
     const desktopTopbarScaleValue = document.getElementById('sb-topbar-scale-desktop-value');
     const bottomBarScaleInput = document.getElementById('sb-bottom-bar-scale-input');
@@ -17213,17 +17860,6 @@ function updateThemePickerUi() {
         const isActive = iconId === nnState.frontendIcon;
         button.classList.toggle('is-selected', isActive);
         button.setAttribute('aria-pressed', String(isActive));
-    }
-
-    if (sliderInput instanceof HTMLInputElement) {
-        sliderInput.min = String(NN_SURFACE_TRANSPARENCY.min);
-        sliderInput.max = String(NN_SURFACE_TRANSPARENCY.max);
-        sliderInput.step = String(NN_SURFACE_TRANSPARENCY.step);
-        sliderInput.value = String(nnState.surfaceTransparency);
-    }
-
-    if (sliderValue instanceof HTMLElement) {
-        sliderValue.textContent = formatSurfaceTransparency(nnState.surfaceTransparency);
     }
 
     if (desktopTopbarScaleInput instanceof HTMLInputElement) {
@@ -21992,7 +22628,13 @@ function initAll() {
     setShellTheme(nnState.theme, { persist: false });
     if (settingsReady) reconcileShellThemeSettings();
     setFrontendIconPreference(nnState.frontendIcon, { persist: false });
-    setSurfaceTransparency(nnState.surfaceTransparency, { persist: false });
+    registerPanelLookProperties();
+    initPanelLookStore();
+    applyPanelLook();
+    if (panelLookNoticePending) {
+        panelLookNoticePending = false;
+        window.setTimeout(() => window.dispatchEvent(new CustomEvent('sb:panel-look-notice')), 0);
+    }
     setPaperTextureEnabled(nnState.paperTextureEnabled, { persist: false });
     setPaperTextureOpacity(nnState.paperTextureOpacity, { persist: false });
     setCompactMode(nnState.compactMode, { persist: false });
@@ -22154,8 +22796,26 @@ function initAll() {
         setFrontendIcon(iconId) {
             setFrontendIconPreference(iconId);
         },
-        setSurfaceTransparency(value) {
-            setSurfaceTransparency(value);
+        setPanelLook(surface, values) {
+            setPanelLook(surface ?? null, values);
+        },
+        resetPanelLook(surface, property) {
+            resetPanelLook(surface ?? null, property ?? null);
+        },
+        getPanelLook() {
+            return getPanelLook();
+        },
+        setTextOutline(values) {
+            setTextOutline(values);
+        },
+        getPanelLookNotice() {
+            return getPanelLookNotice();
+        },
+        answerPanelLookNotice(answer) {
+            answerPanelLookNotice(answer);
+        },
+        openPanelLookSettings() {
+            openPanelLookSettings();
         },
         setTopbarScale(mode, value) {
             setTopbarScale(mode, value);
@@ -22202,9 +22862,6 @@ function initAll() {
         },
         getFrontendIcon() {
             return nnState.frontendIcon;
-        },
-        getSurfaceTransparency() {
-            return nnState.surfaceTransparency;
         },
         getTopbarScale(mode) {
             return mode === 'mobile'

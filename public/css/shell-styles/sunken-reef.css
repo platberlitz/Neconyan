@@ -53,6 +53,19 @@
     }
 }
 
+/* Panels defaults (Settings > Appearance > Panels; resolved in neconyan.css): sea-glass Home cards and dark-theme messages with real blur. */
+:root[data-sb-theme='sunken-reef'] {
+    --sb-panel-message-opacity: .95;
+    --sb-panel-home-opacity: .8;
+    --sb-panel-side-opacity: 1;
+    --sb-panel-message-blur: 22px;
+    --sb-panel-home-blur: 22px;
+}
+
+:root[data-sb-theme='sunken-reef'][data-sb-surface-tone='light'] {
+    --sb-panel-message-opacity: 1;
+}
+
 :root[data-sb-theme='sunken-reef'] body.neconyan:not(.sbterm) {
     --reef-coral: color-mix(in srgb, var(--neco-ginger) 58%, #ff7398);
     --reef-caustic-glow: color-mix(in srgb, var(--reef-lagoon) 24%, transparent);
@@ -202,11 +215,11 @@
 
 /* Sea-glass panes: Home cards let the submerged reef and swimming creatures drift behind them. */
 :root[data-sb-theme='sunken-reef'] body.neconyan:not(.sbterm) :is(.neconyan-home-intro, .neconyan-assistant-picker) {
+    /* Two stops around the Home cards' Panels opacity (0.8 by default): a little above it at the top, a little
+       below at the bottom, meeting it at fully clear and fully solid. */
     background:
-        linear-gradient(180deg, var(--reef-glass-top), var(--reef-glass-bottom));
+        linear-gradient(180deg, rgb(from var(--reef-glass-top) r g b / calc(var(--sb-home-opacity) + var(--sb-home-opacity) * (1 - var(--sb-home-opacity)) * .375)), rgb(from var(--reef-glass-bottom) r g b / calc(var(--sb-home-opacity) - var(--sb-home-opacity) * (1 - var(--sb-home-opacity)) * .375)));
     border-color: color-mix(in srgb, var(--reef-lagoon) 44%, transparent);
-    backdrop-filter: blur(22px) saturate(98%);
-    -webkit-backdrop-filter: blur(22px) saturate(98%);
     box-shadow:
         inset 0 1px 0 rgb(220 252 255 / 0.18),
         inset 0 0 60px color-mix(in srgb, var(--reef-coral) 10%, transparent),
@@ -234,10 +247,19 @@
 
 /* The Home layout switcher is a sea-glass rail across the reef. */
 :root[data-sb-theme='sunken-reef'] body.neconyan:not(.sbterm) .neconyan-home-layout-bar {
-    background: var(--reef-glass-rail);
+    background: rgb(from var(--reef-glass-rail) r g b / var(--sb-home-opacity));
     border-color: color-mix(in srgb, var(--reef-lagoon) 36%, transparent);
-    backdrop-filter: blur(18px) saturate(112%);
-    -webkit-backdrop-filter: blur(18px) saturate(112%);
+}
+
+/* The glass blurs only while the Home cards are see-through (Panels blur gate, data-sb-panel-blur). */
+:root[data-sb-theme='sunken-reef'][data-sb-panel-blur~='home'] body.neconyan:not(.sbterm) :is(.neconyan-home-intro, .neconyan-assistant-picker) {
+    backdrop-filter: blur(var(--sb-home-blur)) saturate(98%);
+    -webkit-backdrop-filter: blur(var(--sb-home-blur)) saturate(98%);
+}
+
+:root[data-sb-theme='sunken-reef'][data-sb-panel-blur~='home'] body.neconyan:not(.sbterm) .neconyan-home-layout-bar {
+    backdrop-filter: blur(var(--sb-home-blur)) saturate(112%);
+    -webkit-backdrop-filter: blur(var(--sb-home-blur)) saturate(112%);
 }
 
 :root[data-sb-theme='sunken-reef'] body.neconyan:not(.sbterm) .neconyan-home-layout-bar :is(button, .menu_button) {
@@ -387,4 +409,10 @@
     :root[data-sb-theme='sunken-reef'] body.neconyan:not(.sbterm) #sb-bottom-chat-bar {
         animation: none;
     }
+}
+
+/* Letter outline (Panels): Recent chats' Pin, Rename and Delete have a face in this style, so they stay unstroked. */
+:root[data-sb-theme='sunken-reef'][data-sb-text-outline] body.neconyan #neconyan-home-host :is(.pinChat, .renameChat, .deleteChat) {
+    -webkit-text-stroke-width: 0;
+    paint-order: normal;
 }

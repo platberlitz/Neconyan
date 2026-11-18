@@ -111,8 +111,6 @@ button:not(.ica--tpanel-handle):not(.gg-action-button):not(.neconyan-edit-action
     box-shadow:
         0 6px 22px rgba(0, 0, 0, 0.16),
         inset 0 1px 0 rgba(255, 244, 210, 0.045) !important;
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
 }
 
 :where(body:not(.nnchat)) .mes[is_user='true'] {

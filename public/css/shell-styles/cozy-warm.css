@@ -2,6 +2,17 @@
    Keeps the Calico palette and cats; warms every surface towards amber lamplight,
    rounds the chrome into pills and pillows, and stitches cards with dashed thread. */
 
+/* Panels defaults (Settings > Appearance > Panels; resolved in neconyan.css): solid light-theme messages, the rest near the 85% floor. */
+:root[data-sb-theme='cozy-warm'] {
+    --sb-panel-message-opacity: .9;
+    --sb-panel-home-opacity: .85;
+    --sb-panel-side-opacity: 1;
+}
+
+:root[data-sb-theme='cozy-warm'][data-sb-surface-tone='light'] {
+    --sb-panel-message-opacity: 1;
+}
+
 :root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) {
     --cozy-amber: color-mix(in srgb, var(--neco-ginger) 55%, #f2b45a);
     --cozy-glow: color-mix(in srgb, var(--cozy-amber) 22%, transparent);
@@ -215,4 +226,10 @@
         backdrop-filter: none;
         -webkit-backdrop-filter: none;
     }
+}
+
+/* Letter outline (Panels): Recent chats' Pin, Rename and Delete have a face in this style, so they stay unstroked. */
+:root[data-sb-theme='cozy-warm'][data-sb-text-outline] body.neconyan #neconyan-home-host :is(.pinChat, .renameChat, .deleteChat) {
+    -webkit-text-stroke-width: 0;
+    paint-order: normal;
 }

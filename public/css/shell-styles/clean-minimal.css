@@ -2,6 +2,13 @@
    Keeps the Calico palette and cats; strips every gradient, shadow and blur, squares
    the corners, and marks the active state with a single ink line instead of a fill. */
 
+/* Panels defaults (Settings > Appearance > Panels; resolved in neconyan.css): the 85% floor on every surface, no blur. */
+:root[data-sb-theme='clean-minimal'] {
+    --sb-panel-message-opacity: .85;
+    --sb-panel-home-opacity: .85;
+    --sb-panel-side-opacity: 1;
+}
+
 :root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) {
     --clean-line: color-mix(in srgb, var(--neco-ink) 14%, transparent);
     --clean-line-strong: var(--neco-ink);
@@ -174,8 +181,13 @@
     --neco-rail: var(--neco-canvas);
 }
 
-:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) :is(.sb-shell-frame, .sb-shell-main, .sb-shell-nav, .sb-character-shell-nav, .sb-shell-header) {
-    background: var(--neco-canvas);
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) :is(.sb-shell-main, .sb-shell-nav, .sb-character-shell-nav, .sb-shell-header) {
+    background: transparent;
+}
+
+/* The frame carries the side backing (Settings > Appearance > Panels); header and tabs sit on it. */
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) .sb-shell-frame {
+    background: rgb(from var(--neco-canvas) r g b / var(--sb-side-opacity));
 }
 
 :root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) :is(.sb-shell-header, .sb-shell-nav, .sb-character-shell-nav) {

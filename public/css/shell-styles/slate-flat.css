@@ -2,6 +2,17 @@
    Keeps the Calico palette and cats; cools every surface towards slate, removes all
    gradients, blur and shadows, and uses solid accent fills with near-square corners. */
 
+/* Panels defaults (Settings > Appearance > Panels; resolved in neconyan.css): solid light-theme messages, the rest near the 85% floor. */
+:root[data-sb-theme='slate-flat'] {
+    --sb-panel-message-opacity: .9;
+    --sb-panel-home-opacity: .85;
+    --sb-panel-side-opacity: 1;
+}
+
+:root[data-sb-theme='slate-flat'][data-sb-surface-tone='light'] {
+    --sb-panel-message-opacity: 1;
+}
+
 :root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) {
     --slate-cool: #46556b;
     --slate-surface: color-mix(in srgb, var(--neco-surface) 78%, var(--slate-cool));
@@ -270,4 +281,10 @@
         backdrop-filter: none;
         -webkit-backdrop-filter: none;
     }
+}
+
+/* Letter outline (Panels): Recent chats' Pin, Rename and Delete have a face in this style, so they stay unstroked. */
+:root[data-sb-theme='slate-flat'][data-sb-text-outline] body.neconyan #neconyan-home-host :is(.pinChat, .renameChat, .deleteChat) {
+    -webkit-text-stroke-width: 0;
+    paint-order: normal;
 }

@@ -2997,7 +2997,7 @@
     padding: 7px 12px 5px;
     border: 1px solid transparent;
     border-radius: 18px 18px 18px 6px;
-    background: color-mix(in srgb, var(--neco-raised) var(--sb-shell-surface-opacity-percent), transparent);
+    background: color-mix(in srgb, var(--neco-raised) calc(var(--sb-message-opacity) * 100%), transparent);
     box-shadow: none;
 }
 :root:not([data-sb-theme='windows-98']):not([data-sb-theme='windows-xp']) body.neconyan:not(.sbterm) #sheld[data-sb-conversation-mode='on'] .sb-conversation-message:is([data-sb-run='middle'], [data-sb-run='end']) > .sb-conversation-message-bubble { margin-top: 0; border-start-start-radius: 6px; }
@@ -3005,10 +3005,10 @@
 :root:not([data-sb-theme='windows-98']):not([data-sb-theme='windows-xp']) body.neconyan:not(.sbterm) #sheld[data-sb-conversation-mode='on'] .sb-conversation-message-bubble > .neconyan-message-sleeper { inset: -25px auto auto -17px; width: 58px; height: 46px; }
 :root:not([data-sb-theme='windows-98']):not([data-sb-theme='windows-xp']) body.neconyan:not(.sbterm) #sheld[data-sb-conversation-mode='on'] .sb-conversation-message-bubble > .neconyan-message-sleeper.is-user { inset-inline: auto -17px; }
 :root:not([data-sb-theme='windows-98']):not([data-sb-theme='windows-xp']) body.neconyan:not(.sbterm) #sheld[data-sb-conversation-mode='on'] .sb-conversation-message:is([data-sb-run='middle'], [data-sb-run='end']) .neconyan-message-sleeper { display: none; }
-:root:not([data-sb-theme='windows-98']):not([data-sb-theme='windows-xp']) body.neconyan:not(.sbterm) #sheld[data-sb-conversation-mode='on'] .sb-conversation-typing-indicator > .sb-conversation-message-bubble { padding: 7px 12px; border: 0; border-radius: 18px 18px 18px 6px; background: color-mix(in srgb, var(--neco-raised) var(--sb-shell-surface-opacity-percent), transparent); box-shadow: none; }
+:root:not([data-sb-theme='windows-98']):not([data-sb-theme='windows-xp']) body.neconyan:not(.sbterm) #sheld[data-sb-conversation-mode='on'] .sb-conversation-typing-indicator > .sb-conversation-message-bubble { padding: 7px 12px; border: 0; border-radius: 18px 18px 18px 6px; background: color-mix(in srgb, var(--neco-raised) calc(var(--sb-message-opacity) * 100%), transparent); box-shadow: none; }
 :root:not([data-sb-theme='windows-98']):not([data-sb-theme='windows-xp']) body.neconyan:not(.sbterm) #sheld[data-sb-conversation-mode='on'] .sb-conversation-message[data-role='user'][data-message-id] > .sb-conversation-message-bubble {
     border-radius: 18px 18px 6px 18px;
-    background: rgb(from color-mix(in srgb, var(--neco-ginger) 16%, var(--neco-user)) r g b / var(--sb-shell-surface-opacity));
+    background: rgb(from color-mix(in srgb, var(--neco-ginger) 16%, var(--neco-user)) r g b / var(--sb-message-opacity));
 }
 :root:not([data-sb-theme='windows-98']):not([data-sb-theme='windows-xp']) body.neconyan:not(.sbterm) #sheld[data-sb-conversation-mode='on'] .sb-conversation-message[data-role='user']:is([data-sb-run='middle'], [data-sb-run='end']) > .sb-conversation-message-bubble { border-start-end-radius: 6px; }
 :root:not([data-sb-theme='windows-98']):not([data-sb-theme='windows-xp']) body.neconyan:not(.sbterm) #sheld[data-sb-conversation-mode='on'] .sb-conversation-message[data-pinned='true'] > .sb-conversation-message-bubble { border-color: color-mix(in srgb, var(--neco-ginger) 60%, var(--neco-border)); }

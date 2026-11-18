@@ -19,6 +19,21 @@
     --sb-message-radius: 12px;
 }
 
+/* Panels defaults (Settings > Appearance > Panels; resolved in neconyan.css): see-through Home cards and
+   dark-theme messages with real blur; the drawer pane stays nearly solid on the blurred tile. */
+:root[data-sb-theme='hypr-glow'] {
+    --sb-panel-message-opacity: .9;
+    --sb-panel-home-opacity: .7;
+    --sb-panel-side-opacity: .92;
+    --sb-panel-message-blur: 24px;
+    --sb-panel-home-blur: 24px;
+    --sb-panel-side-blur: 14px;
+}
+
+:root[data-sb-theme='hypr-glow'][data-sb-surface-tone='light'] {
+    --sb-panel-message-opacity: 1;
+}
+
 /* A chosen accent pair supplies both ends of the gradient. */
 :root[data-sb-theme='hypr-glow'][data-neconyan-accent='custom'] body.neconyan:not(.sbterm) {
     --hypr-b: var(--neco-accent-secondary);
@@ -203,16 +218,20 @@
     box-shadow: 0 0 12px color-mix(in srgb, var(--hypr-a) 50%, transparent);
 }
 
-/* Drawers: another tile, same gradient rim, tabs as small tiles. */
+/* Drawers: another tile, same gradient rim, tabs as small tiles. On phones the sheet's root is the reading
+   layer and blurs only through the Panels gate (neconyan-background-controls.css). */
 :root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) :is(.sb-shell-root, #right-nav-panel).openDrawer {
     --neco-rail: var(--hypr-tile);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
 }
 
 @media (min-width: 769px) {
+    :root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) :is(.sb-shell-root, #right-nav-panel).openDrawer {
+        backdrop-filter: blur(var(--sb-side-blur));
+        -webkit-backdrop-filter: blur(var(--sb-side-blur));
+    }
+
     :root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) #right-nav-panel.openDrawer:is([data-menu-type='characters'], [data-menu-type='world-info']) {
-        background: linear-gradient(var(--neco-rail), var(--neco-rail)), var(--neco-surface) !important;
+        background: rgb(from var(--neco-rail) r g b / var(--sb-side-opacity)) !important;
     }
 }
 
@@ -248,12 +267,23 @@
     color: var(--hypr-a);
 }
 
-/* Glass frame, solid pane: this fill ignores Background visibility (neconyan-calico.css reads --sb-reading-pane). */
+/* Glass frame, nearly solid pane: on desktop the pane carries the side backing (neconyan-calico.css reads
+   --sb-reading-pane), mixed from --neco-surface like the other glass styles; on phones the sheet's root does. */
 :root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) .sb-shell-panel-scroller {
-    --sb-reading-pane: var(--hypr-inner);
-    background: var(--sb-reading-pane);
     border: 1px solid color-mix(in srgb, var(--hypr-a) 25%, var(--neco-border));
     border-radius: 12px;
+}
+
+@media (min-width: 769px) {
+    :root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) .sb-shell-panel-scroller {
+        --sb-reading-pane: color-mix(in srgb, var(--neco-surface) calc(var(--sb-side-opacity) * 100%), transparent);
+        background: var(--sb-reading-pane);
+    }
+
+    /* The drawer header takes the same side backing as the pane (not the Characters and Lorebooks root's own). */
+    :root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) .sb-shell-header:not(#right-nav-panel .sb-shell-header) {
+        background: color-mix(in srgb, var(--neco-surface) calc(var(--sb-side-opacity) * 100%), transparent);
+    }
 }
 
 :root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) .sb-shell-close {
@@ -310,4 +340,10 @@
         backdrop-filter: none;
         -webkit-backdrop-filter: none;
     }
+}
+
+/* Letter outline (Panels): Recent chats' Pin, Rename and Delete have a face in this style, so they stay unstroked. */
+:root[data-sb-theme='hypr-glow'][data-sb-text-outline] body.neconyan #neconyan-home-host :is(.pinChat, .renameChat, .deleteChat) {
+    -webkit-text-stroke-width: 0;
+    paint-order: normal;
 }

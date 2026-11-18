@@ -54,9 +54,19 @@ test('desktop Bubbles follows stationary paint, native edits and the real lower 
     });
     await expect.poll(() => row.evaluate(element => getComputedStyle(element).backgroundColor === getComputedStyle(document.querySelector('#neconyan-bubbles-bottom-boundary')).backgroundColor)).toBe(true);
     expect(await cap.evaluate(element => getComputedStyle(element).backgroundColor)).not.toBe(ordinaryPaint);
-    await page.evaluate(() => document.documentElement.style.setProperty('--sb-shell-surface-opacity', '0.37'));
-    await expect.poll(() => cap.locator('div').evaluate(element => getComputedStyle(element).opacity)).toBe('0.37');
+    // Messages at 35% (Panels): the row's ::before fill carries the alpha, and the cap's surface copies it.
+    await page.evaluate(() => window.NeconyanShell.setPanelLook('message', { opacity: 35 }));
+    await expect.poll(() => row.evaluate(element => getComputedStyle(element, '::before').backgroundColor)).toMatch(/\/ 0\.35\)$/);
+    await expect.poll(() => row.evaluate(element => getComputedStyle(element, '::before').backgroundColor === getComputedStyle(document.querySelector('#neconyan-bubbles-bottom-boundary > div')).backgroundColor)).toBe(true);
     await row.evaluate(element => element.classList.remove('selected'));
+    // With message blur on, a clip on #chat would cut every row's blur off from the wallpaper: no notch, a straight cut.
+    await page.evaluate(() => window.NeconyanShell.setPanelLook('message', { opacity: 60, blur: 16 }));
+    await expect.poll(() => page.evaluate(() => document.documentElement.dataset.sbPanelBlur)).toContain('message');
+    await cross(); await hidden('message blur');
+    expect(await page.locator('#chat').evaluate(element => getComputedStyle(element).clipPath)).toBe('none');
+    await expect.poll(() => row.evaluate(element => getComputedStyle(element, '::before').backdropFilter)).toBe('blur(16px)');
+    await page.evaluate(() => window.NeconyanShell.resetPanelLook('message', null));
+    await cross(); await expect(cap).toBeVisible();
     await row.locator('.mes_edit').click();
     await expect(row.locator('.edit_textarea')).toBeVisible();
     await hidden('native editor');

@@ -43,8 +43,6 @@
     --moonlit-sb-swipe-edge-offset: 8px;
     --moonlit-sb-swipe-gap: 4px;
     --moonlit-sb-swipe-inline-offset: 24px;
-    --moonlit-sb-user-message-bg: rgb(from var(--SmartThemeUserMesBlurTintColor) r g b / var(--sb-shell-surface-opacity, 1));
-    --moonlit-sb-bot-message-bg: rgb(from var(--SmartThemeBotMesBlurTintColor) r g b / var(--sb-shell-surface-opacity, 1));
     --customCSS-bg-opacity: 1;
     --customCSS-bg-blur: 0;
     --sheldBackgroundColor: transparent;
@@ -68,9 +66,10 @@ body.sb-sheld-blur #sheld::before {
     -webkit-backdrop-filter: blur(calc(var(--sheldBlurStrength, 0) * 1px));
 }
 
-:root[data-sb-surface-transparent='true'] body.neconyan:not(.sbterm) #chat :is(.mes, .mes_block) {
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
+/* Message fills take their alpha from Panels (neconyan.css resolves --sb-message-opacity on body.neconyan). */
+body.neconyan {
+    --moonlit-sb-user-message-bg: rgb(from var(--SmartThemeUserMesBlurTintColor) r g b / var(--sb-message-opacity));
+    --moonlit-sb-bot-message-bg: rgb(from var(--SmartThemeBotMesBlurTintColor) r g b / var(--sb-message-opacity));
 }
 
 body:not(.bubblechat):not(.echostyle):not(.whisperstyle):not(.hushstyle):not(.ripplestyle):not(.tidestyle):not(.nnchat) #chat .mes:not(.smallSysMes) .mes_block {
@@ -1778,7 +1777,7 @@ body.neconyan.flatchat.nnchat-messenger:not(.sbterm) #chat .mes[is_user='true'] 
     padding: 10px calc(14px * var(--messageMarginScale, 1));
     border: 1px solid color-mix(in oklch, var(--neco-ginger) 45%, var(--neco-border));
     border-radius: 20px 20px 6px 20px;
-    background: color-mix(in srgb, color-mix(in oklch, var(--neco-ginger) 24%, var(--neco-surface)) var(--sb-shell-surface-opacity-percent), transparent);
+    background: color-mix(in srgb, color-mix(in oklch, var(--neco-ginger) 24%, var(--neco-surface)) calc(var(--sb-message-opacity) * 100%), transparent);
 }
 body.neconyan.flatchat.nnchat-messenger:not(.sbterm) #chat .mes .name_text {
     font-size: 12px;
@@ -1833,11 +1832,11 @@ body.neconyan.flatchat.nnchat-notebook:not(.sbterm) #chat .mes:not(.smallSysMes)
     padding: 12px calc(18px * var(--messageMarginScale, 1)) 14px calc(26px * var(--messageMarginScale, 1));
     border: 1px solid color-mix(in oklch, var(--neco-cream) 18%, var(--neco-border));
     border-radius: 4px 10px 10px 4px;
-    background: color-mix(in srgb, var(--neco-surface) var(--sb-shell-surface-opacity-percent), transparent);
+    background: color-mix(in srgb, var(--neco-surface) calc(var(--sb-message-opacity) * 100%), transparent);
     box-shadow: inset 3px 0 0 color-mix(in oklch, var(--neco-pink) 60%, transparent), 0 2px 8px color-mix(in oklch, var(--neco-charcoal) 16%, transparent);
 }
 body.neconyan.flatchat.nnchat-notebook:not(.sbterm) #chat .mes[is_user='true']:not(.smallSysMes) .mes_block {
-    background: color-mix(in srgb, color-mix(in oklch, var(--neco-ginger) 14%, var(--neco-surface)) var(--sb-shell-surface-opacity-percent), transparent);
+    background: color-mix(in srgb, color-mix(in oklch, var(--neco-ginger) 14%, var(--neco-surface)) calc(var(--sb-message-opacity) * 100%), transparent);
     box-shadow: inset 3px 0 0 color-mix(in oklch, var(--neco-ginger) 70%, transparent), 0 2px 8px color-mix(in oklch, var(--neco-charcoal) 16%, transparent);
 }
 body.neconyan.flatchat.nnchat-notebook:not(.sbterm) #chat .mes .mes_text {
@@ -1873,7 +1872,7 @@ body.neconyan.flatchat.nnchat-script:not(.sbterm) #chat .mes:not(.smallSysMes)[i
     padding: 12px calc(16px * var(--messageMarginScale, 1));
     border: 1px solid var(--neco-border);
     border-radius: 8px;
-    background: color-mix(in srgb, var(--neco-surface) var(--sb-shell-surface-opacity-percent), transparent);
+    background: color-mix(in srgb, var(--neco-surface) calc(var(--sb-message-opacity) * 100%), transparent);
     box-shadow: none;
 }
 body.neconyan.flatchat.nnchat-script:not(.sbterm) #chat .mes .ch_name > .flex-container:first-child {
@@ -1921,12 +1920,12 @@ body.neconyan.flatchat.nnchat-compact:not(.sbterm) #chat .mes:not(.smallSysMes)[
     padding: 6px calc(10px * var(--messageMarginScale, 1));
     border: 1px solid var(--neco-border);
     border-radius: 8px;
-    background: color-mix(in srgb, var(--neco-surface) var(--sb-shell-surface-opacity-percent), transparent);
+    background: color-mix(in srgb, var(--neco-surface) calc(var(--sb-message-opacity) * 100%), transparent);
     box-shadow: none;
 }
 body.neconyan.flatchat:is(.nnchat-script, .nnchat-compact):not(.sbterm) #chat .mes:not(.smallSysMes)[is_user='true'] .mes_block {
     border-color: color-mix(in oklch, var(--neco-ginger) 45%, var(--neco-border));
-    background: color-mix(in srgb, color-mix(in oklch, var(--neco-ginger) 14%, var(--neco-surface)) var(--sb-shell-surface-opacity-percent), transparent);
+    background: color-mix(in srgb, color-mix(in oklch, var(--neco-ginger) 14%, var(--neco-surface)) calc(var(--sb-message-opacity) * 100%), transparent);
 }
 body.neconyan.flatchat.nnchat-compact:not(.sbterm) #chat .mes .mes_text {
     font-size: 0.94em;
@@ -1955,13 +1954,13 @@ body.neconyan.flatchat.nnchat-storybook:not(.sbterm) #chat .mes:not(.smallSysMes
     padding: 22px calc(clamp(16px, 5%, 40px) * var(--messageMarginScale, 1)) 26px;
     border: 1px solid color-mix(in oklch, var(--neco-cream) 24%, var(--neco-border));
     border-radius: 6px;
-    background: color-mix(in srgb, color-mix(in oklch, var(--neco-cream) 7%, var(--neco-surface)) var(--sb-shell-surface-opacity-percent), transparent);
+    background: color-mix(in srgb, color-mix(in oklch, var(--neco-cream) 7%, var(--neco-surface)) calc(var(--sb-message-opacity) * 100%), transparent);
     box-shadow: 0 6px 18px color-mix(in oklch, var(--neco-charcoal) 20%, transparent);
 }
 body.neconyan.flatchat.nnchat-storybook:not(.sbterm) #chat .mes:not(.smallSysMes)[is_user='true'] .mes_block {
     padding: 12px calc(18px * var(--messageMarginScale, 1));
     border-left: 3px solid var(--neco-ginger);
-    background: color-mix(in srgb, color-mix(in oklch, var(--neco-ginger) 10%, var(--neco-surface)) var(--sb-shell-surface-opacity-percent), transparent);
+    background: color-mix(in srgb, color-mix(in oklch, var(--neco-ginger) 10%, var(--neco-surface)) calc(var(--sb-message-opacity) * 100%), transparent);
 }
 body.neconyan.flatchat.nnchat-storybook:not(.sbterm) #chat .mes .ch_name > .flex-container:first-child {
     justify-content: center;
@@ -2093,7 +2092,7 @@ body.tidestyle #chat .mes:not(.smallSysMes) .ica--companion-ledger > .ica--compa
             height: var(--nn-tide-box-height);
             border: 1px solid color-mix(in srgb, var(--neco-border) 70%, transparent);
             border-radius: 22px;
-            background: color-mix(in srgb, var(--neco-surface) 55%, transparent);
+            background: color-mix(in srgb, var(--neco-surface) calc(var(--sb-message-opacity) * 55%), transparent);
         }
 
         > .mesAvatarWrapper {
@@ -2195,7 +2194,7 @@ body.tidestyle #chat .mes:not(.smallSysMes) .ica--companion-ledger > .ica--compa
             height: var(--nn-tide-plate-height);
             border: 1px solid var(--neco-border);
             border-radius: 18px;
-            background: var(--neco-surface);
+            background: rgb(from var(--neco-surface) r g b / var(--sb-message-opacity));
         }
 
         > .neconyan-message-sleeper {

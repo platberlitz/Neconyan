@@ -125,7 +125,7 @@ function auditImportantDeclarations(source, id) {
     if (expectedCount === 1 && important.length === 1) {
         const { node, declaration, ancestors } = important[0];
         const expectedSelector = `:root[data-sb-theme='${id}'] body.neconyan:not(.sbterm) #right-nav-panel.openDrawer:is([data-menu-type='characters'], [data-menu-type='world-info'])`;
-        const expectedValue = 'linear-gradient(var(--neco-rail), var(--neco-rail)), var(--neco-surface) !important';
+        const expectedValue = 'rgb(from var(--neco-rail) r g b / var(--sb-side-opacity)) !important';
         if (ancestors.length !== 1 || ancestors[0].type !== 'media'
             || normaliseMedia(ancestors[0].media) !== '(min-width:769px)') errors.push('wrong media ancestry');
         if (node.type !== 'rule' || node.selectors.length !== 1
@@ -312,7 +312,7 @@ describe('shell style runtime stylesheets', () => {
     test('the backing exception rejects additional or widened important declarations', () => {
         const id = 'windows-aero';
         const selector = `:root[data-sb-theme='${id}'] body.neconyan:not(.sbterm) #right-nav-panel.openDrawer:is([data-menu-type='characters'], [data-menu-type='world-info'])`;
-        const declaration = 'background: linear-gradient(var(--neco-rail), var(--neco-rail)), var(--neco-surface) !important;';
+        const declaration = 'background: rgb(from var(--neco-rail) r g b / var(--sb-side-opacity)) !important;';
         const rule = `${selector} { ${declaration} }`;
         const valid = `@media (min-width: 769px) { ${rule} }`;
         expect(auditImportantDeclarations(valid, id)).toEqual([]);
@@ -322,7 +322,7 @@ describe('shell style runtime stylesheets', () => {
             rule,
             valid.replace(':is([data-menu-type=\'characters\'], [data-menu-type=\'world-info\'])', ''),
             valid.replace('background:', 'color:'),
-            valid.replace('var(--neco-surface)', 'transparent'),
+            valid.replace('var(--sb-side-opacity)', '1'),
             valid.replace('not(.sbterm) #right-nav-panel', 'not(.sbterm)#right-nav-panel'),
             valid.replace(':root[data-sb-theme=', ':root [data-sb-theme='),
             valid.replace('var(--neco-rail)', 'var (--neco-rail)'),
@@ -335,11 +335,37 @@ describe('shell style runtime stylesheets', () => {
         expect(auditImportantDeclarations('/* !important */', 'windows-xp')).toEqual([]);
     });
 
-    test('only the glass shells set the reading-pane hook that the Calico slider rule reads', () => {
+    test('only the glass shells set the reading-pane hook that the core pane rule reads', () => {
         const calico = stripCssBlockComments(readSource('public', 'css', 'neconyan-calico.css'));
-        expect(calico).toContain('background-color: var(--sb-reading-pane, color-mix(in srgb, var(--neco-surface) calc(var(--sb-shell-surface-opacity) * 90%), transparent)) !important;');
+        expect(calico).toContain('background-color: var(--sb-reading-pane, transparent) !important;');
         const setters = runtimeIds.filter(id => stripCssBlockComments(readSource('public', 'css', 'shell-styles', `${id}.css`)).includes('--sb-reading-pane:'));
         expect([...setters].sort()).toEqual([...backedLibraryStyles].sort());
+    });
+
+    test('every runtime style declares its own three Panels opacities', () => {
+        // Core sets Calico's values on :root, so a style that left one out would silently take Calico's.
+        for (const id of runtimeIds) {
+            const stripped = stripCssBlockComments(readSource('public', 'css', 'shell-styles', `${id}.css`));
+            for (const surface of ['message', 'home', 'side']) {
+                expect({ id, surface, declared: new RegExp(`--sb-panel-${surface}-opacity\\s*:`).test(stripped) }).toEqual({ id, surface, declared: true });
+            }
+        }
+    });
+
+    test('nothing under public uses the retired shared Panels fallbacks', () => {
+        const offenders = [];
+        const walk = dir => {
+            for (const entry of readdirSync(dir, { withFileTypes: true })) {
+                const full = path.join(dir, entry.name);
+                if (entry.isDirectory()) {
+                    if (entry.name !== 'node_modules') walk(full);
+                } else if (/\.(?:css|js|html|json|md)$/.test(entry.name) && /--sb-panel-(?:opacity|blur)\b/.test(readFileSync(full, 'utf8'))) {
+                    offenders.push(path.relative(repoRoot, full));
+                }
+            }
+        };
+        walk(path.join(repoRoot, 'public'));
+        expect(offenders).toEqual([]);
     });
 
     test('Windows XP dark faces tint raised cards and tabs with the scheme colour', () => {

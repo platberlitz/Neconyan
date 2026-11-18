@@ -110,7 +110,7 @@ body.neconyan #sb-topbar-stack,
 body.neconyan #sb-topbar-primary,
 body.neconyan #sb-topbar-inner { background: transparent; }
 
-:root[data-neconyan-palette='calico'] body.neconyan :is(.sb-shell-header, .sb-character-shell-header, #sb-mobile-nav-content),
+:root[data-neconyan-palette='calico'] body.neconyan #sb-mobile-nav-content,
 :root[data-neconyan-palette='calico'] body.neconyan dialog.popup {
     background: var(--neco-panel-gradient);
 }
@@ -360,14 +360,13 @@ body.neconyan:not(.sbterm) #right-nav-panel > :is(.scrollableInner, .scrollableI
     background-color: transparent !important;
 }
 body.neconyan:not(.sbterm) :is(.sb-shell-panel-scroller, .sb-conversation-thread-empty) {
-    background-color: var(--sb-reading-pane, color-mix(in srgb, var(--neco-surface) calc(var(--sb-shell-surface-opacity) * 90%), transparent)) !important;
+    background-color: var(--sb-reading-pane, transparent) !important;
 }
 @media (max-width: 768px) {
     /* Phone sheets fill the screen, so the floating-card look above turns into wallpaper
        bleeding through the header zone and list gutters. Paint them solid. */
-    body.neconyan:not(.sbterm) :is(.sb-shell-root.openDrawer, #right-nav-panel.openDrawer),
-    body.neconyan:not(.sbterm) #right-nav-panel.openDrawer > :is(.scrollableInner, .scrollableInnerFull) {
-        background-color: var(--neco-surface) !important;
+    body.neconyan:not(.sbterm) :is(.sb-shell-root.openDrawer, #right-nav-panel.openDrawer) {
+        background-color: rgb(from var(--neco-surface) r g b / var(--sb-side-opacity)) !important;
     }
 }
 
@@ -679,6 +678,7 @@ body.neconyan #sb_character_world_info_panel {
     color: var(--neco-ink) !important;
     border-color: var(--neco-border) !important;
 }
+body.neconyan #right-nav-panel :is(#sb_character_world_info_panel, #neconyan-lorebook-library) { background: transparent !important; }
 
 body.neconyan :is(#world_popup, #SillyTavernImportSection, #sb_character_import_panel, #sb_character_world_info_panel) :is(label, .toggle-description, .world_popup_action_group_label, .world_info_results_summary, .settings-section-header, h3, h4, strong, p, small) {
     color: var(--neco-ink) !important;

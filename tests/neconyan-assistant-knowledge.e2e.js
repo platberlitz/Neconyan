@@ -162,7 +162,7 @@ for (const { width, height, tone } of [{ width: 1280, height: 900, tone: 'dark' 
         for (const [id, label] of [
             ['sb-theme-presets-drawer', 'Custom RGB Accent'],
             ['sb-shell-style-drawer', 'Hide cats (Kittyless)'],
-            ['sb-interface-drawer', 'Background Visibility'],
+            ['sb-panel-look-drawer', 'Panel opacity'],
             ['sb-page-tours-drawer', 'Hide all tour buttons'],
         ]) {
             const drawer = page.locator(`#${id}`);
@@ -276,7 +276,7 @@ for (const phone of [false, true]) {
             }
             return { revision: KNOWLEDGE_REVISION, results };
         }, refreshedKnowledgeCases);
-        expect(references.revision).toBe(117);
+        expect(references.revision).toBe(118);
         expect(references.results).toHaveLength((13 + refreshedKnowledgeCases.length) * 9);
         expect(references.results.filter(result => !result.found)).toEqual([]);
     });

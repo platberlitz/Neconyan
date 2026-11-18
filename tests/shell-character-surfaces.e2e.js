@@ -171,7 +171,7 @@ async function expectPaintCoversUnderlay(page) {
 }
 
 for (const phone of [false, true]) {
-    test(`Characters and Lorebooks keep an opaque surface in every shell (${phone ? 'phone' : 'desktop'})`, async ({ app }) => {
+    test(`Characters and Lorebooks keep the shell's side backing in every shell (${phone ? 'phone' : 'desktop'})`, async ({ app }) => {
         test.setTimeout(360000);
         const account = await app.account({ phone, configureSettings(saved) {
             saved.firstRun = false;
@@ -190,7 +190,8 @@ for (const phone of [false, true]) {
         for (const style of styles) {
             await applyStyle(page, style);
             for (const tab of ['characters', 'world-info']) {
-                const checkUnderlay = !phone && ['windows-xp', 'windows-aero', 'macos-minimal', 'hypr-glow'].includes(style);
+                // The glass shells' desktop library backing now follows Panels (0.92 by default), so only a solid one is checked for cover.
+                const checkUnderlay = !phone && ['windows-xp'].includes(style);
                 if (checkUnderlay) await page.evaluate(async () => (await import('/scripts/scratchpad/index.js')).openScratchpad());
                 await page.evaluate(id => window.NeconyanShell.openTab('characters', id), tab);
                 const panel = page.locator('#right-nav-panel');
@@ -200,7 +201,10 @@ for (const phone of [false, true]) {
                 await page.evaluate(() => new Promise(resolve => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve))));
                 await page.evaluate(() => window.toastr?.remove());
                 const geometry = await surfaceGeometry(page);
-                expect(geometry.alpha, `${style} ${tab} panel background`).toBe(255);
+                // The root is the one side layer: opaque on phones and, on desktop, in every shell except the frosted glass ones (0.92).
+                const side = await page.evaluate(() => window.NeconyanShell.getPanelLook().resolved.side.opacity);
+                expect(side, `${style} side default`).toBe(phone || !['windows-aero', 'macos-minimal', 'hypr-glow'].includes(style) ? 1 : 0.92);
+                expect(Math.abs(geometry.alpha - Math.round(255 * side)), `${style} ${tab} panel background ${geometry.alpha} for side ${side}`).toBeLessThanOrEqual(1);
                 expect(geometry.height, `${style} ${tab} has usable scrolling space`).toBeGreaterThan(100);
                 expect(geometry.overflow, `${style} ${tab} document overflow`).toBeLessThanOrEqual(1);
                 const close = panel.locator('#sb_character_shell_close');

@@ -34,7 +34,7 @@ Neconyan is a self-hosted web app for chatting with AI characters. It grew out o
 
 1. Phone parity. Anything reachable on desktop is reachable on a phone in the same number of taps. Labelled tab rows that scroll sideways beat dropdowns; one tap beats two.
 2. Nothing is 'advanced' by default. Rare actions live in the Chat tools menu or a Fine-tuning group, but they are always there. The one exception is Simple Mode, which people opt into (Nori offers it to new accounts): it hides power features for anyone who finds the full layout overwhelming, deletes and disables nothing, and 'Show all features' brings everything back in one tap.
-3. Readable first. Nunito for everything you read, Fredoka One only for headings and the brand. Solid surfaces over the wallpaper; the paws show through the canvas, never through text.
+3. Readable first. Nunito for everything you read, Fredoka One only for headings and the brand. Text always sits on a backed panel; the paws show through the canvas, and only as far as each style, or the person in Panels, lets them show behind text.
 4. Cute but honest. Puns in copy, never in error causes. Errors say what went wrong and the first thing to try.
 5. Accessible by default. 44px touch targets, visible focus rings, WCAG 2.2 AA contrast for every bundled theme, reduced-motion respected.
 6. Replies are browser-first by default. Ordinary Roleplay, Story and group replies use the browser's generation path for direct display unless the account chooses server replies so they keep going after the page closes. The server retains supported single-character requests for recovery and handles work that needs background execution or a protected saved-message replacement, plus imports, translations and memory.

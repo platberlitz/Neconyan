@@ -226,7 +226,9 @@ describe('Neconyan Custom CSS AI helper', () => {
         const neconyanCss = fs.readFileSync(new URL('../public/css/neconyan.css', import.meta.url), 'utf8');
 
         expect(conversationCss).toMatch(/\.sb-conversation-timeline \{\n\s{4}min-block-size: 0;[\s\S]*?overflow-y: auto;[\s\S]*?touch-action: pan-y;/);
-        expect(neconyanCss).toMatch(/body\.neconyan \.sb-conversation-timeline \{[^}]*margin: 8px 10px 4px;[^}]*border-radius:[^}]*background: color-mix/);
+        // The inset timeline keeps its frame but paints no fill: the bubbles carry the Panels message backing.
+        expect(neconyanCss).toMatch(/body\.neconyan \.sb-conversation-timeline \{[^}]*margin: 8px 10px 4px;[^}]*border-radius:[^}]*\}/);
+        expect(neconyanCss.match(/body\.neconyan \.sb-conversation-timeline \{[^}]*\}/)[0]).not.toMatch(/background/);
         expect(neconyanCss).toMatch(/\.sb-conversation-pals-list > \.sb-conversation-empty \{ display: grid; place-items: center;/);
         expect(system.content).toContain('#sb_conversation_stage');
         expect(system.content).toContain('.sb-conversation-composer');
@@ -257,15 +259,19 @@ describe('Neconyan Custom CSS AI helper', () => {
             else delete globalThis.getComputedStyle;
         }
         expect(CUSTOM_CSS_AI_PALETTE_VARIABLES).toContain('--neco-accent-secondary');
-        expect(CUSTOM_CSS_AI_PALETTE_VARIABLES).toContain('--sb-shell-surface-opacity');
+        for (const token of ['--sb-message-opacity', '--sb-home-opacity', '--sb-side-opacity']) {
+            expect(CUSTOM_CSS_AI_PALETTE_VARIABLES).toContain(token);
+            expect(system.content).toContain(token);
+        }
+        expect(CUSTOM_CSS_AI_PALETTE_VARIABLES).not.toContain('--sb-shell-surface-opacity');
         expect(system.content).toContain('--neco-accent-secondary');
-        expect(system.content).toContain('--sb-shell-surface-opacity');
-        expect(system.content).toContain('shell surface opacity at --sb-shell-surface-opacity');
+        expect(system.content).toContain('Page Size & Clarity and Panels');
+        expect(system.content).toContain('keep reading surfaces at the resolved --sb-message-opacity, --sb-home-opacity and --sb-side-opacity');
         expect(system.content).toContain('1 is opaque');
-        expect(system.content).not.toContain('surface transparency from --sb-shell-surface-opacity');
-        expect(tabsSource).toMatch(/const surfaceOpacity = Math\.max\(0, 1 - \(nextTransparency \/ 100\)\);/);
-        expect(tabsSource).toMatch(/setProperty\('--sb-shell-surface-opacity', surfaceOpacity\.toFixed\(2\)\)/);
-        expect(themeCss).toContain('--sb-shell-surface-opacity: 1;');
+        expect(system.content).not.toContain('Background Visibility');
+        expect(tabsSource).toMatch(/CSS\.registerProperty\(\{ name: `--sb-\$\{surface\}-opacity`, syntax: '<number>'/);
+        expect(tabsSource).not.toMatch(/setProperty\('--sb-shell-surface-opacity'/);
+        expect(themeCss).toContain('--sb-shell-surface-opacity: 0;');
         expect(themeCss).toMatch(/opacity: var\(--sb-shell-surface-opacity\)/);
         expect(neconyanCss).toContain('--neco-accent-secondary: var(--neco-ginger);');
         expect(neconyanCss).toMatch(/:root\[data-neconyan-accent='custom'\] body\.neconyan \{ --neco-accent-secondary: var\(--SmartThemeUnderlineColor\); \}/);
