@@ -36,6 +36,7 @@ const { runChatProfile } = await import('../src/generation/service.js');
 const { replySwipes, appendReplySwipe, exportReply, MAX_REPLY_SWIPES } = await import('../public/scripts/scratchpad/swipes.js');
 const { scratchpadPrefill, joinScratchpadPrefill } = await import('../public/scripts/scratchpad/prefill.js');
 const { imageChangeHash } = await import('../src/scratchpad/image-state.js');
+const { forgetTextOnlyModels } = await import('../src/scratchpad/image-history.js');
 
 after(() => cancelAutoSaves());
 
@@ -210,6 +211,73 @@ test('a round table sends generated pictures only to its vision-capable speakers
         assert.equal(imageMessages.length, reply.assistant === 'taro' ? 0 : 1);
         if (imageMessages.length) assert.match(imageMessages[0].content[0].text, /from taro, proposal 1/);
     }
+});
+
+test('a Custom model sees saved pictures without image inlining and answers from text notes when it refuses them', async t => {
+    t.after(forgetTextOnlyModels);
+    const a = account(t, { oai: { chat_completion_source: 'custom', custom_url: 'https://proxy.example/v1', media_inlining: false }, model: 'proxy/text-model' });
+    const filename = path.join(a.directories.root, SETTINGS_FILE);
+    const settings = JSON.parse(fs.readFileSync(filename, 'utf8'));
+    Object.assign(settings.extension_settings.connectionManager.profiles[0], { api: 'custom', 'api-url': 'https://proxy.example/v1' });
+    fs.writeFileSync(filename, JSON.stringify(settings));
+    const session = startSession(a);
+    saveGeneratedPicture(a, session);
+    const pictures = messages => messages.flatMap(message => Array.isArray(message.content) ? message.content : []).filter(part => part.type === 'image_url');
+    const calls = [];
+    let refusal = Object.assign(new Error('Unauthorised.'), { providerStatus: 401 });
+    registerScratchpadJobs({ generate: async ({ messages }) => {
+        calls.push(messages);
+        if (pictures(messages).length) throw refusal;
+        return { text: 'The roof needs more contrast.', usage: {} };
+    } });
+
+    const unrelated = await acceptScratchpadReply(a.request(), sendBody(session, { text: 'How does it look?' }));
+    await runJob(getJob(a.directories, unrelated.job.id));
+    assert.equal(calls.length, 1);
+    assert.equal(pictures(calls[0]).length, 1);
+
+    calls.length = 0;
+    refusal = Object.assign(new Error('Invalid content type. image_url is only supported by certain models.'), { providerStatus: 400 });
+    const accepted = await acceptScratchpadReply(a.request(), sendBody(session, { text: 'How does it look now?' }));
+    assert.equal(pictures(readArtifact(a.directories, accepted.job.id, 'request').messages).length, 1);
+    await runJob(getJob(a.directories, accepted.job.id));
+    assert.equal(calls.length, 2);
+    assert.equal(pictures(calls[1]).length, 0);
+    assert.equal(calls[1].length, calls[0].length);
+    assert.match(calls[1].find(message => Array.isArray(message.content)).content[0].text, /proposal 1.*refused pictures; do not infer/);
+    const reply = a.read(SOURCE).sessions.find(item => item.id === session.id).messages.at(-1);
+    assert.equal(reply.state, 'done');
+    assert.equal(reply.text, 'The roof needs more contrast.');
+
+    calls.length = 0;
+    const later = await acceptScratchpadReply(a.request(), sendBody(session, { text: 'And the windows?' }));
+    assert.equal(pictures(readArtifact(a.directories, later.job.id, 'request').messages).length, 0);
+    await runJob(getJob(a.directories, later.job.id));
+    assert.equal(calls.length, 1);
+});
+
+test('a real Custom provider refusal of pictures settles its step and the text retry completes the job', async t => {
+    t.after(forgetTextOnlyModels);
+    const a = account(t, { oai: { chat_completion_source: 'custom', custom_url: 'https://proxy.example/v1', media_inlining: false }, model: 'proxy/text-model' });
+    const filename = path.join(a.directories.root, SETTINGS_FILE);
+    const settings = JSON.parse(fs.readFileSync(filename, 'utf8'));
+    Object.assign(settings.extension_settings.connectionManager.profiles[0], { api: 'custom', 'api-url': 'https://proxy.example/v1' });
+    fs.writeFileSync(filename, JSON.stringify(settings));
+    const session = startSession(a, { stream: false });
+    saveGeneratedPicture(a, session);
+    const sent = [];
+    registerScratchpadJobs({ generate: options => runChatProfile({ ...options, fetch: async (_url, request) => {
+        const body = JSON.parse(request.body);
+        const pictures = JSON.stringify(body.messages).includes('"image_url"');
+        sent.push(pictures);
+        if (pictures) return new Response(JSON.stringify({ error: { message: 'Invalid content type. image_url is only supported by certain models.' } }), { status: 400 });
+        return new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'It reads as text only.' } }] }));
+    } }) });
+    const accepted = await acceptScratchpadReply(a.request(), sendBody(session, { text: 'How does it look?' }));
+    await runJob(getJob(a.directories, accepted.job.id));
+    assert.equal(getJob(a.directories, accepted.job.id).state, 'completed', JSON.stringify(getJob(a.directories, accepted.job.id).error));
+    assert.deepEqual(sent, [true, false]);
+    assert.equal(a.read(SOURCE).sessions.find(item => item.id === session.id).messages.at(-1).text, 'It reads as text only.');
 });
 
 function readInstructions(a) {

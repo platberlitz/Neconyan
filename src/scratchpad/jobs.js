@@ -50,7 +50,7 @@ import { sameSourceContext } from '../../public/scripts/scratchpad/source.js';
 import { captureImageTargetsLocked, capturePersonaTargetLocked, imagePersonaIdLocked, normaliseImageTargets, normalisePersonaTarget } from './image-targets.js';
 import { hasPendingImages } from './image-state.js';
 import { readScratchpadImageAvailability } from './images.js';
-import { generatedImageReceipts, prepareGeneratedImageHistory } from './image-history.js';
+import { generatedImageFallback, generatedImageReceipts, isImageRefusal, isUnsupportedImageRefusal, prepareGeneratedImageHistory, rememberTextOnlyModel, withoutGeneratedImages } from './image-history.js';
 import { WEB_PAGES_PLACEHOLDER, buildWebPagesPrompt, planWebPages, readWebPages, webPagesAcknowledgement, webPagesHistoryLine, webPagesMetadata } from './web-pages.js';
 import { MAX_WEB_SEARCH_QUERIES, MAX_WEB_SEARCH_RESULTS, WEB_SEARCH_PLACEHOLDER, buildWebSearchPrompt, performWebSearch, planWebSearch, readWebSearchLocked, webSearchAcknowledgement, webSearchFailure, webSearchHistoryLine, webSearchMetadata } from './web-search.js';
 import { MAX_RESEARCH_ROUNDS, RESEARCH_PLAN_MAX_TOKENS, mergeResearchResults, nextResearchQueries, parseResearchPlan, researchPlannerMessages } from './web-research.js';
@@ -291,6 +291,7 @@ export async function acceptScratchpadReply(request, body = {}) {
         const imageHistory = await prepareGeneratedImageHistory({ context: { directories, owner }, material, history: planned.history, cache: imageHistoryCache,
             maxBytes: Math.floor((15 * 1024 * 1024 - bytes(JSON.stringify(planned.summary))) / planned.speakers.length) - bytes(JSON.stringify(messages)) - 256 * 1024 });
         if (imageHistory !== planned.history) messages = buildMessages(imageHistory);
+        const imageFallback = imageHistory !== planned.history ? generatedImageFallback(messages, imageHistory) : [];
         const summaryIndex = planned.summary ? messages.findIndex(message => message.content === summaryContext(SUMMARY_PLACEHOLDER)) : -1;
         const pagesIndex = planned.webPages ? messages.length - 2 : -1;
         const searchIndex = planned.webSearch ? messages.length - (planned.webPages ? 3 : 2) : -1;
@@ -312,7 +313,7 @@ export async function acceptScratchpadReply(request, body = {}) {
         return { replyId: newScratchpadId(), assistant: speaker.assistant, gender: speaker.gender, binding, messages, maxTokens: planned.maxTokens,
             userName: names.user, characterName: names.char, rawOptions, preparedMessages, stream: planned.stream, webSearch: planned.webSearch,
             summaryIndex, searchIndex, webPages: planned.webPages, pagesIndex, prefillReply: prefill.reply,
-            ...(planned.rehearsal ? { rehearsal: true } : {}), functionTools: preparedMessages && !planned.rehearsal ? scratchpadCharacterTools() : [] };
+            ...(planned.rehearsal ? { rehearsal: true } : {}), ...(imageFallback.length ? { imageFallback } : {}), functionTools: preparedMessages && !planned.rehearsal ? scratchpadCharacterTools() : [] };
     }));
     const savedRequest = { source: input.source, sessionId: input.sessionId, summary: planned.summary, ...(replies.length === 1 ? replies[0] : { replies }) };
     if (bytes(JSON.stringify(savedRequest)) > 15 * 1024 * 1024) {
@@ -653,8 +654,8 @@ async function runParticipant(context, request, { generate, grouped = false, web
     const requireRunning = () => {
         if (stopped()) throw fail('SCRATCHPAD_STOPPED', 'Stopped before it finished.', 409);
     };
-    const messages = request.webSearch || request.webPages ? (() => {
-        const value = [...request.messages];
+    const withWebResults = base => request.webSearch || request.webPages ? (() => {
+        const value = [...base];
         // The pages sit after the search results, so they are replaced first and the search position stays valid.
         if (request.webPages) value.splice(request.pagesIndex, 1,
             { role: 'user', content: buildWebPagesPrompt(request.webPages, webPagesResult) },
@@ -663,7 +664,8 @@ async function runParticipant(context, request, { generate, grouped = false, web
             { role: 'user', content: buildWebSearchPrompt(request.webSearch, webSearchResult ?? { ok: false, error: 'No web results are available.' }) },
             { role: 'assistant', content: webSearchAcknowledgement(webSearchResult) });
         return value;
-    })() : request.messages;
+    })() : base;
+    const messages = withWebResults(request.messages);
     const webMetadata = request.webSearch ? webSearchMetadata(request.webSearch, webSearchResult ?? { ok: false, error: 'No web results are available.' }) : null;
     const pagesMetadata = request.webPages ? webPagesMetadata(request.webPages, webPagesResult) : null;
     try {
@@ -676,7 +678,7 @@ async function runParticipant(context, request, { generate, grouped = false, web
             const functionTools = await scratchpadToolsFor(context, request.binding, request.functionTools,
                 { artifactName: grouped ? `model-capabilities:${request.replyId}` : 'model-capabilities' });
             requireRunning();
-            const response = await generate({
+            const run = messages => generate({
                 binding: request.binding,
                 generationType: 'quiet',
                 messages,
@@ -701,6 +703,16 @@ async function runParticipant(context, request, { generate, grouped = false, web
                 context,
                 jobContext: context,
             });
+            let response;
+            try {
+                response = await run(messages);
+            } catch (error) {
+                // Unlisted models get pictures on trust; one that refuses them still answers from the text notes.
+                if (!request.imageFallback?.length || !isImageRefusal(error)) throw error;
+                requireRunning();
+                if (isUnsupportedImageRefusal(error)) rememberTextOnlyModel(resolveGenerationProfile(directories, request.binding));
+                response = await run(withWebResults(withoutGeneratedImages(request.messages, request.imageFallback)));
+            }
             requireRunning();
             const { text, hasTools } = characterToolReply(response, functionTools);
             if (!text) throw fail('SCRATCHPAD_EMPTY_REPLY', 'The model returned no text. Try again or pick another connection.', 502);
