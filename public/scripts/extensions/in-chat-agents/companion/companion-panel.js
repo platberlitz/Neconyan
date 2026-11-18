@@ -627,7 +627,10 @@ function hasCompanionPanelLauncherContent() {
         return false;
     }
 
-    return collectPanelAgentStates().some(state => state.latest || state.agent);
+    // An automatic Companion has nothing to show until its first note, so its button waits.
+    // A manual one is run from the panel, so it needs the button straight away.
+    return collectPanelAgentStates().some(state => state.latest
+        || (state.agent && getCompanionConfig(state.agent).trigger !== 'auto'));
 }
 
 export function shouldShowCompanionPanelHandle() {

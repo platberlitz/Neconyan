@@ -12,6 +12,12 @@ const test = base.extend({
         const ios = testInfo.title.includes('gestures');
         const account = await app.account({ phone, contextOptions: ios ? IPHONE_SAFARI_CONTEXT : {} });
         if (ios) await installIPhoneSafari(account.context, { standalone: true });
+        // A manual Companion keeps the story's Companion button on screen for Scratchpad to cover.
+        await account.post('/api/in-chat-agents/save', {
+            id: 'scratchpad-panel-companion', name: 'Scene Notes', enabled: true,
+            execution: 'companion', category: 'companion', prompt: 'Keep a scene note.',
+            companion: { displayMode: 'panel', trigger: 'manual' },
+        });
         const page = await account.open({ workspace: false });
         await use({ account, page });
     }, { timeout: 120000 }],
