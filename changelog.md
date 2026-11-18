@@ -56,6 +56,7 @@
 - PR #743 (2026-11-18) `feat(top-bar): scroll truncated labels by default`
 - PR #744 (2026-11-18) `feat(agents): add a clothing tracker for the current scene`
 - PR #745 (2026-11-18) `fix(dialogue-colors): skip obvious card titles`
+- PR #746 (2026-11-18) `feat(scratchpad): add assistant feedback tone slider`
 
 ## v1.5.5
 
