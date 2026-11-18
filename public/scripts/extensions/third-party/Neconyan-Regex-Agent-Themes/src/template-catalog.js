@@ -42,6 +42,7 @@ export const TEMPLATE_LABELS = Object.freeze({
     "tpl-chatroom-companion": "Chatroom",
     "tpl-message-inbox-companion": "Message Inbox",
     "tpl-position-tracker-companion": "Position Tracker",
+    "tpl-clothing-tracker-companion": "Clothing Tracker",
     "tpl-visual-map-companion": "Visual Map",
     "tpl-vitals-companion": "Vitals"
 });

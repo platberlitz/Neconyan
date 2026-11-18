@@ -22,6 +22,7 @@ const RENDERERS = Object.freeze({
     [ARCHETYPES.STREAM]: renderStream,
     [ARCHETYPES.TRANSCRIPT]: renderTranscript,
     [ARCHETYPES.POSITION]: renderTrackerCompanion,
+    [ARCHETYPES.CLOTHING]: renderTrackerCompanion,
     [ARCHETYPES.VISUAL_MAP]: renderTrackerCompanion,
     [ARCHETYPES.VITALS]: renderTrackerCompanion,
     [ARCHETYPES.BOLD]: renderBold,

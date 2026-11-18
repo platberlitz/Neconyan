@@ -47,6 +47,7 @@ const ARCHETYPE_LABELS = Object.freeze({
     [ARCHETYPES.STREAM]: 'Chatroom stream',
     [ARCHETYPES.TRANSCRIPT]: 'Transcript row',
     [ARCHETYPES.POSITION]: 'Position Tracker',
+    [ARCHETYPES.CLOTHING]: 'Clothing Tracker',
     [ARCHETYPES.VISUAL_MAP]: 'Visual Map',
     [ARCHETYPES.VITALS]: 'Vitals',
 });
