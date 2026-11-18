@@ -48,6 +48,7 @@
 - PR #736 (2026-11-17) `fix(chat): preserve dialogue gradients over visible backgrounds`
 - PR #737 (2026-11-17) `feat(catline): draw extensions as a pile of cats`
 - PR #738 (2026-11-17) `fix(chat): preserve styled html over wallpaper`
+- PR #739 (2026-11-18) `feat(scratchpad): share the equipped preset in general`
 - PR #740 (2026-11-18) `fix(scratchpad): attach saved pictures for opus 5.5`
 
 ## v1.5.5
