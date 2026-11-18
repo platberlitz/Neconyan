@@ -701,12 +701,13 @@ test('saved text Meower requests omit sampler and instruct formatting together',
     assert.equal(request.api_server, 'http://127.0.0.1:5000');
 });
 
-/** Legacy active connections still bind the whole power object, except reply routing. */
+/** Legacy active connections bind request formatting, not persona text, appearance or reply routing. */
 function assertActivePreferenceStability(fixture, binding) {
     const original = fixture.settings.power_user.reply_generation_location;
     fixture.settings.power_user.reply_generation_location = 'browser';
     fixture.save();
     assert.equal(resolveGenerationProfile(fixture.directories, binding).fingerprint, binding.fingerprint);
+    assertPersonaAndAppearanceStability(fixture, binding);
     fixture.settings.power_user.auto_swipe = true;
     fixture.save();
     assert.throws(() => resolveGenerationProfile(fixture.directories, binding), /changed/);
@@ -716,6 +717,20 @@ function assertActivePreferenceStability(fixture, binding) {
     assert.equal(resolveGenerationProfile(fixture.directories, binding).fingerprint, binding.fingerprint);
     if (original === undefined) delete fixture.settings.power_user.reply_generation_location;
     else fixture.settings.power_user.reply_generation_location = original;
+    fixture.save();
+}
+
+/** The browser saves persona edits and appearance while a server reply runs. */
+function assertPersonaAndAppearanceStability(fixture, binding) {
+    const power = fixture.settings.power_user;
+    const saved = structuredClone(power);
+    Object.assign(power, { persona_description: 'Edited during the reply', persona_descriptions: { 'user.png': { description: 'Edited' } },
+        personas: { 'user.png': 'Me' }, default_persona: 'user.png', neconyan_shell_style: 'windows-98', theme: 'Other', chat_width: 70,
+        sb_accent_profiles: [{ id: 'mint' }], movingUIState: { panel: 1 } });
+    fixture.save();
+    assert.equal(resolveGenerationProfile(fixture.directories, binding).fingerprint, binding.fingerprint);
+    for (const key of Object.keys(power)) delete power[key];
+    Object.assign(power, saved);
     fixture.save();
 }
 
@@ -805,6 +820,11 @@ for (const backend of ['chat', 'text']) test(`explicit saved-active ${backend} c
     settings.power_user.reply_generation_location = 'server';
     fixture.save();
     assert.equal(resolveGenerationProfile(fixture.directories, binding).fingerprint, binding.fingerprint);
+    assertPersonaAndAppearanceStability(fixture, binding);
+    settings.power_user.auto_swipe = true;
+    fixture.save();
+    assert.throws(() => resolveGenerationProfile(fixture.directories, binding), /changed/);
+    delete settings.power_user.auto_swipe;
     settings.power_user.instruct.input_sequence = 'changed';
     fixture.save();
     assert.throws(() => resolveGenerationProfile(fixture.directories, binding), /changed/);
