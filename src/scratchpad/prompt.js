@@ -11,6 +11,8 @@ import { SCRATCHPAD_MACRO_GUIDANCE } from './macros.js';
 import { NOTE_TOOL_DEFINITIONS, NOTE_MUTATING_KINDS, NOTE_TOOL_NOTICE } from '../../public/scripts/notebooks/assistant-note-tools.js';
 import { attachmentContent } from '../../public/scripts/scratchpad/attachment-data.js';
 import { pinnedNoteContext } from '../../public/scripts/scratchpad/pinned-note.js';
+import { DEFAULT_FEEDBACK_TONE } from '../../public/scripts/scratchpad/feedback-tone.js';
+import { feedbackToneInstructions } from './feedback-tone.js';
 import { scratchpadImageSourceLabels } from './image-sources.js';
 
 export const CHANGE_FENCE = 'scratchpad-change';
@@ -209,7 +211,7 @@ function changeInstructions({ lore, character, chat, members, notebook, persona,
     ].join('\n');
 }
 
-export function buildScratchpadSystemPrompt({ assistant, gender, persona: savedPersona, assistantNames = {}, userName, characterName, sourceKind = 'roleplay', capabilities = {}, help = '', participants = [], randomReply = false, customPrompt, userInstructions = '', webSearch = false, webPages = false, imageEditing = false }) {
+export function buildScratchpadSystemPrompt({ assistant, gender, persona: savedPersona, assistantNames = {}, userName, characterName, sourceKind = 'roleplay', capabilities = {}, help = '', participants = [], randomReply = false, customPrompt, userInstructions = '', webSearch = false, webPages = false, imageEditing = false, feedbackTone = DEFAULT_FEEDBACK_TONE }) {
     const persona = savedPersona ?? readAssistantPersona(assistant, gender);
     const names = { user: userName || 'User', char: persona.name };
     const story = characterName ? `the story chat with ${characterName}` : 'the story chat';
@@ -243,7 +245,9 @@ export function buildScratchpadSystemPrompt({ assistant, gender, persona: savedP
     const voice = typeof customPrompt === 'string' && customPrompt.trim() ? ''
         : `For this reply, be ${persona.name} throughout: ${substituteNames(persona.personality, names)}\nGive the requested help in that voice, including explanations around any change blocks. Keep factual claims accurate and distinguish playful teasing from real advice.`;
     const imageHistory = 'Saved generated pictures may accompany earlier Scratchpad replies as labelled image inputs. Inspect those pictures when discussing feedback, and distinguish the visible result from the requested prompt. A saved-image status or prompt alone does not show you the picture; only claim to see images actually attached to this request.';
-    return { text: [instructions, preferences, SCRATCHPAD_MACRO_GUIDANCE, CHARACTER_CREATION_INSTRUCTIONS, PERSONA_CREATION_INSTRUCTIONS, CREATOR_SCRATCHPAD_INSTRUCTIONS, imageInstructions(capabilities, imageEditing), imageHistory, reference, voice].filter(Boolean).join('\n\n'), persona };
+    // The tone sits outside the editable prompt so a saved custom prompt keeps following the slider.
+    const tone = feedbackToneInstructions(feedbackTone, { assistant, name: persona.name, userName: names.user });
+    return { text: [instructions, preferences, SCRATCHPAD_MACRO_GUIDANCE, CHARACTER_CREATION_INSTRUCTIONS, PERSONA_CREATION_INSTRUCTIONS, CREATOR_SCRATCHPAD_INSTRUCTIONS, imageInstructions(capabilities, imageEditing), imageHistory, reference, tone, voice].filter(Boolean).join('\n\n'), persona };
 }
 
 export const SCRATCHPAD_CONTEXT_ACK = 'I have read the shared context. What would you like to work on?';

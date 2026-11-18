@@ -31,6 +31,8 @@ export const refreshedKnowledgeCases = [
     ['Where is Block external media by default?', 'privacy.external', 'Settings → Chat & Writing → Chat & messages → Messages'],
     ['Does Separate notes for each persona give me separate Author\'s Note libraries?', 'chat.authors-note', 'own note library for that character, not just separate ticks'],
     ['How do I use the Scratchpad pinned note or story tracker?', 'scratchpad.pinned-note', 'press Pinned note beside the assistant controls'],
+    ['How do I make the Scratchpad assistants harsher about my writing?', 'scratchpad.feedback-tone', 'The Feedback tone slider under the Scratchpad assistant picker'],
+    ['Can Miso be nice while Taro is unreasonably critical in a Scratchpad round table?', 'scratchpad.feedback-tone', 'Give one assistant its own tone'],
     ['How does Scratchpad automatic summary keep older discussion available?', 'scratchpad.auto-summary', 'All saved messages remain'],
     ['How do I rehearse the next reply in Scratchpad?', 'scratchpad.rehearsal', 'use + → Rehearse next reply'],
     ['How do I add my own quick prompts to Scratchpad?', 'scratchpad.quick-prompts', 'Add a prompt creates a row'],

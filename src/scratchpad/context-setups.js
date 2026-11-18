@@ -11,7 +11,9 @@ const FILE_LIMIT = 4 * 1024 * 1024;
  * Only choices that mean the same in every chat travel. Message picks, lorebook entry choices, shared notes,
  * connections and round-table seats name things that belong to one chat or one session, so they stay behind.
  */
-export const CONTEXT_SETUP_KEYS = Object.freeze(['depth', 'include', 'maxTokens', 'stream', 'webSearch', 'readLinks', 'prefill', 'partialPrefill']);
+export const CONTEXT_SETUP_KEYS = Object.freeze(['depth', 'include', 'maxTokens', 'stream', 'webSearch', 'readLinks', 'prefill', 'partialPrefill', 'feedbackTone']);
+/** Setups saved before these keys existed leave the session's own choice alone. */
+const OPTIONAL_SETUP_KEYS = new Set(['feedbackTone']);
 
 function contextSetupsFile(lease) {
     return path.join(roleplayLease(lease).scope.directories.root, 'scratchpad', 'context-setups.json');
@@ -19,7 +21,9 @@ function contextSetupsFile(lease) {
 
 export function contextSetupSettings(input) {
     const settings = normaliseSettings(input);
-    return Object.fromEntries(CONTEXT_SETUP_KEYS.map(key => [key, settings[key]]));
+    return Object.fromEntries(CONTEXT_SETUP_KEYS
+        .filter(key => !OPTIONAL_SETUP_KEYS.has(key) || input?.[key] !== undefined)
+        .map(key => [key, settings[key]]));
 }
 
 function normaliseContextSetups(input) {

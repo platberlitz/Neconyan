@@ -15,6 +15,7 @@ import { normalisePresetTargets } from '../../public/scripts/scratchpad/preset-f
 import { normaliseAttachments } from '../../public/scripts/scratchpad/attachment-data.js';
 import { MAX_REPLY_SWIPES, replySwipes, selectReplySwipe } from '../../public/scripts/scratchpad/swipes.js';
 import { MAX_PINNED_NOTE_BYTES } from '../../public/scripts/scratchpad/pinned-note.js';
+import { DEFAULT_FEEDBACK_TONE, isFeedbackTone } from '../../public/scripts/scratchpad/feedback-tone.js';
 
 export const SCRATCHPAD_SCHEMA = 1;
 export const ASSISTANT_IDS = BUILTIN_ASSISTANT_IDS;
@@ -178,6 +179,8 @@ export function defaultSettings() {
         assistants: {},
         roundTable: false,
         randomReply: false,
+        feedbackTone: DEFAULT_FEEDBACK_TONE,
+        assistantTones: {},
         participants: [...ASSISTANT_IDS],
         maxTokens: DEFAULT_MAX_TOKENS,
         stream: true,
@@ -283,6 +286,21 @@ export function normaliseSettings(input, previous = defaultSettings(), { allowIn
     }
     if (typeof source.roundTable === 'boolean') settings.roundTable = source.roundTable;
     if (typeof source.randomReply === 'boolean') settings.randomReply = source.randomReply;
+    if (source.feedbackTone !== undefined) {
+        if (!isFeedbackTone(source.feedbackTone)) throw fail('SCRATCHPAD_TONE_INVALID', 'Choose Nicer, Neutral, Harsher or Unreasonably critical.');
+        settings.feedbackTone = source.feedbackTone;
+    }
+    if (isPlainObject(source.assistantTones)) {
+        settings.assistantTones ??= {};
+        for (const assistant of Object.keys(source.assistantTones).filter(isAssistantId).slice(0, 27)) {
+            if (!Object.hasOwn(source.assistantTones, assistant)) continue;
+            const tone = source.assistantTones[assistant];
+            // null clears the override, so the assistant follows the shared tone again.
+            if (tone === null) delete settings.assistantTones[assistant];
+            else if (!isFeedbackTone(tone)) throw fail('SCRATCHPAD_TONE_INVALID', 'Choose Nicer, Neutral, Harsher or Unreasonably critical.');
+            else settings.assistantTones[assistant] = tone;
+        }
+    }
     if (source.participants !== undefined) {
         const participants = Array.isArray(source.participants) ? orderedAssistants(source.participants) : [];
         if (!participants.length) throw fail('SCRATCHPAD_PARTICIPANTS_INVALID', 'Choose at least one assistant for the round table.');

@@ -5,6 +5,7 @@ import { appendReplySwipe, MAX_REPLY_SWIPES, replySwipes } from '../../public/sc
 import { scratchpadPrefill, joinScratchpadPrefill } from '../../public/scripts/scratchpad/prefill.js';
 import { roundToDiscuss } from '../../public/scripts/scratchpad/discuss.js';
 import { canRehearse, REHEARSAL_INSTRUCTIONS, REHEARSAL_REQUEST } from '../../public/scripts/scratchpad/rehearsal.js';
+import { assistantFeedbackTone } from '../../public/scripts/scratchpad/feedback-tone.js';
 import { runChatProfile, validateActiveGenerationContext } from '../generation/service.js';
 import { createMessageTokenCounter } from '../generation/message-token-counts.js';
 import { captureGenerationBinding, resolveGenerationProfile } from '../generation/profiles.js';
@@ -269,7 +270,7 @@ export async function acceptScratchpadReply(request, body = {}) {
             randomReply: session.settings.roundTable && session.settings.randomReply,
             speakers: plan.assistants.map(assistant => ({ assistant, userInstructions: instructionsForAssistant(instructions, assistant),
                 persona: resolveAssistant(library, assistant, snapshots),
-                customPrompt: session.settings.assistantPrompts?.[assistant], gender: input.genders[assistant] ?? (assistant === session.assistant ? session.gender : 'neutral'), connection: assistantConnection(session.settings, assistant) })) };
+                customPrompt: session.settings.assistantPrompts?.[assistant], feedbackTone: assistantFeedbackTone(session.settings, assistant), gender: input.genders[assistant] ?? (assistant === session.assistant ? session.gender : 'neutral'), connection: assistantConnection(session.settings, assistant) })) };
     });
 
     const imageHistoryCache = new Map();

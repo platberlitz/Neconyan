@@ -70,6 +70,21 @@ Turn on **Random** beside **Round table** for one reply per message. **Ask 1** p
 
 With **Random** off, round-table assistants answer at the same time. They share your question and the earlier conversation, but do not see the other answers being written in that round. Ask a follow-up to compare their views, or press **Discuss these answers** under the round: each assistant then reads the others' answers and replies again, saying where they agree, where they disagree and what they would change. Anything you have typed in the message box is sent with it as the point to focus on. The button appears once at least two assistants have finished answering your latest message, and that round doesn't run a web search. **Stop all** stops unfinished replies and keeps answers already saved. If one connection fails, the other answers are kept and you can retry just the failed assistant. Random uses **Stop** for its single reply.
 
+### Feedback tone
+
+The **Feedback tone** slider under the assistant picker sets how hard the assistants judge your writing and ideas. Drag it, use the arrow keys, or press a stop in **Context → Feedback tone**:
+
+- **Nicer** is encouraging. The assistant leads with what works and suggests one or two gentle fixes, while staying honest.
+- **Neutral** is each assistant's usual honest feedback. New sessions start here, and older sessions without a tone stay here.
+- **Harsher** is blunt. The assistant leads with the biggest problem, holds the work to a professional standard and gives praise only where it is earned.
+- **Unreasonably critical** is impossible to please, played for laughs. Every complaint still names the line or choice and comes with a real fix, and the mockery stays on the writing, never on you. If you sound genuinely upset or ask them to stop, they drop the act.
+
+Each assistant keeps their own voice at every stop: Miso turns into a horrified genki perfectionist, Taro itemises every suspicious comma and Nori flings pages like a diva critic. Custom assistants use their own personality. Facts, app help and change cards stay accurate whatever the tone.
+
+In a round table every assistant uses the shared tone unless you open **Context → Feedback tone → Give one assistant its own tone** and choose a different one for them, such as a kind Miso beside an unreasonably critical Taro. Choose **Same as shared** to follow the slider again. When the tone isn't Neutral, the folded **Talking with** bar shows it as a badge.
+
+The tone is saved with the session, carried by branches, copies and JSON session exports, and inherited by new sessions in the same list. **Saved setups** include the shared tone, while per-assistant tones stay with the session. A custom assistant prompt still follows the slider: **Context → Assistant prompts → View or edit Miso's prompt** (and the same for each assistant) shows the tone text added after the prompt, which you can read but not edit there. Rehearsals ignore the tone, so story characters keep their own voices.
+
 To give the conversation more room, press **Talking with** (just the arrow on phones) and the assistant picker and session line fold into one slim bar. Press the bar to bring them back. Scratchpad remembers which way you left it.
 
 Replies are written on the server with streaming on or off. Once your message has been accepted, they keep going when you switch tabs on your phone, close Scratchpad, reload the page or close the browser. The finished reply and any thinking the model sends are saved for when you come back. **Stop** ends a reply early. While a reply is being written you cannot send another message in the same session.
