@@ -57,6 +57,18 @@ async function buttonColours(locator) {
     });
 }
 
+// Panels writes the face as a relative colour, which Chromium reports in color(srgb ...) form.
+function paintedBackground(locator) {
+    return locator.evaluate(el => {
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = 1;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = getComputedStyle(el).backgroundColor;
+        ctx.fillRect(0, 0, 1, 1);
+        return `rgba(${[...ctx.getImageData(0, 0, 1, 1).data].join(', ')})`;
+    });
+}
+
 async function expectXpWallpaper(page) {
     // Wait for the rendered wallpaper, not just the lazy stylesheet's presence.
     await expect.poll(() => page.evaluate(() => getComputedStyle(document.body, '::before').backgroundImage))
@@ -136,7 +148,7 @@ for (const phone of [false, true]) {
             await useUiTheme(page, name, slug);
             await page.screenshot({ path: new URL(`xp-olive-${device}-${label}.png`, screenshots).pathname });
         }
-        await expect(intro).toHaveCSS('background-color', 'rgb(34, 42, 28)');
+        await expect.poll(() => paintedBackground(intro)).toBe('rgba(34, 42, 28, 255)');
         await expect(page.locator('html')).toHaveAttribute('data-sb-surface-tone', 'dark');
         const accents = new Set();
         for (const profile of [null, 'Pearl', 'Midnight Ink']) {
@@ -147,7 +159,7 @@ for (const phone of [false, true]) {
             accents.add(await captionOf(button));
             const colours = await buttonColours(button);
             for (const stop of colours.stops) expect(contrastRatio(colours.ink, stop)).toBeGreaterThanOrEqual(4.5);
-            await expect(intro).toHaveCSS('background-color', 'rgb(34, 42, 28)');
+            await expect.poll(() => paintedBackground(intro)).toBe('rgba(34, 42, 28, 255)');
         }
         expect(accents.size).toBe(3);
 
