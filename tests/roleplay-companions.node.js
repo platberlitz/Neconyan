@@ -282,6 +282,25 @@ test('swiping with Agents preserves the original host while reconciling reply me
     assert.equal(row.extra.inChatAgentCompanionResults.side.status, 'done');
 });
 
+test('a server swipe checks Companion capacity against the saved chat, not the shorter prompt', async t => {
+    const f = prepared(t, [
+        { ...companion('side'), conditions: { generationTypes: ['swipe'] } },
+        { ...companion('shard', { trigger: 'manual' }), sourceTemplateId: MEMORY_SHARD_TEMPLATE_ID },
+    ], { effect: 'swipe' });
+    const original = f.rows().at(-1).mes;
+    const prompts = [];
+    await f.run({ generate: paid('main', 'Replacement reply'), generateAgent: paid('agent', ({ messages }) => {
+        prompts.push(JSON.stringify(messages));
+        return { text: 'Replacement note' };
+    }) });
+    assert.equal(f.worldInfo.companionCapacity.companionCount, 2);
+    assert.equal(prompts.length, 1);
+    assert.ok(prompts[0].includes('Replacement reply'));
+    const row = f.rows().at(-1);
+    assert.ok(row.swipes.includes(original));
+    assert.equal(row.extra.inChatAgentCompanionResults.side.content, 'Replacement note');
+});
+
 test('native companions see the processed reply, saved lore, original notes and bound extra cards, then run their own post passes', async t => {
     const note = companion('side', { includeWorldInfo: true, includeInChatHistory: true, contextMessages: 2 });
     note.sourceTemplateId = 'tpl-chatroom-companion';

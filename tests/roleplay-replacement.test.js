@@ -192,9 +192,21 @@ function createScrollableChat({ historyHeight = 5000, oldHeight = 2500, previewN
     return { chat, preview, makeRow, listeners };
 }
 
-test('swapping a long reply places the preview at the top of the viewport with only the needed reserve', () => {
+test.each(['roleplay.swipe', 'guided.swipe'])('%s never reserves the old reply height for the placeholder or preview', name => {
+    const { chat, preview, listeners } = createScrollableChat({});
+    const restore = beginRoleplayReplacement(name, 1, () => true);
+    expect(original.style.minHeight).toBe('');
+    commitRoleplayReplacement(rows[0], preview, chat);
+    expect(preview.style.minHeight).toBe('');
+    expect(listeners.size).toBe(0);
+    preview.remove();
+    restore();
+    expect(rows).toEqual([original]);
+});
+
+test('correcting a long reply places the preview at the top of the viewport with only the needed reserve', () => {
     const { chat, preview } = createScrollableChat({ historyHeight: 5000, oldHeight: 2500, clientHeight: 700, scrollTop: 6800 });
-    const restore = beginRoleplayReplacement('roleplay.swipe', 1, () => true);
+    const restore = beginRoleplayReplacement('roleplay.correct', 1, () => true);
     const marker = rows[0];
     commitRoleplayReplacement(marker, preview, chat);
 
@@ -210,9 +222,9 @@ test('swapping a long reply places the preview at the top of the viewport with o
     expect(rows).toEqual([original]);
 });
 
-test('swapping a short reply whose top is visible keeps the row top in place', () => {
+test('correcting a short reply whose top is visible keeps the row top in place', () => {
     const { chat, preview } = createScrollableChat({ historyHeight: 5000, oldHeight: 240, clientHeight: 700, scrollTop: 4540 });
-    beginRoleplayReplacement('roleplay.swipe', 1, () => true);
+    beginRoleplayReplacement('roleplay.correct', 1, () => true);
     commitRoleplayReplacement(rows[0], preview, chat);
 
     expect(chat.scrollTop).toBe(4540);
@@ -224,7 +236,7 @@ test('swapping a short reply whose top is visible keeps the row top in place', (
 
 test('transferring the reserve to the saved row shrinks on scroll and clears at natural height', () => {
     const { chat, preview, makeRow, listeners } = createScrollableChat({ historyHeight: 5000, oldHeight: 2500, clientHeight: 700, scrollTop: 6800 });
-    beginRoleplayReplacement('roleplay.swipe', 1, () => true);
+    beginRoleplayReplacement('roleplay.correct', 1, () => true);
     commitRoleplayReplacement(rows[0], preview, chat);
 
     let holdReleased = 0;

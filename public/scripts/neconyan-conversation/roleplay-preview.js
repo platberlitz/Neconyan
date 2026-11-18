@@ -151,8 +151,8 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
         rewriteWaitingSince = 0;
         const replacement = chat.querySelector('[data-roleplay-replacement]');
         if (!node?.isConnected && replacement) isReplacementPreview = true;
-        // Follow an ordinary new reply while it is written; swipe replacements start at
-        // the top of the screen and stay put, and Agent/Companion output added after
+        // Follow an ordinary new reply while it is written; replacements do not follow the
+        // bottom as they grow, and Agent/Companion output added after
         // the reply lands below the reader instead of pulling the page down to it.
         const companionResults = latest.inChatAgentCompanionResults;
         const hasCompanionResults = Boolean(companionResults) && typeof companionResults === 'object'

@@ -136,7 +136,7 @@ for (const phone of [true, false]) {
             const row = chat.querySelector('.mes[mesid="11"]').getBoundingClientRect();
             return {
                 row: row.height,
-                rowTop: row.top - chatTop,
+                minHeight: chat.querySelector('.mes[mesid="11"]').style.minHeight,
                 screen: chat.clientHeight,
                 previousBottom: chat.querySelector('.mes[mesid="10"]').getBoundingClientRect().bottom - chatTop,
                 bottomGap: chat.scrollHeight - chat.clientHeight - chat.scrollTop,
@@ -159,24 +159,28 @@ for (const phone of [true, false]) {
             return {
                 bottomGap: chat.scrollHeight - chat.clientHeight - chat.scrollTop,
                 previewTop: preview.getBoundingClientRect().top - chatTop,
+                previewHeight: preview.getBoundingClientRect().height,
+                minHeight: preview.style.minHeight,
                 previousBottom: previous.getBoundingClientRect().bottom - chatTop,
             };
         });
         expect(before.row, 'the old reply is taller than the screen').toBeGreaterThan(waiting.screen * 2);
-        expect(Math.abs(waiting.rowTop), 'the emptied reply moves to the top of the chat viewport').toBeLessThanOrEqual(2);
-        expect(waiting.previousBottom, 'older messages do not come into view while waiting').toBeLessThanOrEqual(0.5);
-        expect(waiting.row, 'the emptied reply holds no more than one screen open').toBeLessThanOrEqual(waiting.screen + 1);
+        expect(waiting.minHeight, 'the emptied reply drops its reserved height before any preview arrives').toBe('');
+        expect(waiting.row, 'the placeholder takes up less than half the screen').toBeLessThan(waiting.screen / 2);
+        expect(waiting.previousBottom, 'earlier messages fill the reclaimed space').toBeGreaterThan(waiting.screen / 2);
         expect(waiting.bottomGap, 'nothing blank is left below the screen').toBeLessThan(3);
-        expect(Math.abs(landed.previewTop), 'new swipe starts at the top of the chat viewport').toBeLessThanOrEqual(2);
-        expect(landed.previousBottom, 'older messages stay above the viewport on swipe start').toBeLessThanOrEqual(0.5);
-        expect(landed.bottomGap, 'reserved height leaves no blank space beyond the viewport bottom').toBeLessThan(3);
+        expect(landed.minHeight, 'the short preview does not inherit the old height').toBe('');
+        expect(landed.previewHeight).toBeLessThan(waiting.screen / 2);
+        expect(landed.previousBottom).toBeGreaterThan(waiting.screen / 2);
+        expect(landed.bottomGap, 'the swap does not leave a gap larger than the change in row height')
+            .toBeLessThanOrEqual(Math.max(0, landed.previewHeight - waiting.row) + 3);
         await expect(page.locator('#chat .mes[mesid="11"]')).toHaveCount(0);
         await expect(body).toBeInViewport();
         await page.evaluate(() => window.sendLivePreviewDelta({ text: `\n\n${'A later streamed paragraph.\n\n'.repeat(40)}` }));
         await expect(body).toContainText('A later streamed paragraph.');
         const streamedTop = await page.locator('#chat').evaluate(chat =>
             document.querySelector('#neconyan-roleplay-preview').getBoundingClientRect().top - chat.getBoundingClientRect().top);
-        expect(Math.abs(streamedTop), 'streaming a swipe replacement never drags the reader down').toBeLessThanOrEqual(2);
+        expect(Math.abs(streamedTop - landed.previewTop), 'streaming a swipe replacement never drags the reader down').toBeLessThanOrEqual(2);
         await page.evaluate(() => { window.stopLivePreview(); window.restoreSwipeSource(); });
         await expect(notes, 'a swipe that ends without a new reply puts the notes back').toContainText('The note for the previous reply.');
     });

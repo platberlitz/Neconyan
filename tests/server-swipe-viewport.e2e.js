@@ -1,4 +1,4 @@
-/* global document, window, requestAnimationFrame, WheelEvent */
+/* global document, window, requestAnimationFrame */
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -242,7 +242,7 @@ async function streamAndCompleteJob(app, account, page, remainingParagraphs, { o
 for (const phone of [true, false]) {
     const viewport = phone ? 'phone' : 'desktop';
 
-    test(`long old reply swipe starts at the top and stays steady through handover on ${viewport}`, async ({ app }) => {
+    test(`long old reply swipe keeps the first preview position through handover on ${viewport}`, async ({ app }) => {
         test.setTimeout(240000);
         const mainReply = paragraphs('New', 30);
         const postReply = mainReply.replace(
@@ -269,8 +269,7 @@ for (const phone of [true, false]) {
         const firstPreviewIndex = samples.findIndex(sample => sample.tailId === 'neconyan-roleplay-preview');
         expect(firstPreviewIndex).toBeGreaterThan(0);
         const firstPreview = samples[firstPreviewIndex];
-        expect(firstPreview.userBottom, 'previous user message must not be visible on first preview frame').toBeLessThanOrEqual(0.5);
-        expect(Math.abs(firstPreview.tailTop), 'preview top starts at chat viewport top').toBeLessThanOrEqual(2);
+        expect(firstPreview.tailTop, 'history fills the space above the first preview').toBeGreaterThan(0);
 
         const postSwap = samples.slice(firstPreviewIndex);
         const stagesSeen = new Set(postSwap.map(sample => sample.stage).filter(Boolean));
@@ -280,18 +279,18 @@ for (const phone of [true, false]) {
         expect(stagesSeen.has('Saving reply…')).toBe(true);
         expect(postSwap.some(sample => sample.tailId !== 'neconyan-roleplay-preview')).toBe(true);
 
-        const maxDrift = Math.max(...postSwap.map(sample => Math.abs(sample.tailTop)));
-        expect(maxDrift, 'reply row top stays within 2px of viewport top across all stages, handover and 3 s after').toBeLessThanOrEqual(2);
+        const maxDrift = Math.max(...postSwap.map(sample => Math.abs(sample.tailTop - firstPreview.tailTop)));
+        expect(maxDrift, 'reply row top stays within 2px of where streaming began').toBeLessThanOrEqual(2);
     });
 
-    test(`short new reply after a long old reply carries and releases the reserve without jumping on ${viewport}`, async ({ app }) => {
+    test(`short new reply after a long old reply stays compact without scrolling on ${viewport}`, async ({ app }) => {
         test.setTimeout(240000);
         const mainReply = Array.from({ length: 4 }, (_, index) => `Short paragraph ${index} of the replacement reply.`).join('\n\n');
         const postReply = mainReply.replace('Short paragraph 1', 'Revised short paragraph 1');
         const companionReply = 'Short Companion note.';
         const { account, page, remainingStreamParagraphs } = await setupSwipeFixture(app, {
             phone,
-            chatName: `Swipe short reserve ${viewport}`,
+            chatName: `Swipe short replacement ${viewport}`,
             oldReply: LONG_OLD,
             mainReply,
             postReply,
@@ -306,56 +305,22 @@ for (const phone of [true, false]) {
 
         const firstPreviewIndex = handoverSamples.findIndex(sample => sample.tailId === 'neconyan-roleplay-preview');
         expect(firstPreviewIndex).toBeGreaterThan(0);
-        const postSwap = handoverSamples.slice(firstPreviewIndex);
-        const savedFrames = postSwap.filter(sample => sample.tailId !== 'neconyan-roleplay-preview');
+        const firstWaitingIndex = handoverSamples.findIndex(sample => sample.hasReplacementMarker);
+        expect(firstWaitingIndex).toBeGreaterThan(0);
+        expect(firstWaitingIndex).toBeLessThan(firstPreviewIndex);
+        const waiting = handoverSamples[firstWaitingIndex];
+        expect(waiting.tailHeight, 'the old card collapses as soon as it clears').toBeLessThan(waiting.clientHeight / 2);
+        expect(waiting.userBottom, 'the preceding message is visible without scrolling').toBeGreaterThan(waiting.clientHeight / 2);
+        expect(Math.abs(waiting.gap), 'the chat reclaims the space immediately').toBeLessThanOrEqual(2);
+
+        const afterClear = handoverSamples.slice(firstWaitingIndex);
+        const savedFrames = afterClear.filter(sample => !sample.hasReplacementMarker && sample.tailId !== 'neconyan-roleplay-preview');
         expect(savedFrames.length).toBeGreaterThan(10);
-        expect(Math.max(...postSwap.map(sample => Math.abs(sample.tailTop)))).toBeLessThanOrEqual(2);
-        expect(savedFrames.at(-1).tailMinHeight).not.toBe('');
-
-        // Scroll up in smooth steps so the reserve shrinks and releases completely without jumping visible content.
-        const scrollResult = await page.evaluate(async () => {
-            const chat = document.querySelector('#chat');
-            const savedRow = [...chat.querySelectorAll(':scope > .mes[mesid]')].at(-1);
-            const userRow = [...chat.querySelectorAll(':scope > .mes[is_user="true"]')].at(-1);
-            const waitPostPaint = () => new Promise(resolve => {
-                const channel = new MessageChannel();
-                channel.port1.onmessage = () => {
-                    channel.port1.close();
-                    channel.port2.close();
-                    resolve();
-                };
-                requestAnimationFrame(() => channel.port2.postMessage(0));
-            });
-
-            const stepDeltas = [];
-            for (let step = 0; step < 12; step++) {
-                const beforeRowTop = savedRow.getBoundingClientRect().top - chat.getBoundingClientRect().top;
-                const beforeScrollTop = chat.scrollTop;
-                chat.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -50 }));
-                chat.scrollTop -= 50;
-                chat.dispatchEvent(new Event('scroll', { bubbles: true }));
-                await waitPostPaint();
-                const scrolled = beforeScrollTop - chat.scrollTop;
-                const afterRowTop = savedRow.getBoundingClientRect().top - chat.getBoundingClientRect().top;
-                stepDeltas.push(Math.abs((afterRowTop - beforeRowTop) - scrolled));
-            }
-            const settledUserTop = userRow.getBoundingClientRect().top - chat.getBoundingClientRect().top;
-            const settledRowTop = savedRow.getBoundingClientRect().top - chat.getBoundingClientRect().top;
-            for (let index = 0; index < 10; index++) await waitPostPaint();
-            return {
-                maxStepError: Math.max(...stepDeltas),
-                minHeightAfter: savedRow.style.minHeight,
-                postSettleRowDrift: Math.abs((savedRow.getBoundingClientRect().top - chat.getBoundingClientRect().top) - settledRowTop),
-                postSettleUserDrift: Math.abs((userRow.getBoundingClientRect().top - chat.getBoundingClientRect().top) - settledUserTop),
-                bottomGap: chat.scrollHeight - chat.scrollTop - chat.clientHeight,
-            };
-        });
-
-        expect(scrollResult.minHeightAfter, 'reserved min-height must be removed once scrolled up').toBe('');
-        expect(scrollResult.maxStepError, 'releasing reserve must not move visible content beyond the scroll step').toBeLessThanOrEqual(2);
-        expect(scrollResult.postSettleRowDrift).toBeLessThanOrEqual(1);
-        expect(scrollResult.postSettleUserDrift).toBeLessThanOrEqual(1);
-        expect(scrollResult.bottomGap).toBeGreaterThan(200);
+        expect(afterClear.every(sample => sample.tailMinHeight === ''), 'no frame keeps the old reply height').toBe(true);
+        expect(savedFrames.at(-1).tailHeight).toBeLessThan(savedFrames.at(-1).clientHeight);
+        const firstSavedTop = savedFrames[0].tailTop;
+        expect(Math.max(...savedFrames.map(sample => Math.abs(sample.tailTop - firstSavedTop)))).toBeLessThanOrEqual(2);
+        await expect(page.locator('#chat .mes[mesid]').last().locator('.mes_text')).toContainText('Revised short paragraph 1');
     });
 
     test(`rewriting every paragraph keeps the middle paragraph index in place on ${viewport}`, async ({ app }) => {
@@ -424,6 +389,21 @@ for (const phone of [true, false]) {
             companionReply,
         });
 
+        // The first preview can arrive before the provider sends text. Position the reader
+        // after the old row collapses but before the server accepts the swipe. Away from the
+        // bottom, a shorter preview can't clamp the scroll offset and mask the anchor.
+        await page.route('**/api/roleplay/workflow/submit', async route => {
+            try {
+                await expect(page.locator('#chat [data-roleplay-replacement]')).toHaveCount(1);
+                await expect(page.locator('#neconyan-roleplay-preview')).toHaveCount(0);
+                await page.evaluate(() => {
+                    document.querySelector('#chat').scrollTop -= 64;
+                });
+                await waitForPostPaintFrames(page, 3);
+            } finally {
+                await route.continue();
+            }
+        }, { times: 1 });
         await startPostPaintSampler(page);
         await streamAndCompleteJob(app, account, page, remainingStreamParagraphs, {
             async onBeforeStreamEnd() {
@@ -444,6 +424,7 @@ for (const phone of [true, false]) {
         expect(firstPreviewIndex).toBeGreaterThan(0);
         const beforeSwap = findBeforeSwapSample(samples, firstPreviewIndex);
         const firstPreview = samples[firstPreviewIndex];
+        expect(beforeSwap.gap, 'the reader is above the bottom when the draft replaces the placeholder').toBeGreaterThan(16);
         expect(beforeSwap.tailTop, 'short old reply top must be visible before swap').toBeGreaterThan(80);
         expect(Math.abs(firstPreview.tailTop - beforeSwap.tailTop), 'row top does not move at the swap').toBeLessThanOrEqual(2);
 

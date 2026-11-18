@@ -15,9 +15,9 @@ function hasFollowingMessage(row) {
 }
 
 /**
- * Empty the old reply and its Companion notes on screen at once, as a browser-side swipe does. The row
- * shrinks with them: holding its old height left a blank page. Display only: the saved chat is untouched,
- * and the returned function puts the old reply back unless something else has redrawn the message meanwhile.
+ * Empty the old reply and its Companion notes on screen at once, as a browser-side swipe does.
+ * Display only: the saved chat is untouched, and the returned function puts the old reply back
+ * unless something else has redrawn the message meanwhile.
  */
 function blankReply(row) {
     const text = row.querySelector?.('.mes_text');
@@ -190,9 +190,8 @@ export function syncRoleplayReplacementReserve(row) {
 }
 
 /**
- * Keep the displayed reply's row, emptied, until its prepared preview can replace it. A row that
- * started above the screen moves to the top of it, and holds only enough height that the chat cannot
- * fall back into older messages.
+ * Keep the displayed reply's row, emptied, until its prepared preview can replace it. On a swipe,
+ * let the row shrink immediately; other replacements reserve height to hold the reading position.
  */
 export function beginRoleplayReplacement(name, messageIndex, isCurrent) {
     if (!replacements.has(name) || !Number.isSafeInteger(messageIndex) || !isCurrent()) return () => {};
@@ -205,7 +204,8 @@ export function beginRoleplayReplacement(name, messageIndex, isCurrent) {
     marker.hidden = true;
     marker.dataset.roleplayReplacement = String(messageIndex);
     const wasInert = original.inert;
-    sources.set(marker, original);
+    const reserveHeight = name !== 'roleplay.swipe' && name !== 'guided.swipe';
+    sources.set(marker, { original, reserveHeight });
     original.inert = true;
     const measurable = typeof original.getBoundingClientRect === 'function'
         && typeof chat.getBoundingClientRect === 'function' && typeof chat.scrollTop === 'number';
@@ -213,7 +213,7 @@ export function beginRoleplayReplacement(name, messageIndex, isCurrent) {
     const oldTop = oldRect ? oldRect.top - chat.getBoundingClientRect().top : 0;
     const startScrollTop = measurable ? chat.scrollTop : 0;
     const previousMinHeight = original.style?.minHeight ?? '';
-    if (oldRect?.height > 0) original.style.minHeight = `${oldRect.height}px`;
+    if (reserveHeight && oldRect?.height > 0) original.style.minHeight = `${oldRect.height}px`;
     const refill = blankReply(original);
     original.before(marker);
     let landedScrollTop = null;
@@ -221,8 +221,10 @@ export function beginRoleplayReplacement(name, messageIndex, isCurrent) {
         const delta = original.getBoundingClientRect().top - chat.getBoundingClientRect().top - Math.max(0, oldTop);
         if (Math.abs(delta) >= 0.5) chat.scrollTop += delta;
         landedScrollTop = chat.scrollTop;
-        const gap = Math.max(0, chat.scrollHeight - chat.scrollTop - chat.clientHeight);
-        holdRoleplayReplacementReserve(original, chat, oldRect.height - gap, { previousMinHeight });
+        if (reserveHeight) {
+            const gap = Math.max(0, chat.scrollHeight - chat.scrollTop - chat.clientHeight);
+            holdRoleplayReplacementReserve(original, chat, oldRect.height - gap, { previousMinHeight });
+        }
     }
     return () => {
         if (!marker.isConnected) return;
@@ -243,16 +245,17 @@ export function beginRoleplayReplacement(name, messageIndex, isCurrent) {
 }
 
 /**
- * Swap synchronously with the prepared preview, landing its top at `Math.max(0, oldTop)` and
- * reserving only enough height to prevent bottom clamping.
+ * Swap synchronously with the prepared preview, aiming to keep its top in place. Only replacements
+ * that reserved height while waiting carry that reserve into the preview.
  * @param {Element|null} marker
  * @param {(Element & {style?: CSSStyleDeclaration})|null} [preview]
  * @param {(Element & {scrollTop?: number, scrollHeight?: number, clientHeight?: number})|null} [chat]
  */
 export function commitRoleplayReplacement(marker, preview = null, chat = null) {
     if (!marker?.isConnected) return;
-    const original = sources.get(marker);
-    if (!original) return;
+    const source = sources.get(marker);
+    if (!source) return;
+    const { original, reserveHeight } = source;
     if (!original.isConnected || !preview?.style
         || typeof original.getBoundingClientRect !== 'function'
         || typeof chat?.getBoundingClientRect !== 'function') {
@@ -265,7 +268,7 @@ export function commitRoleplayReplacement(marker, preview = null, chat = null) {
     const oldHeight = originalRect.height;
     const target = Math.max(0, oldTop);
     const previousMinHeight = preview.style.minHeight ?? '';
-    if (oldHeight > 0) preview.style.minHeight = `${oldHeight}px`;
+    if (reserveHeight && oldHeight > 0) preview.style.minHeight = `${oldHeight}px`;
     if (!preview.isConnected) marker.before(preview);
     original.remove();
     if (typeof preview.getBoundingClientRect === 'function' && typeof chat.scrollTop === 'number') {
@@ -277,6 +280,7 @@ export function commitRoleplayReplacement(marker, preview = null, chat = null) {
             chat.scrollTop = Math.max(0, Math.floor(chat.scrollTop) - (Number.isInteger(chat.scrollTop) ? 1 : 0));
         }
     }
+    if (!reserveHeight) return;
     const gap = typeof chat.scrollHeight === 'number' && typeof chat.clientHeight === 'number' && typeof chat.scrollTop === 'number'
         ? Math.max(0, chat.scrollHeight - chat.scrollTop - chat.clientHeight) : 0;
     const reserved = Math.max(0, oldHeight - gap);
