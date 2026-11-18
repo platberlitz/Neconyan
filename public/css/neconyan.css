@@ -224,6 +224,21 @@ body.neconyan #sb-topbar-title {
     justify-self: start; text-align: left; font-size: 13px; font-weight: 500;
     min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.sb-brand-title-clip { display: block; min-width: 0; overflow: hidden; }
+.sb-brand-title-text { display: block; width: max-content; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+body:not(.reduced-motion) .sb-brand-title-text[data-sb-marquee] {
+    max-width: none;
+    --sb-title-shift: calc(-1 * var(--sb-title-overflow));
+    animation: sb-title-slide var(--sb-title-slide-time) linear infinite alternate;
+}
+body:not(.reduced-motion) .sb-brand-title-text[data-sb-marquee]:dir(rtl) { --sb-title-shift: var(--sb-title-overflow); }
+@keyframes sb-title-slide {
+    0%, 18% { transform: translateX(0); }
+    82%, 100% { transform: translateX(var(--sb-title-shift)); }
+}
+@media (prefers-reduced-motion: reduce) {
+    body:not(.reduced-motion) .sb-brand-title-text[data-sb-marquee] { max-width: 100%; animation: none; }
+}
 body.neconyan #sb-topbar-clock {
     display: inline-flex;
     align-items: center;

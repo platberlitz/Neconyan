@@ -2,6 +2,7 @@
 export const refreshedKnowledgeCases = [
     ['Where are Notebook options on my phone?', 'notes.phone-tools', 'Open Notebook options to switch or create notebooks'],
     ['Where are Note tools on my phone?', 'notes.phone-tools', 'Note tools reveals formatting'],
+    ['How do I stop the top bar label from moving?', 'appearance.topbar-marquee', 'Turn the switch off to keep the ellipsis instead'],
     ['How do I make a companion skip user messages?', 'agents.skip-user-messages', 'counts replies only'],
     ['Where is Skip user messages in recent messages for a reply rewriter?', 'agents.skip-user-messages', 'Skip user messages in recent messages'],
     ['How do I skip user messages in Mewmory search cues?', 'mewmory.skip-user-cues', 'last eight non-user messages'],
