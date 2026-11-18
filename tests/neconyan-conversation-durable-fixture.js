@@ -136,6 +136,8 @@ export const test = base.extend({
                 // Keep unrelated startup preset backups from changing the settings acknowledgement mid-test.
                 saved.extension_settings.disabledExtensions = [...new Set([...(saved.extension_settings.disabledExtensions || []), 'third-party/Neconyan-Time-Machine'])];
                 saved.power_user.send_on_enter = 1;
+                // Skipping the tour would otherwise install Miso, Taro and Nori in the middle of the test.
+                saved.accountStorage = { ...saved.accountStorage, 'NeconyanAssistantSeed.v1': 'done' };
                 saved.extension_settings.connectionManager = { profiles: [{ id: 'durable', name: 'Durable fixture',
                     api: 'custom', mode: 'cc', model: MODEL, 'api-url': provider.url }] };
                 saved.oai_settings = { ...saved.oai_settings, chat_completion_source: 'custom', custom_url: provider.url, custom_model: 'decoy', stream_openai: false };
