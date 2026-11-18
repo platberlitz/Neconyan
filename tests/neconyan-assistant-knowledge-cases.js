@@ -40,6 +40,7 @@ export const refreshedKnowledgeCases = [
     ['How does the Scratchpad CSS snippet change card work when an assistant suggests new CSS?', 'scratchpad.css-snippet-changes', 'tick CSS Snippets (off by default, also offered in General)'],
     ['How do I use the General Scratchpad lorebook picker to share a lorebook without a chat?', 'scratchpad.general-lorebook', 'choose a book under Share a lorebook'],
     ['How do I use General Scratchpad to share the equipped preset without opening a chat?', 'scratchpad.preset', 'General shares the equipped preset for reference only'],
+    ['Can I share my equipped preset in General Scratchpad?', 'scratchpad.preset', 'Context → Also share and tick Current preset'],
     ['How does the Scratchpad dialogue colour change card work when an assistant suggests a new colour?', 'scratchpad.dialogue-color-changes', 'tick Dialogue Colors (off by default, also offered in General)'],
     ['How do I share saved Mewmory records with Scratchpad?', 'scratchpad.mewmory', 'tick Mewmory under Also share'],
     ['How do I fix a wrong Mewmory record from Scratchpad?', 'scratchpad.mewmory-corrections', 'Correct memory card'],
