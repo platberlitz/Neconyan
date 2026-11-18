@@ -1,7 +1,7 @@
 /* global document, getComputedStyle */
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-import { enterNotes, expectSourceText, notesApi, openNotes, openWorkspace, showNotebooks } from './notebooks-browser-fixture.js';
+import { enterNotes, expectSourceText, notesApi, openNotes, openWorkspace, revealNoteTools, showNotebooks } from './notebooks-browser-fixture.js';
 
 test.use({ hasTouch: true, serviceWorkers: 'block' });
 test.setTimeout(180000);
@@ -18,8 +18,9 @@ async function setup(page, viewport) {
     expect(created.status).toBe('success');
     await page.evaluate(async notebookId => (await import('/scripts/notebooks/notes-app.js')).notesApp().loadNotebooks(notebookId), notebookId);
     await showNotebooks(page, viewport);
-    await page.locator('.notes-pane-nav .notes-note-title').getByText('Fold fixture', { exact: true }).first().click();
+    await page.locator('[data-section="list"] .notes-note-title').getByText('Fold fixture', { exact: true }).click();
     await expect(page.getByRole('textbox', { name: 'Note text (Markdown)', exact: true })).toBeVisible();
+    await revealNoteTools(page);
     return { notebookId, noteId: created.noteId, revision: created.revision };
 }
 
@@ -122,11 +123,11 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 393, height: 852 
             title: 'Other fold fixture', text: original.replace('title: Fold fixture', 'title: Other fold fixture') });
         expect(other.status).toBe('success');
         await showNotebooks(page, viewport);
-        await page.locator('.notes-pane-nav .notes-note-title').getByText('Other fold fixture', { exact: true }).first().click();
+        await page.locator('[data-section="list"] .notes-note-title').getByText('Other fold fixture', { exact: true }).click();
         await expectSourceText(page, original.replace('title: Fold fixture', 'title: Other fold fixture').replace(/\r\n/g, '\n'));
         expect((await editorState(page)).folds).toEqual([]);
         await showNotebooks(page, viewport);
-        await page.locator('.notes-pane-nav .notes-note-title').getByText('Fold fixture', { exact: true }).first().click();
+        await page.locator('[data-section="list"] .notes-note-title').getByText('Fold fixture', { exact: true }).click();
         await expectSourceText(page, original.replace(/\r\n/g, '\n'));
         expect((await editorState(page)).folds).toEqual(folded);
         const saved = await page.evaluate(async () => (await import('/script.js')).saveSettings(0, { returnResult: true }));
@@ -134,7 +135,7 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 393, height: 852 
         await page.unroute('**/api/settings/get');
         await openWorkspace(page, { preserveNotesPrefs: true });
         await enterNotes(page, viewport);
-        await page.locator('.notes-pane-nav .notes-note-title').getByText('Fold fixture', { exact: true }).first().click();
+        await page.locator('[data-section="list"] .notes-note-title').getByText('Fold fixture', { exact: true }).click();
         await expectSourceText(page, original.replace(/\r\n/g, '\n'));
         expect((await editorState(page)).folds).toEqual(folded);
         await page.getByRole('button', { name: 'Read', exact: true }).click();

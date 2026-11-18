@@ -10,7 +10,7 @@ import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
-import { expectSourceText, fillSource, notesApi, openNotes, showNotebooks, sourceText } from './notebooks-browser-fixture.js';
+import { expectSourceText, fillSource, notesApi, openNotes, revealNotebookOptions, showNotebooks, sourceText } from './notebooks-browser-fixture.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 // An owned local stand-in for the 'ob' client; it never connects to a network or an Obsidian account.
@@ -122,7 +122,7 @@ async function setup(page, viewport) {
     await notesApi(page, '/policies/update', { notebookId, operationId: `sync:${randomUUID()}`, expectedRevision: policy.policy.revision, patch: { assistant: 'edit', assistantPublish: true } });
     await page.evaluate(async notebookId => (await import('/scripts/notebooks/notes-app.js')).notesApp().loadNotebooks(notebookId), notebookId);
     await showNotebooks(page, viewport);
-    await page.locator('.notes-pane-nav .notes-note-title').getByText('Original', { exact: true }).first().click();
+    await page.locator('[data-section="list"] .notes-note-title').getByText('Original', { exact: true }).click();
     await expectSourceText(page, text.replace(/\r\n/g, '\n'));
     const account = await page.evaluate(async () => (await import('/scripts/notebooks/notes-app.js')).notesApp().state.account);
     const folder = path.join(app.dataRoot, account, 'notebooks', notebookId);
@@ -132,6 +132,7 @@ async function setup(page, viewport) {
 
 async function openSync(page, viewport) {
     await showNotebooks(page, viewport);
+    await revealNotebookOptions(page);
     await page.locator('.notes-pane-nav').getByRole('button', { name: 'Obsidian sync', exact: true }).click();
     const popup = page.locator('dialog.popup:visible');
     await expect(popup.getByRole('heading', { name: 'Obsidian sync', exact: true })).toBeVisible();
@@ -256,6 +257,7 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 393, height: 852 
         const pending = new Promise(done => { announce = done; });
         await page.route('**/scripts/notebooks/obsidian-dialogs.js', async route => { announce(); await gate; await route.continue(); });
         await showNotebooks(page, viewport);
+        await revealNotebookOptions(page);
         await page.locator('.notes-pane-nav').getByRole('button', { name: 'Obsidian sync', exact: true }).click();
         await pending;
         const other = await notesApi(page, '/create', { operationId: `sync:${randomUUID()}`, name: `Later sync choice ${randomUUID()}` });

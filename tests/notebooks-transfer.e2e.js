@@ -2,13 +2,14 @@
 import fs from 'node:fs';
 import { zipSync, unzipSync } from 'fflate';
 import { expect, test } from '@playwright/test';
-import { enterNotes, notesApi, openNotes } from './notebooks-browser-fixture.js';
+import { enterNotes, notesApi, openNotes, revealNotebookOptions } from './notebooks-browser-fixture.js';
 
 test.use({ serviceWorkers: 'block', hasTouch: true });
 test.setTimeout(120000);
 test.afterEach(async ({ page }) => page.unrouteAll({ behavior: 'wait' }));
 
 async function chooseArchive(page, name, files) {
+    await revealNotebookOptions(page);
     const chooser = page.waitForEvent('filechooser');
     await page.locator('#neconyan-notes').getByRole('button', { name: 'Import', exact: true }).click();
     await (await chooser).setFiles({ name: `${name}.zip`, mimeType: 'application/zip', buffer: Buffer.from(zipSync(files)) });
@@ -45,6 +46,7 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 393, height: 852 
         await page.reload({ waitUntil: 'domcontentloaded' });
         await expect(page.locator('[data-neconyan-cat]')).toBeVisible({ timeout: 60000 });
         await enterNotes(page, viewport);
+        await revealNotebookOptions(page);
         await page.getByRole('button', { name: 'Unfinished imports', exact: true }).click();
         const row = page.locator('dialog[open] .notes-list-item').filter({ has: page.getByText(name, { exact: true }) });
         await row.getByRole('button', { name: 'Continue', exact: true }).click();
