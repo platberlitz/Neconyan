@@ -2076,7 +2076,7 @@ export function getChatCompletionModel(settings = null) {
     }
 }
 
-function getChatCompletionSamplerMetadata(settings, model) {
+export function getChatCompletionSamplerMetadata(settings, model) {
     const source = String(settings?.chat_completion_source ?? '');
     const explicitMetadata = settings?.model_sampler_metadata;
 

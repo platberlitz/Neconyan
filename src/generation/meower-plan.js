@@ -1,6 +1,7 @@
 import path from 'node:path';
 import sanitize from 'sanitize-filename';
 import { randomUUID } from 'node:crypto';
+import { uiText } from '../../public/scripts/ui-text.js';
 import { readJson } from '../mewmory/store.js';
 import { hash } from '../mewmory/core.js';
 import { readRoleplayFile, withRoleplayAccount } from '../roleplay-store.js';
@@ -11,7 +12,7 @@ import { createMacroEnvironment } from '../macros/index.js';
 import { captureEnhancedMacros } from '../macros/enhanced.js';
 import { readQuickImageGenSettings } from './quick-image-gen.js';
 import { quickImageGenSettingsFingerprint } from './quick-image-gen-job.js';
-import { deriveAccounts, selectParticipants, KIND_CHARACTER, KIND_PERSONA, reasoningOverridesFrom } from '../../public/scripts/extensions/third-party/Neconyan-Hopper/src/core.js';
+import { deriveAccounts, selectParticipants, KIND_CHARACTER, KIND_PERSONA, meowerReasoningOverrides } from '../../public/scripts/extensions/third-party/Neconyan-Hopper/src/core.js';
 
 export const meowerError = (message, status = 409) => Object.assign(new Error(message), { status });
 export const receiptKey = (owner, submissionKey) => hash([owner, submissionKey]);
@@ -22,6 +23,10 @@ export function meowerInput(body, kind) {
     if (typeof body.sessionId !== 'string' || !body.sessionId || body.sessionId.length > 120) throw meowerError('A Meower timeline is required.', 400);
     if (!['refresh', 'profile'].includes(kind)) throw meowerError('Invalid Meower operation.', 400);
     const input = { kind, sessionId: body.sessionId };
+    if (body.previousJobId !== undefined) {
+        if (typeof body.previousJobId !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,119}$/.test(body.previousJobId)) throw meowerError(uiText('Invalid earlier Meower job identity.'), 400);
+        input.previousJobId = body.previousJobId;
+    }
     if (kind === 'profile') {
         if (!['persona', 'character', 'all'].includes(body.mode)) throw meowerError('Invalid Meower profile operation.', 400);
         input.mode = body.mode;
@@ -98,7 +103,8 @@ export async function captureMeowerPlan({ owner, directories }, store, input) {
     const plan = { version: 1, input, now: Date.now(), settings, session: structuredClone(session), characters, persona, binding,
         macroEnhanced: captureEnhancedMacros(saved, {}, { personaAvatar: session.personaId }),
         account: withRoleplayAccount({ owner, directories }, null, (_lease, account) => account),
-        overridePayload: binding.kind === 'profile' ? reasoningOverridesFrom(material.profile, material.preset) : {},
+        overridePayload: meowerReasoningOverrides({ effort: settings.reasoningEffort, backend: binding.backend || 'chat',
+            ...(binding.kind === 'profile' ? { profile: material.profile, preset: material.preset } : {}) }),
         imageFingerprint: settings.images.enabled ? quickImageGenSettingsFingerprint(readQuickImageGenSettings(directories)) : null };
     plan.accounts = accountsForPlan(plan);
     plan.activeKeys = selectParticipants(plan.accounts, settings, store.feeds[input.sessionId]).map(account => account.key);

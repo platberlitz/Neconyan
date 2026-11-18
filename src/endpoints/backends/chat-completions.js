@@ -1,4 +1,5 @@
 import { classifyGenerationOutcome } from '../../../public/scripts/generation-outcome.js';
+import { safeProviderErrorMessage } from '../../generation/provider-error.js';
 /* eslint-disable dot-notation */
 import process from 'node:process';
 import { validateHeaderValue } from 'node:http';
@@ -3796,14 +3797,17 @@ export async function handleChatCompletionsGenerate(request, response) {
             const responseText = await fetchResponse.text();
             const errorData = tryParse(responseText);
 
-            const message = fetchResponse.statusText || 'Unknown error occurred';
+            const message = safeProviderErrorMessage(errorData, {
+                status: fetchResponse.status, statusText: fetchResponse.statusText,
+                secrets: [apiKey, request.body.proxy_password], headers: config.headers, requestBody,
+            });
             const quota_error = fetchResponse.status === 429 && errorData?.error?.type === 'insufficient_quota';
-            console.error('Chat completion request error: ', message, responseText);
+            console.error('Chat completion request error:', fetchResponse.status, message);
 
             if (!response.headersSent) {
                 response.status(getSafeCompletionErrorStatus(fetchResponse.status)).send({ error: { message, ...(classifyGenerationOutcome(errorData) ? { code: classifyGenerationOutcome(errorData).reason } : {}) }, quota_error: quota_error, provider_status: fetchResponse.status });
             } else if (!response.writableEnded) {
-                response.write(responseText);
+                response.write(message);
             } else {
                 response.end();
             }

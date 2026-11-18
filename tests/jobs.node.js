@@ -74,6 +74,52 @@ test('job acceptance deduplicates by submission key, conflicts on different inte
     }
 });
 
+test('acceptance guards run once under the real ledger lock, after key resolution, and may inspect prior artifacts', () => {
+    const directories = tempDirectories('guard');
+    const input = { owner: 'alice', type: 'guarded', submissionKey: 'first', intent: {} };
+    const prior = acceptJob(directories, input).job;
+    writeArtifact(directories, prior.id, 'proof', { settled: true });
+    let calls = 0;
+    const beforeAccept = () => {
+        calls++;
+        assert.equal(getJob(directories, prior.id).id, prior.id);
+        assert.deepEqual(readArtifact(directories, prior.id, 'proof'), { settled: true });
+        assert.throws(() => updateJob(directories, prior.id, { state: 'running' }), error => error.code === 'ELOCKED');
+    };
+    const second = { ...input, submissionKey: 'second' };
+    const accepted = acceptJob(directories, second, { beforeAccept });
+    assert.equal(calls, 1);
+    assert.equal(accepted.created, true);
+    const refusing = () => { throw new Error('Guard must not run for a resolved key'); };
+    assert.equal(acceptJob(directories, second, { beforeAccept: refusing }).job.id, accepted.job.id);
+    assert.throws(() => acceptJob(directories, { ...second, intent: { changed: true } }, { beforeAccept: refusing }), error => error.code === 'JOB_SUBMISSION_CONFLICT');
+    assert.equal(getJob(directories, prior.id).state, 'queued');
+});
+
+test('a refused or asynchronous acceptance guard leaves exact bytes unchanged and releases the lock', () => {
+    const directories = tempDirectories('guard-refusal');
+    const input = { owner: 'alice', type: 'guarded', submissionKey: 'first', intent: {} };
+    const prior = acceptJob(directories, input).job;
+    const ledger = path.join(directories.root, 'jobs/index.json');
+    const before = fs.readFileSync(ledger, 'utf8');
+    const revision = readJobStore(directories).revision;
+    let asyncBody = false;
+    for (const beforeAccept of [
+        () => { throw new Error('Refused guard'); },
+        async () => { asyncBody = true; },
+        () => Promise.reject(new Error('Rejected returned promise')),
+        () => ({ then(resolve) { resolve(); } }),
+        'not callable',
+    ]) {
+        assert.throws(() => acceptJob(directories, { ...input, submissionKey: 'new' }, { beforeAccept }), /guard|synchronous|promise/i);
+        assert.equal(fs.readFileSync(ledger, 'utf8'), before);
+        assert.equal(readJobStore(directories).revision, revision);
+        assert.equal(getJob(directories, prior.id).state, 'queued');
+    }
+    assert.equal(asyncBody, false);
+    assert.equal(acceptJob(directories, { ...input, submissionKey: 'new' }).created, true);
+});
+
 test('idle recovery does not create or rewrite a job ledger', () => {
     const directories = tempDirectories('idle-recovery');
     recoverJobs(directories);

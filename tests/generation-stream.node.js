@@ -92,6 +92,26 @@ test('a provider rejection keeps its explanation and ignores non-text error deta
         error => error.message === 'The model provider could not complete the reply (HTTP 503).' && error.status === 502);
 });
 
+test('a non-streamed provider failure cannot write its raw body after headers were sent', async t => {
+    const chunks = [], logs = [];
+    const capture = createCapturingResponse({ onChunk: value => chunks.push(value) });
+    capture.writeHead(200);
+    t.mock.method(console, 'error', (...args) => logs.push(args.join(' ')));
+    const privateValue = 'PRIVATE-UPSTREAM-BODY';
+    await handleChatCompletionsGenerate({ headers: {}, socket: new EventEmitter(), anonymousCustom: true,
+        user: { directories: { root: '/tmp/opencode' } },
+        body: { chat_completion_source: 'custom', custom_url: 'http://provider.invalid/v1', model: 'fixture',
+            messages: [{ role: 'user', content: 'Hello' }], stream: false },
+        fetch: async () => ({ ok: false, status: 503, statusText: 'Service Unavailable',
+            text: async () => JSON.stringify({ error: { message: 'The model provider is busy.' }, private: privateValue }) }),
+    }, capture);
+    assert.deepEqual(chunks, ['The model provider is busy.']);
+    assert.equal(logs.length, 1);
+    assert.match(logs[0], /503.*The model provider is busy/);
+    assert.equal(JSON.stringify([chunks, logs]).includes(privateValue), false);
+    capture.end();
+});
+
 test('native streaming publishes the first text before the provider completes', async () => {
     const first = Promise.withResolvers(), finish = Promise.withResolvers();
     let completed = false;

@@ -1,4 +1,5 @@
 // Pure logic: no host calls, no DOM. Everything here is unit-testable with plain objects.
+import { REASONING_CONTROL_VALUES } from '../../../../chat-reasoning-capabilities.js';
 
 export const SETTINGS_KEY = 'Neconyan-TwitterLike';
 export const EXT_PROMPT_KEY = 'Neconyan-TwitterLike';
@@ -50,6 +51,7 @@ export const DEFAULTS = Object.freeze({
     invited: [],
     ambient: false,
     profileId: '',
+    reasoningEffort: '',
     quotas: { posts: 8, replies: 12, reposts: 4, likes: 18 },
     /** One post or interaction per request, committed and shown as each lands. */
     incremental: false,
@@ -81,6 +83,7 @@ export const DEFAULTS = Object.freeze({
 });
 
 const ACTIVE_MODES = new Set(['range', 'exact', 'all']);
+const REASONING_EFFORTS = new Set(['', 'auto', ...REASONING_CONTROL_VALUES]);
 
 function clampInt(value, min, max, fallback) {
     const number = typeof value === 'number' || typeof value === 'string' ? Number(value) : NaN;
@@ -288,6 +291,7 @@ export function normalizeSettings(raw) {
         invited: [...new Set(stringArray(source.invited))],
         ambient: source.ambient === true,
         profileId: typeof source.profileId === 'string' ? source.profileId : '',
+        reasoningEffort: REASONING_EFFORTS.has(source.reasoningEffort) ? source.reasoningEffort : '',
         quotas: {
             posts: clampInt(quotas.posts, 0, 100, DEFAULTS.quotas.posts),
             replies: clampInt(quotas.replies, 0, 200, DEFAULTS.quotas.replies),
@@ -483,6 +487,13 @@ export function reasoningOverridesFrom(profile, preset) {
             overrides[requestKey] = value;
         }
     }
+    return overrides;
+}
+
+/** Keep connection/preset inheritance intact; only chat requests accept the local choice. */
+export function meowerReasoningOverrides({ effort = '', backend = 'chat', profile, preset } = {}) {
+    const overrides = reasoningOverridesFrom(profile, preset);
+    if (backend === 'chat' && effort && REASONING_EFFORTS.has(effort)) overrides.reasoning_effort = effort;
     return overrides;
 }
 

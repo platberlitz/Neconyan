@@ -45,6 +45,78 @@ function nanoReasoningFixture(t, { metadata = false, preset = false, tier = 'def
         options: { context: { owner: 'tester', directories: fixture.directories }, messages: [{ role: 'user', content: 'Owned reasoning probe.' }], maxTokens: 128 } };
 }
 
+test('existing Meower inheritance reaches final NanoGPT wire bodies for active, profile, preset and omitted effort', async t => {
+    const { reasoningOverridesFrom } = await import('../public/scripts/extensions/third-party/Neconyan-Hopper/src/core.js');
+    const fixture = nanoReasoningFixture(t, { preset: true });
+    fixture.settings.oai_settings.reasoning_effort = 'xhigh';
+    fs.writeFileSync(path.join(fixture.directories.openAI_Settings, 'reasoning.json'), JSON.stringify({ reasoning_effort: 'xhigh', stop: ['ROLEPLAY STOP'] }));
+    fixture.save();
+    const bodies = [];
+    const generate = async kind => {
+        const binding = captureGenerationBinding(fixture.directories, kind === 'active' ? { kind } : { kind, profileId: 'nano' }, { settingsRevision: 7 });
+        const material = resolveGenerationProfile(fixture.directories, binding);
+        await runChatProfile({ ...fixture.options, binding, maxTokens: 32768, rawOptions: kind === 'profile' ? { includePreset: false } : {},
+            overridePayload: kind === 'profile' ? reasoningOverridesFrom(material.profile, material.preset) : {}, fetch: async (_url, request) => {
+                assert.equal(String(request.method).toUpperCase(), 'POST');
+                bodies.push(JSON.parse(request.body));
+                return new Response(JSON.stringify({ choices: [{ message: { content: 'Inherited fixture.' } }] }));
+            } });
+    };
+    await generate('active');
+    await generate('profile');
+    delete fixture.profile['reasoning-effort'];
+    fixture.save();
+    await generate('profile');
+    fs.writeFileSync(path.join(fixture.directories.openAI_Settings, 'reasoning.json'), JSON.stringify({ stop: ['ROLEPLAY STOP'] }));
+    await generate('profile');
+    assert.deepEqual(bodies.map(body => body.reasoning?.effort), ['xhigh', 'low', 'xhigh', undefined]);
+    assert.ok(bodies.every(body => body.max_tokens === 32768 && !body.stop?.includes('ROLEPLAY STOP')));
+});
+
+test('Meower local effort overrides final NanoGPT wire output without mutating active controls or a saved profile/preset', async t => {
+    const { meowerReasoningOverrides } = await import('../public/scripts/extensions/third-party/Neconyan-Hopper/src/core.js');
+    const fixture = nanoReasoningFixture(t, { preset: true });
+    fixture.settings.oai_settings.reasoning_effort = 'xhigh';
+    fs.writeFileSync(path.join(fixture.directories.openAI_Settings, 'reasoning.json'), JSON.stringify({ reasoning_effort: 'xhigh', stop: ['ROLEPLAY STOP'] }));
+    fixture.save();
+    const before = fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8');
+    const presetBefore = fs.readFileSync(path.join(fixture.directories.openAI_Settings, 'reasoning.json'), 'utf8');
+    const cases = [
+        { kind: 'active', effort: '', expected: 'xhigh' },
+        { kind: 'profile', effort: '', expected: 'low' },
+        { kind: 'profile', effort: 'high', expected: 'high' },
+        { kind: 'active', effort: 'min', expected: 'minimal' },
+        { kind: 'profile', effort: 'auto', expected: undefined },
+    ];
+    let calls = 0;
+    for (const { kind, effort, expected } of cases) {
+        const binding = captureGenerationBinding(fixture.directories, kind === 'active' ? { kind } : { kind, profileId: 'nano' }, { settingsRevision: 7 });
+        const material = resolveGenerationProfile(fixture.directories, binding);
+        const overridePayload = meowerReasoningOverrides({ effort, backend: binding.backend, ...(kind === 'profile' ? { profile: material.profile, preset: material.preset } : {}) });
+        await runChatProfile({ ...fixture.options, binding, overridePayload, maxTokens: 32768, rawOptions: kind === 'profile' ? { includePreset: false } : {}, fetch: async (_url, request) => {
+            calls++;
+            assert.equal(String(request.method).toUpperCase(), 'POST', 'no catalogue request is added');
+            const body = JSON.parse(request.body);
+            assert.equal(body.reasoning?.effort, expected);
+            assert.equal(body.max_tokens, 32768);
+            assert.ok(!body.stop?.includes('ROLEPLAY STOP'));
+            return new Response(JSON.stringify({ choices: [{ message: { content: 'Fixture reply.' } }] }));
+        } });
+    }
+    assert.equal(calls, cases.length);
+    assert.equal(fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8'), before);
+    assert.equal(fs.readFileSync(path.join(fixture.directories.openAI_Settings, 'reasoning.json'), 'utf8'), presetBefore);
+    delete fixture.profile['reasoning-effort'];
+    fixture.save();
+    const binding = captureGenerationBinding(fixture.directories, { kind: 'profile', profileId: 'nano' });
+    const material = resolveGenerationProfile(fixture.directories, binding);
+    await runChatProfile({ ...fixture.options, binding, maxTokens: 32768, rawOptions: { includePreset: false },
+        overridePayload: meowerReasoningOverrides({ backend: binding.backend, profile: material.profile, preset: material.preset }), fetch: async (_url, request) => {
+            assert.equal(JSON.parse(request.body).reasoning.effort, 'xhigh');
+            return new Response(JSON.stringify({ choices: [{ message: { content: 'Preset fallback.' } }] }));
+        } });
+});
+
 test('captured active NanoGPT declarations reject Low and retain deliberate final overrides without catalogue calls', async t => {
     const fixture = nanoReasoningFixture(t, { metadata: true });
     const binding = captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 7 });
@@ -660,6 +732,27 @@ function textFixture(t) {
     const material = () => resolveGenerationProfile(directories, capture());
     return { root, profile, settings, directories, save, capture, material };
 }
+
+test('a stored Meower chat effort stays inactive after switching to a text connection', async t => {
+    const { meowerReasoningOverrides } = await import('../public/scripts/extensions/third-party/Neconyan-Hopper/src/core.js');
+    const fixture = textFixture(t);
+    const binding = { kind: 'profile', ...fixture.capture() };
+    const material = resolveGenerationProfile(fixture.directories, binding);
+    const overridePayload = meowerReasoningOverrides({ effort: 'xhigh', backend: binding.backend, profile: material.profile, preset: material.preset });
+    assert.deepEqual(overridePayload, {});
+    let calls = 0;
+    await runChatProfile({ context: { owner: 'tester', directories: fixture.directories }, binding,
+        messages: [{ role: 'user', content: 'Hello' }], maxTokens: 73, overridePayload, rawOptions: { includePreset: false, includeInstruct: false }, fetch: async (_url, request) => {
+            calls++;
+            const body = JSON.parse(request.body);
+            assert.equal(body.reasoning_effort, undefined);
+            assert.equal(body.reasoning, undefined);
+            assert.equal(body.max_tokens, 73);
+            assert.equal(body.max_new_tokens, 73);
+            return new Response(JSON.stringify({ content: 'Text reply.' }));
+        } });
+    assert.equal(calls, 1);
+});
 
 for (const backend of ['chat', 'text']) test(`explicit saved-active ${backend} capture ignores the selected profile and preset`, async t => {
     const fixture = textFixture(t);

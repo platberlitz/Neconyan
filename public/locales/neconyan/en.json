@@ -24763,5 +24763,12 @@
   "Practical troubleshooter": "Practical troubleshooter",
   "Looks severe but will help you regardless. Don’t be afraid to tell Taro your woes; the scariest thing about this severe one is the puns.": "Looks severe but will help you regardless. Don’t be afraid to tell Taro your woes; the scariest thing about this severe one is the puns.",
   "Creative writing partner": "Creative writing partner",
-  "A bratty little prankster that won’t actually hurt you… unless? Kidding, kidding. Tell Nori everything - you know you want to!": "A bratty little prankster that won’t actually hurt you… unless? Kidding, kidding. Tell Nori everything - you know you want to!"
+  "A bratty little prankster that won’t actually hurt you… unless? Kidding, kidding. Tell Nori everything - you know you want to!": "A bratty little prankster that won’t actually hurt you… unless? Kidding, kidding. Tell Nori everything - you know you want to!",
+  "Use connection setting": "Use connection setting",
+  "Provider default": "Provider default",
+  "Uses the selected connection unless overridden here. Available levels depend on the model.": "Uses the selected connection unless overridden here. Available levels depend on the model.",
+  "Reasoning effort applies to Chat Completion connections. Your saved choice stays inactive for this connection.": "Reasoning effort applies to Chat Completion connections. Your saved choice stays inactive for this connection.",
+  "Your saved effort is unavailable for this model. Choose another level or use the connection setting.": "Your saved effort is unavailable for this model. Choose another level or use the connection setting.",
+  "The earlier Meower operation needs recovery. Review it in Jobs before retrying.": "The earlier Meower operation needs recovery. Review it in Jobs before retrying.",
+  "Invalid earlier Meower job identity.": "Invalid earlier Meower job identity."
 }

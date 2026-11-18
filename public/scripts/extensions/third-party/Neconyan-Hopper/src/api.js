@@ -13,6 +13,7 @@ import {
 } from './core.js';
 import { createStorageClient } from './storage-client.js';
 import { createStorageTransport } from './storage-transport.js';
+import { checkChatReasoningEffort, getNativeReasoningRoute } from '../../../../chat-reasoning-capabilities.js';
 
 // getContext() copies chatId / characterId / chatMetadata by value, so a cached reference
 // silently reads the wrong chat. Always resolve it fresh.
@@ -516,6 +517,27 @@ export function listConnectionProfiles({ throwOnError = false } = {}) {
     }
 }
 
+/** Describe only the chosen connection, using metadata already present in the host. */
+export function reasoningConnection(profileId = getSettings().profileId) {
+    const context = ctx();
+    const controls = context.chatCompletionSettings ?? {};
+    if (profileId) {
+        const profile = listConnectionProfiles().find(profile => profile.id === profileId);
+        const mapping = profile && context.CONNECT_API_MAP?.[profile.api];
+        if (!mapping || profile.mode === 'tc' || mapping.selected !== 'openai') return { chat: false };
+        return { chat: true, source: mapping.source, model: profile.model,
+            metadata: context.getChatCompletionSamplerMetadata?.({ chat_completion_source: mapping.source }, profile.model) };
+    }
+    if (context.mainApi !== 'openai') return { chat: false };
+    const model = context.getChatCompletionModel?.(controls);
+    return { chat: true, source: controls.chat_completion_source, model,
+        metadata: context.getChatCompletionSamplerMetadata?.(controls, model), route: getNativeReasoningRoute(controls) };
+}
+
+export function reasoningChoiceSupported(connection, effort) {
+    return checkChatReasoningEffort({ ...connection, effort }).supported;
+}
+
 async function runNativeJob(kind, input, options) {
     await flushFeed();
     const [{ createMeowerJobClient }, jobs, host, user] = await Promise.all([
@@ -541,21 +563,21 @@ export async function hasRunningRefresh(sessionId) {
         && job.target?.id === sessionId && ['queued', 'running', 'waiting'].includes(job.state));
 }
 
-export async function generatePersonaProfile(sessionId = ensureActiveSession().id, { signal } = {}) {
+export async function generatePersonaProfile(sessionId = ensureActiveSession().id, { signal, manual = false } = {}) {
     const client = storage();
-    const result = await runNativeJob('profile', { sessionId, mode: 'persona' }, { signal, onSnapshot: () => client.syncStore() });
+    const result = await runNativeJob('profile', { sessionId, mode: 'persona' }, { signal, manual, onSnapshot: () => client.syncStore() });
     return result.profile;
 }
 
-export async function regenerateProfile(accountKey, sessionId = ensureActiveSession().id, { signal } = {}) {
+export async function regenerateProfile(accountKey, sessionId = ensureActiveSession().id, { signal, manual = false } = {}) {
     const client = storage();
-    const result = await runNativeJob('profile', { sessionId, mode: 'character', accountKey }, { signal, onSnapshot: () => client.syncStore() });
+    const result = await runNativeJob('profile', { sessionId, mode: 'character', accountKey }, { signal, manual, onSnapshot: () => client.syncStore() });
     return result.profiles?.[accountKey] || null;
 }
 
-export async function regenerateAllProfiles(sessionId = ensureActiveSession().id, { signal } = {}) {
+export async function regenerateAllProfiles(sessionId = ensureActiveSession().id, { signal, manual = false } = {}) {
     const client = storage();
-    const result = await runNativeJob('profile', { sessionId, mode: 'all' }, { signal, onSnapshot: () => client.syncStore() });
+    const result = await runNativeJob('profile', { sessionId, mode: 'all' }, { signal, manual, onSnapshot: () => client.syncStore() });
     return result.written;
 }
 
@@ -613,13 +635,14 @@ function currentScene(settings) {
     return { names: [...names], lines };
 }
 
-export async function runRefresh({ sessionId, feed, signal, onProgress = () => {}, onPartial = () => {}, topic = '' } = {}) {
+export async function runRefresh({ sessionId, feed, signal, manual = false, onProgress = () => {}, onPartial = () => {}, topic = '' } = {}) {
     sessionId ??= ensureActiveSession().id;
     const client = storage();
     const seenPosts = new Set(feed.posts.map(post => post.id));
     const seenInteractions = new Set(feed.interactions.map(item => item.id));
     return runNativeJob('refresh', { sessionId, topic, scene: currentScene(getSettings()), localTime: new Date().toLocaleString() }, {
         signal,
+        manual,
         onSnapshot: async job => {
             await client.syncStore();
             const saved = await client.feed(sessionId);

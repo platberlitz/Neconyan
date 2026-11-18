@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { types } from 'node:util';
 import { acquireChatFileLock } from '../chat-file-lock.js';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
 import { fsyncDirectorySync } from '../util.js';
@@ -476,7 +477,7 @@ export function hasJob(directories, id) {
  * caller: only server-side checkpoints may nominate safe resumption. A client
  * cannot ask the server to repeat an uncertain provider call after a crash.
  */
-export function acceptJob(directories, input) {
+export function acceptJob(directories, input, { beforeAccept } = {}) {
     const owner = validateOwner(input?.owner);
     const type = input?.type;
     if (typeof type !== 'string' || !JOB_TYPE_PATTERN.test(type)) throw fail(400, 'JOB_INVALID', 'A job needs a short lowercase type.');
@@ -509,6 +510,16 @@ export function acceptJob(directories, input) {
                 throw fail(409, 'JOB_SUBMISSION_CONFLICT', 'This request was already sent with different details. Start it again as a new request.');
             }
             return { job, created: false, changed: false, revision: store.revision };
+        }
+        // Server-only admission checks share the ledger lock with generic Jobs retry.
+        // No ledger references are exposed, and an already accepted key bypasses the guard.
+        if (beforeAccept !== undefined) {
+            if (typeof beforeAccept !== 'function' || types.isAsyncFunction(beforeAccept)) throw new TypeError('Job acceptance guards must be synchronous functions.');
+            const result = beforeAccept();
+            if (result && typeof result.then === 'function') {
+                Promise.resolve(result).catch(() => {});
+                throw new TypeError('Job acceptance guards must not return a promise.');
+            }
         }
         // Refuse before persisting when this record could not be saved, rather
         // than throwing away the caller's just-accepted identity.

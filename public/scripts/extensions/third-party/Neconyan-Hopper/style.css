@@ -1144,6 +1144,32 @@ body > #sheld[data-sbtw-mode='on'] ~ :where(*) :is(#ica--tracker-panel, #ica--tr
     color: var(--sbtw-danger);
 }
 
+.sbtw-composer-bar:has(> [data-state='error']),
+.sbtw-status-lines {
+    flex-wrap: wrap;
+}
+
+.sbtw-status-lines {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.sbtw-composer-bar > .sbtw-status[data-state='error'],
+.sbtw-composer-bar > .sbtw-save-status[data-state='error'],
+.sbtw-recovery-section .sbtw-status[data-state='error'],
+.sbtw-recovery-section .sbtw-save-status[data-state='error'] {
+    flex: 1 0 100%;
+    order: 1;
+    width: 100%;
+    max-width: 100%;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    user-select: text;
+}
+
 .sbtw-storage-mode {
     margin-block: 0.5rem;
     overflow-wrap: anywhere;
