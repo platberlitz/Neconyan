@@ -1,4 +1,5 @@
 export const REASONING_EFFORT_SHORT_LABELS = Object.freeze({
+    auto: 'Auto',
     none: 'None',
     min: 'Min',
     low: 'Low',

@@ -41,6 +41,8 @@ describe('outgoing chat completions', () => {
         secretManager.writeSecret(SECRET_KEYS.PERPLEXITY, 'perplexity-test-key');
         secretManager.writeSecret(SECRET_KEYS.POLLINATIONS, 'pollinations-test-key');
         secretManager.writeSecret(SECRET_KEYS.COMETAPI, 'cometapi-test-key');
+        secretManager.writeSecret(SECRET_KEYS.OPENAI, 'openai-test-key');
+        secretManager.writeSecret(SECRET_KEYS.MAKERSUITE, 'google-test-key');
 
         const app = express();
         app.use(express.json());
@@ -101,6 +103,87 @@ describe('outgoing chat completions', () => {
             }),
         });
     }
+
+    const invalidNoneRoutes = [
+        ['OpenAI native', 'openai', { model: 'gpt-5' }],
+        ['OpenAI Responses native', 'openai_responses', { model: 'gpt-5' }],
+        ['Gemini 3 native', 'makersuite', { model: 'gemini-3.8-flash' }],
+        ['Nano exact list', 'nanogpt', { model: 'vendor/plain', model_sampler_metadata: { source: 'nanogpt', model: 'vendor/plain', reasoning_efforts: ['high'] } }],
+        ['Nano thinking without catalogue', 'nanogpt', { model: 'vendor/model:free:thinking' }],
+        ['OpenRouter list', 'openrouter', { model_sampler_metadata: { source: 'openrouter', model: 'test-model', reasoning: { supported_efforts: ['high'] } } }],
+        ['OpenRouter mandatory unknown list', 'openrouter', { model_sampler_metadata: { source: 'openrouter', model: 'test-model', reasoning: { mandatory: true, supported_efforts: [] } } }],
+        ['OpenRouter no selector', 'openrouter', { model_sampler_metadata: { source: 'openrouter', model: 'test-model', reasoning: {} } }],
+    ];
+
+    describe.each([false, true])('None wire suppression with stream=%s', stream => {
+        test.each(invalidNoneRoutes)('%s equals the absent-effort provider body', async (_name, source, overrides) => {
+            nodeFetchMock.mockImplementation(async (_url, options) => {
+                capturedBody = JSON.parse(options.body);
+                return stream
+                    ? new FetchResponse('data: [DONE]\n\n', { headers: { 'Content-Type': 'text/event-stream' } })
+                    : new FetchResponse(JSON.stringify({ choices: [{ message: { content: 'ok' } }], output: [],
+                        candidates: [{ content: { parts: [{ text: 'ok' }], role: 'model' }, finishReason: 'STOP' }] }),
+                    { headers: { 'Content-Type': 'application/json' } });
+            });
+            const controls = { ...overrides, stream, include_reasoning: true, temperature: 0.7 };
+            const absent = await makeRequest(source, controls);
+            expect(absent.status).toBe(200);
+            await absent.text();
+            expect(nodeFetchMock).toHaveBeenCalledTimes(1);
+            const absentBody = structuredClone(capturedBody);
+            const inputField = source === 'makersuite' ? 'contents' : source === 'openai_responses' ? 'input' : 'messages';
+            expect(Array.isArray(absentBody[inputField])).toBe(true);
+            expect(absentBody[inputField].length).toBeGreaterThan(0);
+            expect(absentBody.model).toBe(source === 'makersuite' ? undefined : overrides.model ?? 'test-model');
+            const suppressed = await makeRequest(source, { ...controls, reasoning_effort: ' None ' });
+            expect(suppressed.status).toBe(200);
+            await suppressed.text();
+            expect(nodeFetchMock).toHaveBeenCalledTimes(2);
+            expect(capturedBody).toEqual(absentBody);
+            expect(capturedBody).not.toHaveProperty('reasoning_effort');
+            expect(capturedBody.reasoning ?? {}).not.toHaveProperty('effort');
+            expect(capturedBody.reasoning ?? {}).not.toHaveProperty('enabled', false);
+            expect(capturedBody.reasoning?.exclude).toBe(source === 'openrouter' ? false : undefined);
+        });
+    });
+
+    test.each([
+        ['openai', { model: 'gpt-5.1' }, ['reasoning_effort']],
+        ['nanogpt', { model_sampler_metadata: { source: 'nanogpt', model: 'test-model', reasoning_efforts: ['none', 'high'] } }, ['reasoning', 'effort']],
+        ['openrouter', { model_sampler_metadata: { source: 'openrouter', model: 'test-model', reasoning: { supported_efforts: ['none', 'high'] } } }, ['reasoning', 'effort']],
+    ])('%s still forwards None on an exact allowed contract', async (source, overrides, field) => {
+        expect((await makeRequest(source, { ...overrides, reasoning_effort: 'none' })).status).toBe(200);
+        expect(capturedBody).toHaveProperty(field, 'none');
+        expect(nodeFetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    test.each([
+        ['nanogpt', {}, ['reasoning', 'effort']],
+        ['nanogpt', { model_sampler_metadata: { source: 'nanogpt', model: 'test-model', reasoning_efforts: ['high', null] } }, ['reasoning', 'effort']],
+        ['nanogpt', { model_sampler_metadata: { source: 'nanogpt', model: 'test-model:free', reasoning_efforts: ['high'] } }, ['reasoning', 'effort']],
+        ['nanogpt', { model: 'vendor/model:thinkingish' }, ['reasoning', 'effort']],
+        ['nanogpt', { model: 'vendor/model:Thinking' }, ['reasoning', 'effort']],
+        ['openrouter', {}, ['reasoning', 'effort']],
+        ['openrouter', { model_sampler_metadata: { source: 'openrouter', model: 'test-model', reasoning: null } }, ['reasoning', 'effort']],
+        ['custom', { model: 'gpt-5.2', custom_url: 'https://custom.test/v1' }, ['reasoning_effort']],
+        ['openai', { model: 'future-neutral-model' }, ['reasoning_effort']],
+    ])('%s keeps unknown raw-request None behaviour with %p', async (source, overrides, field) => {
+        expect((await makeRequest(source, { ...overrides, reasoning_effort: 'none' })).status).toBe(200);
+        expect(capturedBody).toHaveProperty(field, 'none');
+        expect(nodeFetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    test.each([
+        ['openai', { model: 'gpt-5' }, 'max'],
+        ['makersuite', { model: 'gemini-3.8-flash' }, 'max'],
+        ['nanogpt', { model_sampler_metadata: { source: 'nanogpt', model: 'test-model', reasoning_efforts: ['high'] } }, 'low'],
+        ['openrouter', { model_sampler_metadata: { source: 'openrouter', model: 'test-model', reasoning: { supported_efforts: ['high'] } } }, 'low'],
+    ])('%s rejects other unsupported efforts before any provider call', async (source, overrides, effort) => {
+        const response = await makeRequest(source, { ...overrides, reasoning_effort: effort });
+        expect(response.status).toBe(400);
+        expect(await response.json()).toMatchObject({ error: { code: 'UNSUPPORTED_REASONING_EFFORT' } });
+        expect(nodeFetchMock).not.toHaveBeenCalled();
+    });
 
     describe.each([CHAT_COMPLETION_SOURCES.NANOGPT, CHAT_COMPLETION_SOURCES.OPENROUTER, 'openrouter-text'])('%s service tiers', source => {
         test.each(['flex', 'priority', 'auto', 'default'])('forwards %s without altering provider or billing choices', async tier => {
@@ -345,13 +428,49 @@ describe('outgoing chat completions', () => {
             expect(capturedBody).not.toHaveProperty('reasoning');
         });
 
-        test.each([['min', 'minimal'], ['none', 'none'], ['FutureRung', 'FutureRung']])('admits explicitly declared %s without changing its wire semantics', async (effort, wire) => {
+        test.each([['min', 'minimal'], ['FutureRung', 'FutureRung']])('admits explicitly declared %s without changing its wire semantics', async (effort, wire) => {
             expect((await makeRequest(CHAT_COMPLETION_SOURCES.NANOGPT, {
                 model, reasoning_effort: effort,
                 model_sampler_metadata: { ...metadata, reasoning_efforts: ['high', 'minimal', 'none', 'FutureRung'] },
             })).status).toBe(200);
             expect(capturedBody.reasoning).toEqual({ effort: wire });
         });
+
+        test('suppresses None for a thinking variant exactly as an absent effort', async () => {
+            const overrides = { model, model_sampler_metadata: metadata };
+            expect((await makeRequest(CHAT_COMPLETION_SOURCES.NANOGPT, overrides)).status).toBe(200);
+            const absentBody = capturedBody;
+            expect((await makeRequest(CHAT_COMPLETION_SOURCES.NANOGPT, { ...overrides, reasoning_effort: 'none' })).status).toBe(200);
+            expect(capturedBody).toEqual(absentBody);
+            expect(nodeFetchMock).toHaveBeenCalledTimes(2);
+        });
+
+        test('forwards explicitly allowed None for a non-thinking variant', async () => {
+            const plainModel = 'z-ai/glm-5.2';
+            expect((await makeRequest(CHAT_COMPLETION_SOURCES.NANOGPT, {
+                model: plainModel, reasoning_effort: 'none',
+                model_sampler_metadata: { ...metadata, model: plainModel, reasoning_efforts: ['none', 'high'] },
+            })).status).toBe(200);
+            expect(capturedBody.reasoning).toEqual({ effort: 'none' });
+        });
+    });
+
+    test.each([false, true])('OpenRouter known-invalid None matches an absent effort, stream=%s', async stream => {
+        const model = 'fixture/model';
+        const overrides = { model, stream, model_sampler_metadata: { source: CHAT_COMPLETION_SOURCES.OPENROUTER, model, reasoning: { supported_efforts: ['high'], mandatory: true } } };
+        if (stream) nodeFetchMock.mockImplementation(async (_url, options) => {
+            capturedBody = JSON.parse(options.body);
+            return new FetchResponse('data: [DONE]\n\n', { headers: { 'Content-Type': 'text/event-stream' } });
+        });
+        const absent = await makeRequest(CHAT_COMPLETION_SOURCES.OPENROUTER, overrides);
+        expect(absent.status).toBe(200);
+        await absent.text();
+        const absentBody = capturedBody;
+        const suppressed = await makeRequest(CHAT_COMPLETION_SOURCES.OPENROUTER, { ...overrides, reasoning_effort: 'none' });
+        expect(suppressed.status).toBe(200);
+        await suppressed.text();
+        expect(capturedBody).toEqual(absentBody);
+        expect(nodeFetchMock).toHaveBeenCalledTimes(2);
     });
 
     // NanoGPT documents none < minimal < low < medium < high < xhigh, and some models accept

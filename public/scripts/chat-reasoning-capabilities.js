@@ -89,6 +89,10 @@ function matchingMetadata(source, model, metadata) {
         && !Array.isArray(metadata) && metadata.source === source && metadata.model === model;
 }
 
+function isNanoThinkingVariant({ source, model }) {
+    return source === 'nanogpt' && typeof model === 'string' && model.split(':').slice(1).includes('thinking');
+}
+
 /** The original Nano contract is kept for existing callers and persisted profiles. */
 export function getNanoGptReasoningCapabilities({ source, model, metadata } = {}) {
     const unknown = { known: false, declaredEfforts: [], supportedEfforts: [] };
@@ -97,14 +101,16 @@ export function getNanoGptReasoningCapabilities({ source, model, metadata } = {}
     if (!Array.isArray(declaration) || declaration.some(value => typeof value !== 'string')) return unknown;
     const declaredEfforts = [...new Set(declaration.map(comparisonValue).filter(value => value && value !== 'auto'))];
     const supportedEfforts = REASONING_CONTROL_VALUES.filter(value => declaredEfforts.includes(value));
-    return supportedEfforts.length ? { known: true, declaredEfforts, supportedEfforts } : unknown;
+    return supportedEfforts.length ? { known: true, declaredEfforts,
+        supportedEfforts: isNanoThinkingVariant({ source, model }) ? supportedEfforts.filter(value => value !== 'none') : supportedEfforts } : unknown;
 }
 
 export function checkNanoGptReasoningEffort({ effort, ...identity } = {}) {
     const capabilities = getNanoGptReasoningCapabilities(identity);
     const value = comparisonValue(effort);
     const omitted = effort == null || (typeof effort === 'string' && (!value || value === 'auto'));
-    return { ...capabilities, supported: !capabilities.known || omitted || (typeof effort === 'string' && capabilities.declaredEfforts.includes(value)) };
+    return { ...capabilities, supported: !(value === 'none' && isNanoThinkingVariant(identity))
+        && (!capabilities.known || omitted || (typeof effort === 'string' && capabilities.declaredEfforts.includes(value))) };
 }
 
 /** Read only the documented OpenRouter catalogue declaration for this exact model.
@@ -115,7 +121,9 @@ export function getChatReasoningCapabilities({ source, model, metadata, route } 
     const unknown = { state: 'unknown', declaredEfforts: [], supportedEfforts: [], forbiddenEfforts: [], reason: 'no-matching-declaration', provenance: null, nativeFallback: hasNativeReasoningFallback({ source, model, route }) };
     if (source === 'nanogpt') {
         const nano = getNanoGptReasoningCapabilities({ source, model, metadata });
-        return { ...unknown, ...nano, state: nano.known ? 'effort-list' : 'unknown',
+        const thinking = isNanoThinkingVariant({ source, model });
+        return { ...unknown, ...nano,
+            forbiddenEfforts: thinking ? ['none'] : [], state: nano.known ? 'effort-list' : 'unknown',
             reason: nano.known ? 'declared-efforts' : 'no-matching-declaration', provenance: nano.known ? 'nanogpt-catalogue' : null };
     }
     if (source !== 'openrouter') {
@@ -147,6 +155,11 @@ export function getChatReasoningCapabilities({ source, model, metadata, route } 
         .filter(value => value && value !== 'auto' && !forbiddenEfforts.includes(value)))];
     const supportedEfforts = REASONING_CONTROL_VALUES.filter(value => declaredEfforts.includes(value));
     return supportedEfforts.length ? { ...result, state: 'effort-list', declaredEfforts, supportedEfforts, reason: 'declared-efforts' } : result;
+}
+
+export function resolveKnownInvalidNoneEffort({ effort, ...identity } = {}) {
+    if (comparisonValue(effort) !== 'none') return effort;
+    return checkChatReasoningEffort({ effort, ...identity }).supported ? effort : undefined;
 }
 
 export function checkChatReasoningEffort({ effort, ...identity } = {}) {
