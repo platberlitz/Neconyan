@@ -465,86 +465,88 @@ for (const phone of [false, true]) {
         });
     }
 
-    for (const together of [false, true]) test(together
-        ? `${viewport} Rerun agents from an interrupted reply runs Companions alongside after-reply Agents when set to`
-        : `${viewport} an interrupted reply kept in the chat offers Rerun agents`, async ({ app }) => {
-        app.provider.mode.streamReply = { first: 'The server ', rest: 'wrote this reply.' };
-        const account = await app.account({ phone, activeConnection: true,
-            contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {}, configureSettings(settings) {
-                settings.oai_settings.stream_openai = true;
-                settings.extension_settings.inChatAgents = { globalSettings: { enabled: true, separateRecentChats: false,
-                    connectionProfile: 'durable', hiddenCompanionAgentIds: ['hidden-companion'], companionConcurrentWithPostGen: together } };
-                settings.extension_settings.connectionManager.profiles.push({ id: 'companion', name: 'Automatic Companion',
-                    api: 'custom', mode: 'cc', model: 'automatic-companion', 'api-url': app.provider.url });
-                settings.extension_settings.connectionManager.profiles.push({ id: 'reviser', name: 'After-reply Agent',
-                    api: 'custom', mode: 'cc', model: 'post-reviser', 'api-url': app.provider.url });
-            } });
-        if (phone) await installIPhoneSafari(account.context);
-        const native = owned(app);
-        await fs.mkdir(native.directories.inChatAgents, { recursive: true });
-        await fs.writeFile(path.join(native.directories.inChatAgents, 'interrupted-reviser.json'), JSON.stringify({
-            id: 'interrupted-reviser', name: 'Interrupted reviser', enabled: true, phase: 'post',
-            connectionProfile: 'reviser', prompt: 'Revise the reply.', postProcess: { enabled: false, promptTransformEnabled: true },
-        }));
-        for (const [id, trigger, enabled] of [['auto-companion', 'auto', true], ['manual-companion', 'manual', true],
-            ['hidden-companion', 'auto', true], ['disabled-companion', 'auto', false]]) {
-            await fs.writeFile(path.join(native.directories.inChatAgents, `${id}.json`), JSON.stringify({ id, name: id, enabled,
-                execution: 'companion', category: 'companion', phase: 'post', prompt: `Write a note for ${id}.`,
-                connectionProfile: 'companion', companion: { trigger, contextMessages: 10, format: 'markdown', displayMode: 'card' } }));
-        }
-        const locator = await savedChat(account, `Interrupted rerun ${together ? 'together ' : ''}${viewport}`);
-        const page = await account.open({ workspace: false, readyTimeout: 120000 });
-        await expect(page.locator('#ica--setupSave')).toBeEnabled();
-        await openChat(page, locator);
-        if (phone) await applyIOSOnlyCss(page);
-        const submitted = page.waitForResponse(acceptedSubmission);
-        await page.locator('#send_textarea').fill('Keep my reply when the chat changes.');
-        await startNativeReply(page);
-        const { jobId } = await (await submitted).json();
-        try {
-            await expect(page.locator('#neconyan-roleplay-preview')).toContainText('The server', { timeout: 60000 });
-            // A concurrent saved edit makes the server refuse its final write and keep the text instead.
-            const source = readRoleplayChat(native.scope, locator);
-            source.records.at(-1).mes += ' Edited while replying.';
-            const { instanceId, revision, rawHash } = source;
-            await account.post('/api/chats/save', { avatar_url: locator.avatar, file_name: locator.chat, chat: source.records,
-                roleplay: { account: native.account, source: { instanceId, revision, rawHash }, operationKey: randomUUID() } });
-            app.provider.mode.finishStream();
-            expect((await terminal(account, jobId)).state).toBe('interrupted');
-            const notice = page.locator('.toast-error').filter({ hasText: 'Reply interrupted' });
-            await expect(notice).toContainText('The text written so far was saved in this chat.', { timeout: 30000 });
-            await dismissTour(page);
-            if (!together) await page.screenshot({ path: path.join('..', 'screenshots', `interrupted-rerun-${viewport}.png`) });
-            const rerun = notice.getByRole('button', { name: 'Rerun agents', exact: true });
-            await expect(rerun).toBeVisible();
-            // The notice waits for a choice instead of timing out under the reader.
-            await delay(6000);
-            await expect(rerun).toBeVisible();
-            await page.locator('#chat .mes').last().locator('.mes_edit').dispatchEvent('click');
-            await expect(page.locator('#chat .mes').last().locator('.edit_textarea')).toBeVisible();
-            const calls = app.provider.calls.length;
-            app.provider.mode.streamReply = null;
-            app.provider.mode.reply = body => ({ choices: [{ message: { role: 'assistant',
-                content: body.model === 'automatic-companion' ? 'The automatic Companion was rerun.' : `${ANSWER} Revised by the after-reply Agent.` } }] });
-            await rerun.click();
-            await expect(notice).toHaveCount(0);
-            await expect(page.locator('#chat .mes').last()).toContainText('Revised by the after-reply Agent.', { timeout: 30000 });
-            await expect.poll(() => page.evaluate(async () => (await import('/script.js')).chat.at(-1)
-                ?.extra?.inChatAgentCompanionResults?.['auto-companion']?.content)).toBe('The automatic Companion was rerun.');
-            const retryCalls = app.provider.calls.slice(calls);
-            if (together) {
-                // Run together, the Companion reads the reply as the after-reply Agent found it.
-                expect(retryCalls.map(call => call.model).sort()).toEqual(['automatic-companion', 'post-reviser']);
-                expect(JSON.stringify(retryCalls.find(call => call.model === 'automatic-companion'))).not.toContain('Revised by the after-reply Agent.');
-            } else {
-                expect(retryCalls.map(call => call.model)).toEqual(['post-reviser', 'automatic-companion']);
-                expect(JSON.stringify(retryCalls[1])).toContain('Revised by the after-reply Agent.');
+    for (const together of [false, true]) {
+        test(`${viewport} ${together
+            ? 'Rerun agents from an interrupted reply runs Companions alongside after-reply Agents when set to'
+            : 'an interrupted reply kept in the chat offers Rerun agents'}`, async ({ app }) => {
+            app.provider.mode.streamReply = { first: 'The server ', rest: 'wrote this reply.' };
+            const account = await app.account({ phone, activeConnection: true,
+                contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {}, configureSettings(settings) {
+                    settings.oai_settings.stream_openai = true;
+                    settings.extension_settings.inChatAgents = { globalSettings: { enabled: true, separateRecentChats: false,
+                        connectionProfile: 'durable', hiddenCompanionAgentIds: ['hidden-companion'], companionConcurrentWithPostGen: together } };
+                    settings.extension_settings.connectionManager.profiles.push({ id: 'companion', name: 'Automatic Companion',
+                        api: 'custom', mode: 'cc', model: 'automatic-companion', 'api-url': app.provider.url });
+                    settings.extension_settings.connectionManager.profiles.push({ id: 'reviser', name: 'After-reply Agent',
+                        api: 'custom', mode: 'cc', model: 'post-reviser', 'api-url': app.provider.url });
+                } });
+            if (phone) await installIPhoneSafari(account.context);
+            const native = owned(app);
+            await fs.mkdir(native.directories.inChatAgents, { recursive: true });
+            await fs.writeFile(path.join(native.directories.inChatAgents, 'interrupted-reviser.json'), JSON.stringify({
+                id: 'interrupted-reviser', name: 'Interrupted reviser', enabled: true, phase: 'post',
+                connectionProfile: 'reviser', prompt: 'Revise the reply.', postProcess: { enabled: false, promptTransformEnabled: true },
+            }));
+            for (const [id, trigger, enabled] of [['auto-companion', 'auto', true], ['manual-companion', 'manual', true],
+                ['hidden-companion', 'auto', true], ['disabled-companion', 'auto', false]]) {
+                await fs.writeFile(path.join(native.directories.inChatAgents, `${id}.json`), JSON.stringify({ id, name: id, enabled,
+                    execution: 'companion', category: 'companion', phase: 'post', prompt: `Write a note for ${id}.`,
+                    connectionProfile: 'companion', companion: { trigger, contextMessages: 10, format: 'markdown', displayMode: 'card' } }));
             }
-        } finally {
-            app.provider.mode.finishStream?.();
-            await app.release();
-        }
-    });
+            const locator = await savedChat(account, `Interrupted rerun ${together ? 'together ' : ''}${viewport}`);
+            const page = await account.open({ workspace: false, readyTimeout: 120000 });
+            await expect(page.locator('#ica--setupSave')).toBeEnabled();
+            await openChat(page, locator);
+            if (phone) await applyIOSOnlyCss(page);
+            const submitted = page.waitForResponse(acceptedSubmission);
+            await page.locator('#send_textarea').fill('Keep my reply when the chat changes.');
+            await startNativeReply(page);
+            const { jobId } = await (await submitted).json();
+            try {
+                await expect(page.locator('#neconyan-roleplay-preview')).toContainText('The server', { timeout: 60000 });
+                // A concurrent saved edit makes the server refuse its final write and keep the text instead.
+                const source = readRoleplayChat(native.scope, locator);
+                source.records.at(-1).mes += ' Edited while replying.';
+                const { instanceId, revision, rawHash } = source;
+                await account.post('/api/chats/save', { avatar_url: locator.avatar, file_name: locator.chat, chat: source.records,
+                    roleplay: { account: native.account, source: { instanceId, revision, rawHash }, operationKey: randomUUID() } });
+                app.provider.mode.finishStream();
+                expect((await terminal(account, jobId)).state).toBe('interrupted');
+                const notice = page.locator('.toast-error').filter({ hasText: 'Reply interrupted' });
+                await expect(notice).toContainText('The text written so far was saved in this chat.', { timeout: 30000 });
+                await dismissTour(page);
+                if (!together) await page.screenshot({ path: path.join('..', 'screenshots', `interrupted-rerun-${viewport}.png`) });
+                const rerun = notice.getByRole('button', { name: 'Rerun agents', exact: true });
+                await expect(rerun).toBeVisible();
+                // The notice waits for a choice instead of timing out under the reader.
+                await delay(6000);
+                await expect(rerun).toBeVisible();
+                await page.locator('#chat .mes').last().locator('.mes_edit').dispatchEvent('click');
+                await expect(page.locator('#chat .mes').last().locator('.edit_textarea')).toBeVisible();
+                const calls = app.provider.calls.length;
+                app.provider.mode.streamReply = null;
+                app.provider.mode.reply = body => ({ choices: [{ message: { role: 'assistant',
+                    content: body.model === 'automatic-companion' ? 'The automatic Companion was rerun.' : `${ANSWER} Revised by the after-reply Agent.` } }] });
+                await rerun.click();
+                await expect(notice).toHaveCount(0);
+                await expect(page.locator('#chat .mes').last()).toContainText('Revised by the after-reply Agent.', { timeout: 30000 });
+                await expect.poll(() => page.evaluate(async () => (await import('/script.js')).chat.at(-1)
+                    ?.extra?.inChatAgentCompanionResults?.['auto-companion']?.content)).toBe('The automatic Companion was rerun.');
+                const retryCalls = app.provider.calls.slice(calls);
+                if (together) {
+                    // Run together, the Companion reads the reply as the after-reply Agent found it.
+                    expect(retryCalls.map(call => call.model).sort()).toEqual(['automatic-companion', 'post-reviser']);
+                    expect(JSON.stringify(retryCalls.find(call => call.model === 'automatic-companion'))).not.toContain('Revised by the after-reply Agent.');
+                } else {
+                    expect(retryCalls.map(call => call.model)).toEqual(['post-reviser', 'automatic-companion']);
+                    expect(JSON.stringify(retryCalls[1])).toContain('Revised by the after-reply Agent.');
+                }
+            } finally {
+                app.provider.mode.finishStream?.();
+                await app.release();
+            }
+        });
+    }
 
     for (const departure of ['closed', 'another chat', 'hidden']) {
         test(`${viewport} a reply stopped with the page ${departure} is kept by the server exactly once`, async ({ app }, info) => {
