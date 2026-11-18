@@ -5,7 +5,8 @@ import { createHash, randomBytes } from 'node:crypto';
 import test from 'node:test';
 import { fixture, png } from './roleplay-transactions-fixture.js';
 
-const { generatedImageReceipts, prepareGeneratedImageHistory, MAX_GENERATED_HISTORY_BYTES } = await import('../src/scratchpad/image-history.js');
+const { generatedImageReceipts, prepareGeneratedImageHistory, MAX_GENERATED_HISTORY_BYTES, generatedImageFallback, withoutGeneratedImages,
+    rememberTextOnlyModel, forgetTextOnlyModels, isImageRefusal, isUnsupportedImageRefusal } = await import('../src/scratchpad/image-history.js');
 const { imageChangeHash } = await import('../src/scratchpad/image-state.js');
 const { encodeServerImage } = await import('../src/media-codecs.js');
 const { buildScratchpadMessages, buildScratchpadSystemPrompt } = await import('../src/scratchpad/prompt.js');
@@ -72,34 +73,80 @@ test('generated pictures reach vision models independently of the regular-chat m
     assert.equal(input.history.some(message => message.generatedImageContent), false);
 });
 
-test('the selected Claude Code Opus 5.5 route receives saved pictures with image inlining off', async t => {
+test('models Neconyan cannot look up receive saved pictures with image inlining off, with text stand-ins', async t => {
+    t.after(forgetTextOnlyModels);
     const input = setup(t);
-    const model = 'claude-code/claude-opus-5-5';
-    const selected = { source: 'custom', profile: { model }, active: { custom_model: 'unverified-model', media_inlining: false } };
-    assert.deepEqual(images(await prepareGeneratedImageHistory({ ...input, material: selected })), [
-        { type: 'image_url', image_url: { url: `data:image/png;base64,${png.toString('base64')}`, detail: 'auto' } },
-    ]);
-
-    for (const other of [
-        { ...selected, profile: { model: `${model}-text` }, active: { ...selected.active, custom_model: model } },
-        { ...selected, source: 'cometapi' },
+    for (const selected of [
+        { source: 'custom', profile: { model: 'smol-google/gemini-4-carbon' }, active: { custom_url: 'https://proxy.example/v1', media_inlining: false } },
+        { source: 'custom', profile: { model: 'claude-code/claude-opus-5-5' }, active: {} },
+        { source: 'cometapi', profile: { model: 'unverified-model' }, active: { media_inlining: false } },
     ]) {
-        assert.deepEqual(images(await prepareGeneratedImageHistory({ ...input, material: other })), []);
+        const result = await prepareGeneratedImageHistory({ ...input, material: selected });
+        assert.deepEqual(images(result), [
+            { type: 'image_url', image_url: { url: `data:image/png;base64,${png.toString('base64')}`, detail: 'auto' } },
+        ], selected.profile.model);
+        assert.deepEqual(result[1].generatedImageText, [{ type: 'text',
+            text: 'Generated image from Taro, proposal 1 in the preceding Scratchpad reply. Picture not attached because this model refused pictures; do not infer its appearance from the prompt.' }]);
+        const messages = buildScratchpadMessages({ system: '', history: result, text: 'Make it blue.', assistant: 'miso' });
+        const fallback = generatedImageFallback(messages, result);
+        assert.equal(fallback.length, 1);
+        assert.equal(images([{ generatedImageContent: messages[fallback[0].index].content }]).length, 1);
+        const textOnly = withoutGeneratedImages(messages, fallback);
+        assert.equal(textOnly.length, messages.length);
+        assert.deepEqual(textOnly[fallback[0].index].content, result[1].generatedImageText);
+        assert.equal(textOnly.some(message => Array.isArray(message.content) && message.content.some(part => part.type === 'image_url')), false);
     }
 });
 
-test('text-only models stay text-only and unverified providers still need image opt-in', async t => {
+test('a refused model stays text-only for its own route only', async t => {
+    t.after(forgetTextOnlyModels);
+    const input = setup(t);
+    const selected = { source: 'custom', profile: { model: 'proxy/text-model' }, active: { custom_url: 'https://proxy.example/v1' } };
+    rememberTextOnlyModel(selected);
+    assert.equal(await prepareGeneratedImageHistory({ ...input, material: selected }), input.history);
+    for (const other of [
+        { ...selected, profile: { model: 'proxy/vision-model' } },
+        { ...selected, active: { custom_url: 'https://other.example/v1' } },
+        { ...selected, profile: { ...selected.profile, 'api-url': 'https://profile.example/v1' } },
+        { ...selected, source: 'cometapi' },
+    ]) {
+        assert.equal(images(await prepareGeneratedImageHistory({ ...input, material: other })).length, 1);
+    }
+});
+
+test('only picture refusals retry without pictures, and only missing support is remembered', () => {
+    const refusal = (message, providerStatus = 400, body) => Object.assign(new Error(message), { providerStatus, body });
+    for (const error of [
+        refusal('Invalid content type. image_url is only supported by certain models.'),
+        refusal('This model does not support image input.', 422),
+        refusal('Failed to deserialize the JSON body', 400, { error: { message: 'unknown variant `image_url`, expected `text`' } }),
+        refusal('Multimodal input is not supported for this model.', 404),
+        refusal('<400> InternalError.Algo.InvalidParameter: The current model only supports text modality and does not support image input. Please remove the image content from your messages and retry.'),
+    ]) {
+        assert.equal(isImageRefusal(error), true, error.message);
+        assert.equal(isUnsupportedImageRefusal(error), true, error.message);
+    }
+    const unreadable = refusal('.messages[0].image[0]: Failed to download image');
+    assert.equal(isImageRefusal(unreadable), true);
+    assert.equal(isUnsupportedImageRefusal(unreadable), false);
+    for (const error of [
+        refusal('Image input is not supported.', 401),
+        refusal('Image quota exceeded.', 429),
+        refusal('Image input is not supported.', 500),
+        refusal('The prompt is too long.'),
+        new Error('Image input is not supported.'),
+    ]) {
+        assert.equal(isImageRefusal(error), false, error.message);
+    }
+});
+
+test('known text-only models and Text Completion connections stay text-only', async t => {
     const input = setup(t);
     for (const model of ['gpt-3.5-turbo', 'gpt-4-turbo-preview', 'o1-preview', 'o1-mini', 'o3-mini']) {
         assert.equal(images(await prepareGeneratedImageHistory({ ...input, material: { ...material, profile: { model } } })).length, 0, model);
     }
     assert.equal(images(await prepareGeneratedImageHistory({ ...input, material: { ...material, backend: 'text' } })).length, 0);
-    for (const source of ['custom', 'cometapi']) {
-        for (const enabled of [true, false]) {
-            const selected = { source, profile: { model: 'unverified-model' }, active: { media_inlining: enabled } };
-            assert.equal(images(await prepareGeneratedImageHistory({ ...input, material: selected })).length, Number(enabled), source);
-        }
-    }
+    assert.equal(images(await prepareGeneratedImageHistory({ ...input, material: { source: 'custom', profile: { model: 'any' }, active: {}, backend: 'text' } })).length, 0);
 });
 
 test('catalogue vision uses this speaker connection and unavailable catalogues preserve a text reply', async t => {
