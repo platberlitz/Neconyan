@@ -211,11 +211,11 @@ function findBeforeSwapSample(samples, firstPreviewIndex) {
         ?? samples[firstPreviewIndex - 1];
 }
 
-async function streamAndCompleteJob(app, account, page, remainingParagraphs, { onBeforeStreamEnd } = {}) {
+async function streamAndCompleteJob(app, account, page, remainingParagraphs, { onBeforeStreamEnd, type = 'swipe' } = {}) {
     const submitted = page.waitForResponse(
         response => response.url().endsWith('/api/roleplay/workflow/submit') && response.status() !== 409,
     );
-    await startNativeReply(page, 'swipe');
+    await startNativeReply(page, type);
     const { jobId } = await (await submitted).json();
 
     await expect.poll(() => app.provider.calls.length, { timeout: 40000 }).toBe(1);
@@ -283,14 +283,14 @@ for (const phone of [true, false]) {
         expect(maxDrift, 'reply row top stays within 2px of where streaming began').toBeLessThanOrEqual(2);
     });
 
-    test(`short new reply after a long old reply stays compact without scrolling on ${viewport}`, async ({ app }) => {
+    for (const type of ['swipe', 'regenerate']) test(`short ${type === 'swipe' ? 'new' : 'regenerated'} reply after a long old reply stays compact without scrolling on ${viewport}`, async ({ app }) => {
         test.setTimeout(240000);
         const mainReply = Array.from({ length: 4 }, (_, index) => `Short paragraph ${index} of the replacement reply.`).join('\n\n');
         const postReply = mainReply.replace('Short paragraph 1', 'Revised short paragraph 1');
         const companionReply = 'Short Companion note.';
         const { account, page, remainingStreamParagraphs } = await setupSwipeFixture(app, {
             phone,
-            chatName: `Swipe short replacement ${viewport}`,
+            chatName: `${type === 'swipe' ? 'Swipe' : 'Regenerate'} short replacement ${viewport}`,
             oldReply: LONG_OLD,
             mainReply,
             postReply,
@@ -298,7 +298,7 @@ for (const phone of [true, false]) {
         });
 
         await startPostPaintSampler(page);
-        await streamAndCompleteJob(app, account, page, remainingStreamParagraphs);
+        await streamAndCompleteJob(app, account, page, remainingStreamParagraphs, { type });
         // eslint-disable-next-line playwright/no-wait-for-timeout
         await page.waitForTimeout(3000);
         const handoverSamples = await stopPostPaintSampler(page);
