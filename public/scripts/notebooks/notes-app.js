@@ -16,7 +16,7 @@ import { formatList, indentLines } from './list-editing.js';
 import { renderHeadingOutline } from './outline.js';
 
 const PREFS_KEY = 'neconyan_notes_prefs';
-const NOTES_STYLESHEET = 'css/neconyan-notes.css?v=18';
+const NOTES_STYLESHEET = 'css/neconyan-notes.css?v=19';
 const TOOL_PAGES_STYLESHEET = 'css/neconyan-tool-pages.css?v=20261107-tour-card-pan';
 const TOUR_PAGE_KEY = 'notes';
 const SAVE_DELAY_MS = 1200;
@@ -176,6 +176,21 @@ function failed(result, fallback = 'That did not work.') {
 
 /* ---------- shell ---------- */
 
+function mobileDisclosure(label, panel, icon = 'fa-chevron-down') {
+    const control = button(label, () => setDisclosure(control, panel, panel.hidden), {
+        icon, className: 'notes-mobile-disclosure',
+    });
+    control.setAttribute('aria-controls', panel.id);
+    control.setAttribute('aria-expanded', 'false');
+    control.hidden = true;
+    return control;
+}
+
+function setDisclosure(control, panel, expanded) {
+    control.setAttribute('aria-expanded', String(expanded));
+    panel.hidden = !expanded;
+}
+
 function buildRoot() {
     const { elements, state } = app;
     elements.status = h('span', { class: 'notes-status', role: 'status', 'aria-live': 'polite' });
@@ -204,18 +219,22 @@ function buildRoot() {
     elements.discuss = button('Talk about this note', () => void discussNote(), { icon: 'fa-comments', className: 'notes-discuss' });
     elements.trash = button('Delete', () => void app.dialogs.trashNote(app), { icon: 'fa-trash-can', className: 'notes-delete notes-danger', title: 'Move this note to Trash' });
     elements.scratchpad = button('Ask Scratchpad', () => void discussInScratchpad(), { icon: 'fa-note-sticky', className: 'notes-discuss' });
-    elements.writingActions = h('div', { class: 'notes-writing-actions' }, elements.viewTabs,
-        h('div', { class: 'notes-nav-actions' }, elements.scratchpad, elements.discuss, elements.fullscreen, elements.trash));
+    elements.noteActions = h('div', { class: 'notes-nav-actions' }, elements.scratchpad, elements.discuss, elements.fullscreen, elements.trash);
+    elements.noteToolsPanel = h('div', { id: 'notes-mobile-note-tools', class: 'notes-editor-tools' }, elements.toolbar, elements.foldControls, elements.foldSections);
+    elements.noteTools = mobileDisclosure('Note tools', elements.noteToolsPanel);
+    elements.writingActions = h('div', { class: 'notes-writing-actions' }, elements.viewTabs, elements.noteTools, elements.noteActions);
     elements.editorBody = h('div', { class: 'notes-editor-body' }, elements.source, elements.reader, elements.suggest);
     elements.empty = h('div', { class: 'notes-empty' });
     elements.editor = h('div', { class: 'notes-editor', hidden: true },
         h('div', { class: 'notes-editor-head' }, elements.title, elements.status),
-        elements.banner, elements.writingActions, elements.toolbar, elements.foldControls, elements.foldSections, elements.editorBody);
+        elements.banner, elements.writingActions, elements.noteToolsPanel, elements.editorBody);
     elements.graph = h('section', { class: 'notes-graph', 'aria-label': 'Notebook graph', hidden: true });
     elements.propertyTable = h('section', { class: 'notes-table-view', 'aria-label': 'Notebook property table', hidden: true });
     elements.canvas = h('section', { class: 'notes-canvas-view', 'aria-label': 'Notebook planning canvases', hidden: true });
     elements.editorPane = h('section', { class: 'notes-pane notes-pane-editor', 'aria-label': 'Note' }, elements.empty, elements.editor, elements.graph, elements.propertyTable, elements.canvas);
     elements.nav = h('nav', { class: 'notes-pane notes-pane-nav', 'aria-label': 'Notebooks and notes' });
+    elements.notebookOptionsPanel = h('div', { id: 'notes-mobile-notebook-options', class: 'notes-notebook-options', hidden: true });
+    elements.notebookOptions = mobileDisclosure('Notebook options', elements.notebookOptionsPanel);
     // One search box for the life of the app: the list below it redraws, the box does not,
     // so keys typed while a search is running are kept and focus never moves.
     elements.search = h('input', { type: 'search', class: 'text_pole notes-search-input', placeholder: 'Search titles and text',
@@ -224,20 +243,25 @@ function buildRoot() {
     elements.details = h('aside', { class: 'notes-pane notes-pane-details', 'aria-label': 'Note details' });
     elements.paneTabs = h('div', { class: 'notes-choice-group notes-pane-tabs', role: 'group', 'aria-label': 'Notes sections' });
     elements.back = button('Back', () => void goBack(), { icon: 'fa-arrow-left', className: 'notes-back', title: 'Back to the previous note' });
+    elements.back.setAttribute('aria-label', 'Back');
     elements.layoutButton = button('Beside chat', () => setLayout(state.layout === 'beside' ? 'full' : 'beside'), { icon: 'fa-table-columns', className: 'notes-layout-toggle' });
     elements.close = button('Back to chat', () => hide(), { icon: 'fa-comments', className: 'notes-close' });
     elements.resizer = h('div', { class: 'notes-resizer', role: 'separator', 'aria-orientation': 'vertical', tabindex: '0',
         'aria-label': 'Resize notes panel', onpointerdown: startResize, onkeydown: resizeByKey });
+    elements.intro = h('div', { id: 'notes-mobile-help', class: 'notes-intro', hidden: true });
+    elements.help = mobileDisclosure('Help', elements.intro, '');
     elements.header = h('header', { class: 'notes-header' },
         h('h2', { class: 'notes-heading' }, h('i', { class: 'fa-solid fa-book-open', 'aria-hidden': 'true' }), h('span', { text: 'Notebooks' })),
         elements.back, h('span', { class: 'notes-spacer' }),
-        elements.layoutButton, elements.close);
-    elements.intro = h('div', { class: 'notes-intro' });
+        elements.layoutButton, elements.help, elements.close);
     elements.root = h('section', { id: 'neconyan-notes', class: 'notes-app', 'aria-label': 'Notebooks', hidden: true, onkeydown: onNotesKeydown },
         elements.resizer, elements.header, elements.intro, elements.paneTabs,
         h('div', { class: 'notes-columns' }, elements.nav, elements.editorPane, elements.details));
     document.body.append(elements.root);
-    globalThis.matchMedia?.(PHONE_QUERY).addEventListener?.('change', () => applyLayout());
+    globalThis.matchMedia?.(PHONE_QUERY).addEventListener?.('change', () => {
+        applyLayout();
+        if (state.open) renderNav();
+    });
     state.built = true;
 }
 
@@ -278,7 +302,17 @@ function applyLayout() {
     if (!elements.root) return;
     const phone = isPhone();
     const beside = !phone && state.layout === 'beside' && !state.writingFullscreen;
-    elements.intro.hidden = beside;
+    elements.help.hidden = !phone;
+    elements.intro.hidden = beside || (phone && elements.help.getAttribute('aria-expanded') !== 'true');
+    elements.noteTools.hidden = !phone;
+    elements.noteToolsPanel.hidden = phone && elements.noteTools.getAttribute('aria-expanded') !== 'true';
+    if (phone && elements.noteActions.parentNode !== elements.noteToolsPanel) elements.noteToolsPanel.prepend(elements.noteActions);
+    if (!phone && elements.noteActions.parentNode !== elements.writingActions) elements.writingActions.append(elements.noteActions);
+    if (phone && state.writingFullscreen) {
+        if (elements.fullscreen.parentNode !== elements.writingActions) elements.writingActions.append(elements.fullscreen);
+    } else if (elements.fullscreen.parentNode !== elements.noteActions) {
+        elements.noteActions.insertBefore(elements.fullscreen, elements.trash);
+    }
     elements.root.dataset.layout = phone ? 'phone' : state.layout;
     elements.root.dataset.writingFullscreen = String(state.writingFullscreen);
     elements.root.dataset.pane = state.pane;
@@ -298,6 +332,7 @@ function applyLayout() {
 
 function setWritingFullscreen(enabled) {
     const { state, elements } = app;
+    const restoreFocus = document.activeElement === elements.fullscreen;
     state.writingFullscreen = Boolean(enabled && state.open && state.note && state.workspaceView === 'note');
     if (state.writingFullscreen) state.pane = 'note';
     applyLayout();
@@ -310,6 +345,10 @@ function setWritingFullscreen(enabled) {
         elements.fullscreen.setAttribute('aria-expanded', String(state.writingFullscreen));
     }
     if (state.open && state.view === 'write') elements.textarea?.focus({ preventScroll: true });
+    else if (state.open && restoreFocus) {
+        const control = isPhone() && elements.noteToolsPanel.hidden && !state.writingFullscreen ? elements.noteTools : elements.fullscreen;
+        control.focus({ preventScroll: true });
+    }
 }
 
 function onNotesKeydown(event) {
@@ -500,6 +539,9 @@ export function hideNotes() {
     if (!state.open) return;
     if (state.dirty) void flushSave();
     state.open = false;
+    setDisclosure(elements.help, elements.intro, false);
+    setDisclosure(elements.noteTools, elements.noteToolsPanel, false);
+    setDisclosure(elements.notebookOptions, elements.notebookOptionsPanel, false);
     setWritingFullscreen(false);
     if (elements.root) elements.root.hidden = true;
     applyLayout();
@@ -636,11 +678,12 @@ function renderNav() {
     const { elements, state } = app;
     const nav = elements.nav;
     if (!nav) return;
-    const { search, searchRow } = elements;
+    const { search, searchRow, notebookOptions, notebookOptionsPanel } = elements;
+    const phone = isPhone();
+    const restoreOptionsFocus = document.activeElement === notebookOptions;
     for (const node of [...nav.childNodes]) {
         if (node !== searchRow) node.remove();
     }
-    const head = [];
     const notebookRow = h('div', { class: 'notes-notebook-row', role: 'group', 'aria-label': 'Notebooks' });
     for (const notebook of state.notebooks) {
         // The title is translated here, because userText keeps the run-time localiser off the whole button.
@@ -650,17 +693,28 @@ function renderNav() {
         }));
     }
     notebookRow.append(button('New notebook', () => void app.dialogs.newNotebook(app), { icon: 'fa-plus', className: 'notes-quiet' }));
-    head.push(keyed('notebooks', section('Notebooks', notebookRow)));
+    const notebooks = keyed('notebooks', section('Notebooks', notebookRow));
     if (!state.notebookId) {
         searchRow.remove();
-        nav.append(...head, keyed('empty', h('p', { class: 'notes-hint notes-nav-empty', text: 'Notebooks hold your notes. Make one to start writing.' })));
+        nav.append(notebooks, keyed('empty', h('p', { class: 'notes-hint notes-nav-empty', text: 'Notebooks hold your notes. Make one to start writing.' })));
         return;
     }
-    head.push(keyed('create', h('div', { class: 'notes-nav-actions notes-create-row' },
+    const quickNote = button('Quick note', () => void app.dialogs.quickNote(app), { icon: 'fa-bolt' });
+    const create = keyed('create', h('div', { class: 'notes-nav-actions notes-create-row' },
         button('New note', () => void app.dialogs.newNote(app), { icon: 'fa-file-circle-plus', className: 'notes-primary' }),
-        button('Quick note', () => void app.dialogs.quickNote(app), { icon: 'fa-bolt' }))));
+        phone ? notebookOptions : quickNote));
     if (searchRow.parentNode !== nav) nav.append(searchRow);
-    searchRow.before(...head);
+    if (phone) {
+        const name = state.notebooks.find(notebook => notebook.id === state.notebookId)?.name;
+        const heading = h('h3', { class: 'notes-current-notebook', text: name || 'Notebook', 'data-i18n-ignore': name ? '' : null });
+        notebookOptions.hidden = false;
+        notebookOptionsPanel.replaceChildren(notebooks, h('div', { class: 'notes-nav-actions' }, quickNote));
+        searchRow.before(heading, create);
+        searchRow.after(notebookOptionsPanel);
+        if (restoreOptionsFocus) notebookOptions.focus({ preventScroll: true });
+    } else {
+        searchRow.before(notebooks, create);
+    }
     if (document.activeElement !== search && search.value !== state.searchQuery) search.value = state.searchQuery;
     if (state.search) {
         const list = h('ul', { class: 'notes-list' });
@@ -674,21 +728,24 @@ function renderNav() {
     if (tree?.origin === 'import' && tree.policy?.admitted === false) {
         nav.append(h('p', { class: 'notes-notice', text: 'Imported notebook: assistants and chat context cannot use it until you allow that under AI access.' }));
     }
+    const shortcuts = [];
     if (tree?.favourites?.length) {
         const list = h('ul', { class: 'notes-list' }, ...tree.favourites.slice(0, 20).map(note => noteButton(note)));
-        nav.append(section('Favourites', list));
+        shortcuts.push(section('Favourites', list));
     }
     if (tree?.recent?.length && !state.folder) {
         const list = h('ul', { class: 'notes-list' }, ...tree.recent.slice(0, 8).map(note => noteButton(note)));
-        nav.append(section('Recent', list));
+        shortcuts.push(section('Recent', list));
     }
+    if (!phone) nav.append(...shortcuts);
+    const browse = phone ? notebookOptionsPanel : nav;
     const folders = h('div', { class: 'notes-folder-row', role: 'group', 'aria-label': 'Folders' });
     folders.append(button(`All notes (${tree?.noteCount ?? 0})`, () => void chooseFolder(null), { className: 'notes-choice', pressed: state.folder === null }));
     folders.append(button(`Top level (${tree?.rootCount ?? 0})`, () => void chooseFolder(''), { className: 'notes-choice', pressed: state.folder === '' }));
     for (const folder of tree?.folders ?? []) {
         folders.append(button(`${folder.path} (${folder.count})`, () => void chooseFolder(folder.path), { className: 'notes-choice', pressed: state.folder === folder.path, userText: true }));
     }
-    nav.append(keyed('folders', section('Folders', folders, h('div', { class: 'notes-nav-actions' },
+    browse.append(keyed('folders', section('Folders', folders, h('div', { class: 'notes-nav-actions' },
         button('New folder', () => void app.dialogs.newFolder(app), { icon: 'fa-folder-plus', className: 'notes-quiet' }),
         state.folder ? button('Rename folder', () => void app.dialogs.renameFolder(app, state.folder), { icon: 'fa-pen', className: 'notes-quiet' }) : null,
         state.folder ? button('Remove empty folder', () => void app.dialogs.deleteFolder(app, state.folder), { icon: 'fa-folder-minus', className: 'notes-quiet' }) : null))));
@@ -702,11 +759,11 @@ function renderNav() {
     if (state.folder) listSection.firstChild.setAttribute('data-i18n-ignore', '');
     nav.append(keyed('list', listSection));
     const tool = (label, onClick, icon, className = '') => button(label, onClick, { icon, className: `notes-notebook-tool ${className}`.trim() });
-    nav.append(keyed('views', section('Notebook views', h('div', { class: 'notes-notebook-tools' },
+    browse.append(keyed('views', section('Notebook views', h('div', { class: 'notes-notebook-tools' },
         tool('Graph', () => void openNotebookGraph(), 'fa-diagram-project', 'notes-graph-open'),
         tool('Property table', () => void openNotebookTable(), 'fa-table', 'notes-table-open'),
         tool('Canvas', () => void openNotebookCanvas(), 'fa-object-group', 'notes-canvas-open')))));
-    nav.append(keyed('tools', section('Notebook', h('div', { class: 'notes-notebook-tools' },
+    browse.append(keyed('tools', section('Notebook', h('div', { class: 'notes-notebook-tools' },
         tool('Obsidian sync', () => void app.dialogs.obsidianSync(app), 'fa-arrows-rotate', 'notes-quiet'),
         tool(`Trash (${tree?.trashCount ?? 0})`, () => void app.dialogs.trash(app), 'fa-trash-can', 'notes-quiet'),
         tool('Assistant changes', () => void app.dialogs.proposals(app), 'fa-wand-magic-sparkles', 'notes-quiet'),
@@ -715,6 +772,7 @@ function renderNav() {
         tool('Export', () => void app.dialogs.exportNotebook(app), 'fa-file-export', 'notes-quiet'),
         tool('Rename notebook', () => void app.dialogs.renameNotebook(app), 'fa-pen', 'notes-quiet'),
         tool('Check notebook', () => void app.dialogs.diagnostics(app), 'fa-stethoscope', 'notes-quiet')))));
+    if (phone) browse.append(...shortcuts);
     if (tree?.skipped?.length) {
         nav.append(h('p', { class: 'notes-notice', text: `${tree.skipped.length} file(s) in this notebook folder were left alone because Notes cannot read them safely.` }));
     }
@@ -880,10 +938,10 @@ function renderEditor({ restorePosition = false, fragment = null } = {}) {
             h('p', { class: 'notes-empty-copy', text: 'Notes keeps your ideas, drafts and references, with or without a chat.' }),
             state.notebookId ? h('div', { class: 'notes-nav-actions notes-empty-actions' },
                 button('New note', () => void app.dialogs.newNote(app), { icon: 'fa-file-circle-plus', className: 'notes-primary' }),
-                button('Quick note', () => void app.dialogs.quickNote(app), { icon: 'fa-bolt' }),
-                button('Graph', () => void openNotebookGraph(), { icon: 'fa-diagram-project', className: 'notes-quiet' }),
-                button('Property table', () => void openNotebookTable(), { icon: 'fa-table', className: 'notes-quiet' }),
-                button('Canvas', () => void openNotebookCanvas(), { icon: 'fa-object-group', className: 'notes-quiet' })) : h('div', { class: 'notes-nav-actions notes-empty-actions' },
+                button('Quick note', () => void app.dialogs.quickNote(app), { icon: 'fa-bolt', className: 'notes-desktop-extra' }),
+                button('Graph', () => void openNotebookGraph(), { icon: 'fa-diagram-project', className: 'notes-quiet notes-desktop-extra' }),
+                button('Property table', () => void openNotebookTable(), { icon: 'fa-table', className: 'notes-quiet notes-desktop-extra' }),
+                button('Canvas', () => void openNotebookCanvas(), { icon: 'fa-object-group', className: 'notes-quiet notes-desktop-extra' })) : h('div', { class: 'notes-nav-actions notes-empty-actions' },
                 button('New notebook', () => void app.dialogs.newNotebook(app), { icon: 'fa-plus', className: 'notes-primary' })),
         ]);
         app.panels?.renderDetails(app);

@@ -490,7 +490,7 @@ describe('General Scratchpad context', () => {
         const source = currentSource();
         expect(source).toMatchObject({ kind: 'general', key: 'general', contextMode: 'roleplay' });
         expect(source.avatar).toBeUndefined();
-        const result = await buildContext({ source, settings: { ...settings, picked: ['0'], include: { ...settings.include, authorsNote: true, preset: true, hidden: true } } });
+        const result = await buildContext({ source, settings: { ...settings, picked: ['0'], include: { ...settings.include, authorsNote: true, hidden: true } } });
         expect(result).toMatchObject({ messageCount: 0, swipeCount: 0, totalMessages: 0, picked: false, preset: null,
             lore: { books: [], entries: [] }, capabilities: { chat: false, character: false, lore: false, members: [] } });
         expect(result.text).toContain('General Scratchpad: no story chat is open');
@@ -498,6 +498,19 @@ describe('General Scratchpad context', () => {
         expect(result.text).not.toMatch(/HIDDEN-|## Character:|Chat lore|Current preset:|Latest messages|Picked messages/);
         expect(loadWorldInfo).not.toHaveBeenCalled();
         expect(sourceMessages(source)).toEqual([]);
+    });
+
+    test('Home shares the equipped preset as literal reference without the hidden story or preset editing', async () => {
+        home.visible = true;
+        chat.push({ name: 'Roleplay', mes: 'HIDDEN-STORY' });
+        const result = await buildContext({ source: currentSource(), settings: { ...settings, include: { ...settings.include, authorsNote: true, preset: true } } });
+        expect(readCurrentPreset).toHaveBeenLastCalledWith({ globalOnly: true });
+        expect(result.preset).toEqual({ name: 'Lantern', on: 4, off: 1 });
+        expect(result.capabilities.preset).toBeUndefined();
+        expect(result.text).toContain('## Current preset: Lantern');
+        expect(result.text).toContain('reference material only');
+        expect(result.text).toContain('{{char}}');
+        expect(result.text).not.toMatch(/HIDDEN-|## Character:|## Author's Note|## Lorebooks|Latest messages|Editable preset target/);
     });
 
     test('Home shares one hand-picked lorebook, without hidden entries or the hidden story', async () => {
@@ -631,6 +644,14 @@ describe('Scratchpad current preset', () => {
         expect(text).toContain('### [on] Reminder (user, in chat at depth 2)\nModule ID: reminder\nStay in tense.');
         expect(text).toContain('### [on] Char Description (slot, filled from the character card)');
         expect(text).toContain('### [on] Chat History (slot, filled from the chat messages)');
+    });
+
+    test('includes Text Completion template fields without exposing edit targets in General', () => {
+        const text = formatPreset({ api: 'Text Completion', name: 'Harbour', modules: [], targets: [
+            { api: 'instruct', name: 'Harbour', fields: { input_sequence: '{{user}}:' } },
+        ] }, { editable: false });
+        expect(text).toContain('Preset template (reference only): {"api":"instruct","name":"Harbour","fields":{"input_sequence":"{{user}}:"}}');
+        expect(text).not.toContain('Editable preset target');
     });
 
     test('stays out of Conversation chats, which do not use the preset', async () => {

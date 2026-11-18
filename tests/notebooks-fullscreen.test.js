@@ -12,7 +12,7 @@ function fixture() {
     const editor = { focus: jest.fn() };
     const app = { state: { open: true, note: { id: 'one' }, workspaceView: 'note', view: 'write', layout: 'beside', pane: 'note', writingFullscreen: false },
         elements: { fullscreen, textarea: editor }, sourceEditor: { composing: false } };
-    const context = vm.createContext({ app, applyLayout: jest.fn() });
+    const context = vm.createContext({ app, applyLayout: jest.fn(), document: { activeElement: null } });
     vm.runInContext(`${extract('setWritingFullscreen')}\n${extract('onNotesKeydown')}`, context);
     return { app, context, label, icon, editor, fullscreen };
 }

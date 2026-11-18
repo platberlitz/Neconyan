@@ -69,6 +69,10 @@ describe('Scratchpad preset reader', () => {
         expect(readCurrentPreset().modules.map(item => [item.id, item.enabled])).toEqual([['main', false]]);
     });
 
+    test('uses only the global prompt order for General even when a character is still active', () => {
+        expect(readCurrentPreset({ globalOnly: true }).modules.map(item => [item.id, item.enabled])).toEqual([['main', false]]);
+    });
+
     test('lists the system prompt, context and instruct templates in Text Completion', async () => {
         const { currentPresetName, readCurrentPreset } = await load('textgenerationwebui');
         const preset = readCurrentPreset();

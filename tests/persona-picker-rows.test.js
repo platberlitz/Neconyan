@@ -21,7 +21,7 @@ describe('persona picker rows', () => {
     });
 
     test('rows keep their full height when a title and Scenario Note chips stack up', () => {
-        const row = getRuleBody('.sb-persona-option');
+        const row = getRuleBody('.sb-persona-picker-row');
         expect(row).toMatch(/flex-shrink:\s*0/);
     });
 });

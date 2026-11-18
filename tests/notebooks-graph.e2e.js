@@ -1,7 +1,7 @@
 /* global getComputedStyle, globalThis, requestAnimationFrame */
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
-import { expectSourceText, notesApi, openNotes, showNotebooks } from './notebooks-browser-fixture.js';
+import { expectSourceText, notesApi, openNotes, revealNotebookOptions, showNotebooks } from './notebooks-browser-fixture.js';
 
 test.use({ hasTouch: true, serviceWorkers: 'block' });
 test.setTimeout(180000);
@@ -32,12 +32,13 @@ async function fixture(page, viewport) {
 async function choose(page, viewport, note) {
     await page.evaluate(async id => (await import('/scripts/notebooks/notes-app.js')).notesApp().loadNotebooks(id), note.notebookId);
     await showNotebooks(page, viewport);
-    await page.locator('.notes-pane-nav .notes-note-title').getByText(note.title, { exact: true }).first().click();
+    await page.locator('[data-section="list"] .notes-note-title').getByText(note.title, { exact: true }).click();
     await expectSourceText(page, note.text.replace(/\r\n?/g, '\n'));
 }
 
 async function openGraph(page, viewport) {
     await showNotebooks(page, viewport);
+    await revealNotebookOptions(page);
     await page.locator('.notes-pane-nav').getByRole('button', { name: 'Graph', exact: true }).click();
     await expect(page.locator('.notes-graph')).toBeVisible();
 }

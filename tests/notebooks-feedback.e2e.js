@@ -4,7 +4,7 @@ import { unzipSync } from 'fflate';
 import { splitFrontmatter } from '../src/notebooks/markdown.js';
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
-import { fillSource, sourceText } from './notebooks-browser-fixture.js';
+import { fillSource, revealNotebookOptions, revealNoteTools, sourceText } from './notebooks-browser-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
 
 test.setTimeout(180_000);
@@ -64,6 +64,7 @@ for (const phone of [false, true]) {
         await expect(root.locator('.notes-header h2')).toHaveText('Notebooks');
         await expect(page.locator('#neconyan-workspace-rail [data-neconyan-route="notes"]')).toContainText('Notebooks');
         await page.evaluate(async () => { window.feedbackEditor = (await import('/scripts/notebooks/notes-app.js')).notesApp().sourceEditor; });
+        await revealNoteTools(page);
         await root.getByRole('button', { name: 'Full screen', exact: true }).click();
         for (const view of ['Read', 'Outline', 'Write']) {
             await root.getByRole('button', { name: view, exact: true }).click();
@@ -122,6 +123,7 @@ for (const phone of [false, true]) {
         await savePreferences(page);
         await page.evaluate(async () => (await import('/scripts/notebooks/notes-app.js')).hideNotes());
         await openAgain(page, notebookId, noteId);
+        await revealNoteTools(page);
         await expect(root.locator('.notes-fold-controls')).toBeHidden();
         await root.getByRole('button', { name: 'Show or hide section controls', exact: true }).click();
         await expect(root.locator('.notes-fold-controls')).toBeVisible();
@@ -144,6 +146,7 @@ for (const phone of [false, true]) {
         await expect(outline.getByRole('button', { name: 'Another harbour', exact: true })).toBeVisible();
         await outline.getByRole('button', { name: 'Harbour', exact: true }).click();
         await expect(page.getByRole('textbox', { name: 'Note text (Markdown)' })).toBeVisible();
+        await revealNoteTools(page);
         await expect(root.getByRole('button', { name: 'Delete', exact: true })).toBeVisible();
         expect(await root.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
         if (phone) await page.screenshot({ path: '/tmp/opencode/notebook-feedback-after.png' });
@@ -306,6 +309,7 @@ for (const phone of [false, true]) {
         const root = page.locator('#neconyan-notes');
         const popup = page.locator('.popup:visible').last();
         await setPane(page, 'nav');
+        await revealNotebookOptions(page);
         await root.getByRole('button', { name: 'Export', exact: true }).click();
         await popup.getByRole('button', { name: 'Choose notes', exact: true }).click();
         await popup.getByRole('checkbox', { name: /Field notes/ }).check();

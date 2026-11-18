@@ -40,11 +40,11 @@ class Element {
     }
 }
 
-function fixture() {
+function fixture(kind = 'roleplay') {
     const panel = new Element('div');
     panel.root = true;
     const requests = [];
-    const scope = { kind: 'roleplay', key: 'chat' };
+    const scope = { kind, key: kind === 'general' ? 'general' : 'chat' };
     const preset = { name: 'Lantern' };
     const app = { built: true, open: true, tab: 'context', source: scope, bucket: null, contextKey: '', ticket: 1,
         library: { assistants: [] }, el: { panels: { context: panel } } };
@@ -214,7 +214,7 @@ describe('Scratchpad Context refresh lifecycle', () => {
         expect(f.panel.children[1]).not.toBe(original);
         expect(f.app.bucket).toBe(bucket);
         expect(f.panel.textContent).toContain('No story chat is open');
-        expect(f.panel.textContent).not.toContain('Current preset:');
+        expect(f.panel.textContent).toContain('Current preset: Lantern');
         f.reply(f.requests[1], [ref('current')]);
         f.reply(stale, [ref('obsolete')]);
         await f.settle();
@@ -268,8 +268,8 @@ describe('Scratchpad Context refresh lifecycle', () => {
         expect(f.requests).toHaveLength(3);
     });
 
-    test('redraws the Current preset label when the chat switches presets', () => {
-        const f = fixture();
+    test.each(['roleplay', 'general'])('redraws the Current preset label in %s when the preset changes', kind => {
+        const f = fixture(kind);
         f.apply([]);
         const originalPanel = f.panel.children[1];
         expect(f.panel.textContent).toContain('Current preset: Lantern');

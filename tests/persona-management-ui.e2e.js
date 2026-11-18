@@ -15,6 +15,77 @@ test.beforeEach(async ({ page }) => {
 });
 
 for (const phone of [true, false]) {
+    test.describe(`Bottom bar persona picker on ${phone ? 'phone' : 'desktop'}`, () => {
+        test.use(phone ? IPHONE_SAFARI_CONTEXT : { viewport: { width: 1280, height: 900 } });
+
+        test('opens the exact persona editor from the pencil at the right of each row', async ({ page, context }) => {
+            if (phone) await installIPhoneSafari(context);
+            await openQuietChatForSmoke(page);
+            await page.evaluate(async () => {
+                const { power_user } = await import('/scripts/power-user.js');
+                const { user_avatar, setPersonaDescription } = await import('/scripts/personas.js');
+                power_user.persona_auto_lock = false;
+                power_user.personas = { [user_avatar]: 'Dawn', 'kuro.png': 'Kuro' };
+                power_user.persona_descriptions = {
+                    [user_avatar]: { description: 'Dawn prompt' },
+                    'kuro.png': { description: 'Kuro prompt' },
+                };
+                setPersonaDescription();
+            });
+            if (phone) await applyIOSOnlyCss(page);
+
+            const bubble = page.locator('#sb-persona-bubble');
+            const picker = page.getByRole('dialog', { name: 'Switch persona' });
+            await bubble.click();
+            await expect(picker).toBeVisible();
+            await expect(picker.getByRole('button', { name: 'Dawn', exact: true })).toHaveAttribute('aria-pressed', 'true');
+            await expect(picker.getByRole('button', { name: 'Edit Dawn' })).toBeVisible();
+            const selectKuro = picker.getByRole('button', { name: 'Kuro', exact: true });
+            const editKuro = picker.getByRole('button', { name: 'Edit Kuro' });
+            const selectBox = await selectKuro.boundingBox();
+            const editBox = await editKuro.boundingBox();
+            expect(editBox.width).toBeGreaterThanOrEqual(44);
+            expect(editBox.height).toBeGreaterThanOrEqual(44);
+            expect(editBox.x).toBeGreaterThanOrEqual(selectBox.x + selectBox.width - 1);
+
+            if (phone) {
+                await editKuro.tap();
+            } else {
+                await expect(picker.getByRole('button', { name: 'Dawn', exact: true })).toBeFocused();
+                await page.keyboard.press('ArrowDown');
+                await expect(selectKuro).toBeFocused();
+                await page.keyboard.press('Tab');
+                await expect(editKuro).toBeFocused();
+                await page.keyboard.press('Escape');
+                await expect(picker).toBeHidden();
+                await expect(bubble).toBeFocused();
+                await page.keyboard.press('Enter');
+                await expect(picker).toBeVisible();
+                await editKuro.focus();
+                await page.keyboard.press('Enter');
+            }
+            await expect(picker).toBeHidden();
+            const prompt = page.locator('#persona_description');
+            await expect(prompt).toBeVisible();
+            await expect(prompt).toHaveValue('Kuro prompt');
+            await expect(bubble).toHaveAttribute('title', 'Persona: Kuro');
+            await page.locator('#right-nav-panel .sb-shell-close').click();
+            await bubble.click();
+            await picker.getByRole('button', { name: 'Edit Kuro' }).click();
+            await expect(prompt).toBeVisible();
+            await expect(prompt).toHaveValue('Kuro prompt');
+
+            await page.locator('#right-nav-panel .sb-shell-close').click();
+            await bubble.click();
+            await picker.getByRole('button', { name: 'Dawn', exact: true }).click();
+            await expect(picker).toBeHidden();
+            await expect(prompt).toBeHidden();
+            await expect(bubble).toHaveAttribute('title', 'Persona: Dawn');
+        });
+    });
+}
+
+for (const phone of [true, false]) {
     test.describe(`Persona status badges on ${phone ? 'phone' : 'desktop'}`, () => {
         test.use(phone ? IPHONE_SAFARI_CONTEXT : { viewport: { width: 1280, height: 900 } });
 

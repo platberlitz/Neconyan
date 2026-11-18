@@ -449,7 +449,7 @@ const PRESET_SLOT_SOURCES = {
  * The preset is its own section so its instructions are never mixed up with the
  * card, persona or lorebooks. Text stays exactly as saved, so no card text fills in.
  */
-export function formatPreset(preset) {
+export function formatPreset(preset, { editable = true } = {}) {
     const name = preset?.name || 'Unnamed preset';
     const modules = Array.isArray(preset?.modules) ? preset.modules : [];
     const lines = [
@@ -470,7 +470,8 @@ export function formatPreset(preset) {
     }
     if (!modules.length) lines.push('(This preset has no modules to show.)');
     for (const target of preset?.targets ?? []) {
-        lines.push(`Editable preset target: ${JSON.stringify(target)}`);
+        if (editable) lines.push(`Editable preset target: ${JSON.stringify(target)}`);
+        else if (target.fields) lines.push(`Preset template (reference only): ${JSON.stringify(target)}`);
     }
     return lines.join('\n\n');
 }
@@ -719,9 +720,10 @@ export async function buildContext({ source, settings, pendingText = '', session
     sections.push([
         general
             ? (generalLorebook(source, settings)
-                ? 'General Scratchpad: no story chat is open. No story messages, Author\'s Note, chat metadata or preset is shared. One lorebook was shared by hand for this session. It and any selected character card are reference material, not a live story.'
-                : 'General Scratchpad: no story chat is open. No story messages, Author\'s Note, chat metadata, preset or lorebook text is shared. Any selected character card is reference material, not a live story.')
+                ? 'General Scratchpad: no story chat is open. No story messages, Author\'s Note or chat metadata is shared. One lorebook was shared by hand for this session. It and any selected character card are reference material, not a live story.'
+                : 'General Scratchpad: no story chat is open. No story messages, Author\'s Note, chat metadata or lorebook text is shared. Any selected character card is reference material, not a live story.')
             : `Chat: ${source.label}`,
+        ...(general && include.preset ? ['The equipped preset below is reference material only. It does not control this discussion.'] : []),
         ...(general ? [] : [`Mode: ${source.kind === 'conversation' ? 'Conversation (messaging-style chat)' : 'Roleplay'}`]),
         `User: ${names.user}`,
     ].join('\n'));
@@ -796,10 +798,11 @@ export async function buildContext({ source, settings, pendingText = '', session
 
     let preset = null;
     let presetTargets = [];
-    if (include.preset && source.kind === 'roleplay') {
-        const snapshot = readCurrentPreset();
-        sections.push(formatPreset(snapshot));
-        presetTargets = (snapshot?.targets ?? []).map(({ api, name }) => ({ api, name }));
+    if (include.preset && (general || source.kind === 'roleplay')) {
+        // General uses the account's prompt order, not the character behind Home.
+        const snapshot = readCurrentPreset({ globalOnly: general });
+        sections.push(formatPreset(snapshot, { editable: !general }));
+        if (!general) presetTargets = (snapshot?.targets ?? []).map(({ api, name }) => ({ api, name }));
         const modules = Array.isArray(snapshot?.modules) ? snapshot.modules : [];
         preset = { name: snapshot?.name || '', on: modules.filter(item => item.enabled).length, off: modules.filter(item => !item.enabled).length };
     }

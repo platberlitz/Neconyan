@@ -1,6 +1,6 @@
 /* global requestAnimationFrame */
 import { expect, test } from '@playwright/test';
-import { notesApi, openNotes } from './notebooks-browser-fixture.js';
+import { notesApi, openNotes, revealNotebookOptions } from './notebooks-browser-fixture.js';
 
 test.use({ serviceWorkers: 'block', hasTouch: true });
 test.setTimeout(120000);
@@ -33,10 +33,11 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 393, height: 852 
         const root = page.locator('#neconyan-notes');
         const earlier = root.getByRole('button', { name: `Earlier ${suffix}`, exact: true });
         const chosen = root.getByRole('button', { name: `Chosen ${suffix}`, exact: true });
-        const newNote = root.locator('.notes-note-title').filter({ hasText: newTitle }).first();
+        const newNote = root.locator('[data-section="list"] .notes-note-title').filter({ hasText: newTitle });
+        await revealNotebookOptions(page);
         await expect(chosen).toBeVisible();
         await earlier.click();
-        await expect(root.locator('.notes-note-title').filter({ hasText: oldTitle }).first()).toBeVisible();
+        await expect(root.locator('[data-section="list"] .notes-note-title').filter({ hasText: oldTitle })).toBeVisible();
 
         // Hold a real notebook notification response while the user chooses another notebook.
         const listHeld = deferred();

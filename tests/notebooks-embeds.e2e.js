@@ -28,7 +28,7 @@ async function note(page, notebookId, title, text, folder = '') {
 async function choose(page, viewport, fixture) {
     await page.evaluate(async notebookId => (await import('/scripts/notebooks/notes-app.js')).notesApp().loadNotebooks(notebookId), fixture.notebookId);
     await showNotebooks(page, viewport);
-    await page.locator('.notes-pane-nav .notes-note-title').getByText(fixture.title, { exact: true }).first().click();
+    await page.locator('[data-section="list"] .notes-note-title').getByText(fixture.title, { exact: true }).click();
     await expectSourceText(page, fixture.text.replace(/\r\n?/g, '\n'));
 }
 

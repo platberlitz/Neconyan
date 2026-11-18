@@ -20,6 +20,12 @@ for (const phone of [false, true]) {
             });
             if (phone) await applyIOSOnlyCss(page);
             const invite = page.locator('#neconyan-notes .neconyan-tool-tour-invite');
+            const help = page.locator('#neconyan-notes').getByRole('button', { name: 'Help', exact: true });
+            if (phone) {
+                await expect(invite).toBeAttached();
+                await expect(invite).toBeHidden();
+                await help.click();
+            }
             await expect(invite).toBeVisible();
             const close = invite.locator('.neconyan-tour-invite-dismiss');
             const box = await invite.boundingBox();
@@ -40,6 +46,7 @@ for (const phone of [false, true]) {
             await enterNotes(page, viewport);
             if (phone) await applyIOSOnlyCss(page);
             await expect(invite).toBeAttached();
+            if (phone) await help.click();
             await expect(invite).toBeHidden();
             await expect(page.locator('#neconyan-notes .neconyan-tool-tour-button')).toBeVisible();
         } finally {

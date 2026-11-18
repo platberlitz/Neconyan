@@ -61,6 +61,7 @@ import {
     mountNeconyanModelWorkspace,
 } from './neconyan-native-workspaces.js';
 import { wireHomePersonaChoice } from './scratchpad/home-persona.js';
+import { setUserAvatar } from './personas.js';
 
 wireHomePersonaChoice();
 const nnMobileShellLifecycle = createMobileShellLifecycle();
@@ -84,6 +85,7 @@ const NN_STORAGE_KEYS = Object.freeze({
     topbarLabelDesktopParts: 'sb-topbar-label-desktop-parts',
     topbarLabelMobilePart: 'sb-topbar-label-mobile-part',
     topbarLabelCustomText: 'sb-topbar-label-custom-text',
+    topbarLabelMarquee: 'sb-topbar-label-marquee',
     topbarLabelClickCycle: 'sb-topbar-label-click-cycle',
     topbarLabelClickCycleDesktop: 'sb-topbar-label-click-cycle-desktop',
     topbarLabelClickCycleMobile: 'sb-topbar-label-click-cycle-mobile',
@@ -533,7 +535,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261118-meower-reasoning';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261118-meower-reasoning-r2';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -1522,6 +1524,8 @@ const nnState = {
             : normalizeTopbarLabelParts(safeGetItem(NN_STORAGE_KEYS.topbarLabelDesktopParts), []),
         mobileParts: readTopbarLabelMobileParts(safeGetItem(NN_STORAGE_KEYS.topbarLabelMobilePart)),
         customText: normalizeTopbarCustomText(safeGetItem(NN_STORAGE_KEYS.topbarLabelCustomText)),
+        marquee: readTopbarLabelMarquee(),
+        marqueeObserver: null,
         clickCycle: {
             desktop: readTopbarLabelClickCycle('desktop'),
             mobile: readTopbarLabelClickCycle('mobile'),
@@ -2284,6 +2288,7 @@ function restorePersistedTopbarState() {
         : normalizeTopbarLabelParts(safeGetItem(NN_STORAGE_KEYS.topbarLabelDesktopParts), []);
     nnState.topbarLabel.mobileParts = readTopbarLabelMobileParts(safeGetItem(NN_STORAGE_KEYS.topbarLabelMobilePart));
     nnState.topbarLabel.customText = normalizeTopbarCustomText(safeGetItem(NN_STORAGE_KEYS.topbarLabelCustomText));
+    nnState.topbarLabel.marquee = readTopbarLabelMarquee();
     nnState.topbarLabel.clickCycle.desktop = readTopbarLabelClickCycle('desktop');
     nnState.topbarLabel.clickCycle.mobile = readTopbarLabelClickCycle('mobile');
     nnState.chatbar.visible = normalizeStoredBoolean(safeGetItem(NN_STORAGE_KEYS.chatbarVisible), nnState.chatbar.visible);
@@ -5943,6 +5948,18 @@ function setTopbarCustomText(value) {
     updateTopBarBrand();
 }
 
+function readTopbarLabelMarquee() {
+    return normalizeStoredBoolean(safeGetItem(NN_STORAGE_KEYS.topbarLabelMarquee), true);
+}
+
+function setTopbarLabelMarquee(enabled) {
+    nnState.topbarLabel.marquee = enabled;
+    safeSetItem(NN_STORAGE_KEYS.topbarLabelMarquee, String(enabled));
+    flushNnStorageWrites();
+    updateThemePickerUi();
+    syncTopBarLabelMarquee(document.querySelector('#sb-topbar-title .sb-brand-title-text'));
+}
+
 function setTopbarLabelClickCycle(enabled) {
     const mode = isMobileViewport() ? 'mobile' : 'desktop';
     const nextValue = Boolean(enabled);
@@ -6492,6 +6509,25 @@ function getTopBarLabel() {
     return labelParts.length ? labelParts.join(' · ') : getDefaultTopBarLabel(context);
 }
 
+function syncTopBarLabelMarquee(text) {
+    if (!text) return;
+
+    const width = text.parentElement.clientWidth;
+    const overflow = width && nnState.topbarLabel.marquee ? text.scrollWidth - width : 0;
+    if (overflow <= 0) {
+        text.removeAttribute('data-sb-marquee');
+        return;
+    }
+
+    const distance = `${overflow}px`;
+    if (text.style.getPropertyValue('--sb-title-overflow') !== distance) {
+        text.style.setProperty('--sb-title-overflow', distance);
+        // Keep longer labels readable without making a few missing pixels crawl.
+        text.style.setProperty('--sb-title-slide-time', `${Math.max(2800, 1600 + overflow * 30)}ms`);
+    }
+    text.toggleAttribute('data-sb-marquee', true);
+}
+
 function updateTopBarBrand() {
     const title = document.getElementById('sb-topbar-title');
     const brand = document.querySelector('.sb-topbar-brand');
@@ -6505,13 +6541,20 @@ function updateTopBarBrand() {
     const isActiveChat = hasActiveTopBarChat(context);
 
     bindTopBarTitleCycle(title);
-    if (title.textContent !== label) title.textContent = label;
+    const text = title.querySelector('.sb-brand-title-text') ?? title;
+    const labelChanged = text.textContent !== label;
+    if (labelChanged) text.textContent = label;
     if (title.title !== label) title.title = label;
     const accessibleLabel = isTopbarLabelClickCycleEnabled()
         ? t`${label}. Tap to switch the top bar label.`
         : t`${label}. Tap to return to the chat.`;
     if (title.getAttribute('aria-label') !== accessibleLabel) title.setAttribute('aria-label', accessibleLabel);
     title.classList.toggle('is-chat', isActiveChat);
+    if (labelChanged && text !== title) {
+        // Start a new label at its beginning, even when its width matches the old one.
+        text.removeAttribute('data-sb-marquee');
+        syncTopBarLabelMarquee(text);
+    }
     const brandState = isActiveChat ? 'chat' : 'idle';
     if (brand.dataset.brandState !== brandState) brand.dataset.brandState = brandState;
     queueTopbarBrandFit();
@@ -10618,7 +10661,7 @@ function openCharacterWorldInfoTab() {
     window.requestAnimationFrame(() => focusCharacterPanelTab('world-info'));
 }
 
-function openCharacterPersonaTab() {
+function openCharacterPersonaTab({ editAvatarId } = {}) {
     const panel = getCharacterPanel();
     nnState.characterDrawer.lastTab = 'persona';
 
@@ -10633,6 +10676,23 @@ function openCharacterPersonaTab() {
     hideCharacterMainPanels();
     syncCharacterShellTabs('persona');
     syncCharacterTitlebarVisibility();
+
+    if (editAvatarId) {
+        // The editor works on the active persona. setUserAvatar updates its fields
+        // synchronously, before any chat refresh, so navigation needn't wait for it.
+        void setUserAvatar(editAvatarId, { toastPersonaNameChange: false }).catch(error => {
+            console.error('[Neconyan] Could not finish selecting persona for editing.', error);
+        });
+        document.getElementById('persona_workspace_tab_edit')?.click();
+        document.getElementById('persona_editor_tab_prompt')?.click();
+
+        void Promise.resolve(personaStylesReady).then(() => {
+            if (isCharacterPanelOpen() && panel?.dataset.menuType === 'persona'
+                && document.activeElement === document.body) {
+                document.getElementById('persona_rename_button')?.focus({ preventScroll: true });
+            }
+        });
+    }
 }
 
 function openCharacterCreatorTab({ avatar = null, draftId = null } = {}) {
@@ -10750,7 +10810,7 @@ function setCharacterShellMode(mode) {
     }
 }
 
-function openCharacterPanelTab(tabId, creatorOptions = {}) {
+function openCharacterPanelTab(tabId, options = {}) {
     const normalizedTabId = normalizeCharacterPanelTab(tabId);
     nnState.characterDrawer.lastTab = normalizedTabId;
 
@@ -10775,9 +10835,9 @@ function openCharacterPanelTab(tabId, creatorOptions = {}) {
         const panel = getCharacterPanel();
         if (normalizedTabId === 'persona') {
             setCharacterPanelMenuType(panel, 'persona');
-            openCharacterPersonaTab();
+            openCharacterPersonaTab(options);
         } else if (normalizedTabId === 'creator') {
-            openCharacterCreatorTab(creatorOptions);
+            openCharacterCreatorTab(options);
         } else if (normalizedTabId === 'import') {
             setCharacterPanelMenuType(panel, 'import');
             openCharacterImportTab();
@@ -11943,8 +12003,14 @@ function buildTopBar() {
     }
 
     centerGroup.innerHTML = `
-        <div id="sb-topbar-title" class="sb-brand-title" role="button" tabindex="0" aria-label="Tap to switch the top bar label">${NN_IDLE_BRAND_LABEL}</div>
+        <div id="sb-topbar-title" class="sb-brand-title" role="button" tabindex="0" aria-label="Tap to switch the top bar label"><span class="sb-brand-title-clip"><span class="sb-brand-title-text">${NN_IDLE_BRAND_LABEL}</span></span></div>
     `;
+    const marqueeClip = centerGroup.querySelector('.sb-brand-title-clip');
+    const marqueeText = marqueeClip.firstElementChild;
+    nnState.topbarLabel.marqueeObserver?.disconnect();
+    nnState.topbarLabel.marqueeObserver = new ResizeObserver(() => syncTopBarLabelMarquee(marqueeText));
+    nnState.topbarLabel.marqueeObserver.observe(marqueeClip);
+    nnState.topbarLabel.marqueeObserver.observe(marqueeText);
 
     // Neconyan: each cluster rail is built beside the Layer 2 anchor it belongs to and stays
     // display:none until icons-only mode is on, so one static child order serves both modes and the
@@ -16781,6 +16847,24 @@ function createTopbarLabelSettingsGroup() {
     clickCycleCopy.append(clickCycleTitle, clickCycleDescription);
     clickCycleOption.append(clickCycleCheckbox, clickCycleCopy);
 
+    const marqueeId = 'sb-topbar-label-marquee-input';
+    const marqueeOption = createElement('label', {
+        className: 'sb-topbar-label-option',
+        attrs: { for: marqueeId },
+    });
+    const marqueeCheckbox = createElement('input', {
+        id: marqueeId,
+        className: 'sb-topbar-label-checkbox',
+        attrs: { type: 'checkbox', 'aria-labelledby': 'sb-topbar-label-marquee-label', 'aria-describedby': 'sb-topbar-label-marquee-description' },
+    });
+    const marqueeCopy = createElement('span', { className: 'sb-topbar-label-option-copy' });
+    marqueeCopy.append(
+        createElement('strong', { id: 'sb-topbar-label-marquee-label', text: 'Scroll long labels' }),
+        createElement('small', { id: 'sb-topbar-label-marquee-description', text: 'Slide the top bar label when it doesn’t fit. Reduced motion keeps it still.' }),
+    );
+    marqueeCheckbox.addEventListener('change', () => setTopbarLabelMarquee(marqueeCheckbox.checked));
+    marqueeOption.append(marqueeCheckbox, marqueeCopy);
+
     desktopHeading.append(desktopTitle, desktopDescription);
     mobileHeading.append(mobileTitle, mobileDescription);
     customTextHeading.append(customTextTitle, customTextDescription);
@@ -16797,7 +16881,7 @@ function createTopbarLabelSettingsGroup() {
     return createThemeSettingsDrawer({
         id: 'sb-topbar-label-drawer',
         title: 'Top Bar Label',
-        content: [description, desktopSection, mobileSection, customTextField, clickCycleOption],
+        content: [description, desktopSection, mobileSection, customTextField, clickCycleOption, marqueeOption],
     });
 }
 
@@ -17200,6 +17284,12 @@ function updateThemePickerUi() {
 
         input.checked = isTopbarLabelClickCycleEnabled();
         input.closest('.sb-topbar-label-option')?.classList.toggle('is-selected', input.checked);
+    }
+
+    const marqueeCheckbox = document.getElementById('sb-topbar-label-marquee-input');
+    if (marqueeCheckbox instanceof HTMLInputElement) {
+        marqueeCheckbox.checked = nnState.topbarLabel.marquee;
+        marqueeCheckbox.closest('.sb-topbar-label-option')?.classList.toggle('is-selected', marqueeCheckbox.checked);
     }
 
     for (const input of document.querySelectorAll('[data-sb-compact-mode-input]')) {
@@ -21508,8 +21598,8 @@ function openPersonaPicker({ focus = true } = {}) {
     const optionsList = createElement('div', {
         className: 'sb-persona-options',
         attrs: {
-            role: 'listbox',
-            'aria-label': 'Choose persona',
+            role: 'group',
+            'aria-label': t`Choose persona`,
         },
     });
     picker.addEventListener('keydown', event => {
@@ -21546,13 +21636,12 @@ function openPersonaPicker({ focus = true } = {}) {
     const bubble = document.getElementById('sb-persona-bubble');
     if (bubble instanceof HTMLElement) {
         document.body.appendChild(picker);
-        positionPersonaPicker(picker, bubble);
-        if (focus) {
-            const activeOption = picker.querySelector('.sb-persona-option.is-active');
-            const firstOption = picker.querySelector('.sb-persona-option');
-            const firstControl = picker.querySelector('button, input');
-            (activeOption ?? firstOption ?? firstControl)?.focus({ preventScroll: true });
-        }
+        positionPersonaPicker(picker, bubble, () => {
+            if (focus) {
+                const activeOption = picker.querySelector('.sb-persona-option.is-active');
+                (activeOption ?? picker.querySelector('button, input'))?.focus();
+            }
+        });
     }
 }
 
@@ -21698,7 +21787,7 @@ function openPersonaAppendicesManager() {
     }, 160);
 }
 
-function positionPersonaPicker(picker, bubble) {
+function positionPersonaPicker(picker, bubble, onPositioned) {
     const bubbleRect = bubble.getBoundingClientRect();
     picker.style.visibility = 'hidden';
     picker.style.left = '0px';
@@ -21721,6 +21810,7 @@ function positionPersonaPicker(picker, bubble) {
         picker.style.left = `${Math.round(left)}px`;
         picker.style.top = `${Math.round(top)}px`;
         picker.style.visibility = '';
+        onPositioned?.();
     });
 }
 
@@ -21741,14 +21831,10 @@ function focusPersonaOption(picker, offset) {
     const nextIndex = currentIndex === -1
         ? 0
         : (currentIndex + offset + options.length) % options.length;
-    options[nextIndex]?.focus({ preventScroll: true });
+    options[nextIndex]?.focus();
 }
 
-async function selectPersonaOption(option, picker, avatarId, context) {
-    picker.querySelectorAll('.sb-persona-option').forEach(element => {
-        element.classList.toggle('is-active', element === option);
-        element.setAttribute('aria-selected', String(element === option));
-    });
+async function selectPersonaOption(avatarId, context) {
     closePersonaPicker();
     const execSlash = context?.executeSlashCommandsWithOptions;
     let switched = false;
@@ -21777,12 +21863,12 @@ async function selectPersonaOption(option, picker, avatarId, context) {
 }
 
 function addPersonaOption(picker, avatarId, name, title, isActive, context) {
+    const row = createElement('div', { className: 'sb-persona-picker-row' });
     const option = createElement('button', {
         className: `sb-persona-option${isActive ? ' is-active' : ''}`,
         attrs: {
             type: 'button',
-            role: 'option',
-            'aria-selected': String(isActive),
+            'aria-pressed': String(isActive),
         },
     });
 
@@ -21790,7 +21876,7 @@ function addPersonaOption(picker, avatarId, name, title, isActive, context) {
         className: 'sb-persona-option-avatar',
         attrs: {
             src: `/User Avatars/${avatarId}`,
-            alt: name,
+            alt: '',
             loading: 'lazy',
         },
     });
@@ -21818,7 +21904,7 @@ function addPersonaOption(picker, avatarId, name, title, isActive, context) {
 
     option.append(img, info);
 
-    option.addEventListener('click', () => { void selectPersonaOption(option, picker, avatarId, context); });
+    option.addEventListener('click', () => { void selectPersonaOption(avatarId, context); });
     option.addEventListener('keydown', event => {
         if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
             event.preventDefault();
@@ -21828,17 +21914,25 @@ function addPersonaOption(picker, avatarId, name, title, isActive, context) {
             focusPersonaOption(picker, -1);
         } else if (event.key === 'Home') {
             event.preventDefault();
-            picker.querySelector('.sb-persona-option')?.focus({ preventScroll: true });
+            picker.querySelector('.sb-persona-option')?.focus();
         } else if (event.key === 'End') {
             event.preventDefault();
-            Array.from(picker.querySelectorAll('.sb-persona-option')).at(-1)?.focus({ preventScroll: true });
-        } else if (event.key === 'Escape') {
-            event.preventDefault();
-            closePersonaPicker({ restoreFocus: true });
+            Array.from(picker.querySelectorAll('.sb-persona-option')).at(-1)?.focus();
         }
     });
 
-    picker.appendChild(option);
+    const editLabel = t`Edit ${name}`;
+    const editButton = createElement('button', {
+        className: 'sb-persona-picker-edit',
+        attrs: { type: 'button', title: editLabel, 'aria-label': editLabel },
+    });
+    editButton.appendChild(createElement('i', { className: 'fa-solid fa-pencil', attrs: { 'aria-hidden': 'true' } }));
+    editButton.addEventListener('click', () => {
+        closePersonaPicker();
+        openCharacterPanelTab('persona', { editAvatarId: avatarId });
+    });
+    row.append(option, editButton);
+    picker.appendChild(row);
 }
 
 function initAll() {

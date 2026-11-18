@@ -1,7 +1,7 @@
 /* global window */
 import { randomUUID } from 'node:crypto';
 import { test, expect } from '@playwright/test';
-import { openNotes, notesApi, fillSource, expectSourceText, sourceText } from './notebooks-browser-fixture.js';
+import { openNotes, notesApi, fillSource, expectSourceText, revealNoteTools, sourceText } from './notebooks-browser-fixture.js';
 import { IPHONE_SAFARI_CONTEXT, installIPhoneSafari, applyIOSOnlyCss } from './ios-safari-emulation.js';
 
 async function createCurrentNote(page) {
@@ -34,6 +34,7 @@ for (const phone of [false, true]) {
             await page.evaluate(async () => { window.notesEditorBeforeFullscreen = (await import('/scripts/notebooks/notes-app.js')).notesApp().sourceEditor; });
             const root = page.locator('#neconyan-notes');
             const normal = await root.boundingBox();
+            await revealNoteTools(page);
             await root.getByRole('button', { name: 'Full screen', exact: true }).click();
             await expect(root).toHaveAttribute('data-writing-fullscreen', 'true');
             // Reduced motion still gives every element a 0.01 ms transition, and the box only
@@ -79,6 +80,7 @@ for (const phone of [false, true]) {
             await page.clock.setFixedTime(new Date('2026-11-14T09:15:25.100Z'));
             const root = page.locator('#neconyan-notes');
             for (const [mode, assistant] of [['Roleplay', 'Taro'], ['Conversation', 'Nori'], ['Conversation', 'Miso'], ['Roleplay', 'Miso']]) {
+                await revealNoteTools(page);
                 await root.getByRole('button', { name: 'Talk about this note', exact: true }).click();
                 const dialog = page.locator('.notes-discussion-dialog');
                 await expect(dialog.getByRole('button', { name: 'Miso', exact: true })).toBeVisible();
@@ -126,6 +128,7 @@ for (const phone of [false, true]) {
                     }, note);
                 }
             }
+            await revealNoteTools(page);
             await root.getByRole('button', { name: 'Talk about this note', exact: true }).click();
             await page.locator('.popup').getByRole('button', { name: 'Not now', exact: true }).click();
             await expect(root).toBeVisible();
@@ -169,6 +172,7 @@ for (const phone of [false, true]) {
             });
 
             await fillSource(page, '# Delete me\n\nTyped just before deleting.');
+            await revealNoteTools(page);
             await root.getByRole('button', { name: 'Delete', exact: true }).click();
             await page.locator('.popup').getByRole('button', { name: 'Move to Trash', exact: true }).click();
             await expect(root.locator('.notes-editor')).toBeHidden();

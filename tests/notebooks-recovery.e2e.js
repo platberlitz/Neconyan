@@ -2,7 +2,7 @@
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
-import { enterNotes, expectSourceText, fillSource, notesApi, openNotes, openWorkspace, showNotebooks } from './notebooks-browser-fixture.js';
+import { enterNotes, expectSourceText, fillSource, notesApi, openNotes, openWorkspace, revealNotebookOptions, showNotebooks } from './notebooks-browser-fixture.js';
 
 test.use({ hasTouch: true, serviceWorkers: 'block' });
 test.setTimeout(180000);
@@ -32,7 +32,7 @@ async function createNote(page, notebookId, title, text) {
 async function showNote(page, viewport, notebookId, note) {
     await page.evaluate(async id => (await import('/scripts/notebooks/notes-app.js')).notesApp().loadNotebooks(id), notebookId);
     await showNotebooks(page, viewport);
-    await page.locator('.notes-pane-nav .notes-note-title').getByText(note.title, { exact: true }).first().click();
+    await page.locator('[data-section="list"] .notes-note-title').getByText(note.title, { exact: true }).click();
     await expect(page.locator('.notes-source')).toBeVisible();
 }
 
@@ -274,6 +274,7 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 393, height: 852 
                 args: { notebookId, noteId: note.id, markdown: addition } });
             expect(proposed.status, proposed.message).toBe('needs_approval');
             await showNotebooks(page, viewport);
+            await revealNotebookOptions(page);
             await page.locator('#neconyan-notes').getByRole('button', { name: 'Assistant changes', exact: true }).click();
             const row = page.locator('.popup:visible .notes-list-item').filter({ hasText: 'Add to note' }).last();
             await row.getByRole('button', { name: 'Review', exact: true }).click();

@@ -40,7 +40,7 @@ function openShell(storage, mobile = false) {
         'isNeconyanStorageKey', 'scheduleNnStorageFlush', 'flushNnStorageWrites', 'bindNnStorageFlushEvents',
         'safeGetItem', 'safeSetItem', 'safeRemoveItem', 'normalizeStoredBoolean',
         'normalizeTopbarLabelPart', 'normalizeTopbarLabelParts', 'normalizeTopbarCustomText',
-        'isMobileViewport', 'readTopbarLabelClickCycle', 'isTopbarLabelClickCycleEnabled',
+        'isMobileViewport', 'readTopbarLabelClickCycle', 'readTopbarLabelMarquee', 'isTopbarLabelClickCycleEnabled',
         'setTopbarLabelClickCycle', 'setTopbarCustomText', 'setMobileTopbarLabelPart',
         'readTopbarLabelMobileParts', 'setMobileTopbarLabelParts',
         'handleTopBarTitleActivation',
@@ -60,6 +60,7 @@ function openShell(storage, mobile = false) {
     ].join('\n'), context);
     return {
         setMobile(value) { mobile = value; },
+        marqueeEnabled() { return vm.runInContext('nnState.topbarLabel.marquee', context); },
         setClickCycle(value) { vm.runInContext(`setTopbarLabelClickCycle(${Boolean(value)})`, context); },
         activate() {
             cycleTopBarLabel.mockClear();
@@ -80,6 +81,13 @@ function openShell(storage, mobile = false) {
 }
 
 describe('top bar label preference persistence', () => {
+    test('enables scrolling by default and restores a stored opt-out on both layouts', () => {
+        expect(openShell(createStorage()).marqueeEnabled()).toBe(true);
+        const storage = createStorage([['sb-topbar-label-marquee', 'false']]);
+        expect(openShell(storage).marqueeEnabled()).toBe(false);
+        expect(openShell(storage, true).marqueeEnabled()).toBe(false);
+    });
+
     test('retains independent desktop and mobile click actions across viewport changes and reloads', () => {
         const storage = createStorage();
         const shell = openShell(storage);

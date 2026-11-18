@@ -8,7 +8,7 @@ Open it from **Notebooks** in the workspace rail (the sidebar on desktop, the dr
 
 Notebooks stays highlighted while it is open, including beside the chat. **Back to chat** closes it and clears its highlight. On desktop, **Beside chat** hides the introductory card so more room is available for the note; **Full width** brings it back.
 
-The first time Notes opens, Miso offers to show you around. **Show me around** starts her tour; **Not now** hides the offer for that account until you restore tour invitations in Settings. You can start the tour later from the **Tour** button under the Notes title. The tour only switches between the Notebooks, Note and Details panes and the detail tabs; it never creates, saves, deletes or imports anything. Steps for parts of the page that are not on screen yet (for example the editor when no note is open) are skipped.
+Miso offers to show you around. On a phone, open **Help** in the Notebooks header to see the invitation. **Show me around** starts her tour; **Not now** hides the offer for that account until you restore tour invitations in Settings. You can start the tour later from the **Tour** button. The tour switches panes and reveals controls; it never creates, saves, deletes or imports anything. Steps for parts of the page that are not on screen yet (for example the editor when no note is open) are skipped.
 
 Background updates do not switch the notebook you chose or replace its list with results from a notebook you left.
 
@@ -281,7 +281,9 @@ Supported: plain Markdown notes, folders, relative image links, the link and emb
 
 ## Phones
 
-On a phone Notes fills the screen. Use the **Notebooks**, **Note** and **Details** tabs at the top to move around, and **Back to chat** to return. Your chat draft and your note draft are both kept when you switch.
+On a phone Notebooks fills the screen. Use the **Notebooks**, **Note** and **Details** tabs to move around, and **Back to chat** to return. Search and **New note** stay visible above the note list. Open **Notebook options** to switch notebooks, filter by folder, find favourites and recent notes, or use notebook tools such as Graph and Export.
+
+In **Note**, switch directly between **Write**, **Read** and **Outline**. Open **Note tools** for formatting, folding, discussion, full screen or Trash. **Exit full screen** stays visible even when **Note tools** is closed. The extra controls start closed each time you open Notebooks; switching panes does not discard your draft.
 
 ## Diagnostics
 
