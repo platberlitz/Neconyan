@@ -46,7 +46,8 @@ for (const phone of [false, true]) {
             settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped', WelcomePage_PanelMode: 'full' };
             await route.fulfill({ response, json: { ...data, settings: JSON.stringify(settings) } });
         });
-        await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
+        // On the context, so a save still pending when the page routes are cleared cannot reach the shared account.
+        await context.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
         await page.goto('/');
         await page.waitForFunction(() => window.NeconyanShell && document.querySelector('.neconyan-home'));
         await expect(page.locator('#preloader')).toHaveCount(0);
