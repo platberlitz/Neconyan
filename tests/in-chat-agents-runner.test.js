@@ -12333,6 +12333,29 @@ Helper context.`;
         expect(textarea.value).toBe('Polished impersonation');
     });
 
+    test('a reply processed under an older Agent order is not processed again', async () => {
+        useManualTransformAgents();
+        for (const agent of enabledAgents) agent.postProcess.enabled = true;
+        generateQuietPrompt.mockResolvedValue('Rewritten again');
+        chat.push({
+            name: 'Assistant',
+            mes: 'Already processed',
+            is_user: false,
+            is_system: false,
+            gen_started: 'started',
+            gen_finished: 'finished',
+            send_date: 'sent',
+            swipe_id: 0,
+            extra: { inChatAgentPostRuns: ['normal|started|finished|sent|0|agent-manual-b,agent-manual-a'] },
+        });
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        await new Promise(resolve => setTimeout(resolve, 1700));
+        expect(generateQuietPrompt).not.toHaveBeenCalled();
+        expect(chat[0].mes).toBe('Already processed');
+    });
+
     test('rewrites generated impersonation text when prompt transform opts in', async () => {
         useImpersonateTransformAgent({ runOnImpersonate: true });
         generateQuietPrompt.mockResolvedValue('<assistant_response>Polished impersonation</assistant_response>');

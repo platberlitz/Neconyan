@@ -1443,10 +1443,27 @@ function syncAssistantMessageTextToSwipe(message) {
     }
 }
 
-function getPostProcessingRunKey(message, generationType, activationSnapshot = null) {
-    const snapshotAgentIds = Array.isArray(activationSnapshot?.activeAgentIds)
-        ? activationSnapshot.activeAgentIds.join(',')
+// Agents can load in a different order after a reload, so run keys list them sorted.
+function getRunKeyAgentIds(activationSnapshot) {
+    return Array.isArray(activationSnapshot?.activeAgentIds)
+        ? [...new Set(activationSnapshot.activeAgentIds.map(String))].sort().join(',')
         : '';
+}
+
+// Keys saved before the Agent list was sorted still describe the same run.
+function normalizeStoredRunKey(runKey) {
+    const separator = runKey.lastIndexOf('|');
+    if (separator < 0) {
+        return runKey;
+    }
+    const agentIds = runKey.slice(separator + 1);
+    return agentIds
+        ? `${runKey.slice(0, separator + 1)}${[...new Set(agentIds.split(','))].sort().join(',')}`
+        : runKey;
+}
+
+function getPostProcessingRunKey(message, generationType, activationSnapshot = null) {
+    const snapshotAgentIds = getRunKeyAgentIds(activationSnapshot);
     const swipeInfo = getActiveSwipeInfo(message);
 
     return [
@@ -1465,9 +1482,7 @@ function getPostProcessingIndexRunKey(message, messageIndex, generationType, act
         return '';
     }
 
-    const snapshotAgentIds = Array.isArray(activationSnapshot?.activeAgentIds)
-        ? activationSnapshot.activeAgentIds.join(',')
-        : '';
+    const snapshotAgentIds = getRunKeyAgentIds(activationSnapshot);
 
     return [
         postProcessingGenerationRunId,
@@ -1775,7 +1790,7 @@ function hasProcessedPostProcessingRun(message, runKey, messageIndex = null, ind
         runKey &&
         (
             processedPostProcessingRuns.get(message)?.has(runKey) ||
-            getStoredPostProcessingRuns(message).includes(runKey) ||
+            getStoredPostProcessingRuns(message).some(value => typeof value === 'string' && normalizeStoredRunKey(value) === runKey) ||
             indexRuns?.includes(runKey) ||
             (indexRunKey && indexRuns?.includes(indexRunKey))
         ),
