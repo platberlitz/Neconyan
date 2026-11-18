@@ -9,7 +9,7 @@ import { callLLMWithProfile } from './llm.js';
 import { injectPrompt } from './prompts.js';
 import { createPerceptualConflictReport } from './perceptual-conflicts.js';
 import { NARRATOR_VISUAL_ID, getNarratorVisual, setNarratorStyle } from './narrator-style.js';
-import { isExcludedSpeakerName } from './speaker-exclusions.js';
+import { getIncludedCharacterEntries, isExcludedSpeakerName } from './speaker-exclusions.js';
 import { GRADIENT_GENERATOR_ALGORITHM, advanceGradientGenerator, generateSeededGradient, normalizeGradientGenerator } from './seeded-gradient-generator.js';
 import { escapeHtml, generateQuietPrompt, getContext, power_user } from './st-api.js';
 import { characterColors, expandedCharacterRows, groupProfiles, setCharacterColors, setExpandedCharacterRows, setGroupProfiles, setSwapMode, settings, swapMode } from './state.js';
@@ -236,9 +236,9 @@ function getConflictSurfaceColor() {
 export function getPerceptualConflictReport(options = {}) {
     const narrator = getNarratorVisual(settings, applyThemeReadabilityAndBrightness);
     const conflictVisuals = narrator ? [narrator] : [];
-    const characterKeys = Object.keys(characterColors).sort(compareCodePoints);
-    for (const key of characterKeys) {
-        const entry = characterColors[key] && typeof characterColors[key] === 'object' ? characterColors[key] : {};
+    const entries = getIncludedCharacterEntries().sort(([left], [right]) => compareCodePoints(left, right));
+    for (const [key, value] of entries) {
+        const entry = value && typeof value === 'object' ? value : {};
         conflictVisuals.push({ ...entry, id: key, label: entry.name || key, kind: 'character' });
     }
     const report = createPerceptualConflictReport(conflictVisuals, {

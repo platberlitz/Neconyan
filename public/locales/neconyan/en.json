@@ -15899,6 +15899,7 @@
   "Reduce routine notifications": "Reduce routine notifications",
   "Not characters": "Not characters",
   "Names that are not real characters, like a scenario card ('Your Wife Wants To Divorce You') or a name with a title ('Leonard | Actor'). They never join the character list and their lines stay in the normal text color.": "Names that are not real characters, like a scenario card ('Your Wife Wants To Divorce You') or a name with a title ('Leonard | Actor'). They never join the character list and their lines stay in the normal text color.",
+  "Obvious card titles are skipped automatically. Add any other names that should stay out of the character list and keep the normal text colour.": "Obvious card titles are skipped automatically. Add any other names that should stay out of the character list and keep the normal text colour.",
   "Name that is not a character": "Name that is not a character",
   "Add this card's name": "Add this card's name",
   "Profiles are scoped with the active color table. Applying one copies its selected fields; later profile edits do not change characters.": "Profiles are scoped with the active color table. Applying one copies its selected fields; later profile edits do not change characters.",

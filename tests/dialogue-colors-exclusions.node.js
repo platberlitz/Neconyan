@@ -76,8 +76,8 @@ const hooks = registerHooks({
     },
 });
 
-const { buildColorRenderingLookup, processColorPairs } = await import(`${EXTENSION}/color-blocks.js`);
-const { buildCharacterEntry } = await import(`${EXTENSION}/palettes.js`);
+const { buildColorRenderingLookup, buildNameColorLookup, processColorPairs, resolveCharacterKeyByNameOrAlias } = await import(`${EXTENSION}/color-blocks.js`);
+const { buildCharacterEntry, getPerceptualConflictReport } = await import(`${EXTENSION}/palettes.js`);
 const { buildExcludedSpeakerPromptRule, buildMinimalPromptInstruction, filterPromptCharacterEntries } = await import(`${EXTENSION}/prompts.js`);
 const { attributeDialogueSegments } = await import(`${EXTENSION}/attribution.js`);
 const {
@@ -163,6 +163,53 @@ test('the colouring prompt tells the model to leave Narrator plain', () => {
 
 const SCENARIO = 'Your Wife Wants To Divorce You';
 const TITLED = 'Leonard | Actor';
+
+function activateCard(name) {
+    Object.assign(globalThis.__dcExclusionsContext, { characterId: 0, characters: [{ name }], name2: name });
+}
+
+test('obvious titles on the active card are skipped automatically, never saved as manual exclusions', () => {
+    const titles = ['Your Wife Will Divorce You', SCENARIO, 'You Wake Up in a Dungeon', 'A Night at the Museum',
+        TITLED, 'Leonard｜Actor', 'Leonard│Actor', 'Leonard / Actor', 'Leonard • Actor', 'Leonard - Actor'];
+    withSettings({ excludedSpeakerNames: ['Stage Direction'] }, () => {
+        for (const title of titles) {
+            activateCard(title);
+            assert.equal(isExcludedSpeakerName(` ${title.toUpperCase()} `), true, title);
+            assert.equal(addExcludedSpeakerName(title), false, title);
+            assert.ok(buildExcludedSpeakerPromptRule().includes(JSON.stringify(title.normalize('NFKC'))), title);
+        }
+        assert.deepEqual(getExcludedSpeakerNames(), ['Stage Direction']);
+
+        for (const name of ['Anne-Marie', 'Sinéad O’Connor', '王小明', 'レイ・スミス', 'Dr. Mira Chen', 'Will Smith', 'The Doctor']) {
+            activateCard(name);
+            assert.equal(isExcludedSpeakerName(name), false, name);
+            assert.ok(buildCharacterEntry(name, { color: MIRA_GREEN }).entry, name);
+        }
+        assert.equal(isExcludedSpeakerName(TITLED), false);
+        assert.ok(!buildExcludedSpeakerPromptRule().includes(TITLED));
+        assert.equal(isExcludedSpeakerName('Stage Direction'), true);
+    });
+});
+
+test('a titled card is not auto-added from dialogue or colour metadata, even with existing colours', () => {
+    const title = 'Your Wife Will Divorce You';
+    const { key, entry } = buildCharacterEntry(title, { color: NARRATOR_RED, aliases: ['The Scenario'] });
+    seedMira();
+    activateCard(title);
+    const raw = `<font color="${NARRATOR_RED}">"Sign here."</font>\n[COLORS:${title}=${NARRATOR_RED},Mira=${MIRA_GREEN}]`;
+    processColorPairs(`${title}=${NARRATOR_RED},Mira=${MIRA_GREEN}`);
+    attributeDialogueSegments('"Sign the papers," she said.', title, { autoAddMessageSpeaker: true });
+    assert.deepEqual(Object.values(state.characterColors).map(value => value.name), ['Mira']);
+    assert.equal(buildColorRenderingLookup(raw).get(NARRATOR_RED)?.excluded, true);
+
+    state.characterColors[key] = entry;
+    assert.equal(resolveCharacterKeyByNameOrAlias(title), '');
+    assert.equal(resolveCharacterKeyByNameOrAlias('The Scenario'), '');
+    assert.equal(buildNameColorLookup().has(key), false);
+    assert.deepEqual(filterPromptCharacterEntries().map(value => value.name), ['Mira']);
+    assert.deepEqual(getPerceptualConflictReport().modes[0].items.map(item => item.label), ['Mira']);
+    assert.equal(state.characterColors[key], entry, 'keep the old style without showing or using it');
+});
 
 test('the not-a-character list is cleaned, deduplicated and leaves Narrator to its own option', () => {
     const cleaned = normalizeExcludedSpeakerNames([`  ${SCENARIO} `, SCENARIO.toUpperCase(), TITLED, 'Narrator', '', 42, null]);
