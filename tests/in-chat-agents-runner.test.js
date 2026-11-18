@@ -12333,6 +12333,22 @@ Helper context.`;
         expect(textarea.value).toBe('Polished impersonation');
     });
 
+    test('a filtered impersonation that began before the Agents started keeps its draft', async () => {
+        useImpersonateTransformAgent({ runOnImpersonate: true });
+        generateQuietPrompt.mockResolvedValue('<assistant_response>Polished impersonation</assistant_response>');
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+        const textarea = { value: 'Draft impersonation', dispatchEvent: jest.fn() };
+        document.querySelector = jest.fn(selector => selector === '#send_textarea' ? textarea : null);
+        const blocked = { version: 1, status: 'blocked', reason: 'content_filter' };
+        await eventSource.emit(eventTypes.IMPERSONATE_READY, 'Draft impersonation', { generationContext: null, type: 'impersonate', generationOutcome: blocked });
+        expect(generateQuietPrompt).not.toHaveBeenCalled();
+        expect(textarea.value).toBe('Draft impersonation');
+        await eventSource.emit(eventTypes.IMPERSONATE_READY, 'Draft impersonation', { generationContext: null, type: 'impersonate', generationOutcome: null });
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        expect(textarea.value).toBe('Polished impersonation');
+    });
+
     test('a reply processed under an older Agent order is not processed again', async () => {
         useManualTransformAgents();
         for (const agent of enabledAgents) agent.postProcess.enabled = true;

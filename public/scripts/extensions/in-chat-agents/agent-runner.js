@@ -6328,7 +6328,10 @@ async function onMainGenerationOutputReady(eventData) {
 }
 
 async function onImpersonateReady(text = '', eventData = {}) {
-    if (isAuxiliaryOrStaleRequest(eventData) || automaticGenerationSuppressed(getAgentGenerationContext()) || !areAgentsGloballyEnabled()) {
+    // Impersonation saves no message to carry its outcome, and a request that began before the
+    // Agents started has no identity to suppress, so the event brings the outcome itself.
+    if (isAuxiliaryOrStaleRequest(eventData) || automaticGenerationSuppressed(getAgentGenerationContext())
+        || messageGenerationSuppressed({ extra: { generation_outcome: eventData?.generationOutcome } }) || !areAgentsGloballyEnabled()) {
         return;
     }
 
