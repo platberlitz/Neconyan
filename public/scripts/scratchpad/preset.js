@@ -17,7 +17,7 @@ function text(value) {
     return String(value ?? '').trim();
 }
 
-/** The name of the preset the open chat would generate with, or '' when none is selected. */
+/** The name of the equipped generation preset, or '' when none is selected. */
 export function currentPresetName() {
     if (main_api === 'openai' && text(oai_settings?.preset_settings_openai)) return text(oai_settings.preset_settings_openai);
     try {
@@ -27,15 +27,15 @@ export function currentPresetName() {
     }
 }
 
-function promptOrder() {
+function promptOrder(globalOnly) {
     if (!promptManager?.serviceSettings) return [];
     const dummy = { id: promptManager.configuration?.promptOrder?.dummyId };
-    const own = promptManager.getPromptOrderForCharacter(promptManager.activeCharacter);
+    const own = globalOnly ? [] : promptManager.getPromptOrderForCharacter(promptManager.activeCharacter);
     return own.length ? own : promptManager.getPromptOrderForCharacter(dummy);
 }
 
-function chatModules() {
-    return promptOrder().map(entry => {
+function chatModules(globalOnly) {
+    return promptOrder(globalOnly).map(entry => {
         const prompt = promptManager.getPromptById(entry.identifier);
         if (!prompt) return null;
         const inChat = Number(prompt.injection_position) === INJECTION_POSITION.ABSOLUTE;
@@ -90,14 +90,14 @@ function textModules() {
  * Reads the active preset and its parts, in prompt order, with what is on and off.
  * Text is returned exactly as saved, so macros and card slots stay unfilled.
  */
-export function readCurrentPreset() {
+export function readCurrentPreset({ globalOnly = false } = {}) {
     const api = main_api || '';
     const kind = api === 'openai' ? 'chat' : 'text';
     return {
         kind,
         api: API_LABELS[api] || api,
         name: currentPresetName(),
-        modules: kind === 'chat' ? chatModules() : textModules(),
+        modules: kind === 'chat' ? chatModules(globalOnly) : textModules(),
         targets: currentPresetTargets(),
     };
 }

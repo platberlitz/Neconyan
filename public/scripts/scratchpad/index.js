@@ -2383,10 +2383,11 @@ function checkbox(label, checked, onChange, hint = '') {
     return h('label', { class: 'scratchpad-check' }, input, h('span', { text: label }), hint ? h('small', { text: hint }) : null);
 }
 
-function presetCheckbox(checked, onChange) {
+function presetCheckbox(checked, onChange, { general } = {}) {
     const name = currentPresetName();
     return checkbox(name ? t`Current preset: ${name}` : t`Current preset`, checked, onChange,
-        t`Shared as its own section, apart from the cards, persona and lorebooks. Every module is listed in order and marked on or off.`);
+        general ? t`Shares the equipped preset for reference only. This doesn't change your preset or the assistant's instructions.`
+            : t`Shared as its own section, apart from the cards, persona and lorebooks. Every module is listed in order and marked on or off.`);
 }
 
 let instructionsEditorOpen = false;
@@ -2481,7 +2482,8 @@ async function editAssistantPrompt(assistant) {
 }
 
 function contextKey() {
-    return JSON.stringify([wireSource(app.source), activeSession()?.id ?? '', currentSettings().notes, app.source?.kind === 'roleplay' ? currentPresetName() : '']);
+    const kind = app.source?.kind;
+    return JSON.stringify([wireSource(app.source), activeSession()?.id ?? '', currentSettings().notes, kind === 'roleplay' || kind === 'general' ? currentPresetName() : '']);
 }
 
 function renderContext({ force = true } = {}) {
@@ -2567,7 +2569,7 @@ function renderContext({ force = true } = {}) {
                 : h('p', { class: 'scratchpad-muted', text: t`No summary saved yet. Recent messages are kept in full alongside the summary.` })),
         general ? h('section', { class: 'scratchpad-section' },
             h('h3', { class: 'scratchpad-section-title', text: t`General Scratchpad` }),
-            h('p', { class: 'scratchpad-muted', text: t`No story chat is open. Chat messages, Author's Note and presets are not shared. You can share your persona, a selected card, saved notes and one lorebook you pick below.` }),
+            h('p', { class: 'scratchpad-muted', text: t`No story chat is open. You can share one lorebook here, or tick what else to share below.` }),
             h('div', { class: 'scratchpad-field' },
                 h('label', { for: 'scratchpad-lorebook', text: t`Share a lorebook` }),
                 h('select', { id: 'scratchpad-lorebook', class: 'text_pole', onchange: event => void updateSettings({ lorebook: event.currentTarget.value }, { rerenderContext: true }) },
@@ -2589,7 +2591,7 @@ function renderContext({ force = true } = {}) {
             roleplay ? checkbox(t`Author's Note`, include.authorsNote, value => setInclude('authorsNote', value)) : null,
             roleplay ? checkbox(t`Mewmory`, include.mewmory === true, value => setInclude('mewmory', value), t`Reads saved memories from this Roleplay chat on the server. Pinned memories come first, followed by recent ones; unavailable or excluded memories are left out.`) : null,
             general ? null : checkbox(t`Lorebook entries`, include.lore, value => setInclude('lore', value), t`Entries are shared when their keywords appear, or when you set them to Always below.`),
-            roleplay ? presetCheckbox(include.preset, value => setInclude('preset', value)) : null,
+            roleplay || general ? presetCheckbox(include.preset, value => setInclude('preset', value), { general }) : null,
             checkbox(t`Agents`, include.agents === true, value => setInclude('agents', value), t`Shares the name, description and prompt of every saved Agent, so an assistant can suggest edits to them.`),
             checkbox(t`Regexes`, include.regex === true, value => setInclude('regex', value), t`Shares the name, Find pattern and replacement of every global regex script, so an assistant can suggest edits to them.`),
             checkbox(t`CSS Snippets`, include.cssSnippets === true, value => setInclude('cssSnippets', value), t`Shares the name and CSS of every saved snippet, so an assistant can suggest edits to them.`),
@@ -2914,13 +2916,18 @@ function renderLoreEntry(entry) {
 }
 
 function renderPreview() {
-    const output = h('div', { class: 'scratchpad-preview' });
     const run = async () => {
-        clear(output);
-        output.append(h('p', { class: 'scratchpad-muted', text: t`Building the preview...` }));
+        const source = app.source;
+        const sessionAtClick = activeSession()?.id;
+        await app.queue;
+        if (!app.open || app.tab !== 'context' || !sameSourceContext(source, app.source)
+            || (sessionAtClick && sessionAtClick !== activeSession()?.id)) return;
+        // Saving the first setting creates a session and rebuilds the panel.
+        const output = app.el.panels.context.querySelector('.scratchpad-preview');
+        if (!output) return;
+        const loading = h('p', { class: 'scratchpad-muted', text: t`Building the preview...` });
+        output.replaceChildren(loading);
         try {
-            const source = app.source;
-            await app.queue;
             requireScope(source);
             const sessionId = activeSession()?.id;
             const context = await buildContext({ source, settings: currentSettings(), pendingText: app.el.composer.value, sessionText: sessionText(activeSession()) });
@@ -2932,7 +2939,7 @@ function renderPreview() {
                 mewmory?.text ? `<mewmory_context>\n${mewmory.text}\n</mewmory_context>` : '', pinnedNoteContext(activeSession()?.pinnedNote)].filter(Boolean).join('\n\n');
             const tokens = await estimateTokens(preview);
             requireScope(source, sessionId);
-            if (!output.isConnected) return;
+            if (!output.isConnected || !loading.isConnected) return;
             clear(output);
             append(output, [
                 h('p', { text: t`About ${tokens} tokens. Chat messages: ${context.messageCount} of ${context.totalMessages}. Lorebook entries: ${context.lore.entries.filter(entry => entry.included).length}.` }),
@@ -2944,6 +2951,7 @@ function renderPreview() {
                 h('pre', { class: 'scratchpad-preview-text', text: preview }),
             ]);
         } catch (error) {
+            if (!output.isConnected || !loading.isConnected) return;
             clear(output);
             output.append(h('p', { class: 'scratchpad-error', text: error?.message || t`The preview could not be built.` }));
         }
@@ -2952,7 +2960,7 @@ function renderPreview() {
         h('h3', { class: 'scratchpad-section-title', text: t`What Scratchpad will read` }),
         h('p', { class: 'scratchpad-muted', text: t`This is the reference material for your next message. Saved notes and shared Mewmory records are read on the server and checked again when you send.` }),
         iconButton(t`Show preview`, () => void run(), { icon: 'fa-magnifying-glass' }),
-        output);
+        h('div', { class: 'scratchpad-preview' }));
 }
 
 /* Sessions tab */
