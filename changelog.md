@@ -60,6 +60,7 @@
 - PR #747 (2026-11-18) `fix(bottom-bar): style the reasoning effort picker like the persona picker`
 - PR #748 (2026-11-18) `fix: drop stale square sizing from the View agent changes row`
 - PR #749 (2026-11-18) `fix(scratchpad): let any Custom or CometAPI model see saved pictures`
+- PR #750 (2026-11-18) `fix(agents): keep persona edits from failing post-reply Agents`
 
 ## v1.5.5
 
