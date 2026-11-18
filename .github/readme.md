@@ -180,11 +180,11 @@ Read your chat as continuous prose, like a book you wrote together.
 
 ### Notebooks
 
-Keep scene plans, places and session journals next to your chats.
+Keep scene plans, places and session journals next to your chats. On a phone, I tucked folders under **Notebook options** and formatting under **Note tools** so the note has more room.
 
 <table><tr>
-  <td width="72%"><img src="../docs/readme/desktop-notes.webp" alt="Notebooks on desktop"></td>
-  <td width="28%"><img src="../docs/readme/phone-notes.webp" alt="Notebooks on a phone"></td>
+  <td width="72%"><img src="../docs/readme/desktop-notes.webp" alt="Notebooks on desktop with the note list, reading view and properties side by side"></td>
+  <td width="28%"><img src="../docs/readme/phone-notes.webp" alt="Notebooks on a phone with the note text visible and Note tools closed"></td>
 </tr></table>
 
 ### Scratchpad
