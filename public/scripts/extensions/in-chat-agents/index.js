@@ -2420,31 +2420,36 @@ async function migratePathfinderAgentToolsFromTemplate() {
             continue;
         }
 
-        const existingTools = Array.isArray(agent.tools) ? agent.tools : [];
-        const existingToolNames = new Set(existingTools.map(tool => tool?.name).filter(Boolean));
-        const defaultTools = getDefaultPathfinderTools(template);
-        const missingTools = defaultTools
-            .filter(tool => tool?.name && !existingToolNames.has(tool.name))
-            .map(tool => structuredClone(tool));
-        const toolStates = { ...(agent.settings?.toolStates || {}) };
-        for (const tool of [...existingTools, ...missingTools]) {
-            if (!tool?.name || Object.hasOwn(toolStates, tool.name)) {
-                continue;
-            }
-            toolStates[tool.name] = tool.enabled !== false;
-        }
-
-        agent.tools = [...existingTools, ...missingTools];
-        agent.settings = {
-            ...(agent.settings || {}),
-            toolStates,
-        };
-        agent.sourceTemplateId = agent.sourceTemplateId || template.id;
+        addDefaultPathfinderTools(agent, template);
         await saveAgent(agent);
         migratedCount++;
     }
 
     return migratedCount;
+}
+
+function addDefaultPathfinderTools(agent, template) {
+    const existingTools = Array.isArray(agent.tools) ? agent.tools : [];
+    const existingToolNames = new Set(existingTools.map(tool => tool?.name).filter(Boolean));
+    const defaultTools = getDefaultPathfinderTools(template);
+    const missingTools = defaultTools
+        .filter(tool => tool?.name && !existingToolNames.has(tool.name))
+        .map(tool => structuredClone(tool));
+    const toolStates = { ...(agent.settings?.toolStates || {}) };
+    for (const tool of [...existingTools, ...missingTools]) {
+        if (!tool?.name || Object.hasOwn(toolStates, tool.name)) {
+            continue;
+        }
+        toolStates[tool.name] = tool.enabled !== false;
+    }
+
+    agent.tools = [...existingTools, ...missingTools];
+    agent.settings = {
+        ...(agent.settings || {}),
+        toolStates,
+    };
+    agent.sourceTemplateId = agent.sourceTemplateId || template.id;
+    return agent;
 }
 
 function shouldSkipBundledTemplateMigrations(agent) {
@@ -2896,6 +2901,8 @@ async function ensureDefaultBundledAgents() {
         const shouldEnsureTemplate = INTERNAL_BUNDLED_TEMPLATE_IDS.has(templateId) || !autoSeededTemplateIds.has(templateId);
         if (shouldEnsureTemplate) {
             const seededAgent = buildAgentFromTemplate(template);
+            // A new account gets Pawthfinder's tools straight away, rather than an 'Agents updated' notice.
+            if (templateId === 'tpl-pathfinder') addDefaultPathfinderTools(seededAgent, template);
             if (!hasMatchingAgentSnapshot(seededAgent)) {
                 await saveAgent(seededAgent);
             }
