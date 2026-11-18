@@ -54,6 +54,7 @@
 - PR #741 (2026-11-18) `feat: add edit shortcuts to the bottom-bar persona picker`
 - PR #742 (2026-11-18) `fix(notebooks): declutter the mobile workspace`
 - PR #743 (2026-11-18) `feat(top-bar): scroll truncated labels by default`
+- PR #744 (2026-11-18) `feat(agents): add a clothing tracker for the current scene`
 
 ## v1.5.5
 
