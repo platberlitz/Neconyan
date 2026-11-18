@@ -57,6 +57,7 @@
 - PR #744 (2026-11-18) `feat(agents): add a clothing tracker for the current scene`
 - PR #745 (2026-11-18) `fix(dialogue-colors): skip obvious card titles`
 - PR #746 (2026-11-18) `feat(scratchpad): add assistant feedback tone slider`
+- PR #747 (2026-11-18) `fix(bottom-bar): style the reasoning effort picker like the persona picker`
 
 ## v1.5.5
 
