@@ -26,6 +26,7 @@ import {
 import { SCRATCHPAD_JOB_TYPE, acceptScratchpadReply, normaliseCapabilities } from '../scratchpad/jobs.js';
 import { readScratchpadPreview, subscribeScratchpadPreview } from '../scratchpad/preview.js';
 import { buildScratchpadSystemPrompt } from '../scratchpad/prompt.js';
+import { assistantFeedbackTone, feedbackToneInstructions, feedbackToneLabel } from '../scratchpad/feedback-tone.js';
 import { readInstructionsLocked, updateInstructionsLocked } from '../scratchpad/instructions.js';
 import { readQuickPromptsLocked, updateQuickPromptsLocked } from '../scratchpad/quick-prompts.js';
 import { readContextSetupsLocked, updateContextSetupsLocked } from '../scratchpad/context-setups.js';
@@ -254,14 +255,21 @@ router.post('/prompt', (request, response) => {
         }) : null;
         const sharedLorebook = source?.kind !== 'general' || (body.sessionId ? withScratchpad(base, lease =>
             Boolean(findSession(readBucketLocked(lease, source), requireId(body.sessionId, 'session')).settings.lorebook)) : false);
-        response.json(buildScratchpadSystemPrompt({ assistant: body.assistant, gender: body.gender,
+        const toneSettings = body.sessionId
+            ? withScratchpad(base, lease => findSession(readBucketLocked(lease, source), requireId(body.sessionId, 'session')).settings)
+            : { feedbackTone: body.feedbackTone, assistantTones: body.assistantTones };
+        const prompt = buildScratchpadSystemPrompt({ assistant: body.assistant, gender: body.gender,
             persona: profiles[body.assistant], assistantNames: Object.fromEntries(Object.entries(profiles).map(([id, profile]) => [id, profile?.name])),
             sourceKind: source?.kind, userName: body.names?.user, characterName: body.names?.character,
             capabilities: { ...normaliseCapabilities(body.capabilities, source?.kind, source ?? {}), notebook: body.capabilities?.notebook === true,
                 lore: body.capabilities?.lore === true && source?.kind !== 'notebook' && sharedLorebook,
                 persona,
                 image: imageAvailability.image && body.capabilities?.image === true, avatar: imageAvailability.image && body.capabilities?.image === true && targets.length > 0 },
-            participants: Array.isArray(body.participants) ? body.participants.slice(0, 3) : [], randomReply: body.randomReply === true }));
+            participants: Array.isArray(body.participants) ? body.participants.slice(0, 3) : [], randomReply: body.randomReply === true });
+        // The editor shows only the editable prompt; the tone is added after it at send time.
+        const tone = assistantFeedbackTone(toneSettings, body.assistant);
+        response.json({ ...prompt, tone: { id: tone, label: feedbackToneLabel(tone),
+            text: feedbackToneInstructions(tone, { assistant: body.assistant, name: prompt.persona.name, userName: body.names?.user || 'User' }) } });
     } catch (error) {
         sendError(response, error);
     }

@@ -1053,15 +1053,16 @@ test('saved context setups keep only portable choices, are account-owned and pro
         settings: {
             depth: 4, include: { card: false, preset: true, unknown: true }, maxTokens: 512, stream: false, webSearch: true, readLinks: true, prefill: 'Ideas:',
             picked: ['m1'], loreOverrides: { 'Book:1': 'always' }, connection: { kind: 'profile', profileId: 'saved' }, roundTable: true, notes: [],
+            feedbackTone: 'harsher', assistantTones: { taro: 'critical' },
         },
     }], 0);
     assert.deepEqual(saved.setups, [{
         name: 'Lean read',
         settings: {
             depth: 4, include: { card: false, persona: true, authorsNote: true, lore: true, preset: true, hidden: false, agents: false, regex: false, cssSnippets: false, dialogueColors: false, mewmory: false },
-            maxTokens: 512, stream: false, webSearch: true, readLinks: true, prefill: 'Ideas:', partialPrefill: '',
+            maxTokens: 512, stream: false, webSearch: true, readLinks: true, prefill: 'Ideas:', partialPrefill: '', feedbackTone: 'harsher',
         },
-    }]);
+    }], 'the shared feedback tone travels, and per-assistant tones stay with their session');
     assert.deepEqual(Object.keys(saved.setups[0].settings), [...CONTEXT_SETUP_KEYS]);
     assert.deepEqual(read(a), saved);
     assert.deepEqual(read(b).setups, [], 'another account sees none of them');
@@ -1082,10 +1083,15 @@ test('saved context setups keep only portable choices, are account-owned and pro
     assert.equal(applied.settings.include.card, false);
     assert.deepEqual(applied.settings.picked, ['keep'], 'applying a setup leaves the session\'s own picks alone');
     assert.equal(applied.settings.roundTable, true);
-    assert.deepEqual(update([], 1).setups, []);
+    assert.equal(applied.settings.feedbackTone, 'harsher');
+    const older = update([{ name: 'Older', settings: { depth: 6 } }], 1);
+    assert.equal(Object.hasOwn(older.setups[0].settings, 'feedbackTone'), false, 'a setup saved without a tone carries none');
+    const kept = store.mutateBucket(a.base, SOURCE, bucket => store.updateSession(bucket, session.id, { settings: older.setups[0].settings }));
+    assert.equal(kept.settings.feedbackTone, 'harsher', 'applying an older setup leaves the session\'s tone alone');
+    assert.deepEqual(update([], 2).setups, []);
     const filename = path.join(a.directories.root, 'scratchpad', 'context-setups.json');
     fs.writeFileSync(filename, '{broken');
-    assert.throws(() => update([setup], 2), error => error.code === 'SCRATCHPAD_CONTEXT_SETUPS_DAMAGED');
+    assert.throws(() => update([setup], 3), error => error.code === 'SCRATCHPAD_CONTEXT_SETUPS_DAMAGED');
     assert.equal(fs.readFileSync(filename, 'utf8'), '{broken');
 });
 
@@ -1805,6 +1811,65 @@ test('custom assistant prompts persist independently, reach the provider and res
     assert.throws(() => store.normaliseSettings({ assistantPrompts: { miso: '字'.repeat(22000) } }), /Write a prompt/);
 });
 
+test('feedback tone defaults to Neutral, validates, and lets one assistant override the shared tone', () => {
+    const defaults = store.normaliseSettings({});
+    assert.equal(defaults.feedbackTone, 'neutral');
+    assert.deepEqual(defaults.assistantTones, {});
+    const saved = store.normaliseSettings({ feedbackTone: 'harsher', assistantTones: { miso: 'nicer', taro: 'critical' } });
+    assert.equal(saved.feedbackTone, 'harsher');
+    assert.deepEqual(saved.assistantTones, { miso: 'nicer', taro: 'critical' });
+    const cleared = store.normaliseSettings({ assistantTones: { miso: null } }, saved);
+    assert.deepEqual(cleared.assistantTones, { taro: 'critical' }, 'null hands the assistant back to the shared tone');
+    assert.deepEqual(saved.assistantTones, { miso: 'nicer', taro: 'critical' }, 'normalising leaves the previous settings alone');
+    for (const invalid of [{ feedbackTone: 'brutal' }, { feedbackTone: 3 }, { assistantTones: { miso: 'mean' } }]) {
+        assert.throws(() => store.normaliseSettings(invalid), { code: 'SCRATCHPAD_TONE_INVALID' });
+    }
+});
+
+test('feedback tone is added after any prompt, Neutral adds nothing and each voice keeps its own flavour', () => {
+    const base = { assistant: 'taro', gender: 'male', userName: 'Kris' };
+    const plain = buildScratchpadSystemPrompt(base).text;
+    assert.equal(buildScratchpadSystemPrompt({ ...base, feedbackTone: 'neutral' }).text, plain, 'Neutral leaves the prompt exactly as it was');
+    assert.doesNotMatch(plain, /Feedback tone:/);
+    const critical = buildScratchpadSystemPrompt({ ...base, feedbackTone: 'critical' }).text;
+    assert.match(critical, /Feedback tone: Unreasonably critical\./);
+    assert.match(critical, /every comma/);
+    assert.match(critical, /real, usable fix/);
+    assert.match(critical, /leave Kris's worth, identity, body and feelings alone/);
+    assert.match(critical, /drop the act and answer kindly/);
+    assert.ok(critical.indexOf('Feedback tone:') < critical.indexOf('For this reply, be Taro throughout'), 'the closing voice reminder still comes last');
+    const miso = buildScratchpadSystemPrompt({ assistant: 'miso', gender: 'female', feedbackTone: 'harsher' }).text;
+    assert.match(miso, /Feedback tone: Harsher\./);
+    assert.match(miso, /recognisably Miso's/);
+    assert.doesNotMatch(miso, /every comma/, 'Taro\'s flavour stays with Taro');
+    const nicer = buildScratchpadSystemPrompt({ assistant: 'nori', gender: 'female', feedbackTone: 'nicer' }).text;
+    assert.match(nicer, /Feedback tone: Nicer\./);
+    assert.match(nicer, /Stay honest/);
+    const custom = buildScratchpadSystemPrompt({ ...base, customPrompt: 'Answer as a concise editor.', feedbackTone: 'nicer' }).text;
+    assert.match(custom, /^Answer as a concise editor\./);
+    assert.match(custom, /Feedback tone: Nicer\./, 'a saved custom prompt still follows the slider');
+    for (const text of [critical, miso, nicer, custom]) assert.doesNotMatch(text.slice(text.indexOf('Feedback tone:')), /\u2014/);
+});
+
+test('each round-table speaker is judged with its own resolved tone, and rehearsals keep none', async t => {
+    const a = account(t);
+    const session = startSession(a, { roundTable: true, participants: ['miso', 'taro', 'nori'], feedbackTone: 'harsher', assistantTones: { miso: 'nicer', taro: 'critical' } });
+    const prompts = [];
+    registerScratchpadJobs({ generate: async options => { prompts.push({ name: options.characterName, text: options.messages[0].content }); return { text: 'A reply.' }; } });
+    const body = sendBody(session);
+    const accepted = await acceptScratchpadReply(a.request(body), body);
+    await runJob(getJob(a.directories, accepted.job.id));
+    const tone = name => prompts.find(prompt => prompt.name === name).text.match(/Feedback tone: ([^.]+)\./)?.[1];
+    assert.equal(tone('Miso'), 'Nicer');
+    assert.equal(tone('Taro'), 'Unreasonably critical');
+    assert.equal(tone('Nori'), 'Harsher', 'an assistant without its own tone follows the shared one');
+    const rehearsal = sendBody(session, { rehearsal: true });
+    const rehearsed = await acceptScratchpadReply(a.request(rehearsal), rehearsal);
+    await runJob(getJob(a.directories, rehearsed.job.id));
+    assert.ok(prompts.length > 3);
+    assert.ok(prompts.slice(3).every(prompt => !prompt.text.includes('Feedback tone:')), 'story prose drafted in a rehearsal is not judged');
+});
+
 test('any reply to one of your messages can be regenerated, seeing only the turns before it', async t => {
     const a = account(t);
     const session = startSession(a);
@@ -2413,6 +2478,12 @@ test('the endpoint checks the account and answers with the saved Scratchpad', as
         expectedRevision: 1 })).status, 403, 'a non-admin account cannot point SearXNG at a loopback address');
     const defaults = await (await post('/prompt', { assistant: 'miso' })).json();
     assert.doesNotMatch(defaults.text, /ENDPOINT-GLOBAL/, 'editing a base prompt must not bake in global text');
+    assert.deepEqual(defaults.tone, { id: 'neutral', label: 'Neutral', text: '' });
+    const toned = await (await post('/prompt', { assistant: 'taro', feedbackTone: 'nicer', assistantTones: { taro: 'critical' }, names: { user: 'Kris' } })).json();
+    assert.equal(toned.tone.id, 'critical', 'a per-assistant tone wins over the shared one');
+    assert.match(toned.tone.text, /^Feedback tone: Unreasonably critical\./);
+    assert.match(toned.tone.text, /Kris/);
+    assert.doesNotMatch(toned.text, /Feedback tone:/, 'the tone stays out of the editable prompt so saving it cannot apply it twice');
     const generalPrompt = await (await post('/prompt', { source: GENERAL, assistant: 'miso', capabilities: { chat: true, lore: true } })).json();
     assert.match(generalPrompt.text, /No story chat is open/);
     assert.doesNotMatch(generalPrompt.text, /Story chat messages \(use|Lorebook entries \(only/);

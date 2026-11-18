@@ -449,6 +449,208 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     font-weight: 700;
 }
 
+.scratchpad-badge.scratchpad-tone-badge {
+    border-color: color-mix(in srgb, var(--neco-ginger) 45%, var(--neco-border));
+    background: color-mix(in srgb, var(--neco-ginger) 16%, var(--neco-surface));
+    color: var(--neco-ink);
+}
+
+.scratchpad-tone-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 12px;
+    padding: 0 14px 4px;
+}
+
+.scratchpad-tone {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+}
+
+.scratchpad-tone-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.scratchpad-tone-label {
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.scratchpad-tone-value {
+    color: var(--neco-ink);
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+/* In the Chat overview the label, track and value share one line. */
+.scratchpad-tone.is-compact {
+    grid-template-columns: auto minmax(7rem, 13rem) auto;
+    align-items: center;
+    gap: 10px;
+}
+
+.scratchpad-tone.is-compact .scratchpad-tone-head {
+    display: contents;
+}
+
+.scratchpad-tone.is-compact .scratchpad-tone-value {
+    grid-column: 3;
+    grid-row: 1;
+    min-width: 9.5em;
+}
+
+.scratchpad-tone input[type='range'].scratchpad-tone-range {
+    --tone-fill: 33.333%;
+    width: 100%;
+    height: auto;
+    min-height: 28px;
+    margin: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    filter: none;
+    cursor: pointer;
+    transition: none;
+    appearance: none;
+}
+
+/* Beats the host's range hover brightness so the accent stays true. */
+.scratchpad-tone input[type='range'].scratchpad-tone-range:hover {
+    filter: none;
+}
+
+.scratchpad-tone input[type='range'].scratchpad-tone-range::-webkit-slider-runnable-track {
+    height: 6px;
+    border: 1px solid var(--neco-border);
+    border-radius: 999px;
+    background: linear-gradient(to right, var(--neco-ginger) var(--tone-fill), var(--neco-raised) var(--tone-fill));
+}
+
+.scratchpad-tone input[type='range'].scratchpad-tone-range::-moz-range-track {
+    height: 6px;
+    border: 1px solid var(--neco-border);
+    border-radius: 999px;
+    background: var(--neco-raised);
+}
+
+.scratchpad-tone input[type='range'].scratchpad-tone-range::-moz-range-progress {
+    height: 6px;
+    border-radius: 999px;
+    background: var(--neco-ginger);
+}
+
+/* The ring of surface and ink keeps the thumb visible on pale and dark accents alike. */
+.scratchpad-tone input[type='range'].scratchpad-tone-range::-webkit-slider-thumb {
+    width: 20px;
+    height: 20px;
+    margin-top: -8px;
+    border: 3px solid var(--neco-surface);
+    border-radius: 50%;
+    background: var(--neco-ginger);
+    box-shadow: 0 0 0 1px var(--neco-ink);
+    appearance: none;
+}
+
+.scratchpad-tone input[type='range'].scratchpad-tone-range::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border: 3px solid var(--neco-surface);
+    border-radius: 50%;
+    background: var(--neco-ginger);
+    box-shadow: 0 0 0 1px var(--neco-ink);
+}
+
+.scratchpad-tone input[type='range'].scratchpad-tone-range:focus-visible {
+    outline: 2px solid var(--neco-ginger);
+    outline-offset: 3px;
+    border-radius: 999px;
+}
+
+.scratchpad-tone.is-disabled {
+    opacity: 0.6;
+}
+
+.scratchpad-tone.is-disabled input[type='range'].scratchpad-tone-range,
+.scratchpad-tone.is-disabled .scratchpad-tone-stop {
+    cursor: not-allowed;
+}
+
+.scratchpad-tone-stops {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px;
+}
+
+.scratchpad-tone-stop {
+    min-height: 32px;
+    padding: 2px 0;
+    border: 0;
+    background: none;
+    color: var(--neco-muted);
+    font: inherit;
+    font-size: 0.78rem;
+    line-height: 1.2;
+    text-align: center;
+    cursor: pointer;
+}
+
+.scratchpad-tone-stop:first-child {
+    text-align: left;
+}
+
+.scratchpad-tone-stop:last-child {
+    text-align: right;
+}
+
+.scratchpad-tone-stop.is-selected {
+    color: var(--neco-ink);
+    font-weight: 700;
+}
+
+.scratchpad-tone-overrides {
+    color: var(--neco-muted);
+    font-size: 0.78rem;
+}
+
+.scratchpad-tone-overrides-list {
+    display: grid;
+    gap: 8px;
+    margin-top: 6px;
+}
+
+.scratchpad-tone-overrides-list > summary {
+    min-height: 28px;
+    align-content: center;
+    width: fit-content;
+    font-size: 0.88rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.scratchpad-tone-overrides-list[open] {
+    gap: 10px;
+}
+
+.scratchpad-tone-prompt {
+    margin: 8px 0;
+    font-size: 0.85rem;
+}
+
+.scratchpad-tone-prompt > summary {
+    color: var(--neco-muted);
+    cursor: pointer;
+}
+
+.scratchpad-tone-prompt > p {
+    margin: 6px 0 0;
+    white-space: pre-wrap;
+}
+
 .scratchpad-messages {
     display: flex;
     flex: 1 1 auto;
@@ -1699,6 +1901,25 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     .scratchpad-app .scratchpad-new-session span {
         display: none;
     }
+
+    /* A narrow panel puts the track on its own line so all four stops stay easy to reach. */
+    .scratchpad-tone-row .scratchpad-tone.is-compact {
+        flex: 1 1 100%;
+        grid-template-columns: auto auto;
+        justify-content: space-between;
+        row-gap: 0;
+    }
+
+    .scratchpad-tone.is-compact .scratchpad-tone-range {
+        grid-column: 1 / -1;
+        grid-row: 2;
+    }
+
+    .scratchpad-tone.is-compact .scratchpad-tone-value {
+        grid-column: 2;
+        min-width: 0;
+        text-align: right;
+    }
 }
 
 @container scratchpad (max-width: 400px) {
@@ -1732,6 +1953,9 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     .scratchpad-assistant,
     .scratchpad-check,
     .scratchpad-segment-choice,
+    .scratchpad-tone input[type='range'].scratchpad-tone-range,
+    .scratchpad-tone-stop,
+    .scratchpad-tone-overrides-list > summary,
     .scratchpad-pick {
         min-height: 44px;
     }
@@ -1784,5 +2008,9 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     .scratchpad-overview-bar,
     .scratchpad-segment-choice {
         transition: background-color 120ms ease-out, border-color 120ms ease-out;
+    }
+
+    .scratchpad-tone-stop {
+        transition: color 120ms ease-out;
     }
 }

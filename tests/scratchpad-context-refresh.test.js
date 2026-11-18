@@ -61,6 +61,7 @@ function fixture(kind = 'roleplay') {
         world_names: [],
         renderContextSetups: () => h('section', { class: 'scratchpad-setups' }),
         renderDictationSettings: () => null,
+        renderFeedbackToneSettings: () => h('section', { class: 'scratchpad-tone-settings' }),
         sameSourceBucket, sameSourceContext, currentSource: () => app.source, stopWatchers() {}, warnMissingPersona() {},
         isCurrentSource: value => sameSourceContext(value, app.source),
         api: { readNotebookContext: (_source, sessionId) => new Promise((resolve, reject) => requests.push({ sessionId, resolve, reject })) },

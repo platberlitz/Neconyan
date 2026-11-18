@@ -60,8 +60,10 @@ import { canReadAloud, isReadingAloud, stopReadAloud, toggleReadAloud } from './
 import { editQuickPrompts } from './quick-prompts.js';
 import { MAX_PINNED_NOTE_BYTES, pinnedNoteContext } from './pinned-note.js';
 import { canRehearse } from './rehearsal.js';
+import { assistantFeedbackTone, DEFAULT_FEEDBACK_TONE, FEEDBACK_TONES, isFeedbackTone, normaliseFeedbackTone } from './feedback-tone.js';
+import { feedbackToneLabel, feedbackToneSlider } from './tone-slider.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261114-test-repairs';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261118-feedback-tone';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -119,6 +121,8 @@ const DEFAULT_SETTINGS = Object.freeze({
     assistantConnections: {},
     roundTable: false,
     randomReply: false,
+    feedbackTone: DEFAULT_FEEDBACK_TONE,
+    assistantTones: {},
     participants: ['miso', 'taro', 'nori'],
     maxTokens: 32000,
     stream: true,
@@ -296,6 +300,32 @@ function assistantConnection(settings, assistant) {
 
 function sessionAssistants(session = activeSession()) {
     return session?.settings.roundTable ? session.settings.participants : [session?.assistant ?? app.assistant];
+}
+
+function sharedFeedbackTone() {
+    return normaliseFeedbackTone(currentSettings().feedbackTone);
+}
+
+/* Assistants in this session whose own tone differs from the shared one. */
+function feedbackToneOverrides(session = activeSession()) {
+    const settings = currentSettings();
+    const shared = sharedFeedbackTone();
+    return sessionAssistants(session).map(id => ({ id, tone: assistantFeedbackTone(settings, id) })).filter(item => item.tone !== shared);
+}
+
+function renderFeedbackTone(session) {
+    const el = app.el;
+    el.feedbackTone.setTone(sharedFeedbackTone());
+    el.feedbackTone.setDisabled(!app.source || app.sending || Boolean(pendingReply()));
+    const overrides = feedbackToneOverrides(session);
+    el.toneOverrides.hidden = !overrides.length;
+    el.toneOverrides.textContent = overrides.map(item => t`${assistantInfo(item.id).name} uses ${feedbackToneLabel(item.tone)}`).join(', ');
+}
+
+async function changeFeedbackTone(tone) {
+    if (!isFeedbackTone(tone)) return;
+    await updateSettings({ feedbackTone: tone });
+    renderHeader();
 }
 
 function randomReplyEnabled() {
@@ -482,6 +512,9 @@ function buildChatPanel() {
     el.assistantPicker = h('div', { class: 'scratchpad-assistants', role: 'group', 'aria-label': t`Talking with` });
     el.manageAssistants = iconButton(t`Assistants`, () => void manageAssistants(), { icon: 'fa-user-plus', title: t`Choose or add an assistant` });
     el.pinnedNote = iconButton(t`Pinned note`, () => void editPinnedNote(), { icon: 'fa-thumbtack', className: 'scratchpad-pinned-note', title: t`Edit the session's pinned note or story tracker` });
+    el.feedbackTone = feedbackToneSlider({ id: 'scratchpad-feedback-tone', tone: DEFAULT_FEEDBACK_TONE, compact: true,
+        onChange: tone => void changeFeedbackTone(tone) });
+    el.toneOverrides = h('span', { class: 'scratchpad-tone-overrides' });
     el.summary = h('div', { class: 'scratchpad-summary' });
     el.messages = h('div', { class: 'scratchpad-messages', role: 'log', 'aria-live': 'polite', 'aria-relevant': 'additions' });
     el.quick = h('div', { class: 'scratchpad-quick', role: 'group', 'aria-label': t`Quick prompts` },
@@ -546,6 +579,7 @@ function buildChatPanel() {
     el.overview = h('div', { id: 'scratchpad-overview', class: 'scratchpad-overview' },
         // Library and reply controls wrap after the current assistant choices.
         h('div', { class: 'scratchpad-chat-top' }, el.overviewToggle, el.assistantPicker, el.manageAssistants, el.roundTable, el.randomReply, el.pinnedNote),
+        h('div', { class: 'scratchpad-tone-row' }, el.feedbackTone, el.toneOverrides),
         el.summary);
     append(el.panels.chat, [
         el.overviewBar,
@@ -1237,6 +1271,7 @@ function renderHeader() {
     app.el.randomReply.setAttribute('aria-pressed', String(Boolean(randomReplyEnabled())));
     app.el.randomReply.classList.toggle('menu_button_primary', Boolean(randomReplyEnabled()));
     app.el.randomReply.disabled = app.el.roundTable.disabled;
+    renderFeedbackTone(session);
     clear(app.el.assistantPicker);
     const choices = allAssistants().filter(item => ASSISTANTS.includes(item) || participants.includes(item.id));
     app.el.assistantPicker.classList.toggle('has-custom', choices.some(item => !ASSISTANTS.includes(item)));
@@ -1299,6 +1334,7 @@ function renderOverview() {
         ...sessionAssistants(session).map(id => h('img', { src: assistantPortrait(id), alt: assistantInfo(id).name, width: 24, height: 24 })),
         h('span', { class: 'scratchpad-overview-name', text: name }),
         randomReplyEnabled() ? h('span', { class: 'scratchpad-badge', text: t`Random` }) : null,
+        sharedFeedbackTone() === DEFAULT_FEEDBACK_TONE ? null : h('span', { class: 'scratchpad-badge scratchpad-tone-badge', text: feedbackToneLabel(sharedFeedbackTone()) }),
         session?.temporary ? h('span', { class: 'scratchpad-badge', text: t`Temporary` }) : null,
         app.source ? h('span', { class: 'scratchpad-overview-context', text: contextSummary(currentSettings()) }) : null,
     ]);
@@ -2468,7 +2504,10 @@ async function editAssistantPrompt(assistant) {
             h('h3', { text: t`${assistant.name}'s prompt` }),
             h('p', { text: t`These instructions are saved for this session and inherited by new sessions in this list. App reference is added automatically. The default reflects the current context and round-table selection.` }),
             editor,
-            iconButton(t`Reset to default`, () => { editor.value = defaults.text; reset = true; }, { icon: 'fa-rotate-left' }));
+            iconButton(t`Reset to default`, () => { editor.value = defaults.text; reset = true; }, { icon: 'fa-rotate-left' }),
+            defaults.tone?.text ? h('details', { class: 'scratchpad-tone-prompt' },
+                h('summary', { text: t`Added after this prompt for the ${feedbackToneLabel(defaults.tone.id)} feedback tone` }),
+                h('p', { text: defaults.tone.text })) : null);
         const result = await callGenericPopup(content, POPUP_TYPE.CONFIRM, '', { wide: true, large: true, okButton: t`Save prompt`, cancelButton: t`Cancel` });
         if (result !== POPUP_RESULT.AFFIRMATIVE) return;
         requireScope(source, session.id);
@@ -2596,6 +2635,7 @@ function renderContext({ force = true } = {}) {
             checkbox(t`Regexes`, include.regex === true, value => setInclude('regex', value), t`Shares the name, Find pattern and replacement of every global regex script, so an assistant can suggest edits to them.`),
             checkbox(t`CSS Snippets`, include.cssSnippets === true, value => setInclude('cssSnippets', value), t`Shares the name and CSS of every saved snippet, so an assistant can suggest edits to them.`),
             checkbox(t`Dialogue Colors`, include.dialogueColors === true, value => setInclude('dialogueColors', value), t`Shares the name and colour of every character in the colour table in use, so an assistant can suggest new colours.`)),
+        renderFeedbackToneSettings(settings),
         h('section', { class: 'scratchpad-section' },
             h('h3', { class: 'scratchpad-section-title', text: t`Assistant connections` }),
             h('p', { class: 'scratchpad-muted', text: t`Choose a saved profile for each assistant. Profiles include the model and connection settings.` }),
@@ -2624,8 +2664,46 @@ function renderContext({ force = true } = {}) {
     panel.scrollTop = scrollTop;
 }
 
+function renderFeedbackToneSettings(settings) {
+    const sharedOption = tone => t`Same as shared (${feedbackToneLabel(tone)})`;
+    const overrides = allAssistants().map(assistant => {
+        const id = `scratchpad-tone-${assistant.id}`;
+        const own = settings.assistantTones?.[assistant.id];
+        const select = h('select', {
+            id, class: 'text_pole',
+            onchange: event => void updateSettings({ assistantTones: { [assistant.id]: event.currentTarget.value || null } }),
+        },
+        h('option', { value: '', class: 'scratchpad-tone-shared', text: sharedOption(settings.feedbackTone) }),
+        FEEDBACK_TONES.map(tone => h('option', { value: tone, text: feedbackToneLabel(tone) })));
+        select.value = isFeedbackTone(own) ? own : '';
+        return h('div', { class: 'scratchpad-field' }, h('label', { for: id, text: t`${assistant.name}'s tone` }), select);
+    });
+    const section = h('section', { class: 'scratchpad-section scratchpad-tone-settings' },
+        h('h3', { class: 'scratchpad-section-title', text: t`Feedback tone` }),
+        h('p', { class: 'scratchpad-muted', text: t`Sets how hard the assistants judge your writing and ideas. Rehearsals and character prose are left alone.` }));
+    const shared = feedbackToneSlider({
+        id: 'scratchpad-context-tone',
+        tone: settings.feedbackTone,
+        describe: true,
+        onChange: async tone => {
+            await updateSettings({ feedbackTone: tone });
+            const saved = sharedFeedbackTone();
+            shared.setTone(saved);
+            for (const option of section.querySelectorAll('.scratchpad-tone-shared')) option.textContent = sharedOption(saved);
+        },
+    });
+    shared.setDisabled(app.sending || Boolean(pendingReply()));
+    append(section, [shared,
+        h('details', { class: 'scratchpad-tone-overrides-list' },
+            h('summary', { text: t`Give one assistant its own tone` }),
+            h('p', { class: 'scratchpad-muted', text: t`In a round table, each assistant can judge differently, such as a kind Miso beside an unreasonably critical Taro.` }),
+            overrides)]);
+    if (allAssistants().some(assistant => isFeedbackTone(settings.assistantTones?.[assistant.id]))) section.querySelector('details').open = true;
+    return section;
+}
+
 /* Mirrors CONTEXT_SETUP_KEYS on the server: only choices that mean the same in every chat are saved. */
-const CONTEXT_SETUP_KEYS = ['depth', 'include', 'maxTokens', 'stream', 'webSearch', 'readLinks', 'prefill', 'partialPrefill'];
+const CONTEXT_SETUP_KEYS = ['depth', 'include', 'maxTokens', 'stream', 'webSearch', 'readLinks', 'prefill', 'partialPrefill', 'feedbackTone'];
 
 function findContextSetup(name) {
     const key = String(name ?? '').trim().toLowerCase();
