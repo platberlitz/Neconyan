@@ -92,6 +92,9 @@ export const SAMPLES = Object.freeze({
     position: {
         full: 'map-start|Harbour at dusk|Rain easing\nplace|Tavern|Warm and crowded\nwho|{{user}}|here|By the hearth|Drying a coat\nwho|Mira|near|At the door|Watching the street\nplace|Docks|Quiet after sunset\nwho|Ezra|far|Beside the boat|Checking the ropes\nmove|Mira|Docks|Tavern\nmap-end',
     },
+    clothing: {
+        full: 'clothing-start\noutfit|{{user}}|Rain-darkened navy coat; grey trousers; leather boots\noutfit|Mira|Cream jumper with rolled sleeves; brass watch\noutfit|Léa O’Connor|Wool waistcoat; ink-stained cuffs; blue neckerchief\nclothing-end',
+    },
     'visual-map': {
         full: 'map-start|Harbour at dusk|Rain easing\nplace|Tavern|here|building|Warm and crowded\npin|{{user}}|By the hearth|Drying a coat\nplace|Docks|east|water|Quiet after sunset\npin|Mira|Beside the boat|Checking the ropes\nmove|Mira|Tavern|Docks\nmap-end',
     },

@@ -138,10 +138,11 @@ describe('bundled tracker contracts', () => {
         }
     });
 
-    test('every theme keeps companion map, movement and vital data intact', () => {
+    test('every theme keeps companion map, movement, outfit and vital data intact', () => {
         for (const selected of THEMES) {
             for (const [id, key, values] of [
                 ['tpl-position-tracker-companion', 'position', ['Harbour at dusk', 'Tavern', 'Mira', 'Nearby', 'Ezra', 'Away', 'Recent moves']],
+                ['tpl-clothing-tracker-companion', 'clothing', ['Scene wardrobe', '{{user}}', 'Rain-darkened navy coat', 'Mira', 'Cream jumper', 'Léa O’Connor', 'Wool waistcoat', 'data-clothing-icon="footwear"', 'data-clothing-icon="other"']],
                 ['tpl-visual-map-companion', 'visual-map', ['Harbour at dusk', 'Tavern', 'Docks', 'Mira', 'Beside the boat', 'Trail']],
                 ['tpl-vitals-companion', 'vitals', ['Tired but safe', 'Health', 'Critical', 'Low', 'Fair', 'Good', 'Bruised ribs', 'Sheltered']],
             ]) {
@@ -149,7 +150,7 @@ describe('bundled tracker contracts', () => {
                 const rendered = applyList(SAMPLES[key].full, built.scripts);
                 expect(rendered).toContain(`data-rat="${selected.slug}@`);
                 for (const value of values) expect(rendered).toContain(value);
-                expect(rendered).not.toMatch(/^(?:map-start|place|pin|who|move|map-end|vitals|bar|status)[-|]/im);
+                expect(rendered).not.toMatch(/^(?:map-(?:start|end)|clothing-(?:start|end)|place\||pin\||who\||move\||outfit\||vitals[|-]|bar\||status\|)/im);
                 expect(rendered).not.toContain('[[vitals-change:');
             }
         }
@@ -260,7 +261,7 @@ describe('tracker-family selection through the real apply path', () => {
     test('applies both, restores excluded trackers exactly, resumes overrides and persists scope', async () => {
         const original = structuredClone(agents);
         updateSettings({ overrides: { 'tpl-the-ledger': THEMES[1].slug } });
-        expect(await applyAll()).toMatchObject({ ok: true, applied: 43, blocked: [], failed: [] });
+        expect(await applyAll()).toMatchObject({ ok: true, applied: original.length, blocked: [], failed: [] });
         for (const agent of agents) expect(inspectAgent(agent).status).toBe('pristine');
         saveAgent.mockClear();
         expect(await reconcile()).toMatchObject({ repaired: 0, reverted: 0, needsAttention: [] });
@@ -286,7 +287,7 @@ describe('tracker-family selection through the real apply path', () => {
         }
         expect(resolveThemeSlug('tpl-the-ledger')).toBe(THEMES[1].slug);
         updateSettings({ theme: STOCK_THEME, overrides: {} });
-        expect(await applyAll()).toMatchObject({ reverted: 43, blocked: [], failed: [] });
+        expect(await applyAll()).toMatchObject({ reverted: original.length, blocked: [], failed: [] });
         expect(agents).toEqual(original);
     });
 

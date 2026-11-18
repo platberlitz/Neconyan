@@ -93,7 +93,7 @@ export function renderTrackerCompanion(spec, tokens) {
     if (!stock) throw new Error(`Missing stock script for ${spec.templateId}/${spec.scriptId}`);
     let markup = protectInheritedInk(repaint(stock.replaceString, tokens), spec, tokens);
     if (spec.key === 'visual-map') return repaintMap(markup, spec, tokens);
-    if (['position-tracker-map-open', 'vitals-open', 'vitals-none'].includes(spec.scriptId)) {
+    if (['position-tracker-map-open', 'clothing-open', 'vitals-open', 'vitals-none'].includes(spec.scriptId)) {
         markup = decorateInlineRoot(markup, spec, tokens);
     }
     return markup;

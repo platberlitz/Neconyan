@@ -24,6 +24,7 @@ export const ARCHETYPES = Object.freeze({
     STREAM: 'stream',
     TRANSCRIPT: 'transcript',
     POSITION: 'position',
+    CLOTHING: 'clothing',
     VISUAL_MAP: 'visual-map',
     VITALS: 'vitals',
     BOLD: 'bold',
@@ -458,6 +459,11 @@ for (const [templateId, key, archetype, entries] of [
         ['fence-cleanup', 0, true], ['map-open', 2], ['place', 2], ['who-here', 4],
         ['who-near', 4], ['who-far', 4], ['who-other', 5], ['moves-open', 0],
         ['move', 3], ['map-close', 0],
+    ]],
+    ['tpl-clothing-tracker-companion', 'clothing', ARCHETYPES.CLOTHING, [
+        ['fence-cleanup', 0, true], ['open', 0], ['garment-split', 0], ['outfit', 2],
+        ['icon-footwear', 1, true], ['icon-dress', 1, true], ['icon-outerwear', 1, true], ['icon-top', 1, true],
+        ['icon-bottoms', 1, true], ['icon-headwear', 1, true], ['icon-neckwear', 1, true], ['icon-jewellery', 1, true], ['icon-other', 1, true], ['close', 0],
     ]],
     ['tpl-visual-map-companion', 'visual-map', ARCHETYPES.VISUAL_MAP, [
         ['fence-cleanup', 0, true], ['lead-cleanup', 0, true], ['tail-cleanup', 1, true],

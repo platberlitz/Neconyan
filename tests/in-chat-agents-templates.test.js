@@ -29,6 +29,7 @@ const sourceFilenames = [
     'chat-only-companion.json',
     'chatroom-companion.json',
     'clock-is-lying.json',
+    'clothing-tracker-companion.json',
     'continuity-companion.json',
     'continuity-corrector.json',
     'continuity-pins.json',
@@ -439,6 +440,74 @@ describe('in-chat agent bundled templates', () => {
             const template = readTemplate(filename);
             expect(Number.isInteger(template.version) && template.version > 0).toBe(true);
         }
+    });
+
+    test('seeds Clothing Tracker as a display-only companion with outfit continuity', () => {
+        const clothing = readTemplate('clothing-tracker-companion.json');
+        expect(findCatalogTemplate(readTemplate('index.json'), clothing.id)).toEqual(clothing);
+        expect(clothing).toMatchObject({ category: 'companion', execution: 'companion', phase: 'post', enabled: false,
+            companion: { trigger: 'auto', displayMode: 'panel', format: 'html', includeHistory: true, historyDepth: 1,
+                includePersona: true, includeCharacterCard: true, includeSystemPrompt: false, feedback: { enabled: false } },
+            postProcess: { enabled: false } });
+        expect(readIndexSetBody('DEFAULT_BUNDLED_TEMPLATE_IDS')).toContain(`'${clothing.id}'`);
+        expect(readIndexSetBody('BUNDLED_REGEX_POST_DEFAULT_EXCLUDED_TEMPLATE_IDS')).toContain('CLOTHING_TRACKER_TEMPLATE_ID');
+        expect(readTemplate('groups.json').find(group => group.id === 'grp-companions').agentTemplateIds).toContain(clothing.id);
+        expect(clothing.prompt).toContain('List {{user}} first if present');
+        expect(clothing.prompt).toContain('Leave out anyone who has left');
+        expect(clothing.prompt).toContain('carry forward clothing that is still being worn');
+        expect(clothing.prompt).toContain('return tracker-none');
+    });
+
+    test('renders fenced outfit lines without losing wearer names or garment details', () => {
+        const clothing = readTemplate('clothing-tracker-companion.json');
+        const raw = [
+            '```text', ' Clothing-start ', 'outfit | {{user}} | Buckled boots / grey coat ',
+            'OUTFIT|Léa O’Connor|; Wool waistcoat ;ink-stained cuffs;; blue neckerchief; ', 'outfit|Innkeeper|Apron &amp; cap',
+            'outfit|Night porter|Not established', 'clothing-end', '```',
+        ].join('\r\n');
+        const render = (text, isMarkdown) => applyRegexScriptList(text, clothing.regexScripts, AGENT_REGEX_PLACEMENT.AI_OUTPUT, {
+            isMarkdown,
+            substituteParamsFn: value => value.replaceAll('{{user}}', 'Kit'),
+        });
+        const html = render(raw, true);
+        const rows = html.split('data-clothing-outfit ').slice(1);
+        const items = row => [...row.matchAll(/data-clothing-item [^>]*>(?:<svg[^>]*>.*?<\/svg>)?([^<]*)</g)].map(match => match[1]);
+        const icons = row => [...row.matchAll(/data-clothing-icon="([^"]+)"/g)].map(match => match[1]);
+        expect(rows).toHaveLength(4);
+        expect(rows[0]).toMatch(/>Kit</);
+        expect(items(rows[0])).toEqual(['Buckled boots / grey coat']);
+        expect(icons(rows[0])).toEqual(['footwear']);
+        expect(rows[1]).toMatch(/>Léa O’Connor</);
+        expect(items(rows[1])).toEqual(['Wool waistcoat', 'ink-stained cuffs', 'blue neckerchief']);
+        expect(icons(rows[1])).toEqual(['top', 'other', 'neckwear']);
+        expect(items(rows[2])).toEqual(['Apron &amp; cap']);
+        expect(icons(rows[2])).toEqual(['headwear']);
+        expect(rows[3]).toMatch(/>Night porter<.*>Not established</);
+        expect(icons(rows[3])).toEqual([]);
+        expect(html).not.toMatch(/```|clothing-(?:start|end)|outfit\s*\||\{\{user\}\}/i);
+        expect(render(raw, false)).toBe(raw);
+    });
+
+    test('gives each garment tag one icon for its kind of clothing', () => {
+        const clothing = readTemplate('clothing-tracker-companion.json');
+        const garments = {
+            'Silk evening gown': 'dress', 'dress shirt': 'top', 'Tank top': 'top', 'top hat': 'headwear', 'flat cap': 'headwear',
+            'Long trench coat': 'outerwear', 'dress coat': 'outerwear', 'Faded jeans': 'bottoms', 'running trainers': 'footwear',
+            'Wool socks': 'footwear', 'silver necklace': 'jewellery', 'brass watch': 'jewellery', 'Red neckerchief': 'neckwear',
+            'leather gloves': 'other', 'No clothing': null,
+        };
+        const html = applyRegexScriptList(
+            ['clothing-start', `outfit|Kit|${Object.keys(garments).join('; ')}`, 'clothing-end'].join('\n'),
+            clothing.regexScripts, AGENT_REGEX_PLACEMENT.AI_OUTPUT, { isMarkdown: true },
+        );
+        const chips = html.split('<span data-clothing-item ').slice(1);
+        expect(chips).toHaveLength(Object.keys(garments).length);
+        Object.entries(garments).forEach(([garment, icon], index) => {
+            expect(chips[index]).toContain(`>${garment}<`);
+            const found = [...chips[index].matchAll(/data-clothing-icon="([^"]+)"/g)].map(match => match[1]);
+            expect(found).toEqual(icon ? [icon] : []);
+        });
+        expect(html).toMatch(/^<div [^>]*data-clothing-card[^>]*>.*<svg aria-hidden="true" viewBox="0 0 24 24" fill="currentColor"/s);
     });
 
     test('keeps template update versions in sync with their catalogue', () => {

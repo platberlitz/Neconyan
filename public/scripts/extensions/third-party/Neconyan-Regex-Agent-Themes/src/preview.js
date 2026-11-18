@@ -28,6 +28,7 @@ export const PREVIEW_KEYS = Object.freeze({
     [ARCHETYPES.STREAM]: 'chatroom',
     [ARCHETYPES.TRANSCRIPT]: 'chat-only',
     [ARCHETYPES.POSITION]: 'position',
+    [ARCHETYPES.CLOTHING]: 'clothing',
     [ARCHETYPES.VISUAL_MAP]: 'visual-map',
     [ARCHETYPES.VITALS]: 'vitals',
 });

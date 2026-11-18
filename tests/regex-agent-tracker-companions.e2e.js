@@ -33,13 +33,33 @@ for (const phone of [true, false]) {
             await page.locator('#rat_toggle_browse').click();
             await page.locator('#rat_drawer [data-focus-key="stage-next"]').click();
             const picker = page.locator('#rat_preview_archetype');
-            for (const [value, label] of [['position', 'Position Tracker'], ['visual-map', 'Visual Map'], ['vitals', 'Vitals']]) {
+            for (const [value, label] of [['position', 'Position Tracker'], ['visual-map', 'Visual Map'], ['vitals', 'Vitals'], ['clothing', 'Clothing Tracker']]) {
                 await expect(picker.locator(`option[value="${value}"]`)).toHaveText(label);
                 await picker.selectOption(value);
                 await expect(page.locator(`#rat_drawer [data-rat-key="${value}"]`).first()).toBeVisible();
             }
+            await expect(page.locator('#rat_drawer [data-clothing-outfit]').first()).toBeVisible();
 
-            // Keep the real formatter and app styles, but show all three cards together
+            // Verify the installed agent, not just the preview's copy of the regexes.
+            await expect.poll(() => page.evaluate(async () => {
+                const { getAgents } = await import('/scripts/extensions/in-chat-agents/agent-store.js');
+                const installed = getAgents().filter(agent => agent.sourceTemplateId === 'tpl-clothing-tracker-companion');
+                return installed.map(agent => ({ enabled: agent.enabled, execution: agent.execution, phase: agent.phase }));
+            })).toEqual([{ enabled: false, execution: 'companion', phase: 'post' }]);
+            const storedNote = await page.evaluate(async () => {
+                const { getAgents } = await import('/scripts/extensions/in-chat-agents/agent-store.js');
+                const { formatCompanionContent } = await import('/scripts/extensions/in-chat-agents/companion/companion-ui.js');
+                const { SAMPLES } = await import('/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/samples.js');
+                const agent = getAgents().find(item => item.sourceTemplateId === 'tpl-clothing-tracker-companion');
+                const render = content => formatCompanionContent(agent.id, { content, format: 'html', status: 'done' });
+                const note = document.createElement('div');
+                note.innerHTML = render(SAMPLES.clothing.full);
+                return { wearers: [...note.querySelectorAll('[data-clothing-wearer]')].map(el => el.textContent), empty: render('tracker-none') };
+            });
+            expect(storedNote.wearers).toEqual([expect.stringMatching(/^(?!.*\{\{user\}\}).+$/), 'Mira', 'Léa O’Connor']);
+            expect(storedNote.empty).toBe('');
+
+            // Keep the real formatter and app styles, but show the cards together
             // so the stock and themed screenshots use the same sample data and layout.
             await page.evaluate(() => {
                 for (const child of document.body.children) child.style.display = 'none';
@@ -63,7 +83,7 @@ for (const phone of [true, false]) {
                     const { getTheme } = await import(`${base}themes/index.js`);
                     const host = document.querySelector('#tracker-captures');
                     host.textContent = '';
-                    for (const [archetype, label] of [['position', 'Position Tracker'], ['visual-map', 'Visual Map'], ['vitals', 'Vitals']]) {
+                    for (const [archetype, label] of [['position', 'Position Tracker'], ['visual-map', 'Visual Map'], ['vitals', 'Vitals'], ['clothing', 'Clothing Tracker']]) {
                         const section = document.createElement('section');
                         section.dataset.capture = archetype;
                         section.style.cssText = 'min-width:0;align-self:start';
@@ -83,6 +103,13 @@ for (const phone of [true, false]) {
                 for (const value of ['Harbour at dusk', 'Mira', 'Tavern', 'Docks', 'Health', '23', 'Bruised ribs', 'Sheltered']) {
                     await expect(page.locator('#tracker-captures')).toContainText(value);
                 }
+                const outfits = page.locator('[data-capture="clothing"] [data-clothing-outfit]');
+                await expect(outfits).toHaveCount(3);
+                await expect(outfits.nth(0)).toContainText('Rain-darkened navy coat');
+                await expect(outfits.nth(1)).toContainText('Mira');
+                await expect(outfits.nth(1)).toContainText('Cream jumper');
+                await expect(outfits.nth(2)).toContainText('Léa O’Connor');
+                await expect(outfits.nth(2)).toContainText('Wool waistcoat');
                 const bounds = await page.evaluate(() => {
                     const host = document.querySelector('#tracker-captures');
                     return { width: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth,
@@ -105,9 +132,43 @@ for (const phone of [true, false]) {
                         positionInk: getComputedStyle(document.querySelector('[data-capture="position"] .mes_text > div')).color,
                     };
                 });
-                appearanceChecks.push({ fontSizes, inheritedInk });
+                const clothingAppearance = await page.locator('[data-capture="clothing"] [data-clothing-card]').evaluate(card => {
+                    const { color, background } = getComputedStyle(card);
+                    const rows = [...card.querySelectorAll('[data-clothing-outfit]')];
+                    const chips = [...card.querySelectorAll('[data-clothing-item]')];
+                    return {
+                        color, background,
+                        chips: rows.map(row => [...row.querySelectorAll('[data-clothing-item]')].map(chip => [...chip.childNodes].filter(node => node.nodeType === Node.TEXT_NODE).map(node => node.textContent).join('').trim())),
+                        icons: rows.map(row => [...row.querySelectorAll('[data-clothing-item]')].map(chip => [...chip.querySelectorAll('svg[data-clothing-icon]')].map(icon => icon.dataset.clothingIcon).join())),
+                        iconsDrawn: [...card.querySelectorAll('svg')].every(icon => {
+                            const box = icon.getBoundingClientRect();
+                            return box.width >= 12 && box.height >= 12 && icon.querySelector('path')?.getAttribute('d')?.length > 100
+                                && getComputedStyle(icon).fill === getComputedStyle(icon.parentElement).color;
+                        }),
+                        fits: rows.every(row => row.scrollWidth <= row.clientWidth + 1)
+                            && chips.every(chip => chip.scrollWidth <= chip.clientWidth + 1),
+                        readable: rows.every(row => [...row.children].every(child => getComputedStyle(child).color === color))
+                            && chips.every(chip => getComputedStyle(chip).color === color),
+                    };
+                });
+                expect(clothingAppearance.chips).toEqual([
+                    ['Rain-darkened navy coat', 'grey trousers', 'leather boots'],
+                    ['Cream jumper with rolled sleeves', 'brass watch'],
+                    ['Wool waistcoat', 'ink-stained cuffs', 'blue neckerchief'],
+                ]);
+                expect(clothingAppearance.icons).toEqual([
+                    ['outerwear', 'bottoms', 'footwear'],
+                    ['top', 'jewellery'],
+                    ['top', 'other', 'neckwear'],
+                ]);
+                expect(clothingAppearance.iconsDrawn).toBe(true);
+                expect(clothingAppearance.fits).toBe(true);
+                expect(clothingAppearance.readable).toBe(true);
+                appearanceChecks.push({ fontSizes, inheritedInk, clothingAppearance });
             }
             expect(appearanceChecks.map(check => check.fontSizes)).toEqual(Array(3).fill(appearanceChecks[0].fontSizes));
+            expect(new Set(appearanceChecks.map(check => check.clothingAppearance.background)).size).toBe(3);
+            expect(appearanceChecks[1].clothingAppearance.color).not.toBe(appearanceChecks[2].clothingAppearance.color);
             for (const { inheritedInk } of appearanceChecks.slice(1)) {
                 expect(inheritedInk.count).toBeGreaterThan(10);
                 expect(inheritedInk.mismatches).toEqual([]);
@@ -162,7 +223,7 @@ for (const phone of [true, false]) {
                 chat.id = 'chat';
                 chat.style.cssText = 'display:block;position:relative;width:100%;height:auto;max-height:none;overflow:visible';
                 document.querySelector('#tracker-captures').append(chat);
-                for (const [archetype, slug] of [['position', 'delft-porcelain'], ['visual-map', 'obsidian-ink'], ['vitals', 'delft-porcelain']]) {
+                for (const [archetype, slug] of [['position', 'delft-porcelain'], ['visual-map', 'obsidian-ink'], ['vitals', 'delft-porcelain'], ['clothing', 'delft-porcelain']]) {
                     const message = document.createElement('div');
                     message.className = 'mes';
                     message.dataset.chatCapture = archetype;
@@ -173,7 +234,7 @@ for (const phone of [true, false]) {
                     mountPreview(block, archetype, getTheme(slug));
                 }
             });
-            for (const [archetype, value] of [['position', 'Rain easing'], ['visual-map', 'Docks'], ['vitals', 'Bruised ribs']]) {
+            for (const [archetype, value] of [['position', 'Rain easing'], ['visual-map', 'Docks'], ['vitals', 'Bruised ribs'], ['clothing', 'Wool waistcoat']]) {
                 const message = page.locator(`#chat [data-chat-capture="${archetype}"]`);
                 await expect(message).toContainText(value);
                 await expect(message.locator('[data-rat]').first()).toBeVisible();

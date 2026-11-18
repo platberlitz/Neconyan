@@ -761,8 +761,7 @@ let autoSeededTemplateIds = new Set();
 
 // Seeded once per account, disabled. The trackers mirror the "Pura's Trackers
 // Only" kit in templates/groups.json; the Ethereality kit stays library-only.
-// Position Tracker, Visual Map, Vitals and the local Dice Roller are the
-// companions seeded by default.
+// The scene cards, Vitals and the local Dice Roller are the companions seeded by default.
 const DEFAULT_BUNDLED_TEMPLATE_IDS = new Set([
     'tpl-proofreader',
     'tpl-dialogue-humaniser',
@@ -800,6 +799,7 @@ const DEFAULT_BUNDLED_TEMPLATE_IDS = new Set([
     'tpl-time-tracker',
     'tpl-world-detail',
     'tpl-position-tracker-companion',
+    'tpl-clothing-tracker-companion',
     'tpl-visual-map-companion',
     'tpl-vitals-companion',
     'tpl-dice-roller-companion',
@@ -846,6 +846,7 @@ const REMOVED_BUNDLED_GROUP_IDS = new Set([
 const CHATROOM_TEMPLATE_ID = 'tpl-chatroom-companion';
 const MESSAGE_INBOX_TEMPLATE_ID = 'tpl-message-inbox-companion';
 const POSITION_TRACKER_TEMPLATE_ID = 'tpl-position-tracker-companion';
+const CLOTHING_TRACKER_TEMPLATE_ID = 'tpl-clothing-tracker-companion';
 const VISUAL_MAP_TEMPLATE_ID = 'tpl-visual-map-companion';
 const VITALS_TEMPLATE_ID = 'tpl-vitals-companion';
 const DICE_ROLLER_TEMPLATE_ID = 'tpl-dice-roller-companion';
@@ -893,6 +894,7 @@ const BUNDLED_REGEX_POST_DEFAULT_EXCLUDED_TEMPLATE_IDS = new Set([
     CHATROOM_TEMPLATE_ID,
     MESSAGE_INBOX_TEMPLATE_ID,
     POSITION_TRACKER_TEMPLATE_ID,
+    CLOTHING_TRACKER_TEMPLATE_ID,
     VISUAL_MAP_TEMPLATE_ID,
     VITALS_TEMPLATE_ID,
     DICE_ROLLER_TEMPLATE_ID,
