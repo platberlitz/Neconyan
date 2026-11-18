@@ -406,7 +406,8 @@ test.describe('S1 accounts mode', () => {
         expect(await side.locator('code').allInnerTexts()).toEqual(['Invalid CSRF token', 'sudo systemctl restart neconyan', 'https://neconyan.purabunny.cc']);
         await side.close();
 
-        // Sign out: the sign-in page is Italian.
+        // Sign out: the sign-in page is Italian. The new account's tour card would cover Log out.
+        await page.evaluate(() => document.querySelector('[data-tour-coach-skip]')?.click());
         await page.evaluate(() => window.NeconyanShell.openTab('right', 'settings'));
         await page.locator('.sb-settings-tab-btn[data-tab="cache-account"]').click();
         await page.locator('#logout_button').click();
