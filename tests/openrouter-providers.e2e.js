@@ -22,7 +22,7 @@ async function mount(page) {
             return route.fulfill({ contentType: 'text/html', body: `<!doctype html><link rel="stylesheet" href="/css/neconyan-menus.css"><body class="neconyan">${page_html}<script src="/lib/jquery-3.5.1.min.js"></script></body>` });
         }
         if (pathname === '/scripts/i18n.js') {
-            return route.fulfill({ contentType: 'text/javascript', body: 'export const t = (strings, ...values) => String.raw({ raw: strings }, ...values);' });
+            return route.fulfill({ contentType: 'text/javascript', body: 'export const t = (strings, ...values) => String.raw({ raw: strings }, ...values); export const localizeMessage = text => text;' });
         }
         const file = path.resolve(root, 'public', `.${pathname}`);
         if (!file.startsWith(path.join(root, 'public') + path.sep)) return route.abort();
