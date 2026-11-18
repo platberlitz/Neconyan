@@ -210,7 +210,8 @@ export async function runRoleplayCompanions(context, options) {
     if (!pre || pre.intentHash !== roleplayHash(context.job.intent) || pre.policyHash !== roleplayHash(snapshot.agents)) throw fail('The companion activation input needs recovery.');
     const { hash: preHash, ...preData } = pre;
     if (preHash !== roleplayHash(preData)) throw fail('The companion activation input is damaged.');
-    const capacity = captureCompanionCapacity(all, records, snapshot.source, { agentContext: Boolean(snapshot.agentContext),
+    // Admission measures the whole saved chat, even if a swipe omits its old reply from the prompt.
+    const capacity = captureCompanionCapacity(all, options.metadataRecords ?? records, snapshot.source, { agentContext: Boolean(snapshot.agentContext),
         trigger: snapshot.global?.trigger, hiddenIds: snapshot.agents.hiddenIds });
     if (roleplayHash(capacity) !== roleplayHash(snapshot.companionCapacity ?? null)) {
         throw fail('The admitted Companion result capacity differs from its saved source.');
