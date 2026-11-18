@@ -52,10 +52,7 @@ async function setupSwipeFixture(app, { phone, chatName, oldReply, mainReply, po
             : body.model === 'post-held' ? postReply : companionReply;
         return { choices: [{ finish_reason: 'stop', message: { role: 'assistant', content } }] };
     };
-    app.provider.mode.streamReply = () => {
-        app.provider.mode.hold = [...holdModels];
-        return { first: lines[0], rest: '' };
-    };
+    app.provider.mode.streamReply = () => ({ first: lines[0], rest: '' });
 
     const account = await app.account({
         phone,
@@ -214,8 +211,7 @@ function findBeforeSwapSample(samples, firstPreviewIndex) {
         ?? samples[firstPreviewIndex - 1];
 }
 
-async function streamAndCompleteJob(app, account, page, remainingParagraphs, { onBeforeFirstToken, onBeforeStreamEnd } = {}) {
-    if (onBeforeFirstToken) app.provider.mode.hold = [MODEL];
+async function streamAndCompleteJob(app, account, page, remainingParagraphs, { onBeforeStreamEnd } = {}) {
     const submitted = page.waitForResponse(
         response => response.url().endsWith('/api/roleplay/workflow/submit') && response.status() !== 409,
     );
@@ -223,11 +219,6 @@ async function streamAndCompleteJob(app, account, page, remainingParagraphs, { o
     const { jobId } = await (await submitted).json();
 
     await expect.poll(() => app.provider.calls.length, { timeout: 40000 }).toBe(1);
-    if (onBeforeFirstToken) {
-        await expect(page.locator('#chat [data-roleplay-replacement]')).toHaveCount(1);
-        await onBeforeFirstToken();
-        await app.release();
-    }
     await expect.poll(() => typeof app.provider.mode.finishStream, { timeout: 20000 }).toBe('function');
     for (const paragraph of remainingParagraphs) {
         app.provider.mode.writeStream(`\n\n${paragraph}`);
@@ -398,16 +389,23 @@ for (const phone of [true, false]) {
             companionReply,
         });
 
-        await startPostPaintSampler(page);
-        await streamAndCompleteJob(app, account, page, remainingStreamParagraphs, {
-            async onBeforeFirstToken() {
-                // Scroll after the old row collapses. At the very bottom a shorter draft can
-                // move the scroll limit, so leave room to test the reading anchor itself.
+        // The first preview can arrive before the provider sends text. Position the reader
+        // after the old row collapses but before the server accepts the swipe. Away from the
+        // bottom, a shorter preview can't clamp the scroll offset and mask the anchor.
+        await page.route('**/api/roleplay/workflow/submit', async route => {
+            try {
+                await expect(page.locator('#chat [data-roleplay-replacement]')).toHaveCount(1);
+                await expect(page.locator('#neconyan-roleplay-preview')).toHaveCount(0);
                 await page.evaluate(() => {
                     document.querySelector('#chat').scrollTop -= 64;
                 });
                 await waitForPostPaintFrames(page, 3);
-            },
+            } finally {
+                await route.continue();
+            }
+        }, { times: 1 });
+        await startPostPaintSampler(page);
+        await streamAndCompleteJob(app, account, page, remainingStreamParagraphs, {
             async onBeforeStreamEnd() {
                 // Position the reader looking above the short reply so the previous user message is in view through saving and handover.
                 await page.evaluate(() => {
