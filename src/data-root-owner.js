@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -232,8 +233,56 @@ function leaseReclaimed(reason, details) {
     return Object.freeze({ reason, details, message: `Reclaimed a stale data folder lease (${reason}). ${formatLeaseDetails(details)}` });
 }
 
+// The process clocks the OS reports round to the second.
+const PROCESS_START_MARGIN_MS = 2000;
+
+/** When the process with this PID started, in milliseconds since the epoch; 'absent' when the OS lists no such process, null when it cannot tell. */
+export function readProcessStartTime(pid, { platform = process.platform, run = spawnSync, now = Date.now, env = process.env } = {}) {
+    if (!Number.isSafeInteger(pid) || pid < 1) return null;
+    try {
+        if (platform === 'win32') {
+            const shell = env.SystemRoot ? path.join(env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe') : 'powershell.exe';
+            const script = `$p = Get-CimInstance Win32_Process -Filter 'ProcessId=${pid}'; if ($p) { ([DateTimeOffset]$p.CreationDate).ToUnixTimeMilliseconds() } else { 'absent' }`;
+            const result = run(shell, ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8', windowsHide: true, timeout: 20000 });
+            const output = String(result?.stdout ?? '').trim();
+            if (result?.error || result?.status !== 0) return null;
+            if (output === 'absent') return 'absent';
+            return /^\d+$/.test(output) ? Number(output) : null;
+        }
+        const result = run('ps', ['-o', 'etime=', '-p', String(pid)], { encoding: 'utf8', timeout: 10000 });
+        if (result?.error) return null;
+        const output = String(result?.stdout ?? '').trim();
+        if (result?.status === 1 && output === '') return 'absent';
+        const match = result?.status === 0 && /^(?:(?:(\d+)-)?(\d+):)?(\d+):(\d+)$/.exec(output);
+        if (!match) return null;
+        const [, days = '0', hours = '0', minutes, seconds] = match;
+        return now() - (((Number(days) * 24 + Number(hours)) * 60 + Number(minutes)) * 60 + Number(seconds)) * 1000;
+    } catch { return null; }
+}
+
+/** Why a lease whose PID still answers is stale after all, or null while it may still be its owner. */
+function staleLiveLeaseReason(root, directory, owner, readStart) {
+    if (!isOwnerRecord(owner)) return null;
+    if (owner.pid === process.pid) {
+        for (const held of activeOwners.values()) if (held.root === root) return null;
+        return 'pid-reused';
+    }
+    if (owner.processStart !== null) {
+        const start = processStartIdentity(owner.pid);
+        return start !== null && start !== owner.processStart ? 'pid-reused' : null;
+    }
+    // Windows and macOS record no process start, and Windows soon hands an old server's PID to another program.
+    // The owner wrote its lease after it started, so a process that started later is not the owner.
+    const started = readStart(owner.pid);
+    if (started === 'absent') return 'process-ended';
+    if (typeof started !== 'number') return null;
+    let written;
+    try { written = fs.lstatSync(path.join(directory, OWNER_NAME)).mtimeMs; } catch { return null; }
+    return started > written + PROCESS_START_MARGIN_MS ? 'pid-reused' : null;
+}
+
 /** Desktop, Termux and shared folders: only a fully identified local process proven absent can be reclaimed automatically. */
-function reclaimDeadLocalLease(root, directory, identity) {
+function reclaimDeadLocalLease(root, directory, identity, readStart) {
     let existing;
     try { existing = readOwner(directory); } catch (error) {
         if (error?.code === 'DATA_ROOT_OWNED') throw fail(error.message, leaseDetails(null, identity));
@@ -248,14 +297,16 @@ function reclaimDeadLocalLease(root, directory, identity) {
         if (cause.code === 'ESRCH') running = false;
         else if (cause.code !== 'EPERM') throw cause;
     }
-    if (running) throw fail('The data folder is already owned by a running process.', details);
+    const reason = running ? staleLiveLeaseReason(root, directory, existing, readStart) : 'process-ended';
+    if (!reason) throw fail('The data folder is already owned by a running process.', details);
     const snapshot = ownerRecoverySnapshot(root);
     if (!snapshot.owner || snapshot.owner.nonce !== existing.nonce) throw fail('The ownership record changed.', details);
-    try { recoverDataRootOwner(root, snapshot.token); } catch (error) {
+    // A live PID was already judged against this same record, so only an unchanged record is removed.
+    try { if (running) removeCheckedOwner(root, snapshot.token); else recoverDataRootOwner(root, snapshot.token); } catch (error) {
         if (error?.code === 'DATA_ROOT_OWNED') throw fail(error.message, details);
         throw error;
     }
-    return leaseReclaimed('process-ended', details);
+    return leaseReclaimed(reason, details);
 }
 
 function appLeaseReason(owner) {
@@ -298,17 +349,18 @@ function reclaimAppServerLease(root, identity, copy) {
 }
 
 /** Hold the fixed root-relative lease until every writer has stopped. No timeout steals it. */
-export function acquireDataRootOwner(dataRoot, purpose, { androidAppServer = false, iosAppServer = false } = {}) {
+export function acquireDataRootOwner(dataRoot, purpose, { androidAppServer = false, iosAppServer = false, readProcessStart = readProcessStartTime } = {}) {
     if (!['server', 'repair'].includes(purpose)) throw new TypeError('Invalid data root ownership purpose.');
     if (typeof androidAppServer !== 'boolean' || androidAppServer && purpose !== 'server'
-        || typeof iosAppServer !== 'boolean' || iosAppServer && (purpose !== 'server' || androidAppServer)) throw new TypeError('Invalid data root ownership option.');
+        || typeof iosAppServer !== 'boolean' || iosAppServer && (purpose !== 'server' || androidAppServer)
+        || typeof readProcessStart !== 'function') throw new TypeError('Invalid data root ownership option.');
     const root = fs.realpathSync(path.resolve(dataRoot));
     const identity = Object.freeze(rootIdentity(root));
     const directory = path.join(root, DATA_ROOT_OWNER_DIRECTORY);
     let reclaimed = null;
     try { fs.mkdirSync(directory, { mode: 0o700 }); } catch (error) {
         if (error.code !== 'EEXIST') throw error;
-        reclaimed = androidAppServer || iosAppServer ? reclaimAppServerLease(root, identity, iosAppServer ? IOS_APP_COPY : ANDROID_APP_COPY) : reclaimDeadLocalLease(root, directory, identity);
+        reclaimed = androidAppServer || iosAppServer ? reclaimAppServerLease(root, identity, iosAppServer ? IOS_APP_COPY : ANDROID_APP_COPY) : reclaimDeadLocalLease(root, directory, identity, readProcessStart);
         fs.mkdirSync(directory, { mode: 0o700 });
     }
     flushDirectory(root);
@@ -423,7 +475,7 @@ export function describeDataRootOwner(dataRoot) {
 }
 
 /** Explicitly recover only the exact inspected ownership after the operator has stopped all servers. */
-export function recoverDataRootOwner(dataRoot, token) {
+export function recoverDataRootOwner(dataRoot, token, { readProcessStart = readProcessStartTime } = {}) {
     if (typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token)) throw fail('An ownership recovery token is required.');
     const checked = ownerRecoverySnapshot(dataRoot);
     if (!checked.token || checked.token !== token) throw fail('The data root ownership changed. Check its status again.');
@@ -434,11 +486,8 @@ export function recoverDataRootOwner(dataRoot, token) {
             if (error.code === 'ESRCH') alive = false;
             else throw fail('The ownership process could not be checked.');
         }
-        if (alive) {
-            const currentStart = processStartIdentity(owner.pid);
-            if (!owner.processStart || !currentStart || owner.processStart === currentStart) {
-                throw fail('The ownership process is still running or cannot be identified. Stop it before recovering the lock.');
-            }
+        if (alive && !staleLiveLeaseReason(checked.root, path.join(checked.root, DATA_ROOT_OWNER_DIRECTORY), owner, readProcessStart)) {
+            throw fail('The ownership process is still running or cannot be identified. Stop it before recovering the lock.');
         }
     }
     removeCheckedOwner(dataRoot, token);
