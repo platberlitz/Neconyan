@@ -23,7 +23,8 @@ for (const phone of [true, false]) {
         const panel = page.locator('#ica--tracker-panel');
         await expect(panel).toBeVisible();
         const sections = panel.locator('.ica--tpanel-agent');
-        const order = () => sections.evaluateAll(nodes => nodes.map(node => node.dataset.agentId));
+        // New accounts also start with Memory Shard in the panel, after these three.
+        const order = () => sections.evaluateAll(nodes => nodes.map(node => node.dataset.agentId).filter(id => id.startsWith('reorder-')));
         await expect.poll(order).toEqual(['reorder-a', 'reorder-b', 'reorder-c']);
         // Measure the grip only once the panel has finished sliding in and startup notices are gone.
         await expect.poll(() => panel.evaluate(node => node.getAnimations({ subtree: true }).length)).toBe(0);
