@@ -592,4 +592,10 @@ export const refreshedKnowledgeCases = [
     ['Why is my lorebook name translated into Portuguese?', 'translation.chat', 'stay exactly as typed'],
     ['Why is my favourite connection profile listed twice?', 'connections.profiles', 'A favourite appears once'],
     ['Does a failed swipe lose my reading position?', 'generation.failed-replies', 'a failed swipe keeps the restored reply in view'],
+    ['How do I use PixAI in Quick Image Gen?', 'images.pixai', 'My API Keys in your pixai.art profile'],
+    ['Where do I get a PixAI API key?', 'images.pixai', 'email api@withpixai.art'],
+    ['Which PixAI model is the default?', 'images.pixai', 'Tsubaki.3 (the default)'],
+    ['Why is Mode missing for Haruka v2?', 'images.pixai', 'appears for Tsubaki models only'],
+    ['Does the PixAI prompt helper cost extra?', 'images.pixai', 'rewrite it at extra cost'],
+    ['Do steps and sampler work with Tsubaki?', 'images.pixai', 'apply to Haruka v2 and Hoshino v2 only'],
 ];
