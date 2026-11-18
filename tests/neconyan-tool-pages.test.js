@@ -483,10 +483,13 @@ describe('Notebooks opens as a page led by Miso', () => {
         expect(css).toMatch(/\.notes-app \{[^}]*overflow: hidden;/);
     });
 
-    test('tour steps only ever press pane and detail tabs, never save, delete or import controls', () => {
+    test('tour steps only ever press tabs and mobile disclosures, never save, delete or import controls', () => {
+        const disclosures = new Set(['notebook-options', 'note-tools', 'help'].map(panel => `[aria-controls="notes-mobile-${panel}"]`));
         for (const step of getToolPage('notes').steps) {
             const opens = [].concat(step.open ?? []).concat(step.tab ?? []);
-            for (const selector of opens) expect(selector).toMatch(/^\.notes-(pane|detail)-tabs \[data-(pane|tab)="[a-z]+"\]$/);
+            for (const selector of opens) {
+                expect(disclosures.has(selector) || /^\.notes-(pane|detail)-tabs \[data-(pane|tab)="[a-z]+"\]$/.test(selector)).toBe(true);
+            }
         }
     });
 });

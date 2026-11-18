@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { refreshedKnowledgeCases } from './neconyan-assistant-knowledge-cases.js';
-import { fillSource } from './notebooks-browser-fixture.js';
+import { fillSource, revealNotebookOptions, revealNoteTools } from './notebooks-browser-fixture.js';
 import { requestJson } from './roleplay-browser-fixture.js';
 
 test.use({ serviceWorkers: 'block', reducedMotion: 'reduce' });
@@ -206,6 +206,7 @@ for (const phone of [false, true]) {
         const notes = page.locator('#neconyan-notes');
         await expect(notes).toBeVisible({ timeout: 60000 });
         if (phone) await notes.getByRole('button', { name: 'Notebooks', exact: true }).click();
+        await revealNotebookOptions(page);
         await notes.getByRole('button', { name: 'Quick note', exact: true }).first().click();
         const quickNote = page.locator('.popup');
         await quickNote.getByRole('textbox', { name: 'Into the Inbox', exact: true }).fill('Knowledge check\n\nQuick capture.');
@@ -216,6 +217,7 @@ for (const phone of [false, true]) {
         await expect(notes.locator('.notes-status')).toHaveText('Saved on server', { timeout: 15000 });
         await notes.getByRole('button', { name: 'Read', exact: true }).click();
         await expect(notes.getByRole('heading', { name: 'Knowledge check', exact: true })).toBeVisible();
+        await revealNoteTools(page);
         await notes.getByRole('button', { name: 'Talk about this note', exact: true }).click();
         const dialog = page.locator('.notes-discussion-dialog');
         await dialog.getByRole('button', { name: 'Miso', exact: true }).click();
@@ -274,7 +276,7 @@ for (const phone of [false, true]) {
             }
             return { revision: KNOWLEDGE_REVISION, results };
         }, refreshedKnowledgeCases);
-        expect(references.revision).toBe(113);
+        expect(references.revision).toBe(114);
         expect(references.results).toHaveLength((13 + refreshedKnowledgeCases.length) * 9);
         expect(references.results.filter(result => !result.found)).toEqual([]);
     });

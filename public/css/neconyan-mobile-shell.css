@@ -3896,3 +3896,93 @@ body.neconyan #rm_extensions_block .sb-extensions-tool:last-child:nth-child(odd)
     min-width: var(--sb-control-icon-physical-size, 44px);
     min-height: var(--sb-control-icon-physical-size, 44px);
 }
+/* Notebooks: keep the page and note list ahead of secondary controls. */
+body.neconyan-notes-open #ica--tracker-panel-handle {
+    visibility: hidden;
+}
+
+#neconyan-notes .notes-pane-nav > .notes-current-notebook {
+    margin: 0 0 8px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    font-family: var(--sb-font-display, 'Fredoka One', sans-serif);
+    font-size: 1.15rem;
+    font-weight: 400;
+    overflow-wrap: anywhere;
+}
+
+#neconyan-notes .notes-mobile-disclosure {
+    min-width: 44px;
+    min-height: 44px;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+#neconyan-notes .notes-mobile-disclosure > i {
+    order: 1;
+}
+
+#neconyan-notes .notes-mobile-disclosure[aria-expanded='true'] > .fa-chevron-down {
+    rotate: 180deg;
+}
+
+#neconyan-notes .notes-header :is(.notes-back, .notes-close) {
+    min-width: 44px;
+}
+
+#neconyan-notes .notes-header .notes-back > span {
+    display: none;
+}
+
+#neconyan-notes .notes-notebook-options,
+#neconyan-notes .notes-editor-tools {
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid var(--neco-border);
+    border-radius: var(--neconyan-control-radius, 12px);
+    background: var(--neco-surface);
+}
+
+#neconyan-notes .notes-notebook-options {
+    margin-block: 0 12px;
+}
+
+#neconyan-notes .notes-notebook-options .notes-nav-section {
+    margin-bottom: 4px;
+}
+
+#neconyan-notes .notes-notebook-options :is(.notes-notebook-row, .notes-folder-row) .notes-choice {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+#neconyan-notes .notes-desktop-extra {
+    display: none;
+}
+
+#neconyan-notes .notes-editor-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+}
+
+#neconyan-notes .notes-editor-head .notes-status {
+    align-self: flex-start;
+    max-width: 100%;
+    white-space: normal;
+}
+
+#neconyan-notes .notes-view-tabs .notes-choice > i {
+    display: none;
+}
+
+#neconyan-notes .notes-view-tabs .notes-choice {
+    padding-inline: 8px;
+}

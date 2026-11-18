@@ -1,7 +1,7 @@
 /* global getComputedStyle, globalThis, requestAnimationFrame */
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-import { expectSourceText, notesApi, openNotes, showNotebooks } from './notebooks-browser-fixture.js';
+import { expectSourceText, notesApi, openNotes, revealNotebookOptions, showNotebooks } from './notebooks-browser-fixture.js';
 
 test.use({ hasTouch: true, serviceWorkers: 'block' });
 test.setTimeout(180000);
@@ -28,12 +28,13 @@ async function createNote(page, notebookId, title, text, folder = '') {
 async function choose(page, viewport, note) {
     await page.evaluate(async notebookId => (await import('/scripts/notebooks/notes-app.js')).notesApp().loadNotebooks(notebookId), note.notebookId);
     await showNotebooks(page, viewport);
-    await page.locator('.notes-pane-nav .notes-note-title').getByText(note.title, { exact: true }).first().click();
+    await page.locator('[data-section="list"] .notes-note-title').getByText(note.title, { exact: true }).click();
     await expectSourceText(page, note.text.replace(/\r\n?/g, '\n'));
 }
 
 async function openTable(page, viewport) {
     await showNotebooks(page, viewport);
+    await revealNotebookOptions(page);
     await page.locator('.notes-pane-nav').getByRole('button', { name: 'Property table', exact: true }).click();
     await expect(page.locator('.notes-table-view')).toBeVisible();
     await expect(page.locator('.notes-property-table tbody tr').first()).toBeVisible({ timeout: 30000 });
@@ -234,6 +235,7 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 393, height: 852 
         const route = async handler => { const response = await handler.fetch(); reached(); await held; await handler.fulfill({ response }); };
         await page.route('**/api/notebooks/properties/table', route);
         await showNotebooks(page, viewport);
+        await revealNotebookOptions(page);
         await page.locator('.notes-pane-nav').getByRole('button', { name: 'Property table', exact: true }).click();
         await started;
         const table = page.locator('.notes-table-view');

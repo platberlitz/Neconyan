@@ -648,6 +648,10 @@ body.neconyan.neconyan-notes-beside #sheld {
     gap: 8px;
 }
 
+.notes-editor-tools {
+    display: contents;
+}
+
 .notes-app .notes-fullscreen {
     min-height: 44px;
 }

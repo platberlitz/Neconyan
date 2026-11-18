@@ -48,6 +48,19 @@ export async function showNotebooks(page, viewport) {
     if (viewport.width <= 768) await page.locator('#neconyan-notes').getByRole('button', { name: 'Notebooks', exact: true }).click();
 }
 
+async function revealOnPhone(page, panel) {
+    const control = page.locator(`#neconyan-notes[data-layout="phone"] button[aria-controls="${panel}"][aria-expanded="false"]`);
+    if (await control.isVisible()) await control.click();
+}
+
+export async function revealNotebookOptions(page) {
+    await revealOnPhone(page, 'notes-mobile-notebook-options');
+}
+
+export async function revealNoteTools(page) {
+    await revealOnPhone(page, 'notes-mobile-note-tools');
+}
+
 export async function notesApi(page, route, body = {}) {
     return page.evaluate(async ({ route, body }) => {
         const { notesRequest } = await import('/scripts/notebooks/api.js');

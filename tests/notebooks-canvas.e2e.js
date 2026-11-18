@@ -2,7 +2,7 @@
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
-import { enterNotes, expectSourceText, notesApi, openNotes, showNotebooks } from './notebooks-browser-fixture.js';
+import { enterNotes, expectSourceText, notesApi, openNotes, revealNotebookOptions, showNotebooks } from './notebooks-browser-fixture.js';
 
 test.use({ hasTouch: true, serviceWorkers: 'block' });
 test.setTimeout(180000);
@@ -39,13 +39,14 @@ async function setup(page, viewport) {
     expect(created.status).toBe('success');
     await page.evaluate(async notebookId => (await import('/scripts/notebooks/notes-app.js')).notesApp().loadNotebooks(notebookId), notebookId);
     await showNotebooks(page, viewport);
-    await page.locator('.notes-pane-nav .notes-note-title').getByText('Canvas reference', { exact: true }).first().click();
+    await page.locator('[data-section="list"] .notes-note-title').getByText('Canvas reference', { exact: true }).click();
     await expectSourceText(page, text.replace(/\r\n/g, '\n'));
     return { notebookId, noteId: note.noteId, noteRevision: note.revision, noteText: text, canvasId: created.canvasId, document, revision: created.revision };
 }
 
 async function openCanvas(page, viewport) {
     await showNotebooks(page, viewport);
+    await revealNotebookOptions(page);
     await page.locator('.notes-pane-nav').getByRole('button', { name: 'Canvas', exact: true }).click();
     await expect(canvasView(page)).toBeVisible();
     await expect(card(page, 'file')).toContainText('Saved note passage.', { timeout: 30000 });
@@ -342,7 +343,7 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 393, height: 852 
         const note = await notesApi(page, '/notes/create', { notebookId: other.notebook.id, operationId: `canvas:${randomUUID()}`, title: 'Later chosen note', text: '# Later chosen note\nDo not replace this.', folder: '' });
         await page.evaluate(async notebookId => (await import('/scripts/notebooks/notes-app.js')).notesApp().loadNotebooks(notebookId), other.notebook.id);
         await showNotebooks(page, viewport);
-        await page.locator('.notes-pane-nav .notes-note-title').getByText('Later chosen note', { exact: true }).first().click();
+        await page.locator('[data-section="list"] .notes-note-title').getByText('Later chosen note', { exact: true }).click();
         release();
         await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
         await expectSourceText(page, '# Later chosen note\nDo not replace this.');
