@@ -63,10 +63,10 @@ describe('chat generation image request settings', () => {
     });
 });
 
-test('captures bound reasoning intent and metadata before an asynchronous bias lookup', async () => {
+test.each(['none', 'high'])('captures bound %s reasoning intent and metadata before an asynchronous bias lookup', async effort => {
     const model = 'fixture/model';
     const metadata = { source: 'openrouter', model, reasoning: { mandatory: true, supported_efforts: ['future'] } };
-    const settings = { ...baseSettings, chat_completion_source: 'openrouter', reasoning_effort: 'none',
+    const settings = { ...baseSettings, chat_completion_source: 'openrouter', reasoning_effort: effort,
         bias_preset_selected: 'selected', bias_presets: { selected: [{ text: 'test', value: -1 }] } };
     let resumeBias;
     let enterBias;
@@ -80,17 +80,19 @@ test('captures bound reasoning intent and metadata before an asynchronous bias l
     });
     await entered;
     settings.chat_completion_source = 'custom';
-    settings.reasoning_effort = 'high';
+    settings.reasoning_effort = 'low';
     metadata.reasoning.mandatory = false;
+    metadata.reasoning.supported_efforts = ['none', 'low'];
     resumeBias();
     const { generate_data: data } = await pending;
     expect(data.chat_completion_source).toBe('openrouter');
-    expect(data.reasoning_effort).toBe('none');
+    expect(data.reasoning_effort).toBe(effort === 'none' ? undefined : effort);
+    expect(settings.reasoning_effort).toBe('low');
     expect(data.model_sampler_metadata).toEqual({ source: 'openrouter', model, reasoning: { mandatory: true, supported_efforts: ['future'] } });
 });
 
 test.each(['anthropic/claude-sonnet-5', 'anthropic/claude-opus-5', 'anthropic/claude-fable-5'])(
-    'retains declared OpenRouter effort for %s until the final guard', async model => {
+    'omits known-invalid None and retains other OpenRouter efforts for %s until the final guard', async model => {
         for (const effort of ['high', 'low', 'none']) {
             const metadata = { source: 'openrouter', model, reasoning: { supported_efforts: ['high', 'max'], mandatory: true } };
             const settings = { ...baseSettings, chat_completion_source: 'openrouter', reasoning_effort: effort };
@@ -98,7 +100,8 @@ test.each(['anthropic/claude-sonnet-5', 'anthropic/claude-opus-5', 'anthropic/cl
                 ...context, getSamplerMetadata: () => metadata,
                 getReasoningEffort: snapshot => resolveChatReasoningEffort(settings, model, undefined, snapshot),
             });
-            expect(data.reasoning_effort).toBe(effort);
+            expect(data.reasoning_effort).toBe(effort === 'none' ? undefined : effort);
+            expect(settings.reasoning_effort).toBe(effort);
             expect(data.model_sampler_metadata).toEqual(metadata);
             expect(data.temperature).toBeUndefined();
             expect(data.top_p).toBeUndefined();

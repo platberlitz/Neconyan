@@ -1,5 +1,5 @@
 import { describe, expect, test } from '@jest/globals';
-import { checkChatReasoningEffort, getChatReasoningCapabilities } from '../public/scripts/chat-reasoning-capabilities.js';
+import { checkChatReasoningEffort, checkNanoGptReasoningEffort, getChatReasoningCapabilities, getNanoGptReasoningCapabilities, resolveKnownInvalidNoneEffort } from '../public/scripts/chat-reasoning-capabilities.js';
 import { buildChatCompletionSamplerMetadata } from '../public/scripts/openai-model-capabilities.js';
 import { resolveChatReasoningEffort } from '../public/scripts/chat-request-controls.js';
 
@@ -60,10 +60,70 @@ describe('OpenRouter model reasoning declarations', () => {
     test('preserves deliberate None and unsupported saved choices until the guard', () => {
         const settings = { chat_completion_source: source, reasoning_effort: 'none' };
         expect(resolveChatReasoningEffort(settings, model, undefined, metadata({ supported_efforts: ['none', 'high'] }))).toBe('none');
-        expect(resolveChatReasoningEffort(settings, model, undefined, metadata({ supported_efforts: ['Future'], mandatory: true }))).toBe('none');
+        expect(resolveChatReasoningEffort(settings, model, undefined, metadata({ supported_efforts: ['Future'], mandatory: true }))).toBeUndefined();
         expect(resolveChatReasoningEffort(settings, model, undefined, metadata({ supported_efforts: [] }))).toBeUndefined();
         expect(resolveChatReasoningEffort({ ...settings, reasoning_effort: 'low' }, model, undefined, metadata({ supported_efforts: ['high'] }))).toBe('low');
         expect(resolveChatReasoningEffort({ ...settings, reasoning_effort: 'low' }, model, undefined, metadata({}))).toBeUndefined();
         expect(settings.reasoning_effort).toBe('none');
+    });
+});
+
+describe('known invalid None suppression', () => {
+    test.each(['vendor/model:thinking', 'vendor/model:thinking:free', 'vendor/model:free:thinking'])('forbids exact Nano token %s even with contradictory metadata', model => {
+        const identity = { source: 'nanogpt', model, metadata: { source: 'nanogpt', model, reasoning_efforts: ['none', 'high'] } };
+        expect(resolveKnownInvalidNoneEffort({ ...identity, effort: ' None ' })).toBeUndefined();
+        expect(checkChatReasoningEffort({ ...identity, effort: 'none' }).supported).toBe(false);
+        expect(checkNanoGptReasoningEffort({ ...identity, effort: 'none' }).supported).toBe(false);
+        expect(getNanoGptReasoningCapabilities(identity).supportedEfforts).toEqual(['high']);
+        expect(resolveKnownInvalidNoneEffort({ ...identity, effort: 'high' })).toBe('high');
+        for (const metadata of [undefined, { ...identity.metadata, reasoning_efforts: ['high', null] }, { ...identity.metadata, model: 'stale' }]) {
+            expect(resolveKnownInvalidNoneEffort({ ...identity, metadata, effort: 'none' })).toBeUndefined();
+            expect(checkNanoGptReasoningEffort({ ...identity, metadata, effort: 'none' }).supported).toBe(false);
+        }
+    });
+
+    test('retains a known empty supported list when thinking metadata declares only None', () => {
+        const identity = { source: 'nanogpt', model: 'vendor/model:thinking', metadata: { source: 'nanogpt', model: 'vendor/model:thinking', reasoning_efforts: ['none'] } };
+        expect(getNanoGptReasoningCapabilities(identity)).toMatchObject({ known: true, supportedEfforts: [] });
+        expect(getChatReasoningCapabilities(identity)).toMatchObject({ state: 'effort-list', supportedEfforts: [] });
+        expect(checkNanoGptReasoningEffort({ ...identity, effort: 'auto' }).supported).toBe(true);
+        for (const effort of ['low', 'high', 'max', 'FutureRung']) {
+            expect(checkNanoGptReasoningEffort({ ...identity, effort }).supported).toBe(false);
+            expect(checkChatReasoningEffort({ ...identity, effort }).supported).toBe(false);
+        }
+        expect(identity.metadata.reasoning_efforts).toEqual(['none']);
+    });
+
+    test.each(['vendor/thinking-model', 'vendor/thinking/model', 'vendor/model:thinkingish', 'vendor/model:Thinking'])('keeps unknown Nano identity %s', model => {
+        expect(resolveKnownInvalidNoneEffort({ source: 'nanogpt', model, effort: 'none' })).toBe('none');
+    });
+
+    test('uses exact declarations and preserves unknown and valid inputs', () => {
+        const source = 'openrouter';
+        const model = 'vendor/model';
+        const identity = reasoning => ({ source, model, metadata: { source, model, reasoning } });
+        for (const reasoning of [{ supported_efforts: ['high'] }, { mandatory: true, supported_efforts: [] }, {}]) {
+            expect(resolveKnownInvalidNoneEffort({ ...identity(reasoning), effort: 'none' })).toBeUndefined();
+        }
+        expect(resolveKnownInvalidNoneEffort({ ...identity({ supported_efforts: ['none', 'high'] }), effort: 'none' })).toBe('none');
+        expect(resolveKnownInvalidNoneEffort({ ...identity({ supported_efforts: [] }), effort: 'none' })).toBe('none');
+        expect(resolveKnownInvalidNoneEffort({ source: 'custom', model: 'vendor/model:thinking', effort: 'none' })).toBe('none');
+    });
+
+    test.each(['nanogpt', 'openrouter'])('%s leaves malformed, stale and missing declarations unknown', source => {
+        const model = 'vendor/plain';
+        const declaration = source === 'nanogpt' ? { reasoning_efforts: ['high'] } : { reasoning: { supported_efforts: ['high'] } };
+        const bound = { source, model, ...declaration };
+        const malformed = source === 'nanogpt' ? { reasoning_efforts: ['high', null] } : { reasoning: { supported_efforts: ['high', null] } };
+        for (const metadata of [undefined, null, [], { ...bound, source: 'custom' }, { ...bound, model: `${model}:free` }, { source, model, ...malformed }]) {
+            const input = { source, model, metadata, effort: ' None ' };
+            const before = JSON.stringify(input);
+            expect(resolveKnownInvalidNoneEffort(input)).toBe(' None ');
+            expect(JSON.stringify(input)).toBe(before);
+        }
+        expect(resolveKnownInvalidNoneEffort({ source, model, metadata: bound, effort: 'none' })).toBeUndefined();
+        for (const effort of ['auto', 'minimal', 'FutureRung', null, 3, {}]) {
+            expect(resolveKnownInvalidNoneEffort({ source, model, metadata: bound, effort })).toBe(effort);
+        }
     });
 });

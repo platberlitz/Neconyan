@@ -153,12 +153,21 @@ describe('Chat Completion sampler wire filtering', () => {
         expect(capturedBody).not.toHaveProperty('temperature');
         expect(nodeFetchMock).toHaveBeenCalledTimes(1);
         nodeFetchMock.mockClear();
-        for (const [effort, reasoning] of [['low', { supported_efforts: ['high', 'max'] }], ['none', { supported_efforts: ['future'], mandatory: true }]]) {
-            const rejected = await request('openrouter', await build(effort, reasoning));
-            expect(rejected.status).toBe(400);
-            expect((await rejected.json()).error.code).toBe('UNSUPPORTED_REASONING_EFFORT');
-        }
+        const rejected = await request('openrouter', await build('low', { supported_efforts: ['high', 'max'] }));
+        expect(rejected.status).toBe(400);
+        expect((await rejected.json()).error.code).toBe('UNSUPPORTED_REASONING_EFFORT');
         expect(nodeFetchMock).not.toHaveBeenCalled();
+        const reasoning = { supported_efforts: ['future'], mandatory: true };
+        const omitted = await build('none', reasoning);
+        expect(omitted.reasoning_effort).toBeUndefined();
+        expect((await request('openrouter', omitted)).status).toBe(200);
+        expect(capturedBody.reasoning).toEqual({ exclude: true });
+        const absentBody = structuredClone(capturedBody);
+        expect(nodeFetchMock).toHaveBeenCalledTimes(1);
+        nodeFetchMock.mockClear();
+        expect((await request('openrouter', { ...omitted, reasoning_effort: 'none' })).status).toBe(200);
+        expect(capturedBody).toEqual(absentBody);
+        expect(nodeFetchMock).toHaveBeenCalledTimes(1);
     });
 
     async function buildNanoGptClaude(effort) {
@@ -192,11 +201,17 @@ describe('Chat Completion sampler wire filtering', () => {
         expect(nodeFetchMock).not.toHaveBeenCalled();
     });
 
-    test('NanoGPT Claude-family requests reject the default None when the declared list lacks it', async () => {
-        const response = await request('nanogpt', await buildNanoGptClaude('none'));
-        expect(response.status).toBe(400);
-        expect((await response.json()).error.code).toBe('UNSUPPORTED_REASONING_EFFORT');
-        expect(nodeFetchMock).not.toHaveBeenCalled();
+    test('NanoGPT Claude-family requests omit the default None when the declared list lacks it', async () => {
+        const data = await buildNanoGptClaude('none');
+        expect(data.reasoning_effort).toBeUndefined();
+        expect((await request('nanogpt', data)).status).toBe(200);
+        expect(capturedBody).not.toHaveProperty('reasoning');
+        const absentBody = structuredClone(capturedBody);
+        expect(nodeFetchMock).toHaveBeenCalledTimes(1);
+        nodeFetchMock.mockClear();
+        expect((await request('nanogpt', { ...data, reasoning_effort: 'none' })).status).toBe(200);
+        expect(capturedBody).toEqual(absentBody);
+        expect(nodeFetchMock).toHaveBeenCalledTimes(1);
     });
 
     test.each([['min', 'minimal'], ['MINIMAL', 'minimal'], ['none', 'none'], ['auto', undefined], ['AUTO', undefined]])(
@@ -209,14 +224,22 @@ describe('Chat Completion sampler wire filtering', () => {
         },
     );
 
-    test('OpenRouter rejects raw Minimum when not declared and honours mandatory reasoning with unknown efforts', async () => {
-        for (const reasoning of [{ supported_efforts: ['high'] }, { supported_efforts: ['future'], mandatory: true }]) {
-            const response = await request('openrouter', { reasoning_effort: reasoning.mandatory ? 'none' : 'min',
-                model_sampler_metadata: { source: 'openrouter', model: 'test-model', reasoning } });
-            expect(response.status).toBe(400);
-            expect((await response.json()).error.code).toBe('UNSUPPORTED_REASONING_EFFORT');
-        }
+    test('OpenRouter rejects raw Minimum when not declared and omits None for mandatory reasoning with unknown efforts', async () => {
+        const response = await request('openrouter', { reasoning_effort: 'min',
+            model_sampler_metadata: { source: 'openrouter', model: 'test-model', reasoning: { supported_efforts: ['high'] } } });
+        expect(response.status).toBe(400);
+        expect((await response.json()).error.code).toBe('UNSUPPORTED_REASONING_EFFORT');
         expect(nodeFetchMock).not.toHaveBeenCalled();
+        const data = { include_reasoning: false, model_sampler_metadata: { source: 'openrouter', model: 'test-model',
+            reasoning: { supported_efforts: ['future'], mandatory: true } } };
+        expect((await request('openrouter', { ...data, reasoning_effort: 'none' })).status).toBe(200);
+        expect(capturedBody.reasoning).toEqual({ exclude: true });
+        const omittedBody = structuredClone(capturedBody);
+        expect(nodeFetchMock).toHaveBeenCalledTimes(1);
+        nodeFetchMock.mockClear();
+        expect((await request('openrouter', data)).status).toBe(200);
+        expect(capturedBody).toEqual(omittedBody);
+        expect(nodeFetchMock).toHaveBeenCalledTimes(1);
     });
 
     test('OpenRouter rejects explicit no-selector overrides but dispatches omission', async () => {
@@ -295,18 +318,35 @@ describe('Chat Completion sampler wire filtering', () => {
     });
 
     test.each([
-        ['openai', 'gpt-5', 'none'], ['openai_responses', 'gpt-6-astra', 'none'],
-        ['makersuite', 'gemini-3.8-flash', 'none'], ['vertexai', 'gemini-3-flash-preview', 'max'],
+        ['vertexai', 'gemini-3-flash-preview', 'max'],
         ['deepseek', 'deepseek-v4-pro', 'medium'],
-        ['deepseek', 'deepseek-v4-flash', 'medium'], ['deepseek', 'deepseek-flash', 'min'], ['moonshot', 'kimi-k3', 'none'], ['zai', 'glm-5.3', 'medium'],
-        ['minimax', 'MiniMax-M3.1-Flash', 'none'], ['mistralai', 'mistral-small-2603', 'low'],
-        ['groq', 'openai/gpt-oss-20b', 'max'], ['aimlapi', 'openai/gpt-oss-20b', 'none'],
+        ['deepseek', 'deepseek-v4-flash', 'medium'], ['deepseek', 'deepseek-flash', 'min'], ['zai', 'glm-5.3', 'medium'],
+        ['mistralai', 'mistral-small-2603', 'low'],
+        ['groq', 'openai/gpt-oss-20b', 'max'],
         ['fireworks', 'accounts/fireworks/models/gpt-oss-20b', 'max'],
     ])('%s %s rejects final unsupported %s before inference', async (source, model, effort) => {
         const response = await request(source, await buildNative(source, model, effort));
         expect(response.status).toBe(400);
         expect((await response.json()).error.code).toBe('UNSUPPORTED_REASONING_EFFORT');
         expect(nodeFetchMock).not.toHaveBeenCalled();
+    });
+
+    test.each([
+        ['openai', 'gpt-5', 'reasoning_effort'], ['openai_responses', 'gpt-6-astra', 'reasoning.effort'],
+        ['makersuite', 'gemini-3.8-flash', 'generationConfig.thinkingConfig.thinkingLevel'],
+        ['moonshot', 'kimi-k3', 'reasoning_effort'], ['minimax', 'MiniMax-M3.1-Flash', 'reasoning_effort'],
+        ['aimlapi', 'openai/gpt-oss-20b', 'reasoning_effort'],
+    ])('%s %s omits known-invalid None in the builder and final handler exactly like an absent effort', async (source, model, field) => {
+        const data = await buildNative(source, model, 'none');
+        expect(data.reasoning_effort).toBeUndefined();
+        expect((await request(source, data)).status).toBe(200);
+        expect(capturedBody).not.toHaveProperty(field);
+        const absentBody = structuredClone(capturedBody);
+        expect(nodeFetchMock).toHaveBeenCalledTimes(1);
+        nodeFetchMock.mockClear();
+        expect((await request(source, { ...data, reasoning_effort: 'none' })).status).toBe(200);
+        expect(capturedBody).toEqual(absentBody);
+        expect(nodeFetchMock).toHaveBeenCalledTimes(1);
     });
 
     const futureSources = ['openai', 'openai_responses', 'makersuite', 'vertexai', 'deepseek', 'moonshot', 'zai',
@@ -546,12 +586,18 @@ describe('Chat Completion sampler wire filtering', () => {
         expect(nodeFetchMock).not.toHaveBeenCalled();
     });
 
-    test('a missing browser Google marker still preserves None for authoritative rejection', async () => {
+    test('a missing browser Google marker preserves None until the authoritative server omits it', async () => {
         const settings = { chat_completion_source: 'makersuite', reasoning_effort: 'none' };
         const route = getNativeReasoningRoute(settings);
         expect(resolveChatReasoningEffort(settings, 'gemini-3.8-flash', undefined, undefined, route)).toBe('none');
-        expect((await request('makersuite', { model: 'gemini-3.8-flash', reasoning_effort: 'none' })).status).toBe(400);
-        expect(nodeFetchMock).not.toHaveBeenCalled();
+        expect((await request('makersuite', { model: 'gemini-3.8-flash', reasoning_effort: 'none' })).status).toBe(200);
+        expect(capturedBody.generationConfig?.thinkingConfig?.thinkingLevel).toBeUndefined();
+        const omittedBody = structuredClone(capturedBody);
+        expect(nodeFetchMock).toHaveBeenCalledTimes(1);
+        nodeFetchMock.mockClear();
+        expect((await request('makersuite', { model: 'gemini-3.8-flash' })).status).toBe(200);
+        expect(capturedBody).toEqual(omittedBody);
+        expect(nodeFetchMock).toHaveBeenCalledTimes(1);
     });
 
     test.each([
@@ -646,8 +692,16 @@ describe('Chat Completion sampler wire filtering', () => {
             expect(capturedBody.generationConfig?.thinkingConfig?.thinkingLevel).toBeUndefined();
             nodeFetchMock.mockClear();
             process.env.SILLYTAVERN_GEMINI_APIVERSION = 'v1beta';
-            expect((await request('makersuite', data)).status).toBe(400);
+            expect((await request('makersuite', data)).status).toBe(200);
+            expect(capturedBody.generationConfig?.thinkingConfig?.thinkingLevel).toBeUndefined();
+            expect(nodeFetchMock).toHaveBeenCalledTimes(1);
+            nodeFetchMock.mockClear();
+            const unsupported = { ...data, reasoning_effort: 'max' };
+            expect((await request('makersuite', unsupported)).status).toBe(400);
             expect(nodeFetchMock).not.toHaveBeenCalled();
+            process.env.SILLYTAVERN_GEMINI_APIVERSION = 'v1';
+            expect((await request('makersuite', unsupported)).status).toBe(200);
+            expect(nodeFetchMock).toHaveBeenCalledTimes(1);
         } finally {
             if (oldVersion === undefined) delete process.env.SILLYTAVERN_GEMINI_APIVERSION;
             else process.env.SILLYTAVERN_GEMINI_APIVERSION = oldVersion;

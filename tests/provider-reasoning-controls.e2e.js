@@ -30,7 +30,7 @@ const models = [
     { id: variant, name: 'Fixture variant' },
 ].map(record => ({ context_length: 128000, pricing: { prompt: '0', completion: '0' }, ...record }));
 
-async function prepare(page, baseURL) {
+async function prepare(page, baseURL, effort = 'low') {
     const origin = new URL(baseURL).origin;
     const catalogue = { hold: false, held: [] };
     expect(['127.0.0.1', 'localhost', '[::1]']).toContain(new URL(baseURL).hostname);
@@ -69,16 +69,16 @@ async function prepare(page, baseURL) {
     const tour = page.locator('#neconyan-tour-coachmark');
     if (await tour.isVisible()) await tour.locator('[data-tour-coach-skip]').click();
     await page.addLocatorHandler(page.locator('#qig-setup-wizard'), async wizard => wizard.getByRole('button', { name: 'Skip', exact: true }).click());
-    await page.evaluate(async initialModel => {
+    await page.evaluate(async ({ initialModel, effort }) => {
         const core = await import('/script.js');
         const openai = await import('/scripts/openai.js');
         const response = await fetch('/api/settings/get', { method: 'POST', headers: core.getRequestHeaders(), body: '{}' });
         openai.loadOpenAISettings(await response.json(), { ...structuredClone(openai.oai_settings), openrouter_model: initialModel,
-            reasoning_effort: 'low', bind_preset_to_connection: false, stream_openai: false, send_if_empty: '' });
+            reasoning_effort: effort, bind_preset_to_connection: false, stream_openai: false, send_if_empty: '' });
         const character = core.characters.findIndex(item => item.name === 'Durable Nova');
         if (character < 0) throw new Error('The owned reasoning fixture character is missing.');
         await core.selectCharacterById(character, { switchMenu: false });
-    }, model);
+    }, { initialModel: model, effort });
     await page.evaluate(() => window.NeconyanShell.openTab('left', 'api'));
     await page.locator('#main_api').selectOption('openai');
     await page.locator('#chat_completion_source').selectOption('openrouter');
@@ -114,6 +114,28 @@ async function savedReasoningState(page) {
     });
 }
 
+async function waitForSettingsSaveWindow(page) {
+    // Observe beyond the real debounce deadline so a queued unwanted save cannot pass unnoticed.
+    await page.evaluate(async () => {
+        const { DEFAULT_SAVE_EDIT_TIMEOUT } = await import('/script.js');
+        await new Promise(resolve => window.setTimeout(resolve, DEFAULT_SAVE_EDIT_TIMEOUT + 100));
+    });
+}
+
+async function applyReasoningPreset(page, effort) {
+    await page.evaluate(async value => {
+        const core = await import('/script.js');
+        const openai = await import('/scripts/openai.js');
+        const response = await fetch('/api/settings/get', { method: 'POST', headers: core.getRequestHeaders(), body: '{}' });
+        const data = await response.json();
+        const index = data.openai_settings.length;
+        data.openai_setting_names.push('Owned saved reasoning preset');
+        data.openai_settings.push(JSON.stringify({ ...openai.getChatCompletionPreset(), reasoning_effort: value }));
+        openai.loadOpenAISettings(data, structuredClone(openai.oai_settings));
+        window.$('#settings_preset_openai').val(String(index)).trigger('change');
+    }, effort);
+}
+
 async function attachGeometry(page, testInfo, name) {
     const metrics = await page.evaluate(() => {
         const selectors = ['#openai_reasoning_effort', '#openai_reasoning_effort option:checked',
@@ -142,6 +164,107 @@ async function attachGeometry(page, testInfo, name) {
 for (const mobile of [false, true]) {
     test.describe(`OpenRouter reasoning ${mobile ? 'phone' : 'desktop'}`, () => {
         test.use({ viewport: mobile ? { width: 393, height: 852 } : { width: 1280, height: 900 }, isMobile: mobile, hasTouch: mobile });
+
+        test('deliberate Auto selection in the shared picker saves and reloads Auto', async ({ page, baseURL }) => {
+            await prepare(page, baseURL);
+            await page.locator('#left-nav-panel .sb-shell-close').click();
+            const chip = page.locator('#sb-reasoning-effort-button');
+            await chip.click();
+            const auto = page.locator('#sb-reasoning-effort-picker').getByRole('option', { name: 'Auto', exact: true });
+            await expect(auto).toBeVisible();
+            await auto.click();
+            await expect(page.locator('#openai_reasoning_effort')).toHaveValue('auto');
+            await expect(chip).toHaveAttribute('aria-label', 'Reasoning Effort: Auto');
+            await acknowledgeActiveSettings(page);
+            expect(await savedEffort(page)).toBe('auto');
+            await page.reload({ waitUntil: 'domcontentloaded' });
+            await page.waitForFunction(() => !document.getElementById('preloader'), null, { timeout: 60000 });
+            await page.waitForFunction(async () => (await import('/script.js')).settingsReady);
+            await expect(page.locator('#openai_reasoning_effort')).toHaveValue('auto');
+            expect(await savedEffort(page)).toBe('auto');
+        });
+
+        for (const effort of ['auto', 'none']) test(`saved ${effort} survives load, preset, late metadata and reload`, async ({ page, baseURL }, testInfo) => {
+            const catalogue = await prepare(page, baseURL, effort);
+            const select = page.locator('#openai_reasoning_effort');
+            await expect(select).toHaveValue(effort);
+            await applyReasoningPreset(page, effort);
+            await expect.poll(() => page.evaluate(async () => (await import('/scripts/openai.js')).oai_settings.preset_settings_openai)).toBe('Owned saved reasoning preset');
+            await expect(select).toHaveValue(effort);
+            await expect(select.locator('option[value="max"]')).toBeEnabled();
+            // Opening this drawer persists its UI state, so settle it before the no-save window.
+            await page.evaluate(() => window.NeconyanShell.openTab('left', 'presets'));
+            const drawer = page.locator('#sb-openai-advanced');
+            if (!await drawer.locator(':scope > .inline-drawer-content').isVisible()) await drawer.locator(':scope > .inline-drawer-header').click();
+            await expect(drawer.locator(':scope > .inline-drawer-content')).toBeVisible();
+            catalogue.hold = true;
+            await page.evaluate(() => window.NeconyanShell.openTab('left', 'api'));
+            await page.locator('#api_button_openai').click();
+            await expect.poll(() => catalogue.held.length).toBe(1);
+            await acknowledgeActiveSettings(page);
+            await waitForSettingsSaveWindow(page);
+            const before = await savedReasoningState(page);
+            expect(before).toMatchObject({ effort, model });
+            expect(Number.isSafeInteger(before.revision)).toBe(true);
+            const writes = [];
+            const recordSave = request => {
+                if (new URL(request.url()).pathname === '/api/settings/save') writes.push(request.url());
+            };
+            page.on('request', recordSave);
+            catalogue.hold = false;
+            await catalogue.held.pop().fulfill({ json: { data: models.map(record => record.id === model
+                ? { ...record, reasoning: { supported_efforts: ['high'], mandatory: true } } : record) } });
+            await expect(select).toHaveValue(effort);
+            await expect(select.locator('option[value="max"]')).toBeDisabled();
+            await expect(page.locator('#api_button_openai + .api_loading')).toBeHidden();
+            await page.evaluate(() => window.NeconyanShell.openTab('left', 'presets'));
+            await expect(drawer.locator(':scope > .inline-drawer-content')).toBeVisible();
+            await select.scrollIntoViewIfNeeded();
+            if (effort === 'none') {
+                await expect(select.locator('option:checked')).toHaveText('None (unavailable)');
+                await expect(select.locator('option[value="none"]')).toBeDisabled();
+                await expect(page.locator('#openrouter_reasoning_effort_hint')).toHaveText('None is unavailable for this model. No reasoning effort override is sent.');
+            } else {
+                await expect(select.locator('option[value="auto"]')).toBeEnabled();
+                await expect(select.locator('option:checked')).toHaveText('Auto');
+            }
+            await attachGeometry(page, testInfo, `${effort}-settings-geometry`);
+            await page.screenshot({ path: testInfo.outputPath(`${effort}-settings.png`) });
+            await page.locator('#left-nav-panel .sb-shell-close').click();
+            const chip = page.locator('#sb-reasoning-effort-button');
+            if (effort === 'none') await expect(chip).toHaveAttribute('aria-label', 'None is unavailable for this model. No reasoning effort override is sent.');
+            else await expect(chip).toHaveAttribute('aria-label', 'Reasoning Effort: Auto');
+            await chip.click();
+            await expect(page.locator('#sb-reasoning-effort-picker').getByRole('option')).toHaveText(['Auto', 'High']);
+            await attachGeometry(page, testInfo, `${effort}-picker-geometry`);
+            await page.screenshot({ path: testInfo.outputPath(`${effort}-picker.png`) });
+            await page.keyboard.press('Escape');
+            await waitForAnimationFrames(page);
+            await expect(chip).toBeFocused();
+            await waitForSettingsSaveWindow(page);
+            expect(writes).toEqual([]);
+            expect(await savedReasoningState(page)).toEqual(before);
+            page.off('request', recordSave);
+
+            await page.evaluate(() => window.NeconyanShell.openTab('left', 'api'));
+            for (const nextModel of [variant, automatic, model]) {
+                await chooseModel(page, nextModel);
+                await expect(select).toHaveValue(effort);
+                await acknowledgeActiveSettings(page);
+                expect(await savedEffort(page)).toBe(effort);
+            }
+            await page.locator('#chat_completion_source').selectOption('custom');
+            await expect(select).toHaveValue(effort);
+            await page.locator('#chat_completion_source').selectOption('openrouter');
+            await expect(select).toHaveValue(effort);
+            await acknowledgeActiveSettings(page);
+            expect(await savedEffort(page)).toBe(effort);
+            await page.reload({ waitUntil: 'domcontentloaded' });
+            await page.waitForFunction(() => !document.getElementById('preloader'), null, { timeout: 60000 });
+            await page.waitForFunction(async () => (await import('/script.js')).settingsReady);
+            await expect(select).toHaveValue(effort);
+            expect(await savedEffort(page)).toBe(effort);
+        });
 
         // Run this same visual fixture against the clean base and candidate.
         test('ordinary settings and picker preview', async ({ page, baseURL }, testInfo) => {
@@ -191,7 +314,7 @@ for (const mobile of [false, true]) {
             await expect(chip).toBeVisible();
             await chip.click();
             const picker = page.locator('#sb-reasoning-effort-picker');
-            await expect(picker.getByRole('option')).toHaveText(['High', 'Maximum']);
+            await expect(picker.getByRole('option')).toHaveText(['Auto', 'High', 'Maximum']);
             await page.keyboard.press('Escape');
             await waitForAnimationFrames(page);
             expect(await savedReasoningState(page)).toEqual(beforePicker);

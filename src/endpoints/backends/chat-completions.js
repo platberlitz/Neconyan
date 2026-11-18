@@ -14,7 +14,7 @@ import { getLocalPromptCacheValue, isLikelyLocalServerUrl } from '../../../publi
 import { getLinkApiBaseUrl, getLinkApiRequestFormat } from '../../../public/scripts/linkapi-utils.js';
 import { applyGrokModelParameterConstraints, applyKimiK3ModelParameterConstraints, isKimiK3Model, filterChatCompletionSamplingParameters, zaiSupportsReasoningEffort } from '../../../public/scripts/openai-model-capabilities.js';
 import { applyGenerationRequestControls, requestUsesReasoning } from '../../../public/scripts/generation-request-controls.js';
-import { checkChatReasoningEffort, getNativeReasoningRoute, GOOGLE_IMAGE_GENERATION_MODELS } from '../../../public/scripts/chat-reasoning-capabilities.js';
+import { checkChatReasoningEffort, getNativeReasoningRoute, GOOGLE_IMAGE_GENERATION_MODELS, resolveKnownInvalidNoneEffort } from '../../../public/scripts/chat-reasoning-capabilities.js';
 
 import {
     AIMLAPI_HEADERS,
@@ -3125,14 +3125,17 @@ export async function handleChatCompletionsGenerate(request, response) {
         // reasoning effort the frontend never validated, and the pass-through sources forward it
         // to the provider verbatim.
         applyReasoningEffortNormalization(request.body);
-        const reasoningSupport = checkChatReasoningEffort({
+        const reasoningIdentity = {
             source: request.body.chat_completion_source,
             model: request.body.model,
             metadata: request.body.model_sampler_metadata,
             route: getNativeReasoningRoute(request.body, { googleApiVersion: request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.MAKERSUITE
                 ? getConfigValue('gemini.apiVersion', 'v1beta') : undefined }),
-            effort: request.body.reasoning_effort,
-        });
+        };
+        if (resolveKnownInvalidNoneEffort({ ...reasoningIdentity, effort: request.body.reasoning_effort }) === undefined) {
+            delete request.body.reasoning_effort;
+        }
+        const reasoningSupport = checkChatReasoningEffort({ ...reasoningIdentity, effort: request.body.reasoning_effort });
         if (!reasoningSupport.supported) {
             const labels = { none: 'None', min: 'Minimum', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra High', max: 'Maximum' };
             const choices = reasoningSupport.supportedEfforts.map(value => labels[value]).join(' or ');

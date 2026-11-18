@@ -21,7 +21,7 @@ for (const [name, drawings] of Object.entries(icons).sort(([a], [b]) => a.locale
         outputs.set(`public/img/icons/catline/${filename}`, svg);
         const id = filename.slice(0, -4);
         spriteDrawings.push(`<g class="icon" id="${id}">${svg}</g>`);
-        return `url('../img/icons/catline/sprite.svg?v=SPRITE_HASH#${id}')`;
+        return `url(../img/icons/catline/sprite.svg?v=SPRITE_HASH#${id})`;
     });
     variables.push(`--neco-svg-${name}:${variants[0]};`);
     plainVariables.push(`--neco-svg-${name}:${variants[1]};`);

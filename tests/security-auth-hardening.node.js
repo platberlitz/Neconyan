@@ -43,7 +43,6 @@ test('HIGH-3 & LOW-2: forwarded IP trust, X-Forwarded-For precedence over spoofe
 
         runIsolatedScript(`
             import assert from 'node:assert/strict';
-            import fs from 'node:fs';
             import express from 'express';
             import { setConfigFilePath } from './src/util.js';
             globalThis.DATA_ROOT = process.env.TEST_ROOT;
@@ -51,7 +50,7 @@ test('HIGH-3 & LOW-2: forwarded IP trust, X-Forwarded-For precedence over spoofe
 
             const { getRealOrForwardedIp, getIpAddress } = await import('./src/express-common.js');
             const { default: getWhitelistMiddleware } = await import('./src/middleware/whitelist.js');
-            const { default: accessLoggerMiddleware, getAccessLogPath } = await import('./src/middleware/accessLogWriter.js');
+            const { default: accessLoggerMiddleware } = await import('./src/middleware/accessLogWriter.js');
 
             // (a) Untrusted remote socket peer cannot spoof X-Real-IP or X-Forwarded-For
             assert.equal(getRealOrForwardedIp({
@@ -125,11 +124,12 @@ test('HIGH-3 & LOW-2: forwarded IP trust, X-Forwarded-For precedence over spoofe
                     'user-agent': 'Mozilla/5.0\\r\\n2026-01-01T00:00:00.000Z FAKE_ENTRY\\x00',
                 },
             }, {}, () => {});
-            await new Promise(resolve => setTimeout(resolve, 50));
-            const lines = fs.readFileSync(getAccessLogPath(), 'utf8').trim().split('\\n');
-            assert.equal(lines.length, 1);
-            assert.ok(!lines[0].includes('\\r'));
         `, { TEST_ROOT: root, TEST_CONFIG: config });
+
+        // The child exits after the asynchronous append completes.
+        const lines = fs.readFileSync(path.join(root, 'access.log'), 'utf8').trim().split('\n');
+        assert.equal(lines.length, 1);
+        assert.ok(!lines[0].includes('\r'));
     } finally {
         fs.rmSync(root, { recursive: true, force: true });
     }

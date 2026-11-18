@@ -185,11 +185,24 @@ describe('reasoning effort on Z.AI and Moonshot requests', () => {
             },
         );
 
-        test.each(['min', 'medium', 'xhigh', 'none'])('rejects unsupported native K3 effort %s without dispatch', async effort => {
+        test.each(['min', 'medium', 'xhigh'])('rejects unsupported native K3 effort %s without dispatch', async effort => {
             const response = await makeRequest(CHAT_COMPLETION_SOURCES.MOONSHOT, { model: 'kimi-k3', reasoning_effort: effort });
             expect(response.status).toBe(400);
             expect((await response.json()).error.code).toBe('UNSUPPORTED_REASONING_EFFORT');
             expect(nodeFetchMock).not.toHaveBeenCalled();
+        });
+
+        test('omits known-invalid native K3 None exactly like an absent effort', async () => {
+            const response = await makeRequest(CHAT_COMPLETION_SOURCES.MOONSHOT, { model: 'kimi-k3', reasoning_effort: 'none' });
+            expect(response.status).toBe(200);
+            expect(capturedBody).not.toHaveProperty('reasoning_effort');
+            expect(capturedBody).not.toHaveProperty('thinking');
+            const omitted = structuredClone(capturedBody);
+            expect(nodeFetchMock).toHaveBeenCalledTimes(1);
+            nodeFetchMock.mockClear();
+            expect((await makeRequest(CHAT_COMPLETION_SOURCES.MOONSHOT, { model: 'kimi-k3' })).status).toBe(200);
+            expect(capturedBody).toEqual(omitted);
+            expect(nodeFetchMock).toHaveBeenCalledTimes(1);
         });
 
         test.each([['min', 'minimal', 'minimal'], ['medium', 'medium', 'medium'], ['xhigh', 'xhigh', 'xhigh'], ['none', undefined, 'none']])(

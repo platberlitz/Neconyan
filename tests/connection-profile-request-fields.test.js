@@ -314,6 +314,22 @@ describe('reasoning settings from the profile preset', () => {
         expect(profileFieldNames).not.toContain('reasoning_effort');
     });
 
+    test.each(['auto', 'none'])('preserves stored %s through profile, preset and explicit precedence', effort => {
+        mockOpenAiSettings.reasoning_effort = 'max';
+        const preset = { reasoning_effort: effort, verbosity: 'low' };
+        mockPresets.set('Saved effort', preset);
+        const profile = { id: 'saved', mode: 'cc', api: 'openai', model: 'gpt-5', preset: 'Saved effort' };
+        const original = JSON.stringify({ profile, preset, active: mockOpenAiSettings });
+        expect(getChatCompletionProfileRequestOverrides(profile, {}).overrides).toMatchObject({ reasoning_effort: effort, verbosity: 'low' });
+        const explicitProfile = { ...profile, 'reasoning-effort': effort };
+        expect(getChatCompletionProfileRequestOverrides(explicitProfile, {}).overrides.reasoning_effort).toBe(effort);
+        const caller = { reasoning_effort: 'high' };
+        const { overrides } = getChatCompletionProfileRequestOverrides(explicitProfile, caller);
+        expect({ ...overrides, ...caller }).toMatchObject({ reasoning_effort: 'high', verbosity: 'low' });
+        expect(JSON.stringify({ profile, preset, active: mockOpenAiSettings })).toBe(original);
+        expect(explicitProfile['reasoning-effort']).toBe(effort);
+    });
+
     test('an empty preset value, a missing preset and a profile without one send nothing extra', () => {
         mockPresets.set('Empty Preset', { reasoning_effort: '', verbosity: undefined });
         const base = { id: 'profile-preset', mode: 'cc', name: 'Preset Profile', api: 'openai', model: 'gpt-5.2' };

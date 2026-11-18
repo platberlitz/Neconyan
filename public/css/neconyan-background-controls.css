@@ -46,3 +46,15 @@
 #Backgrounds.bg-selection-mode #bg_menu_content .bg-delete-button {
     display: none;
 }
+
+/* Keep the picture sharp and put contrast at the letters, not across the canvas. */
+:root[data-sb-surface-transparent='true'] body.neconyan:not(.sbterm) :is(#chat .mes_text, .sb-conversation-message-text, #neconyan-home-host :is(h1, h2, h3, p)) {
+    -webkit-text-stroke: 2px var(--neco-surface);
+    paint-order: stroke fill;
+}
+
+/* Reset at the outermost styled HTML element, so author-defined strokes can still cascade. */
+:where(:root[data-sb-surface-transparent='true'] body.neconyan:not(.sbterm) :is(#chat .mes_text, .sb-conversation-message-text) [data-nn-message-style]:not([data-nn-message-style] *)) {
+    -webkit-text-stroke: initial;
+    paint-order: normal;
+}

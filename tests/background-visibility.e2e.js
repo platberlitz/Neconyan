@@ -5,21 +5,22 @@ import { expect } from '@playwright/test';
 import { PNG } from 'pngjs';
 import { contrastRatio } from '../public/scripts/theme-contrast.js';
 import { test } from './neconyan-conversation-durable-fixture.js';
+import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
 
-async function seedChat(page, avatar) {
-    await page.evaluate(async avatar => {
+async function seedChat(page, avatar, reply = 'She returned with a pot of tea.') {
+    await page.evaluate(async ({ avatar, reply }) => {
         const context = window.SillyTavern.getContext();
         await context.getCharacters();
         await context.selectCharacterById(context.characters.findIndex(character => character.avatar === avatar));
         const date = '2026-10-11T00:00:00Z';
         context.chat.splice(0, context.chat.length, ...[false, true].map(user => ({
             name: user ? 'Brian' : 'Sara', is_user: user, is_system: false, send_date: date,
-            mes: user ? 'He sat by the window.' : 'She returned with a pot of tea.', extra: {},
+            mes: user ? 'He sat by the window.' : reply, extra: {},
         })));
         await context.saveChat();
         await context.reloadCurrentChat();
         await window.NeconyanShell.activateMode('roleplay');
-    }, avatar);
+    }, { avatar, reply });
     await expect(page.locator('#chat > .mes')).toHaveCount(2);
 }
 
@@ -551,6 +552,78 @@ for (const phone of [false, true]) {
             expect(sample.nested.every(alpha => alpha === 0), `nested rails at ${value}`).toBe(true);
             // Phone sheets fill the screen, so they stay solid at every visibility.
             expect(sample.root, `sheet at ${value}`).toBeCloseTo(phone ? 1 : 0, 2);
+        }
+    });
+
+    test(`Background Visibility preserves dialogue gradients on ${phone ? 'phone' : 'desktop'}`, async ({ app }) => {
+        test.setTimeout(120000);
+        const account = await app.account({ phone, contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {} });
+        if (phone) await installIPhoneSafari(account.context);
+        const page = await account.open({ workspace: false });
+        await seedChat(page, account.avatar, 'She came back with a pot of tea. "The garden is still green after all that rain," Sara said.');
+        await page.evaluate(async () => {
+            const extension = '/scripts/extensions/third-party/sillytavern-character-colors/src';
+            const { settings, setCharacterColors } = await import(`${extension}/state.js`);
+            const { buildCharacterEntry } = await import(`${extension}/palettes.js`);
+            const { decorateAllMessages } = await import(`${extension}/dom-engine.js`);
+            Object.assign(settings, { enabled: true, coloringEngine: 'dom', autoScanNewMessages: false, llmAttributionCheck: false });
+            const { key, entry } = buildCharacterEntry('Sara', { color: '#74ffb8', origin: 'manual' });
+            entry.gradient = {
+                type: 'linear', angle: 90, primaryPosition: 0,
+                stops: [{ color: '#baff55', baseColor: '#baff55', position: 100 }],
+            };
+            setCharacterColors({ [key]: entry });
+            decorateAllMessages();
+        });
+        if (phone) await applyIOSOnlyCss(page);
+        const text = page.locator('#chat > .mes[mesid="0"] .mes_text p');
+        const quote = text.locator('q');
+        await expect(quote).toHaveClass(/dc-gradient-text/);
+        for (const value of [100, 50, 0]) {
+            await setVisibility(page, value);
+            await expect(text).toHaveCSS('-webkit-text-stroke-width', value === 0 ? '0px' : '2px');
+            await expect(quote).toHaveCSS('background-image', /linear-gradient/);
+            await expect(quote).toHaveCSS('-webkit-text-fill-color', 'rgba(0, 0, 0, 0)');
+            await expect(quote).toHaveCSS('-webkit-text-stroke-width', '0px');
+        }
+    });
+
+    test(`Background Visibility preserves styled HTML on ${phone ? 'phone' : 'desktop'}`, async ({ app }, info) => {
+        const account = await app.account({ phone, contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {} });
+        if (phone) await installIPhoneSafari(account.context);
+        const page = await account.open({ workspace: false });
+        await seedChat(page, account.avatar, [
+            'Sara *unfolded* the handout.',
+            '<style>.handout { padding: 1em; background: #f6f2e8; color: #252320; font-family: monospace; } .handout-stamp { -webkit-text-stroke: 1px #7e3c28; }</style>',
+            '<div class="handout"><b>ATELIER NOTES</b><br>Cut a test pattern before touching the good linen.',
+            '<table><tr><td>Waist</td><td>Measure at the natural crease</td></tr><tr><td>Back</td><td>Measure across the shoulders</td></tr></table>',
+            '<span class="handout-stamp"><span style="font-style: italic">Sample only</span></span></div>',
+            'She had underlined <span style="background-color: #f6f2e8; color: #252320">test pattern</span> twice.',
+        ].join('\n\n'));
+        if (phone) await applyIOSOnlyCss(page);
+        const text = page.locator('#chat > .mes[mesid="0"] .mes_text');
+        const card = text.locator('.custom-handout');
+        const heading = card.getByText('ATELIER NOTES', { exact: true });
+        const cell = card.getByRole('cell', { name: 'Waist', exact: true });
+        const stamp = card.getByText('Sample only', { exact: true });
+        const inline = text.getByText('test pattern', { exact: true });
+        const prose = text.getByText('unfolded', { exact: true });
+        await expect(card).toHaveCSS('background-color', 'rgb(246, 242, 232)');
+
+        for (const value of [100, 50, 5, 0]) {
+            await setVisibility(page, value);
+            if (value === 100) {
+                await text.screenshot({
+                    path: info.outputPath('html-message.png'), animations: 'disabled', scale: 'css',
+                    style: '#nn-update-toast, #toast-container { visibility: hidden !important; }',
+                });
+            }
+            await expect(prose).toHaveCSS('-webkit-text-stroke-width', value === 0 ? '0px' : '2px');
+            await expect(heading).toHaveCSS('-webkit-text-stroke-width', '0px');
+            await expect(heading).toHaveCSS('paint-order', 'normal');
+            await expect(cell).toHaveCSS('-webkit-text-stroke-width', '0px');
+            await expect(inline).toHaveCSS('-webkit-text-stroke-width', '0px');
+            await expect(stamp).toHaveCSS('-webkit-text-stroke-width', '1px');
         }
     });
 
