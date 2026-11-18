@@ -2,7 +2,7 @@ import { MAX_PROVIDER_RESPONSE_BYTES, normalizeImageSource } from "./security.js
 
 export const HOSTED_PROVIDER_IDS = new Set([
     "pollinations", "novelai", "gptimage", "arliai", "routeway", "navy", "nanogpt",
-    "chutes", "civitai", "nanobanana", "stability", "replicate", "fal", "together", "zai",
+    "chutes", "civitai", "nanobanana", "stability", "replicate", "fal", "together", "zai", "pixai",
 ]);
 
 export const PROVIDER_OUTPUT_HOST_SUFFIXES = Object.freeze({
@@ -21,6 +21,7 @@ export const PROVIDER_OUTPUT_HOST_SUFFIXES = Object.freeze({
     fal: ["fal.ai", "fal.run", "fal.media"],
     together: ["together.ai", "together.xyz"],
     zai: ["z.ai", "sfile.chatglm.cn", "cdn.bigmodel.cn"],
+    pixai: ["pixai.art"],
 });
 
 function hostMatchesSuffix(hostname, suffix) {

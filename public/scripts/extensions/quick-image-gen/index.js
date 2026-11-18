@@ -172,6 +172,18 @@ import {
     readSseDataStream,
 } from "./lib/hosted-provider.js";
 import {
+    buildPixaiImageRequestFromSettings,
+    createPixaiTask,
+    getPixaiModelFamily,
+    getPixaiModelName,
+    PIXAI_CREATE_URL,
+    PIXAI_DEFAULT_MODE,
+    PIXAI_DEFAULT_MODEL,
+    PIXAI_DEFAULT_PROMPT_HELPER,
+    PIXAI_MODELS,
+    pollPixaiTask,
+} from "./lib/pixai.js";
+import {
     buildContextMediaCandidates,
     canDeleteContextMediaPath,
     contextMediaBytesMatchFormat,
@@ -938,6 +950,7 @@ const PROVIDER_KEY_FIELDS = {
     fal: "falKey",
     together: "togetherKey",
     zai: "zaiKey",
+    pixai: "pixaiKey",
     pollinations: "pollinationsKey",
     custom: "customApiKey",
 };
@@ -962,7 +975,9 @@ function collectQigStatus(s = getSettings()) {
     if (!s) return { items, warnings };
     const providerName = PROVIDERS[s.provider]?.name || s.provider || "No provider";
     items.push(providerName);
-    const model = getProviderModelId(s);
+    const model = s.provider === "pixai"
+        ? (getPixaiModelName(s.pixaiModel) || getProviderModelId(s))
+        : getProviderModelId(s);
     if (model) items.push(model);
     items.push(`${s.width}\u00d7${s.height}`);
     items.push(getPromptSourceLabel(derivePromptSource(s)));
@@ -1209,6 +1224,11 @@ const defaultSettings = {
     zaiKey: "",
     zaiModel: "cogview-4-250304",
     zaiQuality: "hd",
+    // PixAI
+    pixaiKey: "",
+    pixaiModel: PIXAI_DEFAULT_MODEL,
+    pixaiMode: PIXAI_DEFAULT_MODE,
+    pixaiPromptHelper: PIXAI_DEFAULT_PROMPT_HELPER,
     // Pollinations
     pollinationsKey: "",
     pollinationsModel: "",
@@ -2291,6 +2311,7 @@ const PROVIDER_KEYS = {
     fal: ["falKey", "falModel"],
     together: ["togetherKey", "togetherModel"],
     zai: ["zaiKey", "zaiModel", "zaiQuality"],
+    pixai: ["pixaiKey", "pixaiModel", "pixaiMode", "pixaiPromptHelper"],
     local: ["localUrl", "localType", "localModel", "localRefImage", "localDenoise", "a1111Model", "a1111ClipSkip", "a1111Scheduler", "a1111RestoreFaces", "a1111Tiling", "a1111Subseed", "a1111SubseedStrength", "a1111Adetailer", "a1111AdetailerModel", "a1111AdetailerPrompt", "a1111AdetailerNegative", "a1111AdetailerDenoise", "a1111AdetailerConfidence", "a1111AdetailerMaskBlur", "a1111AdetailerDilateErode", "a1111AdetailerInpaintOnlyMasked", "a1111AdetailerInpaintPadding", "a1111Adetailer2", "a1111Adetailer2Model", "a1111Adetailer2Prompt", "a1111Adetailer2Negative", "a1111Adetailer2Denoise", "a1111Adetailer2Confidence", "a1111Adetailer2MaskBlur", "a1111Adetailer2DilateErode", "a1111Adetailer2InpaintOnlyMasked", "a1111Adetailer2InpaintPadding", "a1111Loras", "a1111Vae", "a1111HiresFix", "a1111HiresUpscaler", "a1111HiresScale", "a1111HiresSteps", "a1111HiresDenoise", "a1111HiresSampler", "a1111HiresScheduler", "a1111HiresPrompt", "a1111HiresNegative", "a1111HiresResizeX", "a1111HiresResizeY", "a1111SaveToWebUI", "a1111IpAdapter", "a1111IpAdapterMode", "a1111IpAdapterWeight", "a1111IpAdapterPixelPerfect", "a1111IpAdapterResizeMode", "a1111IpAdapterControlMode", "a1111IpAdapterStartStep", "a1111IpAdapterEndStep", "a1111ControlNet", "a1111ControlNetModel", "a1111ControlNetModule", "a1111ControlNetWeight", "a1111ControlNetResizeMode", "a1111ControlNetControlMode", "a1111ControlNetPixelPerfect", "a1111ControlNetGuidanceStart", "a1111ControlNetGuidanceEnd", "a1111ControlNetImage", "comfyWorkflow", "comfyModelLoader", "comfyClipSkip", "comfyDenoise", "comfyScheduler", "comfyTimeout", "comfyUpscale", "comfyUpscaleModel", "comfyLoras", "comfyOutputNodeIds", "comfyOutputImageIndex", "comfyAllowLegacyInterrupt", "comfySkipNegativePrompt", "comfyFluxClipModel1", "comfyFluxClipModel2", "comfyFluxVaeModel", "comfyFluxClipType", "a1111InterruptServer", "comfyWorkflowComponentOverrides"],
     proxy: ["proxyUrl", "proxyKey", "proxyModel", "proxyLoras", "proxyFacefix", "proxyExtraInstructions", "proxyRefImages", "proxyTimeout", "proxyComfyMode", "proxyComfyTimeout", "proxyComfyNodeId", "proxyComfyWorkflow"],
     custom: ["customApiUrl", "customApiKey", "customApiAuthType", "customApiAuthName", "customApiModel", "customApiPollUrl", "customApiRefImages"]
@@ -2312,6 +2333,7 @@ const PROVIDERS = {
     fal: { name: "Fal.ai", needsKey: true },
     together: { name: "Together AI", needsKey: true },
     zai: { name: "Z.AI", needsKey: true },
+    pixai: { name: "PixAI", needsKey: true },
     local: { name: "Local (A1111/ComfyUI)", needsKey: false },
     proxy: { name: "Reverse Proxy (OpenAI-compatible)", needsKey: false },
     custom: { name: "Custom API", needsKey: false }
@@ -13357,6 +13379,19 @@ async function genZai(prompt, negative, s, signal) {
     throw new Error("No image in Z.AI response");
 }
 
+async function genPixAI(prompt, negative, s, signal) {
+    const apiKey = String(s.pixaiKey || "").trim();
+    if (!apiKey) throw new Error("PixAI API key required");
+    const seed = resolveRandomSeed(s.seed, s);
+    const { body, effectiveParameters } = buildPixaiImageRequestFromSettings(s, prompt, negative, seed);
+    if (body.prompt.length < String(prompt || "").length) log(`PixAI: prompt shortened to ${body.prompt.length} characters`);
+    const taskId = await createPixaiTask({ body, apiKey, fetchImpl: fetch, signal });
+    log(`PixAI: task ${taskId} submitted`);
+    // PixAI has no cancel endpoint: a cancelled run stops polling, and the task still finishes on PixAI.
+    const url = await pollPixaiTask({ taskId, apiKey, fetchImpl: fetch, signal, wait: abortableSleep });
+    return { url, effectiveRequest: { parameters: effectiveParameters } };
+}
+
 async function genOpenAICompatibleImageProvider(provider, providerName, apiUrl, apiKey, model, prompt, negative, s, signal, options = {}) {
     if (!apiKey) throw new Error(`${providerName} API key required`);
     const trimmedModel = String(model || "").trim();
@@ -13502,6 +13537,7 @@ const providerGenerators = {
     fal: genFal,
     together: genTogether,
     zai: genZai,
+    pixai: genPixAI,
     local: genLocal,
     comfyui: genLocal,
     proxy: genProxy,
@@ -13667,6 +13703,9 @@ function getHostedProviderOutputRequest(provider, settings) {
             return { requestUrl: "https://api.together.xyz/v1/images/generations", headers: { Authorization: `Bearer ${settings.togetherKey}` } };
         case "zai":
             return { requestUrl: "https://api.z.ai/api/paas/v4/images/generations", headers: { Authorization: `Bearer ${settings.zaiKey}` } };
+        case "pixai":
+            // The image host is another origin, so the key header never reaches it.
+            return { requestUrl: PIXAI_CREATE_URL, headers: { Authorization: `Bearer ${settings.pixaiKey}` } };
         default:
             return null;
     }
@@ -17491,6 +17530,7 @@ function refreshProviderInputs(provider, { updateProviderVisibility = true } = {
         fal: [["qig-fal-key", "falKey"], ["qig-fal-model", "falModel"]],
         together: [["qig-together-key", "togetherKey"], ["qig-together-model", "togetherModel"]],
         zai: [["qig-zai-key", "zaiKey"], ["qig-zai-model", "zaiModel"], ["qig-zai-quality", "zaiQuality"]],
+        pixai: [["qig-pixai-key", "pixaiKey"], ["qig-pixai-mode", "pixaiMode"], ["qig-pixai-prompt-helper", "pixaiPromptHelper"]],
         local: [
             ["qig-local-url", "localUrl"],
             ["qig-local-type", "localType"],
@@ -17662,11 +17702,12 @@ function refreshProviderInputs(provider, { updateProviderVisibility = true } = {
         renderCustomApiRefImages();
         updateCustomApiUI();
     }
+    if (provider === "pixai") syncPixaiModelControls(s);
     syncGenerationSettingsControls(s);
     if (updateProviderVisibility) updateProviderUI();
 }
 
-// Only the active provider's controls stay in the document. The other seventeen sections are
+// Only the active provider's controls stay in the document. The other provider sections are
 // parked out of it, keeping their nodes, values, and listeners, so they cannot be reached by
 // the settings search, the tab order, or a screen reader. Detaching preserves everything;
 // ensureProviderSectionAttached must run before any code reads that provider's fields by id.
@@ -18303,6 +18344,39 @@ function navyModelInput(currentVal) {
     `;
 }
 
+const PIXAI_CUSTOM_MODEL_VALUE = "custom";
+
+function isKnownPixaiModel(value) {
+    const id = String(value ?? "").trim() || PIXAI_DEFAULT_MODEL;
+    return PIXAI_MODELS.some(model => model.id === id);
+}
+
+function pixaiModelOptions(currentVal) {
+    const id = String(currentVal ?? "").trim() || PIXAI_DEFAULT_MODEL;
+    const known = isKnownPixaiModel(id);
+    const options = PIXAI_MODELS.map(model => {
+        const label = model.id === PIXAI_DEFAULT_MODEL ? `${model.name} (default)` : model.name;
+        return `<option value="${escapeHtml(model.id)}" ${known && id === model.id ? "selected" : ""}>${escapeHtml(label)}</option>`;
+    });
+    options.push(`<option value="${PIXAI_CUSTOM_MODEL_VALUE}" ${known ? "" : "selected"}>Custom model version ID</option>`);
+    return options.join("");
+}
+
+// The Model picker names the recommended models; a custom version ID gets its own field.
+// Mode applies to Tsubaki models only, so it is hidden for anything else.
+function syncPixaiModelControls(settings = getSettings(), { showCustom = null } = {}) {
+    const select = document.getElementById("qig-pixai-model");
+    const customWrap = document.getElementById("qig-pixai-custom-model-wrap");
+    const customInput = document.getElementById("qig-pixai-custom-model");
+    const modeWrap = document.getElementById("qig-pixai-mode-wrap");
+    const model = String(settings?.pixaiModel ?? "").trim();
+    const custom = showCustom ?? !isKnownPixaiModel(model);
+    if (select) select.value = custom ? PIXAI_CUSTOM_MODEL_VALUE : (model || PIXAI_DEFAULT_MODEL);
+    if (customWrap) customWrap.hidden = !custom;
+    if (customInput && document.activeElement !== customInput) customInput.value = custom ? model : "";
+    if (modeWrap) modeWrap.hidden = getPixaiModelFamily(model) !== "tsubaki";
+}
+
 function buildOptions(items, selectedValue, labelFn) {
     return items.map(([k, v]) =>
         `<option value="${k}" ${selectedValue === k ? "selected" : ""}>${labelFn ? labelFn(v) : v}</option>`
@@ -18707,6 +18781,37 @@ function createUI() {
                         <option value="standard" ${s.zaiQuality === "standard" ? "selected" : ""}>Standard (faster)</option>
                     </select>
                     <div class="form-hint">Image URLs expire after 30 days. Sizes are constrained per-model.</div>
+                </div>
+
+                <div id="qig-pixai-settings" class="qig-provider-section">
+                    <label for="qig-pixai-key">PixAI API Key</label>
+                    <input id="qig-pixai-key" type="password" value="${esc(s.pixaiKey)}" autocomplete="off">
+                    <small>Create one under My API Keys in your pixai.art profile (needs a PixAI membership), or email api@withpixai.art. Each image spends credits from your PixAI account.</small>
+                    <label for="qig-pixai-model">Model</label>
+                    <select id="qig-pixai-model">${pixaiModelOptions(s.pixaiModel)}</select>
+                    <div id="qig-pixai-custom-model-wrap" ${isKnownPixaiModel(s.pixaiModel) ? "hidden" : ""}>
+                        <label for="qig-pixai-custom-model">Model version ID</label>
+                        <input id="qig-pixai-custom-model" type="text" inputmode="numeric" autocomplete="off" value="${isKnownPixaiModel(s.pixaiModel) ? "" : esc(s.pixaiModel)}" placeholder="Leave blank for Tsubaki.3">
+                        <small>The last number in the model version's address on pixai.art. Mode and sampling are only sent for the listed models.</small>
+                    </div>
+                    <div id="qig-pixai-mode-wrap" ${getPixaiModelFamily(s.pixaiModel) === "tsubaki" ? "" : "hidden"}>
+                        <label for="qig-pixai-mode">Mode</label>
+                        <select id="qig-pixai-mode">
+                            <option value="lite" ${s.pixaiMode === "lite" ? "selected" : ""}>Lite (fastest)</option>
+                            <option value="standard" ${s.pixaiMode === "standard" ? "selected" : ""}>Standard (balanced)</option>
+                            <option value="pro" ${s.pixaiMode === "pro" ? "selected" : ""}>Pro (more detail, slower)</option>
+                            <option value="ultra" ${s.pixaiMode === "ultra" ? "selected" : ""}>Ultra (most detail, slowest)</option>
+                        </select>
+                        <small>Tsubaki models only. Some modes need a higher PixAI plan.</small>
+                    </div>
+                    <label for="qig-pixai-prompt-helper">Prompt helper</label>
+                    <select id="qig-pixai-prompt-helper">
+                        <option value="disable" ${s.pixaiPromptHelper === "disable" ? "selected" : ""}>Off (send my prompt as written)</option>
+                        <option value="enable" ${s.pixaiPromptHelper === "enable" ? "selected" : ""}>On (PixAI rewrites it, extra cost)</option>
+                        <option value="low" ${s.pixaiPromptHelper === "low" ? "selected" : ""}>Light rewrite (extra cost)</option>
+                        <option value="medium" ${s.pixaiPromptHelper === "medium" ? "selected" : ""}>Medium rewrite (extra cost)</option>
+                    </select>
+                    <div class="form-hint">Width and height snap to the nearest PixAI aspect ratio; a long side over 1280 px uses the larger 1.5k size. Steps, CFG and sampler apply to Haruka v2 and Hoshino v2 only.</div>
                 </div>
 
                 <div id="qig-local-settings" class="qig-provider-section">
@@ -19865,6 +19970,27 @@ function createUI() {
     bind("qig-zai-key", "zaiKey");
     bind("qig-zai-model", "zaiModel");
     bind("qig-zai-quality", "zaiQuality");
+    bind("qig-pixai-key", "pixaiKey");
+    bind("qig-pixai-mode", "pixaiMode");
+    bind("qig-pixai-prompt-helper", "pixaiPromptHelper");
+    const pixaiModelSelect = document.getElementById("qig-pixai-model");
+    if (pixaiModelSelect) pixaiModelSelect.onchange = (e) => {
+        if (settingsImportInProgress) return;
+        const settings = getSettings();
+        const custom = e.target.value === PIXAI_CUSTOM_MODEL_VALUE;
+        if (!custom) settings.pixaiModel = e.target.value;
+        syncPixaiModelControls(settings, { showCustom: custom });
+        if (custom) document.getElementById("qig-pixai-custom-model")?.focus();
+        updateGenerationCapabilitiesUI(settings);
+        saveSettingsDebounced();
+        updateQigStatusLine();
+        syncConfigurationIndicators();
+    };
+    bind("qig-pixai-custom-model", "pixaiModel", (value) => {
+        getSettings().pixaiModel = String(value || "").trim();
+        syncPixaiModelControls(getSettings(), { showCustom: true });
+        updateGenerationCapabilitiesUI();
+    });
     bind("qig-context-media-enabled", "contextMediaEnabled", false, true, (enabled) => {
         if (!enabled) cancelContextMediaWork();
     });
@@ -23052,6 +23178,7 @@ function getProviderModelId(settings, provider = settings?.provider) {
         case "fal": return settings?.falModel || null;
         case "together": return settings?.togetherModel || null;
         case "zai": return settings?.zaiModel || "cogview-4-250304";
+        case "pixai": return String(settings?.pixaiModel || "").trim() || PIXAI_DEFAULT_MODEL;
         case "local": return settings?.localType === "a1111" ? (settings?.a1111Model || null) : (settings?.localModel || null);
         case "proxy": return settings?.proxyModel || null;
         case "custom": return settings?.customApiModel || null;
@@ -23469,6 +23596,7 @@ async function handleMetadataDrop(e) {
                     case "fal": s.falModel = params.model; break;
                     case "together": s.togetherModel = params.model; break;
                     case "zai": s.zaiModel = params.model; break;
+                    case "pixai": s.pixaiModel = String(params.model).trim(); break;
                     case "local":
                         if ((importedBackend || s.localType) === "comfyui") {
                             s.localModel = params.model;

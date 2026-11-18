@@ -12,7 +12,7 @@ const MAX_STRING_BYTES = 2 * 1024 * 1024;
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const FORBIDDEN_KEYS = new Set(["__proto__", "prototype", "constructor"]);
 const PRIVATE_FIELD = /(?:ApiKey|Key|Token|Secret|Password|RefImages?|RefImage|ControlNetImage|LocalRefImage|ImageBase64)$/;
-const KNOWN_PRIVATE_FIELD = /^(?:apiKey|key|token|secret|password|(?:proxy|nai|gptImage|pollinations|arli|routeway|navy|nanoGpt|chutes|civitai|nanobanana|stability|replicate|fal|together|zai|gemini|comfy)(?:Proxy|Api)?Key)$/i;
+const KNOWN_PRIVATE_FIELD = /^(?:apiKey|key|token|secret|password|(?:proxy|nai|gptImage|pollinations|arli|routeway|navy|nanoGpt|chutes|civitai|nanobanana|stability|replicate|fal|together|zai|pixai|gemini|comfy)(?:Proxy|Api)?Key)$/i;
 const DELIMITED_PRIVATE_FIELD = /^(?:api[_-]?key|access[_-]?token|auth|authorization|token|secret|password|passwd)$/i;
 const TRUSTED_ENDPOINT_FIELD = /(?:Url|Uri)$/i;
 const CUSTOM_API_FIELD = /^customApi/;
@@ -73,7 +73,7 @@ const SETTINGS_BOOLEAN_FIELDS = new Set([
 ]);
 
 const SETTINGS_ENUM_VALUES = Object.freeze({
-    provider: ["pollinations", "novelai", "gptimage", "arliai", "routeway", "navy", "nanogpt", "chutes", "civitai", "nanobanana", "stability", "replicate", "fal", "together", "zai", "local", "proxy", "custom"],
+    provider: ["pollinations", "novelai", "gptimage", "arliai", "routeway", "navy", "nanogpt", "chutes", "civitai", "nanobanana", "stability", "replicate", "fal", "together", "zai", "pixai", "local", "proxy", "custom"],
     llmPromptStyle: ["tags", "natural", "custom"],
     llmRequestRole: ["default", "user", "system"],
     contextMediaInsertMode: ["replace", "new", "hidden"],
@@ -87,6 +87,8 @@ const SETTINGS_ENUM_VALUES = Object.freeze({
     civitaiScheduler: ["EulerA", "Euler", "DPM++ 2M Karras", "DDIM"],
     nanobananaNbpPreset: ["house", "preservation", "structural", "custom"],
     zaiQuality: ["hd", "standard"], localType: ["a1111", "comfyui"],
+    pixaiMode: ["lite", "standard", "pro", "ultra"],
+    pixaiPromptHelper: ["disable", "enable", "low", "medium"],
     a1111IpAdapterResizeMode: ["Just Resize", "Crop and Resize", "Resize and Fill"],
     a1111IpAdapterControlMode: ["Balanced", "My prompt is more important", "ControlNet is more important"],
     a1111ControlNetResizeMode: ["Just Resize", "Crop and Resize", "Resize and Fill"],

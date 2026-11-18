@@ -10,12 +10,19 @@ import { abortableSleep, buildCivitaiWorkflowBody, createHostedProviderDeadline,
     getCivitaiWorkflowImageUrls, getRetryAfterMs, isTransientProviderStatus, parseCivitaiLoras,
 } from '../../public/scripts/extensions/quick-image-gen/lib/hosted-provider.js';
 import { readResponseArrayBuffer, readResponseText } from '../../public/scripts/extensions/quick-image-gen/lib/security.js';
+import { buildPixaiImageRequestFromSettings, createPixaiTask, pollPixaiTask, PIXAI_CREATE_URL,
+} from '../../public/scripts/extensions/quick-image-gen/lib/pixai.js';
 
 const fail = (message, code = 'QIG_PROVIDER_ERROR') => Object.assign(new Error(message), { status: 409, code });
 const endpoint = Object.freeze({
     replicate: 'https://api.replicate.com/v1/predictions',
     civitai: 'https://orchestration.civitai.com/v2/consumer/workflows',
+    pixai: PIXAI_CREATE_URL,
 });
+const KEY_FIELDS = Object.freeze({ replicate: 'replicateKey', civitai: 'civitaiKey', pixai: 'pixaiKey' });
+
+/** Providers whose paid submission is saved before read-only polling. */
+export const QUEUED_IMAGE_PROVIDERS = Object.freeze(Object.keys(endpoint));
 
 /** Build only the input that may be persisted, never the account's private API key. */
 export function buildQueuedImageRequest(provider, settings, prompt, negative) {
@@ -38,11 +45,18 @@ export function buildQueuedImageRequest(provider, settings, prompt, negative) {
             cfgScale: Number(settings.cfgScale) || 7, width: Number(settings.width) || 1024,
             height: Number(settings.height) || 1024, seed, loras: parseCivitaiLoras(settings.civitaiLoras) });
     }
+    if (provider === 'pixai') {
+        try {
+            return buildPixaiImageRequestFromSettings(settings, prompt, negative, seed).body;
+        } catch (error) {
+            throw fail(error.message, 'QIG_INVALID_INPUT');
+        }
+    }
     throw fail('This provider cannot submit a queued image.', 'QIG_PROVIDER_UNSUPPORTED');
 }
 
 function providerKey(provider, settings) {
-    const value = provider === 'replicate' ? settings.replicateKey : settings.civitaiKey;
+    const value = settings[KEY_FIELDS[provider]];
     if (typeof value !== 'string' || !value.trim()) throw fail('The saved image provider key is unavailable.', 'QIG_MISSING_KEY');
     return value.trim();
 }
@@ -95,6 +109,11 @@ export async function generateQueuedImageJob(context, { effectId, input, setting
             if (roleplayHash(readSettings()) !== fingerprint) {
                 throw providerNotDispatched(fail('The queued provider settings changed before submission.', 'QIG_SETTINGS_CHANGED'));
             }
+            if (provider === 'pixai') {
+                const id = await createPixaiTask({ body: savedInput?.body ?? body, apiKey: providerKey(provider, settings),
+                    fetchImpl, signal: deadline.signal, createError: fail });
+                return { id, sourceHash };
+            }
             const url = `${endpoint[provider]}${provider === 'civitai' ? '?wait=0' : ''}`;
             const response = await fetchImpl(url, { method: 'POST',
                 headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${providerKey(provider, settings)}` },
@@ -111,6 +130,12 @@ export async function generateQueuedImageJob(context, { effectId, input, setting
             throw fail('The saved queued image submission needs recovery.', 'QIG_RESULT_RECOVERY');
         }
         const key = providerKey(provider, settings);
+        if (provider === 'pixai') {
+            const source = await pollPixaiTask({ taskId: submission.id, apiKey: key, fetchImpl,
+                signal: deadline.signal, wait, createError: fail });
+            // Await the image body before finally removes timeout and cancellation protection.
+            return await materializeSource(source, fetchImpl, deadline.signal, provider, key);
+        }
         while (true) {
             await wait(1500, deadline.signal);
             const url = `${endpoint[provider]}/${encodeURIComponent(submission.id)}`;

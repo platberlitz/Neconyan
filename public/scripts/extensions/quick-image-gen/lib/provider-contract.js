@@ -3,6 +3,7 @@ import { getCustomBackendCapabilities } from "./custom-backend.js";
 import { getFalEffectiveSteps, getProviderGenerationCapabilities } from "./provider-capabilities.js";
 import { coerceSettingsFieldValue } from "./settings-transfer.js";
 import { attachResultFailures, getResultFailures } from "./generation.js";
+import { getPixaiSize } from "./pixai.js";
 
 const MAX_SNAPSHOT_STRING = 16_384;
 const MAX_REPRODUCIBLE_SNAPSHOT_BYTES = 16 * 1024;
@@ -58,6 +59,7 @@ const PROVIDER_REPRODUCIBLE_FIELDS = Object.freeze({
     fal: ["falModel"],
     together: ["togetherModel"],
     zai: ["zaiModel", "zaiQuality"],
+    pixai: ["pixaiModel", "pixaiMode", "pixaiPromptHelper"],
     local: LOCAL_REPRODUCIBLE_BASE_FIELDS,
     proxy: [
         "proxyModel", "proxyLoras", "proxyFacefix", "proxySteps", "proxyCfg", "proxySampler", "proxySeed",
@@ -203,6 +205,10 @@ function mappedSize(provider, settings, capabilities = null) {
     if (provider === "gptimage") {
         if (width === height) return { width: 1024, height: 1024 };
         return width > height ? { width: 1536, height: 1024 } : { width: 1024, height: 1536 };
+    }
+    if (provider === "pixai") {
+        const pixaiSize = getPixaiSize(width, height);
+        return { width: pixaiSize.width, height: pixaiSize.height };
     }
     if (provider === "nanobanana" || (provider === "proxy" && settings.proxyComfyMode)) return {};
     if (provider === "custom" && capabilities) {
