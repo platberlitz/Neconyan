@@ -44,6 +44,7 @@
 - PR #731 (2026-11-17) `fix(backgrounds): keep the wallpaper visible at every Background Visibility`
 - PR #732 (2026-11-17) `test(e2e): wait for startup and editor readiness`
 - PR #733 (2026-11-17) `fix(chat): let background visibility fade message surfaces fully`
+- PR #735 (2026-11-18) `fix(reasoning): preserve auto and omit unsupported none`
 - PR #736 (2026-11-17) `fix(chat): preserve dialogue gradients over visible backgrounds`
 - PR #737 (2026-11-17) `feat(catline): draw extensions as a pile of cats`
 - PR #738 (2026-11-17) `fix(chat): preserve styled html over wallpaper`
