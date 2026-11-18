@@ -7669,7 +7669,10 @@ export async function hasSavedReplyAgentWork(messageIndex) {
     return getAutomaticCompanionAgents(messageIndex).length > 0;
 }
 
-/** Rerun the saved reply's after-reply Agents, then its enabled automatic Companions. */
+/**
+ * Rerun the saved reply's after-reply Agents and its enabled automatic Companions, together when
+ * Companions are set to run at the same time as after-reply Agents, otherwise one after the other.
+ */
 export async function rerunSavedReplyAgentsOnMessage(messageIndex, { isCurrent = () => true } = {}) {
     const message = chat[messageIndex];
     if (!message || message.is_user || message.is_system) return;
@@ -7688,10 +7691,25 @@ export async function rerunSavedReplyAgentsOnMessage(messageIndex, { isCurrent =
         && isMessageTargetCurrent(message, target.state, messageIndex, { text: false });
     const { runAutomaticCompanionsOnMessage } = await import('./companion/companion-runner.js');
     if (!canContinue() || !isMessageTargetCurrent(message, target.state, messageIndex)) return;
-    if (getPromptTransformAgents(getEnabledAgents().filter(isAgentRuntimeAllowed)).length > 0) {
-        await enqueueManualOperation(manualAgentRunQueues[0], target, () => executeRerunPostGenerationAgentsOnMessage(target, cancelRevision), cancelRevision);
+    if (getPromptTransformAgents(getEnabledAgents().filter(isAgentRuntimeAllowed)).length === 0) {
+        await runAutomaticCompanionsOnMessage(messageIndex);
+        return;
     }
-    if (canContinue()) await runAutomaticCompanionsOnMessage(messageIndex);
+    const rerunPostGenerationAgents = () => enqueueManualOperation(manualAgentRunQueues[0], target, () => executeRerunPostGenerationAgentsOnMessage(target, cancelRevision), cancelRevision);
+    if (!getGlobalSettings().companionConcurrentWithPostGen) {
+        await rerunPostGenerationAgents();
+        if (canContinue()) await runAutomaticCompanionsOnMessage(messageIndex);
+        return;
+    }
+    // Companions read the reply as it stands, so an open edit is saved before both start.
+    await commitOpenEditorForMessage(messageIndex);
+    if (!isMessageTargetCurrent(message, target.state, messageIndex, { text: false, revision: false })) return;
+    target.state = captureMessageTargetState(message, messageIndex);
+    if (!canContinue()) return;
+    const companions = runAutomaticCompanionsOnMessage(messageIndex).catch(error => {
+        console.warn('[InChatAgents] Companion stage failed:', error);
+    });
+    await Promise.allSettled([rerunPostGenerationAgents(), companions]);
 }
 
 async function executeRerunPostGenerationAgentsOnMessage(submittedTarget, cancelRevision) {

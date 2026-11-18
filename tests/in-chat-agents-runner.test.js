@@ -2244,6 +2244,35 @@ describe('in-chat agent post-processing runner', () => {
             expect(chat[messageIndex].mes).toBe('Recovered reply.');
             expect(chat[messageIndex].extra.reasoning).toBe(REASONING);
         });
+
+        test.each([
+            ['starts its Companions alongside the after-reply Agents when they run together', true],
+            ['starts its Companions once the after-reply Agents finish otherwise', false],
+        ])('rerunning a saved reply %s', async (_title, concurrentCompanions) => {
+            enabledAgents = [rewriteAgent(), createCompanionAgent({ id: 'agent-companion' })];
+            let finishRewrite;
+            generateQuietPrompt.mockImplementation(request => {
+                const prompt = String(request?.quietPrompt ?? '');
+                if (prompt.includes('REWRITE_PROMPT')) return new Promise(resolve => { finishRewrite = () => resolve('Rewritten reply.'); });
+                if (prompt.includes('Write a companion note')) return Promise.resolve('Companion note.');
+                return Promise.resolve('unexpected request');
+            });
+            const runner = await loadRunner({ concurrentCompanions });
+            chat.push({ name: 'Traveler', mes: 'Knock knock.', is_user: true, is_system: false, extra: {} });
+            chat.push({ name: 'Assistant', mes: 'Saved reply.', is_user: false, is_system: false, extra: {} });
+
+            const rerun = runner.rerunSavedReplyAgentsOnMessage(1);
+            await waitFor(() => callsWith('REWRITE_PROMPT').length === 1);
+            await new Promise(resolve => setTimeout(resolve, 50));
+            expect(callsWith('Write a companion note')).toHaveLength(concurrentCompanions ? 1 : 0);
+
+            finishRewrite();
+            await rerun;
+            expect(callsWith('REWRITE_PROMPT')).toHaveLength(1);
+            expect(callsWith('Write a companion note')).toHaveLength(1);
+            expect(chat[1].mes).toBe('Rewritten reply.');
+            await new Promise(resolve => setTimeout(resolve, 80));
+        });
     });
 
     describe('companion recovery and dependency ownership', () => {
