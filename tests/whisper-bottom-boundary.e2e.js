@@ -19,7 +19,7 @@ test('Opaque Whisper and Hush join remains continuous at fractional device scale
     }, account.avatar);
     await page.locator('#themes').selectOption('Windows Aero Light', { force: true });
     // This case verifies opaque cards, independently of the artwork-visible default.
-    await page.evaluate(() => window.NeconyanShell.setSurfaceTransparency(0));
+    await page.evaluate(() => window.NeconyanShell.setPanelLook('message', { opacity: 100 }));
     for (const style of ['4', '5']) {
         await page.locator('#chat_display').selectOption(style, { force: true });
         const chatBox = await page.locator('#chat').boundingBox();

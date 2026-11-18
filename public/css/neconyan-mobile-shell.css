@@ -2129,16 +2129,46 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
         box-shadow: 0 24px 70px color-mix(in srgb, var(--SmartThemeShadowColor) 28%, transparent);
     }
 
+    /* Phones: side panels start solid and follow only their own Side panels values (M75). */
+    :root body.neconyan {
+        --sb-side-opacity: var(--sb-user-panel-side-opacity, 1);
+        --sb-side-blur: var(--sb-user-panel-side-blur, 0px);
+    }
+    /* The sheet's root carries the side backing on phones (neconyan-calico.css); the frame inside it is clear,
+       also where a shell style paints its frame (the ids out-rank those shell rules without !important). */
+    :root body.neconyan:not(.sbterm) :is(.sb-shell-root, #left-nav-panel, #user-settings-block) .sb-shell-frame {
+        background: transparent;
+    }
+
     /* On phones, keep the avatar and swipe controls inside one Flat message surface. */
-    :root[data-sb-surface-transparent='true'] body.neconyan.flatchat:not(.nnchat):not(.sbterm) #chat .mes {
+    :root body.neconyan.flatchat:not(.nnchat):not(.sbterm) #chat .mes {
         --nn-phone-message-background: var(--moonlit-sb-bot-message-bg);
         --nn-flat-inner-background: transparent;
     }
-    :root[data-sb-surface-transparent='true'] body.neconyan.flatchat:not(.nnchat):not(.sbterm) #chat .mes[is_user='true'] {
+    :root body.neconyan.flatchat:not(.nnchat):not(.sbterm) #chat .mes[is_user='true'] {
         --nn-phone-message-background: var(--moonlit-sb-user-message-bg);
     }
-    :root[data-sb-surface-transparent='true'] body.neconyan.flatchat:not(.nnchat):not(.sbterm) #chat .mes .mes_block {
+    :root body.neconyan.flatchat:not(.nnchat):not(.sbterm) #chat .mes .mes_block {
         border-color: transparent;
+    }
+
+    /* Phones: Bubbles, Document, Echo and Tide paint one card, the .mes, from the message tokens; what sits inside it is clear (M75). */
+    :root body.neconyan:is(.bubblechat, .documentstyle, .echostyle, .tidestyle):not(.sbterm) #chat .mes {
+        --nn-phone-message-background: var(--moonlit-sb-bot-message-bg);
+    }
+    :root body.neconyan:is(.bubblechat, .documentstyle, .echostyle, .tidestyle):not(.sbterm) #chat .mes[is_user='true'] {
+        --nn-phone-message-background: var(--moonlit-sb-user-message-bg);
+    }
+    :root body.neconyan:is(.bubblechat, .documentstyle, .echostyle, .tidestyle):not(.sbterm) #chat .mes > * {
+        --moonlit-sb-bot-message-bg: transparent;
+        --moonlit-sb-user-message-bg: transparent;
+    }
+    /* Echo and Tide paint their name and date row as a plate; on phones it sits on the card instead. Controls keep their fills. */
+    :root body.neconyan:is(.echostyle, .tidestyle):not(.sbterm) #chat .mes:not(.smallSysMes) .ch_name .neconyan-message-heading {
+        background: transparent;
+    }
+    :root body.neconyan.bubblechat:not(.sbterm) #chat .mes::before {
+        background: none;
     }
 
     #sb-mobile-nav-content::before {

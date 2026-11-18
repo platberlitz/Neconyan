@@ -85,7 +85,7 @@ test('real help questions retrieve the appropriate topic', () => {
         ['Where do I find saved Labs work?', 'tools.labs-saved-work'],
         ['How do I use the Clean-Up Data Maid?', 'recovery.clean-up'],
         ['Is my backup still running after I closed the page?', 'recovery.account-jobs'],
-        ['Why did the clouds disappear after I picked a background?', 'appearance.background-visibility'],
+        ['Why did the clouds disappear after I picked a background?', 'appearance.panels'],
         ['Can characters react to the current roleplay in Conversation?', 'conversation.roleplay-asides'],
         ['Is the Conversation message timeline translucent?', 'conversation.layout'],
         ['Does Meower keep refreshing after I close it?', 'meower.server-jobs'],

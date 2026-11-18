@@ -35,7 +35,7 @@ body.neconyan .neconyan-home .recentChat .chatActions .deleteChat { color: var(-
 body.neconyan .neconyan-home .recentChat .chatActions .deleteChat:hover { color: var(--SmartThemeQuoteColor); }
 .neconyan-home-footer { display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding-top: 16px; border-top: 1px solid var(--neco-border); }
 .neconyan-home-footer > button { align-self: flex-start; min-height: 44px; display: inline-flex; align-items: center; gap: 8px; }
-.neconyan-home-layout-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 16px 20px; border: 1px solid color-mix(in oklch, var(--neco-border) 78%, var(--neco-ginger)); border-radius: 24px; background: var(--neco-panel-gradient); }
+.neconyan-home-layout-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 16px 20px; border: 1px solid color-mix(in oklch, var(--neco-border) 78%, var(--neco-ginger)); border-radius: 24px; background: rgb(from var(--neco-surface) r g b / var(--sb-home-opacity)); }
 .neconyan-home .neconyan-home-layout-bar h2 { display: flex; align-items: center; gap: 8px; font-size: 15px; }
 .neconyan-home-layout { display: flex; flex-wrap: wrap; gap: 6px; }
 .neconyan-home-layout button, .neconyan-assistant-collapse { min-height: 44px; margin: 0; }
@@ -74,7 +74,7 @@ body.neconyan .neconyan-home-intro {
     padding: 28px;
     border: 1px solid color-mix(in oklch, var(--neco-border) 82%, var(--neco-ginger));
     border-radius: 24px;
-    background: var(--neco-panel-gradient);
+    background: rgb(from var(--neco-surface) r g b / var(--sb-home-opacity));
     box-shadow: 0 16px 36px color-mix(in srgb, var(--neco-charcoal) 22%, transparent);
 }
 
@@ -113,7 +113,7 @@ body.neconyan .neconyan-assistant-picker {
     padding: 24px;
     border: 1px solid color-mix(in oklch, var(--neco-border) 78%, var(--neco-ginger));
     border-radius: 24px;
-    background: var(--neco-panel-gradient);
+    background: rgb(from var(--neco-surface) r g b / var(--sb-home-opacity));
     box-shadow: 0 16px 34px color-mix(in srgb, var(--neco-charcoal) 18%, transparent);
 }
 
@@ -140,12 +140,12 @@ body.neconyan .neconyan-assistant-picker {
     padding: 14px;
     border: 1px solid color-mix(in oklch, var(--neco-border) 84%, var(--neco-cream));
     border-radius: 20px;
-    background: color-mix(in oklch, var(--neco-surface) 72%, var(--neco-cream) 5%);
+    background: rgb(from color-mix(in oklch, var(--neco-surface) 72%, var(--neco-cream) 5%) r g b / min(1, var(--sb-home-opacity) + .12));
 }
 
 .neconyan-assistant-row.is-selected {
     border-color: color-mix(in oklch, var(--neco-ginger) 70%, var(--neco-border));
-    background: color-mix(in oklch, var(--neco-raised) 76%, var(--neco-ginger) 8%);
+    background: rgb(from color-mix(in oklch, var(--neco-raised) 76%, var(--neco-ginger) 8%) r g b / min(1, var(--sb-home-opacity) + .12));
 }
 
 .neconyan-assistant-portrait-wrap {

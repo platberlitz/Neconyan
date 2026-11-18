@@ -151,17 +151,9 @@ test('kitty clouds remain visible behind Home and Conversation, while Characters
     await expect(page.locator('[data-neconyan-cat]')).toHaveAttribute('src', /neconyan-pixel-cat-rest\.webp/);
     await expect(page.locator('#qig-input-btn')).toBeAttached();
 
-    // Cloud visibility follows the Background Visibility control rather than
-    // forcing the canvas transparent at every setting.
-    await page.locator('#sb-surface-transparency-input').evaluate(input => {
-        input.value = '100';
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-    await expect.poll(() => page.evaluate(() =>
-        window.getComputedStyle(document.documentElement).getPropertyValue('--sb-shell-surface-opacity').trim(),
-    )).toBe('0.00');
-
-    await expect(page.locator('.neconyan-home-intro')).toHaveCSS('background-color', /(?:,\s*|\/\s*)0\)$/);
+    // The Home intro is a Panels Home card: it takes Calico's Home default (0.85), and the canvas stays clear.
+    await expect.poll(() => page.evaluate(() => window.NeconyanShell.getPanelLook().resolved.home.opacity)).toBeCloseTo(0.85, 2);
+    await expect(page.locator('.neconyan-home-intro')).toHaveCSS('background-color', /(?:,\s*|\/\s*)0\.85\)$/);
 
     const checkCanvas = async (name, selectors) => {
         const backgrounds = await page.locator(selectors).evaluateAll(elements => elements
@@ -175,7 +167,7 @@ test('kitty clouds remain visible behind Home and Conversation, while Characters
                 return {
                     id: element.id, alpha: context.getImageData(0, 0, 1, 1).data[3],
                     colour: window.getComputedStyle(element).backgroundColor,
-                    shellOpacity: window.getComputedStyle(element).getPropertyValue('--sb-shell-surface-opacity'),
+                    homeOpacity: window.getComputedStyle(element).getPropertyValue('--sb-home-opacity'),
                     bodyClasses: document.body.className,
                 };
             }));
@@ -194,7 +186,17 @@ test('kitty clouds remain visible behind Home and Conversation, while Characters
     await checkCanvas('home', '#sheld, #neconyan-home-host');
     await page.getByRole('button', { name: 'Characters', exact: true }).click();
     await expect(page.locator('#sheld')).toHaveCSS('visibility', 'hidden');
-    await expect(page.locator('#right-nav-panel')).toHaveCSS('background-color', layer.tone === 'dark' ? 'rgb(27, 28, 26)' : 'rgb(255, 250, 240)');
+    // The sheet is the Panels side layer (`rgb(from var(--neco-rail) r g b / var(--sb-side-opacity))`), which Chromium
+    // serialises as color(srgb ...); compare the painted colour, which must be the rail colour at full opacity.
+    const painted = locator => locator.evaluate(element => {
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = 1;
+        const context = canvas.getContext('2d');
+        context.fillStyle = window.getComputedStyle(element).backgroundColor;
+        context.fillRect(0, 0, 1, 1);
+        return [...context.getImageData(0, 0, 1, 1).data];
+    });
+    await expect.poll(() => painted(page.locator('#right-nav-panel'))).toEqual(layer.tone === 'dark' ? [27, 28, 26, 255] : [255, 250, 240, 255]);
     await expect(page.locator('#right-nav-panel > .scrollableInner')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
     await page.getByRole('button', { name: 'Close Characters', exact: true }).click();
     await expect(page.locator('#sheld')).toHaveCSS('visibility', 'visible');

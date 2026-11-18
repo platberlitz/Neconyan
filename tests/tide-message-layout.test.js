@@ -213,7 +213,8 @@ describe('Tide layout script seams', () => {
         expect(chatStyles).toContain('> .nn-tide-container {');
         expect(chatStyles).toContain('z-index: -2;');
         expect(chatStyles).toContain('border-radius: 22px;');
-        expect(chatStyles).toContain('background: color-mix(in srgb, var(--neco-surface) 55%, transparent);');
+        // The container follows Panels: at message opacity 1 it is the former fixed 55%.
+        expect(chatStyles).toContain('background: color-mix(in srgb, var(--neco-surface) calc(var(--sb-message-opacity) * 55%), transparent);');
         expect(chatStyles).toContain('--nn-tide-inset: 22px;');
         expect(chatStyles).toContain('padding-inline: var(--nn-tide-inset);');
         expect(chatStyles).toContain('right: var(--nn-tide-inset);');

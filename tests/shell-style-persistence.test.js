@@ -31,7 +31,7 @@ function createHarness(options = {}) {
         flushNnStorageWrites: () => {},
         saveSettingsDebounced: () => writes.push(context.power_user.neconyan_shell_style),
         syncShellStyleStylesheet: () => {}, syncKittylessStylesheet: () => {}, syncStarlightConservatoryStage: () => {}, syncSunkenReefStage: () => {},
-        updateThemePickerUi: () => {}, updateThemeBadge: () => {}, syncShellStyleAssistantArt: () => {},
+        updateThemePickerUi: () => {}, updateThemeBadge: () => {}, syncShellStyleAssistantArt: () => {}, applyPanelLook: () => {},
     };
     vm.createContext(context);
     vm.runInContext(implementation, context);

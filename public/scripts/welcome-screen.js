@@ -731,6 +731,66 @@ function removeTutorialCoachmark() {
     activeTutorialPanel = null;
     document.getElementById('neconyan-tour-coachmark')?.remove();
     document.body.classList.remove('neconyan-tour-active');
+    renderPanelLookNotice();
+}
+
+// One-time Home note about the Panels release (plan M75 3.6). The shell owns the state; this only draws it.
+function renderPanelLookNotice(panel = document.querySelector('#neconyan-home-host .welcomePanel') || document.querySelector('.welcomePanel')) {
+    const notice = window.NeconyanShell?.getPanelLookNotice?.() ?? null;
+    const blocked = document.body.classList.contains('neconyan-tour-active');
+    document.querySelectorAll('.neconyan-panels-notice').forEach((card) => {
+        if (!notice || blocked || card.dataset.notice !== notice || card.parentElement !== panel) card.remove();
+    });
+    if (!notice || blocked || !(panel instanceof HTMLElement) || panel.querySelector(':scope > .neconyan-panels-notice')) {
+        return;
+    }
+    const card = document.createElement('section');
+    card.className = 'neconyan-panels-notice';
+    card.dataset.notice = notice;
+    card.setAttribute('aria-labelledby', 'neconyan-panels-notice-title');
+    const heading = document.createElement('h2');
+    heading.id = 'neconyan-panels-notice-title';
+    const text = document.createElement('p');
+    const actions = document.createElement('div');
+    actions.className = 'neconyan-panels-notice-actions';
+    const answer = (value, after = null) => {
+        const host = card.parentElement;
+        window.NeconyanShell?.answerPanelLookNotice?.(value);
+        card.remove();
+        const next = host?.querySelector('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])');
+        if (next instanceof HTMLElement) next.focus({ preventScroll: true });
+        after?.();
+    };
+    const button = (label, value, after = null) => {
+        const element = document.createElement('button');
+        element.type = 'button';
+        element.className = 'menu_button';
+        element.textContent = label;
+        element.addEventListener('click', () => answer(value, after));
+        return element;
+    };
+    if (notice === 'choice') {
+        heading.textContent = t`Panels now have their own look for each style`;
+        text.textContent = t`Your Background Visibility setting is kept for messages and Home cards in every style. Side panels, such as Settings, stay at each style's own look. You can try each style's own look instead. Either way, you can change it later in Settings → Appearance → Panels.`;
+        actions.append(button(t`Try the new defaults`, 'defaults'), button(t`Keep my setting`, 'keep'));
+        card.append(heading, text, actions);
+    } else {
+        heading.textContent = t`Panels now follow your shell style`;
+        text.textContent = t`Each shell style now has its own look for messages, Home cards and side panels. You can change it in Settings → Appearance → Panels.`;
+        actions.append(button(t`Open Panels settings`, 'seen', () => window.NeconyanShell?.openPanelLookSettings?.()));
+        const close = document.createElement('button');
+        close.type = 'button';
+        close.className = 'menu_button neconyan-panels-notice-close';
+        close.setAttribute('aria-label', t`Dismiss this note`);
+        close.title = t`Dismiss this note`;
+        const icon = document.createElement('i');
+        icon.className = 'fa-solid fa-xmark';
+        icon.setAttribute('aria-hidden', 'true');
+        close.append(icon);
+        close.addEventListener('click', () => answer('seen'));
+        card.append(close, heading, text, actions);
+    }
+    panel.prepend(card);
 }
 
 function buildTourParagraph(text) {
@@ -970,6 +1030,7 @@ function showTutorialCoachmark({ askSimpleMode = false, askAssistants = false } 
     }
     activeTutorialPanel = coachmark;
     document.body.classList.add('neconyan-tour-active');
+    renderPanelLookNotice();
     const savedIndex = getWelcomeUiPreference(tutorialIndexKey) || 0;
     const atStart = (Number.parseInt(savedIndex, 10) || 0) === 0;
     if (askSimpleMode && atStart) {
@@ -1675,6 +1736,7 @@ async function sendWelcomePanel(chats, expand, requestId, assistantPersonalities
                 updateRecentChatFilterView(root);
             }
         });
+        renderPanelLookNotice(welcomeHost.querySelector('.welcomePanel'));
         const homeArriving = !document.body.classList.contains('neconyan-home-visible');
         document.body.classList.add('neconyan-home-visible');
         if (homeArriving) revealUi(welcomeHost);
@@ -3464,6 +3526,7 @@ export function initWelcomeScreen() {
         if (activeTutorialPanel) setTutorialUiState(activeTutorialPanel, activeTutorialPanel.dataset.tutorialIndex, true, { persist: false });
     });
     window.addEventListener('sb:conversation-workspace-state-changed', concealWelcomeHome);
+    window.addEventListener('sb:panel-look-notice', () => renderPanelLookNotice());
     // One resume can fire focus, visibilitychange and pageshow together. Refresh
     // the recent list once per burst so another device or a server job is seen
     // without a permanent cache.

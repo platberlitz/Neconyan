@@ -2,6 +2,13 @@
    Keeps the Calico palette tokens, fonts and message tints, and lays square corners,
    two-pixel bevels, navy caption bars and 256-colour pixel-art cats on top. */
 
+/* Panels defaults (Settings > Appearance > Panels; resolved in neconyan.css): solid window faces everywhere. */
+:root[data-sb-theme='windows-98'] {
+    --sb-panel-message-opacity: 1;
+    --sb-panel-home-opacity: 1;
+    --sb-panel-side-opacity: 1;
+}
+
 :root[data-sb-theme='windows-98'] body.neconyan {
     --neconyan-cat-radius: 0;
     --neconyan-home-action-radius: 0;
@@ -376,7 +383,7 @@
 /* Home: each block is a small window with a caption bar drawn along its top edge. */
 :root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(.neconyan-home-intro, .neconyan-assistant-picker, .welcomeRecentShell) {
     padding-top: 34px;
-    background: var(--w98-caption) 3px 3px / calc(100% - 6px) 20px no-repeat, var(--w98-face);
+    background: var(--w98-caption) 3px 3px / calc(100% - 6px) 20px no-repeat, rgb(from var(--w98-face) r g b / var(--sb-home-opacity));
     border: 0;
     border-radius: 0;
     box-shadow: var(--w98-raised), 3px 3px 0 rgb(0 0 0 / 0.3);
@@ -399,7 +406,7 @@
 }
 
 :root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) .sb-shell-frame {
-    background: var(--w98-face);
+    background: rgb(from var(--w98-face) r g b / var(--sb-side-opacity));
     border: 0;
     border-radius: 0;
     box-shadow: var(--w98-raised);
@@ -528,7 +535,8 @@
 :root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) #right-nav-panel.openDrawer > .sb-character-shell-header.neconyan-cat-panel {
     border: 0;
     border-radius: 0;
-    background: var(--w98-face);
+    /* The drawer's own face (its root, Panels side backing) shows through: one layer behind the header text. */
+    background: transparent;
     box-shadow: var(--w98-raised);
 }
 
@@ -656,4 +664,10 @@
     :root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) #right-nav-panel.neconyan-character-workspace.openDrawer > .sb-character-shell-header > #sb_character_dock_toggle {
         inset: calc(50% - 22px) 72px auto auto;
     }
+}
+
+/* Letter outline (Panels): Recent chats' Pin, Rename and Delete have a face in this style, so they stay unstroked. */
+:root[data-sb-theme='windows-98'][data-sb-text-outline] body.neconyan #neconyan-home-host :is(.pinChat, .renameChat, .deleteChat) {
+    -webkit-text-stroke-width: 0;
+    paint-order: normal;
 }

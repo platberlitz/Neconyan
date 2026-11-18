@@ -29,12 +29,11 @@ const REWRITES = [
     {
         file: 'public/css/neconyan.css',
         from: 'body.neconyan :is(.sb-shell-frame, .sb-shell-main, .sb-shell-nav, .sb-character-shell-nav, .sb-shell-header)',
+        // Panels: the frame carries the side backing; the header and the Characters nav no longer paint their own fill.
         to: [
             'body.neconyan .sb-shell-frame',
             'body.neconyan .sb-shell-main',
             'body.neconyan .sb-shell-nav',
-            'body.neconyan .sb-character-shell-nav',
-            'body.neconyan .sb-shell-header',
         ],
     },
     {

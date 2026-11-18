@@ -350,7 +350,7 @@ body.neconyan :is(.sb-shell-root, #right-nav-panel).openDrawer {
     height: calc(100dvh - var(--sb-topbar-layout-offset)) !important;
     max-height: calc(100dvh - var(--sb-topbar-layout-offset)) !important;
     margin: 0 !important; border: 0 !important; border-left: 1px solid var(--neco-border) !important;
-    border-radius: 0 !important; background: var(--neco-rail) !important; box-shadow: none !important;
+    border-radius: 0 !important; background: rgb(from var(--neco-rail) r g b / var(--sb-side-opacity)) !important; box-shadow: none !important;
     transform: none !important; animation: none !important; pointer-events: auto !important;
 }
 /* Anchored on the drawer holder, not body: a body-level :has() here made Chromium restyle the
@@ -379,13 +379,10 @@ body.neconyan #left-nav-panel[data-sb-active-tab='agents'] .sb-shell-panel-scrol
 
 body.neconyan .sb-shell-frame,
 body.neconyan .sb-shell-main,
-body.neconyan .sb-shell-nav,
-body.neconyan .sb-character-shell-nav,
-body.neconyan .sb-shell-header {
-    background: color-mix(in srgb, var(--neco-rail) calc(85% + var(--sb-shell-surface-opacity) * 15%), transparent); box-shadow: none; animation: none !important;
+body.neconyan .sb-shell-nav {
+    background: rgb(from var(--neco-rail) r g b / var(--sb-side-opacity)); box-shadow: none; animation: none !important;
 }
-body.neconyan .sb-shell-frame :is(.sb-shell-main, .sb-shell-nav, .sb-character-shell-nav) { background: transparent; }
-body.neconyan .sb-shell-header { background: var(--neco-rail); }
+body.neconyan .sb-shell-frame :is(.sb-shell-main, .sb-shell-nav, .sb-character-shell-nav), body.neconyan .sb-character-shell-nav { background: transparent; }
 body.neconyan .sb-shell-root::before,
 body.neconyan .sb-shell-main::before,
 body.neconyan .sb-shell-nav::before,
@@ -502,6 +499,8 @@ body.neconyan :is(#sheld, #chat, #form_sheld, #sb-bottom-chat-bar) {
     border: 0; border-radius: 0; background: var(--neco-canvas); box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
 }
 body.neconyan #sheld { min-width: 0; overflow: hidden; }
+:root{--sb-panel-message-opacity:.9;--sb-panel-home-opacity:.85;--sb-panel-side-opacity:1}
+body.neconyan{--sb-message-opacity:var(--sb-user-panel-message-opacity,calc(var(--sb-panel-message-opacity)*var(--sb-user-panel-k,1) + var(--sb-user-panel-m,0)));--sb-home-opacity:var(--sb-user-panel-home-opacity,calc(var(--sb-panel-home-opacity)*var(--sb-user-panel-k,1) + var(--sb-user-panel-m,0)));--sb-side-opacity:var(--sb-user-panel-side-opacity,calc(var(--sb-panel-side-opacity)*var(--sb-user-panel-k,1) + var(--sb-user-panel-m,0)));--sb-message-blur:var(--sb-user-panel-message-blur,var(--sb-user-panel-blur,var(--sb-panel-message-blur,0px)));--sb-home-blur:var(--sb-user-panel-home-blur,var(--sb-user-panel-blur,var(--sb-panel-home-blur,0px)));--sb-side-blur:var(--sb-user-panel-side-blur,var(--sb-user-panel-blur,var(--sb-panel-side-blur,0px)))}
 /* Page Size & Clarity sliders: each scale is 1 at its default, so the stock sizes are unchanged. */
 body.neconyan { --neco-gutter: calc(24px * var(--messageMarginScale, 1)); --neco-bubble-pad: calc(16px * var(--messageMarginScale, 1)); --neco-reading-width: calc(820px * var(--neconyanPageWidthScale, 1)); --neco-line-height: calc(1 + var(--neconyanLineSpacing, 1.2) * .54); --neco-line-ratio: calc(var(--neconyanLineSpacing, 1.2) / 1.2); }
 /* Keep the floating holders measurable for the expression worker's mode detection. */
@@ -679,11 +678,11 @@ body.neconyan #sheld #sb_conversation_pals_rail {
 }
 body.neconyan #sheld #sb_conversation_pals_rail[data-open='true'] { visibility: visible; pointer-events: auto; }
 body.neconyan #sheld #sb_conversation_pals_rail .sb-conversation-rail-close { display: inline-flex; }
-body.neconyan .sb-conversation-timeline { padding: 24px max(var(--neco-gutter), calc((100% - var(--neco-reading-width)) / 2)); gap: 24px; margin: 8px 10px 4px; border: 1px solid var(--neco-border); border-radius: var(--sb-radius-lg, 18px); background: color-mix(in srgb, var(--neco-surface) var(--sb-shell-surface-opacity-percent), transparent); }
+body.neconyan .sb-conversation-timeline { padding: 24px max(var(--neco-gutter), calc((100% - var(--neco-reading-width)) / 2)); gap: 24px; margin: 8px 10px 4px; border: 1px solid var(--neco-border); border-radius: var(--sb-radius-lg, 18px); }
 .sb-conversation-pals-list > .sb-conversation-empty { display: grid; place-items: center; gap: 12px; text-align: center; }
 .sb-conversation-pals-list > .sb-conversation-empty > span { max-inline-size: 24ch; }
-body.neconyan .sb-conversation-message-bubble { padding: 8px 0; background: transparent; color: var(--neco-ink); border: 0; border-radius: 0; box-shadow: none; }
-body.neconyan .sb-conversation-message[data-role='user'] .sb-conversation-message-bubble { padding: 12px var(--neco-bubble-pad); background: var(--neco-user); border-radius: 8px; }
+body.neconyan .sb-conversation-message-bubble { padding: 8px 12px; background: rgb(from var(--neco-surface) r g b / var(--sb-message-opacity)); color: var(--neco-ink); border: 0; border-radius: 0; box-shadow: none; }
+body.neconyan .sb-conversation-message[data-role='user'] .sb-conversation-message-bubble { padding: 12px var(--neco-bubble-pad); background: rgb(from var(--neco-user) r g b / var(--sb-message-opacity)); border-radius: 8px; }
 body.neconyan .sb-conversation-message-name,
 body.neconyan .sb-conversation-message-text { color: var(--neco-ink); }
 body.neconyan .sb-conversation-message-text { line-height: var(--neco-line-height); }
@@ -713,14 +712,12 @@ body.neconyan .welcomePanel::before,
 body.neconyan .welcomeRecentShell::before,
 body.neconyan .welcomePanel::after { display: none; }
 body.neconyan :is(.welcomeHero, .welcomeHeroCopy, .welcomeHeroTitleGroup) { display: flex; flex-direction: column; align-items: stretch; gap: 16px; text-align: left; }
-body.neconyan .welcomeHeroTitleGroup { min-width: 0; gap: 8px; }
 body.neconyan .welcomeHeaderTitle { display: flex; flex-direction: row; flex-wrap: nowrap; align-items: center; justify-content: flex-start; gap: 16px; }
 body.neconyan .welcomeHeaderLogo { width: 44px; height: 44px; flex: 0 0 44px; border: 0; border-radius: 10px; box-shadow: none; }
 body.neconyan .welcomeHeaderVersionDisplay { margin: 0; color: var(--neco-ink); font-size: 26px; line-height: 1.2; font-weight: 600; letter-spacing: -0.025em; }
 body.neconyan :is(.welcomeRecentShell, .welcomeGuidePanel, .welcomeDeckFrame) { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 /* Recent chats: solid themed box for its cat ears. */
-body.neconyan .welcomeRecentShell { padding: 18px 20px; border: 1px solid var(--neco-border); border-radius: 16px; background: var(--neco-surface); box-shadow: none; }
-body.neconyan .welcomeRecentHeader { align-items: center; }
+body.neconyan .welcomeRecentShell { padding: 18px 20px; border: 1px solid var(--neco-border); border-radius: 16px; background: rgb(from var(--neco-surface) r g b / var(--sb-home-opacity)); box-shadow: none; }
 body.neconyan .welcomeRecent .recentChatList .recentChat { padding: 12px 0; border: 0; border-bottom: 1px solid var(--neco-border); border-radius: 0; background: transparent; box-shadow: none; }
 body.neconyan .welcomeRecent .recentChatList .recentChat:hover { background: color-mix(in oklch, var(--neco-surface) 40%, transparent); }
 body.neconyan .welcomeRecent .recentChatList .recentChat .avatar { width: 32px; height: 32px; min-width: 32px; min-height: 32px; }
@@ -2070,14 +2067,14 @@ body.neconyan #right-nav-panel #rm_characters_block {
     min-width: 0;
     min-height: 0;
     overflow: hidden;
-    background: var(--neco-surface);
+    background: transparent;
 }
 body.neconyan #right-nav-panel #neconyan-character-library {
     flex: 0 0 auto;
     min-width: 0;
     padding: 8px 12px;
     border-radius: 0;
-    background: var(--neco-surface);
+    background: transparent;
 }
 body.neconyan #right-nav-panel #rm_characters_block > #rm_print_characters_block {
     flex: 1 1 auto;
@@ -3616,7 +3613,7 @@ body.neconyan:is(.whisperstyle, .hushstyle)[data-neconyan-chat-mode='roleplay']:
     body.neconyan.echostyle:not(.sbterm) #chat .mes.nn-echo-layout .mes_text { margin-top: var(--nn-echo-clearance, 44px); min-height: 0; }
     body.neconyan.echostyle:not(.sbterm) #chat .mes.nn-echo-layout .mes_text::before { position: relative; float: right; margin: -8px -14px 4px 10px; background-attachment: scroll; background-position: center top; }
     body.neconyan.echostyle:not(.sbterm) #chat .mes.nn-echo-layout[is_user='true'] .mes_text::before { float: left; margin: -8px 10px 4px -14px; }
-    .nn-echo-header-plate { position: absolute; pointer-events: none; z-index: -1; top: var(--nn-echo-plate-top); left: var(--nn-echo-plate-left); width: var(--nn-echo-plate-width); height: var(--nn-echo-plate-height); border: 1px solid var(--neco-border); border-radius: 12px; background: var(--neco-surface); }
+    .nn-echo-header-plate { position: absolute; pointer-events: none; z-index: -1; top: var(--nn-echo-plate-top); left: var(--nn-echo-plate-left); width: var(--nn-echo-plate-width); height: var(--nn-echo-plate-height); border: 1px solid var(--neco-border); border-radius: 12px; background: rgb(from var(--neco-surface) r g b / var(--sb-message-opacity)); }
     .nn-echo-header-bottom { position: absolute; pointer-events: none; width: 1px; height: 1px; top: calc(var(--nn-echo-plate-top) + var(--nn-echo-plate-height) - 1px); }
     #chat .mes.nn-echo-cutoff:not(:focus-within):not(:has(.mes_reasoning_details[open], .edit_textarea, .reasoning_edit_textarea, [aria-expanded='true'])) > :is(.mesAvatarWrapper, .nn-echo-header-plate),
     #chat .mes.nn-echo-cutoff:not(:focus-within):not(:has(.mes_reasoning_details[open], .edit_textarea, .reasoning_edit_textarea, [aria-expanded='true'])) > .mes_block > :is(.ch_name, .mes_reasoning_details) { visibility: hidden; }
@@ -3628,7 +3625,3 @@ body.neconyan:is(.whisperstyle, .hushstyle)[data-neconyan-chat-mode='roleplay']:
 #chat > .mes[data-nn-offscreen] *::before,
 #chat > .mes[data-nn-offscreen] *::after { animation-play-state: paused !important; }
 
-body.neconyan:not(.sbterm) #neconyan-home-host :is(.neconyan-home-intro, .neconyan-assistant-picker, .welcomeRecentShell, .neconyan-home-layout-bar) {
-    background: rgb(from var(--neco-surface) r g b / var(--sb-shell-surface-opacity)) !important;
-    backdrop-filter: none;
-}

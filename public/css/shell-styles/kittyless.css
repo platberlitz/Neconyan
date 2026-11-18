@@ -2,6 +2,13 @@
    Keep the chosen palette, fonts, wallpaper and character portraits. The cat removal itself lives in
    css/neconyan-kittyless.css so the Hide cats switch can apply it to any style; this style turns it on. */
 
+/* Panels defaults (Settings > Appearance > Panels; resolved in neconyan.css): solid panels everywhere. */
+:root[data-sb-theme='kittyless'] {
+    --sb-panel-message-opacity: 1;
+    --sb-panel-home-opacity: 1;
+    --sb-panel-side-opacity: 1;
+}
+
 :root[data-sb-theme='kittyless'] body.neconyan {
     --neconyan-cat-radius: 999px;
     --neconyan-cat-padding-inline: 20px;
@@ -27,11 +34,23 @@
     --kittyless-line: color-mix(in srgb, var(--neco-accent-secondary) 35%, var(--neco-border));
 }
 
-:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) :is(#top-bar, #sb-topbar-stack, #sb-topbar-primary, #sb-topbar-inner, #neconyan-workspace-rail, #sb-mobile-nav-content, .sb-shell-frame, .sb-shell-header, .sb-shell-nav, .sb-character-shell-nav, dialog.popup) {
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) :is(#top-bar, #sb-topbar-stack, #sb-topbar-primary, #sb-topbar-inner, #neconyan-workspace-rail, #sb-mobile-nav-content, dialog.popup) {
     background: var(--neco-surface);
     box-shadow: none;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
+}
+
+/* Drawers: the frame carries the side backing (Settings > Appearance > Panels); header and tabs sit on it. */
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) :is(.sb-shell-frame, .sb-shell-header, .sb-shell-nav, .sb-character-shell-nav) {
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) .sb-shell-frame {
+    background: rgb(from var(--neco-surface) r g b / var(--sb-side-opacity));
 }
 
 :root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) #top-bar { border-bottom: 1px solid var(--kittyless-line); }
@@ -60,7 +79,7 @@
     padding: 26px;
     border: 1px solid var(--kittyless-line);
     border-radius: 24px;
-    background: var(--neco-surface);
+    background: rgb(from var(--neco-surface) r g b / var(--sb-home-opacity));
     box-shadow: none;
 }
 

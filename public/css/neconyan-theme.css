@@ -132,15 +132,15 @@
     --sb-focus-ring: color-mix(in srgb, var(--SmartThemeQuoteColor) 70%, transparent);
     --sb-ambient-a: color-mix(in srgb, var(--SmartThemeQuoteColor) 12%, transparent);
     --sb-ambient-b: color-mix(in srgb, var(--SmartThemeUnderlineColor) 9%, transparent);
-    --sb-shell-surface-opacity: 1;
-    --sb-shell-surface-opacity-percent: 100%;
+    --sb-shell-surface-opacity: 0;
+    --sb-shell-surface-opacity-percent: 0%;
     --sb-shell-card-opacity: 1;
     --sb-shell-control-opacity: 1;
     --sb-shell-overlay-opacity: 1;
-    --sb-page-surface-opacity: 1;
-    --sb-page-card-opacity: 1;
-    --sb-page-control-opacity: 1;
-    --sb-page-overlay-opacity: 1;
+    --sb-page-surface-opacity: 0;
+    --sb-page-card-opacity: .12;
+    --sb-page-control-opacity: .22;
+    --sb-page-overlay-opacity: .08;
     --sb-composer-surface-opacity: 1;
     --sb-message-radius: 22px;
 }
@@ -1650,7 +1650,8 @@ body.bubblechat #chat .mes[is_user='true']:has(.reasoning_edit_textarea)::before
     }
 }
 
-body.bubblechat .mes {
+body.bubblechat .mes,
+body.bubblechat .mes[is_user='true'] {
     position: relative;
     isolation: isolate;
     background-color: transparent;
@@ -1663,12 +1664,11 @@ body.bubblechat .mes::before {
     z-index: -1;
     border-radius: inherit;
     pointer-events: none;
-    background: var(--SmartThemeBotMesBlurTintColor);
-    opacity: var(--sb-shell-surface-opacity, 1);
+    background: rgb(from var(--SmartThemeBotMesBlurTintColor) r g b / var(--sb-message-opacity));
 }
 
 body.bubblechat .mes[is_user='true']::before {
-    background: var(--SmartThemeUserMesBlurTintColor);
+    background: rgb(from var(--SmartThemeUserMesBlurTintColor) r g b / var(--sb-message-opacity));
 }
 
 .mes[is_user='true'] .mes_block {
