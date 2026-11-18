@@ -1,6 +1,5 @@
 /* global window */
-/* eslint-disable playwright/no-conditional-in-test -- Both viewports share the same checks with optional iOS emulation and screenshots. */
-import path from 'node:path';
+/* eslint-disable playwright/no-conditional-in-test -- Exercise the context UI at both sizes and verify the shared send path once. */
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
@@ -15,33 +14,53 @@ async function equipPreset(page, name, prompt) {
     }, { name, prompt });
 }
 
+async function expectSharedPreset(page, app, account, tab, rawPrompt) {
+    await page.locator('#scratchpad-connection-miso').selectOption('durable');
+    await page.getByRole('checkbox', { name: /^Stream replies/ }).uncheck();
+    await tab('Chat').click();
+    const question = 'What is the prompt for my equipped preset?';
+    app.provider.mode.reply = { choices: [{ message: { content: 'Here is what the preset says.' } }] };
+    await page.locator('.scratchpad-composer').fill(question);
+    const [response] = await Promise.all([
+        page.waitForResponse('**/api/scratchpad/send'),
+        page.locator('.scratchpad-send').click(),
+    ]);
+    expect(response.ok(), await response.text()).toBe(true);
+    await account.settled((await response.json()).job.id);
+    const calls = app.provider.calls.filter(call => call.messages?.at(-1)?.content === question);
+    expect(calls).toHaveLength(1);
+    const sent = calls[0].messages.map(message => String(message.content)).join('\n');
+    expect(sent).toContain('## Current preset: Harbour');
+    expect(sent).toContain(rawPrompt);
+    expect(sent).not.toMatch(/Garden|Latest messages|## Author's Note|Editable preset target|"type":"preset"/);
+    await tab('Context').click();
+}
+
+async function expectPresetPreview(button, preview, prompt) {
+    await button.click();
+    await expect(preview).toContainText(prompt);
+}
+
+const withoutPreset = /^General Scratchpad:(?![\s\S]*## Current preset:)/;
+
 for (const phone of [false, true]) {
     test(`${phone ? 'phone' : 'desktop'} General Scratchpad opts in to sharing the equipped preset as reference`, async ({ app }) => {
-        const account = await app.account({ phone, contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {} });
+        const account = await app.account({
+            phone,
+            contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {},
+            configureSettings(saved) {
+                saved.accountStorage = { ...saved.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped' };
+                saved.power_user.reduced_motion = true;
+            },
+        });
         if (phone) await installIPhoneSafari(account.context, { standalone: true });
-        const openContext = async activePage => {
-            await activePage.evaluate(async () => (await import('/scripts/scratchpad/index.js')).openScratchpad({ tab: 'chat' }));
-            await activePage.getByRole('tab', { name: 'Context', exact: true }).click();
-            if (phone) await applyIOSOnlyCss(activePage);
-        };
-        const baseline = process.env.NECONYAN_SCRATCHPAD_BASELINE_ROOT;
-        const screenshot = (activePage, label) => activePage.screenshot({ path: `../screenshots/scratchpad-general-preset/${phone ? 'phone' : 'desktop'}-${label}.png` });
-        const clearToasts = activePage => activePage.evaluate(() => window.toastr.clear());
-        if (baseline) {
-            const before = await account.open({ workspace: false });
-            await before.route('**/scripts/scratchpad/**', route => route.fulfill({ path: path.join(baseline, 'public', new URL(route.request().url()).pathname), contentType: 'text/javascript' }));
-            await openContext(before);
-            const share = before.getByRole('heading', { name: 'Also share', exact: true });
-            await share.scrollIntoViewIfNeeded();
-            await clearToasts(before);
-            await screenshot(before, 'before');
-            await before.close();
-        }
-        const page = await account.open({ workspace: false });
+        const page = await account.open({ workspace: false, skipTour: false });
         await expect(page.locator('body')).toHaveClass(/neconyan-home-visible/);
         const tab = name => page.getByRole('tab', { name, exact: true });
         await equipPreset(page, 'Garden', 'Garden prompt with {{char}}.');
-        await openContext(page);
+        await page.evaluate(async () => (await import('/scripts/scratchpad/index.js')).openScratchpad({ tab: 'chat' }));
+        await tab('Context').click();
+        if (phone) await applyIOSOnlyCss(page);
         await expect(page.locator('.scratchpad-source')).toContainText('General Scratchpad');
         const preset = () => page.getByRole('checkbox', { name: /^Current preset:/ });
         await expect(preset()).toHaveAccessibleName(/^Current preset: Garden/);
@@ -55,8 +74,7 @@ for (const phone of [false, true]) {
         const previewButton = page.getByRole('button', { name: 'Show preview', exact: true });
         const preview = page.locator('pre.scratchpad-preview-text');
         await previewButton.click();
-        await expect(preview).toBeVisible();
-        await expect(preview).not.toContainText('Garden');
+        await expect(preview).toHaveText(withoutPreset);
 
         // Preview while the first setting is still saving, before the session redraws Context.
         const saveGate = Promise.withResolvers();
@@ -72,42 +90,22 @@ for (const phone of [false, true]) {
         }
         await expect(preview).toContainText('## Current preset: Garden');
         await expect(preview).toContainText('Garden prompt with {{char}}.');
-        if (baseline) {
+        if (process.env.NECONYAN_SCRATCHPAD_SCREENSHOTS === '1') {
             await page.getByRole('heading', { name: 'Also share', exact: true }).scrollIntoViewIfNeeded();
-            await clearToasts(page);
-            await screenshot(page, 'after');
+            await page.evaluate(() => window.toastr.clear());
+            await page.screenshot({ path: `../screenshots/scratchpad-general-preset/${phone ? 'phone' : 'desktop'}-after.png` });
         }
 
         const rawPrompt = 'Harbour prompt with {{lastMessage}}.';
         await equipPreset(page, 'Harbour', rawPrompt);
         await expect(preset()).toHaveAccessibleName(/^Current preset: Harbour/);
         await expect(preset()).toBeChecked();
-        await previewButton.click();
-        await expect(preview).toContainText(rawPrompt);
-        await expect(preview).not.toContainText('Garden');
 
-        await page.locator('#scratchpad-connection-miso').selectOption('durable');
-        await page.getByRole('checkbox', { name: /^Stream replies/ }).uncheck();
-        await tab('Chat').click();
-        const question = 'What is the prompt for my equipped preset?';
-        app.provider.mode.reply = { choices: [{ message: { content: 'Here is what the preset says.' } }] };
-        await page.locator('.scratchpad-composer').fill(question);
-        const accepted = page.waitForResponse('**/api/scratchpad/send');
-        await page.locator('.scratchpad-send').click();
-        const response = await accepted;
-        expect(response.ok(), await response.text()).toBe(true);
-        await account.settled((await response.json()).job.id);
-        const calls = app.provider.calls.filter(call => call.messages?.at(-1)?.content === question);
-        expect(calls).toHaveLength(1);
-        const sent = calls[0].messages.map(message => String(message.content)).join('\n');
-        expect(sent).toContain('## Current preset: Harbour');
-        expect(sent).toContain(rawPrompt);
-        expect(sent).not.toMatch(/Garden|Latest messages|## Author's Note|Editable preset target|"type":"preset"/);
+        if (phone) await expectPresetPreview(previewButton, preview, rawPrompt);
+        else await expectSharedPreset(page, app, account, tab, rawPrompt);
 
-        await tab('Context').click();
         await preset().uncheck();
         await previewButton.click();
-        await expect(preview).toBeVisible();
-        await expect(preview).not.toContainText(rawPrompt);
+        await expect(preview).toHaveText(withoutPreset);
     });
 }
