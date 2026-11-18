@@ -3,9 +3,27 @@
 // card name with a title ("Leonard | Actor") is a message author but not a speaker
 // whose dialogue should get its own colour.
 import { normalizeRegistryIdentity, normalizeRegistryIdentityName } from './group-profiles.js';
-import { settings } from './state.js';
+import { characterColors, settings } from './state.js';
+import { getContext } from './st-api.js';
 
 export const MAX_EXCLUDED_SPEAKER_NAMES = 200;
+
+function looksLikeCardTitle(name) {
+    // Keep punctuation used inside names, such as Anne-Marie, O’Connor and レイ・スミス.
+    if (/[|¦‖∣│┃/\\:•—]| [-–·・] |^\p{Extended_Pictographic}|\p{Extended_Pictographic}$/u.test(name)) return true;
+    // Look for phrases, not just capitalisation or the number of words in a name.
+    return /^(?:your|my|our|their|the|a|an) .+? (?:will|would|wants? to|has to|is going to|must|can(?:not)?|can't) \p{L}/iu.test(name)
+        || /^(?:you|i|we|they) (?:\p{L}+ ){2,}\p{L}/iu.test(name)
+        || /^(?:the|a|an) .+? (?:in|at|of|on|with|from) (?:the|a|an|your|my) \p{L}/iu.test(name);
+}
+
+function getActiveCardName() {
+    const context = getContext();
+    // In a group the speaker can change from turn to turn. Don't infer an
+    // exclusion from that speaker or from names picked up in message text.
+    if (context?.groupId) return '';
+    return normalizeRegistryIdentityName(context?.characters?.[context?.characterId]?.name);
+}
 
 export function normalizeExcludedSpeakerNames(value) {
     const source = Array.isArray(value) ? value : [];
@@ -35,6 +53,7 @@ export function isExcludedSpeakerName(name) {
     const identity = normalizeRegistryIdentity(String(name ?? ''));
     if (!identity) return false;
     if (identity === 'narrator') return isNarratorCardSkipped();
+    if (looksLikeCardTitle(identity) && getActiveCardName().toLowerCase() === identity) return true;
     return getExcludedSpeakerNames().some(candidate => candidate.toLowerCase() === identity);
 }
 
@@ -42,6 +61,8 @@ export function isExcludedSpeakerName(name) {
 // left out while the Narration style is on, because that style owns the name.
 export function getPromptExcludedSpeakerNames({ narratorStyled = false } = {}) {
     const names = getExcludedSpeakerNames();
+    const cardName = getActiveCardName();
+    if (looksLikeCardTitle(cardName) && !names.some(name => name.toLowerCase() === cardName.toLowerCase())) names.push(cardName);
     if (isNarratorCardSkipped() && !narratorStyled) names.unshift('Narrator');
     return names;
 }
@@ -79,4 +100,8 @@ export function removeExcludedSpeakerName(name) {
 export function isExcludedCharacterEntry(entry) {
     if (!entry || typeof entry !== 'object') return false;
     return isExcludedSpeakerName(entry.name);
+}
+
+export function getIncludedCharacterEntries() {
+    return Object.entries(characterColors).filter(([, entry]) => !isExcludedCharacterEntry(entry));
 }

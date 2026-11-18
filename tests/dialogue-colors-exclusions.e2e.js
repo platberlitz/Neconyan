@@ -5,28 +5,34 @@ import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './i
 
 const extension = '/scripts/extensions/third-party/sillytavern-character-colors/src';
 const SCENARIO = 'Your Wife Wants To Divorce You';
+const CARD_TITLE = 'Your Wife Will Divorce You';
 const NARRATOR_RED = 'rgb(204, 34, 68)';
+const dialogue = name => `<font color="#22aa66">"We need to talk,"</font> Mira said. <font color="#ddaa00">"Fine,"</font> the room answered.\n[COLORS:Mira=#22aa66,${name}=#ddaa00]`;
 
-async function openDialogueColours(app, phone = false) {
+async function openDialogueColours(app, phone) {
     const account = await app.account({ phone, contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {} });
     if (phone) await installIPhoneSafari(account.context, { standalone: true });
+    const created = await account.context.request.post('/api/characters/create', {
+        headers: account.headers, data: { ch_name: CARD_TITLE, first_mes: dialogue(CARD_TITLE) },
+    });
+    expect(created.ok()).toBe(true);
+    const titleAvatar = await created.text();
     const page = await account.open({ workspace: false });
-    await page.evaluate(async ({ avatar, extension, scenario }) => {
+    await page.evaluate(async ({ avatar, extension, scenario, firstSwipe }) => {
         const core = await import('/script.js');
-        await core.getCharacters();
-        await core.selectCharacterById(core.characters.findIndex(character => character.avatar === avatar), { switchMenu: false });
         const { settings } = await import(`${extension}/state.js`);
         Object.assign(settings, {
             coloringEngine: 'llm', keepCardCharacter: false, autoPersonaCharacter: false,
             llmAttributionCheck: false, disableToasts: true, autoScanNewMessages: false,
         });
+        await core.selectCharacterById(core.characters.findIndex(character => character.avatar === avatar), { switchMenu: false });
         const template = core.chat[0];
         const message = (name, mes, extra = {}) => ({ ...template, name, mes, swipes: undefined, swipe_id: undefined, extra: {}, ...extra });
         core.chat.splice(0, core.chat.length,
             message('Narrator', 'The rain kept falling. <font color="#cc2244">"Welcome back,"</font> the voice said.\n[COLORS:Narrator=#cc2244]'),
-            message(scenario, '<font color="#22aa66">"We need to talk,"</font> Mira said. <font color="#ddaa00">"Fine,"</font> the room answered.\n[COLORS:Mira=#22aa66,Your Wife Wants To Divorce You=#ddaa00]', {
+            message(scenario, firstSwipe, {
                 swipes: [
-                    '<font color="#22aa66">"We need to talk,"</font> Mira said. <font color="#ddaa00">"Fine,"</font> the room answered.\n[COLORS:Mira=#22aa66,Your Wife Wants To Divorce You=#ddaa00]',
+                    firstSwipe,
                     '<font color="#22aa66">"Later,"</font> Mira said.\n[COLORS:Mira=#22aa66]',
                 ],
                 swipe_id: 0,
@@ -36,9 +42,9 @@ async function openDialogueColours(app, phone = false) {
         await core.reloadCurrentChat();
         await (await import(`${extension}/color-blocks.js`)).scanAllMessages();
         window.NeconyanExtensions.focusUnit('Dialogue Colors');
-    }, { avatar: account.avatar, extension, scenario: SCENARIO });
+    }, { avatar: account.avatar, extension, scenario: SCENARIO, firstSwipe: dialogue(SCENARIO) });
     if (phone) await applyIOSOnlyCss(page);
-    return page;
+    return { page, titleAvatar };
 }
 
 const fontColour = (page, mesid, index) => page.locator(`#chat .mes[mesid="${mesid}"] .mes_text font`).nth(index)
@@ -62,7 +68,7 @@ for (const phone of [true, false]) {
     const press = locator => phone ? locator.tap() : locator.click();
     test(`dialogue colours skips Narrator and names that are not characters on ${viewport}`, async ({ app }) => {
         test.setTimeout(180000);
-        const page = await openDialogueColours(app, phone);
+        const { page, titleAvatar } = await openDialogueColours(app, phone);
 
         // A Narrator card stays in the normal text colour even when the model wrapped it in red.
         await expect.poll(() => fontColour(page, 0, 0)).toBe(await textColour(page, 0));
@@ -134,5 +140,30 @@ for (const phone of [true, false]) {
         await expect.poll(async () => JSON.stringify(await chatText())).not.toContain('<font');
         expect((await chatText())[0].mes).toBe('The rain kept falling. "Welcome back," the voice said.');
         await expect(page.locator('#chat .mes[mesid="1"] .mes_text font')).toHaveCount(0);
+
+        await test.step('Skip the active card title without adding a manual exclusion', async () => {
+            await page.evaluate(async ({ avatar, extension }) => {
+                const core = await import('/script.js');
+                const { settings } = await import(`${extension}/state.js`);
+                settings.keepCardCharacter = true;
+                await core.selectCharacterById(core.characters.findIndex(character => character.avatar === avatar), { switchMenu: false });
+                await (await import(`${extension}/color-blocks.js`)).scanAllMessages();
+            }, { avatar: titleAvatar, extension });
+            if (!await page.locator('#dc-page-automation > summary').isVisible()) {
+                await page.evaluate(() => window.NeconyanExtensions.focusUnit('Dialogue Colors'));
+            }
+            await expect(page.locator('#dc-char-list .dc-char-name')).toHaveText(['Mira']);
+            expect(await characterNames(page)).toEqual(['Mira']);
+            const titleChatColour = await textColour(page, 0);
+            await expect.poll(() => fontColour(page, 0, 1)).toBe(titleChatColour);
+            expect(await fontColour(page, 0, 0)).not.toBe(titleChatColour);
+
+            await openPage(page, 'automation', press);
+            const exclusions = page.locator('#dc-excluded-name-list');
+            await expect(exclusions.locator('.dc-excluded-remove')).toHaveCount(2);
+            await expect(exclusions).not.toContainText(CARD_TITLE);
+            await press(page.locator('#dc-excluded-current-card'));
+            await expect(exclusions.locator('.dc-excluded-remove')).toHaveCount(2);
+        });
     });
 }

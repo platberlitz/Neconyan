@@ -6,7 +6,7 @@ import { commit, repaintDomAfterCharacterDataChange } from './live-colors.js';
 import { applyThemeReadabilityAndBrightness, buildCharacterEntry, checkColorConflicts, deriveBaseColorFromEffectiveColor, getEntryEffectiveColor, setEntryFromEffectiveColor } from './palettes.js';
 import { NARRATOR_VISUAL_ID, getNarratorVisual, setTransientNarratorCount } from './narrator-style.js';
 import { getThoughtDelimiterSymbols } from './prompts.js';
-import { isExcludedCharacterEntry, isExcludedSpeakerName } from './speaker-exclusions.js';
+import { getIncludedCharacterEntries, isExcludedCharacterEntry, isExcludedSpeakerName } from './speaker-exclusions.js';
 import { escapeHtml, escapeRegex, getContext } from './st-api.js';
 import { characterColors, isDomEngine, settings } from './state.js';
 import { HTML_RAW_OR_CODE_ELEMENTS, findHtmlTagRanges, isCompositeSpeakerLabel, normalizeAliases, normalizeGoogleFontName, normalizeHexColor, parseNameWithNicknames, splitCompositeSpeakerName, toast } from './utils.js';
@@ -154,12 +154,14 @@ function removeElementColorMetadata(metadata) {
 
 export function resolveCharacterKeyByNameOrAlias(rawName) {
     const lookupName = normalizeRegistryIdentity(rawName);
-    if (!lookupName) return '';
-    if (hasOwn(characterColors, lookupName) && characterColors[lookupName]) return lookupName;
+    if (!lookupName || isExcludedSpeakerName(lookupName)) return '';
+    if (hasOwn(characterColors, lookupName) && characterColors[lookupName] && !isExcludedCharacterEntry(characterColors[lookupName])) return lookupName;
     for (const [key, entry] of Object.entries(characterColors)) {
         if (!entry) continue;
-        if (normalizeRegistryIdentity(entry.name) === lookupName) return key;
-        if (normalizeAliases(entry.aliases).some(alias => normalizeRegistryIdentity(alias) === lookupName)) return key;
+        if (normalizeRegistryIdentity(entry.name) === lookupName
+            || normalizeAliases(entry.aliases).some(alias => normalizeRegistryIdentity(alias) === lookupName)) {
+            if (!isExcludedCharacterEntry(entry)) return key;
+        }
     }
     return '';
 }
@@ -337,7 +339,7 @@ export function buildUniqueKnownColorStatsLookup() {
     const lookup = new Map();
     const ambiguousColors = new Set();
 
-    for (const [key, entry] of Object.entries(characterColors)) {
+    for (const [key, entry] of getIncludedCharacterEntries()) {
         const color = normalizeHexColor(getEntryEffectiveColor(entry), null);
         if (!color || ambiguousColors.has(color)) continue;
         if (lookup.has(color)) {
@@ -497,7 +499,7 @@ export function scanAllMessages({ notify = true } = {}) {
     }
     const conflicts = checkColorConflicts();
     if (conflicts.length) toast.warning(`Similar: ${conflicts.slice(0, 3).map(c => c.map(escapeHtml).join(' & ')).join(', ')}`);
-    if (scannedAny && notify) toast.info(`Found ${Object.keys(characterColors).length} characters`);
+    if (scannedAny && notify) toast.info(`Found ${getIncludedCharacterEntries().length} characters`);
 }
 
 export function parseColorAssignmentsFromText(text) {

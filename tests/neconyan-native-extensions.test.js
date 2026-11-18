@@ -148,7 +148,7 @@ test('automatic Dialogue Colors scans stay quiet while manual scans still report
         isHostSystemOrToolMessage: () => false, processColorBlocksInText() {},
         recountDialogueCountsFromChat() {}, commit() {}, stripColorBlocksFromDisplay() {},
         isDomEngine: () => false, repaintDomAfterCharacterDataChange() {},
-        checkColorConflicts: () => [], characterColors: {}, toast: { info },
+        checkColorConflicts: () => [], getIncludedCharacterEntries: () => [], toast: { info },
     });
     vm.runInContext(code, context);
     context.scanAllMessages({ notify: false });
