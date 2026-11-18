@@ -2913,7 +2913,7 @@ function loadMewmoryStyles() {
     if (!style) {
         style = document.createElement('link');
         style.id = 'mewmory-css';
-        style.href = 'css/mewmory.css?v=20261118-meower-reasoning-r2';
+        style.href = 'css/mewmory.css?v=20261118-reasoning-picker-r1';
         document.head.append(style);
     }
     if (style.rel !== 'stylesheet') {
