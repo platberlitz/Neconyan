@@ -50,6 +50,7 @@
 - PR #738 (2026-11-17) `fix(chat): preserve styled html over wallpaper`
 - PR #739 (2026-11-18) `feat(scratchpad): share the equipped preset in general`
 - PR #740 (2026-11-18) `fix(scratchpad): attach saved pictures for opus 5.5`
+- PR #741 (2026-11-18) `feat: add edit shortcuts to the bottom-bar persona picker`
 
 ## v1.5.5
 
