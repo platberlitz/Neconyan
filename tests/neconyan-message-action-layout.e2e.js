@@ -105,6 +105,29 @@ for (const phone of [false, true]) {
             await expect(page.locator('dialog[open]')).toContainText('UI Agent');
         });
 
+        test('lines View agent changes up with the other message actions', async ({ page }) => {
+            test.skip(!phone, 'The desktop menu is a multi-column grid');
+            const message = page.locator('#chat .mes[mesid="0"]');
+            await openMessageAction(message, '.mes_view_agent_changes');
+            const rows = await message.locator('.extraMesButtons > *').evaluateAll(els => els
+                .filter(el => el.getBoundingClientRect().height > 0)
+                .map(el => {
+                    const box = el.getBoundingClientRect();
+                    const label = el.querySelector('.neconyan-action-label')?.getBoundingClientRect();
+                    return { view: el.classList.contains('mes_view_agent_changes'), x: box.x, height: box.height, labelX: label?.x ?? null, padding: getComputedStyle(el).padding };
+                }));
+            const view = rows.find(row => row.view);
+            const others = rows.filter(row => !row.view && row.labelX !== null);
+            expect(view).toBeTruthy();
+            expect(others.length).toBeGreaterThan(0);
+            for (const row of others) {
+                expect(Math.abs(view.x - row.x)).toBeLessThan(1);
+                expect(Math.abs(view.labelX - row.labelX)).toBeLessThan(1.5);
+                expect(Math.abs(view.height - row.height)).toBeLessThan(1);
+                expect(view.padding).toBe(row.padding);
+            }
+        });
+
         test('left-aligns the wrapped Quick Image Gen message label', async ({ page }, testInfo) => {
             const message = page.locator('#chat .mes[mesid="0"]');
             const action = await openMessageAction(message, '.qig-message-generate');

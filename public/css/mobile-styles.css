@@ -1040,17 +1040,6 @@
         padding: 0;
     }
 
-    #chat .mes .mes_view_agent_changes {
-        width: var(--sb-message-icon-size, 2rem);
-        min-width: var(--sb-message-icon-size, 2rem);
-        max-width: var(--sb-message-icon-size, 2rem);
-        height: var(--sb-message-icon-size, 2rem);
-        min-height: var(--sb-message-icon-size, 2rem);
-        max-height: var(--sb-message-icon-size, 2rem);
-        padding: 0;
-        aspect-ratio: 1 / 1;
-    }
-
     .drawer-content .floating_panel_maximize,
     .drawer-content .inline-drawer-maximize {
         display: none;
