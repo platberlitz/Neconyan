@@ -26,6 +26,11 @@ try {
             && Boolean(window.SillyTavern?.getContext?.().accountStorage?.isReady), undefined, { timeout: 60000 });
     };
     const tutorialPending = ({ status, hidden }) => status !== null && !['completed', 'skipped'].includes(status) && hidden !== 'true';
+    const readAssistantSeed = () => page.evaluate(() => window.SillyTavern.getContext().accountStorage.getItem('NeconyanAssistantSeed.v1'));
+    // Skipping the tour installs Miso, Taro and Nori in the background. Until that saves,
+    // every later page reinstalls them and saves settings at an unpredictable moment.
+    const waitForAssistantSeed = () => page.waitForFunction(
+        () => window.SillyTavern.getContext().accountStorage.getItem('NeconyanAssistantSeed.v1') !== 'ask', undefined, { timeout: 120000 });
     await openApp();
     // The tour opens on APP_READY, which can land well after the rail is ready.
     if (tutorialPending(await readTutorial())) {
@@ -34,10 +39,13 @@ try {
         await skip.click();
         await skip.waitFor({ state: 'hidden' });
         await page.waitForFunction(() => window.SillyTavern.getContext().accountStorage.getItem('NeconyanTutorialStatus.v1') === 'skipped', undefined, { timeout: 30000 });
-        await openApp();
-        const saved = await readTutorial();
-        if (tutorialPending(saved)) throw new Error(`First-run tour is still pending after a reload: ${JSON.stringify(saved)}`);
     }
+    if (await readAssistantSeed() === 'ask') await waitForAssistantSeed();
+    await openApp();
+    const saved = await readTutorial();
+    if (tutorialPending(saved)) throw new Error(`First-run tour is still pending after a reload: ${JSON.stringify(saved)}`);
+    const seed = await readAssistantSeed();
+    if (seed === 'ask') throw new Error('The bundled assistants are still waiting to be installed after a reload.');
     if (await page.evaluate(() => window.SillyTavern.getContext().characters.length === 0)) {
         const headers = await page.evaluate(() => window.SillyTavern.getContext().getRequestHeaders());
         const response = await page.request.post('/api/characters/create', { headers, data: {
@@ -45,7 +53,7 @@ try {
         } });
         if (!response.ok()) throw new Error(`Release character creation failed: ${response.status()}`);
     }
-    console.log('Disposable release profile has a character and a dismissed first-run tour.');
+    console.log(`Disposable release profile has a character, a dismissed first-run tour and assistant seeding marked '${seed}'.`);
 } finally {
     await browser.close();
 }
