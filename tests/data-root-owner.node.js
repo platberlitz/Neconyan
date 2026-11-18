@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import test from 'node:test';
-import { acquireDataRootOwner, DATA_ROOT_OWNER_DIRECTORY, describeDataRootOwner, inspectDataRootOwner, recoverDataRootOwner } from '../src/data-root-owner.js';
+import { acquireDataRootOwner, DATA_ROOT_OWNER_DIRECTORY, describeDataRootOwner, inspectDataRootOwner, readProcessStartTime, recoverDataRootOwner } from '../src/data-root-owner.js';
 import * as ownerModule from '../src/data-root-owner.js';
 
 function root(t) {
@@ -513,7 +513,7 @@ test('a default-mode refusal carries the lease evidence but never the nonce', t 
 
 test('default mode reports an unsignalable PID as a refusal, not a raw EPERM', { skip: !canSeeForeignPid }, t => {
     const directory = root(t);
-    plantLease(directory, value => { value.pid = 1; });
+    plantLease(directory, value => { value.pid = 1; value.processStart = procStart(1); });
     assert.throws(() => acquireDataRootOwner(directory, 'server'), error => {
         assert.equal(error.code, 'DATA_ROOT_OWNED');
         assert.ok(error.details);
@@ -527,6 +527,113 @@ test('a default-mode dead-owner reclaim reports why', t => {
     const owner = acquireDataRootOwner(directory, 'repair');
     assert.equal(owner.reclaimed.reason, 'process-ended');
     owner.release();
+});
+
+// Issue 753: Windows gave a stopped server's PID to another program, and the lease looked live for good.
+function backdateLease(filename, ms = 60 * 60 * 1000) {
+    const then = new Date(Date.now() - ms);
+    fs.utimesSync(filename, then, then);
+}
+
+test('default mode reclaims a lease without a start record whose PID now belongs to a later process', { skip: process.platform === 'win32' }, async t => {
+    const directory = root(t);
+    const child = await liveChild(t);
+    const planted = plantLease(directory, value => { value.pid = child.pid; value.processStart = null; });
+    backdateLease(planted.filename);
+    const owner = acquireDataRootOwner(directory, 'server');
+    assert.equal(owner.reclaimed.reason, 'pid-reused');
+    assert.equal(inspectDataRootOwner(directory).pid, process.pid);
+    owner.release();
+});
+
+test('default mode refuses a lease without a start record while its process started before it', { skip: process.platform === 'win32' }, async t => {
+    const directory = root(t);
+    const child = await liveChild(t);
+    const planted = plantLease(directory, value => { value.pid = child.pid; value.processStart = null; });
+    assert.throws(() => acquireDataRootOwner(directory, 'server'), { code: 'DATA_ROOT_OWNED' });
+    assert.deepEqual(fs.readFileSync(planted.filename), planted.bytes);
+});
+
+test('default mode refuses a lease without a start record when the start cannot be read', async t => {
+    const directory = root(t);
+    const child = await liveChild(t);
+    const planted = plantLease(directory, value => { value.pid = child.pid; value.processStart = null; });
+    backdateLease(planted.filename);
+    assert.throws(() => acquireDataRootOwner(directory, 'server', { readProcessStart: () => null }), { code: 'DATA_ROOT_OWNED' });
+    assert.deepEqual(fs.readFileSync(planted.filename), planted.bytes);
+});
+
+test('default mode reclaims a lease whose PID answers but the OS lists no such process', async t => {
+    const directory = root(t);
+    const child = await liveChild(t);
+    plantLease(directory, value => { value.pid = child.pid; value.processStart = null; });
+    const owner = acquireDataRootOwner(directory, 'server', { readProcessStart: pid => (pid === child.pid ? 'absent' : null) });
+    assert.equal(owner.reclaimed.reason, 'process-ended');
+    owner.release();
+});
+
+test('default mode reclaims a lease whose recorded start no longer matches its PID', { skip: !linux }, async t => {
+    const directory = root(t);
+    const child = await liveChild(t);
+    plantLease(directory, value => { value.pid = child.pid; value.processStart = '1'; });
+    const owner = acquireDataRootOwner(directory, 'server', { readProcessStart: () => { throw new Error('not needed'); } });
+    assert.equal(owner.reclaimed.reason, 'pid-reused');
+    owner.release();
+});
+
+test('default mode still refuses a lease whose recorded start matches its live PID', { skip: !linux }, async t => {
+    const directory = root(t);
+    const child = await liveChild(t);
+    const planted = plantLease(directory, value => { value.pid = child.pid; value.processStart = procStart(child.pid); });
+    backdateLease(planted.filename);
+    assert.throws(() => acquireDataRootOwner(directory, 'server'), { code: 'DATA_ROOT_OWNED' });
+    assert.deepEqual(fs.readFileSync(planted.filename), planted.bytes);
+});
+
+test('default mode reclaims a lease naming its own PID that it does not hold', t => {
+    const directory = root(t);
+    plantLease(directory, value => { value.pid = process.pid; });
+    const owner = acquireDataRootOwner(directory, 'server');
+    assert.equal(owner.reclaimed.reason, 'pid-reused');
+    owner.release();
+});
+
+test('explicit recovery removes a lease without a start record whose PID now belongs to a later process', async t => {
+    const directory = root(t);
+    const child = await liveChild(t);
+    const planted = plantLease(directory, value => { value.pid = child.pid; value.processStart = null; });
+    backdateLease(planted.filename);
+    const token = describeDataRootOwner(directory).token;
+    assert.throws(() => recoverDataRootOwner(directory, token, { readProcessStart: () => null }), { code: 'DATA_ROOT_OWNED' });
+    recoverDataRootOwner(directory, token, { readProcessStart: () => Date.now() });
+    assert.equal(inspectDataRootOwner(directory), null);
+});
+
+test('process start times are read from Windows and from ps', () => {
+    const windows = (stdout, extra = {}) => readProcessStartTime(42, { platform: 'win32', env: { SystemRoot: 'C:\\Windows' },
+        run: (command, args) => {
+            assert.match(command, /powershell\.exe$/);
+            assert.ok(args.at(-1).includes('ProcessId=42'));
+            return { status: 0, stdout, ...extra };
+        } });
+    assert.equal(windows('1763452800123\r\n'), 1763452800123);
+    assert.equal(windows('absent\r\n'), 'absent');
+    assert.equal(windows('Get-CimInstance : Access denied'), null);
+    assert.equal(windows('1763452800123', { status: 1 }), null);
+    assert.equal(windows('', { error: new Error('spawn ENOENT') }), null);
+    const now = () => 10_000_000_000;
+    const ps = (stdout, status = 0, error) => readProcessStartTime(42, { platform: 'darwin', now, run: (command, args) => {
+        assert.equal(command, 'ps');
+        assert.deepEqual(args, ['-o', 'etime=', '-p', '42']);
+        return { status, stdout, error };
+    } });
+    assert.equal(ps('   01:02\n'), now() - 62_000);
+    assert.equal(ps('03:01:02'), now() - (3 * 3600 + 62) * 1000);
+    assert.equal(ps('2-03:01:02'), now() - (2 * 86400 + 3 * 3600 + 62) * 1000);
+    assert.equal(ps('', 1), 'absent');
+    assert.equal(ps('ELAPSED'), null);
+    assert.equal(ps('', null, new Error('spawn ps ENOENT')), null);
+    assert.equal(readProcessStartTime(0, { run: () => { throw new Error('never'); } }), null);
 });
 
 test('the Android option is validated', t => {
