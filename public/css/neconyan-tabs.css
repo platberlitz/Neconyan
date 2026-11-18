@@ -5322,7 +5322,7 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
 
 #sb-reasoning-effort-picker {
     min-width: 180px;
-    max-height: min(360px, calc(100dvh - 96px));
+    max-height: min(400px, calc(100dvh - 96px));
     overflow-y: auto;
 }
 

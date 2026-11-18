@@ -237,6 +237,19 @@ body.neconyan:not(.sbterm) #options .options-content > hr {
     justify-content: center;
 }
 
+/* Reasoning effort picker rows: same flat, left-aligned rows as the persona picker. */
+#sb-reasoning-effort-picker .sb-persona-option { --neconyan-control-radius: 8px; -webkit-appearance: none; appearance: none; width: 100%; min-height: 40px; display: grid; grid-template-columns: 20px minmax(0, 1fr); align-items: center; gap: 8px; padding: 5px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--neco-ink); font-size: calc(var(--mainFontSize) * 0.85); font-weight: 600; text-align: left; cursor: pointer; }
+@media (hover: hover) {
+    #sb-reasoning-effort-picker .sb-persona-option:hover { background: color-mix(in srgb, var(--neco-ink) 10%, transparent); }
+}
+#sb-reasoning-effort-picker .sb-persona-option:focus-visible { background: color-mix(in srgb, var(--neco-ink) 10%, transparent); outline: 2px solid var(--neco-ginger); outline-offset: -2px; }
+#sb-reasoning-effort-picker .sb-persona-option.is-active { background: color-mix(in srgb, var(--neco-ginger) 18%, var(--neco-surface)); }
+#sb-reasoning-effort-picker .sb-persona-option > i { text-align: center; color: var(--neco-muted); }
+#sb-reasoning-effort-picker .sb-persona-option.is-active > i { color: var(--neco-ink); }
+@media (max-width: 520px) {
+    #sb-reasoning-effort-picker .sb-persona-option { min-height: 44px; }
+}
+
 /* Swipe picker: every version of one reply as a card. The popup grows with its cards
    and the list scrolls inside it, so the header and the Show button stay in reach. */
 .swipe_picker_popup .popup-body,
@@ -706,3 +719,4 @@ body.neconyan .sb-chat-picker .sb-select-picker-clear { flex-shrink: 0; padding:
 .sb-select-picker-check { flex-shrink: 0; margin-top: 2px; font-size: 0.9375rem; color: var(--neco-muted); }
 .sb-chat-picker-row.is-current .sb-select-picker-check { color: var(--neco-ink); }
 .sb-select-picker .sb-chat-picker-row-meta { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow-wrap: anywhere; }
+
