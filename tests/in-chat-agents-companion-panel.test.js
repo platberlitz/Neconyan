@@ -794,12 +794,13 @@ describe('companion tracker panel', () => {
         expect(panel.buildPanelHtml()).toContain('data-action="panel-regenerate-all" title="Switch Agents on to run companions" disabled');
     });
 
-    test('waits for the first note of an automatic Companion before showing a launcher', async () => {
+    test('waits for the first note of an automatic Companion before showing the floating button', async () => {
         agents = [{ id: 'tracker-1', name: 'Scene Tracker', execution: 'companion', enabled: true }];
         const panel = await importPanel();
         expect(panel.shouldShowCompanionPanelHandle()).toBe(false);
+        // The top bar button covers nothing, so it stays available.
         panel.setCompanionPanelLauncher('topbar');
-        expect(panel.shouldShowCompanionPanelTopbarButton()).toBe(false);
+        expect(panel.shouldShowCompanionPanelTopbarButton()).toBe(true);
         panel.setCompanionPanelLauncher('handle');
 
         const message = { is_user: false, is_system: false, mes: 'reply' };
