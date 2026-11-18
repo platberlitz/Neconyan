@@ -105,6 +105,7 @@ export const refreshedKnowledgeCases = [
     ['Can Scratchpad see the picture it generated?', 'scratchpad.image-editing', 'without uploading it again'],
     ['Can Scratchpad edit a Scenario Note avatar?', 'scratchpad.image-editing', 'Review avatar, then Save change'],
     ['Can my Scratchpad custom connection see saved pictures?', 'scratchpad.image-editing', 'still need image inlining enabled'],
+    ['Can claude-code/claude-opus-5-5 see saved pictures in Scratchpad?', 'scratchpad.image-editing', 'including the Custom model claude-code/claude-opus-5-5'],
     ['Where are Saved crash reports when the server is offline?', 'recovery.crash-reports', 'without enabling live debugging'],
     ['Can anyone read a server crash report?', 'recovery.crash-reports', 'require an administrator account'],
     ['Why do card scripts ask me to Run anyway?', 'tools.card-scripts', 'each card needs Run anyway'],

@@ -72,6 +72,22 @@ test('generated pictures reach vision models independently of the regular-chat m
     assert.equal(input.history.some(message => message.generatedImageContent), false);
 });
 
+test('the selected Claude Code Opus 5.5 route receives saved pictures with image inlining off', async t => {
+    const input = setup(t);
+    const model = 'claude-code/claude-opus-5-5';
+    const selected = { source: 'custom', profile: { model }, active: { custom_model: 'unverified-model', media_inlining: false } };
+    assert.deepEqual(images(await prepareGeneratedImageHistory({ ...input, material: selected })), [
+        { type: 'image_url', image_url: { url: `data:image/png;base64,${png.toString('base64')}`, detail: 'auto' } },
+    ]);
+
+    for (const other of [
+        { ...selected, profile: { model: `${model}-text` }, active: { ...selected.active, custom_model: model } },
+        { ...selected, source: 'cometapi' },
+    ]) {
+        assert.deepEqual(images(await prepareGeneratedImageHistory({ ...input, material: other })), []);
+    }
+});
+
 test('text-only models stay text-only and unverified providers still need image opt-in', async t => {
     const input = setup(t);
     for (const model of ['gpt-3.5-turbo', 'gpt-4-turbo-preview', 'o1-preview', 'o1-mini', 'o3-mini']) {

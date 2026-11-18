@@ -43,8 +43,9 @@ export async function prepareGeneratedImageHistory({ context, material, history,
     fetchModels = fetchChatProfileModels, cache = new Map() }) {
     if (material.backend && material.backend !== 'chat' || !history.some(message => message.generatedImages?.length) || maxBytes <= 0) return history;
     const settings = bindChatInputSettings(mergeChatPresetSettings(material.active, material.preset), material.source, material.profile?.model);
-    // Custom endpoints and CometAPI have no vision detection; their media toggle is the explicit opt-in.
-    if (['custom', 'cometapi'].includes(material.source) && !settings.media_inlining) return history;
+    // Recognise the exact Claude Code route, not arbitrary Custom aliases containing the model name.
+    const knownCustomVision = material.source === 'custom' && settings.custom_model === 'claude-code/claude-opus-5-5';
+    if (['custom', 'cometapi'].includes(material.source) && !settings.media_inlining && !knownCustomVision) return history;
     let models = [];
     try {
         if (CATALOGUED.has(material.source)) models = await fetchModels({ context, material });

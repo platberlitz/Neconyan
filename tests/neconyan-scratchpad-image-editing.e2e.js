@@ -11,6 +11,7 @@ import { checkImageControlContrast } from './scratchpad-image-contrast-helpers.j
 const baseline = process.env.NECONYAN_SCRATCHPAD_EDIT_BASELINE_ROOT;
 if (baseline) test.use({ initialServerOptions: { checkoutRoot: baseline } });
 const fence = change => '```scratchpad-change\n' + JSON.stringify(change) + '\n```';
+const OPUS_MODEL = 'claude-code/claude-opus-5-5';
 
 function visionConnection(saved, url) {
     saved.oai_settings.media_inlining = false;
@@ -57,7 +58,8 @@ for (const phone of [true, false]) {
         const original = picture();
         imageProvider.mode.reply = { data: [{ b64_json: original.toString('base64') }] };
         const account = await app.account({ phone, contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {}, configureSettings(saved) {
-            visionConnection(saved, app.provider.url);
+            saved.oai_settings.media_inlining = false;
+            saved.extension_settings.connectionManager.profiles[0].model = OPUS_MODEL;
             saved.extension_settings['quick-image-gen'] = { provider: 'gptimage', gptImageKey: 'fixture-image-key',
                 gptImageModel: 'gpt-image-2.6-flare', gptImageProxyUrl: `${imageProvider.url}/responses`, width: 1024, height: 1024,
                 style: 'none', appendQuality: false, useSTStyle: false, reviewBeforeGenerate: false, setupWizardSeen: true };
@@ -95,7 +97,7 @@ for (const phone of [true, false]) {
         }
         expect(JSON.stringify(app.provider.calls.at(-1))).toContain(`Image source {\\"messageId\\":\\"${messageId}\\"`);
         const feedback = app.provider.calls.at(-1);
-        expect(feedback.model).toBe('gpt-4o');
+        expect(feedback.model).toBe(OPUS_MODEL);
         expect(feedback.messages.flatMap(message => Array.isArray(message.content) ? message.content : []).filter(part => part.type === 'image_url'))
             .toEqual([{ type: 'image_url', image_url: { url: `data:image/png;base64,${originalBytes.toString('base64')}`, detail: 'auto' } }]);
         const edited = page.locator('.scratchpad-image-card').nth(1);
