@@ -61,6 +61,7 @@
 - PR #748 (2026-11-18) `fix: drop stale square sizing from the View agent changes row`
 - PR #749 (2026-11-18) `fix(scratchpad): let any Custom or CometAPI model see saved pictures`
 - PR #750 (2026-11-18) `fix(agents): keep persona edits from failing post-reply Agents`
+- PR #752 (2026-11-18) `feat(appearance): give each shell style its own panel look`
 
 ## v1.5.5
 
