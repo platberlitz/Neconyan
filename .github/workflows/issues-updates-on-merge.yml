@@ -18,8 +18,25 @@ jobs:
           fetch-depth: 0
           sparse-checkout: .github/miso
           persist-credentials: false
+      - name: Check GitHub App configuration
+        id: app-config
+        env:
+          ST_BOT_APP_ID: ${{ vars.ST_BOT_APP_ID }}
+          ST_BOT_PRIVATE_KEY: ${{ secrets.ST_BOT_PRIVATE_KEY }}
+        run: |
+          if [ -n "$ST_BOT_APP_ID" ] && [ -n "$ST_BOT_PRIVATE_KEY" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Mint App token so issue comments can run
+        id: app
+        if: steps.app-config.outputs.enabled == 'true'
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        with:
+          app-id: ${{ vars.ST_BOT_APP_ID }}
+          private-key: ${{ secrets.ST_BOT_PRIVATE_KEY }}
       - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         with:
+          github-token: ${{ steps.app.outputs.token || github.token }}
           script: |
             const { execFileSync } = require('node:child_process');
             const { linkedIssueNumbers, markIssuesDone } = require(`${process.env.GITHUB_WORKSPACE}/.github/miso/label-automation.cjs`);

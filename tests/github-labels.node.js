@@ -30,11 +30,15 @@ test('catalogue names and aliases are unique and metadata fits GitHub', () => {
 
 test('live migration edits existing labels without changing IDs, and waits for default-dependent names', () => {
     const unrelated = { name: 'do not touch', color: '000000', description: '' };
-    const initial = [fixture('bug'), fixture('fix'), fixture('size-m'), unrelated];
+    const initial = [fixture('docs'), fixture('fix'), fixture('size-m'), unrelated];
     const planned = planLabelSync(initial, false);
-    assert.ok(planned.some(row => row.old === 'bug' && row.name === labels.bug.name));
+    assert.ok(planned.some(row => row.old === 'documentation' && row.name === labels.docs.name));
     assert.ok(planned.some(row => row.old === '🦋 Bug Fix' && row.name === '🦋 Bug Fix'));
     assert.ok(planned.some(row => !row.old && row.name === labels['needs-testing'].legacy[0]));
+    for (const id of ['bug', 'feature-request']) {
+        assert.ok(planned.some(row => !row.old && row.name === labels[id].legacy[0]));
+        assert.ok(!planned.some(row => row.name === labels[id].name));
+    }
     assert.ok(!planned.some(row => row.old === unrelated.name || row.name === labels['size-m'].name));
     const synced = planned.map(({ old: _old, ...label }) => label);
     assert.deepEqual(planLabelSync(synced, false), []);
