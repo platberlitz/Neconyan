@@ -249,7 +249,7 @@ function initializeScrollResetBehaviors(element = document) {
  * @param {KeyboardEvent} event - The keyboard event
  */
 function handleGlobalKeyDown(event) {
-    // Native controls already activate themselves; only emulate Enter for legacy div controls.
+    // Native controls already activate themselves; emulate activation for legacy controls.
     if (event.defaultPrevented || event.repeat
         || event.target instanceof HTMLElement && event.target.closest('button, a[href], input, textarea, select, summary, [contenteditable="true"]')) {
         return;
@@ -270,7 +270,7 @@ function handleGlobalKeyDown(event) {
         target = target.parentElement;
     }
 
-    if (event.key === ' ' && !target?.matches('.inline-drawer-icon')) {
+    if (event.key === ' ' && !target?.matches('.inline-drawer-icon, #options_button, #option_toggle_AN, #floatingPromptMaximize, #ANClose')) {
         return;
     }
 

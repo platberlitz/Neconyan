@@ -98,7 +98,7 @@ describe('Simple Mode styles and wiring', () => {
         expect(css).not.toMatch(/transition|animation/);
         const kept = [
             '"home"', '"characters"', '"model"', '"lorebooks"', '"agents"', '"notes"', '"scratchpad"',
-            'data-sb-tab="settings"', '#send_but', '#options_button', '#sb-shortcut-left', '#option_scratchpad', '.sb-bottom-chat-scratchpad',
+            'data-sb-tab="settings"', '#send_but', '#options_button', '#sb-shortcut-left', '#option_toggle_AN', '#option_scratchpad', '.sb-bottom-chat-scratchpad',
         ];
         for (const item of kept) {
             expect({ item, hidden: SIMPLE_MODE_HIDDEN_SELECTORS.join(' ').includes(item) }).toEqual({ item, hidden: false });

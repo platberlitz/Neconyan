@@ -1243,34 +1243,23 @@ export function openAuthorsNotePanel(tabName = '') {
     return true;
 }
 
-function onANMenuItemClick() {
+let returnFocusToChatTools = false;
+
+function onANMenuItemClick(event) {
     if (!selected_group && this_chid === undefined) {
         toastr.warning(t`Select a character before trying to use Author's Note`, '', { timeOut: 5000 });
         return;
     }
 
-    //show AN if it's hidden
-    const $ANcontainer = $('#floatingPrompt');
-    if ($ANcontainer.css('display') !== 'flex') {
+    if ($('#floatingPrompt').css('display') !== 'flex') {
         openAuthorsNotePanel();
+        returnFocusToChatTools = event.originalEvent?.detail === 0;
+        if (returnFocusToChatTools) {
+            findInNotePanel('[data-an-tab][aria-selected="true"]').get(0)?.focus();
+        }
     } else {
-        //hide AN if it's already displayed
-        $ANcontainer.addClass('resizing');
-        $ANcontainer.transition({
-            opacity: 0.0,
-            duration: animation_duration,
-        }, async function () {
-            await delay(50);
-            $ANcontainer.removeClass('resizing');
-        });
-        setTimeout(function () {
-            $ANcontainer.hide();
-        }, animation_duration);
+        $('#ANClose').trigger('click');
     }
-
-    //duplicate options menu close handler from script.js
-    //because this listener takes priority
-    $('#options').stop().fadeOut(animation_duration);
 }
 
 async function onChatChanged() {
@@ -1347,12 +1336,17 @@ export function initAuthorsNote() {
     $('input[name="extension_floating_position"]').on('change', onExtensionFloatingPositionInput);
     $('input[name="extension_default_position"]').on('change', onDefaultPositionInput);
     $('#ANClose').on('click', function () {
-        $('#floatingPrompt').transition({
+        const panel = $('#floatingPrompt');
+        if (returnFocusToChatTools && panel.get(0)?.contains(document.activeElement)) {
+            document.getElementById('options_button')?.focus();
+        }
+        returnFocusToChatTools = false;
+        panel.transition({
             opacity: 0,
             duration: animation_duration,
             easing: 'ease-in-out',
         });
-        setTimeout(function () { $('#floatingPrompt').hide(); }, animation_duration);
+        setTimeout(function () { panel.hide(); }, animation_duration);
     });
     $('#option_toggle_AN').on('click', onANMenuItemClick);
     findInNotePanel('[data-an-tab]').on('click', function () {

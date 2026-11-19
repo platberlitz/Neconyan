@@ -51,7 +51,6 @@ export const SIMPLE_MODE_HIDDEN_SELECTORS = Object.freeze([
     '#extensionsMenuButton',
     '#qig-input-btn',
     '#gg-action-button-container',
-    '#option_toggle_AN',
     '#option_toggle_purrks',
     '#sb-bottom-chat-purrks-btn',
     '#option_copy_chat_link',
