@@ -10,6 +10,7 @@
 - PR #761 (2026-11-19) `ci: report browser retries and retain failed-attempt traces`
 - PR #762 (2026-11-19) `ci: run browser checks nightly on staging`
 - PR #763 (2026-11-19) `feat(scratchpad): make one picture per Quick Image Gen image count`
+- PR #764 (2026-11-19) `ci: run a short browser smoke check on pull requests`
 
 ## v1.5.6
 
