@@ -161,6 +161,13 @@ for (const phone of [true, false]) {
         await expect(tiles).toHaveCount(2);
 
         const singleDelete = gallery.locator('.qig-gallery-tile').first().locator('.qig-gallery-delete');
+        const [cardBox, deleteBox] = await Promise.all([
+            tiles.first().boundingBox(),
+            singleDelete.boundingBox(),
+        ]);
+        expect(deleteBox.y - cardBox.y).toBeLessThanOrEqual(8);
+        expect((cardBox.x + cardBox.width) - (deleteBox.x + deleteBox.width)).toBeLessThanOrEqual(8);
+        expect(deleteBox.x - cardBox.x).toBeGreaterThanOrEqual(40);
         const confirm = page.locator('dialog.popup[open]');
         await singleDelete.click();
         await confirm.getByRole('button', { name: 'Cancel' }).click();

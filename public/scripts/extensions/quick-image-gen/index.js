@@ -12847,8 +12847,12 @@ async function showGallery(returnFocusElement = null) {
                     const remove = document.createElement("button");
                     remove.type = "button";
                     remove.className = "menu_button qig-gallery-delete";
-                    remove.textContent = "Delete";
-                    if (item.prompt) remove.setAttribute("aria-label", t`Delete: ${item.prompt.slice(0, 80)}`);
+                    remove.title = t`Delete`;
+                    remove.setAttribute("aria-label", item.prompt ? t`Delete: ${item.prompt.slice(0, 80)}` : t`Delete`);
+                    const icon = document.createElement("i");
+                    icon.className = "fa-solid fa-trash-can";
+                    icon.setAttribute("aria-hidden", "true");
+                    remove.appendChild(icon);
                     remove.onclick = () => removePictures([entry], remove);
                     tile.appendChild(remove);
                 }
