@@ -53,17 +53,6 @@ async function readRows(file) {
 
 async function openGroup({ account, group }) {
     const page = await account.open({ workspace: false, readyTimeout: 60000 });
-    // The tests switch Agents on by editing settings directly, so the Agents must finish
-    // their first start (switching on Memory Shard, the Dice Roller defaults) beforehand.
-    await expect.poll(() => page.evaluate(async () => {
-        const [{ extension_settings }, { accountStorage }, store] = await Promise.all([
-            import('/scripts/extensions.js'),
-            import('/scripts/util/AccountStorage.js'),
-            import('/scripts/extensions/in-chat-agents/agent-store.js'),
-        ]);
-        return store.areAgentsLoaded() && accountStorage.getItem('NeconyanMemoryShardSeed.v1') !== 'on'
-            && Boolean(extension_settings.inChatAgents?.diceRoller);
-    }), { timeout: 60000 }).toBe(true);
     await page.evaluate(async id => {
         const groups = await import('/scripts/group-chats.js');
         await groups.openGroupById(id);

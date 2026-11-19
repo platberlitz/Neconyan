@@ -19,6 +19,27 @@ export const MODEL = 'conversation-fixture';
 export const REPLY = 'Durable first reply. [reminder: 1h | Durable reminder]\n\nDurable second reply. [schedule_update: status="dnd" activity="fixture rest" duration="1h"]';
 const terminal = ['completed', 'cancelled', 'failed', 'interrupted', 'conflict'];
 
+// A new account's Agents finish their first start (switching on Memory Shard, the Dice
+// Roller defaults) a few seconds after the page is ready, and save settings when they do.
+// Tests that edit or save settings directly wait for that save first, so it cannot land in
+// the middle of the test.
+export async function waitForAgentsFirstStart(page) {
+    await expect.poll(() => page.evaluate(async () => {
+        const [{ extension_settings }, { accountStorage }] = await Promise.all([
+            import('/scripts/extensions.js'),
+            import('/scripts/util/AccountStorage.js'),
+        ]);
+        if (extension_settings.disabledExtensions?.includes('in-chat-agents')) return true;
+        const store = await import('/scripts/extensions/in-chat-agents/agent-store.js');
+        return store.areAgentsLoaded() && accountStorage.getItem('NeconyanMemoryShardSeed.v1') !== 'on'
+            && Boolean(extension_settings.inChatAgents?.diceRoller);
+    }), { timeout: 60000, message: 'The Agents finished their first start' }).toBe(true);
+    await page.evaluate(async () => {
+        const core = await import('/script.js');
+        if (!await core.saveSettings(0, { returnResult: true })) throw new Error('The settings save after the Agents started failed.');
+    });
+}
+
 export async function acknowledgeActiveSettings(page) {
     let acknowledgement;
     // Startup listeners may queue another save after the one this helper awaits.
@@ -248,6 +269,7 @@ export const test = base.extend({
                         await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'), undefined, { timeout: readyTimeout });
                         const skip = page.locator('#neconyan-tour-coachmark [data-tour-coach-skip]');
                         if (skipTour && await skip.isVisible()) await skip.click();
+                        await waitForAgentsFirstStart(page);
                         if (!workspace) return page;
                         await page.evaluate(async avatar => {
                             await window.SillyTavern.getContext().getCharacters();
