@@ -130,9 +130,19 @@ jobs:
             tests/package-lock.json
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version: 1.4.3
+        shell: bash
+        env:
+          BUN_VERSION: '1.4.3'
+          BUN_ARCHIVE_SHA512: 440ae09e98de5e3686ce3a7987b46cf3d714609bad3bc232a91de2b44f0e05a07312df0a366da3a7f628cf1047ab8785a2fc2b40baf2792c1301c9a24fecdca0
+        # The Playwright images have tar but not unzip, which setup-bun needs.
+        run: |
+          bun_dir="$RUNNER_TEMP/neconyan-bun"
+          mkdir -p "$bun_dir"
+          archive=$(npm pack "@oven/bun-linux-x64@$BUN_VERSION" --ignore-scripts --silent --pack-destination "$bun_dir")
+          printf '%s  %s\n' "$BUN_ARCHIVE_SHA512" "$bun_dir/$archive" | sha512sum --check
+          tar -xzf "$bun_dir/$archive" -C "$bun_dir" --strip-components=2 package/bin/bun
+          test "$("$bun_dir/bun" --version)" = "$BUN_VERSION"
+          echo "$bun_dir" >> "$GITHUB_PATH"
 
       - name: Install root dependencies
         run: npm ci --ignore-scripts
