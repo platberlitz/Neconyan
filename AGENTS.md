@@ -51,7 +51,7 @@ UI work, in short:
 - After an isolated test fix, run the affected tests or shards against the new commit. GitHub's failed-job rerun reuses the original commit and cannot validate later fixes. A new commit alone doesn't justify another full run.
 - Use a full rerun when application behaviour, shared test setup or workflow changes have broad or uncertain effects. State the reason before starting it.
 - If a failure repeats, return to diagnosis before another retry. Keep the logs and distinguish a corrected test from an unchanged test that passed on retry; don't weaken assertions or skip failures to get a green result.
-- Playwright retries failed browser tests once in CI. The release run's summary lists tests that passed on retry as flaky, separately from unresolved failures. Download `release-e2e-diagnostics-*` for the first failed attempt's trace even if the job is green; `release-e2e-result-*` records test outcomes and durations.
+- Playwright retries failed browser tests once in CI. The release run's summary lists tests that passed on retry as flaky, separately from unresolved failures. Download `release-e2e-diagnostics-*` for the first failed attempt's action trace, screenshot and video when available, even if the job is green. CI traces omit DOM snapshots and the trace filmstrip for speed. `release-e2e-result-*` records outcomes and durations.
 - Record the commit and scope each result covers. Reuse unaffected results honestly and state what still needs checking, rather than repeatedly spending an hour on the entire matrix.
 
 ## CSS shipping rules
