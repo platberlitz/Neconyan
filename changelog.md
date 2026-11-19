@@ -53,6 +53,7 @@
 - New accounts no longer see an 'Agents updated' notice about Pawthfinder's tools, and dragging a tool up into another sidebar section on a phone drops it where you let go instead of one row lower.
 - The first Notebooks open after an install or update no longer sits on a blank page for several seconds.
 - When the browser refuses to store crash reports, the advice to copy or download them before closing the page stays on screen instead of being replaced by a later, vaguer message.
+- On a brand-new account, a reply the server writes in the first few seconds no longer skips its Agents and Companions with 'Agents did not finish'. It waits a moment for the account's one-time setup to save first.
 - A 'Session expired' notice now says when you've been signed out, and your open page and draft stay in place.
 - Translated interfaces no longer translate names you chose, so a prompt called 'Draft' or a lorebook called 'Notes' shows as written.
 - Favourite connection profiles appear only under '★ Favorites', and long persona and Scenario Note names wrap instead of spilling out.
