@@ -2108,6 +2108,31 @@ test('a correction flags earlier reads instead of erasing them, so only new mess
     assert.deepEqual(pendingSources(state, config, { checkpoint: true, unreadOnly: true }).map(refKey), [refKey(state.timeline.at(-1))]);
 });
 
+test('correcting a memory reads again only the messages behind memories built on it', () => {
+    const state = base();
+    const config = defaultConfig();
+    const policy = processingVersion(config);
+    for (const ref of state.timeline) state.coverage[refKey(ref)] = state.checkpoints[refKey(ref)] = policy;
+    const memory = event(state);
+    const view = event(state, { id: 'event:gift-view', refs: [state.timeline[3]], asOf: 3, text: 'Mara now trusts the gift a little.', dependencies: [{ id: memory.id, version: memory.version }] });
+    view.inputRefs = [{ id: state.timeline[3].id, revision: state.timeline[3].revision }];
+    putRecord(state, { ...memory, authorOverride: true });
+    assert.equal(pendingSources(state, config, { checkpoint: true, unreadOnly: true }).length, 0);
+    putRecord(state, { ...memory, text: 'Author: Mara accepted the gift slowly.', authorOverride: true });
+    assert.deepEqual(pendingSources(state, config, { checkpoint: true, unreadOnly: true }).map(refKey), [refKey(state.timeline[3])]);
+});
+
+test('correcting a memory reads again the messages an interview built on it came from', () => {
+    const state = base();
+    const config = defaultConfig();
+    const policy = processingVersion(config);
+    for (const ref of state.timeline) state.coverage[refKey(ref)] = state.checkpoints[refKey(ref)] = policy;
+    const memory = event(state);
+    event(state, { id: 'event:gift-view', refs: [state.timeline[3]], asOf: 3, text: 'Mara now trusts the gift a little.', dependencies: [{ id: memory.id, version: memory.version }] });
+    putRecord(state, { ...memory, text: 'Author: Mara accepted the gift slowly.', authorOverride: true });
+    assert.deepEqual(pendingSources(state, config, { checkpoint: true, unreadOnly: true }).map(refKey), [refKey(state.timeline[3])]);
+});
+
 test('story scope, copied branch prefix, and explicit continuations isolate later parent history', () => {
     const { state, original, current } = giftHistory();
     const other = base();
