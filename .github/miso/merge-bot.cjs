@@ -1,17 +1,11 @@
 'use strict';
 
 const gallery = require('./gallery.json');
+const { BLOCKING_LABELS } = require('./labels.cjs');
 
 const MARKER = '<!-- miso-merge-bot';
 const BOT_LOGIN = 'github-actions[bot]';
 const OWN_CHECK_NAMES = new Set(['🐯 Miso merge check']);
-const BLOCKING_LABELS = new Set([
-    '⛔ Don\'t Merge',
-    '🔨 Needs Work',
-    '🔬 Needs Testing',
-    '⛔ Waiting For External/Upstream',
-    '💥💣 Breaking Changes',
-]);
 const FAILED_CONCLUSIONS = {
     failure: 'failed',
     timed_out: 'timed out',

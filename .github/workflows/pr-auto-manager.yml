@@ -120,8 +120,8 @@ jobs:
     name: 🚫 Check Merge Blocking Labels
     needs: [label-by-branches]
     runs-on: ubuntu-latest
-    # Run, even if the previous jobs were skipped/failed
-    if: always()
+    # Run for a PR even if the previous job was skipped or failed.
+    if: always() && github.event_name == 'pull_request_target'
 
     # Override permissions, as this needs to write a check
     permissions:
@@ -130,6 +130,13 @@ jobs:
       pull-requests: read
 
     steps:
+      - name: Checkout the base branch's label rules
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          sparse-checkout: .github/miso
+          persist-credentials: false
+
       - name: Check Merge Blocking
         # GitHub Script
         # https://github.com/marketplace/actions/github-script
@@ -137,15 +144,8 @@ jobs:
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         with:
           script: |
-            const prLabels = context.payload.pull_request.labels.map(label => label.name);
-            const blockingLabels = [
-              "⛔ Don't Merge",
-              "🔨 Needs Work",
-              "🔬 Needs Testing",
-              "⛔ Waiting For External/Upstream",
-              "💥💣 Breaking Changes"
-            ];
-            const hasBlockingLabel = prLabels.some(label => blockingLabels.includes(label));
+            const { BLOCKING_LABELS } = require(`${process.env.GITHUB_WORKSPACE}/.github/miso/labels.cjs`);
+            const hasBlockingLabel = context.payload.pull_request.labels.some(({ name }) => BLOCKING_LABELS.has(name));
 
             if (hasBlockingLabel) {
               console.log("Blocking label detected. Setting warning status.");

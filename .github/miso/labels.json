@@ -1,0 +1,37 @@
+{
+    "do-not-merge": {
+        "name": "Do not merge (claws out)",
+        "colour": "b60205",
+        "description": "Hold the merge until a maintainer removes this label.",
+        "blocksMerge": true,
+        "legacy": ["⛔ Don't Merge"]
+    },
+    "needs-work": {
+        "name": "Needs work (back to the basket)",
+        "colour": "d93f0b",
+        "description": "Changes are still needed before this pull request can merge.",
+        "blocksMerge": true,
+        "legacy": ["🔨 Needs Work"]
+    },
+    "needs-testing": {
+        "name": "Needs testing (paw check)",
+        "colour": "b45309",
+        "description": "The behaviour in this pull request still needs checking.",
+        "blocksMerge": true,
+        "legacy": ["🔬 Needs Testing"]
+    },
+    "waiting-on-upstream": {
+        "name": "Waiting on upstream (catnap)",
+        "colour": "674ea7",
+        "description": "Blocked on a change outside Neconyan.",
+        "blocksMerge": true,
+        "legacy": ["⛔ Waiting For External/Upstream"]
+    },
+    "breaking-change": {
+        "name": "Breaking change (hiss)",
+        "colour": "991b1b",
+        "description": "Hold for review of a change that can break existing setups.",
+        "blocksMerge": true,
+        "legacy": ["💥💣 Breaking Changes"]
+    }
+}
