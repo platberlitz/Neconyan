@@ -58,12 +58,32 @@ const gracefulFs = require('graceful-fs');
 function recordLockOwner(lockPath) {
     // This is a recovery hint, not write-ahead evidence. Losing it falls back to
     // the ordinary stale timeout; it must not add a disk flush to every lock.
+    const ownerPath = lockPath + '.owner';
+    const pendingPath = ownerPath + '.pending';
+    let pending = false;
     try {
         const identity = lockIdentity(fs.statSync(lockPath));
         if (!identity) return;
-        const fd = fs.openSync(lockPath + '.owner', fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | fs.constants.O_NOFOLLOW, 0o600);
+        const flags = fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_NOFOLLOW;
+        let fd;
+        try {
+            fd = fs.openSync(pendingPath, flags, 0o600);
+        } catch (error) {
+            if (error.code !== 'EEXIST') throw error;
+            // We hold the lock. A previous holder may have died before publishing its hint.
+            fs.unlinkSync(pendingPath);
+            fd = fs.openSync(pendingPath, flags, 0o600);
+        }
+        pending = true;
         try { fs.writeFileSync(fd, JSON.stringify({ hostname, pid: process.pid, identity })); } finally { fs.closeSync(fd); }
-    } catch { /* Locking remains valid without the recovery hint. */ }
+        // A process death before rename must not leave a partial published hint.
+        fs.renameSync(pendingPath, ownerPath);
+        pending = false;
+    } catch { /* Locking remains valid without the recovery hint. */ } finally {
+        if (pending) {
+            try { fs.unlinkSync(pendingPath); } catch { /* Optional recovery hint. */ }
+        }
+    }
 }
 
 /** Retain the existing lock policy while allowing immediate recovery of dead local owners. */

@@ -36,8 +36,8 @@ function inventory(lease, strictLocks = false) {
         if (!fs.existsSync(directory)) return;
         for (const entry of fs.readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
             const filename = path.join(directory, entry.name);
-            const lockArtifact = strictLocks ? /^\.neconyan-chat-[a-f0-9]{64}\.lock(?:\.owner)?$/.test(entry.name)
-                : entry.name.endsWith('.lock') || entry.name.endsWith('.lock.owner');
+            const chatLockArtifact = /^\.neconyan-chat-[a-f0-9]{64}\.lock(?:\.owner(?:\.pending)?)?$/.test(entry.name);
+            const lockArtifact = chatLockArtifact || (!strictLocks && (entry.name.endsWith('.lock') || entry.name.endsWith('.lock.owner')));
             if (lockArtifact) {
                 if (strictLocks) {
                     const stat = fs.lstatSync(filename);
