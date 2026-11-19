@@ -122,6 +122,7 @@
 - PR #751 (2026-11-18) `fix(roleplay): collapse cleared replies on server swipes`
 - PR #752 (2026-11-18) `feat(appearance): give each shell style its own panel look`
 - PR #754 (2026-11-18) `fix(data): reclaim a Windows lease whose PID another program took`
+- PR #755 (2026-11-19) `chore(release): prepare version 1.5.6`
 
 ## v1.5.5
 
