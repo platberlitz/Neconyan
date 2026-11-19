@@ -10,6 +10,7 @@
 - **PixAI** supports model-matched LoRAs and a separate **Negative Prompt** in Quick Image Gen.
 - PixAI only sends modes the selected model offers, and can recover finished pictures when a task's reported image address fails.
 - **BotSearcher** can open `jani.com` card links and use it as a backup for JanitorAI lists and imports. JannyAI stays a separate source.
+- ZIP imports can resume when the server stops while it is saving a chat.
 
 ### Merged Staging PRs
 - PR #757 (2026-11-19) `ci: use pinned browser images for release checks`
