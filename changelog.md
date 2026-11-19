@@ -11,6 +11,7 @@
 - PR #762 (2026-11-19) `ci: run browser checks nightly on staging`
 - PR #763 (2026-11-19) `feat(scratchpad): make one picture per Quick Image Gen image count`
 - PR #764 (2026-11-19) `ci: run a short browser smoke check on pull requests`
+- PR #765 (2026-11-19) `ci: keep old and new blocking labels working during migration`
 
 ## v1.5.6
 
