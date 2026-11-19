@@ -1,5 +1,5 @@
 labels:
-  - name: ✖️ Invalid
+  - name: '@invalid@'
     labeled:
       pr:
         action: close
@@ -11,13 +11,13 @@ labels:
 
           If you need help, feel free to ask!
 
-  - name: ⛔ Don't Merge
+  - name: '@do-not-merge@'
     labeled:
       pr:
         body: >
           🚨 This PR has been temporarily blocked from merging.
 
-  - name: 💥💣 Breaking Changes
+  - name: '@breaking-change@'
     labeled:
       pr:
         body: >
@@ -25,7 +25,7 @@ labels:
 
           Make sure these changes are well-documented and that users will be properly informed when this is released.
 
-  - name: ⛔ Waiting For External/Upstream
+  - name: '@waiting-on-upstream@'
     labeled:
       pr:
         body: >
@@ -34,18 +34,17 @@ labels:
 
             Please inform us of any progress on the upstream changes or approval.
 
-  - name: 🔬 Needs Testing
+  - name: '@needs-testing@'
     labeled:
       pr:
         body: >
           🔬 This PR needs testing!
           Any contributor can test and leave reviews, so feel free to help us out!
 
-  - name: 🟥 ⬤⬤⬤⬤⬤
+  - name: '@size-xl@'
     labeled:
       pr:
         body: >
             ⚠️ This PR is over 1000 lines, which is larger than recommended.
 
             Please make sure that it only addresses a single issue - PRs this large are hard to test and may be rejected.
-

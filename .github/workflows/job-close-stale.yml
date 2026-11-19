@@ -12,10 +12,40 @@ permissions:
   pull-requests: write
 
 jobs:
+  resolve-labels:
+    name: Read current stale label names
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+    outputs:
+      stale: ${{ steps.labels.outputs.stale }}
+      inactive: ${{ steps.labels.outputs.inactive }}
+      keep-open: ${{ steps.labels.outputs.keep-open }}
+      awaiting-reply: ${{ steps.labels.outputs.awaiting-reply }}
+      no-response: ${{ steps.labels.outputs.no-response }}
+      alternative-exists: ${{ steps.labels.outputs.alternative-exists }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          sparse-checkout: .github/miso
+          persist-credentials: false
+      - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        id: labels
+        with:
+          script: |
+            const { labelName, repoLabelNames } = require(`${process.env.GITHUB_WORKSPACE}/.github/miso/label-automation.cjs`);
+            const available = await repoLabelNames(github, context.repo);
+            for (const id of ['stale', 'inactive', 'keep-open', 'awaiting-reply', 'no-response', 'alternative-exists']) {
+              const name = labelName(id, available);
+              if (!name) throw new Error(`Missing label ${id}. Run the repository label sync first.`);
+              core.setOutput(id, name);
+            }
+
   mark-inactivity:
     name: ⏳ Mark Issues/PRs without Activity
     runs-on: ubuntu-latest
-    if: always()
+    needs: [resolve-labels]
 
     steps:
       - name: Check GitHub App Configuration
@@ -62,18 +92,18 @@ jobs:
             🔒 This issue was auto-closed due to inactivity for over 6 months.
           close-pr-message: >
             🔒 This PR was auto-closed due to inactivity for over 6 months.
-          stale-issue-label: '⚰️ Stale'
-          close-issue-label: '🕸️ Inactive'
-          stale-pr-label: '⚰️ Stale'
-          close-pr-label: '🕸️ Inactive'
-          exempt-issue-labels: '📌 Keep Open'
-          exempt-pr-labels: '📌 Keep Open'
+          stale-issue-label: ${{ needs.resolve-labels.outputs.stale }}
+          close-issue-label: ${{ needs.resolve-labels.outputs.inactive }}
+          stale-pr-label: ${{ needs.resolve-labels.outputs.stale }}
+          close-pr-label: ${{ needs.resolve-labels.outputs.inactive }}
+          exempt-issue-labels: ${{ needs.resolve-labels.outputs.keep-open }}
+          exempt-pr-labels: ${{ needs.resolve-labels.outputs.keep-open }}
 
   await-user-response:
     name: ⚠️ Mark Issues/PRs Awaiting User Response
-    needs: [mark-inactivity]
+    needs: [resolve-labels, mark-inactivity]
     runs-on: ubuntu-latest
-    if: always()
+    if: always() && needs.resolve-labels.result == 'success'
 
     steps:
       - name: Check GitHub App Configuration
@@ -114,17 +144,17 @@ jobs:
             Please provide the requested details in the next few days to keep this ticket open.
           close-issue-message: >
             🔒 This issue was auto-closed due to no response from user.
-          only-labels: '🚏 Awaiting User Response'
-          labels-to-remove-when-unstale: '🚏 Awaiting User Response'
-          stale-issue-label: '🛑 No Response'
-          close-issue-label: '🕸️ Inactive'
-          exempt-issue-labels: '🚧 Alternative Exists'
+          only-labels: ${{ needs.resolve-labels.outputs.awaiting-reply }}
+          labels-to-remove-when-unstale: ${{ needs.resolve-labels.outputs.awaiting-reply }}
+          stale-issue-label: ${{ needs.resolve-labels.outputs.no-response }}
+          close-issue-label: ${{ needs.resolve-labels.outputs.inactive }}
+          exempt-issue-labels: ${{ needs.resolve-labels.outputs.alternative-exists }}
 
   alternative-exists:
     name: 🔄 Mark Issues with Alternative Exists
-    needs: [mark-inactivity, await-user-response]
+    needs: [resolve-labels, mark-inactivity, await-user-response]
     runs-on: ubuntu-latest
-    if: always()
+    if: always() && needs.resolve-labels.result == 'success'
 
     steps:
       - name: Check GitHub App Configuration
@@ -166,7 +196,7 @@ jobs:
             If you still need help, drop a comment within the next 7 days to keep this open.
           close-issue-message: >
             ✅ Closing this issue due to no confirmation on the alternative solution.
-          only-labels: '🚧 Alternative Exists'
-          stale-issue-label: '🚏 Awaiting User Response'
-          close-issue-label: '🕸️ Inactive'
-          exempt-issue-labels: '📌 Keep Open'
+          only-labels: ${{ needs.resolve-labels.outputs.alternative-exists }}
+          stale-issue-label: ${{ needs.resolve-labels.outputs.awaiting-reply }}
+          close-issue-label: ${{ needs.resolve-labels.outputs.inactive }}
+          exempt-issue-labels: ${{ needs.resolve-labels.outputs.keep-open }}

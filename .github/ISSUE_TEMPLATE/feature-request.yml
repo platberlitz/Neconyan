@@ -2,7 +2,7 @@ name: Feature Request ✨
 type: Feature
 description: Suggest an idea for future development of this project. Please use English only.
 title: '[FEATURE_REQUEST] <title>'
-labels: ['🦄 Feature Request']
+labels: ['Feature request (wish list)']
 
 body:
   - type: markdown

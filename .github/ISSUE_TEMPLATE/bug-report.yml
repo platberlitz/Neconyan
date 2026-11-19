@@ -2,7 +2,7 @@ name: Bug Report 🐛
 type: Bug
 description: Report something that's not working the intended way. Support requests for external programs (reverse proxies, 3rd party servers, other peoples' forks) will be refused! Please use English only.
 title: '[BUG] <title>'
-labels: ['🐛 Bug']
+labels: ['Bug (bug hunt)']
 body:
   - type: markdown
     attributes:
@@ -20,6 +20,8 @@ body:
         - 📱 Termux
         - 🐋 Docker
         - 🍎 Mac
+        - Android
+        - iPhone / iOS
     validations:
       required: true
 
@@ -51,7 +53,7 @@ body:
       placeholder: |
         - Node.js version (if applicable): [run `node --version` in cmd]
         - Generation API [e.g. KoboldAI, OpenAI]
-        - Branch [staging, release]
+        - Branch [staging, main]
         - Model [e.g. Pygmalion 6b, LLaMa 13b]
     validations:
       required: false
