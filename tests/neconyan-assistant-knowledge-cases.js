@@ -578,6 +578,7 @@ export const refreshedKnowledgeCases = [
     ['A companion was blocked by the content filter, what happens to the others?', 'agents.companion-runs', 'its card keeps that error'],
     ['What does Also offer original chat passages to recall do?', 'mewmory.recall-passages', 'recall picks saved memory entries only'],
     ['Why is Mewmory using so many tokens?', 'mewmory.recall-passages', 'Re-read them'],
+    ['After correcting a memory, does Mewmory re-read the chat?', 'mewmory.recall-passages', 'Re-read them'],
     ['Mewmory keeps hitting 429 rate limits', 'mewmory.recall-passages', '30 seconds doubling up to 15 minutes'],
     ['Does Mewmory recall original chat passages?', 'mewmory.recall-passages', 'Also offer original chat passages to recall is off by default'],
     ['Does Mewmory keyword search still find original passages?', 'mewmory.search', 'join only when Also offer original chat passages to recall is on'],
