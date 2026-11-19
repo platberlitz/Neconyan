@@ -178,11 +178,19 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
 
                 await windowNode.getByRole('button', { name: 'Expand Floating Scene Notes window' }).evaluate(element => element.click());
                 const beforeDrag = await windowNode.boundingBox();
+                // Deliver the synthetic click in the release event, after the app's drag
+                // handler, so browser automation latency cannot outlast the click guard.
+                await head.locator('.ica--cwin-name').evaluate((title, releaseEvent) => {
+                    const layer = title.closest('#ica--cwin-layer');
+                    layer.addEventListener(releaseEvent, () => {
+                        title.click();
+                        layer.dataset.testDragReleaseClick = 'sent';
+                    }, { once: true });
+                }, viewport.width < 769 ? 'touchend' : 'pointerup');
                 await dragHeader(page, head, viewport.width < 769);
                 const afterDrag = await windowNode.boundingBox();
                 expect(afterDrag.y).toBeGreaterThan(beforeDrag.y);
-                await expect(windowNode).toHaveAttribute('data-collapsed', 'false');
-                await head.locator('.ica--cwin-name').evaluate(element => element.click());
+                await expect(page.locator('#ica--cwin-layer')).toHaveAttribute('data-test-drag-release-click', 'sent');
                 await expect(windowNode).toHaveAttribute('data-collapsed', 'false');
                 // A fresh press immediately after dragging must still toggle the header.
                 await activate(head.locator('.ica--cwin-name'));
@@ -224,13 +232,16 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
                 await createAgentFixture(page, firstId, 'Scene Tracker', longNote);
                 const firstWindow = page.locator(`.ica--cwin[data-agent-id="${firstId}"]`);
                 const secondWindow = page.locator(`.ica--cwin[data-agent-id="${secondId}"]`);
+                const panel = page.locator('#ica--tracker-panel');
 
                 await openPanel(page);
                 await page.locator(`[data-agent-id="${firstId}"] [data-action="panel-open-window"]`).click();
                 await expect(firstWindow).toBeVisible();
+                await expect(panel).toBeHidden();
                 await openPanel(page);
                 await page.locator(`[data-agent-id="${secondId}"] [data-action="panel-open-window"]`).click();
                 await expect(secondWindow).toBeVisible();
+                await expect(panel).toBeHidden();
 
                 const stack = await page.evaluate(({ firstId, secondId }) => {
                     const first = document.querySelector(`.ica--cwin[data-agent-id="${firstId}"]`);
@@ -257,9 +268,21 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
                         firstHeaderTop: firstHead.top,
                         secondHeaderTop: secondHead.top,
                         viewportHeight: window.innerHeight,
+                        diagnostics: {
+                            viewportWidth: window.innerWidth,
+                            visualWidth: window.visualViewport?.width,
+                            visualOffsetLeft: window.visualViewport?.offsetLeft,
+                            firstPoint,
+                            firstHeader: firstHead.toJSON(),
+                            firstHeaderTarget: firstHit?.outerHTML.split('>')[0],
+                            secondPoint,
+                            secondHeader: secondHead.toJSON(),
+                            secondHeaderTarget: secondHit?.outerHTML.split('>')[0],
+                        },
                     };
                 }, { firstId, secondId });
 
+                await info.attach('companion-window-hit-test', { body: JSON.stringify(stack, null, 2), contentType: 'application/json' });
                 expect(stack.topGap).toBeGreaterThanOrEqual(stack.firstHeaderHeight + 4);
                 expect(stack.firstHeaderHit).toBe(firstId);
                 expect(stack.firstCloseHit).toBe(firstId);

@@ -48,43 +48,62 @@ test('collapsed rail centres every icon inside reachable square buttons', async 
         await page.evaluate(() => new Promise(resolve => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve))));
         await page.setViewportSize({ width: 1280, height });
         const rail = page.locator('#neconyan-workspace-rail');
-        expect((await rail.boundingBox()).width).toBe(style === 'hypr-glow' ? 44 : 52);
-        const expand = await page.locator('#neconyan-sidebar-toggle').boundingBox();
-        const axis = expand.x + expand.width / 2;
-        const scroll = await rail.locator('.neconyan-rail-scroll').evaluate(element => ({ x: element.getBoundingClientRect().x, y: element.getBoundingClientRect().y, client: element.clientWidth, height: element.clientHeight }));
-        const buttons = rail.locator('button:visible').filter({ has: page.locator('i:not(.neconyan-whiskers)') });
-        for (const button of await buttons.all()) {
-            await button.scrollIntoViewIfNeeded();
-            const box = await button.boundingBox();
-            const icon = await button.locator(':scope > i:not(.neconyan-whiskers)').first().boundingBox();
-            const name = (await button.textContent()).trim();
-            expect(Math.abs(box.x + box.width / 2 - icon.x - icon.width / 2), name).toBeLessThanOrEqual(1);
-            expect(Math.abs(box.y + box.height / 2 - icon.y - icon.height / 2), name).toBeLessThanOrEqual(1);
-            expect(Math.abs(box.x + box.width / 2 - axis), name).toBeLessThanOrEqual(1);
-            expect(box.x, name).toBeGreaterThanOrEqual(0);
-            expect(box.x + box.width, name).toBeLessThanOrEqual(51);
+        // Recent chats and quick actions can redraw while auditing every button.
+        // Inspect one live layout per style, rather than re-resolving a changing nth locator.
+        const metrics = await rail.evaluate(element => {
+            const expand = element.querySelector('#neconyan-sidebar-toggle');
+            const scroller = element.querySelector('.neconyan-rail-scroll');
+            const { x, y } = scroller.getBoundingClientRect();
+            const scroll = { x, y, width: scroller.clientWidth, height: scroller.clientHeight, contentWidth: scroller.scrollWidth };
+            const centre = box => box.x + box.width / 2;
+            const axis = centre(expand.getBoundingClientRect());
+            const buttons = [...element.querySelectorAll('button')]
+                .filter(button => {
+                    const { width, height } = button.getBoundingClientRect();
+                    return width > 0 && height > 0 && (button.checkVisibility?.({ visibilityProperty: true }) ?? (getComputedStyle(button).visibility === 'visible'));
+                })
+                .map(button => {
+                    const icon = button.querySelector(':scope > i:not(.neconyan-whiskers)');
+                    const inScroll = scroller.contains(button);
+                    if (icon || inScroll) button.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+                    const box = button.getBoundingClientRect();
+                    const glyph = icon?.getBoundingClientRect().toJSON();
+                    if (inScroll) button.focus({ preventScroll: true });
+                    return {
+                        name: button.textContent.trim() || button.getAttribute('aria-label'),
+                        box: box.toJSON(), glyph, inScroll, focused: document.activeElement === button, expand: button === expand,
+                    };
+                });
+            // Removing Chromium's stable scrollbar gutter must not move the home icon axis.
+            const gutter = scroller.style.scrollbarGutter;
+            scroller.style.scrollbarGutter = 'auto';
+            const overlayAxis = centre(element.querySelector('[data-neconyan-route="home"]').getBoundingClientRect());
+            scroller.style.scrollbarGutter = gutter;
+            return { width: element.getBoundingClientRect().width, axis, overlayAxis, scroll, buttons };
+        });
+        expect(metrics.width).toBe(style === 'hypr-glow' ? 44 : 52);
+        expect(metrics.buttons.some(button => button.glyph && button.inScroll)).toBe(true);
+        for (const { box, name, glyph, inScroll, focused, expand } of metrics.buttons) {
+            if (glyph) {
+                expect(Math.abs(box.x + box.width / 2 - glyph.x - glyph.width / 2), name).toBeLessThanOrEqual(1);
+                expect(Math.abs(box.y + box.height / 2 - glyph.y - glyph.height / 2), name).toBeLessThanOrEqual(1);
+                expect(Math.abs(box.x + box.width / 2 - metrics.axis), name).toBeLessThanOrEqual(1);
+                expect(box.x, name).toBeGreaterThanOrEqual(0);
+                expect(box.x + box.width, name).toBeLessThanOrEqual(51);
+            }
+            if (!expand) {
+                expect(box.width, name).toBe(style === 'hypr-glow' ? 32 : 36);
+                expect(box.height, name).toBe(box.width);
+            }
+            if (inScroll) {
+                expect(box.x + box.width, name).toBeLessThanOrEqual(metrics.scroll.x + metrics.scroll.width);
+                expect(box.y, name).toBeGreaterThanOrEqual(metrics.scroll.y);
+                expect(box.y + box.height, name).toBeLessThanOrEqual(metrics.scroll.y + metrics.scroll.height);
+                expect(focused, name).toBe(true);
+            }
         }
-        for (const button of await rail.locator('button:visible:not(#neconyan-sidebar-toggle)').all()) {
-            const box = await button.boundingBox();
-            expect(box.width).toBe(style === 'hypr-glow' ? 32 : 36);
-            expect(box.height).toBe(box.width);
-        }
-        for (const button of await rail.locator('.neconyan-rail-scroll button:visible').all()) {
-            await button.scrollIntoViewIfNeeded();
-            const box = await button.boundingBox();
-            expect(box.x + box.width).toBeLessThanOrEqual(scroll.x + scroll.client);
-            expect(box.y).toBeGreaterThanOrEqual(scroll.y);
-            expect(box.y + box.height).toBeLessThanOrEqual(scroll.y + scroll.height);
-            await button.focus();
-            await expect(button).toBeFocused();
-        }
-        expect(await rail.locator('.neconyan-rail-scroll').evaluate(element => element.scrollWidth)).toBeLessThanOrEqual(scroll.client);
-        // Chromium's overlay allocation is zero without the stable gutter.
-        // Changing that allocation must not move any of the fixed icon axes.
-        await rail.locator('.neconyan-rail-scroll').evaluate(element => { element.style.scrollbarGutter = 'auto'; });
-        const overlay = await rail.locator('[data-neconyan-route="home"]').boundingBox();
-        expect(Math.abs(overlay.x + overlay.width / 2 - axis)).toBeLessThanOrEqual(1);
-        await rail.locator('.neconyan-rail-scroll').evaluate(element => { element.style.scrollbarGutter = ''; });
+        expect(metrics.scroll.contentWidth).toBeLessThanOrEqual(metrics.scroll.width);
+        expect(Math.abs(metrics.overlayAxis - metrics.axis)).toBeLessThanOrEqual(1);
     }
 });
 

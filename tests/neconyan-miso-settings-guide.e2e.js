@@ -169,10 +169,16 @@ test('desktop: four questions apply real settings, undo guards an outside change
         await expect(page.locator(`${GUIDE} .nn-miso-guide-applied`)).toHaveCount(0);
         expect(await readSettings(page)).toEqual(before);
 
-        await page.locator('#nn-miso-guide-apply').click();
-        await expect(page.locator(`${GUIDE} .nn-miso-guide-applied`)).toBeVisible();
-        await page.waitForResponse(response => response.url().endsWith('/api/settings/save')
-            && Boolean(response.request().postDataJSON()?.accountStorage?.['NeconyanMisoSettingsGuide.v1']), { timeout: 15000 });
+        await Promise.all([
+            page.waitForResponse(response => {
+                if (!response.ok() || !response.url().endsWith('/api/settings/save')) return false;
+                const settings = response.request().postDataJSON();
+                return Boolean(settings?.accountStorage?.['NeconyanMisoSettingsGuide.v1'])
+                    && settings.power_user?.message_token_count_enabled === false;
+            }, { timeout: 15000 }),
+            page.locator('#nn-miso-guide-apply').click(),
+        ]);
+        await expect(applied).toBeVisible();
         const afterSecondApply = await readSettings(page);
 
         await openSettings(page);

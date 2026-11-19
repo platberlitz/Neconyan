@@ -8,9 +8,12 @@ import { acknowledgeSettingsSave } from './chat-scroll-regression-helpers.js';
 const shellSource = await readFile(new URL('../public/scripts/neconyan-tabs.js', import.meta.url), 'utf8');
 const shells = [...shellSource.match(/const NN_THEMES = Object\.freeze\(\[([\s\S]*?)\]\);/)[1].matchAll(/id:\s*'([^']+)'/g)].map(match => match[1]);
 
-async function colours(locator) {
-    return locator.evaluate(element => {
-        const style = getComputedStyle(element);
+async function colours(subject, regexSelector) {
+    const sample = target => {
+        const compareRegexAccent = typeof target === 'string';
+        const matches = compareRegexAccent ? document.querySelectorAll(target) : null;
+        const element = matches ? (matches.length === 1 ? matches[0] : null) : target;
+        if (!element) return null;
         const canvas = document.createElement('canvas');
         canvas.width = canvas.height = 1;
         const context = canvas.getContext('2d');
@@ -22,27 +25,61 @@ async function colours(locator) {
         };
         const composite = (over, under) => over.slice(0, 3).map((channel, i) => Math.round(channel * over[3] / 255 + under[i] * (1 - over[3] / 255)));
         const format = channels => `rgb(${channels.slice(0, 3).join(', ')})`;
-        let backdrop = [255, 255, 255];
-        const ancestors = [];
-        for (let parent = element.parentElement; parent; parent = parent.parentElement) ancestors.unshift(parent);
-        for (const parent of ancestors) backdrop = composite(rgb(getComputedStyle(parent).backgroundColor), backdrop);
-        const base = composite(rgb(style.backgroundColor), backdrop);
-        const brightness = Number(style.filter.match(/brightness\(([\d.]+)\)/)?.[1] || 1);
-        const filtered = channels => format(channels.map(channel => Math.min(255, Math.round(channel * brightness))));
-        // A padding-box fill covers the lower border-only gradient behind the label.
-        const image = style.backgroundClip === 'padding-box, border-box'
-            ? style.backgroundImage.split(/, (?=linear-gradient)/)[0] : style.backgroundImage;
-        const stops = image.match(/(?:rgba?|color)\([^)]+\)/g) || [];
-        return {
-            background: style.backgroundColor, image: style.backgroundImage,
-            ink: filtered(rgb(style.color)),
-            stops: stops.length ? stops.map(stop => filtered(composite(rgb(stop), base))) : [filtered(base)],
-            children: [...element.querySelectorAll('i, span')].map(child => filtered(rgb(getComputedStyle(child).color))),
-            filter: style.filter,
-            shadow: style.boxShadow,
-            outline: `${style.outlineStyle} ${style.outlineWidth} ${style.outlineColor}`,
+        const measure = button => {
+            const style = getComputedStyle(button);
+            let backdrop = [255, 255, 255];
+            const ancestors = [];
+            for (let parent = button.parentElement; parent; parent = parent.parentElement) ancestors.unshift(parent);
+            for (const parent of ancestors) backdrop = composite(rgb(getComputedStyle(parent).backgroundColor), backdrop);
+            const base = composite(rgb(style.backgroundColor), backdrop);
+            const brightness = Number(style.filter.match(/brightness\(([\d.]+)\)/)?.[1] || 1);
+            const filtered = channels => format(channels.map(channel => Math.min(255, Math.round(channel * brightness))));
+            // A padding-box fill covers the lower border-only gradient behind the label.
+            const image = style.backgroundClip === 'padding-box, border-box'
+                ? style.backgroundImage.split(/, (?=linear-gradient)/)[0] : style.backgroundImage;
+            const stops = image.match(/(?:rgba?|color)\([^)]+\)/g) || [];
+            return {
+                background: style.backgroundColor, image: style.backgroundImage,
+                ink: filtered(rgb(style.color)),
+                stops: stops.length ? stops.map(stop => filtered(composite(rgb(stop), base))) : [filtered(base)],
+                children: [...button.querySelectorAll('i, span')].map(child => filtered(rgb(getComputedStyle(child).color))),
+                filter: style.filter,
+                shadow: style.boxShadow,
+                outline: `${style.outlineStyle} ${style.outlineWidth} ${style.outlineColor}`,
+            };
         };
-    });
+        const value = measure(element);
+        if (!compareRegexAccent) return value;
+
+        // Accent changes can replace the whole stage. Compare with a fresh
+        // shared button in the current stage, in the same browser call.
+        const stageApply = element.closest('#rat_drawer')?.querySelector('.rat-stage-apply');
+        if (!stageApply) return null;
+        const reference = document.createElement('button');
+        reference.className = 'menu_button menu_button_primary';
+        reference.hidden = true;
+        stageApply.parentElement.append(reference);
+        try {
+            return {
+                ...value,
+                pair: measure(reference),
+                fullOpacity: [...element.children].every(child => getComputedStyle(child).opacity === '1'),
+                height: element.getBoundingClientRect().height,
+            };
+        } finally {
+            reference.remove();
+        }
+    };
+    if (!regexSelector) return subject.evaluate(sample);
+
+    // Re-resolve the control if pressing or focusing it coincides with a redraw.
+    // Only retry finding the live control, never a measured contrast result.
+    let value;
+    await expect.poll(async () => {
+        value = await subject.evaluate(sample, regexSelector);
+        return value !== null;
+    }, { message: 'measure the current Regex Agent Themes control and its accent reference' }).toBe(true);
+    return value;
 }
 
 for (const phone of [false, true]) {
@@ -163,12 +200,13 @@ for (const phone of [false, true]) {
                 settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped', WelcomePage_PanelMode: 'full' };
                 await route.fulfill({ response, json: { ...data, settings: JSON.stringify(settings) } });
             });
-            await page.route('**/api/settings/save', acknowledgeSettingsSave);
+            await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
             await page.goto('/');
             await page.waitForFunction(() => window.NeconyanShell && document.querySelector('#rat_drawer') && !document.querySelector('#preloader'));
             await page.evaluate(() => NeconyanShell.openIncludedTool('third-party/Neconyan-Regex-Agent-Themes'));
             await page.locator('#rat_toggle_browse').click();
-            const apply = page.locator('#rat_drawer .rat-stage-apply');
+            const applySelector = '#rat_drawer .rat-stage-apply';
+            const apply = page.locator(applySelector);
             await expect(apply).toBeDisabled();
             await page.locator('#rat_drawer [data-focus-key="mode-light"]').click();
             await expect(page.locator('#rat_drawer [data-focus-key="mode-light"]')).toHaveAttribute('aria-pressed', 'true');
@@ -179,23 +217,14 @@ for (const phone of [false, true]) {
             await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; animation: none !important; }' });
             for (const shell of shells.filter(shell => shell !== 'calico')) await page.addStyleTag({ url: `/css/shell-styles/${shell}.css` });
             await page.addStyleTag({ url: '/css/neconyan-kittyless.css' });
-            await apply.evaluate(element => {
-                const reference = document.createElement('button');
-                reference.id = 'regex-accent-reference';
-                reference.className = 'menu_button menu_button_primary';
-                reference.hidden = true;
-                element.parentElement.append(reference);
-            });
-            const reference = page.locator('#regex-accent-reference');
-            const selected = page.locator('#rat_drawer .rat-chip[aria-pressed="true"]');
-            const check = async (control, label) => {
-                const value = await colours(control);
-                const pair = await colours(reference);
+            const selectedSelector = '#rat_drawer .rat-chip[aria-pressed="true"]';
+            const check = async (selector, label) => {
+                const { pair, fullOpacity, height, ...value } = await colours(page, selector);
                 const minimum = Math.min(...value.stops.map(stop => contrastRatio(value.ink, stop)));
                 if (minimum < 4.5 || value.ink !== pair.ink || JSON.stringify(value.stops) !== JSON.stringify(pair.stops)
                     || value.children.some(ink => ink !== value.ink)) findings.push({ label, minimum, ...value, pair });
-                expect(await control.evaluate(element => [...element.children].every(child => getComputedStyle(child).opacity === '1')), `${label}: counts keep full contrast`).toBe(true);
-                if (phone) expect((await control.boundingBox()).height, `${label}: phone tap height`).toBeGreaterThanOrEqual(44);
+                expect(fullOpacity, `${label}: counts keep full contrast`).toBe(true);
+                if (phone) expect(height, `${label}: phone tap height`).toBeGreaterThanOrEqual(44);
             };
             for (const theme of ['Neconyan Calico Dark', 'Neconyan Calico']) {
                 for (const profile of [null, 'Mint Glass', 'Plum Wine']) {
@@ -208,22 +237,24 @@ for (const phone of [false, true]) {
                             if (shell === 'kittyless') document.documentElement.dataset.sbKittyless = 'true';
                             else delete document.documentElement.dataset.sbKittyless;
                         }, shell);
-                        for (const [name, control] of [['apply', apply], ['selected filter', selected]]) {
+                        for (const [name, selector] of [['apply', applySelector], ['selected filter', selectedSelector]]) {
+                            const control = page.locator(selector);
                             const label = `${theme}/${profile || 'default'}/${shell}/${name}`;
-                            await control.scrollIntoViewIfNeeded();
+                            // Hover scrolls the live button into view and re-resolves it if the panel redraws.
+                            await control.hover();
                             await page.mouse.move(0, 0);
-                            await check(control, `${label}/rest`);
+                            await check(selector, `${label}/rest`);
                             await control.focus();
                             await page.keyboard.press('Shift');
-                            await check(control, `${label}/focus`);
+                            await check(selector, `${label}/focus`);
                             await control.hover();
-                            await check(control, `${label}/hover`);
+                            await check(selector, `${label}/hover`);
                             await page.mouse.down();
-                            await check(control, `${label}/pressed`);
+                            await check(selector, `${label}/pressed`);
                             // Release away from the control so the audit does not apply a tracker theme.
                             await page.mouse.move(0, 0);
                             await page.mouse.up();
-                            await control.evaluate(element => element.blur());
+                            await control.blur();
                         }
                     }
                 }
@@ -256,7 +287,7 @@ for (const phone of [false, true]) {
                 settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped', WelcomePage_PanelMode: 'full' };
                 await route.fulfill({ response, json: { ...data, settings: JSON.stringify(settings) } });
             });
-            await page.route('**/api/settings/save', acknowledgeSettingsSave);
+            await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
             await page.goto('/');
             await page.waitForFunction(() => window.NeconyanShell && document.querySelector('.neconyan-home') && !document.querySelector('#preloader'));
             // Measure settled colours, not intermediate transition frames between shells.

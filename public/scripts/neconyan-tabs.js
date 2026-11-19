@@ -11213,7 +11213,9 @@ function openCharacterPanelTab(tabId, options = {}) {
     }
 
     if (!isCharacterPanelOpen()) {
-        toggleCharacterPanel({ preferredTab: normalizedTabId });
+        // This call activates its own tab once the drawer is open. An implicit
+        // restore can start an async library render that later replaces it.
+        toggleCharacterPanel({ restoreView: false });
     } else {
         applyMobileSurfaceExclusivity(nnMobileShellLifecycle.overlays.resolveExclusiveOpen({
             surface: nnMobileShellLifecycle.overlays.surface.CHARACTER_PANEL,
@@ -11741,7 +11743,7 @@ document.addEventListener('click', (e) => {
     characterToggleSkipExtensionIntercept = false;
 }, true);
 
-function toggleCharacterPanel({ preferredTab = null } = {}) {
+function toggleCharacterPanel({ restoreView = true } = {}) {
     injectCharacterDrawerControls();
     ensureCharacterResizeHandle();
 
@@ -11750,17 +11752,12 @@ function toggleCharacterPanel({ preferredTab = null } = {}) {
         return;
     }
 
-    const normalizedPreferredTab = preferredTab ? normalizeCharacterPanelTab(preferredTab) : '';
-    if (normalizedPreferredTab) {
-        nnState.characterDrawer.lastTab = normalizedPreferredTab;
-    }
-
     applyMobileSurfaceExclusivity(nnMobileShellLifecycle.overlays.resolveExclusiveOpen({
         surface: nnMobileShellLifecycle.overlays.surface.CHARACTER_PANEL,
         isMobileViewport: isMobileViewport(),
     }));
     closeAllDropdowns({ except: 'characters', closeSurfaces: false });
-    restoreLastCharacterPanelView();
+    if (restoreView) restoreLastCharacterPanelView();
 
     // iOS Safari clips position:fixed inside overflow:hidden ancestors.
     // Temporarily allow overflow on the parent so the panel renders.
@@ -11801,7 +11798,7 @@ function toggleCharacterPanel({ preferredTab = null } = {}) {
             forceDrawerState('right-nav-panel', true, '#rightNavDrawerIcon');
         }
 
-        restoreLastCharacterPanelView();
+        if (restoreView) restoreLastCharacterPanelView();
 
         syncChatbarVisibilityState();
         syncMobileShellDrawerBounds();
