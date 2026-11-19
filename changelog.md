@@ -14,6 +14,7 @@
 - PR #765 (2026-11-19) `ci: keep old and new blocking labels working during migration`
 - PR #766 (2026-11-19) `ci: use one catalogue for cat-themed github labels`
 - PR #767 (2026-11-19) `ci: verify all release files with one command`
+- PR #768 (2026-11-19) `fix(scratchpad): let avatar proposals follow the image count`
 
 ## v1.5.6
 
