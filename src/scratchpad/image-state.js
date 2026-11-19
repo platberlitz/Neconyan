@@ -33,6 +33,13 @@ export function normaliseStoredImages(value) {
         if (typeof input.imageHash === 'string' && /^[a-f0-9]{64}$/.test(input.imageHash)) image.imageHash = input.imageHash;
         for (const key of ['url', 'previousAvatarUrl']) if (typeof input[key] === 'string' && SCRATCHPAD_IMAGE_URL.test(input[key])) image[key] = input[key];
         for (const key of ['width', 'height']) if (Number.isSafeInteger(input[key]) && input[key] > 0 && input[key] <= 32768) image[key] = input[key];
+        const more = image.url && Array.isArray(input.more) ? input.more.slice(0, 9).flatMap(picture => {
+            if (!picture || typeof picture !== 'object' || typeof picture.url !== 'string' || !SCRATCHPAD_IMAGE_URL.test(picture.url)
+                || typeof picture.imageHash !== 'string' || !/^[a-f0-9]{64}$/.test(picture.imageHash)) return [];
+            return [{ url: picture.url, imageHash: picture.imageHash, ...Object.fromEntries(['width', 'height']
+                .filter(key => Number.isSafeInteger(picture[key]) && picture[key] > 0 && picture[key] <= 32768).map(key => [key, picture[key]])) }];
+        }) : [];
+        if (more.length) image.more = more;
         if (image.state === 'done' && !image.url) { image.state = 'failed'; image.error = 'The saved image address is unavailable.'; }
         images[index] = image;
     }

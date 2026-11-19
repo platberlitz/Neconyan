@@ -63,7 +63,7 @@ import { canRehearse } from './rehearsal.js';
 import { assistantFeedbackTone, DEFAULT_FEEDBACK_TONE, FEEDBACK_TONES, isFeedbackTone, normaliseFeedbackTone } from './feedback-tone.js';
 import { feedbackToneLabel, feedbackToneSlider } from './tone-slider.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261118-feedback-tone';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261119-multi-image';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;

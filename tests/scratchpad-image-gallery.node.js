@@ -113,3 +113,19 @@ test('the Gallery endpoint uses the signed-in account and rejects a stale accoun
     assert.equal((await post('first')).status, 409);
     assert.deepEqual(new Set((await (await post('second')).json()).images.map(image => image.url)), new Set([second.url, sharedName.url]));
 });
+
+test('Gallery lists every picture of a batch', t => {
+    const a = account(t);
+    const first = a.image('first');
+    const second = a.image('second');
+    const third = a.image('third');
+    fs.utimesSync(first.filename, 1000, 1000);
+    fs.utimesSync(second.filename, 2000, 2000);
+    fs.utimesSync(third.filename, 3000, 3000);
+    const hash = createHash('sha256').update(png).digest('hex');
+    first.message.images[0].more = [{ url: second.url, imageHash: hash, width: 1, height: 1 }, { url: third.url, imageHash: '0'.repeat(63) }];
+    a.save('a', [{ messages: [first.message] }]);
+    const found = a.list();
+    assert.deepEqual(found.map(image => image.url), [second.url, first.url]);
+    assert.equal(found[0].prompt, 'Picture first');
+});

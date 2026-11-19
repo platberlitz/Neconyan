@@ -944,7 +944,8 @@ export function projectPending(bucket, readJob) {
 
 export function projectPendingImages(bucket, readJob) {
     for (const session of bucket.sessions) for (const message of session.messages) for (const image of Object.values(message.images ?? {})) {
-        if (image.url) continue;
+        // A batch that stopped part-way keeps its saved pictures, and a retry of it still shows as running.
+        if (image.url && image.state === 'done') continue;
         const job = image.jobId && readJob(image.jobId);
         if (job && ['queued', 'running', 'waiting'].includes(job.state)) {
             image.state = 'pending';
