@@ -543,7 +543,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261119-gallery-delete-r2';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261120-simple-guided';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -21385,6 +21385,7 @@ function applyBottomChatBarButtonLayout() {
     };
 
     applyZone('main', container);
+    state.chatPickerButton?.after(state.guidedActions);
     if (state.secondaryRow instanceof HTMLElement) {
         const managementCluster = state.secondaryRow.querySelector('.sb-bottom-chat-management-actions');
         applyZone('actions', managementCluster instanceof HTMLElement ? managementCluster : state.secondaryRow);
@@ -21469,6 +21470,7 @@ function buildBottomChatBar() {
         setBottomChatSearchOpen(shouldOpen, { focusInput: shouldOpen });
     });
     searchToggleBtn.setAttribute('aria-controls', 'sb-bottom-chat-search-field');
+    const guidedActions = createElement('div', { id: 'sb-bottom-chat-guided-actions' });
     const navCluster = createElement('div', { className: 'sb-bottom-chat-nav-actions' });
     const managementCluster = createElement('div', { className: 'sb-bottom-chat-management-actions' });
     const secondaryRow = createElement('div', {
@@ -21519,6 +21521,7 @@ function buildBottomChatBar() {
         chatPicker,
         personaBubble,
         reasoningButton,
+        guidedActions,
         navCluster,
         scratchpadButton: scratchpadBtn,
         purrksButton: purrksBtn,
@@ -21564,6 +21567,7 @@ function buildBottomChatBar() {
     }
 
     bindBottomChatBarEvents();
+    document.dispatchEvent(new Event('neconyan:bottom-chat-bar-built'));
     scheduleBottomChatBarRefresh(0);
 }
 

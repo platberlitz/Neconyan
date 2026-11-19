@@ -3303,6 +3303,20 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
         touch-action: pan-x;
     }
 
+    html.neconyan-simple-mode #sb-bottom-chat-bar:has(> #sb-bottom-chat-guided-actions:not(:empty)) {
+        --sb-bottom-chat-mobile-guided-size: max(44px, var(--sb-bottom-chat-mobile-button-size));
+    }
+
+    #sb-bottom-chat-guided-actions {
+        grid-column: -4 / span 2;
+        grid-row: 1;
+        justify-content: flex-end;
+    }
+
+    #sb-bottom-chat-guided-actions > .sb-bottom-chat-btn {
+        --sb-bottom-chat-mobile-button-size: var(--sb-bottom-chat-mobile-guided-size);
+    }
+
     #sb-bottom-chat-secondary-row {
         touch-action: pan-x;
     }

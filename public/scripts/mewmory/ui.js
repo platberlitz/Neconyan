@@ -2913,7 +2913,7 @@ function loadMewmoryStyles() {
     if (!style) {
         style = document.createElement('link');
         style.id = 'mewmory-css';
-        style.href = 'css/mewmory.css?v=20261119-gallery-delete-r2';
+        style.href = 'css/mewmory.css?v=20261120-simple-guided';
         document.head.append(style);
     }
     if (style.rel !== 'stylesheet') {

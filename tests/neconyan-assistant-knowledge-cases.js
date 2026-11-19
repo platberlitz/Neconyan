@@ -241,6 +241,8 @@ export const refreshedKnowledgeCases = [
     ['How do I start the Taro Agents tour?', 'agents.tour', 'without saving changes, running agents'],
     ['How do I hide all tour buttons?', 'navigation.page-tours', 'Settings → Appearance → Page tours'],
     ['How do I turn off Simple Mode?', 'start.simple-mode', 'Show all features in the sidebar'],
+    ['Where is Guided Swipe in Simple Mode?', 'tools.guided-simple', 'next to Switch chat in the bottom chat bar'],
+    ['Does Guided Impersonation in Simple Mode send my reply?', 'tools.guided-simple', 'in the composer without sending it'],
     ['How do I update in Simple Mode?', 'start.simple-updates', 'Open menu → Updates'],
     ['What happens when I pet the sleeping cat?', 'chat.sleepers', 'Enter or Space'],
     ['Where is the Simple Mode APK update?', 'start.simple-updates', 'Update APK inside the Android app'],
