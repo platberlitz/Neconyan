@@ -51,6 +51,7 @@
 - **Notebooks** on phones keeps the note list, search and New note in view, with the rest under 'Notebook options' and 'Note tools', so the note text starts on the first screen.
 - On Windows, Neconyan no longer refuses to start with `DATA_ROOT_OWNED` after a few days off, when another program had taken the old server's process number.
 - New accounts no longer see an 'Agents updated' notice about Pawthfinder's tools, and dragging a tool up into another sidebar section on a phone drops it where you let go instead of one row lower.
+- The first Notebooks open after an install or update no longer sits on a blank page for several seconds.
 - A 'Session expired' notice now says when you've been signed out, and your open page and draft stay in place.
 - Translated interfaces no longer translate names you chose, so a prompt called 'Draft' or a lorebook called 'Notes' shows as written.
 - Favourite connection profiles appear only under '★ Favorites', and long persona and Scenario Note names wrap instead of spilling out.
