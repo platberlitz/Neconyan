@@ -49,7 +49,7 @@ test('Popular uses the existing serialised Janitor browser and a private fixed r
         assert.equal(await startBeauBridge(browser, ''), null);
         bridge = await startBeauBridge(browser, socketPath);
         assert.equal(fs.statSync(socketPath).mode & 0o777, 0o600);
-        assert.deepEqual((await get()).data, payload);
+        assert.deepEqual((await get()).data, { ...payload, origin: 'https://janitorai.com' });
         assert.equal((await get()).status, 200);
         assert.equal(launches, 1);
         // The second request is served from the shared five-minute copy.

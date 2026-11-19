@@ -7,6 +7,8 @@ const { janitorai } = await import(`${SERVER}/sources/janitorai.js`);
 const { getSource } = await import(`${SERVER}/registry.js`);
 
 const ID = 'd9e73da5-e776-4a89-8863-fb1a4b4bbf4d';
+const PRIMARY = 'https://janitorai.com';
+const BACKUP = 'https://jani.com';
 
 function character(index, extra = {}) {
     const hex = index.toString(16).padStart(12, '0');
@@ -32,23 +34,28 @@ function fakeBrowser({ payload = () => ({ data: [character(1)] }), clock, sessio
     const reads = [];
     const probes = [];
     const visits = [];
+    const origins = [];
+    let currentUrl = PRIMARY;
     const page = {
-        url: () => 'https://janitorai.com/',
+        url: () => currentUrl,
         goto: async (url) => {
             visits.push(url);
+            currentUrl = url;
         },
         setDefaultTimeout: () => {},
         close: async () => {},
         context: () => ({ on: () => {}, off: () => {} }),
         evaluate: async (_fn, arg) => {
+            if (arg?.origin) assert.equal(arg.origin, new URL(currentUrl).origin);
             if (arg?.probe) {
                 probes.push(visits.length);
-                return { expiresAt: session(probes.length, visits.length) };
+                return { expiresAt: session(probes.length, visits.length, arg.origin) };
             }
             if (typeof arg?.target !== 'string') {
                 return null;
             }
             const url = new URL(arg.target);
+            origins.push(url.origin);
             reads.push(Object.fromEntries(url.searchParams));
             const body = payload(url);
             return body instanceof Error ? { status: 403, body: '' } : { status: 200, body: JSON.stringify(body) };
@@ -60,7 +67,7 @@ function fakeBrowser({ payload = () => ({ data: [character(1)] }), clock, sessio
         now: clock ?? Date.now,
         ...(sessionWaitMs === undefined ? {} : { sessionWaitMs }),
     });
-    return { browser, reads, probes, visits };
+    return { browser, reads, probes, visits, origins };
 }
 
 test('JanitorAI front page reads ask for the right list and page', async () => {
@@ -109,8 +116,21 @@ test('a failed list read is not kept', async () => {
         return true;
     });
     fail = false;
-    assert.deepEqual(await browser.frontpage('popular'), { data: [] });
-    assert.equal(reads.length, 2);
+    assert.deepEqual(await browser.frontpage('popular'), { data: [], origin: PRIMARY });
+    assert.equal(reads.length, 3);
+});
+
+test('a failed primary read uses the signed-in backup and links the resulting cards there', async () => {
+    const { browser, origins, visits } = fakeBrowser({
+        payload: (url) => url.origin === PRIMARY ? new Error('blocked') : { data: [character(1)], origin: PRIMARY },
+    });
+    const result = await janitorai.search({ frontpage: browser.frontpage }, { sort: 'popular' });
+    assert.deepEqual(origins, [PRIMARY, BACKUP]);
+    assert.deepEqual(visits, [BACKUP]);
+    assert.equal(result.items[0].pageUrl, `${BACKUP}/characters/${character(1).id}_character-character-1`);
+    assert.equal(result.items[0].importUrl, result.items[0].pageUrl);
+    await browser.frontpage('latest');
+    assert.deepEqual(origins, [PRIMARY, BACKUP, BACKUP]);
 });
 
 // JanitorAI answers an expired or missing token with its signed-out list and
@@ -136,7 +156,7 @@ test('a token about to expire counts as expired', async () => {
 test('a session that is never renewed asks for a login and is not cached', async () => {
     let renewed = false;
     const { browser, reads, visits } = fakeBrowser({
-        session: () => Date.now() + (renewed ? HOUR : -HOUR),
+        session: (_probe, _visits, origin) => origin === BACKUP ? null : Date.now() + (renewed ? HOUR : -HOUR),
         sessionWaitMs: 1500,
     });
     await assert.rejects(browser.frontpage('trending24'), (error) => {
@@ -146,7 +166,7 @@ test('a session that is never renewed asks for a login and is not cached', async
         return true;
     });
     assert.equal(reads.length, 0, 'no signed-out list is read');
-    assert.deepEqual(visits, ['https://janitorai.com'], 'the site is loaded again once to start renewal');
+    assert.deepEqual(visits, [PRIMARY, BACKUP], 'the primary site is loaded again once to start renewal, then the backup is checked');
     renewed = true;
     await browser.frontpage('trending24');
     assert.equal(reads.length, 1, 'the next request reads the list instead of a kept failure');
@@ -158,7 +178,7 @@ test('a browser with no session asks for a login without the full wait', async (
     await assert.rejects(browser.frontpage('popular'), (error) => error.code === 'janny_login_required');
     assert.ok(Date.now() - started < 5000);
     assert.equal(reads.length, 0);
-    assert.deepEqual(visits, []);
+    assert.deepEqual(visits, [BACKUP]);
 });
 
 test('JanitorAI is registered as a list-only source', () => {

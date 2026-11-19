@@ -27,7 +27,7 @@ function jannyCharacterUrl(uuid) {
  * Turns a JannyAI or JanitorAI character link, or a Janny "_character" UUID,
  * into the canonical address the BotSearcher browser import accepts.
  * @param {string} value URL or UUID given to the importer.
- * @returns {string|null} https://jannyai.com/characters/<uuid>, or null for anything else.
+ * @returns {string|null} Canonical JannyAI or backup JanitorAI character URL.
  */
 export function canonicalJannyCharacterUrl(value) {
     const text = String(value ?? '').trim();
@@ -41,8 +41,9 @@ export function canonicalJannyCharacterUrl(value) {
     }
     if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null;
     const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
-    if (host !== 'jannyai.com' && host !== 'janitorai.com') return null;
+    if (host !== 'jannyai.com' && host !== 'janitorai.com' && host !== 'jani.com') return null;
     const uuid = parsed.pathname.match(/^\/characters\/([^/]+)/i)?.[1]?.match(JANNY_UUID_PATTERN)?.[0];
+    if (uuid && host === 'jani.com') return `https://jani.com/characters/${uuid.toLowerCase()}`;
     return uuid ? jannyCharacterUrl(uuid) : null;
 }
 
