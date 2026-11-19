@@ -240,7 +240,8 @@ for (const phone of [false, true]) {
                         for (const [name, selector] of [['apply', applySelector], ['selected filter', selectedSelector]]) {
                             const control = page.locator(selector);
                             const label = `${theme}/${profile || 'default'}/${shell}/${name}`;
-                            await control.scrollIntoViewIfNeeded();
+                            // Hover scrolls the live button into view and re-resolves it if the panel redraws.
+                            await control.hover();
                             await page.mouse.move(0, 0);
                             await check(selector, `${label}/rest`);
                             await control.focus();
@@ -253,7 +254,7 @@ for (const phone of [false, true]) {
                             // Release away from the control so the audit does not apply a tracker theme.
                             await page.mouse.move(0, 0);
                             await page.mouse.up();
-                            await control.evaluate(element => element.blur());
+                            await control.blur();
                         }
                     }
                 }
