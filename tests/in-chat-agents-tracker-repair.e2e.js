@@ -16,6 +16,9 @@ const repaired = `[METER|Alhaitham|Confidant|💚 STABLE|🌅 WARMING]\n${body}\
 function configureTrackerSettings(saved) {
     saved.extension_settings.connectionManager.profiles[0].model = MODEL;
     saved.accountStorage = { ...saved.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped' };
+    // Programmatic chat opens schedule a synthetic composer click. It counts
+    // as an outside click and can close More while the test is opening it.
+    saved.power_user.auto_focus_chat_input = false;
 }
 
 function labelBoundsWithinButton(element) {
@@ -39,8 +42,9 @@ async function openTrackerChat(account, chatName, broken, agentOverrides = {}, {
         roleplay: { account: vacancy.account, vacancy: vacancy.vacancy, operationKey: randomUUID() },
     });
     const page = await account.open({ workspace: false });
-    // eslint-disable-next-line playwright/no-networkidle -- Inspect only after the disposable preview finishes startup.
-    await page.waitForLoadState('networkidle');
+    // The extension binds its message-action listeners at the end of first
+    // start. The fixture's Dice Roller check can pass earlier on a second tab.
+    expect(await page.evaluate(async () => (await import('/scripts/settings-setup.js')).waitForSettingsSetup())).toBe(true);
     await page.evaluate(async ({ avatar, chatName, agentOverrides, templateName }) => {
         const context = window.SillyTavern.getContext();
         await context.getCharacters();
@@ -53,6 +57,32 @@ async function openTrackerChat(account, chatName, broken, agentOverrides = {}, {
     }, { avatar: account.avatar, chatName, agentOverrides, templateName });
     await acknowledgeActiveSettings(page);
     return { page, request };
+}
+
+async function openTrackerActions(message, info) {
+    const more = message.locator('.extraMesButtonsHint');
+    const fix = message.locator('.mes_fix_trackers');
+    try {
+        await more.click();
+        await expect(more).toHaveAttribute('aria-expanded', 'true');
+        await expect(fix).toBeVisible();
+    } catch (error) {
+        const state = await message.evaluate(async element => {
+            const { areAgentsGloballyEnabled, getAgents, isTrackerFixAgent } = await import('/scripts/extensions/in-chat-agents/agent-store.js');
+            const button = element.querySelector('.mes_fix_trackers');
+            return {
+                menuExpanded: element.querySelector('.extraMesButtonsHint')?.getAttribute('aria-expanded'),
+                buttonDisplay: button?.style.display,
+                user: element.getAttribute('is_user'),
+                system: element.getAttribute('is_system'),
+                agentsEnabled: areAgentsGloballyEnabled(),
+                trackers: getAgents().filter(isTrackerFixAgent).map(agent => agent.id),
+            };
+        });
+        await info.attach('tracker-action-state', { body: JSON.stringify(state), contentType: 'application/json' });
+        throw error;
+    }
+    return fix;
 }
 
 for (const phone of [false, true]) {
@@ -119,8 +149,7 @@ for (const { phone, kind } of [false, true].flatMap(phone => ['header', 'field o
         const text = message.locator('.mes_text');
         await expect(text).toContainText(broken.split('\n')[0]);
         await expect(text.locator('details')).toHaveCount(0);
-        await message.locator('.extraMesButtonsHint').click();
-        const fixButton = message.locator('.mes_fix_trackers');
+        const fixButton = await openTrackerActions(message, info);
         const label = fixButton.locator('.neconyan-action-label');
         const restingLabelBounds = await label.evaluate(labelBoundsWithinButton);
         await fixButton.click();
@@ -273,7 +302,7 @@ test('Run automatic falls back to the page when the server has no room for every
     expect(app.provider.calls).toHaveLength(ids.length);
 });
 
-test('with server replies chosen, Fix Trackers and the Companion wrench repair on the server', async ({ app }) => {
+test('with server replies chosen, Fix Trackers and the Companion wrench repair on the server', async ({ app }, info) => {
     const account = await app.account({ activeConnection: true, configureSettings(saved) {
         configureTrackerSettings(saved);
         saved.power_user.reply_generation_location = 'server';
@@ -288,8 +317,7 @@ test('with server replies chosen, Fix Trackers and the Companion wrench repair o
     });
     const message = page.locator('#chat .mes[mesid="0"]');
     const text = message.locator('.mes_text');
-    await message.locator('.extraMesButtonsHint').click();
-    await message.locator('.mes_fix_trackers').click();
+    await (await openTrackerActions(message, info)).click();
     await expect(text.locator('details').first()).toBeVisible({ timeout: 60000 });
     await expect(text).not.toContainText('[METER|');
     await expect.poll(async () => (await account.post('/api/chats/get', request))[1].mes)

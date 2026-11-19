@@ -12,9 +12,12 @@ export const PIXAI_DEFAULT_PROMPT_HELPER = "disable";
 export const PIXAI_MODES = Object.freeze(["lite", "standard", "pro", "ultra"]);
 export const PIXAI_PROMPT_HELPERS = Object.freeze(["disable", "enable", "low", "medium"]);
 
+// PixAI refuses a mode the model does not offer (422 INVALID_INPUT); Tsubaki.3 offers only Pro and Ultra.
 export const PIXAI_MODELS = Object.freeze([
-    Object.freeze({ id: "2024383379556065549", name: "Tsubaki.3", family: "tsubaki" }),
-    Object.freeze({ id: "1983308862240288769", name: "Tsubaki.2", family: "tsubaki" }),
+    Object.freeze({ id: "2024383379556065549", name: "Tsubaki.3", family: "tsubaki",
+        modes: Object.freeze(["pro", "ultra"]), defaultMode: "pro" }),
+    Object.freeze({ id: "1983308862240288769", name: "Tsubaki.2", family: "tsubaki",
+        modes: PIXAI_MODES, defaultMode: PIXAI_DEFAULT_MODE }),
     Object.freeze({ id: "1861558740588989558", name: "Haruka v2", family: "sdxl" }),
     Object.freeze({ id: "1954632828118619567", name: "Hoshino v2", family: "sdxl" }),
 ]);
@@ -71,8 +74,19 @@ export function getPixaiModelName(model) {
     return PIXAI_MODELS.find(entry => entry.id === id)?.name || "";
 }
 
-export function normalizePixaiMode(value) {
-    return PIXAI_MODES.includes(value) ? value : PIXAI_DEFAULT_MODE;
+/** The modes a Tsubaki model accepts; empty for models that take no mode. */
+export function getPixaiModes(model) {
+    const id = normalizePixaiModel(model);
+    return PIXAI_MODELS.find(entry => entry.id === id)?.modes || [];
+}
+
+/** The saved mode when the model offers it, otherwise that model's own default. */
+export function normalizePixaiMode(value, model = PIXAI_DEFAULT_MODEL) {
+    const id = normalizePixaiModel(model);
+    const entry = PIXAI_MODELS.find(item => item.id === id);
+    const modes = entry?.modes || PIXAI_MODES;
+    if (modes.includes(value)) return value;
+    return entry?.defaultMode || PIXAI_DEFAULT_MODE;
 }
 
 export function normalizePixaiPromptHelper(value) {
@@ -143,7 +157,7 @@ export function buildPixaiImageRequest({
         sampler: undefined,
         seed: undefined,
     };
-    if (family === "tsubaki") body.mode = normalizePixaiMode(mode);
+    if (family === "tsubaki") body.mode = normalizePixaiMode(mode, modelVersionId);
     if (family === "sdxl") {
         const sampling = {};
         const method = PIXAI_SAMPLER_METHODS[sampler];
@@ -227,21 +241,20 @@ export async function createPixaiTask({ body, apiKey, fetchImpl = globalThis.fet
     return id;
 }
 
-/** The finished image of a completed task: its URL, or the media ID to look the URL up by. */
+/** Keep the media ID even when the task already provides a URL. */
 export function getPixaiTaskOutput(task) {
     const outputs = task?.outputs && typeof task.outputs === "object" ? task.outputs : {};
     const urls = Array.isArray(outputs.mediaUrls) ? outputs.mediaUrls : [];
     const ids = Array.isArray(outputs.mediaIds) ? outputs.mediaIds : [];
-    const url = urls.find(value => typeof value === "string" && value.trim());
-    if (url) return { url: url.trim() };
+    const url = urls.find(value => typeof value === "string" && value.trim())?.trim();
     const mediaId = ids.map(value => (typeof value === "number" ? String(value) : value))
         .find(value => typeof value === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(value));
-    return mediaId ? { mediaId } : null;
+    return url || mediaId ? { url, mediaId } : null;
 }
 
 export function pickPixaiMediaUrl(items, mediaId) {
     const list = Array.isArray(items) ? items : (Array.isArray(items?.data) ? items.data : []);
-    const media = list.find(item => String(item?.id ?? "") === String(mediaId)) || (list.length === 1 ? list[0] : null);
+    const media = list.find(item => String(item?.id ?? "") === mediaId);
     const urls = Array.isArray(media?.urls) ? media.urls : [];
     const publicUrl = urls.find(entry => entry?.variant === "PUBLIC" && typeof entry.url === "string")?.url;
     return typeof publicUrl === "string" ? publicUrl.trim() : "";
@@ -253,11 +266,12 @@ export function describePixaiTaskFailure(task) {
     return `PixAI image ${status}${detail ? `: ${detail}` : ""}`;
 }
 
-function assertTrustedPixaiImageUrl(url, createError) {
-    if (!isTrustedProviderOutputUrl("pixai", url, PIXAI_CREATE_URL)) {
-        throw createError("PixAI returned an image address outside pixai.art", "QIG_UNSAFE_IMAGE_URL");
-    }
-    return url;
+function isTrustedPixaiImageUrl(url) {
+    return isTrustedProviderOutputUrl("pixai", url, PIXAI_CREATE_URL);
+}
+
+function unsafePixaiImageUrl(createError) {
+    return createError("PixAI returned an image address outside its own image hosts", "QIG_UNSAFE_IMAGE_URL");
 }
 
 /**
@@ -299,7 +313,9 @@ export async function pollPixaiTask({
         if (status === "completed") {
             const output = getPixaiTaskOutput(task);
             if (!output) throw createError("PixAI finished without an image", "QIG_BAD_IMAGE");
-            if (output.url) return assertTrustedPixaiImageUrl(output.url, createError);
+            if (output.url && isTrustedPixaiImageUrl(output.url)) return output.url;
+            if (!output.mediaId) throw unsafePixaiImageUrl(createError);
+            // Recover the same image through PixAI without fetching an untrusted URL or submitting again.
             const lookup = await fetchImpl(`${PIXAI_API_BASE}/media/batch?ids=${encodeURIComponent(output.mediaId)}`, {
                 method: "GET",
                 headers: authHeaders(apiKey),
@@ -309,7 +325,8 @@ export async function pollPixaiTask({
             if (!lookup.ok) throw createError(await describePixaiError(lookup, "image lookup"), "QIG_PROVIDER_ERROR");
             const url = pickPixaiMediaUrl(await readJson(lookup, createError), output.mediaId);
             if (!url) throw createError("PixAI finished, but its image address is unavailable", "QIG_BAD_IMAGE");
-            return assertTrustedPixaiImageUrl(url, createError);
+            if (!isTrustedPixaiImageUrl(url)) throw unsafePixaiImageUrl(createError);
+            return url;
         }
         if (status === "failed" || status === "cancelled" || status === "canceled") {
             throw createError(describePixaiTaskFailure(task), "QIG_PROVIDER_ERROR");

@@ -176,6 +176,8 @@ import {
     createPixaiTask,
     getPixaiModelFamily,
     getPixaiModelName,
+    getPixaiModes,
+    normalizePixaiMode,
     PIXAI_CREATE_URL,
     PIXAI_DEFAULT_MODE,
     PIXAI_DEFAULT_MODEL,
@@ -18522,6 +18524,20 @@ function pixaiModelOptions(currentVal) {
     return options.join("");
 }
 
+const PIXAI_MODE_LABELS = Object.freeze({
+    lite: "Lite (fastest)",
+    standard: "Standard (balanced)",
+    pro: "Pro (more detail, slower)",
+    ultra: "Ultra (most detail, slowest)",
+});
+
+// Only the modes the chosen model accepts, with the one that will be sent selected.
+function pixaiModeOptions(model, mode) {
+    const selected = normalizePixaiMode(mode, model);
+    return getPixaiModes(model).map(value =>
+        `<option value="${value}" ${value === selected ? "selected" : ""}>${PIXAI_MODE_LABELS[value]}</option>`).join("");
+}
+
 // The Model picker names the recommended models; a custom version ID gets its own field.
 // Mode applies to Tsubaki models only, so it is hidden for anything else.
 function syncPixaiModelControls(settings = getSettings(), { showCustom = null } = {}) {
@@ -18535,6 +18551,8 @@ function syncPixaiModelControls(settings = getSettings(), { showCustom = null } 
     if (customWrap) customWrap.hidden = !custom;
     if (customInput && document.activeElement !== customInput) customInput.value = custom ? model : "";
     if (modeWrap) modeWrap.hidden = getPixaiModelFamily(model) !== "tsubaki";
+    const modeSelect = document.getElementById("qig-pixai-mode");
+    if (modeSelect) modeSelect.innerHTML = pixaiModeOptions(model, settings?.pixaiMode);
 }
 
 function buildOptions(items, selectedValue, labelFn) {
@@ -18956,12 +18974,7 @@ function createUI() {
                     </div>
                     <div id="qig-pixai-mode-wrap" ${getPixaiModelFamily(s.pixaiModel) === "tsubaki" ? "" : "hidden"}>
                         <label for="qig-pixai-mode">Mode</label>
-                        <select id="qig-pixai-mode">
-                            <option value="lite" ${s.pixaiMode === "lite" ? "selected" : ""}>Lite (fastest)</option>
-                            <option value="standard" ${s.pixaiMode === "standard" ? "selected" : ""}>Standard (balanced)</option>
-                            <option value="pro" ${s.pixaiMode === "pro" ? "selected" : ""}>Pro (more detail, slower)</option>
-                            <option value="ultra" ${s.pixaiMode === "ultra" ? "selected" : ""}>Ultra (most detail, slowest)</option>
-                        </select>
+                        <select id="qig-pixai-mode">${pixaiModeOptions(s.pixaiModel, s.pixaiMode)}</select>
                         <small>Tsubaki models only. Some modes need a higher PixAI plan.</small>
                     </div>
                     <label for="qig-pixai-prompt-helper">Prompt helper</label>

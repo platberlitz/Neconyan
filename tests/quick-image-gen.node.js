@@ -565,19 +565,22 @@ test('CivitAI saves a workflow ID and downloads a validated 308 CDN redirect wit
 });
 
 const PIXAI_IMAGE = 'https://images-ng.pixai.art/images/orig/0f6a0d1c-2a39-4f10-9b9e-4c3f1d2e5a7b';
+const PIXAI_SIGNED_IMAGE = 'https://d2doj8oszwtcqy.cloudfront.net/images/temp/6a1f0c2e-8d4b-4e7a-9c3f-2b5d7e9a1c4f'
+    + '?Expires=1795000000&Key-Pair-Id=K1QNL3S474VQ35&Signature=abc~def_ghi';
 
 test('PixAI saves one task submission, polls through an early 404 and downloads without its key', async () => {
     const directories = tempRoot();
     const context = jobContext(directories);
+    // Tsubaki.3 refuses the old Standard default, and PixAI returns signed CloudFront addresses.
     const settings = { provider: 'pixai', pixaiKey: 'pixai-private-key', pixaiModel: '2024383379556065549',
-        pixaiMode: 'pro', pixaiPromptHelper: 'disable', width: 832, height: 1216, steps: 30, cfgScale: 6,
+        pixaiMode: 'standard', pixaiPromptHelper: 'disable', width: 832, height: 1216, steps: 30, cfgScale: 6,
         sampler: 'euler_a', seed: -1 };
     saveImageSettings(directories, settings);
     const calls = [];
     const polls = [
         jsonResponse({ code: 'NOT_FOUND', status: 404, message: 'Task not found' }, 404),
         jsonResponse({ id: 'task-123', status: 'running' }),
-        jsonResponse({ id: 'task-123', status: 'completed', outputs: { mediaIds: ['m-1'], mediaUrls: [PIXAI_IMAGE] } }),
+        jsonResponse({ id: 'task-123', status: 'completed', outputs: { mediaIds: ['m-1'], mediaUrls: [PIXAI_SIGNED_IMAGE] } }),
     ];
     const input = { effectId: 'pixai:0', prompt: 'moonlit garden', negative: 'fog',
         settingsFingerprint: quickImageGenSettingsFingerprint(settings), wait: async () => {},
@@ -585,7 +588,7 @@ test('PixAI saves one task submission, polls through an early 404 and downloads 
             calls.push({ url, options });
             if (options.method === 'POST') return jsonResponse({ id: 'task-123', status: 'waiting' }, 201);
             if (url === 'https://api.pixai.art/v2/task/task-123') return polls.shift();
-            assert.equal(url, PIXAI_IMAGE);
+            assert.equal(url, PIXAI_SIGNED_IMAGE);
             return new Response(Buffer.from(PNG_BASE64, 'base64'), { status: 200 });
         } };
     const image = await generateQuickImageGenJobImage(context, input);
@@ -606,7 +609,7 @@ test('PixAI saves one task submission, polls through an early 404 and downloads 
     assert.deepEqual(await generateQuickImageGenJobImage(context, { ...input, fetch: () => assert.fail('PixAI replayed') }), image);
 });
 
-test('PixAI sends SDXL sampling, resolves a missing media URL and reports a failed task plainly', async () => {
+test('PixAI sends SDXL sampling, recovers an off-domain media URL and reports a failed task plainly', async () => {
     const directories = tempRoot();
     const context = jobContext(directories);
     const settings = { provider: 'pixai', pixaiKey: 'pixai-private-key', pixaiModel: '1861558740588989558',
@@ -619,15 +622,21 @@ test('PixAI sends SDXL sampling, resolves a missing media URL and reports a fail
         fetch: async (url, options) => {
             calls.push({ url, options });
             if (options.method === 'POST') return jsonResponse({ id: 'task-sdxl' }, 201);
-            if (url.endsWith('/task/task-sdxl')) return jsonResponse({ status: 'completed', outputs: { mediaIds: ['m-2'], mediaUrls: [null] } });
+            if (url.endsWith('/task/task-sdxl')) return jsonResponse({ status: 'completed',
+                outputs: { mediaIds: ['m-2'], mediaUrls: ['https://storage.example/image.png'] } });
             if (url === 'https://api.pixai.art/v2/media/batch?ids=m-2') {
+                assert.equal(options.headers.Authorization, 'Bearer pixai-private-key');
+                assert.equal(options.redirect, 'error');
                 return jsonResponse([{ id: 'm-2', type: 'IMAGE', urls: [{ variant: 'PUBLIC', url: PIXAI_IMAGE }] }]);
             }
             assert.equal(url, PIXAI_IMAGE);
             assert.equal(options.headers?.Authorization, undefined);
+            assert.equal(options.redirect, 'error');
             return new Response(Buffer.from(PNG_BASE64, 'base64'), { status: 200 });
         } });
     assert.equal(image.base64, PNG_BASE64);
+    assert.deepEqual(calls.map(({ url }) => url), ['https://api.pixai.art/v2/image/create',
+        'https://api.pixai.art/v2/task/task-sdxl', 'https://api.pixai.art/v2/media/batch?ids=m-2', PIXAI_IMAGE]);
     const submitted = JSON.parse(calls[0].options.body);
     assert.equal(submitted.mode, undefined);
     assert.equal(submitted.promptHelper, 'enable');

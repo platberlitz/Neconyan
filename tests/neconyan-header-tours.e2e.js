@@ -1,9 +1,17 @@
 /* global window, getComputedStyle */
-import { expect as baseExpect, test } from '@playwright/test';
+import { expect as baseExpect } from '@playwright/test';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+import { test } from './neconyan-conversation-durable-fixture.js';
 
-test.describe.configure({ mode: 'serial' });
 const expect = baseExpect.configure({ timeout: 20000 });
+
+async function tourAccount(app, contextOptions) {
+    return app.account({ contextOptions, configureSettings(saved) {
+        // The bundled Chat Completion preset uses scoped macros. These tests
+        // cover Nori's tour, not the opt-in prompt for the preset's macros.
+        saved.power_user.experimental_macro_engine = true;
+    } });
+}
 
 const layouts = [
     { name: 'desktop', options: { viewport: { width: 1280, height: 900 } } },
@@ -20,37 +28,26 @@ async function openPage(page, shell, tab, key) {
     return root;
 }
 
-test('Presets tour follows the Text Completion preset controls', async ({ browser }, testInfo) => {
+test('Presets tour follows the Text Completion preset controls', async ({ app }) => {
     test.setTimeout(300000);
-    const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, baseURL: testInfo.project.use.baseURL, reducedMotion: 'reduce', serviceWorkers: 'block' });
-    try {
-        const page = await context.newPage();
-        await page.goto('/', { waitUntil: 'domcontentloaded' });
-        await expect(page.locator('body')).toHaveClass(/neconyan-rail-ready/, { timeout: 120000 });
-        const skip = page.locator('#neconyan-tour-coachmark [data-tour-coach-skip]');
-        if (await skip.isVisible()) await skip.click();
-        await openPage(page, 'left', 'api', 'connections');
-        const formats = page.locator('#main_api');
-        // NovelAI and KoboldAI Classic were retired; saved values migrate to Chat Completion.
-        await expect(formats.locator('option')).toHaveText(['Chat Completion', 'Text Completion']);
-        await formats.selectOption('textgenerationwebui');
-        const root = await openPage(page, 'left', 'presets', 'presets');
-        await expect(root.locator('#sb-settings_preset_textgenerationwebui-picker-button')).toBeVisible();
-        await root.locator('.sb-shell-header .neconyan-tool-tour-button').click();
-        const card = page.locator('#neconyan-tool-tour');
-        for (const step of ['welcome', 'choose', 'save', 'copy', 'files', 'done']) {
-            await expect(card).toHaveAttribute('data-step', step);
-            await expect(card.locator('.neconyan-tool-tour-count')).toHaveText(/of 6$/);
-            await expect(page.locator('.neconyan-tool-tour-target')).toHaveCount(1);
-            await card.locator('[data-tool-tour-next]').click();
-        }
-        await expect(card).toHaveCount(0);
-        await openPage(page, 'left', 'api', 'connections');
-        await formats.selectOption('openai');
-    } finally {
-        // Teardown must not replace the assertion or action that actually failed.
-        await context.close().catch(() => {});
+    const account = await tourAccount(app);
+    const page = await account.open({ workspace: false, readyTimeout: 120000 });
+    await openPage(page, 'left', 'api', 'connections');
+    const formats = page.locator('#main_api');
+    // NovelAI and KoboldAI Classic were retired; saved values migrate to Chat Completion.
+    await expect(formats.locator('option')).toHaveText(['Chat Completion', 'Text Completion']);
+    await formats.selectOption('textgenerationwebui');
+    const root = await openPage(page, 'left', 'presets', 'presets');
+    await expect(root.locator('#sb-settings_preset_textgenerationwebui-picker-button')).toBeVisible();
+    await root.locator('.sb-shell-header .neconyan-tool-tour-button').click();
+    const card = page.locator('#neconyan-tool-tour');
+    for (const step of ['welcome', 'choose', 'save', 'copy', 'files', 'done']) {
+        await expect(card).toHaveAttribute('data-step', step);
+        await expect(card.locator('.neconyan-tool-tour-count')).toHaveText(/of 6$/);
+        await expect(page.locator('.neconyan-tool-tour-target')).toHaveCount(1);
+        await card.locator('[data-tool-tour-next]').click();
     }
+    await expect(card).toHaveCount(0);
 });
 
 async function assertHeader(root) {
@@ -95,18 +92,12 @@ async function assertHeader(root) {
 }
 
 for (const layout of layouts) {
-    test(`title blurbs and Nori's Presets tour: ${layout.name}`, async ({ browser }, testInfo) => {
+    test(`title blurbs and Nori's Presets tour: ${layout.name}`, async ({ app }, testInfo) => {
         test.setTimeout(300000);
-        const context = await browser.newContext({ ...layout.options, baseURL: testInfo.project.use.baseURL, reducedMotion: 'reduce', serviceWorkers: 'block' });
+        const account = await tourAccount(app, layout.options);
         try {
-            if (layout.ios) await installIPhoneSafari(context, { standalone: Boolean(layout.standalone) });
-            const page = await context.newPage();
-            // The workspace loads its bundled tools after the main document.
-            // eslint-disable-next-line playwright/no-networkidle
-            await page.goto('/', { waitUntil: 'networkidle' });
-            await expect(page.locator('body')).toHaveClass(/neconyan-rail-ready/, { timeout: 120000 });
-            const skip = page.locator('#neconyan-tour-coachmark [data-tour-coach-skip]');
-            if (await skip.isVisible()) await skip.click();
+            if (layout.ios) await installIPhoneSafari(account.context, { standalone: Boolean(layout.standalone) });
+            const page = await account.open({ workspace: false, readyTimeout: 120000 });
 
             await openPage(page, 'left', 'api', 'connections');
             await page.locator('#main_api').selectOption('openai');
@@ -189,7 +180,8 @@ for (const layout of layouts) {
             await page.evaluate(() => window.NeconyanShell.openTab('right', 'settings'));
             await expect(page.locator('#user-settings-block .neconyan-shell-page-intro')).toBeEmpty();
         } finally {
-            await context.close();
+            // Teardown must not replace the assertion or action that actually failed.
+            await account.context.close().catch(() => {});
         }
     });
 }

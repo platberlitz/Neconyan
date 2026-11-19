@@ -21,7 +21,8 @@ export const PROVIDER_OUTPUT_HOST_SUFFIXES = Object.freeze({
     fal: ["fal.ai", "fal.run", "fal.media"],
     together: ["together.ai", "together.xyz"],
     zai: ["z.ai", "sfile.chatglm.cn", "cdn.bigmodel.cn"],
-    pixai: ["pixai.art"],
+    // PixAI serves finished images from its own CloudFront distribution: that one host, not all of cloudfront.net.
+    pixai: ["pixai.art", "d2doj8oszwtcqy.cloudfront.net"],
 });
 
 function hostMatchesSuffix(hostname, suffix) {
