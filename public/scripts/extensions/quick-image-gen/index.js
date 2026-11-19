@@ -1605,6 +1605,7 @@ function generateUUID() {
 
 let sessionGallery = [];
 let scratchpadGalleryRequest = null;
+const galleryDeletes = new Map();
 let galleryRepository = null;
 let galleryInitializationPromise = Promise.resolve();
 let accountStorageScope = null;
@@ -12627,12 +12628,20 @@ async function showGallery(returnFocusElement = null) {
     let scratchpadImages = [];
     let scratchpadLoading = true;
     let scratchpadFailed = false;
+    let batchEditing = false;
+    let confirming = false;
+    const selected = new Set();
     const gallery = createPopup("qig-gallery-popup", "Gallery", `
         <div class="qig-gallery-panel">
             <div class="qig-gallery-toolbar">
                 <h3 id="qig-gallery-count">Gallery (${sessionGallery.length})</h3>
-                <button id="qig-gallery-clear" class="menu_button" type="button">Clear local history</button>
+                <div class="qig-gallery-actions">
+                    <button id="qig-gallery-edit" class="menu_button" type="button">Batch Edit</button>
+                    <button id="qig-gallery-clear" class="menu_button" type="button">Clear local history</button>
+                    <button id="qig-gallery-delete-selected" class="menu_button" type="button" hidden>Delete selected</button>
+                </div>
             </div>
+            <p id="qig-gallery-selection" class="qig-muted" role="status" hidden></p>
             <div class="qig-gallery-import">
                 <input id="qig-gallery-import-url" type="text" placeholder="Paste image URL or data URL">
                 <button id="qig-gallery-import-add" class="menu_button" type="button">Add URL</button>
@@ -12649,6 +12658,95 @@ async function showGallery(returnFocusElement = null) {
         </div>`, (gallery) => {
         const grid = gallery.querySelector("#qig-gallery-grid");
         const importInput = gallery.querySelector("#qig-gallery-import-url");
+        const edit = gallery.querySelector("#qig-gallery-edit");
+        const clear = gallery.querySelector("#qig-gallery-clear");
+        const deleteSelected = gallery.querySelector("#qig-gallery-delete-selected");
+        const selection = gallery.querySelector("#qig-gallery-selection");
+        const isCurrent = () => grid.isConnected && !gallery.inert && accountStorageScope === accountScope;
+        const isBusy = () => confirming || galleryDeletes.has(accountScope);
+        const galleryItems = () => [
+            ...sessionGallery.map(item => ({ item, saved: false, key: `local:${item.id}` })),
+            ...scratchpadImages.map(item => ({ item, saved: true, key: `saved:${item.id}` })),
+        ].sort((a, b) => b.item.date - a.item.date);
+
+        const syncActions = () => {
+            const deleting = galleryDeletes.has(accountScope);
+            edit.textContent = batchEditing ? t`Done` : t`Batch Edit`;
+            edit.disabled = deleting || (!batchEditing && !grid.childElementCount);
+            clear.hidden = batchEditing;
+            clear.disabled = isBusy();
+            deleteSelected.hidden = !batchEditing;
+            deleteSelected.disabled = deleting || !selected.size;
+            selection.hidden = !batchEditing;
+            selection.textContent = batchEditing ? t`${selected.size} selected` : "";
+        };
+
+        const removePictures = async (pictures, trigger) => {
+            if (!pictures.length || isBusy()) return;
+            // Snapshot the selection at confirmation, before asynchronous Gallery loads can redraw it.
+            confirming = true;
+            const savedIds = pictures.filter(entry => entry.saved).map(({ item }) => item.id);
+            const localIds = pictures.filter(entry => !entry.saved).map(({ item }) => item.id);
+            const okButton = batchEditing ? "Delete selected" : "Delete";
+            try {
+                const message = savedIds.length
+                    ? t`Delete from Gallery? The original pictures will stay in Scratchpad.`
+                    : t`Delete from this device's Gallery?`;
+                if (!(await qigConfirm(message, { okButton })) || !isCurrent()) return;
+                const repository = galleryRepository;
+                const selectedLocal = new Set(localIds);
+                const removeLocal = async () => {
+                    if (!localIds.length) return [];
+                    if (repository) {
+                        try {
+                            return await repository.removeMany(localIds);
+                        } finally {
+                            if (accountStorageScope === accountScope && galleryRepository === repository) sessionGallery = repository.list();
+                        }
+                    }
+                    const removed = sessionGallery.filter(item => selectedLocal.has(item.id));
+                    sessionGallery = sessionGallery.filter(item => !selectedLocal.has(item.id));
+                    for (const item of removed) {
+                        releaseTransientBlobUrl(item.url);
+                        releaseTransientBlobUrl(item.thumbnail);
+                    }
+                    return removed.map(item => item.id);
+                };
+                const removeSaved = async () => {
+                    if (!savedIds.length) return [];
+                    const response = await fetch("/api/scratchpad/images/gallery/remove", {
+                        method: "POST", headers: getSameOriginJsonHeaders(), body: JSON.stringify({ ids: savedIds }),
+                    });
+                    if (!response.ok) throw new Error(`Scratchpad Gallery delete returned ${response.status}`);
+                    const { removed } = await response.json();
+                    if (!Array.isArray(removed)) throw new Error("Scratchpad Gallery delete returned an invalid result");
+                    return removed;
+                };
+                const pending = Promise.allSettled([removeLocal(), removeSaved()]);
+                galleryDeletes.set(accountScope, pending);
+                syncActions();
+                const [local, saved] = await pending;
+                galleryDeletes.delete(accountScope);
+                for (const result of [local, saved]) {
+                    if (result.status === "rejected") log(`Gallery delete failed: ${result.reason?.message || result.reason}`);
+                }
+                if (accountStorageScope !== accountScope) return;
+                const savedRemoved = new Set(saved.value || []);
+                scratchpadImages = scratchpadImages.filter(item => !savedRemoved.has(item.id));
+                if (pictures.some(({ saved, item }) => !(saved ? savedRemoved.has(item.id) : local.value?.includes(item.id)))) {
+                    qigToast.error("Could not delete all requested pictures. Try again.", "Quick Image Gen");
+                }
+                renderOpenGallery();
+            } finally {
+                confirming = false;
+                if (isCurrent()) {
+                    syncActions();
+                    if (!gallery.contains(document.activeElement)) {
+                        restoreQigPopupFocus(trigger.isConnected && !trigger.disabled ? trigger : edit.disabled ? importInput : edit);
+                    }
+                }
+            }
+        };
         gallery.querySelector("#qig-gallery-generate").onclick = () => {
             if (!globalThis.NeconyanShell?.openIncludedTool?.(extensionName)) return;
             hidePopup(gallery, { restoreFocus: false });
@@ -12660,7 +12758,13 @@ async function showGallery(returnFocusElement = null) {
         };
 
         const renderGalleryGrid = () => {
-            const items = [...sessionGallery, ...scratchpadImages].sort((a, b) => b.date - a.date);
+            const items = galleryItems();
+            const previousFocus = document.activeElement;
+            const focusedTile = previousFocus?.closest(".qig-gallery-tile");
+            const focusedIndex = focusedTile?.parentElement === grid ? [...grid.children].indexOf(focusedTile) : -1;
+            const focusedKey = focusedIndex >= 0 ? focusedTile.dataset.key : null;
+            const keys = new Set(items.map(entry => entry.key));
+            for (const key of selected) if (!keys.has(key)) selected.delete(key);
             const titleEl = gallery.querySelector("#qig-gallery-count");
             if (titleEl) titleEl.textContent = `Gallery (${items.length})`;
             const status = gallery.querySelector("#qig-gallery-status");
@@ -12669,7 +12773,11 @@ async function showGallery(returnFocusElement = null) {
             status.hidden = !status.textContent;
             grid.replaceChildren();
             gallery.querySelector("#qig-gallery-empty").hidden = Boolean(items.length) || scratchpadLoading || scratchpadFailed;
-            for (const item of items) {
+            for (const entry of items) {
+                const { item, key } = entry;
+                const tile = document.createElement("div");
+                tile.className = "qig-gallery-tile";
+                tile.dataset.key = key;
                 const card = document.createElement("button");
                 card.type = "button";
                 card.className = "qig-gallery-card";
@@ -12706,8 +12814,23 @@ async function showGallery(returnFocusElement = null) {
                     card.classList.add("qig-gallery-card--ephemeral");
                     card.title = "This image could not be stored permanently";
                 }
+                if (batchEditing) {
+                    const mark = document.createElement("span");
+                    mark.className = "qig-gallery-selection-mark";
+                    mark.setAttribute("aria-hidden", "true");
+                    mark.textContent = "✓";
+                    card.appendChild(mark);
+                    card.setAttribute("aria-pressed", String(selected.has(key)));
+                }
                 card.onclick = (e) => {
                     e.stopPropagation();
+                    if (isBusy()) return;
+                    if (batchEditing) {
+                        if (!selected.delete(key)) selected.add(key);
+                        card.setAttribute("aria-pressed", String(selected.has(key)));
+                        syncActions();
+                        return;
+                    }
                     lastPrompt = item.prompt || "";
                     lastNegative = item.negative || "";
                     lastPromptWasLLM = !!item.promptWasLLM;
@@ -12715,10 +12838,36 @@ async function showGallery(returnFocusElement = null) {
                     hidePopup(gallery, { restoreFocus: false });
                     displayImage(item, true, resultReturnFocus);
                 };
-                grid.appendChild(card);
+                tile.appendChild(card);
+                if (!batchEditing) {
+                    const remove = document.createElement("button");
+                    remove.type = "button";
+                    remove.className = "menu_button qig-gallery-delete";
+                    remove.textContent = "Delete";
+                    if (item.prompt) remove.setAttribute("aria-label", t`Delete: ${item.prompt.slice(0, 80)}`);
+                    remove.onclick = () => removePictures([entry], remove);
+                    tile.appendChild(remove);
+                }
+                grid.appendChild(tile);
+            }
+            syncActions();
+            if (focusedKey !== null) {
+                const next = [...grid.children].find(tile => tile.dataset.key === focusedKey)
+                    || grid.children[Math.min(focusedIndex, grid.childElementCount - 1)];
+                const target = next?.querySelector(previousFocus.matches(".qig-gallery-delete") ? ".qig-gallery-delete" : ".qig-gallery-card");
+                restoreQigPopupFocus(target || (edit.disabled ? importInput : edit));
             }
         };
         gallery._qigRender = renderGalleryGrid;
+
+        edit.onclick = () => {
+            if (isBusy()) return;
+            batchEditing = !batchEditing;
+            selected.clear();
+            renderGalleryGrid();
+            if (edit.disabled) restoreQigPopupFocus(importInput);
+        };
+        deleteSelected.onclick = () => removePictures(galleryItems().filter(entry => selected.has(entry.key)), deleteSelected);
 
         const runImport = async ({ insert = false } = {}) => {
             const rawUrl = importInput?.value?.trim() || "";
@@ -12735,8 +12884,9 @@ async function showGallery(returnFocusElement = null) {
             }
         };
 
-        gallery.querySelector("#qig-gallery-clear").onclick = async () => {
-            if (!(await qigConfirm("Clear this device's gallery history? Saved Scratchpad pictures will still appear.", { okButton: "Clear local history" }))) return;
+        clear.onclick = async () => {
+            if (isBusy() || batchEditing) return;
+            if (!(await qigConfirm("Clear this device's gallery history? Saved Scratchpad pictures will still appear.", { okButton: "Clear local history" })) || !isCurrent() || isBusy()) return;
             try {
                 if (galleryRepository) {
                     await galleryRepository.clear();
@@ -12781,6 +12931,8 @@ async function showGallery(returnFocusElement = null) {
         renderGalleryGrid();
     }, { contentClass: "qig-popup-content--wide", resizable: false, returnFocusElement });
     try {
+        await galleryDeletes.get(accountScope);
+        if (controller.signal.aborted || accountStorageScope !== accountScope) return;
         const response = await fetch("/api/scratchpad/images/gallery", {
             method: "POST", headers: getSameOriginJsonHeaders(), body: "{}", signal: controller.signal,
         });
