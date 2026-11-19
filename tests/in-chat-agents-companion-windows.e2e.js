@@ -232,13 +232,16 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
                 await createAgentFixture(page, firstId, 'Scene Tracker', longNote);
                 const firstWindow = page.locator(`.ica--cwin[data-agent-id="${firstId}"]`);
                 const secondWindow = page.locator(`.ica--cwin[data-agent-id="${secondId}"]`);
+                const panel = page.locator('#ica--tracker-panel');
 
                 await openPanel(page);
                 await page.locator(`[data-agent-id="${firstId}"] [data-action="panel-open-window"]`).click();
                 await expect(firstWindow).toBeVisible();
+                await expect(panel).toBeHidden();
                 await openPanel(page);
                 await page.locator(`[data-agent-id="${secondId}"] [data-action="panel-open-window"]`).click();
                 await expect(secondWindow).toBeVisible();
+                await expect(panel).toBeHidden();
 
                 const stack = await page.evaluate(({ firstId, secondId }) => {
                     const first = document.querySelector(`.ica--cwin[data-agent-id="${firstId}"]`);
@@ -265,9 +268,21 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
                         firstHeaderTop: firstHead.top,
                         secondHeaderTop: secondHead.top,
                         viewportHeight: window.innerHeight,
+                        diagnostics: {
+                            viewportWidth: window.innerWidth,
+                            visualWidth: window.visualViewport?.width,
+                            visualOffsetLeft: window.visualViewport?.offsetLeft,
+                            firstPoint,
+                            firstHeader: firstHead.toJSON(),
+                            firstHeaderTarget: firstHit?.outerHTML.split('>')[0],
+                            secondPoint,
+                            secondHeader: secondHead.toJSON(),
+                            secondHeaderTarget: secondHit?.outerHTML.split('>')[0],
+                        },
                     };
                 }, { firstId, secondId });
 
+                await info.attach('companion-window-hit-test', { body: JSON.stringify(stack, null, 2), contentType: 'application/json' });
                 expect(stack.topGap).toBeGreaterThanOrEqual(stack.firstHeaderHeight + 4);
                 expect(stack.firstHeaderHit).toBe(firstId);
                 expect(stack.firstCloseHit).toBe(firstId);
