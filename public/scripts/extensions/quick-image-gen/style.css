@@ -1200,6 +1200,7 @@
 }
 
 .qig-gallery-toolbar,
+.qig-gallery-actions,
 .qig-gallery-import {
     display: flex;
     align-items: center;
@@ -1208,7 +1209,26 @@
 
 .qig-gallery-toolbar {
     justify-content: space-between;
+    flex-wrap: wrap;
     margin-bottom: 16px;
+}
+
+.qig-gallery-actions {
+    flex-wrap: wrap;
+}
+
+#qig-gallery-popup .menu_button[hidden] {
+    display: none;
+}
+
+#qig-gallery-popup .qig-gallery-actions .menu_button {
+    min-height: 44px;
+    padding-inline: 10px;
+    margin: 0;
+}
+
+#qig-gallery-selection {
+    margin: 0 0 12px;
 }
 
 .qig-gallery-toolbar h3 {
@@ -1234,6 +1254,7 @@
 
 .qig-gallery-card {
     position: relative;
+    width: 100%;
     min-height: 96px;
     overflow: hidden;
     padding: 0;
@@ -1242,6 +1263,63 @@
     background: var(--qig-surface);
     color: var(--SmartThemeBodyColor);
     cursor: pointer;
+}
+
+.qig-gallery-tile {
+    position: relative;
+    min-width: 0;
+}
+
+#qig-gallery-popup #qig-gallery-grid .qig-gallery-tile .qig-gallery-delete.menu_button:not(.disabled):not([disabled]) {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    z-index: 1;
+    width: 44px;
+    inline-size: 44px;
+    min-width: 44px;
+    min-inline-size: 44px;
+    height: 44px;
+    block-size: 44px;
+    min-height: 44px;
+    min-block-size: 44px;
+    padding: 0;
+    margin: 0;
+    border: 1px solid var(--SmartThemeBorderColor);
+    background: var(--neco-surface);
+    color: var(--neco-ink);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
+}
+
+#qig-gallery-popup #qig-gallery-grid .qig-gallery-tile .qig-gallery-delete.menu_button:not(.disabled):not([disabled]):is(:hover, :focus-visible) {
+    border-color: var(--neco-ginger);
+    background: color-mix(in srgb, var(--neco-ginger) 14%, var(--neco-surface));
+    color: var(--neco-ink);
+}
+
+.qig-gallery-selection-mark {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    display: grid;
+    place-items: center;
+    width: 25px;
+    height: 25px;
+    border: 1px solid var(--neco-ink);
+    border-radius: 50%;
+    background: var(--neco-surface);
+    color: transparent;
+    font-weight: 700;
+}
+
+#qig-gallery-popup .qig-gallery-card[aria-pressed="true"] {
+    border-color: var(--neco-ginger);
+}
+
+.qig-gallery-card[aria-pressed="true"] .qig-gallery-selection-mark {
+    border-color: var(--neco-ginger);
+    background: var(--neco-ginger);
+    color: var(--neco-on-accent);
 }
 
 .qig-gallery-card:focus-visible {

@@ -479,6 +479,46 @@ export class GalleryRepository {
     });
   }
 
+  removeMany(ids) {
+    const selected = new Set(ids);
+    return this.#enqueue(async () => {
+      const removed = this.entries.filter(entry => selected.has(entry.id));
+      if (!removed.length) return [];
+      // A legacy copy may still be read on reload if its migration was interrupted.
+      if (removed.some(entry => entry.legacy && !this.manifest.legacyMigrated)) {
+        throw new Error('Reload Gallery to finish migrating older pictures before deleting them');
+      }
+      const previous = this.manifest;
+      const assets = previous.entries.filter(entry => selected.has(entry.id));
+      if (assets.length) {
+        const next = {
+          ...previous,
+          revision: previous.revision + 1,
+          entries: previous.entries.filter(entry => !selected.has(entry.id)),
+        };
+        this.#writeManifest(next);
+        this.manifest = next;
+        try {
+          await this.#deleteAssets(assets.map(entry => entry.assetId));
+        } catch (error) {
+          const rollback = { ...previous, revision: next.revision + 1 };
+          try {
+            this.#writeManifest(rollback, { expectedRevision: next.revision });
+          } catch (rollbackError) {
+            this.entries = this.entries.filter(entry => !assets.some(asset => asset.id === entry.id));
+            this.#revokeObjectUrls(assets.map(entry => entry.id));
+            throw new AggregateError([error, rollbackError], 'Gallery deletion failed and could not be rolled back');
+          }
+          this.manifest = rollback;
+          throw error;
+        }
+      }
+      this.entries = this.entries.filter(entry => !selected.has(entry.id));
+      this.#revokeObjectUrls(removed.map(entry => entry.id));
+      return removed.map(entry => entry.id);
+    });
+  }
+
   clear() {
     this.generation += 1;
     return this.#enqueue(async () => {
