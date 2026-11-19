@@ -20,17 +20,27 @@ export const REPLY = 'Durable first reply. [reminder: 1h | Durable reminder]\n\n
 const terminal = ['completed', 'cancelled', 'failed', 'interrupted', 'conflict'];
 
 // A new account's Agents finish their first start (switching on Memory Shard, the Dice
-// Roller defaults) a few seconds after the page is ready, and save settings when they do.
-// Tests that edit or save settings directly wait for that save first, so it cannot land in
-// the middle of the test.
+// Roller defaults) a few seconds after the page is ready, and Dialogue Colors adds its
+// regex rules a second after it starts. Both save settings when they do. Tests that edit
+// or save settings directly wait for those saves first, so they cannot land in the middle
+// of the test.
 export async function waitForAgentsFirstStart(page) {
     await expect.poll(() => page.evaluate(async () => {
         const { extension_settings } = await import('/scripts/extensions.js');
-        if (extension_settings.disabledExtensions?.includes('in-chat-agents')) return true;
+        const disabled = extension_settings.disabledExtensions ?? [];
         // The Dice Roller starts last, after Memory Shard is switched on or a setup
         // needing recovery has stopped the rest of the start.
-        return Boolean(extension_settings.inChatAgents?.diceRoller);
-    }), { timeout: 60000, message: 'The Agents finished their first start' }).toBe(true);
+        const agentsStarted = disabled.includes('in-chat-agents') || Boolean(extension_settings.inChatAgents?.diceRoller);
+        if (!agentsStarted) return false;
+        if (disabled.some(name => name.includes('sillytavern-character-colors'))) return true;
+        const { runtimeState, settings } = await import('/scripts/extensions/third-party/sillytavern-character-colors/src/state.js');
+        if (!runtimeState.ready) return false;
+        await runtimeState.ready;
+        if (!settings.enabled) return true;
+        const rules = new Set((extension_settings.regex ?? []).map(rule => rule?.id));
+        return ['dialogue-colors:trim-font-tags:v1', 'dialogue-colors:trim-color-blocks:v1', 'dialogue-colors:trim-css-effects:v1']
+            .every(id => rules.has(id));
+    }), { timeout: 60000, message: 'The Agents and Dialogue Colors finished their first start' }).toBe(true);
     await page.evaluate(async () => {
         const core = await import('/script.js');
         if (!await core.saveSettings(0, { returnResult: true })) throw new Error('The settings save after the Agents started failed.');
