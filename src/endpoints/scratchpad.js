@@ -38,13 +38,22 @@ import { notebookContextLocked, withNotebookPreparation, prepareNotebookProposal
 import { acceptScratchpadImage, readScratchpadImageAvailability, prepareScratchpadAvatarReview, saveScratchpadPersonaAvatar } from '../scratchpad/images.js';
 import { captureImageTargetsLocked, capturePersonaTargetLocked } from '../scratchpad/image-targets.js';
 import { updateWebSearchLocked, webSearchState, webSearchStateLocked } from '../scratchpad/web-search.js';
-import { scratchpadGalleryLocked } from '../scratchpad/image-gallery.js';
+import { removeScratchpadGalleryImagesLocked, scratchpadGalleryLocked } from '../scratchpad/image-gallery.js';
 
 export const router = express.Router();
 
 router.post('/images/gallery', (request, response) => {
     try {
         response.json({ images: withScratchpad(scratchpadAccountBase(request), scratchpadGalleryLocked) });
+    } catch (error) {
+        sendError(response, error);
+    }
+});
+
+router.post('/images/gallery/remove', (request, response) => {
+    try {
+        const removed = withScratchpad(scratchpadAccountBase(request), lease => removeScratchpadGalleryImagesLocked(lease, request.body?.ids));
+        response.json({ removed });
     } catch (error) {
         sendError(response, error);
     }

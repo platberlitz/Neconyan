@@ -81,8 +81,14 @@ test('Gallery excludes temporary sessions, invalid receipts, backups, missing an
 test('the Gallery endpoint uses the signed-in account and rejects a stale account header', async t => {
     const a = account(t, 'first');
     const b = account(t, 'second');
-    a.save('a', [{ messages: [a.image('first').message] }]);
-    b.save('a', [{ messages: [b.image('second').message] }]);
+    const first = a.image('first');
+    const keep = a.image('keep');
+    const second = b.image('second');
+    const sharedName = b.image('first');
+    a.save('a', [{ messages: [first.message, keep.message] }]);
+    b.save('a', [{ messages: [second.message, sharedName.message] }]);
+    const listPath = path.join(a.directory, `${'a'.repeat(40)}.json`);
+    const originalList = fs.readFileSync(listPath);
     let active = a;
     const app = express();
     app.use(express.json());
@@ -90,11 +96,20 @@ test('the Gallery endpoint uses the signed-in account and rejects a stale accoun
     app.use(router);
     const server = await new Promise(resolve => { const opened = app.listen(0, '127.0.0.1', () => resolve(opened)); });
     t.after(() => { server.closeAllConnections(); server.close(); });
-    const post = owner => fetch(`http://127.0.0.1:${server.address().port}/images/gallery`, { method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Neconyan-Account': owner, Connection: 'close' }, body: '{}' });
+    const post = (owner, ids) => fetch(`http://127.0.0.1:${server.address().port}/images/gallery${ids ? '/remove' : ''}`, { method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Neconyan-Account': owner, Connection: 'close' }, body: JSON.stringify({ ids }) });
     assert.equal((await post('second')).status, 409);
-    assert.deepEqual((await (await post('first')).json()).images.map(image => image.prompt), ['Picture first']);
+    const firstId = `scratchpad:${first.url}`;
+    const secondId = `scratchpad:${second.url}`;
+    assert.equal((await post('second', [firstId])).status, 409);
+    assert.equal((await post('first', [firstId, 'scratchpad:/../settings.json'])).status, 400);
+    assert.equal((await (await post('first')).json()).images.length, 2);
+    assert.deepEqual(await (await post('first', [firstId, secondId, firstId])).json(), { removed: [firstId] });
+    assert.deepEqual(await (await post('first', [firstId])).json(), { removed: [firstId] });
+    assert.deepEqual((await (await post('first')).json()).images.map(image => image.url), [keep.url]);
+    assert.deepEqual(fs.readFileSync(first.filename), png);
+    assert.deepEqual(fs.readFileSync(listPath), originalList);
     active = b;
     assert.equal((await post('first')).status, 409);
-    assert.deepEqual((await (await post('second')).json()).images.map(image => image.prompt), ['Picture second']);
+    assert.deepEqual(new Set((await (await post('second')).json()).images.map(image => image.url)), new Set([second.url, sharedName.url]));
 });

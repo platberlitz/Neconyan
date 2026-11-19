@@ -572,6 +572,7 @@ export const refreshedKnowledgeCases = [
     ['Does a Regex Agent Theme keep the Chatroom 4chan look?', 'tools.tracker-themes', 'keeps each platform\'s layout'],
     ['Why are my Scratchpad pictures in Gallery?', 'images.quick-gallery', 'Saved Scratchpad pictures from your account appear too'],
     ['Where is Clear Gallery?', 'images.quick-gallery', 'Clear local history (formerly Clear Gallery)'],
+    ['How do I use Batch Edit to delete pictures from Gallery?', 'images.quick-gallery-delete', 'then choose Delete selected and confirm'],
     ['What does the Session expired error mean?', 'privacy.signin', 'copy any unsaved text, then reload to sign in again'],
     ['Does Proofreader check impersonation?', 'agents.reply-rewrites', 'Guided Impersonate drafts'],
     ['Does Runs after wait for the linked companion?', 'agents.batch-connect', 'switches that waiting on as soon as you tick a companion'],
