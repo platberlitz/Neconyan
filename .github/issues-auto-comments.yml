@@ -1,5 +1,5 @@
 labels:
-  - name: ✖️ Invalid
+  - name: '@invalid@'
     labeled:
       issue:
         action: close
@@ -9,7 +9,7 @@ labels:
           Check the [Neconyan handbook](https://platberlitz.github.io/neconyan-docs/) for usage questions. Before submitting a bug report, follow the issue template and check previous issues.
           If provided, follow the instructions given by maintainers.
 
-  - name: 👩‍💻 Good First Issue
+  - name: '@good-first-issue@'
     labeled:
       issue:
         body: >
@@ -19,7 +19,7 @@ labels:
           Start with the [Neconyan handbook](https://platberlitz.github.io/neconyan-docs/) for usage questions and the [contribution guide](https://github.com/platberlitz/Neconyan/blob/staging/CONTRIBUTING.md) for development.
           Ask questions about implementing this change in this issue.
 
-  - name: ❌ wontfix
+  - name: '@wontfix@'
     labeled:
       issue:
         action: close
@@ -27,7 +27,7 @@ labels:
           ❌ This issue has been marked as 'wontfix', which usually means it is out-of-scope, not feasible at this time or will not be implemented for various reasons.
           If you have any questions about this, feel free to reach out.
 
-  - name: 🛑 Out of Scope
+  - name: '@out-of-scope@'
     labeled:
       issue:
         action: close
@@ -35,30 +35,30 @@ labels:
           🛑 This issue has been marked as 'out of scope', as this can't or won't be implemented.
           If you have any questions about this, feel free to reach out.
 
-  - name: ✅ Done (staging)
+  - name: '@done-staging@'
     labeled:
       issue:
         body: >
           ✅ It looks like all or part of this issue has now been implemented as part of the `staging` branch.
-          If you currently are on the `release` branch, you can switch to `staging` to test this right away.
+          If you're on `main`, you can switch to `staging` to test the change before the next release.
 
           Note that `staging` is considered less stable than the official releases. To switch, follow existing instructions,
           or simply enter the following command: `git switch staging`
 
-  - name: ✅ Done
+  - name: '@released@'
     labeled:
       issue:
         body: >
           ✅ It looks like all or part of this issue has now been implemented as part of the latest release.
 
-  - name: ‼️ High Priority
+  - name: '@high-priority@'
     labeled:
       issue:
         body: >
           🚨 This issue has been marked high priority, meaning it's important to the maintainers or community.
           While we can't promise immediate changes, it is on our radar and will be addressed whenever possible. Thanks for your patience!
 
-  - name: 💀 Spam
+  - name: '@spam@'
     labeled:
       issue:
         action: close
