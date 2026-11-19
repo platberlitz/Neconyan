@@ -231,7 +231,8 @@ jobs:
         shell: bash
         run: |
           # HEAD is GitHub's test merge. Its first parent is the base we compare against.
-          git diff --name-only --diff-filter=ACMRT -z HEAD^1 HEAD > "$RUNNER_TEMP/pr-files"
+          # The container user doesn't own the Actions checkout. Trust only this path.
+          git -c "safe.directory=$GITHUB_WORKSPACE" diff --name-only --diff-filter=ACMRT -z HEAD^1 HEAD -- > "$RUNNER_TEMP/pr-files"
           (cd tests && npx --no-install playwright test --list --reporter=json) > "$RUNNER_TEMP/pr-browser-list.json"
           node scripts/pr-browser-smoke.js "$RUNNER_TEMP/pr-browser-list.json" "$RUNNER_TEMP/pr-files" "$RUNNER_TEMP/pr-browser-tests"
 
