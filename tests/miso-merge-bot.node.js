@@ -122,8 +122,23 @@ test('every kind of blocker is listed, even while other checks still run', () =>
 
 test('every blocking label from the Pull Request Manager blocks Miso too', () => {
     const workflow = fs.readFileSync(new URL('../.github/workflows/pr-auto-manager.yml', import.meta.url), 'utf8');
-    const listed = workflow.match(/const blockingLabels = \[([\s\S]*?)\];/)[1].match(/"([^"]+)"/g).map(label => label.slice(1, -1));
-    assert.deepEqual([...miso.BLOCKING_LABELS].sort(), listed.sort());
+    const shared = require('../.github/miso/labels.cjs');
+    assert.equal(miso.BLOCKING_LABELS, shared.BLOCKING_LABELS);
+    assert.match(workflow, /ref: \$\{\{ github\.event\.pull_request\.base\.sha \}\}/);
+    assert.match(workflow, /const \{ BLOCKING_LABELS \} = require\(`\$\{process\.env\.GITHUB_WORKSPACE\}\/\.github\/miso\/labels\.cjs`\)/);
+    assert.match(workflow, /BLOCKING_LABELS\.has\(name\)/);
+    for (const [oldName, newName] of [
+        ['⛔ Don\'t Merge', 'Do not merge (claws out)'],
+        ['🔨 Needs Work', 'Needs work (back to the basket)'],
+        ['🔬 Needs Testing', 'Needs testing (paw check)'],
+        ['⛔ Waiting For External/Upstream', 'Waiting on upstream (catnap)'],
+        ['💥💣 Breaking Changes', 'Breaking change (hiss)'],
+    ]) {
+        for (const name of [oldName, newName]) {
+            const result = miso.evaluatePullRequest({ pr: pr({ labels: [{ name }] }), checkRuns: [check('lint')] });
+            assert.deepEqual(result, { state: 'blocked', reasons: [`It has the **${name}** label.`] });
+        }
+    }
 });
 
 test('every character has Sunburst and Flare pictures and lines for both states', () => {
