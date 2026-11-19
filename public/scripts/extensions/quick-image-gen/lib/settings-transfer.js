@@ -101,7 +101,7 @@ const SETTINGS_ENUM_VALUES = Object.freeze({
 
 const SETTINGS_STRING_FIELDS = new Set([
     "model", "sampler", "style", "prompt", "negativePrompt", "qualityTags", "messageRange",
-    "generateShortcut", "lastLoadedPresetId", "civitaiLoras", "nanobananaExtraInstructions",
+    "generateShortcut", "lastLoadedPresetId", "civitaiLoras", "pixaiLoras", "nanobananaExtraInstructions",
     "a1111Loras", "a1111Vae", "comfyLoras", "comfyOutputNodeIds", "comfyFluxClipType",
     "proxyLoras", "proxyExtraInstructions", "injectTagName", "injectRegex", "llmOverrideProfileId",
     "llmOverridePreset",

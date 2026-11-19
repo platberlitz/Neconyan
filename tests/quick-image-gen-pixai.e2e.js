@@ -9,6 +9,9 @@ test.setTimeout(120000);
 
 const TSUBAKI_3 = '2024383379556065549';
 const HARUKA = '1861558740588989558';
+const LORA = '1234567890123456789';
+const OTHER_LORA = '1234567890123456788';
+const LORA_SETTING = `${LORA}:0.8, https://pixai.art/model/9876543210987654321/${OTHER_LORA}`;
 const MEDIA_ID = '1943547603237249965';
 const IMAGE_URL = 'https://images-ng.pixai.art/images/orig/0f6a0d1c-2a39-4f10-9b9e-4c3f1d2e5a7b';
 const OFFSITE_URL = 'https://storage.example/pixai-result.png';
@@ -22,7 +25,7 @@ const CORS = {
 const stepsFieldShown = page => page.locator('#qig-steps').evaluate(input => input.closest('.qig-field')?.style.display !== 'none');
 
 for (const [layout, phone] of [['desktop', false], ['phone', true]]) {
-    test(`${layout} Quick Image Gen recovers a PixAI image with Tsubaki.3 by default`, async ({ app }, info) => {
+    test(`${layout} Quick Image Gen recovers a PixAI image with LoRAs and defaults to Tsubaki.3`, async ({ app }, info) => {
         const png = await readFile(new URL('../public/img/ai4.png', import.meta.url));
         const api = [];
         const images = [];
@@ -105,6 +108,18 @@ for (const [layout, phone] of [['desktop', false], ['phone', true]]) {
         const sectionBox = await section.boundingBox();
         expect(sectionBox.x).toBeGreaterThanOrEqual(0);
         expect(sectionBox.x + sectionBox.width).toBeLessThanOrEqual(phone ? 394 : 1281);
+
+        const loras = section.getByRole('textbox', { name: 'PixAI LoRAs' });
+        await expect(loras).toHaveValue('');
+        const saved = page.waitForResponse(response => response.url().endsWith('/api/settings/save')
+            && response.ok() && response.request().postDataJSON()?.extension_settings?.['quick-image-gen']?.pixaiLoras === LORA_SETTING);
+        await loras.fill(LORA_SETTING);
+        await loras.blur();
+        await saved;
+        await page.locator('#qig-provider').selectOption('pollinations');
+        await expect(loras).toBeHidden();
+        await page.locator('#qig-provider').selectOption('pixai');
+        await expect(loras).toHaveValue(LORA_SETTING);
         await info.attach(`${layout}-pixai-settings`, { body: await section.screenshot(), contentType: 'image/png' });
 
         await page.locator('#qig-prompt').fill('A calico cat reading by a window.');
@@ -118,6 +133,7 @@ for (const [layout, phone] of [['desktop', false], ['phone', true]]) {
             modelVersionId: TSUBAKI_3, prompt: expect.stringContaining('A calico cat reading by a window.'),
             negativePrompt: expect.stringContaining('blurry'), aspectRatio: '2:3', size: '1k', mode: 'pro',
             promptHelper: 'disable', batchSize: 1, seed: 77,
+            loras: [{ modelId: LORA, weight: 0.8 }, { modelId: OTHER_LORA, weight: 1 }],
         });
         expect(api.map(call => call.path)).toEqual([
             '/v2/image/create', '/v2/task/task-1', '/v2/task/task-1', '/v2/task/task-1', `/v2/media/batch?ids=${MEDIA_ID}`,

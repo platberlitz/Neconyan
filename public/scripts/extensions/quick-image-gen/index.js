@@ -1231,6 +1231,7 @@ const defaultSettings = {
     pixaiModel: PIXAI_DEFAULT_MODEL,
     pixaiMode: PIXAI_DEFAULT_MODE,
     pixaiPromptHelper: PIXAI_DEFAULT_PROMPT_HELPER,
+    pixaiLoras: "",
     // Pollinations
     pollinationsKey: "",
     pollinationsModel: "",
@@ -2314,7 +2315,7 @@ const PROVIDER_KEYS = {
     fal: ["falKey", "falModel"],
     together: ["togetherKey", "togetherModel"],
     zai: ["zaiKey", "zaiModel", "zaiQuality"],
-    pixai: ["pixaiKey", "pixaiModel", "pixaiMode", "pixaiPromptHelper"],
+    pixai: ["pixaiKey", "pixaiModel", "pixaiMode", "pixaiPromptHelper", "pixaiLoras"],
     local: ["localUrl", "localType", "localModel", "localRefImage", "localDenoise", "a1111Model", "a1111ClipSkip", "a1111Scheduler", "a1111RestoreFaces", "a1111Tiling", "a1111Subseed", "a1111SubseedStrength", "a1111Adetailer", "a1111AdetailerModel", "a1111AdetailerPrompt", "a1111AdetailerNegative", "a1111AdetailerDenoise", "a1111AdetailerConfidence", "a1111AdetailerMaskBlur", "a1111AdetailerDilateErode", "a1111AdetailerInpaintOnlyMasked", "a1111AdetailerInpaintPadding", "a1111Adetailer2", "a1111Adetailer2Model", "a1111Adetailer2Prompt", "a1111Adetailer2Negative", "a1111Adetailer2Denoise", "a1111Adetailer2Confidence", "a1111Adetailer2MaskBlur", "a1111Adetailer2DilateErode", "a1111Adetailer2InpaintOnlyMasked", "a1111Adetailer2InpaintPadding", "a1111Loras", "a1111Vae", "a1111HiresFix", "a1111HiresUpscaler", "a1111HiresScale", "a1111HiresSteps", "a1111HiresDenoise", "a1111HiresSampler", "a1111HiresScheduler", "a1111HiresPrompt", "a1111HiresNegative", "a1111HiresResizeX", "a1111HiresResizeY", "a1111SaveToWebUI", "a1111IpAdapter", "a1111IpAdapterMode", "a1111IpAdapterWeight", "a1111IpAdapterPixelPerfect", "a1111IpAdapterResizeMode", "a1111IpAdapterControlMode", "a1111IpAdapterStartStep", "a1111IpAdapterEndStep", "a1111ControlNet", "a1111ControlNetModel", "a1111ControlNetModule", "a1111ControlNetWeight", "a1111ControlNetResizeMode", "a1111ControlNetControlMode", "a1111ControlNetPixelPerfect", "a1111ControlNetGuidanceStart", "a1111ControlNetGuidanceEnd", "a1111ControlNetImage", "comfyWorkflow", "comfyModelLoader", "comfyClipSkip", "comfyDenoise", "comfyScheduler", "comfyTimeout", "comfyUpscale", "comfyUpscaleModel", "comfyLoras", "comfyOutputNodeIds", "comfyOutputImageIndex", "comfyAllowLegacyInterrupt", "comfySkipNegativePrompt", "comfyFluxClipModel1", "comfyFluxClipModel2", "comfyFluxVaeModel", "comfyFluxClipType", "a1111InterruptServer", "comfyWorkflowComponentOverrides"],
     proxy: ["proxyUrl", "proxyKey", "proxyModel", "proxyLoras", "proxyFacefix", "proxyExtraInstructions", "proxyRefImages", "proxyTimeout", "proxyComfyMode", "proxyComfyTimeout", "proxyComfyNodeId", "proxyComfyWorkflow"],
     custom: ["customApiUrl", "customApiKey", "customApiAuthType", "customApiAuthName", "customApiModel", "customApiPollUrl", "customApiRefImages"]
@@ -17692,7 +17693,7 @@ function refreshProviderInputs(provider, { updateProviderVisibility = true } = {
         fal: [["qig-fal-key", "falKey"], ["qig-fal-model", "falModel"]],
         together: [["qig-together-key", "togetherKey"], ["qig-together-model", "togetherModel"]],
         zai: [["qig-zai-key", "zaiKey"], ["qig-zai-model", "zaiModel"], ["qig-zai-quality", "zaiQuality"]],
-        pixai: [["qig-pixai-key", "pixaiKey"], ["qig-pixai-mode", "pixaiMode"], ["qig-pixai-prompt-helper", "pixaiPromptHelper"]],
+        pixai: [["qig-pixai-key", "pixaiKey"], ["qig-pixai-mode", "pixaiMode"], ["qig-pixai-prompt-helper", "pixaiPromptHelper"], ["qig-pixai-loras", "pixaiLoras"]],
         local: [
             ["qig-local-url", "localUrl"],
             ["qig-local-type", "localType"],
@@ -18977,6 +18978,9 @@ function createUI() {
                         <select id="qig-pixai-mode">${pixaiModeOptions(s.pixaiModel, s.pixaiMode)}</select>
                         <small>Tsubaki models only. Some modes need a higher PixAI plan.</small>
                     </div>
+                    <label for="qig-pixai-loras">PixAI LoRAs</label>
+                    <input id="qig-pixai-loras" type="text" value="${esc(s.pixaiLoras)}" placeholder="1234567890123456789:0.8" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="qig-pixai-loras-hint">
+                    <small id="qig-pixai-loras-hint">Paste LoRA version links or IDs, separated by commas. Add :0.8 for a weight of 0.8 (default 1). Choose LoRAs for the same base model, or leave blank.</small>
                     <label for="qig-pixai-prompt-helper">Prompt helper</label>
                     <select id="qig-pixai-prompt-helper">
                         <option value="disable" ${s.pixaiPromptHelper === "disable" ? "selected" : ""}>Off (send my prompt as written)</option>
@@ -20146,6 +20150,7 @@ function createUI() {
     bind("qig-pixai-key", "pixaiKey");
     bind("qig-pixai-mode", "pixaiMode");
     bind("qig-pixai-prompt-helper", "pixaiPromptHelper");
+    bind("qig-pixai-loras", "pixaiLoras");
     const pixaiModelSelect = document.getElementById("qig-pixai-model");
     if (pixaiModelSelect) pixaiModelSelect.onchange = (e) => {
         if (settingsImportInProgress) return;

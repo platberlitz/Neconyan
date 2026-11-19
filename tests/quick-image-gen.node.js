@@ -574,7 +574,7 @@ test('PixAI saves one task submission, polls through an early 404 and downloads 
     // Tsubaki.3 refuses the old Standard default, and PixAI returns signed CloudFront addresses.
     const settings = { provider: 'pixai', pixaiKey: 'pixai-private-key', pixaiModel: '2024383379556065549',
         pixaiMode: 'standard', pixaiPromptHelper: 'disable', width: 832, height: 1216, steps: 30, cfgScale: 6,
-        sampler: 'euler_a', seed: -1 };
+        sampler: 'euler_a', seed: -1, pixaiLoras: '1234567890123456789:0.8, 1234567890123456788' };
     saveImageSettings(directories, settings);
     const calls = [];
     const polls = [
@@ -597,6 +597,7 @@ test('PixAI saves one task submission, polls through an early 404 and downloads 
     const submitted = JSON.parse(calls[0].options.body);
     assert.deepEqual(submitted, { modelVersionId: '2024383379556065549', prompt: 'moonlit garden', negativePrompt: 'fog',
         aspectRatio: '2:3', size: '1k', mode: 'pro', promptHelper: 'disable', batchSize: 1,
+        loras: [{ modelId: '1234567890123456789', weight: 0.8 }, { modelId: '1234567890123456788', weight: 1 }],
         seed: readArtifact(directories, context.job.id, 'input:quick-image:pixai:0').seed });
     assert.deepEqual(calls.map(call => call.options.headers?.Authorization), [
         'Bearer pixai-private-key', 'Bearer pixai-private-key', 'Bearer pixai-private-key', 'Bearer pixai-private-key', undefined,
@@ -639,6 +640,7 @@ test('PixAI sends SDXL sampling, recovers an off-domain media URL and reports a 
         'https://api.pixai.art/v2/task/task-sdxl', 'https://api.pixai.art/v2/media/batch?ids=m-2', PIXAI_IMAGE]);
     const submitted = JSON.parse(calls[0].options.body);
     assert.equal(submitted.mode, undefined);
+    assert.equal(submitted.loras, undefined);
     assert.equal(submitted.promptHelper, 'enable');
     assert.deepEqual(submitted.sampling, { method: 'DPM++ 2M Karras', steps: 28, cfgScale: 7 });
     assert.equal(submitted.seed, 11);
@@ -667,6 +669,18 @@ test('PixAI surfaces a refused submission without polling', async () => {
             return jsonResponse({ code: 'WAITING_NUM_EXCEEDED', status: 403, message: 'Too many waiting tasks' }, 403);
         } }), { message: 'PixAI image request failed (403 WAITING_NUM_EXCEEDED): Too many waiting tasks' });
     assert.equal(calls, 1);
+});
+
+test('PixAI refuses an invalid LoRA weight before paid submission', async () => {
+    const directories = tempRoot();
+    const context = jobContext(directories);
+    const settings = { provider: 'pixai', pixaiKey: 'pixai-private-key', pixaiLoras: '1234567890123456789:1.5', seed: 3 };
+    saveImageSettings(directories, settings);
+    await assert.rejects(generateQuickImageGenJobImage(context, { effectId: 'pixai:bad-lora', prompt: 'harbour',
+        settingsFingerprint: quickImageGenSettingsFingerprint(settings), wait: async () => {},
+        fetch: async () => assert.fail('PixAI was called with an invalid LoRA') }),
+    { code: 'QIG_INVALID_INPUT', message: 'PixAI LoRA 1: use a weight between 0 and 1, or leave it out.' });
+    assert.equal(readArtifact(directories, context.job.id, 'input:quick-image:pixai:bad-lora:queued'), undefined);
 });
 
 test('unsupported queued model and workflow settings refuse before paid submission', async () => {

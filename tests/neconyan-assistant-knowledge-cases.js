@@ -601,4 +601,6 @@ export const refreshedKnowledgeCases = [
     ['Why is Mode missing for Haruka v2?', 'images.pixai', 'appears for Tsubaki models only'],
     ['Does the PixAI prompt helper cost extra?', 'images.pixai', 'rewrite it at extra cost'],
     ['Do steps and sampler work with Tsubaki?', 'images.pixai', 'apply to Haruka v2 and Hoshino v2 only'],
+    ['How do I use PixAI LoRAs in Quick Image Gen?', 'images.pixai-loras', 'copy the version link or its last number'],
+    ['Where do I set the PixAI negative prompt?', 'images.pixai-loras', 'Advanced Prompt Options → Negative Prompt'],
 ];

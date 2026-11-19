@@ -10296,6 +10296,8 @@
   "Pro (more detail, slower)": "Pro (more detail, slower)",
   "Ultra (most detail, slowest)": "Ultra (most detail, slowest)",
   "Tsubaki models only. Some modes need a higher PixAI plan.": "Tsubaki models only. Some modes need a higher PixAI plan.",
+  "PixAI LoRAs": "PixAI LoRAs",
+  "Paste LoRA version links or IDs, separated by commas. Add :0.8 for a weight of 0.8 (default 1). Choose LoRAs for the same base model, or leave blank.": "Paste LoRA version links or IDs, separated by commas. Add :0.8 for a weight of 0.8 (default 1). Choose LoRAs for the same base model, or leave blank.",
   "Prompt helper": "Prompt helper",
   "Off (send my prompt as written)": "Off (send my prompt as written)",
   "On (PixAI rewrites it, extra cost)": "On (PixAI rewrites it, extra cost)",
