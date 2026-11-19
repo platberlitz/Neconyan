@@ -45,7 +45,9 @@ for (const [layout, viewport, hasTouch] of [
             await expect(page.locator('.neconyan-lorebook-folder').filter({ hasText: 'Unfiled' })).toHaveCount(0);
 
             await page.evaluate(() => window.NeconyanShell.openTab('left', 'agents'));
-            await expect(page.locator('#ica--run-status')).toHaveText(german['No automatic agents enabled']);
+            // New accounts may have Memory Shard switched on, so either status is right as long as it is German.
+            const runStatus = [german['No automatic agents enabled'], german['Ready for the next reply']];
+            await expect.poll(() => page.locator('#ica--run-status').textContent()).toMatch(new RegExp(`^(?:${runStatus.join('|')})$`));
             const clearFilters = page.locator('#ica--agentList .ica--clear-agent-filters');
             if (await clearFilters.isVisible()) await clearFilters.click();
             await page.locator('#ica--agentList .ica--card-primary-actions .ica--btn-edit').first().click();

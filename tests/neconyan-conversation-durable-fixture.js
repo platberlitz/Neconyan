@@ -19,6 +19,34 @@ export const MODEL = 'conversation-fixture';
 export const REPLY = 'Durable first reply. [reminder: 1h | Durable reminder]\n\nDurable second reply. [schedule_update: status="dnd" activity="fixture rest" duration="1h"]';
 const terminal = ['completed', 'cancelled', 'failed', 'interrupted', 'conflict'];
 
+// A new account's Agents finish their first start (switching on Memory Shard, the Dice
+// Roller defaults) a few seconds after the page is ready, and Dialogue Colors adds its
+// regex rules a second after it starts. Both save settings when they do. Tests that edit
+// or save settings directly wait for those saves first, so they cannot land in the middle
+// of the test.
+export async function waitForAgentsFirstStart(page) {
+    await expect.poll(() => page.evaluate(async () => {
+        const { extension_settings } = await import('/scripts/extensions.js');
+        const disabled = extension_settings.disabledExtensions ?? [];
+        // The Dice Roller starts last, after Memory Shard is switched on or a setup
+        // needing recovery has stopped the rest of the start.
+        const agentsStarted = disabled.includes('in-chat-agents') || Boolean(extension_settings.inChatAgents?.diceRoller);
+        if (!agentsStarted) return false;
+        if (disabled.some(name => name.includes('sillytavern-character-colors'))) return true;
+        const { runtimeState, settings } = await import('/scripts/extensions/third-party/sillytavern-character-colors/src/state.js');
+        if (!runtimeState.ready) return false;
+        await runtimeState.ready;
+        if (!settings.enabled) return true;
+        const rules = new Set((extension_settings.regex ?? []).map(rule => rule?.id));
+        return ['dialogue-colors:trim-font-tags:v1', 'dialogue-colors:trim-color-blocks:v1', 'dialogue-colors:trim-css-effects:v1']
+            .every(id => rules.has(id));
+    }), { timeout: 60000, message: 'The Agents and Dialogue Colors finished their first start' }).toBe(true);
+    await page.evaluate(async () => {
+        const core = await import('/script.js');
+        if (!await core.saveSettings(0, { returnResult: true })) throw new Error('The settings save after the Agents started failed.');
+    });
+}
+
 export async function acknowledgeActiveSettings(page) {
     let acknowledgement;
     // Startup listeners may queue another save after the one this helper awaits.
@@ -136,6 +164,8 @@ export const test = base.extend({
                 // Keep unrelated startup preset backups from changing the settings acknowledgement mid-test.
                 saved.extension_settings.disabledExtensions = [...new Set([...(saved.extension_settings.disabledExtensions || []), 'third-party/Neconyan-Time-Machine'])];
                 saved.power_user.send_on_enter = 1;
+                // Skipping the tour would otherwise install Miso, Taro and Nori in the middle of the test.
+                saved.accountStorage = { ...saved.accountStorage, 'NeconyanAssistantSeed.v1': 'done' };
                 saved.extension_settings.connectionManager = { profiles: [{ id: 'durable', name: 'Durable fixture',
                     api: 'custom', mode: 'cc', model: MODEL, 'api-url': provider.url }] };
                 saved.oai_settings = { ...saved.oai_settings, chat_completion_source: 'custom', custom_url: provider.url, custom_model: 'decoy', stream_openai: false };
@@ -236,7 +266,7 @@ export const test = base.extend({
                         }
                         return job;
                     },
-                    async open({ workspace = true, timeout = 20000, readyTimeout = 60000, skipTour = true } = {}) {
+                    async open({ workspace = true, timeout = 20000, readyTimeout = 60000, skipTour = true, waitForFirstStart = true } = {}) {
                         const page = await context.newPage();
                         // Update notices depend on the checkout's remote, not this disposable account.
                         await page.route('**/api/server-admin/status', route => route.fulfill({ status: 403, json: { error: 'Update checks are outside this fixture.' } }));
@@ -246,6 +276,7 @@ export const test = base.extend({
                         await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'), undefined, { timeout: readyTimeout });
                         const skip = page.locator('#neconyan-tour-coachmark [data-tour-coach-skip]');
                         if (skipTour && await skip.isVisible()) await skip.click();
+                        if (waitForFirstStart) await waitForAgentsFirstStart(page);
                         if (!workspace) return page;
                         await page.evaluate(async avatar => {
                             await window.SillyTavern.getContext().getCharacters();

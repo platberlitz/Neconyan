@@ -1,4 +1,4 @@
-/* global document, getComputedStyle, window */
+/* global document, getComputedStyle, window, Node */
 import { test, expect } from '@playwright/test';
 import { mkdir, readFile } from 'node:fs/promises';
 import { acknowledgeSettingsSave } from './chat-scroll-regression-helpers.js';

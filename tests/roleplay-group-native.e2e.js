@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { acknowledgeActiveSettings, test } from './neconyan-conversation-durable-fixture.js';
+import { acknowledgeActiveSettings, test, waitForAgentsFirstStart } from './neconyan-conversation-durable-fixture.js';
 import { startNativeReply } from './native-roleplay-helpers.js';
 import { IPHONE_SAFARI_CONTEXT, installIPhoneSafari, applyIOSOnlyCss } from './ios-safari-emulation.js';
 
@@ -414,4 +414,33 @@ test('a native group reply runs its automatic Companion once, not again in the b
     await delay(7200);
     expect(browserGenerations).toHaveLength(0);
     expect(app.provider.calls).toHaveLength(2);
+});
+
+test('a native group reply sent while a new account is still setting up keeps its Companion', async ({ app }) => {
+    const fixture = await prepare(app, false, 1, 'auto');
+    // Send before the Agents and Dialogue Colors finish their first start, which saves settings.
+    // A slow template catalogue holds the Agents' start back, as a slow phone or server does.
+    await fixture.account.context.route('**/in-chat-agents/templates/index.json*', async route => {
+        await delay(4000);
+        await route.continue();
+    });
+    const page = await fixture.account.open({ workspace: false, readyTimeout: 60000, waitForFirstStart: false });
+    await page.evaluate(async id => {
+        const groups = await import('/scripts/group-chats.js');
+        await groups.openGroupById(id);
+    }, fixture.group.id);
+    await expect(page.locator('#send_textarea')).toBeVisible();
+    const submitted = page.waitForResponse(response => response.url().endsWith('/api/roleplay/group/submit'));
+    await page.locator('#send_textarea').fill('Write one reply and one Companion note.');
+    await startNativeReply(page);
+    const response = await submitted;
+    expect(response.status(), await response.text()).toBe(202);
+    const accepted = await response.json();
+    // The reply is held until the setup has saved, so a reply sent too early sees it land.
+    await waitForAgentsFirstStart(page);
+    await app.release();
+    await fixture.account.settled(accepted.jobId);
+    await expect(page.locator('#chat .mes').last()).toContainText(ANSWER);
+    await expect.poll(() => app.provider.calls.length).toBe(2);
+    await expect(page.getByText('Agents did not finish')).toHaveCount(0);
 });

@@ -564,10 +564,107 @@ test('CivitAI saves a workflow ID and downloads a validated 308 CDN redirect wit
     assert.ok(!JSON.stringify(readArtifact(directories, context.job.id, 'input:quick-image:civitai:0:queued')).includes(settings.civitaiKey));
 });
 
+const PIXAI_IMAGE = 'https://images-ng.pixai.art/images/orig/0f6a0d1c-2a39-4f10-9b9e-4c3f1d2e5a7b';
+
+test('PixAI saves one task submission, polls through an early 404 and downloads without its key', async () => {
+    const directories = tempRoot();
+    const context = jobContext(directories);
+    const settings = { provider: 'pixai', pixaiKey: 'pixai-private-key', pixaiModel: '2024383379556065549',
+        pixaiMode: 'pro', pixaiPromptHelper: 'disable', width: 832, height: 1216, steps: 30, cfgScale: 6,
+        sampler: 'euler_a', seed: -1 };
+    saveImageSettings(directories, settings);
+    const calls = [];
+    const polls = [
+        jsonResponse({ code: 'NOT_FOUND', status: 404, message: 'Task not found' }, 404),
+        jsonResponse({ id: 'task-123', status: 'running' }),
+        jsonResponse({ id: 'task-123', status: 'completed', outputs: { mediaIds: ['m-1'], mediaUrls: [PIXAI_IMAGE] } }),
+    ];
+    const input = { effectId: 'pixai:0', prompt: 'moonlit garden', negative: 'fog',
+        settingsFingerprint: quickImageGenSettingsFingerprint(settings), wait: async () => {},
+        fetch: async (url, options) => {
+            calls.push({ url, options });
+            if (options.method === 'POST') return jsonResponse({ id: 'task-123', status: 'waiting' }, 201);
+            if (url === 'https://api.pixai.art/v2/task/task-123') return polls.shift();
+            assert.equal(url, PIXAI_IMAGE);
+            return new Response(Buffer.from(PNG_BASE64, 'base64'), { status: 200 });
+        } };
+    const image = await generateQuickImageGenJobImage(context, input);
+    assert.equal(image.base64, PNG_BASE64);
+    assert.equal(calls[0].url, 'https://api.pixai.art/v2/image/create');
+    const submitted = JSON.parse(calls[0].options.body);
+    assert.deepEqual(submitted, { modelVersionId: '2024383379556065549', prompt: 'moonlit garden', negativePrompt: 'fog',
+        aspectRatio: '2:3', size: '1k', mode: 'pro', promptHelper: 'disable', batchSize: 1,
+        seed: readArtifact(directories, context.job.id, 'input:quick-image:pixai:0').seed });
+    assert.deepEqual(calls.map(call => call.options.headers?.Authorization), [
+        'Bearer pixai-private-key', 'Bearer pixai-private-key', 'Bearer pixai-private-key', 'Bearer pixai-private-key', undefined,
+    ]);
+    assert.equal(calls.filter(call => call.options.method === 'POST').length, 1);
+    assert.equal(readArtifact(directories, context.job.id, 'provider:quick-image:pixai:0:submit').id, 'task-123');
+    assert.ok(!JSON.stringify(readArtifact(directories, context.job.id, 'input:quick-image:pixai:0:queued')).includes(settings.pixaiKey));
+    assert.ok(!JSON.stringify(readArtifact(directories, context.job.id, 'provider:quick-image:pixai:0:submit')).includes(settings.pixaiKey));
+    saveImageSettings(directories, { ...settings, pixaiKey: 'rotated-key' });
+    assert.deepEqual(await generateQuickImageGenJobImage(context, { ...input, fetch: () => assert.fail('PixAI replayed') }), image);
+});
+
+test('PixAI sends SDXL sampling, resolves a missing media URL and reports a failed task plainly', async () => {
+    const directories = tempRoot();
+    const context = jobContext(directories);
+    const settings = { provider: 'pixai', pixaiKey: 'pixai-private-key', pixaiModel: '1861558740588989558',
+        pixaiMode: 'ultra', pixaiPromptHelper: 'enable', width: 1024, height: 1024, steps: 28, cfgScale: 7,
+        sampler: 'dpm++_2m', seed: 11 };
+    saveImageSettings(directories, settings);
+    const calls = [];
+    const image = await generateQuickImageGenJobImage(context, { effectId: 'pixai:sdxl', prompt: 'harbour',
+        settingsFingerprint: quickImageGenSettingsFingerprint(settings), wait: async () => {},
+        fetch: async (url, options) => {
+            calls.push({ url, options });
+            if (options.method === 'POST') return jsonResponse({ id: 'task-sdxl' }, 201);
+            if (url.endsWith('/task/task-sdxl')) return jsonResponse({ status: 'completed', outputs: { mediaIds: ['m-2'], mediaUrls: [null] } });
+            if (url === 'https://api.pixai.art/v2/media/batch?ids=m-2') {
+                return jsonResponse([{ id: 'm-2', type: 'IMAGE', urls: [{ variant: 'PUBLIC', url: PIXAI_IMAGE }] }]);
+            }
+            assert.equal(url, PIXAI_IMAGE);
+            assert.equal(options.headers?.Authorization, undefined);
+            return new Response(Buffer.from(PNG_BASE64, 'base64'), { status: 200 });
+        } });
+    assert.equal(image.base64, PNG_BASE64);
+    const submitted = JSON.parse(calls[0].options.body);
+    assert.equal(submitted.mode, undefined);
+    assert.equal(submitted.promptHelper, 'enable');
+    assert.deepEqual(submitted.sampling, { method: 'DPM++ 2M Karras', steps: 28, cfgScale: 7 });
+    assert.equal(submitted.seed, 11);
+
+    const failedSettings = { ...settings, pixaiModel: '2024383379556065549' };
+    const failedDirectories = tempRoot();
+    saveImageSettings(failedDirectories, failedSettings);
+    await assert.rejects(generateQuickImageGenJobImage(jobContext(failedDirectories), { effectId: 'pixai:failed', prompt: 'harbour',
+        settingsFingerprint: quickImageGenSettingsFingerprint(failedSettings), wait: async () => {},
+        fetch: async (_url, options) => options.method === 'POST'
+            ? jsonResponse({ id: 'task-bad' }, 201)
+            : jsonResponse({ status: 'failed', taskStatusMsgI18n: { key: 'x', defaultMessage: 'Not enough credits for Pro mode' } }) }),
+    { message: 'PixAI image failed: Not enough credits for Pro mode' });
+});
+
+test('PixAI surfaces a refused submission without polling', async () => {
+    const directories = tempRoot();
+    const context = jobContext(directories);
+    const settings = { provider: 'pixai', pixaiKey: 'pixai-private-key', seed: 3 };
+    saveImageSettings(directories, settings);
+    let calls = 0;
+    await assert.rejects(generateQuickImageGenJobImage(context, { effectId: 'pixai:refused', prompt: 'harbour',
+        settingsFingerprint: quickImageGenSettingsFingerprint(settings), wait: async () => {},
+        fetch: async () => {
+            calls++;
+            return jsonResponse({ code: 'WAITING_NUM_EXCEEDED', status: 403, message: 'Too many waiting tasks' }, 403);
+        } }), { message: 'PixAI image request failed (403 WAITING_NUM_EXCEEDED): Too many waiting tasks' });
+    assert.equal(calls, 1);
+});
+
 test('unsupported queued model and workflow settings refuse before paid submission', async () => {
     for (const settings of [
         { provider: 'replicate', replicateKey: 'key', replicateModel: 'black-forest-labs/flux-schnell' },
         { provider: 'civitai', civitaiKey: 'key', civitaiModel: 'urn:air:sdxl:checkpoint:123', sampler: 'unknown' },
+        { provider: 'pixai', pixaiKey: '' },
     ]) {
         const directories = tempRoot();
         const context = jobContext(directories);
@@ -578,28 +675,30 @@ test('unsupported queued model and workflow settings refuse before paid submissi
     }
 });
 
-for (const provider of ['replicate', 'civitai']) {
+for (const provider of ['replicate', 'civitai', 'pixai']) {
     for (const interruption of ['cancel', 'timeout']) {
         test(`${provider} keeps ${interruption} active while downloading the image body`, async t => {
             const directories = tempRoot();
             const controller = new AbortController();
             const context = { ...jobContext(directories), signal: controller.signal };
             const settings = { provider, replicateKey: 'replicate-private-key', civitaiKey: 'civitai-private-key',
+                pixaiKey: 'pixai-private-key',
                 civitaiModel: 'urn:air:sdxl:checkpoint:123', sampler: 'euler_a', hostedTimeout: 30, seed: 12 };
             saveImageSettings(directories, settings);
             t.mock.timers.enable({ apis: ['setTimeout'] });
             const downloading = Promise.withResolvers();
             let downloadSignal;
             let streamController;
-            const imageUrl = provider === 'replicate'
-                ? 'https://cdn.replicate.delivery/image.png' : 'https://cdn.civitai.com/image.png';
+            const imageUrl = { replicate: 'https://cdn.replicate.delivery/image.png',
+                civitai: 'https://cdn.civitai.com/image.png', pixai: PIXAI_IMAGE }[provider];
             const pending = generateQuickImageGenJobImage(context, {
                 effectId: `${provider}:${interruption}`, prompt: 'village',
                 settingsFingerprint: quickImageGenSettingsFingerprint(settings), wait: async () => {},
                 fetch: async (url, options) => {
                     if (options.method === 'POST') return jsonResponse({ id: 'queued-image' }, 201);
-                    if (url.endsWith('/queued-image')) return jsonResponse({ status: 'succeeded',
-                        output: [imageUrl], steps: [{ output: { images: [{ url: imageUrl }] } }] });
+                    if (url.endsWith('/queued-image')) return jsonResponse({ status: provider === 'pixai' ? 'completed' : 'succeeded',
+                        output: [imageUrl], steps: [{ output: { images: [{ url: imageUrl }] } }],
+                        outputs: { mediaUrls: [imageUrl] } });
                     assert.equal(url, imageUrl);
                     downloadSignal = options.signal;
                     return new Response(new ReadableStream({

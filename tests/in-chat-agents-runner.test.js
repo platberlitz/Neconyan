@@ -2244,6 +2244,35 @@ describe('in-chat agent post-processing runner', () => {
             expect(chat[messageIndex].mes).toBe('Recovered reply.');
             expect(chat[messageIndex].extra.reasoning).toBe(REASONING);
         });
+
+        test.each([
+            ['starts its Companions alongside the after-reply Agents when they run together', true],
+            ['starts its Companions once the after-reply Agents finish otherwise', false],
+        ])('rerunning a saved reply %s', async (_title, concurrentCompanions) => {
+            enabledAgents = [rewriteAgent(), createCompanionAgent({ id: 'agent-companion' })];
+            let finishRewrite;
+            generateQuietPrompt.mockImplementation(request => {
+                const prompt = String(request?.quietPrompt ?? '');
+                if (prompt.includes('REWRITE_PROMPT')) return new Promise(resolve => { finishRewrite = () => resolve('Rewritten reply.'); });
+                if (prompt.includes('Write a companion note')) return Promise.resolve('Companion note.');
+                return Promise.resolve('unexpected request');
+            });
+            const runner = await loadRunner({ concurrentCompanions });
+            chat.push({ name: 'Traveler', mes: 'Knock knock.', is_user: true, is_system: false, extra: {} });
+            chat.push({ name: 'Assistant', mes: 'Saved reply.', is_user: false, is_system: false, extra: {} });
+
+            const rerun = runner.rerunSavedReplyAgentsOnMessage(1);
+            await waitFor(() => callsWith('REWRITE_PROMPT').length === 1);
+            await new Promise(resolve => setTimeout(resolve, 50));
+            expect(callsWith('Write a companion note')).toHaveLength(concurrentCompanions ? 1 : 0);
+
+            finishRewrite();
+            await rerun;
+            expect(callsWith('REWRITE_PROMPT')).toHaveLength(1);
+            expect(callsWith('Write a companion note')).toHaveLength(1);
+            expect(chat[1].mes).toBe('Rewritten reply.');
+            await new Promise(resolve => setTimeout(resolve, 80));
+        });
     });
 
     describe('companion recovery and dependency ownership', () => {
@@ -12331,6 +12360,59 @@ Helper context.`;
         await eventSource.emit(eventTypes.IMPERSONATE_READY, 'Draft impersonation');
         expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
         expect(textarea.value).toBe('Polished impersonation');
+    });
+
+    test('a filtered impersonation that began before the Agents started keeps its draft', async () => {
+        useImpersonateTransformAgent({ runOnImpersonate: true });
+        generateQuietPrompt.mockResolvedValue('<assistant_response>Polished impersonation</assistant_response>');
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+        const textarea = { value: 'Draft impersonation', dispatchEvent: jest.fn() };
+        document.querySelector = jest.fn(selector => selector === '#send_textarea' ? textarea : null);
+        const blocked = { version: 1, status: 'blocked', reason: 'content_filter' };
+        await eventSource.emit(eventTypes.IMPERSONATE_READY, 'Draft impersonation', { generationContext: null, type: 'impersonate', generationOutcome: blocked });
+        expect(generateQuietPrompt).not.toHaveBeenCalled();
+        expect(textarea.value).toBe('Draft impersonation');
+        await eventSource.emit(eventTypes.IMPERSONATE_READY, 'Draft impersonation', { generationContext: null, type: 'impersonate', generationOutcome: null });
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        expect(textarea.value).toBe('Polished impersonation');
+    });
+
+    test('a generation that ended before the Agents saw it start leaves the earlier reply alone', async () => {
+        useManualTransformAgents();
+        for (const agent of enabledAgents) agent.postProcess.enabled = true;
+        generateQuietPrompt.mockResolvedValue('Rewritten greeting');
+        chat.push({ name: 'Assistant', mes: 'Greeting', is_user: false, is_system: false, send_date: 'greeting-date', extra: {} });
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+        await eventSource.emit(eventTypes.GENERATION_ENDED, chat.length);
+        await new Promise(resolve => setTimeout(resolve, 300));
+        expect(generateQuietPrompt).not.toHaveBeenCalled();
+        expect(chat[0].mes).toBe('Greeting');
+        expect(chat[0].extra.inChatAgentPostRuns).toBeUndefined();
+    });
+
+    test('a reply processed under an older Agent order is not processed again', async () => {
+        useManualTransformAgents();
+        for (const agent of enabledAgents) agent.postProcess.enabled = true;
+        generateQuietPrompt.mockResolvedValue('Rewritten again');
+        chat.push({
+            name: 'Assistant',
+            mes: 'Already processed',
+            is_user: false,
+            is_system: false,
+            gen_started: 'started',
+            gen_finished: 'finished',
+            send_date: 'sent',
+            swipe_id: 0,
+            extra: { inChatAgentPostRuns: ['normal|started|finished|sent|0|agent-manual-b,agent-manual-a'] },
+        });
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        await new Promise(resolve => setTimeout(resolve, 1700));
+        expect(generateQuietPrompt).not.toHaveBeenCalled();
+        expect(chat[0].mes).toBe('Already processed');
     });
 
     test('rewrites generated impersonation text when prompt transform opts in', async () => {

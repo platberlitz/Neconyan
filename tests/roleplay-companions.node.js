@@ -53,8 +53,10 @@ function prepared(t, agents, { global = {}, profiles = [], effect = 'append', ch
     for (const agent of agents) fs.writeFileSync(path.join(directories.inChatAgents, `${agent.id}.json`), JSON.stringify(agent));
     const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
     const anchored = ['continue', 'swipe'].includes(effect);
-    const source = captureRoleplaySource(f.scope, { locator: f.locator, ...(anchored ? { message: f.records.length - 2 } : {}) });
-    const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 4000, serverPrompt: true, ...(imagePolicy ? { mediaPolicyVersion: 1 } : {}), trigger: anchored ? effect : 'normal' });
+    const target = anchored ? { message: f.records.length - 2 } : effect === 'replace' ? { range: { start: f.records.length - 2, count: 1 } } : {};
+    const trigger = anchored ? effect : effect === 'replace' ? 'regenerate' : 'normal';
+    const source = captureRoleplaySource(f.scope, { locator: f.locator, ...target });
+    const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 4000, serverPrompt: true, ...(imagePolicy ? { mediaPolicyVersion: 1 } : {}), trigger });
     const request = { binding: { kind: 'profile', ...captureChatProfile(directories, 'main') }, maxTokens: 32, characterName: 'Nova', worldInfo, serverPrompt: true, messages: [],
         ...(previewParent ? { workflowCandidate: { version: 1, parentJobId: previewParent } } : {}) };
     const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'companions-native', source, effect, request });
@@ -282,11 +284,11 @@ test('swiping with Agents preserves the original host while reconciling reply me
     assert.equal(row.extra.inChatAgentCompanionResults.side.status, 'done');
 });
 
-test('a server swipe checks Companion capacity against the saved chat, not the shorter prompt', async t => {
+for (const [action, effect, generationType] of [['swipe', 'swipe', 'swipe'], ['regenerate', 'replace', 'regenerate']]) test(`a server ${action} checks Companion capacity against the saved chat, not the shorter prompt`, async t => {
     const f = prepared(t, [
-        { ...companion('side'), conditions: { generationTypes: ['swipe'] } },
+        { ...companion('side'), conditions: { generationTypes: [generationType] } },
         { ...companion('shard', { trigger: 'manual' }), sourceTemplateId: MEMORY_SHARD_TEMPLATE_ID },
-    ], { effect: 'swipe' });
+    ], { effect });
     const original = f.rows().at(-1).mes;
     const prompts = [];
     await f.run({ generate: paid('main', 'Replacement reply'), generateAgent: paid('agent', ({ messages }) => {
@@ -297,7 +299,8 @@ test('a server swipe checks Companion capacity against the saved chat, not the s
     assert.equal(prompts.length, 1);
     assert.ok(prompts[0].includes('Replacement reply'));
     const row = f.rows().at(-1);
-    assert.ok(row.swipes.includes(original));
+    if (effect === 'swipe') assert.ok(row.swipes.includes(original));
+    else assert.equal(row.mes, 'Replacement reply');
     assert.equal(row.extra.inChatAgentCompanionResults.side.content, 'Replacement note');
 });
 

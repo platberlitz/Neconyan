@@ -3,7 +3,7 @@
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
-import { fillSource, sourceText } from './notebooks-browser-fixture.js';
+import { fillSource, revealNoteTools, sourceText } from './notebooks-browser-fixture.js';
 
 async function openScratchpad(page, options = { tab: 'context' }) {
     await page.evaluate(async options => (await import('/scripts/scratchpad/index.js')).openScratchpad(options), options);
@@ -200,6 +200,7 @@ async function checkNoteSelection({ app }, access, { holdSave = false } = {}) {
         const app = (await import('/scripts/notebooks/notes-app.js')).notesApp();
         app.elements.textarea.setSelectionRange(19, 34);
     });
+    await revealNoteTools(page);
     await page.getByRole('button', { name: 'Ask Scratchpad', exact: true }).click();
     await expect(page.locator('.notes-dialog .notes-capture-preview')).toHaveText('Shared passage.');
     await page.getByRole('checkbox', { name: 'Allow proposed edits to the shared text', exact: true }).check();

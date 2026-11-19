@@ -94,6 +94,8 @@ jobs:
 
       # Azure's Ubuntu mirror has taken 50 minutes to download browser packages.
       # Use Ubuntu's main mirror and let apt retry stalled requests itself.
+      # Runners now come from Azure or EC2, and the regional EC2 mirrors
+      # can take a minute per package, so every regional mirror is replaced.
       # Killing the unprivileged Playwright parent leaves sudo's apt process
       # holding the package lock, so do not wrap it in a shell timeout/retry loop.
       - name: Install test browsers
@@ -104,7 +106,7 @@ jobs:
             | sudo tee /etc/apt/apt.conf.d/80-neconyan-ci-downloads > /dev/null
           for source in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources /etc/apt/apt-mirrors*.txt; do
             if [ -f "$source" ]; then
-              sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g; s|https://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' "$source"
+              sudo sed -E -i 's#https?://[a-z0-9.-]+\.archive\.ubuntu\.com/ubuntu#https://archive.ubuntu.com/ubuntu#g' "$source"
             fi
           done
           npx --no-install playwright install --with-deps chromium firefox webkit

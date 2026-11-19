@@ -5,7 +5,7 @@ import { applyIOSOnlyCss, installIPhoneSafari } from './ios-safari-emulation.js'
 
 const key = 'NeconyanWorkspaceRailOrder.v1';
 const groups = {
-    primary: ['home', 'characters', 'model', 'agents', 'mewmory', 'lorebooks', 'notes', 'scratchpad', 'chat-archive', 'extensions'],
+    primary: ['home', 'characters', 'model', 'agents', 'mewmory', 'lorebooks', 'notes', 'scratchpad', 'gallery', 'chat-archive', 'extensions'],
     advanced: ['presets', 'sampling', 'formatting', 'regex', 'preset-tools', 'chat-completion-tabs', 'prompt-tags', 'macro-enhanced', 'prompting-lab', 'deep-swipe'],
     lore: ['persona', 'expressions', 'quick-image-gen', 'botsearcher', 'pathfinder', 'world-info-lab', 'lorebook-distiller', 'time-machine'],
     appearance: ['background', 'dialogue-colors', 'termeownal-ui', 'css-snippets', 'regex-agent-themes'],
@@ -193,7 +193,7 @@ for (const phone of [false, true]) {
             // Exercise the real account save/load flow without changing the preview account.
             const state = await storeOrder(page, { enabled: false, primary: ['model', 'model', 'removed', 'home', 'story'] });
             await ready(page);
-            expect(await order(page, 'primary')).toEqual(['model', 'home', 'characters', 'agents', 'mewmory', 'lorebooks', 'notes', 'scratchpad', 'chat-archive', 'extensions']);
+            expect(await order(page, 'primary')).toEqual(['model', 'home', 'characters', 'agents', 'mewmory', 'lorebooks', 'notes', 'scratchpad', 'gallery', 'chat-archive', 'extensions']);
             let checkbox = await settings(page, phone);
             const reset = page.locator(`[data-sb-rail-order-reset="${phone ? 'mobile' : 'desktop'}"]`);
             await expect(checkbox).not.toBeChecked();
@@ -327,7 +327,7 @@ for (const phone of [false, true]) {
             await dragTo(page, grip, target, phone);
             await expect.poll(() => order(page, 'primary')).toEqual(['home', 'characters', 'model', 'persona', ...groups.primary.slice(3)]);
             expect(await order(page, 'lore')).toEqual(groups.lore.slice(1));
-            await expect(page.locator('#neconyan-workspace-rail > [role="status"]')).toHaveText('Persona moved to position 4 of 11 in Workspace.');
+            await expect(page.locator('#neconyan-workspace-rail > [role="status"]')).toHaveText('Persona moved to position 4 of 12 in Workspace.');
             await expect.poll(() => JSON.parse(state.stored).primary?.[3]).toBe('persona');
             await page.screenshot({ path: info.outputPath('persona-in-workspace.png') });
 

@@ -220,7 +220,7 @@ test('current feature questions supply complete, actionable references to older 
         ['Where is the Tour button on settings pages?', 'navigation.page-tours', 'Tour button in the title row'],
         ['How do I start the Nori Presets tour?', 'connections.preset-tour', 'with a new name keeps the original'],
         ['Can I hide the message statistics below the avatar?', 'appearance.message-statistics', 'Settings → Appearance → Visual Toggles'],
-        ['How do I set up Mewmory with saved connections?', 'mewmory.setup', 'Original passages work without Facts and events or Pawspective interviews'],
+        ['How do I set up Mewmory with saved connections?', 'mewmory.setup', 'Replies recall saved memories, so enable Facts and events to build them'],
         ['Can Mewmory search without an AI selector?', 'mewmory.search', 'ranked results go directly to the memory budget'],
         ['How do I change Mewmory passage size and overlap?', 'mewmory.passages', 'Edits save automatically'],
         ['Why are Mewmory Data Bank file passages missing?', 'mewmory.files', 'Sources this model may read'],

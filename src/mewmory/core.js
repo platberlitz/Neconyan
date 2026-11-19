@@ -126,6 +126,22 @@ export function forgetReaders(records, state) {
     }
 }
 
+/** Records built on the given one, directly or through other records. */
+export function dependantRecords(state, recordId) {
+    const ids = new Set([recordId]);
+    const found = [];
+    for (let grew = true; grew;) {
+        grew = false;
+        for (const record of state.records) {
+            if (ids.has(record.id) || !(record.dependencies || []).some(dependency => ids.has(dependency.id))) continue;
+            ids.add(record.id);
+            found.push(record);
+            grew = true;
+        }
+    }
+    return found;
+}
+
 export function sourceEligible(state, ref, asOf = Infinity) {
     const source = state.sources[ref?.id];
     const revision = source && sourceAt(state, ref);
@@ -585,6 +601,12 @@ export function putRecord(state, record, { automatic = false, force = false } = 
         state.overrides = state.overrides.filter(override => override.id !== record.id);
         state.overrides.push({ id: record.id, signatures });
         retireCoverage(state);
+        // Memories built on the corrected one no longer count, so the messages behind them
+        // are read again on the next update rather than waiting for a whole-chat re-read.
+        // Interviews and their overviews are not read from a batch, so their own messages stand in.
+        if (previous && recordContent(previous) !== recordContent(record)) {
+            forgetReaders(dependantRecords(state, record.id).map(item => ({ inputRefs: item.inputRefs || item.refs })), state);
+        }
     }
     state.index.pending = true;
     state.recalls = [];

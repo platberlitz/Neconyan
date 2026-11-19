@@ -1,3 +1,5 @@
+import { getPixaiModelFamily } from "./pixai.js";
+
 const ALL_CONTROLS = Object.freeze({
     steps: true,
     cfgScale: true,
@@ -32,6 +34,8 @@ export const PROVIDER_GENERATION_CAPABILITIES = Object.freeze({
     fal: Object.freeze({ ...ALL_CONTROLS, sampler: false }),
     together: Object.freeze({ ...ALL_CONTROLS, sampler: false }),
     zai: NO_DIFFUSION_CONTROLS,
+    // Tsubaki and unknown model IDs: PixAI sets sampling itself and rejects the fields.
+    pixai: Object.freeze({ ...NO_DIFFUSION_CONTROLS, seed: true, sequentialSeeds: true }),
     local: ALL_CONTROLS,
     comfyui: ALL_CONTROLS,
 });
@@ -284,6 +288,9 @@ export function getProviderGenerationCapabilities(provider, settings = {}, custo
     }
     if (provider === "nanogpt") {
         return getNanoGptModelCapabilities(String(settings?.nanogptModel || "").trim() || "flux-schnell", settings?.__qigNanoGptModelMetadata);
+    }
+    if (provider === "pixai" && getPixaiModelFamily(settings?.pixaiModel) === "sdxl") {
+        return Object.freeze({ ...ALL_CONTROLS, referenceImages: false });
     }
     return PROVIDER_GENERATION_CAPABILITIES[provider] || ALL_CONTROLS;
 }

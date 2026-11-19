@@ -240,6 +240,12 @@
     :root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) .sb-shell-header:not(#right-nav-panel .sb-shell-header) {
         background: var(--aero-shine), color-mix(in srgb, var(--neco-surface) calc(var(--sb-side-opacity) * 100%), transparent);
     }
+
+    /* The right-hand drawers' titles sit straight on their glass root, and a pale accent made that glass too
+       light for them, so the glass leans on the panel surface the titles are drawn for. */
+    :root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) #right-nav-panel.openDrawer {
+        --neco-rail: color-mix(in srgb, var(--aero-glass-strong) 55%, var(--neco-surface));
+    }
 }
 
 :root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) .sb-shell-tab:hover {

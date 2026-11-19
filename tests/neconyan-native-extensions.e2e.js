@@ -135,8 +135,8 @@ test('bundled tools sit in named rail groups on desktop and phones', async ({ pa
 
     const rail = page.locator('#neconyan-workspace-rail');
     await expect(rail.locator('.neconyan-rail-tools, [data-neconyan-native-tool-list]')).toHaveCount(0);
-    await expect(rail.locator('[data-neconyan-rail-tool]:not([hidden])')).toHaveCount(15);
-    for (const [group, route] of [['finer', 'debugger'], ['appearance', 'termeownal-ui'], ['primary', 'chat-archive'],
+    await expect(rail.locator('[data-neconyan-rail-tool]:not([hidden])')).toHaveCount(16);
+    for (const [group, route] of [['finer', 'debugger'], ['appearance', 'termeownal-ui'], ['primary', 'gallery'], ['primary', 'chat-archive'],
         ['lore', 'botsearcher'], ['advanced', 'prompting-lab']]) {
         await expect(rail.locator(`[data-neconyan-${group}-nav] [data-neconyan-route="${route}"]`)).toBeVisible();
     }
@@ -159,7 +159,7 @@ test('bundled tools sit in named rail groups on desktop and phones', async ({ pa
     await expect(page.locator('body')).toHaveClass(/neconyan-rail-drawer-open/);
     await rail.locator('[data-neconyan-route="debugger"]').scrollIntoViewIfNeeded();
     await expect(rail.locator('[data-neconyan-finer-nav] [data-neconyan-route="debugger"]')).toBeVisible();
-    await expect(rail.locator('[data-neconyan-rail-tool]:not([hidden])')).toHaveCount(15);
+    await expect(rail.locator('[data-neconyan-rail-tool]:not([hidden])')).toHaveCount(16);
 });
 
 test.describe('Editor surfaces and composer density', () => {
@@ -486,7 +486,10 @@ test.describe('Sidebar sizing', () => {
 
 test.describe('side-only first-run tour', () => {
     test.use({ hasTouch: true });
-    const paragraphs = [...readFileSync(new URL('../public/scripts/welcome-screen.js', import.meta.url), 'utf8').matchAll(/body: '([^']*)', hint: '([^']*)'/g)].map(match => match.slice(1));
+    // Only the full tour: the Simple Mode tour has its own, shorter steps.
+    const welcomeSource = readFileSync(new URL('../public/scripts/welcome-screen.js', import.meta.url), 'utf8');
+    const fullTourSource = welcomeSource.slice(welcomeSource.indexOf('const WELCOME_TUTORIAL_STEPS'), welcomeSource.indexOf('const SIMPLE_TUTORIAL_STEPS'));
+    const paragraphs = [...fullTourSource.matchAll(/body: '([^']*)', hint: '([^']*)'/g)].map(match => match.slice(1));
     for (const viewport of [{ width: 1280, height: 900 }, { width: 393, height: 852 }]) {
         test(`resumes, replays and remembers completion at ${viewport.width}px`, async ({ page }, info) => {
             expect(paragraphs).toHaveLength(8);

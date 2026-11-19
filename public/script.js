@@ -8660,7 +8660,7 @@ class StreamingProcessor {
         // Impersonation fills the composer without creating a chat message.
         if (this.type === 'impersonate') {
             if (unlockUI) this.markUIGenStopped();
-            await eventSource.emit(event_types.IMPERSONATE_READY, text, { generationContext: this.agentGenerationContext, type: this.type });
+            await eventSource.emit(event_types.IMPERSONATE_READY, text, { generationContext: this.agentGenerationContext, type: this.type, generationOutcome: this.outcome ?? null });
             return;
         }
         const messageElement = chatElement.find(`.mes[mesid="${messageId}"]`);

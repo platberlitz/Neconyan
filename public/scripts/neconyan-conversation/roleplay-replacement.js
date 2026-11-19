@@ -1,4 +1,6 @@
 const replacements = new Set(['roleplay.swipe', 'roleplay.correct', 'guided.swipe', 'guided.regenerate', 'guided.correction']);
+// Swipes and regenerates write a whole new reply, so the cleared card shrinks at once.
+const collapsingReplacements = new Set(['roleplay.swipe', 'roleplay.correct', 'guided.swipe', 'guided.regenerate']);
 const sources = new WeakMap();
 const reserves = new Map();
 
@@ -190,8 +192,8 @@ export function syncRoleplayReplacementReserve(row) {
 }
 
 /**
- * Keep the displayed reply's row, emptied, until its prepared preview can replace it. On a swipe,
- * let the row shrink immediately; other replacements reserve height to hold the reading position.
+ * Keep the displayed reply's row, emptied, until its prepared preview can replace it. On a swipe or
+ * regenerate, let the row shrink immediately; a correction reserves height to hold the reading position.
  */
 export function beginRoleplayReplacement(name, messageIndex, isCurrent) {
     if (!replacements.has(name) || !Number.isSafeInteger(messageIndex) || !isCurrent()) return () => {};
@@ -204,7 +206,7 @@ export function beginRoleplayReplacement(name, messageIndex, isCurrent) {
     marker.hidden = true;
     marker.dataset.roleplayReplacement = String(messageIndex);
     const wasInert = original.inert;
-    const reserveHeight = name !== 'roleplay.swipe' && name !== 'guided.swipe';
+    const reserveHeight = !collapsingReplacements.has(name);
     sources.set(marker, { original, reserveHeight });
     original.inert = true;
     const measurable = typeof original.getBoundingClientRect === 'function'

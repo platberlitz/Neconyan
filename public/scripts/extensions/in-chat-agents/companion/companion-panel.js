@@ -621,13 +621,16 @@ export function collectPanelAgentStates() {
         .sort((a, b) => orderOf(a) - orderOf(b));
 }
 
-function hasCompanionPanelLauncherContent() {
+function hasCompanionPanelLauncherContent({ waitForNote = false } = {}) {
     // Pausing runs or recovering a setup must not hide readable Companion notes.
     if (isConversationModeActive()) {
         return false;
     }
 
-    return collectPanelAgentStates().some(state => state.latest || state.agent);
+    // The floating button sits over the chat, so for an automatic Companion it waits for the
+    // first note. A manual one is run from the panel, so it needs the button straight away.
+    return collectPanelAgentStates().some(state => state.latest
+        || (state.agent && (!waitForNote || getCompanionConfig(state.agent).trigger !== 'auto')));
 }
 
 export function shouldShowCompanionPanelHandle() {
@@ -636,7 +639,7 @@ export function shouldShowCompanionPanelHandle() {
         return false;
     }
 
-    return hasCompanionPanelLauncherContent();
+    return hasCompanionPanelLauncherContent({ waitForNote: true });
 }
 
 export function shouldShowCompanionPanelTopbarButton() {

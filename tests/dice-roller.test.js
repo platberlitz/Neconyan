@@ -175,7 +175,7 @@ describe('dice roller companion wiring', () => {
         const indexSource = readRepoFile('public/scripts/extensions/in-chat-agents/index.js');
         expect(indexSource).toMatch(/const DEFAULT_BUNDLED_TEMPLATE_IDS = new Set\(\[[\s\S]*?'tpl-dice-roller-companion',[\s\S]*?\]\);/);
         expect(indexSource).toMatch(/const BUNDLED_REGEX_POST_DEFAULT_EXCLUDED_TEMPLATE_IDS = new Set\(\[[\s\S]*?DICE_ROLLER_TEMPLATE_ID,[\s\S]*?\]\);/);
-        expect(indexSource).toContain('void import(\'./companion/dice-roller.js\')');
+        expect(indexSource).toContain('diceRollerStart = import(\'./companion/dice-roller.js\')');
         expect(existsSync(fileURLToPath(new URL('../public/scripts/extensions/dice-roller', import.meta.url)))).toBe(false);
         expect(readRepoFile('src/endpoints/extensions.js')).not.toContain('\'dice-roller\'');
         expect(readRepoFile('public/scripts/extensions-manager.js')).not.toContain('\'dice-roller\'');

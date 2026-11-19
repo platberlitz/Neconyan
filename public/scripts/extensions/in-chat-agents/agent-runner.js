@@ -1443,10 +1443,27 @@ function syncAssistantMessageTextToSwipe(message) {
     }
 }
 
-function getPostProcessingRunKey(message, generationType, activationSnapshot = null) {
-    const snapshotAgentIds = Array.isArray(activationSnapshot?.activeAgentIds)
-        ? activationSnapshot.activeAgentIds.join(',')
+// Agents can load in a different order after a reload, so run keys list them sorted.
+function getRunKeyAgentIds(activationSnapshot) {
+    return Array.isArray(activationSnapshot?.activeAgentIds)
+        ? [...new Set(activationSnapshot.activeAgentIds.map(String))].sort().join(',')
         : '';
+}
+
+// Keys saved before the Agent list was sorted still describe the same run.
+function normalizeStoredRunKey(runKey) {
+    const separator = runKey.lastIndexOf('|');
+    if (separator < 0) {
+        return runKey;
+    }
+    const agentIds = runKey.slice(separator + 1);
+    return agentIds
+        ? `${runKey.slice(0, separator + 1)}${[...new Set(agentIds.split(','))].sort().join(',')}`
+        : runKey;
+}
+
+function getPostProcessingRunKey(message, generationType, activationSnapshot = null) {
+    const snapshotAgentIds = getRunKeyAgentIds(activationSnapshot);
     const swipeInfo = getActiveSwipeInfo(message);
 
     return [
@@ -1465,9 +1482,7 @@ function getPostProcessingIndexRunKey(message, messageIndex, generationType, act
         return '';
     }
 
-    const snapshotAgentIds = Array.isArray(activationSnapshot?.activeAgentIds)
-        ? activationSnapshot.activeAgentIds.join(',')
-        : '';
+    const snapshotAgentIds = getRunKeyAgentIds(activationSnapshot);
 
     return [
         postProcessingGenerationRunId,
@@ -1775,7 +1790,7 @@ function hasProcessedPostProcessingRun(message, runKey, messageIndex = null, ind
         runKey &&
         (
             processedPostProcessingRuns.get(message)?.has(runKey) ||
-            getStoredPostProcessingRuns(message).includes(runKey) ||
+            getStoredPostProcessingRuns(message).some(value => typeof value === 'string' && normalizeStoredRunKey(value) === runKey) ||
             indexRuns?.includes(runKey) ||
             (indexRunKey && indexRuns?.includes(indexRunKey))
         ),
@@ -4882,6 +4897,10 @@ function onGenerationEnded(_chatLength, generationContext) {
     clearPathfinderRetrievalToast();
     releaseToolAgentRegistrations();
 
+    // A generation that began before the Agents started left no record of the reply it
+    // followed, so the latest reply here may be an older one, such as the greeting.
+    if (postProcessingGenerationRunId === 0) return;
+
     if (isNativeRoleplayGeneration || stoppedGenerationRunId === postProcessingGenerationRunId) {
         isGenerationInProgress = false;
         lastMainGenerationEndedAt = Date.now();
@@ -6313,7 +6332,10 @@ async function onMainGenerationOutputReady(eventData) {
 }
 
 async function onImpersonateReady(text = '', eventData = {}) {
-    if (isAuxiliaryOrStaleRequest(eventData) || automaticGenerationSuppressed(getAgentGenerationContext()) || !areAgentsGloballyEnabled()) {
+    // Impersonation saves no message to carry its outcome, and a request that began before the
+    // Agents started has no identity to suppress, so the event brings the outcome itself.
+    if (isAuxiliaryOrStaleRequest(eventData) || automaticGenerationSuppressed(getAgentGenerationContext())
+        || messageGenerationSuppressed({ extra: { generation_outcome: eventData?.generationOutcome } }) || !areAgentsGloballyEnabled()) {
         return;
     }
 
@@ -7647,7 +7669,10 @@ export async function hasSavedReplyAgentWork(messageIndex) {
     return getAutomaticCompanionAgents(messageIndex).length > 0;
 }
 
-/** Rerun the saved reply's after-reply Agents, then its enabled automatic Companions. */
+/**
+ * Rerun the saved reply's after-reply Agents and its enabled automatic Companions, together when
+ * Companions are set to run at the same time as after-reply Agents, otherwise one after the other.
+ */
 export async function rerunSavedReplyAgentsOnMessage(messageIndex, { isCurrent = () => true } = {}) {
     const message = chat[messageIndex];
     if (!message || message.is_user || message.is_system) return;
@@ -7666,10 +7691,25 @@ export async function rerunSavedReplyAgentsOnMessage(messageIndex, { isCurrent =
         && isMessageTargetCurrent(message, target.state, messageIndex, { text: false });
     const { runAutomaticCompanionsOnMessage } = await import('./companion/companion-runner.js');
     if (!canContinue() || !isMessageTargetCurrent(message, target.state, messageIndex)) return;
-    if (getPromptTransformAgents(getEnabledAgents().filter(isAgentRuntimeAllowed)).length > 0) {
-        await enqueueManualOperation(manualAgentRunQueues[0], target, () => executeRerunPostGenerationAgentsOnMessage(target, cancelRevision), cancelRevision);
+    if (getPromptTransformAgents(getEnabledAgents().filter(isAgentRuntimeAllowed)).length === 0) {
+        await runAutomaticCompanionsOnMessage(messageIndex);
+        return;
     }
-    if (canContinue()) await runAutomaticCompanionsOnMessage(messageIndex);
+    const rerunPostGenerationAgents = () => enqueueManualOperation(manualAgentRunQueues[0], target, () => executeRerunPostGenerationAgentsOnMessage(target, cancelRevision), cancelRevision);
+    if (!getGlobalSettings().companionConcurrentWithPostGen) {
+        await rerunPostGenerationAgents();
+        if (canContinue()) await runAutomaticCompanionsOnMessage(messageIndex);
+        return;
+    }
+    // Companions read the reply as it stands, so an open edit is saved before both start.
+    await commitOpenEditorForMessage(messageIndex);
+    if (!isMessageTargetCurrent(message, target.state, messageIndex, { text: false, revision: false })) return;
+    target.state = captureMessageTargetState(message, messageIndex);
+    if (!canContinue()) return;
+    const companions = runAutomaticCompanionsOnMessage(messageIndex).catch(error => {
+        console.warn('[InChatAgents] Companion stage failed:', error);
+    });
+    await Promise.allSettled([rerunPostGenerationAgents(), companions]);
 }
 
 async function executeRerunPostGenerationAgentsOnMessage(submittedTarget, cancelRevision) {

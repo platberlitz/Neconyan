@@ -257,7 +257,7 @@ async function attachJson(testInfo, name, value) {
     await testInfo.attach(name, { path, contentType: 'application/json' });
 }
 
-async function expectReasoningState(page, value, restricted = true) {
+async function expectReasoningState(page, value, restricted = true, noneAvailable = !restricted) {
     await expect.poll(() => page.evaluate(async () => {
         const select = document.getElementById('openai_reasoning_effort');
         const { oai_settings } = await import('/scripts/openai.js');
@@ -269,9 +269,11 @@ async function expectReasoningState(page, value, restricted = true) {
         };
     })).toEqual({
         value, selected: [{ value, selected: true }], setting: value,
-        options: ['none', 'min', 'low', 'medium', 'high', 'xhigh', 'max'].map(effort => ({
-            value: effort, hidden: restricted && !['high', 'max'].includes(effort), disabled: restricted && !['high', 'max'].includes(effort),
-        })),
+        // Auto lets the provider choose, so models with declared levels still offer it.
+        options: ['auto', 'none', 'min', 'low', 'medium', 'high', 'xhigh', 'max'].map(effort => {
+            const unavailable = effort === 'none' ? !noneAvailable : restricted && !['auto', 'high', 'max'].includes(effort);
+            return { value: effort, hidden: unavailable, disabled: unavailable };
+        }),
     });
 }
 
@@ -284,7 +286,7 @@ async function savedReasoningEffort(page) {
 }
 
 async function expectSupportedReasoningRows(picker, selected = null) {
-    await expect(picker.getByRole('option')).toHaveText(['High', 'Maximum']);
+    await expect(picker.getByRole('option')).toHaveText(['Auto', 'High', 'Maximum']);
     await expect(picker.locator('[aria-selected="true"]')).toHaveCount(selected ? 1 : 0);
     if (selected) await expect(picker.getByRole('option', { name: selected, exact: true })).toHaveAttribute('aria-selected', 'true');
 }
@@ -373,7 +375,7 @@ for (const mobile of [false, true]) {
             await expect(select).toHaveValue('low');
             await expect(select.locator('option[value="low"]')).toBeDisabled();
             await expectSupportedReasoningRows(picker);
-            await expect(picker.getByRole('option', { name: 'High', exact: true })).toBeFocused();
+            await expect(picker.getByRole('option', { name: 'Auto', exact: true })).toBeFocused();
             await page.keyboard.press('ArrowUp');
             await expect(picker.getByRole('option', { name: 'Maximum', exact: true })).toBeFocused();
             await page.keyboard.press('Escape');
@@ -419,6 +421,8 @@ for (const mobile of [false, true]) {
             await page.keyboard.press('ArrowDown');
             await expect(picker.getByRole('option', { name: 'Maximum', exact: true })).toBeFocused();
             await page.keyboard.press('ArrowDown');
+            await expect(picker.getByRole('option', { name: 'Auto', exact: true })).toBeFocused();
+            await page.keyboard.press('ArrowDown');
             await expect(picker.getByRole('option', { name: 'High', exact: true })).toBeFocused();
             await page.keyboard.press('Enter');
             await expect(picker).toBeHidden();
@@ -441,6 +445,7 @@ for (const mobile of [false, true]) {
                 await select.scrollIntoViewIfNeeded();
                 await select.focus();
                 await page.keyboard.press('Home');
+                await page.keyboard.press('ArrowDown');
                 await page.keyboard.press('Enter');
                 await expectReasoningState(page, 'high');
                 await page.evaluate(async () => (await import('/script.js')).saveSettings(0, { returnResult: true }));
@@ -470,7 +475,8 @@ for (const mobile of [false, true]) {
             const picker = page.locator('#sb-reasoning-effort-picker');
             await expect(picker.getByRole('option', { name: 'Low', exact: true })).toBeEnabled();
             await expect(picker.getByRole('option')).toHaveCount(7);
-            await expectReasoningState(page, 'low', false);
+            // A thinking variant always reasons, so None stays hidden without a declared list.
+            await expectReasoningState(page, 'low', false, false);
             routes.models.value = MODELS;
             routes.models.hold = false;
             await routes.models.held.pop().fulfill({ json: { data: MODELS } });
@@ -534,7 +540,7 @@ for (const mobile of [false, true]) {
             await expectReasoningState(page, 'low', false);
             await page.locator('#left-nav-panel .sb-shell-close').click();
             await chip.click();
-            await expect(picker.getByRole('option')).toHaveText(['None', 'Minimum', 'Low', 'Medium', 'High', 'Extra High', 'Maximum']);
+            await expect(picker.getByRole('option')).toHaveText(['Auto', 'None', 'Minimum', 'Low', 'Medium', 'High', 'Extra High', 'Maximum']);
             await page.keyboard.press('Escape');
             await expectReasoningState(page, 'low', false);
             await page.evaluate(() => window.NeconyanShell.openTab('left', 'api'));

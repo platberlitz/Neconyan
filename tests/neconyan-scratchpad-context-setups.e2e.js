@@ -28,7 +28,7 @@ async function setupAccount(app, phone) {
 for (const phone of [false, true]) {
     test(`${phone ? 'phone' : 'desktop'} current Saved setup follows every new session and survives reopening`, async ({ preparedSetups }) => {
         test.setTimeout(90000);
-        const { page, open } = preparedSetups;
+        const { account, page, open } = preparedSetups;
         await page.locator('#scratchpad-setup').selectOption('Quiet replies');
         const updated = page.waitForResponse('**/api/scratchpad/session/update');
         await page.locator('#scratchpad-depth').fill('3');
@@ -43,6 +43,12 @@ for (const phone of [false, true]) {
             expect(session.settings).toMatchObject({ depth: 9, stream: false });
         };
         await create(false);
+        // The choice is saved with the settings a second after the last change, and a reload
+        // cancels a save that has not gone yet.
+        await expect.poll(async () => {
+            const { accountStorage } = JSON.parse((await account.post('/api/settings/get')).settings);
+            return JSON.parse(accountStorage?.neconyanScratchpad ?? '{}').contextSetup;
+        }, { timeout: 15000 }).toBe('Quiet replies');
         await page.reload({ waitUntil: 'domcontentloaded' });
         await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'), undefined, { timeout: 60000 });
         await open('context');
@@ -143,7 +149,7 @@ for (const phone of [false, true]) {
         const stored = await listed();
         expect(stored.setups.map(setup => setup.name)).toEqual(['Quick look']);
         expect(stored.setups[0].settings).toMatchObject({ depth: 7, stream: false });
-        expect(Object.keys(stored.setups[0].settings).sort()).toEqual(['depth', 'include', 'maxTokens', 'partialPrefill', 'prefill', 'readLinks', 'stream', 'webSearch']);
+        expect(Object.keys(stored.setups[0].settings).sort()).toEqual(['depth', 'feedbackTone', 'include', 'maxTokens', 'partialPrefill', 'prefill', 'readLinks', 'stream', 'webSearch']);
 
         await section.scrollIntoViewIfNeeded();
         await page.screenshot({ path: `${prefix}-saved.png` });

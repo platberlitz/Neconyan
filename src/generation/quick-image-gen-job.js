@@ -10,7 +10,7 @@ import { assertQuickImageGenRequestConfigured, downloadQuickImageGenImage, gener
     readQuickImageGenSettings, resolveQuickImageGenSeed } from './quick-image-gen.js';
 import { prepareNanoGptPayload } from './quick-image-gen-nanogpt.js';
 import { prepareNanobananaPayload } from './quick-image-gen-nanobanana.js';
-import { generateQueuedImageJob } from './quick-image-gen-queued.js';
+import { generateQueuedImageJob, QUEUED_IMAGE_PROVIDERS } from './quick-image-gen-queued.js';
 import { generateComfyImageJob } from './quick-image-gen-comfy.js';
 import { prepareProxyImageRequest } from './quick-image-gen-proxy.js';
 import { prepareA1111ImageRequest } from './quick-image-gen-a1111.js';
@@ -163,7 +163,7 @@ export async function generateQuickImageGenJobImage(context, { effectId, prompt,
             image = await generateCustomImageJob(context, { effectId, input, settings, references: providerInput,
                 fingerprint: input.settingsFingerprint, fetchImpl: fetch || globalThis.fetch, readSettings, withAccount, wait });
             withAccount(() => writeImageArtifact(context.directories, context.job.id, step, image));
-        } else if (['replicate', 'civitai'].includes(input.provider) || input.provider === 'local' && settings.localType === 'comfyui') {
+        } else if (QUEUED_IMAGE_PROVIDERS.includes(input.provider) || input.provider === 'local' && settings.localType === 'comfyui') {
             image = input.provider === 'local'
                 ? await generateComfyImageJob(referenceContext, { effectId, input, settings,
                     fingerprint: input.settingsFingerprint, fetchImpl: fetch || globalThis.fetch,

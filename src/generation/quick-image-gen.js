@@ -36,7 +36,8 @@ import { isTrustedProviderOutputUrl } from '../../public/scripts/extensions/quic
 import { buildCustomBackendRequest, downloadCustomBackendImage, executeCustomBackend, normalizeCustomBackendConfig, normalizeCustomBackendImageSource } from '../../public/scripts/extensions/quick-image-gen/lib/custom-backend.js';
 import { getGeminiCandidateFailure } from '../../public/scripts/extensions/quick-image-gen/lib/generated-image.js';
 import { MAX_PROVIDER_RESPONSE_BYTES } from '../../public/scripts/extensions/quick-image-gen/lib/security.js';
-import { buildQueuedImageRequest } from './quick-image-gen-queued.js';
+import { buildQueuedImageRequest, QUEUED_IMAGE_PROVIDERS } from './quick-image-gen-queued.js';
+import { PIXAI_CREATE_URL } from '../../public/scripts/extensions/quick-image-gen/lib/pixai.js';
 import { nanobananaEndpoint } from './quick-image-gen-nanobanana.js';
 import { buildNovelAIRequest, decodeNovelAIOutput, resolveNovelAIProxyImage } from './quick-image-gen-novelai.js';
 import { assertProxyImageConfigured, generateProxyImage, proxyImageEndpoint } from './quick-image-gen-proxy.js';
@@ -204,6 +205,10 @@ async function materializeImage(source, fetchImpl, signal, provider, requestUrl 
 
 /** Replicate API output may need its key; allowlisted CDN output never receives it. */
 export function materializeQueuedImage(source, fetchImpl, signal, provider, apiKey) {
+    if (provider === 'pixai') {
+        // PixAI serves finished images from its public image host, which never receives the key.
+        return materializeImage(source, fetchImpl, signal, provider, PIXAI_CREATE_URL, {});
+    }
     return materializeImage(source, fetchImpl, signal, provider,
         'https://api.replicate.com/v1/predictions', { Authorization: `Bearer ${apiKey}` });
 }
@@ -239,7 +244,7 @@ export function assertQuickImageGenRequestConfigured(settings, prompt, negative 
     const provider = assertQuickImageGenConfigured(settings);
     if (provider === 'custom') {
         buildCustomBackendRequest(customConfig(settings), customInput(settings, prompt, negative));
-    } else if (provider === 'replicate' || provider === 'civitai') {
+    } else if (QUEUED_IMAGE_PROVIDERS.includes(provider)) {
         buildQueuedImageRequest(provider, { ...settings, seed: resolveQuickImageGenSeed(settings.seed) }, prompt, negative);
     } else if (provider === 'nanobanana') {
         nanobananaEndpoint(settings);
@@ -594,7 +599,7 @@ export function readQuickImageGenSettings(directories) {
 /** Reject a configuration known to be unable to send a request before recording provider uncertainty. */
 export function assertQuickImageGenConfigured(settings) {
     const provider = String(settings?.provider || '').trim();
-    if (!Object.hasOwn(PROVIDER_GENERATORS, provider) && !['replicate', 'civitai'].includes(provider)) {
+    if (!Object.hasOwn(PROVIDER_GENERATORS, provider) && !QUEUED_IMAGE_PROVIDERS.includes(provider)) {
         throw fail(provider
             ? `Quick Image Gen provider '${provider}' has no server-side implementation yet.`
             : 'No Quick Image Gen provider is configured for this account.',
@@ -615,6 +620,7 @@ export function assertQuickImageGenConfigured(settings) {
         case 'novelai': requireKey(settings.naiProxyKey || settings.naiKey, 'NovelAI API key'); break;
         case 'replicate': requireKey(settings.replicateKey, 'Replicate API key'); break;
         case 'civitai': requireKey(settings.civitaiKey, 'CivitAI API key'); break;
+        case 'pixai': requireKey(settings.pixaiKey, 'PixAI API key'); break;
         case 'local':
             if (settings.localType === 'comfyui') comfyImageBaseUrl(settings);
             else a1111BaseUrl(settings);

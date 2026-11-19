@@ -82,17 +82,22 @@ for (const [runner, browserType] of [[test, 'chromium'], [webkitTest, 'webkit']]
             const indicator = summary.locator('.fa-chevron-down');
             await expect(summary).toHaveText('Advanced entry settings');
             await expect(indicator).toHaveAttribute('aria-hidden', 'true');
-            await summary.scrollIntoViewIfNeeded();
-            const geometry = await summary.evaluate(node => {
-                const box = node.getBoundingClientRect();
-                const icon = node.querySelector('i');
-                const iconBox = icon.getBoundingClientRect();
-                const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
-                return { height: box.height, hit: node === hit || node.contains(hit), iconWidth: iconBox.width,
-                    mask: getComputedStyle(icon, '::before').maskImage, overflow: node.scrollWidth - node.clientWidth };
-            });
+            let geometry;
+            // On a slow runner the editor can still move after the first scroll, so scroll and
+            // measure again until the summary holds still under the pointer.
+            await expect(async () => {
+                await summary.scrollIntoViewIfNeeded();
+                geometry = await summary.evaluate(node => {
+                    const box = node.getBoundingClientRect();
+                    const icon = node.querySelector('i');
+                    const iconBox = icon.getBoundingClientRect();
+                    const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+                    return { height: box.height, hit: node === hit || node.contains(hit), iconWidth: iconBox.width,
+                        mask: getComputedStyle(icon, '::before').maskImage, overflow: node.scrollWidth - node.clientWidth };
+                });
+                expect(geometry.hit).toBe(true);
+            }).toPass({ timeout: 10000 });
             expect(geometry.height).toBeGreaterThanOrEqual(44);
-            expect(geometry.hit).toBe(true);
             expect(geometry.iconWidth).toBeGreaterThan(0);
             expect(geometry.mask).not.toBe('none');
             expect(geometry.overflow).toBeLessThanOrEqual(1);

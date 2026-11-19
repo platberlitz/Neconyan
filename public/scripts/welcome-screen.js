@@ -1988,8 +1988,14 @@ function initializeNeconyanRailOrder(rail) {
                     start: (_event, ui) => {
                         ui.placeholder.outerHeight(ui.item.outerHeight());
                         suppressClickUntil = Infinity;
+                        // The placeholder moving above the visible rows would make the browser
+                        // scroll the list to keep its place, sliding the rows under the finger.
+                        const scroller = rail.querySelector('.neconyan-rail-scroll');
+                        if (scroller) scroller.style.overflowAnchor = 'none';
                     },
                     stop: (_event, ui) => {
+                        const scroller = rail.querySelector('.neconyan-rail-scroll');
+                        if (scroller) scroller.style.overflowAnchor = '';
                         suppressClickUntil = Date.now() + 400;
                         saveOrder(ui.item[0]);
                     },

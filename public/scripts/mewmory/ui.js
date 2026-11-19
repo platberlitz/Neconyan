@@ -2913,7 +2913,7 @@ function loadMewmoryStyles() {
     if (!style) {
         style = document.createElement('link');
         style.id = 'mewmory-css';
-        style.href = 'css/mewmory.css?v=20261118-panel-transparency-r2';
+        style.href = 'css/mewmory.css?v=20261119-aero-header-r2';
         document.head.append(style);
     }
     if (style.rel !== 'stylesheet') {

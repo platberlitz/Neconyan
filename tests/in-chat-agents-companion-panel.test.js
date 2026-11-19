@@ -784,11 +784,35 @@ describe('companion tracker panel', () => {
         expect(panel.shouldShowCompanionPanelHandle()).toBe(false);
 
         agents = [{ id: 'tracker-1', name: 'Scene Tracker', execution: 'companion', enabled: true }];
+        const message = { is_user: false, is_system: false, mes: 'reply' };
+        chat.push(message);
+        companionResultsByMessage.set(message, { 'tracker-1': { status: 'done', content: 'Rain on the station roof.', agentName: 'Scene Tracker' } });
         expect(panel.shouldShowCompanionPanelHandle()).toBe(true);
 
         globallyEnabled = false;
         expect(panel.shouldShowCompanionPanelHandle()).toBe(true);
         expect(panel.buildPanelHtml()).toContain('data-action="panel-regenerate-all" title="Switch Agents on to run companions" disabled');
+    });
+
+    test('waits for the first note of an automatic Companion before showing the floating button', async () => {
+        agents = [{ id: 'tracker-1', name: 'Scene Tracker', execution: 'companion', enabled: true }];
+        const panel = await importPanel();
+        expect(panel.shouldShowCompanionPanelHandle()).toBe(false);
+        // The top bar button covers nothing, so it stays available.
+        panel.setCompanionPanelLauncher('topbar');
+        expect(panel.shouldShowCompanionPanelTopbarButton()).toBe(true);
+        panel.setCompanionPanelLauncher('handle');
+
+        const message = { is_user: false, is_system: false, mes: 'reply' };
+        chat.push(message);
+        companionResultsByMessage.set(message, { 'tracker-1': { status: 'done', content: 'Rain on the station roof.', agentName: 'Scene Tracker' } });
+        expect(panel.shouldShowCompanionPanelHandle()).toBe(true);
+    });
+
+    test('shows the launcher for a manual Companion before it has run', async () => {
+        agents = [{ id: 'tracker-1', name: 'Scene Tracker', execution: 'companion', enabled: true, companion: { trigger: 'manual' } }];
+        const panel = await importPanel();
+        expect(panel.shouldShowCompanionPanelHandle()).toBe(true);
     });
 
     test('defaults the launcher to the floating button and normalises unknown values', async () => {
@@ -801,7 +825,7 @@ describe('companion tracker panel', () => {
     });
 
     test('shows either the floating button or the top bar button, never both', async () => {
-        agents = [{ id: 'tracker-1', name: 'Scene Tracker', execution: 'companion', enabled: true }];
+        agents = [{ id: 'tracker-1', name: 'Scene Tracker', execution: 'companion', enabled: true, companion: { trigger: 'manual' } }];
         const panel = await importPanel();
 
         expect(panel.shouldShowCompanionPanelHandle()).toBe(true);
@@ -826,7 +850,7 @@ describe('companion tracker panel', () => {
 
     test('restores the top bar choice, puts its button in the bar slot, and removes it when switched back', async () => {
         accountStorageValues.set('ica--tracker-panel-launcher', 'topbar');
-        agents = [{ id: 'tracker-1', name: 'Scene Tracker', execution: 'companion', enabled: true }];
+        agents = [{ id: 'tracker-1', name: 'Scene Tracker', execution: 'companion', enabled: true, companion: { trigger: 'manual' } }];
         const nodes = new Map();
         const slot = { append: jest.fn(node => nodes.set(node.id, node)) };
         globalThis.document.getElementById = jest.fn(id => (id === 'sb-topbar-extension-slot' ? slot : nodes.get(id) ?? null));
@@ -904,7 +928,7 @@ describe('companion tracker panel', () => {
             getAttribute: jest.fn(() => conversationMode),
         };
         globalThis.document.getElementById = jest.fn(id => id === 'sheld' ? sheld : null);
-        agents = [{ id: 'tracker-1', name: 'Scene Tracker', execution: 'companion', enabled: true }];
+        agents = [{ id: 'tracker-1', name: 'Scene Tracker', execution: 'companion', enabled: true, companion: { trigger: 'manual' } }];
         const panel = await importPanel();
         const panelElement = {
             attr: jest.fn(() => panelElement),
@@ -939,7 +963,7 @@ describe('companion tracker panel', () => {
     });
 
     test('hides the story handle while Scratchpad is open, then restores it', async () => {
-        agents = [{ id: 'tracker-1', name: 'Scene Tracker', execution: 'companion', enabled: true }];
+        agents = [{ id: 'tracker-1', name: 'Scene Tracker', execution: 'companion', enabled: true, companion: { trigger: 'manual' } }];
         let scratchpadOpen = true;
         globalThis.document.body.classList = { contains: name => name === 'neconyan-scratchpad-open' && scratchpadOpen };
         globalThis.matchMedia = jest.fn(() => ({ matches: true }));
@@ -1163,7 +1187,7 @@ describe('companion tracker panel', () => {
     });
 
     test('hides the floating handle from the panel and restores it on the next explicit open', async () => {
-        agents = [{ id: 'tracker-1', name: 'Scene Tracker', execution: 'companion', enabled: true }];
+        agents = [{ id: 'tracker-1', name: 'Scene Tracker', execution: 'companion', enabled: true, companion: { trigger: 'manual' } }];
         const panel = await importPanel();
         const panelElement = {
             on: jest.fn(() => panelElement),
@@ -1217,7 +1241,7 @@ describe('companion tracker panel', () => {
     });
 
     test('jumps the panel to its top and bottom and hides the jump buttons when nothing scrolls', async () => {
-        agents = [{ id: 'tracker-1', name: 'Scene Tracker', execution: 'companion', enabled: true, companion: { displayMode: 'panel' } }];
+        agents = [{ id: 'tracker-1', name: 'Scene Tracker', execution: 'companion', enabled: true, companion: { displayMode: 'panel', trigger: 'manual' } }];
         const panel = await importPanel();
         const createButton = () => {
             const attributes = new Map();

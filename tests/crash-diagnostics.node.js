@@ -204,6 +204,13 @@ test('browser capture survives unavailable storage and reports the loss of persi
     assert.doesNotMatch(JSON.stringify(result), /key=private/);
 });
 
+test('an activity write after an unsaved report keeps the advice to copy the report', () => {
+    const fixture = browser(new Map(), true);
+    fixture.listeners.get('error')({ error: new Error('failure'), filename: 'https://host/app.js', lineno: 1, colno: 1 });
+    fixture.api.flushActivity('manual');
+    assert.match(fixture.api.getReports().storageError, /Could not save to browser storage\. Copy or download/);
+});
+
 const hasJava = spawnSync('javac', ['-version']).status === 0 && spawnSync('java', ['-version']).status === 0;
 test('Android report store survives recreation, limits retention and strips secrets', { skip: !hasJava }, t => {
     const root = temporary(t);

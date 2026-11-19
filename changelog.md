@@ -2,6 +2,64 @@
 
 ## v1.5.6
 
+### Highlights
+- **Simple Mode** covers the whole first hour now. A new account meets Miso, Taro and Nori ('Who would you like to meet?' lets you pick Female, Male or Neutral for each), and the tour is three steps: connect, meet a character, say hello.
+- Home has 'Find characters online' and 'Import a character'. In Simple Mode a found card skips the review screen and opens its chat straight away.
+- Simple Mode's Connections page shows only provider, key, model, Connect and Test, with OpenRouter sign-in under the key box and everything else under 'More connection options'. Connect with no key now says so, and Test shows its result under the button.
+- The Simple Mode sidebar has 'Memory', which opens 'Story so far' with a switch, 'Summarise now' and the latest summary, plus 'Updates' for checking and installing updates and Dialogue Colors for speaker colours.
+- Simple Mode hides more of the power-user extras, such as the Sampling, Formatting and Mewmory tabs, Groups, Catelier and the rarer message menu items. On phones, the 'Want to keep things simple?' answers are no longer cut off.
+- **Panels** replaces Background Visibility in Settings > Appearance. Each shell style starts with its own look for messages, Home cards and side panels: Windows XP, 98 and Kittyless are solid, the glass styles are frosted, and Calico and the flat styles are nearly solid.
+- 'Panel opacity' and 'Panel blur' change all three surfaces at once, 'Separate surfaces' sets each one on its own, and every style remembers its own settings on that device. If you had Background Visibility set, Home asks once whether to 'Try the new defaults' or 'Keep my setting'.
+- Your wallpaper shows around messages and Home cards at every setting, and Settings, Characters, Lorebooks and the other reading pages have a solid backing again. 'Letter outline' is opt-in and leaves Dialogue Colors gradients and styled HTML alone.
+- Windows 98 greys pick up the accent you choose, as Windows XP already did. The theme's own accent keeps the classic silver.
+- Long top bar labels slide to show the text that was cut off. 'Scroll long labels' is on by default, and reduced motion keeps them still.
+- The Extensions icon is a pile of cats, and selected favourite stars fill in instead of only changing colour.
+- The loading screen waits for the styles the app needs, so your Shell Style is there from the first frame and the Agents page never opens blank or unstyled. The first open after an update no longer shows old copies of some stylesheets.
+- **Scratchpad** has a 'Feedback tone' slider from 'Nicer' through 'Neutral' and 'Harsher' to 'Unreasonably critical'. 'Give one assistant its own tone' lets a round table seat a kind Miso next to a merciless Taro.
+- General Scratchpad can share your equipped preset as reference: tick 'Current preset' under Context. It's off by default.
+- Assistants see the pictures saved in a session on follow-up messages without another upload, on Custom and CometAPI connections too. A model that refuses pictures gets a short text note instead, so the reply still arrives.
+- Avatar edits name the character, persona or Scenario Note they change, and still wait for 'Review avatar' and 'Save change'.
+- Pressing Send with an empty box answers your last unanswered message, new sessions use the selected Saved setup, and the floating Companion handle no longer covers Scratchpad messages.
+- **Gallery** has its own place in Workspace, above Chat Archive, and can be a Quick Access shortcut or a Search result. It opens over whatever you were doing and leaves your draft alone.
+- Gallery shows pictures made in Scratchpad, including older sessions, alongside Quick Image Gen history. 'Clear local history' clears only this device's history and keeps the Scratchpad pictures.
+- **Quick Image Gen** can use PixAI. Tsubaki.3 is the default model, with Tsubaki.2, Haruka v2, Hoshino v2 or your own model version ID, and PixAI's paid prompt helper stays off unless you turn it on.
+- Quick Image Gen no longer shows two false 'could not be saved' warnings the first time a new account opens.
+- **Mewmory** uses far fewer tokens. Recall picks saved memories rather than raw chat passages ('Also offer original chat passages to recall' brings the old behaviour back), requests are smaller and new records are shorter.
+- Automatic Mewmory updates follow the chat you're in, a busy or rate-limited service is paused instead of retried over and over, and finished paid work is no longer thrown away when something unrelated changes.
+- Changing the model, a card or a lorebook entry no longer makes Mewmory re-read every chat. Upkeep offers 'Re-read them' with an estimate first, and 'Model use today' shows how much each job used.
+- Correcting a Mewmory memory no longer drops the memories built on it, such as a character's current view of a subject, from recall. The next update reads again just the messages behind them.
+- Nano-GPT's decision models, such as Jev, Kev, d3 and SubQ, can be picked for Mewmory recall and Pawthfinder without typing model IDs or addresses.
+- 'Skip user messages in search cues' lets Mewmory look for memories using the characters' replies only.
+- **Agents** have a new Clothing Tracker Companion that keeps a 'Scene wardrobe' card of what your persona and everyone in the scene is wearing. It ships switched off, next to Position Tracker.
+- 'Skip user messages' leaves your own messages out of what a Companion or rewrite Agent reads, so 'last 10 messages' means the last 10 replies.
+- The 'Reply interrupted' notice has a 'Rerun agents' button too, and both 'Rerun agents' buttons run automatic Companions again, even after you edit the reply. With 'Run companions at the same time as after-reply agents' on, they start together, as they do on a new reply.
+- Reopening a chat no longer runs its after-reply Agents on the last reply a second time, and Agents that are still starting when you send no longer rewrite an older reply or a blocked impersonation draft.
+- Server-written replies no longer show 'Agents did not finish' because a persona or Shell Style was saved while they ran. A Companion blocked by the provider's content filter shows its own error card while the others finish.
+- The bulk 'On Companions' change can choose which companions the selected Agents work on: 'Chosen companions', 'All companions' or 'Keep each agent's choices'.
+- A new 'Runs after' link takes effect on the next reply in the same chat, and Proofreader checks impersonations whenever it's switched on.
+- Memory Shard is on for new accounts, summarises again only after about 30,000 more tokens instead of after every reply, and hides the messages it has summarised from the model. Mewmory still reads them. The floating Companion button waits until an automatic Companion has written its first note, so it no longer covers card buttons on narrow phones.
+- The Companion Panel has jump to top and bottom buttons, and on phones the Chatroom reply box gets its full width and the Agents history controls fit on one row.
+- Regex Agent Themes can search 'Tracker overrides', and a themed Chatroom feed keeps each platform's look instead of turning into one generic stream.
+- **BotSearcher** has a JanitorAI source with 'Trending 24h', 'Trending 7d', 'Popular' and 'Latest', which waits for a fresh JanitorAI sign-in so the lists are the real ones.
+- 'Sources and logins' inside the search window turns sites on and off and holds the BotBooru, Saucepan.ai and JannyAI logins. Your search stays put when you go back.
+- **Roleplay** keeps the existing reply in view when a swipe fails before any text arrives, and a reload no longer brings back the '...' placeholder.
+- On a server-written swipe or Regenerate the old reply shrinks to '...' at once instead of leaving a blank gap, and an Agent rewrite or Companion notes are no longer lost when Memory Shard is set up.
+- The model name sits below the date in message headers and wraps instead of being cut off, with even spacing under the name. On phones, Copy stays on the same row as More, Edit and Delete.
+- The bottom-bar persona picker has a pencil on each row that opens that persona's prompt, and the reasoning effort picker matches its look, with every level fitting on a phone.
+- 'Auto' reasoning effort stays selected after a reload or a preset change, and models that reject 'None' no longer get it.
+- Dialogue Colors skips obvious card titles, such as 'Your Wife Will Divorce You', in one-to-one chats, so they no longer need adding to 'Not characters'.
+- **Meower** has a reasoning effort setting under Generation, keeps provider errors readable below the composer and starts a fresh attempt when you press Refresh after a failure.
+- **Notebooks** on phones keeps the note list, search and New note in view, with the rest under 'Notebook options' and 'Note tools', so the note text starts on the first screen.
+- On Windows, Neconyan no longer refuses to start with `DATA_ROOT_OWNED` after a few days off, when another program had taken the old server's process number.
+- New accounts no longer see an 'Agents updated' notice about Pawthfinder's tools, and dragging a tool up into another sidebar section on a phone drops it where you let go instead of one row lower.
+- The first Notebooks open after an install or update no longer sits on a blank page for several seconds.
+- When the browser refuses to store crash reports, the advice to copy or download them before closing the page stays on screen instead of being replaced by a later, vaguer message.
+- On a brand-new account, a reply the server writes in the first few seconds no longer skips its Agents and Companions with 'Agents did not finish'. It waits a moment for the account's one-time setup to save first.
+- A 'Session expired' notice now says when you've been signed out, and your open page and draft stay in place.
+- Translated interfaces no longer translate names you chose, so a prompt called 'Draft' or a lorebook called 'Notes' shows as written.
+- Favourite connection profiles appear only under '★ Favorites', and long persona and Scenario Note names wrap instead of spilling out.
+- The assistants explain Simple Mode's new pages, Panels, Feedback tone, Clothing Tracker, Gallery, PixAI and 'Skip user messages'.
+
 ### Merged Staging PRs
 - PR #693 (2026-11-16) `fix(locale): keep names people choose as written`
 - PR #694 (2026-11-15) `fix(image-gen): wait for app settings before the first save`

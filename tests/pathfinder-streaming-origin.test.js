@@ -104,7 +104,7 @@ describe('streaming message origin', () => {
         expect(processor.reasoningHandler.finish).not.toHaveBeenCalled();
         expect(context.unblockGeneration).toHaveBeenCalledWith('impersonate', { emitGenerationEnded: true });
         expect(context.eventSource.emit).toHaveBeenCalledWith('impersonate', 'My draft.', {
-            generationContext: processor.agentGenerationContext, type: 'impersonate',
+            generationContext: processor.agentGenerationContext, type: 'impersonate', generationOutcome: null,
         });
     });
 

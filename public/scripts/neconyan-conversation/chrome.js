@@ -98,7 +98,7 @@ import {
 import { setLastConversationPreview } from './typing.js';
 import { noteHomePersonaChoice } from '../scratchpad/home-persona.js';
 
-const CONVERSATION_STYLESHEET_HREF = 'css/neconyan-conversation.css?v=20261118-panel-transparency-r2';
+const CONVERSATION_STYLESHEET_HREF = 'css/neconyan-conversation.css?v=20261119-aero-header-r2';
 const CONVERSATION_STYLESHEET_ID = 'sb-conversation-css';
 
 export function ensureConversationStylesheet() {
