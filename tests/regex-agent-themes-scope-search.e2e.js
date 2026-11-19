@@ -53,7 +53,11 @@ for (const phone of [true, false]) {
             await page.evaluate(async ({ extension, agents }) => {
                 // The UI fixture owns refreshes. Detach the real account's startup
                 // reconciliation and settings listeners before replacing its store.
-                (await import(`${extension}../index.js`)).deactivate();
+                // Use the loader's versioned URL, not a second instance of the entry point.
+                const entry = new URL('../index.js', new URL(extension, document.baseURI)).pathname;
+                const loaded = [...document.scripts].find(script => script.src && new URL(script.src).pathname === entry);
+                if (!loaded) throw new Error('Regex Agent Themes entry script was not loaded');
+                (await import(loaded.src)).deactivate();
                 const host = await import(`${extension}host.js`);
                 const scripts = await import('/scripts/extensions/in-chat-agents/regex-scripts.js');
                 const fixture = window.ratScopeFixture = { agents, reads: 0, saves: 0 };
@@ -84,7 +88,8 @@ for (const phone of [true, false]) {
             expect(await cards.locator('option').count()).toBeGreaterThan(4000);
             await expect(status).toHaveText(`Trackers shown: ${total} of ${total}`);
             const details = page.locator('[aria-labelledby="rat_scope_title_tpl-relationship-tracker"] details');
-            await details.evaluate(node => { node.open = true; });
+            await details.locator('summary').click();
+            await expect(details).toHaveAttribute('open', '');
             await page.evaluate(() => {
                 window.ratScopeOriginal = {
                     input: document.querySelector('#rat_scope_search'),
