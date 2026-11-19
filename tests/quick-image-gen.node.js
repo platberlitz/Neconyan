@@ -606,7 +606,7 @@ test('PixAI saves one task submission, polls through an early 404 and downloads 
     assert.deepEqual(await generateQuickImageGenJobImage(context, { ...input, fetch: () => assert.fail('PixAI replayed') }), image);
 });
 
-test('PixAI sends SDXL sampling, resolves a missing media URL and reports a failed task plainly', async () => {
+test('PixAI sends SDXL sampling, recovers an off-domain media URL and reports a failed task plainly', async () => {
     const directories = tempRoot();
     const context = jobContext(directories);
     const settings = { provider: 'pixai', pixaiKey: 'pixai-private-key', pixaiModel: '1861558740588989558',
@@ -619,15 +619,21 @@ test('PixAI sends SDXL sampling, resolves a missing media URL and reports a fail
         fetch: async (url, options) => {
             calls.push({ url, options });
             if (options.method === 'POST') return jsonResponse({ id: 'task-sdxl' }, 201);
-            if (url.endsWith('/task/task-sdxl')) return jsonResponse({ status: 'completed', outputs: { mediaIds: ['m-2'], mediaUrls: [null] } });
+            if (url.endsWith('/task/task-sdxl')) return jsonResponse({ status: 'completed',
+                outputs: { mediaIds: ['m-2'], mediaUrls: ['https://storage.example/image.png'] } });
             if (url === 'https://api.pixai.art/v2/media/batch?ids=m-2') {
+                assert.equal(options.headers.Authorization, 'Bearer pixai-private-key');
+                assert.equal(options.redirect, 'error');
                 return jsonResponse([{ id: 'm-2', type: 'IMAGE', urls: [{ variant: 'PUBLIC', url: PIXAI_IMAGE }] }]);
             }
             assert.equal(url, PIXAI_IMAGE);
             assert.equal(options.headers?.Authorization, undefined);
+            assert.equal(options.redirect, 'error');
             return new Response(Buffer.from(PNG_BASE64, 'base64'), { status: 200 });
         } });
     assert.equal(image.base64, PNG_BASE64);
+    assert.deepEqual(calls.map(({ url }) => url), ['https://api.pixai.art/v2/image/create',
+        'https://api.pixai.art/v2/task/task-sdxl', 'https://api.pixai.art/v2/media/batch?ids=m-2', PIXAI_IMAGE]);
     const submitted = JSON.parse(calls[0].options.body);
     assert.equal(submitted.mode, undefined);
     assert.equal(submitted.promptHelper, 'enable');

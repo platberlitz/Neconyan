@@ -21,6 +21,7 @@ const TSUBAKI_2 = '1983308862240288769';
 const HARUKA = '1861558740588989558';
 const HOSHINO = '1954632828118619567';
 const IMAGE_URL = 'https://images-ng.pixai.art/images/orig/0f6a0d1c-2a39-4f10-9b9e-4c3f1d2e5a7b';
+const OFFSITE_URL = 'https://storage.example/cat.png';
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC', 'base64');
 
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -207,10 +208,46 @@ describe('PixAI task polling', () => {
         expect(new URL(calls[1].url).origin).toBe('https://api.pixai.art');
     });
 
-    test('refuses image addresses outside pixai.art and stops after a lasting 404', async () => {
-        const offsite = scriptedFetch([json({ status: 'completed', outputs: { mediaUrls: ['https://evil.example/cat.png'] } })]);
+    test('looks up the same media ID instead of using an off-domain task URL', async () => {
+        const { calls, fetchImpl } = scriptedFetch([
+            json({ status: 'completed', outputs: { mediaIds: ['m1'], mediaUrls: [OFFSITE_URL] } }),
+            json([
+                { id: 'other', urls: [{ variant: 'PUBLIC', url: 'https://images-ng.pixai.art/images/orig/other' }] },
+                { id: 'm1', urls: [{ variant: 'PRIVATE', url: OFFSITE_URL }, { variant: 'PUBLIC', url: IMAGE_URL }] },
+            ]),
+        ]);
+        const signal = new AbortController().signal;
+        await expect(pollPixaiTask({ taskId: 't4', apiKey: 'k', fetchImpl, wait, signal })).resolves.toBe(IMAGE_URL);
+        expect(calls.map(call => call.url)).toEqual([
+            'https://api.pixai.art/v2/task/t4', 'https://api.pixai.art/v2/media/batch?ids=m1',
+        ]);
+        expect(calls[1].init).toEqual({ method: 'GET', redirect: 'error', headers: { Authorization: 'Bearer k' }, signal });
+    });
+
+    test('refuses an off-domain task URL without a media ID', async () => {
+        const offsite = scriptedFetch([json({ status: 'completed', outputs: { mediaUrls: [OFFSITE_URL] } })]);
         await expect(pollPixaiTask({ taskId: 't5', apiKey: 'k', fetchImpl: offsite.fetchImpl, wait }))
             .rejects.toThrow('PixAI returned an image address outside pixai.art');
+        expect(offsite.calls).toHaveLength(1);
+    });
+
+    test.each([
+        ['an off-domain public URL', { id: 'm1', urls: [{ variant: 'PUBLIC', url: OFFSITE_URL }] },
+            'PixAI returned an image address outside pixai.art'],
+        ['another media ID', { id: 'other', urls: [{ variant: 'PUBLIC', url: IMAGE_URL }] },
+            'PixAI finished, but its image address is unavailable'],
+    ])('refuses a lookup that only returns %s', async (_label, media, error) => {
+        const { calls, fetchImpl } = scriptedFetch([
+            json({ status: 'completed', outputs: { mediaIds: ['m1'], mediaUrls: [OFFSITE_URL] } }),
+            json([media]),
+        ]);
+        await expect(pollPixaiTask({ taskId: 't5', apiKey: 'k', fetchImpl, wait })).rejects.toThrow(error);
+        expect(calls.map(call => call.url)).toEqual([
+            'https://api.pixai.art/v2/task/t5', 'https://api.pixai.art/v2/media/batch?ids=m1',
+        ]);
+    });
+
+    test('stops after a lasting 404 and reports a task with no outputs', async () => {
         const gone = scriptedFetch(Array.from({ length: 11 }, () => json({ code: 'NOT_FOUND', status: 404, message: 'Task not found' }, 404)));
         await expect(pollPixaiTask({ taskId: 't6', apiKey: 'k', fetchImpl: gone.fetchImpl, wait }))
             .rejects.toThrow('PixAI status check failed (404 NOT_FOUND): Task not found');

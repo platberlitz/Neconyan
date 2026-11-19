@@ -11,6 +11,7 @@ const TSUBAKI_3 = '2024383379556065549';
 const HARUKA = '1861558740588989558';
 const MEDIA_ID = '1943547603237249965';
 const IMAGE_URL = 'https://images-ng.pixai.art/images/orig/0f6a0d1c-2a39-4f10-9b9e-4c3f1d2e5a7b';
+const OFFSITE_URL = 'https://storage.example/pixai-result.png';
 const CORS = {
     'access-control-allow-origin': '*',
     'access-control-allow-headers': 'authorization, content-type',
@@ -21,10 +22,11 @@ const CORS = {
 const stepsFieldShown = page => page.locator('#qig-steps').evaluate(input => input.closest('.qig-field')?.style.display !== 'none');
 
 for (const [layout, phone] of [['desktop', false], ['phone', true]]) {
-    test(`${layout} Quick Image Gen makes a PixAI image with Tsubaki.3 by default`, async ({ app }, info) => {
+    test(`${layout} Quick Image Gen recovers a PixAI image with Tsubaki.3 by default`, async ({ app }, info) => {
         const png = await readFile(new URL('../public/img/ai4.png', import.meta.url));
         const api = [];
         const images = [];
+        const offsite = [];
         let polls = 0;
         const account = await app.account({ phone, contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {}, configureSettings(saved) {
             saved.extension_settings['quick-image-gen'] = {
@@ -49,12 +51,16 @@ for (const [layout, phone] of [['desktop', false], ['phone', true]]) {
                 polls += 1;
                 if (polls === 1) return route.fulfill({ status: 404, headers: CORS, json: { code: 'NOT_FOUND', status: 404, message: 'Task not found' } });
                 if (polls === 2) return route.fulfill({ headers: CORS, json: { id: 'task-1', status: 'running' } });
-                return route.fulfill({ headers: CORS, json: { id: 'task-1', status: 'completed', outputs: { seed: '77', mediaIds: [MEDIA_ID], mediaUrls: [null] } } });
+                return route.fulfill({ headers: CORS, json: { id: 'task-1', status: 'completed', outputs: { seed: '77', mediaIds: [MEDIA_ID], mediaUrls: [OFFSITE_URL] } } });
             }
             if (url.pathname === '/v2/media/batch') {
                 return route.fulfill({ headers: CORS, json: [{ id: MEDIA_ID, type: 'IMAGE', urls: [{ variant: 'PUBLIC', url: IMAGE_URL }] }] });
             }
             return route.fulfill({ status: 404, headers: CORS, json: { code: 'NOT_FOUND', status: 404, message: 'Unexpected path' } });
+        });
+        await account.context.route(OFFSITE_URL, route => {
+            offsite.push(route.request().url());
+            return route.abort();
         });
         await account.context.route('https://images-ng.pixai.art/**', async route => {
             images.push({ url: route.request().url(), authorization: route.request().headers().authorization });
@@ -113,6 +119,7 @@ for (const [layout, phone] of [['desktop', false], ['phone', true]]) {
             '/v2/image/create', '/v2/task/task-1', '/v2/task/task-1', '/v2/task/task-1', `/v2/media/batch?ids=${MEDIA_ID}`,
         ]);
         expect(api.every(call => call.authorization === 'Bearer fixture-pixai-key')).toBe(true);
+        expect(offsite).toEqual([]);
         expect(images.length).toBeGreaterThanOrEqual(1);
         expect(images.every(call => call.url === IMAGE_URL && call.authorization === undefined)).toBe(true);
         await info.attach(`${layout}-pixai-result`, { body: await page.screenshot(), contentType: 'image/png' });
