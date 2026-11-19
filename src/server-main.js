@@ -705,6 +705,12 @@ async function preSetupTasks() {
 
     // Wait for frontend libs to compile
     await webpackMiddleware.runWebpackCompiler();
+    // Notebooks load their editor as a separate bundle. Building it now, rather than when
+    // Notebooks first open, spares that first open several seconds on a blank page.
+    if (!shouldServeFrontendAssets()) {
+        notesEditorMiddleware.runWebpackCompiler()
+            .catch(error => console.warn('The Notebooks editor could not be built in advance.', error));
+    }
 }
 
 async function runDeferredStartupTasks() {
