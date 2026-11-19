@@ -117,6 +117,7 @@
 - PR #750 (2026-11-18) `fix(agents): keep persona edits from failing post-reply Agents`
 - PR #751 (2026-11-18) `fix(roleplay): collapse cleared replies on server swipes`
 - PR #752 (2026-11-18) `feat(appearance): give each shell style its own panel look`
+- PR #754 (2026-11-18) `fix(data): reclaim a Windows lease whose PID another program took`
 
 ## v1.5.5
 
