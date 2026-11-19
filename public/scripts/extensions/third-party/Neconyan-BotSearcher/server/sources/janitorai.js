@@ -12,9 +12,7 @@ import { clampInt, own, pick } from '../validate.js';
 import { mintRef } from '../refs.js';
 import { indexedPageCursor } from '../paging.js';
 import { UpstreamError } from '../guards.js';
-import { FRONTPAGE_MAX_PAGE, JannyBrowserError } from '../janny-browser.js';
-
-const SITE = 'https://janitorai.com';
+import { FRONTPAGE_MAX_PAGE, JANITOR_ORIGIN as SITE, JANITOR_BACKUP_ORIGIN, JannyBrowserError } from '../janny-browser.js';
 const IMAGES = 'https://ella.janitorai.com/bot-avatars';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -84,8 +82,8 @@ function slugOf(value) {
     return slug || 'character';
 }
 
-function pageUrl(id, name) {
-    return `${SITE}/characters/${id}_character-${slugOf(name)}`;
+function pageUrl(id, name, origin = SITE) {
+    return `${origin}/characters/${id}_character-${slugOf(name)}`;
 }
 
 function avatarOf(item) {
@@ -127,7 +125,7 @@ function dateOf(item) {
     return null;
 }
 
-function toSummary(item) {
+function toSummary(item, origin) {
     const id = own(item, 'id');
     if (typeof id !== 'string' || !UUID.test(id)) {
         return null;
@@ -137,7 +135,7 @@ function toSummary(item) {
     const avatar = avatarOf(item);
     const isNsfw = own(item, 'is_nsfw');
     const creator = own(item, 'creator_name');
-    const url = pageUrl(id, name);
+    const url = pageUrl(id, name, origin);
 
     return buildSummary({
         source: 'janitorai',
@@ -173,7 +171,7 @@ export const janitorai = Object.freeze({
     label: 'JanitorAI',
     homepage: SITE,
     allowedHosts: Object.freeze(['ella.janitorai.com']),
-    linkHosts: Object.freeze(['janitorai.com']),
+    linkHosts: Object.freeze(['janitorai.com', 'jani.com']),
     idPattern: UUID,
     tier: 2,
     nativeImport: true,
@@ -197,7 +195,9 @@ export const janitorai = Object.freeze({
             return { total: null, next: null, items: [] };
         }
         const section = SECTIONS[pick(sort, SORTS, SORTS[0])];
-        const all = listOf(await ctx.frontpage(section, sfwOnly === true ? 'sfw' : 'all', page));
+        const payload = await ctx.frontpage(section, sfwOnly === true ? 'sfw' : 'all', page);
+        const origin = own(payload, 'origin') === JANITOR_BACKUP_ORIGIN ? JANITOR_BACKUP_ORIGIN : SITE;
+        const all = listOf(payload);
         const slice = all.slice(index, index + perPage);
         const consumed = index + slice.length;
         let next = null;
@@ -209,7 +209,7 @@ export const janitorai = Object.freeze({
         return {
             total: null,
             next,
-            items: slice.map(toSummary).filter((item) => item !== null),
+            items: slice.map((item) => toSummary(item, origin)).filter((item) => item !== null),
         };
     },
 

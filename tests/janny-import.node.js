@@ -22,6 +22,8 @@ test('server recognises JannyAI and JanitorAI import hosts', () => {
     assert.equal(isJannyImportHost('jannyai.com'), true);
     assert.equal(isJannyImportHost('www.jannyai.com'), true);
     assert.equal(isJannyImportHost('janitorai.com'), true);
+    assert.equal(isJannyImportHost('jani.com'), true);
+    assert.equal(isJannyImportHost('jani.com.example.org'), false);
     assert.equal(isJannyImportHost('notjannyai.com'), false);
     assert.equal(isJannyImportHost('chub.ai'), false);
     assert.equal(JANNY_CLOUDFLARE_ERROR_CODE, 'janny_cloudflare_blocked');
@@ -39,11 +41,48 @@ test('client canonicalises Janny links and UUIDs for the browser import', () => 
     const canonical = `https://jannyai.com/characters/${ID}`;
     assert.equal(canonicalJannyCharacterUrl(`https://jannyai.com/characters/${ID}_character-miguel-o-hara`), canonical);
     assert.equal(canonicalJannyCharacterUrl(`https://www.janitorai.com/characters/${ID.toUpperCase()}?ref=x#top`), canonical);
+    assert.equal(canonicalJannyCharacterUrl(`https://jani.com/characters/${ID}_character-miguel?ref=x`), `https://jani.com/characters/${ID}`);
+    assert.equal(canonicalJannyCharacterUrl(`https://jani.com.example.org/characters/${ID}`), null);
     assert.equal(canonicalJannyCharacterUrl(`  ${ID}_character-miguel  `), canonical);
     assert.equal(canonicalJannyCharacterUrl(ID), null);
     assert.equal(canonicalJannyCharacterUrl(`https://chub.ai/characters/${ID}`), null);
     assert.equal(canonicalJannyCharacterUrl(`https://jannyai.com/creators/${ID}`), null);
     assert.equal(canonicalJannyCharacterUrl(''), null);
+});
+
+test('the browser accepts the backup character domain but not lookalike hosts', async () => {
+    const { parseJannyUrl } = await import('../public/scripts/extensions/third-party/Neconyan-BotSearcher/server/janny-browser.js');
+    assert.deepEqual(parseJannyUrl(`https://jani.com/characters/${ID}_character-miguel`), { id: ID, url: `https://jani.com/characters/${ID}` });
+    for (const host of ['jani.com.example.org', 'notjani.com', 'jani.com:444', 'jani.com@example.org']) {
+        assert.equal(parseJannyUrl(`https://${host}/characters/${ID}`), null);
+    }
+});
+
+test('public imports use the backup when the primary card response is unusable', async () => {
+    const { createJannyBrowser } = await import('../public/scripts/extensions/third-party/Neconyan-BotSearcher/server/janny-browser.js');
+    const requests = [];
+    let currentUrl = 'about:blank';
+    const page = {
+        url: () => currentUrl,
+        goto: async (url) => { currentUrl = url; },
+        evaluate: async (_fn, args) => {
+            assert.equal(args.origin, new URL(currentUrl).origin);
+            requests.push(args.target);
+            const body = args.origin === 'https://janitorai.com' ? {} : { id: ID, name: 'Mira', showdefinition: true, personality: 'Friendly' };
+            return { status: 200, body: JSON.stringify(body) };
+        },
+    };
+    const browser = createJannyBrowser({
+        profileDir: '/tmp/opencode/janny-test-profile',
+        launchContext: async () => ({ pages: () => [page], close: async () => {} }),
+    });
+    try {
+        const result = await browser.fetchCard(`https://janitorai.com/characters/${ID}`);
+        assert.equal(result.card.data.name, 'Mira');
+        assert.deepEqual(requests, [`https://janitorai.com/hampter/characters/${ID}`, `https://jani.com/hampter/characters/${ID}`]);
+    } finally {
+        await browser.close();
+    }
 });
 
 test('client guidance points at the server browser login for a logged-out bridge', () => {

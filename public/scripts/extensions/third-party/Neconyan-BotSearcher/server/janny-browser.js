@@ -14,7 +14,10 @@ import nodeFetch from 'node-fetch';
 
 import { detectImageType } from './imagetype.js';
 
-const ORIGIN = 'https://janitorai.com';
+export const JANITOR_ORIGIN = 'https://janitorai.com';
+export const JANITOR_BACKUP_ORIGIN = 'https://jani.com';
+const ORIGINS = [JANITOR_ORIGIN, JANITOR_BACKUP_ORIGIN];
+const NAVIGATION = { waitUntil: 'domcontentloaded', timeout: 30000 };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PROFILE_ENV = 'SBBS_JANNY_PROFILE_DIR';
 const REQUEST_TIMEOUT_MS = 30000;
@@ -23,6 +26,8 @@ export const FRONTPAGE_SECTIONS = Object.freeze(['popular', 'trending24', 'trend
 export const FRONTPAGE_MAX_PAGE = 50;
 const FRONTPAGE_CACHE_MS = 5 * 60 * 1000;
 const FRONTPAGE_CACHE_ENTRIES = 64;
+// Both domains must fit in Beau's existing socket request window.
+const LIST_IO_TIMEOUT_MS = 4000;
 const SESSION_MARGIN_MS = 60 * 1000;
 const SESSION_WAIT_MS = 20 * 1000;
 const SESSION_ABSENT_WAIT_MS = 2000;
@@ -52,7 +57,7 @@ export function parseJannyUrl(raw) {
     } catch {
         return null;
     }
-    if (url.protocol !== 'https:' || !['jannyai.com', 'janitorai.com'].includes(url.hostname)
+    if (url.protocol !== 'https:' || !['jannyai.com', 'janitorai.com', 'jani.com'].includes(url.hostname)
         || (url.port !== '' && url.port !== '443')
         || url.username !== '' || url.password !== '' || url.search !== '' || url.hash !== '') {
         return null;
@@ -63,7 +68,7 @@ export function parseJannyUrl(raw) {
     }
     return {
         id: match[1],
-        url: `${ORIGIN}/characters/${match[1]}`,
+        url: `${url.origin === JANITOR_BACKUP_ORIGIN ? JANITOR_BACKUP_ORIGIN : JANITOR_ORIGIN}/characters/${match[1]}`,
     };
 }
 
@@ -125,11 +130,25 @@ async function openPersistentContext(directory) {
     }
 }
 
-async function pageFor(context) {
-    const existing = context.pages().find((page) => page.url().includes('janitorai.com'));
+function pageOrigin(page) {
+    return URL.parse(page.url())?.origin;
+}
+
+async function pageFor(context, origin) {
+    const existing = context.pages().find((page) => pageOrigin(page) === origin)
+        ?? context.pages().find((page) => ORIGINS.includes(pageOrigin(page)));
     const page = existing ?? context.pages()[0] ?? await context.newPage();
     page.setDefaultTimeout?.(15000);
     return page;
+}
+
+async function visit(page, origin, pathname = '', timeout = NAVIGATION.timeout) {
+    const response = await page.goto(origin + pathname, { ...NAVIGATION, timeout });
+    const status = response?.status();
+    // Character permalinks can 404 even when the API still has the card.
+    if (pageOrigin(page) !== origin || (status >= 400 && !(status === 404 && pathname.startsWith('/characters/')))) {
+        throw new JannyBrowserError('janny_browser_request_failed', 502, 'JanitorAI navigation failed');
+    }
 }
 
 async function withTimeout(promise, timeoutMs = REQUEST_TIMEOUT_MS) {
@@ -146,8 +165,11 @@ async function withTimeout(promise, timeoutMs = REQUEST_TIMEOUT_MS) {
     }
 }
 
-async function inPageFetch(page, url, init = {}, { probe = false } = {}) {
-    const pending = page.evaluate(async ({ target, request, timeoutMs, probe }) => {
+async function inPageFetch(page, url, init = {}, { probe = false, origin = new URL(url).origin, timeoutMs = REQUEST_TIMEOUT_MS } = {}) {
+    const pending = page.evaluate(async ({ target, request, timeoutMs, probe, origin }) => {
+        if (location.origin !== origin) {
+            throw new Error('JanitorAI page changed origin');
+        }
         function decode(raw) {
             try {
                 return decodeURIComponent(raw);
@@ -255,6 +277,7 @@ async function inPageFetch(page, url, init = {}, { probe = false } = {}) {
             const response = await fetch(target, {
                 ...request,
                 credentials: 'include',
+                redirect: 'error',
                 headers,
                 signal: controller.signal,
             });
@@ -262,10 +285,10 @@ async function inPageFetch(page, url, init = {}, { probe = false } = {}) {
         } finally {
             clearTimeout(timer);
         }
-    }, { target: url, request: init, timeoutMs: REQUEST_TIMEOUT_MS, probe });
+    }, { target: url, request: init, timeoutMs, probe, origin });
     try {
         // Also bound an unresponsive renderer, whose own abort timer cannot run.
-        return await withTimeout(pending, REQUEST_TIMEOUT_MS + 1000);
+        return await withTimeout(pending, timeoutMs + 1000);
     } catch (error) {
         if (error instanceof JannyBrowserError) {
             await withTimeout(page.close(), CLOSE_TIMEOUT_MS).catch(() => {});
@@ -274,8 +297,8 @@ async function inPageFetch(page, url, init = {}, { probe = false } = {}) {
     }
 }
 
-async function jsonFromPage(page, url, init = {}) {
-    const result = await inPageFetch(page, url, init);
+async function jsonFromPage(page, url, init = {}, options) {
+    const result = await inPageFetch(page, url, init, options);
     if (result.status === 401 || result.status === 403) {
         throw new JannyBrowserError('janny_login_required', 401, `JanitorAI answered HTTP ${result.status}`);
     }
@@ -295,12 +318,12 @@ async function jsonFromPage(page, url, init = {}) {
  * signed-out list (HTTP 200, not 401), so a list read before the site renews
  * a freshly launched browser's token would show guest picks as Trending.
  */
-async function awaitSignedInSession(page, { now, waitMs }) {
+async function awaitSignedInSession(page, origin, { now, waitMs }) {
     const started = Date.now();
     let sawToken = false;
     let reloaded = false;
     for (;;) {
-        const expiresAt = (await inPageFetch(page, null, {}, { probe: true }))?.expiresAt;
+        const expiresAt = (await inPageFetch(page, null, {}, { probe: true, origin, timeoutMs: LIST_IO_TIMEOUT_MS }))?.expiresAt;
         if (Number.isFinite(expiresAt)) {
             if (expiresAt - now() > SESSION_MARGIN_MS) {
                 return;
@@ -315,7 +338,7 @@ async function awaitSignedInSession(page, { now, waitMs }) {
         if (sawToken && !reloaded && waited >= waitMs / 3) {
             // A fresh load of the site starts its own token renewal.
             reloaded = true;
-            await page.goto(ORIGIN, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+            await visit(page, origin, '', LIST_IO_TIMEOUT_MS).catch(() => {});
         }
         await new Promise((resolve) => setTimeout(resolve, SESSION_POLL_MS));
     }
@@ -508,9 +531,9 @@ async function settingsRequest(page, url, init = {}) {
     }
 }
 
-async function captureProfileId(page) {
+async function captureProfileId(page, origin) {
     try {
-        const profile = await jsonFromPage(page, `${ORIGIN}/hampter/profiles/mine`, { cache: 'no-store' });
+        const profile = await jsonFromPage(page, `${origin}/hampter/profiles/mine`, { cache: 'no-store' });
         if (typeof profile?.id !== 'string' || profile.id.trim() === '') {
             throw new JannyBrowserError('janny_restore_failed', 502);
         }
@@ -521,19 +544,19 @@ async function captureProfileId(page) {
 }
 
 async function captureRequest(page, snapshot, url, init) {
-    if (await captureProfileId(page) !== snapshot.profileId) {
+    if (await captureProfileId(page, snapshot.origin) !== snapshot.profileId) {
         throw new JannyBrowserError('janny_restore_failed', 502);
     }
     return settingsRequest(page, url, init);
 }
 
-async function enterCaptureMode(page, recovery) {
-    const url = `${ORIGIN}/hampter/api-settings`;
-    const profileId = await captureProfileId(page);
+async function enterCaptureMode(page, origin, recovery) {
+    const url = `${origin}/hampter/api-settings`;
+    const profileId = await captureProfileId(page, origin);
     const before = await settingsRequest(page, url);
     // A visible login can change while settings are being read. Do not retain
     // another account's settings under the first account's identity.
-    if (await captureProfileId(page) !== profileId) {
+    if (await captureProfileId(page, origin) !== profileId) {
         throw new JannyBrowserError('janny_restore_failed', 502);
     }
     const settings = before?.settings;
@@ -561,7 +584,7 @@ async function enterCaptureMode(page, recovery) {
     };
     // Keep the original settings before the first mutation, including when a
     // request succeeds remotely but its response is lost. Never write to disk.
-    const snapshot = { original, profileId, clientId: preset.client_id, serverId: null, chatId: null };
+    const snapshot = { original, origin, profileId, clientId: preset.client_id, serverId: null, chatId: null };
     recovery.snapshot = snapshot;
     await captureRequest(page, snapshot, `${url}/proxy-configs`, {
         method: 'POST',
@@ -614,7 +637,7 @@ async function restoreCaptureMode(page, recovery) {
     if (!snapshot) {
         return;
     }
-    const url = `${ORIGIN}/hampter/api-settings`;
+    const url = `${snapshot.origin}/hampter/api-settings`;
     try {
         await captureRequest(page, snapshot, url, {
             method: 'PATCH',
@@ -637,7 +660,7 @@ async function restoreCaptureMode(page, recovery) {
             await captureRequest(page, snapshot, `${url}/proxy-configs/${encodeURIComponent(preset.id)}`, { method: 'DELETE' });
         }
         if (snapshot.chatId !== null) {
-            await captureRequest(page, snapshot, `${ORIGIN}/hampter/chats/${encodeURIComponent(snapshot.chatId)}`, { method: 'DELETE' }).catch((error) => {
+            await captureRequest(page, snapshot, `${snapshot.origin}/hampter/chats/${encodeURIComponent(snapshot.chatId)}`, { method: 'DELETE' }).catch((error) => {
                 // Chat removal remains best-effort, but never across accounts.
                 if (error.code === 'janny_restore_failed') {
                     throw error;
@@ -645,7 +668,7 @@ async function restoreCaptureMode(page, recovery) {
             });
             snapshot.chatId = null;
         }
-        if (await captureProfileId(page) !== snapshot.profileId) {
+        if (await captureProfileId(page, snapshot.origin) !== snapshot.profileId) {
             throw new JannyBrowserError('janny_restore_failed', 502);
         }
         recovery.snapshot = null;
@@ -908,7 +931,7 @@ async function sendMessage(page, message) {
 }
 
 async function createChat(page, id, snapshot) {
-    const data = await captureRequest(page, snapshot, `${ORIGIN}/hampter/chats`, {
+    const data = await captureRequest(page, snapshot, `${snapshot.origin}/hampter/chats`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ character_id: id }),
@@ -923,7 +946,7 @@ async function createChat(page, id, snapshot) {
  */
 async function chatPersonaNames(page, chatId, snapshot) {
     try {
-        const chat = await withTimeout(captureRequest(page, snapshot, `${ORIGIN}/hampter/chats/${encodeURIComponent(chatId)}`));
+        const chat = await withTimeout(captureRequest(page, snapshot, `${snapshot.origin}/hampter/chats/${encodeURIComponent(chatId)}`));
         return (Array.isArray(chat?.personas) ? chat.personas : [])
             .map((persona) => persona?.name)
             .filter((name) => typeof name === 'string');
@@ -946,19 +969,16 @@ export function assertCardCapturable(meta) {
     }
 }
 
-async function capturePrivateCard(page, id, meta, recovery) {
+async function capturePrivateCard(page, origin, id, meta, recovery) {
     assertCardCapturable(meta);
     try {
-        const snapshot = await enterCaptureMode(page, recovery);
+        const snapshot = await enterCaptureMode(page, origin, recovery);
         const chatId = await createChat(page, id, snapshot);
         snapshot.chatId = chatId;
         if (!chatId) {
             throw new JannyBrowserError('janny_private_capture_failed', 502);
         }
-        await page.goto(`${ORIGIN}/chats/${encodeURIComponent(chatId)}`, {
-            waitUntil: 'domcontentloaded',
-            timeout: 30000,
-        });
+        await visit(page, origin, `/chats/${encodeURIComponent(chatId)}`);
         const [response] = await Promise.all([
             page.waitForResponse((response) => response.url().includes('/generateAlpha')
                 && response.request().method() === 'POST', { timeout: 120000 }),
@@ -993,6 +1013,7 @@ export function createJannyBrowser({
     let starting = null;
     let closing = null;
     let stopped = false;
+    let preferredOrigin = JANITOR_ORIGIN;
     const recovery = { snapshot: null };
     // ponytail: one persistent page is shared by the browser bridge; serialize
     // navigation and capture until a multi-page pool is actually needed.
@@ -1041,19 +1062,58 @@ export function createJannyBrowser({
         return starting;
     }
 
-    async function status() {
+    async function restorePending(opened) {
+        if (!recovery.snapshot) return;
+        const { origin } = recovery.snapshot;
+        const page = await pageFor(opened, origin);
+        try {
+            if (pageOrigin(page) !== origin) await visit(page, origin);
+            await restoreCaptureMode(page, recovery);
+        } catch {
+            throw new JannyBrowserError('janny_restore_failed', 502);
+        }
+    }
+
+    async function readFromOrigins(first, read) {
+        const opened = await ensureContext();
+        await restorePending(opened);
+        let failure;
+        for (const origin of [first, ...ORIGINS.filter((candidate) => candidate !== first)]) {
+            try {
+                const page = await pageFor(opened, origin);
+                const value = await read(page, origin);
+                preferredOrigin = origin;
+                return { page, origin, value };
+            } catch (error) {
+                if (error?.code === 'janny_restore_failed') throw error;
+                if (!failure || (error?.code === 'janny_login_required' && failure.code !== error.code)) {
+                    failure = error;
+                    // If the primary was unreachable but the backup just needs a login,
+                    // open that login rather than sending the admin to the broken site.
+                    if (error?.code === 'janny_login_required') preferredOrigin = origin;
+                }
+            }
+        }
+        if (failure instanceof JannyBrowserError) throw failure;
+        throw new JannyBrowserError('janny_browser_request_failed', 502, failure?.message);
+    }
+
+    async function status(onlyOrigin) {
         const result = { ready: Boolean(context), loggedIn: false };
         if (context) {
             try {
-                const page = await pageFor(context);
-                if (new URL(page.url()).origin !== ORIGIN) {
-                    await page.goto(ORIGIN, { waitUntil: 'domcontentloaded', timeout: 30000 });
+                const read = async (page, origin) => {
+                    if (pageOrigin(page) !== origin) await visit(page, origin);
+                    const profile = await jsonFromPage(page, `${origin}/hampter/profiles/mine`);
+                    if (profile === null) throw new JannyBrowserError('janny_login_required', 401);
+                };
+                if (onlyOrigin) {
+                    await read(await pageFor(context, onlyOrigin), onlyOrigin);
+                    await restorePending(context);
+                } else {
+                    await readFromOrigins(preferredOrigin, read);
                 }
-                const payload = await jsonFromPage(page, `${ORIGIN}/hampter/profiles/mine`);
-                result.loggedIn = payload !== null;
-                if (result.loggedIn) {
-                    await restoreCaptureMode(page, recovery);
-                }
+                result.loggedIn = true;
             } catch (error) {
                 if (!(error instanceof JannyBrowserError) || error.code !== 'janny_login_required') {
                     result.code = 'janny_browser_request_failed';
@@ -1079,10 +1139,19 @@ export function createJannyBrowser({
         async login() {
             frontpageCache.clear();
             return exclusive(async () => {
-                const opened = await ensureContext();
-                const page = await pageFor(opened);
-                await page.goto(`${ORIGIN}/login`, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
-                return status();
+                if (recovery.snapshot) {
+                    // Re-authentication must remain possible if a restore lost its session.
+                    const { origin } = recovery.snapshot;
+                    const page = await pageFor(await ensureContext(), origin);
+                    await visit(page, origin, '/login').catch(() => {});
+                    return status(origin);
+                }
+                try {
+                    const { origin } = await readFromOrigins(preferredOrigin, (page, host) => visit(page, host, '/login'));
+                    return status(origin);
+                } catch (error) {
+                    return { ready: Boolean(context), loggedIn: false, restorePending: Boolean(recovery.snapshot), code: error.code };
+                }
             });
         },
 
@@ -1092,17 +1161,7 @@ export function createJannyBrowser({
                 const opened = await ensureContext();
                 // Restore while credentials still exist. A failed restore must
                 // not discard the only session that can retry it.
-                if (recovery.snapshot) {
-                    try {
-                        const page = await pageFor(opened);
-                        if (new URL(page.url()).origin !== ORIGIN) {
-                            await page.goto(ORIGIN, { waitUntil: 'domcontentloaded', timeout: 30000 });
-                        }
-                        await restoreCaptureMode(page, recovery);
-                    } catch {
-                        throw new JannyBrowserError('janny_restore_failed', 502);
-                    }
-                }
+                await restorePending(opened);
                 try {
                     try {
                         await withTimeout((async () => {
@@ -1112,7 +1171,7 @@ export function createJannyBrowser({
                             // profile need not have visited the origin this run.
                             await opened.setStorageState({
                                 cookies: [],
-                                origins: [{ origin: ORIGIN, localStorage: [] }],
+                                origins: ORIGINS.map((origin) => ({ origin, localStorage: [] })),
                             });
                         })());
                     } finally {
@@ -1121,6 +1180,7 @@ export function createJannyBrowser({
                 } catch {
                     throw new JannyBrowserError('janny_browser_request_failed', 502);
                 }
+                preferredOrigin = JANITOR_ORIGIN;
                 return { ready: false, loggedIn: false, restorePending: false };
             });
         },
@@ -1131,12 +1191,16 @@ export function createJannyBrowser({
                 if (!parsed) {
                     throw new JannyBrowserError('bad_import_url', 400);
                 }
-                const opened = await ensureContext();
-                const page = await pageFor(opened);
-                await page.goto(parsed.url, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
-                await restoreCaptureMode(page, recovery);
-                const payload = await jsonFromPage(page, `${ORIGIN}/hampter/characters/${encodeURIComponent(parsed.id)}`);
-                const meta = characterOf(payload);
+                const first = new URL(parsed.url).origin === JANITOR_BACKUP_ORIGIN ? JANITOR_BACKUP_ORIGIN : preferredOrigin;
+                const id = encodeURIComponent(parsed.id);
+                const { page, origin, value: meta } = await readFromOrigins(first, async (tab, host) => {
+                    await visit(tab, host, `/characters/${id}`);
+                    const character = characterOf(await jsonFromPage(tab, `${host}/hampter/characters/${id}`));
+                    if (text(character?.id).toLowerCase() !== parsed.id.toLowerCase()) {
+                        throw new JannyBrowserError('janny_card_unavailable', 502, 'JanitorAI character was missing');
+                    }
+                    return character;
+                });
                 // The portrait is fetched first: the private capture below
                 // navigates away from the character page.
                 const avatarUrl = resolveAvatarUrl(meta, await renderedAvatarSrc(page));
@@ -1145,7 +1209,7 @@ export function createJannyBrowser({
                     id: parsed.id,
                     card: meta?.showdefinition && (text(meta?.personality).trim() !== '' || text(meta?.scenario).trim() !== '')
                         ? buildPublicCard(meta)
-                        : await capturePrivateCard(page, parsed.id, meta, recovery),
+                        : await capturePrivateCard(page, origin, parsed.id, meta, recovery),
                     avatarPng,
                 };
             });
@@ -1164,14 +1228,16 @@ export function createJannyBrowser({
                 return cached.value;
             }
             const value = exclusive(async () => {
-                const page = await pageFor(await ensureContext());
-                if (new URL(page.url()).origin !== ORIGIN) {
-                    await page.goto(ORIGIN, { waitUntil: 'domcontentloaded', timeout: 30000 });
-                }
-                await awaitSignedInSession(page, { now, waitMs: sessionWaitMs });
                 const query = new URLSearchParams({ page: String(pageNumber), language: 'en', mode, count_mode: 'bounded', include_top_custom_tags: 'false' });
                 query.set(section.startsWith('trending') ? 'special_mode' : 'sort', section);
-                return jsonFromPage(page, `${ORIGIN}/hampter/characters?${query}`);
+                const { origin, value: payload } = await readFromOrigins(preferredOrigin, async (page, host) => {
+                    if (pageOrigin(page) !== host) await visit(page, host, '', LIST_IO_TIMEOUT_MS);
+                    await awaitSignedInSession(page, host, { now, waitMs: sessionWaitMs });
+                    const list = await jsonFromPage(page, `${host}/hampter/characters?${query}`, {}, { timeoutMs: LIST_IO_TIMEOUT_MS });
+                    if (!Array.isArray(list?.data)) throw new JannyBrowserError('janny_card_unavailable', 502, 'JanitorAI list was missing');
+                    return list;
+                });
+                return { ...payload, origin };
             });
             const entry = { at: now(), value };
             frontpageCache.delete(key);
@@ -1196,7 +1262,7 @@ export function createJannyBrowser({
                     await withTimeout((async () => {
                         await operationTail;
                         if (context && recovery.snapshot) {
-                            await restoreCaptureMode(await pageFor(context), recovery);
+                            await restorePending(context);
                         }
                     })(), CLOSE_TIMEOUT_MS).catch(() => {});
                     const opened = context;

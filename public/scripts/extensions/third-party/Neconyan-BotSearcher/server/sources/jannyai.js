@@ -241,7 +241,7 @@ export const jannyai = Object.freeze({
     label: 'JannyAI',
     homepage: SITE,
     allowedHosts: Object.freeze(['search.jannyai.com', 'image.jannyai.com']),
-    linkHosts: Object.freeze(['jannyai.com', 'janitorai.com']),
+    linkHosts: Object.freeze(['jannyai.com', 'janitorai.com', 'jani.com']),
     idPattern: UUID,
     tier: 2,
     nativeImport: true,

@@ -2237,7 +2237,7 @@ const JANNY_CLOUDFLARE_MESSAGE = 'JannyAI\'s Cloudflare check blocked this serve
  */
 export function isJannyImportHost(host) {
     const value = String(host || '').toLowerCase();
-    return value.includes('janitorai') || value === 'jannyai.com' || value.endsWith('.jannyai.com');
+    return value.includes('janitorai') || value === 'jani.com' || value === 'www.jani.com' || value === 'jannyai.com' || value.endsWith('.jannyai.com');
 }
 
 /**
