@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { createHash } from 'node:crypto';
+import { createHash, randomInt } from 'node:crypto';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
 import { Jimp } from '../jimp.js';
 import { invalidateThumbnail } from '../endpoints/thumbnails.js';
@@ -19,6 +19,7 @@ import { supportsQuickImageEditing, withQuickImageEdit } from '../generation/qui
 import { captureQuickImageTextSettings } from '../generation/quick-image-gen-text.js';
 import { resolveCharacterImageSettings } from '../../public/scripts/extensions/quick-image-gen/lib/character-settings.js';
 import { detectImageFormat } from '../../public/scripts/extensions/quick-image-gen/lib/image-metadata.js';
+import { normalizeBatchCount } from '../../public/scripts/extensions/quick-image-gen/lib/generation.js';
 import { decodeServerImage } from '../media-codecs.js';
 import { createMacroEnvironment } from '../macros/index.js';
 import { sameSourceContext } from '../../public/scripts/scratchpad/source.js';
@@ -147,7 +148,18 @@ function imageSnapshot(lease, source, session, message, target, acknowledgement,
     } catch {
         throw fail('Check your Quick Image Gen negative prompt.');
     }
-    return { snapshot, review: Boolean(settings.reviewBeforeGenerate ?? settings.llmEditPrompt), negative };
+    // Avatar targets install one reviewed picture, so only plain images follow the Quick Image Gen batch count.
+    const count = target || personaTarget ? 1 : normalizeBatchCount(settings.batchCount);
+    const seed = Number(settings.seed);
+    const batch = count > 1 ? { count, sequentialSeeds: settings.sequentialSeeds === true,
+        ...(String(settings.seed ?? '').trim() !== '' && Number.isFinite(seed) && seed >= 0 ? { seed: Math.min(0xffffffff, Math.floor(seed)) } : {}) } : null;
+    return { snapshot, review: Boolean(settings.reviewBeforeGenerate ?? settings.llmEditPrompt), negative, batch };
+}
+
+/** Effect identities for every picture of one request; the first keeps the single-image identity. */
+function imageEffectIds(request) {
+    const count = Number.isSafeInteger(request?.batch?.count) ? Math.min(10, Math.max(1, request.batch.count)) : 1;
+    return Array.from({ length: count }, (_, index) => index ? `${request.effectId}-${index + 1}` : request.effectId);
 }
 
 // Provider step names Quick Image Gen may save for one effect, so a stopped or pruned job is never assumed free.
@@ -166,7 +178,7 @@ function imageAttemptWasFree(directories, job) {
     if (providerRecoverySteps(job).length || (typeof job.resume === 'string' && job.resume.startsWith('provider:'))) return false;
     const request = readArtifact(directories, job.id, 'request');
     if (!request) return true;
-    return !hasSavedProviderResult(directories, job.id, request.effectId);
+    return !imageEffectIds(request).some(effectId => hasSavedProviderResult(directories, job.id, effectId));
 }
 
 /** The saved image receipt records whether the provider was reached; it outlives a pruned job. */
@@ -220,7 +232,8 @@ export async function acceptScratchpadImage(request, body = {}) {
             prompt: change.prompt, negative: change.negative, ...(target ? { avatar: target.avatar, characterName: target.name } : {}) };
         const input = { source, sessionId: session.id, messageId: message.id, index, changeHash, account, snapshot: captured.snapshot,
             ...(edit ? { edit: { ...edit, source: change.source } } : {}),
-            prompt: change.prompt, negative: [captured.negative, change.negative].filter(Boolean).join(', '), review: captured.review, effectId: `scratchpad-${image.id}` };
+            prompt: change.prompt, negative: [captured.negative, change.negative].filter(Boolean).join(', '), review: captured.review, effectId: `scratchpad-${image.id}`,
+            ...(captured.batch ? { batch: captured.batch } : {}) };
         try {
             // The request record is written first, so a crash cannot leave a bucket image pointing at a missing request.
             writeArtifact(base.directories, job.id, 'request', input);
@@ -242,7 +255,7 @@ function providerWorkStarted(directories, jobId) {
     if (!job) return false;
     if (providerRecoverySteps(job).length || (typeof job.resume === 'string' && job.resume.startsWith('provider:'))) return true;
     const request = readArtifact(directories, jobId, 'request');
-    return Boolean(request && hasSavedProviderResult(directories, jobId, request.effectId));
+    return Boolean(request && imageEffectIds(request).some(effectId => hasSavedProviderResult(directories, jobId, effectId)));
 }
 
 function settleImage(context, request, patch) {
@@ -256,9 +269,21 @@ function settleImage(context, request, patch) {
     });
 }
 
+/** Seeds for a batch, saved once so a resumed job asks the provider for exactly the same pictures. */
+function batchSeeds(context, request, seedOverride, count) {
+    if (count < 2 || !request.batch?.sequentialSeeds) return Array(count).fill(seedOverride);
+    const saved = readArtifact(context.directories, context.job.id, 'image-batch');
+    if (Array.isArray(saved?.seeds) && saved.seeds.length === count && saved.seeds.every(Number.isSafeInteger)) return saved.seeds;
+    const base = seedOverride ?? request.batch.seed ?? randomInt(2147483647);
+    const seeds = Array.from({ length: count }, (_, index) => (base + index) >>> 0);
+    writeArtifact(context.directories, context.job.id, 'image-batch', { seeds });
+    return seeds;
+}
+
 export async function runScratchpadImage(context, { generate = generateQuickImageGenJobImage } = {}) {
     const request = readArtifact(context.directories, context.job.id, 'request');
     if (!request) throw fail('The saved image request is missing.');
+    const effects = imageEffectIds(request);
     const sourceCheck = lease => {
         const current = assertImageLocked(lease, request, context.job.id);
         if (request.edit) {
@@ -267,6 +292,8 @@ export async function runScratchpadImage(context, { generate = generateQuickImag
         }
         configured(context.directories, request.snapshot.quickImageGenCharacterScope);
     };
+    const outputs = [];
+    let effectId = effects[0];
     try {
         context.signal.throwIfAborted();
         const prepared = await prepareConversationScopedImagePrompt(context, { effectId: request.effectId, prompt: request.prompt,
@@ -277,30 +304,45 @@ export async function runScratchpadImage(context, { generate = generateQuickImag
             if (approval.decision === null) return { waiting: true };
             if (approval.decision === 'deny') { settleImage(context, request, { state: 'cancelled', error: 'Image prompt declined.' }); return { declined: true }; }
         }
-        const image = await generate(context, { effectId: request.effectId, prompt: prepared.prompt, negative: prepared.negative,
-            settingsFingerprint: request.snapshot.quickImageGenSettingsFingerprint, expectedAccount: request.account,
-            assertSourceLocked: sourceCheck, characterScope: request.snapshot.quickImageGenCharacterScope,
-            referenceSources: request.snapshot.quickImageGenReferenceSources, seedOverride: prepared.seedOverride,
-            ...(request.edit ? { editReference: request.edit.reference } : {}) });
-        const format = detectImageFormat(Buffer.from(image.base64, 'base64'));
-        if (!format || image.format !== (format.ext === 'jpeg' ? 'jpg' : format.ext)) throw fail('The image provider returned an invalid picture.');
-        const bitmap = await decodeServerImage(Buffer.from(image.base64, 'base64'));
-        const url = await saveQuickImageToUserImages(context.directories, { ...image, chName: 'Scratchpad', filename: `scratchpad-${roleplayHash([context.job.id, request.effectId])}`,
-            account: request.account, owner: context.owner, assertSourceLocked: lease => assertImageLocked(lease, request, context.job.id) });
-        // Record the exact saved bytes so the avatar writer can prove the reviewed picture later.
-        const imageHash = createHash('sha256').update(Buffer.from(image.base64, 'base64')).digest('hex');
-        settleImage(context, request, { state: 'done', url: url.startsWith('/') ? url : `/${url}`, width: bitmap.width, height: bitmap.height, error: '', imageHash });
-        writeArtifact(context.directories, context.job.id, 'result', { url });
-        return { url };
+        const seeds = batchSeeds(context, request, prepared.seedOverride, effects.length);
+        for (const [index, id] of effects.entries()) {
+            effectId = id;
+            context.signal.throwIfAborted();
+            const image = await generate(context, { effectId, prompt: prepared.prompt, negative: prepared.negative,
+                settingsFingerprint: request.snapshot.quickImageGenSettingsFingerprint, expectedAccount: request.account,
+                assertSourceLocked: sourceCheck, characterScope: request.snapshot.quickImageGenCharacterScope,
+                referenceSources: request.snapshot.quickImageGenReferenceSources, seedOverride: seeds[index],
+                ...(effects.length > 1 ? { batch: { index, count: effects.length } } : {}),
+                ...(request.edit ? { editReference: request.edit.reference } : {}) });
+            const format = detectImageFormat(Buffer.from(image.base64, 'base64'));
+            if (!format || image.format !== (format.ext === 'jpeg' ? 'jpg' : format.ext)) throw fail('The image provider returned an invalid picture.');
+            const bitmap = await decodeServerImage(Buffer.from(image.base64, 'base64'));
+            const url = await saveQuickImageToUserImages(context.directories, { ...image, chName: 'Scratchpad', filename: `scratchpad-${roleplayHash([context.job.id, effectId])}`,
+                account: request.account, owner: context.owner, assertSourceLocked: lease => assertImageLocked(lease, request, context.job.id) });
+            // Record the exact saved bytes so the avatar writer can prove the reviewed picture later.
+            const imageHash = createHash('sha256').update(Buffer.from(image.base64, 'base64')).digest('hex');
+            outputs.push({ url: url.startsWith('/') ? url : `/${url}`, width: bitmap.width, height: bitmap.height, imageHash });
+        }
+        settleImage(context, request, { state: 'done', ...pictures(outputs), error: '' });
+        writeArtifact(context.directories, context.job.id, 'result', { url: outputs[0].url, ...(outputs.length > 1 ? { urls: outputs.map(output => output.url) } : {}) });
+        return { url: outputs[0].url };
     } catch (error) {
-        const saved = readImageArtifact(context.directories, context.job.id, `provider:quick-image:${request.effectId}`);
+        const saved = readImageArtifact(context.directories, context.job.id, `provider:quick-image:${effectId}`);
         writeArtifact(context.directories, context.job.id, 'image-failure', { unknown: !saved && Boolean(unresolvedProviderStep(context.directories, context.job.id)) });
         // A retained paid result can be republished by retrying the same job, never by another purchase.
         const message = saved ? 'The image was generated but could not be attached. Retry its saved job to finish saving, without another image request.'
             : context.signal.aborted ? 'Image stopped.' : error.message || 'The image could not be generated.';
-        try { settleImage(context, request, { state: context.signal.aborted ? 'cancelled' : 'failed', error: message }); } catch { /* The original job retains the conflict and its result. */ }
+        // Pictures already saved from a batch stay visible; retrying reuses their saved provider results.
+        const partial = outputs.length ? { ...pictures(outputs), error: `${message} ${outputs.length} of ${effects.length} images were saved.` } : { error: message };
+        try { settleImage(context, request, { state: context.signal.aborted ? 'cancelled' : 'failed', ...partial }); } catch { /* The original job retains the conflict and its result. */ }
         throw error;
     }
+}
+
+/** The first picture keeps the single-image fields that avatar review and image editing read. */
+function pictures(outputs) {
+    const [first, ...more] = outputs;
+    return { ...first, ...(more.length ? { more } : {}) };
 }
 
 export function assertScratchpadImageRetry(directories, job) {

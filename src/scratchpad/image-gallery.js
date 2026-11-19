@@ -57,7 +57,7 @@ function collectGalleryImages(lease, excluded, requested = null) {
                 for (const message of replySwipes(current)) {
                     if (!message || typeof message.text !== 'string' || !message.images) continue;
                     const receipts = generatedImageReceipts({ ...message, images: normaliseStoredImages(message.images) });
-                    for (const image of receipts) {
+                    for (const image of receipts.flatMap(receipt => [receipt, ...(receipt.more ?? []).map(picture => ({ ...receipt, ...picture }))])) {
                         const url = `/${image.url.replace(/^\//, '')}`;
                         const id = `${PREFIX}${url}`;
                         if (excluded.has(id) || images.has(id) || (requested && !requested.has(id))) continue;
