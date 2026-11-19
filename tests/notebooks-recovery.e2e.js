@@ -205,10 +205,12 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 393, height: 852 
         await measureControls(page, '[data-banner="conflict"]', viewport, info, 'later-typing-conflict');
     });
 
-    test(`device draft recovery keeps server and draft choices separate at ${viewport.width}px`, async ({ page, context }, info) => {
-        await openNotes(page, viewport);
-        const notebookId = await notebook(page, 'Device drafts');
-        for (const choice of ['Restore automatically', 'Use draft', 'Save draft as a copy', 'Discard draft', 'Dismiss']) {
+    // Each choice owns a separate note and a real reload. Keep these independent
+    // so booting one case cannot consume the time available to another.
+    for (const choice of ['Restore automatically', 'Use draft', 'Save draft as a copy', 'Discard draft', 'Dismiss']) {
+        test(`device draft recovery: ${choice} at ${viewport.width}px`, async ({ page, context }, info) => {
+            await openNotes(page, viewport);
+            const notebookId = await notebook(page, 'Device drafts');
             const note = await createNote(page, notebookId, `Draft ${choice}`, 'Original saved words.');
             await showNote(page, viewport, notebookId, note);
             await page.route('**/api/notebooks/notes/update', route => route.abort('failed'));
@@ -233,7 +235,7 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 393, height: 852 
             if (choice === 'Restore automatically') {
                 await expect(banner).toContainText('Restored changes saved on this device');
                 await expect.poll(async () => (await readNote(page, notebookId, note.id)).text).toBe(draft);
-                continue;
+                return;
             }
             await expectSourceText(page, server);
             await banner.getByRole('button', { name: 'Compare', exact: true }).click();
@@ -257,8 +259,8 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 393, height: 852 
                 await page.locator('[data-banner="draft"]').getByRole('button', { name: 'Discard draft', exact: true }).click();
             }
             await expect.poll(() => draftOnDevice(page, notebookId, note.id)).toBeNull();
-        }
-    });
+        });
+    }
 
     test(`assistant review Save change, Not now and Decline at ${viewport.width}px`, async ({ page }, info) => {
         await openNotes(page, viewport);
