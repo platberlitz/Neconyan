@@ -21393,12 +21393,17 @@ jQuery(async function () {
     function showMenu() {
         showBookmarksButtons();
         setUiVisibility(menu.get(0), true, () => menu.stop(true, true).show());
+        button.attr('aria-expanded', 'true');
         setOptionsMenuEvents(true);
         optionsPopper.update();
         isOptionsMenuVisible = true;
     }
 
     function hideMenu(immediate = false) {
+        button.attr('aria-expanded', 'false');
+        if (menu.get(0)?.contains(document.activeElement)) {
+            button.get(0)?.focus();
+        }
         if (immediate) {
             menu.stop(true, true).hide();
         } else {
@@ -21420,6 +21425,7 @@ jQuery(async function () {
                 return;
             }
             isOptionsMenuVisible = false;
+            button.attr('aria-expanded', 'false');
             setOptionsMenuEvents(false);
         });
         observer.observe(optionsMenuNode, { attributes: true, attributeFilter: ['style'] });
@@ -21429,11 +21435,21 @@ jQuery(async function () {
         return menu.is(':hover, :focus-within') || button.is(':hover, :focus');
     }
 
-    button.on('click', function () {
+    button.on('click', function (event) {
         if (isOptionsMenuVisible) {
             hideMenu();
         } else {
             showMenu();
+            if (event.originalEvent?.detail === 0) {
+                menu.find('a[tabindex="0"]:visible').get(0)?.focus();
+            }
+        }
+    });
+    menu.on('keydown', function (event) {
+        if (event.key === 'Escape' && isOptionsMenuVisible) {
+            event.preventDefault();
+            event.stopPropagation();
+            hideMenu();
         }
     });
     $(document).on('click', function () {

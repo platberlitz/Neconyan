@@ -190,7 +190,7 @@ test('open menus keep positioning while open and stop after every close path', a
             await exerciseMenu(page, menu);
         }
 
-        // Author's Note also fades the options menu as a legacy duplicate close.
+        // Author's Note closes through the shared menu handler.
         // The direct hide below separately covers a path that never reaches hideMenu.
         await page.locator('#options_button').click();
         await expect(page.locator('#options')).toBeVisible();
