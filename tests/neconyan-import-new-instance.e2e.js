@@ -54,7 +54,11 @@ async function importButtonContrast(page) {
 for (const phone of [false, true]) {
     test(`explicit adoption preserves 50 messages and selects one separate character on ${phone ? 'phone' : 'desktop'}`, async ({ app }) => {
         test.setTimeout(180000);
-        const account = await app.account({ phone });
+        const account = await app.account({ phone, configureSettings: saved => {
+            // Keep independent background naming from renaming the imported files
+            // or making a model request while we verify the import itself.
+            saved.power_user.auto_label_chat = false;
+        } });
         const page = await account.open({ workspace: false });
         await select(page, account.avatar);
         const cardFile = path.join(app.directory, 'data', 'default-user', 'characters', account.avatar);
