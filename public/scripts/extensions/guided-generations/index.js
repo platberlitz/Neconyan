@@ -22,6 +22,8 @@ import { simpleSend } from './scripts/simpleSend.js';
 const oldExtensionKey = 'GuidedGenerations-Extension';
 const oldExtensionName = 'third-party/GuidedGenerations-Extension';
 const legacySystemPromptPresetNames = new Set(['GGSystemPrompt', 'GGSytemPrompt']);
+const swipeButton = ['gg_swipe_button', 'Guided Swipe', 'fa-solid fa-forward', guidedSwipe];
+const impersonateButton = ['gg_impersonate_button', 'Guided Impersonate', 'fa-solid fa-user-pen', guidedImpersonate];
 
 const defaultSettings = {
     showFlushGuidesButton: true,
@@ -317,11 +319,19 @@ async function loadSettingsPanel() {
     addSettingsEventListeners(container);
 }
 
-function createActionButton(id, title, iconClass, actionFunc) {
+function createActionButton(id, title, iconClass, actionFunc, bottomBar = false) {
     const button = document.createElement('button');
-    button.id = id;
     button.type = 'button';
-    button.className = `gg-action-button menu_button menu_button_icon ${iconClass}`;
+    if (bottomBar) {
+        button.className = 'sb-bottom-chat-btn';
+        const icon = document.createElement('i');
+        icon.className = iconClass;
+        icon.setAttribute('aria-hidden', 'true');
+        button.append(icon);
+    } else {
+        button.id = id;
+        button.className = `gg-action-button menu_button menu_button_icon ${iconClass}`;
+    }
     button.title = title;
     button.setAttribute('aria-label', title);
     button.addEventListener('click', event => {
@@ -440,6 +450,18 @@ function ensureButtonContainer() {
     return container;
 }
 
+function updateSimpleModeButtons() {
+    const slot = document.getElementById('sb-bottom-chat-guided-actions');
+    if (!slot) return;
+
+    const settings = getSettings();
+    const enabled = !extension_settings.disabledExtensions?.includes(extensionName);
+    slot.replaceChildren(...[
+        enabled && settings.showGuidedSwipe && createActionButton(...swipeButton, true),
+        enabled && settings.showImpersonate1stPerson && createActionButton(...impersonateButton, true),
+    ].filter(Boolean));
+}
+
 function updateExtensionButtons() {
     const settings = getSettings();
     const container = ensureButtonContainer();
@@ -466,14 +488,15 @@ function updateExtensionButtons() {
     const buttons = [
         settings.showFlushGuidesButton && createFlushGuidesButton(),
         settings.showSimpleSendButton && createActionButton('gg_simple_send_button', 'Simple Send', 'fa-solid fa-paper-plane', simpleSend),
-        settings.showImpersonate1stPerson && createActionButton('gg_impersonate_button', 'Guided Impersonate', 'fa-solid fa-user-pen', guidedImpersonate),
-        settings.showGuidedSwipe && createActionButton('gg_swipe_button', 'Guided Swipe', 'fa-solid fa-forward', guidedSwipe),
+        settings.showImpersonate1stPerson && createActionButton(...impersonateButton),
+        settings.showGuidedSwipe && createActionButton(...swipeButton),
         settings.showGuidedRegenerate && createActionButton('gg_regenerate_button', 'Guided Regenerate', 'fa-solid fa-rotate-right', guidedRegenerate),
         settings.showGuidedCorrection && createActionButton('gg_correction_button', 'Guided Correction', 'fa-solid fa-pen-to-square', guidedCorrection),
         settings.showGuidedResponse && createActionButton('gg_response_button', 'Guided Response', 'fa-solid fa-compass', guidedResponse),
     ].filter(Boolean);
 
     actionsContainer.append(...buttons);
+    updateSimpleModeButtons();
     updateFlushGuideButton();
     integrateQrBar();
 }
@@ -532,6 +555,10 @@ export async function init() {
     loadSettings();
     maybeWarnOldExtensionDeprecated();
     await loadSettingsPanel();
+    document.addEventListener('neconyan:bottom-chat-bar-built', updateSimpleModeButtons);
+    eventSource.on(event_types.EXTENSION_DISABLED, name => {
+        if (name === extensionName) updateSimpleModeButtons();
+    });
     updateExtensionButtons();
     startFlushGuideButtonUpdates();
     startQrIntegration();

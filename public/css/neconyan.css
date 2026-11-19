@@ -642,6 +642,13 @@ body.neconyan.flatchat:not(.sbterm) #chat .mes :is(.mes_button, .extraMesButtons
 body.neconyan #form_sheld { width: 100%; max-width: max(420px, calc(860px * var(--sb-bottom-bar-scale, 1))); margin: 0 auto; padding: 0 24px max(18px, env(safe-area-inset-bottom)); }
 body.neconyan :is(#send_form, #sb-bottom-chat-bar) { background: var(--neco-surface); }
 body.neconyan #sb-bottom-chat-bar { padding-inline: 0; }
+
+#sb-bottom-chat-guided-actions { display: none; }
+html.neconyan-simple-mode #sb-bottom-chat-guided-actions:not(:empty) {
+    display: inline-flex;
+    flex: 0 0 auto;
+    gap: inherit;
+}
 body.neconyan #send_form { padding: 4px; border: 1px solid var(--neco-border); border-radius: 10px; box-shadow: none; }
 body.neconyan #nonQRFormItems { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 body.neconyan #send_textarea {
@@ -3624,4 +3631,3 @@ body.neconyan:is(.whisperstyle, .hushstyle)[data-neconyan-chat-mode='roleplay']:
 #chat > .mes[data-nn-offscreen] *,
 #chat > .mes[data-nn-offscreen] *::before,
 #chat > .mes[data-nn-offscreen] *::after { animation-play-state: paused !important; }
-

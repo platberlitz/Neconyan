@@ -4894,7 +4894,8 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
         width: min(var(--sb-bottom-chat-mobile-width), calc(100% - (var(--sb-bottom-chat-mobile-gutter) * 2)));
         max-width: calc(100% - (var(--sb-bottom-chat-mobile-gutter) * 2));
         display: grid;
-        grid-template-columns: var(--sb-bottom-chat-mobile-persona-size) minmax(0, 1fr) repeat(3, var(--sb-bottom-chat-mobile-button-size));
+        --sb-bottom-chat-mobile-action-tracks: repeat(2, var(--sb-bottom-chat-mobile-guided-size, var(--sb-bottom-chat-mobile-button-size))) var(--sb-bottom-chat-mobile-button-size);
+        grid-template-columns: var(--sb-bottom-chat-mobile-persona-size) minmax(0, 1fr) var(--sb-bottom-chat-mobile-action-tracks);
         align-items: center;
         justify-content: stretch;
         gap: var(--sb-bottom-chat-mobile-gap);
@@ -4905,7 +4906,7 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
     }
 
     #sb-bottom-chat-bar.sb-has-reasoning-effort {
-        grid-template-columns: var(--sb-bottom-chat-mobile-persona-size) auto minmax(0, 1fr) repeat(3, var(--sb-bottom-chat-mobile-button-size));
+        grid-template-columns: var(--sb-bottom-chat-mobile-persona-size) auto minmax(0, 1fr) var(--sb-bottom-chat-mobile-action-tracks);
     }
 
     #sb-bottom-chat-bar #sb-reasoning-effort-button {
