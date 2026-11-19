@@ -1,6 +1,6 @@
 # Neconyan~
 
-The latest version is [1.5.6](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.6).
+The latest version is [1.5.7](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.7).
 
 **Read in your language:** [Deutsch](.github/readme-de_de.md) · [Español](.github/readme-es_es.md) · [Français](.github/readme-fr_fr.md) · [Italiano](.github/readme-it_it.md) · [Nederlands](.github/readme-nl_nl.md) · [Português](.github/readme-pt_pt.md) · [Íslenska](.github/readme-is_is.md) · [Русский](.github/readme-ru_ru.md) · [Українська](.github/readme-uk_ua.md) · [العربية](.github/readme-ar_sa.md) · [ไทย](.github/readme-th_th.md) · [Tiếng Việt](.github/readme-vi_vn.md) · [日本語](.github/readme-ja_jp.md) · [한국어](.github/readme-ko_kr.md) · [简体中文](.github/readme-zh_cn.md) · [繁體中文](.github/readme-zh_tw.md)
 
@@ -64,10 +64,26 @@ The chat and the composer get the room, and the sidebar keeps a short list of pa
 - **Memory** opens **Story so far**, with one switch, a **Summarise now** button and the latest summary of your chat.
 - **Updates** checks for a new version and installs it without leaving Simple Mode.
 
+When enabled in Guided Generations, **Guided Swipe** and **Guided Impersonate** sit next to **Switch chat**, even when you collapse the chat bar. The first keeps your original reply and makes an alternative. The second drafts your next message without sending it.
+
 <table><tr>
-  <td width="72%"><img src="docs/readme/desktop-simple-chat.webp" alt="A roleplay chat in Simple Mode on desktop, with the shorter sidebar"></td>
-  <td width="28%"><img src="docs/readme/phone-simple-menu.webp" alt="The shorter Simple Mode menu on a phone, with Memory, Updates and Show all features"></td>
+  <td width="72%"><img src="docs/readme/desktop-simple-chat.webp" alt="Guided Swipe and Guided Impersonate beside Switch chat in Simple Mode on desktop"></td>
+  <td width="28%"><img src="docs/readme/phone-simple-chat.webp" alt="The two guided actions in the collapsed Simple Mode chat bar on a phone"></td>
 </tr></table>
+
+**Chat tools → Author's Note** opens the editor without leaving Simple Mode. All four tabs are there on a phone as well.
+
+<details>
+<summary>See Author's Note and the shorter phone menu</summary>
+
+<table><tr>
+  <td width="72%"><img src="docs/readme/desktop-simple-authors-note.webp" alt="Author's Note and its four tabs in Simple Mode on desktop"></td>
+  <td width="28%"><img src="docs/readme/phone-simple-authors-note.webp" alt="Author's Note and its four tabs in Simple Mode on a phone"></td>
+</tr></table>
+
+<img src="docs/readme/phone-simple-menu.webp" width="260" alt="The shorter Simple Mode menu on a phone, with Memory, Updates and Show all features">
+
+</details>
 
 ### Connecting without the homework
 
@@ -90,7 +106,7 @@ Press **Show all features** in the sidebar, or turn it off in **Settings → App
   <img src="docs/readme/banner-modes.webp" alt="Modes">
 </p>
 
-I captured these desktop and phone screenshots using demo chats and notes with the bundled assistants, the default Calico Dark colours and **Background Visibility at 0%**.
+I captured these desktop and phone screenshots using demo chats and notes with the bundled assistants, the default Calico Dark colours and opaque panels.
 
 ### Home
 
