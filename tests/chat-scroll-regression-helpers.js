@@ -1,4 +1,5 @@
 /* global document, HTMLElement, requestAnimationFrame, window, WheelEvent, CSSTransition */
+import { expect } from '@playwright/test';
 import { createMockRoleplayStore } from './roleplay-browser-fixture.js';
 
 export const APP_URL = process.env.NECONYAN_TEST_BASE_URL || '/';
@@ -48,13 +49,18 @@ export async function isolateSettingsSaves(page, prepare = () => {}, prepareEnve
 }
 
 export async function openPersonaEditor(page, section = 'prompt') {
-    const edit = page.locator('#persona_workspace_tab_edit');
-    if (await edit.isVisible()) await edit.click();
+    const edit = page.locator('#persona_workspace_tab_edit:visible');
     const sections = page.getByRole('combobox', { name: 'Persona section', exact: true });
+    const tab = page.locator(`#persona_editor_tab_${section}:visible`);
+    // The drawer activates Persona after opening and holds it until its CSS loads.
+    // Do not choose the desktop fallback while the entire phone editor is still hidden.
+    await expect(edit.or(sections).or(tab).first()).toBeVisible();
+    if (await edit.isVisible()) await edit.click();
+    await expect(sections.or(tab).first()).toBeVisible();
     if (await sections.isVisible()) {
         await sections.selectOption(section);
     } else {
-        await page.locator(`#persona_editor_tab_${section}`).click();
+        await tab.click();
     }
 }
 
