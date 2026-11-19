@@ -16,6 +16,9 @@ const repaired = `[METER|Alhaitham|Confidant|💚 STABLE|🌅 WARMING]\n${body}\
 function configureTrackerSettings(saved) {
     saved.extension_settings.connectionManager.profiles[0].model = MODEL;
     saved.accountStorage = { ...saved.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped' };
+    // Programmatic chat opens schedule a synthetic composer click. It counts
+    // as an outside click and can close More while the test is opening it.
+    saved.power_user.auto_focus_chat_input = false;
 }
 
 function labelBoundsWithinButton(element) {
