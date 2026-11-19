@@ -8,9 +8,8 @@ import { acknowledgeSettingsSave } from './chat-scroll-regression-helpers.js';
 const shellSource = await readFile(new URL('../public/scripts/neconyan-tabs.js', import.meta.url), 'utf8');
 const shells = [...shellSource.match(/const NN_THEMES = Object\.freeze\(\[([\s\S]*?)\]\);/)[1].matchAll(/id:\s*'([^']+)'/g)].map(match => match[1]);
 
-async function colours(locator) {
-    return locator.evaluate(element => {
-        const style = getComputedStyle(element);
+async function colours(locator, { compareRegexAccent = false } = {}) {
+    return locator.evaluate((element, compareRegexAccent) => {
         const canvas = document.createElement('canvas');
         canvas.width = canvas.height = 1;
         const context = canvas.getContext('2d');
@@ -22,27 +21,50 @@ async function colours(locator) {
         };
         const composite = (over, under) => over.slice(0, 3).map((channel, i) => Math.round(channel * over[3] / 255 + under[i] * (1 - over[3] / 255)));
         const format = channels => `rgb(${channels.slice(0, 3).join(', ')})`;
-        let backdrop = [255, 255, 255];
-        const ancestors = [];
-        for (let parent = element.parentElement; parent; parent = parent.parentElement) ancestors.unshift(parent);
-        for (const parent of ancestors) backdrop = composite(rgb(getComputedStyle(parent).backgroundColor), backdrop);
-        const base = composite(rgb(style.backgroundColor), backdrop);
-        const brightness = Number(style.filter.match(/brightness\(([\d.]+)\)/)?.[1] || 1);
-        const filtered = channels => format(channels.map(channel => Math.min(255, Math.round(channel * brightness))));
-        // A padding-box fill covers the lower border-only gradient behind the label.
-        const image = style.backgroundClip === 'padding-box, border-box'
-            ? style.backgroundImage.split(/, (?=linear-gradient)/)[0] : style.backgroundImage;
-        const stops = image.match(/(?:rgba?|color)\([^)]+\)/g) || [];
-        return {
-            background: style.backgroundColor, image: style.backgroundImage,
-            ink: filtered(rgb(style.color)),
-            stops: stops.length ? stops.map(stop => filtered(composite(rgb(stop), base))) : [filtered(base)],
-            children: [...element.querySelectorAll('i, span')].map(child => filtered(rgb(getComputedStyle(child).color))),
-            filter: style.filter,
-            shadow: style.boxShadow,
-            outline: `${style.outlineStyle} ${style.outlineWidth} ${style.outlineColor}`,
+        const measure = target => {
+            const style = getComputedStyle(target);
+            let backdrop = [255, 255, 255];
+            const ancestors = [];
+            for (let parent = target.parentElement; parent; parent = parent.parentElement) ancestors.unshift(parent);
+            for (const parent of ancestors) backdrop = composite(rgb(getComputedStyle(parent).backgroundColor), backdrop);
+            const base = composite(rgb(style.backgroundColor), backdrop);
+            const brightness = Number(style.filter.match(/brightness\(([\d.]+)\)/)?.[1] || 1);
+            const filtered = channels => format(channels.map(channel => Math.min(255, Math.round(channel * brightness))));
+            // A padding-box fill covers the lower border-only gradient behind the label.
+            const image = style.backgroundClip === 'padding-box, border-box'
+                ? style.backgroundImage.split(/, (?=linear-gradient)/)[0] : style.backgroundImage;
+            const stops = image.match(/(?:rgba?|color)\([^)]+\)/g) || [];
+            return {
+                background: style.backgroundColor, image: style.backgroundImage,
+                ink: filtered(rgb(style.color)),
+                stops: stops.length ? stops.map(stop => filtered(composite(rgb(stop), base))) : [filtered(base)],
+                children: [...target.querySelectorAll('i, span')].map(child => filtered(rgb(getComputedStyle(child).color))),
+                filter: style.filter,
+                shadow: style.boxShadow,
+                outline: `${style.outlineStyle} ${style.outlineWidth} ${style.outlineColor}`,
+            };
         };
-    });
+        const value = measure(element);
+        if (!compareRegexAccent) return value;
+
+        // Accent changes can replace the whole stage. Compare with a fresh
+        // shared button in the current stage, in the same browser call.
+        const stageApply = element.closest('#rat_drawer').querySelector('.rat-stage-apply');
+        const reference = document.createElement('button');
+        reference.className = 'menu_button menu_button_primary';
+        reference.hidden = true;
+        stageApply.parentElement.append(reference);
+        try {
+            return {
+                ...value,
+                pair: measure(reference),
+                fullOpacity: [...element.children].every(child => getComputedStyle(child).opacity === '1'),
+                height: element.getBoundingClientRect().height,
+            };
+        } finally {
+            reference.remove();
+        }
+    }, compareRegexAccent);
 }
 
 for (const phone of [false, true]) {
@@ -179,23 +201,14 @@ for (const phone of [false, true]) {
             await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; animation: none !important; }' });
             for (const shell of shells.filter(shell => shell !== 'calico')) await page.addStyleTag({ url: `/css/shell-styles/${shell}.css` });
             await page.addStyleTag({ url: '/css/neconyan-kittyless.css' });
-            await apply.evaluate(element => {
-                const reference = document.createElement('button');
-                reference.id = 'regex-accent-reference';
-                reference.className = 'menu_button menu_button_primary';
-                reference.hidden = true;
-                element.parentElement.append(reference);
-            });
-            const reference = page.locator('#regex-accent-reference');
             const selected = page.locator('#rat_drawer .rat-chip[aria-pressed="true"]');
             const check = async (control, label) => {
-                const value = await colours(control);
-                const pair = await colours(reference);
+                const { pair, fullOpacity, height, ...value } = await colours(control, { compareRegexAccent: true });
                 const minimum = Math.min(...value.stops.map(stop => contrastRatio(value.ink, stop)));
                 if (minimum < 4.5 || value.ink !== pair.ink || JSON.stringify(value.stops) !== JSON.stringify(pair.stops)
                     || value.children.some(ink => ink !== value.ink)) findings.push({ label, minimum, ...value, pair });
-                expect(await control.evaluate(element => [...element.children].every(child => getComputedStyle(child).opacity === '1')), `${label}: counts keep full contrast`).toBe(true);
-                if (phone) expect((await control.boundingBox()).height, `${label}: phone tap height`).toBeGreaterThanOrEqual(44);
+                expect(fullOpacity, `${label}: counts keep full contrast`).toBe(true);
+                if (phone) expect(height, `${label}: phone tap height`).toBeGreaterThanOrEqual(44);
             };
             for (const theme of ['Neconyan Calico Dark', 'Neconyan Calico']) {
                 for (const profile of [null, 'Mint Glass', 'Plum Wine']) {
