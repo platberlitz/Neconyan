@@ -449,13 +449,24 @@ test('draft refusal, disabled URL tracking and restored-page routing preserve th
     await expect(page.locator('#send_textarea')).toHaveValue('Unsent draft belongs to A.');
     expect(await page.evaluate(async () => (await import('/script.js')).getCurrentChatId())).toBe('Nav A');
     expect(new URL(page.url()).searchParams.get('chat')).toBe(a.id);
-    await page.locator('#send_textarea').fill('');
+    const composer = page.locator('#send_textarea');
+    await composer.fill('');
+    await composer.blur();
     await page.evaluate(async () => (await import('/script.js')).openCharacterChat('Nav B'));
+    // An ordinary chat open focuses the composer on a timer. Let that finish
+    // before verifying that restoring the saved route leaves it unfocused.
+    await expect(composer).toBeFocused();
     await expect.poll(() => new URL(page.url()).searchParams.has('chat')).toBe(false);
     await preferences(page, { links: false, resume: true });
     await expect.poll(async () => (await nav('state')).pointer?.id).toBe(b.id);
     await nav('remember', { destination: a, clientId: '11111111-1111-4111-8111-111111111111', sequence: 1 });
+    await composer.focus();
+    // The chat is already visible, so checking its text immediately after
+    // pageshow would not prove that restored-page routing actually ran.
+    const restore = page.waitForResponse(response => response.url().endsWith('/api/chat-navigation/resolve')
+        && response.request().postDataJSON().destination?.id === b.id);
     await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
+    expect((await restore).ok()).toBe(true);
     await assertRoleplay(page, 'Nav B');
     expect((await nav('state')).pointer.id).toBe(a.id);
     const length = await page.evaluate(() => window.history.length);

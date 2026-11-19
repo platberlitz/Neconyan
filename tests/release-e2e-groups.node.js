@@ -4,13 +4,16 @@ import path from 'node:path';
 import { test } from 'node:test';
 import {
     PINNED_FILES,
+    RELEASE_GROUP_TOTAL,
     TESTS_DIRECTORY,
     TIMINGS_PATH,
     collectTests,
     measureLogs,
     planGroups,
+    selectReleaseJobs,
     sourceKeepsFileWhole,
     testListLines,
+    testListNeedsEdge,
 } from '../scripts/release-e2e-groups.js';
 
 function listOf(files) {
@@ -72,9 +75,40 @@ test('the crash diagnostics file stays in group 1, which runs on Ubuntu 22.04', 
     const plan = planGroups({ tests, timings, total: 4, keepWhole });
     assert.ok(testListLines(plan.groups[0]).includes('crash-diagnostics.e2e.js'));
     const workflow = fs.readFileSync(path.join(TESTS_DIRECTORY, '..', '.github', 'workflows', 'release-e2e.yml'), 'utf8');
-    assert.match(workflow, /runs-on: \$\{\{ matrix\.shard == 1 && 'ubuntu-22\.04' \|\| 'ubuntu-24\.04' \}\}/);
-    assert.match(workflow, /RELEASE_E2E_SHARD_TOTAL: 20\n/);
-    assert.match(workflow, /--test-list="\$RUNNER_TEMP\/e2e-group\.txt"/);
+    assert.match(workflow, /runs-on: \$\{\{ matrix\.jammy && 'ubuntu-22\.04' \|\| 'ubuntu-24\.04' \}\}/);
+    const lock = JSON.parse(fs.readFileSync(path.join(TESTS_DIRECTORY, 'package-lock.json'), 'utf8'));
+    const version = lock.packages['node_modules/@playwright/test'].version;
+    const images = [...workflow.matchAll(/mcr\.microsoft\.com\/playwright:v([\d.]+)-(jammy|noble)@sha256:[a-f0-9]{64}/g)];
+    assert.deepEqual(images.map(match => match.slice(1)), [[version, 'noble'], [version, 'jammy'], [version, 'noble']]);
+    assert.match(workflow, /--test-list="\$RUNNER_TEMP\/e2e-plan\/\$RELEASE_E2E_JOB\.txt"/);
+});
+
+test('dispatch defaults to all 20 groups, with only group 1 using Jammy', () => {
+    const all = selectReleaseJobs({ tests });
+    assert.equal(RELEASE_GROUP_TOTAL, 20);
+    assert.equal(all.length, RELEASE_GROUP_TOTAL);
+    assert.deepEqual(all.filter(job => job.jammy), [{ id: 'group-1', jammy: true, group: 1 }]);
+    assert.deepEqual(selectReleaseJobs({ tests, shards: '[7,8,7]' }), [all[6], all[7]]);
+});
+
+test('focused dispatch selects exact paths and preserves the crash test runner', () => {
+    assert.deepEqual(selectReleaseJobs({ tests, files: '["tests/crash-diagnostics.e2e.js","small-b.e2e.js","tests/small-b.e2e.js"]' }), [
+        { id: 'files-jammy', jammy: true, lines: ['crash-diagnostics.e2e.js'] },
+        { id: 'files-noble', jammy: false, lines: ['small-b.e2e.js'] },
+    ]);
+    assert.throws(() => selectReleaseJobs({ tests, files: '["not-found.e2e.js"]' }), /file not found/);
+    assert.throws(() => selectReleaseJobs({ tests, files: '[".*"]' }), /file not found/);
+    assert.throws(() => selectReleaseJobs({ tests, files: '[]' }), /non-empty/);
+    assert.throws(() => selectReleaseJobs({ tests, shards: '[21]' }), /from 1 to 20/);
+    assert.throws(() => selectReleaseJobs({ tests, shards: '[1]', files: '["small-b.e2e.js"]' }), /not both/);
+});
+
+test('Edge follows the selected files and split-file title lines', () => {
+    const readSource = file => fs.readFileSync(path.join(TESTS_DIRECTORY, file), 'utf8');
+    assert.equal(testListNeedsEdge(['crash-diagnostics.e2e.js'], readSource), false);
+    assert.equal(testListNeedsEdge(['language-preference.e2e.js \u203A msedge: sign-in'], readSource), true);
+    assert.equal(testListNeedsEdge(['page-locale.e2e.js'], readSource), true);
+    assert.equal(testListNeedsEdge(['pages-before-app.e2e.js'], readSource), true);
 });
 
 test('a long file is cut into consecutive pieces, a file that shares state is not', () => {
