@@ -178,11 +178,19 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
 
                 await windowNode.getByRole('button', { name: 'Expand Floating Scene Notes window' }).evaluate(element => element.click());
                 const beforeDrag = await windowNode.boundingBox();
+                // Deliver the synthetic click in the release event, after the app's drag
+                // handler, so browser automation latency cannot outlast the click guard.
+                await head.locator('.ica--cwin-name').evaluate((title, releaseEvent) => {
+                    const layer = title.closest('#ica--cwin-layer');
+                    layer.addEventListener(releaseEvent, () => {
+                        title.click();
+                        layer.dataset.testDragReleaseClick = 'sent';
+                    }, { once: true });
+                }, viewport.width < 769 ? 'touchend' : 'pointerup');
                 await dragHeader(page, head, viewport.width < 769);
                 const afterDrag = await windowNode.boundingBox();
                 expect(afterDrag.y).toBeGreaterThan(beforeDrag.y);
-                await expect(windowNode).toHaveAttribute('data-collapsed', 'false');
-                await head.locator('.ica--cwin-name').evaluate(element => element.click());
+                await expect(page.locator('#ica--cwin-layer')).toHaveAttribute('data-test-drag-release-click', 'sent');
                 await expect(windowNode).toHaveAttribute('data-collapsed', 'false');
                 // A fresh press immediately after dragging must still toggle the header.
                 await activate(head.locator('.ica--cwin-name'));

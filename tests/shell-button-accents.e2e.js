@@ -163,7 +163,7 @@ for (const phone of [false, true]) {
                 settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped', WelcomePage_PanelMode: 'full' };
                 await route.fulfill({ response, json: { ...data, settings: JSON.stringify(settings) } });
             });
-            await page.route('**/api/settings/save', acknowledgeSettingsSave);
+            await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
             await page.goto('/');
             await page.waitForFunction(() => window.NeconyanShell && document.querySelector('#rat_drawer') && !document.querySelector('#preloader'));
             await page.evaluate(() => NeconyanShell.openIncludedTool('third-party/Neconyan-Regex-Agent-Themes'));
@@ -256,7 +256,7 @@ for (const phone of [false, true]) {
                 settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped', WelcomePage_PanelMode: 'full' };
                 await route.fulfill({ response, json: { ...data, settings: JSON.stringify(settings) } });
             });
-            await page.route('**/api/settings/save', acknowledgeSettingsSave);
+            await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
             await page.goto('/');
             await page.waitForFunction(() => window.NeconyanShell && document.querySelector('.neconyan-home') && !document.querySelector('#preloader'));
             // Measure settled colours, not intermediate transition frames between shells.
