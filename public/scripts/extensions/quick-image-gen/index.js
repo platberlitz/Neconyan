@@ -12814,20 +12814,24 @@ async function showGallery(returnFocusElement = null) {
                     card.classList.add("qig-gallery-card--ephemeral");
                     card.title = "This image could not be stored permanently";
                 }
-                if (batchEditing) {
-                    const mark = document.createElement("span");
+                const mark = batchEditing ? document.createElement("span") : null;
+                const syncCardSelection = () => {
+                    const checked = selected.has(key);
+                    mark.textContent = checked ? "✓" : "";
+                    card.setAttribute("aria-pressed", String(checked));
+                };
+                if (mark) {
                     mark.className = "qig-gallery-selection-mark";
                     mark.setAttribute("aria-hidden", "true");
-                    if (selected.has(key)) mark.textContent = "✓";
                     card.appendChild(mark);
-                    card.setAttribute("aria-pressed", String(selected.has(key)));
+                    syncCardSelection();
                 }
                 card.onclick = (e) => {
                     e.stopPropagation();
                     if (isBusy()) return;
-                    if (batchEditing) {
+                    if (mark) {
                         if (!selected.delete(key)) selected.add(key);
-                        card.setAttribute("aria-pressed", String(selected.has(key)));
+                        syncCardSelection();
                         syncActions();
                         return;
                     }
