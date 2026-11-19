@@ -5,6 +5,7 @@
 ### Merged Staging PRs
 - PR #757 (2026-11-19) `ci: use pinned browser images for release checks`
 - PR #758 (2026-11-19) `fix(pixai): recover images from rejected task addresses`
+- PR #759 (2026-11-19) `feat(gallery): add single and batch picture deletion`
 - PR #760 (2026-11-19) `fix(pixai): accept PixAI's CloudFront images and send only offered modes`
 
 ## v1.5.6
