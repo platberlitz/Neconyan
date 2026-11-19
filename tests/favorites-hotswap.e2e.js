@@ -149,7 +149,7 @@ test.describe('favorites hotswap scrolling', () => {
 test.describe('phone favourites', () => {
     test.use({ viewport: { width: 393, height: 852 }, hasTouch: true, isMobile: true });
 
-    test('keeps the existing compact touch rail and shared controls', async ({ page, context }) => {
+    test('keeps the existing compact touch rail and shared controls', async ({ page, context }, info) => {
         await setFavorites(page, 36);
         await expect(page.locator(leftSelector)).toBeHidden();
         await expect(page.locator(rightSelector)).toBeVisible();
@@ -157,19 +157,56 @@ test.describe('phone favourites', () => {
         await expect(rail).toHaveCSS('scrollbar-width', 'none');
         await expect(rail).toHaveCSS('touch-action', 'pan-x');
         const dimensions = await rail.evaluate(bar => {
+            const drawer = bar.closest('#right-nav-panel');
+            const events = [];
+            const tagFor = el => el?.outerHTML?.split('>', 1)[0] ?? null;
+            const snapshot = () => ({
+                rail: bar.getBoundingClientRect().toJSON(),
+                drawer: drawer.getBoundingClientRect().toJSON(),
+                scrollLeft: bar.scrollLeft,
+                maxScrollLeft: bar.scrollWidth - bar.clientWidth,
+                viewport: { width: window.innerWidth, height: window.innerHeight, scale: window.visualViewport?.scale },
+            });
+            for (const type of ['touchstart', 'touchmove', 'touchend', 'touchcancel', 'click', 'scroll']) {
+                window.addEventListener(type, event => {
+                    if (events.length >= 50) return;
+                    const touch = event.changedTouches?.[0];
+                    const inside = bar.contains(event.target);
+                    events.push({ event, data: {
+                        type, inside, target: tagFor(event.target),
+                        x: touch?.clientX, y: touch?.clientY,
+                        ...(type === 'touchstart' ? snapshot() : {}),
+                    } });
+                }, { capture: true, passive: true });
+            }
+            window.testFavoritesSwipe = point => ({
+                point, hitAfterSwipe: tagFor(document.elementFromPoint(point.x, point.y)),
+                after: snapshot(),
+                events: events.map(({ event, data }) => ({ ...data, cancelable: event.cancelable, cancelled: event.defaultPrevented })),
+            });
             return { height: bar.getBoundingClientRect().height, overflow: getComputedStyle(bar).overflowX };
         });
         expect(dimensions.height).toBeLessThanOrEqual(36);
         expect(dimensions.overflow).toBe('auto');
         const box = await rail.boundingBox();
         const client = await context.newCDPSession(page);
-        await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: box.x + box.width - 60, y: box.y + box.height / 2 }] });
-        for (let x = box.x + box.width - 65; x > box.x + 50; x -= 10) {
-            await client.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: box.y + box.height / 2 }] });
+        const start = { x: box.x + box.width - 60, y: box.y + box.height / 2 };
+        try {
+            await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [start] });
+            for (let x = box.x + box.width - 65; x > box.x + 50; x -= 10) {
+                await client.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: start.y }] });
+            }
+            await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+            await expect.poll(() => rail.evaluate(bar => bar.scrollLeft)).toBeGreaterThan(0);
+            await expect(page.locator(leftSelector)).toBeVisible();
+        } catch (error) {
+            await info.attach('favourites-touch-targets', {
+                body: JSON.stringify(await page.evaluate(point => window.testFavoritesSwipe(point), start)),
+                contentType: 'application/json',
+            });
+            throw error;
+        } finally {
+            await client.detach();
         }
-        await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-        await expect.poll(() => rail.evaluate(bar => bar.scrollLeft)).toBeGreaterThan(0);
-        await expect(page.locator(leftSelector)).toBeVisible();
-        await client.detach();
     });
 });

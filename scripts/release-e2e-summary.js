@@ -30,7 +30,7 @@ export function readReleaseReports(directory, commit) {
     return reports;
 }
 
-function inlineCode(text) {
+export function inlineCode(text) {
     const line = text.replace(/\s+/g, ' ').slice(0, 300);
     const delimiter = '`'.repeat(1 + Math.max(0, ...[...line.matchAll(/`+/g)].map(match => match[0].length)));
     return `${delimiter} ${line} ${delimiter}`;
@@ -40,7 +40,7 @@ export function summariseReleaseReports({ jobs, reports, prepareResult, matrixRe
     const output = ['## Release browser results', '', `Commit: ${inlineCode(commit)}`, ''];
     if (prepareResult !== 'success') {
         output.push('Browser preflight or planning did not complete successfully. See the preparation job log.');
-        return { markdown: output.join('\n') + '\n', ok: false };
+        return { markdown: output.join('\n') + '\n', ok: false, complete: false };
     }
 
     const totals = Object.fromEntries(OUTCOMES.map(key => [key, 0]));
@@ -83,14 +83,19 @@ export function summariseReleaseReports({ jobs, reports, prepareResult, matrixRe
         output.push('');
     }
     output.push('See `release-e2e-diagnostics-*` for HTML reports and failed-attempt traces, and `release-e2e-result-*` for all outcomes.', '');
+    const complete = jobs.length > 0 && !missing.length && !errors.length
+        && (matrixResult === 'success' || (matrixResult === 'failure' && totals.unexpected > 0));
     return {
         markdown: output.join('\n'),
-        ok: matrixResult === 'success' && jobs.length > 0 && !missing.length && !errors.length && !totals.unexpected,
+        complete,
+        ok: complete && matrixResult === 'success' && !totals.unexpected,
     };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-    const { GITHUB_SHA: commit, GITHUB_STEP_SUMMARY, RELEASE_E2E_MATRIX, PREPARE_RESULT: prepareResult, MATRIX_RESULT: matrixResult } = process.env;
+    const { GITHUB_SHA, RELEASE_E2E_COMMIT = GITHUB_SHA, GITHUB_STEP_SUMMARY, RELEASE_E2E_MATRIX,
+        PREPARE_RESULT: prepareResult, MATRIX_RESULT: matrixResult } = process.env;
+    const commit = RELEASE_E2E_COMMIT;
     const reports = readReleaseReports(process.argv[2], commit);
     const jobs = RELEASE_E2E_MATRIX ? JSON.parse(RELEASE_E2E_MATRIX).include.map(job => job.id) : [];
     const { markdown, ok } = summariseReleaseReports({ jobs, reports, prepareResult, matrixResult, commit });

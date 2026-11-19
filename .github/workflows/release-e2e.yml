@@ -1,6 +1,8 @@
 name: Release E2E Validation
 
 on:
+  schedule:
+    - cron: '17 3 * * *'
   workflow_dispatch:
     inputs:
       shards:
@@ -9,13 +11,17 @@ on:
       files:
         description: 'JSON array of exact browser test files, e.g. ["tests/panel-look.e2e.js"]; omit shards'
         type: string
+      nightly_preview:
+        description: 'Preview nightly reporting on this ref without changing issues or saved timings'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-e2e-${{ github.ref }}-${{ (inputs.shards || inputs.files) && format('focused-{0}', github.run_id) || 'full' }}
-  cancel-in-progress: true
+  group: release-e2e-${{ github.event_name == 'schedule' && 'nightly-staging' || format('{0}-{1}', github.ref, (inputs.shards || inputs.files || inputs.nightly_preview) && format('focused-{0}', github.run_id) || 'full') }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' }}
 
 env:
   CI: 'true'
@@ -26,8 +32,75 @@ env:
   NECONYAN_RELEASE_TEST_DISPOSABLE: '1'
 
 jobs:
+  select:
+    name: Select the commit to test
+    # A scheduled rerun could otherwise resolve a different staging commit.
+    # Incomplete runs leave the commit eligible for the next night instead.
+    if: github.event_name != 'schedule' || (github.run_attempt == 1 && github.repository == 'platberlitz/Neconyan')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      commit: ${{ steps.select.outputs.commit }}
+      run: ${{ steps.select.outputs.run }}
+    steps:
+      - name: Resolve the commit and previous nightly run
+        id: select
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          NIGHTLY_PREVIEW: ${{ inputs.nightly_preview }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/nightly-input"
+          commit="$GITHUB_SHA"
+          run=true
+          if [[ "$GITHUB_EVENT_NAME" == schedule ]]; then
+            commit=$(gh api "repos/$GH_REPO/git/ref/heads/staging" --jq .object.sha)
+          fi
+          if [[ "$GITHUB_EVENT_NAME" == schedule || "$NIGHTLY_PREVIEW" == true ]]; then
+            runs=$(gh api "repos/$GH_REPO/actions/workflows/release-e2e.yml/runs?event=schedule&status=completed&per_page=20" --jq '.workflow_runs[].id')
+            for earlier in $runs; do
+              found=$(gh api "repos/$GH_REPO/actions/runs/$earlier/artifacts?name=release-e2e-nightly-state" \
+                --jq '[.artifacts[] | select(.expired == false)] | length')
+              if [[ "$found" != 0 ]]; then
+                gh run download "$earlier" --name release-e2e-nightly-state --dir "$RUNNER_TEMP/nightly-input"
+                break
+              fi
+            done
+            if [[ "$GITHUB_EVENT_NAME" == schedule && -f "$RUNNER_TEMP/nightly-input/state.json" ]]; then
+              last=$(jq -r '.lastTested.commit // empty' "$RUNNER_TEMP/nightly-input/state.json")
+              if [[ "$commit" == "$last" ]]; then
+                run=false
+                echo '### Staging is unchanged since the last complete nightly run.' >> "$GITHUB_STEP_SUMMARY"
+              fi
+            fi
+            # Upload an input even on the first night.
+            if [[ ! -f "$RUNNER_TEMP/nightly-input/state.json" ]]; then
+              echo '{"version":1}' > "$RUNNER_TEMP/nightly-input/state.json"
+            fi
+          fi
+          [[ "$commit" =~ ^[0-9a-f]{40}$ ]]
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "Selected $commit (run browser tests: $run)"
+      - name: Save the nightly input for this run
+        if: github.event_name == 'schedule' || inputs.nightly_preview
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-e2e-nightly-input
+          path: ${{ runner.temp }}/nightly-input/state.json
+          overwrite: true
+          if-no-files-found: error
+          retention-days: 2
+
   prepare:
     name: Check browsers and plan release tests
+    needs: select
+    if: needs.select.outputs.run == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     container:
@@ -39,6 +112,9 @@ jobs:
       matrix: ${{ steps.plan.outputs.matrix }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.select.outputs.commit }}
+          persist-credentials: false
       - uses: actions/setup-node@cdca7365b2dadb8aad0a33bc7601856ffabcc48e # v4.3.0
         with:
           node-version: 24
@@ -71,12 +147,20 @@ jobs:
           }
           JS
 
+      - name: Download nightly timings
+        if: github.event_name == 'schedule' || inputs.nightly_preview
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-e2e-nightly-input
+          path: ${{ runner.temp }}/nightly-input/
+
       - name: Plan requested test jobs
         id: plan
         shell: bash
         env:
           RELEASE_E2E_SHARDS: ${{ inputs.shards }}
           RELEASE_E2E_FILES: ${{ inputs.files }}
+          RELEASE_E2E_NIGHTLY_STATE: ${{ runner.temp }}/nightly-input/state.json
         run: |
           (cd tests && npx --no-install playwright test --list --reporter=json) > "$RUNNER_TEMP/e2e-list.json"
           node scripts/release-e2e-groups.js prepare --list "$RUNNER_TEMP/e2e-list.json" --out "$RUNNER_TEMP/e2e-plan"
@@ -92,7 +176,7 @@ jobs:
 
   run-release-e2e:
     name: Browser tests (${{ matrix.id }})
-    needs: prepare
+    needs: [select, prepare]
     # Groups other than 1 run ubuntu-24.04: the ubuntu-latest alias now resolves
     # to Ubuntu 26.04, which Playwright 1.60 does not support. Group 1 always
     # contains crash-diagnostics.e2e.js (pinned in scripts/release-e2e-groups.js),
@@ -114,11 +198,11 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      # A commit pushed mid-run would otherwise make the server show its
-      # update toast over whatever a test is measuring.
-      - name: Detach checkout from its upstream
-        run: git branch --unset-upstream 2>/dev/null || true
+        with:
+          # An exact SHA leaves no tracked upstream that can trigger an update
+          # toast over the controls under test when a new commit is pushed.
+          ref: ${{ needs.select.outputs.commit }}
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@cdca7365b2dadb8aad0a33bc7601856ffabcc48e # v4.3.0
@@ -196,6 +280,7 @@ jobs:
           NECONYAN_LAUNCHER: '1'
           NECONYAN_SKIP_BROWSER_AUTO_LAUNCH: '1'
           RELEASE_E2E_REPORT: ${{ runner.temp }}/result.json
+          RELEASE_E2E_COMMIT: ${{ needs.select.outputs.commit }}
         run: |
           set -euo pipefail
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -268,14 +353,15 @@ jobs:
 
   summary:
     name: Summarise browser results
-    needs: [prepare, run-release-e2e]
-    if: ${{ !cancelled() }}
+    needs: [select, prepare, run-release-e2e]
+    if: ${{ !cancelled() && needs.select.outputs.run == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+          fetch-depth: ${{ (github.event_name == 'schedule' || inputs.nightly_preview) && '0' || '1' }}
       - uses: actions/setup-node@cdca7365b2dadb8aad0a33bc7601856ffabcc48e # v4.3.0
         with:
           node-version: 24
@@ -290,4 +376,78 @@ jobs:
           PREPARE_RESULT: ${{ needs.prepare.result }}
           MATRIX_RESULT: ${{ needs.run-release-e2e.result }}
           RELEASE_E2E_MATRIX: ${{ needs.prepare.outputs.matrix }}
+          RELEASE_E2E_COMMIT: ${{ needs.select.outputs.commit }}
         run: node scripts/release-e2e-summary.js "$RUNNER_TEMP/e2e-results"
+      - name: Download the previous nightly state
+        if: ${{ !cancelled() && (github.event_name == 'schedule' || inputs.nightly_preview) }}
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-e2e-nightly-input
+          path: ${{ runner.temp }}/nightly-input/
+      - name: Prepare the tracking issue and timings
+        if: ${{ !cancelled() && (github.event_name == 'schedule' || inputs.nightly_preview) }}
+        env:
+          PREPARE_RESULT: ${{ needs.prepare.result }}
+          MATRIX_RESULT: ${{ needs.run-release-e2e.result }}
+          RELEASE_E2E_MATRIX: ${{ needs.prepare.outputs.matrix }}
+          RELEASE_E2E_COMMIT: ${{ needs.select.outputs.commit }}
+        run: node scripts/release-e2e-nightly.js "$RUNNER_TEMP/e2e-results" "$RUNNER_TEMP/nightly-input/state.json" . "$RUNNER_TEMP/nightly-output"
+      - name: Save the nightly report
+        if: ${{ !cancelled() && (github.event_name == 'schedule' || inputs.nightly_preview) }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-e2e-nightly-report
+          path: ${{ runner.temp }}/nightly-output/
+          overwrite: true
+          if-no-files-found: error
+          retention-days: 14
+
+  publish-nightly:
+    name: Update the staging tracker and save nightly timings
+    needs: [select, summary]
+    if: ${{ !cancelled() && github.event_name == 'schedule' && github.run_attempt == 1 && needs.select.result == 'success' && github.repository == 'platberlitz/Neconyan' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ needs.select.outputs.run == 'true' && 'release-e2e-nightly-report' || 'release-e2e-nightly-input' }}
+          path: ${{ runner.temp }}/nightly/
+      - name: Publish the nightly issues
+        if: needs.select.outputs.run == 'true'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          NIGHTLY_REPORT: ${{ runner.temp }}/nightly/issues.json
+        with:
+          script: |
+            const { publish, tracking, recurring } = JSON.parse(require('node:fs').readFileSync(process.env.NIGHTLY_REPORT, 'utf8'));
+            if (!publish) return;
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              ...context.repo, state: 'all', creator: 'github-actions[bot]', per_page: 100,
+            });
+            const marker = key => `<!-- neconyan-nightly:${key} -->`;
+            const find = key => issues.find(issue => !issue.pull_request && issue.user?.login === 'github-actions[bot]'
+              && issue.body?.startsWith(`${marker(key)}\n`));
+            const title = 'Nightly staging browser checks';
+            const tracker = find('tracker');
+            const body = `${marker('tracker')}\n${tracking.body}`;
+            if (tracker) {
+              await github.rest.issues.update({ ...context.repo, issue_number: tracker.number, body,
+                ...(tracking.green || tracker.state === 'open' ? {} : { state: 'open' }) });
+            } else if (!tracking.green) {
+              await github.rest.issues.create({ ...context.repo, title, body });
+            }
+            for (const item of recurring) {
+              if (find(item.key)) continue;
+              await github.rest.issues.create({ ...context.repo, title: item.title, body: `${marker(item.key)}\n${item.body}` });
+            }
+      - name: Keep the nightly state for the next run
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-e2e-nightly-state
+          path: ${{ runner.temp }}/nightly/state.json
+          if-no-files-found: error
+          retention-days: 30

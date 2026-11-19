@@ -31,7 +31,7 @@ export default class ReleaseE2EReporter {
             attempts: test.results.map(({ status, duration }) => ({ status, durationMs: duration })),
         }));
         fs.writeFileSync(process.env.RELEASE_E2E_REPORT, JSON.stringify({
-            commit: process.env.GITHUB_SHA,
+            commit: process.env.RELEASE_E2E_COMMIT || process.env.GITHUB_SHA,
             status: result.status,
             runErrors: this.runErrors,
             tests,

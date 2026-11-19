@@ -280,6 +280,19 @@ function main(argv) {
         const readSource = file => fs.readFileSync(path.join(TESTS_DIRECTORY, file), 'utf8');
         if (jobs[0].group) {
             const timings = JSON.parse(fs.readFileSync(TIMINGS_PATH, 'utf8'));
+            const nightlyPath = process.env.RELEASE_E2E_NIGHTLY_STATE;
+            if (nightlyPath && fs.existsSync(nightlyPath)) {
+                const nightly = JSON.parse(fs.readFileSync(nightlyPath, 'utf8')).timings?.files;
+                const listedFiles = new Set(tests.map(test => test.file));
+                timings.files = Object.assign(Object.create(null), timings.files);
+                for (const [file, measurement] of Object.entries(nightly || {})) {
+                    if (listedFiles.has(file) && Number.isFinite(measurement?.seconds) && measurement.seconds > 0
+                        && Number.isSafeInteger(measurement.tests) && measurement.tests > 0) {
+                        timings.files[file] = measurement;
+                    }
+                }
+                if (nightly) console.log('Using test timings from the previous successful nightly run.');
+            }
             const keepWhole = file => sourceKeepsFileWhole(readSource(file));
             const plan = planGroups({ tests, timings, total: RELEASE_GROUP_TOTAL, keepWhole });
             console.log(describePlan(plan));
