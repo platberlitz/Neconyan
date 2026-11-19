@@ -63,7 +63,7 @@ import { canRehearse } from './rehearsal.js';
 import { assistantFeedbackTone, DEFAULT_FEEDBACK_TONE, FEEDBACK_TONES, isFeedbackTone, normaliseFeedbackTone } from './feedback-tone.js';
 import { feedbackToneLabel, feedbackToneSlider } from './tone-slider.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261119-multi-image';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261120-avatar-batches';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -1725,7 +1725,7 @@ function renderChangeCard(session, message, part) {
     }
     if (part.change.type === 'image') return images.renderImageCard({ session, message, part, button: iconButton,
         availability: app.imageAvailability, job: app.imageJobs.get(message.images?.[part.index]?.jobId), error: app.imageErrors.get(changeKey(session, message, part)),
-        onGenerate: () => void generateImageProposal(session, message, part), onReview: () => void reviewChange(session, message, part),
+        onGenerate: () => void generateImageProposal(session, message, part), onReview: picture => void reviewChange(session, message, part, picture),
         onPromptReview: () => void approveImagePrompt(session, message, part), onDismiss: () => void dismissChange(session, message, part),
         onError: error => { app.imageErrors.set(changeKey(session, message, part), error.message); renderMessages(); },
         onRetried: () => { const jobId = message.images?.[part.index]?.jobId; if (jobId) app.imageAutoReviews.add(jobId); if (app.open) void reload(); },
@@ -1855,7 +1855,7 @@ function markChange(session, message, index, state, source = app.source) {
     return change(wire => api.markProposal(wire, session.id, message.id, index, state), t`Scratchpad could not update that suggestion.`, source);
 }
 
-async function reviewChange(session, message, part) {
+async function reviewChange(session, message, part, picture) {
     if (part.change.type === 'notebook') return reviewNotebookChange(session, message, part);
     const key = changeKey(session, message, part);
     if (busyChanges.has(key)) return;
@@ -1865,7 +1865,7 @@ async function reviewChange(session, message, part) {
             if (await markChange(session, message, part.index, 'applied', app.source)) committedChanges.delete(key);
             return;
         }
-        await reviewAndSaveChange(session, message, part, key);
+        await reviewAndSaveChange(session, message, part, key, picture);
     } finally {
         setChangeBusy(key, false);
     }
@@ -1885,7 +1885,7 @@ function changeDiff(plan, editor = null) {
 }
 
 /** Reads the live target of one suggestion and builds its review. Throws when it cannot be reviewed now. */
-async function prepareReviewPlan(source, session, message, part) {
+async function prepareReviewPlan(source, session, message, part, picture) {
     await app.queue;
     requireScope(source, session.id);
     if (part.change.type === 'chat' && source.scope && !sameChat(message.contextSource, source)) {
@@ -1895,7 +1895,7 @@ async function prepareReviewPlan(source, session, message, part) {
         && (!sameChat(message.contextSource, source) || !currentSettings().include.card)) {
         throw new Error(t`Return to the original context and share the selected card before reviewing this change.`);
     }
-    const plan = part.change.type === 'image' ? await images.prepareAvatarChange({ source: wireSource(source), personaSource: source, session, message, part,
+    const plan = part.change.type === 'image' ? await images.prepareAvatarChange({ source: wireSource(source), personaSource: source, session, message, part, picture,
         guard: () => imageGuard(source, session, message, part) }) : await prepareChange(part.change, source, { sharedAvatar: message.sharedAvatar,
         sharedPersona: message.sharedPersona, personaGuard: () => personaGuard(source, session, message, part),
         sharedPreset: message.sharedPreset, presetGuard: () => {
@@ -1921,11 +1921,11 @@ async function commitReviewPlan(source, session, part, plan, text) {
     return plan.commit(text);
 }
 
-async function reviewAndSaveChange(session, message, part, key) {
+async function reviewAndSaveChange(session, message, part, key, picture) {
     const source = app.source;
     let plan;
     try {
-        plan = await prepareReviewPlan(source, session, message, part);
+        plan = await prepareReviewPlan(source, session, message, part, picture);
     } catch (error) {
         reportError(error, t`That change cannot be reviewed right now.`);
         return;

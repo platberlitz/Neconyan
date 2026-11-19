@@ -148,8 +148,8 @@ function imageSnapshot(lease, source, session, message, target, acknowledgement,
     } catch {
         throw fail('Check your Quick Image Gen negative prompt.');
     }
-    // Avatar targets install one reviewed picture, so only plain images follow the Quick Image Gen batch count.
-    const count = target || personaTarget ? 1 : normalizeBatchCount(settings.batchCount);
+    // Avatar batches let the user review one chosen picture; the writer installs only that one.
+    const count = normalizeBatchCount(settings.batchCount);
     const seed = Number(settings.seed);
     const batch = count > 1 ? { count, sequentialSeeds: settings.sequentialSeeds === true,
         ...(String(settings.seed ?? '').trim() !== '' && Number.isFinite(seed) && seed >= 0 ? { seed: Math.min(0xffffffff, Math.floor(seed)) } : {}) } : null;
@@ -351,20 +351,37 @@ export function assertScratchpadImageRetry(directories, job) {
     }
 }
 
+/** Which picture of an avatar batch the browser asked for; 0 is the first. */
+function requestedPicture(value) {
+    if (value === undefined || value === null) return null;
+    if (!Number.isSafeInteger(value) || value < 0 || value > 9) throw fail('Choose one of the saved avatar pictures.');
+    return value;
+}
+
+/** The picture of a batch that avatar review and the avatar writer use. */
+function chosenPicture(image, picture = image?.avatarPicture ?? 0) {
+    const chosen = picture ? image?.more?.[picture - 1] : image;
+    if (!chosen || !SCRATCHPAD_IMAGE_URL.test(chosen.url)) throw fail('That avatar picture is no longer saved. Generate it again.');
+    return chosen;
+}
+
 export async function prepareScratchpadAvatarReview(base, source, body) {
+    const requested = requestedPicture(body.picture);
     const captured = withScratchpad(base, (lease, account) => {
         const current = selection(lease, source, body);
         const image = current.message.images?.[current.index];
         if (!image || image.state !== 'done' || !['avatar', 'persona-avatar', 'persona-note-avatar'].includes(image.target) || !SCRATCHPAD_IMAGE_URL.test(image.url)) throw fail('Generate and save the avatar image before reviewing it.');
         const target = requireTarget(lease, current.bucket.source, current.session, current.message, current.change);
         if (target.avatar !== image.avatar) throw fail('The avatar suggestion belongs to a different card.');
-        const filename = path.join(base.directories.root, image.url.replace(/^\//, ''));
+        const picture = requested ?? image.avatarPicture ?? 0;
+        const chosen = chosenPicture(image, picture);
+        const filename = path.join(base.directories.root, chosen.url.replace(/^\//, ''));
         const generated = readRoleplayFile(filename, 20 * 1024 * 1024);
         const format = generated && detectImageFormat(generated.bytes);
         if (!format || !['png', 'jpeg', 'webp'].includes(format.ext)) throw fail('This generated picture cannot be used as a card avatar. Download it separately.');
-        if (!IMAGE_HASH.test(image.imageHash) || generated.rawHash !== image.imageHash) throw fail('The saved avatar picture could not be verified. Generate it again.');
+        if (!IMAGE_HASH.test(chosen.imageHash) || generated.rawHash !== chosen.imageHash) throw fail('The saved avatar picture could not be verified. Generate it again.');
         return { avatar: target.avatar, name: target.name, kind: target.kind, noteId: target.noteId, avatarValue: target.avatarValue,
-            bytes: target.file.bytes, revision: target.file.rawHash, url: image.url, account };
+            bytes: target.file.bytes, revision: target.file.rawHash, url: chosen.url, picture, account };
     });
     let proposedAvatar;
     if (captured.kind === 'persona-note') {
@@ -384,10 +401,15 @@ export async function prepareScratchpadAvatarReview(base, source, body) {
         const current = selection(lease, source, body);
         const target = requireTarget(lease, current.bucket.source, current.session, current.message, current.change);
         if (target.avatar !== captured.avatar || target.file.rawHash !== captured.revision || target.avatarValue !== captured.avatarValue) throw fail('The portrait changed before the avatar review. Review it again.');
-        Object.assign(current.message.images[current.index], { previousAvatarUrl: previousAvatarUrl.startsWith('/') ? previousAvatarUrl : `/${previousAvatarUrl}`, previousAvatarRevision: captured.revision });
+        const image = current.message.images[current.index];
+        if (chosenPicture(image, captured.picture).url !== captured.url) throw fail('The avatar pictures changed. Review it again.');
+        Object.assign(image, { previousAvatarUrl: previousAvatarUrl.startsWith('/') ? previousAvatarUrl : `/${previousAvatarUrl}`, previousAvatarRevision: captured.revision });
+        // The writer installs only the picture chosen in this review.
+        if (captured.picture) image.avatarPicture = captured.picture;
+        else delete image.avatarPicture;
         writeBucketLocked(lease, current.bucket);
-        return { avatar: captured.avatar, name: captured.name, kind: captured.kind, revision: captured.revision, currentUrl: current.message.images[current.index].previousAvatarUrl,
-            proposedUrl: captured.url, ...(proposedAvatar ? { noteId: captured.noteId, avatarValue: captured.avatarValue, proposedAvatar } : {}), bucket: publicBucket(current.bucket) };
+        return { avatar: captured.avatar, name: captured.name, kind: captured.kind, revision: captured.revision, currentUrl: image.previousAvatarUrl,
+            proposedUrl: captured.url, picture: captured.picture, ...(proposedAvatar ? { noteId: captured.noteId, avatarValue: captured.avatarValue, proposedAvatar } : {}), bucket: publicBucket(current.bucket) };
     });
 }
 
@@ -402,7 +424,8 @@ export function assertScratchpadAvatarWriteLocked(lease, input, avatar, revision
     const current = selection(lease, source, body);
     const image = current.message.images?.[current.index];
     if (!image || image.state !== 'done' || image.target !== targetKind || image.avatar !== avatar || image.previousAvatarRevision !== revision
-        || !SCRATCHPAD_IMAGE_URL.test(image.previousAvatarUrl) || current.message.proposals?.[current.index] === 'rejected') throw fail('Review this saved avatar suggestion again before replacing the card.');
+        || !SCRATCHPAD_IMAGE_URL.test(image.previousAvatarUrl) || current.message.proposals?.[current.index] === 'rejected'
+        || (image.avatarPicture ?? 0) !== (requestedPicture(body.picture) ?? 0)) throw fail('Review this saved avatar suggestion again before replacing the card.');
     const target = requireTarget(lease, current.bucket.source, current.session, current.message, current.change);
     if (target.avatar !== avatar) throw fail('The shared avatar target changed.');
     if (target.file.rawHash !== revision) throw fail('The avatar changed after review. Review it again.');
@@ -410,18 +433,19 @@ export function assertScratchpadAvatarWriteLocked(lease, input, avatar, revision
     const backup = readRoleplayFile(path.join(root, image.previousAvatarUrl.replace(/^\//, '')), 64 * 1024 * 1024);
     if (!backup || backup.rawHash !== revision) throw fail('The saved previous picture could not be verified. Nothing was replaced.');
     // The saved proposal is the only picture the writer may install; browser-supplied bytes are never trusted.
-    if (!SCRATCHPAD_IMAGE_URL.test(image.url) || !IMAGE_HASH.test(image.imageHash)) throw fail('The saved avatar picture could not be verified. Generate it again.');
+    const chosen = chosenPicture(image);
+    if (!IMAGE_HASH.test(chosen.imageHash)) throw fail('The saved avatar picture could not be verified. Generate it again.');
     let proposed;
-    try { proposed = readRoleplayFile(path.join(root, image.url.replace(/^\//, '')), 20 * 1024 * 1024); } catch {
+    try { proposed = readRoleplayFile(path.join(root, chosen.url.replace(/^\//, '')), 20 * 1024 * 1024); } catch {
         throw fail('The saved avatar picture could not be read. Review the current card again.');
     }
     if (!proposed) throw fail('The saved avatar picture is no longer available. Generate it again.');
-    if (proposed.rawHash !== image.imageHash) throw fail('The saved avatar picture changed after review. Review it again.');
+    if (proposed.rawHash !== chosen.imageHash) throw fail('The saved avatar picture changed after review. Review it again.');
     return proposed.bytes;
 }
 
 export async function saveScratchpadPersonaAvatar(base, body) {
-    const input = JSON.stringify({ source: body.source, sessionId: body.sessionId, messageId: body.messageId, index: body.index });
+    const input = JSON.stringify({ source: body.source, sessionId: body.sessionId, messageId: body.messageId, index: body.index, picture: body.picture });
     const captured = withScratchpad(base, (lease, account) => ({ account,
         bytes: assertScratchpadAvatarWriteLocked(lease, input, body.avatar, body.revision, 'persona-avatar') }));
     const image = await (await Jimp.read(captured.bytes)).getBuffer('image/png');

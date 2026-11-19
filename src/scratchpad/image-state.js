@@ -40,6 +40,9 @@ export function normaliseStoredImages(value) {
                 .filter(key => Number.isSafeInteger(picture[key]) && picture[key] > 0 && picture[key] <= 32768).map(key => [key, picture[key]])) }];
         }) : [];
         if (more.length) image.more = more;
+        // A dropped extra picture would shift the numbers, so the saved choice only survives an intact batch.
+        if (Number.isSafeInteger(input.avatarPicture) && input.avatarPicture >= 1 && input.avatarPicture <= more.length
+            && more.length === input.more.length) image.avatarPicture = input.avatarPicture;
         if (image.state === 'done' && !image.url) { image.state = 'failed'; image.error = 'The saved image address is unavailable.'; }
         images[index] = image;
     }

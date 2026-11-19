@@ -352,6 +352,79 @@ for (const phone of [true, false]) {
         await checkImageControlContrast(page, ['.scratchpad-image-link'], phone);
         await page.locator('.scratchpad-close').click();
     });
+
+    test(`${size}: an avatar proposal follows the image count and saves the picture chosen for review`, async ({ app }) => {
+        test.setTimeout(240000);
+        const imageProvider = await app.images();
+        const skies = [[34, 52, 90], [126, 46, 52]];
+        let made = 0;
+        imageProvider.mode.reply = () => ({ data: [{ b64_json: mockPicture(skies[made++ % skies.length]).toString('base64') }] });
+        const account = await app.account({ phone, contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {}, configureSettings: saved => {
+            saved.extension_settings['quick-image-gen'] = { provider: 'gptimage', gptImageKey: 'fixture-image-key', gptImageModel: 'gpt-image-1',
+                gptImageProxyUrl: imageProvider.url, width: 1024, height: 1024, style: 'none', appendQuality: false, useSTStyle: false,
+                reviewBeforeGenerate: false, setupWizardSeen: true, batchCount: 2 };
+        } });
+        if (phone) await installIPhoneSafari(account.context, { standalone: true });
+        const page = await account.open({ workspace: false });
+        if (phone) await applyIOSOnlyCss(page);
+        await page.evaluate(async avatar => (await import('/scripts/neconyan-conversation/chrome.js')).openConversationWorkspaceForAvatar(avatar), account.avatar);
+        await page.evaluate(async () => (await import('/scripts/scratchpad/index.js')).openScratchpad({ tab: 'context' }));
+        await page.locator('#scratchpad-connection-miso').selectOption('durable');
+        await page.getByRole('tab', { name: 'Chat', exact: true }).click();
+        await sendProposal(page, app, account, fence({ type: 'image', action: 'generate', target: 'avatar', character: 'Durable Nova', prompt: 'A new portrait for Durable Nova.' }));
+        const original = await fs.readFile(path.join(app.dataRoot, 'default-user', 'characters', account.avatar));
+        const card = page.locator('.scratchpad-image-card').last();
+        const waiting = page.waitForResponse('**/api/scratchpad/images/generate');
+        await card.getByRole('button', { name: 'Generate image', exact: true }).click();
+        const response = await waiting;
+        expect(response.ok(), await response.text()).toBe(true);
+        await account.settled((await response.json()).job.id);
+        const count = before ? 1 : 2;
+        await expect(card.locator('.scratchpad-generated-image')).toHaveCount(count);
+        expect(imageProvider.calls).toHaveLength(count);
+        const shoot = async name => {
+            await card.locator('.scratchpad-change-state').evaluate(state => state.scrollIntoView({ block: 'end' }));
+            await page.mouse.move(0, 0);
+            await page.evaluate(() => window.toastr.remove());
+            await page.screenshot({ path: `../screenshots/scratchpad-avatar-batch-${size}-${name}.png` });
+        };
+        await shoot(before ? 'before' : 'after');
+        if (before) return;
+        await expect(card.getByText('2 images saved to your user images. Choose one to review as the avatar.', { exact: true })).toBeVisible();
+        await expect(card.getByRole('button', { name: 'Review avatar', exact: true })).toHaveCount(0);
+        await expect(card.getByRole('button', { name: /^Review image \d as the avatar$/ })).toHaveCount(2);
+        await checkImageControlContrast(page, ['.scratchpad-generated-actions button.menu_button_primary'], phone);
+        const layout = await card.evaluate(element => {
+            const box = element.getBoundingClientRect();
+            return {
+                inside: [...element.querySelectorAll('.scratchpad-generated-figure, .scratchpad-generated-actions > *')].every(child => {
+                    const rect = child.getBoundingClientRect();
+                    return rect.left >= box.left - 1 && rect.right <= box.right + 1;
+                }),
+                overflow: element.scrollWidth - element.clientWidth,
+            };
+        });
+        expect(layout.inside).toBe(true);
+        expect(layout.overflow).toBeLessThanOrEqual(1);
+        const second = new URL(await card.locator('.scratchpad-generated-image').nth(1).getAttribute('src'), page.url()).pathname;
+        await card.getByRole('button', { name: 'Review image 2 as the avatar', exact: true }).click();
+        const popup = page.locator('dialog.popup[open]');
+        await expect(popup.getByText('Proposed avatar', { exact: true })).toBeVisible();
+        const proposed = await popup.locator('.scratchpad-avatar-review img').evaluateAll(images => images.map(image => new URL(image.src).pathname));
+        expect(proposed).toContain(second);
+        const upload = page.waitForResponse('**/api/characters/edit-avatar');
+        await popup.getByRole('button', { name: 'Save change', exact: true }).click();
+        const uploaded = await upload;
+        expect(uploaded.ok(), await uploaded.text()).toBe(true);
+        await expect(card.getByRole('button', { name: 'Image 2 saved as the avatar', exact: true })).toBeDisabled();
+        await expect(card.getByRole('button', { name: /^Review image \d as the avatar$/ })).toHaveCount(0);
+        expect(hash(await fs.readFile(path.join(app.dataRoot, 'default-user', 'characters', account.avatar)))).not.toBe(hash(original));
+        // The saved card holds the second picture: its pixels carry the second sky, not the first.
+        const saved = PNG.sync.read(await fs.readFile(path.join(app.dataRoot, 'default-user', 'characters', account.avatar)));
+        expect([...saved.data.subarray(0, 3)].map(value => Math.round(value / 8))).toEqual(skies[1].map(value => Math.round(value / 8)));
+        expect(imageProvider.calls).toHaveLength(2);
+        await shoot('saved');
+    });
 }
 
 test('an accepted image finishes after closing the page and remains in its original General list', async ({ app }) => {
