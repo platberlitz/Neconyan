@@ -57,6 +57,10 @@ jobs:
 
       - name: Check all three browsers launch
         working-directory: tests
+        # Firefox checks that the launching user owns HOME. The Actions
+        # container's /github/home mount is owned by a different user.
+        env:
+          HOME: /root
         run: |
           node --input-type=module <<'JS'
           import { chromium, firefox, webkit } from '@playwright/test';
@@ -152,10 +156,12 @@ jobs:
       - name: Run release E2E suite
         shell: bash
         env:
+          HOME: /root
           NECONYAN_LAUNCHER: '1'
           NECONYAN_SKIP_BROWSER_AUTO_LAUNCH: '1'
         run: |
           set -euo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
           server_log="$RUNNER_TEMP/neconyan-server.log"
           bun server.js --browserLaunchEnabled=false > "$server_log" 2>&1 &
