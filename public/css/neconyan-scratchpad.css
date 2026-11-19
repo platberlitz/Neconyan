@@ -30,7 +30,7 @@
     flex-wrap: wrap;
     gap: 6px;
 }
-.scratchpad-generated-actions .scratchpad-image-link {
+.scratchpad-generated-actions > * {
     flex: 1 1 auto;
     justify-content: center;
     text-align: center;

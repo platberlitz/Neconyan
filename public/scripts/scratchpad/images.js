@@ -52,6 +52,16 @@ export function renderImageCard({ session, message, part, button, availability, 
     if (original && safeImage(original.url)) actions.append(h('a', { class: 'scratchpad-button scratchpad-image-link', href: original.url, target: '_blank', rel: 'noopener', text: t`View source image` }));
     const pictures = image?.url && safeImage(image.url) ? [image, ...(Array.isArray(image.more) ? image.more : [])].filter(picture => safeImage(picture?.url)) : [];
     const size = picture => picture.width && picture.height ? { width: picture.width, height: picture.height } : {};
+    const settled = pictures.length && !['pending', 'failed', 'cancelled'].includes(image.state);
+    const avatarTarget = ['avatar', 'persona-avatar', 'persona-note-avatar'].includes(image?.target);
+    const chosen = Number.isSafeInteger(image?.avatarPicture) && image.avatarPicture < pictures.length ? image.avatarPicture : 0;
+    // Each picture of an avatar batch has its own review; once one is saved, only that picture says so.
+    const reviewPicture = index => {
+        if (!settled || !avatarTarget || dismissed || (applied && index !== chosen)) return null;
+        const review = button(applied ? t`Avatar saved` : t`Use as avatar`, () => onReview(index), { primary: true, disabled: applied });
+        review.setAttribute('aria-label', applied ? t`Image ${index + 1} saved as the avatar` : t`Review image ${index + 1} as the avatar`);
+        return review;
+    };
     if (pictures.length === 1) {
         card.append(h('img', { class: 'scratchpad-generated-image', src: image.url, alt: t`Generated image: ${image.prompt}`, loading: 'lazy', ...size(image) }));
         actions.append(h('a', { class: 'scratchpad-button scratchpad-image-link', href: image.url, target: '_blank', rel: 'noopener', text: t`Open image` }),
@@ -63,13 +73,14 @@ export function renderImageCard({ session, message, part, button, availability, 
                 h('img', { class: 'scratchpad-generated-image', src: picture.url, alt: t`Generated image ${number} of ${pictures.length}: ${image.prompt}`, loading: 'lazy', ...size(picture) }),
                 h('figcaption', { class: 'scratchpad-generated-actions' },
                     h('a', { class: 'scratchpad-button scratchpad-image-link', href: picture.url, target: '_blank', rel: 'noopener', text: t`Open`, 'aria-label': t`Open image ${number}` }),
-                    h('a', { class: 'scratchpad-button scratchpad-image-link', href: picture.url, download: '', text: t`Download`, 'aria-label': t`Download image ${number}` })));
+                    h('a', { class: 'scratchpad-button scratchpad-image-link', href: picture.url, download: '', text: t`Download`, 'aria-label': t`Download image ${number}` }),
+                    reviewPicture(index)));
         })));
     }
-    if (pictures.length && !['pending', 'failed', 'cancelled'].includes(image.state)) {
-        if (['avatar', 'persona-avatar', 'persona-note-avatar'].includes(image.target) && !dismissed) actions.append(button(applied ? t`Avatar saved` : t`Review avatar`, onReview, { primary: true, disabled: applied }));
+    if (settled) {
+        if (avatarTarget && !dismissed && pictures.length === 1) actions.append(button(applied ? t`Avatar saved` : t`Review avatar`, () => onReview(0), { primary: true, disabled: applied }));
         if (safeImage(image.previousAvatarUrl)) actions.append(h('a', { class: 'scratchpad-button scratchpad-image-link', href: image.previousAvatarUrl, target: '_blank', rel: 'noopener', text: t`Previous avatar` }));
-        card.append(h('p', { class: 'scratchpad-change-state', text: applied ? t`Avatar saved` : image.target === 'persona-note-avatar' ? t`Image saved. The Scenario Note is unchanged.` : image.target === 'persona-avatar' ? t`Image saved. The persona is unchanged.` : image.target === 'avatar' ? t`Image saved. The character card is unchanged.` : pictures.length > 1 ? t`${pictures.length} images saved to your user images.` : t`Image saved to your user images.` }));
+        card.append(h('p', { class: 'scratchpad-change-state', text: applied ? t`Avatar saved` : avatarTarget && pictures.length > 1 ? t`${pictures.length} images saved to your user images. Choose one to review as the avatar.` : image.target === 'persona-note-avatar' ? t`Image saved. The Scenario Note is unchanged.` : image.target === 'persona-avatar' ? t`Image saved. The persona is unchanged.` : image.target === 'avatar' ? t`Image saved. The character card is unchanged.` : pictures.length > 1 ? t`${pictures.length} images saved to your user images.` : t`Image saved to your user images.` }));
     } else if (image?.state === 'pending') {
         const approval = Boolean(job?.result?.approval);
         const reviewing = approval || (Boolean(image.review) && job?.stage !== 'approved');
@@ -94,12 +105,14 @@ export function renderImageCard({ session, message, part, button, availability, 
     return card;
 }
 
-export async function prepareAvatarChange({ source, personaSource = source, session, message, part, guard }) {
+export async function prepareAvatarChange({ source, personaSource = source, session, message, part, picture, guard }) {
     const owner = getCurrentUserHandle();
     const check = () => { guard(); if (getCurrentUserHandle() !== owner) throw new Error(t`The account changed. Reopen the avatar review.`); };
     check();
-    const review = await api.readAvatarReview(source, session.id, message.id, part.index);
+    const review = await api.readAvatarReview(source, session.id, message.id, part.index, picture);
     check();
+    // The writer checks that it installs the same picture of the batch that was reviewed here.
+    const chosen = Number.isSafeInteger(review.picture) ? review.picture : 0;
     if (!safeImage(review.currentUrl) || !safeImage(review.proposedUrl) || !/^[a-f0-9]{64}$/.test(review.revision)) throw new Error(t`The avatar review could not verify its saved pictures.`);
     const image = message.images?.[part.index];
     const persona = part.change.target === 'persona-avatar';
@@ -112,25 +125,25 @@ export async function prepareAvatarChange({ source, personaSource = source, sess
         if (plan.before !== review.avatarValue) throw new Error(t`Save the current Scenario Note before reviewing its avatar.`);
         return { ...plan, bucket: review.bucket, async commit() {
             check();
-            const fresh = await api.readAvatarReview(source, session.id, message.id, part.index);
+            const fresh = await api.readAvatarReview(source, session.id, message.id, part.index, chosen);
             check();
             if (fresh.avatar !== review.avatar || fresh.noteId !== review.noteId || fresh.revision !== review.revision || fresh.avatarValue !== review.avatarValue || fresh.proposedAvatar !== review.proposedAvatar) throw new Error(t`The Scenario Note avatar changed. Review it again.`);
             return plan.commit(review.proposedAvatar);
         } };
     }
-    const picture = (label, url) => h('figure', {}, h('figcaption', { text: label }), h('img', { src: url, alt: label, loading: 'eager' }));
+    const figure = (label, url) => h('figure', {}, h('figcaption', { text: label }), h('img', { src: url, alt: label, loading: 'eager' }));
     return { target: review.name, field: persona ? t`Persona avatar` : t`Character avatar`, editable: false, before: '', after: '', bucket: review.bucket,
-        visual: h('div', { class: 'scratchpad-avatar-review' }, picture(t`Current avatar`, review.currentUrl), picture(t`Proposed avatar`, review.proposedUrl)),
+        visual: h('div', { class: 'scratchpad-avatar-review' }, figure(t`Current avatar`, review.currentUrl), figure(t`Proposed avatar`, review.proposedUrl)),
         hint: persona ? t`The previous picture is kept in your user images. Save change replaces this persona's portrait across chats.` : t`The previous picture, including its card data, is kept in your user images. Save change replaces only this card's portrait.`,
         async commit() {
             check();
             const form = new FormData();
             form.set('avatar_url', review.avatar);
             form.set('expected_revision', review.revision);
-            form.set('scratchpad_avatar_review', JSON.stringify({ source, sessionId: session.id, messageId: message.id, index: part.index }));
+            form.set('scratchpad_avatar_review', JSON.stringify({ source, sessionId: session.id, messageId: message.id, index: part.index, picture: chosen }));
             // The server installs its own saved reviewed picture; no image bytes are uploaded from the browser.
             const written = persona
-                ? await fetch('/api/scratchpad/images/persona-avatar', { method: 'POST', headers: getRequestHeaders(), body: JSON.stringify({ source, sessionId: session.id, messageId: message.id, index: part.index, avatar: review.avatar, revision: review.revision }) })
+                ? await fetch('/api/scratchpad/images/persona-avatar', { method: 'POST', headers: getRequestHeaders(), body: JSON.stringify({ source, sessionId: session.id, messageId: message.id, index: part.index, picture: chosen, avatar: review.avatar, revision: review.revision }) })
                 : await fetch('/api/characters/edit-avatar', { method: 'POST', headers: getRequestHeaders({ omitContentType: true }), body: form });
             if (!written.ok) {
                 const body = await written.json().catch(() => ({}));

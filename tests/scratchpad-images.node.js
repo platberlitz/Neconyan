@@ -575,13 +575,39 @@ test('an image proposal makes one picture per Quick Image Gen image count, with 
     assert.equal(a.calls.length, 3);
 });
 
-test('avatar proposals stay at one picture whatever the image count', async t => {
+test('avatar proposals follow the image count and install only the picture chosen in review', async t => {
     const a = account(t, { qig: { batchCount: 3 }, change: { target: 'avatar', character: 'Nova' } });
     const accepted = await a.accept();
     await a.run(accepted);
-    assert.equal(a.calls.length, 1);
-    assert.equal(a.image().state, 'done');
-    assert.equal(a.image().more, undefined);
+    assert.equal(a.calls.length, 3);
+    const image = a.image();
+    assert.equal(image.state, 'done');
+    assert.equal(image.more.length, 2);
+    const third = image.more[1];
+    const review = await prepareScratchpadAvatarReview(a.base, a.source, { ...a.body, picture: 2 });
+    assert.equal(review.picture, 2);
+    assert.equal(review.proposedUrl, third.url);
+    assert.equal(a.image().avatarPicture, 2);
+    const write = picture => store.withScratchpad(a.base, lease => assertScratchpadAvatarWriteLocked(lease, JSON.stringify({ ...a.body, picture }), 'Nova.png', review.revision));
+    // A write naming a different picture than the reviewed one is refused.
+    assert.throws(() => write(0), /Review this saved avatar suggestion again/);
+    assert.deepEqual(write(2), fs.readFileSync(path.join(a.directories.root, third.url.slice(1))));
+    // Reviewing again without naming a picture keeps the earlier choice.
+    assert.equal((await prepareScratchpadAvatarReview(a.base, a.source, a.body)).picture, 2);
+    await assert.rejects(prepareScratchpadAvatarReview(a.base, a.source, { ...a.body, picture: 5 }), /no longer saved/);
+    await assert.rejects(prepareScratchpadAvatarReview(a.base, a.source, { ...a.body, picture: 'two' }), /Choose one of the saved avatar pictures/);
+    assert.equal(a.calls.length, 3);
+});
+
+test('a persona avatar batch saves the picture chosen in review', async t => {
+    const a = account(t, { qig: { batchCount: 2 }, change: { target: 'persona-avatar', persona: 'Kris' } });
+    await a.run(await a.accept());
+    assert.equal(a.image().more.length, 1);
+    const review = await prepareScratchpadAvatarReview(a.base, a.source, { ...a.body, picture: 1 });
+    assert.equal(review.proposedUrl, a.image().more[0].url);
+    await assert.rejects(saveScratchpadPersonaAvatar(a.base, { ...a.body, picture: 0, avatar: 'User.png', revision: review.revision }), /again/);
+    await saveScratchpadPersonaAvatar(a.base, { ...a.body, picture: 1, avatar: 'User.png', revision: review.revision });
+    assert.equal(a.calls.length, 2);
 });
 
 test('a batch that stops part way keeps its saved pictures and the retry buys only the rest', async t => {

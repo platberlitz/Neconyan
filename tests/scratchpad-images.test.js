@@ -75,15 +75,16 @@ describe('Scratchpad images and avatar reviews', () => {
         expect(commit).toHaveBeenCalledWith(portrait);
         expect(globalThis.fetch).not.toHaveBeenCalled();
     });
-    test('persona avatar review writes only the saved persona image and refreshes it', async () => {
-        readAvatarReview.mockResolvedValue({ avatar: 'User.png', name: 'Kris', kind: 'persona', revision: 'b'.repeat(64),
+    test('persona avatar review writes only the saved persona image chosen from the batch and refreshes it', async () => {
+        readAvatarReview.mockResolvedValue({ avatar: 'User.png', name: 'Kris', kind: 'persona', revision: 'b'.repeat(64), picture: 1,
             currentUrl: '/user/images/Scratchpad/scratchpad-old.png', proposedUrl: '/user/images/Scratchpad/scratchpad-new.png' });
         const proposal = { index: 0, change: { target: 'persona-avatar', persona: 'Kris' } };
-        const plan = await prepareAvatarChange({ source, session, message: { id: 'reply', images: { 0: { avatar: 'User.png' } } }, part: proposal, guard: () => {} });
+        const plan = await prepareAvatarChange({ source, session, message: { id: 'reply', images: { 0: { avatar: 'User.png' } } }, part: proposal, picture: 1, guard: () => {} });
+        expect(readAvatarReview).toHaveBeenCalledWith(source, 'session', 'reply', 0, 1);
         expect(plan.field).toBe('Persona avatar');
         expect(globalThis.fetch).not.toHaveBeenCalled();
         await plan.commit();
-        expect(globalThis.fetch).toHaveBeenCalledWith('/api/scratchpad/images/persona-avatar', expect.objectContaining({ body: JSON.stringify({ source, sessionId: 'session', messageId: 'reply', index: 0, avatar: 'User.png', revision: 'b'.repeat(64) }) }));
+        expect(globalThis.fetch).toHaveBeenCalledWith('/api/scratchpad/images/persona-avatar', expect.objectContaining({ body: JSON.stringify({ source, sessionId: 'session', messageId: 'reply', index: 0, picture: 1, avatar: 'User.png', revision: 'b'.repeat(64) }) }));
         expect(refreshPersonaAvatar).toHaveBeenCalledWith('User.png');
         expect(getOneCharacter).not.toHaveBeenCalled();
     });
@@ -96,6 +97,19 @@ describe('Scratchpad images and avatar reviews', () => {
         expect(generateImage).not.toHaveBeenCalled();
         expect(globalThis.fetch).not.toHaveBeenCalled();
         expect(nodes(render({ ...message(), proposals: { 0: 'applied' } })).some(node => node.tag === 'img')).toBe(true);
+    });
+    test('an avatar batch offers each picture for review and marks only the saved one', () => {
+        const onReview = jest.fn();
+        const batch = { ...message().images[0], more: [{ url: '/user/images/Scratchpad/scratchpad-new-2.png', imageHash: 'b'.repeat(64), width: 512, height: 512 }] };
+        const button = (label, onclick, options) => ({ ...h('button', { text: label, onclick, ...options }), setAttribute(name, value) { this.attributes[name] = value; } });
+        const render = msg => renderImageCard({ session, message: msg, part, availability: { image: true }, onReview, button });
+        const reviews = nodes(render({ id: 'reply', images: { 0: batch } })).filter(node => node.tag === 'button' && node.attributes.text === 'Use as avatar');
+        expect(reviews.map(node => node.attributes['aria-label'])).toEqual(['Review image 1 as the avatar', 'Review image 2 as the avatar']);
+        expect(nodes(render({ id: 'reply', images: { 0: batch } })).some(node => node.attributes.text === 'Review avatar')).toBe(false);
+        reviews[1].attributes.onclick();
+        expect(onReview).toHaveBeenCalledWith(1);
+        const saved = nodes(render({ id: 'reply', proposals: { 0: 'applied' }, images: { 0: { ...batch, avatarPicture: 1 } } })).filter(node => node.tag === 'button');
+        expect(saved.map(node => [node.attributes.text, node.attributes['aria-label'], node.attributes.disabled])).toEqual([['Avatar saved', 'Image 2 saved as the avatar', true]]);
     });
 
     test('only pressing Generate submits a source-bound saved proposal after settings acknowledgement', async () => {
@@ -203,7 +217,7 @@ describe('Scratchpad images and avatar reviews', () => {
         const form = globalThis.fetch.mock.calls[0][1].body;
         expect(form.get('avatar_url')).toBe('Nova.png');
         expect(form.get('expected_revision')).toBe('a'.repeat(64));
-        expect(JSON.parse(form.get('scratchpad_avatar_review'))).toEqual({ source, sessionId: 'session', messageId: 'reply', index: 0 });
+        expect(JSON.parse(form.get('scratchpad_avatar_review'))).toEqual({ source, sessionId: 'session', messageId: 'reply', index: 0, picture: 0 });
         expect(getOneCharacter).toHaveBeenCalledWith('Nova.png');
         expect(printCharactersDebounced).toHaveBeenCalled();
         expect(emit).toHaveBeenCalled();

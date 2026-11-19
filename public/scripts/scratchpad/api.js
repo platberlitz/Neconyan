@@ -113,7 +113,7 @@ export async function sendReply(body) {
 }
 
 export const readImageAvailability = () => post('/images/availability', {});
-export const readAvatarReview = (source, sessionId, messageId, index) => post('/images/avatar-review', { source, sessionId, messageId, index });
+export const readAvatarReview = (source, sessionId, messageId, index, picture) => post('/images/avatar-review', { source, sessionId, messageId, index, picture });
 
 const unconfirmedImages = new Map();
 export async function generateImage(body) {
