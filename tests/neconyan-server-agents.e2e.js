@@ -294,20 +294,21 @@ for (const phone of [false, true]) {
             settings.extension_settings.quickReplyV2 = { isEnabled: true, config: { setList: [{ set: 'Actions' }] } };
             settings.world_info_settings = { world_info: { globalSelect: ['Town'] }, world_info_budget: 100 };
         } });
+        const native = accountScope(app);
+        // Seed the set before the browser loads its settings. Otherwise Quick Reply
+        // drops the unresolved link, and a queued settings save can overwrite a
+        // later direct edit to settings.json even after the page is closed.
+        withRoleplayAccount(native.base, native.account, () => {
+            fs.mkdirSync(native.directories.quickreplies, { recursive: true });
+            fs.writeFileSync(path.join(native.directories.quickreplies, 'Actions.json'), JSON.stringify({ name: 'Actions', version: 2,
+                qrList: [{ id: 1, label: 'Set colour', automationId: 'qr-one', message: '/setvar key=color green' }] }));
+        });
         await account.open({ workspace: false });
         const bundledMacros = await noPages(browser);
-        const native = accountScope(app);
         withRoleplayAccount(native.base, native.account, lease => {
             fs.writeFileSync(path.join(native.directories.worlds, 'Town.json'), JSON.stringify({ entries: {
                 1: { uid: 1, key: ['Original question'], content: 'A saved match.', position: 0, automationId: 'qr-one' },
             } }));
-            fs.mkdirSync(native.directories.quickreplies, { recursive: true });
-            fs.writeFileSync(path.join(native.directories.quickreplies, 'Actions.json'), JSON.stringify({ name: 'Actions', version: 2,
-                qrList: [{ id: 1, automationId: 'qr-one', message: '/setvar key=color green' }] }));
-            const settingsFile = path.join(native.directories.root, 'settings.json');
-            const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
-            settings.extension_settings.quickReplyV2 = { isEnabled: true, config: { setList: [{ set: 'Actions' }] } };
-            fs.writeFileSync(settingsFile, JSON.stringify(settings));
             writeAgentRecordLocked(lease, 'agent', { id: 'editor', name: 'Editor', category: 'custom', enabled: true, phase: 'post', prompt: 'CHANGE RESPONSE TO ORBIT',
                 postProcess: { enabled: true, promptTransformEnabled: true, promptTransformMode: 'rewrite', promptTransformMaxTokens: 64 } });
         });

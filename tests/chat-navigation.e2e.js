@@ -455,7 +455,12 @@ test('draft refusal, disabled URL tracking and restored-page routing preserve th
     await preferences(page, { links: false, resume: true });
     await expect.poll(async () => (await nav('state')).pointer?.id).toBe(b.id);
     await nav('remember', { destination: a, clientId: '11111111-1111-4111-8111-111111111111', sequence: 1 });
+    // The chat is already visible, so checking its text immediately after
+    // pageshow would not prove that restored-page routing actually ran.
+    const restore = page.waitForResponse(response => response.url().endsWith('/api/chat-navigation/resolve')
+        && response.request().postDataJSON().destination?.id === b.id);
     await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
+    expect((await restore).ok()).toBe(true);
     await assertRoleplay(page, 'Nav B');
     expect((await nav('state')).pointer.id).toBe(a.id);
     const length = await page.evaluate(() => window.history.length);

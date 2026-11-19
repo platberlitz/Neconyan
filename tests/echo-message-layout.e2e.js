@@ -70,16 +70,18 @@ test('Echo preserves native structure, cutoff exemptions, tablet paint and actua
     await expect(message).toHaveAttribute('is_system', 'false');
     await expect(message).toHaveClass(/nn-echo-layout/);
     await expect(message.locator('.nn-echo-header-plate')).toHaveCount(1);
-    await page.evaluate(async () => {
+    // Force wrapping even with the narrower fallback fonts used by some CI images.
+    const longName = 'Miso with a very long bibliographical character name '.repeat(4) + 'and the final words of the entire name';
+    await page.evaluate(async longName => {
         const context = window.SillyTavern.getContext();
-        context.chat[1].name = 'Miso with a very long bibliographical character name that should remain within the captured message panel and retain the entire name';
+        context.chat[1].name = longName;
         context.chat[1].extra.files = [{ name: 'export-attachment.txt', size: 200, url: '/not-downloaded.txt' }];
         await context.saveChat(); await context.reloadCurrentChat();
         const { COMPANION_RESULTS_EXTRA_KEY } = await import('/scripts/extensions/in-chat-agents/companion/companion-shared.js');
         const { renderCompanionResultsForMessage } = await import('/scripts/extensions/in-chat-agents/companion/companion-ui.js');
         context.chat[1].extra[COMPANION_RESULTS_EXTRA_KEY] = { export: { agentName: 'Export Notes', status: 'done', content: 'The final Notes section must remain complete.\n\nECHO FINAL NOTES MARKER', collapsed: false } };
         renderCompanionResultsForMessage(1);
-    });
+    }, longName);
     await message.locator('.mes_reasoning_details').evaluate(el => el.open = true);
     await expect(message.locator('.ica--companion-ledger')).toContainText('ECHO FINAL NOTES MARKER');
     await expect(message.locator('.name_text')).toContainText('entire name');
@@ -120,7 +122,9 @@ test('Echo preserves native structure, cutoff exemptions, tablet paint and actua
             liveFooterMarkers: row.querySelectorAll('.nn-echo-reading-footer, .nn-echo-footer-joined, .nn-echo-joined-end, .nn-echo-overlay-footer, .nn-echo-reserves-footer').length,
             finalRadius: getComputedStyle(finalPanel).borderBottomRightRadius };
     });
-    expect(bounds.name).toContain('entire name');
+    const boundsFile = info.outputPath('echo-export-bounds.json'); await fs.writeFile(boundsFile, JSON.stringify(bounds, null, 2));
+    await info.attach('Serialized export geometry', { path: boundsFile, contentType: 'application/json' });
+    expect(bounds.name).toBe(longName);
     expect(bounds.lines.length).toBeGreaterThan(1);
     expect(bounds.lines.every(line => line.right <= bounds.row.right + 1)).toBe(true);
     expect(bounds.reasoning.bottom).toBeLessThanOrEqual(bounds.plate.bottom);
@@ -128,8 +132,6 @@ test('Echo preserves native structure, cutoff exemptions, tablet paint and actua
     expect(Math.abs(bounds.cat.top + 41 - bounds.text.top)).toBeLessThan(1);
     expect(bounds.copiedGeometry).toEqual([]);
     expect(bounds.liveFooterMarkers).toBe(0); expect(bounds.finalRadius).toBe('10px');
-    const boundsFile = info.outputPath('echo-export-bounds.json'); await fs.writeFile(boundsFile, JSON.stringify(bounds, null, 2));
-    await info.attach('Serialized export geometry', { path: boundsFile, contentType: 'application/json' });
     await artifact.close();
     await page.setViewportSize({ width: 900, height: 900 });
     await expect(message.locator('.nn-echo-header-plate')).toHaveCount(0);
