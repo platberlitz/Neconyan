@@ -12818,7 +12818,7 @@ async function showGallery(returnFocusElement = null) {
                     const mark = document.createElement("span");
                     mark.className = "qig-gallery-selection-mark";
                     mark.setAttribute("aria-hidden", "true");
-                    mark.textContent = "✓";
+                    if (selected.has(key)) mark.textContent = "✓";
                     card.appendChild(mark);
                     card.setAttribute("aria-pressed", String(selected.has(key)));
                 }

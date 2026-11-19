@@ -185,6 +185,8 @@ for (const phone of [true, false]) {
         await tiles.filter({ hasText: prompt }).click();
         await expect(gallery.locator('#qig-gallery-selection')).toHaveText('2 selected');
         await expect(tiles.nth(1)).toHaveAttribute('aria-pressed', 'false');
+        await expect(tiles.nth(1).locator('.qig-gallery-selection-mark')).toBeEmpty();
+        await expect(tiles.first().locator('.qig-gallery-selection-mark')).toHaveText('✓');
         await snapshot('batch');
 
         for (const rgba of [null, 'rgba(110,231,183,1)', 'rgba(126,34,206,1)']) {
