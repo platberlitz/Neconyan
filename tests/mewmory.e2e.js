@@ -243,14 +243,17 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
             expect(box.x).toBeGreaterThanOrEqual(-1);
             expect(box.x + box.width).toBeLessThanOrEqual(width + 1);
         }
-        const tokenizer = workspace.getByLabel('Tokenizer for this role');
-        expect(await tokenizer.evaluate(element => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
+        // Resolve and measure together, just like the inputs above. Settings can
+        // replace the select before a locator's separate element evaluation.
+        const tokenizerControls = await workspace.getByLabel('Tokenizer for this role').evaluateAll(elements => elements.map(element => ({
+            fontSize: window.getComputedStyle(element).fontSize,
+            height: element.getBoundingClientRect().height,
+            touchPoints: window.navigator.maxTouchPoints,
+        })));
+        expect(tokenizerControls).toHaveLength(1);
+        expect(tokenizerControls[0].height).toBeGreaterThanOrEqual(44);
         await info.attach('mewmory-controls-' + width, {
-            body: Buffer.from(JSON.stringify(await tokenizer.evaluate(element => ({
-                fontSize: window.getComputedStyle(element).fontSize,
-                height: element.getBoundingClientRect().height,
-                touchPoints: window.navigator.maxTouchPoints,
-            })))), contentType: 'application/json',
+            body: Buffer.from(JSON.stringify(tokenizerControls[0])), contentType: 'application/json',
         });
         await workspace.getByRole('tab', { name: 'Pawspective', exact: true }).click();
         await page.screenshot({ path: info.outputPath('mewmory-mobile-' + width + '.png') });
