@@ -1,5 +1,97 @@
 # Full server migration: continuation
 
+### 19 November 2026: 1.5.6 published, staging starts 1.5.7
+
+I published [Neconyan 1.5.6](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.6)
+with annotated tag `v1.5.6` on `d3f33f5d3e940d8eb167b1517559f785d927d00d`.
+PR #755 prepared the release; PR #756 promoted staging to main by
+fast-forward, without a merge commit. The release holds 62 merged PRs, #693 to
+#755 (#753 is the issue #754 fixed). The changelog bot missed none of them.
+PixAI in Quick Image Gen, the Regenerate collapse, running Companions
+alongside rerun Agents and the Windows data folder lease fix (#754) were added
+during release preparation at my request. The running personal instance was
+not deployed as part of this release.
+
+Verification and retained results:
+
+- Local checks at the readiness head `37aa0342`: 689 Jest suites (10,205
+  passed, 3 skipped), 4,389 Node tests and 140 Mewmory checks passed, with
+  root and test lint, frontend budgets, `npm run build:frontend` and the
+  README mirror check. The release commit differs from that head only by the
+  #755 merge and the changelog bot's line for it.
+- Readiness PR #755 checks passed at `37aa0342`; exact-head promotion checks
+  `44469224787` (unit, server, frontend, lint) and `44469224724` (Windows)
+  passed on the release commit.
+- Browser coverage for the candidate: full run `44453109849` at `40adc4c0`
+  passed 19 of 20 groups; group 15 failed only on the Lorebook disclosure
+  test, corrected in `2202b6a4` and passed in `44458877539`. Groups 1, 8, 12,
+  13, 14, 17 and 20, which hold the Mewmory and assistant help tests, passed
+  again in `44464723960` at `37aa0342` after the Mewmory correction fix. Later
+  commits touch only the changelog. Existing skips remain. The Mewmory browser
+  checks, which skip in release groups, passed locally at `37aa0342`: all 25
+  (main 3, trackers 1, hiding 4, settings switches 17).
+- No unchanged retry was used for the final results. The duplicate full runs
+  queued by PR #756 (`44469224808`) and the main push (`44470219689`) were
+  cancelled, as the runs above cover the candidate.
+- Earlier full runs `44284881645`, `44316170782`, `44338056965`,
+  `44431637804` and `44443183884` exposed these application defects, each
+  reproduced before fixing: reopening a chat re-ran its after-reply Agents
+  when the Agent list loaded in another order (duplicate paid calls); Agents
+  still starting when a message was sent rewrote a blocked impersonation draft
+  or an older reply; the default-on Memory Shard Companion showed the floating
+  Companion button over card buttons on 375 pixel phones; new accounts saw an
+  'Agents updated' notice about Pawthfinder's tools; dragging a sidebar tool
+  up on Android Chrome landed it one row low; PR #752 left the Windows Aero
+  right-hand drawer titles at 4.1:1 contrast with pale accents; the first
+  Notebooks open after an install waited about 4 s for the note editor bundle;
+  a later activity write replaced the advice to copy unsaved crash reports;
+  and a server-written reply in a new account's first seconds lost its Agents
+  because the one-time setup saves changed its bound settings. The local
+  Mewmory browser checks found that correcting a memory dropped the memories
+  built on it (a character's current view) from recall until a whole-chat
+  re-read.
+- Test and CI corrections: the shared release account was left half-way
+  through installing the bundled assistants, the Kittyless test's save mock
+  let a pending save reach that account, and durable-fixture tests now wait for
+  the Agents' first start and Dialogue Colors' first save. Stale expectations
+  were updated for changes merged since 1.5.5 (Gallery rail tool, Simple Mode
+  tour, Auto reasoning effort, feedback tone, Note tools on phones, PR #752's
+  colour serialisation, Memory Shard on new accounts, Mewmory tracker notes in
+  the message text). The frontend asset cap rose from 1,000 to 1,025 because
+  1.5.6 loads 1,001 files against 997 in 1.5.5. The Lorebook disclosure test
+  now scrolls and measures until the editor holds still, and the Scratchpad
+  setup test waits for its choice to save before reloading. EC2 runners now
+  use Ubuntu's main mirror, after three runs lost groups to 20-minute browser
+  installs. No assertion was weakened and no skip was added.
+- Not fixed: runs at `3bce0d9c` and `9242594b` twice showed a message's
+  extra actions menu closed right after the test opened it
+  (`in-chat-agents-tracker-repair`, `notebooks-recovery`); it never
+  reproduced locally and passed in the later runs, so the cause is unknown.
+  'Execution context was destroyed' hit three different tests once each. The
+  new tour's meeting card is not yet translated into Italian.
+- Assistant knowledge revision 121 adds eleven topics, corrects the Mewmory
+  recall answers and adds 39 retrieval cases. It passed source, budget and
+  retrieval checks, and the assistant browser checks passed on phone and
+  desktop.
+- Android run `44470285433` built the signed downloads and passed the WebView
+  fixture and the Android 11, 13 and 15 lifecycle and native checks. These are
+  emulator results, not physical-phone tests.
+- iPhone run `44470289140` passed the storage and path checks, the 13 GiB
+  import, the unsigned device IPA and simulator startup and recovery. These
+  are simulator results, not a physical-iPhone test.
+- I checked all twelve files: the eight Android and two iPhone manifest
+  entries, both APK signatures (the same certificate as 1.5.5), 16 KiB ELF
+  alignment of all six native libraries, both verifiers against the supplied
+  provenance, and 6,124 source ZIP files against `git archive` of the release
+  commit. The re-downloaded published files matched byte for byte and matched
+  GitHub's SHA-256 digests; the release is public and marked latest.
+- The handbook took `f0ce71f` (the 1.5.6 candidate, Pages run `44288908909`)
+  and, after publication, `7cfd565` (published wording and the release commit,
+  Pages run `44474813735`). I checked the changed pages on the live site.
+- The README on main and staging names 1.5.6 and links its release page; the
+  mirror check passes. Main stays at the release commit. Staging starts 1.5.7
+  in `2168e797`; its 4 boundary tests and lint passed.
+
 ### 15 November 2026: 1.5.5 published, staging starts 1.5.6
 
 I published [Neconyan 1.5.5](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.5)
