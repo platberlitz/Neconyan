@@ -51,6 +51,7 @@ UI work, in short:
 - After an isolated test fix, run the affected tests or shards against the new commit. GitHub's failed-job rerun reuses the original commit and cannot validate later fixes. A new commit alone doesn't justify another full run.
 - Use a full rerun when application behaviour, shared test setup or workflow changes have broad or uncertain effects. State the reason before starting it.
 - If a failure repeats, return to diagnosis before another retry. Keep the logs and distinguish a corrected test from an unchanged test that passed on retry; don't weaken assertions or skip failures to get a green result.
+- Playwright retries failed browser tests once in CI. The release run's summary lists tests that passed on retry as flaky, separately from unresolved failures. Download `release-e2e-diagnostics-*` for the first failed attempt's trace even if the job is green; `release-e2e-result-*` records test outcomes and durations.
 - Record the commit and scope each result covers. Reuse unaffected results honestly and state what still needs checking, rather than repeatedly spending an hour on the entire matrix.
 
 ## CSS shipping rules
@@ -189,6 +190,8 @@ UI work, in short:
 A release from staging into main covers every step below, including the handbook, assistant help, signed Android downloads, the iPhone IPA and the next staging version.
 
 **Resolve and verify every E2E failure before publishing.** E2E means end-to-end browser or app checks. A pending run or an unresolved test-only failure is not an acceptable release result. Preserve valid passing groups as described in 'Browser CI rerun scope'; record which commits and tests the combined results cover. Keep existing skips visible, and never add skips or weaken assertions to make a release pass.
+
+Inspect every flaky result before promoting the candidate. A passed retry does not prove the cause was fixed. Record the tests that passed only on retry, their run links and what the traces showed in the handover; note the flaky results briefly under 'Checks' in the release notes. File a separate issue for each test that flakes on consecutive nightly staging runs and link those runs.
 
 1. **Prepare the candidate.** Fetch the remote branches, inspect local changes and check the release history against `package.json`. Use a release worktree so the main checkout stays on `staging`, tracking `origin/staging`, and update that checkout by fast-forward only. Preserve unrelated work. Use the existing normal release version; fixes to an already published `X.Y.Z` use `X.Y.Z.A`. Keep published tags intact. Release preparation does not deploy to any running instance.
 2. **Refresh the official handbook.** Review the changes since the previous release in the separate `platberlitz/neconyan-docs` repository. Update the affected guides and their review/version information. Run `.venv/bin/mkdocs build --strict`, `.venv/bin/python scripts/check_site.py` and `.venv/bin/python scripts/browser_check.py` there. Check phone and desktop pages, publish the documentation, wait for Pages to succeed and verify the changed pages on the live site. Historical snapshot versions stay historical.

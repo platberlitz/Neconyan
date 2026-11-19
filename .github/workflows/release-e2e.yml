@@ -189,11 +189,13 @@ jobs:
           npm run init
 
       - name: Run release E2E suite
+        id: e2e
         shell: bash
         env:
           HOME: /root
           NECONYAN_LAUNCHER: '1'
           NECONYAN_SKIP_BROWSER_AUTO_LAUNCH: '1'
+          RELEASE_E2E_REPORT: ${{ runner.temp }}/result.json
         run: |
           set -euo pipefail
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -226,7 +228,24 @@ jobs:
           done
 
           node tests/prepare-release-fixture.js
-          npm run test:e2e --prefix tests -- --workers=1 --test-list="$RUNNER_TEMP/e2e-plan/$RELEASE_E2E_JOB.txt" --reporter=line,html
+          npm run test:e2e --prefix tests -- --workers=1 --test-list="$RUNNER_TEMP/e2e-plan/$RELEASE_E2E_JOB.txt" \
+            --reporter=line,html,./release-e2e-reporter.js
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          const { tests } = JSON.parse(fs.readFileSync(process.env.RELEASE_E2E_REPORT, 'utf8'));
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `flaky=${tests.some(test => test.outcome === 'flaky')}\n`);
+          // Playwright can exit successfully if a failed test skips its retry.
+          if (tests.some(test => test.outcome === 'unexpected')) process.exitCode = 1;
+          JS
+
+      - name: Upload browser results
+        if: ${{ !cancelled() && steps.e2e.outcome != 'skipped' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-e2e-result-${{ matrix.id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/result.json
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Print server log on failure
         if: failure()
@@ -235,8 +254,8 @@ jobs:
             cat "$RUNNER_TEMP/neconyan-server.log"
           fi
 
-      - name: Upload failure diagnostics
-        if: failure()
+      - name: Upload failed-attempt diagnostics
+        if: ${{ failure() || steps.e2e.outputs.flaky == 'true' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-e2e-diagnostics-${{ matrix.id }}-${{ github.run_attempt }}
@@ -246,3 +265,29 @@ jobs:
             tests/test-results/
           if-no-files-found: ignore
           retention-days: 14
+
+  summary:
+    name: Summarise browser results
+    needs: [prepare, run-release-e2e]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@cdca7365b2dadb8aad0a33bc7601856ffabcc48e # v4.3.0
+        with:
+          node-version: 24
+      - name: Download result artifacts
+        if: needs.prepare.result == 'success'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: release-e2e-result-*
+          path: ${{ runner.temp }}/e2e-results/
+      - name: Write browser summary
+        env:
+          PREPARE_RESULT: ${{ needs.prepare.result }}
+          MATRIX_RESULT: ${{ needs.run-release-e2e.result }}
+          RELEASE_E2E_MATRIX: ${{ needs.prepare.outputs.matrix }}
+        run: node scripts/release-e2e-summary.js "$RUNNER_TEMP/e2e-results"
