@@ -133,7 +133,9 @@
     if (typeof window === 'undefined' || !window.document) return;
 
     let reports = [];
-    let storageError = '';
+    // Kept apart so a later activity write cannot replace the advice to copy unsaved reports.
+    let reportStorageError = '', recoveryStorageError = '', activityStorageError = '';
+    const storageError = () => reportStorageError || recoveryStorageError || activityStorageError;
     let capturing = false;
     let unsaved = false;
     const activity = [];
@@ -284,7 +286,7 @@
             const text = JSON.stringify(entry).slice(0, -1) + ',"snapshot":' + snapshotText + ',"events":' + eventsText + '}';
             // Canonical activity contains only ASCII enums, reviewed labels and safe IDs.
             if (text.length <= 8192) localStorage.setItem(SESSION_PREFIX + tabId, text);
-        } catch { storageError = 'Browser storage is unavailable; activity cannot be retained after this page closes.'; }
+        } catch { activityStorageError = 'Browser storage is unavailable; activity cannot be retained after this page closes.'; }
         try {
             if (nativeToken && snapshotText && eventsText) {
                 const text = '{"snapshot":' + snapshotText + ',"events":' + eventsText + '}';
@@ -349,7 +351,7 @@
             const parsed = JSON.parse(recoveryText);
             if (Array.isArray(parsed)) recoveries = parsed.filter(report => report?.schema === 1 && safeId(report.id)).slice(-8);
         }
-    } catch { storageError = 'Browser storage is unavailable; reports last only until this page closes.'; }
+    } catch { reportStorageError = 'Browser storage is unavailable; reports last only until this page closes.'; }
 
     function breadcrumb(type) {
         activity.push({ at: new Date().toISOString(), type });
@@ -358,7 +360,7 @@
 
     function save() {
         unsaved = false;
-        try { localStorage.setItem(KEY, JSON.stringify(reports)); storageError = ''; } catch { storageError = 'Could not save to browser storage. Copy or download these reports before closing the page.'; }
+        try { localStorage.setItem(KEY, JSON.stringify(reports)); reportStorageError = ''; } catch { reportStorageError = 'Could not save to browser storage. Copy or download these reports before closing the page.'; }
     }
 
     function capture(kind, error, context = {}) {
@@ -421,12 +423,12 @@
             return report;
         } catch { return null; } finally { capturing = false; }
     };
-    api.getReports = () => JSON.parse(JSON.stringify({ reports, recoveries, storageError, retainedActivities }));
+    api.getReports = () => JSON.parse(JSON.stringify({ reports, recoveries, storageError: storageError(), retainedActivities }));
     api.clear = () => {
         reports = [];
         recoveries = [];
         unsaved = false;
-        try { localStorage.removeItem(KEY); localStorage.removeItem(RECOVERY_KEY); storageError = ''; return true; } catch { return false; }
+        try { localStorage.removeItem(KEY); localStorage.removeItem(RECOVERY_KEY); reportStorageError = ''; recoveryStorageError = ''; return true; } catch { return false; }
     };
     const SEEN_KEY = 'neconyan.crash-notice-seen.v1';
     let seen = [], pendingRecovery = null, currentStartupNotice = null;
@@ -514,7 +516,7 @@
         recoveries.push(report); recoveries = recoveries.slice(-8);
         if (previousSession?.visibility === 'visible') pendingRecovery = report;
         if (previousSession) previousSession.state = 'recovered';
-        try { localStorage.setItem(RECOVERY_KEY, JSON.stringify(recoveries)); } catch { storageError = 'Could not save recovery activity. Copy it before closing this page.'; }
+        try { localStorage.setItem(RECOVERY_KEY, JSON.stringify(recoveries)); } catch { recoveryStorageError = 'Could not save recovery activity. Copy it before closing this page.'; }
     }
     recoverPrevious();
     function clearFrontendCachesBeforeReload() {
@@ -676,7 +678,7 @@
             + (sample?.chat?.messageCount != null ? ` Last known activity: ${sample.chat.messageCount} messages.` : '')
             + (labels ? ` Running ${labels} ${timing}.` : '')
             + (sample?.at ? ` Last activity recorded at ${new Date(sample.at).toLocaleTimeString()}.` : '')
-            + (storageError ? ` ${storageError}` : '');
+            + (storageError() ? ` ${storageError()}` : '');
         const notice = api.showNotice({ id: report.noticeId || report.id, title: report.summary || 'Neconyan could not finish loading', message, onRead: () => api.openReports(report.id) });
         if (api.fatalReportId === report.id) currentStartupNotice = notice;
     }
