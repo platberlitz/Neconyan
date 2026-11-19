@@ -27,6 +27,7 @@
 - **Mewmory** uses far fewer tokens. Recall picks saved memories rather than raw chat passages ('Also offer original chat passages to recall' brings the old behaviour back), requests are smaller and new records are shorter.
 - Automatic Mewmory updates follow the chat you're in, a busy or rate-limited service is paused instead of retried over and over, and finished paid work is no longer thrown away when something unrelated changes.
 - Changing the model, a card or a lorebook entry no longer makes Mewmory re-read every chat. Upkeep offers 'Re-read them' with an estimate first, and 'Model use today' shows how much each job used.
+- Correcting a Mewmory memory no longer drops the memories built on it, such as a character's current view of a subject, from recall. The next update reads again just the messages behind them.
 - Nano-GPT's decision models, such as Jev, Kev, d3 and SubQ, can be picked for Mewmory recall and Pawthfinder without typing model IDs or addresses.
 - 'Skip user messages in search cues' lets Mewmory look for memories using the characters' replies only.
 - **Agents** have a new Clothing Tracker Companion that keeps a 'Scene wardrobe' card of what your persona and everyone in the scene is wearing. It ships switched off, next to Position Tracker.
