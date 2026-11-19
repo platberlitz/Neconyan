@@ -10,6 +10,31 @@
     border-radius: 8px;
     background: var(--neco-raised);
 }
+.scratchpad-generated-images {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 9rem), 1fr));
+    gap: 8px;
+}
+.scratchpad-generated-figure {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+    margin: 0;
+}
+.scratchpad-generated-images .scratchpad-generated-image {
+    max-height: 220px;
+}
+.scratchpad-generated-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.scratchpad-generated-actions .scratchpad-image-link {
+    flex: 1 1 auto;
+    justify-content: center;
+    text-align: center;
+}
 
 .scratchpad-image-prompt {
     white-space: pre-wrap;

@@ -558,3 +558,59 @@ test('group target permissions are rechecked atomically by avatar writes after a
     fs.writeFileSync(path.join(a.directories.groups, 'group.json'), JSON.stringify({ id: 'group', members: [], chats: ['Source'] }));
     assert.throws(() => store.withScratchpad(a.base, lease => assertScratchpadAvatarWriteLocked(lease, JSON.stringify(a.body), 'Nova.png', review.revision)), /does not belong/);
 });
+
+test('an image proposal makes one picture per Quick Image Gen image count, with sequential seeds', async t => {
+    const a = account(t, { qig: { batchCount: 3, sequentialSeeds: true } });
+    const accepted = await a.accept();
+    await a.run(accepted);
+    assert.equal(getJob(a.directories, accepted.job.id).state, 'completed', a.image()?.error);
+    assert.deepEqual(a.calls.map(call => call.body.seed), [37, 38, 39]);
+    const image = a.image();
+    assert.equal(image.state, 'done');
+    assert.equal(image.more.length, 2);
+    const urls = [image.url, ...image.more.map(picture => picture.url)];
+    assert.equal(new Set(urls).size, 3);
+    for (const url of urls) assert.deepEqual(fs.readFileSync(path.join(a.directories.root, url.slice(1))), fs.readFileSync(path.join(a.directories.root, image.url.slice(1))));
+    await a.run(accepted);
+    assert.equal(a.calls.length, 3);
+});
+
+test('avatar proposals stay at one picture whatever the image count', async t => {
+    const a = account(t, { qig: { batchCount: 3 }, change: { target: 'avatar', character: 'Nova' } });
+    const accepted = await a.accept();
+    await a.run(accepted);
+    assert.equal(a.calls.length, 1);
+    assert.equal(a.image().state, 'done');
+    assert.equal(a.image().more, undefined);
+});
+
+test('a batch that stops part way keeps its saved pictures and the retry buys only the rest', async t => {
+    const a = account(t, { qig: { batchCount: 2 } });
+    const accepted = await a.accept();
+    const outside = path.join(a.f.root, 'outside-images'); fs.mkdirSync(outside);
+    const aside = `${a.directories.userImages}-aside`;
+    a.calls.push = function (...calls) {
+        if (this.length === 1) {
+            fs.renameSync(a.directories.userImages, aside);
+            fs.symlinkSync(outside, a.directories.userImages);
+        }
+        return Array.prototype.push.apply(this, calls);
+    };
+    await a.run(accepted);
+    assert.equal(a.calls.length, 2);
+    const failed = a.image();
+    assert.equal(failed.state, 'failed');
+    assert.ok(failed.url);
+    assert.equal(failed.more, undefined);
+    assert.match(failed.error, /1 of 2 images were saved/);
+    fs.unlinkSync(a.directories.userImages);
+    fs.renameSync(aside, a.directories.userImages);
+    const job = getJob(a.directories, accepted.job.id);
+    assertScratchpadImageRetry(a.directories, job);
+    updateJob(a.directories, accepted.job.id, { state: 'queued', error: null, finishedAt: null, ...explicitRetryRecovery(job) });
+    await a.run(accepted);
+    assert.equal(a.calls.length, 2);
+    assert.equal(a.image().state, 'done', a.image().error);
+    assert.equal(a.image().url, failed.url);
+    assert.equal(a.image().more.length, 1);
+});

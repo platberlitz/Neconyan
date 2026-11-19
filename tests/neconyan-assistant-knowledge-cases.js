@@ -109,6 +109,7 @@ export const refreshedKnowledgeCases = [
     ['Does General Scratchpad secretly share chat messages?', 'scratchpad.context', 'General shares no story messages, swipes, chat metadata or Author\'s Note'],
     ['How do Scratchpad images use Review avatar?', 'scratchpad.images', 'Review avatar'],
     ['What does Previous avatar in Scratchpad mean?', 'scratchpad.images', 'not one-click undo'],
+    ['Can Scratchpad make more than one image at once?', 'scratchpad.images', 'Image count'],
     ['Can Scratchpad see the picture it generated?', 'scratchpad.image-editing', 'without uploading it again'],
     ['Can Scratchpad edit a Scenario Note avatar?', 'scratchpad.image-editing', 'Review avatar, then Save change'],
     ['Can my Scratchpad custom connection see saved pictures?', 'scratchpad.image-editing', 'are always offered the pictures'],

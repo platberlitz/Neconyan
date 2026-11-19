@@ -17,14 +17,14 @@ if (before) {
 const fence = change => '```scratchpad-change\n' + JSON.stringify(change) + '\n```';
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 
-function mockPicture() {
+function mockPicture(sky = [34, 52, 90]) {
     const picture = new PNG({ width: 384, height: 256 });
     for (let y = 0; y < picture.height; y++) for (let x = 0; x < picture.width; x++) {
         const moon = (x - 270) ** 2 + (y - 65) ** 2 < 35 ** 2;
         const hill = y > 190 + Math.sin(x / 50) * 15;
         const house = x > 100 && x < 190 && y > 120 && y < 200;
         const roof = y > 85 && y < 125 && Math.abs(x - 145) < y - 85;
-        const colour = moon ? [245, 226, 160] : house || roof ? [218, 135, 101] : hill ? [42, 82, 74] : [34, 52, 90];
+        const colour = moon ? [245, 226, 160] : house || roof ? [218, 135, 101] : hill ? [42, 82, 74] : sky;
         const offset = (y * picture.width + x) * 4;
         picture.data.set([...colour, 255], offset);
     }
@@ -291,6 +291,65 @@ for (const phone of [false, true]) {
         await account.settled(job.id);
         await expect(card.locator('.scratchpad-generated-image')).toBeVisible();
         expect(imageProvider.calls).toHaveLength(1);
+        await page.locator('.scratchpad-close').click();
+    });
+}
+
+for (const phone of [true, false]) {
+    const size = phone ? 'phone' : 'desktop';
+    test(`${size}: an image proposal makes one picture per Quick Image Gen image count`, async ({ app }) => {
+        test.setTimeout(240000);
+        const imageProvider = await app.images();
+        const skies = [[34, 52, 90], [86, 46, 92], [28, 84, 96]];
+        let made = 0;
+        imageProvider.mode.reply = () => ({ data: [{ b64_json: mockPicture(skies[made++ % skies.length]).toString('base64') }] });
+        const account = await app.account({ phone, contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {}, configureSettings: saved => {
+            saved.extension_settings['quick-image-gen'] = { provider: 'gptimage', gptImageKey: 'fixture-image-key', gptImageModel: 'gpt-image-1',
+                gptImageProxyUrl: imageProvider.url, width: 1024, height: 1024, style: 'none', appendQuality: false, useSTStyle: false,
+                reviewBeforeGenerate: false, setupWizardSeen: true, batchCount: 3, sequentialSeeds: true, seed: 41 };
+        } });
+        if (phone) await installIPhoneSafari(account.context, { standalone: true });
+        const page = await account.open({ workspace: false });
+        await openRail(page, phone);
+        if (phone) await applyIOSOnlyCss(page);
+        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await page.locator('#scratchpad-connection-miso').selectOption('durable');
+        await page.getByRole('tab', { name: 'Chat', exact: true }).click();
+        await sendProposal(page, app, account, fence({ type: 'image', action: 'generate', target: 'image', prompt: 'A little observatory below a moonlit sky.', reason: 'An illustration of the idea.' }));
+        const card = page.locator('.scratchpad-image-card').first();
+        const waiting = page.waitForResponse('**/api/scratchpad/images/generate');
+        await card.getByRole('button', { name: 'Generate image', exact: true }).click();
+        const response = await waiting;
+        expect(response.ok(), await response.text()).toBe(true);
+        await account.settled((await response.json()).job.id);
+        const count = before ? 1 : 3;
+        await expect(card.locator('.scratchpad-generated-image')).toHaveCount(count);
+        expect(imageProvider.calls).toHaveLength(count);
+        await card.locator('.scratchpad-generated-image').first().evaluate(picture => picture.scrollIntoView({ block: 'center' }));
+        await page.mouse.move(0, 0);
+        await page.evaluate(() => window.toastr.remove());
+        await page.screenshot({ path: `../screenshots/scratchpad-batch-${size}-${before ? 'before' : 'after'}.png` });
+        if (before) return;
+        await expect(card.getByText('3 images saved to your user images.', { exact: true })).toBeVisible();
+        for (const number of [1, 2, 3]) {
+            await expect(card.getByRole('link', { name: `Open image ${number}`, exact: true })).toBeVisible();
+            await expect(card.getByRole('link', { name: `Download image ${number}`, exact: true })).toBeVisible();
+        }
+        const layout = await card.evaluate(element => {
+            const box = element.getBoundingClientRect();
+            return {
+                images: [...element.querySelectorAll('.scratchpad-generated-image')].map(image => image.src),
+                inside: [...element.querySelectorAll('.scratchpad-generated-figure, .scratchpad-image-link')].every(child => {
+                    const rect = child.getBoundingClientRect();
+                    return rect.left >= box.left - 1 && rect.right <= box.right + 1;
+                }),
+                overflow: element.scrollWidth - element.clientWidth,
+            };
+        });
+        expect(new Set(layout.images).size).toBe(3);
+        expect(layout.inside).toBe(true);
+        expect(layout.overflow).toBeLessThanOrEqual(1);
+        await checkImageControlContrast(page, ['.scratchpad-image-link'], phone);
         await page.locator('.scratchpad-close').click();
     });
 }

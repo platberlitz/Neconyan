@@ -50,14 +50,26 @@ export function renderImageCard({ session, message, part, button, availability, 
     const actions = h('div', { class: 'scratchpad-change-actions' });
     const original = editing && part.change.source.kind === 'generated' ? session.messages.find(item => item.id === part.change.source.messageId)?.images?.[part.change.source.index] : null;
     if (original && safeImage(original.url)) actions.append(h('a', { class: 'scratchpad-button scratchpad-image-link', href: original.url, target: '_blank', rel: 'noopener', text: t`View source image` }));
-    if (image?.url && safeImage(image.url)) {
-        card.append(h('img', { class: 'scratchpad-generated-image', src: image.url, alt: t`Generated image: ${image.prompt}`, loading: 'lazy',
-            ...(image.width && image.height ? { width: image.width, height: image.height } : {}) }));
+    const pictures = image?.url && safeImage(image.url) ? [image, ...(Array.isArray(image.more) ? image.more : [])].filter(picture => safeImage(picture?.url)) : [];
+    const size = picture => picture.width && picture.height ? { width: picture.width, height: picture.height } : {};
+    if (pictures.length === 1) {
+        card.append(h('img', { class: 'scratchpad-generated-image', src: image.url, alt: t`Generated image: ${image.prompt}`, loading: 'lazy', ...size(image) }));
         actions.append(h('a', { class: 'scratchpad-button scratchpad-image-link', href: image.url, target: '_blank', rel: 'noopener', text: t`Open image` }),
             h('a', { class: 'scratchpad-button scratchpad-image-link', href: image.url, download: '', text: t`Download` }));
+    } else if (pictures.length > 1) {
+        card.append(h('div', { class: 'scratchpad-generated-images' }, ...pictures.map((picture, index) => {
+            const number = index + 1;
+            return h('figure', { class: 'scratchpad-generated-figure' },
+                h('img', { class: 'scratchpad-generated-image', src: picture.url, alt: t`Generated image ${number} of ${pictures.length}: ${image.prompt}`, loading: 'lazy', ...size(picture) }),
+                h('figcaption', { class: 'scratchpad-generated-actions' },
+                    h('a', { class: 'scratchpad-button scratchpad-image-link', href: picture.url, target: '_blank', rel: 'noopener', text: t`Open`, 'aria-label': t`Open image ${number}` }),
+                    h('a', { class: 'scratchpad-button scratchpad-image-link', href: picture.url, download: '', text: t`Download`, 'aria-label': t`Download image ${number}` })));
+        })));
+    }
+    if (pictures.length && !['pending', 'failed', 'cancelled'].includes(image.state)) {
         if (['avatar', 'persona-avatar', 'persona-note-avatar'].includes(image.target) && !dismissed) actions.append(button(applied ? t`Avatar saved` : t`Review avatar`, onReview, { primary: true, disabled: applied }));
         if (safeImage(image.previousAvatarUrl)) actions.append(h('a', { class: 'scratchpad-button scratchpad-image-link', href: image.previousAvatarUrl, target: '_blank', rel: 'noopener', text: t`Previous avatar` }));
-        card.append(h('p', { class: 'scratchpad-change-state', text: applied ? t`Avatar saved` : image.target === 'persona-note-avatar' ? t`Image saved. The Scenario Note is unchanged.` : image.target === 'persona-avatar' ? t`Image saved. The persona is unchanged.` : image.target === 'avatar' ? t`Image saved. The character card is unchanged.` : t`Image saved to your user images.` }));
+        card.append(h('p', { class: 'scratchpad-change-state', text: applied ? t`Avatar saved` : image.target === 'persona-note-avatar' ? t`Image saved. The Scenario Note is unchanged.` : image.target === 'persona-avatar' ? t`Image saved. The persona is unchanged.` : image.target === 'avatar' ? t`Image saved. The character card is unchanged.` : pictures.length > 1 ? t`${pictures.length} images saved to your user images.` : t`Image saved to your user images.` }));
     } else if (image?.state === 'pending') {
         const approval = Boolean(job?.result?.approval);
         const reviewing = approval || (Boolean(image.review) && job?.stage !== 'approved');
