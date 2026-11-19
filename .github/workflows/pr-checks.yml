@@ -53,6 +53,10 @@ jobs:
         uses: actions/setup-node@cdca7365b2dadb8aad0a33bc7601856ffabcc48e # v4.3.0
         with:
           node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            tests/package-lock.json
 
       - name: Run npm install
         run: npm ci --ignore-scripts
@@ -80,6 +84,10 @@ jobs:
         uses: actions/setup-node@cdca7365b2dadb8aad0a33bc7601856ffabcc48e # v4.3.0
         with:
           node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            tests/package-lock.json
 
       - name: Install root dependencies
         run: npm ci --ignore-scripts
@@ -109,6 +117,10 @@ jobs:
         uses: actions/setup-node@cdca7365b2dadb8aad0a33bc7601856ffabcc48e # v4.3.0
         with:
           node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            tests/package-lock.json
 
       - name: Install root dependencies
         run: npm ci --ignore-scripts
@@ -135,6 +147,10 @@ jobs:
         uses: actions/setup-node@cdca7365b2dadb8aad0a33bc7601856ffabcc48e # v4.3.0
         with:
           node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            tests/package-lock.json
 
       - name: Install root dependencies
         run: npm ci --ignore-scripts
@@ -170,3 +186,117 @@ jobs:
 
       - name: Run Structured Prefill Bun regression
         run: timeout 20s bun tests/structured-prefill-bun-runtime.js
+
+  browser-smoke:
+    name: 🐾 Check Browser Smoke on PR
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    container:
+      # Keep in sync with the noble image in release-e2e.yml and Playwright in tests/package-lock.json.
+      image: mcr.microsoft.com/playwright:v1.60.0-noble@sha256:83192064c7510f7ee73dd63dc5f22a5e01a92c81a2e6a9c715d9e3fe55471fd9
+      options: --ipc=host
+    env:
+      CI: 'true'
+      PLAYWRIGHT_HTML_OPEN: never
+      NECONYAN_TEST_BASE_URL: http://127.0.0.1:4433
+      NECONYAN_CONVERSATION_TEST_DISPOSABLE: '1'
+      NECONYAN_DEVICE_SYNC_DISPOSABLE: '1'
+      NECONYAN_RELEASE_TEST_DISPOSABLE: '1'
+
+    steps:
+      - name: Checkout PR with its base branch merged in
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@cdca7365b2dadb8aad0a33bc7601856ffabcc48e # v4.3.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            tests/package-lock.json
+
+      - name: Install root dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install test dependencies
+        env:
+          NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/.npmrc
+        run: npm ci --ignore-scripts --prefix tests
+
+      - name: Select smoke and changed browser tests
+        shell: bash
+        run: |
+          # HEAD is GitHub's test merge. Its first parent is the base we compare against.
+          # The container user doesn't own the Actions checkout. Trust only this path.
+          git -c "safe.directory=$GITHUB_WORKSPACE" diff --name-only --diff-filter=ACMRT -z HEAD^1 HEAD -- > "$RUNNER_TEMP/pr-files"
+          (cd tests && npx --no-install playwright test --list --reporter=json) > "$RUNNER_TEMP/pr-browser-list.json"
+          node scripts/pr-browser-smoke.js "$RUNNER_TEMP/pr-browser-list.json" "$RUNNER_TEMP/pr-files" "$RUNNER_TEMP/pr-browser-tests"
+
+      - name: Initialise disposable server state
+        run: |
+          mkdir -p /tmp/opencode
+          npm run init
+
+      - name: Run PR browser tests
+        id: browser
+        shell: bash
+        env:
+          # The Actions container mounts /github/home with a different owner; Firefox checks HOME.
+          HOME: /root
+          NECONYAN_LAUNCHER: '1'
+          NECONYAN_SKIP_BROWSER_AUTO_LAUNCH: '1'
+          RELEASE_E2E_REPORT: ${{ runner.temp }}/pr-browser-result.json
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          node server.js --browserLaunchEnabled=false > "$RUNNER_TEMP/pr-browser-server.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true; wait "$server_pid" 2>/dev/null || true' EXIT
+          deadline=$((SECONDS + 60))
+          until curl --fail --silent --connect-timeout 1 --max-time 2 "$NECONYAN_TEST_BASE_URL/" > /dev/null; do
+            if ! kill -0 "$server_pid" 2>/dev/null || (( SECONDS >= deadline )); then
+              echo 'Neconyan did not become ready for the PR browser check.' >&2
+              exit 1
+            fi
+            sleep 1
+          done
+          node tests/prepare-release-fixture.js
+          result=0
+          npm run test:e2e --prefix tests -- --workers=1 --global-timeout=240000 --test-list="$RUNNER_TEMP/pr-browser-tests" \
+            --reporter=line,html,./release-e2e-reporter.js || result=$?
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          import { inlineCode } from './scripts/release-e2e-summary.js';
+          const { tests, runErrors } = JSON.parse(fs.readFileSync(process.env.RELEASE_E2E_REPORT, 'utf8'));
+          const flaky = tests.filter(test => test.outcome === 'flaky');
+          const count = outcome => tests.filter(test => test.outcome === outcome).length;
+          const summary = ['## PR browser results', '',
+              `${count('expected')} passed, ${flaky.length} passed on retry, ${count('unexpected')} failed and ${count('skipped')} skipped or not run.`, '',
+              ...flaky.map(test => `- Passed on retry: ${inlineCode([test.file, ...test.title].join(' › '))}`), '',
+          ];
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary.join('\n'));
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `flaky=${flaky.length > 0}\n`);
+          if (runErrors || count('expected') + flaky.length === 0 || count('unexpected')) process.exitCode = 1;
+          JS
+          exit "$result"
+
+      - name: Print server log on failure
+        if: failure()
+        run: |
+          if [ -f "$RUNNER_TEMP/pr-browser-server.log" ]; then cat "$RUNNER_TEMP/pr-browser-server.log"; fi
+
+      - name: Upload failed-attempt diagnostics
+        if: ${{ failure() || steps.browser.outputs.flaky == 'true' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pr-browser-diagnostics-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/pr-browser-result.json
+            ${{ runner.temp }}/pr-browser-server.log
+            tests/playwright-report/
+            tests/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
