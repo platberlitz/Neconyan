@@ -4,9 +4,10 @@
 // Playwright's --shard splits by test count, so a group that draws the slow
 // files runs for over an hour while another finishes in minutes. This planner
 // uses the measured time of each file instead and writes a --test-list file
-// for one group. Every job computes the same plan from the same inputs.
+// for one group. CI computes the plan once before starting the test jobs.
 //
 //   node scripts/release-e2e-groups.js plan --list <list.json> --group <n> --total <n> [--out <file>]
+//   node scripts/release-e2e-groups.js prepare --list <list.json> --out <directory>
 //   node scripts/release-e2e-groups.js timings <log-dir>... [--out <file>]
 //
 // <list.json> is the output of `playwright test --list --reporter=json`, run
@@ -24,6 +25,7 @@ export const TIMINGS_PATH = path.join(TESTS_DIRECTORY, 'release-e2e-timings.json
 // crash-diagnostics.e2e.js includes a real renderer crash, which Chromium only
 // reports on the Ubuntu 22.04 runner. The workflow runs group 1 there.
 export const PINNED_FILES = Object.freeze({ 'crash-diagnostics.e2e.js': 1 });
+export const RELEASE_GROUP_TOTAL = 20;
 
 // Files that share state between their tests cannot be split across groups.
 const KEEP_WHOLE_SOURCE = /\bserial\b|\bbeforeAll\b|\bafterAll\b|scope:\s*['"]worker['"]/;
@@ -175,6 +177,35 @@ export function describePlan({ groups }) {
     }).join('\n');
 }
 
+/** Parse dispatch inputs without silently widening or narrowing the run. */
+export function selectReleaseJobs({ tests, shards = '', files = '' }) {
+    if (shards && files) throw new Error('Choose either shards or files, not both.');
+    if (files) {
+        const requested = JSON.parse(files);
+        if (!Array.isArray(requested) || !requested.length || requested.some(file => typeof file !== 'string')) {
+            throw new Error('files must be a non-empty JSON array of exact browser test paths.');
+        }
+        const listed = new Set(tests.map(test => test.file));
+        const selected = [...new Set(requested.map(file => file.replace(/^tests\//, '')))];
+        for (const file of selected) {
+            if (!listed.has(file)) throw new Error(`Browser test file not found: ${JSON.stringify(file)}.`);
+        }
+        const jammy = selected.filter(file => PINNED_FILES[file] === 1);
+        const noble = selected.filter(file => PINNED_FILES[file] !== 1);
+        return [
+            { id: 'files-jammy', jammy: true, lines: jammy },
+            { id: 'files-noble', jammy: false, lines: noble },
+        ].filter(job => job.lines.length);
+    }
+
+    const total = RELEASE_GROUP_TOTAL;
+    const groups = shards ? JSON.parse(shards) : Array.from({ length: total }, (_, index) => index + 1);
+    if (!Array.isArray(groups) || !groups.length || groups.some(group => !Number.isInteger(group) || group < 1 || group > total)) {
+        throw new Error(`shards must be a non-empty JSON array of group numbers from 1 to ${total}.`);
+    }
+    return [...new Set(groups)].map(group => ({ id: `group-${group}`, jammy: group === 1, group }));
+}
+
 /**
  * Reads line-reporter job logs ("<ISO time> [n/N] file:line:col › title") and
  * returns { files: { [file]: { seconds, tests } } }, averaged over the runs.
@@ -233,6 +264,31 @@ function main(argv) {
     const args = [...argv];
     const command = args.shift();
 
+    if (command === 'prepare') {
+        const listPath = readOption(args, '--list');
+        const out = readOption(args, '--out');
+        if (!listPath || !out) throw new Error('Usage: prepare --list <list.json> --out <directory>');
+        const tests = collectTests(JSON.parse(fs.readFileSync(listPath, 'utf8')));
+        if (!tests.length) throw new Error('Playwright did not list any browser tests.');
+        const jobs = selectReleaseJobs({ tests, shards: process.env.RELEASE_E2E_SHARDS, files: process.env.RELEASE_E2E_FILES });
+        if (jobs[0].group) {
+            const timings = JSON.parse(fs.readFileSync(TIMINGS_PATH, 'utf8'));
+            const keepWhole = file => sourceKeepsFileWhole(fs.readFileSync(path.join(TESTS_DIRECTORY, file), 'utf8'));
+            const plan = planGroups({ tests, timings, total: RELEASE_GROUP_TOTAL, keepWhole });
+            console.log(describePlan(plan));
+            for (const job of jobs) job.lines = testListLines(plan.groups[job.group - 1]);
+        }
+        fs.mkdirSync(out, { recursive: true });
+        for (const job of jobs) {
+            if (!job.lines.length) throw new Error(`No tests assigned to ${job.id}.`);
+            fs.writeFileSync(path.join(out, `${job.id}.txt`), `${job.lines.join('\n')}\n`);
+        }
+        const matrix = { include: jobs.map(({ id, jammy }) => ({ id, jammy })) };
+        if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `matrix=${JSON.stringify(matrix)}\n`);
+        else console.log(JSON.stringify(matrix));
+        return;
+    }
+
     if (command === 'plan') {
         const listPath = readOption(args, '--list');
         const group = Number(readOption(args, '--group'));
@@ -268,7 +324,7 @@ function main(argv) {
         return;
     }
 
-    throw new Error('Usage: release-e2e-groups.js plan|timings ...');
+    throw new Error('Usage: release-e2e-groups.js plan|prepare|timings ...');
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

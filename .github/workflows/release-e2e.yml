@@ -4,40 +4,91 @@ on:
   workflow_dispatch:
     inputs:
       shards:
-        description: 'JSON array of test groups to run, keeping the normal 20-group split'
+        description: 'JSON array of group numbers, e.g. [7,8]; leave both inputs blank for all 20 groups'
         type: string
-        default: '[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]'
-  pull_request:
-    branches:
-      - main
-    paths-ignore:
-      - '**/*.md'
-      - '.github/**'
-      - '.gitignore'
-      - 'android/**'
-      - 'scripts/build-android-payload.js'
-      - 'tests/android-apk-smoke.py'
-  push:
-    branches:
-      - main
-    paths-ignore:
-      - '**/*.md'
-      - '.github/**'
-      - '.gitignore'
-      - 'android/**'
-      - 'scripts/build-android-payload.js'
-      - 'tests/android-apk-smoke.py'
+      files:
+        description: 'JSON array of exact browser test files, e.g. ["tests/panel-look.e2e.js"]; omit shards'
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-e2e-${{ github.ref }}
+  group: release-e2e-${{ github.ref }}-${{ (inputs.shards || inputs.files) && format('focused-{0}', github.run_id) || 'full' }}
   cancel-in-progress: true
 
+env:
+  CI: 'true'
+  PLAYWRIGHT_HTML_OPEN: never
+  NECONYAN_TEST_BASE_URL: http://127.0.0.1:4433
+  NECONYAN_CONVERSATION_TEST_DISPOSABLE: '1'
+  NECONYAN_DEVICE_SYNC_DISPOSABLE: '1'
+  NECONYAN_RELEASE_TEST_DISPOSABLE: '1'
+
 jobs:
+  prepare:
+    name: Check browsers and plan release tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    container:
+      # Match the Playwright version in tests/package-lock.json. Browsers and
+      # OS libraries are already installed; no apt mirror or browser CDN in CI.
+      image: mcr.microsoft.com/playwright:v1.60.0-noble@sha256:83192064c7510f7ee73dd63dc5f22a5e01a92c81a2e6a9c715d9e3fe55471fd9
+      options: --ipc=host
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@cdca7365b2dadb8aad0a33bc7601856ffabcc48e # v4.3.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            tests/package-lock.json
+
+      - name: Install root dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install test dependencies
+        env:
+          NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/.npmrc
+        run: npm ci --ignore-scripts --prefix tests
+
+      - name: Check all three browsers launch
+        working-directory: tests
+        run: |
+          node --input-type=module <<'JS'
+          import { chromium, firefox, webkit } from '@playwright/test';
+          for (const browserType of [chromium, firefox, webkit]) {
+              const browser = await browserType.launch();
+              console.log(`${browserType.name()} ${browser.version()}`);
+              await browser.close();
+          }
+          JS
+
+      - name: Plan requested test jobs
+        id: plan
+        shell: bash
+        env:
+          RELEASE_E2E_SHARDS: ${{ inputs.shards }}
+          RELEASE_E2E_FILES: ${{ inputs.files }}
+        run: |
+          (cd tests && npx --no-install playwright test --list --reporter=json) > "$RUNNER_TEMP/e2e-list.json"
+          node scripts/release-e2e-groups.js prepare --list "$RUNNER_TEMP/e2e-list.json" --out "$RUNNER_TEMP/e2e-plan"
+
+      - name: Upload test lists
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-e2e-plan
+          path: ${{ runner.temp }}/e2e-plan/
+          overwrite: true
+          if-no-files-found: error
+          retention-days: 14
+
   run-release-e2e:
-    name: Run Chromium E2E suite
+    name: Browser tests (${{ matrix.id }})
+    needs: prepare
     # Groups other than 1 run ubuntu-24.04: the ubuntu-latest alias now resolves
     # to Ubuntu 26.04, which Playwright 1.60 does not support. Group 1 always
     # contains crash-diagnostics.e2e.js (pinned in scripts/release-e2e-groups.js),
@@ -45,21 +96,16 @@ jobs:
     # Ubuntu 24.04 because Chromium never delivers them there, so that group
     # stays on 22.04.
     # https://github.com/microsoft/playwright/blob/v1.60.0/tests/library/page-event-crash.spec.ts
-    runs-on: ${{ matrix.shard == 1 && 'ubuntu-22.04' || 'ubuntu-24.04' }}
+    runs-on: ${{ matrix.jammy && 'ubuntu-22.04' || 'ubuntu-24.04' }}
+    container:
+      image: ${{ matrix.jammy && 'mcr.microsoft.com/playwright:v1.60.0-jammy@sha256:9b80f22fa7c2a899e3722c890807484710cb68870830d156268d7fb60bbdeeef' || 'mcr.microsoft.com/playwright:v1.60.0-noble@sha256:83192064c7510f7ee73dd63dc5f22a5e01a92c81a2e6a9c715d9e3fe55471fd9' }}
+      options: --ipc=host
     timeout-minutes: 120
     strategy:
       fail-fast: false
-      matrix:
-        shard: ${{ fromJSON(inputs.shards || '[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]') }}
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
     env:
-      RELEASE_E2E_SHARD: ${{ matrix.shard }}
-      RELEASE_E2E_SHARD_TOTAL: 20
-      CI: 'true'
-      PLAYWRIGHT_HTML_OPEN: never
-      NECONYAN_TEST_BASE_URL: http://127.0.0.1:4433
-      NECONYAN_CONVERSATION_TEST_DISPOSABLE: '1'
-      NECONYAN_DEVICE_SYNC_DISPOSABLE: '1'
-      NECONYAN_RELEASE_TEST_DISPOSABLE: '1'
+      RELEASE_E2E_JOB: ${{ matrix.id }}
 
     steps:
       - name: Checkout Repository
@@ -92,40 +138,19 @@ jobs:
           NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/.npmrc
         run: npm ci --ignore-scripts --prefix tests
 
-      # Azure's Ubuntu mirror has taken 50 minutes to download browser packages.
-      # Use Ubuntu's main mirror and let apt retry stalled requests itself.
-      # Runners now come from Azure or EC2, and the regional EC2 mirrors
-      # can take a minute per package, so every regional mirror is replaced.
-      # Killing the unprivileged Playwright parent leaves sudo's apt process
-      # holding the package lock, so do not wrap it in a shell timeout/retry loop.
-      - name: Install test browsers
-        working-directory: tests
-        timeout-minutes: 20
-        run: |
-          printf '%s\n' 'Acquire::Retries "3";' 'Acquire::http::Timeout "30";' 'Acquire::https::Timeout "30";' \
-            | sudo tee /etc/apt/apt.conf.d/80-neconyan-ci-downloads > /dev/null
-          for source in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources /etc/apt/apt-mirrors*.txt; do
-            if [ -f "$source" ]; then
-              sudo sed -E -i 's#https?://[a-z0-9.-]+\.archive\.ubuntu\.com/ubuntu#https://archive.ubuntu.com/ubuntu#g' "$source"
-            fi
-          done
-          npx --no-install playwright install --with-deps chromium firefox webkit
+      - name: Download test lists
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-e2e-plan
+          path: ${{ runner.temp }}/e2e-plan/
 
       - name: Initialize server state
         run: |
           mkdir -p /tmp/opencode
           npm run init
 
-      # Groups are balanced by measured running time rather than test count.
-      # Refresh tests/release-e2e-timings.json when the suite changes a lot.
-      - name: Plan this test group
-        run: |
-          set -euo pipefail
-          (cd tests && npx --no-install playwright test --list --reporter=json) > "$RUNNER_TEMP/e2e-list.json"
-          node scripts/release-e2e-groups.js plan --list "$RUNNER_TEMP/e2e-list.json" \
-            --group "$RELEASE_E2E_SHARD" --total "$RELEASE_E2E_SHARD_TOTAL" --out "$RUNNER_TEMP/e2e-group.txt"
-
       - name: Run release E2E suite
+        shell: bash
         env:
           NECONYAN_LAUNCHER: '1'
           NECONYAN_SKIP_BROWSER_AUTO_LAUNCH: '1'
@@ -160,7 +185,7 @@ jobs:
           done
 
           node tests/prepare-release-fixture.js
-          npm run test:e2e --prefix tests -- --workers=1 --test-list="$RUNNER_TEMP/e2e-group.txt" --reporter=line,html
+          npm run test:e2e --prefix tests -- --workers=1 --test-list="$RUNNER_TEMP/e2e-plan/$RELEASE_E2E_JOB.txt" --reporter=line,html
 
       - name: Print server log on failure
         if: failure()
@@ -173,7 +198,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: release-e2e-diagnostics-${{ matrix.shard }}-${{ github.run_attempt }}
+          name: release-e2e-diagnostics-${{ matrix.id }}-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/neconyan-server.log
             tests/playwright-report/
