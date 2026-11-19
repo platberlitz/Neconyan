@@ -231,25 +231,31 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
         await expect(settingsStatus).toHaveText('Configuration saved.');
         expect((await post('/api/mewmory/config/get')).config.roles.extractor.tokenizer).toBe('auto');
         expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width + 1);
-        const inputs = workspace.locator('input:not([type="checkbox"]):visible');
-        // Saving can rebuild Settings between separate locator calls. Measure the
-        // visible controls together so a detached input cannot lose its box.
-        const inputBoxes = await inputs.evaluateAll(elements => elements.map(element => {
-            const { x, width } = element.getBoundingClientRect();
-            return { x, width };
-        }));
+        const tokenizer = workspace.getByLabel('Tokenizer for this role');
+        await expect(tokenizer).toBeVisible();
+        // A save can rebuild Settings between Playwright resolving a locator
+        // and evaluating it. Query and measure the live DOM in one callback.
+        const { inputBoxes, tokenizerControls } = await page.evaluate(() => {
+            const root = document.getElementById('mewmory-workspace');
+            const inputBoxes = [...root.querySelectorAll('input:not([type="checkbox"])')]
+                .filter(element => element.checkVisibility?.({ visibilityProperty: true })
+                    ?? (element.getClientRects().length > 0 && window.getComputedStyle(element).visibility === 'visible'))
+                .map(element => {
+                    const { x, width } = element.getBoundingClientRect();
+                    return { x, width };
+                });
+            const tokenizerControls = [...root.querySelectorAll('select[id="mewmory-field-tokenizer-extractor"]')].map(element => ({
+                fontSize: window.getComputedStyle(element).fontSize,
+                height: element.getBoundingClientRect().height,
+                touchPoints: window.navigator.maxTouchPoints,
+            }));
+            return { inputBoxes, tokenizerControls };
+        });
         expect(inputBoxes.length).toBeGreaterThan(0);
         for (const box of inputBoxes) {
             expect(box.x).toBeGreaterThanOrEqual(-1);
             expect(box.x + box.width).toBeLessThanOrEqual(width + 1);
         }
-        // Resolve and measure together, just like the inputs above. Settings can
-        // replace the select before a locator's separate element evaluation.
-        const tokenizerControls = await workspace.getByLabel('Tokenizer for this role').evaluateAll(elements => elements.map(element => ({
-            fontSize: window.getComputedStyle(element).fontSize,
-            height: element.getBoundingClientRect().height,
-            touchPoints: window.navigator.maxTouchPoints,
-        })));
         expect(tokenizerControls).toHaveLength(1);
         expect(tokenizerControls[0].height).toBeGreaterThanOrEqual(44);
         await info.attach('mewmory-controls-' + width, {
