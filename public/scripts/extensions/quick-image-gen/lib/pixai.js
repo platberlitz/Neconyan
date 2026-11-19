@@ -12,9 +12,12 @@ export const PIXAI_DEFAULT_PROMPT_HELPER = "disable";
 export const PIXAI_MODES = Object.freeze(["lite", "standard", "pro", "ultra"]);
 export const PIXAI_PROMPT_HELPERS = Object.freeze(["disable", "enable", "low", "medium"]);
 
+// PixAI refuses a mode the model does not offer (422 INVALID_INPUT); Tsubaki.3 offers only Pro and Ultra.
 export const PIXAI_MODELS = Object.freeze([
-    Object.freeze({ id: "2024383379556065549", name: "Tsubaki.3", family: "tsubaki" }),
-    Object.freeze({ id: "1983308862240288769", name: "Tsubaki.2", family: "tsubaki" }),
+    Object.freeze({ id: "2024383379556065549", name: "Tsubaki.3", family: "tsubaki",
+        modes: Object.freeze(["pro", "ultra"]), defaultMode: "pro" }),
+    Object.freeze({ id: "1983308862240288769", name: "Tsubaki.2", family: "tsubaki",
+        modes: PIXAI_MODES, defaultMode: PIXAI_DEFAULT_MODE }),
     Object.freeze({ id: "1861558740588989558", name: "Haruka v2", family: "sdxl" }),
     Object.freeze({ id: "1954632828118619567", name: "Hoshino v2", family: "sdxl" }),
 ]);
@@ -71,8 +74,19 @@ export function getPixaiModelName(model) {
     return PIXAI_MODELS.find(entry => entry.id === id)?.name || "";
 }
 
-export function normalizePixaiMode(value) {
-    return PIXAI_MODES.includes(value) ? value : PIXAI_DEFAULT_MODE;
+/** The modes a Tsubaki model accepts; empty for models that take no mode. */
+export function getPixaiModes(model) {
+    const id = normalizePixaiModel(model);
+    return PIXAI_MODELS.find(entry => entry.id === id)?.modes || [];
+}
+
+/** The saved mode when the model offers it, otherwise that model's own default. */
+export function normalizePixaiMode(value, model = PIXAI_DEFAULT_MODEL) {
+    const id = normalizePixaiModel(model);
+    const entry = PIXAI_MODELS.find(item => item.id === id);
+    const modes = entry?.modes || PIXAI_MODES;
+    if (modes.includes(value)) return value;
+    return entry?.defaultMode || PIXAI_DEFAULT_MODE;
 }
 
 export function normalizePixaiPromptHelper(value) {
@@ -143,7 +157,7 @@ export function buildPixaiImageRequest({
         sampler: undefined,
         seed: undefined,
     };
-    if (family === "tsubaki") body.mode = normalizePixaiMode(mode);
+    if (family === "tsubaki") body.mode = normalizePixaiMode(mode, modelVersionId);
     if (family === "sdxl") {
         const sampling = {};
         const method = PIXAI_SAMPLER_METHODS[sampler];
@@ -257,7 +271,7 @@ function isTrustedPixaiImageUrl(url) {
 }
 
 function unsafePixaiImageUrl(createError) {
-    return createError("PixAI returned an image address outside pixai.art", "QIG_UNSAFE_IMAGE_URL");
+    return createError("PixAI returned an image address outside its own image hosts", "QIG_UNSAFE_IMAGE_URL");
 }
 
 /**

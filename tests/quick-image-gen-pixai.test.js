@@ -4,7 +4,9 @@ import {
     buildPixaiImageRequest,
     buildPixaiImageRequestFromSettings,
     createPixaiTask,
+    getPixaiModes,
     getPixaiSize,
+    normalizePixaiMode,
     PIXAI_CREATE_URL,
     PIXAI_DEFAULT_MODEL,
     PIXAI_MODELS,
@@ -22,6 +24,8 @@ const HARUKA = '1861558740588989558';
 const HOSHINO = '1954632828118619567';
 const IMAGE_URL = 'https://images-ng.pixai.art/images/orig/0f6a0d1c-2a39-4f10-9b9e-4c3f1d2e5a7b';
 const OFFSITE_URL = 'https://storage.example/cat.png';
+const CLOUDFRONT_URL = 'https://d2doj8oszwtcqy.cloudfront.net/images/temp/6a1f0c2e-8d4b-4e7a-9c3f-2b5d7e9a1c4f'
+    + '?Expires=1795000000&Key-Pair-Id=K1QNL3S474VQ35&Signature=abc~def_ghi';
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC', 'base64');
 
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -83,7 +87,21 @@ describe('PixAI request body', () => {
             expect(effectiveParameters.steps).toBeUndefined();
             expect(effectiveParameters.sampler).toBeUndefined();
         }
-        expect(buildPixaiImageRequest({ prompt: 'cat', mode: 'turbo' }).body.mode).toBe('standard');
+    });
+
+    test('sends only a mode the Tsubaki model offers', () => {
+        const mode = (model, value) => buildPixaiImageRequest({ model, prompt: 'cat', mode: value }).body.mode;
+        expect(getPixaiModes(TSUBAKI_3)).toEqual(['pro', 'ultra']);
+        expect(getPixaiModes(TSUBAKI_2)).toEqual(['lite', 'standard', 'pro', 'ultra']);
+        expect(getPixaiModes(HARUKA)).toEqual([]);
+        expect(getPixaiModes('1234567890')).toEqual([]);
+        for (const value of ['lite', 'standard', 'turbo', undefined]) expect(mode(TSUBAKI_3, value)).toBe('pro');
+        expect(mode(TSUBAKI_3, 'ultra')).toBe('ultra');
+        for (const value of ['lite', 'standard', 'pro', 'ultra']) expect(mode(TSUBAKI_2, value)).toBe(value);
+        expect(mode(TSUBAKI_2, 'turbo')).toBe('standard');
+        expect(buildPixaiImageRequest({ prompt: 'cat', mode: 'standard' }).body.mode).toBe('pro');
+        expect(normalizePixaiMode('standard', TSUBAKI_3)).toBe('pro');
+        expect(normalizePixaiMode('lite', TSUBAKI_2)).toBe('lite');
     });
 
     test('SDXL models get sampling and never mode', () => {
@@ -224,16 +242,35 @@ describe('PixAI task polling', () => {
         expect(calls[1].init).toEqual({ method: 'GET', redirect: 'error', headers: { Authorization: 'Bearer k' }, signal });
     });
 
+    test('uses the signed CloudFront address PixAI really returns, without a lookup', async () => {
+        const { calls, fetchImpl } = scriptedFetch([
+            json({ id: 't4', status: 'completed', outputs: { seed: '7', mediaIds: ['m1'], mediaUrls: [CLOUDFRONT_URL] } }),
+        ]);
+        await expect(pollPixaiTask({ taskId: 't4', apiKey: 'k', fetchImpl, wait })).resolves.toBe(CLOUDFRONT_URL);
+        expect(calls).toHaveLength(1);
+    });
+
+    test('does not trust other CloudFront distributions', async () => {
+        const other = 'https://dabc123example.cloudfront.net/images/temp/x';
+        const { calls, fetchImpl } = scriptedFetch([
+            json({ status: 'completed', outputs: { mediaIds: ['m1'], mediaUrls: [other] } }),
+            json([{ id: 'm1', urls: [{ variant: 'PUBLIC', url: other }] }]),
+        ]);
+        await expect(pollPixaiTask({ taskId: 't5', apiKey: 'k', fetchImpl, wait }))
+            .rejects.toThrow('PixAI returned an image address outside its own image hosts');
+        expect(calls).toHaveLength(2);
+    });
+
     test('refuses an off-domain task URL without a media ID', async () => {
         const offsite = scriptedFetch([json({ status: 'completed', outputs: { mediaUrls: [OFFSITE_URL] } })]);
         await expect(pollPixaiTask({ taskId: 't5', apiKey: 'k', fetchImpl: offsite.fetchImpl, wait }))
-            .rejects.toThrow('PixAI returned an image address outside pixai.art');
+            .rejects.toThrow('PixAI returned an image address outside its own image hosts');
         expect(offsite.calls).toHaveLength(1);
     });
 
     test.each([
         ['an off-domain public URL', { id: 'm1', urls: [{ variant: 'PUBLIC', url: OFFSITE_URL }] },
-            'PixAI returned an image address outside pixai.art'],
+            'PixAI returned an image address outside its own image hosts'],
         ['another media ID', { id: 'other', urls: [{ variant: 'PUBLIC', url: IMAGE_URL }] },
             'PixAI finished, but its image address is unavailable'],
     ])('refuses a lookup that only returns %s', async (_label, media, error) => {
@@ -285,6 +322,27 @@ describe('PixAI in Quick Image Gen', () => {
         expect(result).toMatch(/^data:image\/png;base64,/);
         expect(calls).toHaveLength(1);
         expect(calls[0].init.headers).toEqual({});
+        await expect(materializeProviderImageSource(CLOUDFRONT_URL, {
+            requestUrl: PIXAI_CREATE_URL,
+            headers: { Authorization: 'Bearer secret' },
+            fetchImpl: async (url, init) => {
+                calls.push({ url, init });
+                return new Response(PNG, { headers: { 'content-type': 'image/webp' } });
+            },
+            allowBrowserFallback: false,
+            forceFetch: true,
+            allowedHostSuffixes: PROVIDER_OUTPUT_HOST_SUFFIXES.pixai,
+            credentialHostSuffixes: [],
+            credentialOrigins: [],
+        })).resolves.toMatch(/^data:image\//);
+        expect(calls[1].url).toBe(CLOUDFRONT_URL);
+        expect(calls[1].init.headers).toEqual({});
+        for (const url of ['https://dabc123example.cloudfront.net/x.png', 'https://evil-d2doj8oszwtcqy.cloudfront.net/x.png']) {
+            await expect(materializeProviderImageSource(url, {
+                requestUrl: PIXAI_CREATE_URL, forceFetch: true, allowedHostSuffixes: PROVIDER_OUTPUT_HOST_SUFFIXES.pixai,
+                fetchImpl: () => { throw new Error('fetched'); },
+            })).rejects.toThrow('untrusted host');
+        }
         await expect(materializeProviderImageSource('https://pixai.art.evil.example/x.png', {
             requestUrl: PIXAI_CREATE_URL, forceFetch: true, allowedHostSuffixes: PROVIDER_OUTPUT_HOST_SUFFIXES.pixai,
             fetchImpl: () => { throw new Error('fetched'); },
