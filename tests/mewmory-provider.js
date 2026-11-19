@@ -105,9 +105,10 @@ export async function createMewmoryProvider(port = 0) {
             const records = [];
             const interviews = [];
             for (const source of scene) {
-                for (const tracker of source.trackerOutputs || []) records.push({
-                    id: 'state:tracker-' + tracker.agentId, kind: 'state', entityId: ownerId,
-                    text: tracker.text, refs: refs(source),
+                // Tracker notes arrive labelled at the end of the message text.
+                for (const [, name, text] of source.text.matchAll(/\[Tracker output: ([^;\]]+); supplementary state, not dialogue\]\n([^\n]+)/g)) records.push({
+                    id: 'state:tracker-' + name.toLowerCase().replace(/[^a-z0-9]+/g, '-'), kind: 'state', entityId: ownerId,
+                    text, refs: refs(source),
                 });
             }
             if (introduction) records.push({
