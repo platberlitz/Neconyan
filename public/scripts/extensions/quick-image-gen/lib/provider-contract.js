@@ -59,7 +59,7 @@ const PROVIDER_REPRODUCIBLE_FIELDS = Object.freeze({
     fal: ["falModel"],
     together: ["togetherModel"],
     zai: ["zaiModel", "zaiQuality"],
-    pixai: ["pixaiModel", "pixaiMode", "pixaiPromptHelper"],
+    pixai: ["pixaiModel", "pixaiMode", "pixaiPromptHelper", "pixaiLoras"],
     local: LOCAL_REPRODUCIBLE_BASE_FIELDS,
     proxy: [
         "proxyModel", "proxyLoras", "proxyFacefix", "proxySteps", "proxyCfg", "proxySampler", "proxySeed",

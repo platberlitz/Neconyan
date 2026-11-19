@@ -55,6 +55,7 @@ export const PIXAI_SAMPLER_METHODS = Object.freeze({
 const TSUBAKI_PROMPT_LIMIT = 10_000;
 const DEFAULT_PROMPT_LIMIT = 4096;
 const NEGATIVE_PROMPT_LIMIT = 4096;
+const MAX_PIXAI_LORAS = 15;
 const MAX_EARLY_NOT_FOUND_POLLS = 10;
 const MAX_POLL_DELAY_MS = 4000;
 const MIN_POLL_DELAY_MS = 1500;
@@ -122,6 +123,30 @@ function truncateText(value, limit) {
     return cut;
 }
 
+function parsePixaiLoras(value) {
+    if (value == null) return [];
+    if (typeof value !== "string") throw new Error("Enter PixAI LoRAs as a comma-separated list of version IDs or links.");
+    if (!value.trim()) return [];
+    const entries = value.split(",", MAX_PIXAI_LORAS + 1);
+    if (entries.length > MAX_PIXAI_LORAS) throw new Error("Use at most 15 PixAI LoRAs. Your plan may allow fewer.");
+    const seen = new Set();
+    return entries.map((entry, index) => {
+        const match = /^(?:https:\/\/(?:www\.)?pixai\.art\/model\/\d+\/(\d+)\/?|(\d+))(?:\s*:\s*(.*))?$/i.exec(entry.trim());
+        const label = `PixAI LoRA ${index + 1}`;
+        if (!match) throw new Error(`${label}: enter the version ID or the PixAI version link.`);
+        // PixAI IDs exceed JavaScript's safe integer range. Keep them as strings.
+        const modelId = match[1] ?? match[2];
+        if (seen.has(modelId)) throw new Error(`${label}: this version is already in the list.`);
+        const rawWeight = match[3];
+        const weight = rawWeight === undefined ? 1 : Number(rawWeight);
+        if (rawWeight !== undefined && (!/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(rawWeight) || weight > 1)) {
+            throw new Error(`${label}: use a weight between 0 and 1, or leave it out.`);
+        }
+        seen.add(modelId);
+        return { modelId, weight };
+    });
+}
+
 /**
  * The POST /v2/image/create body, plus the parameters the image was really made with.
  * mode goes only to Tsubaki models and sampling only to SDXL models; an unknown model
@@ -129,7 +154,7 @@ function truncateText(value, limit) {
  */
 export function buildPixaiImageRequest({
     model, prompt, negative = "", width, height, mode, promptHelper,
-    steps, cfgScale, sampler, seed,
+    steps, cfgScale, sampler, seed, loras,
 } = {}) {
     const modelVersionId = normalizePixaiModel(model);
     const family = getPixaiModelFamily(modelVersionId);
@@ -146,6 +171,8 @@ export function buildPixaiImageRequest({
         batchSize: 1,
     };
     if (finalNegative.trim()) body.negativePrompt = finalNegative;
+    const adapters = parsePixaiLoras(loras);
+    if (adapters.length) body.loras = adapters;
     const effectiveParameters = {
         model: modelVersionId,
         width: resolution.width,
@@ -189,6 +216,7 @@ export function buildPixaiImageRequestFromSettings(settings, prompt, negative, s
         height: settings?.height,
         mode: settings?.pixaiMode,
         promptHelper: settings?.pixaiPromptHelper,
+        loras: settings?.pixaiLoras,
         steps: settings?.steps,
         cfgScale: settings?.cfgScale,
         sampler: settings?.sampler,

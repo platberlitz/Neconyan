@@ -22,6 +22,8 @@ const TSUBAKI_3 = '2024383379556065549';
 const TSUBAKI_2 = '1983308862240288769';
 const HARUKA = '1861558740588989558';
 const HOSHINO = '1954632828118619567';
+const LORA = '1234567890123456789';
+const LORA_VERSION_LINK = 'https://pixai.art/model/9876543210987654321/1234567890123456788';
 const IMAGE_URL = 'https://images-ng.pixai.art/images/orig/0f6a0d1c-2a39-4f10-9b9e-4c3f1d2e5a7b';
 const OFFSITE_URL = 'https://storage.example/cat.png';
 const CLOUDFRONT_URL = 'https://d2doj8oszwtcqy.cloudfront.net/images/temp/6a1f0c2e-8d4b-4e7a-9c3f-2b5d7e9a1c4f'
@@ -156,12 +158,45 @@ describe('PixAI request body', () => {
     test('reads Quick Image Gen settings', () => {
         const { body } = buildPixaiImageRequestFromSettings({
             pixaiModel: HARUKA, pixaiMode: 'pro', pixaiPromptHelper: 'enable',
+            pixaiLoras: ` ${LORA}: 0.8 , ${LORA_VERSION_LINK}, 1234567890123456787:0 `,
             width: 1024, height: 1024, steps: 25, cfgScale: 7, sampler: 'euler_a',
         }, 'cat', 'dog', 9);
         expect(body).toEqual({
             modelVersionId: HARUKA, prompt: 'cat', negativePrompt: 'dog', aspectRatio: '1:1', size: '1k',
             promptHelper: 'enable', batchSize: 1, seed: 9, sampling: { method: 'Euler a', steps: 25, cfgScale: 7 },
+            loras: [{ modelId: LORA, weight: 0.8 }, { modelId: '1234567890123456788', weight: 1 }, { modelId: '1234567890123456787', weight: 0 }],
         });
+    });
+
+    test('only sends LoRAs when set, alongside a separate negative prompt', () => {
+        for (const pixaiLoras of [undefined, '', '  ']) {
+            expect(buildPixaiImageRequestFromSettings({ pixaiLoras }, 'cat', 'dog', 9).body).not.toHaveProperty('loras');
+        }
+        const { body } = buildPixaiImageRequestFromSettings({ pixaiLoras: `${LORA_VERSION_LINK}/:.65` }, 'cat', 'dog', 9);
+        expect(body).toMatchObject({ modelVersionId: TSUBAKI_3, mode: 'pro', prompt: 'cat', negativePrompt: 'dog',
+            loras: [{ modelId: '1234567890123456788', weight: 0.65 }] });
+    });
+
+    test.each([
+        ['some-name', 'enter the version ID or the PixAI version link'],
+        ['https://pixai.art/model/9876543210987654321', 'enter the version ID or the PixAI version link'],
+        [LORA_VERSION_LINK.replace('pixai.art', 'pixai.art.example'), 'enter the version ID or the PixAI version link'],
+        [`${LORA}, `, 'LoRA 2: enter the version ID'],
+        [`${LORA_VERSION_LINK}, 1234567890123456788`, 'LoRA 2: this version is already in the list'],
+        [`${LORA}:`, 'use a weight between 0 and 1'],
+        [`${LORA}:1.01`, 'use a weight between 0 and 1'],
+        [`${LORA}:-0.1`, 'use a weight between 0 and 1'],
+        [`${LORA}:0x1`, 'use a weight between 0 and 1'],
+        [[LORA], 'comma-separated list'],
+    ])('rejects an invalid LoRA list (%s)', (pixaiLoras, error) => {
+        expect(() => buildPixaiImageRequestFromSettings({ pixaiLoras }, 'cat', '', 9)).toThrow(error);
+    });
+
+    test('enforces the PixAI API limit', () => {
+        const ids = Array.from({ length: 16 }, (_, index) => `12345678901234567${10 + index}`);
+        const request = values => buildPixaiImageRequestFromSettings({ pixaiLoras: values.join(',') }, 'cat', '', 9);
+        expect(request(ids.slice(0, 15)).body.loras).toHaveLength(15);
+        expect(() => request(ids)).toThrow('Use at most 15 PixAI LoRAs');
     });
 });
 
@@ -358,13 +393,15 @@ describe('PixAI in Quick Image Gen', () => {
             .toMatchObject({ steps: true, cfgScale: true, sampler: true, seed: true, referenceImages: false });
     });
 
-    test('records the model, mode and prompt helper but never the key', () => {
+    test('records the model, mode, prompt helper and LoRAs but never the key', () => {
         const settings = {
             provider: 'pixai', pixaiKey: 'secret-key', pixaiModel: TSUBAKI_3, pixaiMode: 'pro', pixaiPromptHelper: 'low',
+            pixaiLoras: `${LORA}:0.8`,
             width: 832, height: 1216, steps: 30, cfgScale: 6, sampler: 'euler_a', seed: 5,
         };
         const snapshot = sanitizeReproducibleSettings(settings);
-        expect(snapshot).toMatchObject({ provider: 'pixai', pixaiModel: TSUBAKI_3, pixaiMode: 'pro', pixaiPromptHelper: 'low' });
+        expect(snapshot).toMatchObject({ provider: 'pixai', pixaiModel: TSUBAKI_3, pixaiMode: 'pro', pixaiPromptHelper: 'low', pixaiLoras: `${LORA}:0.8` });
+        expect(sanitizeReproducibleSettings({ ...settings, provider: 'civitai' })).not.toHaveProperty('pixaiLoras');
         expect(JSON.stringify(snapshot)).not.toContain('secret-key');
         const request = createEffectiveRequest(settings, { model: TSUBAKI_3 });
         expect(request.parameters).toMatchObject({ model: TSUBAKI_3, width: 848, height: 1280, seed: 5 });
@@ -372,16 +409,18 @@ describe('PixAI in Quick Image Gen', () => {
         expect(request.parameters).not.toHaveProperty('sampler');
     });
 
-    test('keeps the PixAI key out of exported and imported settings', () => {
+    test('transfers PixAI LoRAs without transferring the API key', () => {
         const exported = createSettingsExport({ activeSettings: {
             provider: 'pixai', pixaiKey: 'secret-key', pixaiModel: HARUKA, pixaiMode: 'lite', pixaiPromptHelper: 'disable',
+            pixaiLoras: `${LORA_VERSION_LINK}, ${LORA}:0.8`,
         } });
-        expect(exported.activeSettings).toMatchObject({ provider: 'pixai', pixaiModel: HARUKA, pixaiMode: 'lite' });
+        expect(exported.activeSettings).toMatchObject({ provider: 'pixai', pixaiModel: HARUKA, pixaiMode: 'lite', pixaiLoras: `${LORA_VERSION_LINK}, ${LORA}:0.8` });
         expect(exported.activeSettings).not.toHaveProperty('pixaiKey');
         const imported = parseSettingsImport(JSON.stringify({ version: 7, activeSettings: {
             provider: 'pixai', pixaiKey: 'smuggled', pixaiModel: TSUBAKI_2, pixaiMode: 'ultra', pixaiPromptHelper: 'medium',
+            pixaiLoras: exported.activeSettings.pixaiLoras,
         } }));
-        expect(imported.activeSettings).toMatchObject({ provider: 'pixai', pixaiModel: TSUBAKI_2, pixaiMode: 'ultra', pixaiPromptHelper: 'medium' });
+        expect(imported.activeSettings).toMatchObject({ provider: 'pixai', pixaiModel: TSUBAKI_2, pixaiMode: 'ultra', pixaiPromptHelper: 'medium', pixaiLoras: `${LORA_VERSION_LINK}, ${LORA}:0.8` });
         expect(imported.activeSettings).not.toHaveProperty('pixaiKey');
     });
 
