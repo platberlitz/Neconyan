@@ -266,7 +266,7 @@ export const test = base.extend({
                         }
                         return job;
                     },
-                    async open({ workspace = true, timeout = 20000, readyTimeout = 60000, skipTour = true } = {}) {
+                    async open({ workspace = true, timeout = 20000, readyTimeout = 60000, skipTour = true, waitForFirstStart = true } = {}) {
                         const page = await context.newPage();
                         // Update notices depend on the checkout's remote, not this disposable account.
                         await page.route('**/api/server-admin/status', route => route.fulfill({ status: 403, json: { error: 'Update checks are outside this fixture.' } }));
@@ -276,7 +276,7 @@ export const test = base.extend({
                         await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'), undefined, { timeout: readyTimeout });
                         const skip = page.locator('#neconyan-tour-coachmark [data-tour-coach-skip]');
                         if (skipTour && await skip.isVisible()) await skip.click();
-                        await waitForAgentsFirstStart(page);
+                        if (waitForFirstStart) await waitForAgentsFirstStart(page);
                         if (!workspace) return page;
                         await page.evaluate(async avatar => {
                             await window.SillyTavern.getContext().getCharacters();

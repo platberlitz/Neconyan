@@ -16,6 +16,7 @@ import { attributionChatGeneration, autoSyncPendingRecord, characterColors, expa
 import { beginStreamingPaint, endStreamingPaint, paintPreviewMessage } from './streaming-paint.js';
 import { confirmAutoSyncRecord, doAutoSyncMarkersMatch, ensureRegexScript, getAutoSyncRecord, getCharKey, getStorageKey, initAutoSync, loadData, markCurrentPersonaKept, migrateLegacyLocalStorageIfNeeded, migrateRenamedCharacterStorage, migrateRenamedChatStorage, persistLocalEnabledState, saveData, stopAutoSyncPolling, syncAutoSyncPolling, tryLoadFromCard, updateAutoSyncUI } from './storage.js';
 import { applyRestoredPersonaColor, applyThemeOrBrightnessChange, clearAutoColorizeIndicators, createUI, ensurePersonaCharacter, mountWandMenuItem, renamePersonaCharacter, syncUIWithSettings, updateCharList, updateLegend } from './ui.js';
+import { registerSettingsSetupTask } from '../../../../settings-setup.js';
 import { cancelStreamingAttributionVerification, captureLoadedAttributionMessageBaseline, clearAutoAttributionVerificationQueue, queueAutoAttributionVerificationForRenderedMessages, scheduleStreamingAttributionVerification } from './verify.js';
 
 let lastAppliedAutoTheme = null;
@@ -27,6 +28,7 @@ let impersonateGenerationActive = false;
 let automaticRuntimeActive = false;
 let enabledStorageInitialized = false;
 let regexInstallTimer = null;
+let resolveRegexInstall = null;
 let dialogueColorsMacroRegistered = false;
 
 // The host repaints its theme at an unknown time after SETTINGS_UPDATED (CSS variables,
@@ -54,11 +56,24 @@ function scheduleAutoThemeProbes() {
     }, delay));
 }
 
-function scheduleRegexScriptInstall() {
+function finishRegexScriptInstall() {
     clearTimeout(regexInstallTimer);
+    regexInstallTimer = null;
+    resolveRegexInstall?.();
+    resolveRegexInstall = null;
+}
+
+function scheduleRegexScriptInstall() {
+    finishRegexScriptInstall();
+    // Adding the trim rules changes settings, which a reply the server writes must not see land later.
+    registerSettingsSetupTask('dialogue-colors trim rules', new Promise(resolve => { resolveRegexInstall = resolve; }));
     regexInstallTimer = setTimeout(() => {
         regexInstallTimer = null;
-        if (settings.enabled) ensureRegexScript();
+        try {
+            if (settings.enabled) ensureRegexScript();
+        } finally {
+            finishRegexScriptInstall();
+        }
     }, 1000);
 }
 
@@ -82,8 +97,7 @@ function stopAutomaticRuntime() {
     automaticRuntimeActive = false;
     for (const timer of themeRefreshTimers) clearTimeout(timer);
     themeRefreshTimers = [];
-    clearTimeout(regexInstallTimer);
-    regexInstallTimer = null;
+    finishRegexScriptInstall();
     stopAutoSyncPolling();
     loudGenerationActive = false;
     impersonateGenerationActive = false;

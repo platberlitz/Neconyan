@@ -146,6 +146,7 @@ import { openAgentQuickSettings } from './quick-settings.js';
 import { bindCompanionQuickControls, buildCompanionQuickControlsHtml } from './companion/companion-quick-controls.js';
 import { renderTemplateAsync } from '../../templates.js';
 import { registerStartupTask } from '../../startup-readiness.js';
+import { registerSettingsSetupTask } from '../../settings-setup.js';
 import { TARO_GUIDE_MAX_NEW_PICKS, chooseInstalledCopy, copiesForTemplate, getTaroUndoBlockReason } from './agent-recommendations.js';
 
 const MODULE_NAME = 'in-chat-agents';
@@ -7136,6 +7137,10 @@ async function renderAgentSettingsTemplate() {
 let resolveAgentPanelMounted = () => {};
 // The startup loader waits for this (capped), so the Agents page is styled and filled in on first open.
 registerStartupTask('in-chat-agents panel', new Promise(resolve => { resolveAgentPanelMounted = resolve; }));
+let resolveAgentsFirstStart = () => {};
+let diceRollerStart = null;
+// A new account's first start switches on Memory Shard and saves the Dice Roller's defaults.
+registerSettingsSetupTask('in-chat-agents first start', new Promise(resolve => { resolveAgentsFirstStart = resolve; }));
 
 (async function () {
     const settingsHtml = await renderAgentSettingsTemplate();
@@ -7333,7 +7338,7 @@ registerStartupTask('in-chat-agents panel', new Promise(resolve => { resolveAgen
     // The Dice Roller is a local companion: its widget rolls and decorates sent
     // messages without a model or a server job. Load it after the companion
     // surfaces exist so its first host lookup succeeds.
-    void import('./companion/dice-roller.js')
+    diceRollerStart = import('./companion/dice-roller.js')
         .then(module => module.initDiceRollerCompanion())
         .catch(error => console.warn('[InChatAgents] Dice Roller companion failed to start:', error));
 
@@ -7847,4 +7852,7 @@ registerStartupTask('in-chat-agents panel', new Promise(resolve => { resolveAgen
     updateRerunAgentsButtonVisibility();
     updateCompanionButtonVisibility();
     updateAgentTokenCounter();
-})().finally(() => resolveAgentPanelMounted());
+})().finally(() => {
+    resolveAgentPanelMounted();
+    resolveAgentsFirstStart(diceRollerStart);
+});

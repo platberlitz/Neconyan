@@ -32,6 +32,7 @@ import { withAbortSignal } from '../abort.js';
 import { imageInputIssueDetail, isImageInputIssue, markImageRefusalShown, roleplayImageOrigin } from '../prompt-media-policy.js';
 import { callGenericPopup, POPUP_RESULT, POPUP_TYPE } from '../popup.js';
 import { roleplayKeptReplyNotice, roleplayReplyNotice } from '../roleplay-reply-notice.js';
+import { waitForSettingsSetup } from '../settings-setup.js';
 
 const WORKFLOW_EVENT = 'neconyan:roleplay-workflow-finished';
 const IMAGE_REFUSED_EVENT = 'neconyan:image-input-refused';
@@ -1209,8 +1210,11 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, messageI
  * landing after acceptance cannot change what the accepted reply was bound to.
  * While the page is still loading its settings, or another save is in flight, the
  * proof is unreadable, so the save is tried again for a bounded time before refusing.
+ * A new account's one-time setup (the Agents' first start, Dialogue Colors' trim rules)
+ * changes settings a few seconds after the page opens, so it is waited for first.
  */
 async function acknowledgedSettingsRevision() {
+    await waitForSettingsSetup();
     let failure = null;
     for (let attempt = 1; attempt <= SETTINGS_PROOF_ATTEMPTS; attempt++) {
         try {
