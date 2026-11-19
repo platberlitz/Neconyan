@@ -236,8 +236,10 @@
         background: var(--sb-reading-pane);
     }
 
-    /* The drawer header takes the same side backing as the pane (not the Characters and Lorebooks root's own). */
-    :root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) .sb-shell-header:not(#right-nav-panel .sb-shell-header) {
+    /* The drawer header takes the same side backing as the pane. The right-hand drawers keep their glass
+       root, but a pale accent makes that glass too light for the title, so their header is backed too. */
+    :root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) .sb-shell-header:not(#right-nav-panel .sb-shell-header),
+    :root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) #right-nav-panel.openDrawer > .sb-shell-header {
         background: var(--aero-shine), color-mix(in srgb, var(--neco-surface) calc(var(--sb-side-opacity) * 100%), transparent);
     }
 }
