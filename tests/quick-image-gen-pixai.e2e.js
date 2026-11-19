@@ -82,21 +82,25 @@ for (const [layout, phone] of [['desktop', false], ['phone', true]]) {
         const model = section.locator('#qig-pixai-model');
         await expect(model).toHaveValue(TSUBAKI_3);
         await expect(model.locator('option').first()).toHaveText('Tsubaki.3 (default)');
-        await expect(section.locator('#qig-pixai-mode')).toBeVisible();
-        await expect(section.locator('#qig-pixai-mode')).toHaveValue('standard');
+        const mode = section.locator('#qig-pixai-mode');
+        await expect(mode).toBeVisible();
+        await expect(mode.locator('option')).toHaveCount(2);
+        expect(await mode.locator('option').evaluateAll(options => options.map(option => option.value))).toEqual(['pro', 'ultra']);
+        await expect(mode).toHaveValue('pro');
         await expect(section.locator('#qig-pixai-prompt-helper')).toHaveValue('disable');
         await expect(section.locator('#qig-pixai-custom-model')).toBeHidden();
         await expect.poll(() => stepsFieldShown(page)).toBe(false);
 
         await model.selectOption(HARUKA);
-        await expect(section.locator('#qig-pixai-mode')).toBeHidden();
+        await expect(mode).toBeHidden();
         await expect.poll(() => stepsFieldShown(page)).toBe(true);
         await model.selectOption('custom');
         await expect(section.locator('#qig-pixai-custom-model')).toBeVisible();
         await expect(section.locator('#qig-pixai-custom-model')).toHaveValue(HARUKA);
         await model.selectOption(TSUBAKI_3);
         await expect(section.locator('#qig-pixai-custom-model')).toBeHidden();
-        await expect(section.locator('#qig-pixai-mode')).toBeVisible();
+        await expect(mode).toBeVisible();
+        await expect(mode).toHaveValue('pro');
         await expect.poll(() => stepsFieldShown(page)).toBe(false);
         const sectionBox = await section.boundingBox();
         expect(sectionBox.x).toBeGreaterThanOrEqual(0);
@@ -112,7 +116,7 @@ for (const [layout, phone] of [['desktop', false], ['phone', true]]) {
         expect(created).toHaveLength(1);
         expect(created[0].body).toEqual({
             modelVersionId: TSUBAKI_3, prompt: expect.stringContaining('A calico cat reading by a window.'),
-            negativePrompt: expect.stringContaining('blurry'), aspectRatio: '2:3', size: '1k', mode: 'standard',
+            negativePrompt: expect.stringContaining('blurry'), aspectRatio: '2:3', size: '1k', mode: 'pro',
             promptHelper: 'disable', batchSize: 1, seed: 77,
         });
         expect(api.map(call => call.path)).toEqual([
