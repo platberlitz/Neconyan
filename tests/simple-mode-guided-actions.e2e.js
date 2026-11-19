@@ -7,6 +7,8 @@ async function openSimpleRoleplay(app, phone = false) {
     const account = await app.account({ phone, activeConnection: true, configureSettings(settings) {
         settings.accountStorage['NeconyanSimpleMode.v1'] = 'on';
         settings.accountStorage['NeconyanTutorialStatus.v1'] = 'completed';
+        // These tools have their own first-start flows and are not needed for guided drafts.
+        settings.extension_settings.disabledExtensions.push('in-chat-agents', 'quick-image-gen');
     } });
     const name = 'Guided shortcuts';
     if (phone) {
@@ -24,7 +26,6 @@ async function openSimpleRoleplay(app, phone = false) {
         });
     }
     const page = await account.open({ workspace: false, waitForFirstStart: false });
-    await page.addLocatorHandler(page.locator('#qig-setup-wizard'), wizard => wizard.getByRole('button', { name: 'Skip', exact: true }).click());
     await page.evaluate(async ({ avatar, chat }) => {
         const core = await import('/script.js');
         await core.getCharacters();
@@ -76,6 +77,7 @@ test('the guided shortcuts fit in the collapsed phone bar and use the existing a
     await expect(reply).toContainText('Durable first reply.');
     await expect(composer).toHaveValue('Guide the new alternative towards the window.');
     expect(await page.evaluate(() => window.SillyTavern.getContext().chat.at(-1).swipes[0])).toBe('The door is shut.');
+    await expect(page.locator('body')).not.toHaveAttribute('data-generating', /.+/);
 
     await composer.fill('Draft my character opening the window.');
     await impersonate.tap();
