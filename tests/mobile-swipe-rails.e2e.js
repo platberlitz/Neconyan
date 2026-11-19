@@ -14,7 +14,7 @@ function chromeFor(page, selector) {
 test.describe('phone discovery cues', () => {
     test.use(IPHONE_SAFARI_CONTEXT);
 
-    test('compact composer tools remain tappable and scroll in both directions', async ({ context, page }) => {
+    test('compact composer tools remain tappable and scroll in both directions', async ({ context, page }, info) => {
         await installIPhoneSafari(context, { standalone: true });
         await isolateSettingsSaves(page, settings => {
             settings.firstRun = false;
@@ -68,13 +68,38 @@ test.describe('phone discovery cues', () => {
         const navBox = await nav.boundingBox();
         const swipe = await context.newCDPSession(page);
         const before = await nav.evaluate(el => el.scrollLeft);
-        await swipe.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: navBox.x + navBox.width - 65, y: navBox.y + navBox.height / 2 }] });
-        for (let x = navBox.x + navBox.width - 70; x > navBox.x + 65; x -= 10) {
-            await swipe.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: navBox.y + navBox.height / 2 }] });
+        const start = { x: navBox.x + navBox.width - 65, y: navBox.y + navBox.height / 2 };
+        await nav.evaluate((el, point) => {
+            const panel = el.closest('#right-nav-panel');
+            const describeTarget = target => target?.outerHTML?.split('>', 1)[0] ?? null;
+            const sample = target => ({
+                target: describeTarget(target), insideRail: el.contains(target), insideDrawer: panel.contains(target),
+                drawer: panel.className, menu: panel.dataset.menuType, scrollLeft: el.scrollLeft,
+                rail: el.getBoundingClientRect().toJSON(),
+            });
+            const samples = window.testRailSwipe = [{ event: 'before', point, ...sample(document.elementFromPoint(point.x, point.y)) }];
+            for (const type of ['touchstart', 'touchend', 'touchcancel', 'click']) {
+                window.addEventListener(type, event => {
+                    samples.push({ event: type, ...sample(event.target) });
+                }, { capture: true, once: true });
+            }
+        }, start);
+        try {
+            await swipe.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [start] });
+            for (let x = navBox.x + navBox.width - 70; x > navBox.x + 65; x -= 10) {
+                await swipe.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: start.y }] });
+            }
+            await swipe.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+            await expect.poll(() => nav.evaluate(el => el.scrollLeft)).toBeGreaterThan(before);
+        } catch (error) {
+            await info.attach('character-rail-touch-targets', {
+                body: JSON.stringify(await page.evaluate(() => window.testRailSwipe)),
+                contentType: 'application/json',
+            });
+            throw error;
+        } finally {
+            await swipe.detach();
         }
-        await swipe.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-        await expect.poll(() => nav.evaluate(el => el.scrollLeft)).toBeGreaterThan(before);
-        await swipe.detach();
         await nav.evaluate(el => el.scrollTo({ left: 0, behavior: 'instant' }));
         await navChrome.locator('.sb-mobile-rail-right').tap();
         await expect.poll(() => nav.evaluate(el => el.scrollLeft)).toBeGreaterThan(0);
