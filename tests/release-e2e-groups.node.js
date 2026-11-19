@@ -13,6 +13,7 @@ import {
     selectReleaseJobs,
     sourceKeepsFileWhole,
     testListLines,
+    testListNeedsEdge,
 } from '../scripts/release-e2e-groups.js';
 
 function listOf(files) {
@@ -100,6 +101,14 @@ test('focused dispatch selects exact paths and preserves the crash test runner',
     assert.throws(() => selectReleaseJobs({ tests, files: '[]' }), /non-empty/);
     assert.throws(() => selectReleaseJobs({ tests, shards: '[21]' }), /from 1 to 20/);
     assert.throws(() => selectReleaseJobs({ tests, shards: '[1]', files: '["small-b.e2e.js"]' }), /not both/);
+});
+
+test('Edge follows the selected files and split-file title lines', () => {
+    const readSource = file => fs.readFileSync(path.join(TESTS_DIRECTORY, file), 'utf8');
+    assert.equal(testListNeedsEdge(['crash-diagnostics.e2e.js'], readSource), false);
+    assert.equal(testListNeedsEdge(['language-preference.e2e.js \u203A msedge: sign-in'], readSource), true);
+    assert.equal(testListNeedsEdge(['page-locale.e2e.js'], readSource), true);
+    assert.equal(testListNeedsEdge(['pages-before-app.e2e.js'], readSource), true);
 });
 
 test('a long file is cut into consecutive pieces, a file that shares state is not', () => {

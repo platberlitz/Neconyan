@@ -168,6 +168,12 @@ export function testListLines(group) {
     return lines;
 }
 
+/** Edge is not in the Playwright images; provision it only for files that use its channel. */
+export function testListNeedsEdge(lines, readSource) {
+    const files = new Set(lines.map(line => line.split(` ${TITLE_SEPARATOR} `, 1)[0]));
+    return [...files].some(file => /['"]msedge['"]/.test(readSource(file)));
+}
+
 export function describePlan({ groups }) {
     return groups.map((group, index) => {
         const tests = group.units.reduce((count, unit) => count + unit.tests.length, 0);
@@ -271,9 +277,10 @@ function main(argv) {
         const tests = collectTests(JSON.parse(fs.readFileSync(listPath, 'utf8')));
         if (!tests.length) throw new Error('Playwright did not list any browser tests.');
         const jobs = selectReleaseJobs({ tests, shards: process.env.RELEASE_E2E_SHARDS, files: process.env.RELEASE_E2E_FILES });
+        const readSource = file => fs.readFileSync(path.join(TESTS_DIRECTORY, file), 'utf8');
         if (jobs[0].group) {
             const timings = JSON.parse(fs.readFileSync(TIMINGS_PATH, 'utf8'));
-            const keepWhole = file => sourceKeepsFileWhole(fs.readFileSync(path.join(TESTS_DIRECTORY, file), 'utf8'));
+            const keepWhole = file => sourceKeepsFileWhole(readSource(file));
             const plan = planGroups({ tests, timings, total: RELEASE_GROUP_TOTAL, keepWhole });
             console.log(describePlan(plan));
             for (const job of jobs) job.lines = testListLines(plan.groups[job.group - 1]);
@@ -283,7 +290,7 @@ function main(argv) {
             if (!job.lines.length) throw new Error(`No tests assigned to ${job.id}.`);
             fs.writeFileSync(path.join(out, `${job.id}.txt`), `${job.lines.join('\n')}\n`);
         }
-        const matrix = { include: jobs.map(({ id, jammy }) => ({ id, jammy })) };
+        const matrix = { include: jobs.map(({ id, jammy, lines }) => ({ id, jammy, edge: testListNeedsEdge(lines, readSource) })) };
         if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `matrix=${JSON.stringify(matrix)}\n`);
         else console.log(JSON.stringify(matrix));
         return;

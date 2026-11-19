@@ -32,7 +32,7 @@ jobs:
     timeout-minutes: 10
     container:
       # Match the Playwright version in tests/package-lock.json. Browsers and
-      # OS libraries are already installed; no apt mirror or browser CDN in CI.
+      # OS libraries are already installed; no apt or Playwright browser download.
       image: mcr.microsoft.com/playwright:v1.60.0-noble@sha256:83192064c7510f7ee73dd63dc5f22a5e01a92c81a2e6a9c715d9e3fe55471fd9
       options: --ipc=host
     outputs:
@@ -157,6 +157,31 @@ jobs:
         with:
           name: release-e2e-plan
           path: ${{ runner.temp }}/e2e-plan/
+
+      - name: Set up Microsoft Edge for language profile tests
+        if: matrix.edge
+        timeout-minutes: 5
+        shell: bash
+        working-directory: tests
+        env:
+          HOME: /root
+          EDGE_VERSION: 155.0.4283.62-1
+          EDGE_DEB_SHA256: 3e53834d9d6e505bc57e6bff44d92cfe8cf0bed9064e88efc5b0d8f1c75f70fa
+        run: |
+          set -euo pipefail
+          package="$RUNNER_TEMP/microsoft-edge-stable.deb"
+          curl --fail --silent --show-error --location --retry 2 --connect-timeout 15 --max-time 180 \
+            "https://packages.microsoft.com/repos/edge/pool/main/m/microsoft-edge-stable/microsoft-edge-stable_${EDGE_VERSION}_amd64.deb" \
+            --output "$package"
+          printf '%s  %s\n' "$EDGE_DEB_SHA256" "$package" | sha256sum --check
+          # Headless Edge needs the browser files, not the package's apt/post-install hooks.
+          dpkg-deb --fsys-tarfile "$package" | tar -x -C / ./opt/microsoft/msedge
+          node --input-type=module <<'JS'
+          import { chromium } from '@playwright/test';
+          const browser = await chromium.launch({ channel: 'msedge' });
+          console.log(`Microsoft Edge ${browser.version()}`);
+          await browser.close();
+          JS
 
       - name: Initialize server state
         run: |
