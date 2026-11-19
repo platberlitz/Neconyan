@@ -17,6 +17,7 @@
 - PR #768 (2026-11-19) `fix(scratchpad): let avatar proposals follow the image count`
 - PR #769 (2026-11-19) `fix(simple-mode): make author's note accessible`
 - PR #770 (2026-11-19) `fix(botsearcher): add jani.com as the janitorai fallback`
+- PR #771 (2026-11-19) `feat(qig): support PixAI LoRAs`
 
 ## v1.5.6
 
