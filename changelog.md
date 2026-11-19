@@ -8,6 +8,7 @@
 - PR #759 (2026-11-19) `feat(gallery): add single and batch picture deletion`
 - PR #760 (2026-11-19) `fix(pixai): accept PixAI's CloudFront images and send only offered modes`
 - PR #761 (2026-11-19) `ci: report browser retries and retain failed-attempt traces`
+- PR #762 (2026-11-19) `ci: run browser checks nightly on staging`
 - PR #763 (2026-11-19) `feat(scratchpad): make one picture per Quick Image Gen image count`
 
 ## v1.5.6
