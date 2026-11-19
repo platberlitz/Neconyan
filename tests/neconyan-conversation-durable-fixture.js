@@ -25,14 +25,11 @@ const terminal = ['completed', 'cancelled', 'failed', 'interrupted', 'conflict']
 // the middle of the test.
 export async function waitForAgentsFirstStart(page) {
     await expect.poll(() => page.evaluate(async () => {
-        const [{ extension_settings }, { accountStorage }] = await Promise.all([
-            import('/scripts/extensions.js'),
-            import('/scripts/util/AccountStorage.js'),
-        ]);
+        const { extension_settings } = await import('/scripts/extensions.js');
         if (extension_settings.disabledExtensions?.includes('in-chat-agents')) return true;
-        const store = await import('/scripts/extensions/in-chat-agents/agent-store.js');
-        return store.areAgentsLoaded() && accountStorage.getItem('NeconyanMemoryShardSeed.v1') !== 'on'
-            && Boolean(extension_settings.inChatAgents?.diceRoller);
+        // The Dice Roller starts last, after Memory Shard is switched on or a setup
+        // needing recovery has stopped the rest of the start.
+        return Boolean(extension_settings.inChatAgents?.diceRoller);
     }), { timeout: 60000, message: 'The Agents finished their first start' }).toBe(true);
     await page.evaluate(async () => {
         const core = await import('/script.js');
