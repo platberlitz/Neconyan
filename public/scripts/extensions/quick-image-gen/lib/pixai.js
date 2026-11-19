@@ -227,21 +227,20 @@ export async function createPixaiTask({ body, apiKey, fetchImpl = globalThis.fet
     return id;
 }
 
-/** The finished image of a completed task: its URL, or the media ID to look the URL up by. */
+/** Keep the media ID even when the task already provides a URL. */
 export function getPixaiTaskOutput(task) {
     const outputs = task?.outputs && typeof task.outputs === "object" ? task.outputs : {};
     const urls = Array.isArray(outputs.mediaUrls) ? outputs.mediaUrls : [];
     const ids = Array.isArray(outputs.mediaIds) ? outputs.mediaIds : [];
-    const url = urls.find(value => typeof value === "string" && value.trim());
-    if (url) return { url: url.trim() };
+    const url = urls.find(value => typeof value === "string" && value.trim())?.trim();
     const mediaId = ids.map(value => (typeof value === "number" ? String(value) : value))
         .find(value => typeof value === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(value));
-    return mediaId ? { mediaId } : null;
+    return url || mediaId ? { url, mediaId } : null;
 }
 
 export function pickPixaiMediaUrl(items, mediaId) {
     const list = Array.isArray(items) ? items : (Array.isArray(items?.data) ? items.data : []);
-    const media = list.find(item => String(item?.id ?? "") === String(mediaId)) || (list.length === 1 ? list[0] : null);
+    const media = list.find(item => String(item?.id ?? "") === mediaId);
     const urls = Array.isArray(media?.urls) ? media.urls : [];
     const publicUrl = urls.find(entry => entry?.variant === "PUBLIC" && typeof entry.url === "string")?.url;
     return typeof publicUrl === "string" ? publicUrl.trim() : "";
@@ -253,11 +252,12 @@ export function describePixaiTaskFailure(task) {
     return `PixAI image ${status}${detail ? `: ${detail}` : ""}`;
 }
 
-function assertTrustedPixaiImageUrl(url, createError) {
-    if (!isTrustedProviderOutputUrl("pixai", url, PIXAI_CREATE_URL)) {
-        throw createError("PixAI returned an image address outside pixai.art", "QIG_UNSAFE_IMAGE_URL");
-    }
-    return url;
+function isTrustedPixaiImageUrl(url) {
+    return isTrustedProviderOutputUrl("pixai", url, PIXAI_CREATE_URL);
+}
+
+function unsafePixaiImageUrl(createError) {
+    return createError("PixAI returned an image address outside pixai.art", "QIG_UNSAFE_IMAGE_URL");
 }
 
 /**
@@ -299,7 +299,9 @@ export async function pollPixaiTask({
         if (status === "completed") {
             const output = getPixaiTaskOutput(task);
             if (!output) throw createError("PixAI finished without an image", "QIG_BAD_IMAGE");
-            if (output.url) return assertTrustedPixaiImageUrl(output.url, createError);
+            if (output.url && isTrustedPixaiImageUrl(output.url)) return output.url;
+            if (!output.mediaId) throw unsafePixaiImageUrl(createError);
+            // Recover the same image through PixAI without fetching an untrusted URL or submitting again.
             const lookup = await fetchImpl(`${PIXAI_API_BASE}/media/batch?ids=${encodeURIComponent(output.mediaId)}`, {
                 method: "GET",
                 headers: authHeaders(apiKey),
@@ -309,7 +311,8 @@ export async function pollPixaiTask({
             if (!lookup.ok) throw createError(await describePixaiError(lookup, "image lookup"), "QIG_PROVIDER_ERROR");
             const url = pickPixaiMediaUrl(await readJson(lookup, createError), output.mediaId);
             if (!url) throw createError("PixAI finished, but its image address is unavailable", "QIG_BAD_IMAGE");
-            return assertTrustedPixaiImageUrl(url, createError);
+            if (!isTrustedPixaiImageUrl(url)) throw unsafePixaiImageUrl(createError);
+            return url;
         }
         if (status === "failed" || status === "cancelled" || status === "canceled") {
             throw createError(describePixaiTaskFailure(task), "QIG_PROVIDER_ERROR");
