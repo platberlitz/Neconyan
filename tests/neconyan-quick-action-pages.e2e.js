@@ -1,4 +1,4 @@
-/* global document, window, localStorage, getComputedStyle */
+/* global document, window, localStorage, getComputedStyle, MutationObserver */
 import { readFileSync, mkdirSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { expect, test } from '@playwright/test';
@@ -7,7 +7,7 @@ const defaultSettings = JSON.parse(readFileSync(new URL('../default/content/sett
 
 async function ready(page) {
     await page.goto('/', { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(async () => document.body.classList.contains('neconyan-rail-ready') && (await import('/script.js')).settingsReady);
+    await expect.poll(() => page.evaluate(async () => document.body.classList.contains('neconyan-rail-ready') && (await import('/script.js')).settingsReady), { timeout: 30000 }).toBe(true);
     const legacy = page.locator('dialog.popup[open]').filter({ hasText: 'Quick Image Gen found legacy browser-only settings' });
     await legacy.waitFor({ state: 'visible', timeout: 3000 }).then(() => legacy.getByRole('button', { name: 'Cancel', exact: true }).click(), () => {});
 }
@@ -18,6 +18,32 @@ async function openRail(page, phone) {
         await page.locator('#sb-hamburger').click();
     }
     await expect(page.locator('#neconyan-workspace-rail')).toHaveJSProperty('inert', false);
+}
+
+async function openCatelierShortcut(page, shortcut) {
+    const drawer = page.locator('#right-nav-panel');
+    await expect(drawer).not.toHaveClass(/openDrawer/);
+    await drawer.evaluate(element => {
+        const menus = [];
+        const observer = new MutationObserver(records => {
+            for (const [i] of records.entries()) {
+                menus.push(i + 1 < records.length ? records[i + 1].oldValue : element.dataset.menuType);
+            }
+        });
+        observer.observe(element, { attributeFilter: ['data-menu-type'], attributeOldValue: true });
+        window.readCatelierShortcutMenus = () => {
+            observer.disconnect();
+            return menus;
+        };
+    });
+    await shortcut.click();
+    await expect(page.locator('#sb_character_creator_panel').getByRole('button', { name: 'Create a character', exact: true })).toBeVisible();
+    await expect(drawer).toHaveAttribute('data-menu-type', 'creator');
+    // Even if a fast Characters render finishes before Catelier, it must not be
+    // queued when the shortcut names its own destination.
+    const menus = await page.evaluate(() => window.readCatelierShortcutMenus());
+    expect(menus).toContain('creator');
+    expect(menus).not.toContain('characters');
 }
 
 for (const phone of [false, true]) {
@@ -80,17 +106,22 @@ for (const phone of [false, true]) {
             expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(phone ? 394 : 1281);
             mkdirSync(new URL('../screenshots/', import.meta.url), { recursive: true });
             await page.screenshot({ path: new URL(`../screenshots/quick-actions-${phone ? 'phone' : 'desktop'}-after.png`, import.meta.url).pathname });
-            await catelier.click();
-            await expect(page.locator('#sb_character_creator_panel')).toBeVisible();
+            await openCatelierShortcut(page, catelier);
+            await page.screenshot({ path: new URL(`../screenshots/quick-actions-${phone ? 'phone' : 'desktop'}-catelier-after.png`, import.meta.url).pathname });
             expect(await page.evaluate(mode => localStorage.getItem(`sb-${mode}-quick-actions-v2`), otherMode)).toBe(otherActions);
             if (phone) await expect(page.locator('#neconyan-workspace-rail')).toHaveAttribute('aria-hidden', 'true');
+            await page.locator('#sb_character_shell_close').click();
+            await openRail(page, phone);
+            await page.locator('[data-neconyan-primary-nav] [data-neconyan-route="characters"]').click();
+            await expect(page.locator('#right-nav-panel')).toHaveClass(/openDrawer/);
+            await expect(page.locator('#right-nav-panel')).toHaveAttribute('data-menu-type', 'characters');
+            await expect(page.locator('#sb_character_creator_panel')).toBeHidden();
             // Quick Actions is device-saved; the destination must survive a full reload.
             await expect.poll(() => page.evaluate(mode => JSON.parse(localStorage.getItem(`sb-${mode}-quick-actions-v2`)).some(action => action.dedupeKey === 'characters::creator'), mode)).toBe(true);
             await ready(page);
             await openRail(page, phone);
             await expect(catelier).toBeVisible();
-            await catelier.click();
-            await expect(page.locator('#sb_character_creator_panel')).toBeVisible();
+            await openCatelierShortcut(page, catelier);
             await openRail(page, phone);
             await list.getByRole('button', { name: 'Scratchpad', exact: true }).click();
             await expect(page.getByRole('textbox', { name: 'Message for Scratchpad', exact: true })).toBeVisible();
