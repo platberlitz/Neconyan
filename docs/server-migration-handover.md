@@ -1,5 +1,96 @@
 # Full server migration: continuation
 
+### 20 November 2026: 1.5.7 published, staging starts 1.5.8
+
+I published [Neconyan 1.5.7](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.7)
+with annotated tag `v1.5.7` on `a84bfbd9f25799137d652a4cfbb42c3320938e36`.
+[PR #773](https://github.com/platberlitz/Neconyan/pull/773) prepared the release;
+[PR #775](https://github.com/platberlitz/Neconyan/pull/775) fast-forwarded main
+without a new merge commit. The release covers 17 staging PRs, #757 through
+#773. The changelog records all 17. I didn't deploy my running instance.
+
+Verification and retained results:
+
+- Readiness [PR checks](https://github.com/platberlitz/Neconyan/actions/runs/44637432453)
+  passed at `ff4ad1f2`. The readiness merge `7b5b87d0` has the same tree. The
+  changelog bot added only the line recording #773, producing `a84bfbd9`.
+  Exact-commit [promotion checks](https://github.com/platberlitz/Neconyan/actions/runs/44643208169)
+  and [Windows checks](https://github.com/platberlitz/Neconyan/actions/runs/44643208285)
+  passed. I applied the 42 label renames after main advanced and confirmed the
+  repository matches the catalogue.
+- Local checks at `600c4a26`: 689 Jest suites (10,225 passed, 3 existing skips),
+  4,424 Node tests and 140 dedicated Mewmory checks passed. Root lint, frontend
+  budgets, frontend build and the README mirror passed. Test lint found one
+  staging quote-style error in the launcher pin expectation; its 21 unit cases
+  and full test lint passed after `6f8e7b1c`, with existing warnings. The storage
+  fix passed 130 lock and recovery cases, 488 affected Node cases and 78 affected
+  Jest cases. The dedicated Mewmory browser checks covered all 25 cases: main 3,
+  trackers 1, hiding 4 and settings switches 17.
+- The [full browser run](https://github.com/platberlitz/Neconyan/actions/runs/44625648871)
+  at `da76c549` reported 3,009 first-attempt passes, 42 existing skips, two retry
+  passes and two failures. I kept unaffected cases and matched the corrected
+  cases by file, title and commit. The [200 storage checks](https://github.com/platberlitz/Neconyan/actions/runs/44633336505)
+  at `49877432` and [20 Notebook recovery checks](https://github.com/platberlitz/Neconyan/actions/runs/44637425074)
+  at `ff4ad1f2` passed first time. The only two files changed after the storage
+  run were the Mewmory and Notebook tests. Across the retained full run and four
+  focused runs there were 3,021 first-attempt passes and 42 existing skips, with
+  no unresolved cases or cases where I relied on a passing retry.
+  - The phone ZIP restart test passed on retry but its first attempt returned
+    `ELOCKED` after restarting the server. Killing the process just after it
+    opened the lock owner record reproduced the failure locally. The fix writes
+    that record to a separate file and renames it once complete, so the next
+    process can't read a half-written owner. The regression now recovers
+    immediately and the rules for existing live locks are unchanged.
+  - The desktop Notes writing test passed on retry. The fixture sent a create
+    request before the first notebook was selected. It now waits for the actual
+    'New note' button, which is when the app permits the action.
+  - The Favourites phone gesture failed twice because the first touch hit a
+    notification covering the rail. The test now checks the real touch point
+    reaches the rail before sending the gesture. The same scroll assertion
+    failed in 1.5.5, but that run didn't record the touch target. See [#774](https://github.com/platberlitz/Neconyan/issues/774)
+    and the [focused run](https://github.com/platberlitz/Neconyan/actions/runs/44632466207)
+    at `08513996`, where all ten Favourites and Notes writing cases passed first
+    time.
+  - The desktop Notebook draft recovery test ran five independent choices in one
+    test. In both attempts the first four choices behaved correctly and the
+    deadline arrived during the fifth reload. The settings interception also
+    disabled the browser cache: a disposable desktop probe transferred about
+    2.31 MB of scripts on each intercepted reload and no script bodies after an
+    ordinary reload had warmed the cache. Each choice now has its own fixture
+    and keeps the real reload and all assertions at both widths.
+  - The local Mewmory phone check tried to measure a select replaced during a
+    settings redraw. Looking up and measuring the live controls in one browser
+    call fixed the race without changing tap-size or save assertions.
+- Assistant help revision 128 passed source, budget and retrieval checks for
+  all nine assistants. The [focused browser run](https://github.com/platberlitz/Neconyan/actions/runs/44626749393)
+  at `600c4a26` passed all eleven phone and desktop cases first time.
+- The [handbook candidate](https://github.com/platberlitz/neconyan-docs/pull/19)
+  passed strict build, link and browser checks. I checked the changed pages
+  after [Pages published](https://github.com/platberlitz/neconyan-docs/actions/runs/44630521259)
+  `89ccca9b`; the four images on the live site match the copies in the README.
+- [The published handbook update](https://github.com/platberlitz/neconyan-docs/pull/20)
+  passed the same checks. After [Pages deployed](https://github.com/platberlitz/neconyan-docs/actions/runs/44649250652)
+  `3ae5d18dc0fae25248d46c72f798c15614763010`, I checked the five changed pages
+  and all four screenshots again. [About](https://platberlitz.github.io/neconyan-docs/help/about/)
+  links to the public 1.5.7 release and the exact release commit.
+- The [Android workflow](https://github.com/platberlitz/Neconyan/actions/runs/44644503908)
+  passed the signed ARM64 and x86_64 builds, WebView fixture and native startup
+  and lifecycle checks on API 30, 33 and 35 emulators. The optional comparison
+  against the previous release was skipped as intended.
+- The [iPhone workflow](https://github.com/platberlitz/Neconyan/actions/runs/44644503754)
+  passed storage and path checks, a real 13 GiB ZIP import, the packaged device
+  IPA check and startup and relaunch in the iPhone simulator. Both workflows
+  were dispatched on main at `a84bfbd9`; neither used a physical phone.
+- I checked all 12 assets and ten checksum entries before uploading. Both APKs
+  had the official signing certificate and passed 16 KiB native alignment.
+  Both APKs and the unsigned IPA matched their recorded provenance. All 6,141
+  source ZIP entries matched the release tree. I downloaded all 12 files again
+  and verified they were byte-identical and matched GitHub's SHA-256 digests.
+  The verifier confirmed the annotated tag and latest public release.
+- The 1.5.8 staging bump passed all four current version-boundary tests, lint
+  for the changed test and the README mirror check. The README still links to
+  1.5.7, the published release.
+
 ### 19 November 2026: 1.5.6 published, staging starts 1.5.7
 
 I published [Neconyan 1.5.6](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.6)
