@@ -509,9 +509,47 @@ for (const width of [1280, 393]) {
         const prompt = JSON.stringify(calls.findLast(call => call.model === 'mewmory-writer').messages);
         expect(prompt).toContain('Mewmory: recalled story context');
         expect(prompt).toContain(marker);
+        const storyUnavailable = route => route.fulfill({ status: 503, json: { error: 'The recap is temporarily unavailable.' } });
+        await page.route('**/api/mewmory/story', storyUnavailable);
         await page.evaluate(() => window.NeconyanShell.openTab('left', 'mewmory'));
         await expect(heading).toHaveText(branch);
         await expect(workspace.getByLabel('Use Mewmory in this chat')).toBeChecked();
+        await workspace.getByRole('tab', { name: 'Story', exact: true }).click();
+        const recap = workspace.locator('#mewmory-story-recap');
+        await expect(recap).toContainText('The recap is temporarily unavailable.');
+        await page.unroute('**/api/mewmory/story', storyUnavailable);
+        await workspace.getByRole('button', { name: 'Refresh', exact: true }).click();
+        await expect(recap).toContainText(marker);
+
+        const asked = Promise.withResolvers();
+        const finishAsk = Promise.withResolvers();
+        const oldAsk = async route => {
+            asked.resolve();
+            await finishAsk.promise;
+            await route.fulfill({ json: { question: 'Did Mara keep it?', answer: 'Answer for the old chat.', citations: [] } });
+        };
+        await page.route('**/api/mewmory/ask', oldAsk);
+        const ask = workspace.locator('#mewmory-ask');
+        try {
+            await ask.getByLabel('Your question').fill('Did Mara keep it?');
+            await ask.getByRole('button', { name: 'Ask', exact: true }).click();
+            await asked.promise;
+            await page.evaluate(async name => (await import('/script.js')).openCharacterChat(name), parent.selected);
+            await expect(heading).toHaveText(parent.selected);
+            await expect(ask.getByLabel('Your question')).toHaveValue('');
+            const finished = page.waitForResponse(response => response.url().endsWith('/api/mewmory/ask'));
+            finishAsk.resolve();
+            await (await finished).finished();
+            // Flush the panel after the old response has been consumed, without changing tabs.
+            await workspace.getByRole('button', { name: 'Refresh', exact: true }).click();
+            await expect(recap).toContainText(marker);
+            await expect(ask).not.toContainText(/Answer for the old chat|The active chat changed/);
+        } finally {
+            finishAsk.resolve();
+            await page.unroute('**/api/mewmory/ask', oldAsk);
+        }
+        await page.evaluate(async name => (await import('/script.js')).openCharacterChat(name), branch);
+        await expect.poll(scope).toMatchObject({ chat: branch, enabled: true });
 
         // Deliver an old inspection after native new-chat navigation has completed.
         const held = Promise.withResolvers();

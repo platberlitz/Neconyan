@@ -53,7 +53,7 @@ const SWITCHES = ['enableNewChats', 'autoUpdate', 'localOnly', 'excludeHistory',
 const tokenizers = ['auto', 'o200k_base', 'cl100k_base', 'gpt2', 'llama', 'llama3', 'mistral', 'gemma', 'claude', 'qwen2', 'deepseek', 'nemo', 'jamba', 'yi'];
 const ui = { root: null, tab: 'now', owner: '', subject: '', significance: '', status: '', kind: 'objective', query: '', offset: 0,
     source: null, editor: null, draft: null, configError: '', accountChanged: false, role: 'extractor', restore: null, matches: null,
-    searchMode: 'hybrid', searchType: '', searchReport: null, running: false, progress: '', scope: '',
+    searchMode: 'hybrid', searchType: '', searchReport: null, running: false, scope: '',
     sort: 'story', flag: '', importance: '', state: '', from: '', to: '', moreFilters: false, selected: new Set(), history: null, duplicates: null,
     estimate: null, loreName: '', loreNote: '', transferNote: '',
     layout: 'list', message: null, person: '', question: '', answer: null, askError: '', conflicts: null, conflictError: '', shareNote: '',
@@ -214,6 +214,7 @@ export async function act(action, { refresh = true } = {}) {
 }
 
 async function switchTab(tab) {
+    retryFailedViews();
     ui.tab = tab;
     ui.offset = 0;
     ui.source = null;
@@ -761,6 +762,12 @@ function renderPawspective(root) {
 
 const loads = {};
 
+function retryFailedViews() {
+    for (const [key, entry] of Object.entries(loads)) {
+        if (entry.error) delete loads[key];
+    }
+}
+
 /** Read-only views that are not part of the inspection, cached until the archive changes. */
 function loadView(key, route, body = {}) {
     const signature = JSON.stringify([getMewmoryScope(), mewmory.view?.revision, route, body]);
@@ -931,11 +938,13 @@ function renderAsk(root) {
         event.preventDefault();
         ui.question = form.querySelector('input')?.value ?? ui.question;
         if (!ui.question.trim()) return;
-        void act(async () => {
+        void act(async scope => {
             ui.askError = '';
             try {
-                ui.answer = await requestMewmory('ask', { question: ui.question });
+                const answer = await requestMewmory('ask', { question: ui.question }, { scope });
+                if (scope === getMewmoryScope()) ui.answer = answer;
             } catch (error) {
+                if (scope !== getMewmoryScope()) return;
                 ui.answer = null;
                 ui.askError = error.message;
             }
@@ -963,11 +972,13 @@ function renderAsk(root) {
 }
 
 function renderConflicts(root) {
-    const block = section('Check for contradictions', button('Check now', () => act(async () => {
+    const block = section('Check for contradictions', button('Check now', () => act(async scope => {
         ui.conflictError = '';
         try {
-            ui.conflicts = await requestMewmory('conflicts');
+            const conflicts = await requestMewmory('conflicts', {}, { scope });
+            if (scope === getMewmoryScope()) ui.conflicts = conflicts;
         } catch (error) {
+            if (scope !== getMewmoryScope()) return;
             ui.conflicts = null;
             ui.conflictError = error.message;
         }
@@ -1383,9 +1394,11 @@ function renderRecall(root) {
         empty(root, 'Nothing to show yet', 'Preview memories or write the next reply to see what was picked and why.');
         return;
     }
-    root.append(node('p', 'mewmory-caption', [{ complete: 'Done', needs_evidence: 'Needed more detail', uncertain: 'Unsure' }[run.status] || run.status,
-        run.retrieval && !run.retrieval.aiSelection ? 'Ranked retrieval' : run.fallbackUsed ? 'Picked by Recall fallback' : 'Picked by Recall selector',
-        new Date(run.at).toLocaleString()].join(' · ')));
+    const caption = { complete: t`Done`, needs_evidence: t`Needed more detail`, uncertain: t`Unsure`,
+        local: t`Prepared for the reply`, degraded: t`Recall could not finish` }[run.status] || t`Unsure`;
+    const method = run.status === 'local' ? '' : run.retrieval && !run.retrieval.aiSelection ? t`Ranked retrieval`
+        : run.fallbackUsed ? t`Picked by Recall fallback` : t`Picked by Recall selector`;
+    root.append(node('p', 'mewmory-caption', [caption, method, new Date(run.at).toLocaleString()].filter(Boolean).join(' · ')));
     root.append(stats([
         { name: 'Picked', value: String(run.selections?.length ?? 0) },
         { name: 'Left out', value: String(run.rejections?.length ?? 0) },
@@ -2562,20 +2575,18 @@ export function pickRestoreBackup(file, view) {
     return { format: 'mewmory-export-1', exportedAt: match.exportedAt || file.exportedAt, state: match.state };
 }
 
-async function exportEveryChat() {
+async function exportEveryChat(scope) {
     const stories = mewmory.stories || [];
     if (!stories.length) throw new Error('No chat has any memories to export yet.');
     const parts = ['{"format":"mewmory-export-all-1","exportedAt":' + Date.now() + ',"chats":['];
     let first = true;
-    for (const [index, story] of stories.entries()) {
-        ui.progress = 'Exporting chat ' + (index + 1) + ' of ' + stories.length + '…';
-        render();
-        const data = await requestMewmory('export', { locator: story.locator });
+    for (const story of stories) {
+        const data = await requestMewmory('export', { locator: story.locator }, { scope });
         parts.push((first ? '' : ',') + JSON.stringify({ locator: story.locator, exportedAt: data.exportedAt, state: data.state }));
         first = false;
     }
     parts.push(']}');
-    ui.progress = '';
+    if (scope !== getMewmoryScope()) return;
     download('Mewmory-every-chat.json', parts, 'application/json');
     ui.transferNote = 'Exported ' + stories.length + (stories.length === 1 ? ' chat.' : ' chats.');
 }
@@ -2810,7 +2821,6 @@ function render() {
         ui.loreName = '';
         ui.loreNote = '';
         ui.transferNote = '';
-        ui.progress = '';
         ui.running = false;
     }
     if (mewmory.focusMessage) {
@@ -2857,7 +2867,10 @@ function render() {
     status.dataset.state = mewmory.error || restoration?.status === 'failed' ? 'error'
         : mewmory.loading || mewmory.busy || mewmory.preparing || restoration?.status === 'pending' ? 'busy'
             : mewmory.view?.enabled ? extractorOn && !waiting ? 'ready' : 'warning' : 'off';
-    heading.append(where, status, button('Refresh', () => act(() => refreshMewmory(filters()), { refresh: false })));
+    heading.append(where, status, button('Refresh', () => {
+        retryFailedViews();
+        return act(() => refreshMewmory(filters(), { force: true }), { refresh: false });
+    }));
     header.append(heading);
     if (mewmory.view) renderOverview(header);
     root.prepend(header);

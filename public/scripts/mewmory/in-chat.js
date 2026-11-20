@@ -15,20 +15,22 @@ export function recallSummary(inspection, now = Date.now()) {
     return summary;
 }
 
-function stampExtra(extra, { summary, offRecord }) {
-    const next = { ...(extra && typeof extra === 'object' ? extra : {}) };
-    if (summary) next.mewmoryRecall = summary;
-    if (offRecord) next.mewmoryExclude = true;
-    return next;
-}
-
 /** Writes the recall summary and the off-the-record flag onto a message and its current swipe. */
-export function stampMessage(message, { summary = null, offRecord = false } = {}) {
-    if (!message || typeof message !== 'object' || (!summary && !offRecord)) return false;
-    message.extra = stampExtra(message.extra, { summary, offRecord });
+export function stampMessage(message, { summary, offRecord = false } = {}) {
+    if (!message || typeof message !== 'object') return false;
     const swipe = Array.isArray(message.swipe_info) ? message.swipe_info[message.swipe_id ?? 0] : null;
-    if (swipe && typeof swipe === 'object') swipe.extra = stampExtra(swipe.extra, { summary, offRecord });
-    return true;
+    let changed = false;
+    for (const holder of [message, swipe]) {
+        if (!holder || typeof holder !== 'object') continue;
+        if (!summary && !offRecord && !(summary === null && holder.extra?.mewmoryRecall)) continue;
+        const next = { ...holder.extra };
+        if (summary) next.mewmoryRecall = summary;
+        else if (summary === null) delete next.mewmoryRecall;
+        if (offRecord) next.mewmoryExclude = true;
+        holder.extra = next;
+        changed = true;
+    }
+    return changed;
 }
 
 /** Clears the off-the-record flag from a message and every swipe, so Mewmory reads it again. */
