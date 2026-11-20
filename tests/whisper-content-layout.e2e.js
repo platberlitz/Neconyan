@@ -198,6 +198,9 @@ for (const width of [393, 769, 900, 1000, 1001, 1280]) {
                     for (const id of ids) {
                         const row = page.locator(`#chat > .mes[mesid="${id}"]`);
                         await expect(row.locator('.nn-response-controls')).toHaveCount(width > 1000 ? 1 : 0);
+                        // The footer moves on the next animation frame after the placement changes.
+                        if (placement === 'below') await expect(row).toHaveClass(/\bnn-response-controls-below\b/);
+                        if (placement === 'inside') await expect(row).not.toHaveClass(/\bnn-response-controls-below\b/);
                         const left = row.locator('.fa-chevron-left').filter({ visible: true }), right = row.locator('.fa-chevron-right').filter({ visible: true });
                         await expect(left).toHaveCount(1); await expect(right).toHaveCount(1);
                         // Being inside the viewport is not enough: the fixed chat bar can cover the arrows.
@@ -207,7 +210,7 @@ for (const width of [393, 769, 900, 1000, 1001, 1280]) {
                             await expect.poll(() => arrow.evaluate(el => {
                                 const { x, y, width, height } = el.getBoundingClientRect();
                                 const hit = document.elementFromPoint(x + width / 2, y + height / 2);
-                                return el.contains(hit) ? null : hit?.closest('[id]')?.id || hit?.className || 'outside the viewport';
+                                return el.contains(hit) ? null : hit ? hit.closest('[id]')?.id || hit.tagName : 'outside the viewport';
                             })).toBeNull();
                         }
                         const measures = await row.evaluate(el => {
