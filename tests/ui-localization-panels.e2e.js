@@ -48,9 +48,16 @@ for (const [layout, viewport, hasTouch] of [
             // New accounts may have Memory Shard switched on, so either status is right as long as it is German.
             const runStatus = [german['No automatic agents enabled'], german['Ready for the next reply']];
             await expect.poll(() => page.locator('#ica--run-status').textContent()).toMatch(new RegExp(`^(?:${runStatus.join('|')})$`));
-            const clearFilters = page.locator('#ica--agentList .ica--clear-agent-filters');
+            // The shared release account can remember Connections & defaults from another test.
+            const manage = page.locator('#ica--workspaceNav').getByRole('tab', { name: german['Manage agents'], exact: true });
+            await manage.click();
+            await expect(manage).toHaveAttribute('aria-selected', 'true');
+            const agentList = page.locator('#ica--panel-manage #ica--agentList');
+            const clearFilters = agentList.locator('.ica--clear-agent-filters');
             if (await clearFilters.isVisible()) await clearFilters.click();
-            await page.locator('#ica--agentList .ica--card-primary-actions .ica--btn-edit').first().click();
+            const editAgent = agentList.locator('.ica--card-primary-actions .ica--btn-edit').filter({ visible: true }).first();
+            await expect(editAgent).toHaveAttribute('title', german['Open the editor with every setting for this agent']);
+            await editAgent.click();
             await expect(page.locator('#ica--editor-summary')).toContainText('Reihenfolge');
             await page.keyboard.press('Escape');
             await expect(page.locator('#ica--editor')).toHaveCount(0);
