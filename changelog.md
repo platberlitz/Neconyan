@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.5.8
+
+### Merged Staging PRs
+- PR #776 (2026-11-20) `fix(settings): keep theme filters in view when pressed`
+
 ## v1.5.7
 
 ### Highlights
