@@ -22207,24 +22207,20 @@ function closeReasoningEffortPicker({ restoreFocus = false } = {}) {
 }
 
 function togglePersonaPicker() {
-    const existing = document.getElementById('sb-persona-picker');
-    if (existing) {
-        existing.remove();
-        document.getElementById('sb-persona-bubble')?.focus({ preventScroll: true });
+    if (document.getElementById('sb-persona-picker')) {
+        closePersonaPicker({ restoreFocus: true });
         return;
     }
 
     openPersonaPicker();
 }
 
-function openPersonaPicker({ focus = true } = {}) {
+function openPersonaPicker() {
+    const bubble = document.getElementById('sb-persona-bubble');
+    if (!bubble || !getSillyTavernContext()) return;
     getBottomChatBarState().chatPicker?.close();
-    const context = getSillyTavernContext();
-    if (!context) return;
     closeReasoningEffortPicker();
 
-    const { personas, currentAvatarId } = getCurrentPersonaSelection(context);
-    const personaDescriptions = context?.powerUserSettings?.persona_descriptions ?? {};
     const picker = createElement('div', {
         id: 'sb-persona-picker',
         attrs: {
@@ -22245,55 +22241,75 @@ function openPersonaPicker({ focus = true } = {}) {
             closePersonaPicker({ restoreFocus: true });
         }
     });
-
-    const keys = Object.keys(personas).filter(avatarId => {
-        const name = personas[avatarId];
-        // Skip auto-created unnamed entries; always show the active persona
-        const isActive = avatarId === currentAvatarId;
-        return isActive || (name && name !== '[Unnamed Persona]');
-    });
-
-    if (!keys.length) {
-        const empty = createElement('div', { className: 'sb-persona-option-empty' });
-        empty.textContent = 'No personas defined';
-        optionsList.appendChild(empty);
-    } else {
-        for (const avatarId of keys) {
-            const name = personas[avatarId] || avatarId;
-            const title = personaDescriptions[avatarId]?.title || '';
-            const isActive = avatarId === currentAvatarId;
-            addPersonaOption(optionsList, avatarId, name, title, isActive, context);
-        }
-    }
-
     picker.appendChild(optionsList);
-    renderPersonaPickerAppendixControls(picker, context, currentAvatarId);
-    renderPersonaPickerAuthorsNoteControls(picker, context, currentAvatarId);
-
-    const bubble = document.getElementById('sb-persona-bubble');
-    if (bubble instanceof HTMLElement) {
-        document.body.appendChild(picker);
-        positionPersonaPicker(picker, bubble, () => {
-            if (focus) {
-                const activeOption = picker.querySelector('.sb-persona-option.is-active');
-                (activeOption ?? picker.querySelector('button, input'))?.focus();
-            }
-        });
+    document.body.appendChild(picker);
+    refreshOpenPersonaPicker();
+    const initialOption = optionsList.querySelector('.sb-persona-option.is-active') ?? optionsList.querySelector('.sb-persona-option');
+    if (initialOption) {
+        focusPersonaOption(optionsList, initialOption);
+    } else {
+        picker.querySelector('button, input')?.focus({ preventScroll: true });
     }
 }
 
 function refreshOpenPersonaPicker() {
-    const existing = document.getElementById('sb-persona-picker');
-    if (!existing) {
-        return;
+    const picker = document.getElementById('sb-persona-picker');
+    if (!picker) return;
+    const bubble = document.getElementById('sb-persona-bubble');
+    const { context, personas, currentAvatarId } = getCurrentPersonaSelection();
+    if (!bubble || !context) return;
+
+    const personaDescriptions = context.powerUserSettings?.persona_descriptions ?? {};
+    // Keep the two scrollers mounted. A note toggle and its settings save both
+    // publish updates, but neither should replay the reveal or move the controls.
+    const optionsList = picker.querySelector('.sb-persona-options');
+    const entries = Object.entries(personas)
+        .filter(([id, name]) => id === currentAvatarId || (name && name !== '[Unnamed Persona]'))
+        .map(([id, name]) => [id, name || id, personaDescriptions[id]?.title || '']);
+    const optionsKey = JSON.stringify(entries);
+    if (optionsList.dataset.entries !== optionsKey) {
+        const scrollTop = optionsList.scrollTop;
+        optionsList.replaceChildren();
+        if (!entries.length) {
+            optionsList.append(createElement('div', { className: 'sb-persona-option-empty', text: 'No personas defined' }));
+        } else {
+            for (const [id, name, title] of entries) addPersonaOption(optionsList, id, name, title);
+        }
+        optionsList.scrollTop = scrollTop;
+        optionsList.dataset.entries = optionsKey;
     }
 
-    existing.remove();
-    openPersonaPicker({ focus: false });
+    for (const option of optionsList.querySelectorAll('.sb-persona-option')) {
+        const avatarId = option.dataset.avatarId;
+        const isActive = avatarId === currentAvatarId;
+        option.classList.toggle('is-active', isActive);
+        if (option.getAttribute('aria-pressed') !== String(isActive)) {
+            option.setAttribute('aria-pressed', String(isActive));
+        }
+        const activeAppendices = getActivePersonaAppendicesFromContext(context, avatarId);
+        const chipsKey = JSON.stringify(activeAppendices.map(appendix => appendix.name));
+        if (option.dataset.chips !== chipsKey) {
+            option.dataset.chips = chipsKey;
+            option.querySelector('.sb-persona-option-appendices')?.remove();
+            if (activeAppendices.length) {
+                const chips = createElement('span', { className: 'sb-persona-option-appendices' });
+                for (const appendix of activeAppendices) {
+                    chips.appendChild(createElement('span', { className: 'sb-persona-appendix-chip', text: `+ ${appendix.name}` }));
+                }
+                option.querySelector('.sb-persona-option-info').append(chips);
+            }
+        }
+    }
+
+    renderPersonaPickerAppendixControls(picker, context, currentAvatarId);
+    renderPersonaPickerAuthorsNoteControls(picker, context, currentAvatarId);
+    positionPersonaPicker(picker, bubble);
 }
 
 function renderPersonaPickerAppendixControls(picker, context, avatarId) {
+    const existing = picker.querySelector('.sb-persona-picker-appendices:not(.sb-persona-picker-authors-note)');
     if (!avatarId) {
+        existing?.remove();
         return;
     }
 
@@ -22301,19 +22317,30 @@ function renderPersonaPickerAppendixControls(picker, context, avatarId) {
     const personas = context?.powerUserSettings?.personas ?? {};
     const personaName = personas[avatarId] || avatarId;
     const activeIds = new Set(getActivePersonaAppendixIdsFromContext(context, avatarId));
+    const notesKey = JSON.stringify([avatarId, personaName, appendices.map(({ id, name }) => [id, name])]);
+    const countText = `${activeIds.size}/${appendices.length} on`;
+    if (existing?.dataset.notes === notesKey) {
+        const count = existing.querySelector('.sb-persona-picker-appendices-count');
+        if (count.dataset.activeCount !== String(activeIds.size)) {
+            count.dataset.activeCount = String(activeIds.size);
+            count.textContent = countText;
+        }
+        for (const checkbox of existing.querySelectorAll('input')) {
+            checkbox.checked = activeIds.has(checkbox.value);
+        }
+        return;
+    }
+
     const section = createElement('section', {
         className: 'sb-persona-picker-appendices',
         attrs: { 'aria-label': `Scenario Notes for ${personaName}` },
     });
+    section.dataset.notes = notesKey;
     const header = createElement('div', { className: 'sb-persona-picker-appendices-header' });
     const title = createElement('strong', { text: 'Scenario Notes' });
-    const count = createElement('span', { className: 'sb-persona-picker-appendices-count' });
-    const updateCount = () => {
-        const activeCount = appendices.filter(appendix => activeIds.has(appendix.id)).length;
-        count.textContent = `${activeCount}/${appendices.length} on`;
-        count.hidden = !appendices.length;
-    };
-    updateCount();
+    const count = createElement('span', { className: 'sb-persona-picker-appendices-count', text: countText });
+    count.dataset.activeCount = String(activeIds.size);
+    count.hidden = !appendices.length;
     const manageButton = createElement('button', {
         className: 'sb-persona-picker-manage menu_button menu_button_icon',
         attrs: { type: 'button', title: 'Manage Scenario Notes' },
@@ -22326,10 +22353,14 @@ function renderPersonaPickerAppendixControls(picker, context, avatarId) {
     if (!appendices.length) {
         const empty = createElement('p', { className: 'sb-persona-picker-appendices-empty', text: 'No Scenario Notes on this persona yet.' });
         section.appendChild(empty);
-        picker.appendChild(section);
-        return;
+    } else {
+        section.appendChild(createPersonaPickerAppendixToggles(appendices, avatarId, activeIds));
     }
+    if (existing) existing.replaceWith(section);
+    else picker.querySelector('.sb-persona-options').after(section);
+}
 
+function createPersonaPickerAppendixToggles(appendices, avatarId, activeIds) {
     const controls = createElement('div', {
         className: 'sb-persona-picker-appendix-toggles',
         attrs: { role: 'group', 'aria-label': 'Use with Scenario Notes' },
@@ -22344,18 +22375,14 @@ function renderPersonaPickerAppendixControls(picker, context, avatarId) {
         });
         checkbox.checked = activeIds.has(appendix.id);
         checkbox.addEventListener('change', () => {
+            const context = getSillyTavernContext();
             const nextIds = getActivePersonaAppendixIdsFromContext(context, avatarId).filter(id => id !== appendix.id);
             if (checkbox.checked) {
                 nextIds.push(appendix.id);
             }
             setActivePersonaAppendixIdsFromContext(context, avatarId, nextIds);
-            if (checkbox.checked) {
-                activeIds.add(appendix.id);
-            } else {
-                activeIds.delete(appendix.id);
-            }
-            updateCount();
             updatePersonaBubble();
+            refreshOpenPersonaPicker();
         });
 
         const labelText = createElement('span', { text: appendix.name });
@@ -22363,12 +22390,13 @@ function renderPersonaPickerAppendixControls(picker, context, avatarId) {
         controls.appendChild(label);
     }
 
-    section.appendChild(controls);
-    picker.appendChild(section);
+    return controls;
 }
 
 function renderPersonaPickerAuthorsNoteControls(picker, context, avatarId) {
+    const existing = picker.querySelector('.sb-persona-picker-authors-note');
     if (!avatarId) {
+        existing?.remove();
         return;
     }
 
@@ -22378,16 +22406,28 @@ function renderPersonaPickerAuthorsNoteControls(picker, context, avatarId) {
     const entry = personaNotes && typeof personaNotes === 'object' ? personaNotes[avatarId] : null;
     const enabled = Boolean(entry?.useNote);
     const hasPrompt = Boolean(String(entry?.prompt ?? '').trim());
+    const statusText = enabled && hasPrompt ? 'On' : hasPrompt ? 'Off (saved)' : 'Off';
+    const label = `Author's Note for ${personaName}`;
+    if (existing) {
+        if (existing.getAttribute('aria-label') !== label) existing.setAttribute('aria-label', label);
+        const status = existing.querySelector('.sb-persona-picker-appendices-count');
+        if (status.dataset.status !== statusText) {
+            status.dataset.status = statusText;
+            status.textContent = statusText;
+        }
+        return;
+    }
     const section = createElement('section', {
         className: 'sb-persona-picker-appendices sb-persona-picker-authors-note',
-        attrs: { 'aria-label': `Author's Note for ${personaName}` },
+        attrs: { 'aria-label': label },
     });
     const header = createElement('div', { className: 'sb-persona-picker-appendices-header' });
     const title = createElement('strong', { text: 'Author\'s Note' });
     const status = createElement('span', {
         className: 'sb-persona-picker-appendices-count',
-        text: enabled && hasPrompt ? 'On' : hasPrompt ? 'Off (saved)' : 'Off',
+        text: statusText,
     });
+    status.dataset.status = statusText;
     const editButton = createElement('button', {
         className: 'sb-persona-picker-manage menu_button menu_button_icon',
         attrs: {
@@ -22424,31 +22464,15 @@ function openPersonaAppendicesManager() {
     }, 160);
 }
 
-function positionPersonaPicker(picker, bubble, onPositioned) {
+function positionPersonaPicker(picker, bubble) {
     const bubbleRect = bubble.getBoundingClientRect();
-    picker.style.visibility = 'hidden';
-    picker.style.left = '0px';
-    picker.style.top = '0px';
-    picker.style.right = 'auto';
-    picker.style.bottom = 'auto';
-
-    requestAnimationFrame(() => {
-        const pickerRect = picker.getBoundingClientRect();
-        const viewportPadding = 8;
-        const left = Math.min(
-            Math.max(viewportPadding, bubbleRect.left),
-            Math.max(viewportPadding, window.innerWidth - pickerRect.width - viewportPadding),
-        );
-        const top = Math.max(
-            viewportPadding,
-            bubbleRect.top - pickerRect.height - viewportPadding,
-        );
-
-        picker.style.left = `${Math.round(left)}px`;
-        picker.style.top = `${Math.round(top)}px`;
-        picker.style.visibility = '';
-        onPositioned?.();
-    });
+    // Measure without hiding or moving the picker. The reveal only translates it.
+    const { width, height } = picker.getBoundingClientRect();
+    const viewportPadding = 8;
+    const left = Math.max(viewportPadding, Math.min(bubbleRect.left, window.innerWidth - width - viewportPadding));
+    const top = Math.max(viewportPadding, bubbleRect.top - height - viewportPadding);
+    picker.style.left = `${left}px`;
+    picker.style.top = `${top}px`;
 }
 
 function closePersonaPicker({ restoreFocus = false } = {}) {
@@ -22462,13 +22486,15 @@ function closePersonaPicker({ restoreFocus = false } = {}) {
     }
 }
 
-function focusPersonaOption(picker, offset) {
-    const options = Array.from(picker.querySelectorAll('.sb-persona-option'));
-    const currentIndex = options.indexOf(document.activeElement);
-    const nextIndex = currentIndex === -1
-        ? 0
-        : (currentIndex + offset + options.length) % options.length;
-    options[nextIndex]?.focus();
+function focusPersonaOption(list, option) {
+    option.focus({ preventScroll: true });
+    const listRect = list.getBoundingClientRect();
+    const optionRect = option.getBoundingClientRect();
+    if (optionRect.top < listRect.top) {
+        list.scrollTop += optionRect.top - listRect.top;
+    } else if (optionRect.bottom > listRect.bottom) {
+        list.scrollTop += optionRect.bottom - listRect.bottom;
+    }
 }
 
 async function selectPersonaOption(avatarId, context) {
@@ -22499,13 +22525,13 @@ async function selectPersonaOption(avatarId, context) {
     document.getElementById('sb-persona-bubble')?.focus({ preventScroll: true });
 }
 
-function addPersonaOption(picker, avatarId, name, title, isActive, context) {
+function addPersonaOption(optionsList, avatarId, name, title) {
     const row = createElement('div', { className: 'sb-persona-picker-row' });
     const option = createElement('button', {
-        className: `sb-persona-option${isActive ? ' is-active' : ''}`,
+        className: 'sb-persona-option',
         attrs: {
             type: 'button',
-            'aria-pressed': String(isActive),
+            'data-avatar-id': avatarId,
         },
     });
 
@@ -22530,31 +22556,19 @@ function addPersonaOption(picker, avatarId, name, title, isActive, context) {
         info.appendChild(desc);
     }
 
-    const activeAppendices = getActivePersonaAppendicesFromContext(context, avatarId);
-    if (activeAppendices.length) {
-        const chips = createElement('span', { className: 'sb-persona-option-appendices' });
-        for (const appendix of activeAppendices) {
-            chips.appendChild(createElement('span', { className: 'sb-persona-appendix-chip', text: `+ ${appendix.name}` }));
-        }
-        info.appendChild(chips);
-    }
-
     option.append(img, info);
 
-    option.addEventListener('click', () => { void selectPersonaOption(avatarId, context); });
+    option.addEventListener('click', () => { void selectPersonaOption(avatarId, getSillyTavernContext()); });
     option.addEventListener('keydown', event => {
-        if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
-            event.preventDefault();
-            focusPersonaOption(picker, 1);
-        } else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
-            event.preventDefault();
-            focusPersonaOption(picker, -1);
-        } else if (event.key === 'Home') {
-            event.preventDefault();
-            picker.querySelector('.sb-persona-option')?.focus();
-        } else if (event.key === 'End') {
-            event.preventDefault();
-            Array.from(picker.querySelectorAll('.sb-persona-option')).at(-1)?.focus();
+        const { key } = event;
+        if (!['ArrowDown', 'ArrowRight', 'ArrowUp', 'ArrowLeft', 'Home', 'End'].includes(key)) return;
+        event.preventDefault();
+        const options = Array.from(optionsList.querySelectorAll('.sb-persona-option'));
+        const index = options.indexOf(option);
+        const offset = key === 'ArrowDown' || key === 'ArrowRight' ? 1 : -1;
+        const next = key === 'Home' ? 0 : key === 'End' ? options.length - 1 : (index + offset + options.length) % options.length;
+        if (options[next]) {
+            focusPersonaOption(optionsList, options[next]);
         }
     });
 
@@ -22569,7 +22583,7 @@ function addPersonaOption(picker, avatarId, name, title, isActive, context) {
         openCharacterPanelTab('persona', { editAvatarId: avatarId });
     });
     row.append(option, editButton);
-    picker.appendChild(row);
+    optionsList.appendChild(row);
 }
 
 function initAll() {
