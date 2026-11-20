@@ -20,6 +20,34 @@ async function openSection(workspace, key) {
     await expect(fold).toHaveJSProperty('open', true);
 }
 
+async function checkKeyAutosave(page, workspace) {
+    const apiKey = workspace.getByLabel('API key', { exact: true });
+    const sentKeys = [];
+    await page.route('**/api/mewmory/config/save', async route => {
+        const key = route.request().postDataJSON().config.roles.extractor.apiKey;
+        if (key) sentKeys.push(key);
+        await route.continue();
+    });
+    const flush = () => page.evaluate(async () => (await import('/scripts/mewmory/config-autosave.js')).mewmoryConfigAutosave.flush());
+    await apiKey.fill('fixture-key-');
+    await flush();
+    expect(sentKeys).toEqual([]);
+    await page.evaluate(() => new Promise(resolve => {
+        window.dispatchEvent(new Event('mewmory:updated'));
+        window.requestAnimationFrame(() => window.requestAnimationFrame(resolve));
+    }));
+    await expect(apiKey).toHaveValue('fixture-key-');
+    await expect(apiKey).toBeFocused();
+    await apiKey.press('End');
+    await apiKey.pressSequentially('complete');
+    await apiKey.press('Tab');
+    await flush();
+    expect(sentKeys).toEqual(['fixture-key-complete']);
+    await page.unroute('**/api/mewmory/config/save');
+    await workspace.getByLabel('Remove the saved API key').check();
+    await flush();
+}
+
 test('native Mewmory setup, backfill, source inspection, correction, recall and writing work on desktop and mobile', async ({ page }, info) => {
     page.setDefaultTimeout(20000);
     await page.setViewportSize({ width: 1280, height: 900 });
@@ -114,6 +142,7 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
         await page.mouse.up();
     }
     await expect(modelsFold).toHaveJSProperty('open', true);
+    await checkKeyAutosave(page, workspace);
     const settingsStatus = workspace.locator('#mewmory-settings-status');
     for (const name of ['extractor', 'pawspective', 'selector', 'fallback']) {
         await workspace.getByRole('group', { name: 'Model role to set up' }).locator('#mewmory-role-' + name).click();

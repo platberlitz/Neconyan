@@ -58,6 +58,8 @@ const ui = { root: null, tab: 'now', owner: '', subject: '', significance: '', s
     estimate: null, loreName: '', loreNote: '', transferNote: '',
     layout: 'list', message: null, person: '', question: '', answer: null, askError: '', conflicts: null, conflictError: '', shareNote: '',
     settingsQuery: '', settingsOpen: null };
+const keyEndpoints = new WeakMap();
+let pendingKeyEdits = new WeakSet();
 
 /** Where a memory's newest message sits in the open chat, or -1 when it is not on screen (inherited or a card). */
 function chatIndex(asOf) {
@@ -85,7 +87,7 @@ function numberValue(text) {
 }
 
 function field(label, value, onChange, { type = 'text', multiline = false, options = null, key = label, hint = '', disabled = false, autosave = false,
-    placeholder = '', hideLabel = false } = {}) {
+    placeholder = '', hideLabel = false, keyEndpoint = '' } = {}) {
     const wrapper = node('div', 'mewmory-field');
     const control = node(options ? 'select' : multiline ? 'textarea' : 'input', 'text_pole');
     control.id = 'mewmory-field-' + key;
@@ -104,10 +106,21 @@ function field(label, value, onChange, { type = 'text', multiline = false, optio
     control.value = value ?? '';
     control.disabled = disabled || ui.running;
     if (placeholder) control.placeholder = placeholder;
-    control.addEventListener(options ? 'change' : 'input', () => {
+    const change = () => {
         onChange(type === 'number' ? numberValue(control.value) : control.value);
         if (autosave) scheduleConfigSave({ immediate: Boolean(options) });
-    });
+    };
+    if (type === 'password' && autosave) {
+        // Leave a partly typed credential out of every autosave, including flushes from other controls.
+        const account = currentUser?.handle;
+        keyEndpoints.set(control, keyEndpoint);
+        control.addEventListener('input', () => pendingKeyEdits.add(control));
+        control.addEventListener('blur', () => {
+            if (pendingKeyEdits.delete(control) && currentUser?.handle === account) change();
+        });
+    } else {
+        control.addEventListener(options ? 'change' : 'input', change);
+    }
     const caption = node('label', hideLabel ? 'mewmory-sr-only' : '', label);
     caption.htmlFor = control.id;
     wrapper.append(caption, control);
@@ -600,6 +613,7 @@ function renderQuickSetup(root) {
                 }, {
                     type: 'password',
                     key: 'now-selector-api-key',
+                    keyEndpoint: selectorRole.endpoint,
                     autosave: true,
                     hint: selectorRole.hasKey ? 'A key is saved. Leave blank to keep it.' : 'Stored in the server’s protected credentials (leave blank for local endpoints that need no key).',
                 }),
@@ -1746,8 +1760,10 @@ function discardSettingsDraft() {
 mewmoryConfigAutosave.configure({
     readDraft: () => ui.draft,
     writeDraft: draft => {
-        if (!draft) ui.draft = null;
-        else if (!ui.draft) ui.draft = draft;
+        if (!draft) {
+            pendingKeyEdits = new WeakSet();
+            ui.draft = null;
+        } else if (!ui.draft) ui.draft = draft;
         else replaceDraftContents(ui.draft, draft);
     },
     getAccount: () => currentUser?.handle || null,
@@ -2276,7 +2292,7 @@ function renderSettings(root) {
             if (role.decisionMode === 'decision' && String(value || '').trim() && String(role.endpoint || '').trim()) role.enabled = true;
             render();
         }, { key: 'model-' + ui.role }),
-        configField('API key', role.apiKey || '', value => { role.apiKey = value; }, { type: 'password', hint: role.hasKey ? 'A key is saved. Leave blank to keep it.' : 'Stored in the server’s protected credentials.', key: 'api-key-' + ui.role }),
+        configField('API key', role.apiKey || '', value => { role.apiKey = value; }, { type: 'password', hint: role.hasKey ? 'A key is saved. Leave blank to keep it.' : 'Stored in the server’s protected credentials.', key: 'api-key-' + ui.role, keyEndpoint: role.endpoint }),
     );
     const usedProfileId = usesShared ? draft.sharedProfileId : role.profileId;
     const usedOverride = usesShared ? draft.sharedModelOverride : role.modelOverride;
@@ -2806,6 +2822,8 @@ function render() {
     }
     const active = root.contains(document.activeElement) ? document.activeElement : null;
     const focusId = active?.id;
+    // A redraw is not the user leaving the credential field. Transfer only to the same connection.
+    const pendingKey = pendingKeyEdits.delete(active);
     const selection = active instanceof HTMLTextAreaElement || (active instanceof HTMLInputElement && ['text', 'password', 'search'].includes(active.type))
         ? [active.selectionStart, active.selectionEnd] : null;
     const scope = getMewmoryScope();
@@ -2935,6 +2953,10 @@ function render() {
     }
     if (focusId && !(active instanceof HTMLSelectElement)) {
         const target = document.getElementById(focusId);
+        if (pendingKey && keyEndpoints.has(target) && keyEndpoints.get(target) === keyEndpoints.get(active)) {
+            target.value = active.value;
+            pendingKeyEdits.add(target);
+        }
         target?.focus({ preventScroll: true });
         if (selection && target?.setSelectionRange) target.setSelectionRange(...selection);
     }
