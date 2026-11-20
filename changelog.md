@@ -10,6 +10,7 @@
 - PR #783 (2026-11-20) `fix(replies): preserve replies through stops and failures`
 - PR #784 (2026-11-20) `fix: stabilise nightly browser checks`
 - PR #785 (2026-11-20) `fix(mewmory): protect archive, recall and model settings`
+- PR #786 (2026-11-20) `fix(scratchpad): preserve sessions and recover interrupted replies`
 
 ## v1.5.7
 
