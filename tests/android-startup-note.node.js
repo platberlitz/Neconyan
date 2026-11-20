@@ -72,6 +72,26 @@ test('an Android start writes the note MainActivity reads', () => {
     }
 });
 
+test('an iPhone start writes the note the launcher shows on the next launch', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'startup-note-ios-'));
+    const saved = Object.fromEntries(['NECONYAN_ANDROID_APP', 'NECONYAN_IOS_APP', 'NECONYAN_STARTUP_NOTE_FILE'].map(name => [name, process.env[name]]));
+    try {
+        delete process.env.NECONYAN_ANDROID_APP;
+        process.env.NECONYAN_IOS_APP = '1';
+        const file = path.join(directory, 'ios-startup-note.txt');
+        process.env.NECONYAN_STARTUP_NOTE_FILE = file;
+        assert.equal(writeStartupNote(new Error('port taken')), true);
+        assert.equal(fs.readFileSync(file, 'utf8'), 'Could not start Neconyan: port taken. Saved data has been kept.');
+        delete process.env.NECONYAN_IOS_APP;
+        fs.rmSync(file);
+        assert.equal(writeStartupNote(new Error('desktop')), false);
+        assert.equal(fs.existsSync(file), false);
+    } finally {
+        for (const [name, value] of Object.entries(saved)) restore(name, value);
+        fs.rmSync(directory, { recursive: true, force: true });
+    }
+});
+
 test('a missing note directory returns false without throwing or creating it', () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'startup-note-missing-'));
     const originalTmpdir = process.env.TMPDIR;

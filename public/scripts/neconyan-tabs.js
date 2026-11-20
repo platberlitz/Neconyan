@@ -13830,6 +13830,7 @@ async function showUpdateToast(repository) {
         </button>`;
     toast.querySelector('.nn-update-toast-text > span').textContent = repository.kind === 'apk'
         ? `APK v${repository.latestVersion} is ready. Open Server to update.`
+        : repository.kind === 'ipa' ? `IPA v${repository.latestVersion} is ready. Open Server to get it.`
         : behind === 1 ? '1 new change. Open Server to update.'
             : `${behind} new changes. Open Server to update.`;
     toast.querySelector('.nn-update-toast-open').addEventListener('click', () => {
@@ -13863,6 +13864,14 @@ async function checkForNeconyanUpdate() {
             const notificationKey = `apk:${androidRelease.architecture}:${androidRelease.latestVersion}`;
             if (notificationKey === readNotifiedUpdateCommit()) return;
             await showUpdateToast({ ...androidRelease, kind: 'apk', remoteCommit: notificationKey });
+            return;
+        }
+        const iosRelease = status?.iosRelease;
+        if (iosRelease?.supported) {
+            if (!iosRelease.checked || !iosRelease.assetAvailable || !iosRelease.canUpdate || !iosRelease.latestVersion) return;
+            const notificationKey = `ipa:${iosRelease.latestVersion}`;
+            if (notificationKey === readNotifiedUpdateCommit()) return;
+            await showUpdateToast({ ...iosRelease, kind: 'ipa', remoteCommit: notificationKey });
             return;
         }
         const repository = status?.repository;
@@ -14143,7 +14152,7 @@ function updateServerAdminInteractivity() {
     setThumbnailInputsDisabled(thumbnailLocked);
     if (refs.autoStashCheckbox) {
         const data = state.lastStatusData;
-        refs.autoStashCheckbox.disabled = locked || Boolean(data?.androidRelease?.supported)
+        refs.autoStashCheckbox.disabled = locked || Boolean(data?.androidRelease?.supported || data?.iosRelease?.supported)
             || !data?.repository?.supported || !data?.repository?.isRepo;
     }
 
@@ -14163,9 +14172,20 @@ function renderServerAdminStatus(data) {
     const repository = data?.repository ?? {};
     const release = data?.release ?? null;
     const androidRelease = data?.androidRelease ?? null;
+    const iosRelease = data?.iosRelease ?? null;
     const version = data?.version ?? {};
     const isAndroidInstall = Boolean(androidRelease?.supported);
-    const isGitInstall = !isAndroidInstall && Boolean(repository?.supported && repository?.isRepo);
+    const isIosInstall = !isAndroidInstall && Boolean(iosRelease?.supported);
+    const appRelease = isAndroidInstall ? androidRelease : isIosInstall ? iosRelease : null;
+    const appPackage = isAndroidInstall ? 'APK' : 'IPA';
+    const isGitInstall = !appRelease && Boolean(repository?.supported && repository?.isRepo);
+    const canRestart = data?.canRestart !== false;
+    for (const button of [refs.restartButton, refs.saveConfigRestartButton, document.getElementById('sb-chat-completion-config-save-restart')]) {
+        if (!(button instanceof HTMLElement)) continue;
+        // The iPhone app runs its server inside the app, so it cannot restart it on its own.
+        button.hidden = !canRestart;
+        button.style.display = canRestart ? '' : 'none';
+    }
     const statusGrid = refs.statusGrid;
     const sourceDetailsGrid = refs.sourceDetailsGrid ?? statusGrid;
     statusGrid.replaceChildren();
@@ -14188,7 +14208,7 @@ function renderServerAdminStatus(data) {
         attrs: { style: 'width: 100%; max-width: 200px;', 'aria-label': isGitInstall ? 'Git branch' : 'Release source' },
     });
     branchSelect.disabled = !isGitInstall;
-    const currentBranch = isGitInstall ? (repository?.displayBranch || repository?.branch || version?.gitBranch || '') : isAndroidInstall ? 'GitHub APK' : 'Release ZIP';
+    const currentBranch = isGitInstall ? (repository?.displayBranch || repository?.branch || version?.gitBranch || '') : appRelease ? `GitHub ${appPackage}` : 'Release ZIP';
     const currentOptionAttributes = { value: currentBranch, selected: 'selected' };
     if (!currentBranch || !isGitInstall) {
         currentOptionAttributes.disabled = 'disabled';
@@ -14207,6 +14227,8 @@ function renderServerAdminStatus(data) {
     if (isAndroidInstall) {
         appendServerAdminStat(statusGrid, 'Latest APK', androidRelease?.latestVersion ? `v${androidRelease.latestVersion}` : 'Unknown');
         appendServerAdminStat(sourceDetailsGrid, 'APK architecture', androidRelease?.architecture || 'Unknown');
+    } else if (isIosInstall) {
+        appendServerAdminStat(statusGrid, 'Latest IPA', iosRelease?.latestVersion ? `v${iosRelease.latestVersion}` : 'Unknown');
     } else {
         appendServerAdminStat(statusGrid, 'Commit', repository?.currentCommit || version?.gitRevision || 'Unknown');
         appendServerAdminStat(sourceDetailsGrid, 'Tracking', repository?.trackingBranch || 'Not set');
@@ -14228,15 +14250,17 @@ function renderServerAdminStatus(data) {
         repository,
         release,
         androidRelease,
+        iosRelease,
+        canRestart,
     };
 
     let pillLabel = 'Unavailable';
     let pillTone = 'neutral';
 
-    if (isAndroidInstall) {
-        pillLabel = androidRelease.canUpdate ? 'APK update available' : !androidRelease.checked ? 'Check failed'
-            : !androidRelease.assetAvailable ? 'APK unavailable' : 'Up to date';
-        pillTone = androidRelease.checked && androidRelease.assetAvailable && !androidRelease.canUpdate ? 'good' : 'warn';
+    if (appRelease) {
+        pillLabel = appRelease.canUpdate ? `${appPackage} update available` : !appRelease.checked ? 'Check failed'
+            : !appRelease.assetAvailable ? `${appPackage} unavailable` : 'Up to date';
+        pillTone = appRelease.checked && appRelease.assetAvailable && !appRelease.canUpdate ? 'good' : 'warn';
     } else if (isGitInstall) {
         if (!repository?.trackingBranch) {
             pillLabel = 'Local project';
@@ -14280,22 +14304,27 @@ function renderServerAdminStatus(data) {
     setServerAdminPill(refs.statusPill, pillLabel, pillTone);
     const hasAndroidInstaller = typeof window.NeconyanAndroid?.installUpdate === 'function';
     const updateMode = isAndroidInstall ? (androidRelease.canUpdate && hasAndroidInstaller ? 'apk' : '')
-        : repository?.canUpdate ? 'git' : release?.canUpdate ? 'zip' : '';
+        : isIosInstall ? (iosRelease.canUpdate && iosRelease.releaseUrl ? 'ipa' : '')
+            : repository?.canUpdate ? 'git' : release?.canUpdate ? 'zip' : '';
     refs.updateButton.dataset.sbCanUpdate = String(Boolean(updateMode));
     refs.updateButton.dataset.sbUpdateMode = updateMode;
-    setServerAdminIdleButtonLabel(refs.updateButton, isAndroidInstall ? 'Update APK' : 'Update & Restart', state);
+    setServerAdminIdleButtonLabel(refs.updateButton, isAndroidInstall ? 'Update APK' : isIosInstall ? 'Get the IPA' : 'Update & Restart', state);
     if (refs.updateDescription) refs.updateDescription.textContent = isAndroidInstall
         ? 'Download the official GitHub APK, then approve installation in Android. Your saved data stays on this device.'
-        : 'Check upstream status, update the app, and relaunch automatically when it is safe to do so.';
+        : isIosInstall
+            ? 'Open the GitHub release page in Safari, then install the new IPA with the sideloading tool you used before.'
+            : 'Check upstream status, update the app, and relaunch automatically when it is safe to do so.';
     if (refs.autoStashLabel) {
-        refs.autoStashLabel.hidden = isAndroidInstall;
-        refs.autoStashLabel.style.display = isAndroidInstall ? 'none' : '';
+        refs.autoStashLabel.hidden = Boolean(appRelease);
+        refs.autoStashLabel.style.display = appRelease ? 'none' : '';
     }
     if (isAndroidInstall) {
         setServerAdminMessage(refs.updateNote, 'Android checks the APK before installing it. You may need to allow app installation in Android settings.');
+    } else if (isIosInstall) {
+        setServerAdminMessage(refs.updateNote, 'Install the IPA over this copy with the same tool and Apple ID, or the iPhone treats it as a different app.');
     }
 
-    const noteParts = [String((isAndroidInstall ? androidRelease.message : isGitInstall ? repository?.message : release?.message || repository?.message) ?? '').trim()].filter(Boolean);
+    const noteParts = [String((appRelease ? appRelease.message : isGitInstall ? repository?.message : release?.message || repository?.message) ?? '').trim()].filter(Boolean);
     if (isAndroidInstall && androidRelease.canUpdate && !hasAndroidInstaller) {
         noteParts.push('Open the Neconyan Android app to install this APK update.');
     }
@@ -14522,7 +14551,8 @@ async function handleServerAdminSaveConfig({ restart = false } = {}) {
         setServerAdminMessage(refs.configNote, result?.message || 'Config saved.', restart ? 'warn' : 'good');
         toastr.success(result?.message || 'Config saved.', 'Server config');
 
-        if (restart) {
+        // The iPhone app saves without restarting: its server runs inside the app.
+        if (restart && result?.restarting !== false) {
             state.busy = false;
             state.restarting = true;
             updateServerAdminInteractivity();
@@ -14740,6 +14770,14 @@ async function handleServerAdminUpdate() {
         } catch (error) {
             setServerAdminMessage(refs.updateNote, error.message || 'Could not open the Android APK updater.', 'danger');
         }
+        return;
+    }
+
+    if (refs.updateButton?.dataset.sbUpdateMode === 'ipa') {
+        const releaseUrl = String(state.lastStatusData?.iosRelease?.releaseUrl || '');
+        // The iPhone app opens links to other sites in Safari.
+        if (/^https:\/\/github\.com\//.test(releaseUrl)) window.open(releaseUrl, '_blank', 'noopener');
+        setServerAdminMessage(refs.updateNote, 'Download the IPA from the release page, then install it over this copy with your sideloading tool.');
         return;
     }
 

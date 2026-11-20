@@ -6,12 +6,27 @@ permissions:
 concurrency:
   group: ios-release-${{ github.ref }}
   cancel-in-progress: false
+env:
+  XCODE_VERSION: '16.4'
+  XCODEGEN_VERSION: '2.48.0'
+  XCODEGEN_SHA256: 620c9f0dc10849f94728ab5df52d225ebab8187439dd6fee1925e59e80dff892
 jobs:
   build:
     runs-on: macos-15
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Select the pinned Xcode
+        run: |
+          set -euo pipefail
+          app="/Applications/Xcode_${XCODE_VERSION}.app"
+          if ! test -d "$app"; then
+            echo "Xcode $XCODE_VERSION is not on this runner. Installed:"
+            ls -d /Applications/Xcode*.app
+            exit 1
+          fi
+          sudo xcode-select -s "$app/Contents/Developer"
+          xcodebuild -version
       - name: Check runtime installation and path aliases
         run: |
           swiftc ios/App/RuntimeInstaller.swift ios/tools/storage-tests/main.swift -o "$RUNNER_TEMP/neconyan-storage-tests"
@@ -20,11 +35,16 @@ jobs:
         run: |
           swiftc ios/App/StartupDiagnostics.swift ios/tools/diagnostics-tests/main.swift -o "$RUNNER_TEMP/neconyan-diagnostics-tests"
           "$RUNNER_TEMP/neconyan-diagnostics-tests"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@cdca7365b2dadb8aad0a33bc7601856ffabcc48e # v4.3.0
         with:
           node-version: '24'
           cache: npm
       - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Check the iOS launcher scripts
+        run: |
+          node --check ios/server-bootstrap.mjs
+          node --check android/bootstrap-config.mjs
+          node --test tests/ios-bootstrap.node.js tests/android-bootstrap-config.node.js tests/android-startup-note.node.js
       - name: Import and verify a real 13 GiB ZIP payload
         env:
           NECONYAN_LARGE_IMPORT_BYTES: '13958643712'
@@ -38,16 +58,18 @@ jobs:
         run: |
           node scripts/build-ios-payload.js
           node --test ios/tools/*.test.mjs
-          sips -z 1024 1024 ios/generated/Assets.xcassets/AppIcon.appiconset/icon.png
       - name: Prepare the pinned iOS runtime
         env:
           NECONYAN_GITHUB_TOKEN: ${{ github.token }}
         run: bash ios/prepare-runtime.sh
       - name: Generate the Xcode project
         run: |
-          brew install xcodegen
+          set -euo pipefail
+          curl -fsSL -o "$RUNNER_TEMP/xcodegen.zip" "https://github.com/yonaskolb/XcodeGen/releases/download/${XCODEGEN_VERSION}/xcodegen.zip"
+          echo "${XCODEGEN_SHA256}  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP/xcodegen"
           cd ios
-          xcodegen generate
+          "$RUNNER_TEMP/xcodegen/xcodegen/bin/xcodegen" generate
       - name: Build real-device app without distribution signing
         run: |
           xcodebuild -project ios/Neconyan.xcodeproj -scheme Neconyan -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath ios/build/device CODE_SIGNING_ALLOWED=NO build > ios/device-build.log 2>&1 || { tail -100 ios/device-build.log; exit 1; }
@@ -57,7 +79,9 @@ jobs:
           test -f ios/artifacts/Payload/Neconyan.app/server/dist/frontend/asset-manifest.json
           test -f ios/artifacts/Payload/Neconyan.app/payload-version.txt
           cd ios/artifacts
-          ditto -c -k --keepParent Payload Neconyan-unsigned.ipa
+          # Without these flags ditto can add AppleDouble files and quarantine
+          # attributes that sideloading tools reject.
+          ditto -c -k --norsrc --noextattr --noqtn --keepParent Payload Neconyan-unsigned.ipa
           rm -rf Payload
           shasum -a 256 Neconyan-unsigned.ipa > SHA256SUMS
           cp ../generated/server/release-provenance.json provenance.json
@@ -72,21 +96,53 @@ jobs:
           cp ios/artifacts/provenance.json release/provenance-ios.json
           cd release
           shasum -a 256 *.ipa provenance-ios.json > SHA256SUMS-ios
-      - name: Start an iPhone simulator
+      - name: Start an iPhone and an iPad simulator
         id: simulator
         run: |
-          id=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for a in d["devices"].values() for x in a if "iPhone" in x["name"]))')
-          xcrun simctl boot "$id"
-          xcrun simctl bootstatus "$id" -b
-          echo "id=$id" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          pick() {
+            xcrun simctl list devices available -j | python3 -c '
+          import json, re, sys
+          family = sys.argv[1]
+          devices = json.load(sys.stdin)["devices"]
+          def runtime(key):
+              match = re.search(r"iOS-(\d+)-(\d+)", key)
+              return tuple(int(part) for part in match.groups()) if match else (-1, -1)
+          for key in sorted(devices, key=runtime, reverse=True):
+              if runtime(key) < (17, 0):
+                  continue
+              names = [x for x in devices[key] if x["name"].startswith(family)]
+              if names:
+                  print(names[0]["udid"])
+                  print(names[0]["name"] + " / " + key, file=sys.stderr)
+                  break
+          ' "$1"
+          }
+          phone=$(pick iPhone)
+          tablet=$(pick iPad)
+          test -n "$phone"
+          test -n "$tablet"
+          xcrun simctl boot "$phone"
+          xcrun simctl bootstatus "$phone" -b
+          echo "id=$phone" >> "$GITHUB_OUTPUT"
+          echo "ipad=$tablet" >> "$GITHUB_OUTPUT"
       - name: Test standalone startup and relaunch on iOS
         run: |
           node ios/tools/model-fixture.mjs > ios/model-fixture.log 2>&1 &
           fixture=$!
           trap 'kill "$fixture" 2>/dev/null || true' EXIT
           xcodebuild -project ios/Neconyan.xcodeproj -scheme Neconyan -configuration Debug -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -parallel-testing-enabled NO -derivedDataPath ios/build/simulator -resultBundlePath ios/test-results.xcresult CODE_SIGNING_ALLOWED=NO test > ios/simulator-test.log 2>&1 || { tail -120 ios/simulator-test.log; exit 1; }
+      - name: Test startup and page features on an iPad
+        run: |
+          xcrun simctl shutdown '${{ steps.simulator.outputs.id }}' || true
+          xcrun simctl boot '${{ steps.simulator.outputs.ipad }}'
+          xcrun simctl bootstatus '${{ steps.simulator.outputs.ipad }}' -b
+          node ios/tools/model-fixture.mjs > ios/model-fixture-ipad.log 2>&1 &
+          fixture=$!
+          trap 'kill "$fixture" 2>/dev/null || true' EXIT
+          xcodebuild -project ios/Neconyan.xcodeproj -scheme Neconyan -configuration Debug -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.ipad }}' -parallel-testing-enabled NO -derivedDataPath ios/build/simulator -resultBundlePath ios/test-results-ipad.xcresult CODE_SIGNING_ALLOWED=NO -only-testing:NeconyanUITests/StandaloneTests/testBundledServerLoadsAndRelaunches -only-testing:NeconyanUITests/StandaloneTests/testPageFeaturesWorkInsideTheApp test > ios/ipad-test.log 2>&1 || { tail -120 ios/ipad-test.log; exit 1; }
       - name: Upload release candidates
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ios-release-${{ github.sha }}
           path: release/
@@ -95,14 +151,19 @@ jobs:
       - name: Collect simulator server diagnostics
         if: always()
         run: |
-          container=$(xcrun simctl get_app_container '${{ steps.simulator.outputs.id }}' io.github.platberlitz.neconyan data 2>/dev/null || true)
-          if test -n "$container"; then
-            cp "$container/Library/Application Support/Neconyan/server.log" ios/server.log || true
-            cp "$container/Library/Application Support/Neconyan/"startup-diagnostics*.jsonl ios/ || true
-            xcrun simctl io '${{ steps.simulator.outputs.id }}' screenshot ios/simulator.png || true
-          fi
+          for device in '${{ steps.simulator.outputs.id }}' '${{ steps.simulator.outputs.ipad }}'; do
+            test -n "$device" || continue
+            container=$(xcrun simctl get_app_container "$device" io.github.platberlitz.neconyan data 2>/dev/null || true)
+            if test -n "$container"; then
+              mkdir -p "ios/device-$device"
+              cp "$container/Library/Application Support/Neconyan/server.log" "ios/device-$device/server.log" || true
+              cp "$container/Library/Application Support/Neconyan/"startup-diagnostics*.jsonl "ios/device-$device/" || true
+              xcrun simctl io "$device" screenshot "ios/device-$device/simulator.png" || true
+            fi
+          done
           xcrun xcresulttool export attachments --path ios/test-results.xcresult --output-path ios/test-attachments || true
-      - uses: actions/upload-artifact@v4
+          xcrun xcresulttool export attachments --path ios/test-results-ipad.xcresult --output-path ios/test-attachments-ipad || true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: ios-build-diagnostics-${{ github.sha }}
@@ -110,9 +171,7 @@ jobs:
             ios/artifacts/
             ios/*-build.log
             ios/*-test.log
-            ios/server.log
-            ios/startup-diagnostics*.jsonl
-            ios/model-fixture.log
-            ios/simulator.png
-            ios/test-results.xcresult
-            ios/test-attachments/
+            ios/device-*/
+            ios/model-fixture*.log
+            ios/test-results*.xcresult
+            ios/test-attachments*/

@@ -7,7 +7,7 @@ import { serverEvents, EVENT_NAMES } from './src/server-events.js';
 import { verifyAndroidStorage } from './file-stats.mjs';
 import { initialiseCrashDiagnostics, installCrashHandlers } from './src/crash-diagnostics.js';
 import { beginServerWork, configureServerWakeMarker } from './src/android-wake.js';
-import { ensureBootstrapConfigSections } from './bootstrap-config.mjs';
+import { loadBootstrapConfig, setAsideNotice } from './bootstrap-config.mjs';
 import { startupNoteMessage } from './src/startup-note.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
@@ -31,11 +31,16 @@ if (process.platform === 'android') {
     if (!creationTimes) console.info('Android storage does not record file creation times; file identity uses device and inode numbers.');
 }
 const configPath = path.join(statePath, 'android-config.yaml');
-const config = YAML.parse(fs.readFileSync(fs.existsSync(configPath) ? configPath : path.join(root, 'default/config.yaml'), 'utf8'));
-// Older saved configurations predate some sections; create the missing containers
-// before any launch, safe mode included. A malformed file throws here, before the
-// configuration is written back, so the user's saved file stays untouched.
-ensureBootstrapConfigSections(config);
+// Older saved configurations predate some sections; the missing containers are created
+// before any launch, safe mode included. A file that cannot be used is set aside and the
+// launch continues from the default, so one damaged file cannot stop the app for good.
+const { config, setAside, reason } = loadBootstrapConfig(configPath, path.join(root, 'default/config.yaml'));
+if (setAside) {
+    console.warn(`${setAsideNotice(setAside)} Reason: ${reason}`);
+    try {
+        writeFileAtomicSync(path.join(process.env.TMPDIR, 'startup-status.txt'), setAsideNotice(setAside), { mode: 0o600 });
+    } catch { /* The warning above still reaches the private server log. */ }
+}
 Object.assign(config, {
     dataRoot: path.join(statePath, 'data'), port: Number(port), listen: true,
     listenAddress: { ipv4: '127.0.0.1', ipv6: '::1' }, protocol: { ipv4: true, ipv6: false },

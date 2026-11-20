@@ -3,8 +3,15 @@
 #include <stdio.h>
 #include <sys/stat.h>
 #include <errno.h>
+#include <atomic>
+
+static std::atomic<bool> nodeExited(false);
+static std::atomic<int> nodeExitCode(0);
 
 @implementation NodeRunner
++ (BOOL)hasExited { return nodeExited.load(); }
++ (int)exitCode { return nodeExitCode.load(); }
+
 + (void)startWithArguments:(NSArray<NSString *> *)arguments logPath:(NSString *)logPath {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
@@ -21,12 +28,26 @@
             for (int i = 0; i < argc; i++) argv[i] = strdup(arguments[i].UTF8String);
             int result = node_start(argc, argv);
             fprintf(stderr, "Neconyan startup: Node exited with code=%d\n", result);
+            nodeExitCode.store(result);
+            nodeExited.store(true);
             for (int i = 0; i < argc; i++) free(argv[i]);
             free(argv);
         }];
         thread.name = @"Neconyan server";
         thread.stackSize = 8 * 1024 * 1024;
+        thread.qualityOfService = NSQualityOfServiceUserInitiated;
         [thread start];
     });
+}
+@end
+
+@implementation NeconyanObjC
++ (NSString *)catchException:(NS_NOESCAPE void (^)(void))block {
+    @try {
+        block();
+        return nil;
+    } @catch (NSException *exception) {
+        return [NSString stringWithFormat:@"%@: %@", exception.name, exception.reason ?: @"no reason"];
+    }
 }
 @end

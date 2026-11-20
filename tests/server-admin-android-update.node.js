@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { test } from 'node:test';
-import { createAndroidReleaseChecker } from '../src/server-admin-android-update.js';
+import { createAndroidReleaseChecker, createIosReleaseChecker } from '../src/server-admin-android-update.js';
 
 const android = { platform: 'android', arch: 'arm64', env: { NECONYAN_ANDROID_APP: '1' } };
 function release(version = '1.3.0', architecture = 'arm64') {
@@ -120,4 +120,51 @@ test('HTTP failures and oversized metadata are rejected', async () => {
         const check = createAndroidReleaseChecker({ fetchImpl: async () => response });
         assert.equal((await check('1.2.9', android)).checked, false);
     }
+});
+
+function iosRelease(version = '1.3.0') {
+    const name = `Neconyan-${version}-ios-unsigned.ipa`;
+    return { tag_name: `v${version}`, draft: false, prerelease: false, assets: [{ name, size: 182227206,
+        browser_download_url: `https://github.com/platberlitz/Neconyan/releases/download/v${version}/${name}` }] };
+}
+
+test('the iPhone app is told about a newer IPA without claiming it can install it', async () => {
+    let calls = 0;
+    const check = createIosReleaseChecker({ fetchImpl: async (_url, options) => {
+        calls++;
+        assert.equal(options.headers['User-Agent'], 'Neconyan-iOS-Update');
+        return Response.json(iosRelease());
+    } });
+    assert.equal(await check('1.2.9', { env: {} }), null);
+    assert.equal(calls, 0);
+    const status = await check('1.2.9', { env: { NECONYAN_IOS_APP: '1' } });
+    assert.equal(status.canUpdate, true);
+    assert.match(status.assetUrl, /Neconyan-1\.3\.0-ios-unsigned\.ipa$/);
+    assert.equal(status.releaseUrl, 'https://github.com/platberlitz/Neconyan/releases/tag/v1.3.0');
+    assert.match(status.message, /sideloading tool/);
+    assert.equal((await check('1.3.0', { env: { NECONYAN_IOS_APP: '1' } })).canUpdate, false);
+});
+
+test('a release without an IPA or a failed check never offers an iPhone update', async () => {
+    const missing = createIosReleaseChecker({ fetchImpl: async () => Response.json(release()) });
+    const result = await missing('1.2.9', { env: { NECONYAN_IOS_APP: '1' } });
+    assert.equal(result.checked, true);
+    assert.equal(result.assetAvailable, false);
+    assert.equal(result.canUpdate, false);
+    const offline = createIosReleaseChecker({ fetchImpl: async () => { throw new Error('offline'); } });
+    const failed = await offline('1.2.9', { env: { NECONYAN_IOS_APP: '1' } });
+    assert.equal(failed.checked, false);
+    assert.match(failed.message, /IPA update/);
+});
+
+test('the iPhone app never restarts its own server, because Node runs inside the app', () => {
+    const endpoint = fs.readFileSync(new URL('../src/endpoints/server-admin.js', import.meta.url), 'utf8');
+    for (const route of ['/restart', '/update', '/switch-branch', '/server-plugins/apply-release']) {
+        const start = endpoint.indexOf(`router.post('${route}'`);
+        assert.notEqual(start, -1, route);
+        assert.match(endpoint.slice(start, start + 400), /if \(rejectInAppRestart\(response\)\) return;/, route);
+    }
+    assert.match(endpoint, /const restart = Boolean\(request\.body\?\.restart\) && canRestartItself\(\);/);
+    assert.match(endpoint, /host: appHost\(\),/);
+    assert.match(endpoint, /iosRelease,/);
 });

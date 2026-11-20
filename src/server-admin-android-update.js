@@ -21,18 +21,18 @@ function newerThan(latest, current) {
 }
 
 /** Cache release metadata, not an update decision: the installed version can change. */
-export function createAndroidReleaseChecker({ fetchImpl = globalThis.fetch, now = Date.now } = {}) {
+function createReleaseReader({ fetchImpl = globalThis.fetch, now = Date.now, userAgent }) {
     let cached;
     let expires = 0;
     let pending;
 
-    async function readRelease({ force = false } = {}) {
+    return async function readRelease({ force = false } = {}) {
         if (!force && cached && now() < expires) return cached;
         if (pending) return pending;
         pending = (async () => {
             try {
                 const response = await fetchImpl(RELEASE_API, {
-                    headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Neconyan-Android-Update' },
+                    headers: { Accept: 'application/vnd.github+json', 'User-Agent': userAgent },
                     signal: AbortSignal.timeout(10000),
                     redirect: 'error',
                 });
@@ -48,18 +48,28 @@ export function createAndroidReleaseChecker({ fetchImpl = globalThis.fetch, now 
                 const release = JSON.parse(text + decoder.decode());
                 const latest = parseVersion(release.tag_name);
                 if (!latest || release.tag_name !== `v${latest.version}` || release.draft || release.prerelease || !Array.isArray(release.assets)) {
-                    throw new Error('GitHub did not return a stable APK release.');
+                    throw new Error('GitHub did not return a stable release.');
                 }
                 cached = { release, latest };
                 expires = now() + 30 * 60 * 1000;
             } catch {
-                cached = { error: 'Could not check GitHub for an APK update. Check your connection and try again in a minute.' };
+                cached = { error: true };
                 expires = now() + 60 * 1000;
             }
             return cached;
         })();
         try { return await pending; } finally { pending = null; }
-    }
+    };
+}
+
+function releaseAsset(release, assetName) {
+    const assetUrl = `${RELEASE_ROOT}/download/${release.tag_name}/${assetName}`;
+    const assetAvailable = release.assets.some(asset => asset.name === assetName && asset.browser_download_url === assetUrl && asset.size > 0);
+    return { assetUrl, assetAvailable };
+}
+
+export function createAndroidReleaseChecker({ fetchImpl = globalThis.fetch, now = Date.now } = {}) {
+    const readRelease = createReleaseReader({ fetchImpl, now, userAgent: 'Neconyan-Android-Update' });
 
     return async function getStatus(currentVersion, { platform = process.platform, arch = process.arch, env = process.env, force = false } = {}) {
         // Termux is also Android, but is updated through Git rather than the APK installer.
@@ -75,11 +85,10 @@ export function createAndroidReleaseChecker({ fetchImpl = globalThis.fetch, now 
             return { ...status, message: 'This Android build cannot check for compatible APK updates.' };
         }
         const result = await readRelease({ force });
-        if (result.error) return { ...status, message: result.error };
+        if (result.error) return { ...status, message: 'Could not check GitHub for an APK update. Check your connection and try again in a minute.' };
         const { release, latest } = result;
         const assetName = `Neconyan-${latest.version}-android-${architecture}.apk`;
-        const assetUrl = `${RELEASE_ROOT}/download/${release.tag_name}/${assetName}`;
-        const assetAvailable = release.assets.some(asset => asset.name === assetName && asset.browser_download_url === assetUrl && asset.size > 0);
+        const { assetUrl, assetAvailable } = releaseAsset(release, assetName);
         const canUpdate = assetAvailable && newerThan(latest, current);
         return {
             ...status, checked: true, latestVersion: latest.version, assetName,
@@ -92,4 +101,38 @@ export function createAndroidReleaseChecker({ fetchImpl = globalThis.fetch, now 
     };
 }
 
+/**
+ * The iPhone app is sideloaded, so it cannot install an update itself. This
+ * only tells the page that a newer IPA exists and where to download it.
+ */
+export function createIosReleaseChecker({ fetchImpl = globalThis.fetch, now = Date.now } = {}) {
+    const readRelease = createReleaseReader({ fetchImpl, now, userAgent: 'Neconyan-iOS-Update' });
+
+    return async function getStatus(currentVersion, { env = process.env, force = false } = {}) {
+        if (env.NECONYAN_IOS_APP !== '1') return null;
+        const current = parseVersion(currentVersion);
+        const status = {
+            supported: true, checked: false, currentVersion: current?.version || String(currentVersion ?? ''),
+            latestVersion: '', releaseUrl: '', assetName: '', assetUrl: '',
+            assetAvailable: false, canUpdate: false, message: '',
+        };
+        if (!current) return { ...status, message: 'This iPhone build cannot check for updates.' };
+        const result = await readRelease({ force });
+        if (result.error) return { ...status, message: 'Could not check GitHub for an IPA update. Check your connection and try again in a minute.' };
+        const { release, latest } = result;
+        const assetName = `Neconyan-${latest.version}-ios-unsigned.ipa`;
+        const { assetUrl, assetAvailable } = releaseAsset(release, assetName);
+        const canUpdate = assetAvailable && newerThan(latest, current);
+        return {
+            ...status, checked: true, latestVersion: latest.version, assetName,
+            releaseUrl: `${RELEASE_ROOT}/tag/${release.tag_name}`,
+            assetUrl: assetAvailable ? assetUrl : '', assetAvailable, canUpdate,
+            message: !assetAvailable ? 'The latest GitHub release has no IPA yet. Check again once it is published.'
+                : canUpdate ? `Neconyan v${latest.version} is available from GitHub. Download the IPA from the release page and install it over this copy with the same sideloading tool you used before.`
+                    : 'No newer IPA is available on GitHub.',
+        };
+    };
+}
+
 export const getLatestAndroidReleaseStatus = createAndroidReleaseChecker();
+export const getLatestIosReleaseStatus = createIosReleaseChecker();
