@@ -108,7 +108,7 @@ for (const width of [393, 1280]) {
                 const scroller = row.closest('.sb-shell-panel-scroller');
                 scroller.scrollTop += row.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 240;
                 row.addEventListener('click', () => {
-                    requestAnimationFrame(() => {
+                    window.requestAnimationFrame(() => {
                         const spacer = document.createElement('div');
                         spacer.style.height = '220px';
                         row.before(spacer);
@@ -126,7 +126,7 @@ for (const width of [393, 1280]) {
             await expect(dark).toHaveAttribute('aria-pressed', 'true');
             await expect(filters).toHaveAttribute('data-layout-settled', 'true');
             const after = await filters.evaluate(row => new Promise(resolve => {
-                requestAnimationFrame(() => requestAnimationFrame(() => resolve({ top: row.getBoundingClientRect().top, pageY: window.scrollY })));
+                window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve({ top: row.getBoundingClientRect().top, pageY: window.scrollY })));
             }));
             expect(Math.abs(after.top - before.top)).toBeLessThan(2);
             expect(after.pageY).toBe(before.pageY);
