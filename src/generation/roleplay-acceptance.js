@@ -442,9 +442,9 @@ export function readRoleplayWorkflowReceipt(request, key) {
     const { base } = submissionScope(request);
     const operationKey = typeof key === 'string' ? key.trim() : '';
     if (!operationKey || operationKey.length > MAX_KEY_LENGTH) throw invalid('Invalid workflow key.');
-    let receipt = readNativeMediaJobResultForOwner(base, { operationKey });
+    let receipt = readNativeMediaJobResultForOwner(base, { operationKey, allowUnsettled: true });
     if (receipt?.state === 'accepted' && closeUnstartedRoleplayWorkflow({ ...base, job: getJob(base.directories, receipt.jobId) })) {
-        receipt = readNativeMediaJobResultForOwner(base, { operationKey });
+        receipt = readNativeMediaJobResultForOwner(base, { operationKey, allowUnsettled: true });
     }
     if (receipt?.jobId && roleplayKeptReplyPending({ directories: base.directories, jobId: receipt.jobId })) {
         try { reconcileRoleplayKeptReplyFamily({ directories: base.directories, owner: base.owner, jobId: receipt.jobId }); } catch { /* Readback still reports pending. */ }

@@ -639,7 +639,7 @@ function findDirectlyAddressedMember(group, text) {
 }
 
 function isAddressedToEntireGroup(text) {
-    return /(^|[^\p{L}\p{N}_])(?:everyone|everybody|you\s+all|y['’]?all|all)([^\p{L}\p{N}_]|$)/iu.test(String(text || ''));
+    return /(^|[^\p{L}\p{N}_])(?:everyone|everybody|you\s+all|y['’]?all|all\s+of\s+you)([^\p{L}\p{N}_]|$)/iu.test(String(text || ''));
 }
 
 
@@ -1062,6 +1062,7 @@ async function _save(job) {
 
 // Group chats
 async function regenerateGroup() {
+    if (is_group_generating) return;
     let generationId = getLastMessageGenerationId();
 
     while (chat.length > 0) {
@@ -2151,9 +2152,7 @@ function reportGroupReplyFailure(error) {
  */
 async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
     function throwIfAborted() {
-        if (params.signal instanceof AbortSignal && params.signal.aborted) {
-            throw new Error('AbortSignal was fired. Group generation stopped');
-        }
+        params.signal?.throwIfAborted();
     }
 
     if (online_status === 'no_connection') {
@@ -2229,12 +2228,12 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
             activatedMembers = params.force_chids;
         } else if (params && typeof params.force_chid == 'number') {
             activatedMembers = [params.force_chid];
-        } else if (!['quiet', 'swipe', 'continue', 'impersonate'].includes(type) && isWholeGroupAddress && isUserInput) {
-            activatedMembers = enabledMembers.map(avatar => getCharacterIdByAvatar(avatar)).filter(chid => chid !== -1);
         } else if (!['quiet', 'swipe', 'continue', 'impersonate'].includes(type) && addressedMemberChid !== -1) {
             activatedMembers = [addressedMemberChid];
         } else if (!['quiet', 'swipe', 'continue', 'impersonate'].includes(type) && selectedSpeakerChid !== -1) {
             activatedMembers = [selectedSpeakerChid];
+        } else if (!['quiet', 'swipe', 'continue', 'impersonate'].includes(type) && isWholeGroupAddress && isUserInput) {
+            activatedMembers = enabledMembers.map(avatar => getCharacterIdByAvatar(avatar)).filter(chid => chid !== -1);
         } else if (type === 'quiet') {
             activatedMembers = activateSwipe(enabledMembers, { allowSystem: true }).slice(0, 1);
 
@@ -2246,7 +2245,7 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
 
             if (activatedMembers.length === 0) {
                 toastr.warning(t`Deleted group member swiped. To get a reply, add them back to the group.`);
-                throw new Error('Deleted group member swiped');
+                return;
             }
         } else if (type === 'impersonate') {
             activatedMembers = activateImpersonate(enabledMembers);
@@ -2311,6 +2310,9 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
 
         activatedMembers = activatedMembers.filter(chid => enabledMembers.includes(characters[chid]?.avatar));
         if (activatedMembers.length === 0) {
+            if (type === 'swipe' || type === 'continue') {
+                toastr.warning(t`The speaker is muted, away or no longer in the group.`);
+            }
             return Promise.resolve();
         }
 
@@ -2394,6 +2396,7 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
         // now the real generation begins: cycle through every activated character
         for (const chId of activatedMembers) {
             throwIfAborted();
+            setSendButtonState(true);
             deactivateSendButtons();
             setCharacterId(chId);
             setCharacterName(characters[chId].name);
@@ -2422,6 +2425,8 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
 
             if (messageChunk) {
                 while (shouldAutoContinue(messageChunk, type === 'impersonate', mergedParams)) {
+                    throwIfAborted();
+                    setSendButtonState(true);
                     textResult = await runWithGroupScene([characters[chId].avatar], () => runWithGroupMemberModelOverride(group, characters[chId]?.avatar, () => Generate('continue', { automatic_trigger: byAutoMode, ...mergedParams, companionHistoryTarget: undefined })));
                     if (textResult?.generationOutcome) break;
                     messageChunk = textResult?.messageChunk;
@@ -2439,6 +2444,8 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
         if (selectedSpeakerChid !== -1 && !(params && typeof params.force_chid == 'number')) {
             clearSelectedGroupSpeaker();
         }
+    } catch (error) {
+        if (!params.signal?.aborted && error?.name !== 'AbortError') throw error;
     } finally {
         restoreAudience();
         setGroupTypingIndicator('');

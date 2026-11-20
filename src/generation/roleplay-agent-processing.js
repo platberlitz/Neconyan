@@ -478,7 +478,9 @@ export async function runRoleplayAgentPostprocessing(context, options) {
     const scope = parallel ? { ...context, providerScope: context.providerScope ?? createProviderScope(context) } : context;
     const runStages = version === 1 ? runLegacyPromptTransformStages : version === 2 ? runOrderedPromptTransformStages : runPromptTransformStages;
     const { draft } = await runStages({
-        agents: selected, text: baseline, parallel, isPrepend: prepend, shouldStop: () => roleplayAgentsStopped(context),
+        // The model step checks for saved results before honouring Stop. Walk
+        // the stages even on a save-only pass so completed work is retained.
+        agents: selected, text: baseline, parallel, isPrepend: prepend,
         onProgress: draft => {
             try {
                 options.onTextProgress?.({ text: composePromptTransformDraft(draft, join),

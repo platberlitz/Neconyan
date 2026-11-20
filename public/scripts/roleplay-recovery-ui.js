@@ -32,9 +32,9 @@ export function mountRoleplayRecovery(container) {
             assertOwner();
             return { method: 'POST', headers: { ...getRequestHeaders(), 'X-Neconyan-Account': owner }, body: JSON.stringify(body) };
         }, { refreshCsrfToken });
-        const result = await response.json();
+        const result = await response.json().catch(() => null);
         assertOwner();
-        if (!response.ok) throw new Error(result.error || 'The check could not be completed.');
+        if (!response.ok || !result) throw new Error(result?.error || 'The check could not be completed.');
         return result;
     };
     const busy = value => { check.disabled = value; repair.disabled = value; };
@@ -70,5 +70,5 @@ export function mountRoleplayRecovery(container) {
             status.textContent = `${error.message}\nCheck transferred data again to see whether the repair completed.`;
         } finally { busy(false); }
     });
-    reload.addEventListener('click', () => { assertOwner(); location.reload(); });
+    reload.addEventListener('click', () => location.reload());
 }

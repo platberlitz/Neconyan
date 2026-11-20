@@ -198,7 +198,7 @@ function absorbSaveResult(body, submitted) {
     return true;
 }
 
-async function saveOnce(account) {
+async function saveOnce(account, skipUnchanged) {
     checkAccount(account);
     if (!readLocalStore()) {
         return true;
@@ -212,6 +212,7 @@ async function saveOnce(account) {
     if (!local || !Number.isSafeInteger(savedVersion)) {
         return false;
     }
+    if (skipUnchanged && conversationValuesEqual(local, savedSnapshot)) return true;
     const submitted = cloneConversationValue(local);
     try {
         const body = await postJson(STORE_SAVE_ENDPOINT, { store: submitted, version: savedVersion }, account);
@@ -237,8 +238,8 @@ async function saveOnce(account) {
 }
 
 /** Send the browser's Conversation copy to the server under its expected version. */
-export function persistConversationStoreNow(account = getCurrentUserHandle()) {
-    const save = () => saveOnce(account);
+export function persistConversationStoreNow(account = getCurrentUserHandle(), { skipUnchanged = false } = {}) {
+    const save = () => saveOnce(account, skipUnchanged);
     const run = syncQueue.then(save, save);
     syncQueue = run.then(swallow, swallow);
     return run;
@@ -249,14 +250,22 @@ let pendingSave = null;
 let resolvePendingSave = null;
 let pendingAccount = null;
 
+function takePendingSave() {
+    clearTimeout(saveTimer);
+    const resolve = resolvePendingSave;
+    saveTimer = null;
+    pendingSave = null;
+    resolvePendingSave = null;
+    pendingAccount = null;
+    return resolve;
+}
+
 /** Coalesce rapid edits into one save. The returned promise resolves once the
  *  debounced save has actually run, so `flushConversationStore` can await it. */
 function scheduleConversationStoreSave(account = getCurrentUserHandle()) {
     checkAccount(account);
     if (pendingSave && pendingAccount !== account) {
-        clearTimeout(saveTimer);
-        resolvePendingSave(false);
-        pendingSave = null;
+        takePendingSave()(false);
     }
     if (!pendingSave) {
         pendingAccount = account;
@@ -266,12 +275,8 @@ function scheduleConversationStoreSave(account = getCurrentUserHandle()) {
         clearTimeout(saveTimer);
     }
     saveTimer = setTimeout(() => {
-        saveTimer = null;
-        const resolve = resolvePendingSave;
-        pendingSave = null;
-        resolvePendingSave = null;
-        pendingAccount = null;
-        persistConversationStoreNow(account).then(resolve, () => resolve(false));
+        const resolve = takePendingSave();
+        persistConversationStoreNow(account, { skipUnchanged: true }).then(resolve, () => resolve(false));
     }, STORE_SAVE_DEBOUNCE_MS);
     return pendingSave;
 }
@@ -283,8 +288,14 @@ export function persistConversationStoreDebounced(account = getCurrentUserHandle
 
 /** Wait until the store the browser holds is acknowledged by the server. */
 export async function flushConversationStore(account = getCurrentUserHandle()) {
-    await scheduleConversationStoreSave(account);
-    return persistConversationStoreNow(account);
+    await Promise.resolve();
+    checkAccount(account);
+    const resolve = pendingAccount === account ? takePendingSave() : null;
+    const save = persistConversationStoreNow(account, { skipUnchanged: true });
+    if (resolve) save.then(resolve, () => resolve(false));
+    if (!await save) return false;
+    return conversationValuesEqual(readLocalStore(), savedSnapshot) || !readLocalStore()
+        || persistConversationStoreNow(account, { skipUnchanged: true });
 }
 
 /** Navigation waits for real edits, but must not force a save just to view a link. */

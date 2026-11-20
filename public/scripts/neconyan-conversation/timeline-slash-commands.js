@@ -87,12 +87,10 @@ export async function handleConversationSlashAction(text, { avatar = getCurrentC
         }
         case 'remind': {
             const reminder = parseConversationReminderArgs(parsed.args);
-            if (!reminder) {
+            if (!reminder || !addConversationReminder(avatar, groupId, reminder.delay, reminder.memo, { branchId: capturedBranchId, personaId })) {
                 globalThis.toastr?.warning?.('Use /remind 1h | message to schedule a reminder.', '', SAFE_TOAST_OPTIONS);
-                return true;
+                return { handled: true, clearDraft: false };
             }
-
-            addConversationReminder(avatar, groupId, reminder.delay, reminder.memo, { branchId: capturedBranchId, personaId });
             return true;
         }
         case 'schedule':

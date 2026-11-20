@@ -152,7 +152,7 @@ describe('browser jobs observer snapshot callbacks', () => {
             expect(globalThis.fetch.mock.calls.filter(([url]) => url.endsWith('/events'))).toHaveLength(1);
             expect(streamHeaders['X-Neconyan-Account']).toBe('alice');
             expect(streamSignal.aborted).toBe(true);
-        } finally { stops.forEach(stop => stop()); feed.close(); }
+        } finally { stops.forEach(stop => stop()); await body.cancel(); }
     });
 
     test('a failed terminal snapshot readback retries before signalling completion', async () => {

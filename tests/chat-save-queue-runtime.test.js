@@ -25,6 +25,7 @@ function createSaveRuntime(group = false) {
     const runtime = vm.createContext({
         console: { trace: jest.fn(), warn: jest.fn(), error: jest.fn() },
         structuredClone,
+        activeGenerationRun: null,
         chatSaveQueue: new Promise(resolve => { releaseQueue = resolve; }),
         chat: [{ mes: 'queued message', extra: { value: 'queued' } }],
         chat_metadata: { integrity: 'original' },

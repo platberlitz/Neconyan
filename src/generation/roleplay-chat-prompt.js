@@ -11,7 +11,7 @@ const fail = message => { throw roleplayError('ROLEPLAY_INVALID', message, 409);
 
 /** Assemble saved Prompt Manager slots around protected history. No page state is read. */
 export async function assembleRoleplayChatPrompt(history, snapshot, material, worldInfo, {
-    userName, characterName, groupNames = [], effect = 'append', substitute, substituteHistory = value => value, memory, exampleLimit = Infinity, contributions = [], records = [], onSection, transformPrompt = (_id, content) => content,
+    userName, characterName, groupNames = [], effect = 'append', continueIndex = history.length - 1, substitute, substituteHistory = value => value, memory, exampleLimit = Infinity, contributions = [], records = [], onSection, transformPrompt = (_id, content) => content,
 } = {}) {
     const controls = mergeChatPresetSettings(material.active, material.preset);
     const order = controls?.prompt_order?.find(value => String(value?.character_id) === '100001')?.order;
@@ -100,7 +100,7 @@ export async function assembleRoleplayChatPrompt(history, snapshot, material, wo
         ...extensions.filter(prompt => prompt.position === 1).map(prompt => prompt.depth));
     const control = [];
     const retainedHistory = [...history].reverse().map(substituteHistory).reverse();
-    const continued = effect === 'continue' ? retainedHistory.pop() : null;
+    const continued = effect === 'continue' && continueIndex >= 0 ? retainedHistory.splice(continueIndex, 1)[0] : null;
     if (continued) {
         if (controls.continue_prefill) {
             const prefill = continued.role === 'assistant' && material.source === 'claude' ? render(controls.assistant_prefill ?? '') : '';

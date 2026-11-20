@@ -150,6 +150,12 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
         signal.throwIfAborted();
         return withRoleplayAccount(base, account, lease => assertRoleplaySourceLocked(lease, source, { effect }));
     };
+    const readProviderResult = step => {
+        const saved = step && readArtifact(directories, job.id, step);
+        // Horde saves the task id before polling and stores its answer separately.
+        return request.binding?.backend === 'horde' && saved?.id
+            ? readArtifact(directories, job.id, 'horde-result:' + step.slice('provider:'.length)) : saved;
+    };
     const finish = async (result, selection) => {
         // The saved provider result, before any thinking recovery, is what a workflow candidate is checked against.
         const providerSource = result;
@@ -157,7 +163,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
         if (blocked && !result?.text?.trim()) throw providerBlockedError(blocked);
         const saveCandidate = (kind, contents) => {
             const reference = readArtifact(directories, job.id, 'roleplay-main-provider');
-            const providerResult = reference?.step && readArtifact(directories, job.id, reference.step);
+            const providerResult = readProviderResult(reference?.step);
             if (!providerResult || roleplayHash(providerResult) !== roleplayHash(providerSource)) {
                 throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The candidate needs its saved provider result.', 503);
             }
@@ -461,7 +467,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
                 // came out of the post-reply Agent phase and can be retried once.
                 if (signal.aborted) throw error;
                 console.warn('[Agents] Post-reply Agents failed; retrying once.', error?.message ?? error);
-                updateJob(directories, job.id, current => explicitRetryRecovery(current));
+                updateJob(directories, job.id, current => ({ ...explicitRetryRecovery(current), resume: 'roleplay-post-main' }));
                 rememberAcceptedAgents();
                 agentCache.clear();
                 try {
@@ -470,7 +476,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
                     if (signal.aborted) throw retryError;
                     console.warn('[Agents] Post-reply Agents failed twice; saving the reply without the remaining Agent changes.', retryError?.message ?? retryError);
                     markRoleplayAgentsFailed(context);
-                    updateJob(directories, job.id, current => explicitRetryRecovery(current));
+                    updateJob(directories, job.id, current => ({ ...explicitRetryRecovery(current), resume: 'roleplay-post-main' }));
                     // This pass only saves the reply with whatever Agent work was
                     // already paid for. Clear the unfinished cards without
                     // announcing them again; the final Companion notification
@@ -570,9 +576,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
             || !/^provider:[a-f0-9]{64}$/.test(providerReference.step)) {
             throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The saved Roleplay provider reference needs recovery.', 503);
         }
-        const completed = readArtifact(directories, job.id, providerReference.step);
-        const result = request.binding?.backend === 'horde' && completed?.id
-            ? readArtifact(directories, job.id, 'horde-result:' + providerReference.step.slice(9)) : completed;
+        const result = readProviderResult(providerReference.step);
         if (result !== undefined && typeof result?.text === 'string') {
             const prompt = request.serverPrompt && readArtifact(directories, job.id, 'roleplay-prompt');
             const selection = request.worldInfo && readArtifact(directories, job.id, 'roleplay-world-info');
@@ -607,7 +611,8 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
             }
             return finish(result, selection);
         }
-        if (completed === undefined && getJob(directories, job.id)?.resume === providerReference.step) {
+        if (result === undefined && getJob(directories, job.id)?.resume === providerReference.step
+            && readArtifact(directories, job.id, providerReference.step) === undefined) {
             throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The previous provider outcome is unknown. It cannot be repeated automatically.', 503);
         }
     }
@@ -1103,6 +1108,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
                 ...(preparedHistory.depthPrompts ? { depthPrompts: preparedHistory.depthPrompts } : {}) }, chatBackend, worldInfo, {
                 userName, characterName: request.characterName, groupNames, effect, substitute, substituteHistory, memory, exampleLimit,
                 contributions: promptExtensions, records: initialRecords,
+                continueIndex: history.findLastIndex(message => !contributedMessages.has(message)),
             });
             exampleCount = assembled.exampleCount;
             presetPrompts = assembled.presetPrompts;

@@ -1,6 +1,6 @@
 import express from 'express';
 import { randomUUID } from 'node:crypto';
-import { acceptJob, clearFinishedJobs, dismissJob, explicitRetryRecovery, getJob, listJobs, requestCancellation, retryConversationFamily, updateJob, validateOwner } from '../jobs/store.js';
+import { acceptJob, clearFinishedJobs, dismissJob, explicitRetryRecovery, getJob, listJobs, requestCancellation, retryConversationFamily, retryRoleplayFamily, updateJob, validateOwner } from '../jobs/store.js';
 import { abortJob, capacity, hasHandler, noteOwner, ownerCount } from '../jobs/runner.js';
 import { readArtifact } from '../jobs/artifacts.js';
 import { readAudioArtifact } from '../jobs/audio-artifacts.js';
@@ -10,7 +10,7 @@ import { retryConversationRoot } from '../generation/conversation-jobs.js';
 import { retainConversationAutomaticAcceptance } from '../generation/conversation-effects.js';
 import { decideJobApproval, readJobApproval } from '../generation/job-approvals.js';
 import { closeUnstartedRoleplayWorkflow } from '../generation/roleplay-workflow-cancellation.js';
-import { preserveRoleplayWorkflowReply } from '../generation/roleplay-kept-reply.js';
+import { preserveRoleplayWorkflowReply, readRoleplayKeptReply, roleplayKeptReplyPending } from '../generation/roleplay-kept-reply.js';
 import { requestRoleplayAgentStop } from '../generation/roleplay-agent-stop.js';
 import { readRoleplayPreview, subscribeRoleplayPreview } from '../generation/roleplay-preview.js';
 import { readConversationPreview, subscribeConversationPreview } from '../generation/conversation-preview.js';
@@ -408,10 +408,22 @@ router.post('/:id/retry', async (request, response) => {
         if (!['failed', 'interrupted'].includes(job.state)) return response.status(409).json({ error: 'Only jobs that failed or were interrupted can be tried again.' });
         if (job.type === 'labs.distill') return response.json({ job: retryDistillJob({ owner, directories }, job) });
         assertScratchpadImageRetry(directories, job);
+        if (job.type === 'media.roleplay-workflow') {
+            return withRoleplayAccount({ directories, owner }, job.intent.media, () => {
+                if (readRoleplayKeptReply({ directories, jobId: job.id })?.state === 'done'
+                    || roleplayKeptReplyPending({ directories, jobId: job.id })) {
+                    return response.status(409).json({ error: 'This reply has already been saved or is still being saved.' });
+                }
+                return response.json({ job: retryRoleplayFamily(directories, job.id, owner).job });
+            });
+        }
+        if (job.type === 'roleplay.candidate' && job.parentId) {
+            return response.status(409).json({ error: 'Retry the Roleplay reply rather than an individual step.' });
+        }
         if (job.type === 'conversation.reply' && (job.children ?? []).length) {
             return response.json({ job: retryConversationFamily(directories, job.id).job });
         }
-        if (job.type === 'conversation.reply' && job.intent?.mode === 'auto' && readArtifact(directories, job.id, 'request') === undefined) {
+        if (job.type === 'conversation.reply' && readArtifact(directories, job.id, 'request') === undefined) {
             return response.json({ job: await retryConversationRoot(request, job) });
         }
         if (job.error?.status === 409 && ['mewmory.index', 'mewmory.recall'].includes(job.type)) {
@@ -420,7 +432,7 @@ router.post('/:id/retry', async (request, response) => {
             });
             return response.json(accepted);
         }
-        return response.json({ job: updateJob(directories, job.id, current => ({ state: 'queued', finishedAt: null, error: null, dismissed: false, ...explicitRetryRecovery(current) })).job });
+        return response.json({ job: updateJob(directories, job.id, current => ({ state: 'queued', finishedAt: null, error: null, dismissed: false, dismissedReason: undefined, ...explicitRetryRecovery(current) })).job });
     } catch (error) {
         return fail(response, error);
     }

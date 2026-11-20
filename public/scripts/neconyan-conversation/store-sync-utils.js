@@ -51,7 +51,7 @@ function messageId(message) {
  * its server position; browser edits and deletions of known messages win, and
  * brand-new browser messages are appended after the server list.
  */
-function mergeMessageLists(serverMessages, localMessages, savedMessages) {
+function mergeMessageLists(serverMessages, localMessages, savedMessages, limit = MAX_THREAD_MESSAGES) {
     const serverList = Array.isArray(serverMessages) ? serverMessages : [];
     const localList = Array.isArray(localMessages) ? localMessages : [];
     const savedList = Array.isArray(savedMessages) ? savedMessages : [];
@@ -119,13 +119,13 @@ function mergeMessageLists(serverMessages, localMessages, savedMessages) {
         }
         // A message the browser had acknowledged but the server no longer has
         // was deleted there; keep it only when the browser edited it meanwhile.
-        if (id && savedById.has(id) && conversationValuesEqual(message, savedById.get(id))) {
+        if (savedById.has(id) && (serverList.length >= limit || conversationValuesEqual(message, savedById.get(id)))) {
             continue;
         }
         merged.push(cloneConversationValue(message));
     }
 
-    return merged.length <= MAX_THREAD_MESSAGES ? merged : null;
+    return merged.slice(-limit);
 }
 
 /**
@@ -264,6 +264,9 @@ function mergeCharacterMap(serverCharacters, localCharacters, savedCharacters) {
     const merged = isPlainConversationObject(serverCharacters) ? cloneConversationValue(serverCharacters) : {};
     const localMap = isPlainConversationObject(localCharacters) ? localCharacters : {};
     const savedMap = isPlainConversationObject(savedCharacters) ? savedCharacters : {};
+    for (const key of Object.keys(savedMap)) {
+        if (!Object.hasOwn(localMap, key) && conversationValuesEqual(merged[key], savedMap[key])) delete merged[key];
+    }
     for (const key of Object.keys(localMap)) {
         const serverThread = merged[key];
         const localThread = localMap[key];
@@ -319,6 +322,11 @@ export function mergeConversationStore(serverStore, localStore, savedStore) {
                 return null;
             }
             merged.characters = result.characters;
+            continue;
+        }
+        if (['reminders', 'groups'].includes(key) && [serverValue, localValue, savedValue ?? []].every(list =>
+            Array.isArray(list) && list.every(entry => entry?.id) && new Set(list.map(messageId)).size === list.length)) {
+            merged[key] = mergeMessageLists(serverValue, localValue, savedValue, Infinity);
             continue;
         }
         if (!conversationValuesEqual(localValue, serverValue)) {

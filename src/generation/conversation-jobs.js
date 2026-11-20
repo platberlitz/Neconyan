@@ -10,10 +10,10 @@ import { getCharacterData, getConversationSettings, getDefaultDirective } from '
 import { getConversationThreadKey } from '../endpoints/conversation-store.js';
 import { validateConversationPayload } from '../endpoints/conversation-utils.js';
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
-import { acceptChildJobs, acceptJob, getJob, listJobs, mutateJobs, releaseChildJobs, releaseJob, requestCancellation, setJobResume, submissionKey as fingerprintSubmission, updateJob } from '../jobs/store.js';
+import { acceptChildJobs, acceptJob, getJob, listJobs, mutateJobs, releaseChildJobs, releaseJob, setJobResume, submissionKey as fingerprintSubmission, updateJob } from '../jobs/store.js';
 import { noteOwner, registerHandler } from '../jobs/runner.js';
 import { createMacroEnvironment } from '../macros/index.js';
-import { appendConversationJobMessage, applyConversationBookkeeping, captureConversationTarget, prepareConversationTarget, commitConversationEffect, commitConversationJobCommands, commitConversationReplyNotice, readConversationEffectReceipt, readConversationTarget, retainConversationAutomaticAcceptance, wasConversationAutomaticOccurrenceAccepted, acceptedConversationOccurrenceOwner } from './conversation-effects.js';
+import { appendConversationJobMessage, applyConversationBookkeeping, captureConversationTarget, prepareConversationTarget, commitConversationEffect, commitConversationJobCommands, commitConversationReplyNotice, isConversationDeliveryStopped, readConversationEffectReceipt, readConversationTarget, retainConversationAutomaticAcceptance, wasConversationAutomaticOccurrenceAccepted, acceptedConversationOccurrenceOwner } from './conversation-effects.js';
 import { runChatProfile } from './service.js';
 import { generateConversationAssistantReply } from './conversation-assistant-tools.js';
 import { getChatProfileContextLimit } from './profiles.js';
@@ -629,20 +629,26 @@ async function assertAutomaticOccurrenceEnabled(request, target, automation, pla
 /** Explicit retry can rebuild preparation only when no frozen request exists. */
 export async function retryConversationRoot(request, job) {
     const directories = request.user.directories;
-    if (job.owner !== request.user.profile.handle || job.type !== 'conversation.reply' || job.intent?.mode !== 'auto'
+    if (job.owner !== request.user.profile.handle || job.type !== 'conversation.reply'
         || job.children?.length || !['failed', 'interrupted'].includes(job.state)) fail('This Conversation preparation cannot be retried.');
     if (readArtifact(directories, job.id, 'request') !== undefined) fail('This Conversation already has a saved request.');
+    if (job.intent?.mode === 'send' && job.inputDurable !== true) fail('Resubmit the original message to finish saving it before requesting a reply.');
     const target = await prepareConversationTarget(request, job.intent.target);
     verifyAcceptedBranch(request, job, target);
     const current = readConversationTarget(request, target);
-    const bindings = await captureConversationParticipantBindings(request, current, target, {
-        plan: job.intent.plan, acknowledgement: current.store.automation?.acknowledgement,
-    });
-    await assertAutomaticOccurrenceEnabled(request, target, job.intent.automation, job.intent.plan);
+    let bindings = job.config?.participantBindings;
+    if (job.intent.mode === 'auto') {
+        bindings = await captureConversationParticipantBindings(request, current, target, {
+            plan: job.intent.plan, acknowledgement: current.store.automation?.acknowledgement,
+        });
+        await assertAutomaticOccurrenceEnabled(request, target, job.intent.automation, job.intent.plan);
+    } else if (!bindings || !Object.keys(bindings).length) {
+        fail('The original Conversation reply connections could not be verified.');
+    }
     const latest = getJob(directories, job.id);
     if (!latest || !['failed', 'interrupted'].includes(latest.state) || latest.cancellation?.requested) fail('This Conversation can no longer be retried.');
     const retried = updateJob(directories, job.id, {
-        state: 'waiting', stage: 'preparing', error: null, result: null, finishedAt: null, dismissed: false,
+        state: 'waiting', stage: 'preparing', error: null, result: null, finishedAt: null, dismissed: false, dismissedReason: undefined,
         recoverability: 'resumable', credentialRef: Object.values(bindings)[0],
         config: { ...latest.config, participantBindings: bindings },
     }).job;
@@ -776,30 +782,23 @@ async function runConversationRootJob(context, deps) {
     }
     setJobResume(directories, context.job.id, 'children');
     const threadKey = getConversationThreadKey(snapshot.target.avatar, snapshot.target.groupId, snapshot.target.personaId);
-    try {
-        const ownsChimes = claimChimeOccurrence(context, snapshot);
-        const participants = snapshot.participants.filter(participant => participant.purpose !== 'chime' || ownsChimes);
-        if (!participants.length) return { skipped: 'chime-already-owned' };
-        const children = acceptChildJobs(directories, context.job.id, participants.map(participant => ({
-            participantKey: participant.speaker.avatar,
-            intent: { participantKey: participant.speaker.avatar, purpose: participant.purpose || 'reply' },
-            target: { kind: 'conversation', id: threadKey, branchId: snapshot.target.branchId },
-            credentialRef: participant.binding,
-            config: { speakerAvatar: participant.speaker.avatar, speakerName: participant.speaker.name },
-        })));
-        for (const child of children) {
-            if (readArtifact(directories, child.id, 'request')) continue;
-            const participant = snapshot.participants.find(item => item.speaker.avatar === child.intent.participantKey);
-            if (participant) writeArtifact(directories, child.id, 'request', participant);
-        }
-        releaseChildJobs(directories, context.job.id);
-        return { children: children.map(child => child.id) };
-    } catch (error) {
-        // A child created but not released would wait forever; cancel the family
-        // so the ledger stays consistent and the failure is actionable.
-        try { requestCancellation(directories, context.job.id, { reason: 'Participant preparation failed.' }); } catch { /* the original error is the real failure */ }
-        throw error;
+    const ownsChimes = claimChimeOccurrence(context, snapshot);
+    const participants = snapshot.participants.filter(participant => participant.purpose !== 'chime' || ownsChimes);
+    if (!participants.length) return { skipped: 'chime-already-owned' };
+    const children = acceptChildJobs(directories, context.job.id, participants.map(participant => ({
+        participantKey: participant.speaker.avatar,
+        intent: { participantKey: participant.speaker.avatar, purpose: participant.purpose || 'reply' },
+        target: { kind: 'conversation', id: threadKey, branchId: snapshot.target.branchId },
+        credentialRef: participant.binding,
+        config: { speakerAvatar: participant.speaker.avatar, speakerName: participant.speaker.name },
+    })));
+    for (const child of children) {
+        if (readArtifact(directories, child.id, 'request')) continue;
+        const participant = participants.find(item => item.speaker.avatar === child.intent.participantKey);
+        if (participant) writeArtifact(directories, child.id, 'request', participant);
     }
+    releaseChildJobs(directories, context.job.id);
+    return { children: children.map(child => child.id) };
 }
 
 /** One participant: evaluate availability, then model and delivery, each receipt-protected. */
@@ -814,8 +813,9 @@ async function runConversationParticipantJob(context, deps) {
     // An autonomous message was already chosen by the server's policy, so it
     // skips the interactive availability gate and writes with its own metadata.
     const automation = snapshot.automation || null;
-    const assertDeliverable = (avatar = speaker.avatar) => {
-        context.signal.throwIfAborted();
+    const stopped = () => isConversationDeliveryStopped(context);
+    const assertDeliverable = (avatar = speaker.avatar, { keepGeneratedReply = false } = {}) => {
+        if (!keepGeneratedReply || !stopped()) context.signal.throwIfAborted();
         if (automation?.roleplaySource) {
             captureConversationRoleplaySource({ user: { directories } }, automation.roleplaySource, { characterName: speaker.name, userName });
         }
@@ -836,11 +836,29 @@ async function runConversationParticipantJob(context, deps) {
     }
     // A receipt-only checkpoint validates ownership and the source before any work.
     await commitConversationEffect(context, target, 'accepted', () => null);
+    const narrate = async (...args) => {
+        try {
+            return await deps.narrate(...args);
+        } catch (error) {
+            assertDeliverable();
+            console.warn('Conversation reply narration could not be prepared.', error);
+            return null;
+        }
+    };
+    const generateImage = async (requestText, author, delivery) => {
+        try {
+            return await deps.generateImage(context, snapshot, requestText, author, delivery, { narrate });
+        } catch (error) {
+            assertDeliverable(author.avatar);
+            console.warn('Conversation reply image could not be included.', error);
+            return false;
+        }
+    };
     if (decision.action === 'autoresponder') {
         assertDeliverable();
         const autoresponderText = buildAvailabilityAutoResponderText(settings, speaker.name, userName);
         const delivered = readConversationEffectReceipt(context, target, 'autoresponder');
-        const narration = delivered !== undefined ? null : await deps.narrate(context, snapshot, autoresponderText, speaker, { effectId: 'autoresponder' });
+        const narration = delivered !== undefined ? null : await narrate(context, snapshot, autoresponderText, speaker, { effectId: 'autoresponder' });
         assertDeliverable();
         await appendConversationJobMessage(context, target, 'autoresponder', {
             role: 'character', name: speaker.name, mes: autoresponderText,
@@ -874,7 +892,9 @@ async function runConversationParticipantJob(context, deps) {
             noticeText: buildDelayedReplyNoticeText(speaker.name, activity.activity), now: deps.now(),
         });
     }
-    let response = readArtifact(directories, context.job.id, 'reply');
+    const retry = context.job.emptyReplyRetries ?? 0;
+    const replyKey = retry ? `reply:empty-retry:${retry}` : 'reply';
+    let response = readArtifact(directories, context.job.id, replyKey);
     if (!response) {
         // Reassert the saved source immediately before paying for a provider
         // call: the chat, message and group may have changed since acceptance.
@@ -892,6 +912,7 @@ async function runConversationParticipantJob(context, deps) {
                 maxTokens: settings.reply_max_tokens, userName, characterName: speaker.name,
                 groupNames: snapshot.groupNames || [], rawOptions: separateSystem ? { systemPrompt: snapshot.messages[0].content } : {},
                 macroEnvironment: createMacroEnvironment(snapshot.macros), stream: snapshot.streamPreview === true,
+                stepNamespace: retry ? `conversation-empty-retry:${retry}` : '',
                 onStream: value => counter.publish(value) };
             response = snapshot.assistantTools
                 ? await generateConversationAssistantReply(context, snapshot, options, deps.generate)
@@ -901,23 +922,25 @@ async function runConversationParticipantJob(context, deps) {
             publishConversationPreview(context, snapshot, null);
         }
         if (response === null) return { waiting: true };
-        writeArtifact(directories, context.job.id, 'reply', response);
+        writeArtifact(directories, context.job.id, replyKey, response);
     }
     const blocked = classifyGenerationOutcome(response?.response);
     if (blocked) {
         if (typeof response.text !== 'string' || !response.text.trim()) throw providerBlockedError(blocked);
         if (Buffer.byteLength(response.text) > 256 * 1024) fail('The model reply exceeded the Conversation message limit.', 502);
-        assertDeliverable();
+        assertDeliverable(speaker.avatar, { keepGeneratedReply: true });
         setJobResume(directories, context.job.id, 'delivery');
         const result = await appendConversationJobMessage(context, target, 'blocked-reply', {
             role: speaker.avatar === target.avatar ? 'character' : 'partner', name: speaker.name, mes: response.text,
             extra: { generation_outcome: blocked, ...(speaker.avatar !== target.avatar ? { partner_avatar: speaker.avatar } : {}),
                 ...(snapshot.replyReference ? { conversation_reply_to: snapshot.replyReference } : {}) },
-        }, { mutate: automation ? (branch, store) => applyConversationBookkeeping(branch, store, automation.patch, automation.key, deps.now()) : undefined });
+        }, { keepGeneratedReply: true, mutate: automation ? (branch, store) => applyConversationBookkeeping(branch, store, automation.patch, automation.key, deps.now()) : undefined });
         writeArtifact(directories, context.job.id, 'result', { ...result, generationOutcome: blocked });
         return { artifact: true, generationOutcome: blocked };
     }
-    if (typeof response.text !== 'string' || !response.text.trim()) fail('The model returned an empty Conversation reply.', 502);
+    if (typeof response.text !== 'string' || !response.text.trim()) {
+        throw Object.assign(new Error('The model returned an empty Conversation reply.'), { code: 'CONVERSATION_EMPTY_REPLY', status: 502 });
+    }
     if (Buffer.byteLength(response.text) > 256 * 1024) fail('The model reply exceeded the Conversation message limit.', 502);
     setJobResume(directories, context.job.id, 'delivery');
     let imageDelivered = false;
@@ -926,32 +949,41 @@ async function runConversationParticipantJob(context, deps) {
     const reasoning = getReplyReasoning(response);
     const { reasoning_tokens } = counter.counts('', reasoning);
     let firstBubble = true;
+    const keepGeneratedReply = { keepGeneratedReply: true };
     const metadata = snapshot.extra && typeof snapshot.extra === 'object' ? snapshot.extra : {};
     const result = await deliverConversationReply(response.text, settings, {
         fallbackSpeaker: speaker, groupId: target.groupId, splitEveryLine: speaker.avatar !== target.avatar,
         getSpeakers: () => snapshot.speakers,
-        validateTarget: () => assertDeliverable(),
+        validateTarget: () => assertDeliverable(speaker.avatar, keepGeneratedReply),
         append: async (text, author, delivery) => {
-            assertDeliverable(author.avatar);
+            assertDeliverable(author.avatar, keepGeneratedReply);
             const counts = { ...counter.counts(text), reasoning_tokens: firstBubble ? reasoning_tokens : 0 };
             firstBubble = false;
             const effectId = `bubble:${delivery.chunk}:${delivery.bubble}`;
-            const delivered = readConversationEffectReceipt(context, target, effectId);
+            const delivered = readConversationEffectReceipt(context, target, effectId, keepGeneratedReply);
             if (delivered !== undefined) return delivered;
             const delayMs = getReplyDelayMsForStatus(text, settings, activity.status);
             // The bubble's author stays shown as typing through its send delay.
             const typing = { ...snapshot, speaker: { ...snapshot.speaker, avatar: author.avatar, name: author.name } };
-            publishConversationPreview(context, typing, {});
+            let narration = null;
             try {
-                await waitForConversationJobDelay(context, `bubble-delay:${delivery.chunk}:${delivery.bubble}`, delayMs, deps);
-                assertDeliverable(author.avatar);
-                const narration = await deps.narrate(context, snapshot, text, author, { ...delivery, effectId });
-                assertDeliverable(author.avatar);
+                if (!stopped()) {
+                    publishConversationPreview(context, typing, {});
+                    try {
+                        await waitForConversationJobDelay(context, `bubble-delay:${delivery.chunk}:${delivery.bubble}`, delayMs, deps);
+                        assertDeliverable(author.avatar, keepGeneratedReply);
+                        if (!stopped()) narration = await narrate(context, snapshot, text, author, { ...delivery, effectId });
+                    } catch (error) {
+                        if (!stopped()) throw error;
+                    }
+                }
+                assertDeliverable(author.avatar, keepGeneratedReply);
                 return await appendConversationJobMessage(context, target, effectId, {
                     role: author.avatar === target.avatar ? 'character' : 'partner', name: author.name, mes: text,
                     extra: { ...metadata, ...delivery.extra, ...counts, ...(author.avatar !== target.avatar ? { partner_avatar: author.avatar } : {}),
                         ...(delivery.attachReplyReference && snapshot.replyReference ? { conversation_reply_to: snapshot.replyReference } : {}) },
                 }, {
+                    ...keepGeneratedReply,
                     // The first committed bubble consumes the occurrence and applies
                     // its counters in the same native write as the message.
                     mutate: automation && !bookkeepingApplied
@@ -964,11 +996,13 @@ async function runConversationParticipantJob(context, deps) {
             }
         },
         commitCommands: (parts, avatar, delivery) => {
+            if (stopped()) return;
             assertDeliverable(avatar);
             return commitConversationJobCommands(context, target, `commands:${delivery.chunk}`, parts, avatar, snapshot.timeZone || context.job.intent.timeZone, snapshot.now);
         },
         generateImage: async (requestText, imageSpeaker, delivery) => {
-            const saved = await deps.generateImage(context, snapshot, requestText, imageSpeaker, delivery, { narrate: deps.narrate });
+            if (stopped()) return false;
+            const saved = await generateImage(requestText, imageSpeaker, delivery);
             imageDelivered = imageDelivered || saved === true;
             return saved;
         },
@@ -978,9 +1012,10 @@ async function runConversationParticipantJob(context, deps) {
     // not, so an old user message cannot force a selfie on them.
     const imageEligible = ['reply', 'reminder', 'schedule', 'idle-followup', 'idle-spontaneous', 'proactive'].includes(snapshot.purpose || 'reply');
     const imageText = automation ? response.text : lastUserMessageText(snapshot.macros?.extra?.chat || []);
-    if (imageEligible && !imageDelivered && conversationReplyWantsImage(settings, imageText)) {
-        await deps.generateImage(context, snapshot, '', speaker, { chunk: 'spontaneous', image: 0, attachReplyReference: false, extra: {} }, { narrate: deps.narrate });
+    if (!stopped() && imageEligible && !imageDelivered && conversationReplyWantsImage(settings, imageText)) {
+        result.posted = await generateImage('', speaker, { chunk: 'spontaneous', image: 0, attachReplyReference: false, extra: {} }) || result.posted;
     }
+    if (!result.posted && !stopped()) fail('The model returned nothing that could be shown in Conversation.', 502);
     writeArtifact(directories, context.job.id, 'result', result);
     return { artifact: true };
 }

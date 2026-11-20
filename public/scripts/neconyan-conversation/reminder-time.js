@@ -15,8 +15,12 @@ export function parseReminderDelayToMs(rawDelay, now = Date.now(), timeZone = In
         return 0;
     }
     const duration = delay.match(/^(\d+(?:\.\d+)?)\s*(s|m|h|d|secs?|seconds?|mins?|minutes?|hrs?|hours?|days?)?$/);
-    if (!duration) return 0;
-    const multiplier = { s: 1000, m: 60000, h: 3600000, d: 86400000 }[(duration[2] || 'm')[0]];
-    const result = Number(duration[1]) * multiplier;
+    const multipliers = { s: 1000, m: 60000, h: 3600000, d: 86400000 };
+    let result = 0;
+    if (duration) {
+        result = Number(duration[1]) * multipliers[(duration[2] || 'm')[0]];
+    } else if (/^(?:\d+(?:\.\d+)?\s*[dhms]\s*)+$/.test(delay)) {
+        for (const [, amount, unit] of delay.matchAll(/(\d+(?:\.\d+)?)\s*([dhms])/g)) result += Number(amount) * multipliers[unit];
+    }
     return Number.isFinite(result) ? result : 0;
 }

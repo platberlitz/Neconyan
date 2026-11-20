@@ -110,6 +110,12 @@ function targetBusy(job) {
     if (key === null) return false;
     for (const runningJob of running.values()) {
         if (targetKey(runningJob) !== key) continue;
+        // Background summaries commit against their saved message prefix,
+        // not the live tail. A manual reply can safely append in parallel.
+        const summary = job.type === 'conversation.summary' ? job : runningJob;
+        const reply = summary === job ? runningJob : job;
+        if (summary.type === 'conversation.summary' && isAutomatic(summary) && !isAutomatic(reply)
+            && ['conversation.reply', 'conversation.participant'].includes(reply.type)) continue;
         // Sibling participants of one accepted request share the thread on
         // purpose; they were selected together and each owns its own receipts.
         // Any other job on the same target stays mutually exclusive.

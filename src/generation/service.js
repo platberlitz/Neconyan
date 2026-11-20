@@ -93,6 +93,7 @@ export async function runTextGeneration({ context, backend, payload, signal, ano
         if (validationError) throw validationError;
         throw isDefiniteProviderRefusal(error?.providerStatus) ? providerRefused(error) : error;
     }
+    if (response == null) throw Object.assign(new Error('The AI service ended the reply before it was finished.'), { status: 502 });
     const text = resolvedBackend === 'text'
         ? normalizeContentText(typeof response === 'string' ? response : response?.choices?.[0]?.text ?? response?.choices?.[0]?.message?.content ?? response?.content ?? response?.response ?? response?.[0]?.content ?? '', { excludeReasoning: true })
         : extractMessageFromData(response, 'openai', { excludeReasoning: true })

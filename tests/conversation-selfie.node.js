@@ -6,9 +6,9 @@ import { fixture, png } from './roleplay-transactions-fixture.js';
 
 const { acceptConversationSelfie, registerConversationSelfieJobs } = await import('../src/generation/conversation-selfie.js');
 const { preflightConversationBindings } = await import('../src/generation/conversation-jobs.js');
-const { explicitRetryRecovery, getJob, listJobs, updateJob } = await import('../src/jobs/store.js');
+const { explicitRetryRecovery, getJob, listJobs, requestCancellation, updateJob } = await import('../src/jobs/store.js');
 const { providerStep, readArtifact } = await import('../src/jobs/artifacts.js');
-const { testExports: { runJob }, setDirectoriesResolver } = await import('../src/jobs/runner.js');
+const { abortJob, testExports: { runJob }, setDirectoriesResolver } = await import('../src/jobs/runner.js');
 const { cancelAutoSaves } = await import('../src/endpoints/settings.js');
 const { getConversationMessageRevision } = await import('../public/scripts/neconyan-conversation/message-identity-utils.js');
 
@@ -159,6 +159,29 @@ test('a failed caption keeps the paid picture with the stock caption', async t =
     assert.equal(getJob(f.directories, accepted.job.id).state, 'completed');
     assert.equal(f.messages().at(-1).mes, 'Here, I took this for you.');
     assert.equal(readArtifact(f.directories, accepted.job.id, 'caption-reply').error, 'Caption provider refused.');
+});
+
+test('stopping a selfie caption still posts the paid picture once', async t => {
+    const f = prepared(t);
+    let paid = 0;
+    let id;
+    registerConversationSelfieJobs({
+        generate: async options => {
+            if (options.messages[0].content.includes('image generation prompt')) return { text: 'Nova in the rain' };
+            requestCancellation(f.directories, id, { reason: 'Cancelled from Conversation Mode.' });
+            abortJob(id);
+            options.jobContext.signal.throwIfAborted();
+        },
+        fetchImpl: async () => { paid++; return imageResponse(); },
+        narrate: () => assert.fail('Narration should not start after Stop'),
+    });
+    id = (await acceptConversationSelfie(f.request, await f.submission())).job.id;
+    await runJob(getJob(f.directories, id));
+    assert.equal(getJob(f.directories, id).state, 'cancelled');
+    assert.equal(f.messages().length, 3);
+    assert.equal(f.messages().at(-1).mes, 'Here, I took this for you.');
+    assert.equal(f.messages().at(-1).extra.image_url, readArtifact(f.directories, id, 'selfie-image').url);
+    assert.equal(paid, 1);
 });
 
 test('an unknown caption outcome keeps the picture and waits for an explicit retry', async t => {

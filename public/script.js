@@ -8287,7 +8287,7 @@ class StreamingProcessor {
         // Reasoning completion can await an event before updating its DOM.
         const updateReasoningDom = this.reasoningHandler.updateDom.bind(this.reasoningHandler);
         this.reasoningHandler.updateDom = messageId => {
-            if (this.#isCurrent(messageId)) updateReasoningDom(messageId);
+            if (this.#isCurrent(messageId, this.finalisingInterrupted)) updateReasoningDom(messageId);
         };
         /** @type {PromptReasoning} */
         this.promptReasoning = promptReasoning;
@@ -8351,8 +8351,8 @@ class StreamingProcessor {
      * @param {number} messageId Current message ID
      * @param {boolean?} continueOnReasoning If continuing on reasoning
      */
-    async #checkDomElements(messageId, continueOnReasoning = null) {
-        if (!this.#isCurrent(messageId)) return;
+    async #checkDomElements(messageId, continueOnReasoning = null, allowStopped = false) {
+        if (!this.#isCurrent(messageId, allowStopped)) return;
         const cachedMessageDomInvalid = this.messageDom !== null
             && (!this.messageDom.isConnected || this.messageDom.getAttribute('mesid') !== String(messageId));
         const cachedMessageTextDomInvalid = this.messageTextDom != null && !this.messageTextDom.isConnected;
@@ -8445,8 +8445,9 @@ class StreamingProcessor {
         return messageId;
     }
 
-    async onProgressStreaming(messageId, text, isFinal) {
-        if (!this.#isCurrent(messageId)) return;
+    async onProgressStreaming(messageId, text, isFinal, allowStopped = false) {
+        const isCurrent = () => this.#isCurrent(messageId, allowStopped);
+        if (!isCurrent()) return;
         const isImpersonate = this.type == 'impersonate';
         const isContinue = this.type == 'continue';
         const shouldReduceStreamingWork = shouldReduceStreamingDomWork(globalThis.navigator, {
@@ -8478,7 +8479,7 @@ class StreamingProcessor {
             getMessage: text,
             isImpersonate: isImpersonate,
             isContinue: isContinue,
-            displayIncompleteSentences: !isFinal || this.finishReason === 'length' || Boolean(this.outcome),
+            displayIncompleteSentences: allowStopped || !isFinal || this.finishReason === 'length' || Boolean(this.outcome),
             stoppingStrings: this.stoppingStrings,
             includeUserPromptBias: !this.structuredPrefill,
         });
@@ -8488,8 +8489,8 @@ class StreamingProcessor {
             this.sendTextarea.dispatchEvent(new Event('input', { bubbles: true }));
         } else {
             const mesChanged = chat[messageId].mes !== processedText;
-            await this.#checkDomElements(messageId);
-            if (!this.#isCurrent(messageId)) return;
+            await this.#checkDomElements(messageId, null, allowStopped);
+            if (!isCurrent()) return;
             this.#updateMessageBlockVisibility();
             const currentTime = new Date();
             chat[messageId].mes = processedText;
@@ -8513,7 +8514,7 @@ class StreamingProcessor {
             // Update reasoning
             this.#applyPendingReasoning();
             await this.reasoningHandler.process(messageId, mesChanged, this.maxOutputTokens ? null : this.promptReasoning);
-            if (!this.#isCurrent(messageId)) return;
+            if (!isCurrent()) return;
             if (this.reasoningHandler.hasReasoningContent()) {
                 this.reasoningHandler.updateDom(messageId);
             }
@@ -8532,7 +8533,7 @@ class StreamingProcessor {
                     countOutput: shouldRefreshTokenCount,
                     countReasoning: shouldRefreshTokenCount,
                 });
-                if (!this.#isCurrent(messageId)) return;
+                if (!isCurrent()) return;
                 currentTokenCount = outputTokens;
                 currentReasoningTokens = reasoningTokens;
             }
@@ -8606,7 +8607,7 @@ class StreamingProcessor {
             this.#queueStreamingVisibleWrite({
                 messageId,
                 write: {
-                    isCurrent: () => this.#isCurrent(messageId),
+                    isCurrent,
                     messageTextDom: this.messageTextDom,
                     messageTimerDom: this.messageTimerDom,
                     messageTokenCounterDom: this.messageTokenCounterDom,
@@ -8652,11 +8653,12 @@ class StreamingProcessor {
      * @param {Object} options - Additional options for finalization.
      * @param {boolean} options.unlockUI - Whether to unlock the generation UI.
      */
-    async finalizeIntermediaryMessage(messageId, text, { unlockUI = true }) {
-        if (!this.#isCurrent(messageId)) return;
+    async finalizeIntermediaryMessage(messageId, text, { unlockUI = true, interrupted = false }) {
+        const isCurrent = () => this.#isCurrent(messageId, interrupted);
+        if (!isCurrent()) return;
         applyGenerationOutcome(chat[messageId], this.outcome);
-        await this.onProgressStreaming(messageId, text, true);
-        if (!this.#isCurrent(messageId)) return;
+        await this.onProgressStreaming(messageId, text, true, interrupted);
+        if (!isCurrent()) return;
         // Impersonation fills the composer without creating a chat message.
         if (this.type === 'impersonate') {
             if (unlockUI) this.markUIGenStopped();
@@ -8669,14 +8671,14 @@ class StreamingProcessor {
         renderGenerationOutcome(messageElement, message);
 
         await this.reasoningHandler.finish(messageId);
-        if (!this.#isCurrent(messageId)) return;
+        if (!isCurrent()) return;
         setGenerationFinishMarker(message.extra, this.finishReason);
         setContinuationEmptyMarker(message.extra, this.type === 'continue' && !String(this.result ?? '').trim());
         setGenerationToolTurnMarker(message.extra, Array.isArray(this.toolCalls) && this.toolCalls.length > 0);
         setFreshReasoningMarker(message.extra, this.type === 'continue' && this.lastReasoningPrefix
             ? this.reasoningHandler.reasoning.slice((this.promptReasoning?.prefixReasoning ?? '').length) : this.type === 'continue' ? this.reasoningHandler.reasoning : null);
         // Markers are complete; only now may an automatic Agent read this reply.
-        markStreamCompleted(message);
+        if (!interrupted) markStreamCompleted(message);
 
         if (Array.isArray(this.swipes) && this.swipes.length > 0) {
             const swipeInfoExtra = structuredClone(message.extra ?? {});
@@ -8716,7 +8718,7 @@ class StreamingProcessor {
 
         if (Array.isArray(this.images) && this.images.length > 0) {
             await processImageAttachment(message, { imageUrls: this.images });
-            if (!this.#isCurrent(messageId)) return;
+            if (!isCurrent()) return;
             appendMediaToMessage(message, $(this.messageDom));
         }
 
@@ -8724,6 +8726,11 @@ class StreamingProcessor {
         if (this.reasoningSignature) {
             message.extra = message.extra || {};
             message.extra.reasoning_signature = this.reasoningSignature;
+        }
+
+        if (interrupted) {
+            updateSwipeCounter(messageId, { message, messageElement });
+            return;
         }
 
         if (unlockUI) {
@@ -8755,35 +8762,65 @@ class StreamingProcessor {
         playMessageSound();
     }
 
-    async onErrorStreaming(error = null) {
+    onErrorStreaming(error = null) {
         suppressAutomaticGeneration(this.agentGenerationContext);
         this.thinkingIndicator.clear();
         if (this.isFinished || !this.#isCurrent(this.messageId, true)) {
             return;
         }
 
-        if (this.message && chat[this.messageId] === this.message) {
-            this.message.extra ??= {};
-            // Neconyan: a connection that could not be resumed keeps what arrived and says it may be incomplete.
-            const lost = error?.code === GENERATION_CONNECTION_LOST;
-            this.message.extra.generation_outcome = lost ? truncatedGenerationOutcome('connection_lost') : { version: 1, status: 'error', reason: 'provider_error' };
-            syncMesToSwipe(this.messageId);
-            if (lost) renderGenerationOutcome(chatElement.find(`.mes[mesid="${this.messageId}"]`), this.message);
-            // Neconyan: the same warning toast that a cut-short reply shows on the reader's path (notifyBlocked).
-            if (lost) toastr.warning(generationBlockedNotice(true, this.message.extra.generation_outcome));
-            await saveChatConditional();
-        }
+        const lost = error?.code === GENERATION_CONNECTION_LOST;
+        this.outcome ??= lost ? truncatedGenerationOutcome('connection_lost') : { version: 1, status: 'error', reason: 'provider_error' };
         this.abortController.abort();
         this.isStopped = true;
         this.isFinished = true;
+        eventSource.emit(event_types.GENERATION_STOPPED, ...(this.agentGenerationContext ? [this.agentGenerationContext] : []));
+    }
 
-        this.markUIGenStopped({ emitGenerationEnded: false, emitGenerationStopped: true });
+    async keepInterruptedReply(restore) {
+        const isCurrent = () => this.#isCurrent(this.messageId, true);
+        if (!isCurrent() || this.type === 'impersonate') return;
+        suppressAutomaticGeneration(this.agentGenerationContext);
+        this.thinkingIndicator.clear();
 
-        const noEmitTypes = ['swipe', 'impersonate', 'continue'];
-        if (!noEmitTypes.includes(this.type)) {
-            eventSource.emit(event_types.MESSAGE_RECEIVED, this.messageId, this.type, this.agentGenerationContext);
-            eventSource.emit(event_types.CHARACTER_MESSAGE_RENDERED, this.messageId, this.type, this.agentGenerationContext);
+        if (!/\S/.test(this.result ?? '') && !/\S/.test(this.pendingReasoning ?? '')
+            && !this.images.length && !this.swipes.some(swipe => /\S/.test(swipe ?? ''))) {
+            if (this.type === 'swipe' && this.message?.swipes && this.swipeId === this.message.swipes.length - 1) {
+                // Leave the selected index out of bounds so endSwipe restores the row in place.
+                this.message.swipes.pop();
+                this.message.swipe_info?.splice(this.swipeId);
+            } else if (this.type !== 'swipe') {
+                await restore(true);
+            }
+            return;
         }
+
+        const text = this.continueMessage + this.result;
+        if (this.message) {
+            this.finalisingInterrupted = true;
+            try {
+                await this.finalizeIntermediaryMessage(this.messageId, text, { unlockUI: false, interrupted: true });
+            } finally {
+                this.finalisingInterrupted = false;
+            }
+        } else {
+            await saveReply({
+                type: this.type === 'continue' ? 'appendFinal' : this.type,
+                getMessage: cleanUpMessage({ getMessage: text, isContinue: this.type === 'continue', displayIncompleteSentences: true,
+                    includeUserPromptBias: !this.structuredPrefill }),
+                fromStreaming: true,
+                reasoning: this.reasoningHandler.reasoning,
+                imageUrls: this.images,
+                reasoningSignature: this.reasoningSignature,
+                reasoningTokens: this.reasoningTokens,
+                generationOutcome: this.outcome,
+                isCurrent,
+            });
+        }
+        if (!isCurrent()) return;
+        if (this.outcome?.reason === 'connection_lost') toastr.warning(generationBlockedNotice(true, this.outcome));
+        // A broken connection can leave a longer reply on the server; an explicit Stop cannot.
+        await saveChatWithHeldReply(this.recoveryContext, isCurrent, { keepHeld: this.outcome?.reason === 'connection_lost' });
     }
 
     setFirstSwipe(messageId) {
@@ -8882,10 +8919,7 @@ class StreamingProcessor {
 
             if (!this.isFinished) {
                 console.error(err);
-                suppressAutomaticGeneration(this.agentGenerationContext);
-                this.abortController.abort();
-                this.isStopped = true;
-                this.isFinished = true;
+                this.onErrorStreaming(err);
             }
             return this.result;
         }
@@ -8897,7 +8931,7 @@ class StreamingProcessor {
 
     async generate() {
         if (this.messageId == -1) {
-            this.messageId = await this.onStartStreaming(this.firstMessageText);
+            await this.onStartStreaming(this.firstMessageText);
             const isHidden = typeof document !== 'undefined' && (document.hidden === true || document.visibilityState === 'hidden');
             if (!isHidden) {
                 await delay(1); // delay for message to be rendered
@@ -8993,7 +9027,7 @@ class StreamingProcessor {
 
             if (!this.isFinished) {
                 console.error(err);
-                await this.onErrorStreaming(err);
+                this.onErrorStreaming(err);
             }
             return this.result;
         } finally {
@@ -9506,13 +9540,14 @@ async function nativeRoleplayWorkflowFor(type, options, collector = null) {
     // can still build the complete prompt. Probe the Notebook requirement only when
     // that preferred path is unavailable, and keep the existing error when needed.
     const browserFallbackAllowed = async () => {
-        if (serverRequired) return false;
+        if (serverRequired || options.skipNativeRoleplay === false) return false;
         if (!preferServer) return true;
         serverRequired = await requiresServerReply();
         return !serverRequired;
     };
     if (!workflows || !name || (preferServer && workflows.isNativeRoleplayWorkflowReady?.() === false)) {
         report('workflow-module');
+        if (options.skipNativeRoleplay === false) throw new Error('The server reply workflow is unavailable. Please reload and try again.');
         if (!await browserFallbackAllowed()) throw new Error('The selected Notebook context needs a server reply. Please reload and try again.');
         return null;
     }
@@ -9522,10 +9557,11 @@ async function nativeRoleplayWorkflowFor(type, options, collector = null) {
     // collector is passed on, so only the emitting decision point writes the line.
     const page = await workflows.capturePagePrompts(name, collector);
     if (!page) {
+        if (options.skipNativeRoleplay === false) throw new Error('The server cannot carry these page prompts. Nothing was generated.');
         if (!await browserFallbackAllowed()) throw new Error('The selected Notebook context cannot be combined with these page prompts. Nothing was generated.');
         return null;
     }
-    return { name, workflows };
+    return { name, workflows, browserFallbackAllowed };
 }
 
 function consumePendingGeneratedMessageExtra(message) {
@@ -9549,8 +9585,12 @@ function consumePendingUserMessageExtra(message) {
 export async function Generate(type, { automatic_trigger, force_name2, quiet_prompt, quietToLoud, skipWIAN, force_chid, signal, quietImage, quietName, jsonSchema = null, depth = 0, suppressUserMessage = false, cacheScope = null, preserveLastMessage = false, companionHistoryTarget = null, suppressAutoContinue = false, maxOutputTokens = 0, responseLength = null, preserveReasoningBudget = false, skipNativeRoleplay, preparedNativeRoleplay = null, mewmoryCatchUpOverride } = {}, dryRun = false) {
     const namingCommit = getPendingChatNameCommit();
     if (!dryRun && namingCommit) await namingCommit;
-    if (!dryRun && isChatNavigationBlocked()) return;
-    if (!dryRun && signal?.aborted) return;
+    if (!dryRun && (isChatNavigationBlocked() || signal?.aborted)) {
+        if (!activeGenerationRun && !activeRoleplayJob && !is_group_generating) {
+            unblockGeneration(type, { emitGenerationEnded: false, force: true });
+        }
+        return;
+    }
     // Commands do not own a reply's cancellation controller or generation events.
     if (!(dryRun || depth || suppressUserMessage || type === 'regenerate' || type === 'swipe' || type === 'quiet')) {
         const commandText = String($('#send_textarea').val());
@@ -9586,15 +9626,19 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
         priorReply.extra = structuredClone(priorReply.swipe_info?.[priorReply.swipe_id]?.extra ?? priorReply.extra ?? {});
         restoreGroupSpeaker(priorReply);
     }
+    const ownsChat = () => getCurrentChatId() === originChatId && chatGeneration === originChatGeneration
+        && getCurrentUserHandle() === refusalAccount && activeGenerationRun === run;
     const restoreBlockedAttempt = async (allowStopped = false) => {
-        if (!isCurrent() && !(allowStopped && getCurrentChatId() === originChatId && chatGeneration === originChatGeneration
-            && getCurrentUserHandle() === refusalAccount && activeGenerationRun === run)) return;
+        const canRestore = allowStopped ? ownsChat : isCurrent;
+        if (!canRestore()) return;
         if (priorReply) chat.splice(priorReplyIndex, chat.length - priorReplyIndex, priorReply);
         else if (activeStream?.message && chat.at(-1) === activeStream.message) chat.pop();
+        if (run) run.pendingRegenerate = null;
         await printMessages();
         // A plain reprint draws no Companion notes; hand the rows to the decorators that draw them.
-        if (isCurrent()) document.dispatchEvent(new CustomEvent('neconyan:chat-rows-prepared', { detail: { elements: [...chatElement[0].querySelectorAll(':scope > .mes[mesid]')] } }));
-        if (await saveChatConditional() && recoveryContext?.id && isCurrent()) await discardGeneration(recoveryContext.id, getRequestHeaders());
+        if (!canRestore()) return;
+        document.dispatchEvent(new CustomEvent('neconyan:chat-rows-prepared', { detail: { elements: [...chatElement[0].querySelectorAll(':scope > .mes[mesid]')] } }));
+        if (await saveChatConditional() && recoveryContext?.id && canRestore() && !allowStopped) await discardGeneration(recoveryContext.id, getRequestHeaders());
     };
     const notifyBlocked = (hasText, outcome) => {
         suppressAutomaticGeneration(agentGenerationContext);
@@ -9711,6 +9755,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                 } else if (type !== 'quiet' && type !== 'swipe' && type !== 'continue' && !isImpersonate && !dryRun && !depth && !nativeReplacement && chat.length && !(type === 'regenerate' && preserveLastMessage) && (!suppressUserMessage || type === 'regenerate')) {
                     if (type === 'regenerate') {
                         requestMobileChatBottomPin();
+                        if (run && priorReply) run.pendingRegenerate = { message: priorReply, index: priorReplyIndex, ownsChat };
                     }
                     const deletedMessageId = chat.length - 1;
                     deleteItemizedPromptForMessage(deletedMessageId);
@@ -9754,8 +9799,15 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
         if (deferNativeDecision) {
             nativeRoleplay = await nativeDecision;
             if (!isCurrent()) return;
-            requestControls.nativeRoleplay = Boolean(nativeRoleplay);
         }
+        // Commands and generation-start listeners may have added a page-only
+        // prompt. Settle the route before browser Agents decide whether to run.
+        if (nativeRoleplay?.browserFallbackAllowed && !nativeReplacement) {
+            nativeRoleplay.page = await nativeRoleplay.workflows.capturePagePrompts(nativeRoleplay.name);
+            if (!nativeRoleplay.page && await nativeRoleplay.browserFallbackAllowed()) nativeRoleplay = null;
+            if (!isCurrent()) return;
+        }
+        requestControls.nativeRoleplay = Boolean(nativeRoleplay);
 
         // Occurs only if the generation is not aborted due to slash commands execution
         const companionFeedbackTarget = companionHistoryTarget
@@ -11107,10 +11159,12 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
             recoveryContext = buildRecoveryContext(type, {
                 streaming: isStreamingEnabled() && type !== 'quiet',
                 skip: isAuxiliaryGeneration || Boolean(quiet_prompt) || (type === 'regenerate' && preserveLastMessage),
+                snapshot: run?.pendingRegenerate ? [...chat, priorReply] : type === 'swipe' && priorReply ? [...chat.slice(0, -1), priorReply] : chat,
+                replaceTail: Boolean(run?.pendingRegenerate),
             });
             if (recoveryContext) {
                 // The recovery anchor must be on disk before the paid request can outlive this page.
-                await saveChatConditional({ throwOnError: true });
+                await saveChatConditional({ throwOnError: true, ...(type === 'swipe' && priorReply ? { chatData: [...chat.slice(0, -1), priorReply] } : {}) });
                 if (!isCurrent()) return;
             }
 
@@ -11307,10 +11361,16 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                     clearStreamingProcessorIfCurrent(activeStreamingProcessor);
                     return;
                 } finally {
-                // Neconyan: Safety net - every streaming exit path must leave the UI idle.
-                // Cancelled streams used to skip unblockGeneration(), leaving is_send_press stuck.
-                    if (isCurrent() && is_send_press && streamingProcessor === null && !startedSuccessorGeneration) {
-                        unblockGeneration(type);
+                    const interrupted = activeStream?.isStopped && streamingProcessor === activeStream && ownsChat();
+                    try {
+                        if (interrupted) await activeStream.keepInterruptedReply(restoreBlockedAttempt);
+                    } finally {
+                        if (!startedSuccessorGeneration && activeStream) clearStreamingProcessorIfCurrent(activeStream);
+                        if (interrupted && ownsChat()) {
+                            unblockGeneration(type, { emitGenerationEnded: false, force: true });
+                        } else if (isCurrent() && is_send_press && streamingProcessor === null && !startedSuccessorGeneration) {
+                            unblockGeneration(type);
+                        }
                     }
                 }
             } else {
@@ -11570,6 +11630,9 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
         if (!dryRun && type !== 'quiet') reportBrowserImageRefusal(error, refusalLocator, refusalAccount);
         throw error;
     } finally {
+        if (run?.pendingRegenerate?.ownsChat() && !hasReplacementReply(chat[priorReplyIndex])) {
+            await restoreBlockedAttempt(true).catch(error => console.error('Could not restore prior reply', error));
+        }
         releaseGenerationContext(recoveryContext);
         if (recoveryContext) scheduleHeldGenerationRecovery();
         externalSignal?.removeEventListener('abort', onAbort);
@@ -11628,11 +11691,13 @@ export function stopGeneration() {
         eventSource.emitAndWait(event_types.GENERATION_STOPPED, ...(generationContext ? [generationContext] : []));
     }
 
-    if (stopState.shouldClearStreamingProcessor) {
+    // Keep ownership until the stream has saved the last received words, not just the last paint.
+    const streamWillSettle = activeStreamingProcessor?.originRun && activeStreamingProcessor.originRun === activeGenerationRun;
+    if (stopState.shouldClearStreamingProcessor && !streamWillSettle) {
         clearStreamingProcessorIfCurrent(activeStreamingProcessor);
     }
 
-    if (stopState.shouldStop) {
+    if (stopState.shouldStop && !streamWillSettle) {
         unblockGeneration(stopState.unblockType, { emitGenerationEnded: false, force: true });
     }
 
@@ -12237,17 +12302,18 @@ export async function sendStreamingRequest(type, data, options = {}) {
  * @param {{streaming: boolean, skip: boolean}} options
  * @returns {object|null}
  */
-function buildRecoveryContext(type, { streaming, skip }) {
+function buildRecoveryContext(type, { streaming, skip, snapshot = chat, replaceTail = false }) {
     const kind = type || 'normal';
     if (skip || selected_group || this_chid === undefined || !characters[this_chid]) return null;
     if (!['normal', 'regenerate', 'swipe', 'continue'].includes(kind)) return null;
-    const last = chat[chat.length - 1];
+    const last = snapshot.at(-1);
     return {
         v: 2,
         chatId: getCurrentChatId(),
         characterAvatar: characters[this_chid].avatar,
         type: kind,
-        chatLength: chat.length,
+        chatLength: snapshot.length,
+        ...(replaceTail ? { replaceTail: true } : {}),
         lastSendDate: last?.send_date ?? null,
         lastIsUser: Boolean(last?.is_user),
         anchor: captureRecoveryAnchor(last),
@@ -12335,12 +12401,14 @@ async function recoverHeldGenerationPass() {
     if (!isIdle()) return scheduleHeldGenerationRecovery();
     const headers = getRequestHeaders();
     const jobs = await listRecoverableGenerations(headers);
+    let waitingForReply = false;
     for (const job of jobs) {
         if (!isCurrent()) return scheduleHeldGenerationRecovery();
         if (!isIdle()) return scheduleHeldGenerationRecovery();
         const ctx = job.context;
         if (!ctx || ![1, 2].includes(ctx.v) || ctx.chatId !== chatId || ctx.characterAvatar !== avatar) continue;
         if (job.attached || job.status === 'running') {
+            waitingForReply = true;
             scheduleHeldGenerationRecovery();
             continue;
         }
@@ -12358,6 +12426,14 @@ async function recoverHeldGenerationPass() {
             toastr.error(t`A reply that ran in the background failed.`);
             await discardGeneration(job.id, headers).catch(() => undefined);
         }
+    }
+    const last = chat.at(-1);
+    // Older browser versions saved the pending swipe placeholder before asking the provider.
+    if (!waitingForReply && isCurrent() && isIdle() && last && !last.is_user && last.swipes?.length && last.swipe_id >= last.swipes.length) {
+        const index = chat.length - 1;
+        syncSwipeToMes(index, last.swipes.length - 1);
+        addOneMessage(last, { type: 'swipe', forceId: index });
+        await saveChatConditional();
     }
 }
 
@@ -12456,7 +12532,11 @@ async function applyHeldGeneration(job, headers, isCurrent) {
 
     toastr.info(t`Restoring a reply that finished in the background...`);
     generation_started = new Date(ctx.startedAt);
-    if (target.type === 'swipe') {
+    if (target.type === 'regenerate') {
+        chat.pop();
+        await removeLastMessage(chat.length);
+        if (!isCurrent()) return;
+    } else if (target.type === 'swipe') {
         const target = chat[chat.length - 1];
         target.swipes = Array.isArray(target.swipes) ? target.swipes : [target.mes];
         target.swipe_id = target.swipes.length;
@@ -13838,6 +13918,11 @@ export async function flushPendingChatSaves({ silent = false } = {}) {
  *
  * @returns {Promise<boolean>}
  */
+function hasReplacementReply(message) {
+    const text = String(message?.mes ?? '').trim();
+    return (text !== '' && text !== '...') || Boolean(message?.extra?.reasoning?.trim() || message?.extra?.image || message?.extra?.media?.length);
+}
+
 export function saveChat(...saveChatArguments) {
     const namingCommit = getPendingChatNameCommit();
     if (namingCommit) return namingCommit.then(() => saveChat(...saveChatArguments));
@@ -13859,6 +13944,12 @@ export function saveChat(...saveChatArguments) {
             : (mesId !== undefined && mesId >= 0 && mesId < chat.length)
                 ? chat.slice(0, Number(mesId) + 1)
                 : chat.slice();
+        const pending = activeGenerationRun?.pendingRegenerate;
+        if (pending?.ownsChat() && options.chatData === undefined && mesId === undefined
+            && options.chatName === undefined && sourceChatData.length <= pending.index + 1
+            && !hasReplacementReply(sourceChatData[pending.index])) {
+            sourceChatData[pending.index] = pending.message;
+        }
         const chatData = cloneChatSavePayload(sourceChatData);
         const metadataSnapshot = structuredClone({ ...chat_metadata, ...(options.withMetadata || {}) });
         const activeCharacter = characters[this_chid];
@@ -21515,16 +21606,16 @@ jQuery(async function () {
             }
             if (is_send_press == false) {
                 if (selected_group) {
-                    regenerateGroup();
+                    void regenerateGroup().catch(error => console.debug('Group regeneration failed', error));
                 } else {
                     is_send_press = true;
-                    Generate('regenerate', buildOrFillAdditionalArgs());
+                    void Generate('regenerate', buildOrFillAdditionalArgs()).catch(error => console.debug('Regeneration failed', error));
                 }
             }
         } else if (id == 'option_impersonate') {
             if (is_send_press == false || fromSlashCommand) {
                 is_send_press = true;
-                Generate('impersonate', buildOrFillAdditionalArgs());
+                void Generate('impersonate', buildOrFillAdditionalArgs()).catch(error => console.debug('Impersonation failed', error));
             }
         } else if (id == 'option_continue') {
             if (swipeState == SWIPE_STATE.EDITING) {
@@ -21538,7 +21629,7 @@ jQuery(async function () {
 
             if (is_send_press == false || fromSlashCommand) {
                 is_send_press = true;
-                Generate('continue', buildOrFillAdditionalArgs());
+                void Generate('continue', buildOrFillAdditionalArgs()).catch(error => console.debug('Continuation failed', error));
             }
         } else if (id == 'option_delete_mes') {
             setTimeout(() => openMessageDelete(fromSlashCommand), animation_duration);

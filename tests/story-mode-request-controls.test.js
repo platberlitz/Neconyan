@@ -229,7 +229,7 @@ function makeRuntime({ api = 'openai', model = 'gpt-4o', stream = false, buffer 
     // The completion-marker helpers are the real declarations from their own modules, loaded like the rest of the host code.
     load(context, 'scripts/stream-completion.js', ['completedMessages', 'markStreamCompleted', 'unmarkStreamCompleted', 'isStreamCompleted', 'setContinuationEmptyMarker', 'setGenerationToolTurnMarker', 'setFreshReasoningMarker']);
     load(context, 'scripts/reasoning.js', ['setReasoningUnclosedMarker']);
-    load(context, 'script.js', ['setGenerationFinishMarker']);
+    load(context, 'script.js', ['setGenerationFinishMarker', 'hasReplacementReply']);
     load(context, 'script.js', ['Generate', 'buildRecoveryContext', 'StreamingProcessor', 'sendGenerationRequest', 'sendStreamingRequest', 'getGenerateUrl', 'saveReply', 'getNextMessageId', 'getBiasStrings', 'processCommands', 'extractMessageFromData', 'normalizeContentText', 'stringifyUnknown', 'shouldBufferMainGenerationOutput', 'applyMainGenerationOutputInterceptors', 'unblockGeneration', 'clearStreamingProcessorIfCurrent', 'shouldAutoContinue', 'triggerAutoContinue', 'syncMesToSwipe', 'stopGeneration', 'generateRaw', 'generateRawData', 'generateQuietPrompt', 'TempResponseLength', 'addChatsPreamble', 'addChatsSeparator', 'consumePendingGeneratedMessageExtra']);
     context.removeReasoningFromString = text => context.parseReasoningFromString(text)?.content ?? text;
 
@@ -1090,10 +1090,10 @@ describe('owned host generation flow', () => {
         expect(processor.isStopped).toBe(true);
         expect(processor.abortController.signal.aborted).toBe(true);
         expect(processor.requestAbortController.signal.aborted).toBe(true);
-        expect(context.saveChatConditional).toHaveBeenCalledTimes(1);
+        expect(context.saveChatConditional).toHaveBeenCalledTimes(2);
         expect(context.saveChatConditional).toHaveBeenCalledWith({ throwOnError: true });
         expect(received).not.toHaveBeenCalled();
-        expect(context.chat[0].mes).toBe(buffer ? 'Existing prose. ' : 'Existing prose. abcd');
+        expect(context.chat[0].mes).toBe('Existing prose. abcd');
     });
 });
 

@@ -43,7 +43,6 @@ import {
     flattenSchema,
     summarizeLlmPayloadForLog,
 } from '../../util.js';
-import { isRequestCancellationError } from '../../request-cancellation.js';
 import { getResumableGeneration } from '../../resumable-generations.js';
 import {
     convertClaudeMessages,
@@ -2780,10 +2779,6 @@ function transformResponsesApiResponse(data) {
     };
 }
 
-function isExpectedStreamAbort(error) {
-    return isRequestCancellationError(error);
-}
-
 /**
  * Transforms a Responses API SSE stream into Chat Completions SSE format.
  * @param {import('node-fetch').Response} fetchResponse The upstream Responses API response
@@ -2807,7 +2802,8 @@ function forwardResponsesApiStream(fetchResponse, expressResponse, request, onDi
     expressResponse.statusMessage = statusText;
 
     if (!fetchResponse.ok || !fetchResponse.body) {
-        fetchResponse.body?.pipe(expressResponse);
+        if (fetchResponse.body) fetchResponse.body.pipe(expressResponse);
+        else expressResponse.end();
         return;
     }
 
@@ -2819,6 +2815,7 @@ function forwardResponsesApiStream(fetchResponse, expressResponse, request, onDi
     // A character can arrive split across two network chunks, so bytes are decoded as one stream.
     const decoder = new StringDecoder('utf8');
     let done = false;
+    const resumableGeneration = getResumableGeneration(request);
     const stopPolling = pollStreamingRequestConnection(request, expressResponse, closeStream);
 
     function closeStream() {
@@ -2836,7 +2833,7 @@ function forwardResponsesApiStream(fetchResponse, expressResponse, request, onDi
         if (fetchResponse.body && typeof fetchResponse.body.destroy === 'function') {
             fetchResponse.body.destroy();
         }
-        if (!expressResponse.destroyed && !expressResponse.writableEnded) {
+        if (!expressResponse.writableEnded) {
             expressResponse.end();
         }
     }
@@ -2908,23 +2905,17 @@ function forwardResponsesApiStream(fetchResponse, expressResponse, request, onDi
 
     fetchResponse.body.on('error', (err) => {
         stopPolling();
-        if (done || isExpectedStreamAbort(err) || expressResponse.destroyed) {
-            done = true;
-            if (!expressResponse.destroyed && !expressResponse.writableEnded) {
-                expressResponse.end();
-            }
-            return;
-        }
-
+        if (done) return;
         done = true;
-        console.error('Responses API stream error:', err);
-        expressResponse.reportStreamError?.(err);
+        if (resumableGeneration || !expressResponse.destroyed) {
+            console.error('Responses API stream error:', err);
+            expressResponse.reportStreamError?.(err);
+        }
         if (!expressResponse.writableEnded) {
             expressResponse.end();
         }
     });
 
-    const resumableGeneration = getResumableGeneration(request);
     if (resumableGeneration) {
         // Neconyan: a resumable generation finishes without the client; only an explicit cancel stops it.
         resumableGeneration.onCancel(closeStream);
@@ -3089,8 +3080,9 @@ async function sendOpenAIResponsesRequest(request, response) {
             }
         }
     } catch (error) {
-        if (isExpectedStreamAbort(error)) {
-            if (!response.headersSent && !response.destroyed) {
+        if (controller.signal.aborted) {
+            if (!response.writableEnded) {
+                if (!response.headersSent) response.status(499);
                 response.end();
             }
             return;
@@ -3098,7 +3090,9 @@ async function sendOpenAIResponsesRequest(request, response) {
 
         console.error('Error communicating with OpenAI Responses API: ', error);
         if (!response.headersSent) {
-            response.send({ error: true });
+            response.status(502).send({ error: { message: error.message, ...error } });
+        } else if (!response.writableEnded) {
+            response.end();
         }
     }
 }
@@ -3110,6 +3104,7 @@ function getSafeCompletionErrorStatus(status) {
 
 // Neconyan divergence: export the existing handler so Conversation REST can reuse upstream request assembly without forking backend logic.
 export async function handleChatCompletionsGenerate(request, response) {
+    const controller = new AbortController();
     try {
         if (!request.body) return response.status(400).send({ error: true });
 
@@ -3664,7 +3659,6 @@ export async function handleChatCompletionsGenerate(request, response) {
             return response.status(400).send({ error: { message: error.message } });
         }
 
-        const controller = new AbortController();
         abortOnRequestClose(request, controller, response);
 
         if (!isTextCompletion && Array.isArray(request.body.tools) && request.body.tools.length > 0) {
@@ -3813,7 +3807,7 @@ export async function handleChatCompletionsGenerate(request, response) {
             }
         }
     } catch (error) {
-        if (isExpectedStreamAbort(error) || request.socket.destroyed) {
+        if (controller.signal.aborted || (!getResumableGeneration(request) && request.socket.destroyed)) {
             if (!response.headersSent && !response.writableEnded) {
                 response.status(499).end();
             } else if (!response.writableEnded) {

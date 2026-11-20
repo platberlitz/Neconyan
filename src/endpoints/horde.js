@@ -172,7 +172,10 @@ export async function handleHordeTaskStatus(request, response) {
             },
         });
 
-        if (request.boundProfile && !fetchResult.ok) return response.status(502).send({ error: true });
+        if (request.boundProfile && !fetchResult.ok) {
+            const status = [404, 429].includes(fetchResult.status) ? fetchResult.status : 502;
+            return response.status(status).send({ error: true });
+        }
         const data = await fetchResult.json();
         console.info(`Horde task ${taskId} status:`, data);
         return response.send(data);

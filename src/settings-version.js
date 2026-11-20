@@ -59,6 +59,19 @@ export function getConversationMessagesHash(messages) {
     return createHash('sha256').update(JSON.stringify(canonicalize(messages))).digest('hex');
 }
 
+function getConversationHistoryHash(messages) {
+    return getConversationMessagesHash(messages.map(message => {
+        if (!isPlainObject(message?.extra)) return message;
+        const extra = { ...message.extra };
+        delete extra.conversation_pinned;
+        delete extra.conversation_reactions;
+        const value = { ...message };
+        if (Object.keys(extra).length) value.extra = extra;
+        else delete value.extra;
+        return value;
+    }));
+}
+
 /** Derive message history metadata from disk, never from browser-supplied counters. */
 function stampConversationMessages(conversation, previous, allowRetention, writeVersion) {
     if (!isPlainObject(conversation?.characters)) return conversation;
@@ -73,20 +86,21 @@ function stampConversationMessages(conversation, previous, allowRetention, write
             const before = same && Array.isArray(old.messages) ? old.messages : [];
             const after = Array.isArray(branch.messages) ? branch.messages : [];
             const beforeHash = getConversationMessagesHash(before);
-            let appendOnly = after.length >= before.length && getConversationMessagesHash(after.slice(0, before.length)) === beforeHash;
+            const historyHash = getConversationHistoryHash(before);
+            let appendOnly = after.length >= before.length && getConversationHistoryHash(after.slice(0, before.length)) === historyHash;
             if (!appendOnly && after.length >= before.length) {
                 // Only the exact server identity repair is exempt, never arbitrary
                 // ID/timestamp changes that could retarget an accepted reply.
                 const repaired = { messages: before };
                 if (repairConversationBranchMessageIds(repaired)) {
-                    appendOnly = getConversationMessagesHash(after.slice(0, before.length)) === getConversationMessagesHash(repaired.messages);
+                    appendOnly = getConversationHistoryHash(after.slice(0, before.length)) === getConversationHistoryHash(repaired.messages);
                 }
             }
             if (!appendOnly && allowRetention && after.length === MAX_THREAD_MESSAGES) {
                 // Only a retained, unchanged suffix followed by new messages is a trim.
                 for (let dropped = 1; dropped < before.length; dropped += 1) {
                     const retained = before.length - dropped;
-                    if (getConversationMessagesHash(before.slice(dropped)) === getConversationMessagesHash(after.slice(0, retained))) {
+                    if (getConversationHistoryHash(before.slice(dropped)) === getConversationHistoryHash(after.slice(0, retained))) {
                         appendOnly = true;
                         break;
                     }

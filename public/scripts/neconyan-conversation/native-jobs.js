@@ -19,6 +19,7 @@ import { observeNativeConversationPreview } from './native-preview.js';
 const OBSERVED_ROOT_TYPES = new Set(['conversation.reply', 'conversation.rewrite', 'conversation.selfie', 'conversation.schedule', 'conversation.summary']);
 const observed = new Map();
 const readbacks = new Map();
+const mergeWarnings = new Set();
 function readback(account) {
     const pending = readbacks.get(account);
     if (pending) {
@@ -32,8 +33,16 @@ function readback(account) {
             entry.again = false;
             const result = await refreshConversationStore(account);
             if (account !== getCurrentUserHandle()) throw new Error('account_changed');
-            // Throw so a terminal job keeps polling until its readback succeeds.
-            if (result?.conflict) throw new Error('Conversation store merge conflict.');
+            // Polling the same conflicting versions cannot repair them. Keep the
+            // local edits available and let the user decide when to reload.
+            if (result?.conflict) {
+                if (!mergeWarnings.has(account)) {
+                    mergeWarnings.add(account);
+                    globalThis.toastr?.warning?.('Conversation changed on another device. Copy any unsaved edits before reloading to see the saved replies.');
+                }
+                return false;
+            }
+            mergeWarnings.delete(account);
             changed ||= result?.changed === true;
         } while (entry.again);
         // Present after each successful merge so a closed workspace still badges,

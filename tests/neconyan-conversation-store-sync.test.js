@@ -23,6 +23,33 @@ function store(characters, extra = {}) {
 }
 
 describe('conversation store sync merge', () => {
+    test('a full thread keeps both new messages instead of blocking readback', () => {
+        const items = Array.from({ length: 250 }, (_, i) => message(`m${i}`, `Message ${i}`));
+        const wrap = messages => store({ alice: thread({ main: branch('main', messages, 10) }) });
+        const saved = wrap(items);
+        const local = wrap([...items.slice(1), message('local', 'Local note', 'user')]);
+        const server = wrap([...items.slice(1), message('native', 'Server reply')]);
+        const merged = mergeConversationStore(server, local, saved).characters.alice.branches.main.messages;
+        expect(merged.map(item => item.id)).toEqual([...items.slice(2).map(item => item.id), 'native', 'local']);
+    });
+
+    test('a firing server reminder and a new local reminder merge by identity', () => {
+        const old = { id: 'old', text: 'The server reminder', fired: false };
+        const added = { id: 'new', text: 'The local reminder', fired: false };
+        const fired = { ...old, fired: true };
+        const merged = mergeConversationStore(store({}, { reminders: [fired] }),
+            store({}, { reminders: [old, added] }), store({}, { reminders: [old] }));
+        expect(merged.reminders).toEqual([fired, added]);
+    });
+
+    test('a deleted local thread does not reappear when another character replies', () => {
+        const main = thread({ main: branch('main', [], 10) });
+        const saved = store({ alice: main, bob: main });
+        const local = store({ alice: main });
+        const server = store({ alice: thread({ main: branch('main', [message('native', 'Hello')], 10) }), bob: main });
+        expect(mergeConversationStore(server, local, saved).characters).toEqual({ alice: server.characters.alice });
+    });
+
     test('a repeated server unread count wins over a stale local clear', () => {
         const wrap = (messages, unread, readThrough) => store({ alice: thread({ main: branch('main', messages, 10, { unread, readThrough }) }) });
         const messages = [message('read', 'Seen'), message('a', 'First')];

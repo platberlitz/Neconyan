@@ -42,12 +42,15 @@ async function stream(type = 'normal') {
         StreamingThinkingIndicator: class { constructor() { return thinking; } },
         chat: [], chat_metadata: { tainted: true }, chatId: 'original', chatGeneration: 1, activeGenerationRun: {}, streamingProcessor: null,
         saveChatConditional: jest.fn(async () => true),
+        chatElement: { find: () => element }, addCopyToCodeBlocks() {}, renderGenerationOutcome() {},
+        saveLogprobsForActiveMessage() {}, updateSwipeCounter() {}, acknowledgeHeldGeneration: async () => {},
         document: { querySelector: () => element }, HTMLElement: Element,
         power_user: { streaming_fps: 30 }, main_api: 'openai', scrollLock: false, scrollLockImmunityUntil: 0,
         IN_CHAT_AGENT_TRANSFORM_HISTORY_KEY: 'history', IN_CHAT_AGENT_PRE_GENERATION_INTERCEPT_HISTORY_KEY: 'intercept',
         ReasoningHandler: class {
             reasoning = '';
             process = async () => {};
+            finish = async () => {};
             updateDom = reasoningDomWrite;
             updateReasoning() {}
             hasReasoningContent() { return false; }
@@ -76,7 +79,7 @@ async function stream(type = 'normal') {
     context.saveReply = async () => { context.chat.push({ ...replacement(), mes: 'original', swipes: ['original'] }); };
     loadDeclarations(context, 'scripts/stream-completion.js', ['completedMessages', 'markStreamCompleted', 'unmarkStreamCompleted', 'isStreamCompleted', 'setContinuationEmptyMarker', 'setGenerationToolTurnMarker', 'setFreshReasoningMarker']);
     loadDeclarations(context, 'scripts/reasoning.js', ['setReasoningUnclosedMarker']);
-    loadDeclarations(context, 'script.js', ['setGenerationFinishMarker']);
+    loadDeclarations(context, 'script.js', ['setGenerationFinishMarker', 'saveChatWithHeldReply']);
     vm.runInContext(classSource + '\nthis.StreamingProcessor = StreamingProcessor;', context);
     const syncSwipe = source.match(/^export function syncMesToSwipe\([\s\S]*?^}$/m)[0].replace(/^export /, '');
     vm.runInContext(syncSwipe, context);
@@ -154,7 +157,10 @@ describe('streaming message origin', () => {
 
     test('saves the owned error outcome on its current swipe before finishing', async () => {
         const { context, processor } = await stream();
-        await processor.onErrorStreaming();
+        processor.result = 'The last token had not been painted yet.';
+        processor.onErrorStreaming();
+        await processor.keepInterruptedReply(jest.fn());
+        expect(context.chat[0].mes).toBe(processor.result);
         expect(context.chat[0].swipe_info[0].extra.generation_outcome.status).toBe('error');
         expect(context.saveChatConditional).toHaveBeenCalledTimes(1);
     });
@@ -165,7 +171,9 @@ describe('streaming message origin', () => {
         context.chatElement = { find: jest.fn(() => 'message element') };
         context.generationBlockedNotice = jest.fn(() => 'the notice');
         context.toastr = { warning: jest.fn() };
-        await processor.onErrorStreaming(Object.assign(new Error('lost'), { code: 'GENERATION_CONNECTION_LOST' }));
+        processor.result = 'An unfinished reply.';
+        processor.onErrorStreaming(Object.assign(new Error('lost'), { code: 'GENERATION_CONNECTION_LOST' }));
+        await processor.keepInterruptedReply(jest.fn());
         expect(context.chat[0].swipe_info[0].extra.generation_outcome).toEqual({ version: 1, status: 'truncated', reason: 'connection_lost' });
         expect(context.renderGenerationOutcome).toHaveBeenCalledWith('message element', context.chat[0]);
         // The same sentence also shows once as the warning toast that a cut-short reply shows in Build B.

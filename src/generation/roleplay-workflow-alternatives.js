@@ -48,7 +48,10 @@ export function addWorkflowAlternatives(records, source, effect, output, origina
     const selected = output.message ?? output.messages?.[0] ?? output;
     const previous = effect === 'continue' ? originalRecords[index] : null;
     const text = selected.mes ?? selected.continuedText ?? (previous ? previous.mes + selected.text : selected.text);
-    if (!message || message.is_user || typeof text !== 'string' || message.mes !== text) throw fail();
+    if (!message || typeof text !== 'string' || message.mes !== text) throw fail();
+    // Continue can target the user's last message, but automatic reply swipes belong to character messages.
+    if (effect === 'continue' && message.is_user) return records;
+    if (message.is_user) throw fail();
     const swipes = Array.isArray(message.swipes) && message.swipes.length ? [...message.swipes] : [message.mes];
     const info = Array.isArray(message.swipe_info) ? structuredClone(message.swipe_info.slice(0, swipes.length)) : [];
     while (info.length < swipes.length) info.push({});

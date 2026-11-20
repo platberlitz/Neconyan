@@ -5620,7 +5620,18 @@ export function readChatCompletionStream(response, { canMultiSwipe = false, expe
             }
             const rawData = value.data;
             if (rawData === '[DONE]') { await reportUnused(); return; }
-            const parsed = JSON.parse(rawData);
+            let parsed;
+            try {
+                parsed = JSON.parse(rawData);
+            } catch (error) {
+                console.warn('The provider sent an incomplete reply frame.', error);
+                await reportUnused();
+                state.outcomes ??= {};
+                state.outcome = state.outcomes[0] ??= truncatedGenerationOutcome();
+                void reader.cancel().catch(() => {});
+                yield { text, swipes, logprobs: null, toolCalls, state };
+                return;
+            }
             completed ||= streamCompletionSignal(parsed);
             state.outcomes ??= {};
             const choices = Array.isArray(parsed.choices) ? parsed.choices : null;

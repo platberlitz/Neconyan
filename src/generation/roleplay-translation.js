@@ -133,22 +133,24 @@ function partsForTranslation(text, provider) {
 }
 
 function splitChunks(text, size) {
-    if (text.length <= size) return [text];
-    const delimiters = ['\n\n', '\n', ' ', ''];
-    const divide = (value, index) => {
-        if (value.length <= size) return [value];
-        const separator = delimiters[index] ?? '';
-        if (!separator) return value.match(new RegExp(`[\\s\\S]{1,${size}}`, 'g')) || [];
-        const pieces = value.split(separator).flatMap(part => part.length < size ? [part] : divide(part, index + 1));
-        const merged = [];
-        for (const part of pieces) {
-            if (merged.length && merged.at(-1).length + separator.length + part.length <= size) {
-                merged[merged.length - 1] += separator + part;
-            } else merged.push(part);
+    const chunks = [];
+    let start = 0;
+    while (text.length - start > size) {
+        const window = text.slice(start, start + size);
+        let end = window.length;
+        for (const separator of ['\n\n', '\n', ' ']) {
+            const index = window.lastIndexOf(separator);
+            if (index <= 0) continue;
+            end = index + separator.length;
+            break;
         }
-        return merged;
-    };
-    return divide(text, 0);
+        // Don't split a Unicode character between provider calls.
+        if (/[\uD800-\uDBFF]/.test(window[end - 1])) end--;
+        chunks.push(window.slice(0, end));
+        start += end;
+    }
+    chunks.push(text.slice(start));
+    return chunks;
 }
 
 async function responseText(response, field) {
@@ -188,7 +190,7 @@ async function transport({ provider, chunks, policy, credentials, fetchImpl, sig
             const response = await fetchImpl(`https://translate.yandex.net/api/v1/tr.json/translate?ucid=${randomUUID()}&srv=android&format=text`,
                 { ...options, method: 'POST', body: form });
             return responseText(response, data => Array.isArray(data?.text) && data.text.every(value => typeof value === 'string')
-                ? data.text.join() : null);
+                ? data.text.join('') : null);
         }
         case 'lingva': {
             const url = `${credentials.url.replace(/\/$/, '')}/auto/${encodeURIComponent(lang)}/${encodeURIComponent(text)}`;

@@ -14,7 +14,7 @@ import { readArtifact, unresolvedProviderStep, writeArtifact } from '../jobs/art
 import { acceptJob, getJob, listJobs, releaseJob, setJobResume, updateJob } from '../jobs/store.js';
 import { noteOwner, registerHandler } from '../jobs/runner.js';
 import { getConversationThreadKey } from '../endpoints/conversation-store.js';
-import { appendConversationJobMessage, captureConversationTarget, commitConversationEffect, readConversationTarget } from './conversation-effects.js';
+import { appendConversationJobMessage, captureConversationTarget, commitConversationEffect, isConversationDeliveryStopped, readConversationTarget } from './conversation-effects.js';
 import { withRoleplayAccount } from '../roleplay-store.js';
 import { createConversationNarrator } from './conversation-narration.js';
 
@@ -213,34 +213,42 @@ async function runConversationSelfieJob(context, { generate, fetchImpl, narrate 
         const url = await renderConversationImage(context, snapshot, { effectName: 'selfie-image', prompt, speaker, assertSourceLocked, fetchImpl });
         image = { url, prompt };
     }
+    const stopped = () => isConversationDeliveryStopped(context);
     await commitConversationEffect(context, snapshot.target, 'selfie-mark', branch => {
         branch.sessionMarkers = { ...(branch.sessionMarkers || {}), image_at: Date.now() };
         return true;
-    }, { verify });
+    }, { verify, keepGeneratedReply: true });
 
     let caption = '';
     try {
-        const raw = await generateOnce(context, snapshot, 'caption-reply',
+        const raw = stopped() ? readArtifact(directories, job.id, 'caption-reply')?.text : await generateOnce(context, snapshot, 'caption-reply',
             generationOptions(snapshot, CAPTION_SYSTEM, captionRequest(snapshot, image.prompt), 80), assertSourceLocked, generate);
         caption = normalizeConversationOutputText(stripSpeakerPrefixText(formatPromptText(raw, 240), snapshot.characterName, normalizeConversationOutputText));
     } catch (error) {
-        // The picture is already paid for; a refused caption falls back to the
-        // stock line instead of discarding it. Cancellation, changed context
-        // and an unknown caption outcome still stop the post, keeping the
-        // picture for an explicit retry.
-        if (error?.name === 'AbortError' || error?.status === 409 || context.signal?.aborted
-            || unresolvedProviderStep(directories, job.id)) throw error;
-        writeArtifact(directories, job.id, 'caption-reply', { text: '', error: String(error?.message || 'Caption failed.').slice(0, 500) });
+        // A stopped or refused caption must not discard the finished image.
+        // The final write still checks that the original target is unchanged.
+        if (!stopped()) {
+            if (error?.name === 'AbortError' || error?.status === 409 || context.signal?.aborted
+                || unresolvedProviderStep(directories, job.id)) throw error;
+            writeArtifact(directories, job.id, 'caption-reply', { text: '', error: String(error?.message || 'Caption failed.').slice(0, 500) });
+        }
     }
     const text = caption || FALLBACK_CAPTION;
-    const narration = narrate ? await narrate(context, snapshot, text, speaker, { effectId: 'selfie', verify }) : null;
+    let narration = null;
+    if (narrate && !stopped()) {
+        try {
+            narration = await narrate(context, snapshot, text, speaker, { effectId: 'selfie', verify });
+        } catch (error) {
+            if (!stopped()) throw error;
+        }
+    }
     setJobResume(directories, job.id, 'apply');
     const posted = await appendConversationJobMessage(context, snapshot.target, 'selfie', {
         role: snapshot.role,
         name: snapshot.characterName,
         mes: text,
         extra: { ...snapshot.extra, conversation_mode_image: true, image_url: image.url, image_prompt: image.prompt },
-    }, { verify, presentation: { narration } });
+    }, { verify, presentation: { narration }, keepGeneratedReply: true });
     writeArtifact(directories, job.id, 'result', { messageId: posted?.id || '', url: image.url });
     return { artifact: true };
 }

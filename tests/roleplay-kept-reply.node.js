@@ -641,8 +641,9 @@ test('a Deep Swipe user alternative keeps the user role and target message', asy
     const named = captureRoleplayNamedWorkflow('deep-swipe.user', { instruction: 'Rewrite this as me.' });
     const f = prepared(t, { effect: 'alternative', named, messageIndex: 0 });
     const child = await f.child();
-    saveCandidate({ dirs: f.dirs, child, text: 'A rewritten user line.' });
-    keepRoleplayReply(f.context(child), { reason: 'stopped', rootJobId: f.jobId });
+    saveCandidate({ dirs: f.dirs, child, text: 'A rewritten user line.', reasoning: 'Thinking about the rewrite.' });
+    const before = f.records()[1];
+    const kept = keepRoleplayReply(f.context(child), { reason: 'stopped', rootJobId: f.jobId });
     const saved = f.records();
     assert.equal(saved.length, 3);
     assert.equal(saved[1].is_user, true);
@@ -650,6 +651,9 @@ test('a Deep Swipe user alternative keeps the user role and target message', asy
     assert.deepEqual(saved[1].swipes, ['Original', 'A rewritten user line.']);
     assert.equal(saved[1].swipe_id, undefined);
     assert.equal(saved[1].mes, 'Original');
+    assert.deepEqual(saved[1].extra, before.extra);
+    assert.equal(saved[1].swipe_info[1].extra.reasoning, 'Thinking about the rewrite.');
+    assert.equal(kept.textHash, roleplayHash(saved[1].swipes[1]));
 });
 
 test('a group speaker keeps its avatar and generation identity', async t => {
