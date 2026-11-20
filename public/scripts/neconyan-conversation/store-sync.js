@@ -20,7 +20,13 @@ import { getRequestHeaders } from '../../script.js';
 import { getCurrentUserHandle } from '../user.js';
 import { extension_settings } from '../extensions.js';
 import { CONVERSATION_STORE_KEY } from './constants.js';
-import { cloneConversationValue, conversationValuesEqual, mergeConversationStore } from './store-sync-utils.js';
+import {
+    applyConversationDeleteScope,
+    cloneConversationValue,
+    conversationValuesEqual,
+    listRemovedConversationTargets,
+    mergeConversationStore,
+} from './store-sync-utils.js';
 
 const STORE_GET_ENDPOINT = '/api/neconyan-conversation/store/get';
 const STORE_SAVE_ENDPOINT = '/api/neconyan-conversation/store/save';
@@ -28,11 +34,16 @@ const STORE_SAVE_DEBOUNCE_MS = 500;
 // One stalled request must not pin the serialised sync queue forever; aborting
 // lets the queue advance and a caller retry against a fresh connection.
 const STORE_REQUEST_TIMEOUT_MS = 60000;
+// A save the page could not keep says so, in words the catalogue builder collects and the runtime localiser translates.
+const CONVERSATION_SAVE_CONFLICT_TEXT = 'Some recent Conversation changes were not saved because they also changed on the server. The latest version is shown now; make those changes again.';
+const CONVERSATION_SAVE_FAILED_TEXT = 'Could not save your last Conversation change. Try again in a moment.';
+const SAVE_FAILED_NOTICE_INTERVAL_MS = 10000;
 
 let savedSnapshot = null;
 let savedVersion = null;
 let loadedAccount;
 let syncQueue = Promise.resolve();
+let lastSaveFailedNoticeAt = 0;
 
 function readLocalStore() {
     const store = extension_settings?.[CONVERSATION_STORE_KEY];
@@ -44,6 +55,22 @@ function setLocalStore(store) {
 }
 
 function swallow() {}
+
+/** 'conflict' (the page's edits were replaced by the server copy) always speaks; 'failed' (a save did not reach the server) at most once per 10 s. */
+function noticeConversationSave(kind) {
+    if (kind === 'conflict') {
+        globalThis.toastr?.error?.(CONVERSATION_SAVE_CONFLICT_TEXT);
+        return;
+    }
+    const now = Date.now();
+    if (now - lastSaveFailedNoticeAt < SAVE_FAILED_NOTICE_INTERVAL_MS) return;
+    lastSaveFailedNoticeAt = now;
+    globalThis.toastr?.error?.(CONVERSATION_SAVE_FAILED_TEXT);
+}
+
+function dispatchRefreshed(detail) {
+    globalThis.window?.dispatchEvent(new CustomEvent('neconyan:conversation-store-refreshed', { detail }));
+}
 
 /** Bind the downloaded settings to their authenticated owner, before profile loading. */
 export function bindConversationAccount(account) {
@@ -132,12 +159,14 @@ async function refreshOnce(account) {
     if (changed) {
         setLocalStore(merged);
     }
+    // What the server took away since the baseline, read before the baseline moves, tells the views what to leave.
+    const removed = listRemovedConversationTargets(savedSnapshot, serverStore);
     // The baseline is the server's copy, not the merged one. The merged copy can
     // contain unsaved local edits; recording those as acknowledged would let the
     // next read treat them as unchanged and replace them with the older value.
     captureConversationStore(serverStore, version);
     if (changed) {
-        globalThis.window?.dispatchEvent(new CustomEvent('neconyan:conversation-store-refreshed'));
+        dispatchRefreshed(removed);
     }
     return { store: merged, version, conflict: false, changed };
 }
@@ -180,6 +209,22 @@ export function ensureConversationAutomationOwnership({ acknowledgement = null, 
 }
 
 /**
+ * A save that cannot be reconciled with the server's copy: the page's changes
+ * are replaced by the server's, the baseline moves with them so the next edit
+ * saves, and the user is told (the page would otherwise repeat the same
+ * conflict on every later save).
+ */
+function adoptServerCopy(refreshed, account) {
+    checkAccount(account);
+    const removed = listRemovedConversationTargets(savedSnapshot, refreshed.store);
+    setLocalStore(cloneConversationValue(refreshed.store));
+    captureConversationStore(refreshed.store, refreshed.version);
+    dispatchRefreshed(removed);
+    noticeConversationSave('conflict');
+    return false;
+}
+
+/**
  * Adopt the server's confirmation without dropping edits the browser made while
  * the request was in flight: merge the returned copy with the current store
  * against the copy that was actually submitted. The baseline only ever becomes
@@ -206,7 +251,8 @@ async function saveOnce(account, skipUnchanged) {
     if (!Number.isSafeInteger(savedVersion)) {
         // Learn the authoritative version before the first Conversation-only save.
         const refreshed = await refreshOnce(account);
-        if (!refreshed || refreshed.conflict) return false;
+        if (!refreshed) return false;
+        if (refreshed.conflict) return adoptServerCopy(refreshed, account);
     }
     const local = readLocalStore();
     if (!local || !Number.isSafeInteger(savedVersion)) {
@@ -224,16 +270,27 @@ async function saveOnce(account, skipUnchanged) {
         // The version moved on under us (usually an unrelated settings save).
         // Merge the server copy, which keeps local edits, then retry once.
         const refreshed = await refreshOnce(account);
-        if (!refreshed || refreshed.conflict) {
+        if (!refreshed) {
             return false;
+        }
+        if (refreshed.conflict) {
+            return adoptServerCopy(refreshed, account);
         }
         const retrySource = readLocalStore();
         if (!retrySource || !Number.isSafeInteger(savedVersion)) {
             return false;
         }
         const retry = cloneConversationValue(retrySource);
-        const body = await postJson(STORE_SAVE_ENDPOINT, { store: retry, version: savedVersion }, account);
-        return absorbSaveResult(body, retry);
+        try {
+            const body = await postJson(STORE_SAVE_ENDPOINT, { store: retry, version: savedVersion }, account);
+            return absorbSaveResult(body, retry);
+        } catch (retryError) {
+            if (retryError.status === 409 && retryError.message !== 'account_changed') {
+                // The version moved again after a clean merge: not a conflict. Keep the edit for the next save, as before.
+                return false;
+            }
+            throw retryError;
+        }
     }
 }
 
@@ -241,6 +298,43 @@ async function saveOnce(account, skipUnchanged) {
 export function persistConversationStoreNow(account = getCurrentUserHandle(), { skipUnchanged = false } = {}) {
     const save = () => saveOnce(account, skipUnchanged);
     const run = syncQueue.then(save, save);
+    syncQueue = run.then(swallow, swallow);
+    return run;
+}
+
+/**
+ * Run a request the server answers with `{ scope, store, version }` (a DM
+ * delete) in the sync queue, behind any save in flight, then adopt the answer:
+ * the scope is applied to the page's copy and to its baseline, so what the
+ * server deleted is gone from both and every other unsaved edit is merged as
+ * usual. Returns the server's reply; a failed request rejects and changes nothing.
+ */
+export function applyConversationServerEdit(endpoint, body, account = getCurrentUserHandle()) {
+    const edit = async () => {
+        const reply = await postJson(endpoint, body, account);
+        const serverStore = responseStore(reply);
+        const localBefore = readLocalStore();
+        const savedBefore = savedSnapshot;
+        const merged = localBefore && savedBefore
+            ? mergeConversationStore(serverStore, applyConversationDeleteScope(localBefore, reply.scope), applyConversationDeleteScope(savedBefore, reply.scope))
+            : cloneConversationValue(serverStore);
+        if (merged) {
+            setLocalStore(merged);
+        } else {
+            // Another unsaved edit disagrees with the server about something else: the server's copy wins and the user is told.
+            setLocalStore(cloneConversationValue(serverStore));
+            noticeConversationSave('conflict');
+        }
+        captureConversationStore(serverStore, reply.version);
+        const fromServer = listRemovedConversationTargets(savedBefore, serverStore);
+        const fromPage = listRemovedConversationTargets(localBefore, readLocalStore());
+        dispatchRefreshed({
+            threadKeys: [...new Set([...fromServer.threadKeys, ...fromPage.threadKeys])],
+            groupIds: [...new Set([...fromServer.groupIds, ...fromPage.groupIds, ...(reply.scope?.groupId ? [reply.scope.groupId] : [])])],
+        });
+        return reply;
+    };
+    const run = syncQueue.then(edit, edit);
     syncQueue = run.then(swallow, swallow);
     return run;
 }
@@ -260,6 +354,14 @@ function takePendingSave() {
     return resolve;
 }
 
+/** Resolve a debounced save's waiters with its result; a save that failed says so (at most once per 10 s) and resolves `false`. */
+function settleDebouncedSave(save, resolve) {
+    save.then(resolve, error => {
+        if (error?.message !== 'account_changed') noticeConversationSave('failed');
+        resolve(false);
+    });
+}
+
 /** Coalesce rapid edits into one save. The returned promise resolves once the
  *  debounced save has actually run, so `flushConversationStore` can await it. */
 function scheduleConversationStoreSave(account = getCurrentUserHandle()) {
@@ -276,7 +378,7 @@ function scheduleConversationStoreSave(account = getCurrentUserHandle()) {
     }
     saveTimer = setTimeout(() => {
         const resolve = takePendingSave();
-        persistConversationStoreNow(account, { skipUnchanged: true }).then(resolve, () => resolve(false));
+        settleDebouncedSave(persistConversationStoreNow(account, { skipUnchanged: true }), resolve);
     }, STORE_SAVE_DEBOUNCE_MS);
     return pendingSave;
 }
@@ -292,7 +394,7 @@ export async function flushConversationStore(account = getCurrentUserHandle()) {
     checkAccount(account);
     const resolve = pendingAccount === account ? takePendingSave() : null;
     const save = persistConversationStoreNow(account, { skipUnchanged: true });
-    if (resolve) save.then(resolve, () => resolve(false));
+    if (resolve) settleDebouncedSave(save, resolve);
     if (!await save) return false;
     return conversationValuesEqual(readLocalStore(), savedSnapshot) || !readLocalStore()
         || persistConversationStoreNow(account, { skipUnchanged: true });

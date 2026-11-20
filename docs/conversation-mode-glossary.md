@@ -41,7 +41,7 @@ The Pals panel is the Conversation contact and thread list. It contains solo DMs
 
 Selecting a Pal opens that specific solo or group thread. Conversation entries may also appear among recent chats on the Neconyan welcome screen.
 
-Deleting a solo DM through its Pals controls resets its Conversation branches and disables that character’s solo Conversation. Deleting a group DM history resets the corresponding group Conversation history. These actions are different from **New Chat**, which preserves older branches.
+Deleting a solo DM with its Pals bin button removes its messages, branches, memory summary and settings, including Manual Scheduling, and the character stops messaging you there. Their group DMs and their Character Schedule are kept. Deleting a group DM removes the group, its settings, and every member’s messages and memory summaries in it; for a Roleplay group’s Conversation history, only that history goes. On Home, **Delete** on a DM’s only recent chat deletes the whole DM in the same way. These actions are different from **New Chat**, which preserves older branches.
 
 ## Persona and User Status Controls
 
@@ -288,7 +288,7 @@ Automatic memory generation begins after enough non-system messages exist. Later
 | **Clear memory**   | Removes the stored summary.                                                |
 | **Summarize**      | Quick-tool form of refreshing Conversation memory.                         |
 
-Memory is persistent and is not automatically removed when a branch or visible DM history is deleted. Use **Clear memory** when you also want the saved long-term context removed.
+Memory is persistent: it survives new chats and deleted branches. Deleting the DM itself, from Pals or with Home’s **Delete** on its only chat, removes its memory summary. Use **Clear memory** when you want the saved long-term context removed but the DM kept.
 
 The internal **Copy memory to new branch** behavior is enabled by default. New branches can therefore retain the source Conversation’s summarized continuity.
 

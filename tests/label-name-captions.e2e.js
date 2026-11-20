@@ -45,7 +45,7 @@ const wording = {
     'pt-pt': {
         openChatLabel: 'Abrir chat', editCardLabel: 'Editar card', editGroupLabel: 'Editar grupo', newBranchLabel: 'Nova ramificação', defaultBranchRow: 'Principal',
         A1: 'Abrir chat com Thoughts', A2: 'Editar Thoughts', A2Edit: 'Editar Edit Thoughts', A2Ampersand: 'Editar Tom & Jerry', A3: 'Editar Draft', B1: 'Abrir Draft',
-        A4Solo: 'Excluir histórico da DM individual com Thoughts', A4Group: 'Excluir histórico de Conversa em grupo com Thoughts',
+        A4Solo: 'Excluir histórico da DM individual com Thoughts', A4Group: 'Excluir DM em grupo \'Group chat\'',
         A4Fallback: 'Excluir histórico da DM individual com Personagem',
         A5Default: 'Renomear Principal', A5Main: 'Renomear Main', A5Summary: 'Renomear Summary', A5Fallback: 'Renomear conversation',
         A6Default: 'Excluir Principal', A6Main: 'Excluir Main', A6Summary: 'Excluir Summary', A6Fallback: 'Excluir conversation',
@@ -56,7 +56,7 @@ const wording = {
         openChatLabel: 'Chat öffnen', editCardLabel: 'Karte bearbeiten', editGroupLabel: 'Gruppe bearbeiten', newBranchLabel: 'Neuer Zweig', defaultBranchRow: 'Haupt',
         A1: 'Chat mit Thoughts öffnen', A2: 'Thoughts bearbeiten', A2Edit: 'Edit Thoughts bearbeiten', A2Ampersand: 'Tom & Jerry bearbeiten', A3: 'Draft bearbeiten',
         B1: 'Draft öffnen',
-        A4Solo: 'Solo-DM-Verlauf mit Thoughts löschen', A4Group: 'Gruppenunterhaltungsverlauf mit Thoughts löschen', A4Fallback: 'Solo-DM-Verlauf mit Charakter löschen',
+        A4Solo: 'Solo-DM-Verlauf mit Thoughts löschen', A4Group: 'Gruppen-DM „Group chat“ löschen', A4Fallback: 'Solo-DM-Verlauf mit Charakter löschen',
         A5Default: 'Haupt umbenennen', A5Main: 'Main umbenennen', A5Summary: 'Summary umbenennen', A5Draft: 'Draft umbenennen', A5Fallback: 'conversation umbenennen',
         A6Default: 'Haupt löschen', A6Main: 'Main löschen', A6Summary: 'Summary löschen', A6Draft: 'Draft löschen', A6Fallback: 'conversation löschen',
         A8CurrentCard: 'Aktuelle Karte: Thoughts', A8CurrentCharacter: 'Aktueller Charakter: Thoughts', A8Card: 'Karte: X', A8Character: 'Charakter: Tom & Jerry',
@@ -335,7 +335,7 @@ for (const language of languages) {
         const twice = value => [value, value];
         const readings = [
             reading(DEFECT, 'A4', 'title and aria-label of the delete button, solo row, character Thoughts', thoughts.deleteDm, twice(words.A4Solo)),
-            reading(DEFECT, 'A4', 'title and aria-label of the delete button, group row, member Thoughts', group.deleteDm, twice(words.A4Group)),
+            reading(DEFECT, 'A4', 'title and aria-label of the delete button, group row, group Group chat', group.deleteDm, twice(words.A4Group)),
             reading(PRESERVATION, 'A4', 'title and aria-label of the delete button, solo row, character with no name (Character fallback; controlled fixture)', nameless.deleteDm, twice(words.A4Fallback)),
             reading(PRESERVATION, 'A5', 'title and aria-label of the rename button, the default branch named Main', defaultBranch.rename, twice(words.A5Default)),
             reading(DEFECT, 'A5', 'title and aria-label of the rename button, another branch named Main', otherMain.rename, twice(words.A5Main)),

@@ -8,7 +8,7 @@ import { loadMovingUIState, power_user } from '../power-user.js';
 import { dragElement, shouldSendOnEnter } from '../RossAscends-mods.js';
 import { debounce } from '../utils.js';
 import { addConversationFilesToInput, clearConversationAttachmentInput, submitAcceptedReply, submitConversationInput, updateConversationAttachmentPreview } from './attachments.js';
-import { CHROME_IDS, DEFAULT_GROUNDED_DIALOGUE_RULES, DEFAULT_CHATROOM_PROMPT } from './constants.js';
+import { CHROME_IDS, DEFAULT_GROUNDED_DIALOGUE_RULES, DEFAULT_CHATROOM_PROMPT, SAFE_TOAST_OPTIONS } from './constants.js';
 import {
     createConversationBranchForAvatar,
     deleteConversationBranch,
@@ -26,7 +26,6 @@ import {
     parseConversationThreadKey,
     parsePositiveInt,
     renameConversationBranch,
-    resetCharacterConversationBranches,
     setActiveConversationBranch,
 } from './context.js';
 import { editConversationMessage } from './generation.js';
@@ -40,7 +39,7 @@ import {
     filterConversationPals,
 } from './interface.js';
 import { getCharacterForAvatar } from './media.js';
-import { clearAllConversationUnreadCounts, clearUnreadCount, isConversationActiveThread } from './notifications.js';
+import { clearAllConversationUnreadCounts, getActiveConversationThreadKey, isConversationActiveThread } from './notifications.js';
 import { getConversationPals, getConversationRailItems, getCurrentGroupConversationMembers } from './pals-rail.js';
 import { switchConversationPersona } from './persona-switch.js';
 import { markConversationBranchRead } from './presentation.js';
@@ -71,8 +70,9 @@ import {
     renderScheduleDisplay,
     togglePalsRail,
 } from './settings-panel.js';
-import { getSettings, resetFollowupCount, saveSettings } from './settings-store.js';
+import { getSettings, saveSettings } from './settings-store.js';
 import { conversationState } from './state.js';
+import { isDeletedConversationThread } from './store-sync-utils.js';
 import { getConversationThread, updateLastUserActivity } from './thread-store.js';
 import {
     branchConversationFromMessage,
@@ -95,7 +95,6 @@ import {
     updateConversationNotificationSettingsVisibility,
     updateConversationSearchQuery,
 } from './timeline-render.js';
-import { setLastConversationPreview } from './typing.js';
 import { noteHomePersonaChoice } from '../scratchpad/home-persona.js';
 
 const CONVERSATION_STYLESHEET_HREF = 'css/neconyan-conversation.css?v=20261121-mobile-audit';
@@ -415,12 +414,56 @@ function toggleConversationMessageActionBar(actionBar, trigger) {
     trigger.setAttribute('aria-expanded', 'true');
 }
 
+/** Leave the open thread because it was deleted: open the next DM in the rail, or close the workspace when there is none. */
+function leaveDeletedConversationThread(avatar, groupId) {
+    const remainingPals = getConversationRailItems()
+        .filter(item => !(item.character.avatar === avatar && item.groupId === groupId));
+    if (remainingPals.length > 0) {
+        const nextPal = remainingPals[0];
+        openConversationWorkspaceForAvatar(nextPal.character.avatar, { groupId: nextPal.groupId || null, showToast: false });
+        scheduleInterfaceRefresh({ syncControls: true });
+    } else {
+        conversationState.conversationWorkspaceOpen = false;
+        emitConversationWorkspaceStateChange();
+        scheduleInterfaceRefresh({ syncControls: false });
+    }
+}
+
+/**
+ * The page's store changed under it (a refresh, or a delete it ran itself). Whatever it holds open for a DM that is gone must not
+ * outlive the DM: a settings drawer is closed without saving (saving would write the deleted DM's settings back), and the open
+ * thread is left.
+ */
+function reconcileDeletedConversationThread(detail) {
+    const drawer = document.getElementById(CHROME_IDS.settingsDrawer);
+    if (drawer instanceof HTMLElement && drawer.hidden === false) {
+        const drawerGroupId = drawer.dataset.conversationGroupId || '';
+        // The drawer's own identity, never getConversationThreadKey: a deleted group falls back to the anchor's solo key there.
+        const drawerThreadGone = drawerGroupId
+            ? Array.isArray(detail?.groupIds) && detail.groupIds.includes(drawerGroupId)
+            : (Array.isArray(detail?.threadKeys) ? detail.threadKeys : []).some(key => {
+                const parsed = parseConversationThreadKey(key);
+                return !parsed.groupId && parsed.avatar === drawer.dataset.conversationAvatar
+                    && getConversationPersonaId(parsed.personaId) === getConversationPersonaId(drawer.dataset.conversationPersonaId || '');
+            });
+        if (drawerThreadGone) {
+            closeConversationSettings(null, { save: false });
+        }
+    }
+    const groupId = conversationState.conversationSelectedGroupId || '';
+    if (isDeletedConversationThread(detail, { activeKey: getActiveConversationThreadKey(), groupId })) {
+        leaveDeletedConversationThread(getCurrentCharAvatar(), groupId);
+    }
+    schedulePalsRailRender();
+}
+
 export function bindConversationChromeControls(sheld) {
     if (sheld.dataset.sbConversationChromeBound === 'true') {
         return;
     }
 
     sheld.dataset.sbConversationChromeBound = 'true';
+    window.addEventListener('neconyan:conversation-store-refreshed', event => reconcileDeletedConversationThread(event.detail));
     document.addEventListener('click', event => {
         if (!(event.target instanceof Element) || !event.target.closest('.sb-conversation-message-actions, .sb-conversation-more-actions')) {
             closeAllConversationMessageActionBars();
@@ -683,44 +726,25 @@ export function bindConversationChromeControls(sheld) {
             case 'delete-dm': {
                 const avatar = target.dataset.avatar;
                 const groupId = target.dataset.groupId || '';
-                const character = getCharacterForAvatar(avatar);
                 if (!avatar) {
                     break;
                 }
-                const name = character?.name || 'this character';
-                const historyLabel = groupId ? `group Conversation history with ${name}` : `solo DM history with ${name}`;
-                const confirmed = typeof globalThis.confirm === 'function'
-                    ? globalThis.confirm(`Delete your previous ${historyLabel}? This cannot be undone.`)
-                    : true;
-                if (confirmed) {
-                    resetCharacterConversationBranches(avatar, { groupId });
-                    setLastConversationPreview(avatar, 'Conversation ready', { groupId });
-                    clearUnreadCount(avatar, { groupId });
-                    resetFollowupCount(avatar, { groupId });
-
-                    if (!groupId) {
-                        const charSettings = getSettings(avatar, { groupId: '' });
-                        charSettings.enabled = false;
-                        saveSettings(avatar, charSettings, { groupId: '' });
-                    }
-
-                    if (isConversationActiveThread(avatar, groupId)) {
-                        const remainingPals = getConversationRailItems()
-                            .filter(item => !(item.character.avatar === avatar && item.groupId === groupId));
-                        if (remainingPals.length > 0) {
-                            const nextPal = remainingPals[0];
-                            openConversationWorkspaceForAvatar(nextPal.character.avatar, { groupId: nextPal.groupId || null, showToast: false });
-                            scheduleInterfaceRefresh({ syncControls: true });
-                        } else {
-                            conversationState.conversationWorkspaceOpen = false;
-                            emitConversationWorkspaceStateChange();
-                            scheduleInterfaceRefresh({ syncControls: false });
-                        }
-                    } else {
-                        schedulePalsRailRender();
-                    }
-                    toastr.success(`Deleted ${historyLabel}.`);
+                // The server deletes the DM and the page adopts its answer; the page leaves the thread when the answer arrives.
+                const edits = await import('./dm-edits.js');
+                const copy = edits.getConversationDmDeleteCopy({ avatar, groupId });
+                const confirmed = typeof globalThis.confirm === 'function' ? globalThis.confirm(copy.confirm) : true;
+                if (!confirmed) {
+                    break;
                 }
+                try {
+                    await edits.deleteConversationDm({ avatar, groupId });
+                } catch (error) {
+                    console.error('Conversation Mode: the DM could not be deleted', error);
+                    toastr.error(copy.failed);
+                    break;
+                }
+                schedulePalsRailRender();
+                toastr.success(copy.success, '', SAFE_TOAST_OPTIONS);
                 break;
             }
             case 'new-chat': {

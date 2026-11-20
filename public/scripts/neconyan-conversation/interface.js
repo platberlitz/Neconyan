@@ -218,8 +218,9 @@ export function renderPalsRail() {
         deleteButton.dataset.groupId = groupId || '';
         // Preserve names when the localiser revisits translated captions.
         const deleteName = character.name || translate('Character');
+        const deleteGroupName = group?.name || translate('Group DM');
         const deleteTitle = groupId
-            ? t`Delete group Conversation history with ${deleteName}`
+            ? t`Delete group DM '${deleteGroupName}'`
             : t`Delete solo DM history with ${deleteName}`;
         deleteButton.title = deleteTitle;
         deleteButton.setAttribute('aria-label', deleteTitle);

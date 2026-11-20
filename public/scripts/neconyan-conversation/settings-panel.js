@@ -666,10 +666,13 @@ export function openConversationSettings() {
     chrome.drawer.querySelector('input, select, textarea, button')?.focus?.({ preventScroll: true });
 }
 
-export function closeConversationSettings(identity = null) {
+/**
+ * Close the settings drawer. `save: false` closes it without writing its fields back, for a drawer whose DM was deleted elsewhere.
+ */
+export function closeConversationSettings(identity = null, { save = true } = {}) {
     const drawer = document.getElementById(CHROME_IDS.settingsDrawer);
     if (drawer instanceof HTMLElement) {
-        const shouldSave = drawer.hidden === false && !isUiClosing(drawer);
+        const shouldSave = save && drawer.hidden === false && !isUiClosing(drawer);
         const capturedIdentity = {
             avatar: identity?.avatar || drawer.dataset.conversationAvatar || getCurrentCharAvatar(),
             groupId: Object.prototype.hasOwnProperty.call(identity || {}, 'groupId')

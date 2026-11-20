@@ -222,6 +222,11 @@ function mergeBranchMap(serverBranches, localBranches, savedBranches) {
         // combined into the replacement branch: report instead of guessing.
         if (!isSameConversationBranchIdentity(savedBranch, serverMap[id]) || !isSameConversationBranchIdentity(savedBranch, localBranch)) {
             if (localChanged) {
+                // The server never touched this branch, so the browser's reset or edit is the only change to it.
+                if (conversationValuesEqual(serverMap[id], savedBranch)) {
+                    merged[id] = copyBranch(localBranch);
+                    continue;
+                }
                 return { conflict: true };
             }
             merged[id] = copyBranch(serverMap[id]);
@@ -288,6 +293,80 @@ function mergeCharacterMap(serverCharacters, localCharacters, savedCharacters) {
 }
 
 /**
+ * Apply the scope a server-side DM delete reports to a copy of the store: the
+ * removed threads, the replacement records, the group record and the
+ * reminders it deleted. Used on the browser's copy and on its baseline alike,
+ * so a deleted thread is neither a local edit nor a server change in the merge.
+ */
+export function applyConversationDeleteScope(store, scope) {
+    if (!isPlainConversationObject(store) || !scope) return store;
+    const next = cloneConversationValue(store);
+    const keys = new Set(scope.removeKeys || []);
+    if (isPlainConversationObject(next.characters)) {
+        for (const key of Object.keys(next.characters)) {
+            if (keys.has(key) || (scope.keyPrefix && key.startsWith(scope.keyPrefix))) delete next.characters[key];
+        }
+        for (const [key, record] of Object.entries(scope.replaceKeys || {})) next.characters[key] = cloneConversationValue(record);
+    }
+    if (isPlainConversationObject(next.legacyThreadPersonaAssignments)) {
+        for (const key of keys) delete next.legacyThreadPersonaAssignments[key];
+    }
+    if (scope.groupId && Array.isArray(next.groups)) {
+        next.groups = next.groups.filter(group => !(String(group?.id) === scope.groupId && String(group?.personaId || '').trim() === scope.personaId));
+    }
+    if (scope.reminderIds?.length && Array.isArray(next.reminders)) {
+        const ids = new Set(scope.reminderIds);
+        next.reminders = next.reminders.filter(reminder => !ids.has(reminder?.id));
+    }
+    return next;
+}
+
+function holdsConversationContent(record) {
+    if (!isPlainConversationObject(record)) return false;
+    if (isPlainConversationObject(record.settings) && Object.keys(record.settings).length) return true;
+    if (record.memorySummary) return true;
+    return Object.values(isPlainConversationObject(record.branches) ? record.branches : {})
+        .some(branch => branch?.memorySummary || (Array.isArray(branch?.messages) && branch.messages.length));
+}
+
+/**
+ * The record a deleted solo DM leaves behind when its pal has a Character
+ * Schedule: the schedule, and nothing the pal could answer from (no settings,
+ * no memory summary, no messages).
+ */
+export function isScheduleOnlyConversationRecord(record) {
+    return isPlainConversationObject(record)
+        && isPlainConversationObject(record.schedule)
+        && (!record.settings || (isPlainConversationObject(record.settings) && !Object.keys(record.settings).length))
+        && !record.memorySummary
+        && Object.values(isPlainConversationObject(record.branches) ? record.branches : {})
+            .every(branch => !branch?.memorySummary && !(Array.isArray(branch?.messages) && branch.messages.length));
+}
+
+/**
+ * What a store change took away from the page's side: the thread keys that are
+ * gone (or were emptied down to a schedule-only record) and the group ids that
+ * are gone. A DM the page opened and never used is not in either list.
+ */
+export function listRemovedConversationTargets(before, after) {
+    const characters = store => (isPlainConversationObject(store?.characters) ? store.characters : {});
+    const groupIds = store => (Array.isArray(store?.groups) ? store.groups : []).map(group => String(group?.id || '')).filter(Boolean);
+    const beforeCharacters = characters(before);
+    const afterCharacters = characters(after);
+    const threadKeys = Object.keys(beforeCharacters).filter(key => !Object.hasOwn(afterCharacters, key)
+        || (isScheduleOnlyConversationRecord(afterCharacters[key]) && holdsConversationContent(beforeCharacters[key])));
+    const remaining = new Set(groupIds(after));
+    return { threadKeys, groupIds: groupIds(before).filter(id => !remaining.has(id)) };
+}
+
+/** True when a store change reported by `listRemovedConversationTargets` took away the thread the page has open. */
+export function isDeletedConversationThread(detail, { activeKey = '', groupId = '' } = {}) {
+    if (!activeKey) return false;
+    if (groupId) return Array.isArray(detail?.groupIds) && detail.groupIds.includes(groupId);
+    return Array.isArray(detail?.threadKeys) && detail.threadKeys.includes(activeKey);
+}
+
+/**
  * Merge the authoritative server store into the current browser store. Returns
  * null when both sides changed the same value differently; the caller keeps the
  * local edits and reports the conflict instead of saving over them.
@@ -327,6 +406,12 @@ export function mergeConversationStore(serverStore, localStore, savedStore) {
         if (['reminders', 'groups'].includes(key) && [serverValue, localValue, savedValue ?? []].every(list =>
             Array.isArray(list) && list.every(entry => entry?.id) && new Set(list.map(messageId)).size === list.length)) {
             merged[key] = mergeMessageLists(serverValue, localValue, savedValue, Infinity);
+            if (key === 'groups' && Array.isArray(merged[key])) {
+                // A group the server removed (a DM delete) stays removed, even if this page changed it.
+                const serverIds = new Set(serverValue.map(messageId));
+                const savedIds = new Set((savedValue ?? []).map(messageId));
+                merged[key] = merged[key].filter(group => serverIds.has(messageId(group)) || !savedIds.has(messageId(group)));
+            }
             continue;
         }
         if (!conversationValuesEqual(localValue, serverValue)) {
