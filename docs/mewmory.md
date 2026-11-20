@@ -145,9 +145,13 @@ The gift fixture covers stable NPC details, a mistaken interpretation, a later r
 For the browser check, start a disposable Neconyan server and the fixture provider:
 
     node tests/mewmory-provider.js
-    NECONYAN_MEWMORY_TEST_DISPOSABLE=1 NECONYAN_TEST_BASE_URL=http://127.0.0.1:4490 npm --prefix tests run test:e2e -- mewmory.e2e.js --workers=1
+    NECONYAN_MEWMORY_TEST_DISPOSABLE=1 NECONYAN_TEST_BASE_URL=http://127.0.0.1:4490 npm --prefix tests run test:e2e -- '/mewmory\.e2e\.js$' --workers=1
 
 Build frontend assets before testing a packaged server. The browser checks cover new chats and branches, connection profiles, rejected saves, saved settings after a reload, role-specific Auto, backfill, original sources, correction persistence, selector diagnostics, desktop and 393/320px touch layouts, and the real writing prompt.
+
+The file search and Scratchpad sharing checks start their own disposable servers. Run them separately:
+
+    NECONYAN_CONVERSATION_TEST_DISPOSABLE=1 npm --prefix tests run test:e2e -- '/(mewmory-rag|neconyan-scratchpad-mewmory)\.e2e\.js$' --workers=1
 
 Real-model extraction recall, unsupported interpretations, character voice, associative relevance and fallback cost still require a labelled story set and configured model endpoints. No particular selector model is claimed to be best. A shared provider in the fixtures is a test arrangement, not automatic role sharing in the application.
 
