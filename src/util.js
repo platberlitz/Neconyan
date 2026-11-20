@@ -11,7 +11,7 @@ import util from 'node:util';
 import _ from 'lodash';
 import yauzl from 'yauzl';
 import mime from 'mime-types';
-import { default as simpleGit } from 'simple-git';
+import { simpleGit } from 'simple-git';
 import chalk from 'chalk';
 import bytes from 'bytes';
 import { LOG_LEVELS, CHAT_COMPLETION_SOURCES, MEDIA_REQUEST_TYPE } from './constants.js';

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 
 import { sync as commandExistsSync } from 'command-exists';
-import simpleGit from 'simple-git';
+import { simpleGit } from 'simple-git';
 import { isBunRuntime } from '../runtime.js';
 
 /** @type {{ AUTO: 'auto', SYSTEM: 'system', BUILTIN: 'builtin' }} */

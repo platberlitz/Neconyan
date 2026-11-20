@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
 import { test } from 'node:test';
-import simpleGit from 'simple-git';
+import { simpleGit } from 'simple-git';
 import { createRemoteRefresh, getStatusDisplayBranch, isGitRepository, NON_GIT_REPOSITORY_MESSAGE } from '../src/server-admin-git.js';
 
 // Execute the production status and update handlers against disposable repositories.
