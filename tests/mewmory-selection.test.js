@@ -368,10 +368,12 @@ test('native chat changes and returning from Conversation load immediately', asy
     expect(mewmory.view.locator.chat).toBe('first');
 });
 
-test('first generation inspects its saved chat while the memory panel is closed', async () => {
+test('first generation checks its saved chat without loading the closed memory panel', async () => {
+    fetch.mockResolvedValueOnce(response({ enabled: false, excludedIndices: [], npcText: '', memoryText: '' }));
     const messages = [{ mes: 'Hello', mewmorySourceIndex: 0 }];
     expect(await prepareMewmoryGeneration(messages)).toEqual({ enabled: false, chat: messages });
-    expect(fetch.mock.calls.some(([url]) => url.endsWith('inspect'))).toBe(true);
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual(['/api/mewmory/prepare']);
+    expect(JSON.parse(fetch.mock.calls[0][1].body).locator.chat).toBe('first');
 });
 
 test('backfill starts one server job, restores its status and cancels only on an explicit stop', async () => {
@@ -1006,7 +1008,7 @@ test('generation, first-message and prompt preparation wait for a delayed new-ch
             await delayedEnable.promise;
             state = { enabled: true, revision: 2 };
         }
-        if (url.endsWith('/prepare')) return response({ excludedIndices: [], npcText: '', memoryText: 'Remembered', inspection: {} });
+        if (url.endsWith('/prepare')) return response({ enabled: state.enabled, excludedIndices: [], npcText: '', memoryText: 'Remembered', inspection: {} });
         return response({ locator: JSON.parse(body).locator, ...state });
     });
     chat.splice(0, chat.length, { is_user: false, mes: 'Hello there' });

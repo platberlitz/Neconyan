@@ -93,7 +93,27 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
     await page.locator('#neconyan-workspace-rail [data-neconyan-route="mewmory"]').click();
     await expect(workspace.getByRole('tab', { name: 'Now', exact: true })).toBeVisible();
     await workspace.getByRole('tab', { name: 'Settings', exact: true }).click();
-    await openSection(workspace, 'models');
+    const modelsFold = workspace.locator('#mewmory-settings-models');
+    const modelsSummary = modelsFold.locator('summary');
+    await expect(workspace.locator('.mewmory-heading .mewmory-status')).not.toHaveAttribute('data-state', 'busy');
+    await expect(modelsFold).toHaveJSProperty('open', false);
+    const point = await modelsSummary.evaluate(summary => {
+        summary.scrollIntoView({ block: 'center', behavior: 'instant' });
+        const { x, y, width, height } = summary.getBoundingClientRect();
+        return { x: x + width / 2, y: y + height / 2 };
+    });
+    await page.mouse.move(point.x, point.y);
+    await page.mouse.down();
+    try {
+        // A background update may arrive during a real press, not just between clicks.
+        await page.evaluate(() => new Promise(resolve => {
+            window.dispatchEvent(new Event('mewmory:updated'));
+            window.requestAnimationFrame(() => window.requestAnimationFrame(resolve));
+        }));
+    } finally {
+        await page.mouse.up();
+    }
+    await expect(modelsFold).toHaveJSProperty('open', true);
     const settingsStatus = workspace.locator('#mewmory-settings-status');
     for (const name of ['extractor', 'pawspective', 'selector', 'fallback']) {
         await workspace.getByRole('group', { name: 'Model role to set up' }).locator('#mewmory-role-' + name).click();

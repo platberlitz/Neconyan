@@ -1903,7 +1903,7 @@ function foldSettingsSections(page) {
         fold.append(summary, body);
         fold.open = openSettingsFolds().has(key);
         fold.addEventListener('toggle', () => {
-            if (!searchTerms(ui.settingsQuery).length) rememberSettingsFold(key, fold.open);
+            if (fold.isConnected && !searchTerms(ui.settingsQuery).length) rememberSettingsFold(key, fold.open);
         });
         part.replaceWith(fold);
     }
@@ -2763,16 +2763,36 @@ function createNavigation() {
 }
 
 let renderFrame = null;
+let renderAfterPress = false;
+let activePress = null;
+
+function startPress(event) {
+    if (!event.isPrimary || event.button !== 0) return;
+    const control = event.target.closest('summary, button, label, input, select, textarea, a');
+    if (control) activePress = { control, id: event.pointerId, scope: getMewmoryScope() };
+}
+
+function finishPress(event) {
+    if (!activePress || (event.type !== 'blur' && event.pointerId !== activePress.id)) return;
+    activePress = null;
+    if (renderAfterPress) queueRender();
+}
 
 function queueRender() {
     if (renderFrame !== null) return;
     renderFrame = window.requestAnimationFrame(() => {
         renderFrame = null;
+        // Replacing the pressed node before pointerup loses the native click.
+        if (ui.root?.contains(activePress?.control) && activePress.scope === getMewmoryScope()) {
+            renderAfterPress = true;
+            return;
+        }
         render();
     });
 }
 
 function render() {
+    renderAfterPress = false;
     if (renderFrame !== null) {
         window.cancelAnimationFrame(renderFrame);
         renderFrame = null;
@@ -2950,7 +2970,12 @@ export async function mountMewmory(root) {
     initMewmory();
     await loadMewmoryStyles();
     if (ui.root !== root) {
+        ui.root?.removeEventListener('pointerdown', startPress, true);
         ui.root = root;
+        root.addEventListener('pointerdown', startPress, true);
+        window.addEventListener('pointerup', finishPress, true);
+        window.addEventListener('pointercancel', finishPress, true);
+        window.addEventListener('blur', finishPress);
         window.addEventListener('mewmory:updated', queueRender);
     }
     render();
