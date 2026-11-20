@@ -500,9 +500,12 @@ test('manual index rebuild owns every batch, persists its result and does not re
     await loadCurrentState(directories, locator);
     mutateState(directories, locator, state => { state.enabled = true; });
     let calls = 0;
+    const progressDuringRebuild = new Map();
     registerMewmoryOperations({ embedFn: async (_dirs, _config, inputs) => {
         calls++;
         assert.equal(readState(directories, locator).index.version, '', 'the rebuilding vector space is not published partway through');
+        const { completed, total } = getSavedJob(directories, first.job.id).progress;
+        if (total !== null) progressDuringRebuild.set(completed, total);
         if (calls === 2) write([...messages, { name: 'Mara', mes: 'Arrived while rebuilding', is_user: false }]);
         return { vectors: inputs.map(() => [1, 0]), usage: { role: 'embedding' } };
     } });
@@ -514,6 +517,8 @@ test('manual index rebuild owns every batch, persists its result and does not re
     assert.equal((await startOperation(directories, 'test', 'index', request)).job.id, first.job.id);
     await jobRunner.runJob(first.job);
     assert.equal(getSavedJob(directories, first.job.id).state, 'completed');
+    assert.deepEqual(getSavedJob(directories, first.job.id).progress, { completed: 81, total: 81 });
+    assert.deepEqual([...progressDuringRebuild], [[32, 81], [64, 81]], 'progress counts indexed passages, including new ones in the total');
     assert.deepEqual(readArtifact(directories, first.job.id, 'result'), { remaining: 0 });
     assert.ok(calls >= 5, 'all batches run without any browser continuation');
     assert.equal(readState(directories, locator).index.pending, false);

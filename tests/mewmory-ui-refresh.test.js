@@ -146,8 +146,8 @@ test('a failed preparation cannot stamp a new reply with the previous recall', a
 
 test('waiting polls back off, restart on activity and stop following a replaced chat', async () => {
     initMewmory();
-    const tick = () => globalThis.window.setTimeout.mock.lastCall[0]();
-    const delay = () => globalThis.window.setTimeout.mock.lastCall[1];
+    const tick = () => global.window.setTimeout.mock.lastCall[0]();
+    const delay = () => global.window.setTimeout.mock.lastCall[1];
     const schedule = on.mock.calls.filter(([event]) => event === 'MESSAGE_EDITED').at(-1)[1];
     const activeConfig = { ...config, autoUpdate: true, roles: { extractor: { enabled: true } } };
     global.fetch = jest.fn(async (url, { body } = {}) => url.endsWith('config/get')

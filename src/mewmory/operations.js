@@ -93,6 +93,7 @@ export function registerMewmoryOperations({ call = callJsonRole, embedFn = embed
                 result = await updateIndex(state, directories, config, { signal, embedFn: providers.embedFn });
                 signal.throwIfAborted();
                 await loadCurrentState(directories, locator);
+                let indexed = 0;
                 mutateState(directories, locator, current => {
                     assertCurrent(current, readConfig(directories), job, embeddingVersion);
                     if (current.indexOperation !== job.id) fail('Memory search changed while it was being rebuilt. Start the rebuild again.', 409);
@@ -100,12 +101,13 @@ export function registerMewmoryOperations({ call = callJsonRole, embedFn = embed
                     // The freshly rebuilt copy goes last so its entries win over older ones.
                     const merged = mergeVectorIndex(current, config, [current.index, state.index]);
                     result.remaining = config.roles.embedding.enabled ? merged.remaining : 0;
+                    indexed = config.roles.embedding.enabled ? Object.keys(merged.vectors).length : 0;
                     current.index = result.remaining > 0 && current.index.version !== merged.version
                         ? { ...current.index, pending: true, build: { version: merged.version, vectors: merged.vectors } }
                         : { version: merged.version, vectors: merged.vectors, pending: result.remaining > 0 };
                     addUsage(current, result.usage);
                 }, undefined, { existingOnly: true });
-                await progress({ stage: 'index', completed: 0, total: result.remaining });
+                await progress({ stage: 'index', completed: indexed, total: indexed + result.remaining });
             } while (result.remaining > 0);
             result = { remaining: 0 };
         } else fail('Mewmory does not recognise that action.');
