@@ -54,6 +54,9 @@ test('summary planning keeps recent turns and invalidates edited or shortened hi
     const edited = structuredClone(messages);
     edited[0].text = 'CORRECTED';
     assert.equal(summary.planSummary(enabled(edited, saved), edited).summary.text, '');
+    const reviewed = structuredClone(messages);
+    reviewed[1].proposals = { 0: 'applied' };
+    assert.equal(summary.planSummary(enabled(reviewed, saved), reviewed).summary.text, '');
     assert.equal(summary.planSummary(enabled(messages, saved), messages.slice(0, 10)).summary, undefined);
     const extended = turns(92);
     const next = summary.planSummary(enabled(extended, saved), extended);

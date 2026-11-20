@@ -458,7 +458,7 @@ test('search errors, timeouts, cancellation and oversized responses are bounded'
         body: { [Symbol.asyncIterator]() { return { next: () => new Promise(() => {}) }; } } });
     await assert.rejects(web.performWebSearch(brave, {
         directories: a.directories, timeoutMs: 15, fetch: async () => stalled(),
-    }), error => error.code === 'SCRATCHPAD_WEB_SEARCH_TIMEOUT' && error.message === 'The web search timed out after 20 seconds.');
+    }), error => error.code === 'SCRATCHPAD_WEB_SEARCH_TIMEOUT' && error.message === 'The web search timed out after 0.015 seconds.');
 
     const bodyController = new AbortController();
     const bodyCancel = web.performWebSearch(brave, {

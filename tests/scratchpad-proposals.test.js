@@ -91,10 +91,13 @@ describe('Scratchpad reply parsing', () => {
     test('keeps stable indexed mixed proposals and caps suggestions at 24', () => {
         const reply = Array.from({ length: 27 }, (_, index) => fence(index % 2 ? { type: 'character', action: 'create', character: { name: 'Nova' } }
             : { type: 'image', action: 'generate', target: 'image', prompt: `Scene ${index}` })).join('\n');
-        const changes = splitReply(reply).filter(part => part.type === 'change');
+        const parts = splitReply(reply);
+        const changes = parts.filter(part => part.type === 'change');
         expect(changes).toHaveLength(24);
         expect(changes.map(part => part.index)).toEqual(Array.from({ length: 24 }, (_, index) => index));
         expect(changes.every(part => part.change)).toBe(true);
+        const prose = parts.filter(part => part.type === 'text').map(part => part.text).join('');
+        expect(prose).toContain(fence({ type: 'image', action: 'generate', target: 'image', prompt: 'Scene 26' }));
     });
     test('keeps text and changes in reply order', () => {
         const reply = [

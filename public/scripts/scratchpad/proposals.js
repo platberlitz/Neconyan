@@ -10,7 +10,7 @@ import { validPresetValue } from './preset-fields.js';
 
 export const CHANGE_FENCE = 'scratchpad-change';
 const FENCE_PATTERN = /```scratchpad-change[^\n]*\n([\s\S]*?)```/g;
-const MAX_CHANGES = 24;
+export const MAX_CHANGES = 24;
 
 export const TEXT_FIELDS = Object.freeze(Object.fromEntries(Object.entries(CHARACTER_FIELDS).filter(([, value]) => value.type === 'text').map(([key, value]) => [key, value.label])));
 export const LIST_FIELDS = Object.freeze(Object.fromEntries(Object.entries(CHARACTER_FIELDS).filter(([, value]) => ['greetings', 'tags'].includes(value.type)).map(([key, value]) => [key, value.label])));
@@ -270,7 +270,10 @@ export function splitReply(reply) {
     for (const match of source.matchAll(FENCE_PATTERN)) {
         if (match.index > last) parts.push({ type: 'text', text: source.slice(last, match.index) });
         last = match.index + match[0].length;
-        if (index >= MAX_CHANGES) continue;
+        if (index >= MAX_CHANGES) {
+            parts.push({ type: 'text', text: match[0] });
+            continue;
+        }
         const raw = match[1].trim();
         let change = null;
         let error = '';

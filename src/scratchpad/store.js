@@ -16,6 +16,7 @@ import { normaliseAttachments } from '../../public/scripts/scratchpad/attachment
 import { MAX_REPLY_SWIPES, replySwipes, selectReplySwipe } from '../../public/scripts/scratchpad/swipes.js';
 import { MAX_PINNED_NOTE_BYTES } from '../../public/scripts/scratchpad/pinned-note.js';
 import { DEFAULT_FEEDBACK_TONE, isFeedbackTone } from '../../public/scripts/scratchpad/feedback-tone.js';
+import { splitReply } from '../../public/scripts/scratchpad/proposals.js';
 
 export const SCRATCHPAD_SCHEMA = 1;
 export const ASSISTANT_IDS = BUILTIN_ASSISTANT_IDS;
@@ -323,10 +324,12 @@ function normaliseMessage(input, { allowInternalKeys = false, allowSwipes = true
     if (!isPlainObject(input)) return null;
     const role = input.role === 'assistant' ? 'assistant' : input.role === 'user' ? 'user' : null;
     if (!role) return null;
+    const hasId = typeof input.id === 'string' && ID_PATTERN.test(input.id);
+    if (allowInternalKeys && (!hasId || typeof input.text !== 'string')) return null;
     const text = typeof input.text === 'string' ? input.text : '';
     if (byteLength(text) > MAX_MESSAGE_BYTES) return null;
     const message = {
-        id: typeof input.id === 'string' && ID_PATTERN.test(input.id) ? input.id : newScratchpadId(),
+        id: hasId ? input.id : newScratchpadId(),
         role,
         text,
         created: typeof input.created === 'string' ? input.created.slice(0, 40) : now(),
@@ -396,8 +399,11 @@ export function normalisePinnedNote(value = '') {
 
 function normaliseSession(input, { allowInternalKeys = false } = {}) {
     if (!isPlainObject(input)) return null;
-    const id = typeof input.id === 'string' && ID_PATTERN.test(input.id) ? input.id : newScratchpadId();
-    const messages = Array.isArray(input.messages) ? input.messages.map(message => normaliseMessage(message, { allowInternalKeys })).filter(Boolean).slice(-MAX_MESSAGES) : [];
+    const hasId = typeof input.id === 'string' && ID_PATTERN.test(input.id);
+    if (allowInternalKeys && !hasId) return null;
+    const id = hasId ? input.id : newScratchpadId();
+    const messages = Array.isArray(input.messages) ? input.messages.map(message => normaliseMessage(message, { allowInternalKeys })) : [];
+    if ((input.messages !== undefined && !Array.isArray(input.messages)) || messages.length > MAX_MESSAGES || messages.includes(null)) throw damagedBucket();
     return {
         id,
         name: boundedString(input.name, MAX_NAME_LENGTH, { trim: true }) || 'Scratchpad',
@@ -462,12 +468,21 @@ export function emptyBucket(source) {
     return { version: SCRATCHPAD_SCHEMA, source, activeSessionId: null, cleanup: defaultCleanup(), sessions: [] };
 }
 
+function damagedBucket() {
+    return fail('SCRATCHPAD_DAMAGED', 'This Scratchpad file could not be read. It has not been changed.', 500);
+}
+
 export function normaliseBucket(input, source, { allowInternalKeys = false } = {}) {
-    if (!isPlainObject(input) || input.version !== SCRATCHPAD_SCHEMA) return emptyBucket(source);
-    const sessions = Array.isArray(input.sessions) ? input.sessions.map(session => normaliseSession(session, { allowInternalKeys })).filter(Boolean).slice(0, MAX_SESSIONS) : [];
-    const activeSessionId = sessions.some(session => session.id === input.activeSessionId) ? input.activeSessionId : (sessions[0]?.id ?? null);
-    return { version: SCRATCHPAD_SCHEMA, source: { ...source, label: source.label || input.source?.label || '' }, activeSessionId,
-        cleanup: defaultCleanup(), sessions };
+    if (!isPlainObject(input) || input.version !== SCRATCHPAD_SCHEMA || !Array.isArray(input.sessions)) throw damagedBucket();
+    try {
+        const sessions = input.sessions.map(session => normaliseSession(session, { allowInternalKeys }));
+        if (sessions.includes(null)) throw damagedBucket();
+        const activeSessionId = sessions.some(session => session.id === input.activeSessionId) ? input.activeSessionId : (sessions[0]?.id ?? null);
+        return { version: SCRATCHPAD_SCHEMA, source: { ...source, label: source.label || input.source?.label || '' }, activeSessionId,
+            cleanup: defaultCleanup(), sessions };
+    } catch {
+        throw damagedBucket();
+    }
 }
 
 /**
@@ -723,13 +738,13 @@ function nextName(bucket, assistant, excludeId, settings) {
     return `${label}'s notes`;
 }
 
-export function createSession(bucket, input = {}) {
+export function createSession(bucket, input = {}, { inheritSettings = true } = {}) {
     if (bucket.cleanup?.enabled) removeOldestSessions(bucket, bucket.sessions.length - MAX_SESSIONS + 1);
     if (bucket.sessions.length >= MAX_SESSIONS) {
         throw fail('SCRATCHPAD_SESSION_LIMIT', `There are already ${MAX_SESSIONS} Scratchpad sessions here. Delete one to start another.`, 409);
     }
     const assistant = normaliseAssistant(input.assistant);
-    const previous = bucket.sessions.find(item => item.id === bucket.activeSessionId);
+    const previous = inheritSettings ? bucket.sessions.find(item => item.id === bucket.activeSessionId) : null;
     const name = boundedString(input.name, MAX_NAME_LENGTH, { trim: true });
     const settings = normaliseSettings(input.settings, previous ? { ...previous.settings, picked: [], pickedSource: null, lorebook: '', notes: previous.settings.notes.filter(ref => !ref.grantId) } : defaultSettings());
     const session = {
@@ -914,7 +929,9 @@ export function markProposal(bucket, sessionId, messageId, index, state) {
     const session = findSession(bucket, sessionId);
     const message = findMessage(session, messageId);
     const key = String(index);
-    if (message.role !== 'assistant' || !/^\d{1,3}$/.test(key)) throw fail('SCRATCHPAD_PROPOSAL_INVALID', 'That change is not part of this reply.');
+    if (message.role !== 'assistant' || !splitReply(message.text).some(part => part.type === 'change' && String(part.index) === key)) {
+        throw fail('SCRATCHPAD_PROPOSAL_INVALID', 'That change is not part of this reply.');
+    }
     if (!['applied', 'rejected', null].includes(state)) throw fail('SCRATCHPAD_PROPOSAL_INVALID', 'That change state is not valid.');
     message.proposals = { ...message.proposals };
     if (state === null) delete message.proposals[key];
@@ -924,7 +941,7 @@ export function markProposal(bucket, sessionId, messageId, index, state) {
     return message;
 }
 
-/** Fold the reply job's current state into a pending placeholder for display. Nothing is saved. */
+/** Fold job state into pending placeholders. A caller writing the bucket also saves these changes. */
 export function projectPending(bucket, readJob) {
     for (const session of bucket.sessions) {
         for (const message of session.messages) {
