@@ -250,7 +250,7 @@ describe('launcher parity', () => {
         expect(packageJson.packageManager).toBe('bun@1.4.3');
         expect(dockerfileSource).toMatch(/^FROM oven\/bun:1\.4\.3-alpine$/m);
         expect(prChecksSource).toContain('bun-version: 1.4.3');
-        expect(releaseE2ESource).toContain("BUN_VERSION: '1.4.3'");
+        expect(releaseE2ESource).toContain('BUN_VERSION: \'1.4.3\'');
         expect(windowsImportSource).toContain('bun-version: 1.4.3');
         expect(packageJson.scripts['debug:node']).toBe('node --inspect server.js');
         expect(packageJson.scripts['start:global:node']).toBe('node --no-warnings server.js --global');

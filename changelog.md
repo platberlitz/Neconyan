@@ -2,6 +2,16 @@
 
 ## v1.5.7
 
+### Highlights
+- Open **Author's Note** from **Chat tools** without leaving Simple Mode. All four tabs fit on a phone, and you can open and close the editor with a keyboard.
+- **Guided Swipe** and **Guided Impersonate** sit next to **Switch chat** in Simple Mode, even with the rest of the chat bar collapsed. Swipe keeps the original reply; Impersonate drafts without sending.
+- Delete a picture in **Gallery**, or pick several with **Batch Edit**. Removing a Scratchpad picture from Gallery keeps the original in its saved reply.
+- Scratchpad follows Quick Image Gen's **Image count** for new pictures and avatar proposals. You can choose which result to review as the avatar before saving it.
+- **PixAI** supports model-matched LoRAs and a separate **Negative Prompt** in Quick Image Gen.
+- PixAI only sends modes the selected model offers, and can recover finished pictures when a task's reported image address fails.
+- **BotSearcher** can open `jani.com` card links and use it as a backup for JanitorAI lists and imports. JannyAI stays a separate source.
+- ZIP imports can resume when the server stops while it is saving a chat.
+
 ### Merged Staging PRs
 - PR #757 (2026-11-19) `ci: use pinned browser images for release checks`
 - PR #758 (2026-11-19) `fix(pixai): recover images from rejected task addresses`

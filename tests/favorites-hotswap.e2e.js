@@ -192,6 +192,10 @@ test.describe('phone favourites', () => {
         const client = await context.newCDPSession(page);
         const start = { x: box.x + box.width - 60, y: box.y + box.height / 2 };
         try {
+            // CDP sends raw coordinates without waiting for a startup toast to clear the point.
+            await expect.poll(() => rail.evaluate((bar, point) => bar.contains(document.elementFromPoint(point.x, point.y)), start), {
+                message: 'The initial touch must hit the favourites rail',
+            }).toBe(true);
             await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [start] });
             for (let x = box.x + box.width - 65; x > box.x + 50; x -= 10) {
                 await client.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: start.y }] });

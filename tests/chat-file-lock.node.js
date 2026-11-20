@@ -47,7 +47,7 @@ test('a killed process releases its locks immediately without stealing a live pr
     assert.equal(fs.existsSync(getChatFileLockPath(filename) + '.owner'), false);
 });
 
-for (const window of ['after-mkdir', 'before-rmdir']) {
+for (const window of ['after-mkdir', 'during-owner-write', 'before-rmdir']) {
     test(`an owned data root immediately reclaims a child lock killed in the ${window} window`, async t => {
         const [filename] = fixture(t);
         const root = path.dirname(filename);
@@ -55,48 +55,59 @@ for (const window of ['after-mkdir', 'before-rmdir']) {
         const module = new URL('../src/chat-file-lock.js', import.meta.url).href;
         const ownerModule = new URL('../src/data-root-owner.js', import.meta.url).href;
         const child = spawn(process.execPath, ['--input-type=module', '-e', `
+            import fs from 'node:fs';
             import { createRequire } from 'node:module';
             import { acquireDataRootOwner } from ${JSON.stringify(ownerModule)};
             import { acquireChatFileLock } from ${JSON.stringify(module)};
             acquireDataRootOwner(${JSON.stringify(root)}, 'server');
             const graceful = createRequire(${JSON.stringify(module)})('graceful-fs');
+            function pauseAtCrashPoint() {
+                fs.writeSync(1, 'window');
+                for (;;) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000);
+            }
             if (${JSON.stringify(window)} === 'after-mkdir') {
                 const mkdir = graceful.mkdirSync;
                 graceful.mkdirSync = function (target, ...args) {
                     const result = mkdir.call(this, target, ...args);
-                    if (target === ${JSON.stringify(lockPath)}) {
-                        process.stdout.write('window');
-                        for (;;) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000);
-                    }
+                    if (target === ${JSON.stringify(lockPath)}) pauseAtCrashPoint();
+                    return result;
+                };
+                acquireChatFileLock(${JSON.stringify(filename)});
+            } else if (${JSON.stringify(window)} === 'during-owner-write') {
+                const open = fs.openSync;
+                fs.openSync = function (target, ...args) {
+                    const result = open.call(this, target, ...args);
+                    if (target === ${JSON.stringify(lockPath + '.owner')} || target === ${JSON.stringify(lockPath + '.owner.pending')}) pauseAtCrashPoint();
                     return result;
                 };
                 acquireChatFileLock(${JSON.stringify(filename)});
             } else {
                 const release = acquireChatFileLock(${JSON.stringify(filename)});
                 graceful.rmdirSync = function (target) {
-                    if (target === ${JSON.stringify(lockPath)}) {
-                        process.stdout.write('window');
-                        for (;;) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000);
-                    }
+                    if (target === ${JSON.stringify(lockPath)}) pauseAtCrashPoint();
                 };
                 release();
             }
         `], { stdio: ['ignore', 'pipe', 'pipe'] });
         t.after(() => child.kill('SIGKILL'));
-        await once(child.stdout, 'data');
+        const exit = once(child, 'exit');
+        assert.equal(await Promise.race([once(child.stdout, 'data').then(([data]) => data.toString()), exit.then(() => 'exited')]), 'window');
         assert.ok(fs.existsSync(lockPath));
-        assert.equal(fs.existsSync(lockPath + '.owner'), false, 'Window leaves an ownerless lock directory');
-        const exited = once(child, 'exit');
+        const hadPublishedOwner = fs.existsSync(lockPath + '.owner');
+        const hadPendingOwner = fs.existsSync(lockPath + '.owner.pending');
         child.kill('SIGKILL');
-        await exited;
+        await exit;
 
         const owner = acquireDataRootOwner(root, 'server');
         t.after(() => { try { owner.release(); } catch { /* Best effort. */ } });
         const started = Date.now();
         acquireChatFileLock(filename)();
         assert.ok(Date.now() - started < 1000, `Owned root must reclaim ${window} orphan lock immediately`);
+        assert.equal(hadPublishedOwner, false, 'Window leaves an ownerless lock directory');
+        assert.equal(hadPendingOwner, window === 'during-owner-write');
         assert.equal(fs.existsSync(lockPath), false);
         assert.equal(fs.existsSync(lockPath + '.owner'), false);
+        assert.equal(fs.existsSync(lockPath + '.owner.pending'), false);
     });
 }
 

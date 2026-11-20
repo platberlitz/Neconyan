@@ -4,6 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fixture, png, writeJournal } from './roleplay-transactions-fixture.js';
 import { write as writeCard } from '../src/character-card-parser.js';
+import { getChatFileLockPath } from '../src/chat-file-lock.js';
 import { captureRoleplayStorageSource, readRoleplayEntity } from '../src/generation/roleplay-source.js';
 import { confirmRoleplayAccount, initialiseRoleplayAccount, readRoleplayAccount, readRoleplayFile, resetRoleplayAccount, roleplayLease, roleplayStoreDirectory, withRoleplayAccount } from '../src/roleplay-store.js';
 import { bootstrapRoleplayAccount, commitRoleplayLifecycleLocked, commitSingleChatWrite } from '../src/roleplay-lifecycle.js';
@@ -64,6 +65,17 @@ test('native chats recover even after their original tracking directory was move
     assert.ok(captureRoleplayStorageSource(scope, f.locator).instanceId);
     assert.deepEqual(fs.readFileSync(f.filename), bytes);
     assert.ok(fs.existsSync(root + '-original/state.json'));
+});
+
+test('an interrupted lock owner write is not included as chat evidence in a repair backup', t => {
+    const f = fixture(t);
+    const pending = getChatFileLockPath(f.filename) + '.owner.pending';
+    fs.writeFileSync(pending, '');
+    const result = repair(f);
+    const manifest = JSON.parse(fs.readFileSync(path.join(result.backup, 'manifest.json'), 'utf8'));
+    assert.ok(manifest.files.some(file => file.relative === 'chats/Nova/Source.jsonl'));
+    assert.ok(!manifest.files.some(file => file.filename === pending));
+    assert.equal(fs.readFileSync(pending, 'utf8'), '');
 });
 
 test('an interrupted operation is archived and never replayed after accepting current files', t => {

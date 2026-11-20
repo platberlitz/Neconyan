@@ -5,6 +5,8 @@ import { openNotes, notesApi, fillSource, expectSourceText, revealNoteTools, sou
 import { IPHONE_SAFARI_CONTEXT, installIPhoneSafari, applyIOSOnlyCss } from './ios-safari-emulation.js';
 
 async function createCurrentNote(page) {
+    // The Notes panel opens before the initial notebook selection finishes loading.
+    await expect(page.locator('#neconyan-notes .notes-create-row').getByRole('button', { name: 'New note', exact: true })).toBeVisible();
     const notebookId = await page.evaluate(async () => (await import('/scripts/notebooks/notes-app.js')).notesApp().state.notebookId);
     const title = `Writing controls ${randomUUID()}`;
     const result = await notesApi(page, '/notes/create', { notebookId, operationId: `browser:${randomUUID()}`, title, text: '# Notes\n\nMy ideas.' });
