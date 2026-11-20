@@ -17,6 +17,8 @@ jest.unstable_mockModule('node:fs', () => ({
 
 jest.unstable_mockModule('node:child_process', () => ({
     execFile: mockExecFile,
+    // util.js also loads simple-git, which imports spawn but should not run Git here.
+    spawn: () => { throw new Error('Unexpected Git subprocess'); },
 }));
 
 jest.unstable_mockModule('node:os', () => ({

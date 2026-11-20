@@ -6,7 +6,7 @@ import { promisify } from 'node:util';
 
 import express from 'express';
 import sanitize from 'sanitize-filename';
-import { CheckRepoActions, default as simpleGit } from 'simple-git';
+import { CheckRepoActions, simpleGit } from 'simple-git';
 
 import { PUBLIC_DIRECTORIES } from '../constants.js';
 import { getConfigValue, isValidUrl } from '../util.js';
