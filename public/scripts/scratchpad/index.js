@@ -63,7 +63,7 @@ import { canRehearse } from './rehearsal.js';
 import { assistantFeedbackTone, DEFAULT_FEEDBACK_TONE, FEEDBACK_TONES, isFeedbackTone, normaliseFeedbackTone } from './feedback-tone.js';
 import { feedbackToneLabel, feedbackToneSlider } from './tone-slider.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261120-avatar-batches';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261121-scratchpad-audit';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -136,6 +136,7 @@ const DEFAULT_SETTINGS = Object.freeze({
 const app = {
     built: false,
     open: false,
+    opening: 0,
     layout: 'beside',
     width: DEFAULT_WIDTH,
     assistant: 'miso',
@@ -188,6 +189,8 @@ const app = {
     everyList: { query: '', loading: false, results: [], more: false, error: '' },
     contextKey: '',
     timer: 0,
+    recoveryTimer: null,
+    recoveryAttempt: 0,
     queue: Promise.resolve(),
     el: {},
 };
@@ -383,7 +386,12 @@ function applyLayout() {
     app.el.layoutButton.querySelector('i').className = `fa-solid ${app.layout === 'full' ? 'fa-table-columns' : 'fa-expand'}`;
     document.body.classList.toggle('neconyan-scratchpad-open', app.open);
     document.body.classList.toggle('neconyan-scratchpad-beside', app.open && layout === 'beside');
-    document.body.style.setProperty('--neco-scratchpad-width', `${clampWidth(app.width, dockedWidth())}px`);
+    const reserved = dockedWidth();
+    const width = clampWidth(app.width, reserved);
+    document.body.style.setProperty('--neco-scratchpad-width', `${width}px`);
+    app.el.resizer.setAttribute('aria-valuemin', '320');
+    app.el.resizer.setAttribute('aria-valuemax', String(clampWidth(Infinity, reserved)));
+    app.el.resizer.setAttribute('aria-valuenow', String(width));
     document.dispatchEvent(new Event('neconyan:scratchpad-visibility'));
 }
 
@@ -422,6 +430,8 @@ function build() {
     if (app.built) return;
     app.built = true;
     const el = app.el;
+    document.addEventListener('visibilitychange', wakePendingJobs);
+    globalThis.addEventListener('online', wakePendingJobs);
 
     el.portrait = h('img', { class: 'scratchpad-portrait', alt: '', width: 36, height: 36 });
     el.sourceLabel = h('p', { class: 'scratchpad-source' });
@@ -438,7 +448,7 @@ function build() {
 
     el.tabs = {};
     el.panels = {};
-    const tabList = h('div', { class: 'scratchpad-tabs', role: 'tablist', 'aria-label': t`Scratchpad sections` });
+    const tabList = h('div', { class: 'scratchpad-tabs', role: 'tablist', 'aria-label': t`Scratchpad sections`, onkeydown: onTabKey });
     for (const [key, label, icon] of [['chat', t`Chat`, 'fa-comments'], ['context', t`Context`, 'fa-book-open'], ['sessions', t`Sessions`, 'fa-folder-open']]) {
         const tab = h('button', {
             type: 'button',
@@ -455,20 +465,22 @@ function build() {
 
     buildChatPanel();
 
+    el.heading = h('h2', { class: 'scratchpad-heading', tabindex: '-1', text: t`Scratchpad` });
+    el.resizer = h('div', {
+        class: 'scratchpad-resizer',
+        role: 'separator',
+        'aria-orientation': 'vertical',
+        'aria-label': t`Resize Scratchpad`,
+        tabindex: '0',
+        onpointerdown: startResize,
+        onkeydown: resizeWithKeys,
+    });
     el.root = h('section', { id: 'neconyan-scratchpad', class: 'scratchpad-app', 'aria-label': t`Scratchpad`, hidden: true },
-        h('div', {
-            class: 'scratchpad-resizer',
-            role: 'separator',
-            'aria-orientation': 'vertical',
-            'aria-label': t`Resize Scratchpad`,
-            tabindex: '0',
-            onpointerdown: startResize,
-            onkeydown: resizeWithKeys,
-        }),
+        el.resizer,
         h('header', { class: 'scratchpad-header' },
             el.portrait,
             h('div', { class: 'scratchpad-title' },
-                h('h2', { class: 'scratchpad-heading', text: t`Scratchpad` }),
+                el.heading,
                 el.sourceLabel),
             h('div', { class: 'scratchpad-header-actions' }, el.newSession, el.layoutButton, el.close)),
         tabList,
@@ -516,7 +528,8 @@ function buildChatPanel() {
         onChange: tone => void changeFeedbackTone(tone) });
     el.toneOverrides = h('span', { class: 'scratchpad-tone-overrides' });
     el.summary = h('div', { class: 'scratchpad-summary' });
-    el.messages = h('div', { class: 'scratchpad-messages', role: 'log', 'aria-live': 'polite', 'aria-relevant': 'additions' });
+    el.messages = h('div', { class: 'scratchpad-messages' });
+    el.replyStatus = h('div', { class: 'sr-only', role: 'status' });
     el.quick = h('div', { class: 'scratchpad-quick', role: 'group', 'aria-label': t`Quick prompts` },
         quickPromptChips());
     el.composer = h('textarea', {
@@ -539,8 +552,10 @@ function buildChatPanel() {
     } });
     el.attach = iconButton(t`Attach files`, () => { closeComposeMenu(); el.fileInput.click(); }, { icon: 'fa-paperclip' });
     el.rehearse = iconButton(t`Rehearse next reply`, () => { closeComposeMenu(); void send({ rehearsal: true }); },
-        { icon: 'fa-masks-theater', className: 'scratchpad-rehearse', title: t`Draft the next story reply here using the shared context. Anything in the message box becomes directions. The draft stays in Scratchpad.` });
-    el.composeMenu = h('div', { id: 'scratchpad-compose-menu', class: 'scratchpad-compose-menu', hidden: true, role: 'group', 'aria-label': t`Message options` }, el.webSearch, el.readLinks, el.attach, el.rehearse);
+        { icon: 'fa-masks-theater', className: 'scratchpad-rehearse' });
+    el.rehearse.setAttribute('aria-describedby', 'scratchpad-rehearse-help');
+    el.rehearseHelp = h('span', { id: 'scratchpad-rehearse-help', hidden: true, text: t`Draft the next story reply here using the shared context. Anything in the message box becomes directions. The draft stays in Scratchpad.` });
+    el.composeMenu = h('div', { id: 'scratchpad-compose-menu', class: 'scratchpad-compose-menu', hidden: true, role: 'group', 'aria-label': t`Message options` }, el.webSearch, el.readLinks, el.attach, el.rehearse, el.rehearseHelp);
     el.plus = iconButton('', () => {
         const open = el.composeMenu.hidden;
         el.composeMenu.hidden = !open;
@@ -557,8 +572,11 @@ function buildChatPanel() {
     } }, el.plus, el.composeMenu, el.fileInput);
     document.addEventListener('pointerdown', event => {
         if (!el.composeActions.contains(event.target)) closeComposeMenu();
+        for (const menu of el.messages.querySelectorAll('.scratchpad-message-menu[open]')) {
+            if (!menu.contains(event.target)) closeMessageMenu(menu, menu.contains(document.activeElement));
+        }
     });
-    el.attachments = h('div', { class: 'scratchpad-draft-attachments', 'aria-label': t`Attached files` });
+    el.attachments = h('div', { class: 'scratchpad-draft-attachments', role: 'list', 'aria-label': t`Attached files` });
     el.fileStatus = h('p', { class: 'scratchpad-muted scratchpad-file-status', role: 'status', hidden: true });
     el.overviewToggle = h('button', {
         type: 'button',
@@ -584,9 +602,21 @@ function buildChatPanel() {
     append(el.panels.chat, [
         el.overviewBar,
         el.overview,
+        el.replyStatus,
         el.messages,
         h('div', { class: 'scratchpad-compose' }, el.quick, el.attachments, el.fileStatus, h('div', { class: 'scratchpad-compose-row' }, el.composeActions, el.composer, el.dictate, el.send)),
     ]);
+}
+
+function onTabKey(event) {
+    const keys = Object.keys(app.el.tabs);
+    const index = keys.indexOf(app.tab);
+    const next = { ArrowLeft: (index + keys.length - 1) % keys.length, ArrowRight: (index + 1) % keys.length, Home: 0, End: keys.length - 1 }[event.key];
+    if (!Number.isInteger(next)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    selectTab(keys[next]);
+    app.el.tabs[keys[next]].focus();
 }
 
 function selectTab(key) {
@@ -609,13 +639,16 @@ function selectTab(key) {
 /* Data */
 
 function applyBucket(bucket, { ticket = null } = {}) {
+    if (!app.open) return;
     if (ticket !== null && ticket !== app.ticket) return;
     if (!sameSourceBucket(bucket?.source, app.source)) return;
     const firstSession = app.bucket?.sessions.length === 0 && bucket.sessions.length > 0;
+    const before = activeSession();
     app.bucket = bucket;
     syncDraft({ carry: firstSession });
     const session = activeSession();
     if (session) app.assistant = session.assistant;
+    announceReplyChange(before, session);
     render();
     syncWatchers();
 }
@@ -655,7 +688,9 @@ function requireScope(source, sessionId) {
 
 async function reload() {
     const source = app.source;
+    const owner = getCurrentUserHandle();
     const ticket = ++app.ticket;
+    const current = () => app.open && owner === getCurrentUserHandle() && ticket === app.ticket && sameSourceBucket(source, app.source);
     if (!source) {
         app.bucket = null;
         render();
@@ -663,9 +698,14 @@ async function reload() {
     }
     try {
         const result = await api.readBucket(wireSource(source));
-        if (sameSourceBucket(source, app.source)) applyBucket(result.bucket, { ticket });
+        if (current()) {
+            clearJobRecovery();
+            applyBucket(result.bucket, { ticket });
+        }
     } catch (error) {
-        if (ticket === app.ticket) reportError(error, t`Scratchpad could not load.`);
+        if (!current()) return;
+        if (hasPendingJobs() && (error.network || (error.status >= 500 && error.code !== 'SCRATCHPAD_DAMAGED'))) scheduleJobRecovery();
+        else reportError(error, t`Scratchpad could not load.`);
     }
 }
 
@@ -764,6 +804,32 @@ async function updateSettings(patch, { rerenderContext = false } = {}) {
 
 /* Replies */
 
+function hasPendingJobs() {
+    return app.open && (app.bucket?.sessions ?? []).some(session => session.messages.some(message => message.state === 'pending'
+        || Object.values(message.images ?? {}).some(image => image.state === 'pending')));
+}
+
+function clearJobRecovery() {
+    clearTimeout(app.recoveryTimer);
+    app.recoveryTimer = null;
+    app.recoveryAttempt = 0;
+}
+
+function scheduleJobRecovery(immediate = false) {
+    if (!hasPendingJobs() || (app.recoveryTimer !== null && !immediate)) return;
+    clearTimeout(app.recoveryTimer);
+    const delays = [2000, 5000, 10000];
+    const delay = immediate ? 0 : delays[Math.min(app.recoveryAttempt++, delays.length - 1)];
+    app.recoveryTimer = setTimeout(() => {
+        app.recoveryTimer = null;
+        if (hasPendingJobs()) void reload();
+    }, delay);
+}
+
+function wakePendingJobs() {
+    if (document.visibilityState !== 'hidden') scheduleJobRecovery(true);
+}
+
 function syncWatchers() {
     const wanted = new Set();
     const pending = new Set();
@@ -795,8 +861,7 @@ function syncWatchers() {
             onDone: result => {
                 app.watchers.get(jobId)?.();
                 app.watchers.delete(jobId);
-                const delay = result?.state === 'unknown' ? 2000 : 0;
-                setTimeout(() => app.open && reload(), delay);
+                scheduleJobRecovery(result?.state !== 'unknown');
             },
         });
         app.watchers.set(jobId, stop);
@@ -824,11 +889,17 @@ function syncWatchers() {
                 }
             }
         };
-        app.imageWatchers.set(id, observeJob(id, { onUpdate: track, onDone: track }));
+        const stop = observeJob(id, { onUpdate: track, onStop: reason => {
+            if (!['done', 'missing'].includes(reason) || app.imageWatchers.get(id) !== stop) return;
+            app.imageWatchers.delete(id);
+            scheduleJobRecovery();
+        } });
+        app.imageWatchers.set(id, stop);
     }
 }
 
 function stopWatchers() {
+    clearJobRecovery();
     for (const stop of app.watchers.values()) stop();
     app.watchers.clear();
     app.previews.clear();
@@ -1180,7 +1251,7 @@ function renderAttachments(files, { draft = false } = {}) {
             h('span', { text: file.name, 'data-i18n-ignore': '' }),
             h('small', { text: `${formatBytes(file.size)} · ${image ? t`Image` : file.mimeType === 'application/pdf' ? t`PDF text` : t`Text`}` }));
         const icon = image ? h('img', { class: 'scratchpad-file-thumb', src: file.dataUrl, alt: '' }) : h('i', { class: 'fa-solid fa-file-lines', 'aria-hidden': 'true' });
-        if (draft) return h('div', { class: 'scratchpad-file' }, icon, label,
+        if (draft) return h('div', { class: 'scratchpad-file', role: 'listitem' }, icon, label,
             iconButton('', () => { files.splice(index, 1); renderComposer(); }, {
                 icon: 'fa-xmark', title: t`Remove ${file.name}`, disabled: app.sending || app.readingFiles.has(files), className: 'scratchpad-file-remove',
             }));
@@ -1381,6 +1452,7 @@ async function editPinnedNote() {
     if (pinnedNoteEditorOpen || !app.source) return;
     pinnedNoteEditorOpen = true;
     const source = app.source;
+    const owner = getCurrentUserHandle();
     try {
         await app.queue;
         requireScope(source);
@@ -1406,9 +1478,10 @@ async function editPinnedNote() {
                     const write = app.queue.then(async () => {
                         requireScope(source, session.id);
                         const result = await api.updateSession(wireSource(source), session.id, { pinnedNote: note, expectedPinnedNote });
-                        requireScope(source, session.id);
-                        app.ticket += 1;
-                        applyBucket(result.bucket);
+                        if (app.open && owner === getCurrentUserHandle() && sameSourceContext(source, app.source) && isCurrentSource(source) && activeSession()?.id === session.id) {
+                            app.ticket += 1;
+                            applyBucket(result.bucket);
+                        }
                     });
                     app.queue = write.catch(() => null);
                     await write;
@@ -1511,19 +1584,43 @@ function stageLabel(preview) {
     return t`Writing...`;
 }
 
+function announceReply(text) {
+    const status = app.el.replyStatus;
+    if (status && status.textContent !== text) status.textContent = text;
+}
+
+function announceReplyChange(before, session) {
+    if (!session || session.id !== before?.id) {
+        announceReply(pendingReply(session) ? stageLabel(null) : '');
+        return;
+    }
+    const pending = new Set(before.messages.filter(message => message.state === 'pending').map(message => message.id));
+    const finished = session.messages.filter(message => pending.has(message.id) && message.state !== 'pending');
+    if (finished.length) {
+        announceReply(finished.map(message => {
+            const name = message.assistantName || assistantInfo(message.assistant ?? session.assistant).name;
+            return message.state === 'failed' ? t`${name} could not finish the reply.` : t`${name} replied.`;
+        }).join(' '));
+    } else if (!pending.size && pendingReply(session)) announceReply(stageLabel(null));
+}
+
 function updateStream(jobId) {
     const nodes = app.el.messages?.querySelectorAll(`.scratchpad-message.is-pending[data-job-id="${CSS.escape(jobId)}"]`);
     if (!nodes?.length) return;
     const stick = nearBottom(app.el.messages);
+    const stages = new Set();
     for (const node of nodes) {
         const preview = replyPreview({ jobId, id: node.dataset.messageId });
         updateMessageTokenCounts(node.querySelector('.scratchpad-author'), preview, { pending: true });
-        node.querySelector('.scratchpad-stage').textContent = stageLabel(preview);
+        const label = stageLabel(preview);
+        node.querySelector('.scratchpad-stage').textContent = label;
+        if (preview?.stage !== 'done' && preview?.stage !== 'failed') stages.add(label);
         node.querySelector('.scratchpad-stream').textContent = preview?.text ?? '';
         const reasoning = node.querySelector('.scratchpad-reasoning');
         reasoning.hidden = !preview?.reasoning;
         reasoning.querySelector('.scratchpad-plain').textContent = preview?.reasoning ?? '';
     }
+    if (stages.size) announceReply([...stages].join(' '));
     if (stick) scrollMessages(true);
 }
 
@@ -1580,7 +1677,7 @@ function renderMessage(session, message, { latest, retry }) {
         const pages = message.role === 'assistant' ? renderWebPages(message) : null;
         if (pages) article.append(pages);
         if (message.state === 'failed') {
-            article.append(h('p', { class: 'scratchpad-error', role: 'status', text: message.error || t`This reply did not finish.` }));
+            article.append(h('p', { class: 'scratchpad-error', text: message.error || t`This reply did not finish.` }));
         }
     }
     const actions = renderMessageActions(session, message, { retry });
@@ -1596,16 +1693,13 @@ function renderMessage(session, message, { latest, retry }) {
         h('i', { class: 'fa-solid fa-ellipsis', 'aria-hidden': 'true' })), actions);
     menu.addEventListener('keydown', event => {
         if (event.key === 'Escape') {
-            app.openMenus.delete(message.id);
-            menu.open = false;
-            menu.querySelector('summary').focus();
+            closeMessageMenu(menu, true);
             event.stopPropagation();
         }
     });
     actions.addEventListener('click', event => {
         if (event.target.closest('button:not(:disabled)')) {
-            app.openMenus.delete(message.id);
-            menu.open = false;
+            closeMessageMenu(menu, menu.contains(document.activeElement));
         }
     });
     author.append(menu);
@@ -1616,21 +1710,31 @@ function renderMessage(session, message, { latest, retry }) {
     return article;
 }
 
+function closeMessageMenu(menu, restoreFocus) {
+    app.openMenus.delete(menu.closest('[data-message-id]')?.dataset.messageId);
+    menu.open = false;
+    if (restoreFocus) menu.querySelector('summary').focus({ preventScroll: true });
+}
+
+function canGenerateSwipe(message, count, latest) {
+    return latest && count < MAX_REPLY_SWIPES
+        && (!(app.source?.scope || app.source?.kind === 'general') || sameSourceContext(app.source, message.contextSource));
+}
+
 function renderReplySwipes(session, message, { latest }) {
     const count = replySwipes(message).length;
     if (count === 1 && !latest) return null;
     const index = message.swipeIndex ?? 0;
-    const canGenerate = latest && count < MAX_REPLY_SWIPES
-        && (!(app.source?.scope || app.source?.kind === 'general') || sameSourceContext(app.source, message.contextSource));
+    const canGenerate = canGenerateSwipe(message, count, latest);
     const controls = h('div', { class: 'scratchpad-reply-swipes', role: 'group', 'aria-label': t`Reply versions` });
     for (const direction of [-1, 1]) {
-        if (direction === 1) controls.append(h('span', { class: 'scratchpad-swipe-count', role: 'status', 'aria-live': 'polite', text: t`${index + 1} of ${count}` }));
+        if (direction === 1) controls.append(h('span', { class: 'scratchpad-swipe-count', text: t`${index + 1} of ${count}` }));
         const unavailable = Object.values(message.images ?? {}).some(image => image.state === 'pending')
             || (direction < 0 ? index === 0 : index === count - 1 && !canGenerate);
         const button = iconButton('', () => void moveReplySwipe(session, message, direction, { latest }), {
             icon: direction < 0 ? 'fa-chevron-left' : 'fa-chevron-right',
             title: direction < 0 ? t`Previous reply` : index < count - 1 ? t`Next reply` : t`Generate another reply`,
-            disabled: unavailable || Boolean(pendingReply(session)) || app.sending || app.swiping,
+            disabled: unavailable || Boolean(pendingReply(session)) || app.sending || app.swiping || Boolean(app.editing),
         });
         button.dataset.unavailable = String(unavailable);
         controls.append(button);
@@ -1645,7 +1749,7 @@ async function moveReplySwipe(session, message, direction, { latest }) {
     const count = replySwipes(message).length;
     if (index < 0) return;
     if (index >= count) {
-        if (latest && count < MAX_REPLY_SWIPES) await send({ regenerate: message.id });
+        if (canGenerateSwipe(message, count, latest)) await send({ regenerate: message.id });
         return;
     }
     const focus = document.activeElement?.closest('.scratchpad-reply-swipes');
@@ -1872,7 +1976,7 @@ async function reviewChange(session, message, part, picture) {
 }
 
 function changeDiff(plan, editor = null) {
-    const diff = h('div', { class: 'ica-transform-diff', 'data-i18n-ignore': '', tabindex: '0', 'aria-label': t`Changes` });
+    const diff = h('div', { class: 'ica-transform-diff', role: 'group', 'data-i18n-ignore': '', tabindex: '0', 'aria-label': t`Changes` });
     const update = () => {
         const edited = editor ? editor.value : plan.after;
         // The shared renderer escapes every text segment before adding its fixed markup.
@@ -2240,22 +2344,34 @@ function renderMessageActions(session, message, { retry }) {
 
 function renderEditor(session, message) {
     const editor = h('textarea', { class: 'text_pole scratchpad-edit', rows: '6', value: message.text, 'aria-label': t`Edit message` });
+    const refocus = () => {
+        if (app.open && activeSession()?.id === session.id) {
+            app.el.messages.querySelector(`[data-message-id="${CSS.escape(message.id)}"] .scratchpad-message-menu > summary`)?.focus({ preventScroll: true });
+        }
+    };
     const done = () => {
         app.editing = '';
         renderMessages();
+        refocus();
     };
-    requestAnimationFrame(() => editor.focus());
-    return h('div', { class: 'scratchpad-editor' },
-        editor,
-        h('div', { class: 'scratchpad-editor-actions' },
-            iconButton(t`Save`, async () => {
-                const text = editor.value.trim();
-                if (!text && !message.attachments?.length) return;
-                app.editing = '';
-                await change(source => api.updateMessage(source, session.id, message.id, text), t`Scratchpad could not save that edit.`);
-                renderMessages();
-            }, { icon: 'fa-check', primary: true }),
-            iconButton(t`Cancel`, done, { icon: 'fa-xmark' })));
+    requestAnimationFrame(() => { if (editor.isConnected) editor.focus(); });
+    return h('div', { class: 'scratchpad-editor', onkeydown: event => {
+        if (event.key !== 'Escape') return;
+        event.preventDefault();
+        event.stopPropagation();
+        done();
+    } },
+    editor,
+    h('div', { class: 'scratchpad-editor-actions' },
+        iconButton(t`Save`, async () => {
+            const text = editor.value.trim();
+            if (!text && !message.attachments?.length) return;
+            app.editing = '';
+            await change(source => api.updateMessage(source, session.id, message.id, text), t`Scratchpad could not save that edit.`);
+            renderMessages();
+            refocus();
+        }, { icon: 'fa-check', primary: true }),
+        iconButton(t`Cancel`, done, { icon: 'fa-xmark' })));
 }
 
 /* Dictation */
@@ -2415,7 +2531,7 @@ function connectionProfiles() {
 }
 
 function checkbox(label, checked, onChange, hint = '') {
-    const input = h('input', { type: 'checkbox', checked, onchange: event => onChange(event.currentTarget.checked) });
+    const input = h('input', { type: 'checkbox', checked, 'data-context-control': label, onchange: event => onChange(event.currentTarget.checked) });
     return h('label', { class: 'scratchpad-check' }, input, h('span', { text: label }), hint ? h('small', { text: hint }) : null);
 }
 
@@ -2531,6 +2647,18 @@ function renderContext({ force = true } = {}) {
     if (!force && key === app.contextKey && panel.childElementCount) return;
     app.contextKey = key;
     const scrollTop = panel.scrollTop;
+    const active = document.activeElement;
+    const selector = !panel.contains(active) ? '' : active.id ? `#${CSS.escape(active.id)}` : active.dataset.contextControl
+        ? `[data-context-control="${CSS.escape(active.dataset.contextControl)}"]` : '';
+    let renderedScrollTop = 0;
+    const restore = (afterLore = false) => {
+        if (afterLore && panel.scrollTop !== renderedScrollTop) return;
+        if (selector && document.activeElement === document.body && !panel.hidden) {
+            panel.querySelector(selector)?.focus({ preventScroll: true });
+        }
+        panel.scrollTop = scrollTop;
+        renderedScrollTop = panel.scrollTop;
+    };
     clear(panel);
     panel.append(h('section', { class: 'scratchpad-section' },
         h('h3', { class: 'scratchpad-section-title', text: t`Global user instructions` }),
@@ -2549,7 +2677,7 @@ function renderContext({ force = true } = {}) {
     panel.append(...[renderDictationSettings()].filter(Boolean));
     if (!app.source) {
         panel.append(h('p', { class: 'scratchpad-empty', text: t`Open a chat to choose what Scratchpad reads.` }));
-        panel.scrollTop = scrollTop;
+        restore();
         return;
     }
     const settings = currentSettings();
@@ -2658,10 +2786,10 @@ function renderContext({ force = true } = {}) {
                     onchange: event => void updateSettings({ partialPrefill: event.currentTarget.value }) }),
                 h('small', { text: t`Used instead of the reply prefill for Kimi K3 and K3.1. Start with <think> to seed thinking; close it with </think> before any visible reply text. An unclosed <think> seeds only thinking and is not added to the saved reply.` }))),
         notebook || general ? null : renderPicks(settings),
-        notebook || (general && !settings.lorebook) ? null : renderLore(settings),
+        notebook || (general && !settings.lorebook) ? null : renderLore(settings, () => restore(true)),
         renderPreview(),
     ]);
-    panel.scrollTop = scrollTop;
+    restore();
 }
 
 function renderFeedbackToneSettings(settings) {
@@ -2877,6 +3005,7 @@ function renderPicks(settings) {
     const pick = item => {
         const input = h('input', {
             type: 'checkbox',
+            'data-context-control': `pick:${item.ref}`,
             'aria-label': item.swipe ? t`Pick message #${item.number}, swipe ${item.swipe}` : t`Pick message #${item.number}`,
             checked: picked.has(item.ref),
             onchange: event => {
@@ -2922,7 +3051,7 @@ function renderPicks(settings) {
     return section;
 }
 
-function renderLore(settings) {
+function renderLore(settings, onRendered) {
     const section = h('section', { class: 'scratchpad-section' }, h('h3', { class: 'scratchpad-section-title', text: t`Lorebook entries` }));
     const list = h('div', { class: 'scratchpad-lore' }, h('p', { class: 'scratchpad-muted', text: t`Loading lorebook entries...` }));
     section.append(list);
@@ -2960,7 +3089,7 @@ function renderLore(settings) {
         if (!list.isConnected) return;
         clear(list);
         list.append(h('p', { class: 'scratchpad-error', text: error?.message || t`Lorebook entries could not be read.` }));
-    });
+    }).finally(() => { if (key === app.contextKey && list.isConnected) onRendered(); });
     return section;
 }
 
@@ -2970,11 +3099,13 @@ function renderLoreEntry(entry) {
     const status = entry.included
         ? (entry.reason === 'constant' ? t`Shared: always active` : entry.reason === 'always' ? t`Shared: set to Always` : t`Shared: keyword found`)
         : t`Not shared right now`;
-    const choices = h('div', { class: 'scratchpad-segment', role: 'group', 'aria-label': t`Share ${entry.title}` });
+    const title = entry.title || t`Untitled entry`;
+    const choices = h('div', { class: 'scratchpad-segment', role: 'group', 'aria-label': t`Share ${title}` });
     for (const [value, label] of [['auto', t`Auto`], ['always', t`Always`], ['never', t`Never`]]) {
         choices.append(h('button', {
             type: 'button',
             class: `scratchpad-segment-choice${value === current ? ' is-selected' : ''}`,
+            'data-context-control': `lore:${loreOverrideKey(entry)}:${value}`,
             'aria-pressed': String(value === current),
             onclick: () => {
                 void updateSettings(latest => {
@@ -2988,7 +3119,7 @@ function renderLoreEntry(entry) {
     }
     return h('div', { class: `scratchpad-lore-entry${entry.included ? ' is-included' : ''}` },
         h('div', { class: 'scratchpad-lore-head' },
-            h('strong', { text: entry.title || t`Untitled entry` }),
+            h('strong', { text: title }),
             h('small', { text: status })),
         choices);
 }
@@ -3067,12 +3198,20 @@ async function renameSession(session) {
     const name = await callGenericPopup(`<h3>${t`New name:`}</h3>`, POPUP_TYPE.INPUT, session.name);
     if (!name || !String(name).trim()) return;
     await change(source => api.updateSession(source, session.id, { name: String(name).trim() }), t`Scratchpad could not rename that session.`, scope);
+    focusSessionAction(scope, session, 'rename');
+}
+
+function focusSessionAction(scope, session, action) {
+    if (app.open && app.tab === 'sessions' && sameSourceBucket(scope, app.source)) {
+        app.el.panels.sessions.querySelector(`[data-session="${CSS.escape(session.id)}"] .scratchpad-session-${action}`)?.focus({ preventScroll: true });
+    }
 }
 
 async function pinSession(session, pinned) {
+    const scope = app.source;
     await change(source => api.updateSession(source, session.id, { pinned }),
-        pinned ? t`Scratchpad could not pin that session.` : t`Scratchpad could not unpin that session.`, app.source);
-    app.el.panels.sessions.querySelector(`[data-session="${session.id}"] .scratchpad-session-pin`)?.focus();
+        pinned ? t`Scratchpad could not pin that session.` : t`Scratchpad could not unpin that session.`, scope);
+    focusSessionAction(scope, session, 'pin');
 }
 
 async function clearSessionMessages(session) {
@@ -3080,6 +3219,7 @@ async function clearSessionMessages(session) {
     const ok = await callGenericPopup(t`Clear every message in '${session.name}'? Its context settings stay.`, POPUP_TYPE.CONFIRM, '', { okButton: t`Clear`, cancelButton: t`Keep` });
     if (ok !== POPUP_RESULT.AFFIRMATIVE) return;
     await change(source => api.clearSession(source, session.id), t`Scratchpad could not clear that session.`, scope);
+    focusSessionAction(scope, session, 'clear');
 }
 
 async function removeSession(session) {
@@ -3311,6 +3451,7 @@ function renderSessions() {
     for (const session of visible) {
         const active = session.id === current?.id;
         const assistant = assistantInfo(session.assistant, session);
+        const labelAction = (button, label) => { button.setAttribute('aria-label', label); return button; };
         list.append(h('li', { class: `scratchpad-session${active ? ' is-active' : ''}`, 'data-session': session.id },
             h('img', { src: assistantPortrait(assistant.id, session), alt: '', width: 32, height: 32 }),
             h('div', { class: 'scratchpad-session-info' },
@@ -3319,24 +3460,27 @@ function renderSessions() {
             h('div', { class: 'scratchpad-session-actions' },
                 active
                     ? h('span', { class: 'scratchpad-badge', text: t`Open` })
-                    : iconButton(t`Open`, async () => {
+                    : labelAction(iconButton(t`Open`, async () => {
                         await change(source => api.activateSession(source, session.id), t`Scratchpad could not open that session.`);
                         selectTab('chat');
-                    }, { icon: 'fa-folder-open' }),
-                session.temporary ? null : iconButton('', () => void pinSession(session, !session.pinned), {
+                    }, { icon: 'fa-folder-open' }), t`Open ${session.name}`),
+                session.temporary ? null : labelAction(iconButton('', () => void pinSession(session, !session.pinned), {
                     icon: 'fa-thumbtack', title: session.pinned ? t`Unpin session` : t`Pin session`, pressed: session.pinned === true, className: 'scratchpad-session-pin',
-                }),
-                iconButton('', () => void renameSession(session), { icon: 'fa-i-cursor', title: t`Rename` }),
-                iconButton('', () => void clearSessionMessages(session), { icon: 'fa-broom', title: t`Clear messages` }),
-                iconButton('', () => void removeSession(session), { icon: 'fa-trash', title: t`Delete session` }))));
+                }), session.pinned ? t`Unpin ${session.name}` : t`Pin ${session.name}`),
+                labelAction(iconButton('', () => void renameSession(session), { icon: 'fa-i-cursor', title: t`Rename`, className: 'scratchpad-session-rename' }), t`Rename ${session.name}`),
+                labelAction(iconButton('', () => void clearSessionMessages(session), { icon: 'fa-broom', title: t`Clear messages`, className: 'scratchpad-session-clear' }), t`Clear messages in ${session.name}`),
+                labelAction(iconButton('', () => void removeSession(session), { icon: 'fa-trash', title: t`Delete session` }), t`Delete ${session.name}`))));
     }
     panel.append(...[list, renderEveryList()].filter(Boolean));
 }
 
 /* Opening and closing */
 
-export async function openScratchpad({ tab = '', note = null } = {}) {
+export async function openScratchpad({ tab = '', note = null, canOpen = () => true } = {}) {
+    const opening = ++app.opening;
     const owner = getCurrentUserHandle();
+    const opener = document.activeElement;
+    const isLatest = () => opening === app.opening && owner === getCurrentUserHandle();
     // Only a different account discards the form draft; a same-account reopen
     // keeps it until a successful save.
     if (app.webSearchOwner !== owner) {
@@ -3352,7 +3496,7 @@ export async function openScratchpad({ tab = '', note = null } = {}) {
     // Saved setups that cannot be read only empty that list; the session's own choices still work.
     const [library, quickPrompts, contextSetups] = await Promise.all([
         api.readAssistants().then(result => result.library, error => {
-            reportError(error, t`Your assistants could not be loaded.`);
+            if (isLatest() && canOpen()) reportError(error, t`Your assistants could not be loaded.`);
             return null;
         }),
         api.readQuickPrompts().then(result => result.quickPrompts, error => {
@@ -3365,12 +3509,13 @@ export async function openScratchpad({ tab = '', note = null } = {}) {
         }),
         loadStylesheetAsync(STYLESHEET, { id: 'neconyan-scratchpad-css' }).catch(() => null),
     ]);
-    if (owner !== getCurrentUserHandle()) return;
+    if (!isLatest() || !canOpen()) return false;
     app.library = library ?? { assistants: [], revision: 0 };
     app.quickPrompts = quickPrompts ?? { prompts: [], revision: 0 };
     app.contextSetups = contextSetups ?? { setups: [], revision: 0 };
     build();
     readPrefs();
+    if (!app.open) app.opener = opener;
     globalThis.NeconyanNotes?.hide?.();
     setNotebookSource(note);
     app.open = true;
@@ -3378,38 +3523,44 @@ export async function openScratchpad({ tab = '', note = null } = {}) {
     if (isPhone()) globalThis.NeconyanShell?.closeWorkspace?.();
     applyLayout();
     selectTab(tab || app.tab);
+    app.el.heading.focus({ preventScroll: true });
     const next = currentSource();
     warnMissingPersona(next);
     if (!sameSourceBucket(next, app.source) || !app.bucket) {
         stopWatchers();
-        app.source = next;
         app.bucket = null;
-        app.contextKey = '';
-        render();
-        await reload();
-    } else {
-        app.source = next;
-        app.contextKey = '';
-        render();
-        await reload();
     }
+    app.source = next;
+    app.contextKey = '';
+    render();
+    await reload();
+    if (!isLatest()) return false;
     clearInterval(app.timer);
     app.timer = setInterval(checkSource, SOURCE_POLL_MS);
     if (note) {
+        if (!sameSourceBucket(app.source, next)) return false;
         const ref = { notebookId: note.notebookId, noteId: note.noteId, ...(note.grantId ? { grantId: note.grantId } : {}) };
         const saved = await updateSettings(latest => ({ notes: [...(latest.notes ?? []).filter(item => item.notebookId !== ref.notebookId || item.noteId !== ref.noteId), ref] }), { rerenderContext: true });
+        // A saved reference keeps its grant even if the panel closed during the write.
+        if (!isLatest()) return Boolean(saved);
         if (!saved) throw new Error(t`The note could not be added to Scratchpad. Return to Notes and try sharing it again.`);
         selectTab('context');
     }
-    if (!isPhone()) app.el.composer.focus({ preventScroll: true });
+    if (!isPhone() && app.tab === 'chat' && document.activeElement === app.el.heading && !app.el.composer.disabled) {
+        app.el.composer.focus({ preventScroll: true });
+    }
     void refreshImageAvailability();
     void refreshWebSearchConfig({ quiet: true });
+    return true;
 }
 
 export function hideScratchpad() {
+    app.opening += 1;
     closeComposeMenu();
     if (!app.open) return;
+    const restoreFocus = app.el.root.contains(document.activeElement);
     app.open = false;
+    app.ticket += 1;
     app.personaWarning = false;
     stopReadAloud();
     cancelDictation();
@@ -3421,6 +3572,16 @@ export function hideScratchpad() {
     setNotebookSource(null);
     app.el.root.hidden = true;
     applyLayout();
+    if (restoreFocus) {
+        const opener = app.opener;
+        if (opener?.isConnected && opener !== document.body) opener.focus({ preventScroll: true });
+        if (document.activeElement === document.body) {
+            const fallback = isPhone() ? document.getElementById('sb-hamburger')
+                : document.querySelector('#neconyan-workspace-rail [data-neconyan-route="scratchpad"]');
+            fallback?.focus({ preventScroll: true });
+        }
+    }
+    app.opener = null;
 }
 
 export async function toggleScratchpad(options) {
@@ -3434,8 +3595,8 @@ export function isScratchpadOpen() {
 
 /** Workspace rail navigation hides a full-width or phone Scratchpad, and Notes always replaces it. */
 export function onWorkspaceRoute(route) {
-    if (!app.open || route === 'scratchpad') return;
-    if (route === 'notes' || isPhone() || app.layout === 'full') hideScratchpad();
+    if (route === 'scratchpad') return;
+    if (!app.open || route === 'notes' || isPhone() || app.layout === 'full') hideScratchpad();
 }
 
 globalThis.NeconyanScratchpad = Object.freeze({

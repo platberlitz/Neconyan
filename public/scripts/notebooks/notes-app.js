@@ -450,8 +450,9 @@ async function discussInScratchpad() {
         grantId = shared.grant.id;
         const { openScratchpad } = await import('../scratchpad/index.js');
         if (!isCurrent()) return;
-        await openScratchpad({ note: { notebookId: snapshot.notebookId, noteId: snapshot.noteId, title: state.note.title, grantId } });
-        grantId = null;
+        if (await openScratchpad({ note: { notebookId: snapshot.notebookId, noteId: snapshot.noteId, title: state.note.title, grantId }, canOpen: isCurrent })) {
+            grantId = null;
+        }
     } catch (error) {
         toast('error', error.message || 'The Scratchpad discussion could not start. Try again.');
     } finally {

@@ -543,7 +543,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261120-simple-guided';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261121-scratchpad-audit';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -10101,7 +10101,11 @@ function syncMobileModalState() {
     // Neconyan: only the chat is inerted. Mobile panels dock below the top bar instead of
     // covering it, so its proxy buttons stay reachable and re-tapping one closes the panel,
     // same as on desktop.
-    setElementInertForMobileModal(document.getElementById('sheld'), modalState.shouldInertShell);
+    // A phone or full-width Scratchpad also covers the chat. Combine these reasons
+    // here so closing another panel cannot make the covered chat interactive again.
+    const body = document.body?.classList;
+    const scratchpadCoversChat = body?.contains('neconyan-scratchpad-open') && !body.contains('neconyan-scratchpad-beside');
+    setElementInertForMobileModal(document.getElementById('sheld'), modalState.shouldInertShell || scratchpadCoversChat);
 }
 
 function queueMobileModalStateSync() {
@@ -22629,6 +22633,7 @@ function initAll() {
     nnState.initObserver?.disconnect();
     nnState.initObserver = null;
     nnState.initialized = true;
+    document.addEventListener('neconyan:scratchpad-visibility', syncMobileModalState);
 
     restorePersistedTopbarState();
     seedTopbarScaleDefaults();

@@ -238,9 +238,14 @@ describe('Scratchpad source context', () => {
     });
 
     test('Conversation reads its own characters, persona, override and attached books', async () => {
+        power_user.persona_descriptions = { 'persona.png': { lorebook: 'Conversation persona lore' } };
+        books.set('Conversation persona lore', { entries: { 0: { uid: 0, constant: true, content: 'Conversation persona lore.' } } });
         const context = await buildContext({ source: currentSource(), settings });
-        expect(context.lore.books).toEqual(expect.arrayContaining(['Nova lore', 'Conversation lore', 'Extra lore', 'Global lore', 'Persona lore']));
-        expect(context.text).not.toMatch(/Roleplay lore|Chat lore|Roleplay persona|Roleplay user/);
+        expect(context.lore.books).toEqual(expect.arrayContaining(['Nova lore', 'Conversation lore', 'Extra lore', 'Conversation persona lore']));
+        expect(context.lore.books).not.toContain('Persona lore');
+        expect(context.lore.books).not.toContain('Global lore');
+        expect(context.text).not.toMatch(/Roleplay lore|Chat lore|Global lore|Roleplay persona|Roleplay user/);
+        expect(context.text).toContain('Conversation persona lore.');
         expect(context.text).toContain('Conversation user is a Conversation persona with Nova.');
         expect(context.text).toContain('Nova lore: Nova and Conversation user.');
         expect(context.text).toContain('### Description [description]\n{{char}} talks to {{user}}.');

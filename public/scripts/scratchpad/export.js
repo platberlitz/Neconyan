@@ -2,6 +2,7 @@ import { t } from '../i18n.js';
 import { h } from '../notebooks/dom.js';
 import { callGenericPopup, POPUP_RESULT, POPUP_TYPE } from '../popup.js';
 import { exportReply, replySwipes } from './swipes.js';
+import { portableSettings } from './portable-settings.js';
 
 /** Import requests are capped at 4 MB; anything above this is retried without its attachments. */
 export const MAX_IMPORT_BYTES = 3_500_000;
@@ -10,9 +11,13 @@ export function exportFileName(name, extension) {
     return `${String(name ?? '').replace(/[^\w.-]+/g, '_').slice(0, 60) || 'scratchpad'}.${extension}`;
 }
 
-/** The importable file. Extras are opt-in, so the default stays conversation text only. */
+/** The importable file. Keep the transcript and assistant identities; leave private settings behind. */
 export function buildSessionExport(session, assistants, options = {}) {
     const used = new Set([session.assistant, ...session.settings.participants, ...session.messages.map(item => item.assistant)]);
+    const profiles = assistants.filter(item => item.personality && used.has(item.id)).map(item => [item.id, {
+        id: item.id, name: item.name, personality: item.personality, examples: item.examples,
+        ...(options.attachments && item.avatar ? { avatar: item.avatar } : {}),
+    }]);
     return {
         format: 'neconyan-scratchpad',
         version: 1,
@@ -22,7 +27,7 @@ export function buildSessionExport(session, assistants, options = {}) {
             pinnedNote: session.pinnedNote || '',
             assistant: session.assistant,
             gender: session.gender,
-            settings: { ...session.settings, assistants: Object.fromEntries(assistants.filter(item => item.personality && used.has(item.id)).map(item => [item.id, item])), notes: [], picked: [], pickedSource: undefined },
+            settings: { ...portableSettings(session.settings), assistants: Object.fromEntries(profiles) },
             messages: session.messages.filter(item => item.state !== 'pending').map(item => exportReply(item, options)),
         },
     };
@@ -102,7 +107,7 @@ export async function chooseSessionExport({ onPdf } = {}) {
             choice('checkbox', 'scratchpad-export-reasoning', t`Thinking`, t`The assistants' thinking, where a reply saved it.`, false, value => { options.reasoning = value; }),
             choice('checkbox', 'scratchpad-export-sources', t`Web search sources`, t`The query and the numbered links under each reply.`, false, value => { options.sources = value; }),
             choice('checkbox', 'scratchpad-export-attachments', t`Attached files and images`, t`Makes the file much larger. A file too large to import again is imported without them.`, false, value => { options.attachments = value; })),
-        h('p', { class: 'scratchpad-review-hint', text: t`With nothing ticked, the file holds the conversation text only. Message picks, saved-note sharing and generated pictures are never included.` }));
+        h('p', { class: 'scratchpad-review-hint', text: t`Without extras, the export keeps the conversation and pinned note. A Scratchpad file also keeps the assistants used and their tone, but not sharing settings, connections or prompt overrides.` }));
     const error = h('p', { class: 'scratchpad-error', role: 'alert', hidden: true });
     content.append(error);
     const result = await callGenericPopup(content, POPUP_TYPE.CONFIRM, '', { okButton: t`Export`, cancelButton: t`Cancel`,

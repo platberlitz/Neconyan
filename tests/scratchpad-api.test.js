@@ -44,6 +44,16 @@ test('a definite refusal allows corrected settings and a new submission', async 
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual(corrected);
 });
 
+test.each([sendReply, generateImage])('a definitive Scratchpad failure frees the submission key', async submit => {
+    const body = { ...request(), messageId: 'reply', index: 0 };
+    fetchMock.mockResolvedValueOnce(Response.json({ code: 'SCRATCHPAD_DAMAGED', message: 'Saved file kept.' }, { status: 500 }));
+    await expect(submit(body)).rejects.toThrow('Saved file kept.');
+    const next = { ...body, submissionKey: 'new-after-repair' };
+    fetchMock.mockResolvedValueOnce(Response.json(receipt(next)));
+    await submit(next);
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual(next);
+});
+
 test('an unresolved request is not reused for a different account', async () => {
     const body = request();
     fetchMock.mockRejectedValueOnce(new Error('Offline'));
@@ -79,6 +89,23 @@ test('an uncertain empty Send retries its original user message, not a different
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual(next);
     fetchMock.mockResolvedValueOnce(Response.json(receipt(first)));
     await sendReply({ ...first, submissionKey: 'retry-question', context: 'changed' });
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual(first);
+});
+
+test.each([
+    ['rehearsal', { rehearsal: true }],
+    ['discussion', { discuss: true }],
+    ['General context', { source: { kind: 'general', key: 'general', personaId: 'Other.png' } }],
+])('an uncertain Send is not reused for a different %s', async (_kind, change) => {
+    const first = { ...request(), ...(change.source ? { source: { ...change.source, personaId: 'First.png' } } : {}) };
+    fetchMock.mockRejectedValueOnce(new Error('Offline'));
+    await expect(sendReply(first)).rejects.toThrow();
+    const next = { ...first, ...change, submissionKey: 'different-send' };
+    fetchMock.mockResolvedValueOnce(Response.json(receipt(next)));
+    await sendReply(next);
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual(next);
+    fetchMock.mockResolvedValueOnce(Response.json(receipt(first)));
+    await sendReply({ ...first, submissionKey: 'retry-send', context: 'Updated context text.' });
     expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual(first);
 });
 

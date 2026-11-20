@@ -2342,11 +2342,14 @@ async function openNeconyanRecentChat(recentChat) {
     return result;
 }
 
+let railRouteRequest = 0;
+
 function activateNeconyanRailRoute(route) {
     const shell = globalThis.NeconyanShell;
     if (route === 'gallery') {
         return shell?.openGallery?.();
     }
+    const request = ++railRouteRequest;
     globalThis.NeconyanNotes?.onRoute?.(route);
     globalThis.NeconyanScratchpad?.onRoute?.(route);
     globalThis.NeconyanGames?.onRoute?.(route);
@@ -2365,7 +2368,7 @@ function activateNeconyanRailRoute(route) {
             break;
         case 'scratchpad':
             void import('./scratchpad/index.js')
-                .then(module => module.openScratchpad())
+                .then(module => request === railRouteRequest && module.openScratchpad())
                 .catch(error => {
                     console.error('[Neconyan] Scratchpad could not open', error);
                     globalThis.toastr?.error?.(t`Scratchpad could not open. Try reloading the page.`);
