@@ -4,6 +4,7 @@
 
 ### Merged Staging PRs
 - PR #776 (2026-11-20) `fix(settings): keep theme filters in view when pressed`
+- PR #778 (2026-11-20) `fix(deps): upgrade simple-git to patch security advisories`
 - PR #779 (2026-11-20) `fix(ci): let the pr manager write pull request labels`
 
 ## v1.5.7
