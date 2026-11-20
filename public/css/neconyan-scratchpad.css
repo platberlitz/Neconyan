@@ -89,7 +89,8 @@ body.neconyan dialog.popup.wide_dialogue_popup:has(.scratchpad-picture-review .s
 }
 
 .scratchpad-app[hidden],
-#neconyan-scratchpad [hidden] {
+#neconyan-scratchpad [hidden],
+.scratchpad-review [hidden] {
     display: none;
 }
 
@@ -718,6 +719,7 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
 }
 
 .scratchpad-message {
+    overflow-wrap: anywhere;
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -1652,6 +1654,7 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
 }
 
 .scratchpad-session-info {
+    overflow-wrap: anywhere;
     display: flex;
     flex: 1 1 160px;
     flex-direction: column;
@@ -1964,7 +1967,9 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     }
 
     .scratchpad-assistant {
-        padding-right: 3px;
+        min-width: 44px;
+        justify-content: center;
+        padding-inline: 3px;
     }
 }
 
@@ -1991,8 +1996,14 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     }
 
     .scratchpad-app textarea.scratchpad-composer,
-    .scratchpad-app .text_pole {
+    .scratchpad-app .text_pole,
+    .scratchpad-review .text_pole {
         font-size: 16px;
+    }
+
+    :is(.scratchpad-app, .scratchpad-review) details > summary {
+        min-height: 44px;
+        align-content: center;
     }
 
     .scratchpad-header {
@@ -2027,15 +2038,11 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
 }
 
 @media (prefers-reduced-motion: no-preference) {
-    .scratchpad-tab,
-    .scratchpad-assistant,
-    .scratchpad-overview-toggle,
-    .scratchpad-overview-bar,
-    .scratchpad-segment-choice {
+    body:not(.reduced-motion) :is(.scratchpad-tab, .scratchpad-assistant, .scratchpad-overview-toggle, .scratchpad-overview-bar, .scratchpad-segment-choice) {
         transition: background-color 120ms ease-out, border-color 120ms ease-out;
     }
 
-    .scratchpad-tone-stop {
+    body:not(.reduced-motion) .scratchpad-tone-stop {
         transition: color 120ms ease-out;
     }
 }

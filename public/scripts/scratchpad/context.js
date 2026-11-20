@@ -285,10 +285,11 @@ function sourceLorebooks(source, settings) {
         const extra = world_info.charLore?.find(item => item.name === filename)?.extraBooks;
         if (Array.isArray(extra)) books.push(...extra);
     }
-    books.push(...selected_world_info, power_user.persona_description_lorebook);
-    books.push(source?.kind === 'conversation'
-        ? getConversationSettings(source.avatar, source).lorebook_override
-        : chat_metadata.world_info);
+    if (source?.kind === 'conversation') {
+        books.push(power_user.persona_descriptions?.[source.personaId]?.lorebook, getConversationSettings(source.avatar, source).lorebook_override);
+    } else {
+        books.push(...selected_world_info, power_user.persona_description_lorebook, chat_metadata.world_info);
+    }
     return [...new Set(books.filter(book => typeof book === 'string' && book.trim()))];
 }
 
@@ -331,18 +332,19 @@ export async function collectLore({ source, settings, scanText = '' }) {
     const listed = usable.map(entry => {
         const key = loreOverrideKey(entry);
         const override = overrides[key] || null;
+        const keys = Array.isArray(entry.key) ? entry.key : typeof entry.key === 'string' ? [entry.key] : [];
         let reason = null;
         if (override === 'always') reason = 'always';
         else if (override === 'never') reason = null;
         else if (entry.constant) reason = 'constant';
-        else if (Array.isArray(entry.key) && entry.key.some(item => keyMatches(item, scanText, lower))) reason = 'keyword';
+        else if (keys.some(item => keyMatches(item, scanText, lower))) reason = 'keyword';
         if (!general && settings?.include?.lore === false) reason = null;
         return {
             key,
             world: String(entry.world),
             uid: entry.uid,
-            title: String(entry.comment || (entry.key || [])[0] || `Entry ${entry.uid}`),
-            keys: Array.isArray(entry.key) ? entry.key.map(String) : [],
+            title: String(entry.comment || keys[0] || `Entry ${entry.uid}`),
+            keys: keys.map(String),
             content: String(entry.content ?? ''),
             constant: Boolean(entry.constant),
             override,

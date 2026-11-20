@@ -686,7 +686,7 @@ export async function performWebSearch(plan, { directories, signal, fetch: fetch
         });
     } catch (error) {
         if (signal?.aborted) throw abortReason(signal);
-        if (timeoutSignal.aborted) throw new WebSearchError('The web search timed out after 20 seconds.', 'SCRATCHPAD_WEB_SEARCH_TIMEOUT');
+        if (timeoutSignal.aborted) throw new WebSearchError(webSearchTimeoutMessage(timeoutMs), 'SCRATCHPAD_WEB_SEARCH_TIMEOUT');
         if (error instanceof WebSearchError) throw error;
         if (error?.code === 'SAFE_HTTP_PRIVATE_IP' || error?.code === 'SAFE_HTTP_PRIVATE_HOST') {
             throw providerRefused(new WebSearchError('Only an administrator can point web search at a private or local address.', 'SCRATCHPAD_WEB_SEARCH_PRIVATE', { definite: true }));
@@ -712,7 +712,7 @@ export async function performWebSearch(plan, { directories, signal, fetch: fetch
         payload = await readJson(response, requestSignal);
     } catch (error) {
         if (signal?.aborted) throw abortReason(signal);
-        if (timeoutSignal.aborted) throw new WebSearchError('The web search timed out after 20 seconds.', 'SCRATCHPAD_WEB_SEARCH_TIMEOUT');
+        if (timeoutSignal.aborted) throw new WebSearchError(webSearchTimeoutMessage(timeoutMs), 'SCRATCHPAD_WEB_SEARCH_TIMEOUT');
         if (error instanceof WebSearchError) throw error;
         throw new WebSearchError('The search service could not be reached.', 'SCRATCHPAD_WEB_SEARCH_UNREACHABLE');
     }
@@ -725,10 +725,15 @@ export async function performWebSearch(plan, { directories, signal, fetch: fetch
 }
 
 /** A failure message that can be shown and saved without a response body or credentials. */
+function webSearchTimeoutMessage(timeoutMs) {
+    const seconds = timeoutMs / 1000;
+    return `The web search timed out after ${seconds} ${seconds === 1 ? 'second' : 'seconds'}.`;
+}
+
 export function webSearchFailure(error, timeoutMs = WEB_SEARCH_TIMEOUT_MS) {
     if (error instanceof WebSearchError) return error.message;
     if (error?.code === 'PROVIDER_OUTCOME_UNKNOWN') return 'An earlier web search has an unknown result, so it was not sent again.';
-    if (error?.name === 'AbortError') return `The web search timed out after ${Math.round(timeoutMs / 1000)} seconds.`;
+    if (error?.name === 'AbortError') return webSearchTimeoutMessage(timeoutMs);
     return 'The web search could not be completed.';
 }
 

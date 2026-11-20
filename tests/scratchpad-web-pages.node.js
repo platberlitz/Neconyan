@@ -170,7 +170,7 @@ test('reading links is off by default, saved per session, and its records are in
     assert.equal(store.normaliseSettings({}).readLinks, false);
     const session = startSession(a, { readLinks: true });
     assert.equal(session.settings.readLinks, true);
-    const input = { role: 'assistant', text: 'Answer.', webPages: [{ url: 'https://example.com/guide', title: 'Guide' }] };
+    const input = { id: 'msg-pages', role: 'assistant', text: 'Answer.', webPages: [{ url: 'https://example.com/guide', title: 'Guide' }] };
     assert.equal(store.testExports.normaliseMessage(input, { allowInternalKeys: false }).webPages, undefined);
     assert.deepEqual(store.testExports.normaliseMessage(input, { allowInternalKeys: true }).webPages, [{ url: 'https://example.com/guide', title: 'Guide' }]);
     const prompt = buildScratchpadSystemPrompt({ assistant: 'miso', userName: 'Kris', characterName: 'Nova', customPrompt: 'MY-CUSTOM-VOICE', webPages: true }).text;

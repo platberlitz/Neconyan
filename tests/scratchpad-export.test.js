@@ -18,7 +18,9 @@ function session() {
         name: 'Tea notes',
         assistant: 'miso',
         gender: 'male',
-        settings: { participants: ['miso', 'custom-1'], notes: [{ notebookId: 'nb', noteId: 'n' }], picked: [3], pickedSource: { kind: 'roleplay' }, webSearch: true },
+        settings: { participants: ['miso', 'custom-1'], notes: [{ notebookId: 'nb', noteId: 'n' }], picked: [3], pickedSource: { kind: 'roleplay' }, webSearch: true, readLinks: true,
+            lorebook: 'Private lore', loreOverrides: { 'Private lore::1': 'always' }, include: { hidden: true }, connection: { profileId: 'private-model' },
+            assistantPrompts: { miso: 'Private prompt' }, assistantPrefills: { miso: 'Private prefill' }, feedbackTone: 'balanced' },
         messages: [
             { id: 'u1', role: 'user', text: 'Where does tea come from?', created: 1, attachments },
             {
@@ -31,7 +33,7 @@ function session() {
     };
 }
 
-const library = [{ id: 'custom-1', name: 'Custom', personality: 'Kind.' }, { id: 'custom-2', name: 'Unused', personality: 'Absent.' }, { id: 'miso', name: 'Miso' }];
+const library = [{ id: 'custom-1', name: 'Custom', personality: 'Kind.', sourceCard: 'private-card.png', avatar: 'data:image/png;base64,AAAA' }, { id: 'custom-2', name: 'Unused', personality: 'Absent.' }, { id: 'miso', name: 'Miso' }];
 
 describe('Scratchpad session export', () => {
     test('the session note travels in JSON and readable Markdown without requiring extra export choices', () => {
@@ -42,9 +44,9 @@ describe('Scratchpad session export', () => {
     test('the default file holds conversation text only, with every version and the assistants used', () => {
         const payload = buildSessionExport(session(), library);
         expect(payload).toMatchObject({ format: 'neconyan-scratchpad', version: 1, session: { name: 'Tea notes', assistant: 'miso', gender: 'male' } });
-        expect(payload.session.settings).toMatchObject({ notes: [], picked: [], webSearch: true });
-        expect(payload.session.settings.pickedSource).toBeUndefined();
-        expect(Object.keys(payload.session.settings.assistants)).toEqual(['custom-1']);
+        expect(payload.session.settings).toEqual({ participants: ['miso', 'custom-1'], feedbackTone: 'balanced',
+            assistants: { 'custom-1': { id: 'custom-1', name: 'Custom', personality: 'Kind.' } } });
+        expect(buildSessionExport(session(), library, { attachments: true }).session.settings.assistants['custom-1'].avatar).toBe(library[0].avatar);
         expect(payload.session.messages).toEqual([
             { role: 'user', text: 'Where does tea come from?', created: 1, assistant: undefined, assistantName: undefined, gender: undefined },
             {

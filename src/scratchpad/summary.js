@@ -34,6 +34,7 @@ function record(message) {
 }
 
 export function summaryFingerprint(messages) {
+    // The summariser distinguishes saved changes from proposals, so those decisions invalidate old summaries.
     return createHash('sha256').update(JSON.stringify(messages.map(record))).digest('hex');
 }
 
@@ -71,16 +72,15 @@ export function planSummary(session, messages) {
             ? { name: attachment.name, kind: 'image', content: 'Image not inspected in summary.' } : attachment);
         return JSON.stringify(item);
     }).join('\n');
+    const encoded = Buffer.from(transcript);
     const chunks = [];
-    let chunk = '';
-    let size = 0;
-    for (const character of transcript) {
-        const length = bytes(character);
-        if (size + length > SUMMARY_CHUNK_BYTES) { chunks.push(chunk); chunk = ''; size = 0; }
-        chunk += character;
-        size += length;
+    for (let start = 0; start < encoded.length;) {
+        let end = Math.min(start + SUMMARY_CHUNK_BYTES, encoded.length);
+        // Never split in the middle of a UTF-8 code point.
+        while (end < encoded.length && (encoded[end] & 0xc0) === 0x80) end--;
+        chunks.push(encoded.toString('utf8', start, end));
+        start = end;
     }
-    if (chunk) chunks.push(chunk);
     return { messages: messages.slice(count), summary: { count, fingerprint: summaryFingerprint(messages.slice(0, count)),
         text: cached?.text ?? '', chunks } };
 }

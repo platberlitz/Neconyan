@@ -39,6 +39,7 @@ import { acceptScratchpadImage, readScratchpadImageAvailability, prepareScratchp
 import { captureImageTargetsLocked, capturePersonaTargetLocked } from '../scratchpad/image-targets.js';
 import { updateWebSearchLocked, webSearchState, webSearchStateLocked } from '../scratchpad/web-search.js';
 import { removeScratchpadGalleryImagesLocked, scratchpadGalleryLocked } from '../scratchpad/image-gallery.js';
+import { portableSettings } from '../../public/scripts/scratchpad/portable-settings.js';
 
 export const router = express.Router();
 
@@ -246,27 +247,19 @@ router.post('/prompt', (request, response) => {
         const body = request.body ?? {};
         const source = body.source || body.sessionId ? normaliseSource(body.source) : null;
         const imageAvailability = readScratchpadImageAvailability(base);
-        const targets = source && imageAvailability.image ? withScratchpad(base, lease => {
-            const bucket = readBucketLocked(lease, source);
+        const participants = Array.isArray(body.participants) ? body.participants.slice(0, 3) : [];
+        const { targets, profiles, persona, sharedLorebook, toneSettings } = withScratchpad(base, lease => {
+            const bucket = source ? readBucketLocked(lease, source) : null;
             const session = body.sessionId ? findSession(bucket, requireId(body.sessionId, 'session')) : null;
-            return captureImageTargetsLocked(lease, bucket.source, body.targets, { shared: session?.settings.include.card !== false });
-        }) : [];
-        const profiles = withScratchpad(base, lease => {
             const library = readAssistantsLocked(lease);
-            const session = body.sessionId ? findSession(readBucketLocked(lease, source), requireId(body.sessionId, 'session')) : null;
-            const ids = [body.assistant, ...(Array.isArray(body.participants) ? body.participants.slice(0, 3) : [])];
-            return Object.fromEntries(ids.map(id => [id, resolveAssistant(library, id, session?.settings.assistants)]));
+            return {
+                targets: bucket && imageAvailability.image ? captureImageTargetsLocked(lease, bucket.source, body.targets, { shared: session?.settings.include.card !== false }) : [],
+                profiles: Object.fromEntries([body.assistant, ...participants].map(id => [id, resolveAssistant(library, id, session?.settings.assistants)])),
+                persona: bucket ? capturePersonaTargetLocked(lease, source, body.capabilities?.persona, session?.settings.include.persona !== false) : null,
+                sharedLorebook: source?.kind !== 'general' || Boolean(session?.settings.lorebook),
+                toneSettings: session?.settings ?? { feedbackTone: body.feedbackTone, assistantTones: body.assistantTones },
+            };
         });
-        const persona = source ? withScratchpad(base, lease => {
-            const bucket = readBucketLocked(lease, source);
-            const session = body.sessionId ? findSession(bucket, requireId(body.sessionId, 'session')) : null;
-            return capturePersonaTargetLocked(lease, source, body.capabilities?.persona, session?.settings.include.persona !== false);
-        }) : null;
-        const sharedLorebook = source?.kind !== 'general' || (body.sessionId ? withScratchpad(base, lease =>
-            Boolean(findSession(readBucketLocked(lease, source), requireId(body.sessionId, 'session')).settings.lorebook)) : false);
-        const toneSettings = body.sessionId
-            ? withScratchpad(base, lease => findSession(readBucketLocked(lease, source), requireId(body.sessionId, 'session')).settings)
-            : { feedbackTone: body.feedbackTone, assistantTones: body.assistantTones };
         const prompt = buildScratchpadSystemPrompt({ assistant: body.assistant, gender: body.gender,
             persona: profiles[body.assistant], assistantNames: Object.fromEntries(Object.entries(profiles).map(([id, profile]) => [id, profile?.name])),
             sourceKind: source?.kind, userName: body.names?.user, characterName: body.names?.character,
@@ -274,7 +267,7 @@ router.post('/prompt', (request, response) => {
                 lore: body.capabilities?.lore === true && source?.kind !== 'notebook' && sharedLorebook,
                 persona,
                 image: imageAvailability.image && body.capabilities?.image === true, avatar: imageAvailability.image && body.capabilities?.image === true && targets.length > 0 },
-            participants: Array.isArray(body.participants) ? body.participants.slice(0, 3) : [], randomReply: body.randomReply === true });
+            participants, randomReply: body.randomReply === true });
         // The editor shows only the editable prompt; the tone is added after it at send time.
         const tone = assistantFeedbackTone(toneSettings, body.assistant);
         response.json({ ...prompt, tone: { id: tone, label: feedbackToneLabel(tone),
@@ -286,9 +279,8 @@ router.post('/prompt', (request, response) => {
 
 router.post('/session/import', (request, response) => change(request, response, (bucket, body, lease) => {
     const session = body.session && typeof body.session === 'object' ? body.session : {};
-    const settings = { ...session.settings, notes: [], picked: [], pickedSource: null, lorebook: '' };
-    const imported = createSession(bucket, { assistant: session.assistant, gender: session.gender, name: session.name, pinnedNote: session.pinnedNote, settings,
-        messages: Array.isArray(session.messages) ? session.messages : [] });
+    const imported = createSession(bucket, { assistant: session.assistant, gender: session.gender, name: session.name, pinnedNote: session.pinnedNote,
+        settings: portableSettings(session.settings), messages: Array.isArray(session.messages) ? session.messages : [] }, { inheritSettings: false });
     refreshSessionAssistants(imported, readAssistantsLocked(lease));
 }));
 
@@ -302,7 +294,7 @@ router.post('/search', (request, response) => {
 
 router.post('/search/copy', (request, response) => change(request, response, (bucket, body, lease) => {
     const found = readFoundSessionLocked(lease, body.list, requireId(body.sessionId, 'session'));
-    const copied = createSession(bucket, { ...found, settings: { ...found.settings, notes: [], picked: [], pickedSource: null, lorebook: '' } });
+    const copied = createSession(bucket, { ...found, settings: portableSettings(found.settings) }, { inheritSettings: false });
     refreshSessionAssistants(copied, readAssistantsLocked(lease));
 }));
 
@@ -313,10 +305,11 @@ router.post('/session/branch', (request, response) => change(request, response, 
 
 router.post('/session/update', (request, response) => change(request, response, (bucket, body, lease) => {
     const session = findSession(bucket, requireId(body.sessionId, 'session'));
-    const changes = body.changes ?? {};
-    const settings = sessionSettings(lease, { ...session.settings, ...changes.settings }, changes.assistant ?? session.assistant);
-    updateSession(bucket, session.id, { ...changes, settings });
-    refreshSessionAssistants(session, readAssistantsLocked(lease));
+    const changes = { ...body.changes };
+    const refresh = changes.settings !== undefined || changes.assistant !== undefined;
+    if (refresh) changes.settings = sessionSettings(lease, { ...session.settings, ...changes.settings }, changes.assistant ?? session.assistant);
+    updateSession(bucket, session.id, changes);
+    if (refresh) refreshSessionAssistants(session, readAssistantsLocked(lease));
 }));
 
 router.post('/session/delete', (request, response) => change(request, response, (bucket, body) => {

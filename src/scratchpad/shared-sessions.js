@@ -121,7 +121,7 @@ function storageForFile(lease, filename, required) {
     }
     const stamp = `${stat.ino}:${stat.size}:${stat.mtimeNs}`;
     const cached = sourceCache.get(filename);
-    if (cached?.stamp === stamp) return cached.storage;
+    if (cached?.stamp === stamp && (cached.storage || !required)) return cached.storage;
 
     let storage = null;
     try {
@@ -130,6 +130,7 @@ function storageForFile(lease, filename, required) {
         if (source?.kind && typeof source.key === 'string') {
             storage = { kind: source.kind, key: source.key, label: typeof source.label === 'string' ? source.label : '' };
         }
+        if (required && !storage) throw new ScratchpadError('SCRATCHPAD_DAMAGED', 'A saved Scratchpad identity is missing. The original files were kept.', 500);
     } catch (error) {
         if (required) throw error;
         console.warn(`Skipping unreadable Scratchpad file ${filename}.`, error);
@@ -166,6 +167,7 @@ export function readSharedBucketLocked(lease, inputSource) {
         const storage = storageForFile(lease, filename, filename === canonicalFilename);
         if (!storage?.kind || typeof storage.key !== 'string') continue;
         const isCanonical = storage.kind === canonical.kind && storage.key === canonical.key;
+        if (filename === canonicalFilename && !isCanonical) throw new ScratchpadError('SCRATCHPAD_DAMAGED', 'A saved Scratchpad identity does not match its file.', 500);
         const owner = ownerOf(storage, state, identities);
         if (!isCanonical && (owner?.kind !== scope.kind || owner.id !== scope.id || owner.space !== space)) continue;
         if (scratchpadFile(root, storage) !== filename) throw new ScratchpadError('SCRATCHPAD_DAMAGED', 'A saved Scratchpad identity does not match its file.', 500);
