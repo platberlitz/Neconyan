@@ -105,3 +105,34 @@ test('catch-up defaults to reply, validates its choice and preserves wait for a 
     const saved = await post('/config/get', {}, headers);
     assert.equal(saved.body.config.historyCatchUp, 'wait');
 });
+
+test('manual model credentials stay with their original endpoint', async t => {
+    const { dirs, post } = await appFor(t, 'alice');
+    const headers = { 'X-Neconyan-Account': 'alice' };
+    const config = defaultConfig();
+    const names = ['extractor', 'pawspective', 'embedding', 'selector', 'fallback'];
+    const firstEndpoint = 'http://127.0.0.1:8411/v1';
+    for (const name of names) Object.assign(config.roles[name], { endpoint: firstEndpoint, apiKey: 'fixture-' + name });
+    const initial = await post('/config/save', { config }, headers);
+    assert.equal(initial.status, 200);
+    for (const name of names) assert.equal(initial.body.config.roles[name].hasKey, true, name);
+    assert.equal(Object.hasOwn(initial.body.config, 'manualKeyEndpoints'), false);
+
+    // An account created on an older version has the keys but no saved binding yet.
+    const file = path.join(dirs.root, 'mewmory', 'config.json');
+    const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+    delete saved.manualKeyEndpoints;
+    fs.writeFileSync(file, JSON.stringify(saved));
+
+    const changed = initial.body.config;
+    for (const name of names) changed.roles[name].endpoint = 'http://127.0.0.1:8412/v1';
+    const moved = await post('/config/save', { config: changed }, headers);
+    assert.equal(moved.status, 200);
+    for (const name of names) assert.equal(moved.body.config.roles[name].hasKey, false, name);
+
+    const restored = moved.body.config;
+    for (const name of names) restored.roles[name].endpoint = 'http://localhost:8411/v1/';
+    const back = await post('/config/save', { config: restored }, headers);
+    assert.equal(back.status, 200);
+    for (const name of names) assert.equal(back.body.config.roles[name].hasKey, true, name);
+});

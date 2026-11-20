@@ -67,6 +67,10 @@ export function validateEndpoint(endpoint, { localOnly, allowRemote }) {
     if (!isLocalEndpoint(url.href) && (localOnly || !allowRemote)) {
         fail('This role is not allowed to send your story to a service on another computer. Tick \'Allow sending story data to a service on another computer\' for this role, or use a service running on this machine.', 403);
     }
+    return normaliseEndpoint(url);
+}
+
+function normaliseEndpoint(url) {
     // Literal loopback prevents localhost DNS changes from bypassing local-only mode.
     if (url.hostname === 'localhost') url.hostname = '127.0.0.1';
     return url.href.replace(/\/$/, '');
@@ -305,8 +309,25 @@ export function readConfig(directories) {
     return config;
 }
 
+function manualKeyEndpoint(config, name) {
+    const endpoint = config.manualKeyEndpoints?.[name] ?? config.roles?.[name]?.endpoint;
+    return endpointIdentity(endpoint);
+}
+
+function endpointIdentity(endpoint) {
+    try { return normaliseEndpoint(new URL(endpoint)).replace(/\/+$/, ''); } catch { return ''; }
+}
+
+function manualKey(directories, config, name, endpoint) {
+    const identity = endpointIdentity(endpoint);
+    return identity && manualKeyEndpoint(config, name) === identity
+        ? readSecret(directories, 'mewmory_' + name) : '';
+}
+
 export function publicConfig(directories) {
-    const config = readSavedConfig(directories);
+    const saved = readSavedConfig(directories);
+    const config = { ...saved };
+    delete config.manualKeyEndpoints;
     const resolved = readConfig(directories);
     const profiles = listModelProfiles(directories);
     return { ...config, profiles, roles: Object.fromEntries(ROLE_NAMES.map(name => {
@@ -317,7 +338,7 @@ export function publicConfig(directories) {
         return [name, { ...role, model, ...(native ? { native: { source: native.source, model: native.settings.model,
             queryPrefix: native.settings.queryPrefix || '', documentPrefix: native.settings.documentPrefix || '' } } : {}),
         error: resolved.roles[name].error || '', autoTokenizer: (native ? resolved.roles[name].model : model) ? getTokenizerModel(native ? resolved.roles[name].model : model) : '',
-        hasKey: Boolean(readSecret(directories, 'mewmory_' + name)) }];
+        hasKey: Boolean(manualKey(directories, saved, name, role.endpoint)) }];
     })) };
 }
 
@@ -359,11 +380,6 @@ export function saveConfig(directories, input) {
             }
         }
         for (const roleName of DECISION_ROLES) {
-            // A manual key belongs to its saved destination, including when a preset changes it.
-            if (current.roles?.[roleName]?.endpoint !== validated.roles[roleName].endpoint
-                && !credentials.some(([name]) => name === roleName)) {
-                credentials.push([roleName, null]);
-            }
             if (input.roles?.[roleName]?.decisionMode === undefined && current.roles?.[roleName]?.decisionMode !== undefined) {
                 validated.roles[roleName].decisionMode = current.roles[roleName].decisionMode;
             }
@@ -371,11 +387,19 @@ export function saveConfig(directories, input) {
                 validated.roles[roleName].decisionThreshold = current.roles[roleName].decisionThreshold;
             }
         }
+        // Bind legacy keys to the previous destination, never the incoming one. Keep the key
+        // available if the author returns to that endpoint rather than deleting it on a switch.
+        validated.manualKeyEndpoints = Object.fromEntries(ROLE_NAMES.map(name => [name, manualKeyEndpoint(current, name)]));
         const previousSecrets = credentials.length && fs.existsSync(secretsFile) ? fs.readFileSync(secretsFile) : null;
         try {
             for (const [name, value] of credentials) {
-                if (value === null) new SecretManager(directories).deleteSecrets('mewmory_' + name);
-                else writeSecret(directories, 'mewmory_' + name, value);
+                if (value === null) {
+                    new SecretManager(directories).deleteSecrets('mewmory_' + name);
+                    validated.manualKeyEndpoints[name] = '';
+                } else {
+                    writeSecret(directories, 'mewmory_' + name, value);
+                    validated.manualKeyEndpoints[name] = validated.roles[name].endpoint;
+                }
             }
             validated.revision = current.revision + 1;
             writeJson(filename, validated);
@@ -589,7 +613,7 @@ async function requestModel(directories, config, name, payload, dataTypes, signa
     const key = role.connection
         ? role.connection.payload.reverse_proxy ? role.connection.payload.proxy_password
             : role.connection.secretId ? readSecret(directories, role.connection.secretType, role.connection.secretId) : ''
-        : readSecret(directories, 'mewmory_' + name);
+        : !role.nativePolicy ? manualKey(directories, config, name, endpoint) : '';
     const send = (url, options) => {
         checkCurrent();
         return fetch(url, { ...options, redirect: 'error', size: 4 * 1024 * 1024 });
