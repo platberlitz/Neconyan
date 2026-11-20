@@ -1,7 +1,7 @@
 import { afterAll, expect, jest, test } from '@jest/globals';
 
-globalThis.document = { hasFocus: () => true };
-afterAll(() => { delete globalThis.document; });
+global.document = { hasFocus: () => true };
+afterAll(() => { delete global.document; });
 
 jest.unstable_mockModule('../public/scripts/power-user.js', () => ({ power_user: { smooth_streaming_speed: 100 } }));
 jest.unstable_mockModule('../public/scripts/utils.js', () => ({ delay: async () => {} }));

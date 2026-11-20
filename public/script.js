@@ -9540,13 +9540,14 @@ async function nativeRoleplayWorkflowFor(type, options, collector = null) {
     // can still build the complete prompt. Probe the Notebook requirement only when
     // that preferred path is unavailable, and keep the existing error when needed.
     const browserFallbackAllowed = async () => {
-        if (serverRequired) return false;
+        if (serverRequired || options.skipNativeRoleplay === false) return false;
         if (!preferServer) return true;
         serverRequired = await requiresServerReply();
         return !serverRequired;
     };
     if (!workflows || !name || (preferServer && workflows.isNativeRoleplayWorkflowReady?.() === false)) {
         report('workflow-module');
+        if (options.skipNativeRoleplay === false) throw new Error('The server reply workflow is unavailable. Please reload and try again.');
         if (!await browserFallbackAllowed()) throw new Error('The selected Notebook context needs a server reply. Please reload and try again.');
         return null;
     }
@@ -9556,6 +9557,7 @@ async function nativeRoleplayWorkflowFor(type, options, collector = null) {
     // collector is passed on, so only the emitting decision point writes the line.
     const page = await workflows.capturePagePrompts(name, collector);
     if (!page) {
+        if (options.skipNativeRoleplay === false) throw new Error('The server cannot carry these page prompts. Nothing was generated.');
         if (!await browserFallbackAllowed()) throw new Error('The selected Notebook context cannot be combined with these page prompts. Nothing was generated.');
         return null;
     }

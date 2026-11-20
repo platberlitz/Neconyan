@@ -52,7 +52,7 @@ export async function deliverConversationReply(rawText, settings, {
         const speaker = match?.speaker || fallbackSpeaker;
         // Command arguments still need their quotes when the command parser reads them.
         const text = match ? match.text : stripSpeakerPrefixText(chunks[chunk], speaker.name || fallbackSpeaker.name || 'Character');
-        const commands = extractCharacterReplyCommandParts(text, settings);
+        const commands = extractCharacterReplyCommandParts(text, settings, { preserveCommandOnlyText: false });
         const messages = splitChatroomMessages(commands.text).map(normalizeConversationOutputText).filter(Boolean);
         const speakerAvatar = speaker.avatar || fallbackSpeaker.avatar;
         if (!messages.length && (commands.scheduleUpdates.length || commands.reminders.length)) {

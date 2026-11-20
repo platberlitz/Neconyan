@@ -892,7 +892,9 @@ async function runConversationParticipantJob(context, deps) {
             noticeText: buildDelayedReplyNoticeText(speaker.name, activity.activity), now: deps.now(),
         });
     }
-    let response = readArtifact(directories, context.job.id, 'reply');
+    const retry = context.job.emptyReplyRetries ?? 0;
+    const replyKey = retry ? `reply:empty-retry:${retry}` : 'reply';
+    let response = readArtifact(directories, context.job.id, replyKey);
     if (!response) {
         // Reassert the saved source immediately before paying for a provider
         // call: the chat, message and group may have changed since acceptance.
@@ -910,6 +912,7 @@ async function runConversationParticipantJob(context, deps) {
                 maxTokens: settings.reply_max_tokens, userName, characterName: speaker.name,
                 groupNames: snapshot.groupNames || [], rawOptions: separateSystem ? { systemPrompt: snapshot.messages[0].content } : {},
                 macroEnvironment: createMacroEnvironment(snapshot.macros), stream: snapshot.streamPreview === true,
+                stepNamespace: retry ? `conversation-empty-retry:${retry}` : '',
                 onStream: value => counter.publish(value) };
             response = snapshot.assistantTools
                 ? await generateConversationAssistantReply(context, snapshot, options, deps.generate)
@@ -919,7 +922,7 @@ async function runConversationParticipantJob(context, deps) {
             publishConversationPreview(context, snapshot, null);
         }
         if (response === null) return { waiting: true };
-        writeArtifact(directories, context.job.id, 'reply', response);
+        writeArtifact(directories, context.job.id, replyKey, response);
     }
     const blocked = classifyGenerationOutcome(response?.response);
     if (blocked) {
@@ -935,7 +938,9 @@ async function runConversationParticipantJob(context, deps) {
         writeArtifact(directories, context.job.id, 'result', { ...result, generationOutcome: blocked });
         return { artifact: true, generationOutcome: blocked };
     }
-    if (typeof response.text !== 'string' || !response.text.trim()) fail('The model returned an empty Conversation reply.', 502);
+    if (typeof response.text !== 'string' || !response.text.trim()) {
+        throw Object.assign(new Error('The model returned an empty Conversation reply.'), { code: 'CONVERSATION_EMPTY_REPLY', status: 502 });
+    }
     if (Buffer.byteLength(response.text) > 256 * 1024) fail('The model reply exceeded the Conversation message limit.', 502);
     setJobResume(directories, context.job.id, 'delivery');
     let imageDelivered = false;
@@ -1008,8 +1013,9 @@ async function runConversationParticipantJob(context, deps) {
     const imageEligible = ['reply', 'reminder', 'schedule', 'idle-followup', 'idle-spontaneous', 'proactive'].includes(snapshot.purpose || 'reply');
     const imageText = automation ? response.text : lastUserMessageText(snapshot.macros?.extra?.chat || []);
     if (!stopped() && imageEligible && !imageDelivered && conversationReplyWantsImage(settings, imageText)) {
-        await generateImage('', speaker, { chunk: 'spontaneous', image: 0, attachReplyReference: false, extra: {} });
+        result.posted = await generateImage('', speaker, { chunk: 'spontaneous', image: 0, attachReplyReference: false, extra: {} }) || result.posted;
     }
+    if (!result.posted && !stopped()) fail('The model returned nothing that could be shown in Conversation.', 502);
     writeArtifact(directories, context.job.id, 'result', result);
     return { artifact: true };
 }

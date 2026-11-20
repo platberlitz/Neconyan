@@ -870,6 +870,9 @@ export function clearFinishedJobs(directories, { owner } = {}) {
  */
 export function explicitRetryRecovery(job) {
     return { recoverability: 'resumable', recoveryStep: null, recoverySteps: [],
+        ...(['conversation.reply', 'conversation.participant'].includes(job.type) && job.error?.code === 'CONVERSATION_EMPTY_REPLY'
+            ? { emptyReplyRetries: (job.emptyReplyRetries ?? 0) + 1 } : {}),
+        ...(job.error?.code === 'HORDE_TASK_TERMINAL' ? { hordeRetryAttempt: (job.hordeRetryAttempt ?? 0) + 1 } : {}),
         resume: typeof job.resume === 'string' && job.resume.startsWith('provider:') ? null : job.resume ?? null };
 }
 
@@ -891,12 +894,12 @@ export function retryConversationFamily(directories, id) {
             }
             child.state = child.children?.length ? 'waiting' : 'queued';
             child.stage = child.children?.length ? 'children' : null;
+            Object.assign(child, explicitRetryRecovery(child));
             child.error = null;
             child.result = null;
             child.finishedAt = null;
             child.dismissed = false;
             delete child.dismissedReason;
-            Object.assign(child, explicitRetryRecovery(child));
             child.attempt += 1;
             child.updatedAt = now();
             changed = true;

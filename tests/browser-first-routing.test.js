@@ -83,13 +83,16 @@ test.each([false, true])('browser preference routes a workflow only when Noteboo
         __routing: { prefersServerReplies: () => false, requiresServerReply: async () => required }, console,
     });
     const result = await decide('normal', {});
-    if (required) {
-        expect(result).toMatchObject({ name: 'roleplay.reply', workflows });
-        await expect(result.browserFallbackAllowed()).resolves.toBe(false);
-    } else {
-        expect(result).toBeNull();
-    }
+    const serverWorkflow = expect.objectContaining({ name: 'roleplay.reply', workflows });
+    expect(result).toEqual(required ? serverWorkflow : null);
     expect(load).toHaveBeenCalledTimes(Number(required));
+});
+
+test('a Notebook reply cannot fall back to the browser after routing', async () => {
+    const workflows = { roleplayWorkflowNameFor: () => 'roleplay.reply', capturePagePrompts: async () => ({}) };
+    const decide = workflowContext(workflows, { prefersServerReplies: () => false, requiresServerReply: async () => true });
+    const result = await decide('normal', {});
+    await expect(result.browserFallbackAllowed()).resolves.toBe(false);
 });
 
 test.each(['normal', 'swipe', 'continue', 'regenerate'])('server preference routes %s without probing Notebook requirements', async type => {

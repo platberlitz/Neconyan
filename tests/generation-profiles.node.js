@@ -621,11 +621,12 @@ test('acknowledged Horde saves its task ID before polling and never submits it t
         }
         polls++;
         assert.ok(String(url).endsWith('/known-task'));
-        if (polls === 1) throw new Error('Polling connection dropped');
+        if (polls <= 3) throw new Error('Polling connection dropped');
         return new Response(JSON.stringify({ done: true, generations: [{ text: 'Ada: Done' }] }));
     } };
     await assert.rejects(runChatProfile(options), { message: 'The model provider could not complete the reply (HTTP 500).', status: 502 });
     assert.equal(submits, 1);
+    assert.equal(polls, 3);
     assert.equal(getJob(fixture.directories, job.id).recoverability, 'resumable');
     markProviderUncertain(fixture.directories, job.id, { step: getJob(fixture.directories, job.id).resume });
     assert.equal(getJob(fixture.directories, job.id).recoverability, 'unknown-outcome');
@@ -633,7 +634,7 @@ test('acknowledged Horde saves its task ID before polling and never submits it t
     fixture.settings.horde_settings.models = ['another-worker']; fixture.save();
     assert.equal((await runChatProfile(options)).text, 'Done');
     assert.equal(submits, 1);
-    assert.equal(polls, 2);
+    assert.equal(polls, 4);
     assert.equal((await runChatProfile(options)).text, 'Done');
     assert.equal(submits, 1);
     const artifacts = path.join(fixture.root, 'jobs', 'artifacts');

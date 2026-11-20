@@ -70,6 +70,22 @@ afterEach(() => {
 });
 
 describe('conversation store synchronisation', () => {
+    test('flushing leaves a clean store alone and uploads a pending edit exactly once', async () => {
+        seed(store({ 'nova.png': thread([]) }), 7);
+        globalThis.fetch = jest.fn(async (_url, options) => jsonResponse(200, {
+            store: JSON.parse(options.body).store, version: 8,
+        }));
+
+        await expect(storeSync.flushConversationStore()).resolves.toBe(true);
+        expect(globalThis.fetch).not.toHaveBeenCalled();
+        extension_settings[KEY].characters['nova.png'].branches.b1.messages.push(message('local', 'Keep my note'));
+        storeSync.persistConversationStoreDebounced();
+        await Promise.resolve();
+        await expect(storeSync.flushConversationStore()).resolves.toBe(true);
+        expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+        expect(storeSync.getConversationSavedSnapshot()).toEqual(extension_settings[KEY]);
+    });
+
     test('a changed refresh notifies views after adopting the server copy', async () => {
         seed(store({ 'nova.png': thread([]) }), 7);
         const previousWindow = globalThis.window;

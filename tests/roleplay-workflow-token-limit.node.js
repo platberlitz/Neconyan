@@ -7,8 +7,11 @@ import { fixture } from './roleplay-transactions-fixture.js';
 const { captureGenerationBinding } = await import('../src/generation/profiles.js');
 const { workflowTokenLimit, normalizeRoleplayWorkflowSubmission, normalizeRoleplayGroupSubmission,
     acceptRoleplayNamedWorkflow, acceptRoleplayGroupTurn } = await import('../src/generation/roleplay-acceptance.js');
-const { MAX_WORKFLOW_TOKENS } = await import('../src/generation/roleplay-workflow.js');
-const { getJob } = await import('../src/jobs/store.js');
+const { MAX_WORKFLOW_TOKENS, runRoleplayWorkflowJob, recoverWaitingRoleplayWorkflow } = await import('../src/generation/roleplay-workflow.js');
+const { runRoleplayReplyJob } = await import('../src/generation/roleplay-execution.js');
+const { runChatProfile } = await import('../src/generation/service.js');
+const { getJob, setJobState, retryRoleplayFamily } = await import('../src/jobs/store.js');
+const { readArtifact } = await import('../src/jobs/artifacts.js');
 const { getRoleplaySourceMessageRevision } = await import('../public/scripts/neconyan-conversation/roleplay-source.js');
 
 const UUID = '00000000-0000-4000-8000-000000000000';
@@ -128,6 +131,43 @@ function groupFixture(t, { revision = 7, oai = {} } = {}) {
     });
     return { f, dirs: f.scope.directories };
 }
+
+test('an expired Horde task only starts a new task on explicit retry and publishes the new reply', async t => {
+    const { f, dirs } = legacyFixture(t, 'koboldhorde');
+    const owner = f.scope.owner;
+    const { jobId } = await acceptRoleplayNamedWorkflow(namedRequest(f), namedBody(f, { key: 'horde-retry' }));
+    const context = id => ({ owner, directories: dirs, job: getJob(dirs, id), signal: new AbortController().signal });
+    setJobState(dirs, jobId, 'running');
+    const { childJobId } = await runRoleplayWorkflowJob(context(jobId));
+    let submissions = 0;
+    const text = 'The replacement Horde task finished.';
+    const fetch = async url => {
+        if (String(url).endsWith('/async')) return Response.json({ id: `task-${++submissions}` });
+        if (String(url).endsWith('/task-1')) return Response.json({ message: 'Task not found.' }, { status: 404 });
+        assert.match(String(url), /\/task-2$/);
+        return Response.json({ done: true, generations: [{ text }] });
+    };
+    const runChild = () => runRoleplayReplyJob(context(childJobId), { generate: options => runChatProfile({ ...options, fetch }) });
+    setJobState(dirs, childJobId, 'running');
+    await assert.rejects(runChild(), { code: 'HORDE_TASK_TERMINAL' });
+    const proof = readArtifact(dirs, childJobId, 'roleplay-main-provider');
+    assert.deepEqual(readArtifact(dirs, childJobId, proof.step), { id: 'task-1' });
+    await assert.rejects(runChild(), { code: 'HORDE_TASK_TERMINAL' });
+    assert.equal(submissions, 1);
+
+    setJobState(dirs, childJobId, 'failed', { error: { code: 'HORDE_TASK_TERMINAL', message: 'Task expired.' } });
+    recoverWaitingRoleplayWorkflow(context(jobId));
+    assert.equal(retryRoleplayFamily(dirs, jobId, owner).job.state, 'waiting');
+    setJobState(dirs, childJobId, 'running');
+    await runChild();
+    setJobState(dirs, childJobId, 'completed');
+    recoverWaitingRoleplayWorkflow(context(jobId));
+    setJobState(dirs, jobId, 'running');
+    assert.equal((await runRoleplayWorkflowJob(context(jobId))).result.status, 'completed');
+    assert.equal(JSON.parse(fs.readFileSync(f.filename, 'utf8').trim().split('\n').at(-1)).mes, text);
+    assert.equal(submissions, 2);
+    assert.deepEqual(readArtifact(dirs, childJobId, proof.step), { id: 'task-1' });
+});
 
 function groupRequest(f) {
     return { user: { profile: { handle: f.scope.owner }, directories: f.scope.directories } };

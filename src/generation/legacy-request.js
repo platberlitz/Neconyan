@@ -15,8 +15,16 @@ const novelTokenizer = model => model.includes('clio') ? 'nerdstash' : model.inc
 const cleanupFields = ['collapse_newlines', 'allow_name1_display', 'allow_name2_display', 'disable_group_trimming',
     'auto_fix_generated_markdown', 'trim_spaces'];
 
+function terminalHordeError() {
+    return Object.assign(new Error('The saved Horde task expired or failed. Retry to start a new task.'), { code: 'HORDE_TASK_TERMINAL', status: 502 });
+}
+
 async function pollHorde({ context, jobContext, key, taskId, cleanup, signal, fetch: fetchImpl, userName, characterName, groupNames, trimNames }) {
     const request = { user: { profile: { handle: context.owner }, directories: context.directories }, headers: {} };
+    const terminal = () => {
+        writeArtifact(context.directories, jobContext.job.id, 'horde-terminal:' + key, { attempt: jobContext.job.hordeRetryAttempt ?? 0 });
+        throw terminalHordeError();
+    };
     let failures = 0;
     for (let attempt = 0; attempt < 480; attempt++) {
         signal?.throwIfAborted();
@@ -26,11 +34,12 @@ async function pollHorde({ context, jobContext, key, taskId, cleanup, signal, fe
             failures = 0;
         } catch (error) {
             signal?.throwIfAborted();
+            if (error.providerStatus === 404) terminal();
             if (!(error.status === 429 || error.status >= 500) || ++failures >= 3) throw error;
             await wait(2500, undefined, { signal });
             continue;
         }
-        if (status?.faulted || status?.is_possible === false) fail('The saved Horde task cannot finish.', 502);
+        if (status?.faulted) terminal();
         if (status?.done) {
             const rawText = status.generations?.[0]?.text;
             if (typeof rawText !== 'string' || !rawText.trim()) fail('Horde completed without a text result.', 502);
@@ -102,10 +111,19 @@ export async function runLegacyProfile({ context, binding, messages, maxTokens, 
     const key = hash({ binding, messages, maxTokens, ephemeralStops, userName, characterName, groupNames, rawOptions,
         ...(preparedText !== undefined ? { preparedText } : {}), ...(cfgValues ? { cfgValues } : {}), ...(stepNamespace ? { stepNamespace } : {}) });
     const resultName = 'horde-result:' + key;
+    let hordeSubmissionKey = key;
     if (jobContext && binding?.backend === 'horde') {
         const completed = readArtifact(context.directories, jobContext.job.id, resultName);
         if (completed !== undefined) return completed;
-        const known = readArtifact(context.directories, jobContext.job.id, 'provider:' + key);
+        const terminal = readArtifact(context.directories, jobContext.job.id, 'horde-terminal:' + key);
+        const attempt = jobContext.job.hordeRetryAttempt ?? 0;
+        if (terminal) {
+            if (!(attempt > terminal.attempt)) throw terminalHordeError();
+            // Keep the original task and request proof. Only an explicit retry
+            // of a definitively dead task can give the submission a new key.
+            hordeSubmissionKey = hash({ key, hordeRetryAttempt: attempt });
+        }
+        const known = readArtifact(context.directories, jobContext.job.id, 'provider:' + hordeSubmissionKey);
         if (known !== undefined) {
             const cleanup = readArtifact(context.directories, jobContext.job.id, 'horde-cleanup:' + key);
             if (!cleanup || !/^[a-zA-Z0-9_-]{1,128}$/.test(known?.id)) fail('The saved Horde task needs recovery.', 409);
@@ -164,7 +182,7 @@ export async function runLegacyProfile({ context, binding, messages, maxTokens, 
         savePrepared();
         await validatePrompt?.(payload, material);
         await onProviderStep?.('provider:' + key, macroState);
-        const submitted = await providerStep(jobContext, key, async () => {
+        const submitted = await providerStep(jobContext, hordeSubmissionKey, async () => {
             resolveGenerationProfile(context.directories, binding);
             try { await beforeDispatch?.(); } catch (error) { throw providerNotDispatched(error); }
             const response = await runBackendRequest(request, handleHordeSubmit, { prompt, params: { ...params, n: 1,

@@ -149,11 +149,9 @@ export async function runConversationWorkerTick({ directoriesFor, owners, now = 
             try {
                 if (job.type === 'conversation.participant' || job.type === 'conversation.reply' && job.children?.some(id => getJob(directories, id)?.type === 'media.assistant-tool')) {
                     reconcileConversationAssistantTools(directories, job);
-                } else if (job.stage === 'preparing' && job.state === 'waiting' && !job.cancellation?.requested && !(Number(job.coalesce?.deadline) > now)
-                    // A composer send batch must have every submitted message saved
-                    // before it is finalised; a crash mid-append leaves it waiting for
-                    // repair. Autonomous/reply jobs submit no composer messages.
-                    ) {
+                } else if (job.stage === 'preparing' && job.state === 'waiting' && !job.cancellation?.requested && !(Number(job.coalesce?.deadline) > now)) {
+                    // A composer send cannot be finalised until the submitted
+                    // message is saved. Autonomous jobs have no composer input.
                     if (job.intent?.mode === 'send' && job.inputDurable !== true) {
                         // The initial request body isn't in the ledger. Allow its
                         // original submission to retry, but don't block automatic

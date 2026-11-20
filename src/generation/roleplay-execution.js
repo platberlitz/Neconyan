@@ -611,7 +611,8 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
             }
             return finish(result, selection);
         }
-        if (result === undefined && getJob(directories, job.id)?.resume === providerReference.step) {
+        if (result === undefined && getJob(directories, job.id)?.resume === providerReference.step
+            && readArtifact(directories, job.id, providerReference.step) === undefined) {
             throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The previous provider outcome is unknown. It cannot be repeated automatically.', 503);
         }
     }
