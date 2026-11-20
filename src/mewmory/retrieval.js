@@ -3,9 +3,9 @@ import {
 } from './core.js';
 import { SELECTION_CONTRACT } from './contracts.js';
 import { assemblyFingerprint, assembleContext, currentOverviews, generationFingerprint } from './context.js';
-import { callJsonRole, embed, readConfig, roleVersion } from './models.js';
+import { callJsonRole, embed, readConfig } from './models.js';
 import { addUsage } from './processing.js';
-import { expandNeighbours, hybridCandidates, mergeVectorIndex, recallPool, searchDocuments, terms, updateIndex } from './search.js';
+import { expandNeighbours, hybridCandidates, mergeVectorIndex, recallPool, searchDocuments, searchableVectorDimension, terms, updateIndex } from './search.js';
 import { RAG_DEFAULTS } from '../../public/scripts/mewmory/rag-settings.js';
 import { loadCurrentState } from './sources.js';
 import { mutateState, statePath } from './store.js';
@@ -289,7 +289,8 @@ export async function recall(directories, locator, {
     // Recall offers saved memory entries (and attached files); raw chat, card and lore passages only when switched on.
     const allDocuments = recallPool(sourceDocuments, config);
     const retainedByRef = new Map(retained.map(item => [refKey(item.ref), String(item.text || '').replace(/\r\n/g, '\n')]));
-    const coverageSignature = hash(retained.map(item => [refKey(item.ref), item.text]));
+    const retainedPairs = retained.map(item => [refKey(item.ref), item.text]);
+    const coverageSignature = hash(retainedPairs);
     const matching = allDocuments.filter(document => document.kind === 'source' && document.dataType === 'chat'
         && document.refs.length === 1 && document.text
         && retainedByRef.get(refKey(document.refs[0]))?.includes(document.text.replace(/\r\n/g, '\n')));
@@ -300,17 +301,18 @@ export async function recall(directories, locator, {
     let suppressedIds = new Set(proof.length ? matching.map(document => document.id) : []);
     let allowedDocuments = allDocuments.filter(document => !suppressedIds.has(document.id));
     let vector = null;
-    if (!local && retrieval.mode !== 'keyword' && query.trim() && config.roles.embedding.enabled && state.index.version === roleVersion(config, 'embedding')) {
+    const dimension = !local && retrieval.mode !== 'keyword' && query.trim() && searchableVectorDimension(allowedDocuments, state.index, config);
+    if (dimension && !config.roles.embedding.allowedData.includes('chat')) {
+        indexError = 'Embeddings cannot read chat messages. Recall used keywords instead.';
+    } else if (dimension) {
         try {
             signal?.throwIfAborted();
             const result = await embedFn(directories, config, [query], { query: true, signal, dataTypes: ['chat'] });
             usage.push(result.usage);
-            vector = result.vectors[0];
-            const indexedDimension = Object.values(state.index.vectors)[0]?.vector.length;
-            if (indexedDimension && vector.length !== indexedDimension) {
-                vector = null;
+            if (result.vectors[0]?.length !== dimension) {
                 fail('The query vector has a different size from the index. Set a new model revision and rebuild the index.', 502);
             }
+            vector = result.vectors[0];
         } catch (error) {
             signal?.throwIfAborted();
             indexError = error.message;
@@ -319,8 +321,17 @@ export async function recall(directories, locator, {
     let forced = forcedMatches(state, allowedDocuments, query, asOf);
     let candidates = [...new Map([...forced, ...hybridCandidates(allowedDocuments, query, vector,
         state.index.vectors, config.candidateLimit, retrieval)].map(document => [document.id, document])).values()];
-    const cached = local && state.recalls.findLast(item => item.status === 'complete' && item.asOf <= asOf
-        && item.sourceCount <= sourceCount && item.coverageSignature === coverageSignature
+    // An author's inspection query can change the picks without changing the scene fingerprint.
+    // Older inspections lack this flag and are not safe to reuse for the writer either.
+    let timelinePositions;
+    const coverageAt = count => {
+        if (count === sourceCount) return coverageSignature;
+        timelinePositions ??= new Map(state.timeline.map((ref, position) => [refKey(ref), position]));
+        // New turns may extend the retained chat without changing which earlier passages were in it.
+        return hash(retainedPairs.filter(([key]) => (timelinePositions.get(key) ?? Infinity) < count));
+    };
+    const cached = local && !manualQuery && state.recalls.findLast(item => item.sceneOnly && item.status === 'complete' && item.asOf <= asOf
+        && item.sourceCount <= sourceCount && item.coverageSignature === coverageAt(item.sourceCount)
         && item.validationFingerprint === recallFingerprint(state, config, item.sourceCount));
     let selection = local ? {
         status: { status: 'local', selections: cached?.selections || [], rejections: [], needsEvidence: [] },
@@ -382,7 +393,7 @@ export async function recall(directories, locator, {
             expanded: currentDocuments.filter(document => !selectedIds.has(document.id)).map(document => document.id),
             limited: rankedIds.slice(retrieval.resultLimit), proposedPassagesSkipped: suppressedIds.size },
         forcedIds: forced.map(document => document.id), omitted: assembly.omitted, usage,
-        sourceCount, validationFingerprint, background, coverageSignature,
+        sourceCount, validationFingerprint, background, coverageSignature, sceneOnly: !manualQuery,
     };
     const retainedJobs = operationId ? new Set(listJobs(directories, { includeDismissed: true }).map(job => job.id)) : null;
     mutate(directories, locator, current => {
@@ -416,7 +427,11 @@ export async function recall(directories, locator, {
         }
         if (operationId && current.recallReceipts?.includes(operationId)) return;
         if (operationId) current.recallReceipts = [...(current.recallReceipts || []).filter(id => retainedJobs.has(id)), operationId];
-        current.recalls = [...current.recalls.slice(-9), inspection];
+        const recalls = [...current.recalls, inspection];
+        // Keep the latest scene pick even if repeated regenerations fill the inspection history.
+        const reusable = recalls.findLast(item => item.sceneOnly && item.status === 'complete');
+        while (recalls.length > 10) recalls.splice(recalls[0] === reusable ? 1 : 0, 1);
+        current.recalls = recalls;
         if (!background) current.preview = { ...assembly, fingerprint,
             ...(previewId ? { previewId } : {}), ...(previewHistory ? { history: previewHistory } : {}) };
         addUsage(current, usage);

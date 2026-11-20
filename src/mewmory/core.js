@@ -384,7 +384,21 @@ export function purgeSources(state, sourceIds) {
     state.sceneNpcIds = null;
     state.recalls = [];
     state.preview = null;
-    state.index = { version: '', vectors: {}, pending: true };
+    // Keep paid vectors for surviving documents. Record search text can also contain a
+    // name or alias taken from an entity record, even without an evidence link to it.
+    const snapshots = [state.index, state.index.build].filter(snapshot => snapshot?.vectors);
+    if (snapshots.length) {
+        const removedNames = new Set(revisions.filter(record => record.kind === 'entity'
+            && removedVersions.has(record.id + '@' + record.version)).map(record => record.entityId));
+        const recordIds = new Set(state.records.filter(record => !removedNames.has(record.ownerId || record.entityId)
+            && !record.subjectIds.some(id => removedNames.has(id))).map(record => record.id));
+        const passageRefs = new Set([...state.timeline, ...state.contextSources].map(refKey));
+        for (const snapshot of snapshots) {
+            snapshot.vectors = Object.fromEntries(Object.entries(snapshot.vectors).filter(([id]) =>
+                recordIds.has(id) || (id.startsWith('source:') && passageRefs.has(id.slice('source:'.length, id.lastIndexOf(':'))))));
+        }
+    }
+    state.index.pending = true;
     forgetReaders(revisions.filter(record => removedVersions.has(record.id + '@' + record.version)), state);
     retireCoverage(state);
 }
@@ -507,6 +521,7 @@ export function validateRecord(state, input, { asOf, origin = 'author', allowedR
         text: text(input.text, 'Memory text', 32000, input.kind === 'interview'),
         refs: validateRefs(state, input.refs, { asOf, allowedRefs }),
         dependencies: list(input.dependencies || [], 'Dependencies', 100).map(dependency => {
+            object(dependency, 'Dependency');
             const parent = recordRevision(state, dependency.id, dependency.version);
             if (!recordEligible(state, parent, { asOf })
                 || (allowedDependencies && !allowedDependencies.has(dependency.id))) fail('A memory this one builds on was changed, rejected, or switched off. Reload Mewmory and try again.', 409);
@@ -557,9 +572,10 @@ export function validateRecord(state, input, { asOf, origin = 'author', allowedR
         record.triggerTerms = list(input.triggerTerms || [], 'Commitment cues', 12).map(value => text(value, 'Cue', 160));
     }
     if (record.kind === 'interview') {
-        record.interview = list(input.interview, 'Interview', 8).map(turn => ({
-            question: text(turn.question, 'Question', 2000), answer: text(turn.answer, 'Answer', 8000),
-        }));
+        record.interview = list(input.interview, 'Interview', 8).map(turn => {
+            object(turn, 'Interview turn');
+            return { question: text(turn.question, 'Question', 2000), answer: text(turn.answer, 'Answer', 8000) };
+        });
         if (!record.interview.length) fail('The Pawspective interview has no questions and answers.');
         record.searchDescription = text(input.searchDescription, 'Search description', 1500);
         record.previousId = input.previousId ? id(input.previousId) : '';

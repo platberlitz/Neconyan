@@ -689,6 +689,15 @@ test('a background recall cannot restore vectors cleared by an index reset', asy
     const fresh = { version, vectors: { [oldDocument.id]: { textHash: hash(oldDocument.searchText), vector: [1, 0] } } };
     const merged = mergeVectorIndex(state, saved, [stale, fresh]);
     assert.deepEqual(merged.vectors[oldDocument.id].vector, [1, 0], 'a fresh matching entry wins over a stale one for the same document');
+
+    const newerDocument = documents[1];
+    const previousSpace = { version, vectors: {
+        [oldDocument.id]: { textHash: hash(oldDocument.searchText), vector: [0, 1, 0] },
+        [newerDocument.id]: { textHash: hash(newerDocument.searchText), vector: [0, 1, 0] },
+    } };
+    const afterReset = mergeVectorIndex(state, saved, [fresh, previousSpace]);
+    assert.deepEqual(afterReset.vectors, fresh.vectors, 'late vectors cannot mix a previous dimension into the current rebuilt index');
+    assert.equal(afterReset.remaining, 3);
 });
 
 test('a switched-off Pawspective suggestion is ignored without a skipped warning', async t => {

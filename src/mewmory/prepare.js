@@ -1,26 +1,27 @@
 import { randomUUID } from 'node:crypto';
-import { fail, hash, list, sourceEligible, sourceRead, text } from './core.js';
+import { fail, hash, list, object, sourceEligible, sourceRead, text } from './core.js';
 import { generationFingerprint } from './context.js';
 import { readConfig } from './models.js';
 import { processingVersion } from './processing.js';
 import { recall } from './retrieval.js';
 import { loadCurrentState } from './sources.js';
-import { mutateState, normalizeLocator, readChat } from './store.js';
+import { memoryEnabled, mutateState, normalizeLocator, readChat } from './store.js';
 import { getCounter } from './tokens.js';
 import { messageHistoryPlan } from '../../public/scripts/mewmory/history-policy.js';
 import { wrapMewmoryContext } from '../../public/scripts/mewmory/prompt-proof.js';
 
 export async function prepareMewmoryPrompt(directories, body, signal, {
     loadState = loadCurrentState, mutate = mutateState, readSource = readChat, scheduleBackground = true, readConfiguration = readConfig,
-    deterministicMarker = false,
+    deterministicMarker = false, isEnabled = loadState === loadCurrentState ? memoryEnabled : null,
 } = {}) {
     const locator = normalizeLocator(body.locator);
-    const config = readConfiguration(directories);
-    const state = await loadState(directories, locator);
-    if (!state.enabled) {
+    signal?.throwIfAborted();
+    const state = isEnabled && !isEnabled(directories, locator) ? null : await loadState(directories, locator);
+    if (!state?.enabled) {
         if (body.mewmoryWaitSnapshot) fail('Mewmory was turned off while waiting. Retry this reply.', 409);
         return { enabled: false, excludedIndices: [], npcText: '', memoryText: '' };
     }
+    const config = readConfiguration(directories);
     if (body.mewmoryCatchUpOverride !== undefined && body.mewmoryCatchUpOverride !== 'reply') fail('Choose a valid memory catch-up option.');
     const snapshot = generationFingerprint(state, config);
     const source = readSource(directories, locator);
@@ -31,6 +32,7 @@ export async function prepareMewmoryPrompt(directories, body, signal, {
     const counter = await getCounter(config.writerTokenizer, body.tokenizer || {});
     let previous = -1;
     const history = list(body.history, 'Prompt history', 100000).map(item => {
+        object(item, 'History item');
         if (!Number.isInteger(item.index) || item.index <= previous || item.index >= source.messages.length) fail('The chat history arrived in the wrong order. Reload the chat and send again.');
         previous = item.index;
         const content = text(item.text, 'History text', 2000000, true);

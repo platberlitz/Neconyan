@@ -1,6 +1,7 @@
 /* eslint playwright/expect-expect: off -- These checks use node:assert, not Playwright assertions. */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -8,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { setConfigFilePath } from '../src/util.js';
 
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
-const { continueState, forkState, newState, refKey, syncSources } = await import('../src/mewmory/core.js');
+const { continueState, forkState, newState, putRecord, refKey, syncSources, validateRecord } = await import('../src/mewmory/core.js');
 const { defaultConfig, readConfig, saveConfig } = await import('../src/mewmory/models.js');
 const { pendingSources, processBatch, processingVersion } = await import('../src/mewmory/processing.js');
 const { applyOverflowHiding } = await import('../src/mewmory/hiding.js');
@@ -51,7 +52,9 @@ function extractorConfig() {
     return config;
 }
 
-test('G1 a disabled Pawspective role does not discard extracted facts', async t => {
+for (const pawspectiveEnabled of [false, true]) test(pawspectiveEnabled
+    ? 'a malformed Pawspective overview skips the interview without discarding extracted facts'
+    : 'G1 a disabled Pawspective role does not discard extracted facts', async t => {
     const messages = [
         message('I hand Mara the silver key to the harbour gate.', { user: true, id: 'm1' }),
         message('Mara turns the silver key over and pockets it.', { id: 'm2' }),
@@ -59,14 +62,15 @@ test('G1 a disabled Pawspective role does not discard extracted facts', async t 
     const fixture = disk(t);
     writeChat(fixture, messages);
     const config = extractorConfig();
-    config.roles.pawspective.enabled = false;
+    Object.assign(config.roles.pawspective, { enabled: pawspectiveEnabled, endpoint: 'http://127.0.0.1:1/v1', model: 'interview' });
     saveConfig(fixture.directories, config);
     await enableChat(fixture.directories);
 
     const calls = [];
     const call = async (_directories, _config, role, _contract, input) => {
         calls.push(role);
-        if (role !== 'extractor') throw new Error('Pawspective was called while it was switched off.');
+        if (role === 'pawspective') return { value: { changed: true, searchDescription: 'Mara considers the key',
+            interview: [{ question: 'Why keep it?', answer: 'To guard the gate.' }], overviews: [null] }, usage: { role } };
         const chat = input.sources.filter(source => source.type === 'chat');
         const [first, second] = chat;
         return {
@@ -87,11 +91,12 @@ test('G1 a disabled Pawspective role does not discard extracted facts', async t 
     };
 
     const state = await processBatch(fixture.directories, locator, {}, call);
-    assert.deepEqual(calls, ['extractor'], 'the disabled interview role is never dispatched');
+    assert.deepEqual(calls, pawspectiveEnabled ? ['extractor', 'pawspective'] : ['extractor']);
     assert.ok(state.records.some(record => record.id === 'entity:mara'));
     assert.ok(state.records.some(record => record.id === 'knowledge:key'));
     assert.equal(state.records.some(record => record.kind === 'interview'), false);
     assert.equal(state.jobs.at(-1).status, 'complete');
+    assert.equal(state.jobs.at(-1).skipped, Number(pawspectiveEnabled));
     assert.equal(pendingSources(state, readConfig(fixture.directories)).length, 0, 'the extracted messages count as processed');
 });
 
@@ -235,6 +240,24 @@ test('G5 disabling after acceptance still fails the saved job at runtime', async
     assert.equal(embeddings, 0, 'no provider work starts for a chat switched off after acceptance');
 });
 
+async function serveMewmory(t, directories) {
+    const express = (await import('express')).default;
+    const { router } = await import('../src/endpoints/mewmory.js');
+    const app = express();
+    app.use(express.json());
+    app.use((request, response, next) => { request.user = { directories }; next(); });
+    app.use(router);
+    const server = await new Promise(resolve => {
+        const listener = app.listen(0, '127.0.0.1', () => resolve(listener));
+    });
+    t.after(() => new Promise(resolve => server.close(resolve)));
+
+    return (route, body) => fetch('http://127.0.0.1:' + server.address().port + route, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ locator, ...body }),
+    });
+}
+
 test('G5 the direct index endpoint refuses a disabled chat before any work', async t => {
     const fixture = disk(t);
     writeChat(fixture, [message('A first scene.', { user: true, id: 'o4' })]);
@@ -242,23 +265,91 @@ test('G5 the direct index endpoint refuses a disabled chat before any work', asy
     mutateState(fixture.directories, locator, state => {
         state.index = { version: 'saved-version', vectors: { kept: { textHash: 'kept', vector: [1] } }, pending: false };
     });
-
-    const express = (await import('express')).default;
-    const { router } = await import('../src/endpoints/mewmory.js');
-    const app = express();
-    app.use(express.json());
-    app.use((request, response, next) => { request.user = { directories: fixture.directories }; next(); });
-    app.use(router);
-    const server = await new Promise(resolve => {
-        const listener = app.listen(0, '127.0.0.1', () => resolve(listener));
-    });
-    t.after(() => new Promise(resolve => server.close(resolve)));
-
-    const response = await fetch('http://127.0.0.1:' + server.address().port + '/index', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ locator, reset: true, background: false }),
-    });
+    const request = await serveMewmory(t, fixture.directories);
+    const response = await request('/index', { reset: true });
     assert.equal(response.status, 409);
     assert.equal((await response.json()).error, 'Turn on Mewmory for this chat first.');
     assert.equal(readState(fixture.directories, locator).index.version, 'saved-version', 'a refused request changes nothing');
+});
+
+test('the direct index cannot publish a batch after embedding permissions change', async t => {
+    const fixture = disk(t);
+    writeChat(fixture, [message('A first scene.', { user: true, id: 'o5' })]);
+    await enableChat(fixture.directories);
+    const provider = http.createServer(async (request, response) => {
+        let body = '';
+        for await (const chunk of request) body += chunk;
+        const config = readConfig(fixture.directories);
+        config.roles.embedding.allowedData = ['memory'];
+        saveConfig(fixture.directories, config);
+        response.setHeader('Content-Type', 'application/json');
+        response.end(JSON.stringify({ data: JSON.parse(body).input.map((_, index) => ({ index, embedding: [1, 0] })) }));
+    });
+    await new Promise(resolve => provider.listen(0, '127.0.0.1', resolve));
+    t.after(() => new Promise(resolve => provider.close(resolve)));
+    const config = defaultConfig();
+    config.retrieval.includePassages = true;
+    Object.assign(config.roles.embedding, { enabled: true, endpoint: 'http://127.0.0.1:' + provider.address().port + '/v1', model: 'test' });
+    saveConfig(fixture.directories, config);
+
+    const request = await serveMewmory(t, fixture.directories);
+    const response = await request('/index', { reset: true });
+    assert.equal(response.status, 409, await response.text());
+    assert.deepEqual(readState(fixture.directories, locator).index.vectors, {});
+});
+
+test('source exclusion validates the selected source and clears saved recall picks', async t => {
+    const fixture = disk(t);
+    writeChat(fixture, [message('A first scene.', { id: 'exclusion' })]);
+    await enableChat(fixture.directories);
+    const before = mutateState(fixture.directories, locator, state => { state.recalls = [{ id: 'old-recall' }]; });
+    const request = await serveMewmory(t, fixture.directories);
+    const id = before.timeline[0].id;
+    const invalid = await request('/source/exclude', { id: [id], exclude: true, revision: before.revision });
+    assert.equal(invalid.status, 404);
+    assert.deepEqual(readState(fixture.directories, locator).excludedSources, []);
+    const valid = await request('/source/exclude', { id, exclude: true, revision: before.revision });
+    assert.equal(valid.status, 200, await valid.text());
+    const after = readState(fixture.directories, locator);
+    assert.deepEqual(after.excludedSources, [id]);
+    assert.deepEqual(after.recalls, []);
+});
+
+test('a typed search can use embeddings without sending chat messages to the embedding provider', async t => {
+    const fixture = disk(t);
+    writeChat(fixture, [message('Unshared conversation about the harbour.', { id: 'semantic' })]);
+    await enableChat(fixture.directories);
+    mutateState(fixture.directories, locator, state => {
+        putRecord(state, validateRecord(state, { id: 'arrival', kind: 'event', text: 'Mara arrived at the harbour.',
+            refs: state.timeline.slice(0, 1) }));
+    });
+    const sent = [];
+    const provider = http.createServer(async (request, response) => {
+        let body = '';
+        for await (const chunk of request) body += chunk;
+        const { input } = JSON.parse(body);
+        sent.push(...input);
+        response.setHeader('Content-Type', 'application/json');
+        response.end(JSON.stringify({ data: input.map((_, index) => ({ index, embedding: [1, 0] })) }));
+    });
+    await new Promise(resolve => provider.listen(0, '127.0.0.1', resolve));
+    t.after(() => new Promise(resolve => provider.close(resolve)));
+    const config = defaultConfig();
+    config.retrieval.mode = 'semantic';
+    config.writerTokenizer = 'cl100k_base';
+    Object.assign(config.roles.embedding, { enabled: true, endpoint: 'http://127.0.0.1:' + provider.address().port + '/v1',
+        model: 'test', allowedData: ['memory'] });
+    saveConfig(fixture.directories, config);
+
+    const request = await serveMewmory(t, fixture.directories);
+    assert.equal((await request('/index', {})).status, 200);
+    const before = sent.length;
+    const { retrieval, matches } = await (await request('/search', { query: 'seafront' })).json();
+    assert.equal(retrieval.usedMode, 'semantic', retrieval.error);
+    assert.ok(matches.length > 0);
+    assert.deepEqual(sent.slice(before), ['seafront']);
+    const { inspection } = await (await request('/recall', {})).json();
+    assert.equal(inspection.retrieval.usedMode, 'keyword');
+    assert.match(inspection.indexError, /Embeddings cannot read chat messages/);
+    assert.deepEqual(sent.slice(before), ['seafront']);
 });

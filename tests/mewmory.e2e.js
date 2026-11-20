@@ -20,6 +20,34 @@ async function openSection(workspace, key) {
     await expect(fold).toHaveJSProperty('open', true);
 }
 
+async function checkKeyAutosave(page, workspace) {
+    const apiKey = workspace.getByLabel('API key', { exact: true });
+    const sentKeys = [];
+    await page.route('**/api/mewmory/config/save', async route => {
+        const key = route.request().postDataJSON().config.roles.extractor.apiKey;
+        if (key) sentKeys.push(key);
+        await route.continue();
+    });
+    const flush = () => page.evaluate(async () => (await import('/scripts/mewmory/config-autosave.js')).mewmoryConfigAutosave.flush());
+    await apiKey.fill('fixture-key-');
+    await flush();
+    expect(sentKeys).toEqual([]);
+    await page.evaluate(() => new Promise(resolve => {
+        window.dispatchEvent(new Event('mewmory:updated'));
+        window.requestAnimationFrame(() => window.requestAnimationFrame(resolve));
+    }));
+    await expect(apiKey).toHaveValue('fixture-key-');
+    await expect(apiKey).toBeFocused();
+    await apiKey.press('End');
+    await apiKey.pressSequentially('complete');
+    await apiKey.press('Tab');
+    await flush();
+    expect(sentKeys).toEqual(['fixture-key-complete']);
+    await page.unroute('**/api/mewmory/config/save');
+    await workspace.getByLabel('Remove the saved API key').check();
+    await flush();
+}
+
 test('native Mewmory setup, backfill, source inspection, correction, recall and writing work on desktop and mobile', async ({ page }, info) => {
     page.setDefaultTimeout(20000);
     await page.setViewportSize({ width: 1280, height: 900 });
@@ -93,7 +121,28 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
     await page.locator('#neconyan-workspace-rail [data-neconyan-route="mewmory"]').click();
     await expect(workspace.getByRole('tab', { name: 'Now', exact: true })).toBeVisible();
     await workspace.getByRole('tab', { name: 'Settings', exact: true }).click();
-    await openSection(workspace, 'models');
+    const modelsFold = workspace.locator('#mewmory-settings-models');
+    const modelsSummary = modelsFold.locator('summary');
+    await expect(workspace.locator('.mewmory-heading .mewmory-status')).not.toHaveAttribute('data-state', 'busy');
+    await expect(modelsFold).toHaveJSProperty('open', false);
+    const point = await modelsSummary.evaluate(summary => {
+        summary.scrollIntoView({ block: 'center', behavior: 'instant' });
+        const { x, y, width, height } = summary.getBoundingClientRect();
+        return { x: x + width / 2, y: y + height / 2 };
+    });
+    await page.mouse.move(point.x, point.y);
+    await page.mouse.down();
+    try {
+        // A background update may arrive during a real press, not just between clicks.
+        await page.evaluate(() => new Promise(resolve => {
+            window.dispatchEvent(new Event('mewmory:updated'));
+            window.requestAnimationFrame(() => window.requestAnimationFrame(resolve));
+        }));
+    } finally {
+        await page.mouse.up();
+    }
+    await expect(modelsFold).toHaveJSProperty('open', true);
+    await checkKeyAutosave(page, workspace);
     const settingsStatus = workspace.locator('#mewmory-settings-status');
     for (const name of ['extractor', 'pawspective', 'selector', 'fallback']) {
         await workspace.getByRole('group', { name: 'Model role to set up' }).locator('#mewmory-role-' + name).click();
@@ -509,9 +558,47 @@ for (const width of [1280, 393]) {
         const prompt = JSON.stringify(calls.findLast(call => call.model === 'mewmory-writer').messages);
         expect(prompt).toContain('Mewmory: recalled story context');
         expect(prompt).toContain(marker);
+        const storyUnavailable = route => route.fulfill({ status: 503, json: { error: 'The recap is temporarily unavailable.' } });
+        await page.route('**/api/mewmory/story', storyUnavailable);
         await page.evaluate(() => window.NeconyanShell.openTab('left', 'mewmory'));
         await expect(heading).toHaveText(branch);
         await expect(workspace.getByLabel('Use Mewmory in this chat')).toBeChecked();
+        await workspace.getByRole('tab', { name: 'Story', exact: true }).click();
+        const recap = workspace.locator('#mewmory-story-recap');
+        await expect(recap).toContainText('The recap is temporarily unavailable.');
+        await page.unroute('**/api/mewmory/story', storyUnavailable);
+        await workspace.getByRole('button', { name: 'Refresh', exact: true }).click();
+        await expect(recap).toContainText(marker);
+
+        const asked = Promise.withResolvers();
+        const finishAsk = Promise.withResolvers();
+        const oldAsk = async route => {
+            asked.resolve();
+            await finishAsk.promise;
+            await route.fulfill({ json: { question: 'Did Mara keep it?', answer: 'Answer for the old chat.', citations: [] } });
+        };
+        await page.route('**/api/mewmory/ask', oldAsk);
+        const ask = workspace.locator('#mewmory-ask');
+        try {
+            await ask.getByLabel('Your question').fill('Did Mara keep it?');
+            await ask.getByRole('button', { name: 'Ask', exact: true }).click();
+            await asked.promise;
+            await page.evaluate(async name => (await import('/script.js')).openCharacterChat(name), parent.selected);
+            await expect(heading).toHaveText(parent.selected);
+            await expect(ask.getByLabel('Your question')).toHaveValue('');
+            const finished = page.waitForResponse(response => response.url().endsWith('/api/mewmory/ask'));
+            finishAsk.resolve();
+            await (await finished).finished();
+            // Flush the panel after the old response has been consumed, without changing tabs.
+            await workspace.getByRole('button', { name: 'Refresh', exact: true }).click();
+            await expect(recap).toContainText(marker);
+            await expect(ask).not.toContainText(/Answer for the old chat|The active chat changed/);
+        } finally {
+            finishAsk.resolve();
+            await page.unroute('**/api/mewmory/ask', oldAsk);
+        }
+        await page.evaluate(async name => (await import('/script.js')).openCharacterChat(name), branch);
+        await expect.poll(scope).toMatchObject({ chat: branch, enabled: true });
 
         // Deliver an old inspection after native new-chat navigation has completed.
         const held = Promise.withResolvers();

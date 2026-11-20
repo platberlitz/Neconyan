@@ -21,6 +21,7 @@ for (const phone of [false, true]) {
         await expect.poll(() => page.evaluate(() => window.SillyTavern.getContext().chat.at(-1)?.mes)).toBe('Hello.');
         const locator = await page.evaluate(async () => (await import('/scripts/mewmory/index.js')).getMewmoryLocator());
         let archive = await account.post('/api/mewmory/inspect', { locator });
+        archive = await account.post('/api/mewmory/enabled', { locator, revision: archive.revision, enabled: true });
         const ref = archive.sources.find(source => source.type === 'chat' && source.eligible);
         expect(ref).toBeTruthy();
         for (const [id, text, excluded] of [['ferry', 'The ferry leaves at dusk. MEMORY-FERRY', false], ['secret', 'EXCLUDED-MEMORY', true]]) {

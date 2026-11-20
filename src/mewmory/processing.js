@@ -344,7 +344,8 @@ export function applyInterview(state, request, output, input, jobId) {
     if (saved.authorOverride) return;
     if (!recordEligible(state, saved, { asOf: input.asOf })) fail('The new Pawspective interview could not be saved because something it relies on changed. These messages will be tried again.', 409);
     const overviews = list(output.overviews, 'Subject overviews', request.subjectIds.length);
-    if (overviews.length !== request.subjectIds.length || new Set(overviews.map(item => item.subjectId)).size !== request.subjectIds.length) {
+    if (overviews.length !== request.subjectIds.length
+        || new Set(overviews.map(item => object(item, 'Subject overview').subjectId)).size !== request.subjectIds.length) {
         fail('The reply must include one short summary for each person or thing the interview is about.');
     }
     for (const overview of overviews) {

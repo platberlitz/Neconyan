@@ -21,6 +21,7 @@ import { applyCaptionRecords } from './generation/caption-records.js';
 import { applyAgentCompletionRecords } from './generation/agent-completion-records.js';
 import { applyRoleplayMacroCommit } from './generation/roleplay-macro-commit.js';
 import { applyOverflowHiding } from './mewmory/hiding.js';
+import { offRecordReplyExtra } from './mewmory/message-policy.js';
 import { assertRoleplayQuickReplyProof } from './generation/roleplay-quick-replies.js';
 import { applyManualAgentRecords } from './generation/agent-manual-records.js';
 import { applyPathfinderNotebookRecords } from './generation/pathfinder-notebook-records.js';
@@ -119,11 +120,13 @@ export function admitRoleplayJob(base, account, { operationKey, effect, source, 
     });
 }
 
-function outputMessage(value) {
+function outputMessage(value, offRecord) {
     if (!value || typeof value !== 'object' || Array.isArray(value) || typeof value.mes !== 'string') {
         throw invalid('A Roleplay job output message needs text.');
     }
-    return structuredClone(value);
+    const message = structuredClone(value);
+    if (offRecord.mewmoryExclude) message.extra = { ...message.extra, ...offRecord };
+    return message;
 }
 
 /**
@@ -168,10 +171,11 @@ function effectRecords(records, source, effect, output, request, job, directorie
         }
         next[0].chat_metadata.timedWorldInfo = structuredClone(output.timedWorldInfo);
     }
-    if (effect === 'append') return [...next, outputMessage(output?.message)];
+    const offRecord = offRecordReplyExtra(records);
+    if (effect === 'append') return [...next, outputMessage(output?.message, offRecord)];
     if (effect === 'replace') {
         if (!Array.isArray(output?.messages) || !output.messages.length) throw invalid('A range replacement needs messages.');
-        next.splice(source.range.start + 1, source.range.count, ...output.messages.map(outputMessage));
+        next.splice(source.range.start + 1, source.range.count, ...output.messages.map(value => outputMessage(value, offRecord)));
         return next;
     }
     if (typeof output?.text !== 'string') throw invalid('A Roleplay job output needs text.');
@@ -181,12 +185,13 @@ function effectRecords(records, source, effect, output, request, job, directorie
     const swipes = Array.isArray(message.swipes) && message.swipes.length ? message.swipes : [message.mes];
     const selected = Number(message.swipe_id ?? 0);
     if (!Number.isInteger(selected) || selected < 0 || selected >= swipes.length) throw invalid('The message has an unreadable version choice.');
+    const outputExtra = offRecord.mewmoryExclude ? { ...output.extra, ...offRecord } : output.extra;
     if (effect === 'alternative') {
         // A named alternative adds one more unselected swipe. The selected text,
         // its index and the message's own metadata stay exactly as they were.
         const info = originalSwipeInfo(message, swipes, selected);
         message.swipes = [...swipes, output.text];
-        message.swipe_info = [...info, { ...timing, ...(output.extra ? { extra: output.extra } : {}) }];
+        message.swipe_info = [...info, { ...timing, ...(outputExtra ? { extra: outputExtra } : {}) }];
         return next;
     }
     if (effect === 'continue') {
@@ -198,17 +203,18 @@ function effectRecords(records, source, effect, output, request, job, directorie
         }
         message.mes = continued;
         Object.assign(message, timing);
-        if (output.extra) message.extra = { ...message.extra, ...output.extra };
+        if (outputExtra) message.extra = { ...message.extra, ...outputExtra };
         if (Array.isArray(message.swipes) && message.swipes.length) message.swipes[selected] = message.mes;
-        if (output.extra && Array.isArray(message.swipe_info) && message.swipe_info[selected]) {
-            message.swipe_info[selected].extra = { ...message.swipe_info[selected].extra, ...output.extra };
+        if (offRecord.mewmoryExclude && Array.isArray(message.swipes)) message.swipe_info = originalSwipeInfo(message, swipes, selected);
+        if (outputExtra && Array.isArray(message.swipe_info) && message.swipe_info[selected]) {
+            message.swipe_info[selected].extra = { ...message.swipe_info[selected].extra, ...outputExtra };
             Object.assign(message.swipe_info[selected], timing);
         }
         if (message.swipe_id !== undefined) message.swipe_id = selected;
         return next;
     }
     const info = originalSwipeInfo(message, swipes, selected);
-    const extra = { ...output.extra };
+    const extra = { ...outputExtra };
     for (const key of ['gen_id', 'off_record']) {
         if (message.extra?.[key] !== undefined && extra[key] === undefined) extra[key] = message.extra[key];
     }

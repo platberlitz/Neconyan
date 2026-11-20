@@ -37,6 +37,11 @@ async function prepare(item, extra = {}) {
     });
 }
 
+test('malformed prompt history gets an actionable validation error', async () => {
+    await assert.rejects(prepare(fixture(1), { history: [null] }),
+        { status: 400, message: 'History item is in the wrong format.' });
+});
+
 test('prepared message window omits only complete preserved groups', async () => {
     const item = fixture(20);
     assert.deepEqual((await prepare(item)).excludedIndices, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);

@@ -3,7 +3,7 @@ import { noteOwner, registerHandler } from '../jobs/runner.js';
 import { providerStep, readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { fail, hash, object, text } from './core.js';
 import { generationFingerprint } from './context.js';
-import { callJsonRole, embed, readConfig } from './models.js';
+import { callJsonRole, embed, readConfig, roleVersion } from './models.js';
 import { addUsage } from './processing.js';
 import { recall } from './retrieval.js';
 import { mergeVectorIndex, updateIndex } from './search.js';
@@ -13,7 +13,7 @@ import { mutateState, normalizeLocator } from './store.js';
 const types = new Set(['recall', 'index']);
 const targetFor = (locator, branchId) => ({ kind: 'mewmory', id: hash(locator), branchId });
 
-export async function startOperation(directories, owner, operation, body) {
+export async function startOperation(directories, owner, operation, body, { retryOf } = {}) {
     validateOwner(owner);
     if (!types.has(operation)) fail('Mewmory does not recognise that action.');
     const locator = normalizeLocator(body.locator);
@@ -31,16 +31,19 @@ export async function startOperation(directories, owner, operation, body) {
     const config = readConfig(directories);
     const accepted = acceptJob(directories, { owner, type: 'mewmory.' + operation, submissionKey: key,
         intent, target: targetFor(locator, state.branchId),
-        config: { fingerprint: generationFingerprint(state, config), revision: config.revision },
+        config: { fingerprint: generationFingerprint(state, config), revision: config.revision,
+            ...(operation === 'index' ? { embeddingVersion: roleVersion(config, 'embedding'),
+                ...(retryOf && state.indexOperation === retryOf ? { resumeIndexOperation: retryOf } : {}) } : {}) },
         label: operation === 'index' ? 'Rebuild memory search index' : 'Recall memory',
     });
     noteOwner(owner);
     return accepted;
 }
 
-function assertCurrent(state, config, job) {
+function assertCurrent(state, config, job, embeddingVersion = job.config?.embeddingVersion) {
     if (hash(job.target) !== hash(targetFor(state.locator, state.branchId))
         || !state.enabled || job.config?.revision !== config.revision
+        || (embeddingVersion !== undefined && embeddingVersion !== roleVersion(config, 'embedding'))
         || (job.type !== 'mewmory.index' && job.config?.fingerprint !== generationFingerprint(state, config))) {
         fail('The chat or Mewmory settings changed before this could start. Try again.', 409);
     }
@@ -53,17 +56,18 @@ export function registerMewmoryOperations({ call = callJsonRole, embedFn = embed
         const completed = readArtifact(directories, job.id, 'result');
         if (completed !== undefined) return { artifact: true };
         const config = readConfig(directories);
+        const embeddingVersion = job.type === 'mewmory.index' ? job.config?.embeddingVersion ?? roleVersion(config, 'embedding') : undefined;
         let state = await loadCurrentState(directories, locator);
-        assertCurrent(state, config, job);
+        assertCurrent(state, config, job, embeddingVersion);
         signal.throwIfAborted();
         const checkedCall = async (key, perform) => {
-            assertCurrent(await loadCurrentState(directories, locator), readConfig(directories), job);
+            assertCurrent(await loadCurrentState(directories, locator), readConfig(directories), job, embeddingVersion);
             return providerStep(context, key, perform);
         };
         const providers = {
             call: (dirs, settings, role, system, input, options) => checkedCall(hash([role, system, input, options.dataTypes]),
                 () => call(dirs, settings, role, system, input, options)),
-            embedFn: (dirs, settings, inputs, options) => checkedCall(hash(['embedding', inputs, options.query, options.dataTypes]),
+            embedFn: (dirs, settings, inputs, options) => checkedCall(hash(['embedding', roleVersion(settings, 'embedding'), inputs, options.query, options.dataTypes]),
                 () => embedFn(dirs, settings, inputs, options)),
         };
         // Only this server checkpoint, never a client field, permits safe restart.
@@ -76,29 +80,34 @@ export function registerMewmoryOperations({ call = callJsonRole, embedFn = embed
         } else if (job.type === 'mewmory.index') {
             if (state.indexOperation !== job.id) {
                 state = mutateState(directories, locator, current => {
-                    assertCurrent(current, readConfig(directories), job);
-                    if (job.intent.reset) current.index = { version: '', vectors: {}, pending: true };
+                    assertCurrent(current, readConfig(directories), job, embeddingVersion);
+                    const resetApplied = job.config?.resumeIndexOperation && current.indexOperation === job.config.resumeIndexOperation;
+                    if (job.intent.reset && !resetApplied) current.index = { version: '', vectors: {}, pending: true };
                     current.indexOperation = job.id;
                 }, state.revision);
             }
             do {
                 signal.throwIfAborted();
                 state = await loadCurrentState(directories, locator);
-                assertCurrent(state, readConfig(directories), job);
+                assertCurrent(state, readConfig(directories), job, embeddingVersion);
                 result = await updateIndex(state, directories, config, { signal, embedFn: providers.embedFn });
                 signal.throwIfAborted();
                 await loadCurrentState(directories, locator);
+                let indexed = 0;
                 mutateState(directories, locator, current => {
-                    assertCurrent(current, readConfig(directories), job);
+                    assertCurrent(current, readConfig(directories), job, embeddingVersion);
                     if (current.indexOperation !== job.id) fail('Memory search changed while it was being rebuilt. Start the rebuild again.', 409);
                     // Keep paid vectors for unchanged documents, even when new messages arrive.
                     // The freshly rebuilt copy goes last so its entries win over older ones.
                     const merged = mergeVectorIndex(current, config, [current.index, state.index]);
                     result.remaining = config.roles.embedding.enabled ? merged.remaining : 0;
-                    current.index = { version: merged.version, vectors: merged.vectors, pending: result.remaining > 0 };
+                    indexed = config.roles.embedding.enabled ? Object.keys(merged.vectors).length : 0;
+                    current.index = result.remaining > 0 && current.index.version !== merged.version
+                        ? { ...current.index, pending: true, build: { version: merged.version, vectors: merged.vectors } }
+                        : { version: merged.version, vectors: merged.vectors, pending: result.remaining > 0 };
                     addUsage(current, result.usage);
                 }, undefined, { existingOnly: true });
-                await progress({ stage: 'index', completed: 0, total: result.remaining });
+                await progress({ stage: 'index', completed: indexed, total: indexed + result.remaining });
             } while (result.remaining > 0);
             result = { remaining: 0 };
         } else fail('Mewmory does not recognise that action.');

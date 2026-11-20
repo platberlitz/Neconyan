@@ -26,7 +26,7 @@ import { startProcessing } from '../mewmory/worker.js';
 import { MEWMORY_CATCH_UP_TIMEOUT_MS, observeMewmoryCatchUp } from '../../public/scripts/mewmory/catch-up.js';
 import { recallInBackground } from '../mewmory/retrieval.js';
 import { loadCurrentStateSync } from '../mewmory/sources.js';
-import { mutateState, normalizeLocator, readChat } from '../mewmory/store.js';
+import { memoryEnabled, mutateState, normalizeLocator, readChat } from '../mewmory/store.js';
 import { generationFingerprint } from '../mewmory/context.js';
 import { readConfig } from '../mewmory/models.js';
 import { prepareAutomaticHiding } from '../mewmory/hiding.js';
@@ -958,6 +958,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
                 ...(request.mewmoryCatchUpOverride ? { mewmoryCatchUpOverride: request.mewmoryCatchUpOverride } : {}),
             };
             const memoryOptions = {
+                isEnabled: (directories, locator) => memoryAccess(() => memoryEnabled(directories, locator)),
                 loadState: (directories, locator) => memoryAccess(() => loadCurrentStateSync(directories, locator)),
                 mutate: (directories, locator, operation) => memoryAccess(() => mutateState(directories, locator, operation)),
                 readSource: (directories, locator) => memoryAccess(() => readChat(directories, locator)),
@@ -1023,6 +1024,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
     }
     const assertMemory = () => {
         if (!request.serverPrompt) return;
+        if (!memory.enabled && !memoryAccess(() => memoryEnabled(directories, promptSource.locator))) return;
         const current = memoryAccess(() => loadCurrentStateSync(directories, promptSource.locator));
         if (current.enabled !== memory.enabled || memory.enabled
             && generationFingerprint(current, readConfig(directories)) !== memory.validationFingerprint) {
