@@ -12,13 +12,25 @@ const HIDE_THRESHOLD = 'Hide older messages at this chat size, tokens';
 
 async function load(page) {
     await page.goto('/', { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'));
+    await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready')
+        && window.SillyTavern?.getContext?.().accountStorage?.isReady);
+    const shouldSkipTour = await page.evaluate(() => {
+        const storage = window.SillyTavern.getContext().accountStorage;
+        const status = storage.getItem('NeconyanTutorialStatus.v1');
+        return status !== null && !['completed', 'skipped'].includes(status)
+            && storage.getItem('NeconyanTutorialHidden.v1') !== 'true';
+    });
+    if (shouldSkipTour) {
+        // The tour opens on APP_READY, after the rail is ready. Dismiss it before
+        // opening Mewmory: pressing the tour also closes an open drawer.
+        const skip = page.locator('#neconyan-tour-coachmark [data-tour-coach-skip]');
+        await skip.click();
+        await expect(skip).toBeHidden();
+    }
 }
 
 async function openSettings(page) {
     await load(page);
-    const skip = page.locator('#neconyan-tour-coachmark [data-tour-coach-skip]');
-    if (await skip.isVisible()) await skip.click();
     await page.evaluate(() => window.NeconyanShell.openTab('left', 'mewmory'));
     const workspace = page.locator('#mewmory-workspace');
     await workspace.getByRole('tab', { name: 'Settings', exact: true }).click();
