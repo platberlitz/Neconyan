@@ -4,6 +4,7 @@
 
 ### Merged Staging PRs
 - PR #776 (2026-11-20) `fix(settings): keep theme filters in view when pressed`
+- PR #779 (2026-11-20) `fix(ci): let the pr manager write pull request labels`
 
 ## v1.5.7
 
