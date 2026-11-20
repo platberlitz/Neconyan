@@ -125,6 +125,18 @@ test('weekly and legacy schedules match the named-timezone clock', () => {
     assert.equal(nextWeek.kind, 'schedule');
 });
 
+test('a schedule delayed by another reply keeps its original occurrence across midnight', () => {
+    const time = Date.UTC(2026, 0, 5, 23, 59);
+    const options = { target, branch: branch(), settings: { auto_message: true,
+        weekly_schedule: [{ days: [1], time: '23:59', message: 'goodnight' }] } };
+    const due = selectConversationScheduledMessage({ ...options, now: time });
+    assert.ok(due);
+    const late = selectConversationScheduledMessage({ ...options, now: time + 120000 });
+    assert.equal(late?.key, due.key);
+    assert.equal(selectConversationScheduledMessage({ ...options, now: time + 120000, taken: key => key === due.key }), null);
+    assert.equal(selectConversationScheduledMessage({ ...options, now: time + 360000 }), null);
+});
+
 test('reminder acceptance retry keeps its identity and a submitted failure cannot starve the next reminder', () => {
     const first = { id: 'first', personaId: 'p.png', triggerAt: 100, text: 'tea', target: { target, settings: { enabled: true } } };
     const second = { ...first, id: 'second', text: 'water' };

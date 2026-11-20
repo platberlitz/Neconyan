@@ -234,8 +234,11 @@ export function roleplayWorkflowResultFacts(workflow, { before = null, after = n
     if (workflow.effect === 'continue') {
         const previous = before[messageIndex + 1]?.mes;
         const current = message.mes;
-        if (typeof previous !== 'string' || typeof current !== 'string' || !current.startsWith(previous)) return null;
-        return { cut: previous.length, length: current.length };
+        if (typeof previous !== 'string' || typeof current !== 'string') return null;
+        // A post-reply Agent can rewrite the existing passage as well as the continuation.
+        let cut = 0;
+        while (cut < previous.length && previous[cut] === current[cut]) cut++;
+        return { cut, length: current.length };
     }
     if (workflow.effect === 'replace') {
         const current = message.mes;

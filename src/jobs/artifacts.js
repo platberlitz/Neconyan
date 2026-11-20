@@ -34,7 +34,7 @@ export function providerNotDispatched(error) {
  */
 export function isDefiniteProviderRefusal(status) {
     const code = Number(status);
-    return Number.isInteger(code) && ((code >= 400 && code < 500 && code !== 408) || code === 503 || code === 529);
+    return Number.isInteger(code) && ((code >= 400 && code < 500 && code !== 408 && code !== 499) || code === 503 || code === 529);
 }
 
 /** Mark a thrown provider refusal as a known outcome without a result. */

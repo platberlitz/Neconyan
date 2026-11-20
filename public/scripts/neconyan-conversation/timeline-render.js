@@ -1057,7 +1057,6 @@ export function renderConversationTimeline() {
     const previousScrollTop = timeline.scrollTop;
     const previousScrollBottom = timeline.scrollHeight - previousScrollTop - timeline.clientHeight;
     const previousThreadKey = conversationState.lastRenderedThreadKey || '';
-    const previousMessageCount = conversationState.lastRenderedMessageCount;
 
     if (!avatar) {
         const unavailableGroup = conversationState.conversationUnavailableGroupId
@@ -1121,7 +1120,6 @@ export function renderConversationTimeline() {
     conversationState.timelineWindowDescriptor = windowDescriptor;
 
     const contextChanged = previousThreadKey !== renderThreadKey;
-    const messagesAdded = allMessages.length > previousMessageCount;
     const isNearBottom = previousScrollBottom <= 150;
     const needsBottomScroll = Boolean(conversationState.timelineBottomScrollPending);
     const fingerprint = buildTimelineFingerprint({
@@ -1175,7 +1173,7 @@ export function renderConversationTimeline() {
         conversationState.lastRenderedMessageCount = allMessages.length;
         conversationState.timelineBottomScrollPending = false;
         updateConversationToolsState();
-        if (contextChanged || messagesAdded || isNearBottom || needsBottomScroll) {
+        if (contextChanged || isNearBottom || needsBottomScroll) {
             anchorConversationTimelineToBottom(timeline, renderThreadKey);
         } else {
             timeline.scrollTop = previousScrollTop;
@@ -1224,7 +1222,7 @@ export function renderConversationTimeline() {
         if (!restoreTimelinePagingAnchor(timeline, pagingAnchor)) {
             timeline.scrollTop = previousScrollTop;
         }
-    } else if (windowDescriptor.followingLatest && (contextChanged || messagesAdded || isNearBottom || needsBottomScroll)) {
+    } else if (windowDescriptor.followingLatest && (contextChanged || isNearBottom || needsBottomScroll)) {
         anchorConversationTimelineToBottom(timeline, renderThreadKey);
     } else {
         timeline.scrollTop = previousScrollTop;

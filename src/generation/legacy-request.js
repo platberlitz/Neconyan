@@ -17,9 +17,19 @@ const cleanupFields = ['collapse_newlines', 'allow_name1_display', 'allow_name2_
 
 async function pollHorde({ context, jobContext, key, taskId, cleanup, signal, fetch: fetchImpl, userName, characterName, groupNames, trimNames }) {
     const request = { user: { profile: { handle: context.owner }, directories: context.directories }, headers: {} };
+    let failures = 0;
     for (let attempt = 0; attempt < 480; attempt++) {
         signal?.throwIfAborted();
-        const status = await runBackendRequest(request, handleHordeTaskStatus, { taskId }, { signal, fetch: fetchImpl, boundProfile: true });
+        let status;
+        try {
+            status = await runBackendRequest(request, handleHordeTaskStatus, { taskId }, { signal, fetch: fetchImpl, boundProfile: true });
+            failures = 0;
+        } catch (error) {
+            signal?.throwIfAborted();
+            if (!(error.status === 429 || error.status >= 500) || ++failures >= 3) throw error;
+            await wait(2500, undefined, { signal });
+            continue;
+        }
         if (status?.faulted || status?.is_possible === false) fail('The saved Horde task cannot finish.', 502);
         if (status?.done) {
             const rawText = status.generations?.[0]?.text;

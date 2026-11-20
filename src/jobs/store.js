@@ -787,10 +787,10 @@ export function requestCancellation(directories, id, { reason = null } = {}) {
             descendants.push(child);
             pending.push(...(child.children ?? []));
         }
-        // Only a running server reply child has a keeper write to finish. A
-        // vector, caption or other auxiliary child does not extend the wait.
+        // A running reply child may have generated content left to save. An
+        // auxiliary child such as a vector or caption does not extend the wait.
         const activeDescendant = descendants.some(child => child.state === 'running'
-            && (child.type === 'roleplay.reply' || child.type === 'roleplay.candidate'));
+            && ['roleplay.reply', 'roleplay.candidate', 'conversation.participant'].includes(child.type));
         for (const child of descendants) {
             if (TERMINAL_STATES.includes(child.state)) continue;
             child.cancellation = { requested: true, requestedAt: now(), reason };
@@ -805,7 +805,7 @@ export function requestCancellation(directories, id, { reason = null } = {}) {
         // parent waiting on a running child is still doing work: its terminal
         // state waits until that child and its server keeper have finished.
         const survivesForChild = activeDescendant
-            && (job.type === 'media.roleplay-workflow' || job.type === 'roleplay.reply');
+            && ['media.roleplay-workflow', 'roleplay.reply', 'conversation.reply'].includes(job.type);
         if ((job.state === 'queued' || job.state === 'waiting') && !survivesForChild) {
             job.state = 'cancelled';
             job.finishedAt = now();
@@ -894,6 +894,8 @@ export function retryConversationFamily(directories, id) {
             child.error = null;
             child.result = null;
             child.finishedAt = null;
+            child.dismissed = false;
+            delete child.dismissedReason;
             Object.assign(child, explicitRetryRecovery(child));
             child.attempt += 1;
             child.updatedAt = now();
@@ -902,14 +904,50 @@ export function retryConversationFamily(directories, id) {
         for (const childId of root.children ?? []) {
             retryChild(store.jobs[jobKey(childId)]);
         }
-        if (!changed) throw fail(409, 'JOB_NOT_RETRYABLE', 'None of the replies in this Conversation can be retried.');
-        root.state = 'waiting';
-        root.stage = 'children';
+        const preparing = (root.children ?? []).some(id => {
+            const child = store.jobs[jobKey(id)];
+            return child?.parentId === root.id && child.state === 'waiting' && child.stage === 'preparing';
+        });
+        if (!changed && !preparing) throw fail(409, 'JOB_NOT_RETRYABLE', 'None of the replies in this Conversation can be retried.');
+        root.state = preparing ? 'queued' : 'waiting';
+        root.stage = preparing ? null : 'children';
         root.error = null;
         root.result = null;
         root.finishedAt = null;
+        root.dismissed = false;
+        delete root.dismissedReason;
         root.recoverability = 'resumable';
         root.updatedAt = now();
+        return { job: root };
+    });
+}
+
+/** Reopen the root and any failed candidate together: a candidate cannot run under a terminal root. */
+export function retryRoleplayFamily(directories, id, owner) {
+    return mutateJobs(directories, store => {
+        const root = store.jobs[jobKey(id)];
+        if (!root || root.owner !== owner || root.type !== 'media.roleplay-workflow') {
+            throw fail(404, 'JOB_NOT_FOUND', 'This job no longer exists.');
+        }
+        const children = (root.children ?? []).map(id => store.jobs[jobKey(id)]);
+        if (!['failed', 'interrupted'].includes(root.state) || root.cancellation?.requested
+            || children.some(child => !child || child.parentId !== root.id || child.owner !== owner
+                || !['completed', 'failed', 'interrupted'].includes(child.state) || child.cancellation?.requested)) {
+            throw fail(409, 'JOB_NOT_RETRYABLE', 'This Roleplay reply cannot be tried again.');
+        }
+        const reopen = (job, state, stage) => {
+            Object.assign(job, explicitRetryRecovery(job), { state, stage, error: null, finishedAt: null,
+                dismissed: false, updatedAt: now() });
+            delete job.dismissedReason;
+        };
+        let waiting = false;
+        for (const child of children) {
+            if (child.state === 'completed') continue;
+            if (child.type !== 'roleplay.candidate') throw fail(409, 'JOB_NOT_RETRYABLE', 'This Roleplay reply has an unsettled step.');
+            reopen(child, 'queued', null);
+            waiting = true;
+        }
+        reopen(root, waiting ? 'waiting' : 'queued', waiting ? 'children' : null);
         return { job: root };
     });
 }

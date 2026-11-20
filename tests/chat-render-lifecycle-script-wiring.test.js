@@ -437,7 +437,7 @@ describe('chat render lifecycle script wiring', () => {
             && node.key?.name === 'onProgressStreaming');
         const source = getSource(onProgressStreaming.value);
 
-        expect(source).toContain('await this.#checkDomElements(messageId);');
+        expect(source).toContain('await this.#checkDomElements(messageId, allowStopped);');
         expect(source).toContain('await updateMessageTokenAccounting(chat[messageId],');
         expect(source).toContain('shouldUpdateMetaBadges: !shouldReduceIntermediateStreamingWork');
         expect(source).toContain('this.setFirstSwipe(messageId);');

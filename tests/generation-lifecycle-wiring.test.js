@@ -150,7 +150,8 @@ describe('generation lifecycle wiring', () => {
     });
 
     test('routes provider-error cleanup through stopped lifecycle semantics', () => {
-        expect(scriptSource).toContain('this.markUIGenStopped({ emitGenerationEnded: false, emitGenerationStopped: true });');
+        expect(scriptSource).toContain('await activeStream.keepInterruptedReply(restoreBlockedAttempt);');
+        expect(scriptSource).toContain('eventSource.emit(event_types.GENERATION_STOPPED, ...(this.agentGenerationContext ? [this.agentGenerationContext] : []));');
         expect(scriptSource).toContain('eventSource.emit(event_types.GENERATION_STOPPED, ...(agentGenerationContext ? [agentGenerationContext] : []));');
         expect(scriptSource).toContain('unblockGeneration(type, { emitGenerationEnded: false });');
     });

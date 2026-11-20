@@ -1474,7 +1474,7 @@ test('stopping the host generation cancels the accepted workflow instead of leav
     const pending = workflows.runNativeRoleplayGeneration('regenerate', { committed: true, signal: controller.signal });
     await settle();
     controller.abort();
-    expect(cancelJob).toHaveBeenCalledWith('job-1', { reason: 'user_cancelled' });
+    expect(cancelJob).toHaveBeenCalledWith('job-1', { account: 'alice', reason: 'user_cancelled' });
     await observers.get('job-1').onStop('cancelled');
     await pending;
 });
@@ -1712,7 +1712,7 @@ test('explicit Stop still cancels the running workflow once after a return event
     controller.abort();
     controller.abort();
     expect(cancelJob).toHaveBeenCalledTimes(1);
-    expect(cancelJob).toHaveBeenCalledWith('job-1', { reason: 'user_cancelled' });
+    expect(cancelJob).toHaveBeenCalledWith('job-1', { account: 'alice', reason: 'user_cancelled' });
     await observers.get('job-1').onStop('cancelled');
     await pending;
 });

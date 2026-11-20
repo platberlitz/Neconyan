@@ -1,6 +1,7 @@
 import { getRequestHeaders } from '../../script.js';
 import { getCurrentUserHandle } from '../user.js';
 import { scheduleInterfaceRefresh } from './render-scheduler.js';
+import { withAbortSignal } from '../abort.js';
 
 const previews = new Map();
 
@@ -33,27 +34,34 @@ export function observeNativeConversationPreview(jobId, account) {
         if (hidden()) { attempt?.abort(); return; }
         wake?.(); wake = null;
     };
+    const reconnect = () => { attempt?.abort(); onVisibility(); };
     document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pageshow', reconnect);
+    window.addEventListener('online', reconnect);
     const run = async () => {
         while (current()) {
             if (hidden()) {
                 await new Promise(resolve => { wake = resolve; });
                 continue;
             }
-            attempt = new AbortController();
+            const connection = attempt = new AbortController();
+            let silence;
+            const arm = () => { clearTimeout(silence); silence = setTimeout(() => connection.abort(), 5000); };
             try {
-                const response = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/preview`, {
+                arm();
+                const response = await withAbortSignal(fetch(`/api/jobs/${encodeURIComponent(jobId)}/preview`, {
                     headers: { ...getRequestHeaders(), 'X-Neconyan-Account': account },
-                    credentials: 'same-origin', signal: attempt.signal,
-                });
+                    credentials: 'same-origin', signal: connection.signal,
+                }), connection.signal);
                 if ([401, 403, 404, 409].includes(response.status)) return;
                 if (!response.ok || !response.body) throw new Error('Preview unavailable.');
                 const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
                 try {
                     let pending = '';
                     while (current()) {
-                        const chunk = await reader.read();
+                        const chunk = await withAbortSignal(reader.read(), connection.signal);
                         if (chunk.done) break;
+                        arm();
                         pending += chunk.value;
                         if (pending.length > 8 * 1024 * 1024) throw new Error('Preview exceeded its limit.');
                         let boundary;
@@ -66,13 +74,19 @@ export function observeNativeConversationPreview(jobId, account) {
                             if (value.state) return;
                         }
                     }
-                } finally { await reader.cancel().catch(() => {}); }
-            } catch { /* Reconnect without resubmitting work. */ }
-            if (current()) await new Promise(resolve => setTimeout(resolve, 1000));
+                } finally { void reader.cancel().catch(() => {}); }
+            } catch { /* Reconnect without resubmitting work. */ } finally {
+                clearTimeout(silence);
+                connection.abort();
+                attempt = null;
+            }
+            if (current() && !hidden()) await new Promise(resolve => setTimeout(resolve, 1000));
         }
     };
     const clear = () => {
         document.removeEventListener('visibilitychange', onVisibility);
+        window.removeEventListener('pageshow', reconnect);
+        window.removeEventListener('online', reconnect);
         diagnostic(null);
         if (previews.get(jobId) !== entry) return;
         previews.delete(jobId);

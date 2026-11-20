@@ -34,7 +34,8 @@ export function getHeldReplyTarget(chat, context, id) {
     const anchorMatches = anchor && (anchor.send_date ?? null) === context.lastSendDate
         && Boolean(anchor.is_user) === context.lastIsUser
         && (!identity || fingerprint(String(anchor.mes ?? '')) === identity.textHash);
-    const replacesTail = ['swipe', 'continue'].includes(context.type);
+    const regenerate = context.type === 'regenerate' && context.replaceTail === true;
+    const replacesTail = regenerate || ['swipe', 'continue'].includes(context.type);
 
     if (!replacesTail) {
         if (!anchorMatches) return null;
@@ -44,7 +45,12 @@ export function getHeldReplyTarget(chat, context, id) {
     }
 
     if (chat.length !== context.chatLength || last?.is_user) return null;
-    if (identity && (last.swipe_id ?? 0) !== identity.swipeId) return null;
+    if (regenerate) {
+        if (sameStart(last)) return { type: 'appendFinal', reasoningPrefix: '' };
+        return anchorMatches && (!identity || (last.swipe_id ?? 0) === identity.swipeId) ? { type: 'regenerate' } : null;
+    }
+    if (identity && (last.swipe_id ?? 0) !== identity.swipeId
+        && !(context.type === 'swipe' && sameStart(last) && last.swipe_id === last.swipes?.length - 1)) return null;
     if (!anchorMatches && !sameStart(last)) return null;
     if (context.type === 'swipe') {
         return { type: sameStart(last) ? 'appendFinal' : 'swipe', reasoningPrefix: '' };

@@ -50,6 +50,27 @@ async function expectSavedOnce(page, account, app, id, model = MODEL) {
 
 for (const phone of [false, true]) {
     const viewport = phone ? 'phone' : 'desktop';
+    test(`${viewport} keeps the partial browser reply after Stop and reopening`, async ({ app }) => {
+        app.provider.mode.streamReply = { first, rest: reply.slice(first.length) };
+        const account = await app.account({ phone, activeConnection: true, configureSettings(saved) {
+            saved.oai_settings.stream_openai = true;
+            saved.power_user.trim_sentences = false;
+        } });
+        const page = await openChat(account);
+        try {
+            const id = await startBrowserReply(page);
+            await expect(page.locator('#chat .mes[mesid]').last().locator('.mes_text')).toHaveText(first);
+            await page.locator('#mes_stop').click();
+            await expect(page.locator('#mes_stop')).toBeHidden();
+            await expect.poll(async () => (await heldReplies(account)).some(job => job.id === id)).toBe(false);
+            await page.close();
+            const reopened = await openChat(account);
+            await expect(reopened.locator('#chat .mes[mesid]').last().locator('.mes_text')).toHaveText(first);
+        } finally {
+            app.provider.mode.finishStream?.();
+        }
+    });
+
     test(`${viewport} restores inline thinking and unfinished prose after a provider length stop`, async ({ app }) => {
         test.setTimeout(180000);
         const prose = 'She opens the door and';

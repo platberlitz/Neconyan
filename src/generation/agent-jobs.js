@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { registerHandler } from '../jobs/runner.js';
-import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
+import { createProviderScope, readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { admitRoleplayJob, applyRoleplayJobEffect, readRoleplayJobResult } from '../roleplay-jobs.js';
 import { readRoleplayFile, roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-store.js';
 import { readAgentRecordLocked } from '../in-chat-agent-storage.js';
@@ -150,10 +150,14 @@ export async function runAgentJob(context, { generate, host = roleplayNativeHost
                 const pre = prepareRoleplayAgentContributions(context, postOptions);
                 let post, companions;
                 if (request.worldInfo.agents?.concurrentCompanions) {
-                    [post, companions] = await Promise.all([
-                        runRoleplayAgentPostprocessing(context, { ...postOptions, namespace: 'manual', value: recoveredText }),
-                        runRoleplayCompanions(context, { ...postOptions, value: roleplayAgentOutputBaseline(recoveredText, pre), effect: 'continue' }),
+                    const shared = { ...context, providerScope: createProviderScope(context) };
+                    const settled = await Promise.allSettled([
+                        runRoleplayAgentPostprocessing(shared, { ...postOptions, namespace: 'manual', value: recoveredText }),
+                        runRoleplayCompanions(shared, { ...postOptions, value: roleplayAgentOutputBaseline(recoveredText, pre), effect: 'continue' }),
                     ]);
+                    const failure = settled.find(result => result.status === 'rejected');
+                    if (failure) throw failure.reason;
+                    [post, companions] = settled.map(result => result.value);
                 } else {
                     post = await runRoleplayAgentPostprocessing(context, { ...postOptions, namespace: 'manual', value: recoveredText });
                     companions = await runRoleplayCompanions(context, { ...postOptions, value: post.text, continuityRuns: post.runs, effect: 'continue' });

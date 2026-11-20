@@ -185,7 +185,8 @@ export async function acceptConversationAsideEvent(request, body = {}) {
     if (event.kind === 'mention') {
         const named = [];
         for (const avatar of members) {
-            const character = await getCharacterData(request, avatar, { allowOverride: false, requireExisting: true });
+            const character = await getCharacterData(request, avatar, { allowOverride: false, requireExisting: true })
+                .catch(error => { if (error.status !== 404) throw error; return null; });
             if (!character?.name || !isCharacterMentionedInText(character, saved.source?.mes, [])) continue;
             named.push(avatar);
         }

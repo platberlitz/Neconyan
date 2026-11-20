@@ -179,23 +179,24 @@ function effectRecords(records, source, effect, output, request, job, directorie
     const timing = output.gen_started && output.gen_finished
         ? { gen_started: output.gen_started, gen_finished: output.gen_finished } : {};
     const swipes = Array.isArray(message.swipes) && message.swipes.length ? message.swipes : [message.mes];
+    const selected = Number(message.swipe_id ?? 0);
+    if (!Number.isInteger(selected) || selected < 0 || selected >= swipes.length) throw invalid('The message has an unreadable version choice.');
     if (effect === 'alternative') {
         // A named alternative adds one more unselected swipe. The selected text,
         // its index and the message's own metadata stay exactly as they were.
-        const info = Array.isArray(message.swipe_info) ? message.swipe_info.slice(0, swipes.length) : [];
-        while (info.length < swipes.length) info.push({});
+        const info = originalSwipeInfo(message, swipes, selected);
         message.swipes = [...swipes, output.text];
         message.swipe_info = [...info, { ...timing, ...(output.extra ? { extra: output.extra } : {}) }];
         return next;
     }
-    const selected = Number(message.swipe_id ?? 0);
-    if (!Number.isInteger(selected) || selected < 0 || selected >= swipes.length) throw invalid('The message has an unreadable version choice.');
     if (effect === 'continue') {
-        if (!output.extra?.generation_outcome) {
-            if (message.extra) delete message.extra.generation_outcome;
-            if (message.swipe_info?.[selected]?.extra) delete message.swipe_info[selected].extra.generation_outcome;
+        const continued = output.continuedText ?? message.mes + output.text;
+        for (const key of ['generation_outcome', ...(continued !== message.mes ? ['display_text', 'reasoning_display_text'] : [])]) {
+            if (output.extra?.[key] !== undefined) continue;
+            if (message.extra) delete message.extra[key];
+            if (message.swipe_info?.[selected]?.extra) delete message.swipe_info[selected].extra[key];
         }
-        message.mes = output.continuedText ?? message.mes + output.text;
+        message.mes = continued;
         Object.assign(message, timing);
         if (output.extra) message.extra = { ...message.extra, ...output.extra };
         if (Array.isArray(message.swipes) && message.swipes.length) message.swipes[selected] = message.mes;
@@ -206,16 +207,30 @@ function effectRecords(records, source, effect, output, request, job, directorie
         if (message.swipe_id !== undefined) message.swipe_id = selected;
         return next;
     }
-    const info = Array.isArray(message.swipe_info) ? message.swipe_info.slice(0, swipes.length) : [];
-    while (info.length < swipes.length) info.push({});
+    const info = originalSwipeInfo(message, swipes, selected);
+    const extra = { ...output.extra };
+    for (const key of ['gen_id', 'off_record']) {
+        if (message.extra?.[key] !== undefined && extra[key] === undefined) extra[key] = message.extra[key];
+    }
     message.swipes = [...swipes, output.text];
-    message.swipe_info = [...info, { ...timing, ...(output.extra ? { extra: output.extra } : {}) }];
+    message.swipe_info = [...info, { ...timing, extra }];
     message.swipe_id = message.swipes.length - 1;
-    if (!output.extra?.generation_outcome && message.extra) delete message.extra.generation_outcome;
     message.mes = output.text;
     Object.assign(message, timing);
-    if (output.extra) message.extra = { ...message.extra, ...output.extra };
+    message.extra = extra;
     return next;
+}
+
+function originalSwipeInfo(message, swipes, selected) {
+    const info = Array.isArray(message.swipe_info) ? message.swipe_info.slice(0, swipes.length) : [];
+    while (info.length < swipes.length) info.push({});
+    if (!info[selected]?.extra) {
+        info[selected] = { ...info[selected], extra: structuredClone(message.extra ?? {}) };
+        for (const key of ['send_date', 'gen_started', 'gen_finished']) {
+            if (message[key] !== undefined) info[selected][key] = message[key];
+        }
+    }
+    return info;
 }
 
 /** Build a protected candidate's final chat without publishing a provisional message. */

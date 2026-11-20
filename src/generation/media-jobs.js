@@ -168,14 +168,14 @@ export function readNativeMediaJobResult(base, account, identity) {
  * without submitting or replaying anything. A missing receipt is not an
  * error: the operation may never have been accepted.
  */
-export function readNativeMediaJobResultForOwner(base, { operationKey } = {}) {
+export function readNativeMediaJobResultForOwner(base, { operationKey, allowUnsettled = false } = {}) {
     if (typeof operationKey !== 'string' || !operationKey || operationKey.length > 256) {
         throw fail('The media result ownership is incomplete.', 'MEDIA_INVALID');
     }
     return withRoleplayAccount(base, null, (lease, account) => {
         const { value } = readReceipt(receiptPath(base, account, operationKey));
         if (!value || roleplayHash(value.account) !== roleplayHash(stamp(account))) return null;
-        if (value.state === 'accepted' && Object.values(value.effects).some(effect => effect.state !== 'done')) {
+        if (!allowUnsettled && value.state === 'accepted' && Object.values(value.effects).some(effect => effect.state !== 'done')) {
             throw fail('The saved media result has an unsettled file effect.');
         }
         return { state: value.state, jobId: value.jobId ?? null,

@@ -101,7 +101,7 @@ export async function prepareConversationTarget(request, target) {
 /** Record acceptance before preparation or cancellation can make a job prunable.
  * Unlike completion bookkeeping, this survives failed attempts and branch resets.
  * Storage limits refuse new work rather than forgetting a paid occurrence. */
-export async function retainConversationAutomaticAcceptance(request, job) {
+function conversationAutomaticAcceptanceKeys(directories, job) {
     const keys = [];
     if (job.type === 'conversation.reply') {
         if (job.intent?.mode === 'auto') keys.push(job.submissionKey);
@@ -109,35 +109,48 @@ export async function retainConversationAutomaticAcceptance(request, job) {
             const id = job.intent.automation.patch?.reminder?.id || job.intent.plan?.[0]?.extra?.reminder_id;
             if (id) keys.push(conversationReminderIdentityKey(id));
         }
-        const snapshot = readArtifact(request.user.directories, job.id, 'request');
+        const snapshot = readArtifact(directories, job.id, 'request');
         const chime = snapshot?.participants?.find(participant => participant.purpose === 'chime');
         const markers = chime?.automation?.patch?.sessionMarkers;
         const activity = markers?.sb_conv_last_chime_session_ ?? markers?.[`sb_conv_last_chime_session_${snapshot?.target?.groupId || 'solo'}`];
         if (activity !== undefined) keys.push(conversationChimeOccurrenceKey(snapshot.target, activity));
     } else if (job.type === 'conversation.summary' && job.automatic) {
         keys.push(job.submissionKey);
-        const snapshot = readArtifact(request.user.directories, job.id, 'request');
+        const snapshot = readArtifact(directories, job.id, 'request');
         if (snapshot?.throughId) keys.push(getConversationSummarySubmissionKey(job.intent.target, snapshot.throughId));
     }
-    if (!keys.length) return;
-    if (job.owner !== request.user.profile.handle) conflict('The Conversation job belongs to another account.');
+    return keys;
+}
+
+async function retainConversationAutomaticAcceptances(request, jobs) {
+    const claims = [];
+    for (const job of jobs) {
+        const keys = conversationAutomaticAcceptanceKeys(request.user.directories, job);
+        if (!keys.length) continue;
+        if (job.owner !== request.user.profile.handle) conflict('The Conversation job belongs to another account.');
+        for (const key of keys) claims.push([digest(key), job.id]);
+    }
+    if (!claims.length) return;
     const saved = readUserSettingsWithStatus(request);
     if (!saved.ok) conflict('The Conversation settings could not be read.');
     const store = ensureConversationStore(saved.data, normalizeGroup);
     store.automation ??= {};
     store.automation.acceptedOccurrences ??= {};
     let changed = false;
-    for (const value of keys) {
-        const key = digest(value);
+    for (const [key, jobId] of claims) {
         // A legacy duplicate cannot replace the first durable owner. Chime
         // dispatch checks that owner, while unrelated Send participants proceed.
         if (store.automation.acceptedOccurrences[key]) continue;
-        store.automation.acceptedOccurrences[key] = job.id;
+        store.automation.acceptedOccurrences[key] = jobId;
         changed = true;
     }
     if (!changed) return;
     const result = await saveConversationStore(request, store, getSettingsVersion(saved.data), { trustedConversationEffects: true });
     if (!result.ok) conflict('The automatic Conversation acceptance could not be saved.');
+}
+
+export function retainConversationAutomaticAcceptance(request, job) {
+    return retainConversationAutomaticAcceptances(request, [job]);
 }
 
 export function wasConversationAutomaticOccurrenceAccepted(store, key) {
@@ -153,22 +166,31 @@ export async function backfillConversationAutomaticAcceptances(request, jobs) {
     const owner = request.user.profile.handle;
     holdJobPruning(owner);
     const ordered = [...jobs].sort((a, b) => Number(Boolean(b.config?.chimeClaim)) - Number(Boolean(a.config?.chimeClaim)) || a.createdAt - b.createdAt);
-    for (const job of ordered) await retainConversationAutomaticAcceptance(request, job);
+    await retainConversationAutomaticAcceptances(request, ordered);
     // A failed copy deliberately leaves pruning held; the next scan retries it.
     holdJobPruning(owner, false);
 }
 
-function readConversationEffectState(context, target, effectId) {
-    context.signal?.throwIfAborted();
+export function isConversationDeliveryStopped(context) {
+    const current = getJob(context.directories, context.job.id);
+    return current?.owner === context.owner && current.cancellation?.requested === true;
+}
+
+function readConversationEffectState(context, target, effectId, { keepGeneratedReply = false } = {}) {
     const currentJob = getJob(context.directories, context.job.id);
     if (!currentJob || currentJob.owner !== context.owner) conflict('The Conversation job is no longer available.');
-    if (currentJob.cancellation?.requested) throw Object.assign(new Error('The Conversation job was cancelled.'), { name: 'AbortError' });
     // A participant child shares its root's message checkpoint: the root records
     // the expected thread hash, so two siblings can append without seeing each
     // other as a conflicting third-party edit, while a user edit still fails.
     const rootJob = currentJob.parentId ? getJob(context.directories, currentJob.parentId) : currentJob;
     if (!rootJob || rootJob.owner !== context.owner) conflict('The Conversation job family is no longer available.');
-    if (rootJob.cancellation?.requested) throw Object.assign(new Error('The Conversation job was cancelled.'), { name: 'AbortError' });
+    // Only callers delivering already-generated prose or images can finish a
+    // durable Stop. An abort on its own (for example shutdown) still stops writes.
+    const cancelled = currentJob.cancellation?.requested || rootJob.cancellation?.requested;
+    if (!keepGeneratedReply || !cancelled) {
+        context.signal?.throwIfAborted();
+        if (cancelled) throw Object.assign(new Error('The Conversation job was cancelled.'), { name: 'AbortError' });
+    }
     const request = { user: { directories: context.directories, profile: { handle: context.owner } } };
     const current = readConversationTarget(request, target);
     if (current.branch.createdAt !== target.createdAt) conflict('The Conversation branch was replaced.');
@@ -180,8 +202,8 @@ function readConversationEffectState(context, target, effectId) {
     return { request, current, jobKey, effectKey, receipt };
 }
 
-export function readConversationEffectReceipt(context, target, effectId) {
-    const { receipt, effectKey } = readConversationEffectState(context, target, effectId);
+export function readConversationEffectReceipt(context, target, effectId, options) {
+    const { receipt, effectKey } = readConversationEffectState(context, target, effectId, options);
     return receipt && Object.hasOwn(receipt.effects, effectKey) ? receipt.effects[effectKey] : undefined;
 }
 
@@ -232,8 +254,8 @@ export function assertConversationEffectSource(context, target, effectId, { veri
  * `verify` replaces the whole-branch checkpoint for a write that depends only on
  * the messages it names, such as rewriting one reply.
  */
-export async function commitConversationEffect(context, target, effectId, mutate, { verify } = {}) {
-    const { request, current, jobKey, effectKey, receipt } = readConversationEffectState(context, target, effectId);
+export async function commitConversationEffect(context, target, effectId, mutate, { verify, keepGeneratedReply } = {}) {
+    const { request, current, jobKey, effectKey, receipt } = readConversationEffectState(context, target, effectId, { keepGeneratedReply });
     if (receipt && Object.hasOwn(receipt.effects, effectKey)) return receipt.effects[effectKey];
     if (verify) verify(current);
     else assertConversationCheckpoint(current, target, receipt);
@@ -253,7 +275,7 @@ export async function commitConversationEffect(context, target, effectId, mutate
     return result;
 }
 
-export async function appendConversationJobMessage(context, target, effectId, value, { mutate, presentation, verify } = {}) {
+export async function appendConversationJobMessage(context, target, effectId, value, { mutate, presentation, verify, keepGeneratedReply } = {}) {
     let notification;
     const result = await commitConversationEffect(context, target, effectId, (branch, store, settings) => {
         const message = createConversationMessage({ ...value, id: `job_${digest([context.job.id, effectId]).slice(0, 32)}` });
@@ -278,7 +300,7 @@ export async function appendConversationJobMessage(context, target, effectId, va
             notification = { id: message.id, title: `New DM from ${message.name || 'Character'}`, body: message.mes || 'New Conversation message' };
         }
         return { id: message.id };
-    }, { verify });
+    }, { verify, keepGeneratedReply });
     // Receipt replays never enter the mutation above, and failed saves never reach here.
     if (notification) {
         try {

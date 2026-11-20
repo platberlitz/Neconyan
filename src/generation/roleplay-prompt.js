@@ -32,9 +32,7 @@ export function selectRoleplayPromptRecords(records, source, effect) {
     if (!Number.isSafeInteger(anchor) || anchor < 0 || anchor >= records.length - 1) {
         throw roleplayError('ROLEPLAY_INVALID', 'The saved prompt target is outside its protected history.', 409);
     }
-    // An alternative rewrite of the anchored message writes a further swipe, so
-    // the model never reads the text it is about to replace.
-    if (effect === 'alternative') return records.slice(0, anchor);
+    // Account for the header: swipes and alternatives read all messages before their target.
     return records.slice(0, anchor + (effect === 'continue' ? 2 : 1));
 }
 

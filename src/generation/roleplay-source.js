@@ -601,9 +601,20 @@ export function assertRoleplaySourceLocked(lease, source, { effect } = {}) {
         }
         locator = resource.locator;
     }
-    const captured = source.kind === 'storage' ? captureRoleplayStorageSourceLocked(lease, locator)
-        : captureRoleplaySourceLocked(lease, { locator, groupId: source.groupId,
+    let captured;
+    if (source.kind === 'storage') {
+        captured = captureRoleplayStorageSourceLocked(lease, locator);
+    } else {
+        const saved = readRoleplayChatLocked(lease, locator);
+        const count = saved.records.length - 1;
+        if (source.message?.index >= count || source.range?.start + source.range?.count > count) {
+            const error = roleplayError('ROLEPLAY_SOURCE_CHANGED', `The message this was for was deleted, ${SOURCE_CHANGE_OUTCOME}`);
+            error.reason = source.message ? 'message' : 'range';
+            throw error;
+        }
+        captured = captureRoleplaySourceFromCurrentChatLocked(lease, saved, { locator, groupId: source.groupId,
             message: source.message?.index, range: source.range });
+    }
     const expected = effect ? { ...source, locator, ...(effect === 'append' ? {}
         : { revision: captured.source.revision, rawHash: captured.source.rawHash }) } : source;
     if (!isDeepStrictEqual(captured.source, expected)) {

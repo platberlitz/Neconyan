@@ -6,6 +6,7 @@
  */
 import { getRequestHeaders } from '../script.js';
 import { getCurrentUserHandle } from './user.js';
+import { withAbortSignal } from './abort.js';
 
 const DEFAULT_INTERVAL_MS = 1500;
 const MAX_INTERVAL_MS = 15000;
@@ -23,15 +24,22 @@ function subscribeJobChanges(base, account, listener) {
         };
         void (async () => {
             let reader;
+            let watchdog;
+            const noteActivity = () => {
+                clearTimeout(watchdog);
+                watchdog = setTimeout(() => controller.abort(), 35000);
+                watchdog?.unref?.();
+            };
             try {
                 checkAccount(account);
-                const response = await fetch(endpoint(base, '/events'), {
+                noteActivity();
+                const response = await withAbortSignal(fetch(endpoint(base, '/events'), {
                     credentials: 'same-origin', signal: controller.signal,
                     headers: { ...getRequestHeaders(), 'X-Neconyan-Account': account, Accept: 'text/event-stream' },
-                });
+                }), controller.signal);
                 checkAccount(account);
                 if (!response.ok || !response.headers?.get('content-type')?.includes('text/event-stream') || !response.body?.getReader) {
-                    await response.body?.cancel?.();
+                    void response.body?.cancel?.().catch(() => {});
                     return;
                 }
                 stream.connected = true;
@@ -39,8 +47,9 @@ function subscribeJobChanges(base, account, listener) {
                 const decoder = new TextDecoder();
                 let buffer = '';
                 while (!controller.signal.aborted) {
-                    const { value, done } = await reader.read();
+                    const { value, done } = await withAbortSignal(reader.read(), controller.signal);
                     if (done) break;
+                    noteActivity();
                     checkAccount(account);
                     buffer += decoder.decode(value, { stream: true });
                     let boundary;
@@ -52,7 +61,8 @@ function subscribeJobChanges(base, account, listener) {
                     if (buffer.length > 4096) throw new Error('Invalid job change stream.');
                 }
             } catch { /* Polling reads back saved state after a disconnect or unsupported stream. */ } finally {
-                const shouldRefresh = stream.connected && !controller.signal.aborted;
+                clearTimeout(watchdog);
+                const shouldRefresh = stream.connected && stream.listeners.size > 0;
                 stream.connected = false;
                 // A stream that worked and then dropped is replaced by the next
                 // subscriber; one that never opened stays, so polling carries on alone.
@@ -61,7 +71,10 @@ function subscribeJobChanges(base, account, listener) {
                     if (changeStreams.get(key) === stream) changeStreams.delete(key);
                 }
                 controller.abort();
-                reader?.releaseLock();
+                if (reader) {
+                    void reader.cancel().catch(() => {});
+                    reader.releaseLock();
+                }
                 if (shouldRefresh) notify();
             }
         })();
@@ -180,6 +193,9 @@ export function observeJob(id, { onUpdate, onSnapshot, onDone, onStop, base = ''
         if (timer) clearTimeout(timer);
         changes?.stop();
         signal?.removeEventListener('abort', onAbort);
+        globalThis.document?.removeEventListener('visibilitychange', wake);
+        globalThis.window?.removeEventListener('pageshow', wake);
+        globalThis.window?.removeEventListener('online', wake);
         onStop?.(reason);
     };
 
@@ -204,6 +220,7 @@ export function observeJob(id, { onUpdate, onSnapshot, onDone, onStop, base = ''
         if (timer) clearTimeout(timer);
         schedule();
     };
+    const wake = () => { if (globalThis.document?.visibilityState !== 'hidden') changed(); };
 
     const tickOnce = async () => {
         if (stopped || signal?.aborted) return;
@@ -253,6 +270,9 @@ export function observeJob(id, { onUpdate, onSnapshot, onDone, onStop, base = ''
 
     if (signal?.aborted) return stop;
     if (signal) signal.addEventListener('abort', onAbort, { once: true });
+    globalThis.document?.addEventListener('visibilitychange', wake);
+    globalThis.window?.addEventListener('pageshow', wake);
+    globalThis.window?.addEventListener('online', wake);
     void tickOnce();
     return stop;
 }

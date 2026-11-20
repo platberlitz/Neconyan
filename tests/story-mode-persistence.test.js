@@ -52,6 +52,7 @@ function loadQueuedSaveRuntime(context, group = false) {
     bindRoleplayAccount('story-test', account);
     rememberRoleplayRead(group ? { group: true, chat: 'story' } : { group: false, avatar: 'story.png', chat: 'story' }, { account, source });
     Object.assign(context, {
+        activeGenerationRun: null,
         beginRoleplaySave, confirmRoleplayOverwrite, finishRoleplaySave, parseRoleplayRead, roleplayAccountStamp, sendRoleplaySave,
         getCurrentUserHandle: () => 'story-test', refreshCsrfToken: jest.fn(),
         getRequestHeaders: () => ({}), compressRequest: async request => request,

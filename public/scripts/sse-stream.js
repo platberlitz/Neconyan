@@ -14,56 +14,40 @@ class EventSourceStream {
 
         let streamBuffer = '';
         let lastEventId = '';
+        let eventType = '';
+        let eventData = '';
 
-        function processChunk(controller) {
-            // Events are separated by two newlines
-            const events = streamBuffer.split(/\r\n\r\n|\r\r|\n\n/g);
-            if (events.length === 0) return;
+        function dispatch(controller) {
+            if (eventData) controller.enqueue(new MessageEvent(eventType || 'message', { data: eventData.slice(0, -1), lastEventId }));
+            eventType = '';
+            eventData = '';
+        }
 
-            // The leftover text to remain in the buffer is whatever doesn't have two newlines after it. If the buffer ended
-            // with two newlines, this will be an empty string.
-            streamBuffer = events.pop();
+        function processLine(line, controller) {
+            if (!line) return dispatch(controller);
+            if (line.startsWith(':')) return;
+            const colon = line.indexOf(':');
+            const field = colon < 0 ? line : line.slice(0, colon);
+            const value = colon < 0 ? '' : line.slice(colon + 1).replace(/^ /, '');
+            switch (field) {
+                case 'event': eventType = value; break;
+                case 'data': eventData += value + '\n'; break;
+                case 'id': if (!value.includes('\0')) lastEventId = value; break;
+            }
+        }
 
-            for (const eventChunk of events) {
-                let eventType = '';
-                // Split up by single newlines.
-                const lines = eventChunk.split(/\n|\r|\r\n/g);
-                let eventData = '';
-                for (const line of lines) {
-                    const lineMatch = /([^:]+)(?:: ?(.*))?/.exec(line);
-                    if (lineMatch) {
-                        const field = lineMatch[1];
-                        const value = lineMatch[2] || '';
-
-                        switch (field) {
-                            case 'event':
-                                eventType = value;
-                                break;
-                            case 'data':
-                                eventData += value;
-                                eventData += '\n';
-                                break;
-                            case 'id':
-                                // The ID field cannot contain null, per the spec
-                                if (!value.includes('\0')) lastEventId = value;
-                                break;
-                            // We do nothing for the `delay` type, and other types are explicitly ignored
-                        }
-                    }
-                }
-
-
-                // https://html.spec.whatwg.org/multipage/server-sent-events.html#dispatchMessage
-                // Skip the event if the data buffer is the empty string.
-                if (eventData === '') continue;
-
-                if (eventData[eventData.length - 1] === '\n') {
-                    eventData = eventData.slice(0, -1);
-                }
-
-                // Trim the *last* trailing newline only.
-                const event = new MessageEvent(eventType || 'message', { data: eventData, lastEventId });
-                controller.enqueue(event);
+        function processChunk(controller, atEnd = false) {
+            let start = 0;
+            for (const match of streamBuffer.matchAll(/\r\n|\r|\n/g)) {
+                // A CR at the edge of a chunk might be the first half of CRLF.
+                if (!atEnd && match[0] === '\r' && match.index === streamBuffer.length - 1) break;
+                processLine(streamBuffer.slice(start, match.index), controller);
+                start = match.index + match[0].length;
+            }
+            streamBuffer = streamBuffer.slice(start);
+            if (atEnd) {
+                if (streamBuffer) processLine(streamBuffer, controller);
+                dispatch(controller);
             }
         }
 
@@ -72,11 +56,13 @@ class EventSourceStream {
                 streamBuffer += chunk;
                 processChunk(controller);
             },
+            flush(controller) {
+                // Some providers end with a final data frame but no blank line.
+                processChunk(controller, true);
+            },
         });
 
-        decoder.readable.pipeThrough(sseStream);
-
-        this.readable = sseStream.readable;
+        this.readable = decoder.readable.pipeThrough(sseStream);
         this.writable = decoder.writable;
     }
 }
@@ -112,7 +98,7 @@ function getDelay(s) {
  * @returns {AsyncGenerator<{data: object, chunk: string, reasoning?: boolean}>} The parsed data and the chunk to be sent.
  */
 async function* parseStreamData(json) {
-    if (typeof json.delta === 'object' && typeof json.delta.message === 'object' && ['tool-plan-delta', 'content-delta'].includes(json.type)) {
+    if (json.delta && typeof json.delta.message === 'object' && ['tool-plan-delta', 'content-delta'].includes(json.type)) {
         // Cohere
         const text = json?.delta?.message?.content?.text ?? '';
         for (let i = 0; i < text.length; i++) {
@@ -242,7 +228,7 @@ async function* parseStreamData(json) {
                 };
             }
             return;
-        } else if (typeof json.choices[0].delta === 'object') {
+        } else if (json.choices[0].delta && typeof json.choices[0].delta === 'object') {
             if (typeof json.choices[0].delta.text === 'string' && json.choices[0].delta.text.length > 0) {
                 for (let j = 0; j < json.choices[0].delta.text.length; j++) {
                     const str = json.choices[0].delta.text[j];
@@ -335,6 +321,23 @@ async function* parseStreamData(json) {
     throw new Error('Unknown event data format');
 }
 
+function stripRepeatedFrameMetadata(data) {
+    delete data.usage;
+    delete data.usageMetadata;
+    delete data.logprobs;
+    for (const choice of data.choices ?? []) {
+        delete choice.logprobs;
+        delete choice.finish_reason;
+        delete choice.structured_prefill;
+        for (const message of [choice.delta, choice.message]) {
+            if (!message) continue;
+            delete message.tool_calls;
+            delete message.function_call;
+        }
+    }
+    for (const candidate of data.candidates ?? []) delete candidate.finishReason;
+}
+
 /**
  * Like the default one, but multiplies the events by the number of letters in the event data.
  */
@@ -361,9 +364,16 @@ export class SmoothEventSourceStream extends EventSourceStream {
                         return controller.enqueue(event);
                     }
 
-                    for await (const parsed of parseStreamData(json)) {
+                    // Keep per-frame metadata on the last character only, not
+                    // on every synthetic fragment of one provider event.
+                    const fragments = parseStreamData(json);
+                    let current = await fragments.next();
+                    while (!current.done) {
+                        const parsed = current.value;
+                        current = await fragments.next();
+                        if (!current.done) stripRepeatedFrameMetadata(parsed.data);
                         !(power_user.smooth_streaming_no_think && parsed.reasoning) && hasFocus && await delay(getDelay(lastStr));
-                        controller.enqueue(new MessageEvent(event.type, { data: JSON.stringify(parsed.data) }));
+                        controller.enqueue(new MessageEvent(event.type, { data: JSON.stringify(parsed.data), lastEventId: event.lastEventId }));
                         lastStr = parsed.chunk;
                     }
                 } catch (error) {

@@ -153,7 +153,20 @@ export async function runConversationWorkerTick({ directoriesFor, owners, now = 
                     // A composer send batch must have every submitted message saved
                     // before it is finalised; a crash mid-append leaves it waiting for
                     // repair. Autonomous/reply jobs submit no composer messages.
-                    && (job.intent?.mode !== 'send' || job.inputDurable === true)) {
+                    ) {
+                    if (job.intent?.mode === 'send' && job.inputDurable !== true) {
+                        // The initial request body isn't in the ledger. Allow its
+                        // original submission to retry, but don't block automatic
+                        // replies forever if that browser never comes back.
+                        if (now - Number(job.coalesce?.deadline || job.createdAt) >= 60000) {
+                            updateJob(directories, job.id, current => current.state === 'waiting'
+                                && current.stage === 'preparing' && current.inputDurable !== true ? {
+                                    state: 'failed', stage: null, finishedAt: now, recoverability: 'needs-retry',
+                                    error: { code: 'CONVERSATION_INPUT_NOT_SAVED', message: 'The submitted message could not be saved.' },
+                                } : {});
+                        }
+                        continue;
+                    }
                     const scopedRequest = { user: { profile: { handle: owner }, directories } };
                     if (job.type === 'conversation.reply') await finalizeConversationSubmission(scopedRequest, job);
                     else if (job.type === 'conversation.rewrite') await finalizeConversationRewriteSubmission(scopedRequest, job);

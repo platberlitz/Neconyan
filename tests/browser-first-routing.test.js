@@ -82,7 +82,13 @@ test.each([false, true])('browser preference routes a workflow only when Noteboo
         willRunNativeRoleplayWorkflow: () => true, loadNativeRoleplayWorkflows: load,
         __routing: { prefersServerReplies: () => false, requiresServerReply: async () => required }, console,
     });
-    expect(await decide('normal', {})).toEqual(required ? { name: 'roleplay.reply', workflows } : null);
+    const result = await decide('normal', {});
+    if (required) {
+        expect(result).toMatchObject({ name: 'roleplay.reply', workflows });
+        await expect(result.browserFallbackAllowed()).resolves.toBe(false);
+    } else {
+        expect(result).toBeNull();
+    }
     expect(load).toHaveBeenCalledTimes(Number(required));
 });
 
@@ -90,7 +96,7 @@ test.each(['normal', 'swipe', 'continue', 'regenerate'])('server preference rout
     const workflows = { roleplayWorkflowNameFor: () => 'roleplay.reply', capturePagePrompts: async () => ({}) };
     const requiresServerReply = jest.fn(async () => false);
     const decide = workflowContext(workflows, { prefersServerReplies: () => true, requiresServerReply });
-    expect(await decide(type, {})).toEqual({ name: 'roleplay.reply', workflows });
+    expect(await decide(type, {})).toMatchObject({ name: 'roleplay.reply', workflows });
     expect(requiresServerReply).not.toHaveBeenCalled();
 });
 
@@ -98,8 +104,9 @@ test('explicit browser and background choices ignore the saved preference', asyn
     const workflows = { roleplayWorkflowNameFor: () => 'roleplay.reply', capturePagePrompts: async () => ({}) };
     const routing = { prefersServerReplies: jest.fn(() => true), requiresServerReply: jest.fn(async () => false) };
     expect(await workflowContext(workflows, routing, () => false)('normal', { skipNativeRoleplay: true })).toBeNull();
-    expect(await workflowContext(workflows, routing)('normal', { skipNativeRoleplay: false }))
-        .toEqual({ name: 'roleplay.reply', workflows });
+    const forced = await workflowContext(workflows, routing)('normal', { skipNativeRoleplay: false });
+    expect(forced).toMatchObject({ name: 'roleplay.reply', workflows });
+    await expect(forced.browserFallbackAllowed()).resolves.toBe(false);
     expect(routing.prefersServerReplies).not.toHaveBeenCalled();
     expect(routing.requiresServerReply).not.toHaveBeenCalled();
 });

@@ -7,7 +7,7 @@ import { getChatProfileContextLimit, resolveGenerationProfile } from './profiles
 import { admittedRoleplayChatLocator, admitRoleplayJob, previewRoleplayWorkflowEffect, readRoleplayJobResult, roleplayHidingModels } from '../roleplay-jobs.js';
 import { roleplayNativeHost } from '../endpoints/chats.js';
 import { commitSingleChatWriteLocked } from '../roleplay-lifecycle.js';
-import { attachOwnedChild, getJob, releaseChildJobs, updateJob } from '../jobs/store.js';
+import { attachOwnedChild, getJob, releaseChildJobs, setJobResume, updateJob } from '../jobs/store.js';
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { saveRoleplayPromptContributions, validateRoleplayToolHistory } from './roleplay-contributions.js';
 import { admitBoundModelToolCall, readBoundModelToolResult, releaseBoundModelToolCall } from './roleplay-tool-dispatch.js';
@@ -254,6 +254,26 @@ function messageContainerOf(output) {
     return output?.message ?? output?.messages?.[0] ?? output;
 }
 
+// Only enrich new publication records. The output that was used for the
+// automatic decision must still hash the same when an older job resumes.
+function withContinuationMetadata(chosen) {
+    if (!chosen.priorChunks?.length || blockedCandidate(chosen)) return chosen.output;
+    const output = structuredClone(chosen.output);
+    const message = messageContainerOf(output);
+    const chunks = [...chosen.priorChunks, chosen.candidate.output].map(messageContainerOf);
+    const extra = message.extra ??= {};
+    const reasoning = chunks.map(chunk => chunk.extra?.reasoning).filter(Boolean);
+    if (reasoning.length) extra.reasoning = reasoning.join('\n\n');
+    const durations = chunks.map(chunk => chunk.extra?.reasoning_duration).filter(Number.isFinite);
+    if (durations.length) extra.reasoning_duration = durations.reduce((sum, duration) => sum + duration, 0);
+    const counts = chunks.map(chunk => chunk.extra?.token_count);
+    if (counts.every(Number.isFinite) && typeof output.continuedText !== 'string') {
+        extra.token_count = counts.reduce((sum, count) => sum + count, 0);
+    }
+    if (chunks[0].gen_started) message.gen_started = chunks[0].gen_started;
+    return output;
+}
+
 function mergeCombinedMessageExtra(previous, current, first, second, wholeMessage = false) {
     const prevMsg = messageContainerOf(previous);
     const currMsg = messageContainerOf(current);
@@ -462,7 +482,7 @@ function finalPlan(context, job, chosen, { key = FINAL, speakerIndex = null, pri
         // A joined chunk is verified against the child's own Agent output. A blocked-continuation proof lives on
         // the combined output, so that output stays the verified value.
         const proofOutput = !chosen.output?.blockedContinuationProof ? chosen.candidate.output : chosen.output;
-        const selected = previewRoleplayWorkflowEffect(lease, { source, effect, output: chosen.output, proofOutput,
+        const selected = previewRoleplayWorkflowEffect(lease, { source, effect, output: withContinuationMetadata(chosen), proofOutput,
             request: chosen.child.intent.request, job: chosen.child });
         const currentSource = assertRoleplaySourceLocked(lease, source, { effect });
         const original = currentSource.records;
@@ -630,7 +650,7 @@ async function runGroupWorkflow(context, job, beforePublication, decideCandidate
             completed.push(prior);
             previous = prior;
             turn = prior.turnEnd;
-            if (readArtifact(context.directories, prior.childJobId, 'roleplay-blocked-output') || roleplayAgentsStopped({ ...context, job: getJob(context.directories, prior.childJobId) })) break;
+            if (turn >= MAX_TURNS || readArtifact(context.directories, prior.childJobId, 'roleplay-blocked-output') || roleplayAgentsStopped({ ...context, job: getJob(context.directories, prior.childJobId) })) break;
             continue;
         }
         const speakerStart = turn;
@@ -638,6 +658,7 @@ async function runGroupWorkflow(context, job, beforePublication, decideCandidate
         let history = [];
         let decision = null;
         let progressiveOutput = null;
+        let priorChunks = [];
         let continuationPrefix = null;
         let continuationSuffix = null;
         let done = null;
@@ -672,7 +693,9 @@ async function runGroupWorkflow(context, job, beforePublication, decideCandidate
             }
             const currentSuffix = continuous
                 ? continuationSuffixText(chosen.candidate.output, continuationPrefix ?? '') : null;
-            if (decision.decision?.kind === 'final' || decision.kind === 'final') {
+            const kind = decision.decision?.kind ?? decision.kind;
+            if (kind === 'final' || (turn === MAX_TURNS - 1 && kind === 'continue')) {
+                chosen.priorChunks = priorChunks;
                 recordWorkflowReplyText(context, job, turn, assembled, { speakerIndex: index,
                     ...(continuous ? { continuation: { prefix: continuationPrefix ?? '',
                         suffix: nextContinuationSuffix(continuationSuffix, currentSuffix) } } : {
@@ -689,6 +712,7 @@ async function runGroupWorkflow(context, job, beforePublication, decideCandidate
             if (decision.decision.kind === 'swipe') {
                 history = rejectedSwipeHistory(history, chosen, decision, turn, assembled);
                 progressiveOutput = null;
+                priorChunks = [];
                 continuationSuffix = null;
                 recordWorkflowReplyText(context, job, turn, null, { selected: false, speakerIndex: index });
             } else {
@@ -698,6 +722,7 @@ async function runGroupWorkflow(context, job, beforePublication, decideCandidate
                         : { chunk: false }) });
                 history = continuedHistory(history, chosen, decision, turn, assembled);
                 progressiveOutput = assembled;
+                priorChunks.push(chosen.candidate.output);
             }
             turn++;
         }
@@ -705,7 +730,7 @@ async function runGroupWorkflow(context, job, beforePublication, decideCandidate
         completed.push(done);
         previous = done;
         await beforePublication?.(index);
-        if (readArtifact(context.directories, done.childJobId, 'roleplay-blocked-output') || roleplayAgentsStopped({ ...context, job: getJob(context.directories, done.childJobId) })) break;
+        if (turn >= MAX_TURNS || readArtifact(context.directories, done.childJobId, 'roleplay-blocked-output') || roleplayAgentsStopped({ ...context, job: getJob(context.directories, done.childJobId) })) break;
     }
     const blockedOutcome = readArtifact(context.directories, completed.at(-1).childJobId, 'roleplay-blocked-output')?.outcome;
     const result = { ...(blockedOutcome ? { generationOutcome: blockedOutcome } : {}), status: 'completed', childJobId: completed.at(-1).childJobId,
@@ -810,6 +835,7 @@ export async function runRoleplayWorkflowJob(context, options = {}) {
 
 async function executeRoleplayWorkflowJob(context, { beforePublication, beforeCommit, decideCandidate } = {}) {
     const job = root(context);
+    setJobResume(context.directories, job.id, 'roleplay-workflow');
     const closed = withNativeMediaReceipt(context, ({ value }) => value.state === 'closed' ? value.result : null,
         { checkSource: false });
     if (closed) return { result: closed };
@@ -819,6 +845,7 @@ async function executeRoleplayWorkflowJob(context, { beforePublication, beforeCo
     let lineage = null;
     let decision = null;
     let progressiveOutput = null;
+    let priorChunks = [];
     let continuationPrefix = null;
     let continuationSuffix = null;
     let turn = 0;
@@ -844,7 +871,9 @@ async function executeRoleplayWorkflowJob(context, { beforePublication, beforeCo
             const assembled = combinedCandidateOutput(progressiveOutput, chosen.candidate.output, job.intent.request.effect);
             decision = await savedTextDecision(context, job, chosen, turn, assembled, candidateText(assembled), decideCandidate);
             chosen.output = assembled;
-            if (decision.decision?.kind === 'final' || decision.kind === 'final') {
+            const kind = decision.decision?.kind ?? decision.kind;
+            if (kind === 'final' || (turn === MAX_TURNS - 1 && kind === 'continue')) {
+                chosen.priorChunks = priorChunks;
                 recordWorkflowReplyText(context, job, turn, assembled, continuous
                     ? { continuation: { prefix: continuationPrefix ?? '',
                         suffix: nextContinuationSuffix(continuationSuffix, currentSuffix) } }
@@ -855,6 +884,7 @@ async function executeRoleplayWorkflowJob(context, { beforePublication, beforeCo
             if (decision.decision.kind === 'swipe') {
                 history = rejectedSwipeHistory(history, chosen, decision, turn, assembled);
                 progressiveOutput = null;
+                priorChunks = [];
                 continuationSuffix = null;
                 recordWorkflowReplyText(context, job, turn, null, { selected: false });
                 chosen = null;
@@ -866,6 +896,7 @@ async function executeRoleplayWorkflowJob(context, { beforePublication, beforeCo
                 : { chunk: false });
             history = continuedHistory(history, chosen, decision, turn, assembled);
             progressiveOutput = assembled;
+            priorChunks.push(chosen.candidate.output);
             chosen = null;
             continue;
         }
