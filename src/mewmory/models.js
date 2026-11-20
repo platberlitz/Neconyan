@@ -459,7 +459,7 @@ function authorizeRole(config, name, dataTypes) {
     } else if (config.localOnly || !role.allowRemote) {
         fail('This role is not allowed to send your story to a service on another computer, and the chosen connection profile is one. Tick \'Allow sending story data to a service on another computer\' for this role, or pick a local profile.', 403);
     }
-    if (dataTypes.some(type => !role.allowedData.includes(type))) fail(ROLE_LABELS[name] + ' cannot read the information it needs. Check ‘This role may read’ in Mewmory settings.', 403);
+    if (dataTypes.some(type => !role.allowedData.includes(type))) fail(ROLE_LABELS[name] + ' cannot read the information it needs. Check ‘Sources this model may read’ in Mewmory settings.', 403);
     return { role, endpoint };
 }
 
@@ -782,7 +782,7 @@ export async function callJsonRole(directories, config, name, contract, input, {
     // A broken own connection still lets the fallbacks answer; a switched-off role or a data permission does not.
     const brokenConnection = Boolean(ROLE_NAMES.includes(name) && saved?.enabled && saved.error);
     const { role } = brokenConnection ? { role: saved } : authorizeRole(config, name, dataTypes);
-    if (brokenConnection && dataTypes.some(type => !role.allowedData.includes(type))) fail(ROLE_LABELS[name] + ' cannot read the information it needs. Check ‘This role may read’ in Mewmory settings.', 403);
+    if (brokenConnection && dataTypes.some(type => !role.allowedData.includes(type))) fail(ROLE_LABELS[name] + ' cannot read the information it needs. Check ‘Sources this model may read’ in Mewmory settings.', 403);
     const messages = [
         { role: 'system', content: contract + '\n' + RESPONSE_RULES },
         { role: 'user', content: JSON.stringify(input) },

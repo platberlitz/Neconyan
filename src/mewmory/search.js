@@ -195,8 +195,10 @@ export async function updateIndex(state, directories, config, { signal, limit = 
             paid[document.id] = entry;
         });
     }
-    const remaining = Math.max(0, missing.length - limit);
-    if (!remaining || sameVersion) state.index = { version, vectors: next, pending: remaining > 0 };
+    // Completing the recall pool makes it usable, but the archive also searches
+    // passages that an automatic recall does not pay to embed.
+    const remaining = documents.length - Object.keys(next).length;
+    if (missing.length <= limit || sameVersion) state.index = { version, vectors: next, pending: remaining > 0 };
     else state.index = { ...state.index, pending: true, build: { version, vectors: next } };
     return { usage, remaining, paid, version };
 }

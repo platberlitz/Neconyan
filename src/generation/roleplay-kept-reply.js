@@ -31,6 +31,7 @@ import { roleplayNativeHost } from '../endpoints/chats.js';
 import { withNativeMediaReceipt } from './media-jobs.js';
 import { readRoleplayPreview } from './roleplay-preview.js';
 import { reasoningOnlyResult } from './reasoning-only-result.js';
+import { offRecordReplyExtra } from '../mewmory/message-policy.js';
 
 export const KEPT_REPLY_ARTIFACT = 'roleplay-kept-reply';
 export const MAIN_COMPLETE_ARTIFACT = 'roleplay-main-complete';
@@ -647,14 +648,9 @@ function isWitnessed(reply, message) {
         && message.gen_started === reply.timings.gen_started;
 }
 
-/** A chat set 'off the record' in Mewmory keeps every new reply out of memory, even one the server saves alone. */
-function offRecord(records) {
-    return records[0]?.chat_metadata?.mewmory_off_record === true ? { mewmoryExclude: true } : {};
-}
-
 function appendRecord(records, reply, identity) {
     const extra = cleanExtra({ ...reply.extra, ...(reply.reasoning ? { reasoning: reply.reasoning } : {}),
-        ...(reply.reasoningDuration !== undefined ? { reasoning_duration: reply.reasoningDuration } : {}), ...offRecord(records) });
+        ...(reply.reasoningDuration !== undefined ? { reasoning_duration: reply.reasoningDuration } : {}), ...offRecordReplyExtra(records) });
     const userMessage = reply.userAlternative === true;
     const message = { name: userMessage ? reply.userName || records[0]?.user_name || 'User' : reply.name,
         is_user: userMessage, mes: reply.text, send_date: new Date().toISOString(),
@@ -672,7 +668,7 @@ function appendRecord(records, reply, identity) {
 
 function extendRecord(records, record, index, reply, identity, { swipe = false, select = true, replace = false } = {}) {
     const extra = cleanExtra({ ...(!swipe ? record.extra : {}), ...reply.extra, ...(reply.reasoning ? { reasoning: reply.reasoning } : {}),
-        ...(reply.reasoningDuration !== undefined ? { reasoning_duration: reply.reasoningDuration } : {}), ...(swipe ? offRecord(records) : {}) });
+        ...(reply.reasoningDuration !== undefined ? { reasoning_duration: reply.reasoningDuration } : {}), ...offRecordReplyExtra(records) });
     const marker = keptMarker(identity);
     if (swipe) {
         const swipes = Array.isArray(record.swipes) && record.swipes.length ? [...record.swipes] : [record.mes];

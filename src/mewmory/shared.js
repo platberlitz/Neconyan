@@ -1,31 +1,10 @@
-import path from 'node:path';
 import { withChatFileLocks } from '../chat-file-lock.js';
 import { fail, hash, putRecord, sourceAt, sourceEligible, validateRecord } from './core.js';
-import { readJson, writeJson } from './store.js';
+import { readSharedMemories, readStateShared, statePath, updateSharedMemories } from './store.js';
 import { brief, namer, usable } from './story.js';
 
-/** Most memories kept in the account-wide shared list; the oldest go first. */
-export const SHARED_LIMIT = 500;
 export const SHARE_KINDS = ['state', 'event', 'relationship', 'knowledge', 'commitment'];
 const BRING_KINDS = ['event', 'relationship', 'commitment'];
-
-function sharedPath(directories) {
-    return path.join(directories.root, 'mewmory', 'shared.json');
-}
-
-function readShared(directories) {
-    const value = readJson(sharedPath(directories), null);
-    return Array.isArray(value?.entries) ? value.entries.filter(entry => entry && typeof entry === 'object' && entry.id) : [];
-}
-
-function writeShared(directories, change) {
-    const filename = sharedPath(directories);
-    return withChatFileLocks([filename], () => {
-        const entries = change(readShared(directories));
-        writeJson(filename, { entries: entries.slice(-SHARED_LIMIT) });
-        return entries;
-    });
-}
 
 /** The characters taking part in this chat, read from their character cards. */
 export function characterSources(state) {
@@ -54,7 +33,11 @@ export function shareRecords(directories, state, ids, { chat = '', now = Date.no
         subjects: brief(state, record, nameOf).subjects, sharedAt: now,
     }));
     const keys = new Set(shared.map(entry => entry.id));
-    writeShared(directories, entries => [...entries.filter(entry => !keys.has(entry.id)), ...shared]);
+    withChatFileLocks([statePath(directories, state.locator)], () => {
+        const current = readStateShared(directories, state.locator);
+        if (current.storyId !== state.storyId || current.revision !== state.revision) fail('This story changed or is no longer there. Reload Mewmory and try again.', 409);
+        updateSharedMemories(directories, entries => [...entries.filter(entry => !keys.has(entry.id)), ...shared]);
+    });
     return { shared: shared.length, skipped: wanted.size - shared.length };
 }
 
@@ -63,7 +46,7 @@ export function listShared(directories, state) {
     const characters = new Set(characterSources(state).map(character => character.id));
     const brought = new Set(state.records.filter(record => record.sharedFrom?.entryId && record.status !== 'invalidated')
         .map(record => record.sharedFrom.entryId));
-    const entries = readShared(directories).sort((a, b) => (b.sharedAt || 0) - (a.sharedAt || 0));
+    const entries = readSharedMemories(directories).sort((a, b) => (b.sharedAt || 0) - (a.sharedAt || 0));
     return {
         available: entries.filter(entry => entry.storyId !== state.storyId
             && (entry.characterIds || []).some(value => characters.has(value)))
@@ -76,7 +59,7 @@ export function listShared(directories, state) {
 export function removeShared(directories, id) {
     if (typeof id !== 'string' || !id) fail('Choose a shared memory first.', 400);
     let found = false;
-    writeShared(directories, entries => entries.filter(entry => {
+    updateSharedMemories(directories, entries => entries.filter(entry => {
         if (entry.id !== id) return true;
         found = true;
         return false;

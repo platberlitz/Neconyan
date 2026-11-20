@@ -403,14 +403,16 @@ route('/source/exclude', async (directories, body) => {
     const locator = normalizeLocator(body.locator);
     const current = await loadCurrentState(directories, locator);
     expectedRevision(body, current);
-    if (!current.sources[body.id]) fail('That message or lore entry no longer exists. Reload Mewmory.', 404);
+    if (typeof body.id !== 'string' || !Object.hasOwn(current.sources, body.id)) fail('That message or lore entry no longer exists. Reload Mewmory.', 404);
     const state = mutateState(directories, locator, state => {
+        if (state.excludedSources.includes(body.id) === (body.exclude === true)) return;
         state.excludedSources = state.excludedSources.filter(id => id !== body.id);
         if (body.exclude === true) state.excludedSources.push(body.id);
         forgetReaders(state.records.filter(record => [...record.refs, ...(record.inputRefs || []), ...(record.evidenceRefs || [])]
             .some(ref => ref.id === body.id)), state);
         retireCoverage(state);
         state.preview = null;
+        state.recalls = [];
         state.index.pending = true;
     }, current.revision);
     return inspectState(state, readConfig(directories), body.filters);
@@ -476,7 +478,8 @@ route('/search', async (directories, body, signal) => {
     const dimension = mode !== 'keyword' && searchableVectorDimension(documents, state.index, config);
     if (dimension) {
         try {
-            const result = await embed(directories, config, [query], { query: true, dataTypes: ['chat'], signal });
+            // This is only the author's typed query, not a copy of any saved source.
+            const result = await embed(directories, config, [query], { query: true, dataTypes: [], signal });
             usage.push(result.usage);
             if (result.vectors[0]?.length !== dimension) fail('Embedding dimensions changed. Rebuild the search index.', 502);
             vector = result.vectors[0];

@@ -1270,8 +1270,15 @@ function moveChatFolder(scope, task) {
 
 function applyLifecycleTask(scope, task, host) {
     const dateRoot = scope.directories.root || path.dirname(scope.directories.groups);
-    if (task.task === 'chat-memory-remove') removeChatMemory(scope.directories, task.locator);
-    else if (task.task === 'loose-card-remove') {
+    if (['chat-memory-remove', 'source-memory-remove', 'chat-memory-rename', 'character-memory-rename'].includes(task.task)) {
+        // Chat and card files have already been committed. An unreadable auxiliary store must not freeze future saves.
+        try {
+            if (task.task === 'chat-memory-remove') removeChatMemory(scope.directories, task.locator);
+            else if (task.task === 'source-memory-remove') removeSourceMemory(scope.directories, task);
+            else if (task.task === 'chat-memory-rename') renameChatMemory(scope.directories, task.from, task.to, { resume: true });
+            else renameCharacterMemory(scope.directories, task.from, task.to, { resume: true });
+        } catch (error) { console.warn('Could not finish Mewmory maintenance after a saved chat or card change.', error); }
+    } else if (task.task === 'loose-card-remove') {
         const filename = roleplayEntityPath(scope, 'character', { avatar: task.avatar });
         withChatFileLocks([filename], () => {
             const stats = fs.lstatSync(filename, { bigint: true, throwIfNoEntry: false });
@@ -1281,15 +1288,12 @@ function applyLifecycleTask(scope, task, host) {
             fs.unlinkSync(filename);
             fsyncDirectorySync(path.dirname(filename));
         });
-    } else if (task.task === 'source-memory-remove') removeSourceMemory(scope.directories, task);
-    else if (task.task === 'date-added-create' || task.task === 'date-added-remove') {
+    } else if (task.task === 'date-added-create' || task.task === 'date-added-remove') {
         try {
             if (task.task === 'date-added-create') createEntityDateAdded(dateRoot, task.entity, task.id, task.time);
             else removeEntityDateAdded(dateRoot, task.entity, task.id);
         } catch (error) { console.warn('Could not update date-added metadata.', error); }
-    } else if (task.task === 'chat-memory-rename') renameChatMemory(scope.directories, task.from, task.to, { resume: true });
-    else if (task.task === 'character-memory-rename') renameCharacterMemory(scope.directories, task.from, task.to, { resume: true });
-    else if (task.task === 'chat-folder-move' || task.task === 'chat-folder-remove') moveChatFolder(scope, task);
+    } else if (task.task === 'chat-folder-move' || task.task === 'chat-folder-remove') moveChatFolder(scope, task);
     else runChatRecoveryBestEffort(() => clearChatRecoveryState(lifecycleRecoveryTarget(scope, task.locator, host)),
         'Failed to clear chat recovery state after deletion.');
 }

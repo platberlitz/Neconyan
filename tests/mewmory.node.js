@@ -21,6 +21,7 @@ const { applyExtraction, applyInterview, extractionInput, interviewInput, pendin
 const { forcedMatches, validateSelection, recall, recallInBackground } = await import('../src/mewmory/retrieval.js');
 const { expandNeighbours, hybridCandidates, lexicalSearch, searchDocuments, splitPassages, updateIndex } = await import('../src/mewmory/search.js');
 const { loadCurrentState } = await import('../src/mewmory/sources.js');
+const { prepareMewmoryPrompt } = await import('../src/mewmory/prepare.js');
 const { branchParentLocator, buildBranchMemoryState, chatPath, listStories, mutateState, normalizeLocator, readChatShared, readState, renameChatMemory, renameCharacterMemory, renameWorldMemory, removeChatMemory, removeSourceMemory, statePath, writeJson } = await import('../src/mewmory/store.js');
 const { ensureMewmoryMessageIds } = await import('../public/scripts/mewmory/message-identity.js');
 const { getCounter, getTokenizerModel } = await import('../src/mewmory/tokens.js');
@@ -403,23 +404,32 @@ test('a reply that reuses a current AI pick starts no second background search',
     const embedFn = async () => assert.fail('No embeddings are enabled');
     const scheduled = { embedFn, call: async (_directories, _config, role, _contract, input) => { counts.scheduled++; await held; return pick(role, input); } };
     const fresh = { embedFn, call: async (_directories, _config, role, _contract, input) => { counts.fresh++; return pick(role, input); } };
-    await recall(directories, locator, { query: 'gift' }, fresh);
-    const afterSearch = await recall(directories, locator, { local: true }, { ...scheduled, scheduleBackground: false });
+    const kept = () => {
+        const state = readState(directories, locator);
+        return state.timeline.map(ref => ({ ref, text: sourceAt(state, ref).text }));
+    };
+    const retained = kept();
+    await recall(directories, locator, { query: 'gift', retained }, fresh);
+    const afterSearch = await recall(directories, locator, { local: true, retained }, { ...scheduled, scheduleBackground: false });
     assert.deepEqual(afterSearch.inspection.selections, [], 'an author search must not supply the writer with an AI pick');
-    await recall(directories, locator, {}, fresh);
-    await recall(directories, locator, { query: 'unrelated gift' }, { ...fresh, call: async () => ({
+    await recall(directories, locator, { retained }, fresh);
+    await recall(directories, locator, { query: 'unrelated gift', retained }, { ...fresh, call: async () => ({
         value: { status: 'complete', selections: [], rejections: [], needsEvidence: [] }, usage: { role: 'selector' },
     }) });
     counts.fresh = 0;
-    const cached = await recall(directories, locator, { local: true }, scheduled);
-    assert.equal(cached.inspection.selections[0].recordId, 'event:gift');
-    await recallInBackground(directories, locator, {}, fresh);
+    for (let attempt = 0; attempt < 12; attempt++) {
+        const cached = await recall(directories, locator, { local: true, retained }, scheduled);
+        assert.equal(cached.inspection.selections[0]?.recordId, 'event:gift', `regeneration ${attempt + 1} reuses the pick`);
+    }
+    assert.equal(readState(directories, locator).recalls.length, 10, 'inspection history stays bounded');
+    await recallInBackground(directories, locator, { retained }, fresh);
     assert.deepEqual(counts, { scheduled: 0, fresh: 1 }, 'the cached pick still fits, so the reply scheduled nothing');
     write([...fixture.messages, { name: 'Mara', is_user: false, send_date: 'new-reply', mes: 'I kept it.' }]);
     await loadCurrentState(directories, locator);
     counts.fresh = 0;
-    await recall(directories, locator, { local: true }, scheduled);
-    const job = recallInBackground(directories, locator, {}, fresh);
+    const next = await recall(directories, locator, { local: true, retained: kept() }, scheduled);
+    assert.equal(next.inspection.selections[0]?.recordId, 'event:gift', 'the unchanged earlier prefix can supply picks for the next turn');
+    const job = recallInBackground(directories, locator, { retained: kept() }, fresh);
     release();
     await job;
     assert.deepEqual(counts, { scheduled: 1, fresh: 0 }, 'a new message schedules a fresh background search');
@@ -518,6 +528,37 @@ test('manual index rebuild owns every batch, persists its result and does not re
     await jobRunner.runJob(changed.job);
     assert.equal(getSavedJob(directories, changed.job.id).state, 'failed');
     assert.equal(calls, before, 'changed source scope is rejected before any provider call');
+});
+
+test('retrying a stale rebuild applies its reset only if it did not already happen', async t => {
+    const { directories } = disk(t);
+    const config = defaultConfig();
+    Object.assign(config.roles.embedding, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'test' });
+    saveConfig(directories, config);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; });
+    let paid = 0;
+    registerMewmoryOperations({ embedFn: async (_dirs, _config, inputs) => {
+        paid += inputs.length;
+        return { vectors: inputs.map(() => [1, 0]), usage: {} };
+    } });
+    t.after(() => registerMewmoryOperations());
+    setDirectoriesResolver(() => directories);
+    const start = (key, options) => startOperation(directories, 'test', 'index', { locator, reset: true, submissionKey: key }, options);
+    const initial = (await start('initial-index')).job;
+    await jobRunner.runJob(initial);
+    const firstCount = paid;
+    assert.ok(firstCount > 0);
+    const beforeReset = (await start('before-reset')).job;
+    const next = (await start('retry-before', { retryOf: beforeReset.id })).job;
+    await jobRunner.runJob(next);
+    assert.equal(paid, firstCount * 2, 'a previously queued rebuild did not reset the index');
+    const resume = (await start('retry-after', { retryOf: next.id })).job;
+    assert.equal(resume.intent.reset, true);
+    assert.equal((await start('retry-after', { retryOf: next.id })).job.id, resume.id);
+    await jobRunner.runJob(resume);
+    assert.equal(getSavedJob(directories, resume.id).state, 'completed');
+    assert.equal(paid, firstCount * 2, 'an applied reset does not discard valid paid vectors on retry');
 });
 
 test('a rebuild cannot publish vectors after its saved connection profile is edited', async t => {
@@ -811,10 +852,13 @@ test('automatic updates read only the most recently written chat', async t => {
 });
 
 test('a delayed worker leaves startup alone, then catches up', async t => {
+    const broken = disk(t);
     const { directories } = disk(t);
     const config = defaultConfig();
     Object.assign(config.roles.extractor, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'test' });
     config.autoUpdate = true;
+    saveConfig(broken.directories, config);
+    fs.writeFileSync(path.join(broken.directories.root, 'mewmory', 'config.json'), '{');
     saveConfig(directories, config);
     await loadCurrentState(directories, locator);
     mutateState(directories, locator, state => { state.enabled = true; });
@@ -823,7 +867,7 @@ test('a delayed worker leaves startup alone, then catches up', async t => {
         calls++;
         return { value: { records: [], interviews: [], activeNpcIds: [] }, usage: { role: 'extractor' } };
     };
-    const stop = startMewmoryWorker(async () => [directories], call, { firstScanDelayMs: 300 });
+    const stop = startMewmoryWorker(async () => [broken.directories, directories], call, { firstScanDelayMs: 300 });
     try {
         await new Promise(resolve => setTimeout(resolve, 150));
         assert.equal(calls, 0, 'no memory work during the startup grace period');
@@ -831,7 +875,7 @@ test('a delayed worker leaves startup alone, then catches up', async t => {
         for (let attempt = 0; attempt < 200 && readState(directories, locator).processing?.status !== 'complete'; attempt++) {
             await new Promise(resolve => setTimeout(resolve, 10));
         }
-        assert.equal(readState(directories, locator).processing?.status, 'complete');
+        assert.equal(readState(directories, locator).processing?.status, 'complete', 'a damaged account must not prevent the next from catching up');
         assert.ok(calls > 0);
     } finally {
         stop();
@@ -1574,6 +1618,17 @@ function giftHistory() {
     return { state, original, current };
 }
 
+test('malformed memory dependencies and interview turns are validation errors', () => {
+    const state = base();
+    const refs = [state.timeline[0]];
+    assert.throws(() => validateRecord(state, { id: 'event:invalid', kind: 'event', refs,
+        text: 'Mara accepted the gift.', dependencies: [null] }),
+    { status: 400, message: 'Dependency is in the wrong format.' });
+    assert.throws(() => validateRecord(state, { id: 'interview:invalid', kind: 'interview', ownerId: 'npc:mara',
+        subjectIds: ['gift'], refs, interview: [null] }),
+    { status: 400, message: 'Interview turn is in the wrong format.' });
+});
+
 /** Marks the given chat records as fully read by Mewmory, as a finished extraction would. */
 function rememberMessages(directories, locator, records) {
     mutateState(directories, locator, state => {
@@ -1709,6 +1764,21 @@ function disk(t, messages = fixture.messages) {
     writeJson(path.join(root, 'settings.json'), {});
     return { directories, filename, write };
 }
+
+test('preparing a reply with Mewmory off does not write an archive or require Mewmory settings', async t => {
+    const { directories } = disk(t);
+    const configPath = path.join(directories.root, 'mewmory', 'config.json');
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    fs.writeFileSync(configPath, '{');
+    const filename = statePath(directories, locator);
+    assert.equal((await prepareMewmoryPrompt(directories, { locator })).enabled, false);
+    assert.equal(fs.existsSync(filename), false);
+    await assert.rejects(prepareMewmoryPrompt(directories, { locator, mewmoryWaitSnapshot: 'previous' }), /turned off/);
+    mutateState(directories, locator, state => { state.enabled = false; });
+    fs.writeFileSync(filename, '{');
+    assert.equal((await prepareMewmoryPrompt(directories, { locator })).enabled, false, 'the recovery check confirms this chat is off');
+    assert.equal(fs.readFileSync(filename, 'utf8'), '{', 'preparing a reply must not overwrite the damaged archive');
+});
 
 test('server automatic hiding skips disabled settings and keeps the latest reply visible', async t => {
     const { directories } = disk(t);
@@ -2101,17 +2171,43 @@ test('hiding a message only to fit the context size keeps its memories, while a 
     assert.equal(recordEligible(state, memory), false);
 });
 
-test('deleted chat purges source copies, dependent memories, search and undo history', () => {
+test('a deleted message purges its source copies, dependent memories, vectors and undo history', async () => {
     const state = base();
     const memory = event(state);
     putRecord(state, { ...memory, text: 'This correction mentions the gift.', authorOverride: true });
-    state.index.vectors.private = { textHash: 'old', vector: [1] };
+    const config = defaultConfig();
+    config.roles.embedding.enabled = true;
+    const embedFn = async (_directories, _config, texts) => ({ vectors: texts.map(() => [1]), usage: {} });
+    await updateIndex(state, {}, config, { embedFn, limit: 100 });
+    const kept = state.index.vectors['entity:mara'];
+    const version = state.index.version;
+    const removedPassages = searchDocuments(state).filter(item => item.kind === 'source' && item.refs[0].id === memory.refs[0].id);
+    assert.ok(removedPassages.length);
+    state.index.build = { version: 'another-model', vectors: { ...state.index.vectors } };
     syncSources(state, fixture.messages.filter((_, index) => index !== 2), fixture.lore);
     assert.deepEqual(state.sources[memory.refs[0].id].revisions, []);
     assert.equal(state.sources[memory.refs[0].id].active, false);
     assert.equal(state.records.some(record => record.id === memory.id), false);
     assert.equal(state.audit.some(entry => entry.recordId === memory.id), false);
-    assert.deepEqual(state.index.vectors, {});
+    assert.equal(state.index.version, version);
+    assert.deepEqual(state.index.vectors['entity:mara'], kept);
+    assert.deepEqual(state.index.build.vectors['entity:mara'], kept);
+    for (const id of [memory.id, ...removedPassages.map(item => item.id)]) {
+        assert.equal(state.index.vectors[id], undefined);
+        assert.equal(state.index.build.vectors[id], undefined);
+    }
+});
+
+test('recall-only indexing does not mark the searchable archive ready without source vectors', async () => {
+    const state = base();
+    const config = defaultConfig();
+    config.roles.embedding.enabled = true;
+    const embedFn = async (_directories, _config, texts) => ({ vectors: texts.map(() => [1]), usage: {} });
+    await updateIndex(state, {}, config, { embedFn, recallOnly: true, limit: 100 });
+    assert.ok(state.index.vectors['entity:mara']);
+    assert.equal(inspectState(state, config).health.indexStatus, 'building');
+    await updateIndex(state, {}, config, { embedFn, limit: 100 });
+    assert.equal(inspectState(state, config).health.indexStatus, 'ready');
 });
 
 test('the extractor gets slim existing records, brief entries for absent characters and a shortened card it already read', () => {
@@ -3545,6 +3641,35 @@ test('character rename keeps story identity and supports rollback; deleting its 
     assert.equal(fs.existsSync(statePath(directories, locator)), false);
 });
 
+test('library changes skip unrelated damaged archives and can delete a damaged archive owned by the deleted card', async t => {
+    const { directories } = disk(t);
+    const unrelated = { ...locator, avatar: 'Other.png' };
+    const damaged = { ...locator, chat: 'Damaged' };
+    for (const target of [locator, unrelated, damaged]) mutateState(directories, target, state => { state.enabled = true; });
+    for (const target of [unrelated, damaged]) fs.writeFileSync(statePath(directories, target), '{damaged');
+    const next = { ...locator, avatar: 'Renamed.png' };
+    const before = readState(directories, locator).storyId;
+    const undo = renameCharacterMemory(directories, locator.avatar, next.avatar);
+    assert.equal(readState(directories, next).storyId, before);
+    undo();
+    removeSourceMemory(directories, { avatar: locator.avatar, deleteChats: true });
+    assert.equal(fs.existsSync(statePath(directories, locator)), false);
+    assert.equal(fs.existsSync(statePath(directories, damaged)), false);
+    assert.equal(fs.readFileSync(statePath(directories, unrelated), 'utf8'), '{damaged');
+});
+
+test('an unreadable shared catalogue does not prevent deletion of the selected private archive', t => {
+    const { directories } = disk(t);
+    const other = { ...locator, chat: 'Other story' };
+    for (const target of [locator, other]) mutateState(directories, target, state => { state.enabled = true; });
+    const shared = path.join(directories.root, 'mewmory', 'shared.json');
+    fs.writeFileSync(shared, '{damaged');
+    removeChatMemory(directories, locator);
+    assert.equal(fs.existsSync(statePath(directories, locator)), false);
+    assert.equal(fs.existsSync(statePath(directories, other)), true);
+    assert.equal(fs.readFileSync(shared, 'utf8'), '{damaged');
+});
+
 test('revoked model permissions are checked again before any outbound request', async t => {
     const { directories } = disk(t);
     const config = defaultConfig();
@@ -3989,6 +4114,12 @@ test('memories shared from one chat can be brought into another chat with the sa
     assert.equal(removeShared(directories, list.available[0].id).removed, 1);
     assert.throws(() => removeShared(directories, list.available[0].id), /no longer there/);
     assert.equal(listShared(directories, readState(directories, other)).available.length, 0);
+    shareRecords(directories, first, ['event:gift']);
+    fs.writeFileSync(statePath(directories, locator), '{damaged');
+    removeChatMemory(directories, locator);
+    assert.equal(listShared(directories, readState(directories, other)).available.length, 0);
+    assert.ok(recordEligible(readState(directories, other), record), 'a copy explicitly brought into another chat stays there');
+    assert.throws(() => shareRecords(directories, first, ['event:gift']), /changed|no longer/);
 });
 
 test('ask, contradiction and sharing routes report plain errors and keep the archive unchanged', async t => {

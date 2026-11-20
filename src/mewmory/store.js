@@ -424,6 +424,16 @@ export function readState(directories, locator) {
     return structuredClone(readStateShared(directories, locator));
 }
 
+/** Do not reconcile or write an archive just to discover that a chat has not opted in. */
+export function memoryEnabled(directories, locator) {
+    try {
+        return readStateShared(directories, locator).enabled === true;
+    } catch (error) {
+        if (error.status === 409 && readLibraryArchive(recoveryPath(directories, locator), true)?.enabled === false) return false;
+        throw error;
+    }
+}
+
 export function mutateState(directories, locator, mutate, expectedRevision, { existingOnly = false } = {}) {
     locator = normalizeLocator(locator);
     const filename = statePath(directories, locator);
@@ -576,11 +586,67 @@ export function removeChatMemory(directories, locator) {
     const filename = statePath(directories, locator);
     const release = acquireChatFileLock(filename);
     try {
+        const state = readLibraryArchive(filename);
+        const guard = readLibraryArchive(recoveryPath(directories, locator), true);
+        const storyIds = new Set([state?.storyId, guard?.storyId].filter(Boolean));
+        if (storyIds.size) {
+            try {
+                updateSharedMemories(directories, entries => entries.filter(entry => !storyIds.has(entry.storyId)));
+            } catch (error) {
+                if (error.status !== 409) throw error;
+                // Do not overwrite a damaged catalogue, or leave the deleted chat's private archive behind.
+                console.warn('Could not remove published copies from the unreadable Mewmory shared catalogue.');
+            }
+        }
         fs.rmSync(filename, { force: true });
         fs.rmSync(recoveryPath(directories, locator), { force: true });
     } finally {
         release();
     }
+}
+
+const SHARED_LIMIT = 500;
+
+export function readSharedMemories(directories) {
+    const saved = readJsonShared(path.join(directories.root, 'mewmory', 'shared.json'), null);
+    return Array.isArray(saved?.entries) ? saved.entries.filter(entry => entry && typeof entry === 'object' && entry.id) : [];
+}
+
+export function updateSharedMemories(directories, change) {
+    const filename = path.join(directories.root, 'mewmory', 'shared.json');
+    return withChatFileLocks([filename], () => {
+        const before = readSharedMemories(directories);
+        const entries = change(before).slice(-SHARED_LIMIT);
+        if (entries.length !== before.length || entries.some((entry, i) => entry !== before[i])) writeJson(filename, { entries });
+    });
+}
+
+function readLibraryArchive(filename, guard = false) {
+    try {
+        const state = readJsonShared(filename, null);
+        if (!state) return null;
+        const locator = normalizeLocator(state.locator);
+        const expectedHash = path.basename(filename, '.json');
+        if (state.format !== 1 || hash(locator) !== expectedHash || typeof state.storyId !== 'string') fail('Invalid Mewmory archive.', 409);
+        if (!guard) {
+            validateState(locator, state, expectedHash);
+            object(state.sources, 'Mewmory sources');
+            if (Object.values(state.sources).some(source => !source || typeof source.id !== 'string'
+                || !Array.isArray(source.revisions) || source.revisions.some(revision => !revision || typeof revision !== 'object'))) {
+                fail('Invalid Mewmory sources.', 409);
+            }
+        }
+        return state;
+    } catch (error) {
+        if (error.status !== 400 && error.status !== 409) throw error;
+        console.warn('Skipping an unreadable Mewmory file during library maintenance:', path.basename(filename));
+        return null;
+    }
+}
+
+function libraryArchives(directories, kind) {
+    const directory = path.join(directories.root, 'mewmory', kind);
+    return fs.existsSync(directory) ? fs.readdirSync(directory).filter(name => /^[a-f0-9]{64}\.json$/.test(name)) : [];
 }
 
 export function chatMemoryExists(directories, locator) {
@@ -631,22 +697,34 @@ export function renameChatMemory(directories, oldLocator, newLocator, { resume =
 export function removeSourceMemory(directories, { avatar = '', world = '', deleteChats = false }) {
     if (!directories.root) return;
     const directory = path.join(directories.root, 'mewmory', 'stories');
-    if (!fs.existsSync(directory)) return;
-    for (const filename of fs.readdirSync(directory).filter(name => /^[a-f0-9]{64}\.json$/.test(name))) {
-        const state = readJsonShared(path.join(directory, filename), null);
-        if (state?.format !== 1) continue;
-        if (avatar && deleteChats && !state.locator.group && state.locator.avatar === avatar) {
-            removeChatMemory(directories, state.locator);
-            continue;
+    const files = libraryArchives(directories, 'stories');
+    const deleted = new Set();
+    const matchingSources = state => Object.values(state.sources).filter(source => {
+        if (!source || (source.type !== 'character' && source.type !== 'lore')) return false;
+        const version = sourceAt(state, { id: source.id, revision: source.current });
+        return (avatar && source.type === 'character' && (version?.meta?.avatar === avatar
+            || source.id === 'character:' + hash(state.characterAliases?.[avatar] || avatar).slice(0, 32)))
+            || (world && source.type === 'lore' && (version?.meta?.world === world
+                || source.id === 'lore:' + hash([state.worldAliases?.[world] || world, version?.meta?.uid]).slice(0, 32)));
+    }).map(source => source.id);
+    if (avatar && deleteChats) {
+        for (const filename of new Set([...files, ...libraryArchives(directories, 'recovery')])) {
+            const state = readLibraryArchive(path.join(directory, filename))
+                || readLibraryArchive(path.join(directories.root, 'mewmory', 'recovery', filename), true);
+            if (state && !state.locator.group && state.locator.avatar === avatar) {
+                removeChatMemory(directories, state.locator);
+                deleted.add(filename);
+            }
         }
-        const ids = Object.values(state.sources).filter(source => {
-            const current = sourceAt(state, { id: source.id, revision: source.current });
-            return (avatar && source.type === 'character' && (current?.meta.avatar === avatar
-                || source.id === 'character:' + hash(state.characterAliases?.[avatar] || avatar).slice(0, 32)))
-                || (world && source.type === 'lore' && (current?.meta.world === world
-                    || source.id === 'lore:' + hash([state.worldAliases?.[world] || world, current?.meta.uid]).slice(0, 32)));
-        }).map(source => source.id);
-        if (ids.length) mutateState(directories, state.locator, current => { purgeSources(current, ids); }, state.revision);
+    }
+    for (const filename of files) {
+        if (deleted.has(filename)) continue;
+        const state = readLibraryArchive(path.join(directory, filename));
+        if (!state || !matchingSources(state).length) continue;
+        mutateState(directories, state.locator, current => {
+            const ids = matchingSources(current);
+            if (ids.length) purgeSources(current, ids);
+        }, undefined, { existingOnly: true });
     }
 }
 
@@ -681,15 +759,14 @@ function renameLibraryMemory(directories, type, oldName, newName, { resume = fal
     };
     if (!directories.root) return undo;
     const directory = path.join(directories.root, 'mewmory', 'stories');
-    if (!fs.existsSync(directory)) return undo;
     try {
-        for (const filename of fs.readdirSync(directory).filter(name => /^[a-f0-9]{64}\.json$/.test(name))) {
-            const state = readJsonShared(path.join(directory, filename), null);
-            if (state?.format !== 1) continue;
+        for (const filename of libraryArchives(directories, 'stories')) {
+            const state = readLibraryArchive(path.join(directory, filename));
+            if (!state) continue;
             const canonical = state[aliasKey]?.[oldName] || oldName;
             const ownsChat = type === 'character' && !state.locator.group && state.locator.avatar === oldName;
             const ids = Object.values(state.sources).filter(source => source.type === type
-                && sourceAt(state, { id: source.id, revision: source.current })?.meta[metaKey] === oldName).map(source => source.id);
+                && sourceAt(state, { id: source.id, revision: source.current })?.meta?.[metaKey] === oldName).map(source => source.id);
             if (!ownsChat && !ids.length) continue;
             const change = { before: state.locator, after: ownsChat ? { ...state.locator, avatar: newName } : state.locator,
                 aliases: structuredClone(state[aliasKey] || {}), ids, moved: false, aliased: false };

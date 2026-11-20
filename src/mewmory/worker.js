@@ -291,7 +291,13 @@ export function startMewmoryWorker(getDirectories, call, { firstScanDelayMs = 0 
         scanning = true;
         try {
             const users = await getDirectories();
-            for (let index = 0; index < users.length; index++) await scanProcessing(users[(firstUser + index) % users.length], call, { reconcile });
+            for (let index = 0; index < users.length; index++) {
+                try {
+                    await scanProcessing(users[(firstUser + index) % users.length], call, { reconcile });
+                } catch (error) {
+                    console.warn('[Mewmory] Could not scan an account’s saved stories:', error.message);
+                }
+            }
             firstUser = users.length ? (firstUser + 1) % users.length : 0;
         } catch (error) {
             console.warn('[Mewmory] Could not scan saved stories:', error.message);

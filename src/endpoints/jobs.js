@@ -428,8 +428,8 @@ router.post('/:id/retry', async (request, response) => {
         }
         if (job.error?.status === 409 && ['mewmory.index', 'mewmory.recall'].includes(job.type)) {
             const accepted = await startOperation(directories, owner, job.type.split('.')[1], {
-                ...job.intent, reset: false, submissionKey: randomUUID(),
-            });
+                ...job.intent, submissionKey: randomUUID(),
+            }, { retryOf: job.id });
             return response.json(accepted);
         }
         return response.json({ job: updateJob(directories, job.id, current => ({ state: 'queued', finishedAt: null, error: null, dismissed: false, dismissedReason: undefined, ...explicitRetryRecovery(current) })).job });

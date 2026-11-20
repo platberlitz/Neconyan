@@ -13,7 +13,7 @@ import { mutateState, normalizeLocator } from './store.js';
 const types = new Set(['recall', 'index']);
 const targetFor = (locator, branchId) => ({ kind: 'mewmory', id: hash(locator), branchId });
 
-export async function startOperation(directories, owner, operation, body) {
+export async function startOperation(directories, owner, operation, body, { retryOf } = {}) {
     validateOwner(owner);
     if (!types.has(operation)) fail('Mewmory does not recognise that action.');
     const locator = normalizeLocator(body.locator);
@@ -32,7 +32,8 @@ export async function startOperation(directories, owner, operation, body) {
     const accepted = acceptJob(directories, { owner, type: 'mewmory.' + operation, submissionKey: key,
         intent, target: targetFor(locator, state.branchId),
         config: { fingerprint: generationFingerprint(state, config), revision: config.revision,
-            ...(operation === 'index' ? { embeddingVersion: roleVersion(config, 'embedding') } : {}) },
+            ...(operation === 'index' ? { embeddingVersion: roleVersion(config, 'embedding'),
+                ...(retryOf && state.indexOperation === retryOf ? { resumeIndexOperation: retryOf } : {}) } : {}) },
         label: operation === 'index' ? 'Rebuild memory search index' : 'Recall memory',
     });
     noteOwner(owner);
@@ -80,7 +81,8 @@ export function registerMewmoryOperations({ call = callJsonRole, embedFn = embed
             if (state.indexOperation !== job.id) {
                 state = mutateState(directories, locator, current => {
                     assertCurrent(current, readConfig(directories), job, embeddingVersion);
-                    if (job.intent.reset) current.index = { version: '', vectors: {}, pending: true };
+                    const resetApplied = job.config?.resumeIndexOperation && current.indexOperation === job.config.resumeIndexOperation;
+                    if (job.intent.reset && !resetApplied) current.index = { version: '', vectors: {}, pending: true };
                     current.indexOperation = job.id;
                 }, state.revision);
             }

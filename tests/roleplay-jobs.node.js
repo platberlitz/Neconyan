@@ -63,6 +63,28 @@ test('each typed effect writes once and a completed replay never writes again', 
     assert.ok(!messages(f).some(message => message.mes === 'Again'));
 });
 
+for (const effect of ['append', 'replace', 'continue', 'swipe', 'alternative']) {
+    test(`off-the-record ${effect} excludes only the new or changed reply`, t => {
+        const f = fixture(t);
+        f.records[0].chat_metadata.mewmory_off_record = true;
+        fs.writeFileSync(f.filename, f.records.map(row => JSON.stringify(row)).join('\n'));
+        const newMessage = { name: 'Nova', is_user: false, mes: 'New reply' };
+        const anchor = effect === 'append' ? {} : effect === 'replace' ? { range: { start: 1, count: 1 } } : { message: 1 };
+        const output = effect === 'append' ? { message: newMessage } : effect === 'replace' ? { messages: [newMessage] } : { text: ' more' };
+        const { jobId } = admit(f, effect, effect, anchor);
+        applyRoleplayJobEffect(f.scope, stamp(f.scope), { operationKey: effect, jobId, output }, host);
+        const saved = messages(f);
+        const reply = saved.at(-1);
+        assert.equal(saved[0].extra.mewmoryExclude, undefined);
+        assert.equal(reply.extra?.mewmoryExclude, effect === 'alternative' ? undefined : true);
+        if (['continue', 'swipe', 'alternative'].includes(effect)) {
+            const changed = effect === 'continue' ? 0 : 2;
+            assert.equal(reply.swipe_info[changed].extra?.mewmoryExclude, true);
+            assert.equal(reply.swipe_info[effect === 'continue' ? 1 : 0].extra?.mewmoryExclude, undefined);
+        }
+    });
+}
+
 test('an open job keeps its finished write receipt through many later saves and never writes twice', async t => {
     const f = fixture(t);
     const { roleplayHash, withRoleplayAccountLock, roleplayLease, saveRoleplayAccount } = await import('../src/roleplay-store.js');
