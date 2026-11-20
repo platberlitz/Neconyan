@@ -22466,11 +22466,15 @@ function openPersonaAppendicesManager() {
 
 function positionPersonaPicker(picker, bubble) {
     const bubbleRect = bubble.getBoundingClientRect();
+    // The Persona bubble scales about its centre on hover. Anchor to its layout
+    // edges so leaving the bubble to click a note doesn't move the picker.
+    const bubbleLeft = bubbleRect.left + (bubbleRect.width - bubble.offsetWidth) / 2;
+    const bubbleTop = bubbleRect.top + (bubbleRect.height - bubble.offsetHeight) / 2;
     // Measure without hiding or moving the picker. The reveal only translates it.
     const { width, height } = picker.getBoundingClientRect();
     const viewportPadding = 8;
-    const left = Math.max(viewportPadding, Math.min(bubbleRect.left, window.innerWidth - width - viewportPadding));
-    const top = Math.max(viewportPadding, bubbleRect.top - height - viewportPadding);
+    const left = Math.max(viewportPadding, Math.min(bubbleLeft, window.innerWidth - width - viewportPadding));
+    const top = Math.max(viewportPadding, bubbleTop - height - viewportPadding);
     picker.style.left = `${left}px`;
     picker.style.top = `${top}px`;
 }

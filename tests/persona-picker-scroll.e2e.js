@@ -3,12 +3,18 @@ import { expect, test } from '@playwright/test';
 import { installSyntheticLongChat, isolateSettingsSaves, openQuietChatForSmoke, waitForAnimationFrames } from './chat-scroll-regression-helpers.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
 
+test.use({ serviceWorkers: 'block' });
+
 for (const phone of [true, false]) {
     test.describe(`Bottom bar persona scroll on ${phone ? 'phone' : 'desktop'}`, () => {
         test.use(phone ? IPHONE_SAFARI_CONTEXT : { viewport: { width: 1280, height: 900 } });
         const press = phone ? locator => locator.tap() : locator => locator.click();
         const pressAt = phone ? (page, x, y) => page.touchscreen.tap(x, y) : (page, x, y) => page.mouse.click(x, y);
         const checkFocus = phone ? () => {} : checkbox => expect(checkbox).toBeFocused();
+        const hoverBubble = phone ? () => {} : async bubble => {
+            await bubble.hover();
+            await bubble.evaluate(element => Promise.all(element.getAnimations().map(animation => animation.finished)));
+        };
 
         test.beforeEach(async ({ page, context }) => {
             if (phone) await installIPhoneSafari(context, { standalone: true });
@@ -21,16 +27,20 @@ for (const phone of [true, false]) {
             await openQuietChatForSmoke(page);
             await expect(page.locator('#neconyan-home-skeleton')).toBeHidden();
             if (phone) await applyIOSOnlyCss(page);
-            await installSyntheticLongChat(page, { messageCount: 24 });
+            await installSyntheticLongChat(page, { messageCount: 10 });
             await page.evaluate(() => {
                 const ctx = window.SillyTavern.getContext();
                 const { powerUserSettings: settings, userAvatar } = ctx;
+                delete ctx.chatMetadata.persona_appendices;
                 settings.personas = { [userAvatar]: 'Original Persona' };
-                settings.persona_descriptions[userAvatar] = {
-                    description: 'Original description.',
-                    appendices: Array.from({ length: 10 }, (_, index) => ({
-                        id: `note-${index + 1}`, name: `Scenario ${index + 1}`, description: `Details ${index + 1}`,
-                    })),
+                settings.persona_description = 'Original persona for the scroll test.';
+                settings.persona_descriptions = {
+                    [userAvatar]: {
+                        description: settings.persona_description,
+                        appendices: Array.from({ length: 10 }, (_, index) => ({
+                            id: `scroll-note-${index + 1}`, name: `Scenario ${index + 1}`, description: `Details ${index + 1}`,
+                        })),
+                    },
                 };
                 for (let i = 1; i <= 9; i++) {
                     settings.personas[`alternate-${i}.png`] = `Alternate ${i}`;
@@ -53,12 +63,15 @@ for (const phone of [true, false]) {
             const scrollTop = locator => locator.evaluate(element => element.scrollTop);
             const chatScroll = await scrollTop(chat);
             expect(chatScroll).toBeGreaterThan(0);
+            // The desktop bubble scales on hover. Moving to a note must not shift the picker.
+            await hoverBubble(bubble);
             await press(bubble);
             const alternate = personas.getByRole('button', { name: 'Alternate 9', exact: true });
             await expect(personas.getByRole('button', { pressed: true })).toBeFocused();
             await alternate.scrollIntoViewIfNeeded();
             expect(await scrollTop(personas)).toBeGreaterThan(0);
             const checkbox = notes.getByRole('checkbox', { name: 'Scenario 10', exact: true });
+            await expect(checkbox).not.toBeChecked();
             await checkbox.scrollIntoViewIfNeeded();
             // Start after the intentional opening animation, so a second reveal is a regression.
             await picker.evaluate(element => Promise.all(element.getAnimations().map(animation => animation.finished)));
@@ -68,8 +81,8 @@ for (const phone of [true, false]) {
             const alternateY = alternateBefore.y + alternateBefore.height / 2;
             const notesScroll = await scrollTop(notes);
             expect(notesScroll).toBeGreaterThan(0);
-            const probe = await picker.evaluateHandle(element => {
-                const checkbox = element.querySelector('input[value="note-10"]');
+            const probe = await checkbox.evaluateHandle(checkbox => {
+                const element = checkbox.closest('#sb-persona-picker');
                 const state = { detached: false, hidden: false, revealed: false, saved: false, done: false };
                 const frame = () => {
                     const current = document.getElementById(element.id);
