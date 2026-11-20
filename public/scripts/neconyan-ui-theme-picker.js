@@ -74,17 +74,27 @@ function holdInPlace(anchor, { grid, duration = 0 } = {}) {
     let end = 0;
     let frame = 0;
     let passes = 0;
+    let observer;
     const stop = () => {
         cancelAnimationFrame(frame);
+        observer?.disconnect();
         for (const type of userScrollEvents) window.removeEventListener(type, stop, true);
     };
-    const settle = () => {
-        if (!anchor.isConnected) return stop();
-        end ||= performance.now() + duration;
+    const restore = () => {
         if (window.scrollY !== pageY) window.scrollTo(pageX, pageY);
         if (grid && grid.scrollTop !== gridTop) grid.scrollTop = gridTop;
         const drift = anchor.getBoundingClientRect().top - top;
         if (scroller && Math.abs(drift) >= 1) scroller.scrollTop += drift;
+    };
+    const settle = () => {
+        if (!anchor.isConnected) return stop();
+        end ||= performance.now() + duration;
+        restore();
+        if (!passes && !duration && scroller) {
+            // A Settings update can run after our frame callback. Correct its DOM changes before paint.
+            observer = new MutationObserver(() => anchor.isConnected ? restore() : stop());
+            observer.observe(scroller, { subtree: true, childList: true, attributeFilter: ['class', 'style', 'hidden'] });
+        }
         if (++passes < 3 || performance.now() < end) frame = requestAnimationFrame(settle);
         else stop();
     };

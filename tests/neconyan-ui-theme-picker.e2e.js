@@ -112,7 +112,14 @@ for (const width of [393, 1280]) {
                         const spacer = document.createElement('div');
                         spacer.style.height = '220px';
                         row.before(spacer);
-                        row.dataset.layoutSettled = 'true';
+                        // Sample after this frame renders, not after a later frame can fix it.
+                        const channel = new window.MessageChannel();
+                        channel.port1.onmessage = () => {
+                            row.dataset.firstPaintedTop = String(row.getBoundingClientRect().top);
+                            channel.port1.close();
+                            channel.port2.close();
+                        };
+                        channel.port2.postMessage(null);
                     });
                 }, { once: true });
                 return { top: row.getBoundingClientRect().top, pageY: window.scrollY };
@@ -124,7 +131,9 @@ for (const width of [393, 1280]) {
             if (phone) await page.touchscreen.tap(x, y);
             else await page.mouse.click(x, y);
             await expect(dark).toHaveAttribute('aria-pressed', 'true');
-            await expect(filters).toHaveAttribute('data-layout-settled', 'true');
+            await expect(filters).toHaveAttribute('data-first-painted-top', /\S/);
+            const firstPaintedTop = Number(await filters.getAttribute('data-first-painted-top'));
+            expect(Math.abs(firstPaintedTop - before.top)).toBeLessThan(2);
             const after = await filters.evaluate(row => new Promise(resolve => {
                 window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve({ top: row.getBoundingClientRect().top, pageY: window.scrollY })));
             }));
