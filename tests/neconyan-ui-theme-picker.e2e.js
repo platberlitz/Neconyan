@@ -81,6 +81,74 @@ for (const width of [393, 1280, 320]) {
     });
 }
 
+for (const width of [393, 1280]) {
+    test(`tone filters keep the Settings viewport in place at ${width}px`, async ({ browser }) => {
+        const phone = width === 393;
+        const context = await browser.newContext({ ...(phone ? IPHONE_SAFARI_CONTEXT : {}), viewport: { width, height: phone ? 852 : 900 }, serviceWorkers: 'block', reducedMotion: 'reduce' });
+        if (phone) await installIPhoneSafari(context, { standalone: true });
+        const page = await context.newPage();
+        try {
+            await prepare(page);
+            await page.goto('/', { waitUntil: 'domcontentloaded' });
+            await openPicker(page);
+            if (phone) await applyIOSOnlyCss(page);
+            const gallery = page.locator('#nn-ui-theme-gallery');
+            const grid = gallery.locator('.nn-ui-theme-grid');
+            const filters = gallery.locator('.nn-ui-theme-filters');
+            const all = filters.getByRole('button', { name: 'All' });
+            const dark = filters.getByRole('button', { name: 'Dark' });
+            const light = filters.getByRole('button', { name: 'Light' });
+            await filters.scrollIntoViewIfNeeded();
+            await expect(all).toHaveAttribute('aria-pressed', 'true');
+            const allCount = await grid.locator('.nn-ui-theme-card:visible').count();
+
+            // Model a late Settings layout update in a browser without native scroll anchoring.
+            await page.addStyleTag({ content: '.sb-shell-panel-scroller { overflow-anchor: none; }' });
+            const before = await filters.evaluate(row => {
+                const scroller = row.closest('.sb-shell-panel-scroller');
+                scroller.scrollTop += row.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 240;
+                row.addEventListener('click', () => {
+                    requestAnimationFrame(() => {
+                        const spacer = document.createElement('div');
+                        spacer.style.height = '220px';
+                        row.before(spacer);
+                        row.dataset.layoutSettled = 'true';
+                    });
+                }, { once: true });
+                return { top: row.getBoundingClientRect().top, pageY: window.scrollY };
+            });
+            await grid.evaluate(element => { element.scrollTop = element.scrollHeight; });
+            expect(await grid.evaluate(element => element.scrollTop)).toBeGreaterThan(320);
+            const box = await dark.boundingBox();
+            const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
+            if (phone) await page.touchscreen.tap(x, y);
+            else await page.mouse.click(x, y);
+            await expect(dark).toHaveAttribute('aria-pressed', 'true');
+            await expect(filters).toHaveAttribute('data-layout-settled', 'true');
+            const after = await filters.evaluate(row => new Promise(resolve => {
+                requestAnimationFrame(() => requestAnimationFrame(() => resolve({ top: row.getBoundingClientRect().top, pageY: window.scrollY })));
+            }));
+            expect(Math.abs(after.top - before.top)).toBeLessThan(2);
+            expect(after.pageY).toBe(before.pageY);
+            expect(await grid.evaluate(element => element.scrollTop)).toBe(0);
+
+            const darkCount = await grid.locator('.nn-ui-theme-card:visible').count();
+            expect(darkCount).toBeGreaterThan(0);
+            expect(darkCount).toBeLessThan(allCount);
+            await light.press('Enter');
+            await expect(light).toBeFocused();
+            await expect(light).toHaveAttribute('aria-pressed', 'true');
+            await expect(grid.locator('.nn-ui-theme-card:visible')).toHaveCount(allCount - darkCount);
+            await all.press('Space');
+            await expect(all).toBeFocused();
+            await expect(all).toHaveAttribute('aria-pressed', 'true');
+            await expect(grid.locator('.nn-ui-theme-card:visible')).toHaveCount(allCount);
+        } finally {
+            await context.close();
+        }
+    });
+}
+
 test('picking a theme keeps the tapped card under the finger when content above it resizes', async ({ browser }) => {
     const context = await browser.newContext({ ...IPHONE_SAFARI_CONTEXT, viewport: { width: 393, height: 852 }, serviceWorkers: 'block', reducedMotion: 'reduce' });
     await installIPhoneSafari(context, { standalone: true });
