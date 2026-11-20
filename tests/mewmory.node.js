@@ -296,6 +296,26 @@ test('ranked recall works without a selector and local replies never dispatch mo
     assert.equal(local.inspection.status, 'local');
 });
 
+test('meaning recall falls back without paying for a query when no matching documents can be embedded', async t => {
+    const { directories } = disk(t);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; event(state); });
+    const config = defaultConfig();
+    config.writerTokenizer = 'cl100k_base';
+    config.retrieval.mode = 'semantic';
+    // The query is derived from chat, but the only recall candidate is a saved record.
+    Object.assign(config.roles.embedding, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'embedding', allowedData: ['chat'] });
+    saveConfig(directories, config);
+    const calls = [];
+    const result = await recall(directories, locator, { query: 'gift' }, { embedFn: async (_dirs, _config, inputs) => {
+        calls.push(inputs);
+        return { vectors: inputs.map(() => [1, 0]), usage: {} };
+    } });
+    assert.deepEqual(calls, []);
+    assert.equal(result.inspection.retrieval.keywordFallback, true);
+    assert.ok(result.selected.includes('event:gift'));
+});
+
 test('recall offers short saved memory entries, not raw chat passages, unless passages are switched on', async t => {
     const { directories, write } = disk(t);
     write([...fixture.messages, { name: 'Mara', is_user: false, send_date: 'long-reply', mes: 'The gift glints. '.repeat(600) }]);
@@ -383,7 +403,13 @@ test('a reply that reuses a current AI pick starts no second background search',
     const embedFn = async () => assert.fail('No embeddings are enabled');
     const scheduled = { embedFn, call: async (_directories, _config, role, _contract, input) => { counts.scheduled++; await held; return pick(role, input); } };
     const fresh = { embedFn, call: async (_directories, _config, role, _contract, input) => { counts.fresh++; return pick(role, input); } };
+    await recall(directories, locator, { query: 'gift' }, fresh);
+    const afterSearch = await recall(directories, locator, { local: true }, { ...scheduled, scheduleBackground: false });
+    assert.deepEqual(afterSearch.inspection.selections, [], 'an author search must not supply the writer with an AI pick');
     await recall(directories, locator, {}, fresh);
+    await recall(directories, locator, { query: 'unrelated gift' }, { ...fresh, call: async () => ({
+        value: { status: 'complete', selections: [], rejections: [], needsEvidence: [] }, usage: { role: 'selector' },
+    }) });
     counts.fresh = 0;
     const cached = await recall(directories, locator, { local: true }, scheduled);
     assert.equal(cached.inspection.selections[0].recordId, 'event:gift');
@@ -466,6 +492,7 @@ test('manual index rebuild owns every batch, persists its result and does not re
     let calls = 0;
     registerMewmoryOperations({ embedFn: async (_dirs, _config, inputs) => {
         calls++;
+        assert.equal(readState(directories, locator).index.version, '', 'the rebuilding vector space is not published partway through');
         if (calls === 2) write([...messages, { name: 'Mara', mes: 'Arrived while rebuilding', is_user: false }]);
         return { vectors: inputs.map(() => [1, 0]), usage: { role: 'embedding' } };
     } });
@@ -491,6 +518,31 @@ test('manual index rebuild owns every batch, persists its result and does not re
     await jobRunner.runJob(changed.job);
     assert.equal(getSavedJob(directories, changed.job.id).state, 'failed');
     assert.equal(calls, before, 'changed source scope is rejected before any provider call');
+});
+
+test('a rebuild cannot publish vectors after its saved connection profile is edited', async t => {
+    const { directories } = disk(t);
+    const profile = { id: 'embedding', name: 'Embeddings', api: 'custom', 'api-url': 'http://127.0.0.1:1/v1', model: 'first' };
+    const writeProfile = model => writeJson(path.join(directories.root, 'settings.json'), {
+        extension_settings: { connectionManager: { profiles: [{ ...profile, model }] } },
+    });
+    writeProfile('first');
+    const config = defaultConfig();
+    Object.assign(config.roles.embedding, { enabled: true, profileId: profile.id });
+    saveConfig(directories, config);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; });
+    registerMewmoryOperations({ embedFn: async (_dirs, _config, inputs) => {
+        writeProfile('second');
+        return { vectors: inputs.map(() => [1, 0]), usage: { role: 'embedding' } };
+    } });
+    t.after(() => registerMewmoryOperations());
+    setDirectoriesResolver(() => directories);
+    const { job } = await startOperation(directories, 'test', 'index', { locator, reset: true, submissionKey: 'index-profile-changed' });
+    await jobRunner.runJob(job);
+    assert.equal(getSavedJob(directories, job.id).state, 'failed');
+    assert.deepEqual(readState(directories, locator).index.vectors, {});
+    assert.equal(readArtifact(directories, job.id, 'result'), undefined);
 });
 
 test('server processing owns the whole backfill, deduplicates starts and resumes persisted work', async t => {

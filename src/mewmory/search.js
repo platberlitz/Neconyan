@@ -97,13 +97,27 @@ export function cosine(left, right) {
     return a && b ? dot / Math.sqrt(a * b) : -1;
 }
 
+function matchesVector(entry, textHash, dimension) {
+    return Array.isArray(entry?.vector) && entry.textHash === textHash && entry.vector.length > 0
+        && (!dimension || entry.vector.length === dimension);
+}
+
+export function searchableVectorDimension(documents, index, config) {
+    if (!config.roles.embedding.enabled || index.version !== roleVersion(config, 'embedding')) return undefined;
+    for (const document of documents) {
+        const entry = index.vectors[document.id];
+        if (matchesVector(entry, hash(document.searchText))) return entry.vector.length;
+    }
+    return undefined;
+}
+
 export function rankedCandidates(documents, query, vector, index, limit, options = {}) {
     const settings = { ...RAG_DEFAULTS, ...options };
     // An unavailable vector space always leaves keyword recovery available.
     const mode = settings.mode === 'semantic' && !vector ? 'keyword' : settings.mode;
     const lexical = mode !== 'semantic' ? lexicalSearch(documents, query, documents.length) : [];
     // ponytail: linear per-story vector search; use a measured ANN backend when large archives outgrow it.
-    const semantic = vector && mode !== 'keyword' ? documents.filter(document => index[document.id]?.textHash === hash(document.searchText))
+    const semantic = vector && mode !== 'keyword' ? documents.filter(document => matchesVector(index[document.id], hash(document.searchText), vector.length))
         .map(document => ({ document, score: cosine(vector, index[document.id].vector) }))
         .filter(item => item.score > settings.minSimilarity).sort((a, b) => b.score - a.score) : [];
     const scores = new Map();
@@ -152,14 +166,19 @@ export async function updateIndex(state, directories, config, { signal, limit = 
     const targets = recallOnly ? recallPool(documents, config) : documents;
     const sameVersion = state.index.version === version;
     const existing = sameVersion ? state.index.vectors : state.index.build?.version === version ? state.index.build.vectors : {};
-    const next = Object.fromEntries(documents.filter(document => existing[document.id]?.textHash === hash(document.searchText))
-        .map(document => [document.id, existing[document.id]]));
+    const next = {};
+    let dimension;
+    for (const document of documents) {
+        const entry = existing[document.id];
+        if (!matchesVector(entry, hash(document.searchText), dimension)) continue;
+        dimension ||= entry.vector.length;
+        next[document.id] = entry;
+    }
     const missing = targets.filter(document => !next[document.id]);
     const usage = [];
     const paid = {};
     const policy = config.roles.embedding.nativePolicy;
     const batchSize = Math.min(config.retrieval?.batchSize || 10, policy?.source === 'vertexai' ? policy.settings.model.startsWith('gemini-embedding-') ? 1 : 5 : 10);
-    let dimension = Object.values(next)[0]?.vector.length;
     for (let start = 0; start < Math.min(limit, missing.length); start += batchSize) {
         signal?.throwIfAborted();
         const batch = missing.slice(start, Math.min(start + batchSize, limit));
@@ -185,8 +204,8 @@ export async function updateIndex(state, directories, config, { signal, limit = 
 /**
  * Keep paid vectors from one or more index snapshots, but only where the embedding role still has
  * the same version, the document is still current and allowed, and its search text is unchanged.
- * Later snapshots take precedence when two entries describe the same current text; an earlier
- * valid entry is still used if the later one is stale. Used when a record or message changes
+ * The first usable snapshot determines the dimension. Later compatible entries take precedence
+ * when both describe the same current text. Used when a record or message changes
  * while a background recall is still embedding the batch.
  */
 export function mergeVectorIndex(state, config, indexes = [state.index]) {
@@ -194,20 +213,16 @@ export function mergeVectorIndex(state, config, indexes = [state.index]) {
     const allowedData = config.roles.embedding.allowedData || [];
     const documents = searchDocuments(state, Infinity, config)
         .filter(document => allowedData.includes(document.dataType));
-    const candidates = new Map();
-    for (const index of indexes) {
-        const vectors = index?.version === version ? index.vectors : index?.build?.version === version ? index.build.vectors : {};
-        for (const [id, entry] of Object.entries(vectors || {})) {
-            const list = candidates.get(id) || [];
-            list.push(entry);
-            candidates.set(id, list);
-        }
-    }
+    const textHashes = new Map(documents.map(document => [document.id, hash(document.searchText)]));
     const vectors = {};
-    for (const document of documents) {
-        const textHash = hash(document.searchText);
-        const entry = candidates.get(document.id)?.findLast(candidate => candidate?.textHash === textHash);
-        if (entry) vectors[document.id] = entry;
+    let dimension;
+    for (const index of indexes) {
+        const entries = index?.version === version ? index.vectors : index?.build?.version === version ? index.build.vectors : {};
+        for (const [id, entry] of Object.entries(entries || {})) {
+            if (!textHashes.has(id) || !matchesVector(entry, textHashes.get(id), dimension)) continue;
+            dimension ||= entry.vector.length;
+            vectors[id] = entry;
+        }
     }
     return { version, vectors, remaining: documents.length - Object.keys(vectors).length };
 }

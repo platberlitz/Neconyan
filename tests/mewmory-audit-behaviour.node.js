@@ -1,6 +1,7 @@
 /* eslint playwright/expect-expect: off -- These checks use node:assert, not Playwright assertions. */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -235,6 +236,24 @@ test('G5 disabling after acceptance still fails the saved job at runtime', async
     assert.equal(embeddings, 0, 'no provider work starts for a chat switched off after acceptance');
 });
 
+async function serveIndex(t, directories) {
+    const express = (await import('express')).default;
+    const { router } = await import('../src/endpoints/mewmory.js');
+    const app = express();
+    app.use(express.json());
+    app.use((request, response, next) => { request.user = { directories }; next(); });
+    app.use(router);
+    const server = await new Promise(resolve => {
+        const listener = app.listen(0, '127.0.0.1', () => resolve(listener));
+    });
+    t.after(() => new Promise(resolve => server.close(resolve)));
+
+    return body => fetch('http://127.0.0.1:' + server.address().port + '/index', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ locator, ...body }),
+    });
+}
+
 test('G5 the direct index endpoint refuses a disabled chat before any work', async t => {
     const fixture = disk(t);
     writeChat(fixture, [message('A first scene.', { user: true, id: 'o4' })]);
@@ -242,23 +261,35 @@ test('G5 the direct index endpoint refuses a disabled chat before any work', asy
     mutateState(fixture.directories, locator, state => {
         state.index = { version: 'saved-version', vectors: { kept: { textHash: 'kept', vector: [1] } }, pending: false };
     });
-
-    const express = (await import('express')).default;
-    const { router } = await import('../src/endpoints/mewmory.js');
-    const app = express();
-    app.use(express.json());
-    app.use((request, response, next) => { request.user = { directories: fixture.directories }; next(); });
-    app.use(router);
-    const server = await new Promise(resolve => {
-        const listener = app.listen(0, '127.0.0.1', () => resolve(listener));
-    });
-    t.after(() => new Promise(resolve => server.close(resolve)));
-
-    const response = await fetch('http://127.0.0.1:' + server.address().port + '/index', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ locator, reset: true, background: false }),
-    });
+    const index = await serveIndex(t, fixture.directories);
+    const response = await index({ reset: true });
     assert.equal(response.status, 409);
     assert.equal((await response.json()).error, 'Turn on Mewmory for this chat first.');
     assert.equal(readState(fixture.directories, locator).index.version, 'saved-version', 'a refused request changes nothing');
+});
+
+test('the direct index cannot publish a batch after embedding permissions change', async t => {
+    const fixture = disk(t);
+    writeChat(fixture, [message('A first scene.', { user: true, id: 'o5' })]);
+    await enableChat(fixture.directories);
+    const provider = http.createServer(async (request, response) => {
+        let body = '';
+        for await (const chunk of request) body += chunk;
+        const config = readConfig(fixture.directories);
+        config.roles.embedding.allowedData = ['memory'];
+        saveConfig(fixture.directories, config);
+        response.setHeader('Content-Type', 'application/json');
+        response.end(JSON.stringify({ data: JSON.parse(body).input.map((_, index) => ({ index, embedding: [1, 0] })) }));
+    });
+    await new Promise(resolve => provider.listen(0, '127.0.0.1', resolve));
+    t.after(() => new Promise(resolve => provider.close(resolve)));
+    const config = defaultConfig();
+    config.retrieval.includePassages = true;
+    Object.assign(config.roles.embedding, { enabled: true, endpoint: 'http://127.0.0.1:' + provider.address().port + '/v1', model: 'test' });
+    saveConfig(fixture.directories, config);
+
+    const index = await serveIndex(t, fixture.directories);
+    const response = await index({ reset: true });
+    assert.equal(response.status, 409, await response.text());
+    assert.deepEqual(readState(fixture.directories, locator).index.vectors, {});
 });

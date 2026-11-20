@@ -10,7 +10,7 @@ import { embed, publicConfig, readConfig, roleVersion, saveConfig } from '../mew
 import { addUsage, pendingSources } from '../mewmory/processing.js';
 import { cancelProcessing, startProcessing, waitForProcessing } from '../mewmory/worker.js';
 import { recall } from '../mewmory/retrieval.js';
-import { hybridCandidates, searchDocuments, updateIndex } from '../mewmory/search.js';
+import { hybridCandidates, searchDocuments, searchableVectorDimension, updateIndex } from '../mewmory/search.js';
 import { loadCurrentState, purgeMissingContextSources, readContextSources } from '../mewmory/sources.js';
 import { commitRecovery, listStories, MAX_ARCHIVE_BYTES, mutateState, normalizeLocator, readChat, readStateShared, recoveryState } from '../mewmory/store.js';
 import { getCounter } from '../mewmory/tokens.js';
@@ -473,13 +473,13 @@ route('/search', async (directories, body, signal) => {
     const documents = searchDocuments(state, asOf, config).filter(document => (!body.dataType || document.dataType === body.dataType)
         && (!body.ownerId || document.ownerId === body.ownerId) && (!body.subjectId || document.subjectIds.includes(body.subjectId)));
     let vector = null; let error = ''; const usage = [];
-    if (mode !== 'keyword' && config.roles.embedding.enabled && state.index.version === roleVersion(config, 'embedding')) {
+    const dimension = mode !== 'keyword' && searchableVectorDimension(documents, state.index, config);
+    if (dimension) {
         try {
             const result = await embed(directories, config, [query], { query: true, dataTypes: ['chat'], signal });
             usage.push(result.usage);
+            if (result.vectors[0]?.length !== dimension) fail('Embedding dimensions changed. Rebuild the search index.', 502);
             vector = result.vectors[0];
-            const dimension = Object.values(state.index.vectors)[0]?.vector.length;
-            if (dimension && vector.length !== dimension) { vector = null; fail('Embedding dimensions changed. Rebuild the search index.', 502); }
         } catch (failure) { error = failure.message; }
     }
     const current = await loadCurrentState(directories, locator);
@@ -514,9 +514,20 @@ route('/index', async (directories, body, signal, owner) => {
     const locator = normalizeLocator(body.locator);
     const state = await loadCurrentState(directories, locator);
     if (!state.enabled) fail('Turn on Mewmory for this chat first.', 409);
+    const config = readConfig(directories);
     if (body.reset === true) state.index = { version: '', vectors: {}, pending: true };
-    const result = await updateIndex(state, directories, readConfig(directories), { signal });
-    mutateState(directories, locator, () => { addUsage(state, result.usage); return state; }, state.revision);
+    const result = await updateIndex(state, directories, config, { signal });
+    await loadCurrentState(directories, locator);
+    signal.throwIfAborted();
+    mutateState(directories, locator, current => {
+        const latest = readConfig(directories);
+        if (current.branchId !== state.branchId || !current.enabled || latest.revision !== config.revision
+            || roleVersion(latest, 'embedding') !== result.version) {
+            fail('The chat or Mewmory settings changed during indexing. Rebuild the index again.', 409);
+        }
+        current.index = state.index;
+        addUsage(current, result.usage);
+    }, state.revision, { existingOnly: true });
     return { remaining: result.remaining };
 });
 

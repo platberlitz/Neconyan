@@ -3,9 +3,9 @@ import {
 } from './core.js';
 import { SELECTION_CONTRACT } from './contracts.js';
 import { assemblyFingerprint, assembleContext, currentOverviews, generationFingerprint } from './context.js';
-import { callJsonRole, embed, readConfig, roleVersion } from './models.js';
+import { callJsonRole, embed, readConfig } from './models.js';
 import { addUsage } from './processing.js';
-import { expandNeighbours, hybridCandidates, mergeVectorIndex, recallPool, searchDocuments, terms, updateIndex } from './search.js';
+import { expandNeighbours, hybridCandidates, mergeVectorIndex, recallPool, searchDocuments, searchableVectorDimension, terms, updateIndex } from './search.js';
 import { RAG_DEFAULTS } from '../../public/scripts/mewmory/rag-settings.js';
 import { loadCurrentState } from './sources.js';
 import { mutateState, statePath } from './store.js';
@@ -300,17 +300,16 @@ export async function recall(directories, locator, {
     let suppressedIds = new Set(proof.length ? matching.map(document => document.id) : []);
     let allowedDocuments = allDocuments.filter(document => !suppressedIds.has(document.id));
     let vector = null;
-    if (!local && retrieval.mode !== 'keyword' && query.trim() && config.roles.embedding.enabled && state.index.version === roleVersion(config, 'embedding')) {
+    const dimension = !local && retrieval.mode !== 'keyword' && query.trim() && searchableVectorDimension(allowedDocuments, state.index, config);
+    if (dimension) {
         try {
             signal?.throwIfAborted();
             const result = await embedFn(directories, config, [query], { query: true, signal, dataTypes: ['chat'] });
             usage.push(result.usage);
-            vector = result.vectors[0];
-            const indexedDimension = Object.values(state.index.vectors)[0]?.vector.length;
-            if (indexedDimension && vector.length !== indexedDimension) {
-                vector = null;
+            if (result.vectors[0]?.length !== dimension) {
                 fail('The query vector has a different size from the index. Set a new model revision and rebuild the index.', 502);
             }
+            vector = result.vectors[0];
         } catch (error) {
             signal?.throwIfAborted();
             indexError = error.message;
@@ -319,7 +318,9 @@ export async function recall(directories, locator, {
     let forced = forcedMatches(state, allowedDocuments, query, asOf);
     let candidates = [...new Map([...forced, ...hybridCandidates(allowedDocuments, query, vector,
         state.index.vectors, config.candidateLimit, retrieval)].map(document => [document.id, document])).values()];
-    const cached = local && state.recalls.findLast(item => item.status === 'complete' && item.asOf <= asOf
+    // An author's inspection query can change the picks without changing the scene fingerprint.
+    // Older inspections lack this flag and are not safe to reuse for the writer either.
+    const cached = local && !manualQuery && state.recalls.findLast(item => item.sceneOnly && item.status === 'complete' && item.asOf <= asOf
         && item.sourceCount <= sourceCount && item.coverageSignature === coverageSignature
         && item.validationFingerprint === recallFingerprint(state, config, item.sourceCount));
     let selection = local ? {
@@ -382,7 +383,7 @@ export async function recall(directories, locator, {
             expanded: currentDocuments.filter(document => !selectedIds.has(document.id)).map(document => document.id),
             limited: rankedIds.slice(retrieval.resultLimit), proposedPassagesSkipped: suppressedIds.size },
         forcedIds: forced.map(document => document.id), omitted: assembly.omitted, usage,
-        sourceCount, validationFingerprint, background, coverageSignature,
+        sourceCount, validationFingerprint, background, coverageSignature, sceneOnly: !manualQuery,
     };
     const retainedJobs = operationId ? new Set(listJobs(directories, { includeDismissed: true }).map(job => job.id)) : null;
     mutate(directories, locator, current => {
