@@ -200,8 +200,16 @@ for (const width of [393, 769, 900, 1000, 1001, 1280]) {
                         await expect(row.locator('.nn-response-controls')).toHaveCount(width > 1000 ? 1 : 0);
                         const left = row.locator('.fa-chevron-left').filter({ visible: true }), right = row.locator('.fa-chevron-right').filter({ visible: true });
                         await expect(left).toHaveCount(1); await expect(right).toHaveCount(1);
-                        await right.scrollIntoViewIfNeeded();
+                        // Being inside the viewport is not enough: the fixed chat bar can cover the arrows.
+                        await right.evaluate(el => el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' }));
                         await page.evaluate(() => new Promise(resolve => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve))));
+                        for (const arrow of [left, right]) {
+                            await expect.poll(() => arrow.evaluate(el => {
+                                const { x, y, width, height } = el.getBoundingClientRect();
+                                const hit = document.elementFromPoint(x + width / 2, y + height / 2);
+                                return el.contains(hit) ? null : hit?.closest('[id]')?.id || hit?.className || 'outside the viewport';
+                            })).toBeNull();
+                        }
                         const measures = await row.evaluate(el => {
                             const box = n => n.getBoundingClientRect().toJSON(), row = box(el), style = getComputedStyle(el);
                             const visible = n => { const s = getComputedStyle(n), r = n.getBoundingClientRect(); return s.display !== 'none' && s.visibility === 'visible' && Number(s.opacity) > 0 && r.width && r.height; };
