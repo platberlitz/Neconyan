@@ -7,6 +7,7 @@
 - PR #778 (2026-11-20) `fix(deps): upgrade simple-git to patch security advisories`
 - PR #779 (2026-11-20) `fix(ci): let the pr manager write pull request labels`
 - PR #781 (2026-11-20) `fix(persona): keep the bottom bar picker from jumping`
+- PR #783 (2026-11-20) `fix(replies): preserve replies through stops and failures`
 
 ## v1.5.7
 
