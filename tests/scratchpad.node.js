@@ -825,7 +825,7 @@ test('General with no card clamps a forged character capability and records no s
 });
 
 test('stored General origins refuse forged shared-avatar authority for another context card', () => {
-    const input = { role: 'assistant', text: 'A suggestion.', contextSource: { kind: 'general', key: 'general', avatar: 'Nova.png' }, sharedAvatar: 'Kit.png' };
+    const input = { id: 'msg-general', role: 'assistant', text: 'A suggestion.', contextSource: { kind: 'general', key: 'general', avatar: 'Nova.png' }, sharedAvatar: 'Kit.png' };
     assert.equal(store.testExports.normaliseMessage(input, { allowInternalKeys: true }).sharedAvatar, undefined);
     assert.equal(store.testExports.normaliseMessage({ ...input, sharedAvatar: 'Nova.png' }, { allowInternalKeys: true }).sharedAvatar, 'Nova.png');
 });
@@ -2677,7 +2677,11 @@ test('the endpoint checks the account and answers with the saved Scratchpad', as
     const pinnedNote = await post('/session/update', { source: SOURCE, sessionId: plotHoles.id, changes: { pinnedNote: 'Keep the ferry.', expectedPinnedNote: '' } });
     const noted = active((await pinnedNote.json()).bucket);
     assert.equal(noted.pinnedNote, 'Keep the ferry.');
-    assert.equal(noted.updated, plotHoles.updated);
+    const pinnedOnly = active((await (await post('/session/update', { source: SOURCE, sessionId: plotHoles.id, changes: { pinned: true } })).json()).bucket);
+    assert.equal(pinnedOnly.pinned, true);
+    assert.equal(pinnedOnly.updated, noted.updated, 'pinning alone keeps the last edit time');
+    assert.deepEqual(pinnedOnly.settings, noted.settings, 'pinning alone leaves the saved settings untouched');
+    await post('/session/update', { source: SOURCE, sessionId: plotHoles.id, changes: { pinned: false } });
 
     const withSharing = { webSearch: true, readLinks: true, depth: 45, prefill: 'Private opening:', maxTokens: 2048 };
     await post('/session/update', { source: SOURCE, sessionId: plotHoles.id, changes: { settings: withSharing } });

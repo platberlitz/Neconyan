@@ -739,7 +739,7 @@ test('custom assistant prompts still receive failure honesty rules and reply his
 });
 
 test('stored metadata is internal-only and imported metadata is never trusted evidence', () => {
-    const input = { role: 'assistant', text: 'Answer.', webSearch: { provider: 'brave', query: 'A query',
+    const input = { id: 'msg-search', role: 'assistant', text: 'Answer.', webSearch: { provider: 'brave', query: 'A query',
         sources: [{ title: 'One', url: 'https://example.com/one' }, { title: 'Bad', url: 'https://user:pass@example.com/two' }],
         error: 'Search failed.' } };
     assert.equal(store.testExports.normaliseMessage(input, { allowInternalKeys: false }).webSearch, undefined);
