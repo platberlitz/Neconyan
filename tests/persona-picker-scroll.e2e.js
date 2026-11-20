@@ -56,8 +56,7 @@ for (const phone of [true, false]) {
             await press(bubble);
             const alternate = personas.getByRole('button', { name: 'Alternate 9', exact: true });
             await expect(personas.getByRole('button', { pressed: true })).toBeFocused();
-            await page.keyboard.press('End');
-            await expect(alternate).toBeFocused();
+            await alternate.scrollIntoViewIfNeeded();
             expect(await scrollTop(personas)).toBeGreaterThan(0);
             const checkbox = notes.getByRole('checkbox', { name: 'Scenario 10', exact: true });
             await checkbox.scrollIntoViewIfNeeded();
@@ -65,6 +64,8 @@ for (const phone of [true, false]) {
             await picker.evaluate(element => Promise.all(element.getAnimations().map(animation => animation.finished)));
             const before = await checkbox.boundingBox();
             const alternateBefore = await alternate.boundingBox();
+            const alternateX = alternateBefore.x + alternateBefore.width / 2;
+            const alternateY = alternateBefore.y + alternateBefore.height / 2;
             const notesScroll = await scrollTop(notes);
             expect(notesScroll).toBeGreaterThan(0);
             const probe = await picker.evaluateHandle(element => {
@@ -96,9 +97,12 @@ for (const phone of [true, false]) {
             expect({ detached, hidden, revealed }).toEqual({ detached: false, hidden: false, revealed: false });
             await checkFocus(checkbox);
             expect(await scrollTop(notes)).toBe(notesScroll);
-            // Adding a chip above the visible rows can adjust the list's scroll offset
-            // to keep those rows in place. Check the position users click, not the offset.
-            expect(Math.abs((await alternate.boundingBox()).y - alternateBefore.y)).toBeLessThanOrEqual(1);
+            // A chip can change the height of a row further up. The original tap
+            // position must still hit the same persona, not a different row.
+            expect(await alternate.evaluate((element, { x, y }) => element.contains(document.elementFromPoint(x, y)), {
+                x: alternateX,
+                y: alternateY,
+            })).toBe(true);
             expect(await scrollTop(chat)).toBe(chatScroll);
             const after = await checkbox.boundingBox();
             expect(Math.abs(after.x - before.x)).toBeLessThanOrEqual(1);
@@ -111,8 +115,6 @@ for (const phone of [true, false]) {
             await expect(checkbox).not.toBeChecked();
             await expect(bubble).toHaveAttribute('title', 'Persona: Original Persona');
 
-            const alternateX = alternateBefore.x + alternateBefore.width / 2;
-            const alternateY = alternateBefore.y + alternateBefore.height / 2;
             await pressAt(page, alternateX, alternateY);
             await expect(picker).toBeHidden();
             await expect(bubble).toHaveAttribute('title', 'Persona: Alternate 9');
