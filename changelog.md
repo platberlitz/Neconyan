@@ -29,6 +29,7 @@
 - PR #770 (2026-11-19) `fix(botsearcher): add jani.com as the janitorai fallback`
 - PR #771 (2026-11-19) `feat(qig): support PixAI LoRAs`
 - PR #772 (2026-11-19) `feat: add guided actions to the simple mode chat bar`
+- PR #773 (2026-11-20) `chore(release): prepare 1.5.7`
 
 ## v1.5.6
 
