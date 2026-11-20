@@ -6,6 +6,7 @@
 - PR #776 (2026-11-20) `fix(settings): keep theme filters in view when pressed`
 - PR #778 (2026-11-20) `fix(deps): upgrade simple-git to patch security advisories`
 - PR #779 (2026-11-20) `fix(ci): let the pr manager write pull request labels`
+- PR #781 (2026-11-20) `fix(persona): keep the bottom bar picker from jumping`
 
 ## v1.5.7
 
