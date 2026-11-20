@@ -9,6 +9,7 @@
 - PR #781 (2026-11-20) `fix(persona): keep the bottom bar picker from jumping`
 - PR #783 (2026-11-20) `fix(replies): preserve replies through stops and failures`
 - PR #784 (2026-11-20) `fix: stabilise nightly browser checks`
+- PR #785 (2026-11-20) `fix(mewmory): protect archive, recall and model settings`
 
 ## v1.5.7
 
