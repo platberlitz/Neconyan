@@ -153,6 +153,31 @@ describe('isSocketConnected', () => {
         expect(mockReadFile).not.toHaveBeenCalled();
         expect(mockExecFile).not.toHaveBeenCalled();
     });
+
+    test('fails open when the Linux table cannot be read, without reading it again', async () => {
+        mockPlatform.mockReturnValue('linux');
+        mockReadFile.mockRejectedValue(Object.assign(new Error('denied'), { code: 'EACCES' }));
+        jest.spyOn(console, 'debug').mockImplementation(() => undefined);
+
+        const address = testExports.getSocketAddress(createSocket());
+        await expect(isSocketAddressConnected(address)).resolves.toBe(true);
+        const reads = mockReadFile.mock.calls.length;
+        expect(reads).toBe(1);
+
+        // Clear the 50 ms connection-table cache so the next check would read again.
+        await new Promise(resolve => setTimeout(resolve, 60));
+        await expect(isSocketAddressConnected(address)).resolves.toBe(true);
+        expect(mockReadFile).toHaveBeenCalledTimes(reads);
+    });
+
+    test('fails open when neither Linux proc table exists', async () => {
+        mockPlatform.mockReturnValue('linux');
+        mockReadFile.mockRejectedValue(Object.assign(new Error('missing'), { code: 'ENOENT' }));
+
+        const address = testExports.getSocketAddress(createSocket());
+        await expect(isSocketAddressConnected(address)).resolves.toBe(true);
+        expect(mockReadFile).toHaveBeenCalledTimes(2);
+    });
 });
 
 describe('isSocketAddressConnected', () => {
@@ -195,6 +220,29 @@ describe('isSocketAddressConnected', () => {
 });
 
 describe('pollSocketConnection', () => {
+    test('netstat platforms poll no faster than once a second', async () => {
+        jest.useFakeTimers();
+        try {
+            mockPlatform.mockReturnValue('darwin');
+            mockExecFile.mockImplementation((command, args, options, callback) => {
+                callback(null, '  TCP    127.0.0.1:8080    127.0.0.2:5555    ESTABLISHED    1234\n', '');
+            });
+
+            const stopPolling = pollSocketConnection(createSocket(), 150, jest.fn());
+            await jest.advanceTimersByTimeAsync(1);
+            expect(mockExecFile).toHaveBeenCalledTimes(1);
+
+            await jest.advanceTimersByTimeAsync(150);
+            expect(mockExecFile).toHaveBeenCalledTimes(1);
+
+            await jest.advanceTimersByTimeAsync(850);
+            expect(mockExecFile).toHaveBeenCalledTimes(2);
+            stopPolling();
+        } finally {
+            jest.useRealTimers();
+        }
+    });
+
     test('detects a disconnected socket and runs the callback once', async () => {
         mockPlatform.mockReturnValue('linux');
         mockReadFile.mockImplementation(async file => file === '/proc/net/tcp'
