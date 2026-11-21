@@ -261,6 +261,7 @@ let nnComposerControlsSyncQueued = false;
 let nnStorageFlushTimer = 0;
 let nnStorageFlushEventsBound = false;
 let nnMessageActionEventsBound = false;
+let nnMessageActionExtensionSignature = null;
 let nnPendingBottomChatScrollCancel = null;
 let nnSearchShortcutPreFocusAt = 0;
 const nnStorageCache = new Map();
@@ -6414,6 +6415,15 @@ function normalizeExtensionName(name) {
     return String(name || '').replace(/^third-party\//i, '').toLowerCase();
 }
 
+function getDisabledExtensionsSignature() {
+    const disabledExtensions = getSillyTavernContext()?.extensionSettings?.disabledExtensions;
+    if (!Array.isArray(disabledExtensions)) {
+        return '';
+    }
+
+    return disabledExtensions.map(normalizeExtensionName).sort().join('\u001f');
+}
+
 function syncMessageActionExtensionVisibility(root = document) {
     if (typeof root === 'number') {
         root = document.querySelector(`.mes[mesid="${root}"]`) || document;
@@ -6421,6 +6431,16 @@ function syncMessageActionExtensionVisibility(root = document) {
 
     if (!root?.querySelectorAll) {
         return;
+    }
+
+    if (root === document) {
+        // A settings save usually leaves extension enablement alone. Walking every
+        // message button for an unchanged list is pure work, so remember the list.
+        const signature = getDisabledExtensionsSignature();
+        if (signature === nnMessageActionExtensionSignature) {
+            return;
+        }
+        nnMessageActionExtensionSignature = signature;
     }
 
     root.querySelectorAll('[data-requires-extension]').forEach(button => {
