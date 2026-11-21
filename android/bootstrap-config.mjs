@@ -55,18 +55,22 @@ export function ensureBootstrapConfigSections(config, fileName = 'android-config
  * aside beside the original name and the app starts from the default. Chats and
  * characters live in the data folder, not in this file.
  */
-export function loadBootstrapConfig(configPath, defaultPath, now = Date.now) {
+export function loadBootstrapConfig(configPath, defaultPath, now = Date.now, validateSaved = null) {
     const fileName = path.basename(configPath);
     const readDefault = () => ensureBootstrapConfigSections(YAML.parse(fs.readFileSync(defaultPath, 'utf8')), fileName);
-    if (!fs.existsSync(configPath)) return { config: readDefault(), setAside: null, reason: null };
+    if (!fs.existsSync(configPath)) return { config: readDefault(), source: 'default', setAside: null, reason: null };
     // A read failure (storage trouble) propagates; only contents that cannot be used are set aside.
     const saved = fs.readFileSync(configPath, 'utf8');
     try {
-        return { config: ensureBootstrapConfigSections(YAML.parse(saved), fileName), setAside: null, reason: null };
+        const config = ensureBootstrapConfigSections(YAML.parse(saved), fileName);
+        validateSaved?.(config);
+        return { config, source: 'saved', setAside: null, reason: null };
     } catch (error) {
         const setAside = `${configPath}.broken-${now()}`;
         fs.renameSync(configPath, setAside);
-        return { config: readDefault(), setAside, reason: String(error?.message ?? error) };
+        const reason = validateSaved && error?.name === 'YAMLParseError'
+            ? 'The saved app configuration contains invalid YAML.' : String(error?.message ?? error);
+        return { config: readDefault(), source: 'recovered', setAside, reason };
     }
 }
 

@@ -39,6 +39,7 @@ import { getThumbnailDimensions, getThumbnailMobileDimensions, setThumbnailDimen
 import { getThumbnailMobileRuntimeSettings, getThumbnailRuntimeSettings, setThumbnailMobileRuntimeSettings, setThumbnailRuntimeSettings } from './thumbnails.js';
 import { requestGracefulExit } from '../shutdown.js';
 import { getServerBootId } from '../server-boot-marker.js';
+import { validateAndroidConfigEdit } from '../android-config-policy.js';
 import {
     LAUNCHER_ENV as RESTART_LAUNCHER_ENV,
     RESTART_EXIT_CODE,
@@ -59,6 +60,7 @@ const GIT_OPTIONS = Object.freeze({
 const RESTART_RESPONSE_DELAY_MS = 200;
 let zipUpdatePending = false;
 const refreshRepositoryRemote = createRemoteRefresh();
+let androidManagedConfig = null;
 const CHAT_COMPLETION_CONFIG_DEFAULTS = Object.freeze({
     claude: Object.freeze({
         enableSystemPromptCache: false,
@@ -118,6 +120,22 @@ export const router = express.Router();
 function getConfigFilePath() {
     const configPath = globalThis.COMMAND_LINE_ARGS?.configPath;
     return path.resolve(configPath || path.join(serverDirectory, 'config.yaml'));
+}
+
+function getAndroidManagedConfig() {
+    if (process.env.NECONYAN_ANDROID_APP !== '1') return null;
+    // Resolve on an actual save, so importing startup helpers needs no launcher
+    // globals. util's config was cached at startup, before any edited YAML was
+    // saved. Keep that authority even when a save omits the managed fields.
+    androidManagedConfig ??= Object.freeze({
+        dataRoot: globalThis.DATA_ROOT,
+        port: globalThis.COMMAND_LINE_ARGS.port,
+        basicAuthUser: Object.freeze({
+            username: getConfigValue('basicAuthUser.username'),
+            password: getConfigValue('basicAuthUser.password'),
+        }),
+    });
+    return androidManagedConfig;
 }
 
 function createHttpError(status, message) {
@@ -185,6 +203,7 @@ function readConfigDocument() {
     const document = yaml.parseDocument(content, { prettyErrors: true });
 
     if (document.errors.length > 0) {
+        if (process.env.NECONYAN_ANDROID_APP === '1') throw createHttpError(400, 'The Android configuration contains invalid YAML. Correct its syntax before saving.');
         throw createHttpError(400, document.errors.map(error => error.message).join('\n\n'));
     }
 
@@ -779,9 +798,12 @@ router.post('/config/save', requireAdminMiddleware, async (request, response) =>
         const parsed = yaml.parseDocument(content, { prettyErrors: true });
         if (parsed.errors.length > 0) {
             return response.status(400).json({
-                error: parsed.errors.map(error => error.message).join('\n\n'),
+                error: process.env.NECONYAN_ANDROID_APP === '1' ? 'The Android configuration contains invalid YAML. Correct its syntax before saving.' : parsed.errors.map(error => error.message).join('\n\n'),
             });
         }
+
+        const managedConfig = getAndroidManagedConfig();
+        if (managedConfig) validateAndroidConfigEdit(parsed.toJS(), managedConfig);
 
         const nextContent = content.endsWith('\n') ? content : `${content}\n`;
         tryWriteFileSync(configPath, nextContent);

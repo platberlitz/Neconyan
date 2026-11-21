@@ -6,6 +6,7 @@ import ipRegex from 'ip-regex';
 import envPaths from 'env-paths';
 import { APP_NAME } from './runtime.js';
 import { color, getConfigValue, stringToBool } from './util.js';
+import { validateAndroidListenerConfig } from './android-config-policy.js';
 import { initConfig } from './config-init.js';
 import { resolveTermuxRecovery } from './termux-startup.js';
 
@@ -312,6 +313,7 @@ export class CommandLineParser {
             requestProxyUrl: cliArguments.requestProxyUrl ?? getConfigValue('requestProxy.url', defaultConfig.requestProxyUrl),
             requestProxyBypass: cliArguments.requestProxyBypass ?? getConfigValue('requestProxy.bypass', defaultConfig.requestProxyBypass),
             getIPv4ListenUrl: function () {
+                if (process.env.NECONYAN_ANDROID_APP === '1') validateAndroidListenerConfig({ listenAddress: { ipv4: this.listenAddressIPv4 } });
                 const isValid = ipRegex.v4({ exact: true }).test(this.listenAddressIPv4);
                 return new URL(
                     (this.ssl ? 'https://' : 'http://') +
@@ -320,6 +322,11 @@ export class CommandLineParser {
                 );
             },
             getIPv6ListenUrl: function () {
+                if (process.env.NECONYAN_ANDROID_APP === '1') {
+                    validateAndroidListenerConfig({ listenAddress: { ipv6: this.listenAddressIPv6 } });
+                    const address = this.listenAddressIPv6.replace(/^\[|\]$/g, '');
+                    return new URL(`${this.ssl ? 'https' : 'http'}://[${this.listen ? address : '::1'}]:${this.port}`);
+                }
                 const isValid = ipRegex.v6({ exact: true }).test(this.listenAddressIPv6);
                 return new URL(
                     (this.ssl ? 'https://' : 'http://') +
