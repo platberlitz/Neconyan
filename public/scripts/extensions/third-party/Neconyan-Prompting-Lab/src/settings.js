@@ -78,16 +78,24 @@ export function getSettings() {
     return settings;
 }
 
-let lastOwnWriteAt = 0;
+// The exact settings document this extension last wrote, or 'undefined' after
+// clearing it. A save of any other setting also emits SETTINGS_UPDATED, but our
+// own document is unchanged then and still needs no refresh.
+let lastOwnSettingsDocument = null;
 
 /**
- * True shortly after this extension saved its own settings. The debounced
- * save makes the host emit SETTINGS_UPDATED back at us; refreshing on our own
- * echo would rebuild the interface for no reason, about a second after every
- * tab switch or preference change.
+ * True when the stored settings still match what this extension last wrote.
+ * The debounced save makes the host emit SETTINGS_UPDATED back at us; refreshing
+ * on our own echo would rebuild the interface for no reason, about a second
+ * after every tab switch or preference change.
  */
-export function isOwnSettingsEcho(withinMs = 2500) {
-    return Date.now() - lastOwnWriteAt < withinMs;
+export function isOwnSettingsEcho() {
+    if (lastOwnSettingsDocument === null) return false;
+    const stored = getContext()?.extensionSettings?.[SETTINGS_KEY];
+    const current = stored === undefined
+        ? 'undefined'
+        : JSON.stringify(migrateSettings(stored));
+    return current === lastOwnSettingsDocument;
 }
 
 export function updateSettings(patch) {
@@ -99,7 +107,7 @@ export function updateSettings(patch) {
     const next = normalizeSettings({ ...getSettings(), ...patch });
     if (context?.extensionSettings) {
         context.extensionSettings[SETTINGS_KEY] = next;
-        lastOwnWriteAt = Date.now();
+        lastOwnSettingsDocument = JSON.stringify(next);
         context.saveSettingsDebounced?.();
     }
     return next;
@@ -120,7 +128,7 @@ export function clearSettings() {
     const context = getContext();
     if (context?.extensionSettings) {
         delete context.extensionSettings[SETTINGS_KEY];
-        lastOwnWriteAt = Date.now();
+        lastOwnSettingsDocument = 'undefined';
         context.saveSettingsDebounced?.();
     }
 }
