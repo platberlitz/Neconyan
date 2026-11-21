@@ -93,6 +93,7 @@
  * @property {() => string} [getInput] - Current composer text, for {{input}}.
  * @property {Object} [chatMetadata] - Live chat metadata object (browser) or snapshot.
  * @property {Array} [chat] - Chat message array.
+ * @property {number[]} [chatMessageIds] - Real message numbers of `chat` entries, when `chat` leaves some messages out.
  * @property {() => string} [getCurrentChatId] - Active chat id.
  * @property {(hash: number) => void} [setChatIdHash]
  * @property {Object} [generationState]

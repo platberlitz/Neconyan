@@ -19,7 +19,7 @@ import { timestampToMoment } from '../../utils.js';
 import { textgenerationwebui_banned_in_macros } from '../../textgen-settings.js';
 import { eventSource, event_types } from '../../events.js';
 import { extension_settings, findExtension } from '../../extensions.js';
-import { filterGroupPromptMessages, hasRestrictedGroupHistory } from '../../group-chat-visibility.js';
+import { filterGroupPromptMessages, hasRestrictedGroupHistory, isGroupPromptMessageVisible } from '../../group-chat-visibility.js';
 import { getPreviewVariables } from '../../variable-preview.js';
 
 /**
@@ -56,6 +56,21 @@ function buildBrowserVariables() {
 }
 
 /**
+ * The chat a macro may read: a group member sees only what they heard, but message numbers stay the real ones.
+ *
+ * @returns {{ chat: any[], chatMessageIds?: number[] }}
+ */
+function buildBrowserChat() {
+    const visible = filterGroupPromptMessages(chat);
+    if (visible === chat || visible.length === chat.length) return { chat: visible };
+    const chatMessageIds = [];
+    chat.forEach((message, index) => {
+        if (isGroupPromptMessageVisible(message)) chatMessageIds.push(index);
+    });
+    return { chat: visible, chatMessageIds };
+}
+
+/**
  * Populates env.extra from the live browser globals for one evaluation.
  *
  * @param {import('./MacroEnv.types.js').MacroEnv} env
@@ -68,7 +83,7 @@ export function populateBrowserExtra(env) {
         getInput: () => /** @type {HTMLTextAreaElement} */(document.querySelector('#send_textarea'))?.value ?? '',
         chatMetadata: chat_metadata,
         setChatIdHash: value => { chat_metadata.chat_id_hash = value; },
-        chat: filterGroupPromptMessages(chat),
+        ...buildBrowserChat(),
         getCurrentChatId: () => getCurrentChatId(),
         getMaxPromptTokens: () => getMaxPromptTokens(),
         getMaxContextTokens: () => getMaxContextTokens(),

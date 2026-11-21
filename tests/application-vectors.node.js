@@ -273,6 +273,30 @@ test('chat recall counts distinct older messages before limiting, excluding prot
     assert.deepEqual(fs.readFileSync(p.f.filename, 'utf8'), records.map(JSON.stringify).join('\n'));
 });
 
+test('a group speaker\'s vector search and recall leave out messages they did not hear', async t => {
+    const p = prepared(t);
+    const heardByBoth = { group_scene: { present: ['Kit.png', 'Mira.png'], whisper_to: [] } };
+    const records = [p.f.records[0],
+        { name: 'User', is_user: true, mes: 'An earlier promise about the lantern.', extra: heardByBoth },
+        { name: 'User', is_user: true, mes: 'Only Kit heard the marigold secret.', extra: { group_scene: { present: ['Kit.png'], whisper_to: [] } } },
+        { name: 'Nova', mes: 'Protected recent answer.', extra: heardByBoth }];
+    fs.writeFileSync(p.f.filename, records.map(JSON.stringify).join('\n'));
+    Object.assign(p.settings.extension_settings.vectors, { enabled_chats: true, protect: 1, insert: 2,
+        message_chunk_size: 400, query: 3, score_threshold: 0.1 });
+    p.saveSettings();
+    const accepted = await acceptApplicationOperation(p.request, { ...p.body('heard-recall'), action: 'prompt', viewers: ['Mira.png'] });
+    const calls = [];
+    await runOperation(p.context(accepted.job), { fetchImpl: async (_url, request) => {
+        const input = JSON.parse(request.body).input;
+        calls.push(input);
+        return new Response(JSON.stringify({ data: input.map((_, index) => ({ index, embedding: [1, index + 1] })) }));
+    } });
+    const result = readOperation(p.base, 'heard-recall').result;
+    assert.deepEqual(result.projection.removed.map(row => row.original), [records[1].mes]);
+    assert.ok(!calls.at(-1).some(text => text.includes('marigold')));
+    assert.ok(calls.at(-1).some(text => text.includes('lantern')));
+});
+
 test('rebuild applies new chat chunks atomically and a failed rebuild preserves the previous index', async t => {
     const p = prepared(t);
     const first = await acceptApplicationOperation(p.request, p.body('initial'));

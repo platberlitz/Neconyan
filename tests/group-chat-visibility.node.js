@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { beginGroupPromptScope, canGroupMemberSee, filterGroupPromptMessages, filterGroupTargetMessages, groupMessageAudience, groupScenePrompt, hasRestrictedGroupHistory, readGroupScene, withGroupTargetPrompt } from '../public/scripts/group-chat-visibility.js';
+import { beginGroupPromptScope, canGroupMemberSee, countGroupPromptHiddenMessages, filterGroupPromptMessages, filterGroupTargetMessages, groupMessageAudience, getGroupPromptViewers, groupScenePrompt, hasRestrictedGroupHistory, readGroupScene, withGroupTargetPrompt } from '../public/scripts/group-chat-visibility.js';
 
 test('scene state is bounded to current members and has safe defaults', () => {
     assert.deepEqual(readGroupScene({}, ['kit', 'mira']), { away: [], location: '', whisper_to: [] });
@@ -60,4 +60,22 @@ test('background Agent history and macro expansion follow their target after the
     assert.equal(filterGroupPromptMessages(messages), messages);
     assert.throws(() => withGroupTargetPrompt(miraReply, messages, () => { throw new Error('Failed macro'); }));
     assert.equal(filterGroupPromptMessages(messages), messages);
+});
+
+test('a scoped turn names its speakers and counts the lines they missed', () => {
+    const messages = [
+        { mes: 'Public' },
+        { mes: 'Kit only', extra: { group_scene: { present: ['kit'], whisper_to: [] } } },
+        { mes: 'Hidden note', is_system: true, extra: { group_scene: { present: ['kit'], whisper_to: [] } } },
+    ];
+    assert.equal(getGroupPromptViewers(), null);
+    assert.equal(countGroupPromptHiddenMessages(), 0);
+    const restore = beginGroupPromptScope(['mira'], messages);
+    assert.deepEqual(getGroupPromptViewers(), ['mira']);
+    assert.equal(countGroupPromptHiddenMessages(), 1);
+    restore();
+    const everyone = beginGroupPromptScope([], messages);
+    assert.equal(hasRestrictedGroupHistory(), false);
+    assert.equal(countGroupPromptHiddenMessages(), 0);
+    everyone();
 });

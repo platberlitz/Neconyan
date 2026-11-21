@@ -131,11 +131,12 @@ import {
 } from './group-chat-scene.js';
 import { buildEnsemblePrompt, createEnsembleMessages } from './group-chat-ensemble.js';
 import { messageAutomaticGenerationSuppressed } from './generation-outcome.js';
-import { beginGroupPromptScope, canGroupMemberSee, groupMessageAudience, groupScenePrompt, readGroupScene } from './group-chat-visibility.js';
+import { beginGroupPromptScope, canGroupMemberSee, filterGroupPromptMessages, groupMessageAudience, groupScenePrompt, readGroupScene } from './group-chat-visibility.js';
 import { initGroupSceneControls, renderGroupScene } from './group-chat-scene-ui.js';
 import { getGroupSpeakerPool } from './group-chat-speakers.js';
 import { initGroupSpeakerMenu } from './group-chat-speaker-menu.js';
 import { buildNarratorReminder, getGroupMemberRole } from './group-chat-roles.js';
+import { renameGroupMemberFields, renameGroupSceneRecords } from './group-member-rename.js';
 
 export {
     selected_group,
@@ -425,6 +426,36 @@ async function runWithGroupScene(avatars, callback) {
     activeGroupAudience = getGroupMessageAudience();
     const restore = beginGroupPromptScope(avatars, chat);
     try { return await callback(); } finally { restore(); activeGroupAudience = previous; }
+}
+
+/**
+ * Lists the messages a member's Purrks may react to: what they heard, limited to what this prompt may show.
+ * @param {string} avatar Member avatar
+ * @returns {object[]} Visible chat messages
+ */
+export function getGroupPurrksMessages(avatar) {
+    if (!Array.isArray(chat)) return [];
+    return filterGroupPromptMessages(chat.filter(message => !message?.is_system && canGroupMemberSee(message, avatar)));
+}
+
+/** The member a prompt preview stands in for: the whisper target, the chosen speaker, else the first member in the scene. */
+export function getGroupPreviewSpeakerChid() {
+    const group = groups.find(item => item.id === selected_group);
+    if (!group) return -1;
+    const members = getGroupEnabledMembers(group);
+    const whispers = (getGroupMessageAudience()?.whisper_to || []).filter(avatar => members.includes(avatar));
+    const avatar = whispers[0] || (members.includes(selectedGroupSpeakerAvatar) ? selectedGroupSpeakerAvatar : members[0]);
+    return avatar ? getCharacterIdByAvatar(avatar) : -1;
+}
+
+/**
+ * Limits a group prompt preview to what the previewed member heard.
+ * @param {number} chid Previewed member
+ * @returns {() => void} Restores the previous scope
+ */
+export function beginGroupPreviewScope(chid) {
+    const avatar = characters[chid]?.avatar;
+    return avatar ? beginGroupPromptScope([avatar], chat) : () => {};
 }
 
 function getSelectedGroupSpeakerChid(group) {
@@ -1480,7 +1511,7 @@ export function getGroupDepthPrompts(groupId, characterId) {
         const memberPurrks = typeof evaluateCharacterPurrks === 'function'
             ? evaluateCharacterPurrks(character, {
                 chatMetadata: chat_metadata,
-                messages: Array.isArray(chat) ? chat.filter(m => !m?.is_system) : [],
+                messages: getGroupPurrksMessages(member),
                 characterKey: character.avatar || member,
             })
             : null;
@@ -1600,7 +1631,7 @@ export function getGroupCharacterCardsLazy(groupId, characterId) {
             const memberPurrks = typeof evaluateCharacterPurrks === 'function'
                 ? evaluateCharacterPurrks(c, {
                     chatMetadata: chat_metadata,
-                    messages: Array.isArray(chat) ? chat.filter(m => !m?.is_system) : [],
+                    messages: getGroupPurrksMessages(c.avatar),
                     characterKey: c.avatar || '',
                 })
                 : null;
@@ -1835,7 +1866,7 @@ export async function renameGroupMember(oldAvatar, newAvatar, newName) {
             }
 
             // Replace group member avatar id and save the changes
-            group.members[memberIndex] = newAvatar;
+            Object.assign(group, renameGroupMemberFields(group, oldAvatar, newAvatar));
             await editGroup(group.id, true, false, getCurrentUserHandle(), { background: true,
                 backgroundChanges: { memberRename: { from: oldAvatar, to: newAvatar } } });
             console.log(`Renamed character ${newName} in group: ${group.name}`);
@@ -1848,6 +1879,8 @@ export async function renameGroupMember(oldAvatar, newAvatar, newName) {
                 let hadChanges = false;
                 // Chat shouldn't be empty
                 if (Array.isArray(messages) && messages.length) {
+                    // Who heard each message is listed by avatar file, even in chats where they never spoke
+                    const sceneChanged = renameGroupSceneRecords(messages, oldAvatar, newAvatar);
                     // Iterate over every chat message
                     for (const message of messages) {
                         // Skip the chat header
@@ -1870,8 +1903,10 @@ export async function renameGroupMember(oldAvatar, newAvatar, newName) {
                         }
                     }
 
-                    if (hadChanges) {
-                        await eventSource.emit(event_types.CHARACTER_RENAMED_IN_PAST_CHAT, messages, oldAvatar, newAvatar);
+                    if (hadChanges || sceneChanged) {
+                        if (hadChanges) {
+                            await eventSource.emit(event_types.CHARACTER_RENAMED_IN_PAST_CHAT, messages, oldAvatar, newAvatar);
+                        }
 
                         const token = beginRoleplaySave({ group: true, chat: String(chatId) }, { operationKey: uuidv4(), evidence });
                         try {
@@ -2420,7 +2455,9 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
             mergedParams.quiet_prompt = [mergedParams.quiet_prompt, contextPrompt, getGroupScenePrompt(group)].filter(Boolean).join('\n');
             mergedParams.quietToLoud = true;
             mergedParams.suppressUserMessage = didRenderUserMessage || mergedParams.suppressUserMessage;
-            textResult = await runWithGroupScene([characters[chId].avatar], () => runWithGroupMemberModelOverride(group, characters[chId]?.avatar, () => Generate(generateType, { automatic_trigger: byAutoMode, ...mergedParams })));
+            // Impersonation writes the user's own line, and the user heard everything.
+            const sceneAvatars = type === 'impersonate' ? [] : [characters[chId].avatar];
+            textResult = await runWithGroupScene(sceneAvatars, () => runWithGroupMemberModelOverride(group, characters[chId]?.avatar, () => Generate(generateType, { automatic_trigger: byAutoMode, ...mergedParams })));
             if (textResult?.generationOutcome) break;
             let messageChunk = textResult?.messageChunk;
 
@@ -2428,7 +2465,7 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
                 while (shouldAutoContinue(messageChunk, type === 'impersonate', mergedParams)) {
                     throwIfAborted();
                     setSendButtonState(true);
-                    textResult = await runWithGroupScene([characters[chId].avatar], () => runWithGroupMemberModelOverride(group, characters[chId]?.avatar, () => Generate('continue', { automatic_trigger: byAutoMode, ...mergedParams, companionHistoryTarget: undefined })));
+                    textResult = await runWithGroupScene(sceneAvatars, () => runWithGroupMemberModelOverride(group, characters[chId]?.avatar, () => Generate('continue', { automatic_trigger: byAutoMode, ...mergedParams, companionHistoryTarget: undefined })));
                     if (textResult?.generationOutcome) break;
                     messageChunk = textResult?.messageChunk;
                 }
@@ -2900,7 +2937,7 @@ export async function editGroup(id, immediately, reload = true, account = getCur
         if (typeof from !== 'string' || typeof to !== 'string' || !Array.isArray(base.members) || !base.members.includes(from)) {
             throw new Error('Reload the group before renaming its member.');
         }
-        changes.members = base.members.map(member => member === from ? to : member);
+        Object.assign(changes, renameGroupMemberFields(base, from, to));
         delete changes.memberRename;
     }
     const snapshot = background ? { ...base, ...changes } : snapshotGroupMetadata(group);

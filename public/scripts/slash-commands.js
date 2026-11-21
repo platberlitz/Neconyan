@@ -75,7 +75,7 @@ import { hideChatMessageRange } from './chats.js';
 import { appendManualSwipe, selectManualSwipe } from './manual-swipe.js';
 import { getContext, saveMetadataDebounced } from './extensions.js';
 import { getRegexedString, regex_placement } from './extensions/regex/engine.js';
-import { findGroupMemberId, groups, is_group_generating, openGroupById, regenerateGroup, resetSelectedGroup, saveGroupChat, selected_group, getGroupMembers } from './group-chats.js';
+import { findGroupMemberId, groups, is_group_generating, openGroupById, regenerateGroup, resetSelectedGroup, saveGroupChat, selected_group, getGroupMembers, getGroupMessageAudience } from './group-chats.js';
 import { chat_completion_sources, MINIMAX_ENDPOINT, oai_settings, promptManager, SILICONFLOW_ENDPOINT, ZAI_ENDPOINT } from './openai.js';
 import { user_avatar } from './personas.js';
 import { addEphemeralStoppingString, chat_styles, context_presets, flushEphemeralStoppingStrings, playMessageSound, power_user } from './power-user.js';
@@ -6015,6 +6015,24 @@ async function messageNameCallback(args, name) {
     return newName;
 }
 
+/**
+ * Records who is in the group scene for a message added by a command.
+ * @param {object} message Message about to join the chat
+ * @param {string} [speakerAvatar] Group member who says it, so they remember their own line
+ */
+function stampGroupCommandMessage(message, speakerAvatar) {
+    const audience = selected_group ? getGroupMessageAudience() : null;
+    if (!audience) return;
+    const members = groups.find(group => group.id === selected_group)?.members || [];
+    if (speakerAvatar && members.includes(speakerAvatar) && !audience.present.includes(speakerAvatar)) {
+        audience.present.push(speakerAvatar);
+    }
+    message.extra.group_scene = audience;
+    for (const info of message.swipe_info || []) {
+        info.extra = { ...info.extra, group_scene: structuredClone(audience) };
+    }
+}
+
 export async function sendMessageAs(args, text) {
     let name = args.name?.trim();
 
@@ -6078,6 +6096,7 @@ export async function sendMessageAs(args, text) {
             model: 'slash command',
         },
     }];
+    stampGroupCommandMessage(message, character?.avatar);
 
     let insertAt = Number(args.at);
 
@@ -6130,6 +6149,7 @@ export async function sendNarratorMessage(args, text) {
             model: 'slash command',
         },
     };
+    stampGroupCommandMessage(message);
 
     let insertAt = Number(args.at);
 
