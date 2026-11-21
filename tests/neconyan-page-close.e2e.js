@@ -73,7 +73,7 @@ async function openModelPage(page) {
     } finally {
         await test.info().attach('model-page-opening-animations', { body: JSON.stringify(samples), contentType: 'application/json' });
     }
-    await expect(page.locator('#sheld')).toHaveCSS('visibility', 'hidden');
+    await expect(page.locator('#sheld')).toHaveCSS('content-visibility', 'hidden');
 }
 
 async function closeAndSample(page, phone, home) {
@@ -89,8 +89,8 @@ async function closeAndSample(page, phone, home) {
                     marker: panel.dataset.uiClosing ?? null,
                     open: panel.classList.contains('openDrawer'),
                     running: panel.getAnimations().length > 0,
-                    sheld: getComputedStyle(document.getElementById('sheld')).visibility,
-                    home: getComputedStyle(document.getElementById('neconyan-home-host')).visibility,
+                    sheld: getComputedStyle(document.getElementById('sheld')).contentVisibility,
+                    home: getComputedStyle(document.getElementById('neconyan-home-host')).contentVisibility,
                 });
                 const immediate = sample();
                 const timeout = window.setTimeout(() => reject(new Error('Page close did not settle')), 15000);
@@ -131,7 +131,8 @@ for (const browserName of ['chromium', 'webkit']) {
             test('reveals Home and chat throughout the exit, without exposing them behind another open page', async ({ page }) => {
                 await openApp(page, phone);
                 await openModelPage(page);
-                await expect(page.locator('#neconyan-home-host')).toHaveCSS('visibility', 'hidden');
+                // Home lives inside #sheld, so hiding the chat hides it too.
+                await expect(page.locator('#sheld')).toHaveCSS('content-visibility', 'hidden');
                 await closeAndSample(page, phone, true);
 
                 await selectSampleCharacter(page);
@@ -145,11 +146,11 @@ for (const browserName of ['chromium', 'webkit']) {
                     const { isUiClosing } = await import('/scripts/ui-motion.js');
                     const panel = document.getElementById('left-nav-panel');
                     panel.querySelector('.sb-shell-close').click();
-                    const closing = { closing: isUiClosing(panel), marker: panel.dataset.uiClosing, sheld: getComputedStyle(document.getElementById('sheld')).visibility };
+                    const closing = { closing: isUiClosing(panel), marker: panel.dataset.uiClosing, sheld: getComputedStyle(document.getElementById('sheld')).contentVisibility };
                     window.NeconyanShell.openTab('left', 'api');
                     return {
                         closing,
-                        reopened: { closing: isUiClosing(panel), marker: panel.dataset.uiClosing ?? null, sheld: getComputedStyle(document.getElementById('sheld')).visibility },
+                        reopened: { closing: isUiClosing(panel), marker: panel.dataset.uiClosing ?? null, sheld: getComputedStyle(document.getElementById('sheld')).contentVisibility },
                     };
                 });
                 expect(reopened.closing).toEqual({ closing: true, marker: 'true', sheld: 'visible' });
@@ -157,14 +158,14 @@ for (const browserName of ['chromium', 'webkit']) {
                 await expect.poll(() => page.locator('#left-nav-panel').evaluate(node => node.getAnimations().length)).toBe(0);
                 await expect(page.locator('#left-nav-panel')).toBeVisible();
                 await expect(page.locator('#left-nav-panel')).not.toHaveAttribute('data-ui-closing');
-                await expect(page.locator('#sheld')).toHaveCSS('visibility', 'hidden');
+                await expect(page.locator('#sheld')).toHaveCSS('content-visibility', 'hidden');
 
                 const replaced = await page.evaluate(async () => {
                     const panel = document.getElementById('left-nav-panel');
                     panel.querySelector('.sb-shell-close').click();
                     window.NeconyanShell.openTab('right', 'extensions');
                     const replacement = document.getElementById('user-settings-block');
-                    const sample = () => ({ sheld: getComputedStyle(document.getElementById('sheld')).visibility, replacementOpen: replacement.classList.contains('openDrawer') });
+                    const sample = () => ({ sheld: getComputedStyle(document.getElementById('sheld')).contentVisibility, replacementOpen: replacement.classList.contains('openDrawer') });
                     const immediate = sample();
                     const frames = await new Promise(resolve => {
                         const frames = [];
@@ -181,7 +182,7 @@ for (const browserName of ['chromium', 'webkit']) {
                 await expect(page.locator('#left-nav-panel')).toBeHidden();
                 await expect(page.locator('#left-nav-panel')).not.toHaveAttribute('data-ui-closing');
                 await expect.poll(() => page.locator('#user-settings-block').evaluate(node => node.getAnimations().length)).toBe(0);
-                await expect(page.locator('#sheld')).toHaveCSS('visibility', 'hidden');
+                await expect(page.locator('#sheld')).toHaveCSS('content-visibility', 'hidden');
             });
         });
     }
