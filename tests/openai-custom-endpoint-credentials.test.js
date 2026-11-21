@@ -60,6 +60,7 @@ function createHarness({ profile = normalizeCustomEndpointPreset({ name: 'Saved 
         pendingSettingsAcknowledgements: 0,
         acknowledgedGenerationSettings: null,
         lastSavedSettings: null,
+        settingsMutationRevision: 0,
         downloadedSettings: null,
         generationSettingsSnapshot,
         getPresetManager: () => null,
