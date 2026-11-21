@@ -1612,6 +1612,10 @@ const nnState = {
         searchApplyToken: 0,
         refreshTimer: 0,
         refreshToken: 0,
+        connectionRefreshTimer: 0,
+        connectionRefreshToken: 0,
+        renderedListing: null,
+        renderedFiles: null,
         pendingSearchScroll: false,
         isApplyingSearch: false,
         chatObserver: null,
@@ -7866,10 +7870,12 @@ function failChatFileListing(throwOnError, message) {
 // the chat listing changes, so a caller after a chat rename, create, delete or switch
 // never receives a listing that was captured before the change.
 let characterChatFileListingGeneration = 0;
+let chatbarListingRevision = 0;
 const characterChatFileListingsInFlight = new Map();
 
 function invalidateInFlightCharacterChatFileListings() {
     characterChatFileListingGeneration += 1;
+    chatbarListingRevision += 1;
     characterChatFileListingsInFlight.clear();
 }
 
@@ -8525,6 +8531,12 @@ function populateChatSelector(select, chatFiles, chatContext, placeholder) {
 
         return map;
     }, new Map()).values()).sort((left, right) => left.fileName.localeCompare(right.fileName));
+
+    const signature = JSON.stringify([placeholder, currentValue, uniqueChats.map(chat => [chat.fileName, chat.tokenEstimate])]);
+    if (select.dataset.nnChatSelectorSignature === signature) {
+        return;
+    }
+    select.dataset.nnChatSelectorSignature = signature;
 
     select.replaceChildren();
 
@@ -9646,6 +9658,108 @@ function bindConnectionProfileSourceObserver() {
     bindConnectionProfileSourceElement(document.getElementById('connection_profiles'));
 }
 
+function getChatbarContextKey(chatContext) {
+    return JSON.stringify([
+        chatContext.group?.id ?? null,
+        chatContext.character?.avatar ?? null,
+        chatContext.chatId ?? '',
+        Boolean(chatContext.canBrowseChats),
+        Boolean(chatContext.canStartNewChat),
+        Boolean(chatContext.hasChat),
+    ]);
+}
+
+function areChatFileListsVisible() {
+    return isChatSidebarOpen() || (isMobileViewport() && Boolean(getChatbarState().mobileToolsOpen));
+}
+
+function syncChatbarConnectionMirror(desktopRefs, mobileRefs, connectionStatusText) {
+    const connectionProfilesSource = document.getElementById('connection_profiles');
+    const hasConnectionProfiles = connectionProfilesSource instanceof HTMLSelectElement;
+    const connectionMirrorState = nnPresetApiSyncLifecycle.connectionProfiles.resolveMirrorState({
+        hasConnectionProfiles,
+        isConnectionStripOpen: isConnectionStripOpen(),
+        hasActiveConnectButton: hasConnectionProfiles && Boolean(resolveActiveApiConnectButton()),
+    });
+
+    if (desktopRefs) {
+        desktopRefs.toggleConnectionButton.hidden = !connectionMirrorState.shouldShowToggle;
+        desktopRefs.connectionStrip.hidden = !connectionMirrorState.shouldShowDesktopStrip;
+    }
+
+    if (connectionMirrorState.shouldCloseDesktopStrip) {
+        setConnectionStripOpenState(false);
+    }
+
+    if (connectionMirrorState.shouldClearMirrors) {
+        if (desktopRefs) {
+            if (desktopRefs.connectionSelect.childElementCount) {
+                desktopRefs.connectionSelect.replaceChildren();
+            }
+            if (desktopRefs.connectionStatus.textContent) {
+                desktopRefs.connectionStatus.textContent = '';
+            }
+            setButtonDisabled(desktopRefs.connectionConnectButton, connectionMirrorState.shouldDisableConnectButton);
+        }
+
+        if (mobileRefs?.connectionSection instanceof HTMLElement) {
+            mobileRefs.connectionSection.hidden = !connectionMirrorState.shouldShowMobileSection;
+            if (mobileRefs.connectionSelect.childElementCount) {
+                mobileRefs.connectionSelect.replaceChildren();
+            }
+            if (mobileRefs.connectionStatus.textContent) {
+                mobileRefs.connectionStatus.textContent = '';
+            }
+        }
+    } else {
+        const optionsMarkup = connectionProfilesSource.innerHTML;
+        if (desktopRefs) {
+            if (desktopRefs.connectionSelect.innerHTML !== optionsMarkup) {
+                desktopRefs.connectionSelect.innerHTML = optionsMarkup;
+            }
+            desktopRefs.connectionSelect.value = connectionProfilesSource.value;
+            if (desktopRefs.connectionStatus.textContent !== connectionStatusText) {
+                desktopRefs.connectionStatus.textContent = connectionStatusText;
+            }
+            setButtonDisabled(desktopRefs.connectionConnectButton, connectionMirrorState.shouldDisableConnectButton);
+        }
+
+        if (mobileRefs?.connectionSection instanceof HTMLElement) {
+            mobileRefs.connectionSection.hidden = !connectionMirrorState.shouldShowMobileSection;
+            if (mobileRefs.connectionSelect.innerHTML !== optionsMarkup) {
+                mobileRefs.connectionSelect.innerHTML = optionsMarkup;
+            }
+            mobileRefs.connectionSelect.value = connectionProfilesSource.value;
+            if (mobileRefs.connectionStatus.textContent !== connectionStatusText) {
+                mobileRefs.connectionStatus.textContent = connectionStatusText;
+            }
+        }
+    }
+}
+
+async function refreshChatbarConnectionState() {
+    const chatbarState = getChatbarState();
+    const refreshToken = ++chatbarState.connectionRefreshToken;
+    const desktopRefs = getChatDesktopRefs();
+    const mobileRefs = getChatMobileRefs();
+
+    if (!desktopRefs && !mobileRefs) {
+        return;
+    }
+
+    const connectionStatusText = await getConnectionStatusText();
+
+    if (refreshToken !== chatbarState.connectionRefreshToken) {
+        return;
+    }
+
+    syncChatbarConnectionMirror(desktopRefs, mobileRefs, connectionStatusText);
+
+    if (desktopRefs) {
+        setButtonPressed(desktopRefs.toggleConnectionButton, isConnectionStripOpen());
+    }
+}
+
 async function refreshChatbarState() {
     const chatbarState = getChatbarState();
     const refreshToken = ++chatbarState.refreshToken;
@@ -9657,6 +9771,18 @@ async function refreshChatbarState() {
     }
 
     const chatContext = getChatUiContext();
+    const contextKey = getChatbarContextKey(chatContext);
+    const listsVisible = areChatFileListsVisible();
+
+    // With both chat lists closed, the chat bar only shows the current chat name and
+    // the buttons' enabled state. Neither changes while a reply streams, so a refresh
+    // that would repeat the same list request and the same option rebuild can stop here.
+    if (!listsVisible
+        && chatbarState.renderedListing?.contextKey === contextKey
+        && chatbarState.renderedListing?.revision === chatbarListingRevision) {
+        return;
+    }
+
     const files = await getChatFilesForContext(chatContext);
     const connectionStatusText = await getConnectionStatusText();
 
@@ -9694,59 +9820,36 @@ async function refreshChatbarState() {
         setButtonDisabled(mobileRefs.searchInput, !chatContext.hasChat);
     }
 
-    const connectionProfilesSource = document.getElementById('connection_profiles');
-    const hasConnectionProfiles = connectionProfilesSource instanceof HTMLSelectElement;
-    const connectionMirrorState = nnPresetApiSyncLifecycle.connectionProfiles.resolveMirrorState({
-        hasConnectionProfiles,
-        isConnectionStripOpen: isConnectionStripOpen(),
-        hasActiveConnectButton: hasConnectionProfiles && Boolean(resolveActiveApiConnectButton()),
-    });
+    syncChatbarConnectionMirror(desktopRefs, mobileRefs, connectionStatusText);
 
-    if (desktopRefs) {
-        desktopRefs.toggleConnectionButton.hidden = !connectionMirrorState.shouldShowToggle;
-        desktopRefs.connectionStrip.hidden = !connectionMirrorState.shouldShowDesktopStrip;
+    const filesSignature = JSON.stringify([chatContext.chatId, files.map(chat => [
+        chat.fileName,
+        chat.tokenEstimate,
+        chat.preview,
+        chat.lastMessage,
+        chat.fileSize,
+        chat.chatItems,
+    ])]);
+    const renderedFiles = chatbarState.renderedFiles ?? {};
+
+    if (isChatSidebarOpen() && renderedFiles.sidebarSignature !== filesSignature) {
+        renderChatFiles(getChatSidebarRefs()?.list, files, chatContext.chatId, {
+            onSelect: chatId => openChatById(chatId),
+        });
+        renderedFiles.sidebarSignature = filesSignature;
     }
 
-    if (connectionMirrorState.shouldCloseDesktopStrip) {
-        setConnectionStripOpenState(false);
+    if (isMobileViewport() && chatbarState.mobileToolsOpen && renderedFiles.mobileSignature !== filesSignature) {
+        renderChatFiles(mobileRefs?.recentList, files, chatContext.chatId, {
+            compact: true,
+            onSelect: chatId => openChatById(chatId, { closeMobileTools: true }),
+        });
+        renderedFiles.mobileSignature = filesSignature;
     }
 
-    if (connectionMirrorState.shouldClearMirrors) {
-        if (desktopRefs) {
-            desktopRefs.connectionSelect.replaceChildren();
-            desktopRefs.connectionStatus.textContent = '';
-            setButtonDisabled(desktopRefs.connectionConnectButton, connectionMirrorState.shouldDisableConnectButton);
-        }
+    chatbarState.renderedFiles = renderedFiles;
 
-        if (mobileRefs?.connectionSection instanceof HTMLElement) {
-            mobileRefs.connectionSection.hidden = !connectionMirrorState.shouldShowMobileSection;
-            mobileRefs.connectionSelect.replaceChildren();
-            mobileRefs.connectionStatus.textContent = '';
-        }
-    } else {
-        const optionsMarkup = connectionProfilesSource.innerHTML;
-        if (desktopRefs) {
-            desktopRefs.connectionSelect.innerHTML = optionsMarkup;
-            desktopRefs.connectionSelect.value = connectionProfilesSource.value;
-            desktopRefs.connectionStatus.textContent = connectionStatusText;
-            setButtonDisabled(desktopRefs.connectionConnectButton, connectionMirrorState.shouldDisableConnectButton);
-        }
-
-        if (mobileRefs?.connectionSection instanceof HTMLElement) {
-            mobileRefs.connectionSection.hidden = !connectionMirrorState.shouldShowMobileSection;
-            mobileRefs.connectionSelect.innerHTML = optionsMarkup;
-            mobileRefs.connectionSelect.value = connectionProfilesSource.value;
-            mobileRefs.connectionStatus.textContent = connectionStatusText;
-        }
-    }
-
-    renderChatFiles(getChatSidebarRefs()?.list, files, chatContext.chatId, {
-        onSelect: chatId => openChatById(chatId),
-    });
-    renderChatFiles(mobileRefs?.recentList, files, chatContext.chatId, {
-        compact: true,
-        onSelect: chatId => openChatById(chatId, { closeMobileTools: true }),
-    });
+    chatbarState.renderedListing = { contextKey, revision: chatbarListingRevision };
 
     if (desktopRefs) {
         setButtonPressed(desktopRefs.toggleSidebarButton, isChatSidebarOpen());
@@ -9762,6 +9865,19 @@ async function refreshChatbarState() {
     } else if (getSearchTerms().length) {
         scheduleChatSearchHighlight({ scrollToFirst: false });
     }
+}
+
+function scheduleChatbarConnectionRefresh(delay = 0) {
+    const chatbarState = getChatbarState();
+    const safeDelay = Math.max(0, Number(delay) || 0);
+
+    window.clearTimeout(chatbarState.connectionRefreshTimer);
+    chatbarState.connectionRefreshTimer = window.setTimeout(() => {
+        chatbarState.connectionRefreshTimer = 0;
+        void refreshChatbarConnectionState().catch(error => {
+            console.warn('[Neconyan] Failed to refresh chat tools connection state.', error);
+        });
+    }, safeDelay);
 }
 
 function scheduleChatbarRefresh(delay = 0) {
@@ -9840,6 +9956,7 @@ function bindChatbarEvents() {
     }
 
     const refresh = () => scheduleChatbarRefresh(0);
+    const refreshConnection = () => scheduleChatbarConnectionRefresh(0);
     const events = [
         eventTypes.APP_READY,
         eventTypes.CHAT_CHANGED,
@@ -9855,6 +9972,10 @@ function bindChatbarEvents() {
         eventTypes.MESSAGE_DELETED,
         eventTypes.MESSAGE_SWIPED,
         eventTypes.MESSAGE_SWIPE_DELETED,
+    ].filter(Boolean);
+    // These change only the connection mirror. They used to reload the chat list too,
+    // which rebuilds every chat row for a profile switch or a settings save.
+    const connectionEvents = [
         eventTypes.CONNECTION_PROFILE_LOADED,
         eventTypes.CONNECTION_PROFILE_CREATED,
         eventTypes.CONNECTION_PROFILE_UPDATED,
@@ -9866,6 +9987,10 @@ function bindChatbarEvents() {
 
     for (const eventName of new Set(events)) {
         eventSource.on(eventName, refresh);
+    }
+
+    for (const eventName of new Set(connectionEvents)) {
+        eventSource.on(eventName, refreshConnection);
     }
 
     bindChatListingInvalidation(eventSource, eventTypes);
@@ -21661,9 +21786,17 @@ async function refreshBottomChatSelect() {
     }
     setButtonDisabled(state.chatPickerButton, !chatContext.canBrowseChats);
     const fallback = currentChatName ? [{ fileName: currentChatName }] : [];
+    // The picker reloads its list when it opens. While it is closed, a reply or a
+    // settings save does not change which chats exist, so the rows already held here
+    // stay valid and the same list request does not need repeating.
+    const pickerOpen = state.chatPickerButton?.getAttribute('aria-expanded') === 'true';
+    const hasCachedListing = !pickerOpen
+        && state.chatList?.key === key
+        && state.chatList?.revision === chatbarListingRevision;
     state.chatList = { key, current: currentChatName, label: chatContext.label,
         entries: state.chatList?.key === key ? state.chatList.entries : fallback,
-        loading: chatContext.canBrowseChats, error: false };
+        loading: !hasCachedListing && chatContext.canBrowseChats, error: false,
+        revision: state.chatList?.revision ?? -1 };
     state.chatPicker?.update(state.chatList);
     if (!chatContext.canBrowseChats) state.chatPicker?.close();
 
@@ -21676,7 +21809,7 @@ async function refreshBottomChatSelect() {
     setButtonDisabled(nnState.bottomChatBar?.massDeleteButton, !chatContext.canBrowseChats);
     setButtonDisabled(nnState.bottomChatBar?.autoNameButton, !chatContext.hasChat);
 
-    if (!chatContext.context) {
+    if (!chatContext.context || hasCachedListing) {
         return;
     }
 
@@ -21701,7 +21834,7 @@ async function refreshBottomChatSelect() {
         const entries = chats.map(chat => ({ ...chat, meta: [formatChatTimestamp(chat.lastMessage),
             chat.chatItems > 0 ? `${chat.chatItems} ${t`messages`}` : '', formatChatTokenEstimate(chat.tokenEstimate)].filter(Boolean).join(' · ') }));
         if (currentChatName && !chatNames.includes(currentChatName)) entries.unshift(...fallback);
-        state.chatList = { ...state.chatList, entries, loading: false };
+        state.chatList = { ...state.chatList, entries, loading: false, revision: chatbarListingRevision };
         state.chatPicker?.update(state.chatList);
 
         chatSelect.replaceChildren();
