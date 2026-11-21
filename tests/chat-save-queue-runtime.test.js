@@ -265,7 +265,7 @@ for (const change of ['different chat in one group', 'superseding load of the sa
                     evidence: { account, source: { instanceId: randomUUID(), revision: 1, rawHash: 'a'.repeat(64) } } };
             },
             loadItemizedPrompts: async () => { if (loads === 1) { signal(); await gate; } },
-            chatElement: { find: () => ({ remove() {} }) }, ensureMessageMediaIsArray: () => {},
+            chatElement: { find: () => ({ remove() {} }) }, ensureMessageMediaIsArray: () => {}, importPresenceRecords: () => false,
             printMessages: async () => {}, updateChatMetadata: metadata => { runtime.chat_metadata = metadata; },
             eventSource: { emit: async () => {} }, event_types: {}, getCurrentChatId: () => group.chat_id,
             toastr: { error: jest.fn() }, t: strings => strings.join(''),

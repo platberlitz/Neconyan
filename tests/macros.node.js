@@ -258,3 +258,19 @@ test('message number macros keep real numbers when a group speaker missed lines'
     const plain = createMacroEnvironment({ ...snapshot(), extra: { ...snapshot().extra, chat } });
     assert.equal(plain.evaluate('{{lastMessageId}} {{allChatRange}}'), '1 0-1');
 });
+
+test('group scene macros read the open scene, and stay empty where there is none', () => {
+    const groupScene = {
+        present: 'Kit, Mira',
+        away: 'Nova',
+        location: 'The lantern inn',
+        heard: messageId => (messageId === 3 ? 'Kit' : ''),
+    };
+    const scene = createMacroEnvironment({ ...snapshot(), extra: { ...snapshot().extra, groupScene } });
+    assert.equal(
+        scene.evaluate('{{groupPresent}}|{{groupAway}}|{{sceneLocation}}|{{groupHeard::3}}|{{groupHeard::9}}|{{groupHeard::-1}}'),
+        'Kit, Mira|Nova|The lantern inn|Kit||',
+    );
+    const plain = createMacroEnvironment(snapshot());
+    assert.equal(plain.evaluate('{{groupPresent}}|{{groupAway}}|{{sceneLocation}}|{{groupHeard::3}}'), '|||');
+});
