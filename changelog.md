@@ -15,6 +15,7 @@
 - PR #788 (2026-11-21) `fix(scratchpad): use short references for scenario note edits`
 - PR #789 (2026-11-21) `fix(mobile): restore the compact composer layout`
 - PR #790 (2026-11-21) `fix(conversation): make deleting a DM or group DM stick`
+- PR #792 (2026-11-21) `fix(android): honour supported server config edits on restart`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
