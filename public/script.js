@@ -324,6 +324,7 @@ import {
     user_avatar,
     getPersonaScenarioAvatar,
     getUserAvatars,
+    prefetchUserAvatars,
     getUserAvatar,
     setUserAvatar,
     initPersonas,
@@ -1574,8 +1575,10 @@ async function firstLoadInit() {
             headers: getRequestHeaders(),
             body: JSON.stringify({}),
         });
-        // Groups are independent too, and getGroups will use this response.
+        // Groups and avatars are independent too, and getGroups and
+        // getUserAvatars will use these responses.
         prefetchGroups();
+        prefetchUserAvatars();
         await initLocales(initialSettingsData);
         // The top bar was first built before the translations loaded, and its title is protected from the localiser, so rebuild its label now.
         globalThis.NeconyanShell?.refreshTopBarLabel?.();
