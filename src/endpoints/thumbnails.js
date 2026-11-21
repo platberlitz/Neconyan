@@ -192,7 +192,7 @@ export function getThumbnailMobileRuntimeSettings() {
  * @param {ThumbnailPreset} [preset='desktop'] - Thumbnail preset to generate.
  * @returns {Promise<{path: string|null, aspectRatio: number|null, resolution: number|null}>} Path to thumbnail, its aspect ratio, and resolution.
  */
-export async function generateThumbnail(directories, type, file, forceGenerate = false, isKnownAnimated = null, preset = 'desktop') {
+export async function generateThumbnail(directories, type, file, forceGenerate = false, isKnownAnimated = null, preset = 'desktop', { includeCachedAspectRatio = true } = {}) {
     // If the caller has already determined the file is animated, skip processing.
     if (isKnownAnimated) {
         return { path: null, aspectRatio: null, resolution: null };
@@ -234,9 +234,14 @@ export async function generateThumbnail(directories, type, file, forceGenerate =
                 }
 
                 if (!forceGenerate) {
-                    const buffer = fs.readFileSync(pathToCachedFile);
-                    const fileDimensions = sizeOf(buffer);
-                    const ratio = (fileDimensions.height > 0) ? (fileDimensions.width / fileDimensions.height) : 1.0;
+                    // The public route only sends the bytes, so it can skip reading
+                    // the cached file once more just to measure it.
+                    let ratio = null;
+                    if (includeCachedAspectRatio) {
+                        const buffer = fs.readFileSync(pathToCachedFile);
+                        const fileDimensions = sizeOf(buffer);
+                        ratio = (fileDimensions.height > 0) ? (fileDimensions.width / fileDimensions.height) : 1.0;
+                    }
                     // When a thumbnail exists, return the current resolution from config so the JSON can be updated.
                     const resolution = isMobile ? getThumbnailMobileResolution(type) : getThumbnailResolution(type);
                     return { path: pathToCachedFile, aspectRatio: ratio, resolution };
@@ -314,7 +319,6 @@ async function processSingleImage(file, originalFolder, thumbnailFolder, type, p
         const originalHeight = image.bitmap.height;
         const aspectRatio = (originalHeight > 0) ? (originalWidth / originalHeight) : 1.0;
 
-        const thumbImage = image.clone();
         const thumbnailResolution = isMobile ? getThumbnailMobileResolution(type) : getThumbnailResolution(type);
         const dimensionSource = isMobile ? mobileDimensions : dimensions;
         const settings = isMobile ? thumbnailMobileRuntimeSettings : thumbnailRuntimeSettings;
@@ -322,23 +326,27 @@ async function processSingleImage(file, originalFolder, thumbnailFolder, type, p
         if (type === 'bg') {
             const [configWidth, configHeight] = dimensionSource[type];
             const targetPixelArea = configWidth * configHeight;
+            // A small picture gains no detail by being enlarged; it only makes a
+            // larger file and a slower resize.
+            const scale = Math.min(1, Math.sqrt(targetPixelArea / (originalWidth * originalHeight)));
+            const thumbWidth = Math.max(1, Math.round(originalWidth * scale));
+            const thumbHeight = Math.max(1, Math.round(originalHeight * scale));
 
-            // Calculate thumbnail dimensions to maintain target pixel area while preserving aspect ratio
-            // For aspect ratio w:h, if area = w*h and ratio = w/h, then:
-            // w = sqrt(area * ratio) and h = sqrt(area / ratio)
-            const thumbWidth = Math.round(Math.sqrt(targetPixelArea * aspectRatio));
-            const thumbHeight = Math.round(Math.sqrt(targetPixelArea / aspectRatio));
-
-            thumbImage.resize({ w: thumbWidth, h: thumbHeight, mode: ResizeStrategy.BILINEAR });
+            image.resize({ w: thumbWidth, h: thumbHeight, mode: ResizeStrategy.BILINEAR });
         } else if (type === 'avatar' || type === 'persona') {
-            // Crop and resize to fixed dimensions
+            // Crop and resize to fixed dimensions, without enlarging the source.
             const [configWidth, configHeight] = dimensionSource[type];
-            safeCover(thumbImage, { w: configWidth, h: configHeight, mode: ResizeStrategy.BILINEAR });
+            const scale = Math.min(1, originalWidth / configWidth, originalHeight / configHeight);
+            safeCover(image, {
+                w: Math.max(1, Math.round(configWidth * scale)),
+                h: Math.max(1, Math.round(configHeight * scale)),
+                mode: ResizeStrategy.BILINEAR,
+            });
         }
 
         const buffer = settings.format === 'png'
-            ? await thumbImage.getBuffer(JimpMime.png)
-            : await thumbImage.getBuffer(JimpMime.jpeg, { quality: settings.quality, jpegColorSpace: 'ycbcr' });
+            ? await image.getBuffer(JimpMime.png)
+            : await image.getBuffer(JimpMime.jpeg, { quality: settings.quality, jpegColorSpace: 'ycbcr' });
 
         writeFileAtomicSync(pathToCachedFile, buffer);
 
@@ -402,7 +410,9 @@ publicRouter.get('/', async function (request, response) {
         if (!pathToCachedFile) return response.sendStatus(403);
 
         // Check freshness even when a cached desktop or mobile thumbnail exists.
-        const thumbResult = await generateThumbnail(request.user.directories, type, file, false, null, effectivePreset);
+        const thumbResult = await generateThumbnail(request.user.directories, type, file, false, null, effectivePreset, {
+            includeCachedAspectRatio: false,
+        });
         // If generation failed (path is null), serve the original file
         if (!thumbResult.path) {
             return serveOriginal();

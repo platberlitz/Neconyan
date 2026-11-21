@@ -367,6 +367,35 @@ describe('thumbnail file name resolution', () => {
         expect(result.path).toBe(path.join(directories.thumbnailsAvatar, '50%.png'));
     });
 
+    test('generateThumbnail never enlarges a small portrait', async () => {
+        const small = new Jimp({ width: 27, height: 40, color: 0xffffffff });
+        fs.writeFileSync(path.join(directories.characters, 'Small.png'), await small.getBuffer(JimpMime.png));
+
+        const result = await generateThumbnail(directories, 'avatar', 'Small.png', true);
+
+        expect(imageSize(fs.readFileSync(result.path))).toMatchObject({ width: 27, height: 40 });
+    });
+
+    test('generateThumbnail still fits a large portrait to the desktop box', async () => {
+        const large = new Jimp({ width: 1600, height: 2000, color: 0xffffffff });
+        fs.writeFileSync(path.join(directories.characters, 'Large.png'), await large.getBuffer(JimpMime.png));
+
+        const result = await generateThumbnail(directories, 'avatar', 'Large.png', true);
+
+        expect(imageSize(fs.readFileSync(result.path))).toMatchObject({ width: 864, height: 1280 });
+    });
+
+    test('serving a cached thumbnail does not read the file just to measure it', async () => {
+        writeCharacter('Cached.png');
+        writeCachedThumbnail('Cached.png', PNG_FIXTURE);
+        const readSpy = jest.spyOn(fs, 'readFileSync');
+
+        const response = await requestThumbnail('type=avatar&file=Cached.png');
+
+        expect(response.status).toBe(200);
+        expect(readSpy.mock.calls.filter(([file]) => file === path.join(directories.thumbnailsAvatar, 'Cached.png'))).toHaveLength(0);
+    });
+
     test('generateThumbnail refuses to resolve outside the originals folder', async () => {
         jest.spyOn(console, 'error').mockImplementation(() => {});
 
