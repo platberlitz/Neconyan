@@ -66,7 +66,7 @@ test('iOS launch isolates the listener and retains private settings across launc
         assert.equal(config.enableServerPlugins, false);
         assert.equal(config.browserLaunch.enabled, false);
         assert.equal(config.customPreference, 'retained');
-        assert.equal(config.dataRoot, path.join(state, 'data'));
+        assert.equal(config.dataRoot, path.join(fs.realpathSync(state), 'data'));
         assert.equal(fs.readFileSync(path.join(state, 'data', 'user-chat'), 'utf8'), 'keep me');
         const observed = JSON.parse(fs.readFileSync(path.join(state, 'observed.json'), 'utf8'));
         assert.equal(observed.ready.port, 28193);
@@ -159,7 +159,7 @@ test('iOS version keys stay within the three numbers iOS accepts', async () => {
     assert.throws(() => iosVersions('2.100.0'), /above 99/);
     const packageVersion = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
     assert.doesNotThrow(() => iosVersions(packageVersion));
-    const verify = spawnSync('python3', ['-c', `import importlib.util,sys
+    const verify = spawnSync('python3', ['-B', '-c', `import importlib.util,sys
 spec = importlib.util.spec_from_file_location('v', 'scripts/verify-ios-build.py'); v = importlib.util.module_from_spec(spec); spec.loader.exec_module(v)
 print(','.join(v.ios_versions(sys.argv[1])))`, '2.7.0.3'], { cwd: root, encoding: 'utf8' });
     if (verify.error?.code !== 'ENOENT') assert.equal(verify.stdout.trim(), '2.7.0,2070003', verify.stderr);
