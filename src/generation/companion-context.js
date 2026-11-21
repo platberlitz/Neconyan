@@ -1,6 +1,6 @@
 import { createMacroEnvironment } from '../macros/index.js';
 import { getStringHash } from '../../public/scripts/macro-primitives.js';
-import { getActiveCompanionResults, getPlotCompassOpeningNote, isEmptyOutputSentinel, isPlotCompassAgent, MEMORY_SHARD_TEMPLATE_ID, TRACKER_EMPTY_OUTPUT_INSTRUCTION } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
+import { getActiveCompanionResults, getPlotCompassContentWithChoice, getPlotCompassOpeningNote, isEmptyOutputSentinel, isPlotCompassAgent, MEMORY_SHARD_TEMPLATE_ID, TRACKER_EMPTY_OUTPUT_INSTRUCTION } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
 import { TRACKER_REPAIR_INSTRUCTION } from '../../public/scripts/extensions/in-chat-agents/tracker-state.js';
 import { buildMewmoryMacros, buildTrackerStateText, captureSecretsTrackerState, SECRETS_TRACKER_MACRO } from '../../public/scripts/extensions/in-chat-agents/agent-context-macros.js';
 import { buildContinuityCorrectionsText, CONTINUITY_CORRECTIONS_MACRO, continuityCorrectionsFromRuns } from '../../public/scripts/extensions/in-chat-agents/continuity-link.js';
@@ -37,6 +37,8 @@ export function resolveCompanionText(options, agent, text, message) {
         original: String(message?.mes ?? options.messages.at(-1)?.mes ?? '') }));
 }
 
+const savedNoteText = (agent, note) => isPlotCompassAgent(agent) ? getPlotCompassContentWithChoice(note) : note.content;
+
 export function previousCompanionNotes(options, agent, { depth = agent.companion.historyDepth, before = options.messages.length - 1 } = {}) {
     const result = [];
     for (let index = Math.min(before - 1, options.messages.length - 1); index >= 0 && result.length < depth; index--) {
@@ -45,11 +47,11 @@ export function previousCompanionNotes(options, agent, { depth = agent.companion
         const stored = getActiveCompanionResults(message);
         const note = Object.hasOwn(stored, agent.id) ? stored[agent.id] : null;
         if (note?.status !== 'done' || !clean(note.content) || isEmptyOutputSentinel(note.content)) continue;
-        result.push({ index, note, content: resolveCompanionText(options, agent, note.content, message) });
+        result.push({ index, note, content: resolveCompanionText(options, agent, savedNoteText(agent, note), message) });
     }
     const opening = isPlotCompassAgent(agent) && getPlotCompassOpeningNote(options.records?.[0]?.chat_metadata, agent.id);
     if (opening && result.length < depth && !isEmptyOutputSentinel(opening.content)) {
-        result.push({ index: -1, note: opening, content: resolveCompanionText(options, agent, opening.content, { is_system: true, mes: '' }) });
+        result.push({ index: -1, note: opening, content: resolveCompanionText(options, agent, savedNoteText(agent, opening), { is_system: true, mes: '' }) });
     }
     return result;
 }

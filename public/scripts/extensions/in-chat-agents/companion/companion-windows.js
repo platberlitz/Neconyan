@@ -9,7 +9,7 @@ import {
     isAgentRuntimeAllowed,
     isCompanionAgent,
 } from '../agent-store.js';
-import { cleanCompanionAgentName, insertChoiceIntoMessageInput } from './companion-ui.js';
+import { cleanCompanionAgentName, insertChoiceIntoMessageInput, togglePlotCompassChoice } from './companion-ui.js';
 import { getCompanionResults, getLatestValidCompanionMessageIndex, runCompanionAgentOnMessage } from './companion-runner.js';
 import { holdsReadableCompanionResults, isDiceRollerAgent, isSuppressedCompanionResult } from './companion-shared.js';
 import { buildDiceCompanionHostHtml, captureDiceCompanionWidget, notifyDiceCompanionHostsChanged, restoreDiceCompanionWidget } from './dice-companion-view.js';
@@ -1229,7 +1229,12 @@ function handleWindowClick(event) {
     if (choiceLine) {
         event.preventDefault();
         event.stopPropagation();
-        if (Date.now() >= suppressWindowClickUntil) {
+        if (Date.now() < suppressWindowClickUntil) {
+            return;
+        }
+        if (choiceLine.classList.contains('ica--plot-choice')) {
+            void togglePlotCompassChoice(choiceLine);
+        } else {
             insertChoiceIntoMessageInput(choiceLine.dataset?.icaChoiceText ?? choiceLine.textContent);
         }
         return;

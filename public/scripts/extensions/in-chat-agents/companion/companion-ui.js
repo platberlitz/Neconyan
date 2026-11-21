@@ -1,5 +1,5 @@
 import { DOMPurify, showdown } from '../../../../lib.js';
-import { chat, characters, this_chid, changeMessageBelowReader, changeMessagesBelowReader, runWhenChatScrollSettles, saveChatDebounced, substituteParams, substituteParamsExtended } from '../../../../script.js';
+import { chat, chat_metadata, characters, this_chid, changeMessageBelowReader, changeMessagesBelowReader, runWhenChatScrollSettles, saveChatDebounced, substituteParams, substituteParamsExtended } from '../../../../script.js';
 import { encodeStyleTags, decodeStyleTags } from '../../../chats.js';
 import { bindPortraitUrls } from '../../../portrait-urls.js';
 import { eventSource, event_types } from '../../../events.js';
@@ -32,6 +32,7 @@ import {
     COMPANION_RESULTS_UPDATED_EVENT,
     MAX_COMPANION_RESULT_CHARS,
     captureCompanionResultTarget,
+    collectRecentCompanionResults,
     deleteCompanionResult,
     emitCompanionResultsUpdated,
     getCompanionResults,
@@ -51,11 +52,16 @@ import {
     isChatroomAgent,
     isDiceRollerAgent,
     isMessageInboxAgent,
+    getPlotCompassChoice,
+    getPlotCompassOpeningNote,
     isPlotCompassAgent,
     isSuppressedCompanionResult,
     isValidCompanionMessage,
     normalizeChatOnlyInput,
     normalizeChatroomReply,
+    normalizePlotCompassChoiceText,
+    parsePlotCompassChoices,
+    PLOT_COMPASS_OPENING_NOTES_KEY,
     setPlotCompassObjectives,
 } from './companion-shared.js';
 import {
@@ -207,15 +213,20 @@ export function formatCompanionContent(agentId, result = {}, message = null, sty
     const portraitCharacter = getCompanionPortraitCharacter(message);
     const bindPortraits = html => bindPortraitUrls(html, portraitCharacter);
 
+    const decorate = html => {
+        const lines = decorateChoiceLines(html);
+        return isPlotCompassAgent(getAgentById(agentId)) ? decoratePlotCompassChoices(lines, agentId, result, message, resolved) : lines;
+    };
+
     if (result.format === 'html') {
-        return decorateChoiceLines(sanitizeCompanionHtml(bindPortraits(resolved), sanitizeOptions));
+        return decorate(sanitizeCompanionHtml(bindPortraits(resolved), sanitizeOptions));
     }
 
     if (result.format === 'text') {
         return `<pre class="ica--companion-text">${escapeHtml(resolved)}</pre>`;
     }
 
-    return decorateChoiceLines(sanitizeCompanionHtml(bindPortraits(getMarkdownConverter().makeHtml(resolved)), sanitizeOptions));
+    return decorate(sanitizeCompanionHtml(bindPortraits(getMarkdownConverter().makeHtml(resolved)), sanitizeOptions));
 }
 
 function getResultStatus(result = {}) {
@@ -510,6 +521,130 @@ export function decorateChoiceLines(html) {
     }
 
     return container.innerHTML;
+}
+
+const PLOT_COMPASS_CHOICE_ATTRIBUTES = ['data-plot-compass-choice', 'data-plot-compass-agent', 'data-plot-compass-message'];
+
+// Only the newest note reaches the next reply, so only its directions take a pick.
+function getPlotCompassChoiceHost(agentId, result, message) {
+    const messageIndex = message ? chat.indexOf(message) : -1;
+    const stored = message
+        ? (messageIndex >= 0 ? getCompanionResults(message)[agentId] : null)
+        : getPlotCompassOpeningNote(chat_metadata, agentId);
+    if (!stored || stored !== result) return null;
+    return collectRecentCompanionResults(agentId, { depth: 1 })[0]?.messageIndex === messageIndex ? messageIndex : null;
+}
+
+function getPlotCompassStoredResult(agentId, messageIndex) {
+    if (messageIndex === -1) return getPlotCompassOpeningNote(chat_metadata, agentId);
+    const message = chat[messageIndex];
+    return message ? getCompanionResults(message)[agentId] ?? null : null;
+}
+
+/**
+ * Turns the numbered directions of a Plot Compass note into picks. A pick steers the next
+ * reply; with none picked the main model follows the note's own Next move.
+ */
+export function decoratePlotCompassChoices(html, agentId, result = {}, message = null, displayContent = '') {
+    if (typeof document === 'undefined' || typeof document?.createElement !== 'function') {
+        return html;
+    }
+    const container = document.createElement('div');
+    container.innerHTML = html;
+    for (const attribute of PLOT_COMPASS_CHOICE_ATTRIBUTES) {
+        container.querySelectorAll(`[${attribute}]`).forEach(element => element.removeAttribute(attribute));
+    }
+
+    const saved = parsePlotCompassChoices(result.content);
+    const messageIndex = saved.choices.length ? getPlotCompassChoiceHost(agentId, result, message) : null;
+    if (messageIndex === null) {
+        return container.innerHTML;
+    }
+
+    const shown = parsePlotCompassChoices(displayContent);
+    const key = text => normalizePlotCompassChoiceText(extractChoiceText(text)).toLowerCase();
+    const labels = new Map();
+    for (const choice of saved.choices) {
+        const display = shown.choices.find(entry => entry.number === choice.number)?.text;
+        labels.set(key(display ?? choice.text), choice.number);
+        labels.set(key(choice.text), choice.number);
+    }
+
+    const chosen = getPlotCompassChoice(result)?.number ?? null;
+    const matched = [];
+    for (const button of container.querySelectorAll('button.ica--choice-line')) {
+        const clone = button.cloneNode(true);
+        clone.querySelectorAll('.ica--plot-choice-tag').forEach(tag => tag.remove());
+        const number = labels.get(key(clone.textContent));
+        if (!number || matched.some(entry => entry.number === number)) continue;
+        matched.push({ button, number });
+    }
+    if (matched.length < 2) {
+        return container.innerHTML;
+    }
+
+    for (const { button, number } of matched) {
+        const picked = chosen === number;
+        button.classList.add('ica--plot-choice');
+        button.dataset.plotCompassChoice = String(number);
+        button.dataset.plotCompassAgent = agentId;
+        button.dataset.plotCompassMessage = String(messageIndex);
+        button.setAttribute('aria-pressed', picked ? 'true' : 'false');
+        button.title = picked ? 'Your pick. Select it again to let Plot Compass choose.' : 'Steer the next reply this way';
+        const tagLabel = picked ? 'Your pick' : (saved.pick === number ? 'Suggested' : '');
+        if (tagLabel) {
+            const tag = document.createElement('span');
+            tag.className = `ica--plot-choice-tag${picked ? ' ica--plot-choice-tag-picked' : ''}`;
+            tag.textContent = tagLabel;
+            button.append(' ', tag);
+        }
+    }
+
+    const last = matched[matched.length - 1].button;
+    const anchor = last.closest('ol, ul') ?? last.closest('p, div') ?? last;
+    const hint = document.createElement('p');
+    hint.className = 'ica--plot-choice-hint';
+    hint.textContent = chosen
+        ? 'The next reply follows your pick. Select it again to let Plot Compass choose.'
+        : 'Pick a direction for the next reply, or leave it and Plot Compass goes with its suggestion.';
+    anchor.after(hint);
+    return container.innerHTML;
+}
+
+/**
+ * Saves or clears the user's pick on a Plot Compass note.
+ * @returns {Promise<boolean>} Whether the button was a Plot Compass pick.
+ */
+export async function togglePlotCompassChoice(button) {
+    const agentId = button?.dataset?.plotCompassAgent ?? '';
+    const messageIndex = Number(button?.dataset?.plotCompassMessage);
+    const number = Number(button?.dataset?.plotCompassChoice);
+    if (!agentId || !Number.isInteger(messageIndex) || messageIndex < -1 || !Number.isInteger(number)) {
+        return false;
+    }
+    const result = getPlotCompassStoredResult(agentId, messageIndex);
+    const choice = result?.status === 'done' && isPlotCompassAgent(getAgentById(agentId))
+        ? parsePlotCompassChoices(result.content).choices.find(entry => entry.number === number)
+        : null;
+    if (!choice) {
+        return true;
+    }
+
+    const next = getPlotCompassChoice(result)?.number === number ? null : { number, text: choice.text };
+    if (messageIndex === -1) {
+        const note = { ...result };
+        if (next) note.plotCompassChoice = next;
+        else delete note.plotCompassChoice;
+        chat_metadata[PLOT_COMPASS_OPENING_NOTES_KEY] = { ...chat_metadata[PLOT_COMPASS_OPENING_NOTES_KEY], [agentId]: note };
+    } else {
+        // Keep updatedAt, so the note's time still says when Plot Compass wrote it.
+        updateCompanionResult(chat[messageIndex], agentId, { plotCompassChoice: next ?? undefined, updatedAt: result.updatedAt });
+        const stored = getCompanionResults(chat[messageIndex])[agentId];
+        if (!next && stored) delete stored.plotCompassChoice;
+    }
+    saveChatDebounced({ deferBackup: false });
+    await emitCompanionResultsUpdated(messageIndex, agentId);
+    return true;
 }
 
 /**
@@ -1149,6 +1284,10 @@ export function initCompanionCardUi() {
     $(document).on('click', '.ica--choice-line', function (event) {
         event.preventDefault();
         event.stopPropagation();
+        if (this.classList?.contains('ica--plot-choice')) {
+            void togglePlotCompassChoice(this);
+            return;
+        }
         insertChoiceIntoMessageInput(this.dataset?.icaChoiceText ?? this.textContent);
     });
     $(document).on('click', CHATROOM_POLL_OPTION_SELECTOR, function (event) {

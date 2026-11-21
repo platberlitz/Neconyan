@@ -53,6 +53,7 @@ import {
     insertChoiceIntoMessageInput,
     isSuppressedCompanionResult,
     refreshCompanionCards,
+    togglePlotCompassChoice,
 } from './companion-ui.js';
 import {
     CHAT_ONLY_INPUT_MAX_CHARS,
@@ -1810,6 +1811,10 @@ export function initCompanionPanel() {
     $('#ica--tracker-panel').on('click', '.ica--tpanel-agent-body .ica--choice-line', function (event) {
         event.preventDefault();
         event.stopPropagation();
+        if (this.classList?.contains('ica--plot-choice')) {
+            void togglePlotCompassChoice(this);
+            return;
+        }
         const inserted = insertChoiceIntoMessageInput(this.dataset?.icaChoiceText ?? this.textContent);
         if (inserted && !panelLocked) {
             closeCompanionPanel();

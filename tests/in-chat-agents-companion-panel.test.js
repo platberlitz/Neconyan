@@ -169,6 +169,7 @@ describe('companion tracker panel', () => {
                 extraContextSections: [{ title: 'Viewer reply', content: viewerText }],
             })),
             insertChoiceIntoMessageInput: jest.fn(() => true),
+            togglePlotCompassChoice: jest.fn(async () => false),
             refreshCompanionCards: jest.fn(),
             isSilentCompanionAgent: jest.fn(agent => String(agent?.sourceTemplateId ?? agent?.id ?? '') === 'tpl-message-inbox-companion'),
             isSuppressedCompanionResult: jest.fn((agentId, result) =>

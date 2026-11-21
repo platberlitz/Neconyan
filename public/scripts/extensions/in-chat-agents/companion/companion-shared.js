@@ -228,7 +228,90 @@ export function getPlotCompassPrompt(settings = {}, identity = {}, resolve = val
         const objective = normalizePlotCompassObjective(resolve(saved));
         return objective ? [`[${labels[scope]}]\n${objective}`] : [];
     });
-    return `[Plot Compass Objective]\n${objectives.length ? objectives.join('\n\n') : 'none set'}`;
+    return `[Plot Compass Objective]\n${objectives.length ? objectives.join('\n\n') : 'none set'}\n\n${PLOT_COMPASS_CHOICES_INSTRUCTION}`;
+}
+
+// Added at run time rather than in the template, so existing installs of the template get it too.
+export const PLOT_COMPASS_CHOICES_INSTRUCTION = '[Plot Compass Choices]\nWrite **Possible developments:** as a numbered list (1., 2., 3.) of two to four distinct directions, one short line each, so the user can pick one. Start **Next move:** with the number of the direction you recommend, such as \'2.\', then give the concrete suggestion. When a previous note ends with [User\'s chosen direction], treat that direction as the user\'s pick and build from it.';
+
+const PLOT_COMPASS_MAX_CHOICES = 6;
+const PLOT_COMPASS_SECTION_RE = /^\s*(?:#{1,6}\s+)?(?:\*\*|__)?\s*(direction|where we are|possible developments|next move)\s*(?::\s*(?:\*\*|__)|(?:\*\*|__)\s*:|:)\s*(.*)$/i;
+const PLOT_COMPASS_HASH_SECTION_RE = /^\s*#{1,6}\s+(direction|where we are|possible developments|next move)\s*()$/i;
+const PLOT_COMPASS_BOLD_HEADING_RE = /^\s*(?:#{1,6}\s+)?(?:\*\*|__)[^*_\n]{1,60}?(?::\s*(?:\*\*|__)|(?:\*\*|__)\s*:)/;
+const PLOT_COMPASS_CHOICE_RE = /^\s*(?:[-*+]\s+)?(?:\*\*|__)?\(?(\d{1,2})[.):](?:\*\*|__)?\s+(\S.*)$/;
+const PLOT_COMPASS_PICK_RE = /^\s*[[(]?\s*(?:(?:option|choice|direction|development|go with|pick)\s*)?#?(\d{1,2})\b/i;
+const PLOT_COMPASS_NAMED_PICK_RE = /\b(?:option|choice|direction|development)\s*#?(\d{1,2})\b/i;
+
+export function normalizePlotCompassChoiceText(value = '') {
+    return String(value ?? '').replaceAll(/[*_`~]+/g, '').replaceAll(/\s+/g, ' ').trim();
+}
+
+/**
+ * Read the numbered directions under 'Possible developments' and the direction the note's
+ * 'Next move' recommends. Notes without that heading fall back to their numbered lines.
+ * @returns {{ choices: { number: number, text: string }[], pick: number | null }}
+ */
+export function parsePlotCompassChoices(content = '') {
+    const lines = String(content ?? '').replaceAll(/\r\n?/g, '\n').split('\n');
+    const sectioned = [];
+    const loose = [];
+    let section = '';
+    let sawDevelopments = false;
+    let nextMove = '';
+    for (const line of lines) {
+        const heading = line.match(PLOT_COMPASS_SECTION_RE) ?? line.match(PLOT_COMPASS_HASH_SECTION_RE);
+        if (heading) {
+            section = heading[1].toLowerCase();
+            if (section === 'possible developments') sawDevelopments = true;
+            if (section === 'next move') nextMove = heading[2] || '';
+            continue;
+        }
+        if (PLOT_COMPASS_BOLD_HEADING_RE.test(line)) {
+            section = 'other';
+            continue;
+        }
+        if (section === 'next move' && !nextMove.trim()) nextMove = line;
+        const choice = line.match(PLOT_COMPASS_CHOICE_RE);
+        if (!choice) continue;
+        const entry = { number: Number(choice[1]), text: normalizePlotCompassChoiceText(choice[2]) };
+        if (!entry.text) continue;
+        if (section === 'possible developments') sectioned.push(entry);
+        else if (section !== 'next move') loose.push(entry);
+    }
+    const seen = new Set();
+    const choices = (sawDevelopments ? sectioned : loose).filter(entry => {
+        if (seen.has(entry.number)) return false;
+        seen.add(entry.number);
+        return true;
+    }).slice(0, PLOT_COMPASS_MAX_CHOICES);
+    if (choices.length < 2) return { choices: [], pick: null };
+    const move = normalizePlotCompassChoiceText(nextMove);
+    const picked = Number((move.match(PLOT_COMPASS_PICK_RE) ?? move.match(PLOT_COMPASS_NAMED_PICK_RE))?.[1]);
+    const pick = choices.some(entry => entry.number === picked) ? picked : null;
+    return { choices, pick };
+}
+
+/** The user's stored pick, only while it still names a direction in the note's current text. */
+export function getPlotCompassChoice(result) {
+    const stored = result?.plotCompassChoice;
+    if (!stored || typeof stored !== 'object') return null;
+    const text = normalizePlotCompassChoiceText(stored.text);
+    const number = Number(stored.number);
+    if (!text) return null;
+    const match = parsePlotCompassChoices(result.content).choices.find(entry => entry.number === number && entry.text === text);
+    return match ?? null;
+}
+
+/**
+ * The note's saved text with the user's pick appended, for prompts. The newest note sent to the
+ * main reply passes `instruction` so the pick replaces the note's own Next move.
+ */
+export function getPlotCompassContentWithChoice(result, { instruction = false } = {}) {
+    const content = String(result?.content ?? '');
+    const choice = getPlotCompassChoice(result);
+    if (!choice) return content;
+    const note = instruction ? '\nThe user picked this direction for the next response. Follow it in place of the Next move above.' : '';
+    return `${content.trimEnd()}\n\n[User's chosen direction]\n${choice.number}. ${choice.text}${note}`;
 }
 
 export function normalizeChatroomReply(value = '') {

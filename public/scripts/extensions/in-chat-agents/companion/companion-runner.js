@@ -74,6 +74,7 @@ import {
     isExpressionsAgent,
     isLocalCompanionAgent,
     isPlotCompassAgent,
+    getPlotCompassContentWithChoice,
     isRetryableCompanionFailure,
     isSuppressedCompanionResult,
     isValidCompanionMessage,
@@ -1026,11 +1027,12 @@ function getPreviousNotesSection(agent, messageIndex, companion) {
     return collectRecentCompanionResults(agent.id, {
         beforeMessageIndex: messageIndex,
         depth: companion.historyDepth,
-    }).map(result => `${result.messageIndex < 0 ? 'Before the conversation' : `Message ${result.messageIndex}`}:\n${getResolvedCompanionResultContent(result, result.messageIndex)}`).join('\n\n');
+    }).map(result => `${result.messageIndex < 0 ? 'Before the conversation' : `Message ${result.messageIndex}`}:\n${getResolvedCompanionResultContent(result, result.messageIndex, { plotCompass: isPlotCompassAgent(agent) })}`).join('\n\n');
 }
 
-function getResolvedCompanionResultContent(result = {}, messageIndex = -1) {
-    return normalizeText(resolveCompanionContentMacros(result.content ?? '', chat[messageIndex]));
+function getResolvedCompanionResultContent(result = {}, messageIndex = -1, { plotCompass = false, instruction = false } = {}) {
+    const content = plotCompass ? getPlotCompassContentWithChoice(result, { instruction }) : result.content ?? '';
+    return normalizeText(resolveCompanionContentMacros(content, chat[messageIndex]));
 }
 
 function getSystemPromptSection(companion) {
@@ -2620,7 +2622,8 @@ export function injectCompanionFeedbackPrompts(activeAgents = [], { excludeMessa
             continue;
         }
 
-        const body = notes.map(result => getResolvedCompanionResultContent(result, result.messageIndex)).filter(Boolean).join('\n\n');
+        const plotCompass = isPlotCompassAgent(agent);
+        const body = notes.map((result, index) => getResolvedCompanionResultContent(result, result.messageIndex, { plotCompass, instruction: index === 0 })).filter(Boolean).join('\n\n');
         if (!body) {
             continue;
         }
