@@ -322,6 +322,8 @@ const processedPostProcessingRunsByIndex = new Map();
 const postProcessingInFlightKeys = new Map();
 const postProcessingTargets = new WeakMap();
 const messageEditRevisions = new WeakMap();
+/** Message -> streaming processor and generation type whose regex snapshot is already stored. */
+const streamRegexSnapshots = new WeakMap();
 const postProcessingInterruptionWarned = new WeakSet();
 let chatLoadRevision = 0;
 
@@ -5593,12 +5595,25 @@ function onStreamTokenReceived() {
     // result here rather than waiting for the post-generation agent pipeline.
     liveStreamingProcessor.result = stripEmptyOutputSentinelLines(liveStreamingProcessor.result);
 
+    // The snapshot only depends on the active agents and the generation, so one pass
+    // per message per generation is enough. Rebuilding it on every token re-cloned
+    // and re-hashed every regex script well before the stream frame limiter ran.
+    const message = chat[numericMessageIndex];
+    const stored = message ? streamRegexSnapshots.get(message) : null;
+    if (stored?.processor === liveStreamingProcessor && stored.generationType === generationType) {
+        return;
+    }
+
     ensureMessageRegexSnapshot(
         numericMessageIndex,
         generationType,
         pendingGenerationSnapshot,
         { refresh: false, save: false },
     );
+
+    if (message) {
+        streamRegexSnapshots.set(message, { processor: liveStreamingProcessor, generationType });
+    }
 }
 
 async function onCharacterMessageRendered(messageIndex, generationType, generationContext = null) {
