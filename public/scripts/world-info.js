@@ -286,6 +286,14 @@ class WorldInfoBuffer {
      */
     #startDepth = 0;
 
+    /** Bumped whenever the depth, injection or recursion buffers change. */
+    #cacheVersion = 0;
+
+    /** Last scan text per depth, entry flags and scan state. */
+    #textCache = new Map();
+
+    #textCacheVersion = -1;
+
     /**
      * Initialize the buffer with the given messages.
      * @param {string[]} messages Array of messages to add to the buffer
@@ -342,6 +350,18 @@ class WorldInfoBuffer {
             depth = MAX_SCAN_DEPTH;
         }
 
+        if (this.#textCacheVersion !== this.#cacheVersion) {
+            this.#textCache.clear();
+            this.#textCacheVersion = this.#cacheVersion;
+        }
+        const cacheKey = `${depth}|${scanState}|${entry.matchPersonaDescription ? 1 : 0}${entry.matchCharacterDescription ? 1 : 0}`
+            + `${entry.matchCharacterPersonality ? 1 : 0}${entry.matchCharacterDepthPrompt ? 1 : 0}`
+            + `${entry.matchScenario ? 1 : 0}${entry.matchCreatorNotes ? 1 : 0}`;
+        const cached = this.#textCache.get(cacheKey);
+        if (cached !== undefined) {
+            return cached;
+        }
+
         const MATCHER = '\x01';
         const JOINER = '\n' + MATCHER;
         let result = MATCHER + this.#depthBuffer.slice(this.#startDepth, depth).join(JOINER);
@@ -376,6 +396,7 @@ class WorldInfoBuffer {
             result += JOINER + this.#recurseBuffer.join(JOINER);
         }
 
+        this.#textCache.set(cacheKey, result);
         return result;
     }
 
@@ -423,6 +444,7 @@ class WorldInfoBuffer {
      */
     addRecurse(message) {
         this.#recurseBuffer.push(message);
+        this.#cacheVersion++;
     }
 
     /**
@@ -431,6 +453,7 @@ class WorldInfoBuffer {
      */
     addInject(message) {
         this.#injectBuffer.push(message);
+        this.#cacheVersion++;
     }
 
     /**
@@ -446,6 +469,7 @@ class WorldInfoBuffer {
      */
     advanceScan() {
         this.#skew++;
+        this.#cacheVersion++;
     }
 
     /**
