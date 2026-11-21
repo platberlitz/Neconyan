@@ -2059,7 +2059,7 @@ body.sbterm.sbterm-minimal #chat .ch_name .name_text {
     font-weight: 450;
 }
 
-body.sbterm.sbterm-minimal #chat .mes[is_user='true'] .mes_block:not(:has(.edit_textarea, .reasoning_edit_textarea)) {
+body.sbterm.sbterm-minimal #chat .mes[is_user='true']:not(.is_editing, .is_reasoning_editing) .mes_block {
     display: grid !important;
     grid-template-columns: max-content minmax(0, 1fr);
     align-items: first baseline;
@@ -2220,10 +2220,6 @@ body.sbterm.sbterm-minimal .welcomeRecentTab.active {
 body.sbterm.sbterm-minimal .welcomeGuidePanel,
 body.sbterm.sbterm-minimal .welcomeRecentShell {
     border-color: transparent !important;
-}
-
-body.sbterm.sbterm-minimal #chat .mes:has(.welcomePanel) {
-    padding: 0 clamp(10px, 2.5vw, 28px) 18px !important;
 }
 
 body.sbterm.sbterm-minimal .welcomePanel {
@@ -2423,7 +2419,7 @@ body.sbterm.sbterm-minimal .recentChat .avatar {
     /* These must carry the same specificity as the §11 grid rules they undo
        (the :not(:has()) there outweighs a plain selector), or touch keeps the
        grid and the always-visible buttons sit on top of the first text line. */
-    body.sbterm.sbterm-minimal #chat .mes[is_user='true'] .mes_block:not(:has(.edit_textarea, .reasoning_edit_textarea)) {
+    body.sbterm.sbterm-minimal #chat .mes[is_user='true']:not(.is_editing, .is_reasoning_editing) .mes_block {
         display: block !important;
     }
 

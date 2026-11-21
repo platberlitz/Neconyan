@@ -16568,6 +16568,7 @@ export async function messageEdit(editMessageId) {
     editTextArea.id = 'curEditTextarea';
     editTextArea.className = 'edit_textarea mdHotkeys';
     editTextArea.dataset.macros = '';
+    messageElement[0]?.classList.add('is_editing');
     messageText.append(editTextArea);
 
     const text = trimSpaces(editMessage.mes || '');
@@ -16623,6 +16624,7 @@ async function messageEditCancel(messageId = this_edit_mes_id) {
     }
 
     const thisMesBlock = thisMesDiv.find('.mes_block');
+    thisMesDiv.removeClass('is_editing');
     thisMesBlock.find('.mes_text').empty();
     thisMesDiv.find('.mes_edit_buttons').css('display', 'none');
     thisMesBlock.find('.mes_buttons').css('display', '');
@@ -16721,6 +16723,7 @@ export async function messageEditDone(div) {
         await updateMessageTokenAccounting(chat[this_edit_mes_id]);
     }
     updateMessageMetaBadges(div.closest('.mes'), chat[this_edit_mes_id]);
+    $(div).closest('.mes').removeClass('is_editing');
     mesBlock.find('.mes_text').empty();
     mesBlock.find('.mes_edit_buttons').css('display', 'none');
     mesBlock.find('.mes_buttons').css('display', '');

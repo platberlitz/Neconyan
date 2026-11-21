@@ -258,11 +258,11 @@ body.sbstory #chat .mes:not(.smallSysMes):not(.last_mes) .swipeRightBlock {
     display: none !important;
 }
 
-body.sbstory #chat .mes:not(.smallSysMes) .mes_reasoning_details:not(:has(.reasoning_edit_textarea)) {
+body.sbstory #chat .mes:not(.smallSysMes):not(.is_reasoning_editing) .mes_reasoning_details {
     display: none !important;
 }
 
-body.sbstory #chat .mes:not(.smallSysMes) .mes_reasoning_details:has(.reasoning_edit_textarea) {
+body.sbstory #chat .mes:not(.smallSysMes).is_reasoning_editing .mes_reasoning_details {
     display: block !important;
 }
 
@@ -411,19 +411,19 @@ body.sbstory #chat .mes.mes:not(.smallSysMes):not(.last_mes) :is(.swipe_left, .s
 
 /* ---------------------------------------------------------------- editing inside the manuscript */
 
-body.sbstory #chat .mes:has(.edit_textarea) {
+body.sbstory #chat .mes.is_editing {
     background: color-mix(in srgb, var(--SmartThemeQuoteColor) 6%, transparent) !important;
     box-shadow: none !important;
     border-radius: var(--sb-radius-md, 16px) !important;
 }
 
-body.sbstory #chat .mes:has(.edit_textarea) .ch_name {
+body.sbstory #chat .mes.is_editing .ch_name {
     float: none;
     width: 100% !important;
 }
 
 /* The host clips .mes_block; the rewrite row below has to escape that clip to stick. */
-body.sbstory #chat .mes:has(.edit_textarea) .mes_block {
+body.sbstory #chat .mes.is_editing .mes_block {
     overflow: visible !important;
 }
 

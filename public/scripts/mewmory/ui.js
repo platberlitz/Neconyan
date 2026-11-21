@@ -2968,7 +2968,7 @@ function loadMewmoryStyles() {
     if (!style) {
         style = document.createElement('link');
         style.id = 'mewmory-css';
-        style.href = 'css/mewmory.css?v=20261122-calm-styles';
+        style.href = 'css/mewmory.css?v=20261122-edit-classes';
         document.head.append(style);
     }
     if (style.rel !== 'stylesheet') {

@@ -284,9 +284,7 @@
 
 /* Disable swipe navigation when message is being edited */
 .mes.is_editing .deep-swipe-left,
-.mes.is_editing .deep-swipe-right,
-.mes:has(.edit_textarea) .deep-swipe-left,
-.mes:has(.edit_textarea) .deep-swipe-right {
+.mes.is_editing .deep-swipe-right {
     opacity: 0 !important;
     pointer-events: none !important;
     cursor: not-allowed !important;
