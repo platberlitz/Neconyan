@@ -1,7 +1,7 @@
 import { describe, expect, jest, test } from '@jest/globals';
 import { createBubblesBottomBoundary } from '../public/scripts/bubbles-bottom-boundary.js';
 
-function fixture() {
+function fixture({ phoneQuery } = {}) {
     let clip = '', priority = '', mode = 'roleplay';
     const frames = [], observers = [], handlers = new Map();
     const element = () => ({ hidden: false, style: {}, dataset: {}, parentElement: null, append: jest.fn(), remove: jest.fn(), setAttribute: jest.fn(), contains: () => false, closest: () => null });
@@ -28,6 +28,10 @@ function fixture() {
         ResizeObserver: class { observe() {} unobserve() {} disconnect() {} },
         MutationObserver: class { constructor(fn) { observers.push(fn); } observe() {} disconnect() {} },
     };
+    if (phoneQuery) {
+        windowRef.matchMedia = query => (query === '(max-width: 768px)' ? phoneQuery : { matches: false });
+        Object.defineProperty(windowRef, 'innerWidth', { get() { throw new Error('innerWidth read'); } });
+    }
     const controller = createBubblesBottomBoundary({ chat, toolbar, getMode: () => mode, documentRef, windowRef });
     return { cap, surface, chat, row, rowStyle, paint, frames, observers, handlers, controller, windowRef, toolbarBox,
         flush: () => frames.shift()(), clip: () => clip, setMode: value => { mode = value; } };
@@ -73,6 +77,17 @@ describe('Bubbles bottom boundary lifecycle', () => {
         f.setMode('conversation'); f.handlers.get('scroll')(); f.flush(); expect(f.clip()).toBe('');
         f.setMode('roleplay'); f.windowRef.innerWidth = 768; f.handlers.get('scroll')(); f.flush();
         expect(f.cap.hidden).toBe(true); f.controller.dispose();
+    });
+    test('asks the phone media query instead of forcing layout through innerWidth', () => {
+        const phoneQuery = { matches: true };
+        const f = fixture({ phoneQuery }); f.flush();
+        expect(f.cap.hidden).toBe(true);
+        f.observers[0]([{ target: f.row, type: 'childList' }]);
+        expect(f.frames).toHaveLength(0);
+        phoneQuery.matches = false;
+        f.handlers.get('scroll')(); f.flush();
+        expect(f.cap.hidden).toBe(false);
+        f.controller.dispose();
     });
     test('stops paint transition resampling at transition end', () => {
         const f = fixture(); f.flush();
