@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
 import fs from 'node:fs';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import { acquireDataRootOwner } from '../src/data-root-owner.js';
 import { STARTUP_NOTE_PREFIX, startupNoteMessage, writeStartupNote } from '../src/startup-note.js';
 
@@ -68,6 +72,54 @@ test('an Android start writes the note MainActivity reads', () => {
     } finally {
         restore('TMPDIR', originalTmpdir);
         restore('NECONYAN_ANDROID_APP', originalMarker);
+        fs.rmSync(directory, { recursive: true, force: true });
+    }
+});
+
+test('a real Android listen conflict reaches the launcher with port recovery advice', async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'startup-note-port-'));
+    const occupied = net.createServer();
+    try {
+        await new Promise((resolve, reject) => occupied.once('error', reject).listen(0, '127.0.0.1', resolve));
+        const port = occupied.address().port;
+        const configPath = path.join(directory, 'config.yaml');
+        fs.copyFileSync(new URL('../default/config.yaml', import.meta.url), configPath);
+
+        // Exercise the real listener on a busy socket without the unrelated
+        // webpack cold build and content migrations of a full server launch.
+        const listen = `
+            import process from 'node:process';
+            import { setConfigFilePath } from './src/util.js';
+            import { writeStartupNote } from './src/startup-note.js';
+            const [configPath, port] = process.argv.slice(1);
+            setConfigFilePath(configPath);
+            const { ServerStartup } = await import('./src/server-startup.js');
+            try {
+                await new ServerStartup(() => {}, {
+                    ssl: false, enableIPv4: true, enableIPv6: false,
+                    getIPv4ListenUrl: () => new URL('http://127.0.0.1:' + port),
+                }).start();
+                process.exit(2);
+            } catch (error) {
+                if (error.code !== 'EADDRINUSE' || !writeStartupNote(error)) throw error;
+                process.exit(1);
+            }
+        `;
+        const root = fileURLToPath(new URL('../', import.meta.url));
+        await assert.rejects(promisify(execFile)(process.execPath, [
+            '--input-type=module', '--eval', listen, '--', configPath, String(port),
+        ], {
+            cwd: root,
+            env: { ...process.env, TMPDIR: directory, NECONYAN_SUPERVISED: '1', NECONYAN_ANDROID_APP: '1' },
+            timeout: 25_000,
+        }), error => {
+            assert.equal(error.code, 1, error.stderr || error.message);
+            assert.match(error.stderr, /attempt 1 of 3/);
+            return true;
+        });
+        assert.match(fs.readFileSync(path.join(directory, 'startup-status.txt'), 'utf8'), /^Could not start Neconyan: The local port is already in use\..*Use a new port/);
+    } finally {
+        if (occupied.listening) await new Promise(resolve => occupied.close(resolve));
         fs.rmSync(directory, { recursive: true, force: true });
     }
 });
