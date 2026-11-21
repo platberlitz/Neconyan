@@ -57,6 +57,7 @@
 - PR #834 (2026-11-21) `test(thumbnails): retry a reset request in the cached check`
 - PR #835 (2026-11-21) `perf(startup): fetch avatars while extensions load`
 - PR #836 (2026-11-21) `perf(chat): hide the chat without restyling every row`
+- PR #837 (2026-11-21) `perf(startup): cache modules under one import map`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
