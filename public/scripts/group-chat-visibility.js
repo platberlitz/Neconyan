@@ -42,9 +42,19 @@ export function filterGroupPromptMessages(messages) {
     return promptScope ? messages.filter(isGroupPromptMessageVisible) : messages;
 }
 
+/** Avatars the current prompt is written for, or null outside a group turn. */
+export function getGroupPromptViewers() {
+    return promptScope ? [...promptScope.avatars] : null;
+}
+
 /** Shared summaries have no audience provenance, so cannot be used on a restricted turn. */
 export function hasRestrictedGroupHistory() {
     return Boolean(promptScope?.messages.some(message => !isGroupPromptMessageVisible(message)));
+}
+
+/** Counts prompt messages the scoped speaker missed, so chat-wide counters stay the same for every speaker. */
+export function countGroupPromptHiddenMessages() {
+    return promptScope ? promptScope.messages.filter(message => !message?.is_system && !isGroupPromptMessageVisible(message)).length : 0;
 }
 
 /** Background Agent work follows its source message even after the active speaker changes. */

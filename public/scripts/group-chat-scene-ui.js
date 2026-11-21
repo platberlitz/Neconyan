@@ -1,5 +1,5 @@
-import { characters, chat_metadata, updateChatMetadata, saveMetadata, getThumbnailUrlForViewport, eventSource, event_types } from '../script.js';
-import { groups, selected_group, updateGroupSpeakerControls } from './group-chats.js';
+import { characters, chat_metadata, updateChatMetadata, saveMetadata, getThumbnailUrlForViewport, eventSource, event_types, is_send_press } from '../script.js';
+import { groups, is_group_generating, selected_group, updateGroupSpeakerControls } from './group-chats.js';
 import { readGroupScene } from './group-chat-visibility.js';
 import { t } from './i18n.js';
 import { getGroupMemberRole } from './group-chat-roles.js';
@@ -15,6 +15,12 @@ export function currentGroupScene() {
 export async function changeGroupScene(patch) {
     const current = currentGroupScene();
     if (!current) return;
+    // A reply in progress already chose who speaks and who hears it.
+    if (is_send_press || is_group_generating) {
+        toastr.info(t`Wait for the current reply to finish.`);
+        renderGroupScene();
+        return;
+    }
     updateChatMetadata({ group_scene: readGroupScene({ group_scene: { ...current.scene, ...patch } }, current.group.members) });
     renderGroupScene();
     updateGroupSpeakerControls();

@@ -30,6 +30,7 @@ import {
     saveMetadata,
 } from '../../script.js';
 import { selected_group, groups } from '../group-chats.js';
+import { canGroupMemberSee } from '../group-chat-visibility.js';
 import { extension_settings, saveMetadataDebounced, writeExtensionField } from '../extensions.js';
 import { eventSource, event_types } from '../events.js';
 import { ConnectionManagerRequestService } from '../extensions/shared.js';
@@ -712,6 +713,17 @@ function getActiveChatCharacters() {
     return [];
 }
 
+/**
+ * Keeps the messages a group member heard, so their Purrks never react to a scene they missed.
+ * @param {object[]} messages Chat messages
+ * @param {string} key Member avatar, or '' outside a group
+ * @returns {object[]} Messages the member heard
+ */
+function messagesHeardBy(messages, key) {
+    if (!key || !Array.isArray(messages)) return messages;
+    return messages.filter(message => canGroupMemberSee(message, key));
+}
+
 function hasAnyPurrks(targets) {
     return targets.some(target => readCharacterPurrks(target.character).items.length > 0);
 }
@@ -751,7 +763,7 @@ export function updateBottomChatPurrksBadge() {
     for (const target of targets) {
         const evaluation = evaluateCharacterPurrks(target.character, {
             chatMetadata: chat_metadata,
-            messages: chat,
+            messages: messagesHeardBy(chat, target.key),
             characterKey: target.key,
         });
         totalCount += evaluation.evaluatedItems.length;
@@ -817,7 +829,7 @@ export async function runSceneDirectorForActiveChat({ notify = false, signal = u
         });
         if (!candidateItems.length) continue;
 
-        const directorMessages = buildSceneDirectorMessages(target.character, candidateItems, chat);
+        const directorMessages = buildSceneDirectorMessages(target.character, candidateItems, messagesHeardBy(chat, target.key));
         if (!directorMessages) continue;
 
         const request = combineSignals(signal, SCENE_DIRECTOR_TIMEOUT_MS);
@@ -864,7 +876,7 @@ function advanceActiveChatPurrksTurn(messages) {
     for (const target of targets) {
         const evaluation = evaluateCharacterPurrks(target.character, {
             chatMetadata: chat_metadata,
-            messages,
+            messages: messagesHeardBy(messages, target.key),
             characterKey: target.key,
         });
         entries.push(...evaluation.evaluatedItems);
@@ -1049,7 +1061,7 @@ export function renderChatPurrksPopover() {
     for (const target of targets) {
         const evaluation = evaluateCharacterPurrks(target.character, {
             chatMetadata: chat_metadata,
-            messages: chat,
+            messages: messagesHeardBy(chat, target.key),
             characterKey: target.key,
         });
         const prefix = target.key ? `${target.key}:` : '';

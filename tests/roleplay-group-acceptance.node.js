@@ -76,3 +76,24 @@ test('a group turn is refused when the chat moved on or a chosen speaker is disa
     await assert.rejects(acceptRoleplayGroupTurn(s.request(), s.body({ key: 'stale', acknowledgement: { account: s.f.scope.owner, settingsRevision: 3 } })),
         error => error.status === 409);
 });
+
+test('a group turn is refused when a chosen speaker is away or missed a line', async t => {
+    const s = saved(t);
+    const rewrite = edit => {
+        const records = fs.readFileSync(s.f.filename, 'utf8').split('\n').map(line => JSON.parse(line));
+        edit(records);
+        fs.writeFileSync(s.f.filename, records.map(record => JSON.stringify(record)).join('\n'));
+    };
+    rewrite(records => { records.at(-1).extra.group_scene = { present: ['Nova.png'], whisper_to: [] }; });
+    await assert.rejects(acceptRoleplayGroupTurn(s.request(), s.body({ key: 'missed' })),
+        error => error.status === 409 && error.apiError === 'roleplay_group_scene');
+    rewrite(records => {
+        records.at(-1).extra.group_scene = { present: ['Nova.png', 'Other.png'], whisper_to: [] };
+        records[0].chat_metadata = { ...records[0].chat_metadata, group_scene: { away: ['Other.png'], location: '', whisper_to: [] } };
+    });
+    await assert.rejects(acceptRoleplayGroupTurn(s.request(), s.body({ key: 'away' })),
+        error => error.status === 409 && error.apiError === 'roleplay_group_scene');
+    rewrite(records => { records[0].chat_metadata.group_scene.away = []; });
+    const accepted = await acceptRoleplayGroupTurn(s.request(), s.body({ key: 'heard' }));
+    assert.equal(accepted.created, true);
+});

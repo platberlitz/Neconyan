@@ -26,6 +26,7 @@ import { closeUnstartedRoleplayWorkflow } from './roleplay-workflow-cancellation
 import { admitAgentJob, captureAgentRequest } from './agent-jobs.js';
 import { normalizeBrowserMacroNames } from '../macros/browser-only.js';
 import { getRoleplaySourceMessageRevision } from '../../public/scripts/neconyan-conversation/roleplay-source.js';
+import { canGroupMemberSee } from '../../public/scripts/group-chat-visibility.js';
 import { readRoleplayKeptReply, reconcileRoleplayKeptReplyFamily, roleplayKeptReplyPending, ROLEPLAY_REPLY_CAPABILITY } from './roleplay-kept-reply.js';
 
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
@@ -332,6 +333,18 @@ export function normalizeRoleplayGroupSubmission(body = {}) {
 }
 
 /**
+ * Server group replies read the whole saved chat, so a speaker who is away or
+ * missed a line would hear it. Those turns stay in the page, which filters them.
+ */
+function assertGroupSceneOpen(records, speakers) {
+    const away = records[0]?.chat_metadata?.group_scene?.away;
+    const missed = records.slice(1).some(row => !row?.is_system && speakers.some(avatar => !canGroupMemberSee(row, avatar)));
+    if (missed || (Array.isArray(away) && speakers.some(avatar => away.includes(avatar)))) {
+        throw changed('A speaker in this group scene missed part of the chat, so this reply has to be written in the browser.', 'roleplay_group_scene');
+    }
+}
+
+/**
  * Accept one whole group turn. The saved chat must still have the messages the page
  * saw, so a chat that moved on is refused rather than answered by the wrong speakers.
  */
@@ -344,6 +357,7 @@ export async function acceptRoleplayGroupTurn(request, body = {}) {
         if (saved.records.length - 1 !== submission.messageCount) {
             throw changed('The saved group chat moved on after this turn was captured.', 'roleplay_workflow_anchor');
         }
+        assertGroupSceneOpen(saved.records, submission.forcedAvatars);
         const captured = captureRoleplaySourceFromSavedChatLocked(lease, saved, { locator: submission.locator, groupId: submission.groupId });
         if (saved.changed || captured.changed) saveRoleplayAccount(lease);
         return captured.source;
