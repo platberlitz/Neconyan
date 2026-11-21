@@ -1,5 +1,6 @@
 import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-store.js';
 import { assertRoleplaySourceLocked, readRoleplayEntityLocked } from './roleplay-source.js';
+import { savedGroupAwayMembers, savedGroupReplyAudience } from './roleplay-group-scene.js';
 
 const invalid = message => { throw roleplayError('ROLEPLAY_WORKFLOW_INVALID', message, 409); };
 const MAX_SPEAKERS = 64;
@@ -41,7 +42,9 @@ export function captureRoleplayGroupSpeakers(base, account, source, { effect, fo
             || new Set(group.members).size !== group.members.length || group.members.length > MAX_SPEAKERS) {
             invalid('The saved group has no bounded unique speaker list.');
         }
-        const enabled = group.members.filter(avatar => !group.disabled_members?.includes(avatar));
+        // Members marked away in the saved scene cannot be picked, as in the page.
+        const away = savedGroupAwayMembers(saved.records[0]?.chat_metadata, group.members);
+        const enabled = group.members.filter(avatar => !group.disabled_members?.includes(avatar) && !away.includes(avatar));
         if (!enabled.length) invalid('The group has no enabled saved speakers.');
         const cards = new Map(enabled.map(avatar => {
             const card = readRoleplayEntityLocked(lease, 'character', avatar).data;
@@ -114,7 +117,8 @@ export function captureRoleplayGroupSpeakers(base, account, source, { effect, fo
             const name = cards.get(avatar).name;
             const modelOverride = group.member_models?.[avatar] ?? '';
             if (typeof modelOverride !== 'string' || modelOverride.length > 256) invalid('A saved group model override is invalid.');
-            return { avatar, name, modelOverride: modelOverride.trim(), contextPrompt: contextPrompt(name, targetName) };
+            return { avatar, name, modelOverride: modelOverride.trim(), contextPrompt: contextPrompt(name, targetName),
+                audience: savedGroupReplyAudience(saved.records[0]?.chat_metadata, group.members, avatar) };
         });
         const value = { version: 1, groupId: source.groupId, sourceHash: roleplayHash(source),
             generationId, speakers, strategy: Number(group.activation_strategy ?? 0) };

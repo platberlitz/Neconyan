@@ -10,6 +10,7 @@ import { formatRoleplayTextExamples } from '../../public/scripts/roleplay-text-f
 import { formatPromptReasoning } from '../../public/scripts/reasoning-prompt-format.js';
 import { composeAuthorsNote, isValidNotePosition } from '../../public/scripts/authors-note-profiles.js';
 import { applyAgentHistoryRegex, prepareCompanionPromptHistory } from './agent-history.js';
+import { blankUnheardGroupRecords } from './roleplay-group-scene.js';
 
 const ROLES = ['system', 'user', 'assistant'];
 
@@ -25,15 +26,18 @@ export function roleplayEffectTrigger(effect) {
     throw roleplayError('ROLEPLAY_INVALID', 'Unknown Roleplay generation effect.', 409);
 }
 
-/** A saved edit target changes the prompt view; its old text remains on disk until completion. */
-export function selectRoleplayPromptRecords(records, source, effect) {
+/**
+ * A saved edit target changes the prompt view; its old text remains on disk until completion.
+ * In a group, `viewer` is the speaker, and lines they did not hear are blanked in place.
+ */
+export function selectRoleplayPromptRecords(records, source, effect, viewer = null) {
     const anchor = effect === 'replace' ? source.range?.start : source.message?.index;
-    if (effect === 'append' || anchor === undefined) return records;
+    if (effect === 'append' || anchor === undefined) return blankUnheardGroupRecords(records, source, viewer);
     if (!Number.isSafeInteger(anchor) || anchor < 0 || anchor >= records.length - 1) {
         throw roleplayError('ROLEPLAY_INVALID', 'The saved prompt target is outside its protected history.', 409);
     }
     // Account for the header: swipes and alternatives read all messages before their target.
-    return records.slice(0, anchor + (effect === 'continue' ? 2 : 1));
+    return blankUnheardGroupRecords(records.slice(0, anchor + (effect === 'continue' ? 2 : 1)), source, viewer);
 }
 
 /** Apply saved prompt-only transformations before both lore scanning and memory budgeting. */

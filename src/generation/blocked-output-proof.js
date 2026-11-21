@@ -29,17 +29,25 @@ function bindings(directories, job, output, records) {
     delete delivered.blockedProof;
     const deliveredMessage = messageOf(delivered);
     const parent = job.intent.request.workflowCandidate?.parentJobId && getJob(directories, job.intent.request.workflowCandidate.parentJobId);
-    if (parent?.intent?.request?.group) {
-        for (const key of ['force_avatar', 'original_avatar']) {
-            if (deliveredMessage[key] !== undefined && deliveredMessage[key] !== job.intent.request.worldInfo.avatar) throw fail();
-            delete deliveredMessage[key];
-        }
-        if (deliveredMessage.extra?.gen_id !== undefined && deliveredMessage.extra.gen_id !== parent.intent.request.group.generationId) throw fail();
-        delete deliveredMessage.extra.gen_id;
-    }
+    if (parent?.intent?.request?.group) stripGroupStamp(deliveredMessage, job, parent);
     return { outputHash: roleplayHash(delivered), version: 1, intentHash: roleplayHash(job.intent), providerReferenceHash: roleplayHash(reference),
         providerHash: roleplayHash(provider), outcome, text,
         baselineHash: baseline ? roleplayHash({ text: baseline.mes, swipe: baseline.swipe_id ?? 0 }) : null };
+}
+
+/** Group publication adds the speaker, turn id and who heard the reply; each must match the accepted turn. */
+function stripGroupStamp(message, job, parent) {
+    for (const key of ['force_avatar', 'original_avatar']) {
+        if (message[key] !== undefined && message[key] !== job.intent.request.worldInfo.avatar) throw fail();
+        delete message[key];
+    }
+    if (message.extra?.gen_id !== undefined && message.extra.gen_id !== parent.intent.request.group.generationId) throw fail();
+    delete message.extra?.gen_id;
+    if (message.extra?.group_scene !== undefined) {
+        const speaker = parent.intent.request.group.speakers?.find(entry => entry.avatar === job.intent.request.worldInfo.avatar);
+        if (!speaker?.audience || roleplayHash(message.extra.group_scene) !== roleplayHash(speaker.audience)) throw fail();
+        delete message.extra.group_scene;
+    }
 }
 
 export function saveBlockedOutputProof(directories, job, output, records) {
@@ -92,15 +100,7 @@ function continuationBindings(directories, job, output, previousOutput) {
     const delivered = structuredClone(output);
     delete delivered.blockedContinuationProof;
     // Group identity is independently checked by its publication path and the base blocked proof.
-    if (parent.intent.request.group) {
-        const message = messageOf(delivered);
-        for (const key of ['force_avatar', 'original_avatar']) {
-            if (message[key] !== undefined && message[key] !== job.intent.request.worldInfo.avatar) throw fail();
-            delete message[key];
-        }
-        if (message.extra?.gen_id !== undefined && message.extra.gen_id !== parent.intent.request.group.generationId) throw fail();
-        delete message.extra.gen_id;
-    }
+    if (parent.intent.request.group) stripGroupStamp(messageOf(delivered), job, parent);
     return { intentHash: roleplayHash(job.intent), parentIntentHash: admitted.parentIntentHash, decisionHash: hash,
         priorProviderHash: roleplayHash(provider), baseProof: original?.blockedProof, previousOutput, outputHash: roleplayHash(delivered) };
 }

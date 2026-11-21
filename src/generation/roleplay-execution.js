@@ -234,10 +234,10 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
             publishRoleplayPreview(context, { stage: 'agents', text: '', reasoning: thinkingOnly.reasoning, reasoning_finished: true,
                 generation: result.generation });
             const recovery = await runRoleplayThinkingRecovery(context, { base, snapshot: request.worldInfo,
-                records: selectRoleplayPromptRecords(current.records, source, effect), metadataRecords: current.records,
+                records: selectRoleplayPromptRecords(current.records, source, effect, request.worldInfo?.avatar), metadataRecords: current.records,
                 reasoning: thinkingOnly.reasoning, generationType: request.worldInfo.global.trigger, binding: request.binding,
                 continuation, continuationPrefix, toolResults: formatToolResults(readRoleplayPromptContributions({ directories, job }).history),
-                macros: savedRoleplayMacroSnapshot(request.worldInfo, selectRoleplayPromptRecords(current.records, source, effect)),
+                macros: savedRoleplayMacroSnapshot(request.worldInfo, selectRoleplayPromptRecords(current.records, source, effect, request.worldInfo?.avatar)),
                 activeLore: roleplayAgentLoreText(selection), mewmory: readAgentMewmory(), assistantName: request.characterName,
                 assertCurrent: sourceChanged
                     ? () => { signal.throwIfAborted(); }
@@ -391,7 +391,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
             };
             const runAgents = async (republish = false, announce = true, cache = agentCache) => {
                 const current = assertSource();
-                let records = selectRoleplayPromptRecords(current.records, source, effect);
+                let records = selectRoleplayPromptRecords(current.records, source, effect, request.worldInfo?.avatar);
                 if (output.captions) records = applyCaptionRecords(records, request.worldInfo.captions.items, output.captions);
                 if (output.inputTranslation) {
                     records = structuredClone(records);
@@ -527,7 +527,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
                 const text = effect === 'continue' ? output.continuedText ?? String(speechRecords[source.message.index + 1].mes ?? '') + output.text : message.mes ?? output.text;
                 const narration = await withRoleplayAgentStop(context, scoped => generateSavedSpeech(scoped, { effectId: 'roleplay', policy: request.worldInfo.speech, account,
                     text, displayText: message.extra?.display_text || '', speaker: { name: request.characterName, avatar: request.worldInfo.avatar },
-                    snapshot: { macros: savedRoleplayMacroSnapshot(request.worldInfo, selectRoleplayPromptRecords(speechRecords, source, effect)) },
+                    snapshot: { macros: savedRoleplayMacroSnapshot(request.worldInfo, selectRoleplayPromptRecords(speechRecords, source, effect, request.worldInfo?.avatar)) },
                     assertSourceLocked: lease => assertRoleplaySourceLocked(lease, source, { effect }),
                 }, speechDependencies), { ownerOnly: true });
                 if (narration) message.extra = { ...message.extra, server_narration: narration };
@@ -628,7 +628,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
     const overridePayload = requestOverrides(request);
     publishRoleplayPreview(context, { text: '', reasoning: '', stage: 'preparing' });
     const initialSource = assertSource();
-    let initialRecords = request.serverPrompt ? selectRoleplayPromptRecords(initialSource.records, source, effect) : initialSource.records;
+    let initialRecords = request.serverPrompt ? selectRoleplayPromptRecords(initialSource.records, source, effect, request.worldInfo?.avatar) : initialSource.records;
     let captions;
     let inputTranslation;
     let agentPre;
@@ -933,7 +933,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
         return operation();
     });
     let memory;
-    let promptRecords = promptSource ? (captions || inputTranslation || vectors ? structuredClone(initialRecords) : selectRoleplayPromptRecords(promptSource.records, source, effect)) : null;
+    let promptRecords = promptSource ? (captions || inputTranslation || vectors ? structuredClone(initialRecords) : selectRoleplayPromptRecords(promptSource.records, source, effect, request.worldInfo?.avatar)) : null;
     if (request.serverPrompt) {
         const locator = promptSource.locator;
         const normalised = normalizeLocator(locator);

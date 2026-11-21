@@ -656,7 +656,7 @@ test('a Deep Swipe user alternative keeps the user role and target message', asy
     assert.equal(kept.textHash, roleplayHash(saved[1].swipes[1]));
 });
 
-test('a group speaker keeps its avatar and generation identity', async t => {
+test('a group speaker keeps its avatar, generation identity and who heard the reply', async t => {
     const f = prepared(t, { group: true });
     const child = await f.child();
     saveCandidate({ dirs: f.dirs, child, text: 'A group speaker reply.', reasoning: 'Speaking as Nova' });
@@ -668,6 +668,7 @@ test('a group speaker keeps its avatar and generation identity', async t => {
     assert.equal(saved[3].force_avatar, 'Nova.png');
     assert.equal(saved[3].extra.gen_id, 5);
     assert.equal(saved[3].extra.reasoning, 'Speaking as Nova');
+    assert.deepEqual(saved[3].extra.group_scene, { present: ['Nova.png'], whisper_to: [] });
 });
 
 test('a restart interruption with a saved delivery proof stays retryable and writes nothing', async t => {
