@@ -40,6 +40,7 @@
 - PR #816 (2026-11-21) `perf(chat): count saved chat rows once`
 - PR #817 (2026-11-21) `test(thumbnails): give the large portrait check time`
 - PR #818 (2026-11-21) `perf(server): leave the agent library out of startup`
+- PR #819 (2026-11-21) `perf(sw): skip rewriting unchanged cache entries`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
