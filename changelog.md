@@ -15,6 +15,7 @@
 - PR #788 (2026-11-21) `fix(scratchpad): use short references for scenario note edits`
 - PR #789 (2026-11-21) `fix(mobile): restore the compact composer layout`
 - PR #790 (2026-11-21) `fix(conversation): make deleting a DM or group DM stick`
+- PR #791 (2026-11-21) `feat(conversation): edit group DM members in place`
 - PR #792 (2026-11-21) `fix(android): honour supported server config edits on restart`
 - PR #793 (2026-11-21) `fix(agents): strip echoed line-format companion trackers`
 
