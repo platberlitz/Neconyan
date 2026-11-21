@@ -325,9 +325,20 @@ export async function waitForAnimationFrames(page, frameCount = 2) {
  */
 export async function settleCssTransitions(page) {
     await page.evaluate(async () => {
+        // Chromium holds back `finished` for transitions in a subtree hidden
+        // with content-visibility (the chat behind an open drawer), so also
+        // stop waiting once the transition no longer reports itself running.
+        const settled = animation => new Promise(resolve => {
+            animation.finished.then(resolve, resolve);
+            const poll = () => {
+                if (animation.playState === 'running') requestAnimationFrame(poll);
+                else resolve();
+            };
+            requestAnimationFrame(poll);
+        });
         await Promise.all(document.getAnimations()
             .filter(animation => animation instanceof CSSTransition)
-            .map(animation => animation.finished.catch(() => {})));
+            .map(settled));
     });
     await waitForAnimationFrames(page);
 }
