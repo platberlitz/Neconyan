@@ -200,11 +200,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-           - {api: 30, target: default, page_size: 4096, ram: 4096M, update_webview: true}
-           - {api: 33, target: default, page_size: 4096, ram: 4096M, update_webview: true}
-           - {api: 35, target: default, page_size: 4096, ram: 4096M, update_webview: false}
-           # The Google APIs image runs extra services and reclaims system processes even before the APK starts at 4 GiB.
-           - {api: 36, target: google_apis_ps16k, page_size: 16384, ram: 6144M, update_webview: false}
+          - {api: 30, target: default, page_size: 4096, ram: 4096M, update_webview: true}
+          - {api: 33, target: default, page_size: 4096, ram: 4096M, update_webview: true}
+          - {api: 35, target: default, page_size: 4096, ram: 4096M, update_webview: false}
+          # The Google APIs image runs extra services and reclaims system processes even before the APK starts at 4 GiB.
+          - {api: 36, target: google_apis_ps16k, page_size: 16384, ram: 6144M, update_webview: false}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -229,12 +229,12 @@ jobs:
           api-level: ${{ matrix.api }}
           arch: x86_64
           target: ${{ matrix.target }}
-           ram-size: ${{ matrix.ram }}
+          ram-size: ${{ matrix.ram }}
           heap-size: 512M
           disk-size: 4096M
           disable-animations: true
           script: |
-             python3 tests/android-apk-smoke.py --serial emulator-5554 --release --check-stop-restart --check-notifications --page-size ${{ matrix.page_size }} --apk release/*-android-x86_64.apk ${{ matrix.update_webview && '--update-webview webview/webview.apk' || '' }}
+            python3 tests/android-apk-smoke.py --serial emulator-5554 --release --check-stop-restart --check-notifications --page-size ${{ matrix.page_size }} --apk release/*-android-x86_64.apk ${{ matrix.update_webview && '--update-webview webview/webview.apk' || '' }}
             python3 tests/android-native-stack-probe.py --serial emulator-5554
       - name: Capture emulator log on failure
         if: failure()
