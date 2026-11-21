@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { planPrBrowserTests } from '../scripts/pr-browser-smoke.js';
 
-const smoke = ['catline-icons.e2e.js', 'neconyan-conversation-empty.e2e.js'];
+const smoke = ['catline-icons.e2e.js', 'neconyan-conversation-empty.e2e.js', 'mobile-app-layout.e2e.js'];
 function plan({ changed = [], files = [], timings = {}, readSource = () => '' } = {}) {
     return planPrBrowserTests({
         changedPaths: changed,
@@ -12,8 +12,11 @@ function plan({ changed = [], files = [], timings = {}, readSource = () => '' } 
     });
 }
 
-test('always runs the smoke files once and ignores non-browser changes', () => {
-    assert.deepEqual(plan({ changed: ['docs/a.md', 'tests/helper.js', `tests/${smoke[0]}`] }), {
+test('always runs the smoke files once, including the mobile layout check on CSS-only changes', () => {
+    assert.deepEqual(plan({ changed: ['public/css/neconyan-touch-layout.css', 'tests/helper.js'] }), {
+        files: smoke, selected: [], deferred: [],
+    });
+    assert.deepEqual(plan({ changed: smoke.map(file => `tests/${file}`) }), {
         files: smoke, selected: [], deferred: [],
     });
 });
