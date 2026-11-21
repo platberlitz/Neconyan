@@ -3,9 +3,9 @@ import { beginServerWork } from '../android-wake.js';
 import { subscribeJobsChanged } from './notifications.js';
 import {
     getJob,
-    listJobs,
     recordReceipt,
     recoverJobs,
+    selectJobs,
     setJobState,
     updateJob,
 } from './store.js';
@@ -278,8 +278,8 @@ async function tick() {
             let candidates;
             try {
                 if (waitingResolver) {
-                    for (const job of listJobs(directories, { owner, includeDismissed: true })) {
-                        if (job.state !== 'waiting' || job.cancellation?.requested) continue;
+                    for (const job of selectJobs(directories, job => job.owner === owner && job.state === 'waiting')) {
+                        if (job.cancellation?.requested) continue;
                         try { await waitingResolver({ job, directories, owner }); } catch (error) {
                             // The resolver can wait, so a Stop saved meanwhile wins. A failed
                             // write here must not hold back this owner's queued work.
@@ -289,8 +289,7 @@ async function tick() {
                         }
                     }
                 }
-                candidates = listJobs(directories, { owner, includeDismissed: true })
-                    .filter(job => job.state === 'queued' && !job.cancellation?.requested)
+                candidates = selectJobs(directories, job => job.owner === owner && job.state === 'queued' && !job.cancellation?.requested)
                     .sort((left, right) => (left.createdAt ?? 0) - (right.createdAt ?? 0));
             } catch {
                 // A damaged ledger fails closed for that owner and must not stop
