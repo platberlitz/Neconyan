@@ -121,6 +121,29 @@ export function rewriteFrontendHtml(html, { enabled = getFrontendAssetsEnabled()
     return rewritten;
 }
 
+let indexHtmlCache = null;
+
+/**
+ * Rewrites the home page once per file and manifest change. The apps reload it
+ * on every launch, and the rewrite runs fifteen document-wide replacements.
+ */
+export function readRewrittenFrontendHtml(indexPath = path.join(serverDirectory, 'public', 'index.html'), { enabled = getFrontendAssetsEnabled() } = {}) {
+    const stat = fs.statSync(indexPath, { throwIfNoEntry: false });
+    if (!stat?.isFile()) {
+        return '';
+    }
+
+    const manifest = loadFrontendManifest();
+    const identity = `${stat.mtimeMs}:${stat.size}:${stat.ino}:${enabled ? 'on' : 'off'}`;
+    if (indexHtmlCache?.manifest === manifest && indexHtmlCache.identity === identity) {
+        return indexHtmlCache.html;
+    }
+
+    const html = rewriteFrontendHtml(fs.readFileSync(indexPath, 'utf8'), { enabled });
+    indexHtmlCache = { manifest, identity, html };
+    return html;
+}
+
 export function applyFrontendAssetHeaders(res, filePath) {
     const relativePath = path.relative(FRONTEND_DIST_ROOT, filePath).split(path.sep).join('/');
 

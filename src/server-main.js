@@ -53,7 +53,7 @@ import {
     migratePublicOverrides,
 } from './users.js';
 
-import { FRONTEND_ASSET_PREFIX, rewriteFrontendHtml, validateBundledFrontend } from './frontend-assets.js';
+import { FRONTEND_ASSET_PREFIX, readRewrittenFrontendHtml, validateBundledFrontend } from './frontend-assets.js';
 import { getFrontendAssetMiddleware, redirectLegacyFrontendAsset, setPublicAssetHeaders, shouldServeFrontendAssets } from './middleware/frontend-assets.js';
 import getResponseCompressionMiddleware from './middleware/response-compression.js';
 import basicAuthMiddleware from './middleware/basicAuth.js';
@@ -80,7 +80,6 @@ import {
     color,
     removeColorFormatting,
     getSeparator,
-    safeReadFileSync,
     recoverFileWritesInDirectorySync,
     setupLogLevel,
     setWindowTitle,
@@ -438,11 +437,9 @@ app.get('/', cacheBuster.middleware, (request, response) => {
     }
 
     if (shouldServeFrontendAssets()) {
-        const indexPath = path.join(serverDirectory, 'public', 'index.html');
-        const indexHtml = safeReadFileSync(indexPath);
         response.type('html');
         response.set('Cache-Control', 'no-cache');
-        return response.send(rewriteFrontendHtml(indexHtml));
+        return response.send(readRewrittenFrontendHtml());
     }
 
     response.set('Cache-Control', 'no-cache');
