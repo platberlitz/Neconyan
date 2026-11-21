@@ -64,7 +64,12 @@ describe('preset/API sync lifecycle wiring', () => {
     });
 
     test('routes connection profile mirror state through the lifecycle seam', () => {
-        const refreshSource = getFunctionSource('refreshChatbarState');
+        const refreshSource = getFunctionSource('syncChatbarConnectionMirror');
+        const callers = ['refreshChatbarState', 'refreshChatbarConnectionState'].map(name => getFunctionSource(name));
+
+        for (const caller of callers) {
+            expect(caller).toContain('syncChatbarConnectionMirror(desktopRefs, mobileRefs, connectionStatusText);');
+        }
 
         expect(refreshSource).toContain('nnPresetApiSyncLifecycle.connectionProfiles.resolveMirrorState({');
         expect(refreshSource).toContain('hasConnectionProfiles');
