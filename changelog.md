@@ -33,6 +33,7 @@
 - PR #806 (2026-11-21) `perf(settings): skip unchanged saves before serialising`
 - PR #807 (2026-11-21) `perf(streaming): patch streamed text instead of replacing it`
 - PR #808 (2026-11-21) `perf(shell): skip unchanged message action scans`
+- PR #809 (2026-11-21) `perf(mewmory): skip prompt history while memory is off`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
