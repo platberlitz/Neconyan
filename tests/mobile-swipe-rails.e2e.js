@@ -295,6 +295,36 @@ test.describe('phone discovery cues', () => {
 
     // Settings: the tab strip's column and its scroller are unpositioned, so the
     // chrome's offset parent sat outside the scroller and trailed every scroll.
+    test('rails wait for start-up to finish before measuring', async ({ page }) => {
+        const errors = [];
+        page.on('pageerror', error => errors.push(error.message));
+        await page.route('**/swipe-rail-fixture', route => route.fulfill({ contentType: 'text/html', body: `<!doctype html>
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <link rel="stylesheet" href="/css/neconyan-mobile-shell.css">
+            <style>#host{position:relative;width:240px;margin:30px}
+            .scratchpad-quick{display:flex;overflow-x:auto;gap:4px;height:44px;white-space:nowrap}
+            .scratchpad-quick button{flex:0 0 90px}</style>
+            <body class="neconyan-home-booting"><div id="host"></div>
+            <script type="module">import {initMobileSwipeRails} from '/scripts/mobile-swipe-rails.js';
+            initMobileSwipeRails({leftLabel:'Scroll left',rightLabel:'Scroll right'});window.ready=true;</script></body>` }));
+        await page.goto('/swipe-rail-fixture');
+        await page.waitForFunction(() => window.ready);
+        await page.evaluate(async () => {
+            const rail = document.createElement('nav');
+            rail.className = 'scratchpad-quick';
+            rail.innerHTML = Array.from({ length: 8 }, (_, i) => `<button role="tab">Option ${i}</button>`).join('');
+            document.getElementById('host').append(rail);
+            for (let i = 0; i < 4; i++) await new Promise(resolve => requestAnimationFrame(resolve));
+        });
+        expect(await page.locator('.sb-mobile-rail-chrome').count()).toBe(0);
+        expect(await page.locator('.scratchpad-quick').evaluate(el => el.classList.contains('sb-mobile-swipe-rail'))).toBe(false);
+
+        await page.evaluate(() => document.body.classList.remove('neconyan-home-booting'));
+        await expect(chromeFor(page, '.scratchpad-quick')).toBeVisible();
+        await expect(page.locator('.scratchpad-quick')).toHaveClass(/sb-can-scroll-right/);
+        expect(errors).toEqual([]);
+    });
+
     test('rail chrome scrolls with the rail inside an unpositioned scroller', async ({ page }) => {
         const errors = [];
         page.on('pageerror', error => errors.push(error.message));
