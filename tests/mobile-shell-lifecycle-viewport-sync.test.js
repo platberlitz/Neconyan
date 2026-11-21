@@ -484,11 +484,11 @@ describe('queued mobile viewport sync', () => {
         sandbox.runNextFrame();
 
         expect(sandbox.calls).toEqual([
+            'syncShortTouchComposer',
             'syncShellViewportBounds',
             'syncMobileShellDrawerBounds',
             'applyTopbarOffset',
             'syncIOSKeyboardBottomInset',
-            'syncShortTouchComposer',
         ]);
         expect(sandbox.calls).not.toContain('syncChatbarVisibilityState');
         expect(sandbox.calls).not.toContain('scheduleTopbarContextRefresh');
@@ -548,11 +548,11 @@ describe('queued mobile viewport sync', () => {
         sandbox.runNextFrame();
 
         expect(sandbox.calls).toEqual([
+            'syncShortTouchComposer',
             'syncShellViewportBounds',
             'syncMobileShellDrawerBounds',
             'applyTopbarOffset',
             'syncIOSKeyboardBottomInset',
-            'syncShortTouchComposer',
         ]);
     });
 
@@ -614,11 +614,11 @@ describe('queued mobile viewport sync', () => {
         sandbox.runNextFrame();
 
         expect(sandbox.calls).toEqual([
+            'syncShortTouchComposer',
             'syncShellViewportBounds',
             'syncMobileShellDrawerBounds',
             'applyTopbarOffset',
             'syncIOSKeyboardBottomInset',
-            'syncShortTouchComposer',
         ]);
         expect(sandbox.calls).not.toContain('syncChatbarVisibilityState');
         expect(sandbox.calls).not.toContain('syncMobileModalState');
@@ -634,11 +634,11 @@ describe('queued mobile viewport sync', () => {
         sandbox.runNextFrame();
 
         expect(sandbox.calls).toEqual([
+            'syncShortTouchComposer',
             'syncShellViewportBounds',
             'syncMobileShellDrawerBounds',
             'applyTopbarOffset',
             'syncIOSKeyboardBottomInset',
-            'syncShortTouchComposer',
         ]);
         expect(sandbox.calls).not.toContain('syncChatbarVisibilityState');
         expect(sandbox.calls).not.toContain('syncMobileShellRailActions');
@@ -672,11 +672,11 @@ describe('queued mobile viewport sync', () => {
         sandbox.runNextFrame();
 
         expect(sandbox.calls).toEqual([
+            'syncShortTouchComposer',
             'syncShellViewportBounds',
             'syncMobileShellDrawerBounds',
             'applyTopbarOffset',
             'syncIOSKeyboardBottomInset',
-            'syncShortTouchComposer',
         ]);
     });
 
