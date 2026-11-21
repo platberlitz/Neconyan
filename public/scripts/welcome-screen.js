@@ -2135,9 +2135,9 @@ function initializeNeconyanRailSections(rail) {
     }
 }
 
-function setNeconyanRailCollapsed(collapsed, { remember = true } = {}) {
+function setNeconyanRailCollapsed(collapsed) {
     const nextCollapsed = Boolean(collapsed);
-    if (remember) accountStorage.setItem(NECONYAN_RAIL_COLLAPSED_KEY, String(nextCollapsed));
+    accountStorage.setItem(NECONYAN_RAIL_COLLAPSED_KEY, String(nextCollapsed));
     document.documentElement.dataset.neconyanSidebar = nextCollapsed ? 'closed' : 'open';
     const toggle = document.getElementById('neconyan-sidebar-toggle');
     toggle?.setAttribute('aria-expanded', String(!nextCollapsed));
@@ -2697,16 +2697,9 @@ function ensureNeconyanRail() {
     rail.querySelector('[data-neconyan-refresh-recent]').addEventListener('click', () => void refreshNeconyanRail({ force: true }));
     rail.querySelector('[data-neconyan-open-archive]').addEventListener('click', () => openNeconyanChatArchive());
     rail.querySelector('[data-neconyan-edit-quick-actions]').addEventListener('click', () => globalThis.NeconyanShell?.editQuickActions?.());
-    // A sideways phone needs most of its width for chat. Keep its sidebar
-    // preference separate, so rotating the phone doesn't change the desktop rail.
-    const shortTouch = window.matchMedia('(min-width: 769px) and (max-height: 420px) and (pointer: coarse)');
-    let shortTouchCollapsed = true;
-    const syncRail = () => setNeconyanRailCollapsed(shortTouch.matches ? shortTouchCollapsed : isNeconyanRailCollapsed(), { remember: false });
-    shortTouch.addEventListener('change', syncRail);
     rail.querySelector('#neconyan-sidebar-toggle').addEventListener('click', () => {
         const collapsed = document.documentElement.dataset.neconyanSidebar === 'closed';
-        if (shortTouch.matches) shortTouchCollapsed = !collapsed;
-        setNeconyanRailCollapsed(!collapsed, { remember: !shortTouch.matches });
+        setNeconyanRailCollapsed(!collapsed);
     });
 
     document.body.insertBefore(rail, document.getElementById('sheld') || document.body.firstChild);
@@ -2717,7 +2710,7 @@ function ensureNeconyanRail() {
     initializeNeconyanHome(rail);
     document.body.classList.add('neconyan-rail-ready');
     window.dispatchEvent(new Event('neconyan:rail-ready'));
-    syncRail();
+    setNeconyanRailCollapsed(isNeconyanRailCollapsed());
     void refreshNeconyanRail();
 }
 

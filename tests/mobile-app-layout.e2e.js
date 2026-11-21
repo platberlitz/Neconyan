@@ -18,11 +18,8 @@ async function openChat(page) {
     await expect(page.locator('#send_textarea')).toBeVisible();
     await page.evaluate(() => { window.SillyTavern.getContext().executeSlashCommandsWithOptions('/sys Workspace layout test'); });
     await expect(page.locator('#chat')).toContainText('Workspace layout test');
-    // Opening a temporary chat can focus the composer, which already enters
-    // the short editing layout in landscape. Start with the keyboard closed.
+    // Opening a temporary chat can focus the composer. Start with the keyboard closed.
     await page.locator('#send_textarea').blur();
-    await expect(page.locator('html')).not.toHaveClass(/sb-short-touch-composer/);
-    await page.waitForFunction(() => Array.from(document.styleSheets).some(sheet => sheet.href?.includes('/neconyan-touch-layout.css')));
 }
 
 test.describe('portrait iPhone composer', () => {
@@ -79,51 +76,16 @@ async function closeKeyboard(page, { ios, width, height }) {
     }
 }
 
-for (const [width, height, typingHeight, ios, offsetTop] of [[852, 393, 203, false, 0], [852, 393, 203, true, 0], [852, 393, 203, true, 150]]) {
-    test.describe(`${width}px landscape ${ios ? `iPhone, page scrolled ${offsetTop}px` : 'Android'}`, () => {
-        test.use({ viewport: { width, height }, ...(ios ? { userAgent: IPHONE_APP_USER_AGENT } : {}) });
-        test('keeps chat and composer above the keyboard', async ({ page, context }) => {
-            if (ios) await installIPhoneApp(context);
-            await openChat(page);
-            if (ios) await applyIOSOnlyCss(page, { inPlace: true });
-            const root = page.locator('html');
-            if (width > 768) await expect(root).toHaveAttribute('data-neconyan-sidebar', 'closed');
-            const composer = page.locator('#send_textarea');
-            const chatBar = page.locator('#sb-bottom-chat-bar');
-            const guidedActions = page.locator('#gg-action-button-container');
-            await expect(chatBar).toBeVisible();
-            await expect(guidedActions).toBeVisible();
-            await openKeyboard(page, { ios, width, typingHeight, offsetTop });
-            await expect(root).toHaveClass(/sb-short-touch-composer/);
-            await expect(chatBar).toBeHidden();
-            await expect(guidedActions).toBeHidden();
-            const chat = await page.locator('#chat').boundingBox();
-            const input = await composer.boundingBox();
-            const actions = await page.locator('#options_button').boundingBox();
-            const visibleBottom = offsetTop + typingHeight;
-            expect(chat.height).toBeGreaterThanOrEqual(70);
-            // The composer ends inside the visible area, not above it.
-            expect(input.y + input.height).toBeLessThanOrEqual(visibleBottom);
-            expect(input.y + input.height).toBeGreaterThan(visibleBottom - 80);
-            expect(actions.y + actions.height).toBeLessThanOrEqual(visibleBottom);
-            expect(actions.height).toBeGreaterThanOrEqual(44);
-            expect(actions.width).toBeGreaterThanOrEqual(44);
-            await closeKeyboard(page, { ios, width, height });
-            await expect(root).not.toHaveClass(/sb-short-touch-composer/);
-            await expect(chatBar).toBeVisible();
-            await expect(guidedActions).toBeVisible();
-        });
-    });
-}
-
-for (const [width, height, typingHeight, ios, offsetTop] of [[320, 568, 352, false, 0], [393, 852, 400, true, 0], [393, 852, 400, true, 300]]) {
-    test.describe(`${width}px portrait ${ios ? `iPhone, page scrolled ${offsetTop}px` : 'Android'}`, () => {
+for (const [width, height, typingHeight, ios, offsetTop] of [
+    [320, 568, 352, false, 0], [393, 852, 400, true, 0], [393, 852, 400, true, 300],
+    [852, 393, 203, false, 0], [852, 393, 203, true, 0], [852, 393, 203, true, 150],
+]) {
+    test.describe(`${width}x${height} ${ios ? `iPhone, page scrolled ${offsetTop}px` : 'Android'}`, () => {
         test.use({ viewport: { width, height }, ...(ios ? { userAgent: IPHONE_APP_USER_AGENT } : {}) });
         test('keeps the normal layout while typing', async ({ page, context }) => {
             if (ios) await installIPhoneApp(context);
             await openChat(page);
             if (ios) await applyIOSOnlyCss(page, { inPlace: true });
-            const root = page.locator('html');
             const chatBar = page.locator('#sb-bottom-chat-bar');
             const guidedActions = page.locator('#gg-action-button-container');
             const sheldHeight = () => page.locator('#sheld').evaluate(element => element.getBoundingClientRect().height);
@@ -131,12 +93,10 @@ for (const [width, height, typingHeight, ios, offsetTop] of [[320, 568, 352, fal
             await openKeyboard(page, { ios, width, typingHeight, offsetTop });
             // Let the viewport sync run before checking that nothing changed.
             await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-            await expect(root).not.toHaveClass(/sb-short-touch-composer/);
             await expect(chatBar).toBeVisible();
             await expect(guidedActions).toBeVisible();
             if (ios) expect(Math.abs(await sheldHeight() - before)).toBeLessThanOrEqual(1);
             await closeKeyboard(page, { ios, width, height });
-            await expect(root).not.toHaveClass(/sb-short-touch-composer/);
             await expect(chatBar).toBeVisible();
         });
     });

@@ -13,7 +13,7 @@ function plan({ changed = [], files = [], timings = {}, readSource = () => '' } 
 }
 
 test('always runs the smoke files once, including the mobile layout check on CSS-only changes', () => {
-    assert.deepEqual(plan({ changed: ['public/css/neconyan-touch-layout.css', 'tests/helper.js'] }), {
+    assert.deepEqual(plan({ changed: ['public/css/neconyan-mobile-shell.css', 'tests/helper.js'] }), {
         files: smoke, selected: [], deferred: [],
     });
     assert.deepEqual(plan({ changed: smoke.map(file => `tests/${file}`) }), {

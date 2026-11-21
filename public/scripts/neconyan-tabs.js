@@ -543,7 +543,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261121-viewport-zoom';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261121-touch-revert';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -4272,35 +4272,6 @@ function syncIOSKeyboardBottomInset() {
     // desktop layouts only pick it up while the software keyboard is open.
     root.classList.toggle('sb-ios-keyboard-inset-active', bottomInset > 0);
     root.classList.toggle('sb-ios-composer-keyboard-controls-active', composerControlsActive);
-}
-
-function isLandscapeTouchScreen(layout) {
-    const type = window.screen?.orientation?.type;
-    if (typeof type === 'string' && type) return type.startsWith('landscape');
-    const angle = Number(window.orientation);
-    if (Number.isFinite(angle)) return Math.abs(angle) === 90;
-    return layout.width > layout.height;
-}
-
-function syncShortTouchComposer() {
-    const root = document.documentElement;
-    const viewport = window.visualViewport;
-    const layout = getLayoutViewportSize();
-    const visual = getVisualViewportSize(layout);
-    const editable = isChatComposerEditableElement(document.activeElement);
-    const keyboardOpen = isVisualViewportKeyboardOpen(layout, visual);
-    // Keep the layout still between tapping a composer control and the keyboard closing.
-    const editing = editable || (keyboardOpen && root.classList.contains('sb-short-touch-composer'));
-    // A portrait phone with the keyboard open is normal use and keeps the regular layout.
-    const compact = window.matchMedia('(pointer: coarse)').matches && isLandscapeTouchScreen(layout)
-        && (viewport?.scale ?? 1) <= 1.01 && visual.height <= 420 && editing;
-    root.classList.toggle('sb-short-touch-composer', compact);
-    // iOS scrolls the page under the keyboard instead of shrinking it, so the
-    // visible bottom sits at the scroll offset plus the visible height.
-    const height = compact ? `${Math.max(0, Math.floor(visual.top + visual.height))}px` : '';
-    if (root.style.getPropertyValue('--sb-short-composer-bottom') !== height) {
-        root.style.setProperty('--sb-short-composer-bottom', height);
-    }
 }
 
 function getShellViewportSize() {
@@ -21151,7 +21122,6 @@ function applyDefaultDrawerStates() {
 }
 
 function syncMobileViewportState({ kind = nnMobileShellLifecycle.viewportSync.kind.FULL } = {}) {
-    syncShortTouchComposer();
     const viewportSyncStep = nnMobileShellLifecycle.viewportSync.step;
     const isMobileViewportActive = isMobileViewport();
     const syncPlan = nnMobileShellLifecycle.viewportSync.resolveSyncPlan({
@@ -22795,8 +22765,6 @@ function initAll() {
     // real panel scroller is nudged manually after viewport changes.
     document.addEventListener('focusin', scheduleMobileFocusedInputScroll);
     document.addEventListener('focusout', scheduleMobileFocusedInputScroll);
-    document.addEventListener('focusin', handleMobileShellViewportResize);
-    document.addEventListener('focusout', handleMobileShellViewportResize);
     window.visualViewport?.addEventListener('resize', scheduleMobileFocusedInputScroll, { passive: true });
     window.visualViewport?.addEventListener('scroll', scheduleMobileFocusedInputScroll, { passive: true });
 
@@ -22813,6 +22781,8 @@ function initAll() {
     if (isIOSWebKitPlatform()) {
         document.addEventListener('focusin', syncIOSKeyboardBottomInset);
         document.addEventListener('focusout', syncIOSKeyboardBottomInset);
+        document.addEventListener('focusin', handleMobileShellViewportResize);
+        document.addEventListener('focusout', handleMobileShellViewportResize);
     }
 
     if (isLegacyIOSWebKitPlatform()) {

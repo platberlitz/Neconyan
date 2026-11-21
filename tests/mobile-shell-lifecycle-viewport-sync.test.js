@@ -68,7 +68,7 @@ function createViewportSyncSandbox({ width = 390, isMobile = true, hasAnimationF
     const stubs = [
         'syncShellViewportBounds', 'syncMobileShellDrawerBounds', 'closeMobileNav', 'closeMobileChatTools',
         'syncMobileShellRailActions', 'syncDesktopShellSizing', 'applyTopbarOffset', 'syncChatbarVisibilityState',
-        'updateTopBarBrand', 'scheduleTopbarContextRefresh', 'syncMobileModalState', 'syncIOSKeyboardBottomInset', 'syncShortTouchComposer',
+        'updateTopBarBrand', 'scheduleTopbarContextRefresh', 'syncMobileModalState', 'syncIOSKeyboardBottomInset',
     ].map(name => `function ${name}() { calls.push(${JSON.stringify(name)}); }`);
 
     const requestAnimationFrame = callback => {
@@ -484,7 +484,6 @@ describe('queued mobile viewport sync', () => {
         sandbox.runNextFrame();
 
         expect(sandbox.calls).toEqual([
-            'syncShortTouchComposer',
             'syncShellViewportBounds',
             'syncMobileShellDrawerBounds',
             'applyTopbarOffset',
@@ -548,7 +547,6 @@ describe('queued mobile viewport sync', () => {
         sandbox.runNextFrame();
 
         expect(sandbox.calls).toEqual([
-            'syncShortTouchComposer',
             'syncShellViewportBounds',
             'syncMobileShellDrawerBounds',
             'applyTopbarOffset',
@@ -614,7 +612,6 @@ describe('queued mobile viewport sync', () => {
         sandbox.runNextFrame();
 
         expect(sandbox.calls).toEqual([
-            'syncShortTouchComposer',
             'syncShellViewportBounds',
             'syncMobileShellDrawerBounds',
             'applyTopbarOffset',
@@ -634,7 +631,6 @@ describe('queued mobile viewport sync', () => {
         sandbox.runNextFrame();
 
         expect(sandbox.calls).toEqual([
-            'syncShortTouchComposer',
             'syncShellViewportBounds',
             'syncMobileShellDrawerBounds',
             'applyTopbarOffset',
@@ -672,7 +668,6 @@ describe('queued mobile viewport sync', () => {
         sandbox.runNextFrame();
 
         expect(sandbox.calls).toEqual([
-            'syncShortTouchComposer',
             'syncShellViewportBounds',
             'syncMobileShellDrawerBounds',
             'applyTopbarOffset',
@@ -698,7 +693,6 @@ describe('queued mobile viewport sync', () => {
             'syncMobileModalState',
         ]));
         expect(sandbox.calls).toContain('syncIOSKeyboardBottomInset');
-        expect(sandbox.calls).toContain('syncShortTouchComposer');
     });
 });
 
