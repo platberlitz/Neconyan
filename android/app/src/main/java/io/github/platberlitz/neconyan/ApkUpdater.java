@@ -77,14 +77,12 @@ public final class ApkUpdater {
 
     @SuppressWarnings("deprecation")
     private int signingFlags() {
-        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
-            ? PackageManager.GET_SIGNING_CERTIFICATES | PackageManager.GET_SIGNATURES
-            : PackageManager.GET_SIGNATURES;
+        return PackageManager.GET_SIGNING_CERTIFICATES | PackageManager.GET_SIGNATURES;
     }
 
     @SuppressWarnings("deprecation")
     private Signature[] signingCertificates(PackageInfo info) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && info.signingInfo != null)
+        if (info.signingInfo != null)
             return info.signingInfo.getApkContentsSigners();
         return info.signatures;
     }

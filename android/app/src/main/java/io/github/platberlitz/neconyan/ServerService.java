@@ -17,9 +17,12 @@ public final class ServerService extends Service {
     public static final String SAFE = "safe";
     static final int RESTART_EXIT = 75;
     static final String RESTART_STATUS = "Restarting your workspace…";
+    static final String PREPARING_STATUS = "Preparing Neconyan on this device…";
+    static final String STARTING_STATUS = "Starting your workspace…";
     private static native int startNode(String[] arguments, String cache);
     private boolean started;
     private volatile boolean nodeStarted;
+    private volatile boolean nodeReturned;
     private PowerManager.WakeLock wake;
     private FileObserver busyWatcher;
     private NativeNotifications messageNotifications;
@@ -102,14 +105,14 @@ public final class ServerService extends Service {
             wake.acquire();
             new Thread(() -> {
                 try {
-                    status("Preparing Neconyan on this device…");
+                    status(PREPARING_STATUS);
                     File runtime;
                     synchronized (INSTALL_LOCK) {
                         if (stopping) return;
                         runtime = installPayload();
                     }
                     JSONObject credentials = credentials(this);
-                    status("Starting your workspace…");
+                    status(STARTING_STATUS);
                     System.loadLibrary("neconyan-node");
                     synchronized (stopLock) {
                         if (stopping) {
@@ -133,6 +136,7 @@ public final class ServerService extends Service {
                     // crashes without them, so Node loads the full data shipped in the payload.
                     int exit = startNode(new String[] { "node", "--max-old-space-size=" + heapMegabytes(this), "--disable-wasm-trap-handler", "--icu-data-dir=" + new File(runtime, "icu").getPath(), "--import", new File(runtime, "file-stats.mjs").getPath(), new File(runtime, "server-bootstrap.mjs").getPath(),
                         getFilesDir().getPath(), credentials.getString("port"), credentials.getString("password"), safe ? "safe" : "normal", getCacheDir().getPath() }, getCacheDir().getPath());
+                    nodeReturned = true;
                     if (exit == RESTART_EXIT) status(RESTART_STATUS);
                     else if (!serverNoteWritten()) status("Neconyan stopped (" + exit + "). Reopen the app to start it again.");
                     // Diagnostic writes must never stop the service from closing cleanly.
@@ -304,7 +308,7 @@ public final class ServerService extends Service {
         boolean terminate;
         synchronized (stopLock) {
             stopping = true;
-            terminate = nodeStarted;
+            terminate = nodeStarted && !nodeReturned;
         }
         new File(getFilesDir(), "android-ready.json").delete();
         stopWake();
@@ -316,8 +320,7 @@ public final class ServerService extends Service {
             new Handler(Looper.getMainLooper()).postDelayed(() -> android.os.Process.killProcess(android.os.Process.myPid()), 10000);
             if (serverReady) android.os.Process.sendSignal(android.os.Process.myPid(), 15);
         } else {
-            // A stopped preflight can leave Android caching a process with no service.
-            // The next launch recovers any interrupted payload staging before starting Node.
+            // Don't keep a cached process with a partially installed or already closed runtime.
             android.os.Process.killProcess(android.os.Process.myPid());
         }
         super.onDestroy();

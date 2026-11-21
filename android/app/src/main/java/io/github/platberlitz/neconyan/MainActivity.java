@@ -748,6 +748,8 @@ public final class MainActivity extends Activity {
     private String waitForWorkspace() throws Exception {
         long startedAt = serverStartedAt;
         long deadline = System.currentTimeMillis() + 300000;
+        boolean preparing = false;
+        boolean preparationFinished = false;
         long lastProbe = 0;
         Exception last = null;
         while (!isFinishing() && !failed && !closed && System.currentTimeMillis() < deadline) {
@@ -773,6 +775,14 @@ public final class MainActivity extends Activity {
                     String text = file.isFile() ? new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8).trim() : "";
                     boolean fresh = !text.isEmpty();
                     if (fresh && (text.startsWith("Could not start Neconyan:") || text.startsWith("Neconyan stopped") || ServerService.RESTART_STATUS.equals(text))) return text;
+                    if (!preparationFinished) {
+                        if (ServerService.PREPARING_STATUS.equals(text)) preparing = true;
+                        if (ServerService.STARTING_STATUS.equals(text)) {
+                            // Extraction happens only on install or repair. Don't charge it against Node's startup budget.
+                            if (preparing) deadline = now + 300000;
+                            preparationFinished = true;
+                        }
+                    }
                     if (serverProcessRunning()) serverSeen = true;
                     else if (serverSeen || now - startedAt > 20000) return "";
                     show(fresh ? text : "Starting your workspace…");
@@ -783,6 +793,7 @@ public final class MainActivity extends Activity {
             }
         }
         if (isFinishing() || failed || closed) return null;
+        if (preparing && !preparationFinished) return "Preparing the app files took more than five minutes. Check that the device has free storage and tap Try again.";
         return "Neconyan took more than five minutes to start" + (last == null ? "." : " (" + last.getMessage() + ").");
     }
     private boolean restartAfterStop(String reason) throws InterruptedException {
