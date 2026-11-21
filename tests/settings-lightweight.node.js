@@ -50,6 +50,15 @@ function call(request) {
     return { result, status };
 }
 
+test('the bootstrap leaves the agent library to the Agents extension', t => {
+    const request = catalogueRequest(t, {});
+    const full = call(request).result;
+    assert.equal(full.inChatAgentAccount, request.user.profile.handle);
+    assert.equal(full.inChatAgents, undefined);
+    assert.equal(full.inChatAgentLoadErrors, undefined);
+    assert.equal(full.inChatAgentRevisions, undefined);
+});
+
 test('named sections return exactly the matching parts of the full bootstrap', t => {
     const full = call(catalogueRequest(t, {})).result;
     assert.equal(full.world_names[0], 'Atlas');
@@ -66,7 +75,11 @@ test('named sections return exactly the matching parts of the full bootstrap', t
         const { result, status } = call(catalogueRequest(t, { sections: [section] }));
         assert.equal(status, 200);
         assert.deepEqual(Object.keys(result).sort(), [...keys].sort(), section);
-        for (const key of keys) assert.deepEqual(result[key], full[key], `${section}.${key}`);
+        for (const key of keys) {
+            // The bootstrap no longer reads the agent library; its own request still returns it.
+            if (['inChatAgents', 'inChatAgentLoadErrors', 'inChatAgentRevisions'].includes(key)) continue;
+            assert.deepEqual(result[key], full[key], `${section}.${key}`);
+        }
     }
 });
 

@@ -551,7 +551,9 @@ router.post('/get', (request, response) => {
     } catch (e) {
         return response.sendStatus(500);
     }
-    Object.assign(full, readSettingsSections(request, new Set(['presets', 'worlds', 'quickReplies', 'agents'])));
+    // The Agents extension loads its library itself. Reading it here as well
+    // made every start-up parse the same files twice.
+    Object.assign(full, readSettingsSections(request, new Set(['presets', 'worlds', 'quickReplies'])));
 
     let roleplayAccount = null;
     try {
@@ -578,10 +580,7 @@ router.post('/get', (request, response) => {
         context: full.context,
         sysprompt: full.sysprompt,
         reasoning: full.reasoning,
-        inChatAgents: full.inChatAgents,
-        inChatAgentLoadErrors: full.inChatAgentLoadErrors,
-        inChatAgentRevisions: full.inChatAgentRevisions,
-        inChatAgentAccount: full.inChatAgentAccount,
+        inChatAgentAccount: request.user.profile.handle,
         roleplayAccount,
         enable_extensions: ENABLE_EXTENSIONS,
         enable_extensions_auto_update: ENABLE_EXTENSIONS_AUTO_UPDATE,
