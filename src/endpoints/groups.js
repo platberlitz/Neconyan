@@ -265,6 +265,7 @@ router.post('/create', (request, response) => {
             avatar_url: body.avatar_url,
             allow_self_responses: !!body.allow_self_responses,
             keep_own_lines: body.keep_own_lines !== false,
+            hear_reply_target: body.hear_reply_target !== false,
             ensemble_replies: body.ensemble_replies === true,
             member_roles: Object.fromEntries(Object.entries(body.member_roles || {}).filter(([avatar, role]) => (body.members || []).includes(avatar) && ['character', 'narrator'].includes(role))),
             activation_strategy: body.activation_strategy ?? 4,

@@ -97,3 +97,21 @@ test('a group turn is refused when a chosen speaker is away or missed a line', a
     const accepted = await acceptRoleplayGroupTurn(s.request(), s.body({ key: 'heard' }));
     assert.equal(accepted.created, true);
 });
+
+test('a group turn follows the scene rules the page uses for who sees everything and the scene line', async t => {
+    const s = saved(t);
+    const rewrite = edit => {
+        const records = fs.readFileSync(s.f.filename, 'utf8').split('\n').map(line => JSON.parse(line));
+        edit(records);
+        fs.writeFileSync(s.f.filename, records.map(record => JSON.stringify(record)).join('\n'));
+    };
+    rewrite(records => {
+        records.at(-1).extra.group_scene = { present: ['Nova.png'], whisper_to: [] };
+        records[0].chat_metadata = { ...records[0].chat_metadata, group_scene: { away: [], location: 'The archive', whisper_to: [], sees_all: ['Other.png'] } };
+    });
+    await assert.rejects(acceptRoleplayGroupTurn(s.request(), s.body({ key: 'located' })),
+        error => error.status === 409 && error.apiError === 'roleplay_group_scene');
+    rewrite(records => { records[0].chat_metadata.group_scene.location = ''; });
+    const accepted = await acceptRoleplayGroupTurn(s.request(), s.body({ key: 'sees-all' }));
+    assert.equal(accepted.created, true);
+});

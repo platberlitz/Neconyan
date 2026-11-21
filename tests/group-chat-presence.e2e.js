@@ -59,7 +59,8 @@ test('away members are not chosen and cannot see what happened while they were a
     await expect.poll(() => page.evaluate(async () => (await import('/script.js')).flushPendingChatSaves({ silent: true }))).toBe(true);
     const prompt = app.provider.calls.at(-1).messages.map(message => message.content).join('\n');
     expect(prompt).not.toContain('marigold');
-    expect(prompt).not.toContain('Only Kit heard the secret.');
+    // She answers Kit's line, so she hears it (Members hear the line they reply to), and nothing earlier.
+    expect(prompt).toContain('Only Kit heard the secret.');
     await page.reload();
     await expect(page.locator('body')).toHaveClass(/neconyan-rail-ready/, { timeout: 60000 });
     await openSceneGroup(page, group);

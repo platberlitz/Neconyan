@@ -124,6 +124,7 @@ import {
     GROUP_DIRECTOR_RESPONSE_TOKENS,
     GROUP_DIRECTOR_STRATEGY,
     GROUP_DIRECTOR_TIMEOUT_MS,
+    isHearReplyTargetEnabled,
     isKeepOwnLinesEnabled,
     parseDirectorResponse,
     pickNextListSpeaker,
@@ -131,7 +132,7 @@ import {
 } from './group-chat-scene.js';
 import { buildEnsemblePrompt, createEnsembleMessages } from './group-chat-ensemble.js';
 import { messageAutomaticGenerationSuppressed } from './generation-outcome.js';
-import { beginGroupPromptScope, canGroupMemberSee, filterGroupPromptMessages, groupMessageAudience, groupScenePrompt, readGroupScene } from './group-chat-visibility.js';
+import { addGroupHearer, beginGroupPromptScope, canGroupMemberSee, filterGroupPromptMessages, groupMessageAudience, groupScenePrompt, readGroupScene } from './group-chat-visibility.js';
 import { initGroupSceneControls, renderGroupScene } from './group-chat-scene-ui.js';
 import { getGroupSpeakerPool } from './group-chat-speakers.js';
 import { initGroupSpeakerMenu } from './group-chat-speaker-menu.js';
@@ -395,13 +396,81 @@ function getGroupEnabledMembers(group) {
 
 let activeGroupAudience = null;
 let activeGroupTurnAudience = null;
+let activeGroupReplyTarget = null;
 
+/** Every new group message records who heard it, so members who arrive or step out later only remember what they heard. */
 export function getGroupMessageAudience({ forUser = false } = {}) {
     if (!forUser && (activeGroupAudience || activeGroupTurnAudience)) return structuredClone(activeGroupAudience || activeGroupTurnAudience);
     const group = groups.find(item => item.id === selected_group);
-    if (!group || !chat_metadata.group_scene) return null;
+    if (!group || !Array.isArray(group.members)) return null;
     const scene = readGroupScene(chat_metadata, group.members);
     return groupMessageAudience(scene, group.members, scene.whisper_to);
+}
+
+function getGroupSceneRules(group) {
+    const seesAll = group ? readGroupScene(chat_metadata, group.members).sees_all : [];
+    return seesAll.length ? { seesAll } : {};
+}
+
+/** The message a speaker answers: the last line before their turn, or before their own line when they swipe or continue it. */
+function findGroupReplyTarget(group, type) {
+    if (!group || !isHearReplyTargetEnabled(group)) return null;
+    const end = ['swipe', 'continue'].includes(type) ? chat.length - 1 : chat.length;
+    for (let index = end - 1; index >= 0; index--) {
+        if (!chat[index]?.is_system) return chat[index];
+    }
+    return null;
+}
+
+/**
+ * Stamps a new reply with who hears it, and records that its speakers heard the message they answered.
+ * @param {object} message New chat message
+ */
+export function stampGroupReply(message) {
+    const audience = getGroupMessageAudience();
+    if (!audience) return;
+    message.extra = message.extra || {};
+    message.extra.group_scene = audience;
+    const target = activeGroupReplyTarget;
+    if (!target || target.message === message || !chat.includes(target.message)) return;
+    for (const avatar of target.avatars) addGroupHearer(target.message, avatar);
+}
+
+/**
+ * Lets a member hear everything said so far in the open group chat, except whispers to someone else.
+ * @param {string} avatar Member avatar
+ * @returns {Promise<number>} How many messages they newly heard
+ */
+export async function catchUpGroupMember(avatar) {
+    const group = groups.find(item => item.id === selected_group);
+    if (!group?.members.includes(avatar)) return 0;
+    let count = 0;
+    for (const message of chat) {
+        if (addGroupHearer(message, avatar, { everySwipe: true })) count++;
+    }
+    if (count) await saveGroupChat(group.id, false);
+    return count;
+}
+
+/**
+ * Offers to catch up a member who joined the open group chat after it started.
+ * @param {string} groupId Group the member joined
+ * @param {string} avatar New member
+ */
+export function noteLateGroupMember(groupId, avatar) {
+    if (groupId !== selected_group || !Array.isArray(chat)) return;
+    if (!chat.some(message => !message?.is_system && !canGroupMemberSee(message, avatar))) return;
+    const name = characters[getCharacterIdByAvatar(avatar)]?.name || avatar;
+    toastr.info(t`Tap here to catch them up on what was said.`, t`${name} has not heard the earlier messages`, {
+        onclick: async () => {
+            if (selected_group !== groupId) return;
+            if (is_send_press || is_group_generating) {
+                toastr.info(t`Wait for the current reply to finish.`);
+                return;
+            }
+            await catchUpGroupMember(avatar);
+        },
+    });
 }
 
 function beginGroupTurnAudience(type) {
@@ -412,8 +481,19 @@ function beginGroupTurnAudience(type) {
     return () => { activeGroupTurnAudience = previous; };
 }
 
-function usesGroupSceneVisibility() {
-    return Boolean(chat_metadata.group_scene || chat.some(message => message.extra?.group_scene));
+/**
+ * Server group replies read the whole saved chat, so a turn stays in the page while the scene is set or a chosen speaker missed a line.
+ * @param {number[]} speakerIds Chosen speakers
+ * @returns {boolean}
+ */
+function usesGroupSceneVisibility(speakerIds = []) {
+    const group = groups.find(item => item.id === selected_group);
+    if (!group) return false;
+    const scene = readGroupScene(chat_metadata, group.members);
+    if (scene.location || scene.away.length || scene.whisper_to.length) return true;
+    const rules = getGroupSceneRules(group);
+    const avatars = speakerIds.map(chid => characters[chid]?.avatar).filter(Boolean);
+    return chat.some(message => !message?.is_system && avatars.some(avatar => !canGroupMemberSee(message, avatar, rules)));
 }
 
 function getGroupScenePrompt(group) {
@@ -423,11 +503,15 @@ function getGroupScenePrompt(group) {
     return prompt + (targets.length ? `\n[Private whisper between ${name1} and ${targets.map(avatar => characters[getCharacterIdByAvatar(avatar)]?.name || avatar).join(', ')}. Other members cannot hear or react to it. Keep the reply private.]` : '');
 }
 
-async function runWithGroupScene(avatars, callback) {
+async function runWithGroupScene(avatars, callback, type = 'normal') {
     const previous = activeGroupAudience;
+    const previousTarget = activeGroupReplyTarget;
+    const group = groups.find(item => item.id === selected_group);
+    const replyTarget = avatars.length ? findGroupReplyTarget(group, type) : null;
     activeGroupAudience = getGroupMessageAudience();
-    const restore = beginGroupPromptScope(avatars, chat);
-    try { return await callback(); } finally { restore(); activeGroupAudience = previous; }
+    activeGroupReplyTarget = replyTarget ? { message: replyTarget, avatars: [...avatars] } : null;
+    const restore = beginGroupPromptScope(avatars, chat, { ...getGroupSceneRules(group), ...(replyTarget ? { replyTarget } : {}) });
+    try { return await callback(); } finally { restore(); activeGroupAudience = previous; activeGroupReplyTarget = previousTarget; }
 }
 
 /**
@@ -437,7 +521,8 @@ async function runWithGroupScene(avatars, callback) {
  */
 export function getGroupPurrksMessages(avatar) {
     if (!Array.isArray(chat)) return [];
-    return filterGroupPromptMessages(chat.filter(message => !message?.is_system && canGroupMemberSee(message, avatar)));
+    const rules = getGroupSceneRules(groups.find(item => item.id === selected_group));
+    return filterGroupPromptMessages(chat.filter(message => !message?.is_system && canGroupMemberSee(message, avatar, rules)));
 }
 
 /** The member a prompt preview stands in for: the whisper target, the chosen speaker, else the first member in the scene. */
@@ -457,7 +542,10 @@ export function getGroupPreviewSpeakerChid() {
  */
 export function beginGroupPreviewScope(chid) {
     const avatar = characters[chid]?.avatar;
-    return avatar ? beginGroupPromptScope([avatar], chat) : () => {};
+    if (!avatar) return () => {};
+    const group = groups.find(item => item.id === selected_group);
+    const replyTarget = findGroupReplyTarget(group, 'normal');
+    return beginGroupPromptScope([avatar], chat, { ...getGroupSceneRules(group), ...(replyTarget ? { replyTarget } : {}) });
 }
 
 function getSelectedGroupSpeakerChid(group) {
@@ -2368,7 +2456,7 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
         const ensembleTurn = group.ensemble_replies === true && activatedMembers.length > 1
             && !['quiet', 'swipe', 'continue', 'impersonate'].includes(type);
         // Scene-specific turns use the browser's prompt and visibility rules.
-        const ordinaryTurn = !ensembleTurn && !usesGroupSceneVisibility() && activationStrategy !== group_activation_strategy.DIRECTOR
+        const ordinaryTurn = !ensembleTurn && !usesGroupSceneVisibility(activatedMembers) && activationStrategy !== group_activation_strategy.DIRECTOR
             && !activatedMembers.some(chid => getGroupMemberRole(group, characters[chid]) === 'narrator')
             && !['quiet', 'swipe', 'continue', 'impersonate'].includes(type) && !params?.quiet_prompt && getCurrentChatId();
         const automaticRouting = ordinaryTurn && params?.skipNativeRoleplay === undefined;
@@ -2470,7 +2558,7 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
             mergedParams.suppressUserMessage = didRenderUserMessage || mergedParams.suppressUserMessage;
             // Impersonation writes the user's own line, and the user heard everything.
             const sceneAvatars = type === 'impersonate' ? [] : [characters[chId].avatar];
-            textResult = await runWithGroupScene(sceneAvatars, () => runWithGroupMemberModelOverride(group, characters[chId]?.avatar, () => Generate(generateType, { automatic_trigger: byAutoMode, ...mergedParams })));
+            textResult = await runWithGroupScene(sceneAvatars, () => runWithGroupMemberModelOverride(group, characters[chId]?.avatar, () => Generate(generateType, { automatic_trigger: byAutoMode, ...mergedParams })), generateType);
             if (textResult?.generationOutcome) break;
             let messageChunk = textResult?.messageChunk;
 
@@ -2478,7 +2566,7 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
                 while (shouldAutoContinue(messageChunk, type === 'impersonate', mergedParams)) {
                     throwIfAborted();
                     setSendButtonState(true);
-                    textResult = await runWithGroupScene(sceneAvatars, () => runWithGroupMemberModelOverride(group, characters[chId]?.avatar, () => Generate('continue', { automatic_trigger: byAutoMode, ...mergedParams, companionHistoryTarget: undefined })));
+                    textResult = await runWithGroupScene(sceneAvatars, () => runWithGroupMemberModelOverride(group, characters[chId]?.avatar, () => Generate('continue', { automatic_trigger: byAutoMode, ...mergedParams, companionHistoryTarget: undefined })), 'continue');
                     if (textResult?.generationOutcome) break;
                     messageChunk = textResult?.messageChunk;
                 }
@@ -3019,6 +3107,7 @@ async function modifyGroupMember(groupId, groupMember, isDelete) {
         await unshallowGroupMembers(openGroupId);
         await editGroup(openGroupId, false, false);
         updateGroupAvatar(thisGroup);
+        if (!isDelete) noteLateGroupMember(openGroupId, id);
     } else {
         markGroupSaveDirty();
     }
@@ -3455,6 +3544,14 @@ async function onGroupKeepOwnLinesClick() {
     }
 }
 
+async function onGroupHearReplyTargetClick() {
+    if (openGroupId) {
+        const _thisGroup = groups.find((x) => x.id == openGroupId);
+        _thisGroup.hear_reply_target = Boolean($(this).prop('checked'));
+        await editGroup(openGroupId, false, false);
+    }
+}
+
 async function onHideMutedSpritesClick(value) {
     if (openGroupId) {
         let _thisGroup = groups.find((x) => x.id == openGroupId);
@@ -3559,6 +3656,7 @@ function select_group_chats(groupId, skipAnimation) {
     $('#rm_group_submit').prop('disabled', !groupHasMembers);
     $('#rm_group_allow_self_responses').prop('checked', group && group.allow_self_responses);
     $('#rm_group_keep_own_lines').prop('checked', group?.keep_own_lines !== false);
+    $('#rm_group_hear_reply_target').prop('checked', isHearReplyTargetEnabled(group));
     $('#rm_group_ensemble_replies').prop('checked', group?.ensemble_replies === true);
     $('#rm_group_hidemutedsprites').prop('checked', group && group.hideMutedSprites);
     $('#rm_group_generation_mode_join_prefix').val(group?.generation_mode_join_prefix ?? '').attr('setting', 'generation_mode_join_prefix');
@@ -3907,6 +4005,7 @@ async function createGroup() {
     let name = $('#rm_group_chat_name').val().toString();
     let allowSelfResponses = !!$('#rm_group_allow_self_responses').prop('checked');
     const keepOwnLines = $('#rm_group_keep_own_lines').prop('checked') !== false;
+    const hearReplyTarget = $('#rm_group_hear_reply_target').prop('checked') !== false;
     let activationStrategy = Number($('#rm_group_activation_strategy').find(':selected').val()) ?? group_activation_strategy.NATURAL;
     let generationMode = Number($('#rm_group_generation_mode').find(':selected').val()) ?? group_generation_mode.SWAP;
     const directorProfile = String($('#rm_group_director_profile').val() || '');
@@ -3939,6 +4038,7 @@ async function createGroup() {
         avatar_url: isValidImageUrl(avatarUrl) ? avatarUrl : default_avatar,
         allow_self_responses: allowSelfResponses,
         keep_own_lines: keepOwnLines,
+        hear_reply_target: hearReplyTarget,
         ensemble_replies: $('#rm_group_ensemble_replies').prop('checked') === true,
         hideMutedSprites: hideMutedSprites,
         activation_strategy: activationStrategy,
@@ -4373,6 +4473,7 @@ jQuery(() => {
     $('#group_favorite_button').on('click', onFavoriteGroupClick);
     $('#rm_group_allow_self_responses').on('input', onGroupSelfResponsesClick);
     $('#rm_group_keep_own_lines').on('input', onGroupKeepOwnLinesClick);
+    $('#rm_group_hear_reply_target').on('input', onGroupHearReplyTargetClick);
     $('#rm_group_ensemble_replies').on('input', async function () {
         const group = groups.find(item => item.id === openGroupId);
         if (group) {

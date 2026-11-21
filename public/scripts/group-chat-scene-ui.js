@@ -63,6 +63,9 @@ export function renderGroupScene() {
         if (getGroupMemberRole(group, character) === 'narrator') {
             button.append($('<small class="group_scene_member_tag"></small>').text(t`Narrator / GM`));
         }
+        if (scene.sees_all.includes(avatar)) {
+            button.append($('<small class="group_scene_member_tag"></small>').text(t`Sees everything`));
+        }
         if (!present) {
             button.append($('<small class="group_scene_member_tag"></small>').text(t`Away`));
         }

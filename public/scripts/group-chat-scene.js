@@ -15,6 +15,15 @@ export function isKeepOwnLinesEnabled(group) {
 }
 
 /**
+ * Whether members always hear the message they reply to, even if they were away for it. New and existing groups default to on.
+ * @param {object} group Group record
+ * @returns {boolean}
+ */
+export function isHearReplyTargetEnabled(group) {
+    return group?.hear_reply_target !== false;
+}
+
+/**
  * Names of the other group members, without the speaker, blanks or repeats.
  * @param {string[]} names Member names
  * @param {string} speakerName Current speaker

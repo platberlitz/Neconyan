@@ -2,7 +2,13 @@
 export function readGroupScene(metadata, members) {
     const scene = metadata?.group_scene || {};
     const valid = values => Array.isArray(values) ? [...new Set(values)].filter(avatar => members.includes(avatar)) : [];
-    return { away: valid(scene.away), location: String(scene.location || '').slice(0, 300), whisper_to: valid(scene.whisper_to) };
+    return { away: valid(scene.away), location: String(scene.location || '').slice(0, 300), whisper_to: valid(scene.whisper_to), sees_all: valid(scene.sees_all) };
+}
+
+/** Rules a saved chat header applies to every speaker: members who see everything except other people's whispers. */
+export function readGroupSceneRules(metadata) {
+    const seesAll = metadata?.group_scene?.sees_all;
+    return Array.isArray(seesAll) && seesAll.length ? { seesAll: [...seesAll] } : {};
 }
 
 export function groupMessageAudience(scene, members, whisperTargets = []) {
@@ -10,12 +16,37 @@ export function groupMessageAudience(scene, members, whisperTargets = []) {
     return { present, whisper_to: [...whisperTargets] };
 }
 
-/** Missing audience means an older public message, before scene tracking was enabled. */
-export function canGroupMemberSee(message, avatar) {
+/**
+ * Missing audience means an older public message, before scene tracking was enabled.
+ * `rules.seesAll` lists members who see every message except whispers to someone else;
+ * `rules.replyTarget` is the message a speaker is replying to, which they always hear.
+ */
+export function canGroupMemberSee(message, avatar, rules = {}) {
     const audience = message?.extra?.group_scene;
     if (!audience) return true;
-    if (Array.isArray(audience.present) && !audience.present.includes(avatar)) return false;
-    return !audience.whisper_to?.length || audience.whisper_to.includes(avatar);
+    if (audience.whisper_to?.length && !audience.whisper_to.includes(avatar)) return false;
+    if (rules.seesAll?.includes(avatar) || (rules.replyTarget && message === rules.replyTarget)) return true;
+    return !Array.isArray(audience.present) || audience.present.includes(avatar);
+}
+
+/**
+ * Records that a member heard a message, on the message and its selected swipe (or every swipe). Whispers to someone else stay private.
+ * @param {object} message Chat message
+ * @param {string} avatar Member avatar
+ * @param {{ everySwipe?: boolean }} [options]
+ * @returns {boolean} Whether anything changed
+ */
+export function addGroupHearer(message, avatar, { everySwipe = false } = {}) {
+    const swipes = Array.isArray(message?.swipe_info) ? message.swipe_info : [];
+    const chosen = everySwipe ? swipes : [swipes[message?.swipe_id ?? 0]];
+    let changed = false;
+    for (const audience of new Set([message?.extra?.group_scene, ...chosen.map(info => info?.extra?.group_scene)])) {
+        if (!Array.isArray(audience?.present) || audience.present.includes(avatar)) continue;
+        if (audience.whisper_to?.length && !audience.whisper_to.includes(avatar)) continue;
+        audience.present.push(avatar);
+        changed = true;
+    }
+    return changed;
 }
 
 export function groupScenePrompt(scene, members) {
@@ -27,15 +58,15 @@ export function groupScenePrompt(scene, members) {
 let promptScope = null;
 
 /** Scope every prompt reader to the same audience, without changing the saved chat. */
-export function beginGroupPromptScope(avatars, messages) {
+export function beginGroupPromptScope(avatars, messages, rules = {}) {
     const previous = promptScope;
-    const scope = { avatars: [...avatars], messages };
+    const scope = { avatars: [...avatars], messages, rules };
     promptScope = scope;
     return () => { if (promptScope === scope) promptScope = previous; };
 }
 
 export function isGroupPromptMessageVisible(message) {
-    return !promptScope || promptScope.avatars.every(avatar => canGroupMemberSee(message, avatar));
+    return !promptScope || promptScope.avatars.every(avatar => canGroupMemberSee(message, avatar, promptScope.rules));
 }
 
 export function filterGroupPromptMessages(messages) {

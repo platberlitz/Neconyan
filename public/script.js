@@ -118,6 +118,7 @@ import {
     getGroupPreviewSpeakerChid,
     getGroupPurrksMessages,
     beginGroupPreviewScope,
+    stampGroupReply,
 } from './scripts/group-chats.js';
 import { filterGroupPromptMessages, isGroupPromptMessageVisible } from './scripts/group-chat-visibility.js';
 import { rememberGroupSpeaker, restoreGroupSpeaker } from './scripts/group-chat-speakers.js';
@@ -13146,8 +13147,7 @@ export async function saveReply({ type, getMessage, fromStreaming = false, title
         chat.push(newMessage);
         newMessage.extra = {};
         applyGenerationOutcome(newMessage, generationOutcome);
-        const groupAudience = selected_group && getGroupMessageAudience();
-        if (groupAudience) newMessage.extra.group_scene = groupAudience;
+        if (selected_group) stampGroupReply(newMessage);
         newMessage.name = name2;
         newMessage.is_user = false;
         newMessage.send_date = getMessageTimeStamp();

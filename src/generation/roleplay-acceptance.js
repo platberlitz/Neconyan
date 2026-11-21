@@ -26,7 +26,7 @@ import { closeUnstartedRoleplayWorkflow } from './roleplay-workflow-cancellation
 import { admitAgentJob, captureAgentRequest } from './agent-jobs.js';
 import { normalizeBrowserMacroNames } from '../macros/browser-only.js';
 import { getRoleplaySourceMessageRevision } from '../../public/scripts/neconyan-conversation/roleplay-source.js';
-import { canGroupMemberSee } from '../../public/scripts/group-chat-visibility.js';
+import { canGroupMemberSee, readGroupSceneRules } from '../../public/scripts/group-chat-visibility.js';
 import { readRoleplayKeptReply, reconcileRoleplayKeptReplyFamily, roleplayKeptReplyPending, ROLEPLAY_REPLY_CAPABILITY } from './roleplay-kept-reply.js';
 
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
@@ -333,13 +333,16 @@ export function normalizeRoleplayGroupSubmission(body = {}) {
 }
 
 /**
- * Server group replies read the whole saved chat, so a speaker who is away or
- * missed a line would hear it. Those turns stay in the page, which filters them.
+ * Server group replies read the whole saved chat and add no scene line, so a
+ * turn stays in the page while the scene is set or a speaker missed a line.
  */
 function assertGroupSceneOpen(records, speakers) {
-    const away = records[0]?.chat_metadata?.group_scene?.away;
-    const missed = records.slice(1).some(row => !row?.is_system && speakers.some(avatar => !canGroupMemberSee(row, avatar)));
-    if (missed || (Array.isArray(away) && speakers.some(avatar => away.includes(avatar)))) {
+    const metadata = records[0]?.chat_metadata;
+    const scene = metadata?.group_scene;
+    const rules = readGroupSceneRules(metadata);
+    const sceneSet = Boolean(scene?.location) || [scene?.away, scene?.whisper_to].some(list => Array.isArray(list) && list.length > 0);
+    const missed = records.slice(1).some(row => !row?.is_system && speakers.some(avatar => !canGroupMemberSee(row, avatar, rules)));
+    if (sceneSet || missed) {
         throw changed('A speaker in this group scene missed part of the chat, so this reply has to be written in the browser.', 'roleplay_group_scene');
     }
 }

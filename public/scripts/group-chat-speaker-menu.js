@@ -1,5 +1,5 @@
 import { chat, characters, Generate, getCurrentChatId, is_send_press, swipe } from '../script.js';
-import { groups, is_group_generating, selected_group, updateGroupSpeakerControls } from './group-chats.js';
+import { catchUpGroupMember, groups, is_group_generating, selected_group, updateGroupSpeakerControls } from './group-chats.js';
 import { changeGroupScene, currentGroupScene } from './group-chat-scene-ui.js';
 import { canGroupMemberSee } from './group-chat-visibility.js';
 import { rememberGroupSpeaker } from './group-chat-speakers.js';
@@ -17,20 +17,28 @@ export async function openGroupSpeakerMenu(avatar) {
     if (!group?.members.includes(avatar) || chid < 0) return;
     const chatId = getCurrentChatId();
     const name = characters[chid].name;
-    const away = currentGroupScene()?.scene.away.includes(avatar);
+    const scene = currentGroupScene()?.scene;
+    const away = scene?.away.includes(avatar);
+    const seesAll = scene?.sees_all.includes(avatar);
+    const rules = { seesAll: scene?.sees_all || [] };
     const muted = group.disabled_members?.includes(avatar);
     const narrator = getGroupMemberRole(group, characters[chid]) === 'narrator';
+    const missed = chat.some(message => !message?.is_system && !canGroupMemberSee(message, avatar, rules));
     const content = $('<div class="group-speaker-menu"></div>').append($('<h3></h3>').text(name));
     const buttons = [];
     if (!away && !muted) {
         buttons.push({ text: t`Speak now`, result: 5, icon: 'fa-comment-dots' });
-        if (chat.at(-1) && !chat.at(-1).is_user && !chat.at(-1).is_system && canGroupMemberSee(chat.at(-1), avatar)) {
+        if (chat.at(-1) && !chat.at(-1).is_user && !chat.at(-1).is_system && canGroupMemberSee(chat.at(-1), avatar, rules)) {
             buttons.push({ text: t`Regenerate last reply as ${name}`, result: 6, icon: 'fa-rotate' });
         }
     }
     buttons.push(
         { text: muted ? t`Unmute` : t`Mute`, result: 2, icon: muted ? 'fa-volume-high' : 'fa-volume-xmark' },
         { text: away ? t`Bring into the scene` : t`Mark away`, result: 3, icon: away ? 'fa-door-open' : 'fa-door-closed' },
+        { text: seesAll ? t`Limit to what they heard` : t`Let them see everything`, result: 8, icon: seesAll ? 'fa-eye-slash' : 'fa-eye' },
+    );
+    if (missed && !seesAll) buttons.push({ text: t`Catch up on what was said`, result: 9, icon: 'fa-forward' });
+    buttons.push(
         { text: narrator ? t`Use as character` : t`Use as Narrator / GM`, result: 7, icon: 'fa-feather' },
         { text: t`Edit card`, result: 4, icon: 'fa-pen' },
     );
@@ -51,13 +59,19 @@ export async function openGroupSpeakerMenu(avatar) {
     } else if (action === 3) {
         const current = currentGroupScene();
         await changeGroupScene({ away: away ? current.scene.away.filter(member => member !== avatar) : [...current.scene.away, avatar] });
+    } else if (action === 8) {
+        const current = currentGroupScene();
+        await changeGroupScene({ sees_all: seesAll ? current.scene.sees_all.filter(member => member !== avatar) : [...current.scene.sees_all, avatar] });
+    } else if (action === 9) {
+        const count = await catchUpGroupMember(avatar);
+        if (count) toastr.success(t`${name} now remembers what was said.`);
     } else if (action === 4) {
         await handlers.editMember($('<div></div>').attr('data-chid', chid));
     } else if (action === 5) {
         await Generate('normal', { force_chid: chid });
     } else if (action === 6) {
         const message = chat.at(-1);
-        if (!canGroupMemberSee(message, avatar)) return;
+        if (!canGroupMemberSee(message, avatar, { seesAll: currentGroupScene()?.scene.sees_all || [] })) return;
         rememberGroupSpeaker(message);
         await swipe(null, SWIPE_DIRECTION.RIGHT, { forceSwipeId: message.swipes?.length || 1, generationOptions: { force_chid: chid, skipNativeRoleplay: true } });
     }
