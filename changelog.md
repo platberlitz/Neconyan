@@ -31,6 +31,7 @@
 - PR #804 (2026-11-21) `perf(conversation): paint streamed previews in place`
 - PR #805 (2026-11-21) `perf(chat): cut observer work on every streamed write`
 - PR #806 (2026-11-21) `perf(settings): skip unchanged saves before serialising`
+- PR #807 (2026-11-21) `perf(streaming): patch streamed text instead of replacing it`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
