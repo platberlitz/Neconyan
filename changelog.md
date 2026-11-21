@@ -11,6 +11,7 @@
 - PR #784 (2026-11-20) `fix: stabilise nightly browser checks`
 - PR #785 (2026-11-20) `fix(mewmory): protect archive, recall and model settings`
 - PR #786 (2026-11-20) `fix(scratchpad): preserve sessions and recover interrupted replies`
+- PR #788 (2026-11-21) `fix(scratchpad): use short references for scenario note edits`
 
 ## v1.5.7
 
