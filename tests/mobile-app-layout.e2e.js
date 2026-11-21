@@ -31,7 +31,7 @@ test.describe('portrait iPhone composer', () => {
     for (const [scale, personaSize, actionSize] of [[100, 34, 38], [85, 29, 34]]) {
         test(`keeps the compact layout at ${scale}% Bottom Bar Size`, async ({ page, context }) => {
             await installIPhoneApp(context);
-            await page.addInitScript(value => localStorage.setItem('sb-bottom-bar-scale', String(value)), scale);
+            await page.addInitScript(value => window.localStorage.setItem('sb-bottom-bar-scale', String(value)), scale);
             await openChat(page);
             await applyIOSOnlyCss(page, { inPlace: true });
 
