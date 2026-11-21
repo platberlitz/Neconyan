@@ -50,7 +50,8 @@ export function normalizeWorldInfoKey(key, substitute) {
         return null;
     }
 
-    const normalized = substitute(key)?.trim();
+    // Most keys are plain text. Only run the macro pass when the key can contain one.
+    const normalized = (/[{<\\]/.test(key) ? substitute(key) : key)?.trim();
     return normalized || null;
 }
 
@@ -216,18 +217,53 @@ export function filterWorldInfoInclusionGroups(candidates, activated, {
     return candidates;
 }
 
+const WORLD_INFO_REGEX_CACHE_LIMIT = 5000;
+const worldInfoKeyRegexCache = new Map();
+const worldInfoWholeWordRegexCache = new Map();
+
+function cachedWorldInfoKeyRegex(key) {
+    if (worldInfoKeyRegexCache.has(key)) {
+        return worldInfoKeyRegexCache.get(key);
+    }
+    const regex = parseWorldInfoKeyRegex(key);
+    if (worldInfoKeyRegexCache.size >= WORLD_INFO_REGEX_CACHE_LIMIT) {
+        worldInfoKeyRegexCache.clear();
+    }
+    worldInfoKeyRegexCache.set(key, regex);
+    return regex;
+}
+
+function cachedWorldInfoWholeWordRegex(needle) {
+    let regex = worldInfoWholeWordRegexCache.get(needle);
+    if (!regex) {
+        if (worldInfoWholeWordRegexCache.size >= WORLD_INFO_REGEX_CACHE_LIMIT) {
+            worldInfoWholeWordRegexCache.clear();
+        }
+        regex = new RegExp(`(?:^|\\W)(${needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})(?:$|\\W)`);
+        worldInfoWholeWordRegexCache.set(needle, regex);
+    }
+    return regex;
+}
+
 /** The exact key and selective-key checks used by each recursive scan pass. */
 export function matchesWorldInfoEntry(entry, text, { substitute = value => value, caseSensitive = false, wholeWords = false } = {}) {
+    let loweredText = null;
+    const lower = () => (loweredText ??= text.toLowerCase());
     const match = (key, normalized = false) => {
         if (!normalized) key = normalizeWorldInfoKey(key, substitute);
         if (!key) return false;
-        const regex = parseWorldInfoKeyRegex(key);
-        if (regex) return regex.test(text);
-        const source = (entry.caseSensitive ?? caseSensitive) ? text : text.toLowerCase();
-        const needle = (entry.caseSensitive ?? caseSensitive) ? key : key.toLowerCase();
+        const regex = cachedWorldInfoKeyRegex(key);
+        if (regex) {
+            // A global or sticky key keeps lastIndex between tests, so reset it for every entry.
+            regex.lastIndex = 0;
+            return regex.test(text);
+        }
+        const sameCase = entry.caseSensitive ?? caseSensitive;
+        const source = sameCase ? text : lower();
+        const needle = sameCase ? key : key.toLowerCase();
         if (!(entry.matchWholeWords ?? wholeWords)) return source.includes(needle);
         if (/\s/.test(needle)) return source.includes(needle);
-        return new RegExp(`(?:^|\\W)(${needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})(?:$|\\W)`).test(source);
+        return cachedWorldInfoWholeWordRegex(needle).test(source);
     };
     if (!Array.isArray(entry.key) || !entry.key.some(match)) return false;
     const secondary = Array.isArray(entry.keysecondary) ? entry.keysecondary.map(key => normalizeWorldInfoKey(key, substitute)).filter(Boolean) : [];
