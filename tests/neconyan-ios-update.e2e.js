@@ -1,5 +1,6 @@
 /* global window */
 import { expect, test } from '@playwright/test';
+import { acknowledgeSettingsSave } from './chat-scroll-regression-helpers.js';
 
 const releaseUrl = 'https://github.com/platberlitz/Neconyan/releases/tag/v1.3.0';
 const status = {
@@ -18,7 +19,7 @@ for (const phone of [false, true]) {
 
         async function openServer(page, response = status) {
             await page.emulateMedia({ reducedMotion: 'reduce' });
-            await page.route('**/api/settings/save', route => route.fulfill({ json: { result: 'ok' } }));
+            await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
             await page.addInitScript(() => {
                 window.openedUrls = [];
                 window.open = (url) => { window.openedUrls.push(String(url)); return null; };
@@ -45,8 +46,9 @@ for (const phone of [false, true]) {
             await expect(panel).toContainText('Latest IPA');
             await expect(panel).toContainText('IPA update available');
             await expect(panel.getByText('Auto-stash local changes before pulling', { exact: true })).toBeHidden();
-            await expect(panel.getByRole('button', { name: 'Restart server', exact: true })).toHaveCount(1);
-            await expect(panel.getByRole('button', { name: 'Restart server', exact: true })).toBeHidden();
+            const restart = panel.getByRole('button', { name: 'Restart server', exact: true, includeHidden: true });
+            await expect(restart).toHaveCount(1);
+            await expect(restart).toBeHidden();
             await expect(panel.getByRole('button', { name: 'Save & Restart', exact: true })).toBeHidden();
             const button = panel.getByRole('button', { name: 'Get the IPA', exact: true });
             await expect(button).toBeEnabled();
