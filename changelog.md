@@ -51,6 +51,7 @@
 - PR #827 (2026-11-21) `perf(agents): build the agent list when shown`
 - PR #828 (2026-11-21) `perf(chats): stat recent chats in short batches`
 - PR #829 (2026-11-21) `perf(sw): serve labelled styles and libraries from cache`
+- PR #831 (2026-11-21) `perf(startup): fetch characters while extensions load`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
