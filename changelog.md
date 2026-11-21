@@ -38,6 +38,7 @@
 - PR #814 (2026-11-21) `perf(thumbnails): stop enlarging small portraits`
 - PR #815 (2026-11-21) `perf(jobs): select from the shared job ledger`
 - PR #816 (2026-11-21) `perf(chat): count saved chat rows once`
+- PR #817 (2026-11-21) `test(thumbnails): give the large portrait check time`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
