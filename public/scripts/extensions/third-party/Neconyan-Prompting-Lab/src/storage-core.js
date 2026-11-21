@@ -556,6 +556,34 @@ export function createPromptingStorage(initialStore) {
         return newest ? getRun(newest.id) : null;
     }
 
+    /** Counts kept runs per case in one read, so the workspace does not ask once per case. */
+    async function countRuns(caseIds = []) {
+        const ids = Array.isArray(caseIds) ? caseIds : [caseIds];
+        const target = await readyStore();
+        let total = 0;
+        for (const caseId of ids) {
+            const indexedRuns = await hydrateRunIndex(caseId, target);
+            total += indexedRuns.filter(({ entry, run }) => run?.id === entry?.id && run.caseId === caseId).length;
+        }
+        return total;
+    }
+
+    /** The side rail's whole readout in one round trip. */
+    async function getInventory() {
+        const [suites, cases, drafts, prompts, ledger] = await Promise.all([
+            listSuites(), listCases(), listDrafts(), listPromptDrafts(), countLedger(),
+        ]);
+        return {
+            suites: suites.length,
+            cases: cases.length,
+            checks: cases.reduce((total, testCase) => total + (testCase.assertions?.length ?? 0), 0),
+            runs: await countRuns(cases.map(testCase => testCase.id)),
+            drafts: drafts.length,
+            prompts: prompts.length,
+            ledger,
+        };
+    }
+
     async function deleteRunUnlocked(caseId, runId, target = getStore()) {
         const recordKey = `${STORE_PREFIX.RUN}${runId}`;
         const previous = await target.getItem(recordKey);
@@ -679,5 +707,5 @@ export function createPromptingStorage(initialStore) {
     return { __setStoreForTests, createMemoryStore, saveDraft, getDraft, listDrafts, deleteDraft,
         savePromptDraft, getPromptDraft, listPromptDrafts, deletePromptDraft, saveLedgerEntry, listLedger, countLedger,
         pruneLedger, clearLedger, saveCase, getCase, listCases, deleteCase, saveSuite, getSuite, listSuites, deleteSuite,
-        updateSuite, saveRun, getRun, listRuns, getLatestRun, deleteRun, pruneRuns, saveImportBatch, clearAll };
+        updateSuite, saveRun, getRun, listRuns, getLatestRun, countRuns, getInventory, deleteRun, pruneRuns, saveImportBatch, clearAll };
 }
