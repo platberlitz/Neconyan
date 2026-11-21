@@ -283,6 +283,10 @@ export class ReasoningHandler {
     #activeStreamingTemplate = null;
     /** @type {number} Last time the live reasoning body was rendered */
     #lastReasoningDomRenderAt = 0;
+    /** @type {string?} Reasoning text last rendered into the live body */
+    #renderedReasoningText = null;
+    /** @type {HTMLElement?} Body the text above was rendered into */
+    #renderedReasoningInto = null;
 
     /**
      * True while an inline reasoning prefix has started and its suffix has not arrived.
@@ -588,6 +592,9 @@ export class ReasoningHandler {
             await eventSource.emit(event_types.STREAM_REASONING_DONE, this.reasoning, this.getDuration(), messageId, this.state);
         }
 
+        // Always draw the final body once, even if the text was already on screen.
+        this.#renderedReasoningText = null;
+        this.#renderedReasoningInto = null;
         this.updateDom(messageId);
     }
 
@@ -631,20 +638,29 @@ export class ReasoningHandler {
             // Neconyan: throttle live reasoning DOM work on reduced platforms so large
             // hidden reasoning blocks do not cause aggressive repaint or reload loops.
             const reasoning = trimSpaces(this.reasoningDisplayText ?? this.reasoning);
-            const displayReasoning = messageFormatting(reasoning, '', false, false, messageId, {}, true);
+            // Reasoning is re-rendered on every streaming tick. When the text and the
+            // body it belongs to have not changed, formatting it again only repeats work.
+            const alreadyRendered = reasoning === this.#renderedReasoningText
+                && this.messageReasoningContentDom === this.#renderedReasoningInto;
 
-            if (power_user.stream_fade_in) {
-                applyStreamFadeIn(this.messageReasoningContentDom, displayReasoning, {
-                    bypassFadeIn: shouldReduceStreamingDomWork(navigatorRef, {
-                        iosEnabled: power_user.ios_webkit_disable_stream_fade_in,
-                        androidEnabled: power_user.android_disable_stream_fade_in,
-                    }),
-                });
-            } else {
-                applyStreamDomPatch(this.messageReasoningContentDom, displayReasoning);
+            if (!alreadyRendered) {
+                const displayReasoning = messageFormatting(reasoning, '', false, false, messageId, {}, true);
+
+                if (power_user.stream_fade_in) {
+                    applyStreamFadeIn(this.messageReasoningContentDom, displayReasoning, {
+                        bypassFadeIn: shouldReduceStreamingDomWork(navigatorRef, {
+                            iosEnabled: power_user.ios_webkit_disable_stream_fade_in,
+                            androidEnabled: power_user.android_disable_stream_fade_in,
+                        }),
+                    });
+                } else {
+                    applyStreamDomPatch(this.messageReasoningContentDom, displayReasoning);
+                }
+
+                this.#lastReasoningDomRenderAt = now;
+                this.#renderedReasoningText = reasoning;
+                this.#renderedReasoningInto = this.messageReasoningContentDom;
             }
-
-            this.#lastReasoningDomRenderAt = now;
         }
 
         // Update tooltip for hidden reasoning edit

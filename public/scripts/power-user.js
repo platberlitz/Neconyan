@@ -414,7 +414,7 @@ const CHAT_STYLE_BODY_CLASSES = Object.freeze({
 
 const LEGACY_CHAT_STYLE_BODY_CLASSES = Object.freeze([]);
 const NATIVE_CHAT_STYLE_STYLESHEET_ID = 'neconyan-native-chat-styles';
-const NATIVE_CHAT_STYLE_STYLESHEET_HREF = 'css/neconyan-chat-styles.css?v=20261122-group-members';
+const NATIVE_CHAT_STYLE_STYLESHEET_HREF = 'css/neconyan-chat-styles.css?v=20261122-calm-styles';
 
 function ensureNativeChatStyleStylesheet() {
     if (document.getElementById(NATIVE_CHAT_STYLE_STYLESHEET_ID)) {
@@ -2617,6 +2617,9 @@ function applyBlurStrength() {
 
 function applyShadowWidth() {
     document.documentElement.style.setProperty('--shadowWidth', String(power_user.shadow_width));
+    // The universal text shadow is gated on this class: at width zero it would still
+    // be a value on every element for nothing.
+    document.body?.classList.toggle('neconyan-text-shadow', Number(power_user.shadow_width) > 0);
     $('#shadow_width_counter').val(power_user.shadow_width);
     $('#shadow_width').val(power_user.shadow_width);
 }

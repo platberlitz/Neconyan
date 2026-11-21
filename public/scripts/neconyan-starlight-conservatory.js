@@ -1034,8 +1034,13 @@ function drawStill() {
 
 function frame(timestamp) {
     if (!state.mounted) return;
+    // Stopping the loop while still avoids a permanent rAF callback that returns
+    // immediately. syncMotion restarts it when motion is enabled again.
+    if (state.still) {
+        state.rafId = 0;
+        return;
+    }
     state.rafId = window.requestAnimationFrame(frame);
-    if (state.still) return;
     if (!state.previous) state.previous = timestamp;
     const delta = clamp((timestamp - state.previous) / 1000, 0, 0.05);
     state.previous = timestamp;
@@ -1071,6 +1076,7 @@ function syncMotion() {
     } else {
         state.previous = 0;
         drawStill();
+        if (!state.rafId) state.rafId = window.requestAnimationFrame(frame);
     }
 }
 

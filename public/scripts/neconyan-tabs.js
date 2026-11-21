@@ -543,7 +543,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261122-group-members';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261122-calm-styles';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -6230,6 +6230,9 @@ function applyPaperTextureOpacity() {
     const enabled = nnState.paperTextureEnabled;
     const opacity = enabled ? normalizePaperTextureOpacity(nnState.paperTextureOpacity) / 100 : 0;
     document.documentElement.style.setProperty('--sb-paper-texture-opacity', opacity.toFixed(2));
+    // The texture layers are position:fixed blend layers. Creating them while the
+    // texture is off (the default) costs paint and compositing on every phone.
+    document.documentElement.toggleAttribute('data-nn-paper-texture', enabled && opacity > 0);
 }
 
 function setPaperTextureEnabled(enabled, { persist = true } = {}) {
@@ -10202,8 +10205,16 @@ function refreshNeconyanTopbarClock() {
         return;
     }
     const now = new Date();
-    clock.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    clock.setAttribute('datetime', now.toISOString());
+    const label = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    // The clock ticks every 15 s; writing the same minute again still dirties the
+    // top bar and starts a style pass.
+    if (clock.textContent !== label) {
+        clock.textContent = label;
+    }
+    const stamp = now.toISOString();
+    if (clock.getAttribute('datetime') !== stamp) {
+        clock.setAttribute('datetime', stamp);
+    }
 }
 
 function startNeconyanTopbarClock() {

@@ -14,8 +14,18 @@ export function createOffscreenMotionPauser({
 
     const visibility = new Intersections(entries => {
         for (const { target, isIntersecting } of entries) {
-            if (isIntersecting === !target.hasAttribute(OFFSCREEN_ATTRIBUTE)) continue;
-            target.toggleAttribute(OFFSCREEN_ATTRIBUTE, !isIntersecting);
+            if (isIntersecting) {
+                if (target.hasAttribute(OFFSCREEN_ATTRIBUTE)) target.removeAttribute(OFFSCREEN_ATTRIBUTE);
+                continue;
+            }
+            if (target.hasAttribute(OFFSCREEN_ATTRIBUTE)) continue;
+            // Only a message with a running animation needs pausing. Marking every
+            // off-screen row restyled its whole subtree and bought nothing.
+            const animations = typeof target.getAnimations === 'function'
+                ? target.getAnimations({ subtree: true })
+                : null;
+            if (animations && animations.length === 0) continue;
+            target.setAttribute(OFFSCREEN_ATTRIBUTE, '');
         }
     }, { rootMargin: VIEW_MARGIN });
 

@@ -101,7 +101,7 @@ import {
 } from './timeline-render.js';
 import { noteHomePersonaChoice } from '../scratchpad/home-persona.js';
 
-const CONVERSATION_STYLESHEET_HREF = 'css/neconyan-conversation.css?v=20261122-group-members';
+const CONVERSATION_STYLESHEET_HREF = 'css/neconyan-conversation.css?v=20261122-calm-styles';
 const CONVERSATION_STYLESHEET_ID = 'sb-conversation-css';
 
 export function ensureConversationStylesheet() {
