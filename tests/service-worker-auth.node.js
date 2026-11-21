@@ -125,14 +125,14 @@ test('content-hashed frontend assets remain cache-first', async () => {
     assert.match(worker.opened[0], /-static$/);
 });
 
-test('library, versioned stylesheet, image and font requests stay stale-while-revalidate', async () => {
+test('versioned libraries, stylesheets, images and fonts stay stale-while-revalidate', async () => {
     const worker = loadWorker();
     const paths = [
-        '/lib/jquery-3.7.1.min.js',
+        '/lib/jquery-3.7.1.min.js?v=20261117-startup',
         '/css/neconyan.css?v=20261117-startup',
         '/css/shell-styles/windows-98.css?v=20261117-startup',
-        '/img/neconyan-pixel-cat-running.webp',
-        '/webfonts/Nunito/Nunito[wght].woff2',
+        '/img/neconyan-pixel-cat-running.webp?v=20261117-startup',
+        '/webfonts/Nunito/Nunito[wght].woff2?v=20261117-startup',
     ];
     const responses = [];
     for (const pathname of paths) {
@@ -146,18 +146,20 @@ test('library, versioned stylesheet, image and font requests stay stale-while-re
     assert.deepEqual(worker.fetched, paths.map(pathname => `${ORIGIN}${pathname}`));
 });
 
-test('unversioned stylesheets are revalidated by the browser so an update never paints old rules', () => {
-    const worker = loadWorker({
-        cache: new Map([[`${ORIGIN}/css/toggle-dependent.css`, makeResponse('previous release')]]),
-    });
-    for (const pathname of [
+test('unversioned files bypass the service worker even when a previous APK cached them', () => {
+    const paths = [
         '/css/toggle-dependent.css',
         '/css/st-tailwind.css',
         '/css/user.css',
         '/css/macros.css',
         '/lib/some-widget.css',
+        '/lib/jquery-3.7.1.min.js',
+        '/img/neconyan-pixel-cat-running.webp',
         '/webfonts/NotoSans/stylesheet.css',
-    ]) {
+        '/webfonts/Nunito/Nunito[wght].woff2',
+    ];
+    const worker = loadWorker({ cache: new Map(paths.map(pathname => [`${ORIGIN}${pathname}`, makeResponse('previous release')])) });
+    for (const pathname of paths) {
         worker.listeners.fetch({
             request: requestFor(pathname),
             respondWith: () => assert.fail(`${pathname} must not be served from the service-worker cache`),
@@ -166,13 +168,14 @@ test('unversioned stylesheets are revalidated by the browser so an update never 
     assert.deepEqual(worker.fetched, []);
 });
 
-test('a stale library response is served while its newer copy is fetched', async () => {
+test('a stale response for a versioned URL is served while that version is revalidated', async () => {
     const cached = makeResponse('cached library');
-    const url = `${ORIGIN}/lib/jquery-3.7.1.min.js`;
+    const pathname = '/lib/jquery-3.7.1.min.js?v=20261117-startup';
+    const url = `${ORIGIN}${pathname}`;
     const worker = loadWorker({ cache: new Map([[url, cached]]) });
     let response;
     worker.listeners.fetch({
-        request: requestFor('/lib/jquery-3.7.1.min.js'),
+        request: requestFor(pathname),
         respondWith: promise => { response = promise; },
     });
     assert.equal(await response, cached);
