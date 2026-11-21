@@ -54,7 +54,7 @@ test('APK updates require confirmation, a newer matching package and matching si
     assert.match(source, /info\.signingInfo\.getApkContentsSigners\(\)/);
     assert.match(source, /GET_SIGNING_CERTIFICATES \| PackageManager\.GET_SIGNATURES/);
     assert.match(source, /getPackageArchiveInfo\(file\.getPath\(\), signingFlags\(\)\)/);
-    assert.match(source, /Build\.VERSION\.SDK_INT >= Build\.VERSION_CODES\.P/);
+    assert.match(source, /if \(info\.signingInfo != null\)\s+return info\.signingInfo\.getApkContentsSigners\(\);\s+return info\.signatures;/);
     assert.match(source, /Could not read the update's signature/);
     assert.match(source, /isFinishing\(\)[\s\S]*isDestroyed\(\)/);
     assert.doesNotMatch(source, /TimeUnit\.MINUTES\.toNanos\(30\)|deadline/);

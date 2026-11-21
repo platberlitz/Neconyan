@@ -185,11 +185,13 @@ test('the service serialises stop against the runtime claim and only signals a b
     assert.doesNotMatch(service, /runtimeClaimed\.set\(false\)/, 'Node must never be initialised twice in one process');
     const destroy = block(service, 'public void onDestroy()', 'public IBinder onBind');
     assert.match(destroy, /boolean serverReady = new File\(getFilesDir\(\), "android-ready\.json"\)\.isFile\(\);/);
-    assert.match(destroy, /synchronized \(stopLock\) \{\s*stopping = true;\s*terminate = nodeStarted;\s*\}/);
+    assert.match(destroy, /synchronized \(stopLock\) \{\s*stopping = true;\s*terminate = nodeStarted && !nodeReturned;\s*\}/);
     // Before the server has booted, SIGTERM would end the process without flushing.
     assert.match(destroy, /if \(serverReady\) android\.os\.Process\.sendSignal\(android\.os\.Process\.myPid\(\), 15\);/);
     assert.ok(destroy.indexOf('killProcess') < destroy.indexOf('if (serverReady)'), 'the kill grace period is armed before any signal');
     assert.match(service, /private volatile boolean nodeStarted;/);
+    assert.match(service, /private volatile boolean nodeReturned;/);
+    assert.match(thread, /startNode\([^;]+\);\s*nodeReturned = true;/);
     assert.match(service, /private volatile boolean stopping;/);
 });
 
