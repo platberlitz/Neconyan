@@ -68,7 +68,7 @@ state.ready = true;
 
 for (const phone of [false, true]) {
     const viewport = phone ? 'phone' : 'desktop';
-    test(`${viewport} installed Doom hooks keep explicit server replies on the browser without changing the preference`, async ({ app }, info) => {
+    test(`${viewport} installed Doom hooks keep replies on the browser without changing the server preference`, async ({ app }, info) => {
         const directory = path.join(app.dataRoot, 'default-user', 'extensions', EXTENSION);
         await fs.mkdir(directory, { recursive: true });
         await fs.writeFile(path.join(directory, 'manifest.json'), JSON.stringify({
@@ -133,7 +133,7 @@ for (const phone of [false, true]) {
         await page.locator('#send_textarea').fill(QUESTION);
         await page.evaluate(async () => {
             const core = await import('/script.js');
-            await core.Generate('normal', { skipNativeRoleplay: false });
+            await core.Generate('normal');
         });
         await expect(page.locator('#chat .mes').last()).toContainText(PROSE);
         const actual = await page.evaluate(async () => {

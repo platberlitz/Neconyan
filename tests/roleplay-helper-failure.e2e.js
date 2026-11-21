@@ -154,9 +154,15 @@ for (const phone of [false, true]) for (const change of ['agent', 'settings', 'a
                 await fs.writeFile(path.join(directory, 'helper.json'), JSON.stringify({ ...agent, prompt: 'An edited instruction.',
                     regexScripts: [{ ...displayScript, replaceString: 'Wrong new formatting' }] }));
             } else {
-                const saved = JSON.parse((await account.post('/api/settings/get')).settings);
-                saved.active_character = 'a-different-character.png';
-                await account.post('/api/settings/save', saved);
+                // A delayed save from the open page can win between reading and writing the revision.
+                await expect.poll(async () => {
+                    const saved = JSON.parse((await account.post('/api/settings/get')).settings);
+                    saved.active_character = 'a-different-character.png';
+                    const response = await account.context.request.post('/api/settings/save', { headers: account.headers, data: saved });
+                    if (response.status() === 409 && (await response.json()).error === 'settings_conflict') return false;
+                    expect(response.ok(), await response.text()).toBe(true);
+                    return true;
+                }).toBe(true);
             }
             app.provider.mode.reply = null;
             app.provider.mode.fail = true;

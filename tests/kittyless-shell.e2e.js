@@ -1,6 +1,6 @@
 /* global document, window, getComputedStyle, NeconyanShell, Image */
 import { expect, test } from '@playwright/test';
-import { acknowledgeSettingsSave } from './chat-scroll-regression-helpers.js';
+import { isolateSettingsSaves } from './chat-scroll-regression-helpers.js';
 import { IPHONE_SAFARI_CONTEXT, installIPhoneSafari, applyIOSOnlyCss } from './ios-safari-emulation.js';
 
 async function expand(page, selector) {
@@ -36,18 +36,10 @@ for (const phone of [false, true]) {
         const errors = [];
         page.on('pageerror', error => errors.push(error.message));
         await page.route('**/api/characters/all', route => route.fulfill({ json: [] }));
-        await page.route('**/api/settings/get', async route => {
-            const response = await route.fetch({ maxRetries: 2 });
-            const data = await response.json();
-            if (typeof data.settings !== 'string') return route.fulfill({ response });
-            const settings = JSON.parse(data.settings);
-            settings.extension_settings.disabledExtensions = [...new Set([...(settings.extension_settings.disabledExtensions || []), 'third-party/Neconyan-Time-Machine'])];
+        await isolateSettingsSaves(page, settings => {
             settings.firstRun = false;
             settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped', WelcomePage_PanelMode: 'full' };
-            await route.fulfill({ response, json: { ...data, settings: JSON.stringify(settings) } });
         });
-        // On the context, so a save still pending when the page routes are cleared cannot reach the shared account.
-        await context.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
         await page.goto('/');
         await page.waitForFunction(() => window.NeconyanShell && document.querySelector('.neconyan-home'));
         await expect(page.locator('#preloader')).toHaveCount(0);
@@ -187,13 +179,13 @@ for (const phone of [false, true]) {
         expect(await page.locator('#bg1').evaluate(el => el.style.backgroundImage)).toBe(selected);
 
         // The saved style is restored on a fresh page, including its default layer.
+        expect(await page.evaluate(async () => (await import('/script.js')).saveSettings(0, { returnResult: true }))).toBe(true);
         await page.reload();
         await page.waitForFunction(() => window.NeconyanShell && document.querySelector('.neconyan-home'));
         await expect(page.locator('html')).toHaveAttribute('data-sb-theme', 'kittyless');
         await expect(page.locator('.neconyan-home-cat')).toBeHidden();
         expect(await page.evaluate(() => getComputedStyle(document.body, '::before').backgroundImage)).toContain('shell-kittyless.webp');
         expect(errors).toEqual([]);
-        await page.unrouteAll({ behavior: 'ignoreErrors' });
         await context.close();
     });
 }

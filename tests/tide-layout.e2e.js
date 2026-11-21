@@ -576,8 +576,9 @@ test('Tide bubbles stay per paragraph on tablet while the header, body blocks an
         return { block: block.toJSON(), text: text.toJSON(), width: style.width, inset: text.left - block.left, right: block.right - text.right };
     });
     expect(Math.abs(phone.text.width - (phone.block.width - phone.inset - phone.right))).toBeLessThanOrEqual(1.5);
-    const card = await user.evaluate(row => getComputedStyle(row, '::after').content);
-    expect(card).not.toBe('none');
+    // The row paints the card. Its ::after layer only exists when paper texture is enabled.
+    await expect(user).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+    await expect(user).toHaveCSS('border-top-width', '1px');
     await expect(user).toHaveCSS('border-radius', '18px');
     // The phone keeps the content fixes only: the same shapes still hide and still bubble.
     const phoneShapes = await assistant.locator('.mes_text').evaluate(text => [...text.children]

@@ -95,7 +95,7 @@ async function installRoutes(page, baseURL, { modelRecords = MODELS, ordinarySen
         // Source-audited read-only dependencies for ordinary browser generation:
         // browser-reply-routing requires the Notebook check; Mewmory must inspect
         // the fresh disabled chat; held-reply recovery lists local jobs.
-        if (ordinarySend && ['/api/notebooks/reply-requirements', '/api/mewmory/inspect', '/api/resumable-generations/list'].includes(url.pathname)) {
+        if (ordinarySend && ['/api/notebooks/reply-requirements', '/api/mewmory/inspect', '/api/mewmory/prepare', '/api/resumable-generations/list'].includes(url.pathname)) {
             return route.continue();
         }
         // Only local data APIs reach the temporary server; all inference and unknown APIs are blocked.
