@@ -68,6 +68,7 @@
 - PR #844 (2026-11-21) `perf(mobile): skip swipe rail measuring during start-up`
 - PR #845 (2026-11-21) `perf(chat): ask a media query for phone width in the bubble boundary`
 - PR #846 (2026-11-21) `perf(models): skip scroll work while the model list is hidden`
+- PR #847 (2026-11-21) `feat(groups): show and edit who heard a message`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
