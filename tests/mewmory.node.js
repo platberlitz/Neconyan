@@ -1785,6 +1785,18 @@ test('preparing a reply with Mewmory off does not write an archive or require Me
     assert.equal(fs.readFileSync(filename, 'utf8'), '{', 'preparing a reply must not overwrite the damaged archive');
 });
 
+test('a reply without history is answered or asked to resend it', async t => {
+    const { directories } = disk(t);
+    saveConfig(directories, { ...defaultConfig(), writerTokenizer: 'o200k_base' });
+    mutateState(directories, locator, state => { state.enabled = true; }, 0);
+    assert.deepEqual(await prepareMewmoryPrompt(directories, { locator, historyOmitted: true }), {
+        enabled: true, needsHistory: true,
+    }, 'an enabled chat asks for the history rather than failing on it');
+    mutateState(directories, locator, state => { state.enabled = false; });
+    assert.equal((await prepareMewmoryPrompt(directories, { locator, historyOmitted: true })).enabled, false,
+        'a disabled chat still answers without the history');
+});
+
 test('server automatic hiding skips disabled settings and keeps the latest reply visible', async t => {
     const { directories } = disk(t);
     const locator = { chat: 'Gift', avatar: 'Mara.png', group: false };
