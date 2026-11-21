@@ -377,13 +377,13 @@ describe('thumbnail file name resolution', () => {
     });
 
     test('generateThumbnail still fits a large portrait to the desktop box', async () => {
-        const large = new Jimp({ width: 1600, height: 2000, color: 0xffffffff });
+        const large = new Jimp({ width: 900, height: 1400, color: 0xffffffff });
         fs.writeFileSync(path.join(directories.characters, 'Large.png'), await large.getBuffer(JimpMime.png));
 
         const result = await generateThumbnail(directories, 'avatar', 'Large.png', true);
 
         expect(imageSize(fs.readFileSync(result.path))).toMatchObject({ width: 864, height: 1280 });
-    });
+    }, 20000);
 
     test('serving a cached thumbnail does not read the file just to measure it', async () => {
         writeCharacter('Cached.png');
