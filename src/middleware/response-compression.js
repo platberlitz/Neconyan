@@ -14,6 +14,10 @@ function hasCacheDirective(response, directive) {
     return cacheControl.split(',').map(part => part.trim()).includes(directive);
 }
 
+function isBundledAppShell() {
+    return process.env.NECONYAN_ANDROID_APP === '1' || process.env.NECONYAN_IOS_APP === '1';
+}
+
 /**
  * Keeps generic response compression away from live streams.
  * @param {import('express').Request} request Express request
@@ -21,6 +25,13 @@ function hasCacheDirective(response, directive) {
  * @returns {boolean}
  */
 export function shouldCompressResponse(request, response) {
+    if (isBundledAppShell()) {
+        // The phone apps fetch from their own server on the same device. The
+        // WebView holds its own cache, and compressing costs more CPU there
+        // than copying the bytes across the loopback.
+        return false;
+    }
+
     const contentType = getHeaderValue(response, 'Content-Type').toLowerCase();
     if (contentType.split(';', 1)[0].trim() === 'text/event-stream') {
         return false;

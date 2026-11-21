@@ -74,6 +74,23 @@ describe('response compression middleware', () => {
         }))).toBe(false);
     });
 
+    test('skips compression inside the bundled phone apps', () => {
+        const android = process.env.NECONYAN_ANDROID_APP;
+        const ios = process.env.NECONYAN_IOS_APP;
+        try {
+            process.env.NECONYAN_ANDROID_APP = '1';
+            expect(shouldCompressResponse({}, createResponse({ 'Content-Type': 'application/json' }))).toBe(false);
+            delete process.env.NECONYAN_ANDROID_APP;
+            process.env.NECONYAN_IOS_APP = '1';
+            expect(shouldCompressResponse({}, createResponse({ 'Content-Type': 'application/json' }))).toBe(false);
+        } finally {
+            if (android === undefined) delete process.env.NECONYAN_ANDROID_APP;
+            else process.env.NECONYAN_ANDROID_APP = android;
+            if (ios === undefined) delete process.env.NECONYAN_IOS_APP;
+            else process.env.NECONYAN_IOS_APP = ios;
+        }
+    });
+
     test('keeps default compression behavior for regular JSON responses', () => {
         expect(shouldCompressResponse({}, createResponse({
             'Content-Type': 'application/json',
