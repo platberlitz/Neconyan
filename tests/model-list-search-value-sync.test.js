@@ -11,7 +11,7 @@ function functionSource(name) {
     return (modelListSource.match(new RegExp(`^(?:export )?(?:async )?function ${name}\\([\\s\\S]*?^}`, 'm'))?.[0] ?? '').replace(/^export /, '');
 }
 
-function createRuntime() {
+function createRuntime(globals = {}) {
     class FakeNode {
         constructor(tagName = '') {
             this.tagName = tagName.toUpperCase();
@@ -129,6 +129,7 @@ function createRuntime() {
         t: strings => strings[0],
         groupByModelFamily: items => [{ label: null, items }],
         globalThis: {},
+        ...globals,
     });
     context.globalThis = context;
     context.lists = new WeakMap();
@@ -194,5 +195,39 @@ describe('model list value sync', () => {
 
         const results = parent.children[1].querySelectorAll('.nn-model-list-option');
         expect(results.find(button => button.dataset.modelId === 'b').getAttribute('aria-pressed')).toBe('true');
+    });
+
+    test('leaves the scroll position and size alone while the list is hidden', () => {
+        const scrollReads = [];
+        let resize = null;
+        let mutate = null;
+        const runtime = createRuntime({
+            ResizeObserver: class { constructor(callback) { resize = callback; } observe() { } },
+            MutationObserver: class { constructor(callback) { mutate = callback; } observe() { } disconnect() { } takeRecords() { return []; } },
+        });
+        Object.defineProperty(runtime.FakeNode.prototype, 'scrollTop', {
+            get() { scrollReads.push(this.className); return this.storedScrollTop ?? 0; },
+            set(value) { scrollReads.push(this.className); this.storedScrollTop = value; },
+        });
+        Object.defineProperty(runtime.FakeNode.prototype, 'clientHeight', {
+            get() { scrollReads.push(`${this.className} height`); return this.storedHeight ?? 0; },
+            set(value) { this.storedHeight = value; },
+        });
+        const select = new runtime.FakeSelect('model_openai_select', [option('a'), option('b')]);
+        const parent = new runtime.FakeNode('div');
+        parent.append(select);
+        runtime.attachModelListSearch(select);
+        mutate([]);
+        expect(scrollReads).toEqual([]);
+
+        const results = parent.children[1].children.find(child => child.className === 'nn-model-list-results');
+        results.clientHeight = 200;
+        results.getBoundingClientRect = () => ({ top: 0, bottom: 200 });
+        results.querySelector = () => null;
+        resize();
+        results.storedScrollTop = 40;
+        mutate([]);
+        expect(scrollReads.length).toBeGreaterThan(0);
+        expect(results.storedScrollTop).toBe(40);
     });
 });
