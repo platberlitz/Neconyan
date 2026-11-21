@@ -41,6 +41,7 @@
 - PR #817 (2026-11-21) `test(thumbnails): give the large portrait check time`
 - PR #818 (2026-11-21) `perf(server): leave the agent library out of startup`
 - PR #819 (2026-11-21) `perf(sw): skip rewriting unchanged cache entries`
+- PR #820 (2026-11-21) `perf(thumbnails): request phone-sized images in lists`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
