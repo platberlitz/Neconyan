@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { enableCompileCache } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
@@ -13,6 +14,13 @@ if (!privatePath || !/^\d+$/.test(port) || Number(port) < 1024 || Number(port) >
     throw new Error('Invalid private iOS launch configuration.');
 }
 const statePath = fs.realpathSync(privatePath);
+// The iPhone app runs Node without a JIT, so parsing the server and its dependencies is
+// slower than on Android. Android already keeps a compile cache; this gives iOS the same.
+try {
+    const compileCachePath = path.join(statePath, 'node-cache');
+    fs.mkdirSync(compileCachePath, { recursive: true });
+    enableCompileCache(compileCachePath);
+} catch { /* A data folder that cannot hold a cache still starts the server. */ }
 // Node runs inside the app process, so any exit closes the whole app. The app reads this
 // file on the next launch to explain what happened instead of silently starting again.
 const exitPath = path.join(statePath, 'ios-exit.json');
