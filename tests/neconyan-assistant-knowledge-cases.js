@@ -258,6 +258,7 @@ export const refreshedKnowledgeCases = [
     ['Does Guided Impersonation in Simple Mode send my reply?', 'tools.guided-simple', 'in the composer without sending it'],
     ['How do I update in Simple Mode?', 'start.simple-updates', 'Open menu → Updates'],
     ['What happens when I pet the sleeping cat?', 'chat.sleepers', 'Enter or Space'],
+    ['Where do I pick a sleeping cat coat?', 'chat.sleepers', 'Settings → Appearance → Interface'],
     ['Where is the Simple Mode APK update?', 'start.simple-updates', 'Update APK inside the Android app'],
     ['I missed update notice, where can I check again?', 'start.simple-updates', 'after an update notice disappears'],
     ['Where is memory in Simple Mode?', 'agents.memory-shard', 'opens Story so far'],
