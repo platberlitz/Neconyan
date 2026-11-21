@@ -66,6 +66,7 @@
 - PR #842 (2026-11-21) `test(e2e): stop waiting on transitions in a hidden chat`
 - PR #843 (2026-11-21) `feat(groups): add scene memory rules`
 - PR #844 (2026-11-21) `perf(mobile): skip swipe rail measuring during start-up`
+- PR #845 (2026-11-21) `perf(chat): ask a media query for phone width in the bubble boundary`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
