@@ -50,6 +50,22 @@ export function loadFrontendManifest() {
     return manifestCache;
 }
 
+/** Native packages have no runtime compiler fallback. Check both URLs for each compiled bundle. */
+export function validateBundledFrontend(root = FRONTEND_DIST_ROOT, manifest = loadFrontendManifest()) {
+    for (const bundle of ['lib', 'notes-editor']) {
+        const alias = `${bundle}.js`;
+        const entry = manifest?.assets?.[alias];
+        const hashedName = typeof entry?.output === 'string' && new RegExp(`^${bundle}-[0-9a-f]{8,}\\.js$`).test(entry.output);
+        if (!hashedName || !Number.isSafeInteger(entry.bytes) || entry.bytes <= 0
+            || [alias, entry.output].some(file => {
+                const stat = fs.statSync(path.join(root, file), { throwIfNoEntry: false });
+                return !stat?.isFile() || stat.size !== entry.bytes;
+            })) {
+            throw new Error(`The installed app is missing or has a damaged frontend bundle (${alias}). Install the app again over this copy to keep your data.`);
+        }
+    }
+}
+
 export function resolveFrontendAssetPath(publicPath) {
     const manifest = loadFrontendManifest();
     const assets = manifest?.assets;

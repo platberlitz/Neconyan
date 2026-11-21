@@ -104,15 +104,19 @@ def verify(ipa, commit):
                     require(handle.read(4) not in NATIVE_MAGIC, f'Native binary inside the server payload: {name}')
         manifest_bytes = archive.read(server + 'dist/frontend/asset-manifest.json')
         require(hashlib.sha256(manifest_bytes).hexdigest() == provenance['frontendManifestSha256'], 'Frontend manifest mismatch')
-        manifest = json.loads(manifest_bytes)
-        for source, asset in manifest['assets'].items():
+        assets = json.loads(manifest_bytes)['assets']
+        for bundle in ('lib.js', 'notes-editor.js'):
+            require('hash' in assets[bundle], f'Uncompiled frontend bundle: {bundle}')
+        for source, asset in assets.items():
             content = archive.read(server + 'dist/frontend/' + asset['output'])
             require(len(content) == asset['bytes'], f'Asset size mismatch: {asset["output"]}')
             if 'hash' in asset:
                 require(hashlib.sha256(content).hexdigest()[:12] == asset['hash'], f'Asset hash mismatch: {asset["output"]}')
             else:
                 require(content == archive.read(server + 'public/' + source), f'Copied asset mismatch: {source}')
-        print(json.dumps({'commit': commit, 'version': provenance['version'], 'platform': 'iOS ARM64 device', 'frontendAssets': len(manifest['assets']), 'signing': 'requires user sideload signing'}, indent=2))
+            if source in ('lib.js', 'notes-editor.js'):
+                require(content == archive.read(server + 'dist/frontend/' + source), f'Frontend bundle alias does not match: {source}')
+        print(json.dumps({'commit': commit, 'version': provenance['version'], 'platform': 'iOS ARM64 device', 'frontendAssets': len(assets), 'signing': 'requires user sideload signing'}, indent=2))
 
 
 if __name__ == '__main__':

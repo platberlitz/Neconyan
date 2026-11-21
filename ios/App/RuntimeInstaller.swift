@@ -18,6 +18,7 @@ enum RuntimeInstaller {
     static let requiredFiles = [
         "server-bootstrap.mjs", "server.js", "package.json", "src/server-main.js",
         "node_modules/yaml/package.json", "dist/frontend/asset-manifest.json", "release-provenance.json",
+        "dist/frontend/lib.js", "dist/frontend/notes-editor.js",
     ]
 
     static func validate(_ runtime: URL, against bundled: URL) throws {

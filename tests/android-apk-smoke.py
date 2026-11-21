@@ -287,6 +287,12 @@ if args.update_webview:
 request, token, port, origin = connect()
 try:
     wait_for_workspace()
+    assets = json.loads(request('/asset-manifest.json'))['assets']
+    for bundle in ('lib.js', 'notes-editor.js'):
+        asset = assets[bundle]
+        assert asset.get('hash') and len(request('/' + bundle).encode('utf-8')) == asset['bytes'], bundle
+        assert request('/' + bundle) == request('/frontend-assets/' + asset['output']), bundle
+    assert 'Compiling frontend libraries' not in private('cat', 'cache/server.log')
     try:
         urllib.request.urlopen(urllib.request.Request(origin + '/api/settings/get', data=b'{}'), timeout=10)
         raise AssertionError('Private server accepted an unauthenticated settings request')

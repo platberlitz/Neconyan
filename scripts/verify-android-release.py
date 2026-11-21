@@ -68,11 +68,16 @@ def verify_apk(filename, commit, version, aapt2):
                     'Payload version differs from release')
             manifest = server.read('dist/frontend/asset-manifest.json')
             require(hashlib.sha256(manifest).hexdigest() == provenance['frontendManifestSha256'], 'Frontend manifest checksum mismatch')
-            for asset in json.loads(manifest)['assets'].values():
+            assets = json.loads(manifest)['assets']
+            for bundle in ('lib.js', 'notes-editor.js'):
+                require('hash' in assets[bundle], f'Uncompiled frontend bundle: {bundle}')
+            for source, asset in assets.items():
                 content = server.read('dist/frontend/' + asset['output'])
                 require(len(content) == asset['bytes'], 'Frontend asset size differs from manifest')
                 if 'hash' in asset:
                     require(hashlib.sha256(content).hexdigest()[:12] == asset['hash'], 'Frontend asset hash differs from manifest')
+                if source in ('lib.js', 'notes-editor.js'):
+                    require(content == server.read('dist/frontend/' + source), f'Frontend bundle alias does not match: {source}')
         libraries = [name for name in apk.namelist() if name.startswith('lib/') and name.endswith('.so')]
         abis = {name.split('/')[1] for name in libraries}
         require(len(abis) == 1 and abis <= MACHINES.keys(), 'Expected one supported CPU architecture per APK')

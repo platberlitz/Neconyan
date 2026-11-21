@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, test } from '@jest/globals';
@@ -9,6 +10,7 @@ import {
     clearFrontendManifestCache,
     getFrontendManifestPath,
     rewriteFrontendHtml,
+    validateBundledFrontend,
 } from '../src/frontend-assets.js';
 import { redirectLegacyFrontendAsset } from '../src/middleware/frontend-assets.js';
 
@@ -112,4 +114,27 @@ describe('frontend asset manifest rewriting', () => {
         expect(HASHED_FRONTEND_ASSET_RE.test('script.js')).toBe(false);
         expect(HASHED_FRONTEND_ASSET_RE.test('scripts/extensions.js')).toBe(false);
     });
+});
+
+test('native startup requires both compiled bundles at their regular and immutable URLs', () => {
+    const dist = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-bundles-'));
+    const assets = {
+        'lib.js': { output: 'lib-0123456789ab.js', bytes: 10 },
+        'notes-editor.js': { output: 'notes-editor-abcdef123456.js', bytes: 10 },
+    };
+    try {
+        for (const [alias, entry] of Object.entries(assets)) {
+            fs.writeFileSync(path.join(dist, alias), '0123456789');
+            fs.writeFileSync(path.join(dist, entry.output), '0123456789');
+        }
+        expect(() => validateBundledFrontend(dist, { assets })).not.toThrow();
+        expect(() => validateBundledFrontend(dist, {})).toThrow(/damaged frontend bundle \(lib.js\)/);
+        fs.unlinkSync(path.join(dist, 'notes-editor.js'));
+        expect(() => validateBundledFrontend(dist, { assets })).toThrow(/damaged frontend bundle \(notes-editor.js\)/);
+        fs.writeFileSync(path.join(dist, 'notes-editor.js'), '0123456789');
+        fs.truncateSync(path.join(dist, assets['lib.js'].output), 4);
+        expect(() => validateBundledFrontend(dist, { assets })).toThrow(/damaged frontend bundle \(lib.js\)/);
+    } finally {
+        fs.rmSync(dist, { recursive: true, force: true });
+    }
 });
