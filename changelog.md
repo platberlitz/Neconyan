@@ -18,6 +18,7 @@
 - PR #791 (2026-11-21) `feat(conversation): edit group DM members in place`
 - PR #792 (2026-11-21) `fix(android): honour supported server config edits on restart`
 - PR #793 (2026-11-21) `fix(agents): strip echoed line-format companion trackers`
+- PR #794 (2026-11-21) `perf(rendering): stop redundant page-wide and per-token work`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
