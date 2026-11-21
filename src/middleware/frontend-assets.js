@@ -30,14 +30,20 @@ import {
     FRONTEND_DIST_ROOT,
     applyFrontendAssetHeaders,
     getFrontendAssetsEnabled,
+    getPublicAssetStamp,
     loadFrontendManifest,
 } from '../frontend-assets.js';
 
-export function setPublicAssetHeaders(res, requestPath) {
+export function setPublicAssetHeaders(res, requestPath, stat) {
     if (/\.(?:m?js|css)$/i.test(requestPath)) {
-        // Neconyan: revalidate unversioned JS modules and stylesheets to avoid stale mixed
-        // frontend graphs. Extension CSS pairs with always-revalidated JS, so an hour-stale
-        // stylesheet leaves new UI unstyled or invisible.
+        // A URL stamped with the file's own label cannot go stale: the next
+        // edit changes the label served in the import map. Anything else keeps
+        // revalidating so a mixed frontend graph is never served.
+        const stamp = getPublicAssetStamp(stat);
+        if (stamp && res.req?.query?.v === stamp) {
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+            return;
+        }
         res.setHeader('Cache-Control', 'no-cache');
         return;
     }

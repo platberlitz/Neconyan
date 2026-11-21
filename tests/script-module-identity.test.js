@@ -1,4 +1,5 @@
 import { describe, expect, test } from '@jest/globals';
+import { clearPublicModuleImportMapCache, readRewrittenFrontendHtml } from '../src/frontend-assets.js';
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -21,16 +22,29 @@ function collectJsFiles(dir, out = []) {
 }
 
 describe('frontend module identity', () => {
-    // Browsers key ES module identity by full URL, query string included. Every
-    // module imports '../script.js' bare, so a cache-busting query on the
-    // index.html script.js tag makes the browser evaluate script.js twice and
-    // register every delegated event handler twice (toggles then no-op because
-    // each click fires both copies). Stale-cache protection comes from the
-    // frontend-assets middleware serving JS with Cache-Control: no-cache.
+    // Browsers key ES module identity by full URL, query string included. The
+    // source page stays bare, and the server stamps both the tag and the import
+    // map with the same label, so '../script.js' imports reach that same URL.
     test('script.js loads under its bare URL so module identity matches bare imports', () => {
         expect(indexHtml).toContain('<link rel="modulepreload" href="script.js">');
         expect(indexHtml).toContain('<script type="module" src="script.js" data-neconyan-core-script></script>');
         expect(indexHtml).not.toMatch(/(?:src|href)="script\.js\?/);
+    });
+
+    test('the served page stamps tags and the import map with the same labels', () => {
+        clearPublicModuleImportMapCache();
+        const served = readRewrittenFrontendHtml(path.join(repoRoot, 'public', 'index.html'), { enabled: true });
+        const map = JSON.parse(served.match(/<script type="importmap">([\s\S]*?)<\/script>/)[1]).imports;
+
+        for (const match of served.matchAll(/<script type="module" src="([^"]+)"/g)) {
+            const url = match[1];
+            expect(map[url.split('?')[0]]).toBe(url);
+        }
+        const scriptTag = [...served.matchAll(/<script type="module" src="([^"]+)" data-neconyan-core-script>/g)]
+            .map(match => match[1])
+            .find(url => url.startsWith('/script.js?'));
+        expect(map['/script.js']).toBe(scriptTag);
+        clearPublicModuleImportMapCache();
     });
 
     test('cache-busted module tags are never bare-imported elsewhere', () => {

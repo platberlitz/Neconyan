@@ -84,7 +84,7 @@ export function resolveFrontendAssetPath(publicPath) {
     return `${FRONTEND_ASSET_PREFIX}${entry.output}`;
 }
 
-export function rewriteFrontendHtml(html, { enabled = getFrontendAssetsEnabled() } = {}) {
+export function rewriteFrontendHtml(html, { enabled = getFrontendAssetsEnabled(), importMap = null } = {}) {
     if (!enabled || typeof html !== 'string') {
         return html;
     }
@@ -118,7 +118,116 @@ export function rewriteFrontendHtml(html, { enabled = getFrontendAssetsEnabled()
         rewritten = rewritten.replace(new RegExp(`(["'])${escaped}(?:\\?v=[^"']*)?\\1`, 'g'), `$1${target}$1`);
     }
 
+    if (importMap && Object.keys(importMap).length > 0) {
+        rewritten = stampFrontendModules(rewritten, importMap);
+    }
+
     return rewritten;
+}
+
+function stampFrontendModules(html, importMap) {
+    let rewritten = html;
+    const stampFor = source => {
+        const cleanPath = `/${source.split('?')[0].replace(/^\.?\/+/, '').replace(/^\/+/, '')}`;
+        return importMap[cleanPath] ?? null;
+    };
+    const stampTag = (match, before, source, after) => {
+        if (!/\.m?js$/i.test(source.split('?')[0])) {
+            return match;
+        }
+
+        return `${before}${stampFor(source) ?? source}${after}`;
+    };
+
+    rewritten = rewritten.replace(/(<script\b[^>]*\bsrc=")([^"]+)(")/gi, stampTag);
+    rewritten = rewritten.replace(/(<link\b[^>]*\brel="modulepreload"[^>]*\bhref=")([^"]+)(")/gi, stampTag);
+
+    rewritten = rewritten.replace(/<script type="importmap">([\s\S]*?)<\/script>/i, (match, body) => {
+        try {
+            const parsed = JSON.parse(body);
+            const imports = { ...(parsed.imports ?? {}), ...importMap };
+            if (importMap['/lib.js']) {
+                imports['#macro-vendor'] = importMap['/lib.js'];
+            }
+            return `<script type="importmap">\n        ${JSON.stringify({ imports })}\n    </script>`;
+        } catch {
+            return match;
+        }
+    });
+
+    if (!/<script type="importmap">/i.test(rewritten) && /<\/head>/i.test(rewritten)) {
+        rewritten = rewritten.replace(/<\/head>/i, `    <script type="importmap">${JSON.stringify({ imports: importMap })}</script>\n</head>`);
+    }
+
+    return rewritten;
+}
+
+const PUBLIC_MODULE_SCAN_TTL_MS = 10_000;
+let publicModuleImportMapCache = null;
+
+/** A short, filesystem-derived label that changes whenever a file changes. */
+export function getPublicAssetStamp(stat) {
+    if (!stat?.isFile?.()) {
+        return '';
+    }
+
+    const inode = Number.isFinite(stat.ino) ? stat.ino.toString(36) : '';
+    return `${stat.size.toString(36)}-${Math.floor(stat.mtimeMs).toString(36)}-${inode}`;
+}
+
+function collectPublicModules(directory, prefix = '', out = []) {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+        const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
+        const fullPath = path.join(directory, entry.name);
+
+        if (entry.isDirectory()) {
+            collectPublicModules(fullPath, relativePath, out);
+        } else if (entry.isFile() && /\.m?js$/i.test(entry.name)) {
+            out.push(relativePath);
+        }
+    }
+
+    return out;
+}
+
+/**
+ * Maps each public module URL to a versioned copy. Import maps apply to every
+ * module specifier, including the relative imports inside stripped bundles, so
+ * one tag and its bare imports now resolve to the same evaluated module.
+ */
+export function buildPublicModuleImportMap(publicRoot = path.join(serverDirectory, 'public')) {
+    const imports = {};
+
+    for (const relativePath of collectPublicModules(publicRoot)) {
+        if (HASHED_FRONTEND_ASSET_RE.test(relativePath)) {
+            continue;
+        }
+        const stat = fs.statSync(path.join(publicRoot, ...relativePath.split('/')), { throwIfNoEntry: false });
+        const stamp = getPublicAssetStamp(stat);
+        if (stamp) {
+            const url = `/${relativePath}`;
+            imports[url] = `${url}?v=${stamp}`;
+        }
+    }
+
+    return imports;
+}
+
+export function clearPublicModuleImportMapCache() {
+    publicModuleImportMapCache = null;
+    indexHtmlCache = null;
+}
+
+function getPublicModuleImportMap(publicRoot, now = Date.now()) {
+    if (publicModuleImportMapCache?.publicRoot === publicRoot
+        && now - publicModuleImportMapCache.builtAt < PUBLIC_MODULE_SCAN_TTL_MS) {
+        return publicModuleImportMapCache;
+    }
+
+    const imports = buildPublicModuleImportMap(publicRoot);
+    const revision = Object.values(imports).join('\u001e');
+    publicModuleImportMapCache = { publicRoot, builtAt: now, imports, revision };
+    return publicModuleImportMapCache;
 }
 
 let indexHtmlCache = null;
@@ -134,12 +243,17 @@ export function readRewrittenFrontendHtml(indexPath = path.join(serverDirectory,
     }
 
     const manifest = loadFrontendManifest();
-    const identity = `${stat.mtimeMs}:${stat.size}:${stat.ino}:${enabled ? 'on' : 'off'}`;
+    // A production build serves its unhashed copies from dist, so the labels
+    // must come from the files the browser will actually receive.
+    const builtModules = enabled && fs.existsSync(path.join(FRONTEND_DIST_ROOT, 'script.js'));
+    const moduleRoot = builtModules ? FRONTEND_DIST_ROOT : path.dirname(indexPath);
+    const moduleMap = enabled ? getPublicModuleImportMap(moduleRoot) : null;
+    const identity = `${stat.mtimeMs}:${stat.size}:${stat.ino}:${enabled ? 'on' : 'off'}:${moduleMap?.revision ?? ''}`;
     if (indexHtmlCache?.manifest === manifest && indexHtmlCache.identity === identity) {
         return indexHtmlCache.html;
     }
 
-    const html = rewriteFrontendHtml(fs.readFileSync(indexPath, 'utf8'), { enabled });
+    const html = rewriteFrontendHtml(fs.readFileSync(indexPath, 'utf8'), { enabled, importMap: moduleMap?.imports ?? null });
     indexHtmlCache = { manifest, identity, html };
     return html;
 }
