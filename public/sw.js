@@ -83,9 +83,15 @@ async function staleWhileRevalidate(request) {
     const cachedResponse = await cache.match(request);
     const freshResponse = fetch(request)
         .then((response) => {
-            putCache(cache, request, response).catch((error) => {
-                console.debug('Neconyan service worker skipped static cache update.', error);
-            });
+            // Revalidated files often come back as 304s with the same ETag. Rewriting
+            // the cache entry then costs a write per stylesheet on every reload.
+            const etag = response.headers.get('ETag');
+            const cachedEtag = cachedResponse?.headers?.get?.('ETag');
+            if (!etag || etag !== cachedEtag) {
+                putCache(cache, request, response).catch((error) => {
+                    console.debug('Neconyan service worker skipped static cache update.', error);
+                });
+            }
 
             return response;
         })
