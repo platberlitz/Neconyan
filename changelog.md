@@ -52,6 +52,7 @@
 - PR #828 (2026-11-21) `perf(chats): stat recent chats in short batches`
 - PR #829 (2026-11-21) `perf(sw): serve labelled styles and libraries from cache`
 - PR #831 (2026-11-21) `perf(startup): fetch characters while extensions load`
+- PR #832 (2026-11-21) `perf(time-machine): capture presets while idle`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
