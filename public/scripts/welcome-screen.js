@@ -3609,7 +3609,9 @@ export function initWelcomeScreen() {
             requestForegroundRefresh();
         }
     });
-    eventSource.on(event_types.APP_READY, async () => {
+    // Open Home before the other start-up listeners run. They can take seconds
+    // (extensions, quick replies, imports), and none of that has to paint first.
+    eventSource.makeFirst(event_types.APP_READY, async () => {
         resumeTutorial();
         const opensHome = getCurrentChatId() === undefined && chat.length === 0;
         const homePromise = opensHome ? openWelcomeScreen() : null;
