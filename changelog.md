@@ -13,6 +13,7 @@
 - PR #786 (2026-11-20) `fix(scratchpad): preserve sessions and recover interrupted replies`
 - PR #787 (2026-11-21) `fix(mobile): improve app startup, updates and device usability`
 - PR #788 (2026-11-21) `fix(scratchpad): use short references for scenario note edits`
+- PR #789 (2026-11-21) `fix(mobile): restore the compact composer layout`
 
 ## v1.5.7
 
