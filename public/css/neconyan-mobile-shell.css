@@ -3761,6 +3761,18 @@ body.neconyan #sheld .sb-conversation-settings-nav {
 body.neconyan #sheld .sb-conversation-settings-nav::-webkit-scrollbar { display: none; }
 body.neconyan #sheld .sb-conversation-settings-nav button { flex: 0 0 auto; white-space: nowrap; }
 
+/* Conversation group editor: a button is never narrower than its label with its padding. Cancel and Save members share a row (equal, or Save wider) while both fit, and otherwise each takes the full row. */
+body.neconyan #sheld .sb-conversation-group-picker-actions-stacked > .sb-conversation-group-picker-buttons > .menu_button { min-inline-size: max-content; }
+
+/* Conversation group editor on short screens: the editor hangs from the Pals header, so it scrolls inside the room the rail has left (the rail is as tall as #sheld) instead of running off the screen. */
+body.neconyan #sheld #sb_conversation_add_dm_picker:has(> .sb-conversation-group-picker-actions-stacked) {
+    box-sizing: border-box;
+    max-block-size: max(120px, calc(var(--sb-ios-shell-height, calc(var(--sb-shell-viewport-height, 100dvh) - var(--sb-topbar-layout-offset, var(--topBarBlockSize)) - 1px)) - 100% - 4px - max(12px, env(safe-area-inset-bottom, 0px))));
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    touch-action: pan-y;
+}
+
 body.neconyan #mewmory-workspace .mewmory-tabs {
     flex-wrap: nowrap;
     overflow-x: auto;

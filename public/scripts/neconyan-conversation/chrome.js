@@ -14,7 +14,9 @@ import {
     deleteConversationBranch,
     getConversationBranches,
     getActiveConversationBranch,
+    getConversationGroupById,
     getConversationGroupIdForAvatar,
+    getConversationGroupThreadAnchor,
     getConversationPersonaId,
     getConversationStore,
     getConversationThreadStore,
@@ -29,6 +31,7 @@ import {
     setActiveConversationBranch,
 } from './context.js';
 import { editConversationMessage } from './generation.js';
+import { computeConversationGroupMemberEdit, describeConversationGroupMemberError, pickConversationGroupFollowTarget } from './group-member-edits.js';
 import {
     applySettingsToPanel,
     handleCharacterMessagePolish,
@@ -46,6 +49,7 @@ import { markConversationBranchRead } from './presentation.js';
 import { editUserPersonaStatus, setActiveConversationPersonaAppendixIds, setUserStatus } from './personas.js';
 import {
     addWeeklyScheduleRow,
+    buildConversationGroupName,
     handleCreateConversationGroupFromPicker,
     hideConversationStartPicker,
     openAddMemberPicker,
@@ -97,7 +101,7 @@ import {
 } from './timeline-render.js';
 import { noteHomePersonaChoice } from '../scratchpad/home-persona.js';
 
-const CONVERSATION_STYLESHEET_HREF = 'css/neconyan-conversation.css?v=20261121-cozy-composer';
+const CONVERSATION_STYLESHEET_HREF = 'css/neconyan-conversation.css?v=20261122-group-members';
 const CONVERSATION_STYLESHEET_ID = 'sb-conversation-css';
 
 export function ensureConversationStylesheet() {
@@ -453,8 +457,73 @@ function reconcileDeletedConversationThread(detail) {
     const groupId = conversationState.conversationSelectedGroupId || '';
     if (isDeletedConversationThread(detail, { activeKey: getActiveConversationThreadKey(), groupId })) {
         leaveDeletedConversationThread(getCurrentCharAvatar(), groupId);
+    } else {
+        followConversationGroupMemberEdit(detail);
     }
     schedulePalsRailRender();
+}
+
+/**
+ * After a member edit reached this page (its own edit or a refresh): a drawer or an open workspace that shows a pal who left, or whose group
+ * key was removed, follows the group to its holder. It runs inside the refresh event itself, before any other listener or timer, so nothing
+ * writes into the removed pal's own DM first. The drawer keeps its unsaved values: they are saved to the group at the holder.
+ */
+function followConversationGroupMemberEdit(detail) {
+    const removedTargets = (Array.isArray(detail?.threadKeys) ? detail.threadKeys : []).map(key => parseConversationThreadKey(key));
+    const decide = (avatar, groupId, personaId) => {
+        const group = groupId ? getConversationGroupById(groupId, { personaId }) : null;
+        const anchor = group ? getConversationGroupThreadAnchor(group, { personaId }) : null;
+        return pickConversationGroupFollowTarget({ avatar, groupId, personaId, group, anchorAvatar: anchor?.avatar || '', removedTargets });
+    };
+    const drawer = document.getElementById(CHROME_IDS.settingsDrawer);
+    if (drawer instanceof HTMLElement && drawer.hidden === false && drawer.dataset.conversationGroupId) {
+        const groupId = drawer.dataset.conversationGroupId;
+        const personaId = drawer.dataset.conversationPersonaId || getConversationPersonaId();
+        const decision = decide(drawer.dataset.conversationAvatar || '', groupId, personaId);
+        if (decision.follow) {
+            if (decision.avatar) closeConversationSettings({ avatar: decision.avatar, groupId, personaId });
+            else closeConversationSettings(null, { save: false });
+        }
+    }
+    const groupId = conversationState.conversationSelectedGroupId || '';
+    if (conversationState.conversationWorkspaceOpen && groupId) {
+        const decision = decide(getCurrentCharAvatar(), groupId, getConversationPersonaId());
+        if (decision.follow && decision.avatar) {
+            openConversationWorkspaceForAvatar(decision.avatar, { groupId, showToast: false });
+        } else if (decision.follow) {
+            leaveDeletedConversationThread(getCurrentCharAvatar(), groupId);
+        }
+    }
+}
+
+/** 'Save members': send the difference from what the editor was drawn with, then close it and say what happened. */
+async function saveConversationGroupMembersFromPicker(button) {
+    const picker = document.getElementById('sb_conversation_add_dm_picker');
+    if (!(picker instanceof HTMLElement) || !picker.dataset.editGroupId) return;
+    const read = (name, fallback) => {
+        try { return JSON.parse(picker.dataset[name] || ''); } catch { return fallback; }
+    };
+    const groupId = picker.dataset.editGroupId;
+    const edit = computeConversationGroupMemberEdit({
+        members: read('baseMembers', []),
+        disabled: read('baseDisabled', []),
+        name: picker.dataset.baseName || '',
+        selected: read('selectedMembers', []),
+        visible: read('visibleMembers', []),
+        autoName: buildConversationGroupName,
+    });
+    if (edit.tooFew || edit.unchanged) return;
+    if (button instanceof HTMLButtonElement) button.disabled = true;
+    const edits = await import('./dm-edits.js');
+    try {
+        const reply = await edits.updateConversationGroupMembers({ groupId, add: edit.add, remove: edit.remove, rename: edit.rename });
+        hideConversationStartPicker();
+        schedulePalsRailRender();
+        toastr.success(edits.getConversationGroupMemberToast({ kind: 'saved', groupName: reply?.group?.name }), '', SAFE_TOAST_OPTIONS);
+    } catch (error) {
+        toastr.error(edits.getConversationGroupMemberToast({ kind: describeConversationGroupMemberError(error) }), '', SAFE_TOAST_OPTIONS);
+        if (button instanceof HTMLButtonElement && button.isConnected) button.disabled = false;
+    }
 }
 
 export function bindConversationChromeControls(sheld) {
@@ -563,7 +632,13 @@ export function bindConversationChromeControls(sheld) {
                 await handleCharacterMessagePolish(target.dataset.messageId, target);
                 break;
             case 'open-add-member':
+                // DM settings and Pals never show together: close the drawer (saving it as closing always does), then draw the editor fresh from the current store.
+                closeConversationSettings();
+                hideConversationStartPicker();
                 openAddMemberPicker();
+                break;
+            case 'save-conversation-group-members':
+                await saveConversationGroupMembersFromPicker(target);
                 break;
             case 'open-add-dm':
                 toggleAddDmPicker();

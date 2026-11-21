@@ -990,7 +990,8 @@ export function getConversationThreadStore(avatar, { create = true, groupId = ge
     }
 
     threadStore.threadAvatar = avatar;
-    threadStore.groupId = groupId || '';
+    // A pal who is not an active member reads their solo record, which keeps its own empty group id.
+    threadStore.groupId = groupId && isAvatarInConversationGroup(avatar, groupId, { personaId }) ? groupId : '';
     return threadStore;
 }
 

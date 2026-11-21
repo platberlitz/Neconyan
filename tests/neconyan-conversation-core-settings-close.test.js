@@ -70,6 +70,7 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/pals-rai
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/pickers.js', () => ({
     bindPartnerList: jest.fn(),
     bindWeeklyScheduleEditor: jest.fn(),
+    renderConversationGroupMemberSummary: () => false,
     updateUserFooter: jest.fn(),
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/prompt.js', () => ({ updateConversationMemorySummary: jest.fn(async () => { memoryText = 'Fresh memory'; return true; }) }));

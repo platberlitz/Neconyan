@@ -678,6 +678,30 @@ describe('conversation store synchronisation: unreconcilable saves and server ed
         expect(globalThis.toastr.error).not.toHaveBeenCalled();
     });
 
+    test('a 409 retry after a member change elsewhere keeps the server\'s members although this page changed the group\'s settings', async () => {
+        const group = { id: 'G', personaId: '', name: 'Group: A, B, C', members: ['A', 'B', 'C'], disabled_members: [], conversation_settings: { auto_character_chat: true }, updatedAt: 1 };
+        seed(store({ 'group:G:A': thread([message('g', 'Hi')]) }, { groups: [group] }), 7);
+        extension_settings[KEY].groups[0].conversation_settings.auto_character_chat = false;
+        const changed = { ...group, name: 'Group: B, C, D', members: ['B', 'C', 'D'], updatedAt: 5 };
+        const saves = [];
+        globalThis.fetch = async (url, options) => {
+            if (url.endsWith('/store/get')) {
+                return jsonResponse(200, { store: store({ 'group:G:B': thread([message('g', 'Hi')]) }, { groups: [changed] }), version: 8 });
+            }
+            const body = JSON.parse(options.body);
+            saves.push(body);
+            if (saves.length === 1) return jsonResponse(409, { error: 'settings_conflict', version: 8 });
+            return jsonResponse(200, { store: body.store, version: 9 });
+        };
+        await expect(storeSync.flushConversationStore()).resolves.toBe(true);
+        expect(saves).toHaveLength(2);
+        expect(saves[1].store.groups[0].members).toEqual(['B', 'C', 'D']);
+        expect(saves[1].store.groups[0].conversation_settings.auto_character_chat).toBe(false);
+        expect(extension_settings[KEY].groups[0].members).toEqual(['B', 'C', 'D']);
+        expect(extension_settings[KEY].groups[0].conversation_settings.auto_character_chat).toBe(false);
+        expect(globalThis.toastr.error).not.toHaveBeenCalled();
+    });
+
     test('a pending edit taken over by a flush that fails shows the failed notice once', async () => {
         // Well past every earlier failed notice in this file, so the 10 s limit cannot hide this one.
         jest.useFakeTimers({ now: 1e13 });

@@ -20,6 +20,7 @@ import {
     normalizeConversationBranch,
     persistConversationStore,
 } from './context.js';
+import { computeConversationGroupMemberEdit, orderConversationGroupPickerAvatars } from './group-member-edits.js';
 import { saveCurrentPanelSettings } from './interface.js';
 import { getCharacterForAvatar } from './media.js';
 import {
@@ -536,9 +537,15 @@ export function toggleConversationGroupPicker({ sourceAvatar = '', sourceGroupId
     }
 
     const normalizedSourceGroupId = sourceGroupId || '';
+    // A Conversation-owned group is edited in place: its members are ticked and nobody is locked. Solo DMs and Roleplay groups keep the old picker.
+    const editGroup = sourceAvatar && normalizedSourceGroupId ? getConversationGroupById(normalizedSourceGroupId) : null;
+    const editMode = editGroup?.is_conversation_group === true;
     const sourceMembers = normalizedSourceGroupId ? getCurrentGroupMemberAvatars(normalizedSourceGroupId) : [];
-    const lockedMembers = new Set(sourceAvatar ? (sourceMembers.length ? sourceMembers : [sourceAvatar]) : []);
-    const selectedMembers = new Set(lockedMembers);
+    const lockedMembers = new Set(sourceAvatar && !editMode ? (sourceMembers.length ? sourceMembers : [sourceAvatar]) : []);
+    const selectedMembers = new Set(editMode ? sourceMembers : lockedMembers);
+    const listedAvatars = editMode
+        ? orderConversationGroupPickerAvatars((Array.isArray(characters) ? characters : []).map(character => character?.avatar).filter(Boolean), editGroup.members)
+        : [];
     const copyFromCurrentThread = false;
 
     if (!picker.hasAttribute('hidden')
@@ -562,7 +569,36 @@ export function toggleConversationGroupPicker({ sourceAvatar = '', sourceGroupId
         ? 'Selected members will open as a separate group Conversation with its own history and group controls.'
         : 'Create a new group DM with two or more of your character cards.';
 
-    picker.innerHTML = `
+    // What the editor was drawn with, read once: saving sends only the difference from this, so a change made elsewhere meanwhile is kept.
+    picker.dataset.editGroupId = editMode ? normalizedSourceGroupId : '';
+    if (editMode) {
+        picker.dataset.visibleMembers = JSON.stringify(listedAvatars);
+        picker.dataset.baseMembers = JSON.stringify(editGroup.members);
+        picker.dataset.baseDisabled = JSON.stringify(editGroup.disabled_members || []);
+        picker.dataset.baseName = editGroup.name || '';
+    }
+
+    picker.innerHTML = editMode ? `
+        <div class="sb-conversation-add-dm-header">
+            <span class="sb-conversation-add-dm-title">Edit group DM members</span>
+            <p class="sb-conversation-field-hint sb-conversation-add-dm-description">Tick the pals in this group DM. Its messages and memory stay, and everyone keeps their own DM.</p>
+            <input type="text" id="sb_conversation_group_search" class="text_pole textarea_compact sb-conversation-add-dm-search" placeholder="Search characters..." />
+        </div>
+        <div class="sb-conversation-add-dm-list sb-conversation-group-list" id="sb_conversation_group_list"></div>
+        <div class="sb-conversation-group-picker-actions sb-conversation-group-picker-actions-stacked">
+            <span id="sb_conversation_group_selected_count" class="sb-conversation-field-hint sb-conversation-group-selected-count"></span>
+            <span class="sb-conversation-group-picker-buttons">
+                <button type="button" class="menu_button" data-sb-conversation-action="cancel-conversation-group">Cancel</button>
+                <button type="button" class="menu_button menu_button_primary" data-sb-conversation-action="save-conversation-group-members">Save members</button>
+            </span>
+        </div>
+        <div class="sb-conversation-group-picker-actions sb-conversation-group-picker-actions-stacked">
+            <span class="sb-conversation-field-hint sb-conversation-group-selected-count">Or keep this group as it is and start a separate one with no messages.</span>
+            <span class="sb-conversation-group-picker-buttons">
+                <button type="button" class="menu_button" data-sb-conversation-action="create-conversation-group">Start a new group instead</button>
+            </span>
+        </div>
+    ` : `
         <div class="sb-conversation-add-dm-header">
             <span class="sb-conversation-add-dm-title">${escapeHtmlText(title)}</span>
             <p class="sb-conversation-field-hint sb-conversation-add-dm-description">${escapeHtmlText(description)}</p>
@@ -577,15 +613,34 @@ export function toggleConversationGroupPicker({ sourceAvatar = '', sourceGroupId
             </span>
         </div>
     `;
+    // The same box is reused for every opening, so it keeps its scroll position unless it is put back at the top here (not in the search or count redraws, which keep it).
+    picker.scrollTop = 0;
 
     const listContainer = document.getElementById('sb_conversation_group_list');
     const searchInput = document.getElementById('sb_conversation_group_search');
     const selectedCount = document.getElementById('sb_conversation_group_selected_count');
     const createButton = picker.querySelector('[data-sb-conversation-action="create-conversation-group"]');
+    const saveButton = picker.querySelector('[data-sb-conversation-action="save-conversation-group-members"]');
 
     function syncSelectedMembers() {
         lockedMembers.forEach(avatar => selectedMembers.add(avatar));
         picker.dataset.selectedMembers = JSON.stringify([...selectedMembers]);
+        if (editMode) {
+            const edit = computeConversationGroupMemberEdit({
+                members: editGroup.members,
+                disabled: editGroup.disabled_members || [],
+                selected: [...selectedMembers],
+                visible: listedAvatars,
+            });
+            if (selectedCount instanceof HTMLElement) {
+                selectedCount.textContent = edit.tooFew
+                    ? 'A group DM needs at least two pals. To end this one, use its bin button in Pals.'
+                    : `${edit.count} selected`;
+            }
+            if (saveButton instanceof HTMLButtonElement) saveButton.disabled = edit.tooFew || edit.unchanged;
+            if (createButton instanceof HTMLButtonElement) createButton.disabled = edit.count < 2;
+            return;
+        }
         if (selectedCount instanceof HTMLElement) {
             selectedCount.textContent = `${selectedMembers.size} selected`;
         }
@@ -597,7 +652,10 @@ export function toggleConversationGroupPicker({ sourceAvatar = '', sourceGroupId
     function renderList() {
         if (!(listContainer instanceof HTMLElement)) return;
         const rows = [];
-        (Array.isArray(characters) ? characters : []).forEach((character) => {
+        const rowCharacters = editMode
+            ? listedAvatars.map(avatar => characters.find(character => character?.avatar === avatar)).filter(Boolean)
+            : (Array.isArray(characters) ? characters : []);
+        rowCharacters.forEach((character) => {
             if (!character?.avatar) return;
             const name = character.name || 'Character';
 
@@ -645,6 +703,62 @@ export function toggleConversationGroupPicker({ sourceAvatar = '', sourceGroupId
             filterConversationPickerRows(options, searchInput.value.toLowerCase().trim(), 'searchName', empty);
         });
     }
+}
+
+/**
+ * DM settings of an owned group: draw the real members as a read-only list under 'Group DM Members', with one 'Edit members' button.
+ * Returns true when it drew the summary and false when it changed nothing (a solo DM or a Roleplay group keeps its checklist).
+ */
+export function renderConversationGroupMemberSummary(list, groupId) {
+    if (!(list instanceof HTMLElement) || !groupId) {
+        return false;
+    }
+    const group = getConversationGroupById(groupId);
+    if (!group || group.is_conversation_group !== true) {
+        return false;
+    }
+
+    list.replaceChildren();
+    list.dataset.sbMemberSummary = 'true';
+    for (const avatar of getCurrentGroupMemberAvatars(groupId)) {
+        const name = getCharacterForAvatar(avatar)?.name || 'Character';
+        const row = document.createElement('div');
+        row.className = 'sb-conversation-partner-option';
+        row.dataset.charName = name.toLowerCase();
+        const pick = document.createElement('span');
+        pick.className = 'sb-conversation-partner-pick';
+        const image = document.createElement('img');
+        image.className = 'sb-conversation-partner-avatar';
+        image.src = getThumbnailUrlForViewport('avatar', avatar);
+        image.alt = '';
+        image.width = 24;
+        image.height = 24;
+        image.loading = 'lazy';
+        image.decoding = 'async';
+        const label = document.createElement('span');
+        label.className = 'sb-conversation-partner-name';
+        label.textContent = name;
+        setUserTextSlot(label, true);
+        pick.append(image, label);
+        row.append(pick);
+        list.append(row);
+    }
+
+    const hint = document.getElementById('sb_conv_group_members_hint');
+    if (hint instanceof HTMLElement) {
+        hint.textContent = 'The pals in this group DM. Type @Name, such as @Kaveh, to tag one of them.';
+    }
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'menu_button';
+    button.dataset.sbConversationAction = 'open-add-member';
+    button.textContent = 'Edit members';
+    list.after(button);
+    const search = document.getElementById('sb_conv_multi_char_search');
+    if (search instanceof HTMLElement) {
+        search.classList.add('displayNone');
+    }
+    return true;
 }
 
 export async function handleCreateConversationGroupFromPicker() {

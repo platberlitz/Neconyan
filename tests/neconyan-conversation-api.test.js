@@ -1286,6 +1286,240 @@ describe('Neconyan Conversation REST API', () => {
         expect(repeat.version).toBe(body.version);
     });
 
+    describe('group/members', () => {
+        const PERSONA = 'me.png';
+        const NAV = '3f2b8c1e-4d5a-4b6c-8d7e-9f0a1b2c3d4e';
+        let clock = 1000;
+
+        function writeCards(...avatars) {
+            for (const avatar of avatars) fs.writeFileSync(path.join(userDirectories.characters, avatar), 'card');
+        }
+
+        const keyOf = async (groupId, avatar, persona = PERSONA) => {
+            const { scopeConversationStorageKey } = await import('../src/endpoints/conversation-utils.js');
+            return scopeConversationStorageKey(`group:${groupId}:${avatar}`, persona);
+        };
+
+        const message = (id, role, extra = {}, name = 'Someone') => ({ id, role, name: role === 'user' ? 'User' : name, mes: `text ${id}`, created_at: ++clock, extra });
+
+        const branchOf = (messages, extra = {}) => ({ id: 'main', name: 'Main', createdAt: 1000, updatedAt: 1000, lastActivity: 1000, lifetimeSeed: 'seed', messages, ...extra });
+        const threadOf = (avatar, groupId, messages, extra = {}) => ({ threadAvatar: avatar, groupId, settings: {}, activeBranchId: 'main', branches: { main: branchOf(messages, extra) } });
+
+        /** Write the whole Conversation store as a second writer would, moving the settings version. */
+        function seedStore({ groups = [], characters = {}, reminders = [], navigationTargets = {}, automation } = {}) {
+            const settings = readSettings();
+            settings.extension_settings[CONVERSATION_STORE_KEY] = {
+                version: 1,
+                settings: {},
+                groups: groups.map(group => ({
+                    personaId: PERSONA, createdAt: 5, updatedAt: 5, disabled_members: [], conversation_settings: {}, ...group,
+                })),
+                reminders,
+                characters,
+                navigationTargets,
+                ...(automation ? { automation } : {}),
+            };
+            settings._version = (settings._version || 0) + 1;
+            fs.writeFileSync(path.join(userDirectories.root, SETTINGS_FILE), JSON.stringify(settings, null, 4));
+            return settings._version;
+        }
+
+        const edit = (body) => postJson('/group/members', { personaId: PERSONA, ...body });
+        const keysOf = (groupId) => Object.keys(readConversationStore().characters).filter(key => key.includes(`group:${groupId}:`));
+        const groupOf = (groupId) => readConversationStore().groups.find(group => group.id === groupId);
+
+        test('adds and removes in one write and keeps the group', async () => {
+            writeCards('A.png', 'B.png', 'C.png', 'D.png');
+            const N0 = 'Group: Nova, Kit, Zed';
+            const m1 = message('m1', 'user');
+            const m2 = message('m2', 'character', {}, 'Nova');
+            seedStore({
+                groups: [{ id: 'G', personaId: '', name: N0, members: ['A.png', 'B.png', 'C.png'] }],
+                characters: { 'group:G:A.png': threadOf('A.png', 'G', [m1, m2]) },
+            });
+            const before = readSettings()._version;
+            const response = await postJson('/group/members', {
+                groupId: 'G', add: ['D.png'], remove: ['B.png'], rename: { from: N0, to: 'Group: Nova, Zed, Dot' },
+            });
+            expect(`${response.status} ${(await response.clone().text()).slice(0, 300)}`).toMatch(/^200 /);
+            const body = await response.json();
+            expect(body.changed).toBe(true);
+            expect(readSettings()._version).toBe(before + 1);
+            expect(body.version).toBe(before + 1);
+            expect(groupOf('G').members).toEqual(['A.png', 'C.png', 'D.png']);
+            expect(groupOf('G').name).toBe('Group: Nova, Zed, Dot');
+            const messages = readConversationStore().characters['group:G:A.png'].branches.main.messages;
+            expect(messages.map(item => [item.id, item.role])).toEqual([['m1', 'user'], ['m2', 'character']]);
+            expect(keysOf('G')).toEqual(['group:G:A.png']);
+            expect(body.anchor.avatar).toBe('A.png');
+            expect(body.scope.keyPrefix).toBe('');
+            expect(body.scope.removeKeys).toEqual([]);
+            expect(body.group.members).toEqual(['A.png', 'C.png', 'D.png']);
+            const repeat = await (await postJson('/group/members', { groupId: 'G', add: ['D.png'], remove: ['B.png'] })).json();
+            expect(repeat.changed).toBe(false);
+            expect(readSettings()._version).toBe(before + 1);
+        });
+
+        test('a rename from a name that is no longer stored changes the members and keeps the name', async () => {
+            writeCards('A.png', 'B.png', 'C.png', 'D.png');
+            seedStore({ groups: [{ id: 'G', name: 'Book club', members: ['A.png', 'B.png', 'C.png'] }] });
+            const response = await edit({
+                groupId: 'G', add: ['D.png'], remove: [], rename: { from: 'Group: Nova, Kit, Zed', to: 'Group: Nova, Kit, Zed +1' },
+            });
+            expect(`${response.status} ${(await response.clone().text()).slice(0, 300)}`).toMatch(/^200 /);
+            expect((await response.json()).changed).toBe(true);
+            expect(groupOf('G').members).toEqual(['A.png', 'B.png', 'C.png', 'D.png']);
+            expect(groupOf('G').name).toBe('Book club');
+        });
+
+        test('removing the holder moves the thread, keeps its records and keeps it theirs', async () => {
+            writeCards('A.png', 'B.png', 'C.png');
+            const messages = [
+                message('m1', 'character', {}, 'Nova'),
+                message('m2', 'partner', { partner_avatar: 'B.png' }, 'Kit'),
+                message('m3', 'character', { partner_avatar: 'C.png' }, 'Zed'),
+                message('m4', 'system', { partner_avatar: 'C.png' }, 'Zed'),
+            ];
+            const oldKey = await keyOf('G', 'A.png');
+            const newKey = await keyOf('G', 'B.png');
+            const prefix = await keyOf('G', '');
+            seedStore({
+                groups: [{ id: 'G', name: 'Crew', members: ['A.png', 'B.png', 'C.png'] }],
+                characters: {
+                    [oldKey]: threadOf('A.png', 'G', messages, {
+                        navigationId: NAV,
+                        serverOperations: { job: { at: 1, messageCount: 4, messagesHash: 'x', effects: {} } },
+                        readThrough: 'm1',
+                        pendingPresentations: { m2: { at: 1, job: 'j', narration: null } },
+                    }),
+                },
+                navigationTargets: { [NAV]: { threadKey: oldKey, branchId: 'main' } },
+                reminders: [{ id: 'r1', avatar: 'A.png', groupId: 'G', personaId: PERSONA, branchId: 'main', triggerAt: Date.now() + 3600000, text: 'r', fired: false, createdAt: 1 }],
+            });
+            const response = await edit({ groupId: 'G', add: [], remove: ['A.png'] });
+            expect(`${response.status} ${(await response.clone().text()).slice(0, 300)}`).toMatch(/^200 /);
+            const body = await response.json();
+            expect(body.changed).toBe(true);
+            const store = readConversationStore();
+            expect(store.characters[oldKey]).toBeUndefined();
+            const branch = store.characters[newKey].branches.main;
+            expect(branch.messages.map(item => item.id)).toEqual(['m1', 'm2', 'm3', 'm4']);
+            expect(branch.messages[0]).toMatchObject({ role: 'partner', extra: { partner_avatar: 'A.png' } });
+            expect(branch.messages[1].role).toBe('character');
+            expect(branch.messages[1].extra.partner_avatar).toBeUndefined();
+            expect(branch.messages[2]).toMatchObject({ role: 'character', extra: { partner_avatar: 'C.png' } });
+            expect(branch.messages[3]).toMatchObject({ role: 'system', extra: { partner_avatar: 'C.png' } });
+            expect(branch.navigationId).toBe(NAV);
+            expect(store.navigationTargets[NAV].threadKey).toBe(newKey);
+            expect(branch.serverOperations).toBeTruthy();
+            expect(branch.pendingPresentations).toBeTruthy();
+            expect(branch.readThrough).toBe('m1');
+            expect(store.reminders[0].avatar).toBe('B.png');
+            expect(body.anchor).toEqual({ avatar: 'B.png', threadKey: newKey });
+            expect(body.scope.keyPrefix).toBe(prefix);
+            expect(body.scope.removeKeys).toEqual([oldKey]);
+            expect(Object.keys(store.characters).filter(key => key.startsWith(prefix))).toEqual([newKey]);
+        });
+
+        test('a stray member thread merges into the holder', async () => {
+            writeCards('A.png', 'B.png', 'C.png', 'D.png');
+            const aKey = await keyOf('G', 'A.png');
+            const bKey = await keyOf('G', 'B.png');
+            const prefix = await keyOf('G', '');
+            seedStore({
+                groups: [{ id: 'G', name: 'Crew', members: ['A.png', 'B.png', 'C.png'] }],
+                characters: {
+                    [aKey]: threadOf('A.png', 'G', [message('a1', 'user'), message('a2', 'character', {}, 'Nova')], { updatedAt: 5000, lastActivity: 5000 }),
+                    [bKey]: threadOf('B.png', 'G', [message('s1', 'character', {}, 'Kit')], { updatedAt: 2000, lastActivity: 2000 }),
+                },
+            });
+            const response = await edit({ groupId: 'G', add: ['D.png'], remove: [] });
+            expect(`${response.status} ${(await response.clone().text()).slice(0, 300)}`).toMatch(/^200 /);
+            const body = await response.json();
+            const store = readConversationStore();
+            expect(Object.keys(store.characters).filter(key => key.startsWith(prefix))).toEqual([aKey]);
+            const messages = store.characters[aKey].branches.main.messages;
+            expect(messages.map(item => item.id).sort()).toEqual(['a1', 'a2', 's1']);
+            expect(messages.find(item => item.id === 's1')).toMatchObject({ role: 'partner', extra: { partner_avatar: 'B.png' } });
+            expect(body.scope.removeKeys).toEqual([bKey]);
+            expect(body.scope.keyPrefix).toBe(prefix);
+            expect(body.anchor.avatar).toBe('A.png');
+        });
+
+        test('refuses what would break the group', async () => {
+            writeCards('A.png', 'B.png', 'C.png');
+            const base = { id: 'G', name: 'Crew', members: ['A.png', 'B.png', 'C.png'] };
+            const seedBase = (extra = {}) => seedStore({ groups: [{ ...base, ...extra }] });
+            seedBase();
+            fs.writeFileSync(path.join(userDirectories.groups, 'rp.json'), JSON.stringify({ id: 'rp', members: ['A.png', 'B.png'], chats: [] }));
+            const extra = Array.from({ length: 126 }, (_, index) => `X${index}.png`);
+            writeCards(...extra);
+            const refusals = [
+                [{ groupId: 'G', add: [], remove: ['A.png', 'B.png'] }, 400, 'members_required'],
+                [{ groupId: 'G', add: ['Z.png'], remove: [] }, 400, 'member_not_found'],
+                [{ groupId: 'nope', add: [], remove: ['A.png'] }, 404, 'group_not_found'],
+                [{ groupId: 'rp', add: [], remove: ['A.png'] }, 404, 'group_not_found'],
+                [{ groupId: 'G', add: extra, remove: [] }, 400, 'too_many_members'],
+                [{ groupId: 'G', add: ['../x.png'], remove: [] }, 400, 'invalid_members'],
+                [{ groupId: 'G', add: ['A.png'], remove: ['A.png'] }, 400, 'invalid_members'],
+                [{ groupId: 'G', add: [], remove: [], rename: { from: 'x', to: '' } }, 400, 'invalid_group_name'],
+                [{ add: [], remove: ['C.png'] }, 400, 'group_required'],
+            ];
+            const versionBefore = readSettings()._version;
+            const storeBefore = structuredClone(readConversationStore());
+            for (const [body, status, error] of refusals) {
+                const response = await edit(body);
+                expect({ body: body.groupId, status: response.status, error: (await response.json()).error }).toEqual({ body: body.groupId, status, error });
+                expect(readSettings()._version).toBe(versionBefore);
+                expect(readConversationStore()).toEqual(storeBefore);
+            }
+            // Every remaining member muted: nobody can hold the thread.
+            seedBase({ disabled_members: ['A.png', 'B.png'] });
+            const muted = structuredClone(readConversationStore());
+            const mutedVersion = readSettings()._version;
+            const noHolder = await edit({ groupId: 'G', add: [], remove: ['C.png'] });
+            expect(noHolder.status).toBe(400);
+            expect((await noHolder.json()).error).toBe('no_available_members');
+            expect(readSettings()._version).toBe(mutedVersion);
+            expect(readConversationStore()).toEqual(muted);
+            // A request that changes nothing never fails on the holder.
+            seedBase({ disabled_members: ['A.png', 'B.png', 'C.png'] });
+            const allMutedVersion = readSettings()._version;
+            const unchanged = await edit({ groupId: 'G', add: [], remove: [] });
+            expect(unchanged.status).toBe(200);
+            expect((await unchanged.json()).changed).toBe(false);
+            expect(readSettings()._version).toBe(allMutedVersion);
+            // A rename alone changes nothing.
+            seedBase({ name: 'N0' });
+            const renameVersion = readSettings()._version;
+            const renameOnly = await edit({ groupId: 'G', add: [], remove: [], rename: { from: 'N0', to: 'Renamed' } });
+            expect(renameOnly.status).toBe(200);
+            expect((await renameOnly.json()).changed).toBe(false);
+            expect(groupOf('G').name).toBe('N0');
+            expect(readSettings()._version).toBe(renameVersion);
+        });
+
+        test('skips a member whose card is gone', async () => {
+            writeCards('A.png', 'B.png', 'C.png', 'D.png');
+            const aKey = await keyOf('G', 'A.png');
+            const bKey = await keyOf('G', 'B.png');
+            seedStore({
+                groups: [{ id: 'G', name: 'Crew', members: ['A.png', 'B.png', 'C.png'] }],
+                characters: { [aKey]: threadOf('A.png', 'G', [message('a1', 'character', {}, 'Nova'), message('a2', 'user')]) },
+            });
+            fs.rmSync(path.join(userDirectories.characters, 'A.png'));
+            const response = await edit({ groupId: 'G', add: ['D.png'], remove: [] });
+            expect(`${response.status} ${(await response.clone().text()).slice(0, 300)}`).toMatch(/^200 /);
+            const body = await response.json();
+            expect(groupOf('G').members).toEqual(['A.png', 'B.png', 'C.png', 'D.png']);
+            const store = readConversationStore();
+            expect(store.characters[aKey]).toBeUndefined();
+            expect(body.anchor.avatar).toBe('B.png');
+            const messages = store.characters[bKey].branches.main.messages;
+            expect(messages.find(item => item.id === 'a1')).toMatchObject({ role: 'partner', extra: { partner_avatar: 'A.png' } });
+        });
+    });
+
     test('message/send adds group reference context for unnamed replies', async () => {
         upstreamReplyText = 'I was talking about the keys.';
 

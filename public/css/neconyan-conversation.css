@@ -2253,6 +2253,15 @@
     white-space: nowrap;
 }
 
+.sb-conversation-group-picker-actions.sb-conversation-group-picker-actions-stacked {
+    flex-direction: column;
+    align-items: stretch;
+}
+
+.sb-conversation-group-picker-actions-stacked > .sb-conversation-group-picker-buttons {
+    inline-size: 100%;
+}
+
 .sb-conversation-group-member-option {
     display: flex;
     align-items: center;

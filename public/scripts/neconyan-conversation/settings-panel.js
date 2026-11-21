@@ -18,7 +18,7 @@ import {
 import { applySettingsToPanel, saveCurrentPanelSettings, updateConversationChrome } from './interface.js';
 import { isConversationActiveThread } from './notifications.js';
 import { getScheduleEditorTargets } from './pals-rail.js';
-import { bindPartnerList, bindWeeklyScheduleEditor, updateUserFooter } from './pickers.js';
+import { bindPartnerList, bindWeeklyScheduleEditor, renderConversationGroupMemberSummary, updateUserFooter } from './pickers.js';
 import { updateConversationMemorySummary } from './prompt.js';
 import { escapeHtmlAttribute, escapeHtmlText } from './render-utils.js';
 import {
@@ -651,7 +651,7 @@ export function openConversationSettings() {
         profileSelect.innerHTML = buildConnectionProfileOptions(settings.connection_profile);
     }
     const partnerList = document.getElementById('sb_conv_chiming_partner_list');
-    if (partnerList instanceof HTMLElement) {
+    if (partnerList instanceof HTMLElement && !renderConversationGroupMemberSummary(partnerList, groupId)) {
         partnerList.innerHTML = buildChimingPartnerOptions(settings.multi_char_names);
     }
 

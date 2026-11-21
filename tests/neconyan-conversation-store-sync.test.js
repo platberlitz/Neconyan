@@ -454,6 +454,61 @@ describe('conversation store sync: local resets and DM delete helpers', () => {
         });
     });
 
+    describe('a group member edit scope with a merge', () => {
+        test('a member-edit scope drops the group keys and adopts the server holder key, keeping the group record and an unsaved edit to another thread', () => {
+            const before = { id: 'G', personaId: '', name: 'Group: A, B, C', members: ['A', 'B', 'C'] };
+            const after = { ...before, name: 'Group: B, C', members: ['B', 'C'] };
+            const history = [message('h1', 'First'), message('h2', 'Second')];
+            const solo = cooldown => thread({ main: branch('main', [], 12) }, { settings: { cooldown } });
+            const saved = wrapped({ 'group:G:A': thread({ main: branch('main', history, 10) }), D: solo(1) }, { groups: [before] });
+            const local = wrapped({ 'group:G:A': thread({ main: branch('main', history, 10) }), D: solo(2) }, { groups: [before] });
+            const server = wrapped({ 'group:G:B': thread({ main: branch('main', history, 10) }), D: solo(1) }, { groups: [after] });
+            const memberEdit = { removeKeys: ['group:G:A'], keyPrefix: 'group:G:', groupId: '', personaId: '', reminderIds: [], replaceKeys: {} };
+            const merged = mergeConversationStore(
+                server,
+                storeSyncUtils.applyConversationDeleteScope(local, memberEdit),
+                storeSyncUtils.applyConversationDeleteScope(saved, memberEdit),
+            );
+            expect(Object.keys(merged.characters).sort()).toEqual(['D', 'group:G:B']);
+            expect(merged.characters['group:G:B'].branches.main.messages.map(item => item.id)).toEqual(['h1', 'h2']);
+            expect(merged.characters.D.settings.cooldown).toBe(2);
+            expect(merged.groups.map(group => [group.id, group.members])).toEqual([['G', ['B', 'C']]]);
+        });
+
+        test('a stale page that changed a group\'s settings keeps the server\'s member change', () => {
+            const baseline = { id: 'G', personaId: '', name: 'Group: A, B, C', members: ['A', 'B', 'C'], disabled_members: [], conversation_settings: { auto_chat_cooldown: 1 }, updatedAt: 1 };
+            const history = [message('h1', 'First')];
+            const keyed = key => ({ [key]: thread({ main: branch('main', history, 10) }) });
+            const saved = wrapped(keyed('group:G:A'), { groups: [baseline] });
+            const server = wrapped(keyed('group:G:B'), {
+                groups: [{ ...baseline, name: 'Group: B, C, D', members: ['B', 'C', 'D'], disabled_members: ['C'], updatedAt: 5 }],
+            });
+            const expectServerMembers = (merged, settings, updatedAt) => {
+                expect(merged).not.toBeNull();
+                expect(Object.keys(merged.characters)).toEqual(['group:G:B']);
+                const [group] = merged.groups;
+                expect(group.members).toEqual(['B', 'C', 'D']);
+                expect(group.disabled_members).toEqual(['C']);
+                expect(group.name).toBe('Group: B, C, D');
+                expect(group.conversation_settings).toEqual(settings);
+                expect(group.updatedAt).toBe(updatedAt);
+            };
+            // (a) The page changed the group's setting and its timestamp.
+            const changedSetting = wrapped(keyed('group:G:A'), {
+                groups: [{ ...baseline, conversation_settings: { auto_chat_cooldown: 9 }, updatedAt: 7 }],
+            });
+            expectServerMembers(mergeConversationStore(server, changedSetting, saved), { auto_chat_cooldown: 9 }, 7);
+            // (b) The page changed only the timestamp.
+            const changedStamp = wrapped(keyed('group:G:A'), { groups: [{ ...baseline, updatedAt: 7 }] });
+            expectServerMembers(mergeConversationStore(server, changedStamp, saved), { auto_chat_cooldown: 1 }, 7);
+            // Control: the server changed only the group's setting, so the page's whole record stands.
+            const settingsOnly = wrapped(keyed('group:G:A'), { groups: [{ ...baseline, conversation_settings: { auto_chat_cooldown: 2 } }] });
+            const control = mergeConversationStore(settingsOnly, changedSetting, saved);
+            expect(control.groups[0].members).toEqual(['A', 'B', 'C']);
+            expect(control.groups[0].conversation_settings.auto_chat_cooldown).toBe(9);
+        });
+    });
+
     describe('isScheduleOnlyConversationRecord', () => {
         const schedule = { generatedAt: 5, days: [] };
         const kept = (over = {}) => ({ settings: {}, schedule, activeBranchId: 'main', branches: { main: branch('main', [], 30) }, ...over });
