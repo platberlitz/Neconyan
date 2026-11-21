@@ -140,12 +140,19 @@ const a11yRules = {
     },
 };
 
+const anyA11ySelector = Object.keys(a11yRules).join(', ');
+
 /**
  * Apply accessibility rules to an element.
  * @param {Element} element Element to process.
  */
 function applyA11yRules(element) {
     try {
+        // Streamed text adds leaves by the dozen. One union test skips the eight
+        // selector walks below without changing what any of them would match.
+        if (!element.matches(anyA11ySelector) && !element.querySelector(anyA11ySelector)) {
+            return;
+        }
         for (const [selector, rule] of Object.entries(a11yRules)) {
             // Apply if the element directly matches the selector
             if (element.matches(selector)) {
