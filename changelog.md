@@ -28,6 +28,7 @@
 - PR #801 (2026-11-21) `perf(expressions): refresh on events instead of an idle poll`
 - PR #802 (2026-11-21) `perf(prompting-lab): read the inventory in one request`
 - PR #803 (2026-11-21) `perf(mewmory): refresh quietly in the background`
+- PR #804 (2026-11-21) `perf(conversation): paint streamed previews in place`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
