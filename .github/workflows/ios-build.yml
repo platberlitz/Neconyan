@@ -131,8 +131,13 @@ jobs:
           node ios/tools/model-fixture.mjs > ios/model-fixture.log 2>&1 &
           fixture=$!
           trap 'kill "$fixture" 2>/dev/null || true' EXIT
-          xcodebuild -project ios/Neconyan.xcodeproj -scheme Neconyan -configuration Debug -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -parallel-testing-enabled NO -derivedDataPath ios/build/simulator -resultBundlePath ios/test-results.xcresult CODE_SIGNING_ALLOWED=NO test > ios/simulator-test.log 2>&1 || { tail -120 ios/simulator-test.log; exit 1; }
+          xcodebuild -project ios/Neconyan.xcodeproj -scheme Neconyan -configuration Debug -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -parallel-testing-enabled NO -derivedDataPath ios/build/simulator -resultBundlePath ios/test-results.xcresult CODE_SIGNING_ALLOWED=NO test > ios/simulator-test.log 2>&1 || {
+            grep -E 'error:|^Test Case .* (passed|failed)' ios/simulator-test.log || true
+            tail -40 ios/simulator-test.log
+            exit 1
+          }
       - name: Test startup and page features on an iPad
+        if: ${{ !cancelled() && steps.simulator.outcome == 'success' }}
         run: |
           xcrun simctl shutdown '${{ steps.simulator.outputs.id }}' || true
           xcrun simctl boot '${{ steps.simulator.outputs.ipad }}'
@@ -140,7 +145,11 @@ jobs:
           node ios/tools/model-fixture.mjs > ios/model-fixture-ipad.log 2>&1 &
           fixture=$!
           trap 'kill "$fixture" 2>/dev/null || true' EXIT
-          xcodebuild -project ios/Neconyan.xcodeproj -scheme Neconyan -configuration Debug -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.ipad }}' -parallel-testing-enabled NO -derivedDataPath ios/build/simulator -resultBundlePath ios/test-results-ipad.xcresult CODE_SIGNING_ALLOWED=NO -only-testing:NeconyanUITests/StandaloneTests/testBundledServerLoadsAndRelaunches -only-testing:NeconyanUITests/StandaloneTests/testPageFeaturesWorkInsideTheApp test > ios/ipad-test.log 2>&1 || { tail -120 ios/ipad-test.log; exit 1; }
+          xcodebuild -project ios/Neconyan.xcodeproj -scheme Neconyan -configuration Debug -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.ipad }}' -parallel-testing-enabled NO -derivedDataPath ios/build/simulator -resultBundlePath ios/test-results-ipad.xcresult CODE_SIGNING_ALLOWED=NO -only-testing:NeconyanUITests/StandaloneTests/testBundledServerLoadsAndRelaunches -only-testing:NeconyanUITests/StandaloneTests/testPageFeaturesWorkInsideTheApp test > ios/ipad-test.log 2>&1 || {
+            grep -E 'error:|^Test Case .* (passed|failed)' ios/ipad-test.log || true
+            tail -40 ios/ipad-test.log
+            exit 1
+          }
       - name: Upload release candidates
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

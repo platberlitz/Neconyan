@@ -33,17 +33,19 @@ final class StandaloneTests: XCTestCase {
     /// iPhones show the share sheet with a Close button; iPads show it as a popover closed by tapping outside.
     @MainActor
     private func dismissShareSheet(in app: XCUIApplication, timeout: TimeInterval) -> Bool {
-        let close = app.buttons["Close"]
+        let sheet = app.navigationBars["UIActivityContentView"].firstMatch
+        let close = app.buttons["header.closeButton"].firstMatch
+        let legacyClose = app.buttons.matching(NSPredicate(format: "label ==[c] %@", "Close")).firstMatch
         let outside = app.otherElements["PopoverDismissRegion"]
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            if close.exists {
-                close.tap()
-                return true
+            if let target = [close, legacyClose].first(where: { $0.exists && $0.isHittable }) {
+                target.tap()
+                return sheet.waitForNonExistence(timeout: 5) && close.waitForNonExistence(timeout: 5)
             }
-            if outside.exists {
-                outside.tap()
-                return true
+            if sheet.exists, let region = outside.allElementsBoundByIndex.first(where: { $0.isHittable }) {
+                region.tap()
+                return sheet.waitForNonExistence(timeout: 5)
             }
             RunLoop.current.run(until: Date().addingTimeInterval(0.25))
         }
@@ -135,9 +137,17 @@ final class StandaloneTests: XCTestCase {
         XCTAssertTrue(app.webViews["workspace-ready"].waitForExistence(timeout: 240))
         XCTAssertTrue(app.staticTexts["Sandboxed frame loaded"].waitForExistence(timeout: 30), "Sandboxed srcdoc frames must load.")
 
+        // A fresh profile opens the interactive tour over Home. Its focus guard
+        // deliberately swallows taps outside the tour, even on the fixture buttons.
+        let skipTour = app.webViews["workspace-ready"].buttons["Skip"].firstMatch
+        if skipTour.exists && skipTour.isHittable {
+            skipTour.tap()
+            XCTAssertTrue(skipTour.waitForNonExistence(timeout: 10))
+        }
         app.buttons["Test alert"].tap()
         let alert = app.alerts["Neconyan"]
         XCTAssertTrue(alert.waitForExistence(timeout: 10), "alert() must show a native dialog.")
+        XCTAssertTrue(alert.staticTexts["Native dialog works"].exists)
         alert.buttons["OK"].tap()
 
         app.buttons["Test download"].tap()

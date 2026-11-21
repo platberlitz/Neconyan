@@ -20,8 +20,10 @@ static std::atomic<int> nodeExitCode(0);
             freopen(logPath.fileSystemRepresentation, "a", stderr);
             setvbuf(stdout, NULL, _IOLBF, 0);
             setvbuf(stderr, NULL, _IOLBF, 0);
+            // Node's heap flag comes before the entry script.
+            NSString *entryPath = arguments[2];
             struct stat entry;
-            int entryStatus = stat(arguments[1].fileSystemRepresentation, &entry);
+            int entryStatus = stat(entryPath.fileSystemRepresentation, &entry);
             fprintf(stderr, "Neconyan startup: entry file stat=%d errno=%d\n", entryStatus, entryStatus == 0 ? 0 : errno);
             int argc = (int)arguments.count;
             char **argv = (char **)calloc(argc + 1, sizeof(char *));
