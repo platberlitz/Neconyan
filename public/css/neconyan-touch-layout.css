@@ -7,14 +7,6 @@
 }
 
 @media (pointer: coarse) {
-    body.neconyan #form_sheld #nonQRFormItems { --sb-composer-action-size: 44px; }
-    body.neconyan #sb-bottom-chat-bar {
-        --sb-bottom-chat-min-touch: 44px;
-        --sb-bottom-chat-mobile-button-size: 44px;
-        --sb-bottom-chat-mobile-select-height: 44px;
-        --sb-bottom-chat-mobile-persona-size: 44px;
-    }
-    body.neconyan #sb-bottom-chat-bar.sb-has-reasoning-effort #sb-reasoning-effort-button { min-width: 44px; }
     body.neconyan #sb-topbar-inner :is(#sb-hamburger, #sb-shortcut-left, #sb-shortcut-right, #sb-topbar-edit-card, #ica--tracker-panel-topbar) {
         min-width: 44px;
         min-height: 44px;
@@ -26,8 +18,6 @@
     }
     body.neconyan #chat .mes_buttons .neconyan-message-action { min-width: 44px; min-height: 44px; }
     body.neconyan #send_form > #gg-action-button-container.gg-action-buttons-container {
-        --gg-mobile-action-size: 36px;
-        --stih-control-width: 36px;
         flex-wrap: wrap;
     }
     body.neconyan #send_form > #gg-action-button-container.gg-action-buttons-container > .gg-regular-buttons-container {
@@ -35,8 +25,9 @@
         flex-wrap: wrap;
     }
 
-    /* Short editing viewports spend their height on messages and Send. The
-       extra chat controls come back as soon as editing ends. */
+    /* Keep the remaining actions easy to tap while the keyboard is open on
+       a short screen. Outside this state, use the regular composer sizing. */
+    html.sb-short-touch-composer body.neconyan #form_sheld #nonQRFormItems { --sb-composer-action-size: 44px; }
     html.sb-short-touch-composer body.neconyan #form_sheld :is(#sb-bottom-chat-bar, #gg-action-button-container, .stih--buttons) {
         display: none !important;
     }
