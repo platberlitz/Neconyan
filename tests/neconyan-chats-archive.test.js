@@ -803,7 +803,7 @@ describe('Neconyan Chats Archive integration', () => {
         expect(ui).toMatch(/sbca-owner-selector/);
         expect(ui).toMatch(/const ownerField = ownerControl\(ctx\)/);
         expect(ui).toMatch(/ownerFilterKey\(row\)/);
-        expect(ui).toMatch(/getThumbnailUrl\('avatar', choice\.avatar\)/);
+        expect(ui).toMatch(/getThumbnailUrlForViewport\('avatar', choice\.avatar\)/);
         expect(ui).toMatch(/Search characters and groups/);
         expect(ui).toMatch(/Character: \{name\}/);
         expect(ui).toMatch(/const listTools = el\('div', 'sbca-list-tools'\)/);

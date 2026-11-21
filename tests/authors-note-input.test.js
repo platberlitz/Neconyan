@@ -37,7 +37,7 @@ function setup({ group = false } = {}) {
         getCharaFilename: (_, { manualAvatarKey }) => manualAvatarKey.replace(/\.png$/, ''),
         chat_metadata: {}, extension_settings: { note: { default: 'Default note', chara: [], persona: {} } },
         power_user: { personas: {} }, groups: [], getGroupMembers: () => [], getSelectedGroupSpeakerAvatar: () => '',
-        getThumbnailUrl: () => '', getTokenCountAsync: jest.fn(async () => 1),
+        getThumbnailUrl: () => '', getThumbnailUrlForViewport: () => '', getTokenCountAsync: jest.fn(async () => 1),
         saveSettingsDebounced: jest.fn(), saveMetadataDebounced: jest.fn(),
         extension_prompt_roles: { SYSTEM: 0 }, extension_prompt_types: { NONE: -1 }, MAX_INJECTION_DEPTH: 10000,
         debounce_timeout: { short: 200, standard: 300 }, setTimeout, clearTimeout,

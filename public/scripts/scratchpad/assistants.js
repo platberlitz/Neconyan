@@ -1,4 +1,4 @@
-import { characters, getThumbnailUrl } from '../../script.js';
+import { characters, getThumbnailUrlForViewport } from '../../script.js';
 import { t } from '../i18n.js';
 import { h } from '../notebooks/dom.js';
 import { callGenericPopup, POPUP_TYPE } from '../popup.js';
@@ -127,7 +127,7 @@ export async function openAssistantLibrary({ assistants, portrait, selected, can
         const rows = characters.filter(card => card.avatar && card.name).map(card => ({
             name: card.name.toLocaleLowerCase(),
             row: h('div', { class: 'scratchpad-library-row' },
-                h('img', { src: getThumbnailUrl('avatar', card.avatar), alt: '', width: 48, height: 48, loading: 'lazy' }),
+                h('img', { src: getThumbnailUrlForViewport('avatar', card.avatar), alt: '', width: 48, height: 48, loading: 'lazy' }),
                 h('strong', { text: card.name, 'data-i18n-ignore': '' }),
                 button(t`Add`, () => void run(async () => {
                     const saved = await save(undefined, card.avatar);

@@ -243,7 +243,7 @@ function ownerChoiceVisual(ctx, choice) {
     if (choice.avatar) {
         const image = document.createElement('img');
         image.className = 'sbca-owner-mini-avatar';
-        image.src = ctx.getThumbnailUrl('avatar', choice.avatar);
+        image.src = ctx.getThumbnailUrlForViewport('avatar', choice.avatar);
         image.alt = '';
         image.loading = 'lazy';
         image.decoding = 'async';
@@ -2266,7 +2266,7 @@ function buildRow(ctx, state, ui, row) {
     if (row.kind === 'solo') {
         const img = document.createElement('img');
         img.className = 'sbca-avatar';
-        img.src = ctx.getThumbnailUrl('avatar', row.avatar);
+        img.src = ctx.getThumbnailUrlForViewport('avatar', row.avatar);
         img.alt = '';
         img.loading = 'lazy';
         img.decoding = 'async';
