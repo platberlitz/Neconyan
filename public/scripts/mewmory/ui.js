@@ -1738,7 +1738,16 @@ function handleConfigState() {
 }
 
 function handleConfigSaved(saved) {
-    if (!mewmory.config || saved.revision >= mewmory.config.revision) mewmory.config = saved;
+    if (!mewmory.config || saved.revision >= mewmory.config.revision) {
+        const previous = mewmory.config?.roles?.embedding?.native;
+        const native = saved.roles?.embedding?.native;
+        mewmory.config = saved;
+        // These controls are read-only and the server resolves their values only after saving.
+        if (ui.tab === 'settings' && ui.role === 'embedding' &&
+            (Boolean(previous) !== Boolean(native) || ['source', 'model', 'queryPrefix', 'documentPrefix'].some(key => previous?.[key] !== native?.[key]))) {
+            queueRender();
+        }
+    }
     window.dispatchEvent(new Event('mewmory:configured'));
     try {
         window.localStorage?.setItem(MEWMORY_CONFIG_CHANGED_KEY, String(saved.revision ?? Date.now()));

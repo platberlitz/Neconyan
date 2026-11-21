@@ -66,9 +66,10 @@ for (const phone of [false, true]) {
         await workspace.getByLabel('Token counter for replies', { exact: true }).selectOption('o200k_base');
         await openSection(workspace, 'models');
         await workspace.locator('#mewmory-role-embedding').click();
-        await workspace.getByLabel('Enable this role', { exact: true }).check();
         await workspace.getByLabel('Embedding connection', { exact: true }).selectOption('native');
+        await workspace.getByLabel('Enable this role', { exact: true }).check();
         await expect(workspace.locator('#mewmory-settings-status')).toHaveText('Configuration saved.');
+        await expect(workspace.getByText('Saved Vectorization connection: llamacpp · server default', { exact: true })).toBeVisible();
         await expect(workspace.getByLabel('Query prefix, optional', { exact: true })).toHaveValue('query: ');
         await expect(workspace.getByLabel('Document prefix, optional', { exact: true })).toHaveValue('passage: \n ');
         await expect(workspace.getByLabel('Document prefix, optional', { exact: true })).toBeDisabled();
