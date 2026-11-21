@@ -6,7 +6,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { setConfigFilePath } from '../src/util.js';
-import { invalidateParsedSettingsFile, readParsedSettingsFile } from '../src/settings-file-cache.js';
+import { invalidateParsedSettingsFile, primeParsedSettingsFile, readParsedSettingsFile } from '../src/settings-file-cache.js';
 
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
 const { readQuickImageGenSettings } = await import('../src/generation/quick-image-gen.js');
@@ -60,6 +60,21 @@ test('accounts with the same settings filename remain isolated', t => {
     assert.equal(readQuickImageGenSettings(first).nested.model, 'one');
     assert.equal(readQuickImageGenSettings(second).nested.model, 'two');
     assert.equal(readQuickImageGenSettings(first).nested.model, 'one');
+});
+
+test('a save can keep its own parse for the next request', t => {
+    const f = fixture(t);
+    f.write('one');
+    const current = readParsedSettingsFile(f.file, 'owner');
+    const next = { ...current, extension_settings: { ...current.extension_settings, saved: true } };
+    fs.writeFileSync(f.file, JSON.stringify(next));
+    primeParsedSettingsFile(f.file, next, 'owner');
+    assert.strictEqual(readParsedSettingsFile(f.file, 'owner'), next, 'the saving handle reuses the object it wrote');
+    const background = readParsedSettingsFile(f.file);
+    assert.deepEqual(background, next, 'other handles read the write, not their older snapshot');
+    assert.notStrictEqual(background, next);
+    f.write('two');
+    assert.equal(readQuickImageGenSettings(f).nested.model, 'two', 'a later write still invalidates the primed parse');
 });
 
 test('a named account write invalidates both request and background settings snapshots', t => {
