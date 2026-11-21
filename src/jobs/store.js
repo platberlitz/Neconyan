@@ -722,7 +722,11 @@ function finaliseCancelledAncestors(store, completed) {
         if (parent.state === 'waiting' && parent.cancellation?.requested && allChildrenTerminal) {
             parent.state = 'cancelled';
             parent.finishedAt = now();
-            parent.error = null;
+            // A cancelled Roleplay memory wait still has a recovery choice
+            // for the same accepted message, even when seen through its root.
+            parent.error = parent.type === 'media.roleplay-workflow' ? (parent.children ?? [])
+                .map(id => store.jobs[jobKey(id)])
+                .find(child => child?.state === 'cancelled' && child.error?.code === 'MEWMORY_WAIT_ABORTED')?.error ?? null : null;
             parent.recoverability = 'terminal';
             parent.updatedAt = now();
         }
