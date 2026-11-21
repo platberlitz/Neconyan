@@ -9,6 +9,7 @@ import {
     HASHED_FRONTEND_ASSET_RE,
     clearFrontendManifestCache,
     getFrontendManifestPath,
+    readRewrittenFrontendHtml,
     rewriteFrontendHtml,
     validateBundledFrontend,
 } from '../src/frontend-assets.js';
@@ -85,6 +86,23 @@ describe('frontend asset manifest rewriting', () => {
         expect(rewritten).not.toContain('/frontend-assets/script-deadbeef.js');
         expect(rewritten).not.toContain('/frontend-assets/scripts/performance-loader-deadbeef.js');
         expect(rewritten).not.toContain('/frontend-assets/scripts/neconyan-tabs-deadbeef.js');
+    });
+
+    test('reuses the rewritten home page until the file changes', () => {
+        const work = fs.mkdtempSync(path.join(os.tmpdir(), 'frontend-index-'));
+        const indexPath = path.join(work, 'index.html');
+        try {
+            fs.writeFileSync(indexPath, '<link href="style.css?v=1">', 'utf8');
+            const first = readRewrittenFrontendHtml(indexPath, { enabled: true });
+            expect(first).toContain('href="/frontend-assets/style-abc123.css"');
+            expect(readRewrittenFrontendHtml(indexPath, { enabled: true })).toBe(first);
+            fs.writeFileSync(indexPath, '<link href="style.css?v=2"><p>second</p>', 'utf8');
+            const changed = readRewrittenFrontendHtml(indexPath, { enabled: true });
+            expect(changed).toContain('<p>second</p>');
+            expect(changed).not.toBe(first);
+        } finally {
+            fs.rmSync(work, { force: true, recursive: true });
+        }
     });
 
     test('keeps the immutable asset prefix stable for production serving', () => {
