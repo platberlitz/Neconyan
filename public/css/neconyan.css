@@ -963,7 +963,7 @@ body.neconyan #chat :is(.mes_edit_buttons, .mes_reasoning_actions) {
     gap: 4px;
     max-inline-size: 100%;
 }
-body.neconyan #chat .mes_reasoning_details:has(.reasoning_edit_textarea) .mes_reasoning_summary { flex-wrap: wrap; }
+body.neconyan #chat .mes.is_reasoning_editing .mes_reasoning_summary { flex-wrap: wrap; }
 body.neconyan #chat .neconyan-edit-action {
     flex: 0 1 auto;
     width: auto;
@@ -3622,8 +3622,8 @@ body.neconyan:is(.whisperstyle, .hushstyle)[data-neconyan-chat-mode='roleplay']:
     body.neconyan.echostyle:not(.sbterm) #chat .mes.nn-echo-layout[is_user='true'] .mes_text::before { float: left; margin: -8px 10px 4px -14px; }
     .nn-echo-header-plate { position: absolute; pointer-events: none; z-index: -1; top: var(--nn-echo-plate-top); left: var(--nn-echo-plate-left); width: var(--nn-echo-plate-width); height: var(--nn-echo-plate-height); border: 1px solid var(--neco-border); border-radius: 12px; background: rgb(from var(--neco-surface) r g b / var(--sb-message-opacity)); }
     .nn-echo-header-bottom { position: absolute; pointer-events: none; width: 1px; height: 1px; top: calc(var(--nn-echo-plate-top) + var(--nn-echo-plate-height) - 1px); }
-    #chat .mes.nn-echo-cutoff:not(:focus-within):not(:has(.mes_reasoning_details[open], .edit_textarea, .reasoning_edit_textarea, [aria-expanded='true'])) > :is(.mesAvatarWrapper, .nn-echo-header-plate),
-    #chat .mes.nn-echo-cutoff:not(:focus-within):not(:has(.mes_reasoning_details[open], .edit_textarea, .reasoning_edit_textarea, [aria-expanded='true'])) > .mes_block > :is(.ch_name, .mes_reasoning_details) { visibility: hidden; }
+    #chat .mes.nn-echo-cutoff:not(:focus-within):not(:has(.mes_reasoning_details[open], [aria-expanded='true'])):not(.is_editing, .is_reasoning_editing) > :is(.mesAvatarWrapper, .nn-echo-header-plate),
+    #chat .mes.nn-echo-cutoff:not(:focus-within):not(:has(.mes_reasoning_details[open], [aria-expanded='true'])):not(.is_editing, .is_reasoning_editing) > .mes_block > :is(.ch_name, .mes_reasoning_details) { visibility: hidden; }
     #chat .sb-message-screenshot-surface .mes.nn-echo-layout :is(.mesAvatarWrapper, .ch_name, .mes_reasoning_details, .nn-echo-header-plate) { visibility: visible; }
     .sb-message-screenshot-surface .nn-echo-header-bottom { display: none; }
 }

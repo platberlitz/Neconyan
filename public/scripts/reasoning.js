@@ -1326,6 +1326,7 @@ function setReasoningEventHandlers() {
         const textarea = document.createElement('textarea');
         const reasoningBlock = messageBlock.find('.mes_reasoning');
         textarea.classList.add('reasoning_edit_textarea');
+        messageBlock.closest('.mes').addClass('is_reasoning_editing');
         textarea.value = reasoning;
         $(textarea).insertBefore(reasoningBlock);
 
@@ -1378,6 +1379,7 @@ function setReasoningEventHandlers() {
         let newReasoning = String(textarea.val());
         newReasoning = substituteParams(newReasoning);
         textarea.remove();
+        messageBlock.closest('.mes').removeClass('is_reasoning_editing');
         if (newReasoning === message.extra.reasoning) {
             return;
         }
@@ -1403,6 +1405,7 @@ function setReasoningEventHandlers() {
         const { messageBlock } = getMessageFromJquery(this);
         const textarea = messageBlock.find('.reasoning_edit_textarea');
         textarea.remove();
+        messageBlock.closest('.mes').removeClass('is_reasoning_editing');
 
         messageBlock.find('.mes_reasoning_edit_cancel:visible').trigger('click');
 
@@ -1461,6 +1464,7 @@ function setReasoningEventHandlers() {
         updateMessageBlock(messageId, message);
         const textarea = messageBlock.find('.reasoning_edit_textarea');
         textarea.remove();
+        messageBlock.closest('.mes').removeClass('is_reasoning_editing');
         await eventSource.emit(event_types.MESSAGE_REASONING_DELETED, messageId);
     });
 
