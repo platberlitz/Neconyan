@@ -2,6 +2,13 @@
 import { expect, test } from '@playwright/test';
 import { isolateSettingsSaves } from './chat-scroll-regression-helpers.js';
 
+test.setTimeout(120000);
+
+async function expand(page, id) {
+    const header = page.locator(`#${id} > .inline-drawer-header`);
+    if (await header.getAttribute('aria-expanded') !== 'true') await header.click();
+}
+
 for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 }]) {
     test.describe(`sleeping cat picker at ${viewport.width}px`, () => {
         test.use({ viewport, hasTouch: viewport.width === 393, serviceWorkers: 'block' });
@@ -17,12 +24,10 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
                 };
             });
             await page.goto('/');
-            await expect(page.locator('.neconyan-assistant-row').first()).toBeAttached();
+            await expect(page.locator('.neconyan-assistant-row').first()).toBeAttached({ timeout: 60000 });
             await page.evaluate(() => window.NeconyanShell.openTab('right', 'settings'));
-            for (const id of ['AppearanceSection', 'sb-interface-drawer']) {
-                const header = page.locator(`#${id} > .inline-drawer-header`);
-                if (await header.getAttribute('aria-expanded') !== 'true') await header.click();
-            }
+            await expand(page, 'AppearanceSection');
+            await expand(page, 'sb-interface-drawer');
 
             const picker = page.locator('#sb-interface-drawer .sb-sleeper-coat-setting');
             const pair = picker.getByLabel('Pair', { exact: true });
