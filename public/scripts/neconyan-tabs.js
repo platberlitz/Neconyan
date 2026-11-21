@@ -17857,12 +17857,12 @@ function injectThemePicker() {
     const shellStyleSettingsGroup = createThemeSettingsDrawer({
         id: 'sb-shell-style-drawer',
         title: 'Shell Style',
-        content: [description, optionRow, kittylessGroup, createSleeperCoatSettingsGroup()],
+        content: [description, optionRow, kittylessGroup],
     });
     const interfaceSettingsGroup = createThemeSettingsDrawer({
         id: 'sb-interface-drawer',
         title: 'Interface',
-        content: [frontendIconSettingsGroup, bottomBarSliderGroup],
+        content: [frontendIconSettingsGroup, bottomBarSliderGroup, createSleeperCoatSettingsGroup()],
     });
     const panelLookSettingsGroup = createThemeSettingsDrawer({
         id: 'sb-panel-look-drawer',
