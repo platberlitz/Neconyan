@@ -41,6 +41,10 @@ export function createRequestTrace(file, { limit = 30 } = {}) {
     }
 
     return function requestTrace(request, response, next) {
+        // The trace exists to explain an interrupted API operation after a crash.
+        // Styling and script requests cannot cause one, and writing them costs two
+        // blocking file writes each on Android.
+        if (!String(request.originalUrl || request.url || '').startsWith('/api/')) return next();
         const started = Date.now();
         const path = diagnosticRequestPath(request.originalUrl || request.url);
         const bytes = Number(request.headers['content-length']) || 0;
