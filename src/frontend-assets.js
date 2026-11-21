@@ -84,7 +84,7 @@ export function resolveFrontendAssetPath(publicPath) {
     return `${FRONTEND_ASSET_PREFIX}${entry.output}`;
 }
 
-export function rewriteFrontendHtml(html, { enabled = getFrontendAssetsEnabled(), importMap = null } = {}) {
+export function rewriteFrontendHtml(html, { enabled = getFrontendAssetsEnabled(), importMap = null, styleMap = null } = {}) {
     if (!enabled || typeof html !== 'string') {
         return html;
     }
@@ -120,6 +120,10 @@ export function rewriteFrontendHtml(html, { enabled = getFrontendAssetsEnabled()
 
     if (importMap && Object.keys(importMap).length > 0) {
         rewritten = stampFrontendModules(rewritten, importMap);
+    }
+
+    if (styleMap && Object.keys(styleMap).length > 0) {
+        rewritten = stampFrontendStylesheets(rewritten, styleMap);
     }
 
     return rewritten;
@@ -162,8 +166,28 @@ function stampFrontendModules(html, importMap) {
     return rewritten;
 }
 
+function stampFrontendStylesheets(html, styleMap) {
+    const stampFor = source => {
+        const cleanPath = `/${source.split('?')[0].replace(/^\.?\/+/, '').replace(/^\/+/, '')}`;
+        return styleMap[cleanPath] ?? null;
+    };
+
+    return html.replace(/<link\b[^>]*>/gi, tag => {
+        const rel = tag.match(/\brel="([^"]*)"/i)?.[1]?.toLowerCase() ?? '';
+        const as = tag.match(/\bas="([^"]*)"/i)?.[1]?.toLowerCase() ?? '';
+        if (rel !== 'stylesheet' && !(rel === 'preload' && as === 'style')) {
+            return tag;
+        }
+
+        return tag.replace(/(\bhref=")([^"]+)(")/i, (match, before, source, after) => {
+            return /^\.?\/?[^"']*\.css(?:\?|$)/i.test(source) ? `${before}${stampFor(source) ?? source}${after}` : match;
+        });
+    });
+}
+
 const PUBLIC_MODULE_SCAN_TTL_MS = 10_000;
 let publicModuleImportMapCache = null;
+let publicStyleMapCache = null;
 
 /** A short, filesystem-derived label that changes whenever a file changes. */
 export function getPublicAssetStamp(stat) {
@@ -175,14 +199,14 @@ export function getPublicAssetStamp(stat) {
     return `${stat.size.toString(36)}-${Math.floor(stat.mtimeMs).toString(36)}-${inode}`;
 }
 
-function collectPublicModules(directory, prefix = '', out = []) {
+function collectPublicFiles(directory, pattern, prefix = '', out = []) {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
         const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
         const fullPath = path.join(directory, entry.name);
 
         if (entry.isDirectory()) {
-            collectPublicModules(fullPath, relativePath, out);
-        } else if (entry.isFile() && /\.m?js$/i.test(entry.name)) {
+            collectPublicFiles(fullPath, pattern, relativePath, out);
+        } else if (entry.isFile() && pattern.test(entry.name)) {
             out.push(relativePath);
         }
     }
@@ -198,7 +222,7 @@ function collectPublicModules(directory, prefix = '', out = []) {
 export function buildPublicModuleImportMap(publicRoot = path.join(serverDirectory, 'public')) {
     const imports = {};
 
-    for (const relativePath of collectPublicModules(publicRoot)) {
+    for (const relativePath of collectPublicFiles(publicRoot, /\.m?js$/i)) {
         if (HASHED_FRONTEND_ASSET_RE.test(relativePath)) {
             continue;
         }
@@ -213,8 +237,31 @@ export function buildPublicModuleImportMap(publicRoot = path.join(serverDirector
     return imports;
 }
 
+/**
+ * Maps each public stylesheet URL to a versioned copy. Stylesheets are not
+ * modules, so the labels go on the link tags rather than into the import map.
+ */
+export function buildPublicStyleMap(publicRoot = path.join(serverDirectory, 'public')) {
+    const styles = {};
+
+    for (const relativePath of collectPublicFiles(publicRoot, /\.css$/i)) {
+        if (HASHED_FRONTEND_ASSET_RE.test(relativePath)) {
+            continue;
+        }
+        const stat = fs.statSync(path.join(publicRoot, ...relativePath.split('/')), { throwIfNoEntry: false });
+        const stamp = getPublicAssetStamp(stat);
+        if (stamp) {
+            const url = `/${relativePath}`;
+            styles[url] = `${url}?v=${stamp}`;
+        }
+    }
+
+    return styles;
+}
+
 export function clearPublicModuleImportMapCache() {
     publicModuleImportMapCache = null;
+    publicStyleMapCache = null;
     indexHtmlCache = null;
 }
 
@@ -228,6 +275,18 @@ function getPublicModuleImportMap(publicRoot, now = Date.now()) {
     const revision = Object.values(imports).join('\u001e');
     publicModuleImportMapCache = { publicRoot, builtAt: now, imports, revision };
     return publicModuleImportMapCache;
+}
+
+function getPublicStyleMap(publicRoot, now = Date.now()) {
+    if (publicStyleMapCache?.publicRoot === publicRoot
+        && now - publicStyleMapCache.builtAt < PUBLIC_MODULE_SCAN_TTL_MS) {
+        return publicStyleMapCache;
+    }
+
+    const styles = buildPublicStyleMap(publicRoot);
+    const revision = Object.values(styles).join('\u001e');
+    publicStyleMapCache = { publicRoot, builtAt: now, styles, revision };
+    return publicStyleMapCache;
 }
 
 let indexHtmlCache = null;
@@ -248,12 +307,13 @@ export function readRewrittenFrontendHtml(indexPath = path.join(serverDirectory,
     const builtModules = enabled && fs.existsSync(path.join(FRONTEND_DIST_ROOT, 'script.js'));
     const moduleRoot = builtModules ? FRONTEND_DIST_ROOT : path.dirname(indexPath);
     const moduleMap = enabled ? getPublicModuleImportMap(moduleRoot) : null;
-    const identity = `${stat.mtimeMs}:${stat.size}:${stat.ino}:${enabled ? 'on' : 'off'}:${moduleMap?.revision ?? ''}`;
+    const styleMap = enabled ? getPublicStyleMap(moduleRoot) : null;
+    const identity = `${stat.mtimeMs}:${stat.size}:${stat.ino}:${enabled ? 'on' : 'off'}:${moduleMap?.revision ?? ''}:${styleMap?.revision ?? ''}`;
     if (indexHtmlCache?.manifest === manifest && indexHtmlCache.identity === identity) {
         return indexHtmlCache.html;
     }
 
-    const html = rewriteFrontendHtml(fs.readFileSync(indexPath, 'utf8'), { enabled, importMap: moduleMap?.imports ?? null });
+    const html = rewriteFrontendHtml(fs.readFileSync(indexPath, 'utf8'), { enabled, importMap: moduleMap?.imports ?? null, styleMap: styleMap?.styles ?? null });
     indexHtmlCache = { manifest, identity, html };
     return html;
 }

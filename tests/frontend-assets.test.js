@@ -8,6 +8,7 @@ import {
     FRONTEND_ASSET_PREFIX,
     HASHED_FRONTEND_ASSET_RE,
     buildPublicModuleImportMap,
+    buildPublicStyleMap,
     clearFrontendManifestCache,
     clearPublicModuleImportMapCache,
     getFrontendManifestPath,
@@ -129,6 +130,31 @@ describe('frontend asset manifest rewriting', () => {
             expect(rewritten).toContain(`src="${map['/scripts/tabs.js']}"`);
             expect(served.imports['/script.js']).toBe(map['/script.js']);
             expect(served.imports['#macro-vendor']).toBe(map['/lib.js']);
+        } finally {
+            fs.rmSync(work, { force: true, recursive: true });
+            clearPublicModuleImportMapCache();
+        }
+    });
+
+    test('stamps stylesheets and deferred style preloads with their own labels', () => {
+        const work = fs.mkdtempSync(path.join(os.tmpdir(), 'frontend-styles-'));
+        try {
+            fs.mkdirSync(path.join(work, 'css'));
+            fs.writeFileSync(path.join(work, 'css', 'site.css'), 'body { color: red; }');
+            fs.writeFileSync(path.join(work, 'css', 'late.css'), '.late { color: blue; }');
+            const styles = buildPublicStyleMap(work);
+            const html = [
+                '<link rel="stylesheet" href="css/site.css?v=old">',
+                '<link rel="preload" as="style" href="css/late.css?v=old">',
+                '<link rel="preload" as="script" href="css/late.css">',
+                '<link rel="stylesheet" href="https://example.com/remote.css">',
+            ].join('');
+            const rewritten = rewriteFrontendHtml(html, { enabled: true, styleMap: styles });
+            expect(styles['/css/site.css']).toMatch(/^\/css\/site\.css\?v=/);
+            expect(rewritten).toContain(`href="${styles['/css/site.css']}"`);
+            expect(rewritten).toContain(`href="${styles['/css/late.css']}"`);
+            expect(rewritten).toContain('as="script" href="css/late.css"');
+            expect(rewritten).toContain('href="https://example.com/remote.css"');
         } finally {
             fs.rmSync(work, { force: true, recursive: true });
             clearPublicModuleImportMapCache();
