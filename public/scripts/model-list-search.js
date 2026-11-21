@@ -201,7 +201,9 @@ export function attachModelListSearch(select, options = {}) {
     }
 
     function render({ invalidate = true, changes = null } = {}) {
-        const scrollTop = results.scrollTop;
+        // A hidden list has no scroll position to keep, and reading or writing
+        // one forces a layout of the whole page while the app is starting.
+        const scrollTop = visible ? results.scrollTop : 0;
         // A caller can replace options and dispatch input in the same turn,
         // before the observer has delivered those source changes.
         const pending = observer.takeRecords();
@@ -280,10 +282,11 @@ export function attachModelListSearch(select, options = {}) {
         }
         // Rebuilding options temporarily empties the scroller. Restore its
         // position before returning focus to a row, including on touch screens.
-        results.scrollTop = scrollTop;
+        if (visible) results.scrollTop = scrollTop;
         if (focusedValue !== null && focusedValue !== undefined) {
             results.querySelector(`[data-model-id="${CSS.escape(focusedValue)}"]`)?.focus({ preventScroll: true });
-        } else if (invalidate && revealOnRender) {
+        } else if (invalidate && revealOnRender && visible) {
+            // A hidden list is revealed by the visibility observer once it is shown.
             revealSelected();
         }
     }
