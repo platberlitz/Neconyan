@@ -376,6 +376,30 @@ test('first generation checks its saved chat without loading the closed memory p
     expect(JSON.parse(fetch.mock.calls[0][1].body).locator.chat).toBe('first');
 });
 
+test('a chat already known to be off asks for a reply without its history', async () => {
+    initMewmory();
+    mewmory.view = { enabled: false, revision: 1, locator: getMewmoryLocator() };
+    fetch.mockResolvedValueOnce(response({ enabled: false, excludedIndices: [], npcText: '', memoryText: '' }));
+    await prepareMewmoryGeneration([{ mes: 'Hello', mewmorySourceIndex: 0 }]);
+    const body = JSON.parse(fetch.mock.calls[0][1].body);
+    expect(body.historyOmitted).toBe(true);
+    expect(body.history).toBeUndefined();
+});
+
+test('a stale off view sends the history again after the server asks for it', async () => {
+    initMewmory();
+    mewmory.view = { enabled: false, revision: 1, locator: getMewmoryLocator() };
+    fetch.mockResolvedValueOnce(response({ enabled: true, needsHistory: true }))
+        .mockResolvedValueOnce(response({ enabled: false, excludedIndices: [], npcText: '', memoryText: '' }));
+    const messages = [{ mes: 'Hello', mewmorySourceIndex: 0 }];
+    expect(await prepareMewmoryGeneration(messages)).toEqual({ enabled: false, chat: messages });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(fetch.mock.calls[0][1].body).historyOmitted).toBe(true);
+    const resent = JSON.parse(fetch.mock.calls[1][1].body);
+    expect(resent.historyOmitted).toBeUndefined();
+    expect(resent.history).toEqual([{ index: 0, text: ': Hello' }]);
+});
+
 test('backfill starts one server job, restores its status and cancels only on an explicit stop', async () => {
     initMewmory();
     let status = 'running';

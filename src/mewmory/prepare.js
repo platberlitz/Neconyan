@@ -21,6 +21,11 @@ export async function prepareMewmoryPrompt(directories, body, signal, {
         if (body.mewmoryWaitSnapshot) fail('Mewmory was turned off while waiting. Retry this reply.', 409);
         return { enabled: false, excludedIndices: [], npcText: '', memoryText: '' };
     }
+    if (body.historyOmitted) {
+        // The client only skips history when its last view said memory was off.
+        // If a change landed since, ask for the history instead of rejecting.
+        return { enabled: true, needsHistory: true };
+    }
     const config = readConfiguration(directories);
     if (body.mewmoryCatchUpOverride !== undefined && body.mewmoryCatchUpOverride !== 'reply') fail('Choose a valid memory catch-up option.');
     const snapshot = generationFingerprint(state, config);

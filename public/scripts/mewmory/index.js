@@ -885,14 +885,24 @@ export async function prepareMewmoryGeneration(messages, { signal, mewmoryCatchU
         if (getChatGeneration() !== generation || getMewmoryScope() !== currentKey) throw new Error('The active chat changed.');
         invalidateMewmoryRefresh();
         const tokenizer = getFriendlyTokenizerName();
+        const history = messages.filter(message => Number.isInteger(message.mewmorySourceIndex)).map(message => ({
+            index: message.mewmorySourceIndex, text: String(message.name || '') + ': ' + String(message.mes || ''),
+        }));
+        // With memory off for this chat the server answers before it needs the
+        // prompt. Sending the whole history anyway costs a large request on
+        // every reply, so ask without it and resend only if the view was stale.
+        const omittedHistory = mewmory.view?.enabled === false && !mewmoryCatchUpOverride;
         const input = {
             locator, tokenizer, integrity: chat_metadata.integrity,
             ...(mewmoryCatchUpOverride ? { mewmoryCatchUpOverride } : {}),
-            history: messages.filter(message => Number.isInteger(message.mewmorySourceIndex)).map(message => ({
-                index: message.mewmorySourceIndex, text: String(message.name || '') + ': ' + String(message.mes || ''),
-            })),
+            ...(omittedHistory ? { historyOmitted: true } : { history }),
         };
         let result = await requestMewmory('prepare', input, { signal });
+        if (result.needsHistory) {
+            delete input.historyOmitted;
+            input.history = history;
+            result = await requestMewmory('prepare', input, { signal });
+        }
         if (result.waiting) {
             if (!result.extractorEnabled || mewmory.config?.roles?.extractor?.error) {
                 throw Object.assign(new Error('Enable and configure Facts and events to record older messages, or reply now with the extra original messages.'), { code: 'MEWMORY_WAIT_FAILED' });
