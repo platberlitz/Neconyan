@@ -17,7 +17,7 @@ const ALLOWED = [
     {
         // Upstream drawer layout rule; it is only evaluated while a settings drawer is open.
         file: 'style.css',
-        matches: selector => /^body:has\(\.drawer-content\.(maximized|open)\) #top-settings-holder:has\(/.test(selector),
+        matches: selector => /^body:has\(\.drawer-content\.maximized\) #top-settings-holder:has\(/.test(selector),
     },
     {
         // Phones narrower than 361px only, in Conversation mode; no current iPhone is that narrow.

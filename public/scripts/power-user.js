@@ -2617,6 +2617,9 @@ function applyBlurStrength() {
 
 function applyShadowWidth() {
     document.documentElement.style.setProperty('--shadowWidth', String(power_user.shadow_width));
+    // The universal text shadow is gated on this class: at width zero it would still
+    // be a value on every element for nothing.
+    document.body?.classList.toggle('neconyan-text-shadow', Number(power_user.shadow_width) > 0);
     $('#shadow_width_counter').val(power_user.shadow_width);
     $('#shadow_width').val(power_user.shadow_width);
 }
