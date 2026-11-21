@@ -70,7 +70,7 @@ test('keeps the current character list available until the refreshed response is
     const jsonRequested = new Promise(resolve => { reportJsonRequest = resolve; });
     const characters = [{ avatar: 'nova.png', name: 'Nova', chat: 'Current chat' }];
     const context = vm.createContext({
-        characters, this_chid: undefined,
+        characters, this_chid: undefined, startupCharacterListPromise: null,
         fetch: async () => ({ ok: true, json: () => { reportJsonRequest(); return json; } }),
         getRequestHeaders: () => ({}),
         DOMPurify: { sanitize: value => value },

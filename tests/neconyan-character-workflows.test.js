@@ -36,7 +36,7 @@ function saveContext() {
     const timers = new Map();
     let timerId = 0;
     const context = vm.createContext({
-        HTMLElement, document: { getElementById: () => status },
+        HTMLElement, document: { getElementById: () => status }, startupCharacterListPromise: null,
         $: () => ({ attr: () => 'editcharacter' }),
         console: { warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
         setTimeout: callback => { timers.set(++timerId, callback); return timerId; },

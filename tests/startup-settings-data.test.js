@@ -28,6 +28,8 @@ describe('startup bootstrap requests', () => {
                 localesInput = value;
                 return Promise.resolve();
             },
+            fetch: async () => ({ ok: true, json: async () => [] }),
+            getRequestHeaders: () => ({}),
         });
         const runner = `(async () => { ${segment} return initialSettingsData; })()`;
         const result = await vm.runInContext(runner, context);
@@ -45,6 +47,8 @@ describe('startup bootstrap requests', () => {
             readSecretState: async () => { started.push('secret-state'); },
             requestSettingsData: async () => { started.push('settings'); },
             initLocales: () => Promise.resolve(),
+            fetch: async () => ({ ok: true, json: async () => [] }),
+            getRequestHeaders: () => ({}),
         });
         await vm.runInContext(`(async () => { ${segment} })()`, context);
         // All three start before any of them completes: no serial waterfall.

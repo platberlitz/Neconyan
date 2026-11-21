@@ -668,6 +668,8 @@ export let displayVersion = 'Neconyan';
 let generation_started = new Date();
 /** @type {Character[]} */
 export let characters = [];
+// Starts while the rest of start-up runs, then getCharacters takes over the response.
+let startupCharacterListPromise = null;
 /**
  * Stringified index of a currently chosen entity in the characters array.
  * @type {string|undefined} Yes, we hate it as much as you do.
@@ -1564,6 +1566,13 @@ async function firstLoadInit() {
             getClientVersion(),
             initSecrets().then(() => readSecretState()),
         ]);
+        // The character list is independent of settings. Fetch it while extensions
+        // and settings initialise; getCharacters awaits this same response below.
+        startupCharacterListPromise = fetch('/api/characters/all', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: JSON.stringify({}),
+        });
         await initLocales(initialSettingsData);
         // The top bar was first built before the translations loaded, and its title is protected from the localiser, so rebuild its label now.
         globalThis.NeconyanShell?.refreshTopBarLabel?.();
@@ -2243,11 +2252,13 @@ export function getCharacterSource(chId = this_chid) {
 }
 
 export async function getCharacters() {
-    const response = await fetch('/api/characters/all', {
+    const pendingResponse = startupCharacterListPromise;
+    startupCharacterListPromise = null;
+    const response = await (pendingResponse ?? fetch('/api/characters/all', {
         method: 'POST',
         headers: getRequestHeaders(),
         body: JSON.stringify({}),
-    });
+    }));
     if (response.ok) {
         const getData = await response.json();
         const previousAvatar = this_chid !== undefined ? characters[this_chid]?.avatar : null;
