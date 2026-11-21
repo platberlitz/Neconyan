@@ -23,6 +23,7 @@
 - PR #796 (2026-11-21) `perf(settings): coalesce rapid style previews`
 - PR #797 (2026-11-21) `perf(chat): key editing styles off message classes`
 - PR #798 (2026-11-21) `perf(chat): stop rebuilding chat lists on every event`
+- PR #799 (2026-11-21) `perf(world-info): stop rebuilding scan text and key patterns`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
