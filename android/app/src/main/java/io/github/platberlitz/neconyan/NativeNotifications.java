@@ -17,24 +17,25 @@ final class NativeNotifications {
     private static final String CHANNEL = "messages";
     private static final String INBOX = "native-notifications.json";
     private static final String CONSENT = "notification-consent.json";
+    static final int INBOX_EVENTS = FileObserver.CLOSE_WRITE | FileObserver.MOVED_TO;
     private final Context context;
-    private final FileObserver watcher;
+    private final FileObserver consentWatcher;
+    private boolean closed;
 
     NativeNotifications(Context context) {
         this.context = context;
         context.getSystemService(NotificationManager.class).createNotificationChannel(
             new NotificationChannel(CHANNEL, "Toasts and Conversation DMs", NotificationManager.IMPORTANCE_DEFAULT));
-        watcher = new FileObserver(java.util.Arrays.asList(context.getFilesDir(), context.getNoBackupFilesDir()), FileObserver.CLOSE_WRITE | FileObserver.MOVED_TO) {
+        consentWatcher = new FileObserver(context.getNoBackupFilesDir(), FileObserver.CLOSE_WRITE | FileObserver.MOVED_TO) {
             @Override public void onEvent(int event, String path) {
-                if (INBOX.equals(path)) drain();
                 if (CONSENT.equals(path)) synchronized (NativeNotifications.class) {
+                    if (closed) return;
                     if (enabled(context)) drainLocked();
                     else cancelMessages(context);
                 }
             }
         };
-        watcher.startWatching();
-        drain();
+        consentWatcher.startWatching();
     }
 
     private static SharedPreferences preferences(Context context) { return context.getSharedPreferences("notifications", Context.MODE_PRIVATE); }
@@ -88,8 +89,14 @@ final class NativeNotifications {
         }
     }
 
-    private void drain() {
-        synchronized (NativeNotifications.class) { drainLocked(); }
+    void onInboxEvent(int event, String path) {
+        if (INBOX.equals(path) && (event & INBOX_EVENTS) != 0) drain();
+    }
+
+    void drain() {
+        synchronized (NativeNotifications.class) {
+            if (!closed) drainLocked();
+        }
     }
 
     private void drainLocked() {
@@ -118,5 +125,10 @@ final class NativeNotifications {
         } catch (Exception ignored) { /* Atomic inbox replacement or revoked permission: retry on the next write. */ }
     }
 
-    void close() { watcher.stopWatching(); }
+    void close() {
+        synchronized (NativeNotifications.class) {
+            closed = true;
+            consentWatcher.stopWatching();
+        }
+    }
 }

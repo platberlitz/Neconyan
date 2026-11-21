@@ -24,7 +24,7 @@ public final class ServerService extends Service {
     private volatile boolean nodeStarted;
     private volatile boolean nodeReturned;
     private PowerManager.WakeLock wake;
-    private FileObserver busyWatcher;
+    private FileObserver filesWatcher;
     private NativeNotifications messageNotifications;
     private volatile boolean stopping;
     private final Object stopLock = new Object();
@@ -98,11 +98,19 @@ public final class ServerService extends Service {
             // Starting up keeps the phone awake. After that the server creates this marker while it
             // is working and removes it when idle, so an idle server no longer stops the phone sleeping.
             new File(getFilesDir(), BUSY).delete();
-            busyWatcher = new FileObserver(getFilesDir(), FileObserver.CREATE | FileObserver.DELETE | FileObserver.MOVED_TO | FileObserver.MOVED_FROM) {
-                @Override public void onEvent(int event, String path) { if (BUSY.equals(path)) syncWake(); }
+            // FileObserver can share a watch descriptor for the same directory. Register
+            // once so that notification inbox events cannot replace the wake-marker watch.
+            int busyEvents = FileObserver.CREATE | FileObserver.DELETE | FileObserver.MOVED_TO | FileObserver.MOVED_FROM;
+            filesWatcher = new FileObserver(getFilesDir(), busyEvents | NativeNotifications.INBOX_EVENTS) {
+                @Override public void onEvent(int event, String path) {
+                    if (stopping) return;
+                    if (BUSY.equals(path) && (event & busyEvents) != 0) syncWake();
+                    else messageNotifications.onInboxEvent(event, path);
+                }
             };
-            busyWatcher.startWatching();
             wake.acquire();
+            filesWatcher.startWatching();
+            messageNotifications.drain();
             new Thread(() -> {
                 try {
                     status(PREPARING_STATUS);
@@ -162,7 +170,7 @@ public final class ServerService extends Service {
 
     private synchronized void stopWake() {
         stopping = true;
-        if (busyWatcher != null) busyWatcher.stopWatching();
+        if (filesWatcher != null) filesWatcher.stopWatching();
         if (messageNotifications != null) messageNotifications.close();
         if (wake != null && wake.isHeld()) wake.release();
     }

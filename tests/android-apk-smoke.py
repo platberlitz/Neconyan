@@ -10,6 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -27,10 +28,13 @@ parser.add_argument('--apk', required=True)
 parser.add_argument('--release', action='store_true', help='Check the signed app on a disposable root-capable emulator')
 parser.add_argument('--page-size', type=int, choices=(4096, 16384), help='Verify the emulator page size before installing')
 parser.add_argument('--check-stop-restart', action='store_true', help='Check the new app’s explicit restart and Stop controls')
+parser.add_argument('--check-notifications', action='store_true', help='Check the private reply inbox and notification consent on a rooted emulator')
 parser.add_argument('--update-webview', help='Check the old-WebView screen, then install the SDK reference WebView APK')
 args = parser.parse_args()
 if not args.serial.startswith('emulator-'):
     parser.error('This destructive lifecycle check is restricted to an emulator.')
+if args.check_notifications and not args.release:
+    parser.error('--check-notifications requires the rooted release fixture.')
 package = 'io.github.platberlitz.neconyan' + ('' if args.release else '.debug')
 
 
@@ -91,6 +95,41 @@ def check_idle_wake_lock(request, token):
     private('rm', '-f', 'files/android-busy')
     wait_until(lambda: matches('manual release', False), 20, 'The app kept the phone awake after the work finished')
     print('The server holds its wake lock only while it is working.', flush=True)
+
+
+def check_native_notifications():
+    """Both consent flips and inbox replacements work in the background."""
+    inbox = 'files/native-notifications.json'
+    consent = 'no_backup/notification-consent.json'
+    now = int(adb('shell', 'date', '+%s')) * 1000
+    first, second = f'smoke-first-{now}', f'smoke-second-{now}'
+
+    def publish(path, value):
+        # Match owner and SELinux label before publishing the app's atomic replacement.
+        body = shlex.quote(json.dumps(value))
+        folder = shlex.quote(str(Path(path).parent))
+        stage = shlex.quote(path + '.smoke')
+        private(f'printf %s {body} > {stage} && chown "$(stat -c %u:%g {folder})" {stage}'
+                f' && chcon "$(ls -Zd {folder} | cut -d " " -f1)" {stage} && mv -f {stage} {shlex.quote(path)}')
+
+    def event(tag):
+        return {'id': tag, 'createdAt': now, 'title': 'Android smoke notification', 'body': 'Private test reply'}
+
+    def posted(tag):
+        return any(key.strip().split('|')[1:4] == [package, '2', tag]
+                   for key in adb('shell', 'cmd', 'notification', 'list').splitlines())
+
+    try:
+        publish(inbox, {'events': [event(first)]})
+        assert not posted(first), 'A reply notification appeared before consent'
+        publish(consent, {'enabled': True, 'since': now})
+        wait_until(lambda: posted(first), 20, 'The consent watcher did not post a pending reply notification')
+        publish(inbox, {'events': [event(first), event(second)]})
+        wait_until(lambda: posted(second), 20, 'The shared files watcher did not post a new reply notification')
+    finally:
+        publish(consent, {'enabled': False, 'since': now})
+    wait_until(lambda: not posted(first) and not posted(second), 20, 'Notification opt-out did not remove reply notifications')
+    print('Reply notifications follow consent and new inbox entries with the workspace in the background.', flush=True)
 
 
 def window_labels():
@@ -307,6 +346,8 @@ try:
     time.sleep(2)
     assert name in request('/api/characters/get', {'avatar_url': avatar}, token)
     print('The local server remains available with the Activity in the background.', flush=True)
+    if args.check_notifications:
+        check_native_notifications()
     check_idle_wake_lock(request, token)
     adb('shell', 'am', 'force-stop', package)
 finally:
