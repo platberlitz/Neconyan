@@ -396,16 +396,17 @@ public final class MainActivity extends Activity {
 
     private void recoverCrashReports() {
         ActivityBreadcrumbs.execute(() -> {
-            CrashReport.Entry latest = CrashDiagnostics.store(this).newestEntry();
+            CrashReport.Entry latest = CrashDiagnostics.store(this).newestNotice();
             if (latest != null) offerCrashReport(latest, true);
             CrashDiagnostics.collectExits(this, result -> {
                 CrashReport.Entry entry = result.entry;
-                CrashReport.Entry newest = CrashDiagnostics.store(this).newestEntry();
+                CrashReport.Entry newest = CrashDiagnostics.store(this).newestNotice();
                 if (!result.saved || newest != null && newest.id.equals(entry.id)) offerCrashReport(entry, result.saved);
             });
         });
     }
     private void offerCrashReport(CrashReport.Entry entry, boolean saved) {
+        if (!CrashReport.needsNotice(entry, saved)) return;
         runOnUiThread(() -> {
             if (isFinishing() || isDestroyed()) return;
             if (crashDialog != null && crashDialog.isShowing() && visibleReport != null && visibleReport.id.equals(entry.id)) {

@@ -224,10 +224,18 @@ final class CrashDiagnostics {
                 String incident = id;
                 CrashReport.Entry matched = null;
                 for (CrashReport.Entry prior : store.listEntries()) {
-                    if (prior.id.equals(id + ".txt") || prior.event.equals("android-process-exit")) continue;
+                    if (prior.id.equals(id + ".txt") || prior.event.equals("android-process-exit") || prior.event.equals(CrashReport.CACHED_MEMORY_EXIT)) continue;
                     if (prior.pid == info.getPid() && start > 0 && prior.processStart == start && prior.at <= info.getTimestamp() && info.getTimestamp() - prior.at <= 10000) { incident = prior.incident; matched = store.readEntry(prior.id); break; }
                 }
                 String errorLine = matched == null ? "Android did not supply an error message." : matched.error;
+                // Clearing a cached launcher process is normal on a busy device. Keep the
+                // evidence in history, but don't block the next launch with a crash dialog.
+                int importance = info.getImportance();
+                boolean cachedMemoryExit = matched == null && reason == ApplicationExitInfo.REASON_LOW_MEMORY
+                    && context.getPackageName().equals(info.getProcessName())
+                    && importance >= ActivityManager.RunningAppProcessInfo.IMPORTANCE_CACHED
+                    && importance < ActivityManager.RunningAppProcessInfo.IMPORTANCE_GONE;
+                String event = cachedMemoryExit ? CrashReport.CACHED_MEMORY_EXIT : "android-process-exit";
                 StringBuilder text = new StringBuilder("Android process exit at ").append(new Date(info.getTimestamp()))
                     .append("\nProcess: ").append(info.getProcessName()).append(" PID ").append(info.getPid())
                     .append("\nReason: ").append(reasonName(reason)).append(" (").append(reason).append(")")
@@ -236,7 +244,7 @@ final class CrashDiagnostics {
                     .append("\nRSS KiB: ").append(info.getRss())
                     .append(sample.details).append("\nDevice details captured on recovery, not at the moment of the exit:\n").append(environment(context));
                 if (matched != null) text.insert(0, "Recorded application error from the same process instance:\n" + matched.text + "\n\n");
-                CrashReport.Entry metadata = CrashReport.create(id, info.getTimestamp(), component, "android-process-exit", info.getPid(), start, incident, reason,
+                CrashReport.Entry metadata = CrashReport.create(id, info.getTimestamp(), component, event, info.getPid(), start, incident, reason,
                     String.valueOf(info.getStatus()), errorLine, sample.at, sample.activity, sample.memory, text + "\n" + NO_TRACE);
                 boolean metadataSaved = store.saveExit(id, metadata.text, false);
                 CrashReport.Entry retained = metadataSaved ? store.readEntry(id + ".txt") : null;
@@ -264,7 +272,7 @@ final class CrashDiagnostics {
                     }
                 } catch (Exception error) { text.append("\nTrace unreadable: ").append(error.getClass().getSimpleName()).append('\n').append(NO_TRACE); }
                 // Stable name lets delayed Android traces enrich the same report instead of duplicating it.
-                CrashReport.Entry entry = CrashReport.create(id, info.getTimestamp(), component, "android-process-exit", info.getPid(), start, incident, reason,
+                CrashReport.Entry entry = CrashReport.create(id, info.getTimestamp(), component, event, info.getPid(), start, incident, reason,
                     String.valueOf(info.getStatus()), errorLine, sample.at, sample.activity, sample.memory, text.toString());
                 boolean saved = store.saveExit(id, entry.text, hasTrace);
                 retained = saved ? store.readEntry(id + ".txt") : null;

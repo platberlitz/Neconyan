@@ -121,11 +121,11 @@ final class DiagnosticStore {
         }
         return entries;
     }
-    CrashReport.Entry newestEntry() {
+    CrashReport.Entry newestNotice() {
         File[] files = files();
         for (int i = files.length - 1; i >= 0; i--) {
             CrashReport.Entry entry = readEntry(files[i].getName());
-            if (entry != null) return entry;
+            if (CrashReport.needsNotice(entry, true)) return entry;
         }
         return null;
     }
