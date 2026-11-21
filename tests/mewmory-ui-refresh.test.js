@@ -68,6 +68,7 @@ let gate;
 let inspects;
 beforeEach(() => {
     generation++;
+    document.visibilityState = 'visible';
     Object.keys(chatMetadata).forEach(key => delete chatMetadata[key]);
     chat.splice(0);
     retryJob.mockClear();
@@ -231,6 +232,58 @@ test('the update estimate says what will be read and warns about the daily limit
     expect(later[1]).toMatch(/^Expected use: about .*earlier updates in this chat\.$/);
     expect(later).toContain('This would go past your daily token limit. Updates you start yourself still run.');
     expect(later.some(line => line.startsWith('Facts and events is switched off'))).toBe(true);
+});
+
+test('a refresh of the chat already on screen does not flash the loading state', async () => {
+    initMewmory();
+    gate.resolve();
+    await refreshMewmory();
+    expect(mewmory.view.revision).toBe(1);
+
+    const loadingStates = [];
+    const record = () => loadingStates.push(mewmory.loading);
+    global.window.addEventListener('mewmory:updated', record);
+    try {
+        await refreshMewmory();
+    } finally {
+        global.window.removeEventListener('mewmory:updated', record);
+    }
+    expect(loadingStates).not.toContain(true);
+    expect(mewmory.loading).toBe(false);
+    expect(mewmory.view.revision).toBe(2);
+});
+
+test('the config and the chat inspection are requested together', async () => {
+    initMewmory();
+    const configGate = Promise.withResolvers();
+    const requested = [];
+    global.fetch = jest.fn(async (url, { body } = {}) => {
+        const route = url.endsWith('config/get') ? 'config/get' : url.split('/').at(-1);
+        requested.push(route);
+        if (route === 'config/get') {
+            await configGate.promise;
+            return response({ config, stories: [] });
+        }
+        return response({ locator: JSON.parse(body).locator, enabled: true, revision: 5, health: { pending: 0 }, operations: [] });
+    });
+    const refresh = refreshMewmory();
+    await settle();
+    expect(requested).toEqual(['config/get', 'inspect']);
+    configGate.resolve();
+    await refresh;
+});
+
+test('a waiting poll stops while the page is hidden and resumes when shown', async () => {
+    initMewmory();
+    const schedule = on.mock.calls.filter(([event]) => event === 'MESSAGE_EDITED').at(-1)[1];
+    schedule();
+    document.visibilityState = 'hidden';
+    const callsBefore = fetch.mock.calls.length;
+    await global.window.setTimeout.mock.lastCall[0]();
+    expect(fetch.mock.calls).toHaveLength(callsBefore);
+    document.visibilityState = 'visible';
+    global.window.dispatchEvent(new Event('visibilitychange'));
+    expect(global.window.setTimeout).toHaveBeenCalled();
 });
 
 test('a file with every chat restores only the memories that belong to this chat', async () => {

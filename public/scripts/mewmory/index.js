@@ -30,6 +30,7 @@ const NEW_CHAT_MARK = 'mewmory_new_chat';
 let initialized = false;
 let timer;
 let updateSequence = 0;
+let hiddenWakeBound = false;
 let viewKey = '';
 let selectionVersion = 0;
 let refreshVersion = 0;
@@ -52,6 +53,15 @@ export function getMewmoryLocator() {
 
 const key = locator => JSON.stringify(locator);
 export const getMewmoryScope = () => key([getMewmoryLocator(), getChatGeneration(), selectionVersion]);
+
+/** What the rail and the panel header draw, so a refresh that changes none of it stays silent. */
+function mewmoryDisplaySignature() {
+    return JSON.stringify([
+        mewmory.error, mewmory.loading, mewmory.busy, mewmory.preparing, mewmory.backfilling,
+        mewmory.view?.revision ?? null, mewmory.view?.enabled ?? null,
+        mewmory.config?.revision ?? null, mewmory.stories?.length ?? null, mewmory.spend ?? null,
+    ]);
+}
 
 export function notifyMewmory() {
     window.dispatchEvent(new CustomEvent('mewmory:updated'));
@@ -141,21 +151,28 @@ async function refreshCurrentChat(filters, { signal }) {
     const currentKey = getMewmoryScope();
     const version = ++refreshVersion;
     const current = () => currentKey === getMewmoryScope() && version === refreshVersion;
+    // A background refresh of the chat already on screen updates the badge and the
+    // header. It should not flash the panel back to its loading state to do it.
+    const quiet = viewKey === currentKey && Boolean(mewmory.view);
     if (viewKey !== currentKey) {
         mewmory.view = null;
         mewmory.error = '';
         viewKey = currentKey;
     }
-    mewmory.loading = Boolean(locator);
-    notifyMewmory();
+    const before = mewmoryDisplaySignature();
+    if (!quiet) {
+        mewmory.loading = Boolean(locator);
+        notifyMewmory();
+    }
     try {
-        const config = await requestMewmory('config/get', {}, { signal, scope: currentKey });
+        const [config, view] = await Promise.all([
+            requestMewmory('config/get', {}, { signal, scope: currentKey }),
+            locator ? requestMewmory('inspect', { locator, ...filters }, { signal, scope: currentKey }) : null,
+        ]);
         if (!current()) return null;
         if (!mewmory.config || config.config.revision >= mewmory.config.revision) mewmory.config = config.config;
         mewmory.stories = config.stories;
         mewmory.spend = config.spend ?? null;
-        const view = locator ? await requestMewmory('inspect', { locator, ...filters }, { signal, scope: currentKey }) : null;
-        if (!current()) return null;
         if (!view || !mewmory.view || view.revision >= mewmory.view.revision) mewmory.view = view;
         mewmory.error = '';
         return view;
@@ -171,7 +188,7 @@ async function refreshCurrentChat(filters, { signal }) {
             if (processing?.status === 'failed') mewmory.error = processing.error;
             const operation = mewmory.view?.operations?.[0];
             if (['failed', 'interrupted'].includes(operation?.state)) mewmory.error = operation.error?.message || 'Memory processing needs attention.';
-            notifyMewmory();
+            if (!quiet || mewmoryDisplaySignature() !== before) notifyMewmory();
             if (mewmory.busy) scheduleUpdate();
         }
     }
@@ -670,6 +687,19 @@ function scheduleUpdate(delay = 1500, waitingDelay = 15000) {
     window.clearTimeout(timer);
     timer = window.setTimeout(async () => {
         if (scope !== getMewmoryScope()) return;
+        // Nothing on this page is visible, so wait for the reader to come back
+        // instead of asking the server for a panel nobody is looking at.
+        if (document.visibilityState === 'hidden') {
+            if (!hiddenWakeBound) {
+                hiddenWakeBound = true;
+                window.addEventListener('visibilitychange', () => {
+                    if (document.visibilityState !== 'visible') return;
+                    hiddenWakeBound = false;
+                    scheduleUpdate();
+                });
+            }
+            return;
+        }
         if (getMewmoryLocator()) await refreshMewmory();
         if (sequence !== updateSequence || scope !== getMewmoryScope()) return;
         const health = mewmory.view?.health;
