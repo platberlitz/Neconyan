@@ -2339,7 +2339,9 @@ function applyNeconyanPalettePreset(presetId) {
 }
 
 function applyCustomCSS() {
-    $('#customCSS').val(power_user.custom_css);
+    if ($('#customCSS').val() !== power_user.custom_css) {
+        $('#customCSS').val(power_user.custom_css);
+    }
     var styleId = 'custom-style';
     var style = document.getElementById(styleId);
     if (!style) {
@@ -2350,6 +2352,26 @@ function applyCustomCSS() {
     }
     style.innerHTML = power_user.custom_css;
     applyCustomThemeStyleEntries();
+}
+
+// The editor saves on every key; re-parsing the whole sheet per key makes typing lag on a long style.
+let customCssRenderTimer = 0;
+
+function scheduleCustomCssRender() {
+    clearTimeout(customCssRenderTimer);
+    customCssRenderTimer = setTimeout(() => {
+        customCssRenderTimer = 0;
+        applyCustomCSS();
+    }, 150);
+}
+
+function flushCustomCssRender() {
+    if (!customCssRenderTimer) {
+        return;
+    }
+    clearTimeout(customCssRenderTimer);
+    customCssRenderTimer = 0;
+    applyCustomCSS();
 }
 
 let customCssAiModulePromise = null;
@@ -2637,6 +2659,26 @@ function normalizeThemeEffectValue(property) {
 
     const stringValue = String(value ?? '').trim();
     return stringValue || property.defaultValue;
+}
+
+// Slider input can arrive faster than frames. One application per frame keeps the live
+// preview while the page is restyled once, not once per pointer event.
+const pendingStyleApplications = new Set();
+let styleApplicationFrame = 0;
+
+function coalesceStyleApplication(application) {
+    pendingStyleApplications.add(application);
+    if (styleApplicationFrame) {
+        return;
+    }
+    styleApplicationFrame = requestAnimationFrame(() => {
+        styleApplicationFrame = 0;
+        const applications = [...pendingStyleApplications];
+        pendingStyleApplications.clear();
+        for (const apply of applications) {
+            apply();
+        }
+    });
 }
 
 function applyThemeEffects() {
@@ -5009,8 +5051,9 @@ jQuery(async () => {
         power_user.custom_css = String($('#customCSS').val());
         markNeconyanPaletteCustom();
         saveSettingsDebounced();
-        applyCustomCSS();
+        scheduleCustomCssRender();
     });
+    $('#customCSS').on('change blur', flushCustomCssRender);
 
     // Neconyan: Custom CSS AI wand uses the active Connection Manager profile without swapping global state.
     $('#custom_css_ai_wand').on('click', () => { void handleCustomCssAiWandClick(); });
@@ -5298,7 +5341,7 @@ jQuery(async () => {
     $('input[name="blur_strength"]').on('input', async function (e) {
         power_user.blur_strength = Number($(this).val());
         $('#blur_strength_counter').val(power_user.blur_strength);
-        applyBlurStrength();
+        coalesceStyleApplication(applyBlurStrength);
         markNeconyanPaletteCustom();
         saveSettingsDebounced();
     });
@@ -5306,7 +5349,7 @@ jQuery(async () => {
     $('input[name="shadow_width"]').on('input', async function (e) {
         power_user.shadow_width = Number($(this).val());
         $('#shadow_width_counter').val(power_user.shadow_width);
-        applyShadowWidth();
+        coalesceStyleApplication(applyShadowWidth);
         markNeconyanPaletteCustom();
         saveSettingsDebounced();
     });
@@ -5314,7 +5357,7 @@ jQuery(async () => {
     for (const property of THEME_EFFECT_PROPERTIES.filter(property => property.selector)) {
         $(property.selector).on('input', function () {
             power_user[property.key] = Number($(this).val());
-            applyThemeEffects();
+            coalesceStyleApplication(applyThemeEffects);
             markNeconyanPaletteCustom();
             saveSettingsDebounced();
         });
