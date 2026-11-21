@@ -223,6 +223,14 @@ function writeCatalogue() {
     const temp = filename + '.tmp';
     fs.writeFileSync(temp, JSON.stringify(source, null, 2) + '\n');
     fs.renameSync(temp, filename);
+
+    // A non-English page only needs the English strings that differ from
+    // their key. Keeping the alias file small avoids loading the full catalogue.
+    const aliases = Object.fromEntries(Object.entries(source).filter(([key, value]) => key !== value));
+    const aliasFile = path.join(output, 'en-aliases.json');
+    const aliasTemp = aliasFile + '.tmp';
+    fs.writeFileSync(aliasTemp, JSON.stringify(aliases, null, 2) + '\n');
+    fs.renameSync(aliasTemp, aliasFile);
 }
 if (process.argv.includes('--write-catalogue')) {
     writeCatalogue();
