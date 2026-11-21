@@ -9,7 +9,7 @@ import { localizeString } from '../public/scripts/ui-localization.js';
 const localePath = name => fileURLToPath(new URL(`../public/locales/${name}`, import.meta.url));
 const readLocale = file => JSON.parse(fs.readFileSync(localePath(file), 'utf8'));
 const SHIPPED_LANGUAGES = fs.readdirSync(localePath('neconyan'))
-    .filter(file => file.endsWith('.json') && file !== 'en.json')
+    .filter(file => file.endsWith('.json') && !['en.json', 'en-aliases.json'].includes(file))
     .map(file => file.slice(0, -'.json'.length))
     .sort();
 

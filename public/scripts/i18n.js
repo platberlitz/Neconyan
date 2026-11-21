@@ -210,7 +210,9 @@ async function getLocaleData(language) {
         const response = await fetch(`./locales/neconyan/${name}.json`);
         return response.ok ? response.json() : {};
     };
-    const [catalogue, supplement] = await Promise.all([readSupplement('en'), readSupplement(language)]);
+    // Only English strings that differ from their key affect a translation.
+    // The full catalogue is mostly key-equals-value and costs megabytes.
+    const [catalogue, supplement] = await Promise.all([readSupplement('en-aliases'), readSupplement(language)]);
     return assembleLocaleData({ base: data, supplement, catalogue });
 }
 

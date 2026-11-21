@@ -12,7 +12,7 @@ import { assembleLocaleData } from '../public/scripts/locale-assembly.js';
 const PORTUGUESE = [{ lang: 'pt-pt', display: 'Português' }];
 const FILES = {
     'pt-pt.json': { Open: 'Abrir', Close: 'Fechar' },
-    'neconyan/en.json': { 'old.symbolic': 'Plain English', 'scoped.x.short': 'Completed', 'scoped.x.template': 'Message ${0}, image ${1}' },
+    'neconyan/en-aliases.json': { 'old.symbolic': 'Plain English', 'scoped.x.short': 'Completed', 'scoped.x.template': 'Message ${0}, image ${1}' },
     'neconyan/pt-pt.json': {
         'old.symbolic': 'Inglês simples',
         'scoped.x.short': 'Concluído',
@@ -207,7 +207,7 @@ describe('scoped key lookups', () => {
 
         test.each([
             ['the dictionary', 'pt-pt.json'],
-            ['the catalogue', 'neconyan/en.json'],
+            ['the catalogue', 'neconyan/en-aliases.json'],
             ['the supplement', 'neconyan/pt-pt.json'],
         ])('a failed fetch of %s clears both tables and shows English everywhere, scoped lookups included', async (_name, failing) => {
             const { i18n, mocks, page } = await loadI18n({ failing: [failing] });
