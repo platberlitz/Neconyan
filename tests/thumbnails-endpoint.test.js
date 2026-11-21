@@ -137,7 +137,15 @@ describe('thumbnail file name resolution', () => {
     }
 
     async function requestThumbnail(query) {
-        return await fetch(`${baseUrl}/thumbnail?${query}`);
+        const url = `${baseUrl}/thumbnail?${query}`;
+        for (let attempt = 0; ; attempt++) {
+            try {
+                return await fetch(url);
+            } catch (error) {
+                // Undici may reuse a keep-alive socket the test server has just closed.
+                if (attempt > 0 || error?.cause?.code !== 'ECONNRESET') throw error;
+            }
+        }
     }
 
     test('serves the real thumbnail when the file name arrives percent-encoded twice', async () => {
