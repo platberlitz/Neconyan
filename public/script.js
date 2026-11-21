@@ -119,6 +119,7 @@ import {
     getGroupPurrksMessages,
     beginGroupPreviewScope,
     stampGroupReply,
+    getGroupHeardCount,
 } from './scripts/group-chats.js';
 import { filterGroupPromptMessages, isGroupPromptMessageVisible } from './scripts/group-chat-visibility.js';
 import { rememberGroupSpeaker, restoreGroupSpeaker } from './scripts/group-chat-speakers.js';
@@ -7133,7 +7134,7 @@ export function updateMessageMetaBadges(messageElement, message) {
     if (whisperTargets.length) {
         let badge = $messageElement.find('.group-whisper-badge');
         if (!badge.length) {
-            badge = $('<span class="group-whisper-badge"></span>');
+            badge = $('<button type="button" class="group-whisper-badge"></button>').attr('title', t`Who heard this`);
             $messageElement.find('.ch_name .name_text').first().after(badge);
         }
         const names = whisperTargets.map(avatar => characters.find(character => character.avatar === avatar)?.name || avatar).join(', ');
@@ -7141,6 +7142,18 @@ export function updateMessageMetaBadges(messageElement, message) {
     } else {
         $messageElement.find('.group-whisper-badge').remove();
     }
+    const heardCount = selected_group ? getGroupHeardCount(message) : null;
+    if (heardCount) {
+        let badge = $messageElement.find('.group-heard-badge');
+        if (!badge.length) {
+            badge = $('<button type="button" class="group-heard-badge"></button>').attr('title', t`Who heard this`);
+            $messageElement.find('.ch_name .name_text').first().after(badge);
+        }
+        badge.text(t`Heard by ${heardCount.heard} of ${heardCount.total}`);
+    } else {
+        $messageElement.find('.group-heard-badge').remove();
+    }
+    $messageElement.find('.mes_heard').toggle(Boolean(selected_group) && !message?.is_system);
 }
 
 function hasPromptTransformHistoryForActiveSwipe(message) {

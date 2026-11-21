@@ -132,10 +132,11 @@ import {
 } from './group-chat-scene.js';
 import { buildEnsemblePrompt, createEnsembleMessages } from './group-chat-ensemble.js';
 import { messageAutomaticGenerationSuppressed } from './generation-outcome.js';
-import { addGroupHearer, beginGroupPromptScope, canGroupMemberSee, filterGroupPromptMessages, groupMessageAudience, groupScenePrompt, readGroupScene } from './group-chat-visibility.js';
+import { addGroupHearer, beginGroupPromptScope, canGroupMemberSee, changeGroupHearers, filterGroupPromptMessages, groupHeardCount, groupMessageAudience, groupScenePrompt, readGroupScene } from './group-chat-visibility.js';
 import { initGroupSceneControls, renderGroupScene } from './group-chat-scene-ui.js';
 import { getGroupSpeakerPool } from './group-chat-speakers.js';
 import { initGroupSpeakerMenu } from './group-chat-speaker-menu.js';
+import { initGroupHeardEditor, refreshGroupHeardBadges } from './group-chat-heard-editor.js';
 import { buildNarratorReminder, getGroupMemberRole } from './group-chat-roles.js';
 import { renameGroupMemberFields, renameGroupSceneRecords } from './group-member-rename.js';
 
@@ -448,8 +449,55 @@ export async function catchUpGroupMember(avatar) {
     for (const message of chat) {
         if (addGroupHearer(message, avatar, { everySwipe: true })) count++;
     }
-    if (count) await saveGroupChat(group.id, false);
+    if (count) {
+        await saveGroupChat(group.id, false);
+        refreshGroupHeardBadges();
+    }
     return count;
+}
+
+/**
+ * Makes a member forget everything said so far in the open group chat.
+ * @param {string} avatar Member avatar
+ * @returns {Promise<number>} How many messages they no longer remember
+ */
+export async function forgetGroupMember(avatar) {
+    const group = groups.find(item => item.id === selected_group);
+    if (!group?.members.includes(avatar)) return 0;
+    let count = 0;
+    for (const message of chat) {
+        if (message?.is_system) continue;
+        if (changeGroupHearers(message, { remove: [avatar] }, group.members)) count++;
+    }
+    if (count) {
+        await saveGroupChat(group.id, false);
+        refreshGroupHeardBadges();
+    }
+    return count;
+}
+
+/**
+ * How many members of the open group heard a message, when some did not.
+ * @param {object} message Chat message
+ * @returns {{ heard: number, total: number }|null}
+ */
+export function getGroupHeardCount(message) {
+    const group = groups.find(item => item.id === selected_group);
+    if (!group || message?.is_system) return null;
+    return groupHeardCount(message, group.members, getGroupSceneRules(group));
+}
+
+/**
+ * Saves edits to who heard messages in the open group chat.
+ * @returns {Promise<boolean>} Whether the chat was saved
+ */
+export async function saveGroupHearers() {
+    return selected_group ? saveGroupChat(selected_group, false) : false;
+}
+
+/** Rules for who sees what in the open group chat. */
+export function getOpenGroupSceneRules() {
+    return getGroupSceneRules(groups.find(item => item.id === selected_group));
 }
 
 /**
@@ -969,6 +1017,7 @@ export async function letGroupMembersTalk() {
 function initGroupSpeakerControls() {
     initGroupSceneControls();
     initGroupSpeakerMenu({ saveGroup: id => editGroup(id, false, false), editMember: openCharacterDefinition });
+    initGroupHeardEditor();
     if (groupSpeakerControlsInitialized) {
         return;
     }
@@ -3108,6 +3157,7 @@ async function modifyGroupMember(groupId, groupMember, isDelete) {
         await editGroup(openGroupId, false, false);
         updateGroupAvatar(thisGroup);
         if (!isDelete) noteLateGroupMember(openGroupId, id);
+        if (openGroupId === selected_group) refreshGroupHeardBadges();
     } else {
         markGroupSaveDirty();
     }
