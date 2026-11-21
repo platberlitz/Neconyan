@@ -147,7 +147,7 @@ test('versioned libraries, stylesheets, images and fonts stay stale-while-revali
 });
 
 test('an unchanged versioned asset keeps its cache entry', async () => {
-    const pathname = '/css/neconyan.css?v=20261117-startup';
+    const pathname = '/img/neconyan-pixel-cat-running.webp?v=20261117-startup';
     const url = `${ORIGIN}${pathname}`;
     const cached = makeResponse('cached');
     cached.headers = { get: name => name === 'ETag' ? '"same"' : '' };
@@ -167,7 +167,7 @@ test('an unchanged versioned asset keeps its cache entry', async () => {
 });
 
 test('a changed versioned asset replaces its cache entry', async () => {
-    const pathname = '/css/neconyan.css?v=20261117-startup';
+    const pathname = '/img/neconyan-pixel-cat-running.webp?v=20261117-startup';
     const url = `${ORIGIN}${pathname}`;
     const cached = makeResponse('cached');
     cached.headers = { get: name => name === 'ETag' ? '"old"' : '' };
@@ -179,6 +179,25 @@ test('a changed versioned asset replaces its cache entry', async () => {
     assert.equal(await response, cached);
     await new Promise(resolve => setTimeout(resolve, 20));
     assert.equal(worker.cache.get(url), fresh);
+});
+
+test('cached versioned stylesheets and libraries load without revalidation', async () => {
+    const paths = [
+        '/css/neconyan.css?v=20261122-edit-classes',
+        '/lib/jquery-3.7.1.min.js?v=20261117-startup',
+    ];
+    const cache = new Map(paths.map(pathname => [`${ORIGIN}${pathname}`, makeResponse('cached')]));
+    const worker = loadWorker({ cache });
+    const responses = [];
+    for (const pathname of paths) {
+        worker.listeners.fetch({
+            request: requestFor(pathname),
+            respondWith: promise => responses.push(promise),
+        });
+    }
+    const resolved = await Promise.all(responses);
+    assert.deepEqual(resolved, paths.map(pathname => cache.get(`${ORIGIN}${pathname}`)));
+    assert.deepEqual(worker.fetched, [], 'a labelled stylesheet or library must not revalidate on every load');
 });
 
 test('unversioned files bypass the service worker even when a previous APK cached them', () => {
@@ -204,8 +223,8 @@ test('unversioned files bypass the service worker even when a previous APK cache
 });
 
 test('a stale response for a versioned URL is served while that version is revalidated', async () => {
-    const cached = makeResponse('cached library');
-    const pathname = '/lib/jquery-3.7.1.min.js?v=20261117-startup';
+    const cached = makeResponse('cached image');
+    const pathname = '/img/neconyan-pixel-cat-running.webp?v=20261117-startup';
     const url = `${ORIGIN}${pathname}`;
     const worker = loadWorker({ cache: new Map([[url, cached]]) });
     let response;
