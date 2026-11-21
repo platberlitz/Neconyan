@@ -23,6 +23,7 @@ import { normalizeBatchCount } from '../../public/scripts/extensions/quick-image
 import { decodeServerImage } from '../media-codecs.js';
 import { createMacroEnvironment } from '../macros/index.js';
 import { sameSourceContext } from '../../public/scripts/scratchpad/source.js';
+import { resolveScenarioNoteId } from '../../public/scripts/scratchpad/scenario-note-references.js';
 import { ScratchpadError, assistantConnection, findSession, findMessage, normaliseSource, requireId, newScratchpadId,
     scratchpadAccountBase, withScratchpad, readBucketLocked, writeBucketLocked, publicBucket, projectPending } from './store.js';
 import { imageChangeHash, imagePart, SCRATCHPAD_IMAGE_URL } from './image-state.js';
@@ -91,7 +92,7 @@ function selection(lease, source, body) {
 function requireTarget(lease, source, session, message, change) {
     if (change.target === 'persona-note-avatar') {
         const persona = resolvePersonaTargetLocked(lease, source, session, message, change.persona);
-        return readScenarioNoteTargetLocked(lease, persona.avatar, change.noteId);
+        return readScenarioNoteTargetLocked(lease, persona.avatar, resolveScenarioNoteId(change, message.sharedPersona));
     }
     if (change.target === 'persona-avatar') return resolvePersonaTargetLocked(lease, source, session, message, change.persona);
     if (!change.character) return null;

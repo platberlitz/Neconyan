@@ -6,6 +6,7 @@ import { PNG } from 'pngjs';
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { checkImageControlContrast } from './scratchpad-image-contrast-helpers.js';
+import { shareScenarioNotes } from '../public/scripts/scratchpad/scenario-note-references.js';
 
 const baseline = process.env.NECONYAN_SCRATCHPAD_PERSONAS_BASELINE_ROOT;
 if (baseline) test.use({ initialServerOptions: { checkoutRoot: baseline } });
@@ -142,11 +143,12 @@ for (const phone of [false, true]) {
             await expect(page.locator('.scratchpad-message.is-pending')).toHaveCount(0);
         };
         const savedPersona = async () => JSON.parse((await account.post('/api/settings/get')).settings).power_user.persona_descriptions[avatarId];
+        const noteTarget = baseline ? { noteId: 'harbour' } : { noteRef: shareScenarioNotes(avatarId, notes).notes[0].ref };
         await send([
             fence({ type: 'persona', persona: 'Kris', field: 'description', value: 'A curious traveller who records every journey.' }),
-            fence({ type: 'persona-note', persona: 'Kris', noteId: 'harbour', field: 'description', value: 'The last ferry leaves at sunset.' }),
+            fence({ type: 'persona-note', persona: 'Kris', ...noteTarget, field: 'description', value: 'The last ferry leaves at sunset.' }),
             fence({ type: 'image', action: 'generate', target: 'persona-avatar', persona: 'Kris', prompt: 'A friendly traveller with a notebook.' }),
-            fence({ type: 'image', action: 'generate', target: 'persona-note-avatar', persona: 'Kris', noteId: 'harbour', prompt: 'A traveller in a blue raincoat at the harbour.' }),
+            fence({ type: 'image', action: 'generate', target: 'persona-note-avatar', persona: 'Kris', ...noteTarget, prompt: 'A traveller in a blue raincoat at the harbour.' }),
         ].join('\n'));
         if (phone) await page.locator('.scratchpad-overview-toggle').click();
         await page.evaluate(() => window.toastr.remove());
@@ -241,7 +243,7 @@ for (const phone of [false, true]) {
         expect((await savedPersona()).appendices[0].description).toBe('The last ferry leaves at sunset.');
         expect((await savedPersona()).appendices[0].avatar).toBe(portrait);
         await page.evaluate(async () => (await import('/scripts/scratchpad/index.js')).openScratchpad({ tab: 'chat' }));
-        await send(fence({ type: 'persona-note', persona: 'Kris', noteId: 'harbour', field: 'avatar', value: '' }));
+        await send(fence({ type: 'persona-note', persona: 'Kris', ...noteTarget, field: 'avatar', value: '' }));
         await page.getByRole('button', { name: 'Review', exact: true }).last().click();
         await expect(popup).toContainText('Persona avatar (fallback)');
         await popup.getByRole('button', { name: 'Save change', exact: true }).click();

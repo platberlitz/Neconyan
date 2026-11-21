@@ -65,14 +65,14 @@ test('a persona picked on Home is shared, while the chat-locked persona stays hi
     expect(before.personaId).toBe(fallback);
     expect(before.text).toContain('DEFAULT-BASE');
     expect(before.text).not.toContain('LOCKED-BASE');
-    expect(before.persona).toEqual({ avatar: fallback, name: 'Account Default' });
+    expect(before.persona).toEqual({ avatar: fallback, name: 'Account Default', noteRefs: {} });
 
     await page.evaluate(avatar => document.querySelector(`#user_avatar_block .avatar-container[data-avatar-id="${avatar}"]`).click(), picked);
     await expect.poll(async () => (await shared(page)).personaId).toBe(picked);
     const after = await shared(page);
     expect(after.text).toContain('PICKED-BASE');
     expect(after.text).not.toContain('LOCKED-BASE');
-    expect(after.persona).toEqual({ avatar: picked, name: 'Picked Ash' });
+    expect(after.persona).toEqual({ avatar: picked, name: 'Picked Ash', noteRefs: {} });
     await expect(page.locator('body')).toHaveClass(/neconyan-home-visible/);
 
     await page.evaluate(async () => (await import('/scripts/welcome-screen.js')).hideWelcomeHome());

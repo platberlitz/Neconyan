@@ -91,8 +91,15 @@ const LORE_RULES = [
     'Write entries as in-world facts, not as instructions to the writer.',
 ];
 
+// An older client still supplies raw IDs. A current client supplies ref values, never the storage IDs.
+function scenarioNoteFormat(persona) {
+    return persona?.noteRefs ? { field: 'noteRef', value: '<exact shared ref>', source: 'ref' }
+        : { field: 'noteId', value: '<exact shared note id>', source: 'id' };
+}
+
 function imageInstructions({ image, avatar, persona }, imageEditing) {
     if (!image) return '';
+    const note = scenarioNoteFormat(persona);
     return [
         'Images through the user\'s saved Quick Image Gen settings:',
         '```scratchpad-change',
@@ -101,9 +108,9 @@ function imageInstructions({ image, avatar, persona }, imageEditing) {
         imageEditing ? 'To edit an attached or previously saved image, use action "edit" and copy its exact Image source selector into "source", for example {"type":"image","action":"edit","target":"image","source":{"messageId":"<exact labelled message id>","kind":"attachment","index":0},"prompt":"<requested changes; preserve everything else>","reason":"<why>"}. Source kind "generated" selects a saved result by its zero-based proposal index. Use only labelled sources from this session. Ask for an attachment if none is available. The owner presses Edit image. The provider checks model-specific image-input limits before dispatch.' : 'The saved image provider does not support Scratchpad editing. Do not suggest an edit or claim a text-only generation will preserve an existing picture.',
         avatar ? 'For an avatar use target "avatar" and character "<exact shared character name>". For character-specific image settings, a plain image may also name an exact shared character. Never name an unshared or ambiguous character.' : 'No character avatar target is shared; never name a character target.',
         persona ? `For the shared user's persona portrait use {"type":"image","action":"generate","target":"persona-avatar","persona":${JSON.stringify(persona.name)},"prompt":"<explicit portrait prompt>","reason":"<why>"}. Use global image settings. Never include a character target. Generation leaves the persona unchanged until Review avatar and Save change.` : '',
-        persona ? `For a saved Scenario Note portrait use {"type":"image","action":"generate","target":"persona-note-avatar","persona":${JSON.stringify(persona.name)},"noteId":"<exact shared note id>","prompt":"<explicit portrait prompt>","reason":"<why>"}. Use global image settings. Review avatar and Save change update only that note's portrait; its label, text and activation stay intact.` : '',
-        imageEditing && (avatar || persona) ? 'For a portrait correction, use action "edit", copy the exact labelled Image source, and keep the intended shared avatar target and its identifiers. Character portraits use target "avatar" with character; persona portraits use "persona-avatar" with persona; Scenario Note portraits use "persona-note-avatar" with persona and noteId. This offers Edit image, then Review avatar and Save change to replace that portrait. Use target "image" for a standalone picture. Match the target to the requested replacement even when the source was generated as a standalone picture.' : '',
-        imageEditing && persona ? `Scenario Note edit example: {"type":"image","action":"edit","target":"persona-note-avatar","persona":${JSON.stringify(persona.name)},"noteId":"<exact shared note id>","source":{"messageId":"<exact labelled message id>","kind":"generated","index":0},"prompt":"Repair the ears; preserve the pose, colours and expression.","reason":"Correct the saved portrait."}. Keep the note's text and activation intact.` : '',
+        persona ? `For a saved Scenario Note portrait use {"type":"image","action":"generate","target":"persona-note-avatar","persona":${JSON.stringify(persona.name)},"${note.field}":"${note.value}","prompt":"<explicit portrait prompt>","reason":"<why>"}. Copy the chosen note's ${note.source} from Saved Persona Scenario Notes. Use global image settings. Review avatar and Save change update only that note's portrait; its label, text and activation stay intact.` : '',
+        imageEditing && (avatar || persona) ? `For a portrait correction, use action "edit", copy the exact labelled Image source, and keep the intended shared avatar target and its identifiers. Character portraits use target "avatar" with character; persona portraits use "persona-avatar" with persona; Scenario Note portraits use "persona-note-avatar" with persona and ${note.field}. This offers Edit image, then Review avatar and Save change to replace that portrait. Use target "image" for a standalone picture. Match the target to the requested replacement even when the source was generated as a standalone picture.` : '',
+        imageEditing && persona ? `Scenario Note edit example: {"type":"image","action":"edit","target":"persona-note-avatar","persona":${JSON.stringify(persona.name)},"${note.field}":"${note.value}","source":{"messageId":"<exact labelled message id>","kind":"generated","index":0},"prompt":"Repair the ears; preserve the pose, colours and expression.","reason":"Correct the saved portrait."}. Keep the note's text and activation intact.` : '',
         'One JSON object per block, one image per suggestion. Do not supply image URLs, paths, credentials or settings. The owner starts generation by pressing the suggestion\'s button; displaying a suggestion does not generate anything. Saved prompt-review preferences may require another approval before the provider runs.',
         'A generated image is saved separately from the card. Only Review avatar followed by Save change replaces a portrait, after preserving the previous picture. Never claim that emitting a block generated an image or changed an avatar.',
     ].join('\n');
@@ -111,6 +118,7 @@ function imageInstructions({ image, avatar, persona }, imageEditing) {
 
 function changeInstructions({ lore, character, chat, members, notebook, persona, preset, agents, authorsNote, regex, cssSnippets, dialogueColors, mewmory }) {
     const kinds = [];
+    const note = scenarioNoteFormat(persona);
     if (mewmory) kinds.push([
         'Mewmory corrections (only records listed under mewmory_context, and only kinds entity, state, event, relationship, knowledge or commitment):',
         '{"type":"mewmory","action":"replace","record":"<exact record id>","field":"text","value":"<complete corrected text>","reason":"<which message or fact shows it is wrong>"}',
@@ -152,8 +160,8 @@ function changeInstructions({ lore, character, chat, members, notebook, persona,
         `To create a saved Scenario Note for this persona, use {"type":"persona-note","action":"create","persona":${JSON.stringify(persona.name)},"name":"<note label>","description":"<note text>","reason":"<why>"}. Put it in its own scratchpad-change fence. The owner reviews and can edit it before saving. The new note is not activated automatically. Do not supply IDs, avatar paths or activation settings.`,
         `{"type":"persona","action":"replace","persona":${JSON.stringify(persona.name)},"field":"description","value":"<complete new base text>","reason":"<why>"}`,
         'Supported fields: name, description, title. Use the exact shared persona name as the target. Replace only the base field, preserving literal macros. Do not copy chat-specific additions into the base description. Connections and additions are kept. A persona rename keeps its avatar filename and chats.',
-        `For an existing saved Persona Scenario Note use {"type":"persona-note","action":"replace","persona":${JSON.stringify(persona.name)},"noteId":"<exact shared note id>","field":"description","value":"<complete new note text>","reason":"<why>"}. Supported note fields: name (label), description (text). Preserve the note ID and its activation in chats. Never treat the character Scenario or Author's Note as a Persona Scenario Note.`,
-        'To remove a Scenario Note portrait, use type "persona-note", its exact noteId, field "avatar" and value "". To replace it, use the persona-note-avatar image suggestion. Never put image bytes, URLs or paths in a text change. Removing a portrait restores the normal portrait selection for new messages; sent messages keep theirs.',
+        `For an existing saved Persona Scenario Note use {"type":"persona-note","action":"replace","persona":${JSON.stringify(persona.name)},"${note.field}":"${note.value}","field":"description","value":"<complete new note text>","reason":"<why>"}. Copy the chosen note's ${note.source} from Saved Persona Scenario Notes; the label is not a reference. Supported note fields: name (label), description (text). Keep activation unchanged. Never treat the character Scenario or Author's Note as a Persona Scenario Note.`,
+        `To remove a Scenario Note portrait, use type "persona-note", its exact ${note.field}, field "avatar" and value "". To replace it, use the persona-note-avatar image suggestion. Never put image bytes, URLs or paths in a text change. Removing a portrait restores the normal portrait selection for new messages; sent messages keep theirs.`,
     ].join('\n'));
     if (notebook) kinds.push([
         'Notebook changes use the shared Notebook operations. Choose only IDs and permissions from notebook_context:',

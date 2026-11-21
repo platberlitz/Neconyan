@@ -8,6 +8,7 @@ import { getCurrentUserHandle } from '../user.js';
 import { getUserAvatars, refreshPersonaAvatar } from '../personas.js';
 import { normalizeScenarioAvatar } from '../persona-appendix-avatar.js';
 import * as api from './api.js';
+import { resolveScenarioNoteId } from './scenario-note-references.js';
 
 const safeImage = url => /^\/?user\/images\/Scratchpad\/scratchpad-[a-z0-9-]+\.(?:png|jpe?g|webp|gif)$/.test(url || '');
 
@@ -119,9 +120,10 @@ export async function prepareAvatarChange({ source, personaSource = source, sess
     if (persona && review.kind !== 'persona') throw new Error(t`The persona avatar target could not be verified.`);
     if (image?.avatar !== review.avatar) throw new Error(t`The avatar target changed. Request a new suggestion.`);
     if (part.change.target === 'persona-note-avatar') {
-        if (review.kind !== 'persona-note' || review.noteId !== part.change.noteId || !normalizeScenarioAvatar(review.proposedAvatar)) throw new Error(t`The Scenario Note avatar could not be verified.`);
+        const noteId = resolveScenarioNoteId(part.change, message.sharedPersona);
+        if (noteId === null || review.kind !== 'persona-note' || review.noteId !== noteId || !normalizeScenarioAvatar(review.proposedAvatar)) throw new Error(t`The Scenario Note avatar could not be verified.`);
         const { preparePersonaChange } = await import('./persona-changes.js');
-        const plan = await preparePersonaChange({ type: 'persona-note', persona: part.change.persona, noteId: part.change.noteId, field: 'avatar', value: review.proposedAvatar }, personaSource, message.sharedPersona, check);
+        const plan = await preparePersonaChange({ ...part.change, type: 'persona-note', field: 'avatar', value: review.proposedAvatar }, personaSource, message.sharedPersona, check);
         if (plan.before !== review.avatarValue) throw new Error(t`Save the current Scenario Note before reviewing its avatar.`);
         return { ...plan, bucket: review.bucket, async commit() {
             check();

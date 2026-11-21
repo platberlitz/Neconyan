@@ -340,9 +340,12 @@ describe('General Scratchpad context', () => {
         power_user.persona_descriptions = { 'User.png': { description: '{{user}} keeps notes.', title: 'Traveller',
             appendices: [{ id: 'harbour', name: 'Harbour', description: 'Wait for {{char}}.' }] } };
         const shared = await buildContext({ source: currentSource(), settings });
-        expect(shared.capabilities.persona).toEqual({ avatar: 'User.png', name: 'Kris' });
+        const { avatar, name, noteRefs } = shared.capabilities.persona;
+        expect({ avatar, name }).toEqual({ avatar: 'User.png', name: 'Kris' });
+        expect(Object.values(noteRefs)).toEqual(['harbour']);
         expect(shared.text).toContain('"description":"{{user}} keeps notes."');
-        expect(shared.text).toContain('"id":"harbour"');
+        expect(shared.text).toContain(`"ref":"${Object.keys(noteRefs)[0]}"`);
+        expect(shared.text).not.toContain('"id":"harbour"');
         expect(shared.text).toContain('Wait for {{char}}.');
         const hidden = await buildContext({ source: currentSource(), settings: { ...settings, include: { ...settings.include, persona: false } } });
         expect(hidden.capabilities.persona).toBeFalsy();
@@ -411,8 +414,8 @@ describe('General Scratchpad context', () => {
             expect(shared.text).toContain('"name":"Kris"');
             expect(shared.text).toContain('Roleplay user keeps notes.');
             expect(shared.text).toContain('## Editable persona fields');
-            expect(shared.text).toContain('"id":"harbour"');
-            expect(shared.capabilities.persona).toEqual({ avatar: 'User.png', name: 'Kris' });
+            expect(shared.text).toContain('"ref":"sn-');
+            expect(shared.capabilities.persona).toEqual({ avatar: 'User.png', name: 'Kris', noteRefs: { [Object.keys(shared.capabilities.persona.noteRefs)[0]]: 'harbour' } });
             expect(shared.text).not.toContain('HIDDEN-APPENDIX');
         });
 
@@ -425,7 +428,7 @@ describe('General Scratchpad context', () => {
             const shared = await buildContext({ source, settings });
             expect(shared.text).toContain('ACCOUNT-DEFAULT-PERSONA');
             expect(shared.text).not.toContain('Kris keeps notes');
-            expect(shared.capabilities.persona).toEqual({ avatar: 'Default.png', name: 'Account default' });
+            expect(shared.capabilities.persona).toEqual({ avatar: 'Default.png', name: 'Account default', noteRefs: {} });
         });
 
         test('a chat change ends the choice, so the hidden persona is withheld again', async () => {

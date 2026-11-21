@@ -20,6 +20,7 @@ import { loadWorldInfo, selected_world_info, world_info } from '../world-info.js
 import { readCurrentPreset } from './preset.js';
 import { sameSourceContext } from './source.js';
 import { homePersonaChoice } from './home-persona.js';
+import { shareScenarioNotes } from './scenario-note-references.js';
 
 export { clearHomePersonaChoice, noteHomePersonaChoice } from './home-persona.js';
 
@@ -730,6 +731,7 @@ export async function buildContext({ source, settings, pendingText = '', session
         `User: ${names.user}`,
     ].join('\n'));
 
+    let sharedPersona;
     if (include.persona) {
         const description = sourcePersonaDescription(source);
         const raw = String(description ?? '').trim();
@@ -739,8 +741,9 @@ export async function buildContext({ source, settings, pendingText = '', session
         if (target) {
             const descriptor = power_user.persona_descriptions?.[target.avatar];
             sections.push(`## Editable persona fields (base values, exactly as saved)\n${JSON.stringify({ name: target.name, description: descriptor?.description || '', title: descriptor?.title || '' })}\nPersona edits replace only these base fields; chat-specific additions stay separate.`);
-            const notes = Array.isArray(descriptor?.appendices) ? descriptor.appendices.map(({ id, name, description, avatar }) => ({ id, name, description, hasAvatar: Boolean(avatar) })) : [];
-            if (notes.length) sections.push(`## Saved Persona Scenario Notes (exact values; activation is not shared)\n${JSON.stringify(notes)}\nEdit a note by its exact id. Changes affect every chat using that note; keep its activation unchanged.`);
+            const { notes, noteRefs } = shareScenarioNotes(target.avatar, descriptor?.appendices);
+            sharedPersona = { ...target, noteRefs };
+            if (notes.length) sections.push(`## Saved Persona Scenario Notes (exact values; activation is not shared)\n${JSON.stringify(notes)}\nCopy the chosen note's ref into noteRef. A note without a ref is read-only. Changes affect every chat using that note; keep its activation unchanged.`);
         }
     }
 
@@ -870,7 +873,7 @@ export async function buildContext({ source, settings, pendingText = '', session
         targets: include.card ? people.map(item => ({ avatar: item.avatar, name: item.name })) : [],
         capabilities: {
             ...(presetTargets.length ? { preset: presetTargets } : {}),
-            ...(include.persona && sourcePersona(source) ? { persona: sourcePersona(source) } : {}),
+            ...(sharedPersona ? { persona: sharedPersona } : {}),
             lore: loreBooks.length > 0,
             character: people.length > 0 && (!general || include.card === true),
             chat: source.kind === 'roleplay',
