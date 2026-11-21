@@ -56,6 +56,14 @@ function shouldStaleWhileRevalidate(url) {
     return url.searchParams.has('v') && NN_STALE_WHILE_REVALIDATE_PREFIXES.some(prefix => url.pathname.startsWith(prefix));
 }
 
+function shouldCacheFirstVersioned(url) {
+    // Stylesheets and libraries carry a fresh ?v= label whenever their contents
+    // change, so their cached copy needs no revalidation on every page load.
+    // Images and fonts keep the safer stale-while-revalidate path.
+    return url.searchParams.has('v')
+        && (url.pathname.startsWith('/lib/') || url.pathname.startsWith('/css/'));
+}
+
 function isFrontendAsset(url) {
     return url.pathname.startsWith(NN_FRONTEND_ASSET_PREFIX);
 }
@@ -191,7 +199,7 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    if (shouldCacheFirst(url)) {
+    if (shouldCacheFirst(url) || shouldCacheFirstVersioned(url)) {
         event.respondWith(cacheFirst(request));
         return;
     }
