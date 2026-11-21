@@ -169,7 +169,7 @@ export function prepareRoleplayAgentContributions(context, { base, snapshot, rec
     const feedback = prepareCompanionFeedback(active, historyAgents, records, snapshot, environment, history.policies, generationType);
     extensions.push(...feedback.extensions);
     return savePhase(context, snapshot.account, 'roleplay-agents-pre', { identity, intentHash: roleplayHash(context.job.intent),
-        policyHash: roleplayHash(snapshot.agents), generationType, activeIds, extensions, history, trackerTags: feedback.trackerTags, macroState: environment.captureState() });
+        policyHash: roleplayHash(snapshot.agents), generationType, activeIds, extensions, history, trackerTags: feedback.trackerTags, trackerLineKeys: feedback.trackerLineKeys, macroState: environment.captureState() });
 }
 
 function activeAgents(context, base, snapshot, agentCache) {
@@ -345,7 +345,7 @@ function prepend(agent, text) {
 
 /** Save the complete post-pass result; a failed parallel peer never discards acknowledged siblings. */
 export function roleplayAgentOutputBaseline(value, pre) {
-    return stripSavedAuxiliaryTrackerEchoes(value, pre?.trackerTags ?? [], []);
+    return stripSavedAuxiliaryTrackerEchoes(value, pre?.trackerTags ?? [], [], pre?.trackerLineKeys ?? []);
 }
 
 // Old paid steps include preceding append blocks in later inputs. Keep their
