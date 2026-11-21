@@ -80,8 +80,21 @@ describe('exact expression history', () => {
         expect(lookups).toBe(0);
 
         const poll = expressions.slice(expressions.indexOf('setInterval(() => {'), expressions.indexOf('}, UPDATE_INTERVAL);'));
-        expect(poll).toContain('if (document.visibilityState === \'hidden\') return;');
+        expect(poll).toContain('if (!hasPendingExpressionWork()) return;');
         expect(poll).toContain('requestExpressionUpdate()');
+    });
+
+    test('pending work skips the scan while hidden and once every reply is processed', () => {
+        const message = { mes: 'line', swipe_id: 0 };
+        const chat = [message];
+        const document = { visibilityState: 'hidden' };
+        const runtime = vm.createContext({ getContext: () => ({ chat, characterId: 0 }), getMessageExpressionAvatar: () => 'Cat.png', document });
+        vm.runInContext(`let processedExpressions = new WeakMap();\n${['getExpressionClassificationSnapshot', 'rememberExpressionMessage', 'seedExpressionHistory', 'needsExpression', 'hasPendingExpressionWork'].map(name => extract(expressions, name)).join('\n')}`, runtime);
+        expect(runtime.hasPendingExpressionWork()).toBe(false);
+        document.visibilityState = 'visible';
+        expect(runtime.hasPendingExpressionWork()).toBe(true);
+        runtime.seedExpressionHistory();
+        expect(runtime.hasPendingExpressionWork()).toBe(false);
     });
 
     for (const name of ['runSingleCompanionAgent', 'runBatchCompanionAgents']) {
