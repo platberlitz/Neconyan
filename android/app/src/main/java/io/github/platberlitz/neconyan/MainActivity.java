@@ -1036,6 +1036,7 @@ public final class MainActivity extends Activity {
         });
     }
     private void registerBackCallback() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return;
         getOnBackInvokedDispatcher().registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::handleBack);
     }
     private void showSafeNotice() {
