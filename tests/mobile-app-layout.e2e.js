@@ -51,8 +51,36 @@ test.describe('portrait iPhone composer', () => {
     }
 });
 
-for (const [width, height, typingHeight, ios] of [[320, 568, 352, false], [852, 393, 203, false], [852, 393, 203, true]]) {
-    test.describe(`${width}px ${ios ? 'iPhone' : 'Android'}`, () => {
+async function openKeyboard(page, { ios, width, typingHeight, offsetTop = 0 }) {
+    await page.locator('#send_textarea').focus();
+    if (ios) {
+        // WKWebView leaves the layout height unchanged as the keyboard opens and
+        // scrolls the page underneath it instead.
+        await page.evaluate(({ height, top }) => {
+            Object.defineProperty(window.visualViewport, 'height', { value: height, configurable: true });
+            Object.defineProperty(window.visualViewport, 'offsetTop', { value: top, configurable: true });
+            window.visualViewport.dispatchEvent(new Event('resize'));
+        }, { height: typingHeight, top: offsetTop });
+    } else {
+        await page.setViewportSize({ width, height: typingHeight });
+    }
+}
+
+async function closeKeyboard(page, { ios, width, height }) {
+    await page.locator('#send_textarea').blur();
+    if (ios) {
+        await page.evaluate(() => {
+            Reflect.deleteProperty(window.visualViewport, 'height');
+            Reflect.deleteProperty(window.visualViewport, 'offsetTop');
+            window.visualViewport.dispatchEvent(new Event('resize'));
+        });
+    } else {
+        await page.setViewportSize({ width, height });
+    }
+}
+
+for (const [width, height, typingHeight, ios, offsetTop] of [[852, 393, 203, false, 0], [852, 393, 203, true, 0], [852, 393, 203, true, 150]]) {
+    test.describe(`${width}px landscape ${ios ? `iPhone, page scrolled ${offsetTop}px` : 'Android'}`, () => {
         test.use({ viewport: { width, height }, ...(ios ? { userAgent: IPHONE_APP_USER_AGENT } : {}) });
         test('keeps chat and composer above the keyboard', async ({ page, context }) => {
             if (ios) await installIPhoneApp(context);
@@ -65,39 +93,51 @@ for (const [width, height, typingHeight, ios] of [[320, 568, 352, false], [852, 
             const guidedActions = page.locator('#gg-action-button-container');
             await expect(chatBar).toBeVisible();
             await expect(guidedActions).toBeVisible();
-            await composer.focus();
-            if (ios) {
-                // WKWebView can leave the layout height unchanged as the keyboard opens.
-                await page.evaluate(height => {
-                    Object.defineProperty(window.visualViewport, 'height', { value: height, configurable: true });
-                    window.visualViewport.dispatchEvent(new Event('resize'));
-                }, typingHeight);
-            } else {
-                await page.setViewportSize({ width, height: typingHeight });
-            }
+            await openKeyboard(page, { ios, width, typingHeight, offsetTop });
             await expect(root).toHaveClass(/sb-short-touch-composer/);
             await expect(chatBar).toBeHidden();
             await expect(guidedActions).toBeHidden();
             const chat = await page.locator('#chat').boundingBox();
             const input = await composer.boundingBox();
             const actions = await page.locator('#options_button').boundingBox();
+            const visibleBottom = offsetTop + typingHeight;
             expect(chat.height).toBeGreaterThanOrEqual(70);
-            expect(input.y + input.height).toBeLessThanOrEqual(typingHeight);
-            expect(actions.y + actions.height).toBeLessThanOrEqual(typingHeight);
+            // The composer ends inside the visible area, not above it.
+            expect(input.y + input.height).toBeLessThanOrEqual(visibleBottom);
+            expect(input.y + input.height).toBeGreaterThan(visibleBottom - 80);
+            expect(actions.y + actions.height).toBeLessThanOrEqual(visibleBottom);
             expect(actions.height).toBeGreaterThanOrEqual(44);
             expect(actions.width).toBeGreaterThanOrEqual(44);
-            await composer.blur();
-            if (ios) {
-                await page.evaluate(() => {
-                    Reflect.deleteProperty(window.visualViewport, 'height');
-                    window.visualViewport.dispatchEvent(new Event('resize'));
-                });
-            } else {
-                await page.setViewportSize({ width, height });
-            }
+            await closeKeyboard(page, { ios, width, height });
             await expect(root).not.toHaveClass(/sb-short-touch-composer/);
             await expect(chatBar).toBeVisible();
             await expect(guidedActions).toBeVisible();
+        });
+    });
+}
+
+for (const [width, height, typingHeight, ios, offsetTop] of [[320, 568, 352, false, 0], [393, 852, 400, true, 0], [393, 852, 400, true, 300]]) {
+    test.describe(`${width}px portrait ${ios ? `iPhone, page scrolled ${offsetTop}px` : 'Android'}`, () => {
+        test.use({ viewport: { width, height }, ...(ios ? { userAgent: IPHONE_APP_USER_AGENT } : {}) });
+        test('keeps the normal layout while typing', async ({ page, context }) => {
+            if (ios) await installIPhoneApp(context);
+            await openChat(page);
+            if (ios) await applyIOSOnlyCss(page, { inPlace: true });
+            const root = page.locator('html');
+            const chatBar = page.locator('#sb-bottom-chat-bar');
+            const guidedActions = page.locator('#gg-action-button-container');
+            const sheldHeight = () => page.locator('#sheld').evaluate(element => element.getBoundingClientRect().height);
+            const before = await sheldHeight();
+            await openKeyboard(page, { ios, width, typingHeight, offsetTop });
+            // Let the viewport sync run before checking that nothing changed.
+            await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+            await expect(root).not.toHaveClass(/sb-short-touch-composer/);
+            await expect(chatBar).toBeVisible();
+            await expect(guidedActions).toBeVisible();
+            if (ios) expect(Math.abs(await sheldHeight() - before)).toBeLessThanOrEqual(1);
+            await closeKeyboard(page, { ios, width, height });
+            await expect(root).not.toHaveClass(/sb-short-touch-composer/);
+            await expect(chatBar).toBeVisible();
         });
     });
 }

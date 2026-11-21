@@ -543,7 +543,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261121-composer-layout';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261121-portrait-keyboard';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -4274,6 +4274,14 @@ function syncIOSKeyboardBottomInset() {
     root.classList.toggle('sb-ios-composer-keyboard-controls-active', composerControlsActive);
 }
 
+function isLandscapeTouchScreen(layout) {
+    const type = window.screen?.orientation?.type;
+    if (typeof type === 'string' && type) return type.startsWith('landscape');
+    const angle = Number(window.orientation);
+    if (Number.isFinite(angle)) return Math.abs(angle) === 90;
+    return layout.width > layout.height;
+}
+
 function syncShortTouchComposer() {
     const root = document.documentElement;
     const viewport = window.visualViewport;
@@ -4283,9 +4291,13 @@ function syncShortTouchComposer() {
     const keyboardOpen = isVisualViewportKeyboardOpen(layout, visual);
     // Keep the layout still between tapping a composer control and the keyboard closing.
     const editing = editable || (keyboardOpen && root.classList.contains('sb-short-touch-composer'));
-    const compact = window.matchMedia('(pointer: coarse)').matches && (viewport?.scale ?? 1) <= 1.01 && visual.height <= 420 && editing;
+    // A portrait phone with the keyboard open is normal use and keeps the regular layout.
+    const compact = window.matchMedia('(pointer: coarse)').matches && isLandscapeTouchScreen(layout)
+        && (viewport?.scale ?? 1) <= 1.01 && visual.height <= 420 && editing;
     root.classList.toggle('sb-short-touch-composer', compact);
-    const height = compact ? `${Math.max(0, Math.floor(visual.bottom))}px` : '';
+    // iOS scrolls the page under the keyboard instead of shrinking it, so the
+    // visible bottom sits at the scroll offset plus the visible height.
+    const height = compact ? `${Math.max(0, Math.floor(visual.top + visual.height))}px` : '';
     if (root.style.getPropertyValue('--sb-short-composer-bottom') !== height) {
         root.style.setProperty('--sb-short-composer-bottom', height);
     }
