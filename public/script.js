@@ -90,6 +90,7 @@ import {
     selected_group,
     saveGroupChat,
     getGroups,
+    prefetchGroups,
     generateGroupWrapper,
     is_group_generating,
     resetSelectedGroup,
@@ -1573,6 +1574,8 @@ async function firstLoadInit() {
             headers: getRequestHeaders(),
             body: JSON.stringify({}),
         });
+        // Groups are independent too, and getGroups will use this response.
+        prefetchGroups();
         await initLocales(initialSettingsData);
         // The top bar was first built before the translations loaded, and its title is protected from the localiser, so rebuild its label now.
         globalThis.NeconyanShell?.refreshTopBarLabel?.();
