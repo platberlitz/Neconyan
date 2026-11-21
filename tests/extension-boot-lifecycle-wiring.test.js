@@ -68,6 +68,9 @@ describe('extension boot lifecycle wiring', () => {
         expect(source).toContain('activationState.shouldSkip');
         expect(source).toContain('activationState.shouldActivate');
         expect(source).toContain('activationState.shouldWaitForDependencyActivations');
+        expect(source).toContain('const activationPromises = new Map();');
+        expect(source).toContain('await Promise.allSettled(dependencies');
+        expect(source).toContain('activationPromises.set(name, pending)');
     });
 
     test('routes activation warnings through lifecycle action names', () => {
