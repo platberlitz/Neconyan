@@ -12,7 +12,7 @@ setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.ur
 
 const {
     acceptJob, clearFinishedJobs, dismissJob, explicitRetryRecovery, getJob, JOB_FAILURE_RETENTION_MS, jobKey, listJobs, readJobStore,
-    recordReceipt, recoverJobs, requestCancellation, setJobState, updateJob, markProviderUncertain, markProviderSettled, setJobResume,
+    recordReceipt, recoverJobs, requestCancellation, selectJobs, setJobState, updateJob, markProviderUncertain, markProviderSettled, setJobResume,
 } = await import('../src/jobs/store.js');
 const {
     CONCURRENCY, abortJob, canStart, capacity, noteOwner, ownerCount, registerHandler, runScheduledTick,
@@ -72,6 +72,19 @@ test('job acceptance deduplicates by submission key, conflicts on different inte
     for (const change of [{ type: 'other' }, { target: { kind: 'chat', id: 'elsewhere' } }, { config: { model: 'other' } }, { credentialRef: { profileId: 'other' } }, { automatic: true }, { mutating: false }]) {
         assert.throws(() => acceptJob(alice, { owner: 'alice', type: 'roleplay', submissionKey: 'send-1', intent: intent(), ...change }), error => error.status === 409);
     }
+});
+
+test('selecting jobs filters the shared ledger and clones only the matches', () => {
+    const directories = tempDirectories('select');
+    const alice = acceptJob(directories, { owner: 'alice', type: 'roleplay', submissionKey: 'alice-queued', intent: intent() }).job;
+    acceptJob(directories, { owner: 'bob', type: 'roleplay', submissionKey: 'bob-queued', intent: intent() });
+
+    const selected = selectJobs(directories, job => job.owner === 'alice' && job.state === 'queued');
+
+    assert.deepEqual(selected.map(job => job.id), [alice.id]);
+    selected[0].state = 'completed';
+    assert.equal(getJob(directories, alice.id).state, 'queued', 'callers must not receive the shared job object');
+    assert.deepEqual(selectJobs(directories, job => job.owner === 'nobody'), []);
 });
 
 test('acceptance guards run once under the real ledger lock, after key resolution, and may inspect prior artifacts', () => {

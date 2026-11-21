@@ -457,6 +457,19 @@ export function listJobs(directories, { owner, includeDismissed = false } = {}) 
         .sort((left, right) => (right.createdAt ?? 0) - (left.createdAt ?? 0));
 }
 
+/**
+ * Filter the shared read-only ledger and clone only the jobs that match. The
+ * runner polls every owner; parsing the whole ledger each time costs more than
+ * the few matching jobs it actually needs.
+ */
+export function selectJobs(directories, predicate) {
+    const store = readStore(directories);
+    return Object.values(store.jobs)
+        .filter(predicate)
+        .map(job => structuredClone(job))
+        .sort((left, right) => (right.createdAt ?? 0) - (left.createdAt ?? 0));
+}
+
 export function getJob(directories, id) {
     const job = readStore(directories).jobs[jobKey(id)];
     return job ? structuredClone(job) : null;
