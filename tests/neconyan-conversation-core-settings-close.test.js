@@ -145,6 +145,16 @@ describe('Conversation settings close identity', () => {
         });
     });
 
+    test('closing with save: false hides the drawer, clears its identity and saves nothing', () => {
+        closeConversationSettings(null, { save: false });
+
+        expect(drawer.hidden).toBe(true);
+        expect(saveCurrentPanelSettings).not.toHaveBeenCalled();
+        expect(drawer.dataset.conversationAvatar).toBeUndefined();
+        expect(drawer.dataset.conversationGroupId).toBeUndefined();
+        expect(drawer.dataset.conversationPersonaId).toBeUndefined();
+    });
+
     test('successful native memory refresh redraws the currently visible field', async () => {
         memoryText = memoryInput.value = 'Old memory';
         await refreshConversationMemoryFromPanel();

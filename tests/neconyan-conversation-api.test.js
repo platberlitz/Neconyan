@@ -1132,6 +1132,160 @@ describe('Neconyan Conversation REST API', () => {
         expect(fs.readdirSync(userDirectories.groups)).toEqual([]);
     });
 
+    // Deleting a DM edits the server's latest copy, so the settings version moves under the caller.
+    function rewriteConversationStore(mutate) {
+        const settings = readSettings();
+        mutate(settings.extension_settings[CONVERSATION_STORE_KEY], settings);
+        settings._version = (settings._version || 0) + 1;
+        fs.writeFileSync(path.join(userDirectories.root, SETTINGS_FILE), JSON.stringify(settings, null, 4));
+        return settings._version;
+    }
+
+    async function saveSoloThread(avatar, text = 'Hello') {
+        const saved = await postJson('/thread/save', { avatar, version: readSettings()._version, messages: [{ role: 'user', mes: text, name: 'User' }] });
+        expect(saved.status).toBe(200);
+    }
+
+    test('thread/delete removes a solo DM from the latest store without a client version', async () => {
+        const storeSyncUtils = await import('../public/scripts/neconyan-conversation/store-sync-utils.js');
+        const { collectSoloConversationMemorySummary } = await import('../public/scripts/neconyan-conversation/memory-utils.js');
+        const { normalizeConversationSettings } = await import('../src/endpoints/conversation-generation.js');
+        const { scopeConversationStorageKey } = await import('../src/endpoints/conversation-utils.js');
+        const schedule = { generatedAt: 5, days: Array.from({ length: 7 }, () => [{ time: '00:00-23:59', status: 'busy', activity: 'baking bread' }]) };
+        const reminder = (id, extra) => ({ id, avatar: 'nova.png', groupId: '', personaId: '', branchId: 'main', triggerAt: Date.now() + 3600000, text: id, fired: false, createdAt: 1, ...extra });
+
+        // A without a schedule: the key goes, whatever the version moved to meanwhile.
+        await saveSoloThread('nova.png');
+        await saveSoloThread('echo.png');
+        const moved = rewriteConversationStore(store => {
+            store.reminders = [
+                reminder('r-solo'), reminder('r-persona', { personaId: 'riley.png' }), reminder('r-group', { groupId: 'g-other' }),
+                reminder('r-other-avatar', { avatar: 'echo.png' }),
+            ];
+        });
+        const first = await postJson('/thread/delete', { avatar: 'nova.png' });
+        expect(first.status).toBe(200);
+        const firstBody = await first.json();
+        expect(firstBody.changed).toBe(true);
+        expect(firstBody.scope.removeKeys).toContain('nova.png');
+        expect(firstBody.scope.reminderIds).toEqual(['r-solo']);
+        expect(firstBody.store.characters['nova.png']).toBeUndefined();
+        expect(firstBody.store.characters['echo.png']).toBeDefined();
+        expect(firstBody.version).toBe(moved + 1);
+        expect(readConversationStore().characters['nova.png']).toBeUndefined();
+        expect(readConversationStore().reminders.map(item => item.id)).toEqual(['r-persona', 'r-group', 'r-other-avatar']);
+        const repeat = await postJson('/thread/delete', { avatar: 'nova.png' });
+        expect(repeat.status).toBe(200);
+        const repeatBody = await repeat.json();
+        expect(repeatBody.changed).toBe(false);
+        expect(repeatBody.version).toBe(firstBody.version);
+        expect(readSettings()._version).toBe(firstBody.version);
+
+        // The same reminder survives under another persona, and the server's own scope lists a key it never had.
+        const other = await postJson('/thread/delete', { avatar: 'ghost.png', personaId: 'morgan.png' });
+        const otherBody = await other.json();
+        expect(otherBody.scope.removeKeys).toContain(scopeConversationStorageKey('ghost.png', 'morgan.png'));
+        expect(otherBody.changed).toBe(false);
+        expect(readConversationStore().reminders.map(item => item.id)).toEqual(['r-persona', 'r-group', 'r-other-avatar']);
+        const persona = await postJson('/thread/delete', { avatar: 'nova.png', personaId: 'riley.png' });
+        expect((await persona.json()).scope.reminderIds).toEqual(['r-persona']);
+        expect(readConversationStore().reminders.map(item => item.id)).toEqual(['r-group', 'r-other-avatar']);
+
+        // An unscoped legacy key assigned to the persona goes with its assignment; an unassigned one stays.
+        const riley = scopeConversationStorageKey('ava.png', 'riley.png');
+        await saveSoloThread('ava.png');
+        rewriteConversationStore(store => {
+            store.characters[riley] = JSON.parse(JSON.stringify(store.characters['ava.png']));
+            store.legacyThreadPersonaAssignments = { 'ava.png': 'riley.png', 'echo.png': 'morgan.png' };
+        });
+        const legacy = await postJson('/thread/delete', { avatar: 'ava.png', personaId: 'riley.png' });
+        const legacyBody = await legacy.json();
+        expect(legacyBody.scope.removeKeys).toEqual(expect.arrayContaining([riley, 'ava.png']));
+        expect(readConversationStore().characters[riley]).toBeUndefined();
+        expect(readConversationStore().characters['ava.png']).toBeUndefined();
+        expect(readConversationStore().legacyThreadPersonaAssignments).toEqual({ 'echo.png': 'morgan.png' });
+        expect(readConversationStore().characters['echo.png']).toBeDefined();
+
+        // A with a schedule, settings, memory and messages: only the schedule survives, as a record nothing can answer from.
+        await saveSoloThread('zed.png', 'Remember me');
+        rewriteConversationStore(store => {
+            const record = store.characters['zed.png'];
+            record.schedule = schedule;
+            record.settings = { enabled: true, auto_message: true, cooldown: 0 };
+            record.memorySummary = 'Thread memory.';
+            record.memoryMessageCount = 1;
+            record.memoryUpdatedAt = 7;
+            record.memorySummaryThrough = record.branches.main.messages[0].id;
+            record.branches.main.memorySummary = 'Branch memory.';
+        });
+        expect(collectSoloConversationMemorySummary(readConversationStore().characters, 'zed.png')).toBeTruthy();
+        const kept = await postJson('/thread/delete', { avatar: 'zed.png' });
+        expect(kept.status).toBe(200);
+        const keptBody = await kept.json();
+        expect(keptBody.changed).toBe(true);
+        expect(Object.keys(keptBody.scope.replaceKeys)).toEqual(['zed.png']);
+        const record = readConversationStore().characters['zed.png'];
+        expect(storeSyncUtils.isScheduleOnlyConversationRecord(record)).toBe(true);
+        for (const field of ['memorySummary', 'memoryMessageCount', 'memoryUpdatedAt', 'memorySummaryThrough']) expect(record[field]).toBeUndefined();
+        expect(record.branches.main.memorySummary || '').toBe('');
+        expect(record.branches.main.messages).toEqual([]);
+        expect(collectSoloConversationMemorySummary(readConversationStore().characters, 'zed.png')).toBeNull();
+        expect(record.schedule).toEqual(schedule);
+        expect(normalizeConversationSettings(record.settings).enabled).toBe(false);
+        expect(keptBody.scope.replaceKeys['zed.png']).toEqual(record);
+        const keptRepeat = await (await postJson('/thread/delete', { avatar: 'zed.png' })).json();
+        expect(keptRepeat.changed).toBe(false);
+        expect(keptRepeat.version).toBe(keptBody.version);
+    });
+
+    test('thread/delete refuses a group target and group/delete refuses a missing group', async () => {
+        expect((await postJson('/thread/delete', { avatar: 'nova.png', groupId: 'some-group' })).status).toBe(400);
+        expect((await postJson('/group/delete', {})).status).toBe(400);
+    });
+
+    test('group/delete removes the record and every member thread for that group only', async () => {
+        const created = [];
+        for (const [name, members] of [['Nova and Echo', ['nova.png', 'echo.png']], ['Echo and Riley', ['echo.png', 'riley.png']]]) {
+            const response = await postJson('/group/create', { name, members, version: readSettings()._version });
+            expect(response.status).toBe(200);
+            created.push((await response.json()).group);
+        }
+        const [doomed, kept] = created;
+        for (const [group, avatar] of [[doomed, 'nova.png'], [doomed, 'echo.png'], [kept, 'echo.png']]) {
+            const appended = await postJson('/message/append', { avatar, groupId: group.id, text: `in ${group.name}`, version: readSettings()._version });
+            expect(appended.status).toBe(200);
+        }
+        await saveSoloThread('echo.png');
+        const doomedPrefix = `group:${doomed.id}:`;
+        rewriteConversationStore(store => {
+            const base = { avatar: 'nova.png', personaId: '', branchId: 'main', triggerAt: Date.now() + 3600000, fired: false, createdAt: 1 };
+            store.reminders = [{ ...base, id: 'r-doomed', groupId: doomed.id, text: 'a' }, { ...base, id: 'r-kept', groupId: kept.id, text: 'b' }, { ...base, id: 'r-solo', groupId: '', text: 'c' }];
+        });
+        // Members of a group share one canonical thread key per group, whichever member the message went to.
+        const doomedKeys = Object.keys(readConversationStore().characters).filter(key => key.startsWith(doomedPrefix)).sort();
+        const keptKeys = Object.keys(readConversationStore().characters).filter(key => key.startsWith(`group:${kept.id}:`)).sort();
+        expect(doomedKeys.length).toBeGreaterThan(0);
+        expect(keptKeys.length).toBeGreaterThan(0);
+
+        const response = await postJson('/group/delete', { groupId: doomed.id });
+        expect(response.status).toBe(200);
+        const body = await response.json();
+        expect(body.changed).toBe(true);
+        expect(body.scope.keyPrefix).toBe(doomedPrefix);
+        expect(body.scope.groupId).toBe(doomed.id);
+        expect(body.scope.removeKeys.sort()).toEqual(doomedKeys);
+        expect(body.scope.reminderIds).toEqual(['r-doomed']);
+        const store = readConversationStore();
+        expect(store.groups.map(group => group.id)).toEqual([kept.id]);
+        expect(Object.keys(store.characters).filter(key => key.includes(doomed.id))).toEqual([]);
+        expect(Object.keys(store.characters).sort()).toEqual(['echo.png', ...keptKeys].sort());
+        expect(store.reminders.map(item => item.id)).toEqual(['r-kept', 'r-solo']);
+        expect((await (await postJson('/group/list', {})).json()).groups.map(group => group.id)).toEqual([kept.id]);
+        const repeat = await (await postJson('/group/delete', { groupId: doomed.id })).json();
+        expect(repeat.changed).toBe(false);
+        expect(repeat.version).toBe(body.version);
+    });
+
     test('message/send adds group reference context for unnamed replies', async () => {
         upstreamReplyText = 'I was talking about the keys.';
 

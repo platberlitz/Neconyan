@@ -14,7 +14,7 @@ import { clearHomePersonaChoice } from './scratchpad/home-persona.js';
 
 import { accountStorage } from './util/AccountStorage.js';
 import { getAssistantGender, getAssistantTourSrc, setAssistantGender } from './neconyan-assistant-art.js';
-import { clamp, flashHighlight, getSortableDelay, isElementInViewport, sortMoments, timestampToMoment } from './utils.js';
+import { clamp, escapeHtml, flashHighlight, getSortableDelay, isElementInViewport, sortMoments, timestampToMoment } from './utils.js';
 import { revealChat, revealUi } from './ui-motion.js';
 import { createForegroundRefreshCoalescer } from './mobile-shell-lifecycle/index.js';
 import { applySimpleMode, getSimpleModePreference, isSimpleModeEnabled, setSimpleModeEnabled, SIMPLE_MODE_CLASS, SIMPLE_MODE_EVENT, SIMPLE_MODE_RAIL_LABELS } from './neconyan-simple-mode.js';
@@ -2900,16 +2900,45 @@ async function renameRecentConversationChat(avatarId, groupId, branchId, branchN
  */
 async function deleteRecentConversationChat(avatarId, groupId, branchId, recentChat) {
     try {
+        const edits = await import('./neconyan-conversation/dm-edits.js');
+        const chat = edits.describeConversationHomeChat(avatarId, branchId, { groupId });
+        if (chat.only) {
+            // The DM's only chat: deleting it deletes the DM, exactly as the Pals bin button does (same words, same server request).
+            const copy = edits.getConversationDmDeleteCopy({ avatar: avatarId, groupId });
+            // A string given to the popup is set as HTML and the copy holds a name someone else wrote, so it is escaped here, as the finished text.
+            const confirmed = await callGenericPopup(escapeHtml(copy.confirm), POPUP_TYPE.CONFIRM);
+            if (!confirmed) {
+                return;
+            }
+            try {
+                await edits.deleteConversationDm({ avatar: avatarId, groupId });
+            } catch (error) {
+                console.error('Error deleting recent Conversation DM:', error);
+                toastr.error(copy.failed);
+                await refreshWelcomeScreen();
+                return;
+            }
+            if (recentChat) {
+                PinnedChatsManager.remove(recentChat);
+            }
+            await refreshWelcomeScreen();
+            toastr.success(copy.success, '', { escapeHtml: true });
+            return;
+        }
+
         const confirm = await callGenericPopup(t`Delete the Chat File?`, POPUP_TYPE.CONFIRM);
         if (!confirm) {
             return;
         }
 
-        const conversationModule = await import('./neconyan-conversation.js');
-        const result = conversationModule.deleteConversationWelcomeBranch?.(avatarId, branchId, { groupId });
-        const deleted = Boolean(result?.deleted);
-        if (!deleted) {
+        const result = await edits.deleteConversationHomeChat(avatarId, branchId, { groupId });
+        if (!result.deleted) {
             toastr.warning(t`Could not delete Conversation chat.`);
+            return;
+        }
+        if (!result.saved) {
+            // The save notice has already said what happened.
+            await refreshWelcomeScreen();
             return;
         }
 
@@ -2917,9 +2946,7 @@ async function deleteRecentConversationChat(avatarId, groupId, branchId, recentC
             PinnedChatsManager.remove(recentChat);
         }
         await refreshWelcomeScreen();
-        if (!result.reset) {
-            toastr.success(t`Chat deleted.`);
-        }
+        toastr.success(t`Chat deleted.`);
     } catch (error) {
         console.error('Error deleting recent Conversation chat:', error);
         toastr.error(t`Could not delete that Conversation chat. Try again.`);

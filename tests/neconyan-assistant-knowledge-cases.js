@@ -1,6 +1,11 @@
 // Questions and distinguishing facts shared by Node and real-browser retrieval checks.
 export const refreshedKnowledgeCases = [
     ['How do I Reload Neconyan without a browser toolbar?', 'navigation.reload', 'Troubleshooting → Reload Neconyan'],
+    ['How do I delete a group DM?', 'conversation.delete', 'removes the group'],
+    ['My characters keep messaging each other in a group, how do I stop it?', 'conversation.delete', 'Allow characters to talk to each other'],
+    ['Where is my Conversation data stored? Is it in the cloud?', 'conversation.delete', 'settings.json'],
+    ['Does deleting a DM remove its memory?', 'conversation.delete', 'memory summary'],
+    ['Is DM memory deleted when I delete the DM?', 'conversation.memory', 'removes it'],
     ['Where are Notebook options on my phone?', 'notes.phone-tools', 'Open Notebook options to switch or create notebooks'],
     ['Where are Note tools on my phone?', 'notes.phone-tools', 'Note tools reveals formatting'],
     ['How do I stop the top bar label from moving?', 'appearance.topbar-marquee', 'Turn the switch off to keep the ellipsis instead'],

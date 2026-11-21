@@ -36,6 +36,8 @@ All endpoints use `POST`, including read-only operations.
 | `/store/save`     | Replaces the complete Conversation Mode store.             |
 | `/group/list`     | Lists Conversation-owned group DMs.                        |
 | `/group/create`   | Creates a Conversation-owned group DM.                     |
+| `/thread/delete`  | Deletes a solo DM from the current server copy. It takes no expected version, returns the applied `scope`, keeps the pal's Character Schedule, removes the DM's memory and cancels open jobs for it. |
+| `/group/delete`   | Deletes a Conversation group DM and every member thread for it. It takes no expected version, returns the applied `scope`, removes the group's memory and cancels open jobs for it. |
 | `/thread/get`     | Reads or initializes a solo or group thread.               |
 | `/thread/save`    | Replaces the active branch’s messages.                     |
 | `/message/append` | Appends one message without generating a reply.            |

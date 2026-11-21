@@ -69,6 +69,7 @@ import {
     extractGeneratedText,
     getSafeConversationGenerationStatus,
 } from './conversation-generation.js';
+import { deleteConversationThreads } from './conversation-delete.js';
 import { acceptConversationAside, acceptConversationSubmission, preflightConversationBindings } from '../generation/conversation-jobs.js';
 import { acceptConversationAsideEvent } from '../generation/conversation-aside-events.js';
 import { acceptConversationSchedule, acceptConversationSummary } from '../generation/conversation-maintenance.js';
@@ -146,6 +147,8 @@ const CONVERSATION_API_INFO = {
             { method: 'POST', path: '/presentation/claim', purpose: 'Claim incoming alerts or narration and acknowledge an observed read boundary.' },
             { method: 'POST', path: '/group/list', purpose: 'List Conversation-owned group DMs for a persona.' },
             { method: 'POST', path: '/group/create', purpose: 'Create a Conversation-owned group DM.' },
+            { method: 'POST', path: '/thread/delete', purpose: 'Delete a solo DM thread from the current server copy; a Character Schedule is kept.' },
+            { method: 'POST', path: '/group/delete', purpose: 'Delete a Conversation group DM and every member thread for it.' },
             { method: 'POST', path: '/thread/get', purpose: 'Read a solo or group DM thread.' },
             { method: 'POST', path: '/thread/save', purpose: 'Replace a solo or group DM thread.' },
             { method: 'POST', path: '/message/append', purpose: 'Append one message without generating a reply.' },
@@ -538,6 +541,30 @@ router.post('/group/create', asyncRoute(async (request, response) => {
 
     const saveResult = await saveConversationStore(request, context.store, request.body?.version, { settingsSnapshot: context.snapshot });
     return respondSaveResult(response, saveResult, { group, groups: getConversationGroups(context.store, personaId, normalizeConversationSettings) });
+}));
+
+router.post('/thread/delete', asyncRoute(async (request, response) => {
+    const target = getConversationTarget(request, response);
+    if (!target) {
+        return;
+    }
+    if (target.groupId) {
+        return response.status(400).send({ error: 'group_delete_required' });
+    }
+    const result = await deleteConversationThreads(request, { avatar: target.avatar, personaId: target.personaId });
+    return result.ok === false ? response.status(result.status).send(result.body) : response.send(result);
+}));
+
+router.post('/group/delete', asyncRoute(async (request, response) => {
+    const scopeValidation = validateConversationScope(getRequestGroupId(request), getRequestPersonaId(request));
+    if (!scopeValidation.valid) {
+        return response.status(400).send({ error: scopeValidation.error });
+    }
+    if (!scopeValidation.groupId) {
+        return response.status(400).send({ error: 'group_required' });
+    }
+    const result = await deleteConversationThreads(request, { groupId: scopeValidation.groupId, personaId: scopeValidation.personaId });
+    return result.ok === false ? response.status(result.status).send(result.body) : response.send(result);
 }));
 
 router.post('/thread/get', asyncRoute(async (request, response) => {

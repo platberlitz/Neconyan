@@ -5,6 +5,7 @@ import {
     isSameConversationBranchIdentity,
     mergeConversationStore,
 } from '../public/scripts/neconyan-conversation/store-sync-utils.js';
+import * as storeSyncUtils from '../public/scripts/neconyan-conversation/store-sync-utils.js';
 
 function message(id, mes, role = 'character', extra = {}) {
     return { id, role, name: role === 'user' ? 'You' : 'Alice', mes, created_at: 1, extra: { conversation_mode_user: role === 'user', ...extra } };
@@ -287,5 +288,248 @@ describe('conversation store sync merge', () => {
         expect(isSameConversationBranchIdentity({ createdAt: 5 }, { createdAt: 5 })).toBe(true);
         expect(isSameConversationBranchIdentity({ createdAt: 5 }, { createdAt: 6 })).toBe(false);
         expect(isSameConversationBranchIdentity(null, { createdAt: 5 })).toBe(false);
+    });
+});
+
+describe('conversation store sync: local resets and DM delete helpers', () => {
+    const wrapped = (characters, extra = {}) => store(characters, extra);
+
+    test('a local reset merges when the server changed only another thread', () => {
+        const saved = wrapped({
+            alice: thread({ main: branch('main', [message('a', 'one')], 10) }),
+            bob: thread({ main: branch('main', [message('b1', 'hi')], 11) }),
+        });
+        const local = wrapped({
+            alice: thread({ main: branch('main', [message('fresh', 'new thread')], 20) }),
+            bob: thread({ main: branch('main', [message('b1', 'hi')], 11) }),
+        });
+        const server = wrapped({
+            alice: thread({ main: branch('main', [message('a', 'one')], 10) }),
+            bob: thread({ main: branch('main', [message('b1', 'hi'), message('b2', 'native')], 11) }),
+        });
+        const merged = mergeConversationStore(server, local, saved);
+        expect(merged).not.toBeNull();
+        expect(merged.characters.alice.branches.main.createdAt).toBe(20);
+        expect(merged.characters.alice.branches.main.messages.map(item => item.id)).toEqual(['fresh']);
+        expect(merged.characters.bob.branches.main.messages.map(item => item.id)).toEqual(['b1', 'b2']);
+    });
+
+    test('a local reset merges when the server changed only bookkeeping on another thread', () => {
+        const saved = wrapped({
+            alice: thread({ main: branch('main', [message('a', 'one')], 10) }),
+            bob: thread({ main: branch('main', [], 11) }),
+        });
+        const local = wrapped({
+            alice: thread({ main: branch('main', [message('fresh', 'new thread')], 20) }),
+            bob: thread({ main: branch('main', [], 11) }),
+        });
+        const server = wrapped({
+            alice: thread({ main: branch('main', [message('a', 'one')], 10) }),
+            bob: thread({ main: branch('main', [], 11, { lastActivity: 99, followupCount: 1 }) }),
+        });
+        const merged = mergeConversationStore(server, local, saved);
+        expect(merged).not.toBeNull();
+        expect(merged.characters.alice.branches.main.createdAt).toBe(20);
+        expect(merged.characters.bob.branches.main.lastActivity).toBe(99);
+    });
+
+    test('a local unread clear on a branch the server left alone keeps the server value', () => {
+        const messages = [message('read', 'Seen'), message('a', 'First')];
+        const wrap = (unread, bobMessages) => wrapped({
+            alice: thread({ main: branch('main', messages, 10, { unread, readThrough: 'read' }) }),
+            bob: thread({ main: branch('main', bobMessages, 11) }),
+        });
+        const merged = mergeConversationStore(wrap(1, [message('n', 'native')]), wrap(0, []), wrap(1, []));
+        expect(merged.characters.alice.branches.main.unread).toBe(1);
+    });
+
+    describe('applyConversationDeleteScope with a merge', () => {
+        const scope = (over = {}) => ({ removeKeys: [], keyPrefix: '', groupId: '', personaId: '', reminderIds: [], replaceKeys: {}, ...over });
+        const edit = (server, local, saved, deleteScope) => mergeConversationStore(
+            server,
+            storeSyncUtils.applyConversationDeleteScope(local, deleteScope),
+            storeSyncUtils.applyConversationDeleteScope(saved, deleteScope),
+        );
+
+        test('a group alias key the baseline never had is gone', () => {
+            const group = { id: 'G', personaId: '', members: ['A', 'B'] };
+            const saved = wrapped({ 'group:G:A': thread({ main: branch('main', [message('a', 'hist')], 10) }), C: thread({ main: branch('main', [], 12) }) }, { groups: [group] });
+            const local = wrapped({ 'group:G:B': thread({ main: branch('main', [message('a', 'hist')], 10) }), C: thread({ main: branch('main', [], 12) }) }, { groups: [group] });
+            const server = wrapped({ C: thread({ main: branch('main', [], 12) }) });
+            const merged = edit(server, local, saved, scope({ removeKeys: ['group:G:A'], keyPrefix: 'group:G:', groupId: 'G' }));
+            expect(Object.keys(merged.characters)).toEqual(['C']);
+            expect(merged.groups).toEqual([]);
+        });
+
+        test('a solo thread that exists only in the page is gone', () => {
+            const saved = wrapped({ B: thread({ main: branch('main', [], 11) }) });
+            const local = wrapped({ A: thread({ main: branch('main', [], 20) }, { settings: { enabled: true } }), B: thread({ main: branch('main', [], 11) }) });
+            const server = wrapped({ B: thread({ main: branch('main', [], 11) }) });
+            const merged = edit(server, local, saved, scope({ removeKeys: ['A'] }));
+            expect(Object.keys(merged.characters)).toEqual(['B']);
+        });
+
+        test('an unsaved edit to another group record is kept', () => {
+            const g1 = { id: 'G1', personaId: '', members: ['A', 'B'], conversation_settings: { auto_character_chat: true } };
+            const g2 = { id: 'G2', personaId: '', members: ['B', 'C'], conversation_settings: { auto_character_chat: true } };
+            const g2edited = { ...g2, conversation_settings: { auto_character_chat: false } };
+            const saved = wrapped({ C: thread({ main: branch('main', [], 12) }) }, { groups: [g1, g2] });
+            const local = wrapped({ C: thread({ main: branch('main', [], 12) }) }, { groups: [g1, g2edited] });
+            const server = wrapped({ C: thread({ main: branch('main', [], 12) }) }, { groups: [g2] });
+            const merged = edit(server, local, saved, scope({ keyPrefix: 'group:G1:', groupId: 'G1' }));
+            expect(merged.groups.map(group => `${group.id}:${group.conversation_settings.auto_character_chat}`)).toEqual(['G2:false']);
+        });
+
+        test('a new local reminder is kept and the deleted one is gone', () => {
+            const r1 = { id: 'r1', avatar: 'A', text: 'x' };
+            const r2 = { id: 'r2', avatar: 'B', text: 'y' };
+            const added = { id: 'r3', avatar: 'B', text: 'z' };
+            const saved = wrapped({ A: thread({ main: branch('main', [], 10) }), B: thread({ main: branch('main', [], 11) }) }, { reminders: [r1, r2] });
+            const local = wrapped({ A: thread({ main: branch('main', [], 10) }), B: thread({ main: branch('main', [], 11) }) }, { reminders: [r1, r2, added] });
+            const server = wrapped({ B: thread({ main: branch('main', [], 11) }) }, { reminders: [r2] });
+            const merged = edit(server, local, saved, scope({ removeKeys: ['A'], reminderIds: ['r1'] }));
+            expect(Object.keys(merged.characters)).toEqual(['B']);
+            expect(merged.reminders.map(reminder => reminder.id)).toEqual(['r2', 'r3']);
+        });
+
+        test('an unrelated real conflict still returns null', () => {
+            const g1 = { id: 'G1', personaId: '', members: ['A', 'B'], name: 'one' };
+            const g2 = { id: 'G2', personaId: '', members: ['B', 'C'], name: 'two' };
+            const history = () => thread({ main: branch('main', [message('g', 'hist')], 12) });
+            const soloA = (messages, createdAt = 10) => thread({ main: branch('main', messages, createdAt) });
+            const saved = wrapped({ A: soloA([message('a', 'one')]), 'group:G1:A': history(), 'group:G1:B': history() }, { groups: [g1, g2] });
+            const untouched = wrapped({ A: soloA([message('a', 'one')]), 'group:G1:A': history(), 'group:G1:B': history() }, { groups: [g1, g2] });
+            const local = wrapped({ A: soloA([message('fresh', 'new thread')], 20), 'group:G1:A': history(), 'group:G1:B': history() }, { groups: [g1, g2] });
+            const server = wrapped({ A: soloA([message('a', 'one'), message('b', 'native')]) }, { groups: [g2] });
+            const deleteG1 = scope({ removeKeys: ['group:G1:A', 'group:G1:B'], keyPrefix: 'group:G1:', groupId: 'G1' });
+            const clean = edit(server, untouched, saved, deleteG1);
+            expect(clean).not.toBeNull();
+            expect(Object.keys(clean.characters)).toEqual(['A']);
+            expect(clean.groups.map(group => group.id)).toEqual(['G2']);
+            expect(edit(server, local, saved, deleteG1)).toBeNull();
+        });
+
+        test('a group the server deleted stays deleted when the page had changed its record', () => {
+            const g1 = { id: 'G1', personaId: '', members: ['A', 'B'], name: 'one', conversation_settings: { auto_character_chat: true } };
+            const g2 = { id: 'G2', personaId: '', members: ['B', 'C'], name: 'two', conversation_settings: { auto_character_chat: true } };
+            const g3 = { id: 'G3', personaId: '', members: ['A', 'C'], name: 'three', conversation_settings: {} };
+            const others = messages => thread({ main: branch('main', messages, 11) });
+            const history = () => thread({ main: branch('main', [message('g', 'hist')], 12) });
+            const saved = wrapped({ B: others([message('b1', 'hi')]), 'group:G1:A': history() }, { groups: [g1, g2] });
+            const local = wrapped({ B: others([message('b1', 'hi')]), 'group:G1:A': history() }, {
+                groups: [
+                    { ...g1, name: 'renamed', conversation_settings: { auto_character_chat: false } },
+                    { ...g2, conversation_settings: { auto_character_chat: false } },
+                    g3,
+                ],
+            });
+            const server = wrapped({ B: others([message('b1', 'hi'), message('b2', 'native')]) }, { groups: [g2] });
+            const merged = mergeConversationStore(server, local, saved);
+            expect(merged).not.toBeNull();
+            expect(merged.groups.map(group => group.id)).toEqual(['G2', 'G3']);
+            expect(merged.groups[0].conversation_settings.auto_character_chat).toBe(false);
+            expect(Object.keys(merged.characters).filter(key => key.startsWith('group:G1:'))).toEqual([]);
+        });
+
+        test('a replaceKeys record replaces A in the deleting tab and wins in a refresh-only tab', () => {
+            const schedule = { generatedAt: 5, days: [[{ time: '00:00-23:59', status: 'busy', activity: 'work' }]] };
+            const kept = { settings: {}, schedule, activeBranchId: 'main', branches: { main: branch('main', [], 30) } };
+            const old = () => thread({ main: branch('main', [message('a', 'one')], 10) }, { settings: { enabled: true }, schedule, memorySummary: 'm' });
+            const saved = wrapped({ A: old(), B: thread({ main: branch('main', [], 11) }, { settings: { cooldown: 1 } }) });
+            const local = wrapped({ A: old(), B: thread({ main: branch('main', [], 11) }, { settings: { cooldown: 2 } }) });
+            const server = wrapped({ A: kept, B: thread({ main: branch('main', [], 11) }, { settings: { cooldown: 1 } }) });
+            const merged = edit(server, local, saved, scope({ replaceKeys: { A: kept } }));
+            expect(merged.characters.A).toEqual(kept);
+            expect(merged.characters.B.settings.cooldown).toBe(2);
+            const other = mergeConversationStore(server, saved, saved);
+            expect(other.characters.A).toEqual(kept);
+            expect(storeSyncUtils.isScheduleOnlyConversationRecord(other.characters.A)).toBe(true);
+        });
+
+        test('legacy assignments of removed keys are dropped', () => {
+            const saved = wrapped({ A: thread({ main: branch('main', [], 10) }) }, { legacyThreadPersonaAssignments: { A: 'p1', Z: 'p1' } });
+            const next = storeSyncUtils.applyConversationDeleteScope(saved, scope({ removeKeys: ['A'] }));
+            expect(next.legacyThreadPersonaAssignments).toEqual({ Z: 'p1' });
+            expect(saved.legacyThreadPersonaAssignments).toEqual({ A: 'p1', Z: 'p1' });
+        });
+    });
+
+    describe('isScheduleOnlyConversationRecord', () => {
+        const schedule = { generatedAt: 5, days: [] };
+        const kept = (over = {}) => ({ settings: {}, schedule, activeBranchId: 'main', branches: { main: branch('main', [], 30) }, ...over });
+
+        test('is true for the kept shape, also with an empty-string branch memory summary', () => {
+            expect(storeSyncUtils.isScheduleOnlyConversationRecord(kept())).toBe(true);
+            expect(storeSyncUtils.isScheduleOnlyConversationRecord(kept({ settings: undefined }))).toBe(true);
+            expect(storeSyncUtils.isScheduleOnlyConversationRecord(kept({ branches: { main: branch('main', [], 30, { memorySummary: '' }) } }))).toBe(true);
+        });
+
+        test('is false with a thread memory summary, a message, a branch memory summary, settings.enabled or no schedule', () => {
+            expect(storeSyncUtils.isScheduleOnlyConversationRecord(kept({ memorySummary: 'Remembers' }))).toBe(false);
+            expect(storeSyncUtils.isScheduleOnlyConversationRecord(kept({ branches: { main: branch('main', [message('a', 'one')], 30) } }))).toBe(false);
+            expect(storeSyncUtils.isScheduleOnlyConversationRecord(kept({ branches: { main: branch('main', [], 30, { memorySummary: 'Branch' }) } }))).toBe(false);
+            expect(storeSyncUtils.isScheduleOnlyConversationRecord(kept({ settings: { enabled: true } }))).toBe(false);
+            expect(storeSyncUtils.isScheduleOnlyConversationRecord(kept({ schedule: undefined }))).toBe(false);
+            expect(storeSyncUtils.isScheduleOnlyConversationRecord(null)).toBe(false);
+        });
+    });
+
+    describe('listRemovedConversationTargets and isDeletedConversationThread', () => {
+        const schedule = { generatedAt: 5, days: [] };
+        const kept = () => ({ settings: {}, schedule, activeBranchId: 'main', branches: { main: branch('main', [], 30) } });
+        const solo = (over = {}, messages = []) => thread({ main: branch('main', messages, 10) }, over);
+
+        test('a server-removed solo key is reported and the open DM is left', () => {
+            const before = wrapped({ A: solo({}, [message('a', 'one')]), B: solo() });
+            const after = wrapped({ B: solo() });
+            const removed = storeSyncUtils.listRemovedConversationTargets(before, after);
+            expect(removed).toEqual({ threadKeys: ['A'], groupIds: [] });
+            expect(storeSyncUtils.isDeletedConversationThread(removed, { activeKey: 'A', groupId: '' })).toBe(true);
+            expect(storeSyncUtils.isDeletedConversationThread(removed, { activeKey: 'B', groupId: '' })).toBe(false);
+            expect(storeSyncUtils.isDeletedConversationThread(removed, { activeKey: '', groupId: '' })).toBe(false);
+        });
+
+        test('a solo record that went from messages, memory or settings to schedule-only is reported', () => {
+            const after = wrapped({ A: kept() });
+            for (const before of [
+                solo({ schedule }, [message('a', 'one')]),
+                solo({ schedule, memorySummary: 'Remembers' }),
+                solo({ schedule, settings: { enabled: true } }),
+                solo({ schedule, settings: { cooldown: 2 } }),
+                thread({ main: branch('main', [], 10, { memorySummary: 'Branch' }) }, { schedule }),
+            ]) {
+                expect(storeSyncUtils.listRemovedConversationTargets(wrapped({ A: before }), after).threadKeys).toEqual(['A']);
+            }
+        });
+
+        test('an opened, unused DM that exists only in the page is not reported', () => {
+            const page = wrapped({ A: solo(), B: solo() });
+            const server = wrapped({ B: solo({}, [message('n', 'native')]) });
+            expect(storeSyncUtils.listRemovedConversationTargets(wrapped({ B: solo() }), server)).toEqual({ threadKeys: [], groupIds: [] });
+            expect(storeSyncUtils.listRemovedConversationTargets(page, page)).toEqual({ threadKeys: [], groupIds: [] });
+        });
+
+        test('a record that was already schedule-only, or empty and then gained a schedule, is not reported', () => {
+            expect(storeSyncUtils.listRemovedConversationTargets(wrapped({ A: kept() }), wrapped({ A: kept() })).threadKeys).toEqual([]);
+            const empty = thread({ main: branch('main', [], 10) });
+            expect(storeSyncUtils.listRemovedConversationTargets(wrapped({ A: empty }), wrapped({ A: kept() })).threadKeys).toEqual([]);
+            const emptySettings = thread({ main: branch('main', [], 10) }, { settings: {} });
+            expect(storeSyncUtils.listRemovedConversationTargets(wrapped({ A: emptySettings }), wrapped({ A: kept() })).threadKeys).toEqual([]);
+        });
+
+        test('a removed group is reported by id and decided by group id only', () => {
+            const group = { id: 'G', personaId: '', members: ['A', 'B'] };
+            const before = wrapped({ 'group:G:A': solo() }, { groups: [group] });
+            const gone = storeSyncUtils.listRemovedConversationTargets(before, wrapped({}));
+            expect(gone.groupIds).toEqual(['G']);
+            expect(storeSyncUtils.isDeletedConversationThread(gone, { activeKey: 'group:G:A', groupId: 'G' })).toBe(true);
+            // The server canonicalised the alias key away but kept the record: the group is not left.
+            const aliasOnly = storeSyncUtils.listRemovedConversationTargets(
+                wrapped({ 'group:G:B': solo() }, { groups: [group] }),
+                wrapped({ 'group:G:A': solo() }, { groups: [group] }),
+            );
+            expect(aliasOnly.groupIds).toEqual([]);
+            expect(storeSyncUtils.isDeletedConversationThread(aliasOnly, { activeKey: 'group:G:B', groupId: 'G' })).toBe(false);
+        });
     });
 });
