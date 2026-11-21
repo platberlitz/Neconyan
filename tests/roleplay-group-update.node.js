@@ -46,6 +46,7 @@ async function groupHttpRuntime(t, owner) {
         selected_group: 'group',
         groupBackgroundState: new WeakMap(), queuedGroupMetadataById: new Map(), groupListReadGeneration: 0,
         groupSaveStates: new Map(), groupMetadataSaveQueue: Promise.resolve(), pendingGroupMetadataSaves: new Map(),
+        startupGroupListPromise: null,
         debounce_timeout: { relaxed: 1 }, console, structuredClone, uuidv4: randomUUID,
         onlyUnique: (value, index, values) => values.indexOf(value) === index,
         getCurrentUserHandle: () => f.scope.owner, roleplayAccountStamp, rememberRoleplayRead, beginRoleplaySave,

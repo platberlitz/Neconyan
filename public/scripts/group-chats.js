@@ -149,6 +149,7 @@ export {
     deleteGroup,
     getGroupAvatar,
     getGroups,
+    prefetchGroups,
     regenerateGroup,
     resetSelectedGroup,
     select_group_chats,
@@ -179,6 +180,7 @@ export function isGroupEnsembleActive() {
 const groupSaveStates = new Map();
 let groupMetadataSaveQueue = Promise.resolve();
 let groupListReadGeneration = 0;
+let startupGroupListPromise = null;
 const groupReadEvidence = new WeakMap();
 const groupBackgroundState = new WeakMap();
 const queuedGroupMetadataById = new Map();
@@ -1892,6 +1894,15 @@ export async function renameGroupMember(oldAvatar, newAvatar, newName) {
     }
 }
 
+/** Starts the group list request beside other start-up work. */
+function prefetchGroups() {
+    startupGroupListPromise ??= fetch('/api/groups/all', {
+        method: 'POST',
+        headers: getRequestHeaders({ omitContentType: true }),
+    });
+    return startupGroupListPromise;
+}
+
 /**
  * Fetches all groups from the server and processes them.
  */
@@ -1900,10 +1911,12 @@ async function getGroups() {
     const account = roleplayAccountStamp();
     const started = new Map(groups.map(group => [group.id, { group, revision: groupSaveStates.get(group.id)?.revision,
         evidence: groupReadEvidence.get(group), background: groupBackgroundState.get(group) }]));
-    const response = await fetch('/api/groups/all', {
+    const pendingResponse = startupGroupListPromise;
+    startupGroupListPromise = null;
+    const response = await (pendingResponse ?? fetch('/api/groups/all', {
         method: 'POST',
         headers: getRequestHeaders({ omitContentType: true }),
-    });
+    }));
 
     if (!response.ok) {
         const error = await response.json().catch(() => ({}));
