@@ -7,6 +7,10 @@ import { registerDebugFunction } from './power-user.js';
 import { t, translate } from './i18n.js';
 
 let charStats = {};
+let statsLoadPromise = null;
+let statsLoaded = false;
+let statsUpdateInFlight = null;
+let statsUpdateQueued = false;
 
 /**
  * Creates an HTML stat block.
@@ -134,7 +138,7 @@ function createHtml(statsType, stats) {
  */
 async function userStatsHandler() {
     // Get stats from server
-    await getStats();
+    await getStats({ force: true });
 
     // Calculate total stats
     let totalStats = calculateTotalStats();
@@ -151,7 +155,7 @@ async function userStatsHandler() {
  */
 async function characterStatsHandler(characters, this_chid) {
     // Get stats from server
-    await getStats();
+    await getStats({ force: true });
     // Get character stats
     let myStats = charStats[characters[this_chid].avatar];
     if (myStats === undefined) {
@@ -174,20 +178,35 @@ async function characterStatsHandler(characters, this_chid) {
 
 /**
  * Fetches the character stats from the server.
+ * @param {object} [options] Options
+ * @param {boolean} [options.force] Read the file again even when this page already loaded it
  */
-async function getStats() {
-    const response = await fetch('/api/stats/get', {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify({}),
-        cache: 'no-cache',
-    });
-
-    if (!response.ok) {
-        toastr.error('Stats could not be loaded. Try reloading the page.');
-        throw new Error('Error getting stats');
+async function getStats({ force = false } = {}) {
+    if (!force && statsLoaded) {
+        return;
     }
-    charStats = await response.json();
+    if (!statsLoadPromise) {
+        // Reading this file before every message costs a round trip per message; one read serves
+        // the page, and concurrent callers share the same request instead of overwriting each other.
+        statsLoadPromise = (async () => {
+            const response = await fetch('/api/stats/get', {
+                method: 'POST',
+                headers: getRequestHeaders(),
+                body: JSON.stringify({}),
+                cache: 'no-cache',
+            });
+
+            if (!response.ok) {
+                toastr.error('Stats could not be loaded. Try reloading the page.');
+                throw new Error('Error getting stats');
+            }
+            charStats = await response.json();
+            statsLoaded = true;
+        })().finally(() => {
+            statsLoadPromise = null;
+        });
+    }
+    return statsLoadPromise;
 }
 
 /**
@@ -233,17 +252,33 @@ function calculateGenTime(gen_started, gen_finished) {
 
 /**
  * Sends a POST request to the server to update the statistics.
+ * A burst of messages shares one upload; a request that arrives mid-flight is sent once after it.
  */
 async function updateStats() {
-    const response = await fetch('/api/stats/update', {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify(charStats),
-    });
+    if (statsUpdateInFlight) {
+        statsUpdateQueued = true;
+        return statsUpdateInFlight;
+    }
+    statsUpdateInFlight = (async () => {
+        const response = await fetch('/api/stats/update', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: JSON.stringify(charStats),
+        });
 
-    if (response.status !== 200) {
-        console.error('Failed to update stats');
-        console.log(response.status);
+        if (response.status !== 200) {
+            console.error('Failed to update stats');
+            console.log(response.status);
+        }
+    })();
+    try {
+        return await statsUpdateInFlight;
+    } finally {
+        statsUpdateInFlight = null;
+        if (statsUpdateQueued) {
+            statsUpdateQueued = false;
+            void updateStats();
+        }
     }
 }
 

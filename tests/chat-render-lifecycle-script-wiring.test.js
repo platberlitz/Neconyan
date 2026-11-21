@@ -312,7 +312,7 @@ describe('chat render lifecycle script wiring', () => {
         expect(source).toContain('removeRenderedChatMessages();');
         expect(source).toContain('querySelector(\'.mes.last_mes\')?.classList.remove(\'last_mes\')');
         expect(source).toContain('lastMessageElement?.classList.add(\'last_mes\')');
-        expect(source).toContain('pruneRenderedChatMessagesToWindow({ windowSize: getChatRenderWindowSize(), pruneFrom: \'start\' });');
+        expect(source).toContain('pruneRenderedChatMessagesToWindow({ windowSize: pruneWindowSize, pruneFrom: \'start\', anchor: pruneAnchor });');
         expect(source).toContain('syncChatHistoryWindowControls();');
         expect(source).toContain('if (showSwipes) refreshSwipeButtons();');
         expect(source).toContain('applyCharacterTagsToMessageDivs({ mesIds: messageId });');

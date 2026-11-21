@@ -3803,7 +3803,7 @@ function selectPrunableChatMessages(renderedMessages, excessMessageCount, pruneF
     return firstProtectedIndex >= 0 ? candidates.slice(0, firstProtectedIndex) : candidates;
 }
 
-function pruneRenderedChatMessagesToWindow({ windowSize, pruneFrom, keepView = true }) {
+function pruneRenderedChatMessagesToWindow({ windowSize, pruneFrom, keepView = true, anchor: capturedAnchor = null }) {
     const renderedMessages = getRenderedChatMessageElements();
     const excessMessageCount = renderedMessages.length - windowSize;
 
@@ -3812,7 +3812,9 @@ function pruneRenderedChatMessagesToWindow({ windowSize, pruneFrom, keepView = t
     }
 
     // Neconyan: pin the first visible message so a top prune cannot shift the view.
-    const anchor = pruneFrom === 'start' && keepView ? captureVisibleChatMessageAnchor() : null;
+    // Callers that already read the place before their DOM write pass it in, which keeps
+    // this removal from forcing a second layout just to measure the same row.
+    const anchor = pruneFrom === 'start' && keepView ? (capturedAnchor ?? captureVisibleChatMessageAnchor()) : null;
 
     const removedMessages = selectPrunableChatMessages(renderedMessages, excessMessageCount, pruneFrom);
     if (removedMessages.length === 0) {
@@ -6692,6 +6694,13 @@ export function addOneMessage(mes, { type = undefined, insertAfter = null, scrol
     const tailAppendIsNearBottom = isTailAppend && scroll ? isChatScrolledNearBottom() : true;
     const shouldPinMobileBottom = isTailAppend && scroll && shouldPinMobileChatToBottom();
     const renderedWindowBeforeAdd = getRenderedChatMessageWindow();
+    const pruneWindowSize = isTailAppend && type !== 'swipe' ? getChatRenderWindowSize() : 0;
+    // Read the reader's place before any DOM write. The prune that follows the append would
+    // otherwise force a layout with the new row merely to measure the row already on screen.
+    const pruneAnchor = pruneWindowSize > 0
+        && renderedWindowBeforeAdd.renderedMessageCount + 1 > pruneWindowSize
+        ? captureVisibleChatMessageAnchor()
+        : null;
     const shouldResetForTailGap = isTailAppend
         && type !== 'swipe'
         && renderedWindowBeforeAdd.renderedMessageCount > 0
@@ -6741,7 +6750,7 @@ export function addOneMessage(mes, { type = undefined, insertAfter = null, scrol
     if (type !== 'swipe') revealUi(insertedElement);
 
     if (isTailAppend && type !== 'swipe') {
-        pruneRenderedChatMessagesToWindow({ windowSize: getChatRenderWindowSize(), pruneFrom: 'start' });
+        pruneRenderedChatMessagesToWindow({ windowSize: pruneWindowSize, pruneFrom: 'start', anchor: pruneAnchor });
         syncChatHistoryWindowControls();
     }
 
@@ -11164,7 +11173,11 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
             });
             if (recoveryContext) {
                 // The recovery anchor must be on disk before the paid request can outlive this page.
-                await saveChatConditional({ throwOnError: true, ...(type === 'swipe' && priorReply ? { chatData: [...chat.slice(0, -1), priorReply] } : {}) });
+                // A compared save still writes whenever the chat differs; it only reuses a save that
+                // already wrote this exact chat. Swipe saves carry their own chat snapshot, which the
+                // comparison does not cover, so they keep the unconditional write.
+                const swipeChatData = type === 'swipe' && priorReply ? [...chat.slice(0, -1), priorReply] : null;
+                await saveChatConditional({ throwOnError: true, skipUnchanged: !swipeChatData, ...(swipeChatData ? { chatData: swipeChatData } : {}) });
                 if (!isCurrent()) return;
             }
 
@@ -11996,9 +12009,7 @@ export async function sendMessageAsUser(messageText, messageBias, insertAt = nul
         },
     };
 
-    if (power_user.message_token_count_enabled) {
-        message.extra.token_count = await getTokenCountAsync(message.mes, 0);
-    }
+    // Counting waits on a tokenizer round trip, so it runs after the message is on screen.
 
     // Lock user avatar to a persona.
     const scenarioAvatar = getPersonaScenarioAvatar(avatar);
@@ -12020,9 +12031,15 @@ export async function sendMessageAsUser(messageText, messageBias, insertAt = nul
 
     chat_metadata.tainted = true;
 
+    const countMessageTokens = async () => {
+        if (!power_user.message_token_count_enabled) return;
+        message.extra.token_count = await getTokenCountAsync(message.mes, 0);
+    };
+
     if (typeof insertAt === 'number' && insertAt >= 0 && insertAt <= chat.length) {
         chat.splice(insertAt, 0, message);
-        await saveChatConditional();
+        await countMessageTokens();
+        await saveChatConditional({ skipUnchanged: true });
         await eventSource.emit(event_types.MESSAGE_SENT, insertAt);
         await reloadCurrentChat();
         await eventSource.emit(event_types.USER_MESSAGE_RENDERED, insertAt);
@@ -12031,7 +12048,9 @@ export async function sendMessageAsUser(messageText, messageBias, insertAt = nul
         const chat_id = (chat.length - 1);
         addOneMessage(message, { scroll: false });
         keepSendScrollAnchored({ settle: true });
-        await saveChatConditional();
+        await countMessageTokens();
+        updateMessageMetaBadges(chatElement.find(`.mes[mesid="${chat_id}"]`), message);
+        await saveChatConditional({ skipUnchanged: true });
         await eventSource.emit(event_types.MESSAGE_SENT, chat_id);
         await eventSource.emit(event_types.USER_MESSAGE_RENDERED, chat_id);
     }
@@ -12362,14 +12381,14 @@ function startHeldGenerationRecoveryTimer(delay) {
 async function saveChatWithHeldReply(context, isCurrent = () => true, { keepHeld = false } = {}) {
     if (!isCurrent()) return false;
     // Neconyan: a reply cut short stays unclaimed, so recovery can replace it with the rest the server holds.
-    if (keepHeld) return saveChatConditional();
+    if (keepHeld) return saveChatConditional({ skipUnchanged: true });
     const message = chat.at(-1);
     if (context?.id && message && !message.is_user) {
         message.extra ??= {};
         message.extra.resumable_generation_id = context.id;
         syncMesToSwipe(chat.length - 1);
     }
-    const saved = await saveChatConditional();
+    const saved = await saveChatConditional({ skipUnchanged: true });
     if (saved && context?.id && isCurrent()) {
         await discardGeneration(context.id, getRequestHeaders()).catch(error => console.warn('Held reply acknowledgement failed', error));
     }
@@ -20871,13 +20890,23 @@ jQuery(async function () {
     $('#send_textarea').on('focusin focus click', () => {
         S_TAPreviouslyFocused = true;
     });
-    $('#send_but, #option_regenerate, #option_continue, #mes_continue, #mes_impersonate').on('click', () => {
+    const keepComposerFocusSelector = '#send_but, #option_regenerate, #option_continue, #mes_continue, #mes_impersonate';
+    // Keeping focus in the composer also keeps the phone keyboard open. Moving it to the button
+    // and back closes and reopens the keyboard, which resizes the viewport around every send.
+    $(document).on('mousedown', keepComposerFocusSelector, event => {
+        if (isIOSFocusSensitiveBrowser) return;
+        if (document.activeElement?.id === 'send_textarea') {
+            event.preventDefault();
+            S_TAPreviouslyFocused = true;
+        }
+    });
+    $(document).on('click', keepComposerFocusSelector, () => {
         if (S_TAPreviouslyFocused && !isIOSFocusSensitiveBrowser) {
             $('#send_textarea').trigger('focus');
         }
     });
     $(document).on('click', event => {
-        if ($(':focus').attr('id') !== 'send_textarea') {
+        if (document.activeElement?.id !== 'send_textarea') {
             var validIDs = ['options_button', 'send_but', 'mes_impersonate', 'mes_continue', 'send_textarea', 'option_regenerate', 'option_continue'];
             if (!validIDs.includes($(event.target).attr('id'))) {
                 S_TAPreviouslyFocused = false;
