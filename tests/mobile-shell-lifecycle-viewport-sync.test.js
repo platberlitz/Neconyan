@@ -68,7 +68,7 @@ function createViewportSyncSandbox({ width = 390, isMobile = true, hasAnimationF
     const stubs = [
         'syncShellViewportBounds', 'syncMobileShellDrawerBounds', 'closeMobileNav', 'closeMobileChatTools',
         'syncMobileShellRailActions', 'syncDesktopShellSizing', 'applyTopbarOffset', 'syncChatbarVisibilityState',
-        'updateTopBarBrand', 'scheduleTopbarContextRefresh', 'syncMobileModalState', 'syncIOSKeyboardBottomInset',
+        'updateTopBarBrand', 'scheduleTopbarContextRefresh', 'syncMobileModalState', 'syncIOSKeyboardBottomInset', 'syncShortTouchComposer',
     ].map(name => `function ${name}() { calls.push(${JSON.stringify(name)}); }`);
 
     const requestAnimationFrame = callback => {
@@ -488,6 +488,7 @@ describe('queued mobile viewport sync', () => {
             'syncMobileShellDrawerBounds',
             'applyTopbarOffset',
             'syncIOSKeyboardBottomInset',
+            'syncShortTouchComposer',
         ]);
         expect(sandbox.calls).not.toContain('syncChatbarVisibilityState');
         expect(sandbox.calls).not.toContain('scheduleTopbarContextRefresh');
@@ -551,6 +552,7 @@ describe('queued mobile viewport sync', () => {
             'syncMobileShellDrawerBounds',
             'applyTopbarOffset',
             'syncIOSKeyboardBottomInset',
+            'syncShortTouchComposer',
         ]);
     });
 
@@ -616,6 +618,7 @@ describe('queued mobile viewport sync', () => {
             'syncMobileShellDrawerBounds',
             'applyTopbarOffset',
             'syncIOSKeyboardBottomInset',
+            'syncShortTouchComposer',
         ]);
         expect(sandbox.calls).not.toContain('syncChatbarVisibilityState');
         expect(sandbox.calls).not.toContain('syncMobileModalState');
@@ -635,6 +638,7 @@ describe('queued mobile viewport sync', () => {
             'syncMobileShellDrawerBounds',
             'applyTopbarOffset',
             'syncIOSKeyboardBottomInset',
+            'syncShortTouchComposer',
         ]);
         expect(sandbox.calls).not.toContain('syncChatbarVisibilityState');
         expect(sandbox.calls).not.toContain('syncMobileShellRailActions');
@@ -672,6 +676,7 @@ describe('queued mobile viewport sync', () => {
             'syncMobileShellDrawerBounds',
             'applyTopbarOffset',
             'syncIOSKeyboardBottomInset',
+            'syncShortTouchComposer',
         ]);
     });
 
@@ -693,6 +698,7 @@ describe('queued mobile viewport sync', () => {
             'syncMobileModalState',
         ]));
         expect(sandbox.calls).toContain('syncIOSKeyboardBottomInset');
+        expect(sandbox.calls).toContain('syncShortTouchComposer');
     });
 });
 

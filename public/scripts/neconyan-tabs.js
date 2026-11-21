@@ -543,7 +543,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261121-scratchpad-audit';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261121-mobile-audit';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -4272,6 +4272,23 @@ function syncIOSKeyboardBottomInset() {
     // desktop layouts only pick it up while the software keyboard is open.
     root.classList.toggle('sb-ios-keyboard-inset-active', bottomInset > 0);
     root.classList.toggle('sb-ios-composer-keyboard-controls-active', composerControlsActive);
+}
+
+function syncShortTouchComposer() {
+    const root = document.documentElement;
+    const viewport = window.visualViewport;
+    const layout = getLayoutViewportSize();
+    const visual = getVisualViewportSize(layout);
+    const editable = isChatComposerEditableElement(document.activeElement);
+    const keyboardOpen = isVisualViewportKeyboardOpen(layout, visual);
+    // Keep the layout still between tapping a composer control and the keyboard closing.
+    const editing = editable || (keyboardOpen && root.classList.contains('sb-short-touch-composer'));
+    const compact = window.matchMedia('(pointer: coarse)').matches && (viewport?.scale ?? 1) <= 1.01 && visual.height <= 420 && editing;
+    root.classList.toggle('sb-short-touch-composer', compact);
+    const height = compact ? `${Math.max(0, Math.floor(visual.bottom))}px` : '';
+    if (root.style.getPropertyValue('--sb-short-composer-bottom') !== height) {
+        root.style.setProperty('--sb-short-composer-bottom', height);
+    }
 }
 
 function getShellViewportSize() {
@@ -13828,11 +13845,10 @@ async function showUpdateToast(repository) {
         <button type="button" class="nn-update-toast-close" aria-label="Dismiss" title="Dismiss">
             <i class="fa-solid fa-xmark" aria-hidden="true"></i>
         </button>`;
-    toast.querySelector('.nn-update-toast-text > span').textContent = repository.kind === 'apk'
-        ? `APK v${repository.latestVersion} is ready. Open Server to update.`
-        : repository.kind === 'ipa' ? `IPA v${repository.latestVersion} is ready. Open Server to get it.`
-        : behind === 1 ? '1 new change. Open Server to update.'
-            : `${behind} new changes. Open Server to update.`;
+    let updateMessage = behind === 1 ? '1 new change. Open Server to update.' : `${behind} new changes. Open Server to update.`;
+    if (repository.kind === 'apk') updateMessage = `APK v${repository.latestVersion} is ready. Open Server to update.`;
+    if (repository.kind === 'ipa') updateMessage = `IPA v${repository.latestVersion} is ready. Open Server to get it.`;
+    toast.querySelector('.nn-update-toast-text > span').textContent = updateMessage;
     toast.querySelector('.nn-update-toast-open').addEventListener('click', () => {
         dismissUpdateToast();
         openShell('right', 'server');
@@ -21123,6 +21139,7 @@ function applyDefaultDrawerStates() {
 }
 
 function syncMobileViewportState({ kind = nnMobileShellLifecycle.viewportSync.kind.FULL } = {}) {
+    syncShortTouchComposer();
     const viewportSyncStep = nnMobileShellLifecycle.viewportSync.step;
     const isMobileViewportActive = isMobileViewport();
     const syncPlan = nnMobileShellLifecycle.viewportSync.resolveSyncPlan({
@@ -22766,6 +22783,8 @@ function initAll() {
     // real panel scroller is nudged manually after viewport changes.
     document.addEventListener('focusin', scheduleMobileFocusedInputScroll);
     document.addEventListener('focusout', scheduleMobileFocusedInputScroll);
+    document.addEventListener('focusin', handleMobileShellViewportResize);
+    document.addEventListener('focusout', handleMobileShellViewportResize);
     window.visualViewport?.addEventListener('resize', scheduleMobileFocusedInputScroll, { passive: true });
     window.visualViewport?.addEventListener('scroll', scheduleMobileFocusedInputScroll, { passive: true });
 
@@ -22782,8 +22801,6 @@ function initAll() {
     if (isIOSWebKitPlatform()) {
         document.addEventListener('focusin', syncIOSKeyboardBottomInset);
         document.addEventListener('focusout', syncIOSKeyboardBottomInset);
-        document.addEventListener('focusin', handleMobileShellViewportResize);
-        document.addEventListener('focusout', handleMobileShellViewportResize);
     }
 
     if (isLegacyIOSWebKitPlatform()) {
