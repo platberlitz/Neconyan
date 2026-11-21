@@ -20,6 +20,7 @@
 - PR #793 (2026-11-21) `fix(agents): strip echoed line-format companion trackers`
 - PR #794 (2026-11-21) `perf(rendering): stop redundant page-wide and per-token work`
 - PR #795 (2026-11-21) `perf(chat): stop the send path waiting on counts and layout`
+- PR #796 (2026-11-21) `perf(settings): coalesce rapid style previews`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
