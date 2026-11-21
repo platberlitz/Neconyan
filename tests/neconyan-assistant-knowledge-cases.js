@@ -1,5 +1,6 @@
 // Questions and distinguishing facts shared by Node and real-browser retrieval checks.
 export const refreshedKnowledgeCases = [
+    ['How do I Reload Neconyan without a browser toolbar?', 'navigation.reload', 'Troubleshooting → Reload Neconyan'],
     ['Where are Notebook options on my phone?', 'notes.phone-tools', 'Open Notebook options to switch or create notebooks'],
     ['Where are Note tools on my phone?', 'notes.phone-tools', 'Note tools reveals formatting'],
     ['How do I stop the top bar label from moving?', 'appearance.topbar-marquee', 'Turn the switch off to keep the ellipsis instead'],

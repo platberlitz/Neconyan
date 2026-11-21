@@ -253,7 +253,7 @@ describe('Simple Mode styles and wiring', () => {
         const welcome = read('public/scripts/welcome-screen.js');
         expect(welcome).toContain('simpleMemory.dataset.neconyanSimpleMemory = \'true\';');
         // The button shares the container that is hidden outside Simple Mode.
-        expect(welcome).toContain('rail.querySelector(\'[data-neconyan-simple-exit]\')?.append(simpleMemory, simpleUpdates, simpleExit);');
+        expect(welcome).toContain('rail.querySelector(\'[data-neconyan-simple-exit]\')?.append(simpleMemory, simpleUpdates, simpleReload, simpleExit);');
         expect(welcome).toContain('When a chat gets long, the LLM writes down what happened so your character does not forget.');
         expect(welcome).toContain('globalThis.NeconyanShell?.openTab?.(\'left\', \'mewmory\')');
 
