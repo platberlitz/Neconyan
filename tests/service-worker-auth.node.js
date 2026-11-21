@@ -146,6 +146,41 @@ test('versioned libraries, stylesheets, images and fonts stay stale-while-revali
     assert.deepEqual(worker.fetched, paths.map(pathname => `${ORIGIN}${pathname}`));
 });
 
+test('an unchanged versioned asset keeps its cache entry', async () => {
+    const pathname = '/css/neconyan.css?v=20261117-startup';
+    const url = `${ORIGIN}${pathname}`;
+    const cached = makeResponse('cached');
+    cached.headers = { get: name => name === 'ETag' ? '"same"' : '' };
+    const worker = loadWorker({
+        cache: new Map([[url, cached]]),
+        responseFor: () => {
+            const response = makeResponse('fresh');
+            response.headers = { get: name => name === 'ETag' ? '"same"' : '' };
+            return response;
+        },
+    });
+    let response;
+    worker.listeners.fetch({ request: requestFor(pathname), respondWith: promise => { response = promise; } });
+    assert.equal(await response, cached);
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(worker.cache.get(url), cached, 'the same ETag must not rewrite the entry');
+});
+
+test('a changed versioned asset replaces its cache entry', async () => {
+    const pathname = '/css/neconyan.css?v=20261117-startup';
+    const url = `${ORIGIN}${pathname}`;
+    const cached = makeResponse('cached');
+    cached.headers = { get: name => name === 'ETag' ? '"old"' : '' };
+    const fresh = makeResponse('fresh');
+    fresh.headers = { get: name => name === 'ETag' ? '"new"' : '' };
+    const worker = loadWorker({ cache: new Map([[url, cached]]), responseFor: () => fresh });
+    let response;
+    worker.listeners.fetch({ request: requestFor(pathname), respondWith: promise => { response = promise; } });
+    assert.equal(await response, cached);
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(worker.cache.get(url), fresh);
+});
+
 test('unversioned files bypass the service worker even when a previous APK cached them', () => {
     const paths = [
         '/css/toggle-dependent.css',
