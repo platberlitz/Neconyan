@@ -1,6 +1,6 @@
 import { getRequestHeaders } from '../../script.js';
 import { getCurrentUserHandle } from '../user.js';
-import { scheduleInterfaceRefresh } from './render-scheduler.js';
+import { scheduleInterfaceRefresh, scheduleTimelineRender } from './render-scheduler.js';
 import { withAbortSignal } from '../abort.js';
 
 const previews = new Map();
@@ -19,11 +19,20 @@ export function observeNativeConversationPreview(jobId, account) {
     let diagnosticRunning = false;
     const diagnostic = phase => { try { globalThis.NeconyanCrashDiagnostics?.observePhase?.(entry, phase); } catch { /* Optional diagnostics. */ } };
     const current = () => !stopped && account === getCurrentUserHandle();
+    let speakerSignature = '';
     const update = participants => {
         if (!current()) return;
         entry.participants = participants;
         if (Boolean(participants.length) !== diagnosticRunning) { diagnosticRunning = Boolean(participants.length); diagnostic(diagnosticRunning ? 'generating' : null); }
-        scheduleInterfaceRefresh({ syncControls: false });
+        // Streamed text only changes a live bubble. A full workspace refresh is
+        // needed when a speaker joins, leaves or is renamed.
+        const signature = participants.map(participant => JSON.stringify([participant?.avatar || '', participant?.name || ''])).join('\u001e');
+        if (signature !== speakerSignature) {
+            speakerSignature = signature;
+            scheduleInterfaceRefresh({ syncControls: false });
+        } else {
+            scheduleTimelineRender();
+        }
     };
     // Close the stream while the page is hidden so a phone is not kept awake receiving
     // text nobody sees; the regular observer still reads the saved reply.
