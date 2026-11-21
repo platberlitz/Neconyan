@@ -7,7 +7,9 @@ import { afterEach, beforeEach, describe, expect, test } from '@jest/globals';
 import {
     FRONTEND_ASSET_PREFIX,
     HASHED_FRONTEND_ASSET_RE,
+    buildPublicModuleImportMap,
     clearFrontendManifestCache,
+    clearPublicModuleImportMapCache,
     getFrontendManifestPath,
     readRewrittenFrontendHtml,
     rewriteFrontendHtml,
@@ -102,6 +104,34 @@ describe('frontend asset manifest rewriting', () => {
             expect(changed).not.toBe(first);
         } finally {
             fs.rmSync(work, { force: true, recursive: true });
+        }
+    });
+
+    test('stamps every module through one import map so its identity stays single', () => {
+        const work = fs.mkdtempSync(path.join(os.tmpdir(), 'frontend-modules-'));
+        try {
+            fs.mkdirSync(path.join(work, 'scripts'));
+            fs.writeFileSync(path.join(work, 'lib.js'), 'export const lib = 1;');
+            fs.writeFileSync(path.join(work, 'script.js'), 'export const app = 1;');
+            fs.writeFileSync(path.join(work, 'scripts', 'tabs.js'), "import '../script.js';");
+            const map = buildPublicModuleImportMap(work);
+            const html = [
+                '<script type="importmap">{ "imports": { "#macro-vendor": "./lib.js" } }</script>',
+                '<link rel="modulepreload" href="script.js">',
+                '<script type="module" src="script.js"></script>',
+                '<script type="module" src="scripts/tabs.js"></script>',
+            ].join('');
+            const rewritten = rewriteFrontendHtml(html, { enabled: true, importMap: map });
+            const served = JSON.parse(rewritten.match(/<script type="importmap">([\s\S]*?)<\/script>/)[1]);
+            expect(map['/script.js']).toMatch(/^\/script\.js\?v=/);
+            expect(rewritten).toContain(`href="${map['/script.js']}"`);
+            expect(rewritten).toContain(`src="${map['/script.js']}"`);
+            expect(rewritten).toContain(`src="${map['/scripts/tabs.js']}"`);
+            expect(served.imports['/script.js']).toBe(map['/script.js']);
+            expect(served.imports['#macro-vendor']).toBe(map['/lib.js']);
+        } finally {
+            fs.rmSync(work, { force: true, recursive: true });
+            clearPublicModuleImportMapCache();
         }
     });
 
