@@ -1,5 +1,6 @@
 #include <jni.h>
 #include <node.h>
+#include <uv.h>
 #include <string>
 #include <vector>
 #include <unistd.h>
@@ -70,7 +71,11 @@ static void Physical(const v8::FunctionCallbackInfo<v8::Value>& args) {
         return;
     }
     if (result != 0) {
-        isolate->ThrowException(v8::Exception::Error(v8::String::NewFromUtf8(isolate, strerror(errno)).ToLocalChecked()));
+        int error = uv_translate_sys_error(errno);
+        auto exception = v8::Exception::Error(v8::String::NewFromUtf8(isolate, uv_strerror(error)).ToLocalChecked());
+        exception.As<v8::Object>()->Set(context, v8::String::NewFromUtf8Literal(isolate, "code"),
+            v8::String::NewFromUtf8(isolate, uv_err_name(error)).ToLocalChecked()).Check();
+        isolate->ThrowException(exception);
         return;
     }
     if (!(value.stx_mask & STATX_BTIME)) { args.GetReturnValue().SetNull(); return; }
@@ -101,9 +106,6 @@ Java_io_github_platberlitz_neconyan_ServerService_startNode(JNIEnv* env, jclass,
         ThrowOrReturn(env, "Cannot read the local server cache path.");
         return 1;
     }
-    setenv("TMPDIR", cache, 1);
-    setenv("NODE_COMPILE_CACHE", (std::string(cache) + "/node-cache").c_str(), 1);
-    setenv("NECONYAN_SUPERVISED", "1", 1);
     // Redirect stdout and stderr to the server log without closing the original
     // descriptors first. freopen() closes stdout before it knows the log can open,
     // so a failure there would leave Node writing to a closed descriptor, or to a

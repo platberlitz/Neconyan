@@ -30,6 +30,28 @@ final class StandaloneTests: XCTestCase {
         csrf = try XCTUnwrap((JSONSerialization.jsonObject(with: data) as? [String: Any])?["token"] as? String)
     }
 
+    /// iPhones show the share sheet with a Close button; iPads show it as a popover closed by tapping outside.
+    @MainActor
+    private func dismissShareSheet(in app: XCUIApplication, timeout: TimeInterval) -> Bool {
+        let sheet = app.navigationBars["UIActivityContentView"].firstMatch
+        let close = app.buttons["header.closeButton"].firstMatch
+        let legacyClose = app.buttons.matching(NSPredicate(format: "label ==[c] %@", "Close")).firstMatch
+        let outside = app.otherElements.matching(identifier: "PopoverDismissRegion")
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if let target = [close, legacyClose].first(where: { $0.exists && $0.isHittable }) {
+                target.tap()
+                return sheet.waitForNonExistence(timeout: 5) && close.waitForNonExistence(timeout: 5)
+            }
+            if sheet.exists, let region = outside.allElementsBoundByIndex.first(where: { $0.isHittable }) {
+                region.tap()
+                return sheet.waitForNonExistence(timeout: 5)
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        }
+        return false
+    }
+
     @MainActor
     func testStartupRecoveryWaitsForExplicitRetry() throws {
         for failure in ["setup", "termination", "navigation"] {
@@ -38,8 +60,9 @@ final class StandaloneTests: XCTestCase {
             app.launchEnvironment["NECONYAN_TEST_STARTUP_FAILURE"] = failure
             app.launch()
             let status = app.staticTexts["startup-status"]
-            let recovered = NSPredicate(format: "exists == true AND label != %@", "Starting Neconyan on this iPhone…")
-            expectation(for: recovered, evaluatedWith: status)
+            // The label changes through each startup stage, so wait for the recovery button instead.
+            let recovered = NSPredicate(format: "exists == true AND hittable == true")
+            expectation(for: recovered, evaluatedWith: app.buttons["Try again"])
             waitForExpectations(timeout: 240)
             let message = status.label
             XCTAssertTrue(app.buttons["Try again"].isHittable)
@@ -48,8 +71,7 @@ final class StandaloneTests: XCTestCase {
             app.activate()
             XCTAssertEqual(status.label, message, "Returning to the app must not restart a failed page.")
             app.buttons["Share startup log"].tap()
-            XCTAssertTrue(app.buttons["Close"].waitForExistence(timeout: 10))
-            app.buttons["Close"].tap()
+            XCTAssertTrue(dismissShareSheet(in: app, timeout: 10))
             XCTAssertEqual(status.label, message)
             let screenshot = XCTAttachment(screenshot: app.screenshot())
             screenshot.name = "startup-recovery-\(failure)"
@@ -60,6 +82,89 @@ final class StandaloneTests: XCTestCase {
             XCTAssertFalse(status.exists)
             app.terminate()
         }
+    }
+
+    @MainActor
+    func testWebProcessLossAfterReadyReloadsOnce() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["NECONYAN_TEST_PORT"] = "28193"
+        app.launchEnvironment["NECONYAN_TEST_STARTUP_FAILURE"] = "reload-after-ready"
+        app.launch()
+        XCTAssertTrue(app.webViews["workspace-ready-after-reload"].waitForExistence(timeout: 240), "A page lost after it was ready must reload by itself.")
+        XCTAssertFalse(app.buttons["Try again"].exists)
+        XCTAssertFalse(app.staticTexts["startup-status"].exists)
+        app.terminate()
+    }
+
+    @MainActor
+    func testPageFeaturesWorkInsideTheApp() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["NECONYAN_TEST_PORT"] = "28193"
+        app.launchEnvironment["NECONYAN_TEST_PAGE_SCRIPT"] = #"""
+        (() => {
+            const box = document.createElement('div');
+            box.style.cssText = 'position:fixed;left:16px;right:16px;top:120px;z-index:2147483647;background:#fff;color:#000;padding:12px;display:grid;gap:12px';
+            const button = (label, action) => {
+                const item = document.createElement('button');
+                item.textContent = label;
+                item.style.cssText = 'min-height:44px;font-size:18px';
+                item.addEventListener('click', action);
+                box.append(item);
+            };
+            button('Test alert', () => alert('Native dialog works'));
+            button('Test download', () => {
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(new Blob(['Downloaded inside the app'], { type: 'text/plain' }));
+                link.download = 'neconyan-test.txt';
+                document.body.append(link);
+                link.click();
+                link.remove();
+            });
+            button('Test popup', () => {
+                const view = window.open('', '_blank');
+                view.document.write('<!doctype html><title>Print view</title><h1>Popup print view</h1>');
+                view.document.close();
+            });
+            const frame = document.createElement('iframe');
+            frame.setAttribute('sandbox', 'allow-scripts');
+            frame.srcdoc = '<p>Sandboxed frame loaded</p>';
+            frame.style.cssText = 'height:60px;border:0';
+            box.append(frame);
+            document.body.append(box);
+        })();
+        """#
+        app.launch()
+        XCTAssertTrue(app.webViews["workspace-ready"].waitForExistence(timeout: 240))
+        XCTAssertTrue(app.staticTexts["Sandboxed frame loaded"].waitForExistence(timeout: 30), "Sandboxed srcdoc frames must load.")
+
+        // A fresh profile opens the interactive tour over Home. Its focus guard
+        // deliberately swallows taps outside the tour, even on the fixture buttons.
+        let skipTour = app.webViews["workspace-ready"].buttons["Skip"].firstMatch
+        if skipTour.exists && skipTour.isHittable {
+            skipTour.tap()
+            XCTAssertTrue(skipTour.waitForNonExistence(timeout: 10))
+        }
+        app.buttons["Test alert"].tap()
+        let alert = app.alerts["Neconyan"]
+        XCTAssertTrue(alert.waitForExistence(timeout: 10), "alert() must show a native dialog.")
+        XCTAssertTrue(alert.staticTexts["Native dialog works"].exists)
+        alert.buttons["OK"].tap()
+
+        app.buttons["Test download"].tap()
+        XCTAssertTrue(dismissShareSheet(in: app, timeout: 20), "A blob download must open the share sheet.")
+
+        app.buttons["Test popup"].tap()
+        let done = app.navigationBars.buttons["Done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 20), "window.open must show a closable page.")
+        XCTAssertTrue(app.staticTexts["Popup print view"].waitForExistence(timeout: 10))
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "popup-print-view"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        done.tap()
+        XCTAssertTrue(app.buttons["Test popup"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["Try again"].exists)
+        app.terminate()
     }
 
     @MainActor

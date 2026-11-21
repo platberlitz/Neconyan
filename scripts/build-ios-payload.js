@@ -3,6 +3,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { iosVersions } from './ios-version.js';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
@@ -18,6 +19,7 @@ for (const name of files) {
     fs.copyFileSync(path.join(root, name), path.join(target, name));
 }
 fs.copyFileSync(path.join(root, 'ios/server-bootstrap.mjs'), path.join(target, 'server-bootstrap.mjs'));
+fs.copyFileSync(path.join(root, 'android/bootstrap-config.mjs'), path.join(target, 'bootstrap-config.mjs'));
 for (const notice of ['NODE-LICENSE.txt', 'POLYWASM-LICENSE.txt']) fs.copyFileSync(path.join(root, 'ios', notice), path.join(target, notice));
 const extensions = [...new Set(files.filter(name => name.startsWith('public/scripts/extensions/third-party/')).map(name => name.split('/')[4]))].filter(Boolean).sort();
 fs.writeFileSync(path.join(target, 'bundled-extensions.json'), JSON.stringify(extensions));
@@ -33,9 +35,12 @@ execFileSync('npm', ['ci', '--omit=dev', '--omit=optional', '--ignore-scripts', 
 execFileSync('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: path.join(root, 'ios/tools'), stdio: 'inherit' });
 execFileSync(process.execPath, ['ios/tools/prepare-sentencepiece.mjs', target], { cwd: root, stdio: 'inherit' });
 fs.writeFileSync(path.join(root, 'ios/generated/payload-version.txt'), provenance.commit + '\n');
-fs.writeFileSync(path.join(root, 'ios/generated/version.xcconfig'), `MARKETING_VERSION = ${provenance.version}\nCURRENT_PROJECT_VERSION = ${provenance.version}\n`);
+// iOS accepts at most three numbers in either version key, so a hotfix (X.Y.Z.A) keeps
+// X.Y.Z as the visible version and the build number carries the same code Android uses.
+const { marketingVersion, buildNumber } = iosVersions(provenance.version);
+fs.writeFileSync(path.join(root, 'ios/generated/version.xcconfig'), `MARKETING_VERSION = ${marketingVersion}\nCURRENT_PROJECT_VERSION = ${buildNumber}\n`);
 const icons = path.join(root, 'ios/generated/Assets.xcassets/AppIcon.appiconset');
 fs.mkdirSync(icons, { recursive: true });
-fs.copyFileSync(path.join(root, 'public/img/neconyan-icon-512.png'), path.join(icons, 'icon.png'));
+fs.copyFileSync(path.join(root, 'ios/AppIcon-1024.png'), path.join(icons, 'icon.png'));
 fs.writeFileSync(path.join(icons, 'Contents.json'), JSON.stringify({ images: [{ filename: 'icon.png', idiom: 'universal', platform: 'ios', size: '1024x1024' }], info: { author: 'xcode', version: 1 } }));
 console.log(`iOS server payload built for ${provenance.commit}`);

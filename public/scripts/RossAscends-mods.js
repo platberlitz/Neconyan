@@ -221,7 +221,9 @@ export function shouldSendOnEnter() {
         case send_on_enter_options.DISABLED:
             return false;
         case send_on_enter_options.AUTO:
-            return !isMobile();
+            return !isMobile() && globalThis.neconyanNativeDevice?.platform !== 'ios'
+                && !(navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+                && !globalThis.matchMedia?.('(pointer: coarse)').matches;
         case send_on_enter_options.ENABLED:
             return true;
     }

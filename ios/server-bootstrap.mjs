@@ -5,6 +5,7 @@ import YAML from 'yaml';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
 import { serverEvents, EVENT_NAMES } from './src/server-events.js';
 import { beginServerWork, configureServerWakeMarker } from './src/android-wake.js';
+import { loadBootstrapConfig, setAsideNotice } from './bootstrap-config.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const [privatePath, port, password] = process.argv.slice(2);
@@ -12,8 +13,32 @@ if (!privatePath || !/^\d+$/.test(port) || Number(port) < 1024 || Number(port) >
     throw new Error('Invalid private iOS launch configuration.');
 }
 const statePath = fs.realpathSync(privatePath);
+// Node runs inside the app process, so any exit closes the whole app. The app reads this
+// file on the next launch to explain what happened instead of silently starting again.
+const exitPath = path.join(statePath, 'ios-exit.json');
+const notePath = path.join(statePath, 'ios-startup-note.txt');
+fs.rmSync(notePath, { force: true });
+process.env.NECONYAN_STARTUP_NOTE_FILE = notePath;
+let lastFailure = '';
+const describe = error => String(error?.message ?? error).trim().replace(/\.$/, '').slice(0, 400);
+process.on('uncaughtExceptionMonitor', error => { lastFailure = describe(error); });
+process.once('exit', code => {
+    if (code === 0) return;
+    let message = lastFailure;
+    if (!message) {
+        try {
+            message = describe(fs.readFileSync(notePath, 'utf8').replace(/^Could not start Neconyan:\s*/, '').replace(/\s*Saved data has been kept\.$/, ''));
+        } catch { /* No note: the code alone still explains that the server stopped. */ }
+    }
+    try {
+        writeFileAtomicSync(exitPath, JSON.stringify({ code, message, at: new Date().toISOString() }), { mode: 0o600 });
+    } catch { /* The private server log still has the failure. */ }
+});
 const configPath = path.join(statePath, 'ios-config.yaml');
-const config = YAML.parse(fs.readFileSync(fs.existsSync(configPath) ? configPath : path.join(root, 'default/config.yaml'), 'utf8'));
+// An old saved file gains the sections written below; a damaged one is set aside so it
+// cannot stop every launch.
+const { config, setAside, reason } = loadBootstrapConfig(configPath, path.join(root, 'default/config.yaml'));
+if (setAside) console.warn(`${setAsideNotice(setAside)} Reason: ${reason}`);
 Object.assign(config, {
     dataRoot: path.join(statePath, 'data'), port: Number(port), listen: true,
     listenAddress: { ipv4: '127.0.0.1', ipv6: '::1' }, protocol: { ipv4: true, ipv6: false },

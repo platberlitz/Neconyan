@@ -10,6 +10,7 @@ final class NativeNotifications: NSObject, UNUserNotificationCenterDelegate {
     private let center = UNUserNotificationCenter.current()
     private var draining = false
     private var revision = 0
+    private var drainedModification: Date?
 
     init(inbox: URL) {
         self.inbox = inbox
@@ -26,8 +27,9 @@ final class NativeNotifications: NSObject, UNUserNotificationCenterDelegate {
     func setEnabled(_ enabled: Bool) async -> [String: Bool] {
         revision += 1
         let requestRevision = revision
-        let allowed = enabled ? ((try? await center.requestAuthorization(options: [.alert, .sound, .badge])) ?? false) : false
+        let allowed = enabled ? ((try? await center.requestAuthorization(options: [.alert, .sound])) ?? false) : false
         guard revision == requestRevision else { return await state() }
+        drainedModification = nil
         defaults.set(allowed, forKey: "notifications.enabled")
         defaults.set(Date().timeIntervalSince1970 * 1000, forKey: "notifications.since")
         if !allowed {
@@ -37,17 +39,21 @@ final class NativeNotifications: NSObject, UNUserNotificationCenterDelegate {
         return await state()
     }
 
-    /// Called before the background keeper releases its final work allowance.
+    /// Called every second by the background keeper; the inbox is read only after the server rewrote it.
     func drain() {
         guard !draining, defaults.bool(forKey: "notifications.enabled") else { return }
+        let modified = (try? FileManager.default.attributesOfItem(atPath: inbox.path))?[.modificationDate] as? Date
+        guard let modified, modified != drainedModification else { return }
         draining = true
         var allowance = UIBackgroundTaskIdentifier.invalid
         allowance = UIApplication.shared.beginBackgroundTask(withName: "Deliver notifications") {
             if allowance != .invalid { UIApplication.shared.endBackgroundTask(allowance); allowance = .invalid }
         }
         Task {
+            var retry = false
             defer {
                 draining = false
+                drainedModification = retry ? nil : modified
                 if allowance != .invalid { UIApplication.shared.endBackgroundTask(allowance) }
             }
             guard (await state())["enabled"] == true,
@@ -71,7 +77,7 @@ final class NativeNotifications: NSObject, UNUserNotificationCenterDelegate {
                         center.removeDeliveredNotifications(withIdentifiers: [id])
                     }
                     seen.insert(id)
-                } catch { /* Keep undelivered IDs eligible for the next poll. */ }
+                } catch { retry = true /* Keep undelivered IDs eligible for the next poll. */ }
             }
             let retained = Set(events.compactMap { $0["id"] as? String })
             defaults.set(Array(seen.intersection(retained)), forKey: "notifications.seen")
@@ -80,5 +86,10 @@ final class NativeNotifications: NSObject, UNUserNotificationCenterDelegate {
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
         completionHandler([.banner, .sound])
+    }
+
+    // Tapping a notification only needs to bring Neconyan forward, which iOS has already done.
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
+        completionHandler()
     }
 }

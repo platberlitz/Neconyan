@@ -42,7 +42,7 @@ async function updateFixture(t, configuredAutoStash = false) {
         isGitRepository, NON_GIT_REPOSITORY_MESSAGE, getStatusDisplayBranch,
         toTrimmedString: value => String(value).trim(), getConfigValue: () => configuredAutoStash,
         refreshRepositoryRemote: createRemoteRefresh(), getInstallCommand: () => null,
-        getVersion: async () => ({}), scheduleRestart: () => { restarted = true; },
+        getVersion: async () => ({}), scheduleRestart: () => { restarted = true; }, rejectInAppRestart: () => false,
         requireAdminMiddleware() {}, router: { post: (_url, _admin, handler) => { update = handler; } },
     });
     for (const name of ['getRepositoryStatus', 'restoreAutoStash']) {

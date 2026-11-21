@@ -15,7 +15,8 @@ const TONE_AMPLITUDE = 60;
 
 export function isBackgroundKeepAliveDevice(navigatorRef = globalThis.navigator, host = globalThis) {
     if (!navigatorRef) return false;
-    // The Android app keeps its own server and page alive with a foreground notification.
+    // Android's foreground service keeps the server alive. Android can still suspend
+    // the page when it is hidden; durable work continues on the server instead.
     if (host?.NeconyanAndroid || host?.NeconyanExport) return false;
     const userAgent = String(navigatorRef.userAgent || '');
     const platform = String(navigatorRef.platform || '');

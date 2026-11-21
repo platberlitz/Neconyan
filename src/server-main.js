@@ -53,8 +53,7 @@ import {
     migratePublicOverrides,
 } from './users.js';
 
-import getWebpackServeMiddleware from './middleware/webpack-serve.js';
-import { FRONTEND_ASSET_PREFIX, rewriteFrontendHtml } from './frontend-assets.js';
+import { FRONTEND_ASSET_PREFIX, rewriteFrontendHtml, validateBundledFrontend } from './frontend-assets.js';
 import { getFrontendAssetMiddleware, redirectLegacyFrontendAsset, setPublicAssetHeaders, shouldServeFrontendAssets } from './middleware/frontend-assets.js';
 import getResponseCompressionMiddleware from './middleware/response-compression.js';
 import basicAuthMiddleware from './middleware/basicAuth.js';
@@ -98,6 +97,7 @@ import { init as statsInit, onExit as statsOnExit } from './endpoints/stats.js';
 import { checkForNewContent, PRESET_CONTENT_TYPES } from './endpoints/content-manager.js';
 import { init as settingsInit } from './endpoints/settings.js';
 import { ServerStartup, setupPrivateEndpoints } from './server-startup.js';
+import { writeStartupNote } from './startup-note.js';
 import { diskCache } from './endpoints/characters.js';
 import { migrateFlatSecrets } from './endpoints/secrets.js';
 import { migrateGroupChatsMetadataFormat } from './endpoints/groups.js';
@@ -486,16 +486,22 @@ app.get('/docs/:slug', (request, response, next) => {
 });
 
 // Host frontend assets
-const webpackMiddleware = getWebpackServeMiddleware();
-const notesEditorMiddleware = getWebpackServeMiddleware({ bundle: 'notes-editor' });
+const bundledMobileFrontend = process.env.NECONYAN_ANDROID_APP === '1' || process.env.NECONYAN_IOS_APP === '1';
+// The APK and IPA already include both compiled bundles. Importing and running
+// Webpack again on a fresh install costs startup time and memory on the device.
+const webpack = bundledMobileFrontend ? null : await import('./middleware/webpack-serve.js');
+const webpackMiddleware = webpack?.default();
+const notesEditorMiddleware = webpack?.default({ bundle: 'notes-editor' });
 const frontendAssetMiddleware = getFrontendAssetMiddleware();
 app.use(redirectLegacyFrontendAsset);
 app.use(FRONTEND_ASSET_PREFIX, frontendAssetMiddleware.immutableAssets);
-app.use(webpackMiddleware);
-app.use(notesEditorMiddleware);
+if (webpackMiddleware && notesEditorMiddleware) {
+    app.use(webpackMiddleware);
+    app.use(notesEditorMiddleware);
+}
 app.use(userCssMiddleware);
 app.use((request, response, next) => {
-    if (!shouldServeFrontendAssets()) {
+    if (!bundledMobileFrontend && !shouldServeFrontendAssets()) {
         return next();
     }
 
@@ -702,6 +708,11 @@ async function preSetupTasks() {
         enableKeepAlive: cliArgs.enableKeepAlive,
         privateRequestFilterEnabled: requestFilterOptions.enabled,
     });
+
+    if (bundledMobileFrontend) {
+        validateBundledFrontend();
+        return;
+    }
 
     // Wait for frontend libs to compile
     await webpackMiddleware.runWebpackCompiler();
@@ -991,5 +1002,6 @@ initUserStorage(globalThis.DATA_ROOT)
     .then(postSetupTasks)
     .catch((error) => {
         console.error('A critical error has occurred while starting the server:', error);
+        writeStartupNote(error);
         process.exit(1);
     });

@@ -84,6 +84,19 @@ describe('mobile send button helpers', () => {
         }
     });
 
+    test('trusts the iPhone app for the iOS version its web view hides', () => {
+        const appWebView = {
+            platform: 'iPhone',
+            maxTouchPoints: 5,
+            userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
+        };
+        expect(isLegacyIOSWebKitPlatform(appWebView, { platform: 'ios', osMajor: 26 })).toBe(false);
+        expect(isLegacyIOSWebKitPlatform(appWebView, { platform: 'ios', osMajor: 18 })).toBe(true);
+        expect(isLegacyIOSWebKitPlatform(appWebView, { platform: 'ios', osMajor: 'nope' })).toBe(true);
+        expect(isLegacyIOSWebKitPlatform(appWebView, { platform: 'android', osMajor: 26 })).toBe(true);
+        expect(isLegacyIOSWebKitPlatform({ ...appWebView, platform: 'Linux x86_64' }, { platform: 'ios', osMajor: 18 })).toBe(false);
+    });
+
     test('checks whether a touch ended inside the send button', () => {
         const button = { contains: target => target === 'inside' };
         expect(touchEndedInsideElement(createTouchEvent('touchend'), button, {

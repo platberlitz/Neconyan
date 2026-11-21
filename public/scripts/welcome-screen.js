@@ -2135,9 +2135,9 @@ function initializeNeconyanRailSections(rail) {
     }
 }
 
-function setNeconyanRailCollapsed(collapsed) {
+function setNeconyanRailCollapsed(collapsed, { remember = true } = {}) {
     const nextCollapsed = Boolean(collapsed);
-    accountStorage.setItem(NECONYAN_RAIL_COLLAPSED_KEY, String(nextCollapsed));
+    if (remember) accountStorage.setItem(NECONYAN_RAIL_COLLAPSED_KEY, String(nextCollapsed));
     document.documentElement.dataset.neconyanSidebar = nextCollapsed ? 'closed' : 'open';
     const toggle = document.getElementById('neconyan-sidebar-toggle');
     toggle?.setAttribute('aria-expanded', String(!nextCollapsed));
@@ -2634,7 +2634,13 @@ function ensureNeconyanRail() {
     });
     delete simpleUpdates.dataset.neconyanRoute;
     simpleUpdates.dataset.neconyanSimpleUpdates = 'true';
-    rail.querySelector('[data-neconyan-simple-exit]')?.append(simpleMemory, simpleUpdates, simpleExit);
+    const reloadWorkspace = () => void import('../script.js').then(({ reloadNeconyanWorkspace }) => reloadNeconyanWorkspace());
+    const createReloadButton = (route = '') => createNeconyanRailButton({
+        label: t`Reload Neconyan`, icon: 'fa-rotate', route, onClick: reloadWorkspace,
+    });
+    const simpleReload = createReloadButton();
+    delete simpleReload.dataset.neconyanRoute;
+    rail.querySelector('[data-neconyan-simple-exit]')?.append(simpleMemory, simpleUpdates, simpleReload, simpleExit);
 
     const modeNav = rail.querySelector('[data-neconyan-mode-nav]');
     if (modeNav instanceof HTMLElement) {
@@ -2688,7 +2694,7 @@ function ensureNeconyanRail() {
         onClick: () => window.open(NECONYAN_ISSUES_URL, '_blank', 'noopener,noreferrer'),
     });
     reportIssueButton.title = 'Opens the Neconyan GitHub issues page in a new tab';
-    finerNav.appendChild(reportIssueButton);
+    finerNav.append(createReloadButton('reload-workspace'), reportIssueButton);
 
     rail.querySelector('[data-neconyan-route="new-chat"]').addEventListener('click', () => activateNeconyanRailRoute('new-chat'));
     rail.querySelectorAll('[data-neconyan-route="search"], [data-neconyan-route="settings"]').forEach(button => {
@@ -2697,9 +2703,16 @@ function ensureNeconyanRail() {
     rail.querySelector('[data-neconyan-refresh-recent]').addEventListener('click', () => void refreshNeconyanRail({ force: true }));
     rail.querySelector('[data-neconyan-open-archive]').addEventListener('click', () => openNeconyanChatArchive());
     rail.querySelector('[data-neconyan-edit-quick-actions]').addEventListener('click', () => globalThis.NeconyanShell?.editQuickActions?.());
+    // A sideways phone needs most of its width for chat. Keep its sidebar
+    // preference separate, so rotating the phone doesn't change the desktop rail.
+    const shortTouch = window.matchMedia('(min-width: 769px) and (max-height: 420px) and (pointer: coarse)');
+    let shortTouchCollapsed = true;
+    const syncRail = () => setNeconyanRailCollapsed(shortTouch.matches ? shortTouchCollapsed : isNeconyanRailCollapsed(), { remember: false });
+    shortTouch.addEventListener('change', syncRail);
     rail.querySelector('#neconyan-sidebar-toggle').addEventListener('click', () => {
         const collapsed = document.documentElement.dataset.neconyanSidebar === 'closed';
-        setNeconyanRailCollapsed(!collapsed);
+        if (shortTouch.matches) shortTouchCollapsed = !collapsed;
+        setNeconyanRailCollapsed(!collapsed, { remember: !shortTouch.matches });
     });
 
     document.body.insertBefore(rail, document.getElementById('sheld') || document.body.firstChild);
@@ -2710,7 +2723,7 @@ function ensureNeconyanRail() {
     initializeNeconyanHome(rail);
     document.body.classList.add('neconyan-rail-ready');
     window.dispatchEvent(new Event('neconyan:rail-ready'));
-    setNeconyanRailCollapsed(isNeconyanRailCollapsed());
+    syncRail();
     void refreshNeconyanRail();
 }
 

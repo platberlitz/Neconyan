@@ -1,7 +1,14 @@
 plugins { id 'com.android.application' version '8.13.0' }
 
 def appPackage = new groovy.json.JsonSlurper().parse(file('../../package.json'))
+if (!(appPackage.version ==~ /(?:0|[1-9][0-9]{0,3})(?:\.(?:0|[1-9][0-9]?)){2,3}/)) {
+    throw new GradleException('Use X.Y.Z or X.Y.Z.A, with the last three numbers below 100.')
+}
 def numbers = appPackage.version.tokenize('.').collect { it as int }
+def apkVersionCode = numbers[0] * 1000000L + numbers[1] * 10000 + numbers[2] * 100 + (numbers.size() > 3 ? numbers[3] : 0)
+if (apkVersionCode < 1 || apkVersionCode > 2100000000L) {
+    throw new GradleException('The Android version code is outside the supported range.')
+}
 def nodeRoot = System.getenv('NODE_MOBILE_ROOT') ?: file('../libnode').absolutePath
 
 android {
@@ -13,7 +20,7 @@ android {
         minSdk 30
         targetSdk 36
         // Hotfixes use a fourth number (1.2.4.1); the code stays above every older three-part code.
-        versionCode numbers[0] * 1000000 + numbers[1] * 10000 + numbers[2] * 100 + (numbers.size() > 3 ? numbers[3] : 0)
+        versionCode apkVersionCode.toInteger()
         versionName appPackage.version
         externalNativeBuild { cmake { arguments "-DNODE_MOBILE_ROOT=${nodeRoot}", '-DANDROID_STL=c++_shared' } }
         buildConfigField 'String', 'SERVER_SHA256', '"' + file('src/main/assets/server.sha256').text.trim() + '"'

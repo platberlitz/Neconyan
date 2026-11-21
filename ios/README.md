@@ -10,23 +10,28 @@ If a release includes an iPhone build, its **unsigned device IPA** is the file e
 
 The 'iOS Release Build' GitHub Actions workflow makes it: it builds the IPA, runs a 13 GiB import and starts the app in Apple's iPhone simulator. Run it by hand on any branch for a test build; the files are under **Artifacts** as `ios-release-<commit>`, for signed-in GitHub accounts only.
 
-You'll need iOS 17 or later. A free Apple account normally needs its signature refreshed every seven days and has a three-app limit. Keep the same signing identity and app identifier when updating so iOS can keep the app's data. Export an account backup before changing signing tools or removing the app; deleting the app deletes its private data too.
+You'll need iOS 17 or later on an iPhone or iPad. A free Apple account normally needs its signature refreshed every seven days and has a three-app limit. Keep the same signing tool, Apple account and app identifier when updating so iOS installs the new IPA over the old one and keeps the app's data. Export an account backup before changing signing tools or removing the app; deleting the app deletes its private data too.
 
-The build isn't an App Store release. Simulator checks don't replace testing on your own iPhone.
+The Server page checks GitHub for a newer IPA and links to its release page. It can't install the update itself: download the IPA and install it with your sideloading tool, the same way as the first time.
+
+The build isn't an App Store release. Simulator checks on an iPhone and an iPad don't replace testing on your own device.
 
 ## What to expect
 
-- Characters, chats, settings and imported files stay in the app's private storage. Updates replace the bundled server separately from your data.
-- Imports carry on in the background. While the local server has work (an import, a server-side reply, memory upkeep), the app plays silent audio so iOS keeps it running with the screen locked, and stops once the server has been idle for 30 seconds. That's what the 'audio' background mode is for, which is also why this build isn't headed for the App Store.
+- Characters, chats, settings and imported files stay in the app's private storage. Updates replace the bundled server separately from your data. Extensions installed 'for all users' are carried over to the new version; if an update ships an extension with the same folder name, your copy is kept under `files/iPhone extension backups`.
+- Imports carry on in the background. While the local server has work (an import, a server-side reply, memory upkeep) and the app isn't on screen, it plays silent audio so iOS keeps it running with the screen locked, and stops once the server has been idle for 30 seconds. It never holds the audio session while the app is open, so dictation and read-aloud work normally. That's what the 'audio' background mode is for, which is also why this build isn't headed for the App Store.
 - Backup ZIPs picked through the app's own picker are copied straight into its storage, so the page never uploads them. The server then starts the import itself, so it doesn't matter if the page is paused. Leave about twice the backup's size free while it's copied in.
 - Replies written in the page keep going too. If you leave mid-reply, the page plays its own silent sound until the reply is written, saved and any Agents after it have run, then stops 15 seconds later. 'Neconyan is finishing a reply' can show on the lock screen meanwhile, and music from another app may pause until it's done.
 - iOS can still end the app under memory pressure. If that happens mid-import, reopen it and start the import again.
-- File inputs use the system picker. Downloads open the share sheet, where you can save to Files.
-- External links open outside the app. The embedded browser connects only to Neconyan's password-protected loopback server, which isn't exposed to the local network.
+- File inputs use the system picker. Downloads open the share sheet, where you can save to Files or Photos. Print views, such as the Scratchpad PDF export, open in a sheet with Print and Done buttons.
+- External links open in Safari. The embedded browser connects only to Neconyan's password-protected loopback server, which isn't exposed to the local network. iOS asks for local network access the first time you connect to a model server on your own network, such as KoboldCpp or Ollama.
+- Notifications for finished replies are off until you turn them on in Neconyan's settings; iOS then asks for permission once.
+- OpenRouter's sign-in button is hidden, because its browser sign-in can't return to the app. Create a key on openrouter.ai and paste it in instead.
+- The server runs inside the app, so there's no 'Restart server' button. When a setting says it needs a restart, close Neconyan from the app switcher and open it again.
 - Server plugins and automatic extension updates are disabled. Extensions requiring a shell or a separate executable won't work inside the iOS sandbox.
 - Local embedding, speech and image models haven't been validated on an iPhone. Use a provider-backed option if you need those features.
 
-If startup fails, use 'Share startup log' on the startup screen. Logs can contain request details; check them before posting publicly.
+If startup fails, use 'Share startup log' on the startup screen. Logs can contain request details; check them before posting publicly. If the server stopped or the app closed while starting, the next launch says so before trying again, so the app doesn't keep reopening into the same failure.
 
 ## Building on a Mac
 
@@ -36,7 +41,6 @@ Use an Apple Silicon Mac with Xcode, Node.js 24 and XcodeGen. Start from a clean
 npm ci --ignore-scripts
 node scripts/build-ios-payload.js
 bash ios/prepare-runtime.sh
-sips -z 1024 1024 ios/generated/Assets.xcassets/AppIcon.appiconset/icon.png
 xcodegen generate --spec ios/project.yml
 xcodebuild -project ios/Neconyan.xcodeproj -scheme Neconyan \
   -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \

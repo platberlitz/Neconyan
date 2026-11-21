@@ -19,11 +19,18 @@ export function isIOSWebKitPlatform(navigatorRef = globalThis.navigator) {
  * Detects known iOS versions that need the legacy composer keyboard inset.
  * Unknown versions retain the modern stable viewport behavior.
  * @param {Navigator} [navigatorRef] Navigator-like object
+ * @param {{ platform?: string, osMajor?: number }} [nativeDevice] What the iPhone app reports about the device
  * @returns {boolean}
  */
-export function isLegacyIOSWebKitPlatform(navigatorRef = globalThis.navigator) {
+export function isLegacyIOSWebKitPlatform(navigatorRef = globalThis.navigator, nativeDevice = globalThis.neconyanNativeDevice) {
     if (!isIOSWebKitPlatform(navigatorRef)) {
         return false;
+    }
+
+    // The app's web view has no Version token and its CPU OS token stops at 18, so the app says which iOS it runs on.
+    const nativeMajor = nativeDevice?.platform === 'ios' ? Number(nativeDevice.osMajor) : NaN;
+    if (Number.isInteger(nativeMajor) && nativeMajor > 0) {
+        return nativeMajor < IOS_STABLE_COMPOSER_VIEWPORT_MAJOR;
     }
 
     const userAgent = String(navigatorRef.userAgent || '');

@@ -22,7 +22,7 @@ import {
 import { getServerLogSnapshot } from '../server-log-buffer.js';
 import { getCrashReports, getCrashReportStatus } from '../crash-diagnostics.js';
 import { getLatestZipReleaseStatus, stageZipReleaseUpdate } from '../server-admin-zip-update.js';
-import { getLatestAndroidReleaseStatus } from '../server-admin-android-update.js';
+import { getLatestAndroidReleaseStatus, getLatestIosReleaseStatus } from '../server-admin-android-update.js';
 import {
     discardStagedServerPluginRelease,
     getServerPluginUpdateCapabilities,
@@ -421,6 +421,25 @@ function isManagedRestart() {
         || process.env[RESTART_SUPERVISED_ENV] === '1';
 }
 
+function appHost() {
+    if (process.env.NECONYAN_IOS_APP === '1') return 'ios';
+    if (process.env.NECONYAN_ANDROID_APP === '1') return 'android';
+    return '';
+}
+
+/** The iPhone app runs Node inside the app process, so exiting to restart would close the whole app. */
+function canRestartItself() {
+    return appHost() !== 'ios';
+}
+
+const IOS_RESTART_MESSAGE = 'The iPhone app cannot restart its own server. Close Neconyan from the app switcher and open it again to apply changes.';
+
+function rejectInAppRestart(response) {
+    if (canRestartItself()) return false;
+    response.status(409).json({ error: IOS_RESTART_MESSAGE, code: 'restart_unavailable' });
+    return true;
+}
+
 function scheduleRestart(response, { reloadSupervisor = false } = {}) {
     // Either a launcher script (Start.bat/start.sh) or the server.js
     // supervisor watches for the restart exit code. Direct launches are
@@ -706,7 +725,8 @@ router.post('/status', requireAdminMiddleware, async (request, response) => {
         const autoStash = typeof request.body?.autoStash === 'boolean' ? request.body.autoStash : undefined;
         const repository = await getRepositoryStatus({ refresh: forceRefresh, autoStash });
         const androidRelease = await getLatestAndroidReleaseStatus(version.pkgVersion, { force: forceRefresh });
-        const release = repository.isRepo || androidRelease || process.env.NECONYAN_IOS_APP === '1'
+        const iosRelease = await getLatestIosReleaseStatus(version.pkgVersion, { force: forceRefresh });
+        const release = repository.isRepo || androidRelease || iosRelease
             ? null : await getLatestZipReleaseStatus(version.pkgVersion, { force: forceRefresh });
         const userRoot = request.user?.directories?.root;
         response.json({
@@ -718,6 +738,9 @@ router.post('/status', requireAdminMiddleware, async (request, response) => {
             repository,
             release,
             androidRelease,
+            iosRelease,
+            host: appHost(),
+            canRestart: canRestartItself(),
         });
     } catch (error) {
         console.error('Failed to get server admin status.', error);
@@ -743,7 +766,7 @@ router.post('/config/get', requireAdminMiddleware, async (_request, response) =>
 router.post('/config/save', requireAdminMiddleware, async (request, response) => {
     try {
         const content = String(request.body?.content ?? '');
-        const restart = Boolean(request.body?.restart);
+        const restart = Boolean(request.body?.restart) && canRestartItself();
         const expectedLastModifiedMs = Number(request.body?.expectedLastModifiedMs);
 
         if (!content.trim()) {
@@ -780,7 +803,7 @@ router.post('/config/save', requireAdminMiddleware, async (request, response) =>
             restarting: false,
             path: configPath,
             lastModifiedMs: nextStat.mtimeMs,
-            message: 'Config saved. Restart the server to apply changes.',
+            message: canRestartItself() ? 'Config saved. Restart the server to apply changes.' : 'Config saved. Close Neconyan from the app switcher and open it again to apply changes.',
         });
     } catch (error) {
         console.error('Failed to save config.yaml.', error);
@@ -805,7 +828,7 @@ router.post('/config/chat-completions/get', requireAdminMiddleware, async (_requ
 
 router.post('/config/chat-completions/save', requireAdminMiddleware, async (request, response) => {
     try {
-        const restart = Boolean(request.body?.restart);
+        const restart = Boolean(request.body?.restart) && canRestartItself();
         const expectedLastModifiedMs = Number(request.body?.expectedLastModifiedMs);
         const normalizedSettings = normalizeChatCompletionConfigInput(request.body?.settings);
         const { configPath, stat, document } = readConfigDocument();
@@ -834,7 +857,9 @@ router.post('/config/chat-completions/save', requireAdminMiddleware, async (requ
             path: configPath,
             lastModifiedMs: nextStat.mtimeMs,
             settings: nextSettings,
-            message: 'Chat completion server config saved. Restart the server to apply changes.',
+            message: canRestartItself()
+                ? 'Chat completion server config saved. Restart the server to apply changes.'
+                : 'Chat completion server config saved. Close Neconyan from the app switcher and open it again to apply changes.',
         });
     } catch (error) {
         console.error('Failed to save chat completions config settings.', error);
@@ -957,6 +982,7 @@ router.get('/server-plugins/capabilities', requireAdminMiddleware, (_request, re
 });
 
 router.post('/server-plugins/apply-release', requireAdminMiddleware, async (request, response) => {
+    if (rejectInAppRestart(response)) return;
     let stagedUpdate = null;
     let cancelHandoff = null;
 
@@ -1025,6 +1051,7 @@ router.post('/server-plugins/apply-release', requireAdminMiddleware, async (requ
 });
 
 router.post('/restart', requireAdminMiddleware, async (_request, response) => {
+    if (rejectInAppRestart(response)) return;
     try {
         scheduleRestart(response);
         response.status(202).json({
@@ -1111,6 +1138,7 @@ router.post('/zip-update', requireAdminMiddleware, async (_request, response) =>
 });
 
 router.post('/update', requireAdminMiddleware, async (request, response) => {
+    if (rejectInAppRestart(response)) return;
     let git = null;
     let stashed = false;
     let restorePending = false;
@@ -1263,6 +1291,7 @@ router.post('/branches', requireAdminMiddleware, async (_request, response) => {
 });
 
 router.post('/switch-branch', requireAdminMiddleware, async (request, response) => {
+    if (rejectInAppRestart(response)) return;
     try {
         if (typeof request.body?.branch !== 'string') {
             return response.status(400).json({ error: 'Choose a branch first.' });

@@ -51,7 +51,9 @@ describe('Neconyan project boundaries', () => {
         expect(iosProjectSource).not.toMatch(/^\s*CURRENT_PROJECT_VERSION:/m);
         expect(iosProjectSource).toMatch(/configFiles:\s+Debug: generated\/version\.xcconfig\s+Release: generated\/version\.xcconfig/);
         expect(iosPayloadBuilderSource).toContain('ios/generated/version.xcconfig');
-        expect(iosPayloadBuilderSource).toContain('MARKETING_VERSION = ${provenance.version}');
+        expect(iosPayloadBuilderSource).toContain('iosVersions(provenance.version)');
+        expect(iosPayloadBuilderSource).toContain('MARKETING_VERSION = ${marketingVersion}');
+        expect(iosPayloadBuilderSource).toContain('CURRENT_PROJECT_VERSION = ${buildNumber}');
     });
 
     test('uses Neconyan-specific global config and data paths', () => {

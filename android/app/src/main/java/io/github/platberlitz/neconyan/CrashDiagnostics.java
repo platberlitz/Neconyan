@@ -204,10 +204,10 @@ final class CrashDiagnostics {
             for (ApplicationExitInfo info : context.getSystemService(ActivityManager.class).getHistoricalProcessExitReasons(context.getPackageName(), 0, 20)) {
                 int reason = info.getReason();
                 if (CrashReport.isRoutineIsolatedExit(reason, info.getStatus(), info.getDescription())) continue;
-                if (expectedStop(context, info)) continue;
+                if (expectedStop(context, info) || expectedInstallPermissionExit(context, info)) continue;
                 if (reason == ApplicationExitInfo.REASON_USER_REQUESTED || reason == ApplicationExitInfo.REASON_USER_STOPPED
                     || reason == 16 /* REASON_PACKAGE_UPDATED is absent from the API 30 constants; the value is inlined */ || reason == ApplicationExitInfo.REASON_PERMISSION_CHANGE
-                    || (reason == ApplicationExitInfo.REASON_EXIT_SELF && info.getStatus() == 0)) continue;
+                    || (reason == ApplicationExitInfo.REASON_EXIT_SELF && (info.getStatus() == 0 || isServerRestart(info)))) continue;
                 String id = info.getTimestamp() + "-exit-" + info.getPid();
                 // Android keeps returning the same history; decode each trace once.
                 if (!store.needsExit(id, NO_TRACE)) continue;
@@ -224,10 +224,18 @@ final class CrashDiagnostics {
                 String incident = id;
                 CrashReport.Entry matched = null;
                 for (CrashReport.Entry prior : store.listEntries()) {
-                    if (prior.id.equals(id + ".txt") || prior.event.equals("android-process-exit")) continue;
+                    if (prior.id.equals(id + ".txt") || prior.event.equals("android-process-exit") || prior.event.equals(CrashReport.CACHED_MEMORY_EXIT)) continue;
                     if (prior.pid == info.getPid() && start > 0 && prior.processStart == start && prior.at <= info.getTimestamp() && info.getTimestamp() - prior.at <= 10000) { incident = prior.incident; matched = store.readEntry(prior.id); break; }
                 }
                 String errorLine = matched == null ? "Android did not supply an error message." : matched.error;
+                // Clearing a cached launcher process is normal on a busy device. Keep the
+                // evidence in history, but don't block the next launch with a crash dialog.
+                int importance = info.getImportance();
+                boolean cachedMemoryExit = matched == null && reason == ApplicationExitInfo.REASON_LOW_MEMORY
+                    && context.getPackageName().equals(info.getProcessName())
+                    && importance >= ActivityManager.RunningAppProcessInfo.IMPORTANCE_CACHED
+                    && importance < ActivityManager.RunningAppProcessInfo.IMPORTANCE_GONE;
+                String event = cachedMemoryExit ? CrashReport.CACHED_MEMORY_EXIT : "android-process-exit";
                 StringBuilder text = new StringBuilder("Android process exit at ").append(new Date(info.getTimestamp()))
                     .append("\nProcess: ").append(info.getProcessName()).append(" PID ").append(info.getPid())
                     .append("\nReason: ").append(reasonName(reason)).append(" (").append(reason).append(")")
@@ -236,7 +244,7 @@ final class CrashDiagnostics {
                     .append("\nRSS KiB: ").append(info.getRss())
                     .append(sample.details).append("\nDevice details captured on recovery, not at the moment of the exit:\n").append(environment(context));
                 if (matched != null) text.insert(0, "Recorded application error from the same process instance:\n" + matched.text + "\n\n");
-                CrashReport.Entry metadata = CrashReport.create(id, info.getTimestamp(), component, "android-process-exit", info.getPid(), start, incident, reason,
+                CrashReport.Entry metadata = CrashReport.create(id, info.getTimestamp(), component, event, info.getPid(), start, incident, reason,
                     String.valueOf(info.getStatus()), errorLine, sample.at, sample.activity, sample.memory, text + "\n" + NO_TRACE);
                 boolean metadataSaved = store.saveExit(id, metadata.text, false);
                 CrashReport.Entry retained = metadataSaved ? store.readEntry(id + ".txt") : null;
@@ -264,7 +272,7 @@ final class CrashDiagnostics {
                     }
                 } catch (Exception error) { text.append("\nTrace unreadable: ").append(error.getClass().getSimpleName()).append('\n').append(NO_TRACE); }
                 // Stable name lets delayed Android traces enrich the same report instead of duplicating it.
-                CrashReport.Entry entry = CrashReport.create(id, info.getTimestamp(), component, "android-process-exit", info.getPid(), start, incident, reason,
+                CrashReport.Entry entry = CrashReport.create(id, info.getTimestamp(), component, event, info.getPid(), start, incident, reason,
                     String.valueOf(info.getStatus()), errorLine, sample.at, sample.activity, sample.memory, text.toString());
                 boolean saved = store.saveExit(id, entry.text, hasTrace);
                 retained = saved ? store.readEntry(id + ".txt") : null;
@@ -274,9 +282,22 @@ final class CrashDiagnostics {
     }
 
     static void markServerStopping(Context context) {
-        File directory = new File(context.getNoBackupFilesDir(), "expected-server-stops");
+        writeExpectedExit(context, "expected-server-stops", android.os.Process.myPid());
+    }
+
+    static void markInstallPermissionSettings(Context context) {
+        writeExpectedExit(context, "expected-install-permission", android.os.Process.myPid());
+        var processes = context.getSystemService(ActivityManager.class).getRunningAppProcesses();
+        if (processes != null) for (var process : processes) {
+            if ((context.getPackageName() + ":server").equals(process.processName))
+                writeExpectedExit(context, "expected-install-permission", process.pid);
+        }
+    }
+
+    private static void writeExpectedExit(Context context, String folder, int pid) {
+        File directory = new File(context.getNoBackupFilesDir(), folder);
         directory.mkdirs();
-        try (DataOutputStream output = new DataOutputStream(new FileOutputStream(new File(directory, String.valueOf(android.os.Process.myPid()))))) {
+        try (DataOutputStream output = new DataOutputStream(new FileOutputStream(new File(directory, String.valueOf(pid))))) {
             output.writeLong(System.currentTimeMillis());
         } catch (IOException ignored) { }
         File[] files = directory.listFiles();
@@ -286,12 +307,27 @@ final class CrashDiagnostics {
         }
     }
 
+    static boolean isServerRestart(ApplicationExitInfo info) {
+        return info != null && info.getReason() == ApplicationExitInfo.REASON_EXIT_SELF
+            && info.getStatus() == ServerService.RESTART_EXIT && info.getProcessName() != null
+            && info.getProcessName().endsWith(":server");
+    }
+
     private static boolean expectedStop(Context context, ApplicationExitInfo info) {
         if (info.getReason() != ApplicationExitInfo.REASON_SIGNALED || (info.getStatus() != 15 && info.getStatus() != 9)) return false;
-        File file = new File(context.getNoBackupFilesDir(), "expected-server-stops/" + info.getPid());
+        return matchesExpectedExit(context, info, "expected-server-stops", 30000);
+    }
+
+    private static boolean expectedInstallPermissionExit(Context context, ApplicationExitInfo info) {
+        return android.os.Build.VERSION.SDK_INT == 30 && info.getReason() == ApplicationExitInfo.REASON_SIGNALED && info.getStatus() == 9
+            && matchesExpectedExit(context, info, "expected-install-permission", 120000);
+    }
+
+    private static boolean matchesExpectedExit(Context context, ApplicationExitInfo info, String folder, long within) {
+        File file = new File(context.getNoBackupFilesDir(), folder + "/" + info.getPid());
         try (DataInputStream input = new DataInputStream(new FileInputStream(file))) {
             long elapsed = info.getTimestamp() - input.readLong();
-            return elapsed >= 0 && elapsed < 30000;
+            return elapsed >= 0 && elapsed < within;
         } catch (IOException ignored) { return false; }
     }
 

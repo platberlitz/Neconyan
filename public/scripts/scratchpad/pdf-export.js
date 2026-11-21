@@ -89,6 +89,10 @@ export function openSessionPrint(session, options) {
     view.document.open();
     view.document.write(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"><title>${escape(session.name || 'Scratchpad')}</title><style>${css}</style></head><body><header><button type="button" disabled>${escape(t`Print / save PDF`)}</button><p>${escape(t`Choose Save as PDF in your browser's print options. On iPhone, open the print preview and use Share to save it. This view can be closed afterwards.`)}</p></header><main>${html}</main></body></html>`);
     view.document.close();
+    if (globalThis.NeconyanAndroid) {
+        view.document.querySelector('header')?.remove(); // Android supplies Print and Done outside the page.
+        return view;
+    }
     view.document.documentElement.lang = document.documentElement.lang || 'en';
     for (const key of ['--neco-ginger', '--neco-ginger-hover', '--neco-on-accent']) view.document.documentElement.style.setProperty(key, colours.getPropertyValue(key));
     const button = view.document.querySelector('button');

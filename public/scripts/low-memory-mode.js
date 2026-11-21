@@ -483,6 +483,22 @@ function safeWriteModeToStorage(storage, mode) {
     }
 }
 
+/**
+ * Turns the iPhone app's device facts into the same profile Android sends.
+ * @param {{ platform?: string, memoryBytes?: number }} [device]
+ * @returns {Readonly<{ schema: 1, totalMemoryMiB: number, isLowRamDevice: boolean }> | null}
+ */
+export function iosMemoryProfile(device) {
+    if (device?.platform !== 'ios' || typeof device.memoryBytes !== 'number' || !Number.isFinite(device.memoryBytes)) {
+        return null;
+    }
+    return validateAndroidMemoryProfile({
+        schema: 1,
+        totalMemoryMiB: Math.round(device.memoryBytes / (1024 * 1024)),
+        isLowRamDevice: false,
+    });
+}
+
 export function createLowMemoryRuntime({
     navigatorRef,
     storageRef,
@@ -505,14 +521,15 @@ export function createLowMemoryRuntime({
     };
 
     let currentMode = safeReadModeFromStorage(getStorage());
-    let nativeMemory = null;
-    let nativeProfileStatus = 'pending';
+    // The iPhone app sets its device facts before the page runs; WebKit has no navigator.deviceMemory.
+    let nativeMemory = iosMemoryProfile(getGlobal()?.neconyanNativeDevice);
+    let nativeProfileStatus = nativeMemory ? 'received' : 'pending';
     let currentPreferencesProvider = typeof preferencesProvider === 'function' ? preferencesProvider : null;
     const listeners = new Set();
 
     function hasNativeBridgeHost() {
         const host = getGlobal();
-        return Boolean(host && (host.NeconyanAndroid || host.NeconyanExport));
+        return Boolean(host && (host.NeconyanAndroid || host.NeconyanExport || host.neconyanNativeDevice));
     }
 
     function computeState() {

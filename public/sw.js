@@ -1,4 +1,4 @@
-const NN_SW_CACHE_VERSION = 'neconyan-cache-v20261121-scratchpad-audit';
+const NN_SW_CACHE_VERSION = 'neconyan-cache-v20261121-mobile-audit';
 // Storage revision for the service worker caches. It is separate from the
 // stylesheet query version so old entries can be evicted without touching CSS.
 const NN_SW_CACHE_EPOCH = '20261018a-native-startup';
@@ -50,15 +50,10 @@ function isSameOrigin(url) {
     return url.origin === self.location.origin;
 }
 
-// A stylesheet without a ?v= label keeps the same URL across updates, so a cached
-// copy would paint the previous release's rules on the first open after an update.
-function isUnversionedStylesheet(url) {
-    return url.pathname.endsWith('.css') && !url.searchParams.has('v');
-}
-
 function shouldStaleWhileRevalidate(url) {
-    return NN_STALE_WHILE_REVALIDATE_PREFIXES.some(prefix => url.pathname.startsWith(prefix))
-        && !isUnversionedStylesheet(url);
+    // Unlabelled files keep the same URL across updates. Let the HTTP cache
+    // revalidate them before use instead of serving a previous APK's copy once.
+    return url.searchParams.has('v') && NN_STALE_WHILE_REVALIDATE_PREFIXES.some(prefix => url.pathname.startsWith(prefix));
 }
 
 function isFrontendAsset(url) {

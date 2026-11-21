@@ -532,7 +532,15 @@ const generateChallenge = (codeVerifier) => {
 /**
  * Redirects the user to authorize OpenRouter.
  */
+function isInsideNeconyanApp() {
+    return globalThis.neconyanNativeDevice?.platform === 'ios' || typeof globalThis.NeconyanAndroid === 'object';
+}
+
 async function authorizeOpenRouter() {
+    if (isInsideNeconyanApp()) {
+        toastr.info(t`Create a key at openrouter.ai/keys, then paste it into the key box here.`, t`OpenRouter sign-in works in a browser`);
+        return;
+    }
     if (secret_state[SECRET_KEYS.OPENROUTER]) {
         const confirmed = await Popup.show.confirm(t`OpenRouter API key already exists`, t`Do you really wish to create a new OpenRouter key? Your existing key will not be deleted.`);
         if (!confirmed) {
@@ -1184,5 +1192,9 @@ export async function initSecrets() {
         warningElement.toggle(value.length > 0);
     });
     $('.openrouter_authorize').on('click', authorizeOpenRouter);
+    if (isInsideNeconyanApp()) {
+        // The sign-in returns through a browser that has no Neconyan session.
+        $('.openrouter_authorize').attr('hidden', '').css('display', 'none');
+    }
     registerSecretSlashCommands();
 }

@@ -4293,7 +4293,8 @@ async function saveServerChatCompletionConfig({ restart = false } = {}) {
         setServerChatCompletionConfigMessage(result?.message || 'Chat completion server config saved.');
         toastr.success(result?.message || 'Chat completion server config saved.', 'Server config');
 
-        if (restart) {
+        // The iPhone app saves without restarting: its server runs inside the app.
+        if (restart && result?.restarting !== false) {
             serverChatCompletionConfigState.busy = false;
             serverChatCompletionConfigState.restarting = true;
             updateServerChatCompletionConfigInteractivity();
