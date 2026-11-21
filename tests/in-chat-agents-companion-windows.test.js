@@ -44,6 +44,7 @@ describe('companion floating windows', () => {
         await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/companion/companion-ui.js', () => ({
             cleanCompanionAgentName: jest.fn(name => String(name ?? '').trim() || 'Companion'),
             insertChoiceIntoMessageInput: jest.fn(() => true),
+            togglePlotCompassChoice: jest.fn(async () => false),
         }));
 
         await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js', () => ({

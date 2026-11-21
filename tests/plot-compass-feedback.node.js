@@ -45,3 +45,35 @@ test('an opening note does not borrow the first message as its original text', (
     const resolved = previousCompanionNotes(options, { ...agent, companion: { historyDepth: 1 } });
     assert.equal(resolved[0].content, 'Plan for Mira:');
 });
+
+const pickedNote = {
+    status: 'done',
+    content: '**Possible developments:**\n1. A storm traps everyone inside.\n2. The host confesses.\n**Next move:** 2. Let the host break first.',
+    plotCompassChoice: { number: 1, text: 'A storm traps everyone inside.' },
+};
+
+test('server feedback tells the next reply to follow the direction the user picked', () => {
+    const host = { is_user: true, mes: 'I wait.', extra: { inChatAgentCompanionResults: { plot: pickedNote } } };
+    const content = feedback([{ chat_metadata: {} }, host])[0].content;
+    assert.match(content, /\[User's chosen direction\]\n1\. A storm traps everyone inside\.\nThe user picked this direction for the next response\./);
+
+    const unpicked = { ...host, extra: { inChatAgentCompanionResults: { plot: { ...pickedNote, plotCompassChoice: undefined } } } };
+    assert.doesNotMatch(feedback([{ chat_metadata: {} }, unpicked])[0].content, /User's chosen direction/);
+});
+
+test('a pick on an opening plan reaches the first reply and the next Plot Compass run', () => {
+    const records = [{ chat_metadata: { inChatAgentPlotCompassOpeningNotes: { plot: pickedNote } } }];
+    assert.match(feedback([...records, { is_user: true, mes: 'I enter.' }])[0].content, /User's chosen direction\]\n1\. A storm/);
+
+    const options = { messages: [{ name: 'Traveller', is_user: true, mes: 'I enter.' }, { name: 'Mira', mes: 'A reply.' }],
+        records, assistantName: 'Mira', macros: { names: { user: 'Traveller', char: 'Mira' }, variables: { local: {}, global: {} } },
+        agents: [], generationType: 'normal', snapshot: { experimentalMacroEngine: false } };
+    const [previous] = previousCompanionNotes(options, { ...agent, companion: { historyDepth: 1 } });
+    assert.match(previous.content, /\[User's chosen direction\]\n1\. A storm traps everyone inside\.$/);
+});
+
+test('a stale pick is dropped once the note no longer lists it', () => {
+    const rewritten = { ...pickedNote, content: pickedNote.content.replace('A storm', 'A flood') };
+    const host = { is_user: true, mes: 'I wait.', extra: { inChatAgentCompanionResults: { plot: rewritten } } };
+    assert.doesNotMatch(feedback([{ chat_metadata: {} }, host])[0].content, /User's chosen direction/);
+});

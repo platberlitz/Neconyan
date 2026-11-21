@@ -29,6 +29,7 @@ function createEventSource() {
 
 describe('companion card ui', () => {
     let chat;
+    let chatMetadata;
     let characters;
     let this_chid;
     let eventSource;
@@ -75,6 +76,7 @@ describe('companion card ui', () => {
 
         await jest.unstable_mockModule('../public/script.js', () => ({
             chat,
+            chat_metadata: chatMetadata,
             characters,
             this_chid,
             changeMessageBelowReader: jest.fn((_element, mutate) => mutate()),
@@ -140,6 +142,7 @@ describe('companion card ui', () => {
             COMPANION_RESULTS_UPDATED_EVENT: 'companion_results_updated',
             MAX_COMPANION_RESULT_CHARS: 65536,
             captureCompanionResultTarget: jest.fn(() => () => true),
+            collectRecentCompanionResults: jest.fn(() => []),
             emitCompanionResultsUpdated: jest.fn(async () => {}),
             deleteCompanionResult: jest.fn(),
             getCompanionResults: jest.fn(message => message?.extra?.inChatAgentCompanionResults ?? {}),
@@ -155,6 +158,7 @@ describe('companion card ui', () => {
 
     beforeEach(() => {
         chat = [];
+        chatMetadata = {};
         characters = [];
         this_chid = undefined;
         powerUser = { timestamp_model_name_short: false };
