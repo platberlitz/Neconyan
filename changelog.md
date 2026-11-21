@@ -63,6 +63,7 @@
 - PR #839 (2026-11-21) `perf(startup): cache stylesheets under their own labels`
 - PR #840 (2026-11-21) `perf(agents): skip the bundled library when unchanged`
 - PR #841 (2026-11-21) `perf(startup): stamp assets without a production build`
+- PR #842 (2026-11-21) `test(e2e): stop waiting on transitions in a hidden chat`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
