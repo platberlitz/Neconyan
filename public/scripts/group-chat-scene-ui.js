@@ -1,4 +1,4 @@
-import { characters, chat_metadata, updateChatMetadata, saveMetadata, getThumbnailUrl, eventSource, event_types } from '../script.js';
+import { characters, chat_metadata, updateChatMetadata, saveMetadata, getThumbnailUrlForViewport, eventSource, event_types } from '../script.js';
 import { groups, selected_group, updateGroupSpeakerControls } from './group-chats.js';
 import { readGroupScene } from './group-chat-visibility.js';
 import { t } from './i18n.js';
@@ -52,7 +52,7 @@ export function renderGroupScene() {
         const present = !scene.away.includes(avatar);
         const button = $('<button type="button" class="menu_button group_scene_member"></button>')
             .attr({ 'data-avatar': avatar, 'aria-pressed': String(present), title: present ? t`Mark away` : t`Bring into the scene` });
-        button.append($('<img alt="">').attr('src', getThumbnailUrl('avatar', avatar)));
+        button.append($('<img alt="">').attr('src', getThumbnailUrlForViewport('avatar', avatar)));
         button.append($('<span class="group_scene_member_name"></span>').text(character.name));
         if (getGroupMemberRole(group, character) === 'narrator') {
             button.append($('<small class="group_scene_member_tag"></small>').text(t`Narrator / GM`));

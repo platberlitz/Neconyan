@@ -56,6 +56,7 @@ import {
     chat_metadata,
     updateChatMetadata,
     getThumbnailUrl,
+    getThumbnailUrlForViewport,
     setMenuType,
     menu_type,
     select_selected_character,
@@ -737,7 +738,7 @@ function updateGroupSpeakerControls() {
             item.attr('data-avatar', avatarId);
             item.toggleClass('selected', avatarId === selectedGroupSpeakerAvatar);
             item.append($('<img alt="">').attr({
-                src: getThumbnailUrl('avatar', avatarId),
+                src: getThumbnailUrlForViewport('avatar', avatarId),
                 loading: 'lazy',
                 decoding: 'async',
             }));
@@ -2069,7 +2070,7 @@ function getGroupAvatar(group) {
         for (const member of group.members) {
             const charIndex = characters.findIndex(x => x.avatar === member);
             if (charIndex !== -1 && characters[charIndex].avatar !== 'none') {
-                const avatar = getThumbnailUrl('avatar', characters[charIndex].avatar);
+                const avatar = getThumbnailUrlForViewport('avatar', characters[charIndex].avatar);
                 memberAvatars.push(avatar);
             }
             if (memberAvatars.length === 4) {
@@ -3304,7 +3305,7 @@ function printGroupMembers() {
  * @returns {JQuery<HTMLElement>} jQuery element representing the group character block
  */
 function getGroupCharacterBlock(character) {
-    const avatar = getThumbnailUrl('avatar', character.avatar);
+    const avatar = getThumbnailUrlForViewport('avatar', character.avatar);
     const template = $('#group_member_template .group_member').clone();
     const isFav = !!character.fav || character.fav == 'true';
     template.data('id', character.avatar);
