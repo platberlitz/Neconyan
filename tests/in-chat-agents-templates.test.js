@@ -513,7 +513,7 @@ describe('in-chat agent bundled templates', () => {
     test('keeps template update versions in sync with their catalogue', () => {
         const catalog = readTemplate('index.json');
         expect(catalog.every(template => Number.isInteger(template.version) && template.version > 0)).toBe(true);
-        for (const filename of fs.readdirSync(templateDir).filter(name => name.endsWith('.json') && !['index.json', 'groups.json', 'regex-bundles.json'].includes(name))) {
+        for (const filename of fs.readdirSync(templateDir).filter(name => name.endsWith('.json') && !['index.json', 'groups.json', 'regex-bundles.json', 'revision.json'].includes(name))) {
             const template = readTemplate(filename);
             expect(catalog.find(item => item.id === template.id).version).toBe(template.version);
         }
@@ -1406,5 +1406,28 @@ describe('in-chat agent bundled templates', () => {
         const orderSource = readIndexFunctionBody('getTemplateBrowserCategoryOrder');
         expect(orderSource).not.toContain('category !== \'custom\'');
         expect(orderSource).toContain('AGENT_CATEGORIES');
+    });
+});
+
+
+describe('bundled catalogue revision', () => {
+    test('revision.json matches the three library files', async () => {
+        const { createHash } = await import('node:crypto');
+        const hash = createHash('sha256');
+        for (const name of ['index.json', 'regex-bundles.json', 'groups.json']) {
+            hash.update(fs.readFileSync(new URL(name, templateDir)));
+        }
+        const revision = JSON.parse(fs.readFileSync(new URL('revision.json', templateDir), 'utf8'));
+        expect(revision.revision).toBe(hash.digest('hex'));
+    });
+
+    test('startup skips the library only when the saved revision matches', () => {
+        const source = fs.readFileSync(indexSourceUrl, 'utf8');
+        expect(source).toContain("fetch(getTemplateAssetUrl('revision.json'))");
+        expect(source).toContain("const BUNDLED_CATALOGUE_REVISION_KEY = 'ica--catalogue-revision';");
+        expect(source).toContain('accountStorage.getItem(BUNDLED_CATALOGUE_REVISION_KEY) === catalogueRevision');
+        expect(source).toContain('catalogueReady ? Promise.resolve() : loadTemplates()');
+        expect(source).toContain('accountStorage.setItem(BUNDLED_CATALOGUE_REVISION_KEY, catalogueRevision);');
+        expect(source).toContain('saveSettingsDebounced();');
     });
 });

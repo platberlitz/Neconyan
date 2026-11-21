@@ -758,6 +758,8 @@ function isBundledAgentName(agent) {
 }
 let templateLoadError = null;
 let templateRegexBundles = {};
+
+const BUNDLED_CATALOGUE_REVISION_KEY = 'ica--catalogue-revision';
 let autoSeededTemplateIds = new Set();
 
 // Seeded once per account, disabled. The trackers mirror the "Pura's Trackers
@@ -5319,6 +5321,18 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
 
 // ===================== Template Browser =====================
 
+/** Reads the small revision file so an unchanged bundled library can be skipped. */
+async function readBundledCatalogueRevision() {
+    try {
+        const response = await fetch(getTemplateAssetUrl('revision.json'));
+        if (!response.ok) return '';
+        const data = await response.json();
+        return typeof data?.revision === 'string' ? data.revision.trim() : '';
+    } catch {
+        return '';
+    }
+}
+
 /**
  * Loads built-in template agents from the templates directory.
  */
@@ -7260,8 +7274,11 @@ registerSettingsSetupTask('in-chat-agents first start', new Promise(resolve => {
 
     const storageAccount = getCurrentUserHandle();
     bindAgentStorageAccount(storageAccount, () => storageAccount === getCurrentUserHandle());
+    const catalogueRevision = await readBundledCatalogueRevision();
+    const catalogueReady = Boolean(catalogueRevision)
+        && accountStorage.getItem(BUNDLED_CATALOGUE_REVISION_KEY) === catalogueRevision;
     const initResults = await Promise.allSettled([
-        loadTemplates(),
+        catalogueReady ? Promise.resolve() : loadTemplates(),
         loadCustomGroupsFromServer(),
         refreshAgentSetupList(),
         fetchAgentLibrary(),
@@ -7280,7 +7297,18 @@ registerSettingsSetupTask('in-chat-agents first start', new Promise(resolve => {
 
     try {
         if (!areAgentsLoaded()) throw new Error('The agent library could not be loaded. Try again.');
-        await finishAgentLibraryInitialization();
+        if (catalogueReady) {
+            if (getAgentLibraryErrors().length || hasPendingAgentRecovery()) {
+                throw new Error('The agent library needs repair before it can finish loading.');
+            }
+            agentLibraryReady = true;
+        } else {
+            await finishAgentLibraryInitialization();
+            if (catalogueRevision) {
+                accountStorage.setItem(BUNDLED_CATALOGUE_REVISION_KEY, catalogueRevision);
+                saveSettingsDebounced();
+            }
+        }
     } catch (error) {
         setAgentSetupStatus(error.message || 'The agent library could not be prepared. Try again.', 'error');
         console.warn('[InChatAgents] Agent library initialization failed:', error);
