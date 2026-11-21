@@ -544,6 +544,10 @@ describe('assistant shortcuts without shipped characters', () => {
         expect(bodyClasses.has('neconyan-home-booting')).toBe(false);
         expect(observers).toHaveLength(1);
     });
+    test('Home opens before the other APP_READY listeners', () => {
+        expect(read('scripts/welcome-screen.js')).toContain('eventSource.makeFirst(event_types.APP_READY');
+    });
+
     for (const activeChat of [false, true]) {
         test(`resumes the tour independently of an active chat: ${activeChat}`, async () => {
             const handlers = new Map();
@@ -554,7 +558,7 @@ describe('assistant shortcuts without shipped characters', () => {
                 releaseChromeAfterBootSkeleton() {}, applySimpleMode() {}, SIMPLE_MODE_EVENT: 'simple', PinnedChatsManager: { init() {} }, ensureNeconyanRail() {},
                 watchNeconyanRailSimpleLabels() {}, installChatNoteCapture() {},
                 window: { addEventListener() {} }, concealWelcomeHome() {},
-                eventSource: { on: (key, handler) => handlers.set(key, handler), makeFirst() {} },
+                eventSource: { on() {}, makeFirst: (key, handler) => handlers.set(key, handler) },
                 event_types: { APP_READY: 'ready' }, getCurrentChatId: () => activeChat ? 'existing' : undefined, chat: [],
                 openWelcomeScreen: async () => { homeOpened = true; }, scheduleNeconyanRailRefresh() {},
                 refreshNeconyanRail: async () => { },
