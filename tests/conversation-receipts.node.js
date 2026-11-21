@@ -5,9 +5,12 @@ import { createHash } from 'node:crypto';
 import test from 'node:test';
 import { fixture } from './roleplay-transactions-fixture.js';
 
-const { prepareConversationTarget, readConversationTarget, appendConversationJobMessage } = await import('../src/generation/conversation-effects.js');
+const { prepareConversationTarget, readConversationTarget, appendConversationJobMessage, acceptedConversationOccurrenceOwner } = await import('../src/generation/conversation-effects.js');
+const { conversationChimeOccurrenceKey } = await import('../src/generation/conversation-auto-policy.js');
+const { runConversationWorkerTick } = await import('../src/generation/conversation-worker.js');
+const { writeArtifact } = await import('../src/jobs/artifacts.js');
 const { saveConversationStore } = await import('../src/endpoints/conversation-store.js');
-const { acceptJob, acceptChildJobs, updateJob } = await import('../src/jobs/store.js');
+const { acceptJob, acceptChildJobs, getJob, updateJob } = await import('../src/jobs/store.js');
 const { cancelAutoSaves } = await import('../src/endpoints/settings.js');
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
@@ -38,6 +41,30 @@ function setup(t) {
     };
     return { directories, request, target, append, read: () => readConversationTarget(request, target) };
 }
+
+test('the oldest ready Send batch retains a shared chime without blocking the next batch', async t => {
+    const { directories, request, target, read } = setup(t);
+    const owner = request.user.profile.handle;
+    const captured = await prepareConversationTarget(request, target);
+    const activity = String(read().branch.lastActivity || 0);
+    const snapshot = { target: captured, participants: [
+        { purpose: 'reply' },
+        { purpose: 'chime', automation: { patch: { sessionMarkers: { sb_conv_last_chime_session_: activity } } } },
+    ] };
+    const ids = ['first', 'second'].map((submissionKey, index) => {
+        const { job } = acceptJob(directories, { owner, type: 'conversation.reply', submissionKey, paused: true,
+            intent: { mode: 'send', target }, coalesce: { deadline: 10 + index, members: [] } });
+        updateJob(directories, job.id, { createdAt: index + 1, inputDurable: true });
+        writeArtifact(directories, job.id, 'request', snapshot);
+        return job.id;
+    });
+
+    await runConversationWorkerTick({ directoriesFor: () => directories, owners: [owner], now: 20 });
+
+    const key = conversationChimeOccurrenceKey(captured, activity);
+    assert.equal(acceptedConversationOccurrenceOwner(read().store, key), ids[0]);
+    assert.deepEqual(ids.map(id => getJob(directories, id).state), ['queued', 'queued']);
+});
 
 test('a branch keeps at most 100 reply receipts', async t => {
     const f = setup(t);
