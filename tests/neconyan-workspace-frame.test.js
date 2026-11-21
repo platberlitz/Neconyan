@@ -19,8 +19,8 @@ describe('Neconyan workspace frame', () => {
         expect(cssSource).toContain('left: var(--neco-sidebar-offset) !important; right: 0 !important;');
         expect(cssSource).toContain('width: auto !important; max-width: none !important;');
         expect(cssSource).toContain('body.neconyan :where(#top-settings-holder):has(> * > :is(.sb-shell-root, #right-nav-panel).openDrawer:where(:not([data-ui-closing]))) ~ #sheld');
-        expect(cssSource).toContain('body.neconyan :where(#top-settings-holder):has(> * > :is(.sb-shell-root, #right-nav-panel).openDrawer:where(:not([data-ui-closing]))) ~ :where(#sheld) #neconyan-home-host');
-        expect(cssSource).toContain('visibility: hidden !important; pointer-events: none !important;');
+        expect(cssSource).toContain('content-visibility: hidden !important; clip-path: inset(100%);');
+        expect(cssSource).toContain('@supports not (content-visibility: hidden)');
     });
 
     test('keeps Model navigation compact inside the page with keyboard and touch-safe tabs', () => {

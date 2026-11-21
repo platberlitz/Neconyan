@@ -185,7 +185,7 @@ test('kitty clouds remain visible behind Home and Conversation, while Characters
 
     await checkCanvas('home', '#sheld, #neconyan-home-host');
     await page.getByRole('button', { name: 'Characters', exact: true }).click();
-    await expect(page.locator('#sheld')).toHaveCSS('visibility', 'hidden');
+    await expect(page.locator('#sheld')).toHaveCSS('content-visibility', 'hidden');
     // The sheet is the Panels side layer (`rgb(from var(--neco-rail) r g b / var(--sb-side-opacity))`), which Chromium
     // serialises as color(srgb ...); compare the painted colour, which must be the rail colour at full opacity.
     const painted = locator => locator.evaluate(element => {
@@ -199,7 +199,7 @@ test('kitty clouds remain visible behind Home and Conversation, while Characters
     await expect.poll(() => painted(page.locator('#right-nav-panel'))).toEqual(layer.tone === 'dark' ? [27, 28, 26, 255] : [255, 250, 240, 255]);
     await expect(page.locator('#right-nav-panel > .scrollableInner')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
     await page.getByRole('button', { name: 'Close Characters', exact: true }).click();
-    await expect(page.locator('#sheld')).toHaveCSS('visibility', 'visible');
+    await expect(page.locator('#sheld')).toHaveCSS('content-visibility', 'visible');
 
     const miso = page.locator('[data-assistant-personality="miso"]');
     await miso.locator('input[value="miso-male"]').check();
