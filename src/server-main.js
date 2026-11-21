@@ -436,14 +436,11 @@ app.get('/', cacheBuster.middleware, (request, response) => {
         return response.redirect(query ? `/login?${query}` : '/login');
     }
 
-    if (shouldServeFrontendAssets()) {
-        response.type('html');
-        response.set('Cache-Control', 'no-cache');
-        return response.send(readRewrittenFrontendHtml());
-    }
-
+    response.type('html');
     response.set('Cache-Control', 'no-cache');
-    return response.sendFile('index.html', { root: path.join(serverDirectory, 'public') });
+    // Stamp module and stylesheet URLs on every install, not only when a
+    // production build is present. The labels let the browser keep them.
+    return response.send(readRewrittenFrontendHtml(undefined, { enabled: shouldServeFrontendAssets() }));
 });
 
 // Callback endpoint for OAuth PKCE flows (e.g. OpenRouter)

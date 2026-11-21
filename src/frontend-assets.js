@@ -85,12 +85,12 @@ export function resolveFrontendAssetPath(publicPath) {
 }
 
 export function rewriteFrontendHtml(html, { enabled = getFrontendAssetsEnabled(), importMap = null, styleMap = null } = {}) {
-    if (!enabled || typeof html !== 'string') {
+    if (typeof html !== 'string') {
         return html;
     }
 
     let rewritten = html;
-    const replacements = new Map([
+    const replacements = new Map(enabled ? [
         ['style.css', resolveFrontendAssetPath('style.css')],
         ['css/mobile-styles.css', resolveFrontendAssetPath('css/mobile-styles.css')],
         ['css/neconyan-theme.css', resolveFrontendAssetPath('css/neconyan-theme.css')],
@@ -107,15 +107,17 @@ export function rewriteFrontendHtml(html, { enabled = getFrontendAssetsEnabled()
         ['webfonts/Figtree/stylesheet.css', resolveFrontendAssetPath('webfonts/Figtree/stylesheet.css')],
         ['webfonts/NotoSans/stylesheet.css', resolveFrontendAssetPath('webfonts/NotoSans/stylesheet.css')],
         ['webfonts/NotoSansMono/stylesheet.css', resolveFrontendAssetPath('webfonts/NotoSansMono/stylesheet.css')],
-    ]);
+    ] : []);
 
-    for (const [source, target] of replacements) {
-        if (!target) {
-            continue;
+    if (enabled) {
+        for (const [source, target] of replacements) {
+            if (!target) {
+                continue;
+            }
+
+            const escaped = source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            rewritten = rewritten.replace(new RegExp(`(["'])${escaped}(?:\\?v=[^"']*)?\\1`, 'g'), `$1${target}$1`);
         }
-
-        const escaped = source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        rewritten = rewritten.replace(new RegExp(`(["'])${escaped}(?:\\?v=[^"']*)?\\1`, 'g'), `$1${target}$1`);
     }
 
     if (importMap && Object.keys(importMap).length > 0) {
@@ -306,8 +308,11 @@ export function readRewrittenFrontendHtml(indexPath = path.join(serverDirectory,
     // must come from the files the browser will actually receive.
     const builtModules = enabled && fs.existsSync(path.join(FRONTEND_DIST_ROOT, 'script.js'));
     const moduleRoot = builtModules ? FRONTEND_DIST_ROOT : path.dirname(indexPath);
-    const moduleMap = enabled ? getPublicModuleImportMap(moduleRoot) : null;
-    const styleMap = enabled ? getPublicStyleMap(moduleRoot) : null;
+    // Labels are independent of the production build. Public modules and sheets
+    // get the same stamped URLs on every install; only the manifest rewrites below
+    // depend on a build being present.
+    const moduleMap = getPublicModuleImportMap(moduleRoot);
+    const styleMap = getPublicStyleMap(moduleRoot);
     const identity = `${stat.mtimeMs}:${stat.size}:${stat.ino}:${enabled ? 'on' : 'off'}:${moduleMap?.revision ?? ''}:${styleMap?.revision ?? ''}`;
     if (indexHtmlCache?.manifest === manifest && indexHtmlCache.identity === identity) {
         return indexHtmlCache.html;
