@@ -19729,10 +19729,14 @@ export async function swipe(event, direction, { source, repeated, message = chat
             //Select only the target classes.
             const swipedElementsDiv = swipedMessagesDiv.children(swipeClasses);
             if (swipedElementsDiv.length > 0) {
-                //This is a global variable, only one swipe transition can occur concurrently.
-                document.documentElement.style.setProperty('--slide-mes-x-start', xStart);
-                document.documentElement.style.setProperty('--slide-mes-x-end', xEnd);
-                document.documentElement.style.setProperty('--slide-mes-x-duration', `${duration}ms`);
+                // Custom properties inherit, so these belong on the swiping messages.
+                // Writing them on the page root restyled the whole app twice per swipe.
+                const slideTargets = swipedElementsDiv.toArray();
+                for (const target of slideTargets) {
+                    target.style.setProperty('--slide-mes-x-start', xStart);
+                    target.style.setProperty('--slide-mes-x-end', xEnd);
+                    target.style.setProperty('--slide-mes-x-duration', `${duration}ms`);
+                }
 
                 //The class must be removed to unfreze previous slides.
                 swipedElementsDiv.removeClass('slide');
@@ -19744,9 +19748,11 @@ export async function swipe(event, direction, { source, repeated, message = chat
                     //Remove the style when done.
                     swipedElementsDiv.removeClass('slide');
 
-                    document.documentElement.style.setProperty('--slide-mes-x-start', '');
-                    document.documentElement.style.setProperty('--slide-mes-x-end', '');
-                    document.documentElement.style.setProperty('--slide-mes-duration', '');
+                    for (const target of slideTargets) {
+                        target.style.setProperty('--slide-mes-x-start', '');
+                        target.style.setProperty('--slide-mes-x-end', '');
+                        target.style.setProperty('--slide-mes-x-duration', '');
+                    }
                     return true;
                 };
                 //Wait for the animation's end. https://developer.mozilla.org/en-US/docs/Web/API/Animation/finished
