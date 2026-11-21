@@ -33,8 +33,11 @@ def verify_badging(badging, version, abi):
     fields = dict(re.findall(r"(\w+)='([^']*)'", package))
     require(fields.get('name') == PACKAGE, 'Wrong application ID')
     require(fields.get('versionName') == version and fields.get('versionCode') == version_code(version), 'Wrong app version')
-    require("sdkVersion:'30'" in lines, 'Expected minimum SDK 30')
-    require("targetSdkVersion:'36'" in lines, 'Expected target SDK 36')
+    # Build-tools 36 calls this minSdkVersion; older aapt2 used sdkVersion.
+    minimum = re.findall(r"^(?:minSdkVersion|sdkVersion):'([^']+)'$", badging, re.MULTILINE)
+    target = re.findall(r"^targetSdkVersion:'([^']+)'$", badging, re.MULTILINE)
+    require(minimum == ['30'], f'Expected minimum SDK 30, found {minimum}')
+    require(target == ['36'], f'Expected target SDK 36, found {target}')
     require(f"native-code: '{abi}'" in lines, f'Expected APK for {abi} only')
 
 

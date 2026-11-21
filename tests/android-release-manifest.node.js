@@ -22,13 +22,15 @@ def expect_failure(call, *args):
     raise RuntimeError(f'{call.__name__} accepted {args!r}')
 
 badging = """package: name='io.github.platberlitz.neconyan' versionCode='1240301' versionName='1.24.3.1'
-sdkVersion:'30'
+minSdkVersion:'30'
 targetSdkVersion:'36'
 native-code: 'arm64-v8a'
 """
 apk.verify_badging(badging, '1.24.3.1', 'arm64-v8a')
+apk.verify_badging(badging.replace('minSdkVersion', 'sdkVersion'), '1.24.3.1', 'arm64-v8a')
 for original, wrong in [('1240301', '1240300'), ('neconyan', 'debug'), ("'30'", "'29'"), ("'36'", "'35'"), ('arm64-v8a', 'x86_64')]:
     expect_failure(apk.verify_badging, badging.replace(original, wrong), '1.24.3.1', 'arm64-v8a')
+expect_failure(apk.verify_badging, badging + "sdkVersion:'29'\\n", '1.24.3.1', 'arm64-v8a')
 for version in ['1.100.1', '1.2.3.100', '01.2.3', '2100.0.1', '1.2.3.4.5', '0.0.0']:
     expect_failure(apk.version_code, version)
 
