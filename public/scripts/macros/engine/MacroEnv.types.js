@@ -94,6 +94,7 @@
  * @property {Object} [chatMetadata] - Live chat metadata object (browser) or snapshot.
  * @property {Array} [chat] - Chat message array.
  * @property {number[]} [chatMessageIds] - Real message numbers of `chat` entries, when `chat` leaves some messages out.
+ * @property {MacroEnvGroupScene|null} [groupScene] - The open group's scene, for the scene macros.
  * @property {() => string} [getCurrentChatId] - Active chat id.
  * @property {(hash: number) => void} [setChatIdHash]
  * @property {Object} [generationState]
@@ -113,6 +114,14 @@
  * @property {(messages: any, user: string, char: string) => any} [formatInstructModeExamples]
  * @property {(timestamp: any) => any} [timestampToMoment]
  * @property {Record<string, any>} [chatMetadataExtra] - Reserved for future per-operation metadata.
+ */
+
+/**
+ * @typedef {Object} MacroEnvGroupScene
+ * @property {string} present - Names of members in the scene, comma-separated.
+ * @property {string} away - Names of members marked away, comma-separated.
+ * @property {string} location - Scene location.
+ * @property {(messageId: number) => string} heard - Names of members who heard a message, or '' when the speaker did not hear it.
  */
 
 /**

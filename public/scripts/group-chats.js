@@ -137,6 +137,7 @@ import { initGroupSceneControls, renderGroupScene } from './group-chat-scene-ui.
 import { getGroupSpeakerPool } from './group-chat-speakers.js';
 import { initGroupSpeakerMenu } from './group-chat-speaker-menu.js';
 import { initGroupHeardEditor, refreshGroupHeardBadges } from './group-chat-heard-editor.js';
+import { importPresenceRecords } from './group-chat-heard-tools.js';
 import { buildNarratorReminder, getGroupMemberRole } from './group-chat-roles.js';
 import { renameGroupMemberFields, renameGroupSceneRecords } from './group-member-rename.js';
 
@@ -1018,6 +1019,9 @@ function initGroupSpeakerControls() {
     initGroupSceneControls();
     initGroupSpeakerMenu({ saveGroup: id => editGroup(id, false, false), editMember: openCharacterDefinition });
     initGroupHeardEditor();
+    import('./group-chat-scene-commands.js')
+        .then(module => module.registerGroupSceneSlashCommands())
+        .catch(error => console.error('Group scene commands could not load', error));
     if (groupSpeakerControlsInitialized) {
         return;
     }
@@ -1472,6 +1476,8 @@ export async function getGroupChat(groupId, reload = false, { switchMenu = true,
         await printMessages({ reveal: true });
         if (!stillCurrent(chat_id)) return;
     } else if (Array.isArray(data) && data.length) {
+        // Chats from the SillyTavern Presence extension keep who heard each line.
+        importPresenceRecords(data, metadata);
         chat.splice(0, chat.length, ...data);
         chat.forEach(ensureMessageMediaIsArray);
         chatElement.find('.mes').remove();

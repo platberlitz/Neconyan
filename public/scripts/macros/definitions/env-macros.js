@@ -45,6 +45,47 @@ export function registerEnvMacros() {
         handler: ({ env }) => env.names.notChar ?? '',
     });
 
+    // Group scene macros (from MacroEnv.extra.groupScene, filled only in an open group chat)
+    MacroRegistry.registerMacro('groupPresent', {
+        category: MacroCategory.NAMES,
+        description: 'Comma-separated list of group members in the scene now (not marked away, muted members included).',
+        returns: 'List of group members in the scene.',
+        handler: ({ env }) => env.extra?.groupScene?.present ?? '',
+    });
+
+    MacroRegistry.registerMacro('groupAway', {
+        category: MacroCategory.NAMES,
+        description: 'Comma-separated list of group members marked away from the scene.',
+        returns: 'List of group members who are away.',
+        handler: ({ env }) => env.extra?.groupScene?.away ?? '',
+    });
+
+    MacroRegistry.registerMacro('sceneLocation', {
+        category: MacroCategory.NAMES,
+        description: 'The group scene location, if one is set.',
+        returns: 'Scene location.',
+        handler: ({ env }) => env.extra?.groupScene?.location ?? '',
+    });
+
+    MacroRegistry.registerMacro('groupHeard', {
+        category: MacroCategory.NAMES,
+        unnamedArgs: [
+            {
+                name: 'messageId',
+                type: MacroValueType.INTEGER,
+                description: 'Message number to check.',
+            },
+        ],
+        description: 'Comma-separated list of group members who heard a message. Empty when the current speaker did not hear it.',
+        returns: 'List of group members who heard the message.',
+        exampleUsage: ['{{groupHeard::12}}'],
+        handler: ({ env, unnamedArgs: [messageId] }) => {
+            const id = Number(messageId);
+            if (!Number.isSafeInteger(id) || id < 0) return '';
+            return env.extra?.groupScene?.heard?.(id) ?? '';
+        },
+    });
+
     // Character card field macros (from MacroEnv.character)
     MacroRegistry.registerMacro('charPrompt', {
         category: MacroCategory.CHARACTER,

@@ -10,7 +10,7 @@
  * This module is browser-only: it imports the running app's live globals.
  * The server never imports it; it builds env.extra itself.
  */
-import { chat_metadata, main_api, getCurrentChatId, getMaxPromptTokens, getMaxContextTokens, getMaxResponseTokens, extension_prompts, chat } from '../../../script.js';
+import { chat_metadata, main_api, getCurrentChatId, getMaxPromptTokens, getMaxContextTokens, getMaxResponseTokens, extension_prompts, chat, characters } from '../../../script.js';
 import { power_user } from '../../power-user.js';
 import { parseMesExamples } from '../../../script.js';
 import { formatInstructModeExamples } from '../../instruct-mode.js';
@@ -19,8 +19,10 @@ import { timestampToMoment } from '../../utils.js';
 import { textgenerationwebui_banned_in_macros } from '../../textgen-settings.js';
 import { eventSource, event_types } from '../../events.js';
 import { extension_settings, findExtension } from '../../extensions.js';
-import { filterGroupPromptMessages, hasRestrictedGroupHistory, isGroupPromptMessageVisible } from '../../group-chat-visibility.js';
+import { filterGroupPromptMessages, hasRestrictedGroupHistory, isGroupPromptMessageVisible, readGroupScene, readGroupSceneRules } from '../../group-chat-visibility.js';
 import { getPreviewVariables } from '../../variable-preview.js';
+import { groups, selected_group } from '../../group-chats.js';
+import { heardBy } from '../../group-chat-heard-tools.js';
 
 /**
  * Per-operation state shared by the state macros. The generation type is
@@ -71,6 +73,30 @@ function buildBrowserChat() {
 }
 
 /**
+ * The open group's scene for the scene macros, or null outside a group chat.
+ *
+ * @returns {import('./MacroEnv.types.js').MacroEnvGroupScene|null}
+ */
+function buildBrowserGroupScene() {
+    const group = selected_group ? groups.find(item => item.id === selected_group) : null;
+    if (!group || !Array.isArray(group.members)) return null;
+    const scene = readGroupScene(chat_metadata, group.members);
+    const nameOf = avatar => characters.find(character => character.avatar === avatar)?.name || avatar.replace(/\.[^.]+$/, '');
+    const names = avatars => avatars.map(nameOf).join(', ');
+    return {
+        present: names(group.members.filter(avatar => !scene.away.includes(avatar))),
+        away: names(scene.away),
+        location: scene.location,
+        // A speaker never learns who heard a line they did not hear themselves.
+        heard: messageId => {
+            const message = chat[messageId];
+            if (!message || !isGroupPromptMessageVisible(message)) return '';
+            return names(heardBy(message, group.members, readGroupSceneRules(chat_metadata)));
+        },
+    };
+}
+
+/**
  * Populates env.extra from the live browser globals for one evaluation.
  *
  * @param {import('./MacroEnv.types.js').MacroEnv} env
@@ -84,6 +110,7 @@ export function populateBrowserExtra(env) {
         chatMetadata: chat_metadata,
         setChatIdHash: value => { chat_metadata.chat_id_hash = value; },
         ...buildBrowserChat(),
+        groupScene: buildBrowserGroupScene(),
         getCurrentChatId: () => getCurrentChatId(),
         getMaxPromptTokens: () => getMaxPromptTokens(),
         getMaxContextTokens: () => getMaxContextTokens(),
