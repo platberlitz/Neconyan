@@ -210,7 +210,6 @@ exports[`public/script.js named export surface matches the parser-derived export
   "reloadCurrentChat",
   "reloadCurrentChatUnsafe",
   "reloadMarkdownProcessor",
-  "reloadNeconyanWorkspace",
   "removeDepthPrompts",
   "removeMacros",
   "renameCharacter",

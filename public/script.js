@@ -15469,46 +15469,8 @@ async function saveSettingsInner(loopCounter = 0, account = getCurrentUserHandle
     } catch (error) {
         if (account !== getCurrentUserHandle()) return false;
         console.error('Error saving settings:', error);
-        toastr.error(t`Check your connection to Neconyan. Use Reload Neconyan under Troubleshooting if the problem continues.`, t`Settings could not be saved`);
+        toastr.error(t`Check your connection to Neconyan, then reload the page to avoid losing changes.`, t`Settings could not be saved`);
         return false;
-    }
-}
-
-let reloadingWorkspace = false;
-
-export async function reloadNeconyanWorkspace() {
-    if (reloadingWorkspace) return;
-    const busy = () => is_send_press || is_group_generating || Boolean(document.body.dataset.generating);
-    const canReload = () => {
-        if (busy()) {
-            toastr.info(t`Wait for the current reply before reloading Neconyan.`);
-            return false;
-        }
-        if (this_edit_mes_id >= 0) {
-            toastr.info(t`Save or cancel your message edit before reloading Neconyan.`);
-            return false;
-        }
-        return true;
-    };
-    if (!canReload()) return;
-
-    reloadingWorkspace = true;
-    try {
-        const temporary = !getCurrentChatId() && chat.some(message => !message.is_system);
-        let saved = false;
-        try {
-            saved = await flushPendingChatSavesForNavigation() && await saveSettings(0, { returnResult: true });
-        } catch (error) {
-            console.warn('Could not finish saving before reload', error);
-        }
-        if ((!saved || temporary) && await Popup.show.confirm(
-            t`Reload Neconyan?`,
-            t`Unsaved changes or temporary messages will be lost if you reload now.`,
-            { okButton: t`Reload Neconyan`, cancelButton: t`Cancel` },
-        ) !== POPUP_RESULT.AFFIRMATIVE) return;
-        if (canReload()) window.location.reload();
-    } finally {
-        reloadingWorkspace = false;
     }
 }
 

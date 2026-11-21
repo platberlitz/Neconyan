@@ -2634,13 +2634,7 @@ function ensureNeconyanRail() {
     });
     delete simpleUpdates.dataset.neconyanRoute;
     simpleUpdates.dataset.neconyanSimpleUpdates = 'true';
-    const reloadWorkspace = () => void import('../script.js').then(({ reloadNeconyanWorkspace }) => reloadNeconyanWorkspace());
-    const createReloadButton = (route = '') => createNeconyanRailButton({
-        label: t`Reload Neconyan`, icon: 'fa-rotate', route, onClick: reloadWorkspace,
-    });
-    const simpleReload = createReloadButton();
-    delete simpleReload.dataset.neconyanRoute;
-    rail.querySelector('[data-neconyan-simple-exit]')?.append(simpleMemory, simpleUpdates, simpleReload, simpleExit);
+    rail.querySelector('[data-neconyan-simple-exit]')?.append(simpleMemory, simpleUpdates, simpleExit);
 
     const modeNav = rail.querySelector('[data-neconyan-mode-nav]');
     if (modeNav instanceof HTMLElement) {
@@ -2694,7 +2688,7 @@ function ensureNeconyanRail() {
         onClick: () => window.open(NECONYAN_ISSUES_URL, '_blank', 'noopener,noreferrer'),
     });
     reportIssueButton.title = 'Opens the Neconyan GitHub issues page in a new tab';
-    finerNav.append(createReloadButton('reload-workspace'), reportIssueButton);
+    finerNav.appendChild(reportIssueButton);
 
     rail.querySelector('[data-neconyan-route="new-chat"]').addEventListener('click', () => activateNeconyanRailRoute('new-chat'));
     rail.querySelectorAll('[data-neconyan-route="search"], [data-neconyan-route="settings"]').forEach(button => {
