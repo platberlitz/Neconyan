@@ -16,6 +16,16 @@
 - PR #789 (2026-11-21) `fix(mobile): restore the compact composer layout`
 - PR #790 (2026-11-21) `fix(conversation): make deleting a DM or group DM stick`
 
+### Local Commits
+- `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
+- `28806f7 fix(mobile): stop iPhone zooming in on focused fields`
+- `5a020e2 revert(mobile): remove the Reload Neconyan sidebar buttons`
+- `5c50b6e revert(mobile): restore the touch layout from before #787`
+- `3ed35ab revert(composer): send with Enter on touch devices again`
+- `1a6ed8e fix(composer): bring back new lines on Enter for touch screens`
+- `c4d4408 fix(mobile): bring back the Reload Neconyan sidebar buttons`
+- `1f34701 fix(themes): give Cozy Warm's phone text box its full width`
+
 ## v1.5.7
 
 ### Highlights
