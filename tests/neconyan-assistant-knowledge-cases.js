@@ -79,6 +79,7 @@ export const refreshedKnowledgeCases = [
     ['Can Scratchpad preview HTML and CSS?', 'scratchpad.html-preview', 'scripts, external resources and links are blocked'],
     ['How do Plot Compass objectives combine?', 'agents.plot-compass', 'Enabled objectives add together'],
     ['Can I disable a Plot Compass objective without deleting it?', 'agents.plot-compass', 'without deleting its text'],
+    ['Can I pick where Plot Compass takes the next reply?', 'agents.plot-compass', 'make it Your pick for the next reply'],
     ['Does Agents remember its page and collapsed categories?', 'agents.start', 'remembers the selected page and collapsed categories'],
     ['How do I restore deleted bundled backgrounds?', 'appearance.background-library', 'Restore defaults brings back missing bundled backgrounds'],
     ['Can I pin Catelier in Quick Actions?', 'navigation.quick-actions', 'Every page from the main search can be pinned'],
