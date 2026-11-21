@@ -475,8 +475,7 @@ function countSerializedChatLines(serializedChat) {
     return String(serializedChat).split('\n').filter(line => line.trim()).length;
 }
 
-function isSuspiciousChatShrink(newData, existingSerializedChat) {
-    const existingLines = countSerializedChatLines(existingSerializedChat);
+function isSuspiciousChatShrink(newData, existingLines) {
     if (existingLines <= 5) {
         return false;
     }
@@ -491,8 +490,7 @@ function isSuspiciousChatShrink(newData, existingSerializedChat) {
  * @param {string} existingSerializedChat Current serialized chat on disk.
  * @returns {''|'emptied'|'shrink'} Reason the save is destructive, or an empty string.
  */
-function getDestructiveChatSaveReason(newData, existingSerializedChat) {
-    const existingLines = countSerializedChatLines(existingSerializedChat);
+function getDestructiveChatSaveReason(newData, existingSerializedChat, existingLines = countSerializedChatLines(existingSerializedChat)) {
     if (existingLines < 2 || !Array.isArray(newData)) {
         return '';
     }
@@ -501,7 +499,7 @@ function getDestructiveChatSaveReason(newData, existingSerializedChat) {
         return 'emptied';
     }
 
-    return isSuspiciousChatShrink(newData, existingSerializedChat) ? 'shrink' : '';
+    return isSuspiciousChatShrink(newData, existingLines) ? 'shrink' : '';
 }
 
 /**
@@ -1828,7 +1826,9 @@ function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handl
 
         const currentChatData = currentSnapshot?.data ?? null;
         const existingIntegrity = currentChatData === null ? '' : getSerializedChatIntegrity(currentChatData);
-        const destructiveReason = currentChatData ? getDestructiveChatSaveReason(savedChatData, currentChatData) : '';
+        // Count the saved rows once: the destructive check and the backup decision below both need it.
+        const existingChatLines = currentChatData ? countSerializedChatLines(currentChatData) : 0;
+        const destructiveReason = currentChatData ? getDestructiveChatSaveReason(savedChatData, currentChatData, existingChatLines) : '';
 
         // Neconyan: classify a history-destroying save before the integrity check, so the client is
         // told what is actually wrong with it. A client that lost its slug and a client sending an
@@ -1838,7 +1838,7 @@ function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handl
         // Reject before the pre-write ring runs, so a rejected save cannot evict the last good state.
         // Deliberate message deletion sets allowShrink, which is not the same confirmation as an integrity overwrite.
         if (destructiveReason && !skipIntegrityCheck && !allowShrink) {
-            throw new DestructiveChatSaveError(destructiveReason, `Refused a destructive chat save for "${cardName}" (${destructiveReason}): incoming payload has ${savedChatData.length} JSONL rows, existing file has ${countSerializedChatLines(currentChatData)} rows.`);
+            throw new DestructiveChatSaveError(destructiveReason, `Refused a destructive chat save for "${cardName}" (${destructiveReason}): incoming payload has ${savedChatData.length} JSONL rows, existing file has ${existingChatLines} rows.`);
         }
 
         // Neconyan: the slug rotates on every save and only reaches the client in the response
@@ -1851,8 +1851,6 @@ function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handl
         }
 
         if (currentChatData) {
-            const existingLines = countSerializedChatLines(currentChatData);
-
             // Neconyan: compare parsed records because loading canonicalizes legacy JSONL formatting.
             // Replacing equivalent content through atomic temp-and-rename would swap the file identity
             // for no gain. Legacy chats remain slugless until their first genuine content change.
@@ -1881,7 +1879,7 @@ function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handl
                 }
 
                 if (destructiveReason) {
-                    console.warn(`Forced destructive chat save for "${cardName}" (${destructiveReason}): incoming payload has ${savedChatData.length} JSONL rows, existing file has ${existingLines} rows.`);
+                    console.warn(`Forced destructive chat save for "${cardName}" (${destructiveReason}): incoming payload has ${savedChatData.length} JSONL rows, existing file has ${existingChatLines} rows.`);
                 }
 
                 if (skipIntegrityCheck) {
