@@ -36,7 +36,7 @@ final class StandaloneTests: XCTestCase {
         let sheet = app.navigationBars["UIActivityContentView"].firstMatch
         let close = app.buttons["header.closeButton"].firstMatch
         let legacyClose = app.buttons.matching(NSPredicate(format: "label ==[c] %@", "Close")).firstMatch
-        let outside = app.otherElements["PopoverDismissRegion"]
+        let outside = app.otherElements.matching(identifier: "PopoverDismissRegion")
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             if let target = [close, legacyClose].first(where: { $0.exists && $0.isHittable }) {
