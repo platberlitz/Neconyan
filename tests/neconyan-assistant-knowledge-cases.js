@@ -1,5 +1,6 @@
 // Questions and distinguishing facts shared by Node and real-browser retrieval checks.
 export const refreshedKnowledgeCases = [
+    ['How do I Reload Neconyan without a browser toolbar?', 'navigation.reload', 'Troubleshooting → Reload Neconyan'],
     ['How do I delete a group DM?', 'conversation.delete', 'removes the group'],
     ['My characters keep messaging each other in a group, how do I stop it?', 'conversation.delete', 'Allow characters to talk to each other'],
     ['Where is my Conversation data stored? Is it in the cloud?', 'conversation.delete', 'settings.json'],
