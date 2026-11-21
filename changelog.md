@@ -59,6 +59,7 @@
 - PR #836 (2026-11-21) `perf(chat): hide the chat without restyling every row`
 - PR #837 (2026-11-21) `perf(startup): cache modules under one import map`
 - PR #839 (2026-11-21) `perf(startup): cache stylesheets under their own labels`
+- PR #840 (2026-11-21) `perf(agents): skip the bundled library when unchanged`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
