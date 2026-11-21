@@ -154,7 +154,7 @@ function buildTimelineFingerprint({ avatar, groupId, branchId, personaId, settin
         windowDescriptor?.hasNewer ? '1' : '0',
     ].join(':');
 
-    return hashConversationRenderFingerprint([
+    const stableFingerprint = hashConversationRenderFingerprint([
         personaId || '',
         avatar || '',
         groupId || '',
@@ -168,10 +168,13 @@ function buildTimelineFingerprint({ avatar, groupId, branchId, personaId, settin
         conversationState.imageGenerationActive ? '1' : '0',
         getConversationSeenAt(avatar, { groupId, personaId }),
         settingsPart,
-        typingPart,
         statusPart,
         messageParts.join('\u001e'),
     ].join('\u001d'));
+    // Streamed text is painted in place by syncTimelineTransientNodes, so it
+    // gets its own hash rather than forcing a full timeline rebuild.
+    const typingFingerprint = hashConversationRenderFingerprint([stableFingerprint, typingPart].join('\u001d'));
+    return { stableFingerprint, typingFingerprint };
 }
 
 function buildConversationMessageFingerprint(message, { avatar, groupId, personaId, settings }) {
@@ -1071,6 +1074,7 @@ export function renderConversationTimeline() {
         }
 
         conversationState.lastTimelineFingerprint = fingerprint;
+        conversationState.lastTimelineTypingFingerprint = '';
         timeline.dataset.sbConversationFingerprint = fingerprint;
         timeline.innerHTML = `
             <div class="sb-conversation-thread-empty neconyan-cat-panel">
@@ -1124,7 +1128,7 @@ export function renderConversationTimeline() {
     const contextChanged = previousThreadKey !== renderThreadKey;
     const isNearBottom = previousScrollBottom <= 150;
     const needsBottomScroll = Boolean(conversationState.timelineBottomScrollPending);
-    const fingerprint = buildTimelineFingerprint({
+    const { stableFingerprint, typingFingerprint } = buildTimelineFingerprint({
         avatar,
         groupId,
         branchId,
@@ -1134,7 +1138,28 @@ export function renderConversationTimeline() {
         messages: windowMessages,
         windowDescriptor,
     });
-    if (!contextChanged && fingerprint === conversationState.lastTimelineFingerprint && timeline.dataset.sbConversationFingerprint === fingerprint) {
+    const renderedFingerprintMatches = !contextChanged
+        && stableFingerprint === conversationState.lastTimelineFingerprint
+        && timeline.dataset.sbConversationFingerprint === stableFingerprint;
+    if (renderedFingerprintMatches && typingFingerprint !== conversationState.lastTimelineTypingFingerprint) {
+        const typingParticipants = getActiveTypingParticipants(avatar, { branchId, groupId, personaId });
+        syncTimelineTransientNodes(timeline, typingParticipants, {
+            avatar, groupId, branchId, personaId, settings, followingLatest: windowDescriptor.followingLatest,
+        });
+        conversationState.lastTimelineTypingFingerprint = typingFingerprint;
+        updateConversationToolsState();
+        syncConversationTimelineHistoryControlsDisabledState(timeline);
+        if (pagingAnchor) {
+            restoreTimelinePagingAnchor(timeline, pagingAnchor);
+        } else if (windowDescriptor.followingLatest && (isNearBottom || needsBottomScroll)) {
+            conversationState.timelineBottomScrollPending = false;
+            anchorConversationTimelineToBottom(timeline, renderThreadKey);
+        } else if (needsBottomScroll) {
+            conversationState.timelineBottomScrollPending = false;
+        }
+        return;
+    }
+    if (renderedFingerprintMatches && typingFingerprint === conversationState.lastTimelineTypingFingerprint) {
         updateConversationToolsState();
         syncConversationTimelineHistoryControlsDisabledState(timeline);
         if (pagingAnchor) {
@@ -1148,8 +1173,9 @@ export function renderConversationTimeline() {
         return;
     }
 
-    conversationState.lastTimelineFingerprint = fingerprint;
-    timeline.dataset.sbConversationFingerprint = fingerprint;
+    conversationState.lastTimelineFingerprint = stableFingerprint;
+    conversationState.lastTimelineTypingFingerprint = typingFingerprint;
+    timeline.dataset.sbConversationFingerprint = stableFingerprint;
     if (contextChanged) {
         timeline.textContent = '';
         revealUi(timeline);
