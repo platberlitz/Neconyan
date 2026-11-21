@@ -47,6 +47,28 @@ describe('frontend module identity', () => {
         clearPublicModuleImportMapCache();
     });
 
+
+    test('a plain install stamps public modules and styles without a build', () => {
+        clearPublicModuleImportMapCache();
+        const served = readRewrittenFrontendHtml(path.join(repoRoot, 'public', 'index.html'), { enabled: false });
+        const map = JSON.parse(served.match(/<script type="importmap">([\s\S]*?)<\/script>/)[1]).imports;
+        const scriptTag = [...served.matchAll(/<script type="module" src="([^"]+)" data-neconyan-core-script>/g)]
+            .map(match => match[1])
+            .find(url => url.startsWith('/script.js?'));
+        const styleTag = served.match(/<link[^>]*href="([^"]*neconyan\.css[^"]*)"/)?.[1] ?? '';
+
+        expect(scriptTag).toBe(map['/script.js']);
+        expect(styleTag).toMatch(/^\/css\/neconyan\.css\?v=/);
+        expect(served).not.toContain('/frontend-assets/');
+        clearPublicModuleImportMapCache();
+    });
+
+    test('the home route rewrites the page on every install', () => {
+        const serverSource = readFileSync(path.join(repoRoot, 'src', 'server-main.js'), 'utf8');
+        expect(serverSource).toContain('readRewrittenFrontendHtml(undefined, { enabled: shouldServeFrontendAssets() })');
+        expect(serverSource).not.toContain("response.sendFile('index.html'");
+    });
+
     test('cache-busted module tags are never bare-imported elsewhere', () => {
         const versionedModuleSrcs = [...indexHtml.matchAll(/<script type="module" src="([^"]+)\?[^"]*">/g)]
             .map(match => match[1]);
