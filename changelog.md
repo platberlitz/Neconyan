@@ -43,6 +43,7 @@
 - PR #819 (2026-11-21) `perf(sw): skip rewriting unchanged cache entries`
 - PR #820 (2026-11-21) `perf(thumbnails): request phone-sized images in lists`
 - PR #821 (2026-11-21) `perf(ios): keep a node compile cache between launches`
+- PR #822 (2026-11-21) `perf(start): bound the update fetch`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
