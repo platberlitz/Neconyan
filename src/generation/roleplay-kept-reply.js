@@ -661,6 +661,7 @@ function appendRecord(records, reply, identity) {
             message.force_avatar = reply.avatar;
         }
         message.extra.gen_id = reply.group.generationId;
+        if (reply.groupAudience) message.extra.group_scene = structuredClone(reply.groupAudience);
     }
     records.push(message);
     return { index: records.length - 2, placement: 'append' };
@@ -990,7 +991,8 @@ export function keepRoleplayReply(context, { reason = 'stopped', rootJobId = nul
             const speaker = Number.isSafeInteger(speakerIndex) ? group?.speakers?.[speakerIndex] : null;
             const avatar = intent.request?.worldInfo?.avatar || speaker?.avatar || reply.avatar || '';
             const named = rootNamed({ directories, job, rootJobId: root });
-            const placed = placeReply(records, { ...reply, group, avatar,
+            const groupAudience = (speaker ?? group?.speakers?.find(entry => entry.avatar === avatar))?.audience;
+            const placed = placeReply(records, { ...reply, group, avatar, groupAudience,
                 userAlternative: named?.name === 'deep-swipe.user',
                 userName: capturedSource.saved.records[0]?.user_name || '' }, intent, {
                 reason, rootJobId: root, childJobId: job.id, textHash: '' });

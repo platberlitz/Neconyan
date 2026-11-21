@@ -38,7 +38,7 @@ export function applyAgentCompletionRecords(directories, job, records, output, b
     const intercepted = proof(directories, job, 'roleplay-agent-intercepts:post-main-generation', admitted.intercepts);
     const post = proof(directories, job, 'roleplay-agent-post', admitted.post);
     const companions = proof(directories, job, 'roleplay-companions', admitted.companions);
-    const selected = selectRoleplayPromptRecords(baselineRecords, source, effect);
+    const selected = selectRoleplayPromptRecords(baselineRecords, source, effect, request.worldInfo?.avatar);
     const generationType = request.worldInfo.global.trigger;
     if (pre.intentHash !== roleplayHash(job.intent) || pre.policyHash !== roleplayHash(request.worldInfo.agents)
         || base.intentHash !== pre.intentHash || base.recordsHash !== roleplayHash(selected) || typeof base.value !== 'string'

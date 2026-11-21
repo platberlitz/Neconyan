@@ -621,6 +621,8 @@ function advanceSpeaker(context, job, chosen, index, turnEnd, previous = null, a
         message.force_avatar = accepted.avatar;
         message.original_avatar = accepted.avatar;
         message.extra = { ...message.extra, gen_id: job.intent.request.group.generationId };
+        // A new reply records who heard it, as page replies do.
+        if (accepted.audience && job.intent.request.effect === 'append') message.extra.group_scene = structuredClone(accepted.audience);
     } else if (job.intent.request.effect !== 'append') {
         output.extra = { ...output.extra, gen_id: job.intent.request.group.generationId };
     }
