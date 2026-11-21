@@ -250,3 +250,11 @@ test('reused environments reset per-string state and default hosts retain histor
     assert.equal(evaluateLegacyMacros('{{char}}/{{input}}/{{pick::only}}', { char: 'Char' }, minimal.extra), 'Char/capability/only');
     assert.equal(minimal.extra.timestampToMoment('2024-07-12@01h31m37s123ms').toISOString(), '2024-07-12T01:31:37.123Z');
 });
+
+test('message number macros keep real numbers when a group speaker missed lines', () => {
+    const chat = [{ mes: 'Hello', is_user: true }, { mes: 'Later line', is_user: false }];
+    const scoped = createMacroEnvironment({ ...snapshot(), extra: { ...snapshot().extra, chat, chatMessageIds: [0, 4] } });
+    assert.equal(scoped.evaluate('{{lastMessageId}} {{lastMessage}} {{allChatRange}}'), '4 Later line 0-4');
+    const plain = createMacroEnvironment({ ...snapshot(), extra: { ...snapshot().extra, chat } });
+    assert.equal(plain.evaluate('{{lastMessageId}} {{allChatRange}}'), '1 0-1');
+});

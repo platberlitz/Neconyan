@@ -14,6 +14,7 @@ import { readRoleplayAccount, readRoleplayFile } from '../src/roleplay-store.js'
 import { router as groupRouter } from '../src/endpoints/groups.js';
 import { beginRoleplaySave, bindRoleplayAccount, finishRoleplaySave, rememberRoleplayRead, roleplayAccountStamp, sendRoleplaySave } from '../public/scripts/roleplay-save-chain.js';
 import { fetchWithCsrfRetry } from '../public/scripts/csrf-token-refresh.js';
+import { renameGroupMemberFields, renameGroupSceneRecords } from '../public/scripts/group-member-rename.js';
 
 const sourceOf = saved => ({ instanceId: saved.instanceId, revision: saved.revision, rawHash: saved.rawHash });
 const groupSource = fs.readFileSync(new URL('../public/scripts/group-chats.js', import.meta.url), 'utf8');
@@ -47,7 +48,7 @@ async function groupHttpRuntime(t, owner) {
         groupBackgroundState: new WeakMap(), queuedGroupMetadataById: new Map(), groupListReadGeneration: 0,
         groupSaveStates: new Map(), groupMetadataSaveQueue: Promise.resolve(), pendingGroupMetadataSaves: new Map(),
         startupGroupListPromise: null,
-        debounce_timeout: { relaxed: 1 }, console, structuredClone, uuidv4: randomUUID,
+        debounce_timeout: { relaxed: 1 }, console, structuredClone, uuidv4: randomUUID, renameGroupMemberFields,
         onlyUnique: (value, index, values) => values.indexOf(value) === index,
         getCurrentUserHandle: () => f.scope.owner, roleplayAccountStamp, rememberRoleplayRead, beginRoleplaySave,
         finishRoleplaySave, sendRoleplaySave, getRequestHeaders: () => ({ 'Content-Type': 'application/json' }),
@@ -507,6 +508,7 @@ test('group member rename carries only its member change as explicit background 
     const runtime = vm.createContext({
         groups: [{ id: 'group', name: 'Group', members: ['Nova.png'], chats: [] }],
         editGroup: async (...args) => { calls.push(args); }, getCurrentUserHandle: () => 'owner', console,
+        renameGroupMemberFields, renameGroupSceneRecords,
     });
     loadGroupFunctions(runtime, ['renameGroupMember']);
     await runtime.renameGroupMember('Nova.png', 'Renamed.png', 'Renamed');

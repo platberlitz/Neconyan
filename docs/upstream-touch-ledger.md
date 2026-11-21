@@ -610,6 +610,19 @@ This ledger tracks intentional Neconyan divergence in upstream-origin files. Its
 | Last reviewed | 2026-07-28 pre-release audit. |
 | Owner | Test and release integrator. |
 
+### `public/script.js`, `public/scripts/group-chats.js`, `public/scripts/slash-commands.js`, and `public/scripts/world-info.js` - group scene visibility
+| Field | Value |
+| --- | --- |
+| Area | Generation lifecycle, group chats and chat persistence. |
+| Divergence reason | Group scenes record who heard each message (`extra.group_scene`), and every prompt reader must see only what the speaking member heard: previews, Purrks, the last-in-context marker, message-number macros, lorebook timers, vectors and slash-command messages. Member renames must carry those lists and the member's mute, role and model. |
+| Target seam | `public/scripts/group-chat-visibility.js` (rules and prompt scope) and `public/scripts/group-member-rename.js` (rename rewrites). |
+| Adapter shape | `Generate()` opens a preview scope in the group dry-run branch and closes it in its `finally`; `setInContextMessages` counts with `isGroupPromptMessageVisible`; `syncSwipeToMes` keeps the message audience when a swipe has none; `/sendas` and `/sys` stamp the current audience; `WorldInfoTimedEffects` adds `countGroupPromptHiddenMessages()` to its clock; `renameGroupMember` and `editGroup` call the rename helpers. |
+| Protecting tests | `tests/group-chat-visibility.node.js`, `tests/group-member-rename.node.js`, `tests/macros.node.js`, `tests/application-vectors.node.js`, `tests/roleplay-group-acceptance.node.js`, `tests/group-chat-scene-gaps.e2e.js`, `tests/group-chat-presence.e2e.js`, `tests/group-chat-whispers.e2e.js`. |
+| Validation | Node tests above, `NECONYAN_CONVERSATION_TEST_DISPOSABLE=1 npx playwright test group-chat-scene-gaps.e2e.js group-chat-presence.e2e.js group-chat-whispers.e2e.js`, full Jest and Node suites, `npm run lint`, `npm run check:frontend-budgets`. |
+| Rollback path | Remove the adapter calls; saved `extra.group_scene` data is unchanged and older code ignores the parts it does not read. |
+| Last reviewed | 2026-11-21 scene visibility gaps. |
+| Owner | Neconyan maintainers. |
+
 ### Native Mewmory (Neconyan)
 
 | Field | Value |
