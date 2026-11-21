@@ -1218,9 +1218,12 @@ function runStorageOperation(operation) {
     return result;
 }
 
+let lastNormalizedSource = null;
+
 export function persistModuleStore(record, { debounce = true, immediate = false } = {}) {
     const normalized = buildAutoSyncRecord(record || getAutoSyncRecord(true));
     extension_settings[MODULE_NAME] = normalized;
+    lastNormalizedSource = normalized;
     // Writing data the server has already confirmed it holds is pure I/O, and
     // an immediate save costs a settings write plus a verification round-trip.
     // Any real change makes this comparison fail, so a needed write still runs.
@@ -1243,9 +1246,15 @@ export function persistLocalModuleChange(record) {
     return persisted;
 }
 
+// Reading the store normalises every stored colour table, which is expensive on a
+// large account and used to run again on every caller in one action. The normalised
+// record is a fresh object each time, so remembering the exact object we handed out
+// lets repeated reads return early; a writer that changes it in place still has its
+// change normalised by persistModuleStore before it is saved.
 export function getAutoSyncRecord(create = false) {
     const existing = extension_settings[MODULE_NAME];
     if (existing && typeof existing === 'object' && !Array.isArray(existing)) {
+        if (existing === lastNormalizedSource) return existing;
         assertSupportedSchemaVersion(existing, { moduleRecord: true });
         migrateLegacyLocalConnectionProfiles(existing.globalSettings);
         if (getLocalEnabledState() === null && hasOwn(existing.globalSettings, 'enabled')) {
@@ -1253,11 +1262,13 @@ export function getAutoSyncRecord(create = false) {
         }
         const normalized = buildAutoSyncRecord(existing);
         extension_settings[MODULE_NAME] = normalized;
+        lastNormalizedSource = normalized;
         return normalized;
     }
     if (!create) return null;
     const created = buildAutoSyncRecord({});
     extension_settings[MODULE_NAME] = created;
+    lastNormalizedSource = created;
     return created;
 }
 
@@ -5430,6 +5441,7 @@ export function startAutoSyncPolling() {
     if (autoSyncInterval) return;
     const pollInterval = document.hidden ? 30000 : 5000;
     setAutoSyncInterval(setInterval(() => {
+        if (document.hidden) return;
         void pollAutoSyncServer();
     }, pollInterval));
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -5507,7 +5519,14 @@ export function initAutoSync() {
     }
 }
 
-// Phase 7: Removed debug console.log statements
+// The host saves settings often; checking three ids is enough to know the rules
+// this extension owns are already there and no setup task is needed.
+export function hasInstalledTrimRules() {
+    const rules = Array.isArray(extension_settings?.regex) ? extension_settings.regex : [];
+    const has = rule => rules.some(candidate => candidate?.id === rule.id && candidate?.scriptName === rule.scriptName);
+    return has(FONT_TRIM_RULE) && has(COLOR_BLOCK_TRIM_RULE) && has(CSS_EFFECTS_TRIM_RULE);
+}
+
 export function ensureRegexScript() {
     try {
         let changed = false;
