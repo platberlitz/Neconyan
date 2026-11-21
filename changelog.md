@@ -37,6 +37,7 @@
 - PR #813 (2026-11-21) `perf(server): keep the settings parse after a save`
 - PR #814 (2026-11-21) `perf(thumbnails): stop enlarging small portraits`
 - PR #815 (2026-11-21) `perf(jobs): select from the shared job ledger`
+- PR #816 (2026-11-21) `perf(chat): count saved chat rows once`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
