@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
 
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
 
@@ -271,5 +272,82 @@ describe('server wiring', () => {
         expect(source).not.toContain('await createFunc(this.cliArgs.getIPv6ListenUrl(), 6);');
         expect(source).not.toContain('await createFunc(this.cliArgs.getIPv4ListenUrl(), 4);');
         expect(source).toContain('await Promise.all([startIPv6, startIPv4]);');
+    });
+});
+
+describe('Android IPv4 readiness', () => {
+    // Exercise the complete production class with deterministic interface
+    // detection and bind outcomes. Real sockets are covered by the restart test.
+    function startupFixture({ host = 'android', hasIPv4 = true, failIPv4 = false } = {}) {
+        const source = readFileSync(SERVER_STARTUP_SOURCE, 'utf8');
+        const bound = [];
+        const bindError = Object.assign(new Error('occupied fixture IPv4 port'), { code: 'EADDRINUSE' });
+        const http = {
+            createServer() {
+                const server = new EventEmitter();
+                server.close = callback => callback?.();
+                server.listen = ({ host }) => {
+                    if (host === '127.0.0.1' && failIPv4) server.emit('error', bindError);
+                    else {
+                        server.listening = true;
+                        bound.push(host);
+                        server.emit('listening');
+                    }
+                };
+                return server;
+            },
+        };
+        const ServerStartup = vm.runInNewContext(`${source.slice(source.indexOf('export class ServerStartup')).replace('export class', 'class')}\nServerStartup;`, {
+            http, URL,
+            process: { env: host === 'android' ? { NECONYAN_ANDROID_APP: '1' } : host === 'ios' ? { NECONYAN_IOS_APP: '1' } : {}, versions: {}, platform: 'linux', exit: () => { throw new Error('unexpected fatal exit'); } },
+            console: { log() {}, warn() {}, error() {} }, color: { green: value => value, red: value => value },
+            getHasIP: async () => ({ hasIPv4Any: hasIPv4, hasIPv6Any: true }),
+            urlHostnameToIPv6: value => value.replace(/^\[|\]$/g, ''),
+            trackListeningServer() {}, retryOnAddressInUse: attempt => attempt(),
+            isAddressInUseError: error => error?.code === 'EADDRINUSE', reportPortHolders: async () => {},
+            writeStartupNote() {}, APP_NAME: 'Neconyan',
+        });
+        const startup = new ServerStartup(() => {}, {
+            listen: true, ssl: false, enableIPv4: 'auto', enableIPv6: true,
+            getIPv4ListenUrl: () => new URL('http://127.0.0.1:28193'),
+            getIPv6ListenUrl: () => new URL('http://[::1]:28193'),
+        });
+        return { startup, bound, bindError };
+    }
+
+    test('auto with detected IPv4 binds before readiness can be published', async () => {
+        const { startup, bound } = startupFixture();
+        const result = await startup.start();
+        expect(result.useIPv4).toBe(true);
+        expect(result.v4Failed).toBe(false);
+        expect(bound).toContain('127.0.0.1');
+        expect(bound).toContain('::1');
+    });
+
+    test('undetected IPv4 cannot publish Android readiness even with successful IPv6', async () => {
+        const { startup, bound } = startupFixture({ hasIPv4: false });
+        let ready = false;
+        const starting = startup.start().then(() => { ready = true; });
+        await expect(starting).rejects.toThrow(/requires IPv4/);
+        expect(bound).toContain('::1');
+        expect(bound).not.toContain('127.0.0.1');
+        expect(ready).toBe(false);
+    });
+
+    test('occupied IPv4 cannot publish Android readiness even with successful IPv6', async () => {
+        const { startup, bound, bindError } = startupFixture({ failIPv4: true });
+        let ready = false;
+        const starting = startup.start().then(() => { ready = true; });
+        await expect(starting).rejects.toBe(bindError);
+        expect(bound).toContain('::1');
+        expect(bound).not.toContain('127.0.0.1');
+        expect(ready).toBe(false);
+    });
+
+    test.each(['desktop', 'ios'])('%s keeps successful IPv6 partial-stack behaviour', async host => {
+        const { startup } = startupFixture({ host, failIPv4: true });
+        const result = await startup.start();
+        expect(result.v4Failed).toBe(true);
+        expect(result.v6Failed).toBe(false);
     });
 });

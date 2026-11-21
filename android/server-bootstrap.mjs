@@ -10,6 +10,7 @@ import { initialiseCrashDiagnostics, installCrashHandlers } from './src/crash-di
 import { beginServerWork, configureServerWakeMarker } from './src/android-wake.js';
 import { loadBootstrapConfig, setAsideNotice } from './bootstrap-config.mjs';
 import { startupNoteMessage } from './src/startup-note.js';
+import { applyAndroidConfigPolicy, validateAndroidListenerConfig } from './src/android-config-policy.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const [privatePath, port, password, mode = 'normal', cachePath = process.env.TMPDIR] = process.argv.slice(2);
@@ -39,25 +40,18 @@ const configPath = path.join(statePath, 'android-config.yaml');
 // Older saved configurations predate some sections; the missing containers are created
 // before any launch, safe mode included. A file that cannot be used is set aside and the
 // launch continues from the default, so one damaged file cannot stop the app for good.
-const { config, setAside, reason } = loadBootstrapConfig(configPath, path.join(root, 'default/config.yaml'));
+const { config, source, setAside, reason } = loadBootstrapConfig(configPath, path.join(root, 'default/config.yaml'), Date.now, validateAndroidListenerConfig);
 if (setAside) {
     console.warn(`${setAsideNotice(setAside)} Reason: ${reason}`);
     try {
         writeFileAtomicSync(path.join(process.env.TMPDIR, 'startup-status.txt'), setAsideNotice(setAside), { mode: 0o600 });
     } catch { /* The warning above still reaches the private server log. */ }
 }
-Object.assign(config, {
-    dataRoot: path.join(statePath, 'data'), port: Number(port), listen: true,
-    listenAddress: { ipv4: '127.0.0.1', ipv6: '::1' }, protocol: { ipv4: true, ipv6: false },
-    basicAuthMode: true, basicAuthUser: { username: 'neconyan', password },
-    perUserBasicAuth: false, enableUserAccounts: false,
-    enableServerPlugins: false, enableServerPluginsAutoUpdate: false,
+const { repairs } = applyAndroidConfigPolicy(config, {
+    source,
+    managed: { dataRoot: path.join(statePath, 'data'), port: Number(port), basicAuthUser: { username: 'neconyan', password } },
 });
-config.browserLaunch.enabled = false;
-config.extensions.autoUpdate = false;
-config.git.backend = 'builtin';
-config.performance.frontendBuild.enabled = true;
-config.logging.enableAccessLog = false;
+if (repairs.length) console.warn(`Android launcher restored required settings: ${repairs.map(({ field, reason }) => `${field}: ${reason}`).join(' ')}`);
 fs.mkdirSync(statePath, { recursive: true });
 writeFileAtomicSync(configPath, YAML.stringify(config), { mode: 0o600 });
 process.env.NECONYAN_SUPERVISED = '1';

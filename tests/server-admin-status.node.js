@@ -6,6 +6,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 import { test } from 'node:test';
 import { simpleGit } from 'simple-git';
+import yaml from 'yaml';
 import { createRemoteRefresh, getStatusDisplayBranch, isGitRepository, NON_GIT_REPOSITORY_MESSAGE } from '../src/server-admin-git.js';
 
 // Execute the production status and update handlers against disposable repositories.
@@ -185,3 +186,53 @@ test('checking repository status preserves staged versions and unstaged lockfile
         assert.equal(await git.diff(), unstaged);
     }
 });
+
+for (const host of ['desktop', 'ios']) {
+    for (const restart of [false, true]) {
+        test(`${host} config Save${restart ? ' & Restart' : ''} accepts listen:false without Android requirements`, async t => {
+            const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-config-save-'));
+            t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+            const configPath = path.join(directory, 'config.yaml');
+            fs.writeFileSync(configPath, 'listen: true\n');
+            const content = 'listen: false\nbasicAuthMode: false\nprotocol:\n  ipv4: false\n  ipv6: true\n';
+            const source = fs.readFileSync(new URL('../src/endpoints/server-admin.js', import.meta.url), 'utf8');
+            let handler;
+            let restartCalls = 0;
+            const context = vm.createContext({
+                fs, path, yaml, process: { env: host === 'ios' ? { NECONYAN_IOS_APP: '1' } : {} },
+                console: { error() {} }, requireAdminMiddleware() {},
+                getConfigFilePath: () => configPath,
+                getConfigValue: () => { throw new Error('Non-Android save must not read Android managed authority.'); },
+                validateAndroidConfigEdit: () => { throw new Error('Non-Android save must not apply Android requirements.'); },
+                tryWriteFileSync: (file, nextContent) => fs.writeFileSync(file, nextContent),
+                scheduleRestart: () => { restartCalls++; },
+                router: { post: (_url, _admin, route) => { handler = route; } },
+            });
+            const managed = source.match(/^let androidManagedConfig = null;/m)?.[0];
+            assert.ok(managed, 'Production Android authority cache is present');
+            vm.runInContext(managed, context);
+            for (const name of ['getAndroidManagedConfig', 'createHttpError', 'readConfigDocument', 'ensureExpectedConfigMtime', 'appHost', 'canRestartItself']) {
+                const declaration = source.match(new RegExp(`^function ${name}\\([\\s\\S]*?^}`, 'm'))?.[0];
+                assert.ok(declaration, `Production ${name} is present`);
+                vm.runInContext(declaration, context);
+            }
+            const route = source.match(/^router.post\('\/config\/save',[\s\S]*?^}\);/m)?.[0];
+            assert.ok(route, 'Production config save route is present');
+            vm.runInContext(route, context);
+            const response = {
+                code: 200, body: null,
+                status(code) { this.code = code; return this; },
+                json(body) { this.body = body; return this; },
+            };
+            await handler({ body: { content, restart, expectedLastModifiedMs: fs.statSync(configPath).mtimeMs } }, response);
+            const shouldRestart = restart && host === 'desktop';
+            assert.equal(response.code, shouldRestart ? 202 : 200);
+            assert.equal(response.body.ok, true);
+            assert.equal(response.body.restarting, shouldRestart);
+            assert.equal(restartCalls, shouldRestart ? 1 : 0);
+            assert.equal(fs.readFileSync(configPath, 'utf8'), content, 'Supported non-Android YAML is written unchanged');
+            assert.equal(yaml.parse(fs.readFileSync(configPath, 'utf8')).listen, false);
+            if (host === 'ios') assert.match(response.body.message, /Close Neconyan from the app switcher/);
+        });
+    }
+}

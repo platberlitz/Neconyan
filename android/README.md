@@ -40,8 +40,8 @@ application files, while the separate data folder, server preferences and custom
 extensions remain. If a newly bundled extension has the same name as a custom
 global extension, its old copy is preserved under `Android extension backups` in
 the account's Files folder and is included in account backups.
-Use APK updates for the application itself. System shell commands, desktop server
-plugins and BotSearcher's desktop Chromium launcher are not included. Providers
+Use APK updates for the application itself. System shell commands and
+BotSearcher's desktop Chromium launcher are not included. Providers
 which call a separate local program need a reachable service instead. For large
 backups, use 'Save a backup of my data' in Account or Server. It writes straight to
 the destination you choose. Only exports generated in the page itself have a 1 GiB
@@ -52,6 +52,37 @@ If startup still fails, you can try again, save a backup or open the saved crash
 reports. A requested server restart doesn't count as a crash. If the app says its
 local port is already in use, 'Use a new port' keeps saved data, but can't move
 unsaved drafts and preferences that live only on the old page.
+
+## Server configuration
+
+The server starts phone-only. To deliberately allow other devices, change
+`listenAddress.ipv4` to `0.0.0.0` in the existing private server config editor,
+then Save & Restart. In the other device's browser use the phone's actual
+reachable network IP and the port displayed in the app, for example
+`http://PHONE_IP:PORT`. `0.0.0.0` is a listen address, not a browser destination.
+The existing whitelist still applies: retain or adjust it for the clients you
+intend to admit. Routing and network firewalls also govern reachability.
+The remote browser signs in as `neconyan` with the generated password already
+visible in that private config editor. Keep that password private.
+
+Supported saved preferences survive reopening, safe starts and APK updates,
+including access logging, IPv6, frontend-build preferences, the `auto` or
+`builtin` Git backend, and server plugin enablement. Missing settings use the
+Android defaults; damaged or incompatible listener settings are kept in a
+separate file and replaced with phone-only defaults so the app can reopen.
+
+The launcher manages the private data folder, port and global credentials.
+Native sign-in requires listening with global basic authentication, IPv4 on
+`127.0.0.1` or `0.0.0.0`, and HTTP rather than HTTPS. IPv4 `auto` is supported
+when IPv4 is detected and binds successfully. Browser launching stays disabled
+because the app uses its WebView. Additional user accounts stay disabled because
+the native recovery backup currently covers only the default account.
+The editor explains incompatible changes before saving them.
+
+Compatible JavaScript server plugins can run if already present, but the APK
+does not supply Git, npm or external programs. System Git and automatic extension
+or server plugin updates are unavailable. APK payload replacement can replace
+application files, so keep your own copies of added plugin files.
 
 ## Build
 

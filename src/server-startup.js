@@ -411,6 +411,12 @@ export class ServerStartup {
      * @returns {void}
      */
     async #handleServerListenFail({ v6Failed, v4Failed, v6Error, v4Error, useIPv6, useIPv4 }) {
+        // IPv6 cannot serve the launcher's fixed IPv4 WebView origin. Never
+        // publish readiness after a partial-stack Android startup.
+        if (process.env.NECONYAN_ANDROID_APP === '1') {
+            if (!useIPv4) throw new Error('Android native sign-in requires IPv4, but IPv4 was disabled or not detected.');
+            if (v4Failed) throw v4Error;
+        }
         // Keep the original error code for the mobile launcher's recovery note.
         if ((process.env.NECONYAN_ANDROID_APP === '1' || process.env.NECONYAN_IOS_APP === '1') && v4Failed && !useIPv6) throw v4Error;
         // A final look at who occupies the port makes the abort actionable: a
