@@ -36,6 +36,7 @@
 - PR #809 (2026-11-21) `perf(mewmory): skip prompt history while memory is off`
 - PR #813 (2026-11-21) `perf(server): keep the settings parse after a save`
 - PR #814 (2026-11-21) `perf(thumbnails): stop enlarging small portraits`
+- PR #815 (2026-11-21) `perf(jobs): select from the shared job ledger`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
