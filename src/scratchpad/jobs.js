@@ -80,9 +80,10 @@ export function normaliseCapabilities(input, sourceKind = 'roleplay', source = {
         ? value.members.filter(name => typeof name === 'string' && name.trim()).map(name => name.trim().slice(0, 200)).slice(0, 2000)
         : [];
     const general = sourceKind === 'general';
+    const persona = sourceKind !== 'notebook' ? normalisePersonaTarget(value.persona) : null;
     return { lore: sourceKind !== 'notebook' && value.lore === true, character: value.character === true && (!general || Boolean(source.avatar)),
         ...(sourceKind === 'roleplay' && normalisePresetTargets(value.preset).length ? { preset: normalisePresetTargets(value.preset) } : {}),
-        ...(sourceKind !== 'notebook' && normalisePersonaTarget(value.persona) ? { persona: normalisePersonaTarget(value.persona) } : {}),
+        ...(persona ? { persona } : {}),
         chat: !general && value.chat === true, members: general ? [] : members,
         ...(sourceKind !== 'notebook' && value.agents === true ? { agents: true } : {}),
         ...(sourceKind !== 'notebook' && value.regex === true ? { regex: true } : {}),

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
+import { shareScenarioNotes } from '../public/scripts/scratchpad/scenario-note-references.js';
 import { Jimp } from '../src/jimp.js';
 import { decodeServerImage } from '../src/media-codecs.js';
 import { fixture, png } from './roleplay-transactions-fixture.js';
@@ -208,17 +209,21 @@ test('persona image refuses revoked sharing, missing capture and renamed persona
 
 test('Scenario Note images keep their full saved picture and refuse stale or revoked notes', async t => {
     const generatedImage = await new Jimp({ width: 1200, height: 1600, color: 0x7799aaff }).getBuffer('image/png');
-    const a = account(t, { change: { target: 'persona-note-avatar', persona: 'Kris', noteId: 'winter' }, generatedImage });
+    const winter = { id: 'winter-1795220000000', name: 'Winter', description: 'Snowy clothes' };
+    const { noteRefs, notes: [{ ref }] } = shareScenarioNotes('User.png', [winter]);
+    const a = account(t, { change: { target: 'persona-note-avatar', persona: 'Kris', noteRef: ref }, generatedImage });
     const descriptor = a.settings.power_user.persona_descriptions['User.png'];
-    descriptor.appendices = [{ id: 'winter', name: 'Winter', description: 'Snowy clothes' }];
+    descriptor.appendices = [winter];
     a.saveSettings();
+    await assert.rejects(a.accept(), /no longer exists/);
+    a.mutate(bucket => { bucket.sessions[0].messages[0].sharedPersona.noteRefs = noteRefs; });
     const accepted = await a.accept();
     await a.run(accepted);
     assert.equal(getJob(a.directories, accepted.job.id).state, 'completed');
     assert.equal(a.image().target, 'persona-note-avatar');
     const review = await prepareScratchpadAvatarReview(a.base, a.source, a.body);
     assert.equal(review.kind, 'persona-note');
-    assert.equal(review.noteId, 'winter');
+    assert.equal(review.noteId, winter.id);
     assert.equal(review.avatarValue, '');
     assert.match(review.proposedAvatar, /^\/user\/images\/Scratchpad\/scratchpad-[a-z0-9-]+\.png$/);
     assert.equal(review.proposedAvatar, review.proposedUrl);
@@ -236,7 +241,7 @@ test('Scenario Note images keep their full saved picture and refuse stale or rev
     a.mutate(bucket => { bucket.sessions[0].settings.include.persona = false; });
     await assert.rejects(prepareScratchpadAvatarReview(a.base, a.source, a.body), /original persona/);
     a.mutate(bucket => { bucket.sessions[0].settings.include.persona = true; });
-    descriptor.appendices = []; a.saveSettings();
+    descriptor.appendices = [{ ...winter, id: 'winter-1795220001000' }]; a.saveSettings();
     await assert.rejects(prepareScratchpadAvatarReview(a.base, a.source, a.body), /no longer exists/);
     assert.equal(a.calls.length, 1);
 });

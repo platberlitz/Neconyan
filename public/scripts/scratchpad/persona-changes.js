@@ -7,6 +7,7 @@ import { event_types, eventSource } from '../events.js';
 import { getCurrentUserHandle } from '../user.js';
 import { sourcePersona, isCurrentSource } from './context.js';
 import { PERSONA_FIELDS, personaFieldValue } from './persona-fields.js';
+import { resolveScenarioNoteId } from './scenario-note-references.js';
 
 export function requireSharedPersona(source, shared, name) {
     const current = sourcePersona(source);
@@ -45,8 +46,9 @@ export async function preparePersonaChange(change, source, shared, guard) {
     };
     check();
     const note = change.type === 'persona-note';
+    const noteId = note ? resolveScenarioNoteId(change, shared) : null;
     const findNote = () => {
-        const matches = (power_user.persona_descriptions?.[shared.avatar]?.appendices || []).filter(item => item.id === change.noteId);
+        const matches = noteId === null ? [] : (power_user.persona_descriptions?.[shared.avatar]?.appendices || []).filter(item => item.id === noteId);
         if (matches.length !== 1) throw new Error('This Scenario Note no longer exists or its ID is ambiguous. Ask for a fresh suggestion.');
         return matches[0];
     };

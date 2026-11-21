@@ -7,6 +7,7 @@ import { normaliseCharacterDraft } from '../neconyan-character-draft.js';
 import { CHARACTER_FIELDS, characterField, characterFieldName } from './character-fields.js';
 import { PERSONA_FIELDS, personaDraft, personaFieldValue } from './persona-fields.js';
 import { validPresetValue } from './preset-fields.js';
+import { scenarioNoteSelector } from './scenario-note-references.js';
 
 export const CHANGE_FENCE = 'scratchpad-change';
 const FENCE_PATTERN = /```scratchpad-change[^\n]*\n([\s\S]*?)```/g;
@@ -79,9 +80,9 @@ export function normaliseChange(value) {
         const personaTarget = ['persona-avatar', 'persona-note-avatar'].includes(value.target);
         if (personaTarget && (typeof value.persona !== 'string' || !value.persona.trim() || value.persona.length > 200 || value.character !== undefined)) fail('A persona avatar suggestion must name only the shared persona.');
         if (!personaTarget && value.persona !== undefined) fail('Only a persona avatar suggestion can name a persona.');
-        if (value.target === 'persona-note-avatar') {
-            if (typeof value.noteId !== 'string' || !value.noteId.trim() || value.noteId.length > 200) fail('A Scenario Note avatar needs its exact saved note ID.');
-        } else if (value.noteId !== undefined) fail('Only a Scenario Note avatar can name a note.');
+        const note = value.target === 'persona-note-avatar' ? scenarioNoteSelector(value) : null;
+        if (value.target === 'persona-note-avatar' && !note) fail('A Scenario Note avatar needs its exact shared note reference.');
+        if (value.target !== 'persona-note-avatar' && (value.noteId !== undefined || value.noteRef !== undefined)) fail('Only a Scenario Note avatar can name a note.');
         if (typeof value.prompt !== 'string' || !value.prompt.trim() || value.prompt.length > 10_000) fail('Write an image prompt between 1 and 10000 characters.');
         if (value.negative !== undefined && (typeof value.negative !== 'string' || value.negative.length > 10_000)) fail('The negative image prompt must be text up to 10000 characters.');
         if (value.character !== undefined && (typeof value.character !== 'string' || !value.character.trim() || value.character.length > 200)) fail('This image suggestion needs an unambiguous shared character name.');
@@ -89,7 +90,7 @@ export function normaliseChange(value) {
         return { type: 'image', action: value.action, target: value.target, prompt: value.prompt.trim(), negative: value.negative?.trim() || '',
             ...(source ? { source } : {}),
             ...(value.character ? { character: value.character.trim() } : {}), ...(value.persona ? { persona: value.persona.trim() } : {}),
-            ...(value.target === 'persona-note-avatar' ? { noteId: value.noteId } : {}), reason };
+            ...note, reason };
     }
     if (value.type === 'notebook') {
         const definition = Object.values(NOTE_TOOL_DEFINITIONS).find(item => item.kind === value.action && NOTE_MUTATING_KINDS.includes(item.kind));
@@ -151,10 +152,11 @@ export function normaliseChange(value) {
         if (!['replace', 'edit', undefined].includes(value.action) || typeof value.persona !== 'string' || !value.persona.trim() || value.persona.length > 200) fail('This persona change needs the shared persona name and a replace action.');
         try {
             if (value.type === 'persona' && value.field === 'avatar') fail('Use a generated persona avatar suggestion to replace the portrait.');
-            if (value.type === 'persona-note' && (!['name', 'description', 'avatar'].includes(value.field) || typeof value.noteId !== 'string' || !value.noteId.trim() || value.noteId.length > 200)) fail('This Scenario Note change needs an existing note ID and a supported field.');
+            const note = value.type === 'persona-note' ? scenarioNoteSelector(value) : null;
+            if (value.type === 'persona-note' && (!note || !['name', 'description', 'avatar'].includes(value.field))) fail('This Scenario Note change needs a shared note reference and a supported field.');
             if (value.field === 'avatar' && value.value !== '') fail('Generate a Scenario Note avatar to replace it, or use an empty value to remove it.');
             return { type: value.type, persona: value.persona.trim(), field: value.field, value: personaFieldValue(value.field, value.value), reason,
-                ...(value.type === 'persona-note' ? { noteId: value.noteId } : {}) };
+                ...note };
         } catch (error) { fail(error.message); }
     }
     if (value.type === 'character') {

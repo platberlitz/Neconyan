@@ -1,4 +1,5 @@
 import { beforeEach, expect, jest, test } from '@jest/globals';
+import { shareScenarioNotes } from '../public/scripts/scratchpad/scenario-note-references.js';
 
 const power_user = {};
 const saveSettings = jest.fn();
@@ -163,6 +164,31 @@ test.each(['name', 'description'])('Scenario Note %s edit preserves identity and
     expect(descriptor().appendices[1]).toEqual({ id: 'other', name: 'Other', description: 'Keep' });
     expect(power_user.personas['User.png']).toBe('Kris');
     expect(setUserName).not.toHaveBeenCalled();
+});
+
+test('a shared reference follows the original note across reordering and never matches a replacement by label', async () => {
+    const { noteRefs, notes: [{ ref }] } = shareScenarioNotes(shared.avatar, descriptor().appendices);
+    descriptor().appendices.reverse();
+    const capture = { ...shared, noteRefs };
+    const change = proposal({ type: 'persona-note', noteRef: ref });
+    const review = () => preparePersonaChange(change, source, capture, () => {});
+    const plan = await review();
+    expect(plan.target).toBe('Kris: Modern AU');
+    descriptor().appendices[1].id = 'different-note-with-the-same-name';
+    await expect(plan.commit('New')).rejects.toThrow('no longer exists');
+    await expect(review()).rejects.toThrow('no longer exists');
+    expect(saveSettings).not.toHaveBeenCalled();
+    expect(descriptor().appendices[1].description).toBe('Original note');
+});
+
+test('an invented reference and an ID that became ambiguous are both refused', async () => {
+    const { noteRefs, notes: [{ ref }] } = shareScenarioNotes(shared.avatar, descriptor().appendices);
+    const review = noteRef => preparePersonaChange(proposal({ type: 'persona-note', noteRef }), source, { ...shared, noteRefs }, () => {});
+    await expect(review('sn-0')).rejects.toThrow('no longer exists');
+    descriptor().appendices.push({ ...descriptor().appendices[0] });
+    await expect(review(ref)).rejects.toThrow('ambiguous');
+    expect(shareScenarioNotes(shared.avatar, descriptor().appendices).notes[0]).not.toHaveProperty('ref');
+    expect(saveSettings).not.toHaveBeenCalled();
 });
 
 test('review refuses a switched persona, revoked sharing, changed field or deleted note', async () => {

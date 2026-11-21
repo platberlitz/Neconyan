@@ -43,10 +43,11 @@ test('editing instructions use server-labelled sources, including text-only imag
 test('portrait edit instructions retain avatar targets and require review before replacement', () => {
     for (const customPrompt of [undefined, 'Be a helpful portrait artist.']) {
         const system = buildScratchpadSystemPrompt({ assistant: 'miso', customPrompt, imageEditing: true,
-            capabilities: { image: true, avatar: true, persona: { name: 'Kris' } } }).text;
+            capabilities: { image: true, avatar: true, persona: { name: 'Kris', noteRefs: { 'sn-abc': 'private-saved-note-id' } } } }).text;
         assert.match(system, /Character portraits use target "avatar" with character/);
         assert.match(system, /persona portraits use "persona-avatar" with persona/);
-        assert.match(system, /"action":"edit","target":"persona-note-avatar","persona":"Kris","noteId"/);
+        assert.match(system, /"action":"edit","target":"persona-note-avatar","persona":"Kris","noteRef"/);
+        assert.doesNotMatch(system, /private-saved-note-id/);
         assert.match(system, /Edit image, then Review avatar and Save change/);
         assert.match(system, /even when the source was generated as a standalone picture/);
     }

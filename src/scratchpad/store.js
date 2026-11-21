@@ -17,6 +17,7 @@ import { MAX_REPLY_SWIPES, replySwipes, selectReplySwipe } from '../../public/sc
 import { MAX_PINNED_NOTE_BYTES } from '../../public/scripts/scratchpad/pinned-note.js';
 import { DEFAULT_FEEDBACK_TONE, isFeedbackTone } from '../../public/scripts/scratchpad/feedback-tone.js';
 import { splitReply } from '../../public/scripts/scratchpad/proposals.js';
+import { normaliseScenarioNoteRefs } from '../../public/scripts/scratchpad/scenario-note-references.js';
 
 export const SCRATCHPAD_SCHEMA = 1;
 export const ASSISTANT_IDS = BUILTIN_ASSISTANT_IDS;
@@ -363,7 +364,9 @@ function normaliseMessage(input, { allowInternalKeys = false, allowSwipes = true
             if (input.imageNames && typeof input.imageNames.user === 'string') message.imageNames = { user: input.imageNames.user.slice(0, 100), character: boundedString(input.imageNames.character, 200) };
             if (typeof input.imagePersonaId === 'string') message.imagePersonaId = input.imagePersonaId.slice(0, 256);
             if (input.sharedPersona && typeof input.sharedPersona.avatar === 'string' && typeof input.sharedPersona.name === 'string') {
-                message.sharedPersona = { avatar: input.sharedPersona.avatar.slice(0, 255), name: input.sharedPersona.name.slice(0, 200) };
+                const avatar = input.sharedPersona.avatar.slice(0, 255);
+                const noteRefs = normaliseScenarioNoteRefs(input.sharedPersona.noteRefs, avatar);
+                message.sharedPersona = { avatar, name: input.sharedPersona.name.slice(0, 200), ...(noteRefs ? { noteRefs } : {}) };
             }
         }
         if (isPlainObject(input.notebookProposals)) {

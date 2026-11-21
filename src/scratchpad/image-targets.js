@@ -6,14 +6,16 @@ import { readScenarioAvatarFile } from '../scenario-avatar-files.js';
 import { roleplayLease, readRoleplayFile, validRoleplayAvatar } from '../roleplay-store.js';
 import { roleplayEntityContent } from '../generation/roleplay-source.js';
 import { CONVERSATION_STORE_KEY } from '../../public/scripts/neconyan-conversation/constants.js';
+import { normaliseScenarioNoteRefs } from '../../public/scripts/scratchpad/scenario-note-references.js';
 import { ScratchpadError } from './store.js';
 
 const invalid = message => new ScratchpadError('SCRATCHPAD_IMAGE_TARGET', message, 409);
 
 export function normalisePersonaTarget(value) {
-    return value && typeof value.avatar === 'string' && value.avatar === sanitize(value.avatar) && value.avatar.length <= 255
-        && /\.(png|jpe?g|webp)$/i.test(value.avatar) && typeof value.name === 'string' && value.name.trim() && value.name.length <= 200
-        ? { avatar: value.avatar, name: value.name } : null;
+    if (!value || typeof value.avatar !== 'string' || value.avatar !== sanitize(value.avatar) || value.avatar.length > 255
+        || !/\.(png|jpe?g|webp)$/i.test(value.avatar) || typeof value.name !== 'string' || !value.name.trim() || value.name.length > 200) return null;
+    const noteRefs = normaliseScenarioNoteRefs(value.noteRefs, value.avatar);
+    return { avatar: value.avatar, name: value.name, ...(noteRefs ? { noteRefs } : {}) };
 }
 
 export function readPersonaTargetLocked(lease, avatar) {
@@ -30,7 +32,7 @@ export function readPersonaTargetLocked(lease, avatar) {
 
 export function readScenarioNoteTargetLocked(lease, avatar, noteId) {
     const persona = readPersonaTargetLocked(lease, avatar);
-    const matches = Array.isArray(persona.appendices) ? persona.appendices.filter(note => note?.id === noteId) : [];
+    const matches = noteId !== null && Array.isArray(persona.appendices) ? persona.appendices.filter(note => note?.id === noteId) : [];
     if (matches.length !== 1) throw invalid('This Scenario Note no longer exists or its ID is ambiguous. Ask for a fresh suggestion.');
     const note = matches[0];
     const portrait = normalizeScenarioAvatar(note.avatar);
