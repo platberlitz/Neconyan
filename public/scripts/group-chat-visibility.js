@@ -49,6 +49,47 @@ export function addGroupHearer(message, avatar, { everySwipe = false } = {}) {
     return changed;
 }
 
+/**
+ * Changes who heard a message, on the message and on every swipe with its own record.
+ * A message without a record counts as heard by every member.
+ * @param {object} message Chat message
+ * @param {{ exact?: string[]|null, add?: string[], remove?: string[] }} change `exact` replaces the list; `add` and `remove` adjust it
+ * @param {string[]} members Current group members
+ * @returns {boolean} Whether anything changed
+ */
+export function changeGroupHearers(message, { exact = null, add = [], remove = [] } = {}, members = []) {
+    if (!message || typeof message !== 'object') return false;
+    const update = audience => {
+        const before = Array.isArray(audience?.present) ? audience.present : members;
+        const next = exact ? [...new Set(exact)] : [...new Set([...before, ...add])].filter(avatar => !remove.includes(avatar));
+        if (next.length === new Set(before).size && next.every(avatar => before.includes(avatar))) return null;
+        return { ...(audience || {}), present: next, whisper_to: [...(audience?.whisper_to || [])] };
+    };
+    let changed = false;
+    const next = update(message.extra?.group_scene);
+    if (next) {
+        message.extra ??= {};
+        message.extra.group_scene = next;
+        changed = true;
+    }
+    for (const info of Array.isArray(message.swipe_info) ? message.swipe_info : []) {
+        const own = info?.extra?.group_scene;
+        const swipeNext = own ? update(own) : null;
+        if (!swipeNext) continue;
+        info.extra.group_scene = swipeNext;
+        changed = true;
+    }
+    return changed;
+}
+
+/** How many current members heard a message, or null when all of them did. Whispers have their own badge. */
+export function groupHeardCount(message, members, rules = {}) {
+    const audience = message?.extra?.group_scene;
+    if (!audience || audience.whisper_to?.length || !members?.length) return null;
+    const heard = members.filter(avatar => canGroupMemberSee(message, avatar, rules)).length;
+    return heard < members.length ? { heard, total: members.length } : null;
+}
+
 export function groupScenePrompt(scene, members) {
     const present = members.filter(member => !scene.away.includes(member.avatar)).map(member => member.name);
     const away = members.filter(member => scene.away.includes(member.avatar)).map(member => member.name);

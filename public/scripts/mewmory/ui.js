@@ -2968,7 +2968,7 @@ function loadMewmoryStyles() {
     if (!style) {
         style = document.createElement('link');
         style.id = 'mewmory-css';
-        style.href = 'css/mewmory.css?v=20261123-plot-choices';
+        style.href = 'css/mewmory.css?v=20261124-heard-editor';
         document.head.append(style);
     }
     if (style.rel !== 'stylesheet') {

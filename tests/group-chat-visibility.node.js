@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addGroupHearer, beginGroupPromptScope, canGroupMemberSee, countGroupPromptHiddenMessages, filterGroupPromptMessages, filterGroupTargetMessages, groupMessageAudience, getGroupPromptViewers, groupScenePrompt, hasRestrictedGroupHistory, readGroupScene, readGroupSceneRules, withGroupTargetPrompt } from '../public/scripts/group-chat-visibility.js';
+import { addGroupHearer, beginGroupPromptScope, canGroupMemberSee, changeGroupHearers, countGroupPromptHiddenMessages, filterGroupPromptMessages, filterGroupTargetMessages, groupHeardCount, groupMessageAudience, getGroupPromptViewers, groupScenePrompt, hasRestrictedGroupHistory, readGroupScene, readGroupSceneRules, withGroupTargetPrompt } from '../public/scripts/group-chat-visibility.js';
 
 test('scene state is bounded to current members and has safe defaults', () => {
     assert.deepEqual(readGroupScene({}, ['kit', 'mira']), { away: [], location: '', whisper_to: [], sees_all: [] });
@@ -119,4 +119,38 @@ test('a speaker hears the line they reply to, and is recorded as having heard it
     assert.equal(addGroupHearer(whisper, 'ash'), false);
     assert.deepEqual(whisper.extra.group_scene.present, ['kit', 'mira']);
     assert.equal(addGroupHearer({ mes: 'Older public line' }, 'mira'), false);
+});
+
+test('changing who heard a line updates the message and its own swipe records only', () => {
+    const members = ['kit', 'mira', 'ash'];
+    const message = {
+        mes: 'Kit whistles.',
+        extra: { group_scene: { present: ['kit'], whisper_to: [] } },
+        swipe_info: [{ extra: { group_scene: { present: ['kit'], whisper_to: [] } } }, { extra: {} }],
+    };
+    assert.equal(changeGroupHearers(message, { exact: ['kit', 'mira', 'mira'] }, members), true);
+    assert.deepEqual(message.extra.group_scene.present, ['kit', 'mira']);
+    assert.deepEqual(message.swipe_info[0].extra.group_scene.present, ['kit', 'mira']);
+    assert.deepEqual(message.swipe_info[1].extra, {});
+    assert.equal(changeGroupHearers(message, { exact: ['mira', 'kit'] }, members), false);
+
+    assert.equal(changeGroupHearers(message, { add: ['ash'], remove: ['kit'] }, members), true);
+    assert.deepEqual(message.extra.group_scene.present, ['mira', 'ash']);
+
+    const older = { mes: 'Older public line' };
+    assert.equal(changeGroupHearers(older, { add: ['kit'] }, members), false);
+    assert.equal(older.extra, undefined);
+    assert.equal(changeGroupHearers(older, { remove: ['ash'] }, members), true);
+    assert.deepEqual(older.extra.group_scene, { present: ['kit', 'mira'], whisper_to: [] });
+});
+
+test('the heard badge counts only lines that some current member missed', () => {
+    const members = ['kit', 'mira', 'ash'];
+    const line = present => ({ extra: { group_scene: { present, whisper_to: [] } } });
+    assert.deepEqual(groupHeardCount(line(['kit']), members), { heard: 1, total: 3 });
+    assert.equal(groupHeardCount(line(members), members), null);
+    assert.deepEqual(groupHeardCount(line(['kit']), members, { seesAll: ['ash'] }), { heard: 2, total: 3 });
+    assert.equal(groupHeardCount({ mes: 'Older public line' }, members), null);
+    assert.equal(groupHeardCount({ extra: { group_scene: { present: ['kit'], whisper_to: ['kit'] } } }, members), null);
+    assert.equal(groupHeardCount(line(['kit']), []), null);
 });
