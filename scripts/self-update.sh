@@ -23,6 +23,20 @@ finish_early() {
     exit 1
 }
 
+fetch_upstream() {
+    local remote="$1"
+
+    # A remote that accepts the connection and then stops sending would otherwise
+    # hold the launcher forever. git's low-speed limits cover HTTP; timeout also
+    # covers SSH. Stock macOS has no timeout command, so there the fetch is left
+    # to git rather than failing every start.
+    if command -v timeout >/dev/null 2>&1; then
+        GIT_HTTP_LOW_SPEED_LIMIT=1000 GIT_HTTP_LOW_SPEED_TIME=8 timeout 15 git fetch --quiet "$remote"
+    else
+        GIT_HTTP_LOW_SPEED_LIMIT=1000 GIT_HTTP_LOW_SPEED_TIME=8 git fetch --quiet "$remote"
+    fi
+}
+
 restore_lone_bun_lock_change() {
     if ! git ls-files --error-unmatch bun.lock >/dev/null 2>&1; then
         return
@@ -82,7 +96,7 @@ fi
 upstream_remote="${upstream_ref%%/*}"
 
 echo "Checking for updates on $upstream_ref..."
-if ! git fetch --quiet "$upstream_remote"; then
+if ! fetch_upstream "$upstream_remote"; then
     finish_early "could not fetch from '$upstream_remote'."
 fi
 
