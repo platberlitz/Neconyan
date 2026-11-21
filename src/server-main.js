@@ -98,6 +98,7 @@ import { init as statsInit, onExit as statsOnExit } from './endpoints/stats.js';
 import { checkForNewContent, PRESET_CONTENT_TYPES } from './endpoints/content-manager.js';
 import { init as settingsInit } from './endpoints/settings.js';
 import { ServerStartup, setupPrivateEndpoints } from './server-startup.js';
+import { writeStartupNote } from './startup-note.js';
 import { diskCache } from './endpoints/characters.js';
 import { migrateFlatSecrets } from './endpoints/secrets.js';
 import { migrateGroupChatsMetadataFormat } from './endpoints/groups.js';
@@ -991,5 +992,6 @@ initUserStorage(globalThis.DATA_ROOT)
     .then(postSetupTasks)
     .catch((error) => {
         console.error('A critical error has occurred while starting the server:', error);
+        writeStartupNote(error);
         process.exit(1);
     });

@@ -18,7 +18,7 @@ import { isIOSWebKitPlatform, isLegacyIOSWebKitPlatform } from './mobile-send-bu
 import { createPresetApiSyncLifecycle } from './preset-api-sync-lifecycle/index.js';
 import { fetchWithCsrfRetry } from './csrf-token-refresh.js';
 import { hasServerReturnedAfterRestart } from './server-restart-monitor.js';
-import { requestAndroidUpdate } from './android-native-bridge.js';
+import { requestAndroidDataBackup, requestAndroidUpdate } from './android-native-bridge.js';
 import {
     PERSONA_APPENDICES_DEFAULT_SCOPE_KEY,
     PERSONA_APPENDICES_SELECTIONS_KEY,
@@ -15090,6 +15090,17 @@ function buildServerAdminPanel() {
     statusCopy.append(statusTitle, statusDescription);
     statusHeader.append(statusCopy, statusPill);
     statusCard.append(statusHeader, statusGrid, folderList, statusNote, changedFiles, sourceDetails);
+    if (typeof globalThis.NeconyanExport?.saveDataBackup === 'function') {
+        const backup = createElement('button', { className: 'menu_button sb-server-action', text: 'Save a backup of my data', attrs: { type: 'button' } });
+        backup.addEventListener('click', async () => {
+            backup.disabled = true;
+            try {
+                await flushPendingChatSavesForNavigation();
+                if (!requestAndroidDataBackup()) toastr.warning(t`The app is not ready to save a backup. Try again in a moment.`);
+            } catch (error) { toastr.error(error.message); } finally { backup.disabled = false; }
+        });
+        statusCard.append(backup);
+    }
 
     const updateCard = createElement('section', { className: 'sb-admin-card sb-server-card' });
     const updateHeader = createElement('div', { className: 'sb-admin-card-header' });

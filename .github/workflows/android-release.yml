@@ -11,6 +11,9 @@ on:
 permissions:
   contents: read
 
+env:
+  OFFICIAL_BUILD: ${{ github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/hotfix/') }}
+
 concurrency:
   group: android-release-${{ github.ref }}
   cancel-in-progress: false
@@ -40,7 +43,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - name: Reproduce the published APK's word-splitting crash
-        uses: reactivecircus/android-emulator-runner@4c44018e59b437e86cdfc41da381398f93ed8808 # v2
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: 35
           arch: x86_64
@@ -53,9 +56,10 @@ jobs:
             python3 tests/android-native-stack-probe.py --serial emulator-5554 --expect-segmenter-crash --symbols android/libnode/bin/x86_64/libnode.so
 
   build:
-    if: github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/hotfix/')
     runs-on: ubuntu-24.04
     timeout-minutes: 90
+    outputs:
+      artifact: ${{ steps.name.outputs.artifact }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-node@cdca7365b2dadb8aad0a33bc7601856ffabcc48e # v4.3.0
@@ -81,7 +85,10 @@ jobs:
         env:
           NECONYAN_GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/prime-gradle-distribution.js
+      - name: Verify the Gradle wrapper JAR
+        run: echo '81a82aaea5abcc8ff68b3dfcb58b3c3c429378efd98e7433460610fecd7ae45f  android/gradle/wrapper/gradle-wrapper.jar' | sha256sum --check
       - name: Build signed APKs
+        if: env.OFFICIAL_BUILD == 'true'
         env:
           SIGNING_KEY: ${{ secrets.NECONYAN_ANDROID_KEYSTORE }}
           NECONYAN_STORE_PASSWORD: ${{ secrets.NECONYAN_ANDROID_STORE_PASSWORD }}
@@ -95,6 +102,18 @@ jobs:
           printf '%s' "$SIGNING_KEY" | base64 --decode > "$NECONYAN_KEYSTORE"
           cd android
           ./gradlew --no-daemon assembleRelease lintRelease
+      - name: Build APKs with a throwaway test signer
+        if: env.OFFICIAL_BUILD != 'true'
+        run: |
+          set -euo pipefail
+          umask 077
+          export NECONYAN_KEYSTORE="$RUNNER_TEMP/neconyan-validation.p12"
+          export NECONYAN_STORE_PASSWORD=validation-only
+          trap 'rm -f "$NECONYAN_KEYSTORE"' EXIT
+          keytool -genkeypair -alias neconyan -keyalg RSA -keysize 2048 -validity 30 -dname 'CN=Neconyan CI validation' \
+            -storetype PKCS12 -keystore "$NECONYAN_KEYSTORE" -storepass:env NECONYAN_STORE_PASSWORD
+          cd android
+          ./gradlew --no-daemon assembleRelease lintRelease
       - name: Verify signed APKs and package source
         env:
           EXPECTED_CERTIFICATE: 49ed1e770b8a5269a008ed0d4763dd19a499377e35c85eec798c554178c4826c
@@ -105,20 +124,30 @@ jobs:
           for abi in arm64-v8a x86_64; do
             apk="android/app/build/outputs/apk/release/app-$abi-release.apk"
             "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$apk" > "release/signature-$abi.txt"
-            grep -F "Signer #1 certificate SHA-256 digest: $EXPECTED_CERTIFICATE" "release/signature-$abi.txt"
+            test "$(grep -Ec '^Signer #[0-9]+ certificate SHA-256 digest: [0-9a-f]{64}$' "release/signature-$abi.txt")" -eq 1
+            if [ "$OFFICIAL_BUILD" = true ]; then
+              grep -Fx "Signer #1 certificate SHA-256 digest: $EXPECTED_CERTIFICATE" "release/signature-$abi.txt"
+            fi
             "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 -v 4 "$apk" > "release/alignment-$abi.txt"
             label="$abi"
             if [ "$abi" = arm64-v8a ]; then label=arm64; fi
             cp "$apk" "release/Neconyan-$version-android-$label.apk"
           done
-          python3 scripts/verify-android-release.py --commit "$GITHUB_SHA" --version "$version" release/*.apk > release/provenance.json
+          python3 scripts/verify-android-release.py --commit "$GITHUB_SHA" --version "$version" \
+            --aapt2 "$ANDROID_HOME/build-tools/36.0.0/aapt2" release/*.apk > release/provenance.json
           git archive --format=zip --prefix="Neconyan-$version/" --output="release/Neconyan-$version-source.zip" "$GITHUB_SHA"
           cd release
           sha256sum *.apk *.zip provenance.json signature-*.txt alignment-*.txt > SHA256SUMS
-      - name: Upload release candidates
+      - name: Name the APK artifact
+        id: name
+        run: |
+          kind=validation
+          if [ "$OFFICIAL_BUILD" = true ]; then kind=release; fi
+          echo "artifact=android-$kind-$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+      - name: Upload verified APKs
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: android-release-${{ github.sha }}
+          name: ${{ steps.name.outputs.artifact }}
           path: release/
           if-no-files-found: error
           retention-days: 30
@@ -141,7 +170,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - name: Export the Android SDK's current WebView
-        uses: reactivecircus/android-emulator-runner@4c44018e59b437e86cdfc41da381398f93ed8808 # v2
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: 35
           arch: x86_64
@@ -170,12 +199,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        api: [30, 33, 35]
+        include:
+          - {api: 30, target: default, page_size: 4096, update_webview: true}
+          - {api: 33, target: default, page_size: 4096, update_webview: true}
+          - {api: 35, target: default, page_size: 4096, update_webview: false}
+          - {api: 36, target: google_apis_ps16k, page_size: 16384, update_webview: false}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: android-release-${{ github.sha }}
+          name: ${{ needs.build.outputs.artifact }}
           path: release
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -190,17 +223,17 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - name: Check signed app lifecycle
-        uses: reactivecircus/android-emulator-runner@4c44018e59b437e86cdfc41da381398f93ed8808 # v2
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: ${{ matrix.api }}
           arch: x86_64
-          target: default
+          target: ${{ matrix.target }}
           ram-size: 4096M
           heap-size: 512M
           disk-size: 4096M
           disable-animations: true
           script: |
-            python3 tests/android-apk-smoke.py --serial emulator-5554 --release --apk release/*-android-x86_64.apk ${{ (matrix.api == 30 || matrix.api == 33) && '--update-webview webview/webview.apk' || '' }}
+            python3 tests/android-apk-smoke.py --serial emulator-5554 --release --check-stop-restart --page-size ${{ matrix.page_size }} --apk release/*-android-x86_64.apk ${{ matrix.update_webview && '--update-webview webview/webview.apk' || '' }}
             python3 tests/android-native-stack-probe.py --serial emulator-5554
       - name: Capture emulator log on failure
         if: failure()

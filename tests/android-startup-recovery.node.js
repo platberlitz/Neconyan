@@ -65,7 +65,7 @@ test('a failed page load reconnects instead of leaving the WebView error page on
 test('the service passes safe mode and a memory-sized heap, and keeps the previous log', () => {
     assert.match(service, /boolean safe = intent != null && intent\.getBooleanExtra\(SAFE, false\);/);
     assert.match(service, /"--max-old-space-size=" \+ heapMegabytes\(this\)/);
-    assert.match(service, /safe \? "safe" : "normal" \}/);
+    assert.match(service, /safe \? "safe" : "normal", getCacheDir\(\)\.getPath\(\) \}/);
     assert.match(service, /"server\.previous\.log"/);
     assert.doesNotMatch(service, /--max-old-space-size=512"/);
 });
@@ -95,11 +95,12 @@ test('a native crash leaves Android a crash record that the bug report details i
     assert.match(bootstrap, /process\.env\.NECONYAN_REQUEST_TRACE = path\.join\(process\.env\.TMPDIR, 'requests\.txt'\);/);
     assert.match(main, /app\.use\(createRequestTrace\(process\.env\.NECONYAN_REQUEST_TRACE\)\);/);
     // Four-part hotfix versions such as 1.2.4.1 still produce a version code above every older release.
-    assert.match(gradle, /versionCode numbers\[0\] \* 1000000 \+ numbers\[1\] \* 10000 \+ numbers\[2\] \* 100 \+ \(numbers\.size\(\) > 3 \? numbers\[3\] : 0\)/);
+    assert.match(gradle, /apkVersionCode = numbers\[0\] \* 1000000L \+ numbers\[1\] \* 10000 \+ numbers\[2\] \* 100 \+ \(numbers\.size\(\) > 3 \? numbers\[3\] : 0\)/);
+    assert.match(gradle, /versionCode apkVersionCode\.toInteger\(\)/);
 });
 
 test('native report presentation is early, resumed and acknowledged only after showing', () => {
-    assert.ok(activity.indexOf('recoverCrashReports();') < activity.indexOf('if (!checkWebView(root))'));
+    assert.match(activity, /recoverCrashReports\(\);\s*if \(!checkWebView\(startup\)\) return;/);
     const reader = block(activity, 'private boolean showCrashReport', 'private void copyReport');
     assert.ok(reader.indexOf('crashDialog.show();') < reader.indexOf('acknowledgeReport(entry)'));
     assert.match(reader, /!resumed/);
@@ -133,7 +134,7 @@ test('the Android server loads full ICU data so word splitting cannot crash it',
 });
 
 test('the server starts after the WebView check and before the WebView is built', () => {
-    const check = activity.indexOf('if (!checkWebView(root)) return;');
+    const check = activity.indexOf('if (!checkWebView(startup)) return;');
     const connect = activity.indexOf('credentials = ServerService.credentials(this);');
     const build = activity.indexOf('web = new WebView(this);');
     assert.ok(check !== -1 && connect !== -1 && build !== -1);
@@ -141,7 +142,8 @@ test('the server starts after the WebView check and before the WebView is built'
     assert.ok(connect < build, 'the server request must overlap WebView construction');
     // Failure and status callbacks may run before the WebView exists.
     assert.ok(activity.indexOf('status = new TextView(this);') < connect);
-    assert.ok(activity.indexOf('root.addView(actions);') < connect);
+    assert.ok(activity.indexOf('startup.addView(actions);') < connect);
+    assert.match(activity.slice(connect, build), /connect\(\);/);
 });
 
 test('an early connection marks the page load before posting and bounds duplicate suppression', () => {
@@ -151,7 +153,7 @@ test('an early connection marks the page load before posting and bounds duplicat
     assert.match(load, /loadFailed = false;\s*web\.loadUrl\(origin\)/);
     assert.doesNotMatch(activity, /pendingPageLoad|webReady/);
     assert.match(block(activity, 'private String waitForWorkspace()', 'private boolean restartAfterStop'), /loadWorkspace\(\);/);
-    assert.match(activity, /if \(closed \|\| failed \|\| pageLoadInProgress\(\) \|\| !connecting\.compareAndSet\(false, true\)\) return;/);
+    assert.match(activity, /if \(closed \|\| failed \|\| stoppedByUser \|\| pageLoadInProgress\(\) \|\| !connecting\.compareAndSet\(false, true\)\) return;/);
     assert.match(block(activity, 'private boolean pageLoadInProgress()', 'private void loadWorkspace()'), /workspaceRequested && SystemClock\.elapsedRealtime\(\) - workspaceRequestedAt < PAGE_LOAD_RETRY_MS/);
     assert.match(activity, /PAGE_LOAD_RETRY_MS = 30000/);
     assert.match(block(activity, 'public void onReceivedError', 'public void onPageFinished'), /workspaceRequested = false;/);
@@ -199,7 +201,7 @@ test('the activity stops reconnects before it stops the service', () => {
     // Every restart path checks the flag, and no close path bypasses it.
     assert.match(activity, /while \(!isFinishing\(\) && !failed && !closed\) \{/);
     assert.match(activity, /while \(!isFinishing\(\) && !failed && !closed && System\.currentTimeMillis\(\) < deadline\) \{/);
-    assert.match(activity, /private void startServer\(boolean safe\) \{\s*synchronized \(serviceStartLock\) \{\s*if \(closed \|\| isFinishing\(\) \|\| isDestroyed\(\)\) return;/);
+    assert.match(activity, /private void startServer\(boolean safe\) \{\s*synchronized \(serviceStartLock\) \{\s*if \(closed \|\| isFinishing\(\) \|\| isDestroyed\(\) \|\| ServerService\.userStopMarker\(this\)\.isFile\(\)\) return;/);
     assert.match(close, /synchronized \(serviceStartLock\)/, 'start and explicit stop must use the same lock');
     assert.match(activity, /if \(!resumed \|\| closed\) return;/);
     assert.equal((activity.match(/-> closeNeconyan\(\)/g) || []).length, 2);
@@ -210,7 +212,7 @@ test('dialog presentation and dismissal survive a destroyed window', () => {
     assert.match(activity, /private AlertDialog safeShow\(AlertDialog\.Builder builder\) \{\s*if \(closed \|\| isFinishing\(\) \|\| isDestroyed\(\)\) return null;\s*try \{ return builder\.show\(\); \}\s*catch \(RuntimeException error\) \{ android\.util\.Log\.w/);
     assert.match(activity, /private static void safeDismiss\(Dialog dialog\)/);
     assert.ok(activity.indexOf('cancelExport();') < activity.indexOf('safeDismiss(crashDialog);'));
-    assert.match(activity, /runOnUiThread\(\(\) -> safeShow\(new AlertDialog\.Builder\(this\)\.setMessage\(text\)\.setPositiveButton\("OK", null\)\)\);/);
+    assert.match(activity, /runOnUiThread\(\(\) -> \{\s*backupPending = false;\s*safeShow\(new AlertDialog\.Builder\(this\)\.setMessage\(text\)\.setPositiveButton\("OK", null\)\);/);
     // The retained crash report dialog is only registered once its show succeeded.
     const report = block(activity, 'private boolean showCrashReport', 'private void copyReport');
     assert.ok(report.indexOf('if (safeShow(dialog) == null) return false;') < report.indexOf('crashDialog = dialog;'));
@@ -222,7 +224,7 @@ test('dialog presentation and dismissal survive a destroyed window', () => {
 
 test('page lifecycle callbacks tolerate null URLs and repeat crashes do not stack actions', () => {
     const finished = block(activity, 'public void onPageFinished', 'web.setWebChromeClient');
-    assert.match(finished, /if \(url == null \|\| !local\(Uri\.parse\(url\)\) \|\| loadFailed \|\| failed\) return;/);
+    assert.match(finished, /if \(url == null \|\| !local\(Uri\.parse\(url\)\) \|\| stoppedByUser \|\| loadFailed \|\| failed\) return;/);
     assert.match(finished, /String currentUrl = view\.getUrl\(\);/);
     assert.ok(finished.indexOf('currentUrl == null') < finished.indexOf('!local(Uri.parse(currentUrl))'));
     assert.match(finished, /if \("\/login"\.equals\(Uri\.parse\(url\)\.getPath\(\)\)\)/);

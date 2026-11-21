@@ -15,6 +15,8 @@ import java.util.Set;
 public final class ServerService extends Service {
     public static final String STOP = "io.github.platberlitz.neconyan.STOP";
     public static final String SAFE = "safe";
+    static final int RESTART_EXIT = 75;
+    static final String RESTART_STATUS = "Restarting your workspace…";
     private static native int startNode(String[] arguments, String cache);
     private boolean started;
     private volatile boolean nodeStarted;
@@ -25,20 +27,38 @@ public final class ServerService extends Service {
     private final Object stopLock = new Object();
     private static final String BUSY = "android-busy";
     private static final java.util.concurrent.atomic.AtomicBoolean runtimeClaimed = new java.util.concurrent.atomic.AtomicBoolean();
+    private static final Object INSTALL_LOCK = new Object();
+
+    static File userStopMarker(Context context) { return new File(context.getNoBackupFilesDir(), "user-stopped"); }
+
+    static void markUserStopped(Context context) {
+        try { Files.write(userStopMarker(context).toPath(), new byte[0]); }
+        catch (IOException error) { android.util.Log.w("Neconyan", "Could not record user stop", error); }
+    }
 
     public static synchronized JSONObject credentials(Context context) throws Exception {
+        return credentials(context, false);
+    }
+
+    static synchronized JSONObject credentials(Context context, boolean newPort) throws Exception {
         File file = new File(context.getNoBackupFilesDir(), "launcher.json");
-        if (file.isFile()) return new JSONObject(new String(Files.readAllBytes(file.toPath()), java.nio.charset.StandardCharsets.UTF_8));
-        byte[] bytes = new byte[32];
-        new SecureRandom().nextBytes(bytes);
-        StringBuilder password = new StringBuilder();
-        for (byte value : bytes) password.append(String.format("%02x", value));
+        JSONObject value;
+        if (file.isFile()) {
+            value = new JSONObject(new String(Files.readAllBytes(file.toPath()), java.nio.charset.StandardCharsets.UTF_8));
+            if (!newPort) return value;
+        } else {
+            byte[] bytes = new byte[32];
+            new SecureRandom().nextBytes(bytes);
+            StringBuilder password = new StringBuilder();
+            for (byte valueByte : bytes) password.append(String.format("%02x", valueByte));
+            value = new JSONObject().put("password", password.toString());
+        }
         int port;
         try (ServerSocket socket = new ServerSocket(0, 0, InetAddress.getByName("127.0.0.1"))) { port = socket.getLocalPort(); }
-        JSONObject value = new JSONObject().put("port", port).put("password", password.toString());
+        value.put("port", port);
         File temporary = new File(file.getParentFile(), "launcher.tmp");
         Files.write(temporary.toPath(), value.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        Files.move(temporary.toPath(), file.toPath(), StandardCopyOption.ATOMIC_MOVE);
+        Files.move(temporary.toPath(), file.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
         return value;
     }
 
@@ -50,12 +70,21 @@ public final class ServerService extends Service {
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent != null && STOP.equals(intent.getAction())) { stopSelf(); return START_NOT_STICKY; }
-        PendingIntent open = PendingIntent.getActivity(this, 0, new Intent(this, MainActivity.class), PendingIntent.FLAG_IMMUTABLE);
+        if (intent != null && STOP.equals(intent.getAction())) {
+            markUserStopped(this);
+            synchronized (stopLock) { stopping = true; }
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+        PendingIntent open = PendingIntent.getActivity(this, 0, MainActivity.openIntent(this), PendingIntent.FLAG_IMMUTABLE);
         PendingIntent stop = PendingIntent.getService(this, 1, new Intent(this, ServerService.class).setAction(STOP), PendingIntent.FLAG_IMMUTABLE);
-        startForeground(1, new Notification.Builder(this, "server").setContentTitle("Neconyan is running on your phone")
+        startForeground(1, new Notification.Builder(this, "server").setContentTitle("Neconyan is running on this device")
             .setContentText("Tap to open. Stop when you have finished chatting.").setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(open).addAction(new Notification.Action.Builder(null, "Stop", stop).build()).setOngoing(true).build());
+        if (userStopMarker(this).isFile()) {
+            stopSelf();
+            return START_NOT_STICKY;
+        }
         if (!started) {
             started = true;
             ActivityBreadcrumbs.state("starting");
@@ -73,8 +102,12 @@ public final class ServerService extends Service {
             wake.acquire();
             new Thread(() -> {
                 try {
-                    status("Preparing Neconyan on your phone…");
-                    File runtime = installPayload();
+                    status("Preparing Neconyan on this device…");
+                    File runtime;
+                    synchronized (INSTALL_LOCK) {
+                        if (stopping) return;
+                        runtime = installPayload();
+                    }
                     JSONObject credentials = credentials(this);
                     status("Starting your workspace…");
                     System.loadLibrary("neconyan-node");
@@ -99,12 +132,14 @@ public final class ServerService extends Service {
                     // The runtime's built-in ICU data has no word-break rules and Intl.Segmenter
                     // crashes without them, so Node loads the full data shipped in the payload.
                     int exit = startNode(new String[] { "node", "--max-old-space-size=" + heapMegabytes(this), "--disable-wasm-trap-handler", "--icu-data-dir=" + new File(runtime, "icu").getPath(), "--import", new File(runtime, "file-stats.mjs").getPath(), new File(runtime, "server-bootstrap.mjs").getPath(),
-                        getFilesDir().getPath(), credentials.getString("port"), credentials.getString("password"), safe ? "safe" : "normal" }, getCacheDir().getPath());
-                    if (!serverNoteWritten()) status("Neconyan stopped (" + exit + "). Reopen the app to start it again.");
+                        getFilesDir().getPath(), credentials.getString("port"), credentials.getString("password"), safe ? "safe" : "normal", getCacheDir().getPath() }, getCacheDir().getPath());
+                    if (exit == RESTART_EXIT) status(RESTART_STATUS);
+                    else if (!serverNoteWritten()) status("Neconyan stopped (" + exit + "). Reopen the app to start it again.");
                     // Diagnostic writes must never stop the service from closing cleanly.
-                    if (exit != 0) try { CrashDiagnostics.recordReport(this, "server", "native-runtime-exit", null, "Local server returned exit code " + exit + ". No Java exception was supplied.", String.valueOf(exit), ActivityBreadcrumbs.current()); } catch (Throwable ignored) { }
+                    if (exit != 0 && exit != RESTART_EXIT) try { CrashDiagnostics.recordReport(this, "server", "native-runtime-exit", null, "Local server returned exit code " + exit + ". No Java exception was supplied.", String.valueOf(exit), ActivityBreadcrumbs.current()); } catch (Throwable ignored) { }
                     stopSelf();
                 } catch (Throwable error) {
+                    if (stopping) return;
                     try { CrashDiagnostics.record(this, "server-startup-failure", error, "The Android server service could not start the workspace."); } catch (Throwable ignored) { }
                     try { status("Could not start Neconyan: " + error.getMessage() + ". Your saved data has been kept. Reopen the app to try again."); } catch (Exception ignored) { }
                     stopSelf();
@@ -273,13 +308,17 @@ public final class ServerService extends Service {
         }
         new File(getFilesDir(), "android-ready.json").delete();
         stopWake();
+        try { CrashDiagnostics.markServerStopping(this); } catch (Throwable ignored) { }
         if (terminate) {
             // Node handles SIGTERM through Neconyan's existing orderly shutdown, but that
             // handler exists only after the server has booted. Before it, a SIGTERM would
             // end the process without flushing, so the kill grace period below closes it.
-            try { CrashDiagnostics.markServerStopping(this); } catch (Throwable ignored) { }
             new Handler(Looper.getMainLooper()).postDelayed(() -> android.os.Process.killProcess(android.os.Process.myPid()), 10000);
             if (serverReady) android.os.Process.sendSignal(android.os.Process.myPid(), 15);
+        } else {
+            // A stopped preflight can leave Android caching a process with no service.
+            // The next launch recovers any interrupted payload staging before starting Node.
+            android.os.Process.killProcess(android.os.Process.myPid());
         }
         super.onDestroy();
     }

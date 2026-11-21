@@ -128,11 +128,12 @@ test('an update dialog that cannot show leaves no busy update behind', () => {
     const source = read('ApkUpdater.java');
     // Guarded show: a BadTokenException from a destroyed window is logged, not fatal.
     assert.match(source, /private boolean showDialog\(Dialog dialog\) \{/);
-    // The confirmation, the progress dialog and the settings notice clear busy when
-    // they cannot be shown, and the progress dismissal survives a detached window.
+    // Initial confirmation and progress clear busy. The settings notice can be
+    // shown again later without throwing away a verified APK on window loss.
     assert.match(source, /if \(!showDialog\(confirm\)\) busy = false;/);
     assert.match(source, /if \(!showDialog\(progress\)\) \{ progress = null; busy = false; return; \}/);
-    assert.match(source, /if \(!showDialog\(notice\)\) finishPendingUpdate\(\);/);
+    assert.match(source, /if \(!showDialog\(notice\)\) offering = false;/);
+    assert.match(source, /if \(!isActivityAlive\(\) \|\| !resumed \|\| offering \|\| pendingVersion == null\) return;/);
     assert.match(source, /private void dismissProgress\(\) \{\s*ProgressDialog current = progress;\s*progress = null;/);
     assert.match(source, /catch \(RuntimeException error\) \{ android\.util\.Log\.w\("Neconyan", "Update progress could not be dismissed", error\); \}/);
     assert.match(source, /if \(!showDialog\(notice\)\) android\.util\.Log\.w\("Neconyan", "The update failure notice could not be shown"\);/);

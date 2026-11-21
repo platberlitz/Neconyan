@@ -25,6 +25,8 @@ parser.add_argument('--adb', default='adb')
 parser.add_argument('--serial', required=True)
 parser.add_argument('--apk', required=True)
 parser.add_argument('--release', action='store_true', help='Check the signed app on a disposable root-capable emulator')
+parser.add_argument('--page-size', type=int, choices=(4096, 16384), help='Verify the emulator page size before installing')
+parser.add_argument('--check-stop-restart', action='store_true', help='Check the new app’s explicit restart and Stop controls')
 parser.add_argument('--update-webview', help='Check the old-WebView screen, then install the SDK reference WebView APK')
 args = parser.parse_args()
 if not args.serial.startswith('emulator-'):
@@ -98,6 +100,17 @@ def window_labels():
         return {node.get('text', '') for node in ET.fromstring(screen).iter('node')}
     except (subprocess.SubprocessError, ET.ParseError):
         return set()
+
+
+def tap_label(text):
+    adb('shell', 'uiautomator', 'dump', '/data/local/tmp/neconyan-window.xml')
+    screen = adb('shell', 'cat', '/data/local/tmp/neconyan-window.xml')
+    for node in ET.fromstring(screen).iter('node'):
+        if node.get('text', '').casefold() == text.casefold():
+            left, top, right, bottom = map(int, re.findall(r'\d+', node.get('bounds', '')))
+            adb('shell', 'input', 'tap', str((left + right) // 2), str((top + bottom) // 2))
+            return True
+    return False
 
 
 def check_crash_report():
@@ -239,6 +252,8 @@ def report_failure(kind, error, traceback):
 sys.excepthook = report_failure
 if args.release:
     ensure_root(adb)
+if args.page_size:
+    assert int(adb('shell', 'getconf', 'PAGE_SIZE')) == args.page_size, 'The emulator booted with the wrong page size'
 print(adb('shell', 'dumpsys', 'webviewupdate'), flush=True)
 print(adb('install', '-r', args.apk), flush=True)
 if int(adb('shell', 'getprop', 'ro.build.version.sdk')) >= 33:
@@ -297,8 +312,32 @@ try:
     assert name in request('/api/characters/get', {'avatar_url': avatar}, token)
     print('Character survived process death and reopening.', flush=True)
     wait_for_workspace()
+    if args.check_stop_restart:
+        original_pid = server_pid()
+        response = json.loads(request('/api/server-admin/restart', {}, token))
+        assert response['restarting'], response
+        wait_until(lambda: server_pid() not in ('', original_pid), 45, 'The requested server restart did not replace the process')
+        wait_until(lambda: 'android-ready.json' in private('ls', 'files').split(), 45, 'The requested restart did not reach the ready marker')
+        assert json.loads(private('cat', 'files/android-ready.json')).get('safe') is False, 'A requested restart entered safe mode'
+        wait_for_workspace()
+        assert 'Crash report' not in window_labels(), 'A requested restart displayed a crash report'
+        print('An explicit server restart reopens the workspace without safe mode or a crash report.', flush=True)
 finally:
     adb('forward', '--remove', 'tcp:' + port)
+
+if args.check_stop_restart:
+    wait_for_workspace()
+    adb('shell', 'cmd', 'statusbar', 'expand-notifications')
+    wait_until(lambda: tap_label('Stop'), 20, 'The foreground notification had no Stop action')
+    adb('shell', 'cmd', 'statusbar', 'collapse')
+    wait_until(lambda: not server_pid() and 'Neconyan is stopped. Your chats are saved on this device.' in window_labels(),
+               30, 'Stopping the notification did not leave the workspace stopped')
+    assert 'user-stopped' in private('ls', 'no_backup').split()
+    wait_until(lambda: tap_label('Start Neconyan'), 10, 'The stopped workspace had no Start action')
+    wait_for_workspace()
+    assert 'user-stopped' not in private('ls', 'no_backup').split()
+    assert json.loads(private('cat', 'files/android-ready.json')).get('safe') is False
+    print('Stop keeps the server off until Start Neconyan is tapped.', flush=True)
 
 # A server that dies from a segmentation fault (the real-world native crash) leaves its
 # ready marker behind. The open app must notice, restart it once in safe mode, load the

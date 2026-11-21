@@ -28,6 +28,8 @@ public final class ApkUpdater {
     private volatile HttpURLConnection connection;
     private boolean busy;
     private boolean restored;
+    private boolean resumed;
+    private boolean offering;
     private String pendingVersion;
     private ProgressDialog progress;
 
@@ -44,7 +46,7 @@ public final class ApkUpdater {
         if (!bridgeGate.accepts(token)) return false;
         activity.runOnUiThread(() -> {
             if (!bridgeGate.accepts(token)) return;
-            if (!isActivityAlive() || busy || !workspaceVisible.getAsBoolean()) return;
+            if (!isActivityAlive() || !resumed || busy || !workspaceVisible.getAsBoolean()) return;
             try {
                 if (ApkUpdatePolicy.versionCode(version) <= installed().getLongVersionCode()) throw new IOException("This APK is not newer than the installed app.");
                 if (!activity.getPackageName().equals("io.github.platberlitz.neconyan")) throw new IOException("A debug app cannot be replaced by a release APK. Install the release app separately.");
@@ -119,9 +121,7 @@ public final class ApkUpdater {
             File partial = null;
             try {
                 if (!apk.getParentFile().isDirectory() && !apk.getParentFile().mkdirs()) throw new IOException("Could not create the private update folder.");
-                String prefix = "download-" + android.os.Process.myPid() + "-";
-                File[] stale = apk.getParentFile().listFiles((folder, name) -> name.startsWith("download-") && name.endsWith(".part.apk") && !name.startsWith(prefix));
-                if (stale != null) for (File file : stale) file.delete();
+                String prefix = partialPrefix();
                 // A destroyed activity's worker must not remove a new activity's download.
                 partial = File.createTempFile(prefix, ".part.apk", apk.getParentFile());
                 apk.delete();
@@ -208,7 +208,8 @@ public final class ApkUpdater {
     }
 
     private void offerInstall() {
-        if (!isActivityAlive()) { busy = false; return; }
+        if (!isActivityAlive() || !resumed || offering || pendingVersion == null) return;
+        offering = true;
         try {
             if (!activity.getPackageManager().canRequestPackageInstalls()) {
                 AlertDialog notice = new AlertDialog.Builder(activity).setTitle("Allow this APK update")
@@ -216,11 +217,13 @@ public final class ApkUpdater {
                     .setNegativeButton("Cancel", (dialog, which) -> finishPendingUpdate())
                     .setOnCancelListener(dialog -> finishPendingUpdate())
                     .setPositiveButton("Open settings", (dialog, which) -> {
-                        try { activity.startActivityForResult(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + activity.getPackageName())), INSTALL_PERMISSION); }
-                        catch (Exception error) { fail(error); }
+                        try {
+                            if (Build.VERSION.SDK_INT == 30) CrashDiagnostics.markInstallPermissionSettings(activity);
+                            activity.startActivityForResult(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + activity.getPackageName())), INSTALL_PERMISSION);
+                        } catch (Exception error) { fail(error); }
                     }).create();
-                // A lost window must not leave the updater claiming a busy update.
-                if (!showDialog(notice)) finishPendingUpdate();
+                // A lost window must not discard a fully verified download.
+                if (!showDialog(notice)) offering = false;
                 return;
             }
             String version = pendingVersion;
@@ -230,6 +233,7 @@ public final class ApkUpdater {
                     verify(UpdateApkProvider.apkFile(activity), version);
                     activity.runOnUiThread(() -> {
                         if (closed) return;
+                        if (!resumed) { offering = false; return; }
                         try {
                             Uri uri = UpdateApkProvider.apkUri(activity);
                             Intent install = new Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
@@ -237,7 +241,6 @@ public final class ApkUpdater {
                                 .putExtra(Intent.EXTRA_RETURN_RESULT, true);
                             install.setClipData(ClipData.newRawUri("Neconyan update", uri));
                             activity.startActivityForResult(install, INSTALL_APK);
-                            pendingVersion = null;
                         } catch (Exception error) { fail(error); }
                     });
                 } catch (Exception error) { activity.runOnUiThread(() -> fail(error)); }
@@ -248,6 +251,7 @@ public final class ApkUpdater {
     boolean onActivityResult(int requestCode) {
         if (requestCode == INSTALL_APK) { restored = true; finishPendingUpdate(); return true; }
         if (requestCode != INSTALL_PERMISSION) return false;
+        offering = false;
         restorePendingUpdate();
         if (pendingVersion != null) {
             if (activity.getPackageManager().canRequestPackageInstalls()) offerInstall();
@@ -260,17 +264,28 @@ public final class ApkUpdater {
         if (restored || closed) return false;
         restored = true;
         try {
+            sweepAbandonedDownloads();
             pendingVersion = pendingUpdate.restore(installed().getLongVersionCode());
             if (pendingVersion != null) { busy = true; return true; }
         } catch (Exception error) { fail(error); }
         return false;
     }
 
-    void onResume() { if (restorePendingUpdate()) offerInstall(); }
+    private static String partialPrefix() { return "download-" + android.os.Process.myPid() + "-"; }
+
+    private void sweepAbandonedDownloads() {
+        File[] files = UpdateApkProvider.apkFile(activity).getParentFile().listFiles((folder, name) ->
+            name.equals("pending-version.tmp") || (name.startsWith("download-") && name.endsWith(".part.apk") && !name.startsWith(partialPrefix())));
+        if (files != null) for (File file : files) file.delete();
+    }
+
+    void onResume() { resumed = true; if (!busy) restorePendingUpdate(); offerInstall(); }
+    void onPause() { resumed = false; }
 
     private void finishPendingUpdate() {
         pendingVersion = null;
         busy = false;
+        offering = false;
         pendingUpdate.clear();
     }
 
@@ -278,6 +293,11 @@ public final class ApkUpdater {
         if (closed) return;
         finishPendingUpdate();
         if (!isActivityAlive()) return;
+        if (!resumed) {
+            android.util.Log.w("Neconyan", "APK update failed while the app was in the background", error);
+            activity.runOnUiThread(() -> android.widget.Toast.makeText(activity, "APK update failed. Open Server to try again.", android.widget.Toast.LENGTH_LONG).show());
+            return;
+        }
         AlertDialog notice = new AlertDialog.Builder(activity).setTitle("APK update not installed")
             .setMessage(error.getMessage() == null ? "Could not update the APK. Your saved data has not been changed." : error.getMessage())
             .setPositiveButton("OK", null).create();

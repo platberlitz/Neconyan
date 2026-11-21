@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { enableCompileCache } from 'node:module';
 import YAML from 'yaml';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
 import { serverEvents, EVENT_NAMES } from './src/server-events.js';
@@ -11,10 +12,14 @@ import { loadBootstrapConfig, setAsideNotice } from './bootstrap-config.mjs';
 import { startupNoteMessage } from './src/startup-note.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const [privatePath, port, password, mode = 'normal'] = process.argv.slice(2);
+const [privatePath, port, password, mode = 'normal', cachePath = process.env.TMPDIR] = process.argv.slice(2);
 if (!privatePath || !/^\d+$/.test(port) || !/^[a-f0-9]{64}$/.test(password) || !['normal', 'safe'].includes(mode)) throw new Error('Invalid private Android launch configuration.');
 // Android's /data/user/0 alias must be resolved before strict storage checks.
 const statePath = fs.realpathSync(privatePath);
+if (cachePath) {
+    process.env.TMPDIR = cachePath;
+    enableCompileCache(path.join(cachePath, 'node-cache'));
+}
 initialiseCrashDiagnostics(path.join(statePath, 'data'));
 installCrashHandlers();
 let started = false;
@@ -71,7 +76,12 @@ serverEvents.once(EVENT_NAMES.SERVER_STARTED, () => {
     endStartup();
     writeFileAtomicSync(readyPath, JSON.stringify({ pid: process.pid, port: Number(port), safe: mode === 'safe' }), { mode: 0o600 });
 });
-process.once('exit', () => {
+process.once('exit', code => {
+    if (code === 75) {
+        try {
+            writeFileAtomicSync(path.join(process.env.TMPDIR, 'startup-status.txt'), 'Restarting your workspace…', { mode: 0o600 });
+        } catch { /* Android's exit record also carries the requested restart code. */ }
+    }
     fs.rmSync(readyPath, { force: true });
     configureServerWakeMarker(null);
 });

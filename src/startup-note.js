@@ -8,7 +8,9 @@ export const STARTUP_NOTE_PREFIX = 'Could not start Neconyan:';
 const REASSURANCE = 'Saved data has been kept.';
 
 export function startupNoteMessage(error) {
-    const message = (error?.message ? String(error.message) : String(error)).replace(/\.$/, '');
+    const message = error?.code === 'EADDRINUSE' && process.env.NECONYAN_ANDROID_APP === '1'
+        ? 'The local port is already in use. Choose Use a new port to start the app'
+        : (error?.message ? String(error.message) : String(error)).replace(/\.$/, '');
     return `${STARTUP_NOTE_PREFIX} ${message}. ${REASSURANCE}`;
 }
 
