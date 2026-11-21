@@ -48,6 +48,7 @@
 - PR #824 (2026-11-21) `perf(home): open Home before other startup listeners`
 - PR #825 (2026-11-21) `perf(streaming): stop repeated netstat checks`
 - PR #826 (2026-11-21) `perf(i18n): load only the English strings that differ`
+- PR #827 (2026-11-21) `perf(agents): build the agent list when shown`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
