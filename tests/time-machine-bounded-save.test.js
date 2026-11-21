@@ -32,6 +32,7 @@ function runtime({ version = 8, revision = 4, wait = 1000 } = {}) {
         lastServerSettingsRevision: revision,
         acknowledgedGenerationSettings: { account: 'alice', settingsRevision: revision, controls: {} },
         lastSavedSettings: null,
+        settingsMutationRevision: 0,
         downloadedSettings: null,
         settings: {},
         fetch: jest.fn(),

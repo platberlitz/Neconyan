@@ -914,7 +914,13 @@ export const DEFAULT_SAVE_EDIT_TIMEOUT = debounce_timeout.relaxed;
 /** @type {debounce_timeout} The debounce timeout used for printing. debounce_timeout.quick: 100 ms */
 export const DEFAULT_PRINT_TIMEOUT = debounce_timeout.quick;
 
-export const saveSettingsDebounced = debounce((loopCounter = 0) => saveSettings(loopCounter), DEFAULT_SAVE_EDIT_TIMEOUT);
+/** Counts every request to save settings again, so an unchanged save can skip serialising. */
+let settingsMutationRevision = 0;
+const scheduleSettingsSave = debounce((loopCounter = 0) => saveSettings(loopCounter), DEFAULT_SAVE_EDIT_TIMEOUT);
+export const saveSettingsDebounced = (loopCounter = 0) => {
+    settingsMutationRevision++;
+    scheduleSettingsSave(loopCounter);
+};
 /** @type {ReturnType<typeof setTimeout> | null} */
 let pendingCharacterSaveTimer = null;
 let characterSavePromise = Promise.resolve(true);
@@ -7688,7 +7694,7 @@ export async function generateQuietPrompt({ quietPrompt = '', quietToLoud = fals
                 signal: stop.signal,
                 prepareInput: async body => {
                     await saveChatConditional({ throwOnError: true, throwOnPromptError: true });
-                    await saveSettings(0, { returnResult: true });
+                    await saveSettings(0, { returnResult: true, skipIfUnchanged: true });
                     return { ...body, acknowledgement: getActiveGenerationAcknowledgement() };
                 },
             });
@@ -9253,7 +9259,7 @@ export async function generateRaw({ prompt = '', api = null, instructOverride = 
                 scope: `raw:${getStringHash(JSON.stringify(input))}`,
                 signal: stop.signal,
                 prepareInput: async body => {
-                    await saveSettings(0, { returnResult: true });
+                    await saveSettings(0, { returnResult: true, skipIfUnchanged: true });
                     return { ...body, acknowledgement: getActiveGenerationAcknowledgement() };
                 },
             });
@@ -15109,14 +15115,16 @@ export async function getSettings(initLoaderHandle = null, initialData = null) {
 }
 
 //MARK: saveSettings()
-export async function saveSettings(loopCounter = 0, { returnResult = false } = {}) {
+export async function saveSettings(loopCounter = 0, { returnResult = false, skipIfUnchanged = false } = {}) {
     const account = getCurrentUserHandle();
     if (accountImportSettingsPause?.account === account) {
         accountImportSettingsPause.dirty = true;
         return returnResult ? false : undefined;
     }
     pendingSettingsAcknowledgements++;
-    const saveTask = settingsSaveQueue.then(() => account === getCurrentUserHandle() ? saveSettingsInner(loopCounter, account) : false);
+    const saveTask = settingsSaveQueue.then(() => account === getCurrentUserHandle()
+        ? saveSettingsInner(loopCounter, account, true, { skipIfUnchanged })
+        : false);
     settingsSaveQueue = saveTask.catch(() => {});
     try {
         const saved = await saveTask;
@@ -15338,7 +15346,7 @@ function matchesDownloadedSettings(account, payload, serializedPayload) {
     }
 }
 
-async function saveSettingsInner(loopCounter = 0, account = getCurrentUserHandle(), allowSamePageRecovery = true) {
+async function saveSettingsInner(loopCounter = 0, account = getCurrentUserHandle(), allowSamePageRecovery = true, { skipIfUnchanged = false } = {}) {
     if (recentSamePageServerWrite && recentSamePageServerWrite.account !== account) recentSamePageServerWrite = null;
     acknowledgedGenerationSettings = null;
     if (!settingsReady) {
@@ -15361,6 +15369,14 @@ async function saveSettingsInner(loopCounter = 0, account = getCurrentUserHandle
         }
         console.error('Response length is currently being overridden, but the save loop has reached the maximum number of retries');
         TempResponseLength.restore(null);
+    }
+
+    // Helper generations call this only to make sure the settings they read are on
+    // disk. When nothing asked for another save, skip building the payload at all.
+    if (skipIfUnchanged && lastSavedSettings?.account === account
+        && lastSavedSettings.revision === settingsMutationRevision) {
+        acknowledgedGenerationSettings = lastSavedSettings.acknowledgement;
+        return true;
     }
 
     const payload = {
@@ -15404,11 +15420,13 @@ async function saveSettingsInner(loopCounter = 0, account = getCurrentUserHandle
     };
 
     try {
+        const payloadRevision = settingsMutationRevision;
         const serializedPayload = JSON.stringify(payload);
         if (lastSavedSettings?.account === account && lastSavedSettings.body === serializedPayload) {
             // Start-up and programmatic control updates request many saves that change nothing;
             // each one would upload every setting again.
             acknowledgedGenerationSettings = lastSavedSettings.acknowledgement;
+            lastSavedSettings = { ...lastSavedSettings, revision: payloadRevision };
             return true;
         }
         if (!lastSavedSettings && matchesDownloadedSettings(account, payload, serializedPayload)) {
@@ -15417,7 +15435,7 @@ async function saveSettingsInner(loopCounter = 0, account = getCurrentUserHandle
                 settingsRevision: payload._settingsRevision,
                 controls: generationSettingsSnapshot(payload),
             };
-            lastSavedSettings = { account, body: serializedPayload, acknowledgement: acknowledgedGenerationSettings };
+            lastSavedSettings = { account, body: serializedPayload, acknowledgement: acknowledgedGenerationSettings, revision: payloadRevision };
             return true;
         }
         lastSavedSettings = null;
@@ -15483,7 +15501,7 @@ async function saveSettingsInner(loopCounter = 0, account = getCurrentUserHandle
         settings = payload;
         await eventSource.emit(event_types.SETTINGS_UPDATED);
         if (account !== getCurrentUserHandle()) return false;
-        lastSavedSettings = accepted;
+        lastSavedSettings = accepted ? { ...accepted, revision: payloadRevision } : null;
         return true;
     } catch (error) {
         if (account !== getCurrentUserHandle()) return false;
