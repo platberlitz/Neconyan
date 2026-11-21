@@ -16,6 +16,7 @@
 - PR #789 (2026-11-21) `fix(mobile): restore the compact composer layout`
 - PR #790 (2026-11-21) `fix(conversation): make deleting a DM or group DM stick`
 - PR #792 (2026-11-21) `fix(android): honour supported server config edits on restart`
+- PR #793 (2026-11-21) `fix(agents): strip echoed line-format companion trackers`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
