@@ -499,7 +499,9 @@ describe('chat render lifecycle script wiring', () => {
         const applySource = getSource(applyStreamingVisibleWrite);
 
         expect(applySource).toContain('applyStreamFadeIn(messageTextDom, formattedText,');
+        expect(applySource).toContain('} else if (isFinal) {');
         expect(applySource).toContain('messageTextDom.innerHTML = formattedText;');
+        expect(applySource).toContain('applyStreamDomPatch(messageTextDom, formattedText);');
         expect(applySource).toContain('messageTokenCounterDom.textContent = `${currentTokenCount}t`;');
         expect(applySource).toContain('messageTimerDom.textContent = timePassed.timerValue;');
         expect(applySource).toContain('messageTimerDom.title = timePassed.timerTitle;');

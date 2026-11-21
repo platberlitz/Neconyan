@@ -115,6 +115,7 @@ async function stream() {
         setCardScriptMessageStreaming: jest.fn(),
         scheduleCardScriptReconcile: jest.fn(),
         applyStreamFadeIn: jest.fn((element, text) => { element.innerHTML = text; }),
+        applyStreamDomPatch: jest.fn((element, text) => { element.innerHTML = text; }),
     });
     context.getCurrentChatId = () => context.chatId;
     context.saveReply = async () => { context.chat.push({ ...replacement(), mes: 'original', name: 'Alice', swipes: ['original'] }); };
@@ -173,6 +174,18 @@ describe('streaming burst coalescing through the real buffer', () => {
         expect(messageTextDom.innerHTML).toBe('<p>final words</p>');
         expect(scheduler.pending).toBe(false);
         expect(scheduler.cancelCount).toBeGreaterThanOrEqual(1);
+    });
+
+    test('a non-final write patches and a final write replaces', async () => {
+        const { context, processor, scheduler, messageTextDom } = await stream();
+
+        await processor.onProgressStreaming(0, 'draft text', false);
+        scheduler.flush();
+        expect(context.applyStreamDomPatch).toHaveBeenCalledWith(messageTextDom, '<p>draft text</p>');
+
+        await processor.onProgressStreaming(0, 'final words', true);
+        expect(context.applyStreamDomPatch).toHaveBeenCalledTimes(1);
+        expect(messageTextDom.innerHTML).toBe('<p>final words</p>');
     });
 
     test('deferred timer formatting keeps the tick state captured at queue time', async () => {

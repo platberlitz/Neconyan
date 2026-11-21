@@ -3231,8 +3231,12 @@ function applyStreamingVisibleWrite(messageId, write, { isFinal = false } = {}) 
     if (messageTextDom instanceof HTMLElement) {
         if (shouldUseStreamFadeIn) {
             applyStreamFadeIn(messageTextDom, formattedText, { bypassFadeIn });
-        } else {
+        } else if (isFinal) {
             messageTextDom.innerHTML = formattedText;
+        } else {
+            // Streamed updates only add to the end, so patching keeps the nodes
+            // (and the layout work) that are already on screen.
+            applyStreamDomPatch(messageTextDom, formattedText);
         }
     }
 
