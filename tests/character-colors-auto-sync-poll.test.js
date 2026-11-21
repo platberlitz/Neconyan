@@ -379,4 +379,33 @@ describe('Dialogue Colors conditional auto-sync reads', () => {
         expect(requests[1].token).toBe('');
         expect(extensionSettings[MODULE_NAME].colorData.card_test.colors.alice.color).toBe('#123456');
     });
+
+    test('reuses the normalised record until a writer replaces it', () => {
+        extensionSettings[MODULE_NAME] = createRecord();
+        const first = storage.getAutoSyncRecord(true);
+        const second = storage.getAutoSyncRecord(true);
+        expect(second).toBe(first);
+    });
+
+    test('installs its trim rules once and reports them as present afterwards', () => {
+        extensionSettings.regex = [];
+        expect(storage.hasInstalledTrimRules()).toBe(false);
+        storage.ensureRegexScript();
+        expect(storage.hasInstalledTrimRules()).toBe(true);
+        const count = extensionSettings.regex.length;
+        storage.ensureRegexScript();
+        expect(extensionSettings.regex).toHaveLength(count);
+    });
+
+    test('pauses auto-sync polling while the page is hidden', async () => {
+        document.hidden = true;
+        storage.startAutoSyncPolling();
+        await jest.advanceTimersByTimeAsync(30000);
+        expect(requests).toHaveLength(0);
+
+        document.hidden = false;
+        await jest.advanceTimersByTimeAsync(30000);
+        expect(requests.length).toBeGreaterThan(0);
+        storage.stopAutoSyncPolling();
+    });
 });

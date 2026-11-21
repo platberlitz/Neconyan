@@ -185,6 +185,7 @@ beforeEach(async () => {
         doAutoSyncMarkersMatch: jest.fn(() => true),
         ensureRegexScript: jest.fn(),
         getAutoSyncRecord: jest.fn(() => null),
+        hasInstalledTrimRules: jest.fn(() => true),
         getCharKey: jest.fn(() => 'character'),
         getStorageKey: jest.fn(() => 'storage'),
         initAutoSync: jest.fn(),
