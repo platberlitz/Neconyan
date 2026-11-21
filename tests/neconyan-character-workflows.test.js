@@ -331,6 +331,7 @@ describe('Neconyan save behaviour', () => {
             ensureGroupEditorLayout() {}, setMenuType() {}, getGroupAvatar() {}, applyTagsOnGroupSelect() {},
             printGroupCandidates() {}, printGroupMembers() {}, toggleHiddenControls() {}, isValidImageUrl() {},
             isExternalMediaAllowed() {}, updateFavButtonState() {}, updateGroupSpeakerControls() {},
+            isHearReplyTargetEnabled: group => group?.hear_reply_target !== false,
             CSS: { supports: () => true }, eventSource: { emit() {} }, t: strings => strings.join(''),
         });
         loadFunctions(context, groups, ['select_group_chats']);

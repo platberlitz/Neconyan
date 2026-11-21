@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { beginGroupPromptScope, canGroupMemberSee, countGroupPromptHiddenMessages, filterGroupPromptMessages, filterGroupTargetMessages, groupMessageAudience, getGroupPromptViewers, groupScenePrompt, hasRestrictedGroupHistory, readGroupScene, withGroupTargetPrompt } from '../public/scripts/group-chat-visibility.js';
+import { addGroupHearer, beginGroupPromptScope, canGroupMemberSee, countGroupPromptHiddenMessages, filterGroupPromptMessages, filterGroupTargetMessages, groupMessageAudience, getGroupPromptViewers, groupScenePrompt, hasRestrictedGroupHistory, readGroupScene, readGroupSceneRules, withGroupTargetPrompt } from '../public/scripts/group-chat-visibility.js';
 
 test('scene state is bounded to current members and has safe defaults', () => {
-    assert.deepEqual(readGroupScene({}, ['kit', 'mira']), { away: [], location: '', whisper_to: [] });
+    assert.deepEqual(readGroupScene({}, ['kit', 'mira']), { away: [], location: '', whisper_to: [], sees_all: [] });
     assert.deepEqual(readGroupScene({ group_scene: { away: ['kit', 'kit', 'removed'], whisper_to: ['mira', 'removed'], location: 'The archive' } }, ['kit', 'mira']),
-        { away: ['kit'], whisper_to: ['mira'], location: 'The archive' });
+        { away: ['kit'], whisper_to: ['mira'], location: 'The archive', sees_all: [] });
 });
 
 test('a returning member cannot see messages from while they were away', () => {
@@ -78,4 +78,45 @@ test('a scoped turn names its speakers and counts the lines they missed', () => 
     assert.equal(hasRestrictedGroupHistory(), false);
     assert.equal(countGroupPromptHiddenMessages(), 0);
     everyone();
+});
+
+test('a member who sees everything still misses whispers to someone else', () => {
+    const heardByKit = { extra: { group_scene: { present: ['kit'], whisper_to: [] } } };
+    const whisperToKit = { extra: { group_scene: { present: ['kit', 'mira'], whisper_to: ['kit'] } } };
+    const rules = readGroupSceneRules({ group_scene: { sees_all: ['mira'] } });
+    assert.deepEqual(rules, { seesAll: ['mira'] });
+    assert.deepEqual(readGroupSceneRules({ group_scene: { sees_all: [] } }), {});
+    assert.deepEqual(readGroupScene({ group_scene: { sees_all: ['mira', 'mira', 'gone'] } }, ['kit', 'mira']).sees_all, ['mira']);
+    assert.equal(canGroupMemberSee(heardByKit, 'mira'), false);
+    assert.equal(canGroupMemberSee(heardByKit, 'mira', rules), true);
+    assert.equal(canGroupMemberSee(whisperToKit, 'mira', rules), false);
+    const restore = beginGroupPromptScope(['mira'], [heardByKit, whisperToKit], rules);
+    try {
+        assert.deepEqual(filterGroupPromptMessages([heardByKit, whisperToKit]), [heardByKit]);
+    } finally {
+        restore();
+    }
+});
+
+test('a speaker hears the line they reply to, and is recorded as having heard it', () => {
+    const earlier = { extra: { group_scene: { present: ['kit'], whisper_to: [] } } };
+    const target = { extra: { group_scene: { present: ['kit'], whisper_to: [] } }, swipe_id: 1, swipe_info: [{ extra: { group_scene: { present: ['kit'], whisper_to: [] } } }, { extra: { group_scene: { present: ['kit'], whisper_to: [] } } }] };
+    const restore = beginGroupPromptScope(['mira'], [earlier, target], { replyTarget: target });
+    try {
+        assert.deepEqual(filterGroupPromptMessages([earlier, target]), [target]);
+    } finally {
+        restore();
+    }
+    assert.equal(addGroupHearer(target, 'mira'), true);
+    assert.deepEqual(target.extra.group_scene.present, ['kit', 'mira']);
+    assert.deepEqual(target.swipe_info[1].extra.group_scene.present, ['kit', 'mira']);
+    assert.deepEqual(target.swipe_info[0].extra.group_scene.present, ['kit']);
+    assert.equal(addGroupHearer(target, 'mira'), false);
+    assert.equal(addGroupHearer(target, 'mira', { everySwipe: true }), true);
+    assert.deepEqual(target.swipe_info[0].extra.group_scene.present, ['kit', 'mira']);
+    const whisper = { extra: { group_scene: { present: ['kit', 'mira'], whisper_to: ['kit'] } } };
+    assert.equal(canGroupMemberSee(whisper, 'mira', { replyTarget: whisper }), false);
+    assert.equal(addGroupHearer(whisper, 'ash'), false);
+    assert.deepEqual(whisper.extra.group_scene.present, ['kit', 'mira']);
+    assert.equal(addGroupHearer({ mes: 'Older public line' }, 'mira'), false);
 });

@@ -9,7 +9,7 @@ import { captureLabChat, captureLabConnection, readLabSettings } from '../labs/s
 import { captureLabBookLocked } from '../labs/books.js';
 import { captureSavedTranslationPolicy } from '../generation/roleplay-translation.js';
 import { getStringHash } from '../../public/scripts/macro-primitives.js';
-import { canGroupMemberSee } from '../../public/scripts/group-chat-visibility.js';
+import { canGroupMemberSee, readGroupSceneRules } from '../../public/scripts/group-chat-visibility.js';
 import { captureVectorPolicy } from './vector-provider.js';
 import { captureVectorIndex, vectorIndexPath } from './vector-index.js';
 import { operationError } from './store.js';
@@ -129,9 +129,10 @@ export async function captureVectors(base, account, input, captured = {}) {
     const viewers = input.viewers ?? null;
     if (viewers !== null && (input.action !== 'prompt' || !Array.isArray(viewers) || viewers.length > 64
         || viewers.some(avatar => typeof avatar !== 'string' || !avatar))) throw operationError('Choose valid group speakers for vector search.', 400);
-    // A group speaker's search and prompt rows leave out what they did not hear.
-    const heard = row => !viewers || viewers.every(avatar => canGroupMemberSee(row, avatar));
     const chat = captured.chat ?? (input.locator ? captureLabChat(base, account, input.locator) : null);
+    // A group speaker's search and prompt rows leave out what they did not hear.
+    const sceneRules = readGroupSceneRules(chat?.records?.[0]?.chat_metadata);
+    const heard = row => !viewers || viewers.every(avatar => canGroupMemberSee(row, avatar, sceneRules));
     const macros = captured.macros ?? chat?.macros ?? { macroEnhanced: captureEnhancedMacros(settings), names: { user: settings.username || 'User', char: 'Character' }, character: {}, variables: {}, extra: {} };
     const environment = createMacroEnvironment(macros);
     const sources = [];

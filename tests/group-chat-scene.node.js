@@ -8,6 +8,7 @@ import {
     buildOwnLinesReminder,
     getGroupTalkBurstCount,
     getOtherMemberNames,
+    isHearReplyTargetEnabled,
     isKeepOwnLinesEnabled,
     parseDirectorResponse,
     pickNextListSpeaker,
@@ -19,6 +20,22 @@ test('keep own lines is on unless a group turns it off', () => {
     assert.equal(isKeepOwnLinesEnabled({}), true);
     assert.equal(isKeepOwnLinesEnabled({ keep_own_lines: true }), true);
     assert.equal(isKeepOwnLinesEnabled({ keep_own_lines: false }), false);
+});
+
+test('hearing the line a member replies to is on unless a group turns it off', () => {
+    assert.equal(isHearReplyTargetEnabled({}), true);
+    assert.equal(isHearReplyTargetEnabled({ hear_reply_target: true }), true);
+    assert.equal(isHearReplyTargetEnabled({ hear_reply_target: false }), false);
+});
+
+test('the reply-to setting is saved with the group, also when it is created', () => {
+    const groupChats = readFileSync(new URL('../public/scripts/group-chats.js', import.meta.url), 'utf8');
+    const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+    const server = readFileSync(new URL('../src/endpoints/groups.js', import.meta.url), 'utf8');
+    assert.match(groupChats, /\$\('#rm_group_hear_reply_target'\)\.on\('input', onGroupHearReplyTargetClick\)/);
+    assert.match(groupChats, /hear_reply_target: hearReplyTarget,/);
+    assert.match(html, /<input id="rm_group_hear_reply_target" type="checkbox" checked \/>/);
+    assert.match(server, /hear_reply_target: body\.hear_reply_target !== false/);
 });
 
 test('other member names drop the speaker, blanks and repeats', () => {

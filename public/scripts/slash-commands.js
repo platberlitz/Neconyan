@@ -75,7 +75,7 @@ import { hideChatMessageRange } from './chats.js';
 import { appendManualSwipe, selectManualSwipe } from './manual-swipe.js';
 import { getContext, saveMetadataDebounced } from './extensions.js';
 import { getRegexedString, regex_placement } from './extensions/regex/engine.js';
-import { findGroupMemberId, groups, is_group_generating, openGroupById, regenerateGroup, resetSelectedGroup, saveGroupChat, selected_group, getGroupMembers, getGroupMessageAudience } from './group-chats.js';
+import { findGroupMemberId, groups, is_group_generating, openGroupById, regenerateGroup, resetSelectedGroup, saveGroupChat, selected_group, getGroupMembers, getGroupMessageAudience, noteLateGroupMember } from './group-chats.js';
 import { chat_completion_sources, MINIMAX_ENDPOINT, oai_settings, promptManager, SILICONFLOW_ENDPOINT, ZAI_ENDPOINT } from './openai.js';
 import { user_avatar } from './personas.js';
 import { addEphemeralStoppingString, chat_styles, context_presets, flushEphemeralStoppingStrings, playMessageSound, power_user } from './power-user.js';
@@ -5041,6 +5041,7 @@ async function addGroupMemberCallback(_, name) {
 
     group.members.push(avatar);
     await saveGroupChat(selected_group, true);
+    noteLateGroupMember(selected_group, avatar);
 
     // Trigger to reload group UI
     $('#rm_button_selected_ch').trigger('click');
