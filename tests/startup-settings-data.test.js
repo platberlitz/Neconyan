@@ -31,6 +31,7 @@ describe('startup bootstrap requests', () => {
             fetch: async () => ({ ok: true, json: async () => [] }),
             getRequestHeaders: () => ({}),
             prefetchGroups: () => undefined,
+            prefetchUserAvatars: () => undefined,
         });
         const runner = `(async () => { ${segment} return initialSettingsData; })()`;
         const result = await vm.runInContext(runner, context);
@@ -51,6 +52,7 @@ describe('startup bootstrap requests', () => {
             fetch: async () => ({ ok: true, json: async () => [] }),
             getRequestHeaders: () => ({}),
             prefetchGroups: () => undefined,
+            prefetchUserAvatars: () => undefined,
         });
         await vm.runInContext(`(async () => { ${segment} })()`, context);
         // All three start before any of them completes: no serial waterfall.

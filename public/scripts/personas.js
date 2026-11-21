@@ -607,6 +607,17 @@ function updatePersonaPaginationVisibility(itemCount, pageSize) {
     container.hidden = itemCount <= pageSize;
 }
 
+let startupAvatarListPromise = null;
+
+/** Starts the avatar list request beside other start-up work. */
+export function prefetchUserAvatars() {
+    startupAvatarListPromise ??= fetch('/api/avatars/get', {
+        method: 'POST',
+        headers: getRequestHeaders({ omitContentType: true }),
+    });
+    return startupAvatarListPromise;
+}
+
 /**
  * Gets a list of user avatars.
  * @param {boolean} doRender Whether to render the list
@@ -614,10 +625,12 @@ function updatePersonaPaginationVisibility(itemCount, pageSize) {
  * @returns {Promise<string[]>} List of avatar file names
  */
 export async function getUserAvatars(doRender = true, openPageAt = '') {
-    const response = await fetch('/api/avatars/get', {
+    const pendingResponse = startupAvatarListPromise;
+    startupAvatarListPromise = null;
+    const response = await (pendingResponse ?? fetch('/api/avatars/get', {
         method: 'POST',
         headers: getRequestHeaders({ omitContentType: true }),
-    });
+    }));
     if (response.ok) {
         const allEntities = await response.json();
 
