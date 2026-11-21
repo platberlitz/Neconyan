@@ -130,3 +130,29 @@ export function invalidateParsedSettingsFile(filePath, handle = '') {
         if (entry.filePath === resolved) removeCachedSettings(key);
     }
 }
+
+/**
+ * Keep the object this process just wrote as the parsed snapshot, so the next
+ * request (often an Agent helper call) does not re-read and re-parse the file.
+ * Other handles are invalidated, because their snapshots may predate the write.
+ * @param {string} filePath
+ * @param {any} settings
+ * @param {string} [handle]
+ */
+export function primeParsedSettingsFile(filePath, settings, handle = '') {
+    invalidateParsedSettingsFile(filePath, handle);
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) return;
+
+    let identity;
+    try {
+        identity = getSettingsFileIdentity(filePath);
+    } catch {
+        return;
+    }
+    if (identity.size > BigInt(MAX_CACHED_SETTINGS_BYTES)) return;
+
+    const entry = { identity, bytes: Number(identity.size), settings, filePath: path.resolve(filePath) };
+    parsedSettingsCache.set(getCacheKey(filePath, handle), entry);
+    parsedSettingsBytes += entry.bytes;
+    trimCachedSettings();
+}

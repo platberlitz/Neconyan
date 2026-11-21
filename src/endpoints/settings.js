@@ -8,7 +8,7 @@ import bytes from 'bytes';
 
 import { SETTINGS_FILE } from '../constants.js';
 import { prepareSettingsSave, restoreSettingsSnapshot } from '../settings-version.js';
-import { invalidateParsedSettingsFile, readParsedSettingsFile } from '../settings-file-cache.js';
+import { invalidateParsedSettingsFile, primeParsedSettingsFile, readParsedSettingsFile } from '../settings-file-cache.js';
 import { createJsonCatalogueCache } from '../json-catalogue-cache.js';
 import { readAgentCollection } from '../in-chat-agent-storage.js';
 import {
@@ -318,7 +318,7 @@ router.post('/save', function (request, response) {
         }
 
         tryWriteFileSync(pathToSettings, JSON.stringify(preparedSave.settings, null, 4));
-        invalidateParsedSettingsFile(pathToSettings, request.user.profile.handle);
+        primeParsedSettingsFile(pathToSettings, preparedSave.settings, request.user.profile.handle);
         triggerAutoSave(request.user.profile.handle);
         response.send({ result: 'ok', version: preparedSave.version, settingsRevision: preparedSave.settingsRevision });
     } catch (err) {
