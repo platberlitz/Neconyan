@@ -1,5 +1,5 @@
 /**
- * Deleting a Conversation DM from the page: the Pals bin button and Home's Delete both come here.
+ * Editing a Conversation DM from the page: the Pals bin button and Home's Delete both come here, and so do a group DM's member edit and Home's row check.
  *
  * Loaded only by dynamic `import()` from `chrome.js` and `welcome-screen.js`, so suites that link those
  * modules do not need `i18n.js` or the store-sync module for it.
@@ -8,14 +8,50 @@ import { t, translate } from '../i18n.js';
 import {
     deleteConversationWelcomeBranch,
     getConversationGroupById,
+    getConversationGroupThreadAnchor,
     getConversationPersonaId,
     getConversationThreadStore,
 } from './context.js';
+import { isConversationGroupMemberActive } from './group-member-edits.js';
 import { getCharacterForAvatar } from './media.js';
-import { applyConversationServerEdit, waitForConversationEdits } from './store-sync.js';
+import { applyConversationServerEdit, flushConversationStore, waitForConversationEdits } from './store-sync.js';
 
 const THREAD_DELETE_ENDPOINT = '/api/neconyan-conversation/thread/delete';
 const GROUP_DELETE_ENDPOINT = '/api/neconyan-conversation/group/delete';
+const GROUP_MEMBERS_ENDPOINT = '/api/neconyan-conversation/group/members';
+
+/**
+ * Ask the server to add and remove the members of an owned group DM in place and adopt the answer. The page's own pending save goes first,
+ * so what the page holds is not lost when the thread moves. Rejects when the server refused (the error's message is its code) or was unreachable.
+ */
+export async function updateConversationGroupMembers({ groupId, add, remove, rename = null, personaId = getConversationPersonaId() }) {
+    await flushConversationStore().catch(() => false);
+    return applyConversationServerEdit(GROUP_MEMBERS_ENDPOINT, { groupId, personaId, add, remove, ...(rename ? { rename } : {}) });
+}
+
+/** The toast for the outcome of a member edit: 'saved' (with the group's name) or the kind of error `describeConversationGroupMemberError` gives. */
+export function getConversationGroupMemberToast({ kind, groupName = '' }) {
+    if (kind === 'saved') {
+        const name = groupName || translate('Group DM');
+        return t`Saved the members of '${name}'.`;
+    }
+    if (kind === 'too_few') return t`A group DM needs at least two pals with character cards.`;
+    if (kind === 'missing_card') return t`One of those pals no longer has a character card.`;
+    if (kind === 'gone') return t`This group DM no longer exists.`;
+    return t`Could not save the group members. Check your connection and try again.`;
+}
+
+/**
+ * Who a Home row's chat belongs to now. A row keeps the avatar it was drawn with, but after a member edit that pal may have left the group
+ * and their thread moved, and the page would resolve (pal, group) to the pal's own solo DM. Returns the row's avatar when it is still
+ * right, the group's current holder when it is not, and '' when the group has nobody left to hold it.
+ */
+export function resolveConversationHomeRowAvatar(avatar, groupId, { personaId = getConversationPersonaId() } = {}) {
+    if (!groupId) return avatar;
+    const group = getConversationGroupById(groupId, { personaId });
+    if (!group || group.is_conversation_group !== true || isConversationGroupMemberActive(group, avatar)) return avatar;
+    return getConversationGroupThreadAnchor(group, { personaId })?.avatar || '';
+}
 
 /**
  * Ask the server to delete a solo DM (`avatar`) or a group DM (`groupId`) and adopt the answer.

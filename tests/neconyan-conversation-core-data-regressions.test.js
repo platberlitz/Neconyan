@@ -41,8 +41,10 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/typing.j
 const {
     deleteConversationBranch,
     deleteConversationWelcomeBranch,
+    getActiveConversationBranch,
     getConversationGroupThreadAnchor,
     getConversationStore,
+    getConversationThreadStore,
     normalizeGroupConversationSettings,
     resetCharacterConversationBranches,
 } = await import('../public/scripts/neconyan-conversation/context.js');
@@ -189,6 +191,66 @@ describe('Conversation core persisted data regressions', () => {
         expect(anchor.threadStore.branches.main.unread).toBe(9);
         expect(persistConversationStoreDebounced).toHaveBeenCalled();
         expect(saveSettingsDebounced).not.toHaveBeenCalled();
+    });
+
+    test('a server-moved group thread at an eligible member is used without a local move', () => {
+        for (const avatar of ['b.png', 'c.png']) charactersByAvatar.set(avatar, { avatar, name: avatar });
+        // The server removed a.png from the group and moved its thread to b.png's key.
+        const group = { id: 'group-a', personaId: 'persona-a.png', members: ['b.png', 'c.png'], disabled_members: [], conversation_settings: {} };
+        const moved = {
+            threadAvatar: 'b.png',
+            groupId: 'group-a',
+            activeBranchId: 'main',
+            branches: { main: { id: 'main', messages: [{ id: 'm1', created_at: 5, mes: 'kept' }], preview: 'kept', updatedAt: 50 } },
+            settings: {},
+        };
+        extensionSettings.neconyan_conversation = createStore({ groups: [group], characters: { 'persona:persona-a.png:group:group-a:b.png': moved } });
+
+        const anchor = getConversationGroupThreadAnchor(group, { personaId: 'persona-a.png' });
+
+        expect(anchor.avatar).toBe('b.png');
+        expect(anchor.key).toBe('persona:persona-a.png:group:group-a:b.png');
+        expect(anchor.threadStore).toBe(moved);
+        expect(Object.keys(getConversationStore().characters)).toEqual(['persona:persona-a.png:group:group-a:b.png']);
+        expect(persistConversationStoreDebounced).not.toHaveBeenCalled();
+    });
+
+    test('reading a pal who is no longer an active member with the group id leaves their solo record as it was', () => {
+        for (const avatar of ['a.png', 'b.png', 'c.png', 'e.png']) charactersByAvatar.set(avatar, { avatar, name: avatar });
+        const soloKey = 'persona:persona-a.png:a.png';
+        const groupKey = 'persona:persona-a.png:group:G:b.png';
+        const record = (avatar, groupId, text) => ({
+            threadAvatar: avatar,
+            groupId,
+            activeBranchId: 'main',
+            branches: { main: { id: 'main', messages: [{ id: 'm1', created_at: 1, mes: text }], preview: text, updatedAt: 10 } },
+            settings: {},
+        });
+        const draw = disabled => {
+            extensionSettings.neconyan_conversation = createStore({
+                groups: [{ id: 'G', personaId: 'persona-a.png', members: disabled.length ? ['a.png', 'b.png', 'c.png'] : ['b.png', 'c.png'], disabled_members: disabled, conversation_settings: {} }],
+                characters: { [soloKey]: record('a.png', '', 'solo'), [groupKey]: record('b.png', 'G', 'group') },
+            });
+        };
+        for (const disabled of [[], ['a.png']]) {
+            draw(disabled);
+            // One ordinary read first, so the record holds whatever the page's own normaliser adds.
+            getConversationThreadStore('a.png', { create: false, groupId: '' });
+            const solo = getConversationStore().characters[soloKey];
+            const before = structuredClone(solo);
+            const read = getConversationThreadStore('a.png', { create: false, groupId: 'G' });
+            expect(read).toBe(solo);
+            expect(read).toEqual(before);
+            expect(read.groupId).toBe('');
+            expect(getActiveConversationBranch('a.png', { create: false, groupId: 'G' })).toEqual(before.branches.main);
+            expect(solo).toEqual(before);
+        }
+        // Controls: a member's own read stamps the group id; a pal with no solo record is not created.
+        const member = getConversationThreadStore('b.png', { create: false, groupId: 'G' });
+        expect(member.groupId).toBe('G');
+        const before = Object.keys(getConversationStore().characters).sort();
+        expect(getConversationThreadStore('e.png', { create: false, groupId: 'G' })).toBeNull();
+        expect(Object.keys(getConversationStore().characters).sort()).toEqual(before);
     });
 
     test('seeds reset branches from retained thread memory', () => {

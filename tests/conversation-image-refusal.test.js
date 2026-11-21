@@ -111,7 +111,7 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/notifica
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/pals-rail.js', () => ({ getConversationRailItems: () => [] }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/pickers.js', () => ({
-    readChimingPartnersFromList: () => '', readWeeklyScheduleFromEditor: () => '[]', updateUserFooter: jest.fn(),
+    readChimingPartnersFromList: () => '', readWeeklyScheduleFromEditor: () => '[]', renderConversationGroupMemberSummary: () => false, updateUserFooter: jest.fn(),
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/schedule.js', () => ({
     clamp: value => value, getConversationReplyMaxTokens: () => 100, getCurrentActivityFromSchedule: () => null, getStoredSchedule: () => null,

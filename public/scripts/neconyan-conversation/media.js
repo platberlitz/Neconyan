@@ -9,7 +9,7 @@ import {
     getCurrentCharacter,
     getCurrentCharAvatar,
 } from './context.js';
-import { collectConversationPartnerAvatars } from './partners-utils.js';
+import { collectConversationPartnerAvatars, isConversationGroupSpeakerEligible } from './partners-utils.js';
 import { setUserTextSlot } from './render-utils.js';
 import { getCurrentActivityFromSchedule, getStoredSchedule } from './schedule.js';
 import { getSettings } from './settings-store.js';
@@ -40,7 +40,9 @@ export function getConversationPartnerAvatars(avatar = getCurrentCharAvatar(), s
     const group = getConversationGroupById(groupId, { personaId });
     const partnerAvatars = collectConversationPartnerAvatars(avatar, resolvedSettings,
         includeThreadPartners ? getConversationThread(avatar, { branchId, create: false, groupId, personaId }) : [], group, includeThreadPartners);
-    return partnerAvatars.filter(partnerAvatar => getCharacterForAvatar(partnerAvatar));
+    // In a Conversation-owned group only current, unmuted members take part, as on the server: a pal who was removed keeps old messages here but no longer speaks.
+    const ownedGroup = group?.is_conversation_group === true;
+    return partnerAvatars.filter(partnerAvatar => getCharacterForAvatar(partnerAvatar) && (!ownedGroup || isConversationGroupSpeakerEligible(group, partnerAvatar)));
 }
 
 export function getConversationParticipants(avatar = getCurrentCharAvatar(), settings = null, options = {}) {

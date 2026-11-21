@@ -411,6 +411,21 @@ export function mergeConversationStore(serverStore, localStore, savedStore) {
                 const serverIds = new Set(serverValue.map(messageId));
                 const savedIds = new Set((savedValue ?? []).map(messageId));
                 merged[key] = merged[key].filter(group => serverIds.has(messageId(group)) || !savedIds.has(messageId(group)));
+                // Members and name change only on the server (Edit members): its change stands although this page changed the record.
+                const serverGroups = new Map(serverValue.map(group => [messageId(group), group]));
+                const savedGroups = new Map((savedValue ?? []).map(group => [messageId(group), group]));
+                merged[key] = merged[key].map(group => {
+                    const server = serverGroups.get(messageId(group));
+                    const saved = savedGroups.get(messageId(group));
+                    if (!server || !saved) return group;
+                    const next = { ...group };
+                    for (const field of ['members', 'disabled_members', 'name']) {
+                        if (conversationValuesEqual(server[field], saved[field])) continue;
+                        if (Object.hasOwn(server, field)) next[field] = cloneConversationValue(server[field]);
+                        else delete next[field];
+                    }
+                    return next;
+                });
             }
             continue;
         }

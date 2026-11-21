@@ -38,7 +38,7 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/context.
     persistConversationStore: jest.fn(),
     isAvatarInConversationGroup: (_avatar, groupId, { personaId } = {}) => groupId === 'active-group' && personaId === 'active.png',
 }));
-await jest.unstable_mockModule('../public/scripts/neconyan-conversation/pickers.js', () => ({ updateUserFooter: jest.fn() }));
+await jest.unstable_mockModule('../public/scripts/neconyan-conversation/pickers.js', () => ({ renderConversationGroupMemberSummary: () => false, updateUserFooter: jest.fn() }));
 
 const {
     getActiveConversationPersonaAppendixIds,

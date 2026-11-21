@@ -51,19 +51,20 @@ function createKeptScheduleRecord(schedule) {
     return { settings: {}, schedule, activeBranchId: 'main', branches: { main: branch } };
 }
 
-/** Stop every open job whose target is one of the deleted or replaced threads, and the work below it. */
-function cancelJobsForDeletedThreads(request, scope) {
+/**
+ * Stop every open Conversation job that `predicate(job)` selects, and the work below it. A failure is logged, never thrown:
+ * the store edit that called this has already been saved.
+ */
+export function cancelConversationJobsWhere(request, predicate, { reason }) {
     const directories = request.user.directories;
     const owner = request.user.profile?.handle;
-    const replaced = new Set(Object.keys(scope.replaceKeys));
-    const removed = new Set(scope.removeKeys);
     try {
         for (const job of listJobs(directories, { owner, includeDismissed: true })) {
             const id = job.target?.kind === 'conversation' ? job.target.id : null;
             if (typeof id !== 'string' || isTerminal(job)) continue;
-            if (!removed.has(id) && !replaced.has(id) && !(scope.keyPrefix && id.startsWith(scope.keyPrefix))) continue;
+            if (!predicate(job)) continue;
             try {
-                const requested = requestCancellation(directories, job.id, { reason: CANCEL_REASON });
+                const requested = requestCancellation(directories, job.id, { reason });
                 const pending = [requested.job.id];
                 const visited = new Set();
                 for (const jobId of pending) {
@@ -75,12 +76,22 @@ function cancelJobsForDeletedThreads(request, scope) {
                     abortJob(jobId);
                 }
             } catch (error) {
-                console.error('Conversation DM delete: a job could not be cancelled', error);
+                console.error(`Conversation jobs (${reason}): a job could not be cancelled`, error);
             }
         }
     } catch (error) {
-        console.error('Conversation DM delete: jobs could not be listed', error);
+        console.error(`Conversation jobs (${reason}): jobs could not be listed`, error);
     }
+}
+
+/** Stop every open job whose target is one of the deleted or replaced threads, and the work below it. */
+function cancelJobsForDeletedThreads(request, scope) {
+    const replaced = new Set(Object.keys(scope.replaceKeys));
+    const removed = new Set(scope.removeKeys);
+    cancelConversationJobsWhere(request, job => {
+        const id = job.target.id;
+        return removed.has(id) || replaced.has(id) || Boolean(scope.keyPrefix && id.startsWith(scope.keyPrefix));
+    }, { reason: CANCEL_REASON });
 }
 
 /**

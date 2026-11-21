@@ -21,7 +21,7 @@ The Conversation header shows the current character or group, participant avatar
 | Control        | What it does                                                                                                        |
 | -------------- | ------------------------------------------------------------------------------------------------------------------- |
 | **Pals**       | Opens the Pals panel containing solo DMs, group DMs, unread indicators, personas, and Conversation status controls. |
-| **Add Member** | Adds another eligible character to the current group Conversation. It appears when group membership can be edited.  |
+| **Edit Members** | In a group DM, changes who is in the group without losing its history: untick a pal to remove them, tick one to add them, then **Save members**. **Start a new group instead** makes a separate group with no messages. In a solo DM the button is **Add Member** and starts a new group. |
 | **New Chat**   | Creates and selects a new branch for the current Conversation. It does not delete the previous branch.              |
 | **Settings**   | Opens the DM or Group controls drawer.                                                                              |
 

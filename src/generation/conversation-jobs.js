@@ -231,7 +231,8 @@ function resolveExplicitSpeaker(current, target, replyTarget) {
     }
     const members = new Set((current.group?.members || []).map(member => String(member || '').trim()));
     if (!members.has(speaker) || (current.group?.disabled_members || []).includes(speaker)) {
-        fail('The reply target is no longer part of this group.', 409);
+        // A pal who is no longer an active member does not answer; the reply goes to ordinary selection.
+        return '';
     }
     return speaker;
 }

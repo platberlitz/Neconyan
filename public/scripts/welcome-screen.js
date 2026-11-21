@@ -2820,16 +2820,22 @@ async function openRecentCharacterChat(avatarId, fileName) {
  * @param {string} branchId Conversation branch ID
  */
 async function openRecentConversationChat(avatarId, groupId = '', branchId = '') {
-    const characterId = characters.findIndex(x => x.avatar === avatarId);
-    if (characterId === -1) {
-        console.error(`Character not found for avatar ID: ${avatarId}`);
-        return false;
-    }
-
     try {
+        // A row keeps the pal it was drawn with; after a member edit the group's chat may sit with another pal.
+        const target = groupId ? (await import('./neconyan-conversation/dm-edits.js')).resolveConversationHomeRowAvatar(avatarId, groupId) : avatarId;
+        if (target === '') {
+            toastr.warning(t`Could not open Conversation Mode for this chat.`);
+            await refreshWelcomeScreen();
+            return false;
+        }
+        const characterId = characters.findIndex(x => x.avatar === target);
+        if (characterId === -1) {
+            console.error(`Character not found for avatar ID: ${target}`);
+            return false;
+        }
         setConversationWelcomeOpeningSuppressed(true);
         const conversationModule = await import('./neconyan-conversation.js');
-        const opened = conversationModule.openConversationWorkspaceForAvatar?.(avatarId, {
+        const opened = conversationModule.openConversationWorkspaceForAvatar?.(target, {
             branchId,
             groupId: groupId || null,
             showToast: false,
@@ -2860,6 +2866,12 @@ async function openRecentConversationChat(avatarId, groupId = '', branchId = '')
  */
 async function renameRecentConversationChat(avatarId, groupId, branchId, branchName, recentChat) {
     try {
+        const target = groupId ? (await import('./neconyan-conversation/dm-edits.js')).resolveConversationHomeRowAvatar(avatarId, groupId) : avatarId;
+        if (target === '') {
+            toastr.warning(t`Could not rename Conversation chat.`);
+            await refreshWelcomeScreen();
+            return;
+        }
         const popupText = await renderTemplateAsync('chatRename');
         const newName = await callGenericPopup(popupText, POPUP_TYPE.INPUT, branchName);
         if (!newName || typeof newName !== 'string' || newName === branchName) {
@@ -2867,7 +2879,7 @@ async function renameRecentConversationChat(avatarId, groupId, branchId, branchN
         }
 
         const conversationModule = await import('./neconyan-conversation.js');
-        const renamed = conversationModule.renameConversationBranch?.(avatarId, branchId, newName, { groupId });
+        const renamed = conversationModule.renameConversationBranch?.(target, branchId, newName, { groupId });
         if (!renamed) {
             toastr.warning(t`Could not rename Conversation chat.`);
             return;
@@ -2894,17 +2906,23 @@ async function renameRecentConversationChat(avatarId, groupId, branchId, branchN
 async function deleteRecentConversationChat(avatarId, groupId, branchId, recentChat) {
     try {
         const edits = await import('./neconyan-conversation/dm-edits.js');
-        const chat = edits.describeConversationHomeChat(avatarId, branchId, { groupId });
+        const target = groupId ? edits.resolveConversationHomeRowAvatar(avatarId, groupId) : avatarId;
+        if (target === '') {
+            toastr.warning(t`Could not delete Conversation chat.`);
+            await refreshWelcomeScreen();
+            return;
+        }
+        const chat = edits.describeConversationHomeChat(target, branchId, { groupId });
         if (chat.only) {
             // The DM's only chat: deleting it deletes the DM, exactly as the Pals bin button does (same words, same server request).
-            const copy = edits.getConversationDmDeleteCopy({ avatar: avatarId, groupId });
+            const copy = edits.getConversationDmDeleteCopy({ avatar: target, groupId });
             // A string given to the popup is set as HTML and the copy holds a name someone else wrote, so it is escaped here, as the finished text.
             const confirmed = await callGenericPopup(escapeHtml(copy.confirm), POPUP_TYPE.CONFIRM);
             if (!confirmed) {
                 return;
             }
             try {
-                await edits.deleteConversationDm({ avatar: avatarId, groupId });
+                await edits.deleteConversationDm({ avatar: target, groupId });
             } catch (error) {
                 console.error('Error deleting recent Conversation DM:', error);
                 toastr.error(copy.failed);
@@ -2924,7 +2942,7 @@ async function deleteRecentConversationChat(avatarId, groupId, branchId, recentC
             return;
         }
 
-        const result = await edits.deleteConversationHomeChat(avatarId, branchId, { groupId });
+        const result = await edits.deleteConversationHomeChat(target, branchId, { groupId });
         if (!result.deleted) {
             toastr.warning(t`Could not delete Conversation chat.`);
             return;

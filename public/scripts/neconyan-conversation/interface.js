@@ -391,9 +391,20 @@ export function updateConversationHeader(settings = getSettings()) {
     const partnerCount = Math.max(0, participants.length - 1);
     if (addMemberButton instanceof HTMLButtonElement) {
         addMemberButton.hidden = !conversationState.conversationWorkspaceOpen;
-        const label = conversationState.conversationSelectedGroupId ? 'Add member to group Conversation' : 'Add member to this DM';
+        const selectedGroup = conversationState.conversationSelectedGroupId ? getConversationGroupById(conversationState.conversationSelectedGroupId) : null;
+        const editMembers = selectedGroup?.is_conversation_group === true;
+        const label = editMembers ? t`Edit group DM members` : (selectedGroup ? t`Add member to group Conversation` : t`Add member to this DM`);
         addMemberButton.title = label;
         addMemberButton.setAttribute('aria-label', label);
+        const addLabel = addMemberButton.querySelector('[data-sb-member-label="add"]');
+        const editLabel = addMemberButton.querySelector('[data-sb-member-label="edit"]');
+        if (addLabel instanceof HTMLElement) addLabel.hidden = editMembers;
+        if (editLabel instanceof HTMLElement) editLabel.hidden = !editMembers;
+        const icon = addMemberButton.querySelector('i');
+        if (icon instanceof HTMLElement) {
+            icon.classList.toggle('fa-user-group', editMembers);
+            icon.classList.toggle('fa-user-plus', !editMembers);
+        }
     }
     renderHeaderParticipantStack(participantsContainer, participants, {
         status: effectiveStatus,
@@ -548,7 +559,8 @@ export function saveCurrentPanelSettings(options = {}) {
         weeklyInput.value = readWeeklyScheduleFromEditor();
     }
     const chimingInput = document.getElementById('sb_conv_multi_char_names');
-    if (chimingInput instanceof HTMLInputElement) {
+    // An owned group's list is a read-only summary: the stored multi_char_names stays as applySettingsToPanel wrote it.
+    if (chimingInput instanceof HTMLInputElement && document.getElementById('sb_conv_chiming_partner_list')?.dataset.sbMemberSummary !== 'true') {
         chimingInput.value = readChimingPartnersFromList();
     }
 
