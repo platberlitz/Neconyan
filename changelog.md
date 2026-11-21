@@ -25,6 +25,7 @@
 - PR #798 (2026-11-21) `perf(chat): stop rebuilding chat lists on every event`
 - PR #799 (2026-11-21) `perf(world-info): stop rebuilding scan text and key patterns`
 - PR #800 (2026-11-21) `perf(dialogue-colors): reuse normalised settings and trim rules`
+- PR #801 (2026-11-21) `perf(expressions): refresh on events instead of an idle poll`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
