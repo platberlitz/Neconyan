@@ -1008,7 +1008,7 @@ describe('owned host generation flow', () => {
         expect(finalise).toHaveBeenCalledTimes(buffer ? 0 : 1);
         expect(intercepted).toEqual(buffer ? ['Existing prose. abcdefgh'] : []);
         expect(context.saveChatConditional).toHaveBeenCalledTimes(2);
-        expect(context.saveChatConditional).toHaveBeenNthCalledWith(1, { throwOnError: true });
+        expect(context.saveChatConditional).toHaveBeenNthCalledWith(1, { throwOnError: true, skipUnchanged: true });
         expect(context.getTokenCount).not.toHaveBeenCalled();
         expect(eventSource.emit.mock.calls.some(([name]) => name === event_types.GENERATION_STOPPED)).toBe(false);
         expect(context.streamingProcessor).toBeNull();
@@ -1091,7 +1091,8 @@ describe('owned host generation flow', () => {
         expect(processor.abortController.signal.aborted).toBe(true);
         expect(processor.requestAbortController.signal.aborted).toBe(true);
         expect(context.saveChatConditional).toHaveBeenCalledTimes(2);
-        expect(context.saveChatConditional).toHaveBeenCalledWith({ throwOnError: true });
+        expect(context.saveChatConditional).toHaveBeenCalledWith({ throwOnError: true, skipUnchanged: true });
+        expect(context.saveChatConditional).toHaveBeenCalledWith({ skipUnchanged: true });
         expect(received).not.toHaveBeenCalled();
         expect(context.chat[0].mes).toBe('Existing prose. abcd');
     });
