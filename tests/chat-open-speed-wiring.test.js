@@ -114,6 +114,8 @@ describe('opening a chat skips work for panels that are not on screen', () => {
         expect(whenShown).toContain('agentListRenderPending = true;');
         expect(whenShown).toContain('list.contains(document.activeElement)');
         expect(whenShown).toContain('updateFixTrackersButtonVisibility();');
+        expect(agentsJs).toContain('let agentListShown = false;');
+        expect(agentsJs).toContain('// Render the panel once it is on screen; a closed page keeps it pending.\n    renderAgentListWhenShown();');
 
         const watch = functionBody(agentsJs, 'function watchAgentList(');
         expect(watch).toContain('new IntersectionObserver(');

@@ -6783,7 +6783,7 @@ function refreshConnectionProfileUi() {
 
 let agentListObserver = null;
 let agentListObserved = null;
-let agentListShown = true;
+let agentListShown = false;
 let agentListRenderPending = false;
 
 // Rebuilding every agent card takes about 100 ms, and a chat or connection change asks for it
@@ -7313,8 +7313,8 @@ registerSettingsSetupTask('in-chat-agents first start', new Promise(resolve => {
         console.warn('[InChatAgents] Tool agent sync failed:', err);
     }
 
-    // Render the panel
-    renderAgentList();
+    // Render the panel once it is on screen; a closed page keeps it pending.
+    renderAgentListWhenShown();
     initCompanionCardUi();
     configureCompanionDashboard({
         openEditor: agentId => openEditor(agentId),
