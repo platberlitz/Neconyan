@@ -24,7 +24,7 @@ export function registerChatMacros() {
         description: 'Index of the last message in the chat.',
         returns: 'Index of the last message in the chat.',
         returnType: MacroValueType.INTEGER,
-        handler: ({ env }) => String(getLastMessageId(env) ?? ''),
+        handler: ({ env }) => String(toChatMessageId(env, getLastMessageId(env)) ?? ''),
     });
 
     MacroRegistry.registerMacro('lastUserMessage', {
@@ -82,9 +82,21 @@ export function registerChatMacros() {
             if (!Array.isArray(chat) || chat.length === 0) {
                 return '';
             }
-            return `0-${chat.length - 1}`;
+            return `0-${toChatMessageId(env, chat.length - 1)}`;
         },
     });
+}
+
+/**
+ * Turns a position in env.extra.chat into the message's real number in the saved chat.
+ * @param {MacroEnv} env
+ * @param {number|null} position
+ * @returns {number|null}
+ */
+function toChatMessageId(env, position) {
+    if (typeof position !== 'number') return position;
+    const ids = env.extra?.chatMessageIds;
+    return Array.isArray(ids) && typeof ids[position] === 'number' ? ids[position] : position;
 }
 
 /**

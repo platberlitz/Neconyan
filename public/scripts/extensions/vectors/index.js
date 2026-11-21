@@ -19,7 +19,7 @@ import { SECRET_KEYS, secret_state } from '../../secrets.js';
 import { getDataBankAttachments, getDataBankAttachmentsForSource } from '../../chats.js';
 import { debounce, getStringHash, onlyUnique, isTrueBoolean } from '../../utils.js';
 import { debounce_timeout } from '../../constants.js';
-import { hasRestrictedGroupHistory } from '../../group-chat-visibility.js';
+import { getGroupPromptViewers, hasRestrictedGroupHistory } from '../../group-chat-visibility.js';
 import { getSortedEntries } from '../../world-info.js';
 import { SlashCommandParser } from '../../slash-commands/SlashCommandParser.js';
 import { SlashCommand } from '../../slash-commands/SlashCommand.js';
@@ -211,14 +211,11 @@ async function ingestDataBankAttachments(source) {
  * @param {string} type Generation type
  */
 async function rearrangeChat(chat, _contextSize, _abort, type) {
-    if (hasRestrictedGroupHistory()) {
-        setExtensionPrompt(EXTENSION_PROMPT_TAG, '', settings.position, settings.depth, settings.include_wi);
-        setExtensionPrompt(EXTENSION_PROMPT_TAG_DB, '', settings.file_position_db, settings.file_depth_db, settings.include_wi, settings.file_depth_role_db);
-        return;
-    }
     if (type === 'quiet' || !getCurrentChatId() || !isVectorStorageEnabled('any')) return;
+    // The server searches only the lines this group speaker heard.
+    const viewers = hasRestrictedGroupHistory() ? getGroupPromptViewers() : null;
     const before = JSON.stringify(chat);
-    const result = await runVectorWork('prompt', {}, { automatic: true });
+    const result = await runVectorWork('prompt', viewers ? { viewers } : {}, { automatic: true });
     if (JSON.stringify(chat) !== before) throw new Error('The prompt changed while vector work was running. Its saved result has been kept.');
     const projection = result.projection;
     const find = target => chat.find(row => row.name === target.name && row.mes === target.original);

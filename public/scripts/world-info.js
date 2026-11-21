@@ -30,6 +30,7 @@ import { escapeCharacterBookRegex, getFreeCharacterBookEntryId, normalizeCharact
 import { detectEmbeddedLorebookCandidates, findMatchingLorebookName, getLinkedAuxBooks, isEmbeddedBookLinked } from './world-info-batch-helpers.js';
 import { applyWorldInfoTimedEffects, filterWorldInfoInclusionGroups, getTimedEffectWindow, matchesWorldInfoEntry, normalizeWorldInfoKey, parseWorldInfoKeyRegex, passesWorldInfoProbability, prepareWorldInfoEntries, resolveWorldInfoTimedEffects } from './world-info-scan-core.js';
 import { parseLorebookImport } from './neconyan-lorebook-tools-core.js';
+import { countGroupPromptHiddenMessages } from './group-chat-visibility.js';
 import { planLorebookRepair, repairChangeText, repairDefectText } from './neconyan-lorebook-repair.js';
 import { classifyKey } from './neconyan-lorebook-keytest.js';
 import { createKeyTestSection } from './neconyan-lorebook-keytest-panel.js';
@@ -556,10 +557,10 @@ class WorldInfoBuffer {
  */
 class WorldInfoTimedEffects {
     /**
-     * Array of chat messages.
-     * @type {string[]}
+     * Chat length used as the timed effect clock. A group member's scan skips lines they missed, but the clock counts them.
+     * @type {number}
      */
-    #chat = [];
+    #chatLength = 0;
 
     /**
      * Array of entries.
@@ -625,7 +626,7 @@ class WorldInfoTimedEffects {
      * @param {boolean} isDryRun Whether the operation is a dry run
      */
     constructor(chat, entries, isDryRun = false) {
-        this.#chat = chat;
+        this.#chatLength = chat.length + countGroupPromptHiddenMessages();
         this.#entries = entries;
         this.#isDryRun = isDryRun;
         this.#ensureChatMetadata();
@@ -680,7 +681,7 @@ class WorldInfoTimedEffects {
      * @returns {WITimedEffect} Timed effect for the entry
      */
     #getEntryTimedEffect(type, entry, isProtected) {
-        const { start, end } = getTimedEffectWindow(this.#chat.length, Number(entry[type]));
+        const { start, end } = getTimedEffectWindow(this.#chatLength, Number(entry[type]));
         return {
             hash: this.#getEntryHash(entry),
             start,
@@ -702,7 +703,7 @@ class WorldInfoTimedEffects {
             console.log(`[WI] Processing ${type} entry ${key}`, value);
             const entry = this.#entries.find(x => String(this.#getEntryHash(x)) === String(value.hash));
 
-            if (this.#chat.length <= Number(value.start) && !value.protected) {
+            if (this.#chatLength <= Number(value.start) && !value.protected) {
                 console.log(`[WI] Removing ${type} entry ${key} from timedWorldInfo: chat not advanced`, value);
                 delete chat_metadata.timedWorldInfo[type][key];
                 continue;
@@ -710,7 +711,7 @@ class WorldInfoTimedEffects {
 
             // Missing entries (they could be from another character's lorebook)
             if (!entry) {
-                if (this.#chat.length >= Number(value.end)) {
+                if (this.#chatLength >= Number(value.end)) {
                     console.log(`[WI] Removing ${type} entry from timedWorldInfo: entry not found and interval passed`, entry);
                     delete chat_metadata.timedWorldInfo[type][key];
                 }
@@ -724,7 +725,7 @@ class WorldInfoTimedEffects {
                 continue;
             }
 
-            if (this.#chat.length >= Number(value.end)) {
+            if (this.#chatLength >= Number(value.end)) {
                 console.log(`[WI] Removing ${type} entry from timedWorldInfo: ${type} interval passed`, entry);
                 delete chat_metadata.timedWorldInfo[type][key];
                 if (typeof onEnded === 'function') {
@@ -748,7 +749,7 @@ class WorldInfoTimedEffects {
                 continue;
             }
 
-            if (this.#chat.length < entry.delay) {
+            if (this.#chatLength < entry.delay) {
                 buffer.push(entry);
                 console.log('[WI] Timed effect "delay" applied to entry', entry);
             }
@@ -759,7 +760,7 @@ class WorldInfoTimedEffects {
      * Checks for timed effects on chat messages.
      */
     checkTimedEffects() {
-        const { metadata, active } = resolveWorldInfoTimedEffects(this.#entries, this.#chat.length, chat_metadata.timedWorldInfo, this.#isDryRun);
+        const { metadata, active } = resolveWorldInfoTimedEffects(this.#entries, this.#chatLength, chat_metadata.timedWorldInfo, this.#isDryRun);
         chat_metadata.timedWorldInfo = metadata;
         for (const type of ['sticky', 'cooldown', 'delay']) {
             this.#buffer[type] = this.#entries.filter(entry => active[type].has(entry.hash));
@@ -808,7 +809,7 @@ class WorldInfoTimedEffects {
      */
     setTimedEffects(activatedEntries) {
         if (this.#isDryRun) return;
-        chat_metadata.timedWorldInfo = applyWorldInfoTimedEffects(chat_metadata.timedWorldInfo, activatedEntries, this.#chat.length);
+        chat_metadata.timedWorldInfo = applyWorldInfoTimedEffects(chat_metadata.timedWorldInfo, activatedEntries, this.#chatLength);
     }
 
     /**

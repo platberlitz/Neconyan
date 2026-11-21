@@ -115,8 +115,11 @@ import {
     isGroupNarratorActive,
     isGroupEnsembleActive,
     getGroupMessageAudience,
+    getGroupPreviewSpeakerChid,
+    getGroupPurrksMessages,
+    beginGroupPreviewScope,
 } from './scripts/group-chats.js';
-import { filterGroupPromptMessages } from './scripts/group-chat-visibility.js';
+import { filterGroupPromptMessages, isGroupPromptMessageVisible } from './scripts/group-chat-visibility.js';
 import { rememberGroupSpeaker, restoreGroupSpeaker } from './scripts/group-chat-speakers.js';
 import { evaluateCharacterPurrks } from './scripts/purrks/model.js';
 import { initCharacterPurrks, renderCharacterEditorPurrks } from './scripts/purrks/index.js';
@@ -8049,7 +8052,7 @@ export function getCharacterCardFieldsLazy({ chid = undefined } = {}) {
         if (!cachedPurrksEvaluation) {
             cachedPurrksEvaluation = evaluateCharacterPurrks(character, {
                 chatMetadata: chat_metadata,
-                messages: Array.isArray(chat) ? chat.filter(m => !m?.is_system) : [],
+                messages: selected_group ? getGroupPurrksMessages(character.avatar) : Array.isArray(chat) ? chat.filter(m => !m?.is_system) : [],
                 characterKey: character.avatar || '',
             });
         }
@@ -9736,6 +9739,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
         eventSource.on(event_types.CHAT_CHANGED, onChatChanged);
     }
 
+    let restoreGroupPreviewScope = null;
     try {
         console.log('Generate entered');
         // Neconyan Stage 9: one decision for this call site, taken before the host
@@ -9906,8 +9910,11 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                 .filter((index) => index !== undefined && index !== null);
 
             if (memberIds.length > 0) {
-                if (menu_type != 'character_edit') setCharacterId(memberIds[0]);
+                const previewChid = getGroupPreviewSpeakerChid();
+                if (menu_type != 'character_edit') setCharacterId(characters[previewChid] ? previewChid : memberIds[0]);
                 setCharacterName('');
+                // A preview shows only what this member heard, as their real turn would.
+                restoreGroupPreviewScope = beginGroupPreviewScope(this_chid);
             } else {
                 console.log('No enabled members found');
                 unblockGeneration(type);
@@ -9989,7 +9996,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
             const purrksEval = activeCharacter && typeof evaluateCharacterPurrks === 'function'
                 ? evaluateCharacterPurrks(activeCharacter, {
                     chatMetadata: chat_metadata,
-                    messages: Array.isArray(chat) ? chat.filter(m => !m?.is_system) : [],
+                    messages: selected_group ? getGroupPurrksMessages(activeCharacter.avatar) : Array.isArray(chat) ? chat.filter(m => !m?.is_system) : [],
                     characterKey: activeCharacter.avatar || '',
                 })
                 : null;
@@ -11670,6 +11677,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
         if (!dryRun && type !== 'quiet') reportBrowserImageRefusal(error, refusalLocator, refusalAccount);
         throw error;
     } finally {
+        restoreGroupPreviewScope?.();
         if (run?.pendingRegenerate?.ownsChat() && !hasReplacementReply(chat[priorReplyIndex])) {
             await restoreBlockedAttempt(true).catch(error => console.error('Could not restore prior reply', error));
         }
@@ -12250,7 +12258,18 @@ function setInContextMessages(msgInContextCount, type, preserveLastMessage = fal
         msgInContextCount++;
     }
 
-    const lastMessageBlock = chatElement.find('.mes:not([is_system="true"]), .mes.toolCall').eq(-msgInContextCount);
+    // Count the messages this prompt could include, so hidden messages and lines the speaker never heard are skipped.
+    let lastMessageId = 0;
+    let remaining = msgInContextCount;
+    for (let index = chat.length - 1; index >= 0 && remaining > 0; index--) {
+        const message = chat[index];
+        const promptable = !message?.is_system || Array.isArray(message?.extra?.tool_invocations);
+        if (!promptable || !isGroupPromptMessageVisible(message)) continue;
+        lastMessageId = index;
+        remaining--;
+    }
+
+    const lastMessageBlock = chatElement.find(`.mes[mesid="${lastMessageId}"]`);
     lastMessageBlock.addClass('lastInContext');
 
     if (lastMessageBlock.length === 0) {
@@ -12259,7 +12278,6 @@ function setInContextMessages(msgInContextCount, type, preserveLastMessage = fal
     }
 
     // Update last id to chat. No metadata save on purpose, gets hopefully saved via another call
-    const lastMessageId = Math.max(0, chat.length - msgInContextCount);
     chat_metadata.lastInContextMessageId = lastMessageId;
 }
 
@@ -13403,7 +13421,10 @@ export function syncSwipeToMes(messageId = null, swipeId = null, targetMessage =
     targetMessage.send_date = targetSwipeInfo?.send_date;
     targetMessage.gen_started = targetSwipeInfo?.gen_started;
     targetMessage.gen_finished = targetSwipeInfo?.gen_finished;
+    const groupAudience = targetMessage.extra?.group_scene;
     targetMessage.extra = structuredClone(targetSwipeInfo?.extra) ?? {};
+    // A swipe without its own audience was heard by the same people as the message.
+    if (groupAudience && !targetMessage.extra.group_scene) targetMessage.extra.group_scene = structuredClone(groupAudience);
     if (targetMessage.extra.group_speaker) restoreGroupSpeaker(targetMessage);
 
     return true;
