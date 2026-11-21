@@ -35,6 +35,7 @@
 - PR #808 (2026-11-21) `perf(shell): skip unchanged message action scans`
 - PR #809 (2026-11-21) `perf(mewmory): skip prompt history while memory is off`
 - PR #813 (2026-11-21) `perf(server): keep the settings parse after a save`
+- PR #814 (2026-11-21) `perf(thumbnails): stop enlarging small portraits`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
