@@ -1247,8 +1247,17 @@ for (const action of ['cancel', 'restart']) {
         if (action === 'cancel') {
             await account.post(`/api/jobs/${root.id}/cancel`);
             await account.settled(root.id, 'cancelled');
+            // Stop keeps prose already returned by the provider, but does not
+            // execute the command embedded in the as-yet undelivered bubble.
+            const stopped = await account.effects();
+            expect(stopped.branch.messages.slice(0, before.branch.messages.length)).toEqual(before.branch.messages);
+            expect(stopped.branch.messages.slice(before.branch.messages.length)).toEqual([
+                expect.objectContaining({ role: 'character', mes: second }),
+            ]);
+            expect(stopped.reminders).toEqual(before.reminders);
+            expect(stopped.runtimeStatusOverrides).toEqual(before.runtimeStatusOverrides);
             await delay(11200);
-            expect(await account.effects()).toEqual(before);
+            expect(await account.effects()).toEqual(stopped);
         } else {
             await app.restart();
             expect(app.processes[0].signal).toBe('SIGKILL');
@@ -1658,6 +1667,10 @@ for (const media of [false, true]) {
         const second = await app.account({ handle: 'second-user' });
         const page = await first.open();
         const destination = path.join(app.directory, 'data', 'second-user');
+        // The first persona thumbnail read can fill the target account's cache
+        // independently of the upload. Complete that write before the snapshot.
+        const thumbnail = await second.context.request.get('/thumbnail?type=persona&file=user-default.png');
+        expect(thumbnail.ok()).toBe(true);
         const before = (await fs.readdir(destination, { recursive: true })).sort();
         const endpoint = media ? '/api/images/upload' : '/api/files/upload';
         await page.route('**' + endpoint, async route => {
