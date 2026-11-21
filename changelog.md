@@ -55,6 +55,7 @@
 - PR #832 (2026-11-21) `perf(time-machine): capture presets while idle`
 - PR #833 (2026-11-21) `perf(startup): fetch groups while extensions load`
 - PR #834 (2026-11-21) `test(thumbnails): retry a reset request in the cached check`
+- PR #835 (2026-11-21) `perf(startup): fetch avatars while extensions load`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
