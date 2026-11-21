@@ -3839,6 +3839,58 @@ describe('in-chat agent post-processing runner', () => {
         expect(saveChatDebounced).toHaveBeenCalled();
     });
 
+    test('removes echoed line-format Companion trackers that are never fed back', async () => {
+        const clothing = createCompanionAgent({
+            id: 'clothing-tracker',
+            prompt: 'Write the outfits as plain lines:\nclothing-start\noutfit|{{user}}|items\nclothing-end',
+        });
+        const custom = createCompanionAgent({
+            id: 'mood-tracker',
+            prompt: 'Track moods.\nmood|name|feeling',
+        });
+        enabledAgents = [clothing, custom];
+        const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        const { initAgentRunner, registerCompanionRuntime } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        registerCompanionRuntime({ stripAuxiliaryTrackerEchoes: companionRunner.stripAuxiliaryTrackerEchoes });
+        initAgentRunner();
+        const generatedReply = {
+            mes: 'Narrative reply.\n\nclothing-start\noutfit|Kris|Linen shirt\noutfit|Kaveh|Apron\nclothing-end\nmood|Kris|Flustered',
+            name: 'Assistant',
+            is_user: false,
+            is_system: false,
+            extra: {},
+        };
+        chat.push({ mes: 'Hello', name: 'User', is_user: true, is_system: false, extra: {} }, generatedReply);
+
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 1, 'normal');
+
+        expect(generatedReply.mes).toBe('Narrative reply.');
+    });
+
+    test('guards fed line-format Companion output in the main prompt', async () => {
+        const vitals = createCompanionAgent({
+            id: 'vitals-companion',
+            prompt: 'Report vitals:\nvitals|{{user}}|summary\nbar|Name|value|change|reason\nvitals-end',
+            companion: { feedback: { enabled: true, depth: 2 } },
+        });
+        enabledAgents = [vitals];
+        const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        const reply = { mes: 'Reply', name: 'Assistant', is_user: false, is_system: false, extra: {} };
+        chat.push(reply, { mes: 'Continue.', name: 'User', is_user: true, is_system: false, extra: {} });
+        companionRunner.setCompanionResult(reply, vitals, {
+            status: 'done',
+            content: 'vitals|Kris|Tired\nbar|Health|90|-5|scraped knee\nvitals-end',
+        });
+
+        companionRunner.injectCompanionFeedbackPrompts([vitals]);
+        const prompt = extensionPrompts['inchat_agent_companion_vitals-companion'].value;
+
+        expect(prompt).toContain('HARD STOP for your reply: the Companion-owned line formats listed here are read-only reference.');
+        expect(prompt).toContain('Do not emit any of: vitals|..., bar|..., vitals-end. Starting a line with one of these keywords is still a violation.');
+        expect(prompt).toContain('bar|Health|90|-5|scraped knee');
+        expect(companionRunner.stripAuxiliaryTrackerEchoes('Story.\nvitals|Kris|Fine\nbar|Health|90|0|steady\nvitals-end')).toBe('Story.');
+    });
+
     test('preserves active inline tracker output for post-processing', async () => {
         usePreExtractTracker();
         const inlineTracker = enabledAgents[0];

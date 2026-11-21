@@ -90,6 +90,7 @@ import { getExpressionsAgentCastPrompt } from '../../expressions/expression-sets
 import { markTrackerRepairRunAgent } from '../tracker-repair-run.js';
 import { isLikelyCompanionNoteRefusal } from '../prompt-transform-refusal.js';
 import { findTrackerBlocks, getCompanionTrackerAutoRepairPayload, inspectCompanionTrackerOutput, inspectTrackerState, normalizeCompanionTrackerRepairPayload, TRACKER_REPAIR_INSTRUCTION } from '../tracker-state.js';
+import { buildTrackerEchoGuard, getActiveCompanionTrackerLineKeys, getActiveInlineTrackerLineKeys, getOwnedCompanionTrackerLineKeys, getVisibleCompanionTrackerLineKeys, stripTrackerLineEchoes } from './companion-tracker-context.js';
 
 export { COMPANION_RESULTS_EXTRA_KEY };
 export const COMPANION_RESULTS_UPDATED_EVENT = 'in_chat_agent_companion_results_updated';
@@ -1121,6 +1122,8 @@ const COMPANION_TRACKER_BARE_TAG_PATTERN = /^[ \t>*_]*\[\/?([A-Z][A-Z0-9_]+)(?::
 const COMPANION_TRACKER_BOUNDARY_LINE_PATTERN = /^[ \t]*\[\/?[A-Z][A-Z0-9_]*(?::[^|\]\n]+)?[|\]]/;
 const COMPANION_TRACKER_ECHO_GUARD_KEY = 'inchat_agent_companion_tracker_echo_guard';
 let activeFeedbackTrackerShapes = new Map();
+let activeFeedbackTrackerLineKeys = new Set();
+const COMPANION_OUTPUT_LINE_KEY_SCAN_DEPTH = 12;
 let standaloneTrackerGuardInjected = false;
 
 /**
@@ -1184,21 +1187,55 @@ function getActiveInlineTrackerTags(activeAgents = []) {
     return tags;
 }
 
-function formatTrackerTagExamples(shapes) {
-    return [...shapes]
-        .flatMap(([tag, shape]) => [shape === 'bare' ? `[${tag}]` : `[${tag}|...]`, `[/${tag}]`])
-        .join(', ');
+function collectRetainedTrackerLineKeys({ excludeMessage = null, inlineLineKeys = new Set() } = {}) {
+    const keys = new Set();
+
+    for (const message of chat) {
+        if (message === excludeMessage) {
+            continue;
+        }
+        for (const [agentId, result] of Object.entries(getCompanionResults(message))) {
+            if (result?.status !== 'done' || result.includeInChatHistory !== true) continue;
+
+            const agent = getAgentById(agentId);
+            if (!agent) continue;
+            for (const key of getVisibleCompanionTrackerLineKeys(agent, result.content, inlineLineKeys)) {
+                keys.add(key);
+            }
+        }
+    }
+
+    return keys;
 }
 
-function buildTrackerEchoGuard(shapes) {
-    return 'HARD STOP for your reply: the Companion-owned bracket formats listed here are read-only reference. '
-        + 'A separate side-channel agent writes and re-attaches those formats automatically after your reply, so copying them creates duplicates the user has to delete by hand. '
-        + 'Do NOT reproduce, paraphrase, update, restate, or wrap reply content in the listed formats. '
-        + 'Do not emit any of: ' + formatTrackerTagExamples(shapes) + '. '
-        + 'Opening one of these tags without its closing tag is still a violation. '
-        + 'This restriction applies only to the exact tags listed here; continue following any separate instructions that require other pre-generation inline tracker formats. '
-        + 'Never repeat an "[... - auxiliary notes]" label. '
-        + 'Produce your normal story reply, including any other required inline tracker blocks.';
+// Custom companions may only imply their line format in prose, so what they wrote lately counts too.
+function collectRecentCompanionOutputLineKeys(activeAgents = []) {
+    const companions = new Map(activeAgents.filter(isCompanionAgent).map(agent => [agent.id, agent]));
+    const keys = new Set();
+    if (companions.size === 0) {
+        return keys;
+    }
+
+    for (let index = chat.length - 1; index >= 0 && index >= chat.length - COMPANION_OUTPUT_LINE_KEY_SCAN_DEPTH; index--) {
+        for (const [agentId, result] of Object.entries(getCompanionResults(chat[index]))) {
+            const agent = companions.get(agentId);
+            if (!agent || result?.status !== 'done' || !result.content?.trim()) continue;
+            for (const key of getOwnedCompanionTrackerLineKeys(agent, result.content)) {
+                keys.add(key);
+            }
+        }
+    }
+
+    return keys;
+}
+
+function getAuxiliaryTrackerLineKeys(activeAgents = []) {
+    const inlineLineKeys = getActiveInlineTrackerLineKeys(activeAgents);
+    return getActiveCompanionTrackerLineKeys(activeAgents, [
+        ...activeFeedbackTrackerLineKeys,
+        ...collectRetainedTrackerLineKeys({ inlineLineKeys }),
+        ...collectRecentCompanionOutputLineKeys(activeAgents),
+    ]);
 }
 
 function collectRetainedTrackerTagShapes({ excludeMessage = null } = {}) {
@@ -1339,8 +1376,8 @@ function mergeTrackerRanges(ranges) {
  * @param {object[]} activeAgents
  * @returns {string}
  */
-export function stripAuxiliaryTrackerEchoes(text, tags = getAuxiliaryTrackerTags(), activeAgents = []) {
-    const source = String(text ?? '').replaceAll(/\r\n?/g, '\n');
+export function stripAuxiliaryTrackerEchoes(text, tags = getAuxiliaryTrackerTags(), activeAgents = [], lineKeys = getAuxiliaryTrackerLineKeys(activeAgents)) {
+    const source = stripTrackerLineEchoes(text, lineKeys).replaceAll(/\r\n?/g, '\n');
     const ranges = [];
     const inlineTrackerTags = getActiveInlineTrackerTags(activeAgents);
 
@@ -2535,6 +2572,9 @@ export function injectCompanionFeedbackPrompts(activeAgents = [], { excludeMessa
     const feedbackTrackerShapes = new Map();
     const feedbackPrompts = [];
     activeFeedbackTrackerShapes = feedbackTrackerShapes;
+    const inlineLineKeys = getActiveInlineTrackerLineKeys(activeAgents);
+    const feedbackLineKeys = new Set();
+    activeFeedbackTrackerLineKeys = feedbackLineKeys;
 
     // Dice Roller writes one short settled-result note for the newest user roll.
     // It has no saved note and no model call, so it never enters feedbackPrompts.
@@ -2590,7 +2630,9 @@ export function injectCompanionFeedbackPrompts(activeAgents = [], { excludeMessa
         if (trackerTags.length > 0) {
             feedbackTrackerShapes.set(trackerShape.tag, trackerShape.shape);
         }
-        feedbackPrompts.push({ agent, body, trackerTags });
+        const lineKeys = getVisibleCompanionTrackerLineKeys(agent, body, inlineLineKeys);
+        lineKeys.forEach(key => feedbackLineKeys.add(key));
+        feedbackPrompts.push({ agent, body, guarded: trackerTags.length > 0 || lineKeys.size > 0 });
     }
 
     // Retained-history companions inject their blocks as prior assistant turns, which is stronger
@@ -2601,13 +2643,14 @@ export function injectCompanionFeedbackPrompts(activeAgents = [], { excludeMessa
             guardShapes.set(tag, shape);
         }
     }
+    const guardLineKeys = new Set([...feedbackLineKeys, ...collectRetainedTrackerLineKeys({ excludeMessage, inlineLineKeys })]);
 
     let trackerGuardInjected = false;
-    for (const { agent, body, trackerTags } of feedbackPrompts) {
-        const echoGuard = trackerTags.length > 0 && !trackerGuardInjected
-            ? buildTrackerEchoGuard(guardShapes) + '\n\n'
+    for (const { agent, body, guarded } of feedbackPrompts) {
+        const echoGuard = guarded && !trackerGuardInjected
+            ? buildTrackerEchoGuard(guardShapes, guardLineKeys) + '\n\n'
             : '';
-        trackerGuardInjected ||= trackerTags.length > 0;
+        trackerGuardInjected ||= guarded;
         const label = `[${String(agent.name ?? 'Companion').trim()} - auxiliary notes]`;
 
         setExtensionPrompt(
@@ -2625,10 +2668,10 @@ export function injectCompanionFeedbackPrompts(activeAgents = [], { excludeMessa
     // Depth 0 IN_CHAT lands after the retained assistant turns that carry the tracker blocks, which
     // is the recency slot the model weighs hardest. Nothing clears companion prompt keys between
     // generations, so the fallback clears itself once the tags stop appearing.
-    if (guardShapes.size > 0 && !trackerGuardInjected) {
+    if ((guardShapes.size > 0 || guardLineKeys.size > 0) && !trackerGuardInjected) {
         setExtensionPrompt(
             COMPANION_TRACKER_ECHO_GUARD_KEY,
-            buildTrackerEchoGuard(guardShapes),
+            buildTrackerEchoGuard(guardShapes, guardLineKeys),
             extension_prompt_types.IN_CHAT,
             0,
             false,
