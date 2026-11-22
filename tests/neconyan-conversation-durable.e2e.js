@@ -21,6 +21,15 @@ const submitPresentationReply = account => account.post('/api/neconyan-conversat
     target: { avatar: account.avatar, personaId: account.personaId, branchId: 'main' },
 });
 
+async function warmSharedBrowserThumbnails(account) {
+    // Image reads from the open tab can fill the destination account's cache
+    // when its cookie changes, independently of the write being tested.
+    for (const [type, file] of [['avatar', account.avatar], ['persona', 'user-default.png']]) {
+        const thumbnail = await account.context.request.get(`/thumbnail?${new URLSearchParams({ type, file })}`);
+        expect(thumbnail.ok()).toBe(true);
+    }
+}
+
 for (const phone of [false, true]) {
     test(`${phone ? 'phone' : 'desktop'} ownership memory refresh updates its open panel and cannot undo a later clear`, async ({ app }) => {
         const account = await app.account({ phone });
@@ -1185,6 +1194,7 @@ for (const boundary of ['solo chat', 'group chat', 'group metadata']) {
         expect(source.settings.enabled).toBe(true);
         expect(source.settings.roleplay_reactions).toBe(true);
         const destination = path.join(app.directory, 'data', 'second-user');
+        await warmSharedBrowserThumbnails(second);
         const before = (await fs.readdir(destination, { recursive: true })).sort();
         const effects = await second.effects();
         const endpoint = boundary === 'solo chat' ? '/api/chats/save' : boundary === 'group chat' ? '/api/chats/group/save' : '/api/groups/edit';
@@ -1667,10 +1677,7 @@ for (const media of [false, true]) {
         const second = await app.account({ handle: 'second-user' });
         const page = await first.open();
         const destination = path.join(app.directory, 'data', 'second-user');
-        // The first persona thumbnail read can fill the target account's cache
-        // independently of the upload. Complete that write before the snapshot.
-        const thumbnail = await second.context.request.get('/thumbnail?type=persona&file=user-default.png');
-        expect(thumbnail.ok()).toBe(true);
+        await warmSharedBrowserThumbnails(second);
         const before = (await fs.readdir(destination, { recursive: true })).sort();
         const endpoint = media ? '/api/images/upload' : '/api/files/upload';
         await page.route('**' + endpoint, async route => {
