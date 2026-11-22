@@ -96,6 +96,7 @@
 - PR #872 (2026-11-22) `fix(lorebooks): load saved entry lists and align entry tools`
 - PR #873 (2026-11-22) `perf(mewmory): store embeddings as compact float32 values`
 - PR #874 (2026-11-22) `feat(scratchpad): check cards, presets and lorebooks for problems`
+- PR #876 (2026-11-22) `fix(plot-compass): honour selected directions`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
