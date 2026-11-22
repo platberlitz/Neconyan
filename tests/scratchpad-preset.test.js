@@ -23,8 +23,9 @@ const power_user = {
 };
 const presetName = { value: 'Samplers' };
 
-jest.unstable_mockModule('../public/script.js', () => ({ main_api: script.main_api }));
-jest.unstable_mockModule('../public/scripts/openai.js', () => ({ oai_settings, promptManager }));
+jest.unstable_mockModule('../public/script.js', () => ({ main_api: script.main_api, amount_gen: 80, max_context: 4096 }));
+jest.unstable_mockModule('../public/scripts/openai.js', () => ({ oai_settings, promptManager, model_list: [], getChatCompletionModel: () => '', getChatCompletionSamplerCapabilitiesForSettings: () => ({ supportedParameters: [] }) }));
+jest.unstable_mockModule('../public/scripts/textgen-settings.js', () => ({ textgenerationwebui_settings: {} }));
 jest.unstable_mockModule('../public/scripts/PromptManager.js', () => ({ INJECTION_POSITION: { RELATIVE: 0, ABSOLUTE: 1 } }));
 jest.unstable_mockModule('../public/scripts/power-user.js', () => ({ power_user }));
 jest.unstable_mockModule('../public/scripts/preset-manager.js', () => ({ getPresetManager: api => ({

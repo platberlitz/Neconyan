@@ -116,9 +116,13 @@ function imageInstructions({ image, avatar, persona }, imageEditing) {
     ].join('\n');
 }
 
-function changeInstructions({ lore, character, chat, members, notebook, persona, preset, agents, authorsNote, regex, cssSnippets, dialogueColors, mewmory }) {
+function changeInstructions({ lore, character, chat, members, notebook, persona, preset, agents, authorsNote, regex, cssSnippets, dialogueColors, mewmory, problems }) {
     const kinds = [];
     const note = scenarioNoteFormat(persona);
+    if (problems) kinds.push([
+        'Shared problem findings come from Neconyan\'s fixed checks, not guesses. Go through them by severity, explain each cause in plain words, say which points are certain checker findings and which are your own judgement, and offer fixes through the review cards below.',
+        'Treat a clean item as clean: do not invent problems for it. A finding marked info is context or a measurement, not a fault.',
+    ].join('\n'));
     if (mewmory) kinds.push([
         'Mewmory corrections (only records listed under mewmory_context, and only kinds entity, state, event, relationship, knowledge or commitment):',
         '{"type":"mewmory","action":"replace","record":"<exact record id>","field":"text","value":"<complete corrected text>","reason":"<which message or fact shows it is wrong>"}',
@@ -246,7 +250,7 @@ export function buildScratchpadSystemPrompt({ assistant, gender, persona: savedP
     ];
     const instructions = typeof customPrompt === 'string' && customPrompt.trim()
         ? [customPrompt, contextNotice && !customPrompt.includes(contextNotice) ? contextNotice : '', webSearch ? WEB_SEARCH_INSTRUCTIONS : '', webPages ? WEB_PAGES_INSTRUCTIONS : '',
-            capabilities.notebook || capabilities.persona || capabilities.preset?.length || capabilities.agents || capabilities.authorsNote || capabilities.regex || capabilities.cssSnippets || capabilities.dialogueColors || capabilities.mewmory || generalLore ? changeInstructions({ lore: generalLore, notebook: capabilities.notebook, persona: capabilities.persona, preset: capabilities.preset, agents: capabilities.agents, authorsNote: capabilities.authorsNote, regex: capabilities.regex, cssSnippets: capabilities.cssSnippets, dialogueColors: capabilities.dialogueColors, mewmory: capabilities.mewmory }) : ''].filter(Boolean).join('\n\n')
+            capabilities.notebook || capabilities.persona || capabilities.preset?.length || capabilities.agents || capabilities.authorsNote || capabilities.regex || capabilities.cssSnippets || capabilities.dialogueColors || capabilities.mewmory || capabilities.problems || generalLore ? changeInstructions({ lore: generalLore, notebook: capabilities.notebook, persona: capabilities.persona, preset: capabilities.preset, agents: capabilities.agents, authorsNote: capabilities.authorsNote, regex: capabilities.regex, cssSnippets: capabilities.cssSnippets, dialogueColors: capabilities.dialogueColors, mewmory: capabilities.mewmory, problems: capabilities.problems }) : ''].filter(Boolean).join('\n\n')
         : sections.filter(Boolean).join('\n\n');
     const reference = help ? `Neconyan reference for app questions (use it only when ${names.user} asks how something in Neconyan works):\n${help}` : '';
     const preferences = userInstructions.trim() ? `The user's global Scratchpad instructions for you:\n${userInstructions}` : '';

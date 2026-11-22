@@ -16,8 +16,12 @@ import { user_avatar } from '../personas.js';
 import { t } from '../i18n.js';
 import { getRoleplaySourceId } from '../roleplay-save-chain.js';
 import { getTokenCountAsync } from '../tokenizers.js';
-import { loadWorldInfo, selected_world_info, world_info } from '../world-info.js';
-import { readCurrentPreset } from './preset.js';
+import { loadWorldInfo, selected_world_info, world_info, world_info_budget, world_info_budget_cap, world_info_case_sensitive, world_info_depth, world_info_match_whole_words, world_info_max_recursion_steps, world_info_recursive, world_names } from '../world-info.js';
+import { currentLimits, readCurrentPreset } from './preset.js';
+import { checkCharacterCard } from './checks/card.js';
+import { checkLorebook } from './checks/lorebook.js';
+import { checkPreset } from './checks/preset.js';
+import { formatChecks, formatLorebookDetails, formatPresetValues } from './checks/index.js';
 import { sameSourceContext } from './source.js';
 import { homePersonaChoice } from './home-persona.js';
 import { shareScenarioNotes } from './scenario-note-references.js';
@@ -294,12 +298,75 @@ function sourceLorebooks(source, settings) {
     return [...new Set(books.filter(book => typeof book === 'string' && book.trim()))];
 }
 
+/** Lorebooks attached to this source, for the Context tab and quick prompts. */
+export function sourceLorebookNames(source) {
+    try {
+        return sourceLorebooks(source, {});
+    } catch {
+        return [];
+    }
+}
+
 export function loreScanText({ source, settings, pendingText = '', sessionText = '' }) {
     return [
         ...(source?.kind === 'general' ? [] : selectMessages(sourceMessages(source), settings, source).messages.slice(-LORE_SCAN_MESSAGES).map(item => item.text)),
         sessionText,
         pendingText,
     ].join('\n');
+}
+
+const RAW_BOOK = Symbol('rawLorebook');
+
+function loreKeys(entry) {
+    return (Array.isArray(entry.key) ? entry.key : typeof entry.key === 'string' ? [entry.key] : []).map(String);
+}
+
+function loreSecondaryKeys(entry) {
+    return (Array.isArray(entry.keysecondary) ? entry.keysecondary : typeof entry.keysecondary === 'string' ? [entry.keysecondary] : []).map(String);
+}
+
+function loreActivation(entry) {
+    return {
+        secondaryKeys: loreSecondaryKeys(entry),
+        selective: Boolean(entry.selective),
+        selectiveLogic: Number(entry.selectiveLogic) || 0,
+        probability: entry.probability === undefined || entry.probability === null ? 100 : Number(entry.probability),
+        order: entry.order ?? 100,
+        position: entry.position ?? 0,
+        depth: entry.depth,
+        scanDepth: entry.scanDepth,
+        caseSensitive: entry.caseSensitive,
+        matchWholeWords: entry.matchWholeWords,
+        excludeRecursion: Boolean(entry.excludeRecursion),
+        preventRecursion: Boolean(entry.preventRecursion),
+        group: entry.group,
+        disabled: Boolean(entry.disable),
+        hiddenFromAgents: Boolean(entry.agentBlacklisted),
+        sticky: entry.sticky,
+        cooldown: entry.cooldown,
+        delay: entry.delay,
+    };
+}
+
+function compactSkippedEntry(entry) {
+    return {
+        uid: entry.uid,
+        title: String(entry.comment || loreKeys(entry)[0] || `Entry ${entry.uid}`),
+        keys: loreKeys(entry),
+        reason: 'disabled',
+    };
+}
+
+function bookSettings() {
+    return {
+        scanDepth: Number(world_info_depth) || 0,
+        tokenBudget: Number(world_info_budget) || 0,
+        tokenBudgetCap: Number(world_info_budget_cap) || 0,
+        recursive: Boolean(world_info_recursive),
+        maxRecursionSteps: Number(world_info_max_recursion_steps) || 0,
+        caseSensitive: Boolean(world_info_case_sensitive),
+        matchWholeWords: Boolean(world_info_match_whole_words),
+    };
 }
 
 /**
@@ -310,7 +377,7 @@ export function loreScanText({ source, settings, pendingText = '', sessionText =
 export async function collectLore({ source, settings, scanText = '' }) {
     requireCurrentSource(source);
     const general = source.kind === 'general';
-    if (source.kind === 'notebook' || (general && !generalLorebook(source, settings))) return { books: [], entries: [] };
+    if (source.kind === 'notebook' || (general && !generalLorebook(source, settings))) return { books: [], entries: [], details: { books: [] } };
     const loaded = await Promise.all(sourceLorebooks(source, settings).map(async world => {
         try {
             const data = await loadWorldInfo(world);
@@ -333,7 +400,7 @@ export async function collectLore({ source, settings, scanText = '' }) {
     const listed = usable.map(entry => {
         const key = loreOverrideKey(entry);
         const override = overrides[key] || null;
-        const keys = Array.isArray(entry.key) ? entry.key : typeof entry.key === 'string' ? [entry.key] : [];
+        const keys = loreKeys(entry);
         let reason = null;
         if (override === 'always') reason = 'always';
         else if (override === 'never') reason = null;
@@ -345,12 +412,14 @@ export async function collectLore({ source, settings, scanText = '' }) {
             world: String(entry.world),
             uid: entry.uid,
             title: String(entry.comment || keys[0] || `Entry ${entry.uid}`),
-            keys: keys.map(String),
+            keys,
             content: String(entry.content ?? ''),
             constant: Boolean(entry.constant),
             override,
             reason,
             included: false,
+            shareReason: null,
+            ...loreActivation(entry),
         };
     });
     const rank = { always: 0, constant: 1, keyword: 2 };
@@ -365,7 +434,24 @@ export async function collectLore({ source, settings, scanText = '' }) {
         used += size;
         count += 1;
     }
-    return { books, entries: listed };
+    for (const item of listed) {
+        if (item.included) continue;
+        if (item.reason) item.shareReason = 'limit';
+        else if (item.override === 'never') item.shareReason = 'marked Never';
+        else item.shareReason = 'no keyword matched';
+    }
+    const details = loaded.filter(Boolean).map(book => {
+        const detail = {
+            name: book.world,
+            settings: bookSettings(),
+            shared: listed.filter(item => item.world === book.world),
+            skipped: book.entries.filter(entry => entry.disable && !entry.agentBlacklisted).map(compactSkippedEntry),
+            hiddenCount: book.entries.filter(entry => entry.agentBlacklisted).length,
+        };
+        Object.defineProperty(detail, RAW_BOOK, { value: book, enumerable: false });
+        return detail;
+    });
+    return { books, entries: listed, details: { books: details } };
 }
 
 function formatLore(lore, substitute, general = false) {
@@ -793,23 +879,77 @@ export async function buildContext({ source, settings, pendingText = '', session
     }
 
     let lore = { books: [], entries: [] };
+    let loreScan = '';
     const loreShared = general ? Boolean(generalLorebook(source, settings)) : Boolean(include.lore);
     if (loreShared) {
         const scanText = loreScanText({ source, settings, sessionText, pendingText });
+        loreScan = scanText;
         lore = await collectLore({ source, settings, scanText });
         const text = formatLore(lore, general ? value => String(value ?? '') : substituteSource, general);
         if (text) sections.push(`## Lorebooks\n${text}`);
     }
 
     let preset = null;
+    let presetSnapshot = null;
     let presetTargets = [];
     if (include.preset && (general || source.kind === 'roleplay')) {
         // General uses the account's prompt order, not the character behind Home.
         const snapshot = readCurrentPreset({ globalOnly: general });
+        presetSnapshot = snapshot;
         sections.push(formatPreset(snapshot, { editable: !general }));
         if (!general) presetTargets = (snapshot?.targets ?? []).map(({ api, name }) => ({ api, name }));
         const modules = Array.isArray(snapshot?.modules) ? snapshot.modules : [];
         preset = { name: snapshot?.name || '', on: modules.filter(item => item.enabled).length, off: modules.filter(item => !item.enabled).length };
+    }
+
+    let problemsShared = false;
+    if (include.problems) {
+        const results = [];
+        if (include.card && people.length) {
+            const knownMacros = await loadKnownMacroNames();
+            const knownLorebooks = Array.isArray(world_names) ? world_names : [];
+            const contextSize = currentLimits().contextSize;
+            for (const character of people) {
+                const filename = String(character?.avatar ?? '').replace(/\.[^.]+$/, '');
+                const extraBooks = world_info.charLore?.find(item => item.name === filename)?.extraBooks ?? [];
+                results.push(await checkCharacterCard(character, {
+                    name: character.name,
+                    contextSize,
+                    knownMacros,
+                    knownLorebooks,
+                    extraBooks,
+                    countTokens: estimateTokens,
+                }));
+            }
+        }
+        if (presetSnapshot) {
+            const knownMacros = await loadKnownMacroNames();
+            results.push(checkPreset(presetSnapshot, { knownMacros, modelContext: presetSnapshot.connection?.modelContext || 0 }));
+        }
+        if (loreShared && lore.details?.books?.length) {
+            for (const detail of lore.details.books) {
+                const raw = detail[RAW_BOOK];
+                const book = raw ? { entries: Object.fromEntries(raw.entries.map(entry => [entry.uid, entry])) } : null;
+                results.push(await checkLorebook({
+                    name: detail.name,
+                    book,
+                    scanText: loreScan,
+                    contextSize: currentLimits().contextSize,
+                    scanDepth: detail.settings.scanDepth,
+                    budget: { percent: detail.settings.tokenBudget, cap: detail.settings.tokenBudgetCap },
+                    defaults: { caseSensitive: detail.settings.caseSensitive, matchWholeWords: detail.settings.matchWholeWords },
+                }));
+            }
+        }
+        if (results.length) {
+            sections.push(`## Checks\n${formatChecks(results)}`);
+            problemsShared = true;
+        }
+        if (loreShared && lore.details?.books?.length) {
+            const details = formatLorebookDetails(lore);
+            if (details) sections.push(`## Lorebook details\n${details}`);
+        }
+        if (presetSnapshot) sections.push(`## Preset values (read only)\n${formatPresetValues(presetSnapshot)}`);
     }
 
     // The head is explicit input, so it keeps its bytes and is never trimmed for messages.
@@ -883,8 +1023,20 @@ export async function buildContext({ source, settings, pendingText = '', session
             ...(cssSnippetsShared ? { cssSnippets: true } : {}),
             ...(dialogueColorsShared ? { dialogueColors: true } : {}),
             ...(include.authorsNote && source.kind === 'roleplay' ? { authorsNote: true } : {}),
+            ...(problemsShared ? { problems: true } : {}),
         },
     };
+}
+
+/** The live macro names, or an empty list when the registry cannot load here. */
+async function loadKnownMacroNames() {
+    try {
+        const { MacroRegistry } = await import('../macros/engine/MacroRegistry.js');
+        const macros = MacroRegistry?.getAllMacros?.() ?? [];
+        return macros.map(item => item?.name).filter(Boolean);
+    } catch {
+        return [];
+    }
 }
 
 export async function estimateTokens(text) {

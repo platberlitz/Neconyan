@@ -88,6 +88,23 @@ test('CSS snippet changes are offered only when CSS Snippets are shared, and nev
     assert.match(buildScratchpadSystemPrompt({ assistant: 'miso', sourceKind: 'general', capabilities: { cssSnippets: true } }).text, /"type":"css-snippet"/);
 });
 
+test('problem findings are offered only when the switch is on, and never for a note', () => {
+    assert.equal(store.normaliseSettings({}).include.problems, false);
+    assert.equal(store.normaliseSettings({ include: { problems: true } }).include.problems, true);
+    assert.equal(store.normaliseSettings({ include: { problems: 'yes' } }).include.problems, false);
+    for (const kind of ['roleplay', 'conversation', 'general']) assert.equal(normaliseCapabilities({ problems: true }, kind).problems, true);
+    assert.equal(normaliseCapabilities({ problems: true }, 'notebook').problems, undefined);
+    assert.equal(normaliseCapabilities({ problems: 'yes' }).problems, undefined);
+    for (const customPrompt of ['', 'Be helpful.']) {
+        const shared = buildScratchpadSystemPrompt({ assistant: 'miso', capabilities: { problems: true }, customPrompt }).text;
+        assert.match(shared, /Shared problem findings come from Neconyan's fixed checks, not guesses/);
+        assert.match(shared, /say which points are certain checker findings and which are your own judgement/);
+        assert.match(shared, /Treat a clean item as clean/);
+        assert.doesNotMatch(buildScratchpadSystemPrompt({ assistant: 'miso', capabilities: {}, customPrompt }).text, /fixed checks, not guesses/);
+    }
+    assert.match(buildScratchpadSystemPrompt({ assistant: 'miso', sourceKind: 'general', capabilities: { problems: true } }).text, /fixed checks, not guesses/);
+});
+
 test('dialogue colour changes are offered only when Dialogue Colors are shared, and never for a note', () => {
     assert.equal(store.normaliseSettings({}).include.dialogueColors, false);
     assert.equal(store.normaliseSettings({ include: { dialogueColors: true } }).include.dialogueColors, true);
@@ -1171,7 +1188,7 @@ test('saved context setups keep only portable choices, are account-owned and pro
     assert.deepEqual(saved.setups, [{
         name: 'Lean read',
         settings: {
-            depth: 4, include: { card: false, persona: true, authorsNote: true, lore: true, preset: true, hidden: false, agents: false, regex: false, cssSnippets: false, dialogueColors: false, mewmory: false },
+            depth: 4, include: { card: false, persona: true, authorsNote: true, lore: true, preset: true, hidden: false, agents: false, regex: false, cssSnippets: false, dialogueColors: false, mewmory: false, problems: false },
             maxTokens: 512, stream: false, webSearch: true, readLinks: true, prefill: 'Ideas:', partialPrefill: '', feedbackTone: 'harsher',
         },
     }], 'the shared feedback tone travels, and per-assistant tones stay with their session');
