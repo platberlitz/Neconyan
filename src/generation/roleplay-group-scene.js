@@ -3,7 +3,8 @@ import { canGroupMemberSee, groupMessageAudience, readGroupScene, readGroupScene
 /**
  * A group speaker's prompt keeps every saved position, so prompt bookkeeping
  * (attachments, captions, memory and Agent history indexes) still lines up.
- * Lines the speaker did not hear become empty hidden rows with no extras.
+ * Lines the speaker did not hear become empty hidden rows that keep only a
+ * mark saying so, which `{{groupHeard}}` reads.
  */
 export function blankUnheardGroupRecords(records, source, viewer) {
     if (!source?.locator?.group || typeof viewer !== 'string' || !viewer || !Array.isArray(records)) return records;
@@ -12,9 +13,14 @@ export function blankUnheardGroupRecords(records, source, viewer) {
     records.forEach((record, index) => {
         if (index === 0 || !record || canGroupMemberSee(record, viewer, rules)) return;
         blanked ??= [...records];
-        blanked[index] = { name: '', is_user: false, is_system: true, mes: '', send_date: record.send_date ?? '', extra: {} };
+        blanked[index] = { name: '', is_user: false, is_system: true, mes: '', send_date: record.send_date ?? '', extra: { group_scene_unheard: true } };
     });
     return blanked ?? records;
+}
+
+/** Whether a group speaker missed any saved line, so chat-wide extras could give it away. */
+export function groupViewerMissedLines(records, source, viewer) {
+    return blankUnheardGroupRecords(records, source, viewer) !== records;
 }
 
 /** Members marked away in the saved scene cannot be chosen to speak. */

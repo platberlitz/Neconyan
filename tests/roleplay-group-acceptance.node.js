@@ -98,7 +98,7 @@ test('a group turn is refused when a chosen speaker is away or missed a line', a
     assert.equal(accepted.created, true);
 });
 
-test('a group turn follows the scene rules the page uses for who sees everything and the scene line', async t => {
+test('a group turn with a scene location and an all-seeing member is written by the server, but a whisper stays in the page', async t => {
     const s = saved(t);
     const rewrite = edit => {
         const records = fs.readFileSync(s.f.filename, 'utf8').split('\n').map(line => JSON.parse(line));
@@ -107,11 +107,11 @@ test('a group turn follows the scene rules the page uses for who sees everything
     };
     rewrite(records => {
         records.at(-1).extra.group_scene = { present: ['Nova.png'], whisper_to: [] };
-        records[0].chat_metadata = { ...records[0].chat_metadata, group_scene: { away: [], location: 'The archive', whisper_to: [], sees_all: ['Other.png'] } };
+        records[0].chat_metadata = { ...records[0].chat_metadata, group_scene: { away: [], location: 'The archive', whisper_to: ['Nova.png'], sees_all: ['Other.png'] } };
     });
-    await assert.rejects(acceptRoleplayGroupTurn(s.request(), s.body({ key: 'located' })),
+    await assert.rejects(acceptRoleplayGroupTurn(s.request(), s.body({ key: 'whisper' })),
         error => error.status === 409 && error.apiError === 'roleplay_group_scene');
-    rewrite(records => { records[0].chat_metadata.group_scene.location = ''; });
-    const accepted = await acceptRoleplayGroupTurn(s.request(), s.body({ key: 'sees-all' }));
+    rewrite(records => { records[0].chat_metadata.group_scene.whisper_to = []; });
+    const accepted = await acceptRoleplayGroupTurn(s.request(), s.body({ key: 'located' }));
     assert.equal(accepted.created, true);
 });

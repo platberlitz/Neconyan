@@ -60,6 +60,7 @@ import { isLikelyMainReplyRefusal } from '../../public/scripts/extensions/in-cha
 import { assertRoleplayBundledMacrosCaptured } from './roleplay-bundled-macros.js';
 import { preserveInterruptedRoleplayReply, recordRoleplayMainReplyComplete } from './roleplay-kept-reply.js';
 import { reasoningOnlyResult } from './reasoning-only-result.js';
+import { groupViewerMissedLines } from './roleplay-group-scene.js';
 
 const MAX_REPLY_BYTES = 256 * 1024;
 const REQUEST_OVERRIDES = new Set(['temperature', 'top_p', 'top_k', 'min_p', 'seed', 'frequency_penalty',
@@ -942,6 +943,11 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
             throw roleplayError('ROLEPLAY_INVALID', 'This protected chat name cannot identify its Mewmory store exactly.', 409);
         }
         memory = readArtifact(directories, job.id, 'roleplay-mewmory');
+        // Chat-wide memories cannot prove which group members heard their sources, as in the page.
+        if (memory === undefined && groupViewerMissedLines(selectRoleplayPromptRecords(promptSource.records, source, effect), source, request.worldInfo?.avatar)) {
+            memory = { enabled: false, restricted: true, npcText: '', memoryText: '', interviewText: '', factsText: '', excludedIndices: [], presentationVersion: 1 };
+            writeArtifact(directories, job.id, 'roleplay-mewmory', memory);
+        }
         if (memory === undefined) {
             const memoryHistory = promptRecords.slice(1).flatMap((record, index) => vectors?.projection.removed.some(item => item.index === index)
                 || record.is_system && !record.extra?.tool_invocations
@@ -1023,7 +1029,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
         historyOptions.preparedContent = historyOptions.preparedContent.filter((_value, index) => retainedIndices.has(index));
     }
     const assertMemory = () => {
-        if (!request.serverPrompt) return;
+        if (!request.serverPrompt || memory.restricted === true) return;
         if (!memory.enabled && !memoryAccess(() => memoryEnabled(directories, promptSource.locator))) return;
         const current = memoryAccess(() => loadCurrentStateSync(directories, promptSource.locator));
         if (current.enabled !== memory.enabled || memory.enabled

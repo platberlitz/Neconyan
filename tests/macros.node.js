@@ -274,3 +274,21 @@ test('group scene macros read the open scene, and stay empty where there is none
     const plain = createMacroEnvironment(snapshot());
     assert.equal(plain.evaluate('{{groupPresent}}|{{groupAway}}|{{sceneLocation}}|{{groupHeard::3}}'), '|||');
 });
+
+test('server group snapshots name the scene and hide Agent variables from a speaker who missed a line', () => {
+    const chatMetadata = { group_scene: { away: ['nova.png'], location: 'The archive', whisper_to: [] } };
+    const chat = [
+        { mes: 'Hello', extra: { group_scene: { present: ['kit.png', 'mira.png'], whisper_to: [] } } },
+        { mes: '', is_system: true, extra: { group_scene_unheard: true } },
+    ];
+    const env = createMacroEnvironment({
+        ...snapshot(),
+        variables: { local: { agent_mood: 'tense', plain: 'kept' }, global: {} },
+        hiddenVariablePrefix: 'agent_',
+        groupMembers: [{ avatar: 'kit.png', name: 'Kit' }, { avatar: 'mira.png', name: 'Mira' }, { avatar: 'nova.png', name: 'Nova' }],
+        extra: { ...snapshot().extra, chatMetadata, chat },
+    });
+    assert.equal(env.evaluate('{{getvar::agent_mood}}|{{getvar::plain}}'), '|kept');
+    assert.equal(env.evaluate('{{groupPresent}}|{{groupAway}}|{{sceneLocation}}|{{groupHeard::0}}|{{groupHeard::1}}'),
+        'Kit, Mira|Nova|The archive|Kit, Mira|');
+});

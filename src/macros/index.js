@@ -20,6 +20,8 @@ import { evaluateLegacyMacros } from './legacy-macros.js';
 import { assertServerMacroVocabulary } from './browser-only.js';
 import { enhancedMacroDefinitions } from './enhanced.js';
 import { normaliseMacroState } from '../../public/scripts/extensions/third-party/MacroEnhanced/src/chat-state.js';
+import { readGroupScene, readGroupSceneRules } from '../../public/scripts/group-chat-visibility.js';
+import { heardBy } from '../../public/scripts/group-chat-heard-tools.js';
 
 export { MacroEngine, MacroRegistry };
 export {
@@ -33,6 +35,26 @@ export {
 };
 
 export { evaluateLegacyMacros } from './legacy-macros.js';
+
+/** The page's scene macro data, read from a saved group chat. Lines the speaker missed read as unheard. */
+function savedGroupScene(members, metadata, chat) {
+    if (!Array.isArray(members) || !members.length) return null;
+    const avatars = members.map(member => member.avatar);
+    const names = new Map(members.map(member => [member.avatar, member.name]));
+    const nameOf = avatar => names.get(avatar) ?? String(avatar).replace(/\.[^.]+$/, '');
+    const scene = readGroupScene(metadata, avatars);
+    const rules = readGroupSceneRules(metadata);
+    return {
+        present: avatars.filter(avatar => !scene.away.includes(avatar)).map(nameOf).join(', '),
+        away: scene.away.map(nameOf).join(', '),
+        location: scene.location,
+        heard: messageId => {
+            const message = chat?.[messageId];
+            if (!message || message.extra?.group_scene_unheard) return '';
+            return heardBy(message, avatars, rules).map(nameOf).join(', ');
+        },
+    };
+}
 
 let registered = false;
 export function registerMacros() {
@@ -64,7 +86,9 @@ export function createMacroEnvironment(snapshot = {}, capabilities = {}, { readO
     const makeScope = (scope) => {
         const values = Object.assign(Object.create(null), data.variables?.[scope]);
         data.variables[scope] = values;
-        const get = name => readVariableValue(values[name]);
+        // A group speaker who missed a line reads Agent variables as empty, as in the page.
+        const hidden = name => Boolean(snapshot.hiddenVariablePrefix) && String(name).startsWith(snapshot.hiddenVariablePrefix);
+        const get = name => hidden(name) ? '' : readVariableValue(values[name]);
         const set = (name, value) => {
             assertWritable(scope);
             if (readOnly) return '';
@@ -92,7 +116,7 @@ export function createMacroEnvironment(snapshot = {}, capabilities = {}, { readO
         };
         return {
             get, set, add, inc: name => add(name, 1), dec: name => add(name, -1),
-            has: name => Object.hasOwn(values, name),
+            has: name => !hidden(name) && Object.hasOwn(values, name),
             del: name => {
                 assertWritable(scope);
                 if (readOnly) return;
@@ -133,6 +157,7 @@ export function createMacroEnvironment(snapshot = {}, capabilities = {}, { readO
             },
             ...data.extra,
             ...capabilities,
+            groupScene: data.extra.groupScene ?? savedGroupScene(data.groupMembers, data.extra.chatMetadata, data.extra.chat),
             powerUser: { ...data.extra.powerUser, instruct: data.extra.powerUser?.instruct ?? {},
                 sysprompt: data.extra.powerUser?.sysprompt ?? {}, context: data.extra.powerUser?.context ?? {} },
             variables: { local: makeScope('local'), global: makeScope('global') },
