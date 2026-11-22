@@ -11,6 +11,12 @@ export function readGroupSceneRules(metadata) {
     return Array.isArray(seesAll) && seesAll.length ? { seesAll: [...seesAll] } : {};
 }
 
+/** Members whose cards a joined-cards prompt includes: everyone still in the scene, and always the speakers. */
+export function groupSceneCardMembers(metadata, members, speakers = []) {
+    const away = readGroupScene(metadata, members).away;
+    return members.filter(avatar => speakers.includes(avatar) || !away.includes(avatar));
+}
+
 export function groupMessageAudience(scene, members, whisperTargets = []) {
     const present = members.filter(avatar => !scene.away.includes(avatar));
     return { present, whisper_to: [...whisperTargets] };

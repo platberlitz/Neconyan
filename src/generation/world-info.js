@@ -32,6 +32,7 @@ import { captureRoleplayToolBindings } from './roleplay-tool-bindings.js';
 import { activeRoleplayAuthorNote, isWorldInfoAuthorNoteActive, selectRoleplayPromptRecords, savedRoleplayMacroSnapshot } from './roleplay-prompt.js';
 import { evaluateCharacterPurrks } from '../purrks.js';
 import { blankUnheardGroupRecords, groupViewerMissedLines } from './roleplay-group-scene.js';
+import { groupSceneCardMembers } from '../../public/scripts/group-chat-visibility.js';
 
 /**
  * Adds active Purrk text after a card field. Without Purrks the field stays exactly as saved,
@@ -353,6 +354,7 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
         const group = source.locator.group ? readRoleplayEntityLocked(lease, 'group', source.groupId).data : null;
         const members = group ? group.members.map(member => ({ avatar: member,
             card: member === avatar ? character.data : readRoleplayEntityLocked(lease, 'character', member).data })) : [];
+        const cardMembers = group ? groupSceneCardMembers(saved.records[0].chat_metadata, group.members, [avatar]) : [];
         const memberName = member => member.card?.data?.name ?? member.card?.name;
         const names = selectedBooks(settings, saved, character, avatar, persona.lorebook);
         const hookPolicy = captureWorldInfoHookPolicy(base.directories, savedSettings,
@@ -442,7 +444,7 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             if (saved.locator.group) {
                 const group = readRoleplayEntityLocked(lease, 'group', source.groupId).data;
                 if (group.generation_mode !== 0) {
-                    depthPrompts = group.members.filter(member => member === avatar || !group.disabled_members?.includes(member))
+                    depthPrompts = cardMembers.filter(member => member === avatar || !group.disabled_members?.includes(member))
                         .map(member => {
                             const card = member === avatar ? character : readRoleplayEntityLocked(lease, 'character', member);
                             const memberPurrks = evaluateCharacterPurrks(card.data?.data ?? card.data, {
@@ -516,7 +518,7 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             promptSettings: Object.fromEntries(['instruct', 'context', 'sysprompt', 'collapse_newlines', 'strip_examples', 'token_padding', 'user_prompt_bias']
                 .filter(key => settings.power_user?.[key] !== undefined).map(key => [key, structuredClone(settings.power_user[key])])),
             groupPrompt: group?.generation_mode ? { mode: group.generation_mode, prefix: group.generation_mode_join_prefix ?? '',
-                suffix: group.generation_mode_join_suffix ?? '', members: members.map(member => {
+                suffix: group.generation_mode_join_suffix ?? '', members: members.filter(member => cardMembers.includes(member.avatar)).map(member => {
                     const memberPurrks = evaluateCharacterPurrks(member.card.data ?? member.card, {
                         chatMetadata: saved.records[0].chat_metadata,
                         messages: blankUnheardGroupRecords(promptRecords, source, member.avatar).slice(1),
