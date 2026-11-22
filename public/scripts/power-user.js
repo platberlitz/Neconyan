@@ -427,7 +427,8 @@ function ensureNativeChatStyleStylesheet() {
     link.type = 'text/css';
     link.href = NATIVE_CHAT_STYLE_STYLESHEET_HREF;
 
-    const themeStylesheet = document.querySelector('link[href^="css/neconyan-theme.css"]');
+    // The server can rewrite the theme URL. Keep mobile overrides later in the cascade.
+    const themeStylesheet = document.getElementById('neconyan-theme-stylesheet');
     if (themeStylesheet) {
         themeStylesheet.after(link);
         return;
