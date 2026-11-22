@@ -90,6 +90,7 @@
 - PR #866 (2026-11-22) `feat(groups): add 'Only with the group' memory mode`
 - PR #867 (2026-11-22) `fix(conversation): let Roleplay group asides follow the scene`
 - PR #868 (2026-11-22) `perf(mewmory): release unused archive data during extraction`
+- PR #869 (2026-11-22) `chore(release): start staging at 1.6.0`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
