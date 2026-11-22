@@ -122,6 +122,7 @@ function changeInstructions({ lore, character, chat, members, notebook, persona,
     if (problems) kinds.push([
         'Shared problem findings come from Neconyan\'s fixed checks, not guesses. Go through them by severity, explain each cause in plain words, say which points are certain checker findings and which are your own judgement, and offer fixes through the review cards below.',
         'Treat a clean item as clean: do not invent problems for it. A finding marked info is context or a measurement, not a fault.',
+        'When Lorebook activation trace is shared, use it to answer why an entry did not trigger, quote its reason, and offer the fix as an activation edit through the review card.',
     ].join('\n'));
     if (mewmory) kinds.push([
         'Mewmory corrections (only records listed under mewmory_context, and only kinds entity, state, event, relationship, knowledge or commitment):',
@@ -179,12 +180,21 @@ function changeInstructions({ lore, character, chat, members, notebook, persona,
         NOTE_TOOL_NOTICE,
     ].join('\n'));
     if (lore) {
+        const activationLines = problems
+            ? [
+                '- Optional activation fields on add or edit (include only fields you are changing; unknown or out-of-range values are refused): keysecondary (string[]), selective (boolean), selectiveLogic (0=AND ANY, 1=NOT ALL, 2=NOT ANY, 3=AND ALL), constant (boolean), probability (integer 0-100), useProbability (boolean), order (integer 0-9999), position (0=Before Char Defs, 1=After Char Defs, 2=Before AN, 3=After AN, 4=At Depth, 5=Before EM, 6=After EM, 7=Outlet), role (0=System, 1=User, 2=Assistant, or null when not At Depth), outletName (string), depth (integer 0-1000), scanDepth (integer 0-1000, or null for book default), caseSensitive (boolean or null for book default), matchWholeWords (boolean or null for book default), excludeRecursion (boolean), preventRecursion (boolean), delayUntilRecursion (boolean or integer 0-1000), group (string), groupOverride (boolean), groupWeight (integer 1-999999), useGroupScoring (boolean or null for book default), ignoreBudget (boolean), sticky (integer 1-10000 or null), cooldown (integer 1-10000 or null), delay (integer 1-10000 or null), disable (boolean).',
+                '- For a disabled entry listed under Lorebook details, you may propose activation edits (such as "disable":false) without inventing content; never propose edits to entries hidden from Agents.',
+            ]
+            : [
+                '- Add or edit blocks may also include optional activation settings (such as constant, disable, keysecondary, selective, selectiveLogic, probability, order, position, depth, scanDepth, caseSensitive, matchWholeWords, recursion, inclusion group or timed-effect fields) using Neconyan\'s entry field names.',
+            ];
         kinds.push([
             'Lorebook entries (only books listed in the context):',
             '{"type":"lorebook","action":"add","book":"<book name>","title":"<entry title>","keys":["<keyword>"],"content":"<entry text>","constant":false,"reason":"<why>"}',
             '{"type":"lorebook","action":"edit","book":"<book name>","uid":<entry uid>,"title":"<optional new title>","keys":["<optional new keywords>"],"content":"<optional new text>","reason":"<why>"}',
             '{"type":"lorebook","action":"delete","book":"<book name>","uid":<entry uid>,"reason":"<why>"}',
             ...LORE_RULES.map(rule => `- ${rule}`),
+            ...activationLines,
         ].join('\n'));
     }
     if (character) {
@@ -250,7 +260,7 @@ export function buildScratchpadSystemPrompt({ assistant, gender, persona: savedP
     ];
     const instructions = typeof customPrompt === 'string' && customPrompt.trim()
         ? [customPrompt, contextNotice && !customPrompt.includes(contextNotice) ? contextNotice : '', webSearch ? WEB_SEARCH_INSTRUCTIONS : '', webPages ? WEB_PAGES_INSTRUCTIONS : '',
-            capabilities.notebook || capabilities.persona || capabilities.preset?.length || capabilities.agents || capabilities.authorsNote || capabilities.regex || capabilities.cssSnippets || capabilities.dialogueColors || capabilities.mewmory || capabilities.problems || generalLore ? changeInstructions({ lore: generalLore, notebook: capabilities.notebook, persona: capabilities.persona, preset: capabilities.preset, agents: capabilities.agents, authorsNote: capabilities.authorsNote, regex: capabilities.regex, cssSnippets: capabilities.cssSnippets, dialogueColors: capabilities.dialogueColors, mewmory: capabilities.mewmory, problems: capabilities.problems }) : ''].filter(Boolean).join('\n\n')
+            capabilities.notebook || capabilities.persona || capabilities.preset?.length || capabilities.agents || capabilities.authorsNote || capabilities.regex || capabilities.cssSnippets || capabilities.dialogueColors || capabilities.mewmory || capabilities.problems || capabilities.lore ? changeInstructions({ lore: Boolean(capabilities.lore), notebook: capabilities.notebook, persona: capabilities.persona, preset: capabilities.preset, agents: capabilities.agents, authorsNote: capabilities.authorsNote, regex: capabilities.regex, cssSnippets: capabilities.cssSnippets, dialogueColors: capabilities.dialogueColors, mewmory: capabilities.mewmory, problems: capabilities.problems }) : ''].filter(Boolean).join('\n\n')
         : sections.filter(Boolean).join('\n\n');
     const reference = help ? `Neconyan reference for app questions (use it only when ${names.user} asks how something in Neconyan works):\n${help}` : '';
     const preferences = userInstructions.trim() ? `The user's global Scratchpad instructions for you:\n${userInstructions}` : '';

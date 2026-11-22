@@ -8,6 +8,13 @@ import { CHARACTER_FIELDS, characterField, characterFieldName } from './characte
 import { PERSONA_FIELDS, personaDraft, personaFieldValue } from './persona-fields.js';
 import { validPresetValue } from './preset-fields.js';
 import { scenarioNoteSelector } from './scenario-note-references.js';
+import {
+    assertAllowedLorebookKeys,
+    EXTRA_ACTIVATION_FIELDS,
+    LOREBOOK_ACTIVATION_FIELDS,
+    LOREBOOK_EDITABLE_FIELDS,
+    validateLorebookField,
+} from './lorebook-fields.js';
 
 export const CHANGE_FENCE = 'scratchpad-change';
 const FENCE_PATTERN = /```scratchpad-change[^\n]*\n([\s\S]*?)```/g;
@@ -115,30 +122,46 @@ export function normaliseChange(value) {
     if (value.type === 'lorebook') {
         const book = text(value.book, 300).trim();
         if (!book) fail('This lorebook change does not say which lorebook.');
+        if (!['add', 'edit', 'delete'].includes(value.action)) fail('This lorebook change has an unknown action.');
+        assertAllowedLorebookKeys(value, value.action, fail);
         if (value.action === 'add') {
+            if (value.content !== undefined && typeof value.content !== 'string') fail('Lorebook content must be text.');
             const content = text(value.content);
             if (!content.trim()) fail('This new lorebook entry has no content.');
-            return {
+            if (value.title !== undefined && typeof value.title !== 'string') fail('Lorebook title must be text.');
+            const change = {
                 type: 'lorebook', action: 'add', book, reason,
-                title: text(value.title, 300).trim(),
-                keys: stringList(value.keys),
+                title: value.title === undefined ? '' : text(value.title, 300).trim(),
+                keys: value.keys === undefined ? [] : validateLorebookField('keys', value.keys, fail),
                 content,
-                constant: value.constant === true,
+                constant: value.constant === undefined ? false : validateLorebookField('constant', value.constant, fail),
             };
-        }
-        if (value.action === 'edit' || value.action === 'delete') {
-            const uid = messageNumber(value.uid);
-            if (uid === null) fail('This lorebook change does not say which entry.');
-            if (value.action === 'delete') return { type: 'lorebook', action: 'delete', book, uid, reason };
-            const change = { type: 'lorebook', action: 'edit', book, uid, reason };
-            if (typeof value.title === 'string') change.title = text(value.title, 300).trim();
-            if (value.keys !== undefined) change.keys = stringList(value.keys);
-            if (typeof value.content === 'string') change.content = text(value.content);
-            if (typeof value.constant === 'boolean') change.constant = value.constant;
-            if (!['title', 'keys', 'content', 'constant'].some(key => key in change)) fail('This lorebook edit does not change anything.');
+            for (const field of EXTRA_ACTIVATION_FIELDS) {
+                if (Object.hasOwn(value, field) && value[field] !== undefined) {
+                    change[field] = validateLorebookField(field, value[field], fail);
+                }
+            }
             return change;
         }
-        fail('This lorebook change has an unknown action.');
+        const uid = messageNumber(value.uid);
+        if (uid === null) fail('This lorebook change does not say which entry.');
+        if (value.action === 'delete') return { type: 'lorebook', action: 'delete', book, uid, reason };
+        const change = { type: 'lorebook', action: 'edit', book, uid, reason };
+        if (Object.hasOwn(value, 'title') && value.title !== undefined) {
+            if (typeof value.title !== 'string') fail('Lorebook title must be text.');
+            change.title = text(value.title, 300).trim();
+        }
+        if (Object.hasOwn(value, 'content') && value.content !== undefined) {
+            if (typeof value.content !== 'string') fail('Lorebook content must be text.');
+            change.content = text(value.content);
+        }
+        for (const field of LOREBOOK_ACTIVATION_FIELDS) {
+            if (Object.hasOwn(value, field) && value[field] !== undefined) {
+                change[field] = validateLorebookField(field, value[field], fail);
+            }
+        }
+        if (!LOREBOOK_EDITABLE_FIELDS.some(key => key in change)) fail('This lorebook edit does not change anything.');
+        return change;
     }
     if (value.type === 'persona' || value.type === 'persona-note') {
         if (value.action === 'create') {

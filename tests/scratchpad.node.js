@@ -105,6 +105,48 @@ test('problem findings are offered only when the switch is on, and never for a n
     assert.match(buildScratchpadSystemPrompt({ assistant: 'miso', sourceKind: 'general', capabilities: { problems: true } }).text, /fixed checks, not guesses/);
 });
 
+test('lorebook activation field instructions stay brief when Problem checks are off and expand with trace guidance when on', () => {
+    for (const customPrompt of ['', 'Be terse.']) {
+        const brief = buildScratchpadSystemPrompt({
+            assistant: 'miso',
+            capabilities: { lore: true, problems: false },
+            customPrompt,
+        }).text;
+        assert.match(brief, /optional activation settings/);
+        assert.doesNotMatch(brief, /Optional activation fields on add or edit/);
+        assert.doesNotMatch(brief, /Lorebook activation trace/);
+
+        const full = buildScratchpadSystemPrompt({
+            assistant: 'miso',
+            capabilities: { lore: true, problems: true },
+            customPrompt,
+        }).text;
+        assert.match(full, /When Lorebook activation trace is shared, use it to answer why an entry did not trigger/);
+        assert.match(full, /Optional activation fields on add or edit/);
+        assert.match(full, /selectiveLogic/);
+        assert.match(full, /delayUntilRecursion/);
+        assert.match(full, /useGroupScoring/);
+        assert.match(full, /disabled entry listed under Lorebook details/);
+    }
+
+    const generalFull = buildScratchpadSystemPrompt({
+        assistant: 'miso',
+        sourceKind: 'general',
+        capabilities: { lore: true, problems: true },
+        customPrompt: 'Be terse.',
+    }).text;
+    assert.match(generalFull, /Optional activation fields on add or edit/);
+    assert.match(generalFull, /When Lorebook activation trace is shared/);
+
+    const notePrompt = buildScratchpadSystemPrompt({
+        assistant: 'miso',
+        sourceKind: 'notebook',
+        capabilities: normaliseCapabilities({ lore: true, problems: true }, 'notebook'),
+    }).text;
+    assert.doesNotMatch(notePrompt, /Full optional activation fields/);
+    assert.doesNotMatch(notePrompt, /Lorebook activation trace/);
+});
+
 test('dialogue colour changes are offered only when Dialogue Colors are shared, and never for a note', () => {
     assert.equal(store.normaliseSettings({}).include.dialogueColors, false);
     assert.equal(store.normaliseSettings({ include: { dialogueColors: true } }).include.dialogueColors, true);

@@ -73,7 +73,7 @@ function activationLine(entry) {
     const secondary = Array.isArray(entry.secondaryKeys) ? entry.secondaryKeys : [];
     const onOff = value => value ? 'yes' : 'no';
     const defaulted = (value, label) => value === undefined || value === null || value === '' ? `${label}: book default` : `${label}: ${value}`;
-    return [
+    const parts = [
         `- [shared] ${valueText(entry.title) || `Entry ${entry.uid}`} | uid: ${entry.uid} | keys: ${keys.length ? keys.join(', ') : 'none'}`,
         `secondary keys: ${secondary.length ? secondary.join(', ') : 'none'}`,
         `logic: ${LOGIC_LABELS[Number(entry.selectiveLogic) || 0] || Number(entry.selectiveLogic) || 0}`,
@@ -82,19 +82,40 @@ function activationLine(entry) {
         `hidden from Agents: ${onOff(entry.hiddenFromAgents)}`,
         `selective: ${onOff(entry.selective)}`,
         `probability: ${entry.probability === undefined || entry.probability === null ? 100 : entry.probability}%`,
+    ];
+    if (entry.useProbability === false) parts.push('use probability: no');
+    parts.push(
         `order: ${entry.order ?? 100}`,
         `position: ${entry.position ?? 0}`,
         defaulted(entry.depth, 'depth'),
         defaulted(entry.scanDepth, 'scan depth'),
-        defaulted(entry.caseSensitive === undefined ? '' : onOff(entry.caseSensitive), 'case sensitive'),
-        defaulted(entry.matchWholeWords === undefined ? '' : onOff(entry.matchWholeWords), 'whole words'),
+        defaulted(entry.caseSensitive === undefined || entry.caseSensitive === null ? '' : onOff(entry.caseSensitive), 'case sensitive'),
+        defaulted(entry.matchWholeWords === undefined || entry.matchWholeWords === null ? '' : onOff(entry.matchWholeWords), 'whole words'),
         `exclude recursion: ${onOff(entry.excludeRecursion)}`,
         `prevent recursion: ${onOff(entry.preventRecursion)}`,
-        `group: ${valueText(entry.group) || 'none'}`,
+    );
+    if (entry.delayUntilRecursion) {
+        const level = entry.delayUntilRecursion === true ? 1 : Number(entry.delayUntilRecursion);
+        parts.push(`delay until recursion: level ${level}`);
+    }
+    const groupText = valueText(entry.group);
+    parts.push(`group: ${groupText || 'none'}`);
+    if (groupText) {
+        if (entry.groupOverride) parts.push('group override: yes');
+        if (entry.groupWeight !== undefined && entry.groupWeight !== null && Number(entry.groupWeight) !== 100) {
+            parts.push(`group weight: ${entry.groupWeight}`);
+        }
+        if (typeof entry.useGroupScoring === 'boolean') {
+            parts.push(`group scoring: ${onOff(entry.useGroupScoring)}`);
+        }
+    }
+    if (entry.ignoreBudget) parts.push('ignore budget: yes');
+    parts.push(
         `sticky: ${Number(entry.sticky) || 0}`,
         `cooldown: ${Number(entry.cooldown) || 0}`,
         `delay: ${Number(entry.delay) || 0}`,
-    ].join(' | ');
+    );
+    return parts.join(' | ');
 }
 
 function skippedLine(entry) {
@@ -102,15 +123,18 @@ function skippedLine(entry) {
     return `- not shared: ${valueText(entry.title) || `Entry ${entry.uid}`} | uid: ${entry.uid} | keys: ${keys.length ? keys.join(', ') : 'none'} | reason: ${entry.reason}`;
 }
 
-const MAX_DETAIL_LINES = 400;
-const MAX_DETAIL_CHARS = 24_000;
+export const MAX_DETAIL_LINES = 400;
+export const MAX_DETAIL_CHARS = 24_000;
 
 /**
  * Formats the full lorebook detail that accompanies the problem checks.
+ * When `traced` is true, entries whose only skip reason was 'no keyword matched'
+ * are left to the activation trace section so each entry is explained once.
  * @param {{books?: object[]}} lore Lore returned by collectLore
+ * @param {{traced?: boolean, maxLines?: number, maxChars?: number}} [options]
  * @returns {string} The Lorebook details section body
  */
-export function formatLorebookDetails(lore) {
+export function formatLorebookDetails(lore, { traced = false, maxLines = MAX_DETAIL_LINES, maxChars = MAX_DETAIL_CHARS } = {}) {
     const books = Array.isArray(lore?.details?.books) ? lore.details.books : [];
     const lines = [];
     let cut = 0;
@@ -127,12 +151,13 @@ export function formatLorebookDetails(lore) {
         const limited = (book.shared ?? []).filter(entry => !entry.included && entry.shareReason === 'limit').length;
         for (const entry of book.shared ?? []) {
             if (entry.included || !entry.shareReason || entry.shareReason === 'limit') continue;
+            if (traced && entry.shareReason === 'no keyword matched') continue;
             block.push(skippedLine({ ...entry, reason: entry.shareReason }));
         }
         if (book.hiddenCount) block.push(`- ${book.hiddenCount} ${book.hiddenCount === 1 ? 'entry is hidden from Agents and was not shared.' : 'entries are hidden from Agents and were not shared.'}`);
         if (limited) block.push(`- ${limited} more ${limited === 1 ? 'entry was' : 'entries were'} left out by the sharing size limits.`);
         for (const line of block) {
-            if (lines.length >= MAX_DETAIL_LINES || used + line.length > MAX_DETAIL_CHARS) {
+            if (lines.length >= maxLines || used + line.length > maxChars) {
                 cut++;
                 continue;
             }
