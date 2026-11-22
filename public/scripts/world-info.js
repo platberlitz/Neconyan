@@ -27,7 +27,8 @@ import { renderTemplateAsync } from './templates.js';
 import { t } from './i18n.js';
 import { accountStorage } from './util/AccountStorage.js';
 import { getOrCreatePersonaDescriptor, setPersonaDescription, updatePersonaLorebookActions, user_avatar } from './personas.js';
-import { escapeCharacterBookRegex, getFreeCharacterBookEntryId, normalizeCharacterBookPosition, serializeCharacterBookKeys, serializeWorldInfoEntry } from './world-info-character-book.js';
+import { getFreeCharacterBookEntryId, serializeCharacterBookKeys, serializeWorldInfoEntry } from './world-info-character-book.js';
+import { convertCharacterBookEntry, worldInfoPositions } from './world-info-character-book-entry.js';
 import { detectEmbeddedLorebookCandidates, findMatchingLorebookName, getLinkedAuxBooks, isEmbeddedBookLinked } from './world-info-batch-helpers.js';
 import { applyWorldInfoTimedEffects, filterWorldInfoInclusionGroups, getTimedEffectWindow, matchesWorldInfoEntry, normalizeWorldInfoKey, parseWorldInfoKeyRegex, passesWorldInfoProbability, prepareWorldInfoEntries, resolveWorldInfoTimedEffects } from './world-info-scan-core.js';
 import { parseLorebookImport } from './neconyan-lorebook-tools-core.js';
@@ -1022,16 +1023,7 @@ export function updateWorldInfoSettings(settings, activeWorldInfo) {
     saveSettingsDebounced();
 }
 
-export const world_info_position = {
-    before: 0,
-    after: 1,
-    ANTop: 2,
-    ANBottom: 3,
-    atDepth: 4,
-    EMTop: 5,
-    EMBottom: 6,
-    outlet: 7,
-};
+export const world_info_position = worldInfoPositions;
 
 export const wi_anchor_position = {
     before: 0,
@@ -3432,7 +3424,8 @@ function getWIOriginalDataIndex(data, uid) {
     if (Number.isInteger(mappedIndex) && data.originalData?.entries?.[mappedIndex]) {
         return mappedIndex;
     }
-    return data.originalData?.entries?.findIndex(x => String(x.id ?? x.uid) === String(uid)) ?? -1;
+    if (data.originalDataUidMap) return -1;
+    return data.originalData?.entries?.findIndex(x => String(x?.id ?? x?.uid) === String(uid)) ?? -1;
 }
 
 // Neconyan: built-in extension writers need one atomic resync after populating a new imported-book entry.
@@ -6561,56 +6554,7 @@ export function convertCharacterBook(characterBook) {
 
     characterBook.entries.forEach((entry, index) => {
         const uid = getFreeWorldEntryUid(result);
-        const toRegex = key => entry.use_regex && !parseRegexFromString(key)
-            ? `/${escapeCharacterBookRegex(key)}/`
-            : key;
-        result.entries[uid] = {
-            ...newWorldInfoEntryTemplate,
-            uid,
-            key: Array.isArray(entry.keys) ? entry.keys.map(toRegex) : [],
-            keysecondary: Array.isArray(entry.secondary_keys) ? entry.secondary_keys.map(toRegex) : [],
-            comment: entry.comment || '',
-            content: entry.content,
-            constant: entry.constant || false,
-            selective: entry.selective || false,
-            order: entry.insertion_order,
-            position: normalizeCharacterBookPosition(entry.extensions?.position, entry.position, world_info_position),
-            excludeRecursion: entry.extensions?.exclude_recursion ?? false,
-            preventRecursion: entry.extensions?.prevent_recursion ?? false,
-            delayUntilRecursion: entry.extensions?.delay_until_recursion ?? false,
-            disable: entry.enabled === false,
-            addMemo: !!entry.comment,
-            displayIndex: entry.extensions?.display_index ?? index,
-            probability: entry.extensions?.probability ?? 100,
-            useProbability: entry.extensions?.useProbability ?? true,
-            depth: entry.extensions?.depth ?? DEFAULT_DEPTH,
-            selectiveLogic: entry.extensions?.selectiveLogic ?? world_info_logic.AND_ANY,
-            outletName: entry.extensions?.outlet_name ?? '',
-            group: entry.extensions?.group ?? '',
-            groupOverride: entry.extensions?.group_override ?? false,
-            groupWeight: entry.extensions?.group_weight ?? DEFAULT_WEIGHT,
-            scanDepth: entry.extensions?.scan_depth ?? null,
-            caseSensitive: entry.case_sensitive ?? entry.extensions?.case_sensitive ?? null,
-            matchWholeWords: entry.extensions?.match_whole_words ?? null,
-            useGroupScoring: entry.extensions?.use_group_scoring ?? null,
-            characterFilter: entry.character_filter,
-            automationId: entry.extensions?.automation_id ?? '',
-            role: entry.extensions?.role ?? extension_prompt_roles.SYSTEM,
-            vectorized: entry.extensions?.vectorized ?? false,
-            sticky: entry.extensions?.sticky ?? null,
-            cooldown: entry.extensions?.cooldown ?? null,
-            delay: entry.extensions?.delay ?? null,
-            matchPersonaDescription: entry.extensions?.match_persona_description ?? false,
-            matchCharacterDescription: entry.extensions?.match_character_description ?? false,
-            matchCharacterPersonality: entry.extensions?.match_character_personality ?? false,
-            matchCharacterDepthPrompt: entry.extensions?.match_character_depth_prompt ?? false,
-            matchScenario: entry.extensions?.match_scenario ?? false,
-            matchCreatorNotes: entry.extensions?.match_creator_notes ?? false,
-            extensions: entry.extensions ?? {},
-            triggers: entry.extensions?.triggers || [],
-            ignoreBudget: entry.extensions?.ignore_budget ?? false,
-            agentBlacklisted: entry.extensions?.agent_blacklisted ?? entry.agentBlacklisted ?? false,
-        };
+        result.entries[uid] = convertCharacterBookEntry(entry, uid, index);
         result.originalDataUidMap[uid] = index;
     });
 

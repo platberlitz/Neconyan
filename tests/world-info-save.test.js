@@ -7,6 +7,7 @@ import lodash from 'lodash';
 import { event_types } from '../public/scripts/events.js';
 import { StructuredCloneMap } from '../public/scripts/util/StructuredCloneMap.js';
 import { escapeCharacterBookRegex, getFreeCharacterBookEntryId, normalizeCharacterBookPosition, serializeWorldInfoEntry } from '../public/scripts/world-info-character-book.js';
+import { convertCharacterBookEntry } from '../public/scripts/world-info-character-book-entry.js';
 import { NECONYAN_LOREBOOK_FOLDERS_KEY, normalizeNeconyanLorebookFolders, renameNeconyanLorebookAssignment, unfileNeconyanLorebook } from '../public/scripts/neconyan-lorebook-folders.js';
 import { sendCompanionResultToLorebook } from '../public/scripts/extensions/in-chat-agents/companion/lorebook-sender.js';
 import { planLorebookRepair, repairChangeText, repairDefectText } from '../public/scripts/neconyan-lorebook-repair.js';
@@ -77,7 +78,7 @@ function createHost(initialBook = book()) {
         lodash, structuredClone, Map, WeakMap, Set, TextEncoder, FormData, console,
         escapeHtml: value => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'),
         callGenericPopup: jest.fn(async () => {}), POPUP_TYPE: { TEXT: 1, CONFIRM: 2 },
-        escapeCharacterBookRegex, getFreeCharacterBookEntryId, normalizeCharacterBookPosition, serializeWorldInfoEntry,
+        escapeCharacterBookRegex, getFreeCharacterBookEntryId, normalizeCharacterBookPosition, serializeWorldInfoEntry, convertCharacterBookEntry,
         NECONYAN_LOREBOOK_FOLDERS_KEY, normalizeNeconyanLorebookFolders, renameNeconyanLorebookAssignment, unfileNeconyanLorebook,
         planLorebookRepair, repairChangeText, repairDefectText, planWorldInfoVectorization,
         setTimeout, clearTimeout, event_types,
