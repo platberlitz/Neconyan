@@ -126,21 +126,21 @@ function checkPrompts() {
     if (sourceCharacters(source).length) {
         prompts.push({
             label: t`Check my card`,
-            text: t`Check the shared character card for problems using the fixed checks in the shared context. Go through the findings by severity, explain each cause in plain words, say which findings are certain checker results and which are your own judgement, and offer fixes through the review cards.`,
+            text: t`Check the shared card for problems and explain how to fix them.`,
             include: { card: true },
         });
     }
     if ((source.kind === 'roleplay' || (general && include.preset)) && currentPresetName()) {
         prompts.push({
             label: t`Check my preset`,
-            text: t`Check the shared preset for problems using the fixed checks in the shared context. Go through the findings by severity, explain each cause in plain words, say which findings are certain checker results and which are your own judgement, and offer fixes through the review cards.`,
+            text: t`Check the shared preset for problems and explain how to fix them.`,
             include: { preset: true },
         });
     }
     if (general ? Boolean(settings.lorebook) : sourceLorebookNames(source).length) {
         prompts.push({
             label: t`Check my lorebook`,
-            text: t`Check the shared lorebook for problems using the fixed checks in the shared context. Go through the findings by severity, explain each cause in plain words, say which findings are certain checker results and which are your own judgement, and offer fixes through the review cards.`,
+            text: t`Check the shared lorebook for problems and explain how to fix them.`,
             include: { lore: true },
         });
     }
@@ -1335,7 +1335,15 @@ function quickPromptChips() {
 /** Fills the composer, after switching on the sharing a check prompt needs for this session. */
 async function takePrompt(prompt) {
     if (prompt.include) {
-        await updateSettings(settings => ({ include: { ...settings.include, problems: true, ...prompt.include } }), { rerenderContext: app.tab === 'context' });
+        const before = currentSettings().include || {};
+        const changed = [];
+        if (!before.problems) changed.push(t`Problem checks`);
+        const labels = { card: t`Character cards`, preset: t`Current preset`, lore: t`Lorebook entries` };
+        for (const [key, label] of Object.entries(labels)) {
+            if (prompt.include[key] && !before[key]) changed.push(label);
+        }
+        const saved = await updateSettings(settings => ({ include: { ...settings.include, problems: true, ...prompt.include } }), { rerenderContext: app.tab === 'context' });
+        if (saved && changed.length) toastr.info(t`Turned on ${changed.join(' and ')} for this session.`, t`Scratchpad`);
     }
     usePrompt(prompt.text);
 }
