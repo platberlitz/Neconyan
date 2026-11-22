@@ -11,7 +11,7 @@ import { lexicalSearch } from '../public/scripts/util/lexical-search.js';
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
 const { hash, newState, syncSources } = await import('../src/mewmory/core.js');
 const { defaultConfig, roleVersion } = await import('../src/mewmory/models.js');
-const { hybridCandidates, mergeVectorIndex, rankedCandidates, searchDocuments, searchableVectorDimension, updateIndex } = await import('../src/mewmory/search.js');
+const { cosine, hybridCandidates, mergeVectorIndex, rankedCandidates, searchDocuments, searchableVectorDimension, updateIndex } = await import('../src/mewmory/search.js');
 const { mutateState, readState, readStateShared, statePath, writeJson } = await import('../src/mewmory/store.js');
 
 const locator = { avatar: 'Mara.png', chat: 'vector-reader', group: false };
@@ -140,6 +140,24 @@ test('256 documents and 32 deterministic queries retain separated rankings throu
             }
         }
     }
+});
+
+test('mixed rankings reuse the current query norm and retain exact cosine scores', () => {
+    const documents = [document('event:a', 'ferry'), document('event:b', 'harbour')];
+    const legacy = [1 + 2 ** -27, 0.125, 0];
+    const compact = [0.125, 1, 2 ** -140];
+    const entries = {
+        'event:a': { textHash: hash(documents[0].searchText), vector: legacy },
+        'event:b': compactEntry(hash(documents[1].searchText), compact),
+    };
+    const query = [0.912, 0.24, 0.911];
+    const settings = { ...options, mode: 'semantic', minSimilarity: 0 };
+    const scores = () => Object.fromEntries(actualRanking(documents, '', query, entries, settings)
+        .map(({ id, similarity }) => [id, similarity]));
+    const expected = () => ({ 'event:a': cosine(query, legacy), 'event:b': cosine(query, compact) });
+    assert.deepEqual(scores(), expected());
+    query.splice(0, 3, 0.11, 1.11723, 0.5);
+    assert.deepEqual(scores(), expected());
 });
 
 test('near ties and strict similarity thresholds use rounded documents and unchanged provider queries', t => {

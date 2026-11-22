@@ -38,6 +38,12 @@ export function cosine(left, right) {
     return a && b ? dot / Math.sqrt(a * b) : -1;
 }
 
+export function querySumOfSquares(query) {
+    let sum = 0;
+    for (let index = 0; index < query.length; index++) sum += query[index] ** 2;
+    return sum;
+}
+
 /** Read dimensions or score saved vectors without retaining their decoded components. */
 export function createVectorReader() {
     let scratch, floats;
@@ -68,19 +74,40 @@ export function createVectorReader() {
             }
             return length;
         },
-        similarity(entry, query) {
+        similarity(entry, query, querySquares) {
             const stored = representation(entry);
-            if (stored === 'vector') return legacyDimension(entry.vector, query.length) ? cosine(query, entry.vector) : null;
-            if (stored !== 'vectorF32LE' || !decode(entry.vectorF32LE, query.length)) return null;
-            let dot = 0, a = 0, b = 0;
-            for (let index = 0; index < query.length; index++) {
-                const right = floats ? floats[index] : scratch.readFloatLE(index * FLOAT32_BYTES);
-                if (!Number.isFinite(right)) return null;
-                dot += query[index] * right;
-                a += query[index] ** 2;
-                b += right ** 2;
+            if (stored === 'vector') {
+                const values = entry.vector;
+                if (!legacyDimension(values, query.length)) return null;
+                if (querySquares === undefined) return cosine(query, values);
+                let dot = 0, storedSquares = 0;
+                for (let index = 0; index < query.length; index++) {
+                    const value = values[index];
+                    dot += query[index] * value;
+                    storedSquares += value ** 2;
+                }
+                return querySquares && storedSquares ? dot / Math.sqrt(querySquares * storedSquares) : -1;
             }
-            return a && b ? dot / Math.sqrt(a * b) : -1;
+            if (stored !== 'vectorF32LE' || !decode(entry.vectorF32LE, query.length)) return null;
+            querySquares ??= querySumOfSquares(query);
+            let dot = 0, storedSquares = 0;
+            const values = floats;
+            if (values) {
+                for (let index = 0; index < query.length; index++) {
+                    const value = values[index];
+                    dot += query[index] * value;
+                    storedSquares += value ** 2;
+                }
+            } else {
+                for (let index = 0; index < query.length; index++) {
+                    const value = scratch.readFloatLE(index * FLOAT32_BYTES);
+                    dot += query[index] * value;
+                    storedSquares += value ** 2;
+                }
+            }
+            // Finite Float32 components cannot overflow this Float64 sum at the supported width.
+            if (!Number.isFinite(storedSquares)) return null;
+            return querySquares && storedSquares ? dot / Math.sqrt(querySquares * storedSquares) : -1;
         },
     };
 }

@@ -69,6 +69,7 @@ test('legacy lookup trusts the array shape and uses the original cosine', () => 
         const entry = { vector };
         assert.equal(reader.dimension(entry, 1), 1);
         assert.equal(reader.similarity(entry, [1]), cosine([1], vector));
+        assert.equal(reader.similarity(entry, [1], 1), cosine([1], vector));
     }
 });
 
@@ -107,15 +108,27 @@ test('compact decoding accepts equivalent alphabet and unused-bit aliases at the
     }
 });
 
-test('compact scoring and dimension lookup both reject a nonfinite tail in reused scratch', () => {
+test('compact scoring and dimension lookup reject nonfinite components in reused scratch', () => {
     const reader = createVectorReader();
     const query = [0.25, -0.125, 1];
     const encoded = fromDoubles(query);
     assert.equal(reader.similarity(encoded, query), 1);
-    const bytes = Buffer.from(encoded.vectorF32LE, 'base64');
-    bytes.writeUInt32LE(0x7fc00000, bytes.length - 4);
-    const invalid = { vectorF32LE: bytes.toString('base64') };
-    assert.equal(reader.similarity(invalid, query), null);
-    assert.equal(reader.dimension(invalid), 0);
+    for (const [index, bits] of [0x7f800000, 0xff800000, 0x7fc00000].entries()) {
+        const bytes = Buffer.from(encoded.vectorF32LE, 'base64');
+        bytes.writeUInt32LE(bits, index * 4);
+        const invalid = { vectorF32LE: bytes.toString('base64') };
+        assert.equal(reader.similarity(invalid, query), null);
+        assert.equal(reader.similarity(invalid, [0, 0, 0]), null);
+        assert.equal(reader.dimension(invalid), 0);
+    }
     assert.equal(reader.similarity(fromDoubles([1, 2]), [1, 2]), 1);
+    assert.equal(reader.similarity(fromDoubles([0, 0]), [1, 2]), -1);
+});
+
+test('the largest finite Float32 components do not overflow the stored sum of squares', () => {
+    const reader = createVectorReader();
+    const maxFloat32 = (2 - 2 ** -23) * 2 ** 127;
+    const stored = Array(32_768).fill(maxFloat32);
+    const query = stored.map((_, i) => i % 2 ? 0.5 : 1);
+    assert.equal(reader.similarity(fromDoubles(stored), query), referenceCosine(query, stored));
 });

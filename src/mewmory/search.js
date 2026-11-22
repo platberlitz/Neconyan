@@ -1,6 +1,6 @@
 import { currentRecords, eligibleRecords, fail, hash, refKey, sourceAt, sourceEligible } from './core.js';
 import { embed, roleVersion } from './models.js';
-import { createVectorReader } from './vector-storage.js';
+import { createVectorReader, querySumOfSquares } from './vector-storage.js';
 import { lexicalSearch } from '../../public/scripts/util/lexical-search.js';
 import { RAG_DEFAULTS } from '../../public/scripts/mewmory/rag-settings.js';
 export { cosine } from './vector-storage.js';
@@ -111,10 +111,11 @@ export function rankedCandidates(documents, query, vector, index, limit, options
     const semantic = [];
     if (vector && mode !== 'keyword') {
         const reader = createVectorReader();
+        const querySquares = querySumOfSquares(vector);
         for (const document of documents) {
             const entry = index[document.id];
             if (entry?.textHash !== hash(document.searchText)) continue;
-            const score = reader.similarity(entry, vector);
+            const score = reader.similarity(entry, vector, querySquares);
             if (score !== null && score > settings.minSimilarity) semantic.push({ document, score });
         }
         semantic.sort((a, b) => b.score - a.score);
