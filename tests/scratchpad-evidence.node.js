@@ -100,7 +100,7 @@ test('own job evidence skips other accounts, finished jobs and everything that c
     assert.ok(!JSON.stringify(evidence).includes('BOB_ONLY'));
 });
 
-test('admin evidence redacts crash reports and keeps only problem lines from the server log', t => {
+test('admin evidence redacts crash reports and keeps only warning and error lines from the server log', t => {
     const work = fs.mkdtempSync(path.join(os.tmpdir(), 'evidence-crash-'));
     t.after(() => fs.rmSync(work, { recursive: true, force: true }));
     initialiseCrashDiagnostics(work);
@@ -110,13 +110,17 @@ test('admin evidence redacts crash reports and keeps only problem lines from the
     console.error('Provider error: password=hunter2-planted from https://u:hunter2-planted@h.example');
     console.log('Chat text: my planted chat line');
     console.log('Server is listening');
+    // Prompt logging prints the whole request as ordinary output, one line per message.
+    const payload = { messages: [{ role: 'user', content: 'my planted chat line: I refused, the attempt failed, an error on my part, I cannot go on' }] };
+    console.log(`[ChatCompletions] openai request payload: {}\n${JSON.stringify(payload, null, 2)}`);
 
     const evidence = collectAdminEvidence();
     assert.equal(evidence.serverCrashes.total >= 1, true);
     assert.equal(evidence.serverCrashes.items[0].kind, 'uncaughtException');
     const lines = evidence.logLines.items.map(line => line.message).join('\n');
     assert.match(lines, /Provider error/);
-    assert.doesNotMatch(lines, /Server is listening|Chat text/);
+    assert.doesNotMatch(lines, /Server is listening|Chat text|refused|"content"/);
+    assert.ok(evidence.logLines.items.every(line => line.stream === 'stderr'));
     assertClean(evidence);
     assertClean(formatAppEvidence({ ...evidence }));
 });

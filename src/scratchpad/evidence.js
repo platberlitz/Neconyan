@@ -12,7 +12,6 @@ import { redactEvidenceText } from '../../public/scripts/scratchpad/evidence.js'
 const ITEM_LIMIT = 50;
 const SLOW_REQUEST_MS = 10000;
 const FAILED_JOB_STATES = new Set(['failed', 'interrupted', 'conflict']);
-const LOG_PROBLEM = /\b(?:error|warn(?:ing)?|fail(?:ed|ure|s)?|fatal|exception|unhandled|uncaught|crash(?:ed)?|panic|timed? ?out|timeout|denied|refused|reset|econn\w*|enoent|eacces|eperm|enospc|emfile|rejected|invalid|cannot|could not|unable)\b/i;
 
 function bounded(entries) {
     return { items: entries.slice(0, ITEM_LIMIT), total: entries.length };
@@ -98,9 +97,10 @@ export function collectAdminEvidence() {
         version: redactEvidenceText(report?.environment?.app?.version, 40),
     }));
     const snapshot = getServerLogSnapshot({ limit: 600 });
-    // Ordinary log lines can echo what was typed or sent, so only problems are shared.
+    // Only warnings and errors are shared. Ordinary output can hold whole prompts when prompt
+    // logging is on, and matching it for problem words would let chat text through.
     const lines = snapshot.entries
-        .filter(entry => entry.stream === 'stderr' || LOG_PROBLEM.test(entry.message))
+        .filter(entry => entry.stream === 'stderr')
         .reverse()
         .map(entry => ({ at: isoTime(entry.timestamp), stream: entry.stream, message: redactEvidenceText(entry.message, 300) }));
     return { serverCrashes: bounded(reports), logLines: bounded(lines) };
