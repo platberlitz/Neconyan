@@ -3,12 +3,12 @@
  * helpers, which are dependency-free, and adds rules specific to shared books.
  */
 import { checkLorebookHealth } from '../../neconyan-lorebook-health.js';
-import { canTestEntryKeys, keyTestVerdictText, testEntryKeys } from '../../neconyan-lorebook-keytest.js';
+import { canTestEntryKeys, testEntryKeys } from '../../neconyan-lorebook-keytest.js';
 import { formatTokenCount, measureTokenFootprint, worldInfoTokenBudget } from '../../neconyan-lorebook-tokens.js';
 
 function entryList(book) {
     return Object.entries(book?.entries ?? {})
-        .filter(([, entry]) => entry && typeof entry === 'object')
+        .filter(([, entry]) => entry && typeof entry === 'object' && !entry.agentBlacklisted)
         .map(([uid, entry]) => ({ ...entry, uid: entry.uid ?? uid }));
 }
 
@@ -62,19 +62,20 @@ export async function checkLorebook({ name, book, scanText = '', contextSize = 0
         maxPromptTokens: Number(contextSize) || 0,
         cap: Number(budgetSettings.cap ?? 0),
     });
-    const footprint = await measureTokenFootprint(book, { budget });
+    const footprint = await measureTokenFootprint({ entries: Object.fromEntries(entries.map(entry => [entry.uid, entry])) }, { budget });
     if (footprint.overBudget) {
         push(null, 'lorebook-constant-over-budget', 'error', `Always-on entries use ${formatTokenCount(footprint.total)} of the ${formatTokenCount(budget)} token lore budget.`);
     }
 
     if (scanText) {
+        let unmatched = 0;
         for (const entry of entries) {
             if (entry.disable || entry.constant || !canTestEntryKeys(entry)) continue;
             const result = testEntryKeys(entry, scanText, defaults);
-            if (result.verdict.reason === 'no-key-matched' || result.verdict.reason === 'secondary-logic-denied') {
-                push(entry, 'lorebook-did-not-match', 'info', `Entry "${entryTitle(entry)}" ${keyTestVerdictText(result).replace(/^Would not be inserted - /, 'did not match: ')}`);
-            }
+            if (result.verdict.reason === 'no-key-matched' || result.verdict.reason === 'secondary-logic-denied') unmatched++;
         }
+        // One summary line only: the lorebook detail already lists each unmatched entry by name.
+        if (unmatched) push(null, 'lorebook-did-not-match', 'info', `${unmatched} ${unmatched === 1 ? 'entry did' : 'entries did'} not match the recent text.`);
     }
 
     return { kind: 'lorebook', findings, name: bookName, budget };

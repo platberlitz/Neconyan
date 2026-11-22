@@ -905,8 +905,16 @@ export async function buildContext({ source, settings, pendingText = '', session
     let problemsShared = false;
     if (include.problems) {
         const results = [];
+        let knownMacros = null;
+        let macroRegistryLoaded = true;
+        const macroNames = async () => {
+            if (knownMacros !== null) return knownMacros;
+            knownMacros = await loadKnownMacroNames();
+            if (!knownMacros.length) macroRegistryLoaded = false;
+            return knownMacros;
+        };
         if (include.card && people.length) {
-            const knownMacros = await loadKnownMacroNames();
+            const names = await macroNames();
             const knownLorebooks = Array.isArray(world_names) ? world_names : [];
             const contextSize = currentLimits().contextSize;
             for (const character of people) {
@@ -915,7 +923,7 @@ export async function buildContext({ source, settings, pendingText = '', session
                 results.push(await checkCharacterCard(character, {
                     name: character.name,
                     contextSize,
-                    knownMacros,
+                    knownMacros: names,
                     knownLorebooks,
                     extraBooks,
                     countTokens: estimateTokens,
@@ -923,13 +931,16 @@ export async function buildContext({ source, settings, pendingText = '', session
             }
         }
         if (presetSnapshot) {
-            const knownMacros = await loadKnownMacroNames();
-            results.push(checkPreset(presetSnapshot, { knownMacros, modelContext: presetSnapshot.connection?.modelContext || 0 }));
+            const names = await macroNames();
+            results.push(checkPreset(presetSnapshot, { knownMacros: names, modelContext: presetSnapshot.connection?.modelContext || 0 }));
         }
         if (loreShared && lore.details?.books?.length) {
             for (const detail of lore.details.books) {
                 const raw = detail[RAW_BOOK];
-                const book = raw ? { entries: Object.fromEntries(raw.entries.map(entry => [entry.uid, entry])) } : null;
+                // Entries hidden from Agents never reach a check: findings quote titles and keys.
+                const book = raw ? { entries: Object.fromEntries(raw.entries
+                    .filter(entry => !entry.agentBlacklisted)
+                    .map(entry => [entry.uid, entry.disable ? { ...entry, content: '' } : entry])) } : null;
                 results.push(await checkLorebook({
                     name: detail.name,
                     book,
@@ -942,7 +953,10 @@ export async function buildContext({ source, settings, pendingText = '', session
             }
         }
         if (results.length) {
-            sections.push(`## Checks\n${formatChecks(results)}`);
+            const macroNote = !macroRegistryLoaded && results.some(item => item.kind === 'card' || item.kind === 'preset')
+                ? '\n- info | Macro names | Unknown macro names were not checked because the macro list could not be loaded.'
+                : '';
+            sections.push(`## Checks\n${formatChecks(results)}${macroNote}`);
             problemsShared = true;
         }
         if (loreShared && lore.details?.books?.length) {

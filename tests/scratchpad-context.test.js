@@ -52,6 +52,7 @@ jest.unstable_mockModule('../public/scripts/personas.js', () => ({ get user_avat
 jest.unstable_mockModule('../public/scripts/i18n.js', () => ({ t: (parts, ...values) => parts.reduce((text, part, index) => text + part + (values[index] ?? ''), '') }));
 jest.unstable_mockModule('../public/scripts/roleplay-save-chain.js', () => ({ getRoleplaySourceId }));
 jest.unstable_mockModule('../public/scripts/tokenizers.js', () => ({ getTokenCountAsync: async () => 1 }));
+jest.unstable_mockModule('../public/scripts/macros/engine/MacroRegistry.js', () => ({ MacroRegistry: { getAllMacros: () => { throw new Error('The registry is unavailable in this test.'); } } }));
 jest.unstable_mockModule('../public/scripts/world-info.js', () => ({
     loadWorldInfo, selected_world_info: ['Global lore'], world_info: { charLore: [{ name: 'Nova', extraBooks: ['Extra lore'] }] },
     world_names: [], world_info_depth: 2, world_info_budget: 25, world_info_budget_cap: 0,
@@ -808,12 +809,28 @@ describe('Scratchpad shared context budget', () => {
 });
 
 describe('Scratchpad problem checks', () => {
-    test('the switch off adds no bytes to the shared context', async () => {
-        const base = await buildContext({ source: currentSource(), settings: { ...settings, include: { ...settings.include, preset: true } } });
-        const off = await buildContext({ source: currentSource(), settings: { ...settings, include: { ...settings.include, preset: true, problems: false } } });
-        expect(off.text).toBe(base.text);
-        expect(off.text).not.toMatch(/## Checks|## Lorebook details|## Preset values/);
-        expect(off.capabilities.problems).toBeUndefined();
+    test('hidden entries never reach any check, in Roleplay or General', async () => {
+        const entries = {
+            0: { uid: 0, comment: 'Visible Quay', key: ['sharedkey'], constant: true, content: 'The quay is open.' },
+            1: { uid: 1, comment: 'HIDDEN TITLE', key: ['hiddenonly', 'sharedkey', '/unclosed['], probability: 0, agentBlacklisted: true,
+                content: 'hiddencontent hiddenonly sharedkey /unclosed[' },
+        };
+        books.set('Leaky', { entries });
+        books.set('Global lore', { entries });
+        const roleplay = await buildContext({ source: currentSource(), settings: { ...settings, include: { ...settings.include, problems: true } } });
+        home.visible = true;
+        conversationState.conversationWorkspaceOpen = false;
+        const general = await buildContext({ source: currentSource(), settings: { ...settings, lorebook: 'Leaky', include: { card: false, problems: true } } });
+        for (const context of [roleplay, general]) {
+            const text = context.text.toLowerCase();
+            expect(context.text).toContain('## Checks');
+            expect(text).not.toContain('hidden title');
+            expect(text).not.toContain('hiddenonly');
+            expect(text).not.toContain('hiddencontent');
+            expect(text).not.toContain('unclosed[');
+            expect(text).not.toContain('/hidden');
+        }
+        expect(general.text.toLowerCase()).toContain('1 entry is hidden from agents');
     });
 
     test('lorebook detail never shares hidden entries or disabled content', async () => {
@@ -831,6 +848,14 @@ describe('Scratchpad problem checks', () => {
         expect(context.text).not.toContain('HIDDEN-ENTRY');
         expect(context.text).not.toContain('OFF-CONTENT');
         expect(context.text).not.toContain('secret');
+    });
+
+    test('still reports structural macro problems when the macro registry cannot load', async () => {
+        conversationState.conversationWorkspaceOpen = false;
+        characters[0].data.first_mes = 'Hello {{char}';
+        const context = await buildContext({ source: currentSource(), settings: { ...settings, include: { ...settings.include, problems: true } } });
+        expect(context.text).toContain('A macro is missing its closing braces');
+        expect(context.text).toContain('Unknown macro names were not checked because the macro list could not be loaded.');
     });
 
     test('the switch on shares findings, fuller lorebook detail and read-only preset values', async () => {
