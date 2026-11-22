@@ -83,6 +83,7 @@
 - PR #859 (2026-11-22) `feat(server): write whispers and reply-to hearing on the server`
 - PR #860 (2026-11-22) `feat(characters): add folder tabs and auto-sort`
 - PR #861 (2026-11-22) `feat(mewmory): give interviews and overviews an audience`
+- PR #862 (2026-11-22) `feat(mewmory): reopen memories after a catch-up`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
