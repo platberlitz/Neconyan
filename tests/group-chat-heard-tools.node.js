@@ -44,6 +44,15 @@ test('chats from the SillyTavern Presence extension keep who heard each line', (
     assert.deepEqual(scene.group_scene.sees_all, [], 'a scene set in Neconyan wins over the extension');
 });
 
+test('Presence members who see only what the group saw together remember only with the group', () => {
+    const metadata = { ignore_presence: ['nova.png'], presence_extension: { char_mode: { 'kit.png': 'on_group_present', 'nova.png': 'on_group_present', 'mira.png': 'present' } } };
+    assert.equal(importPresenceRecords([], metadata), true);
+    assert.deepEqual(metadata.group_scene, { away: [], location: '', whisper_to: [], sees_all: ['nova.png'], with_group: ['kit.png'] });
+    const only = { presence_extension: { char_mode: { 'kit.png': 'on_group_present' } } };
+    assert.equal(importPresenceRecords([], only), true);
+    assert.deepEqual(only.group_scene, { away: [], location: '', whisper_to: [], sees_all: [], with_group: ['kit.png'] });
+});
+
 test('message ranges read one number, a span either way round, or the whole chat', () => {
     assert.deepEqual(parseHeardRange('', 9), { start: 0, end: 9 });
     assert.deepEqual(parseHeardRange('4', 9), { start: 4, end: 4 });

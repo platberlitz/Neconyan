@@ -23,7 +23,7 @@ test('a renamed member keeps their mute, role and model', () => {
 
 test('a renamed member keeps what they heard, their whispers, being away and seeing everything', () => {
     const records = [
-        { chat_metadata: { group_scene: { away: ['kit.png'], whisper_to: ['kit.png'], sees_all: ['kit.png'], location: 'Hall' } } },
+        { chat_metadata: { group_scene: { away: ['kit.png'], whisper_to: ['kit.png'], sees_all: ['kit.png'], with_group: ['kit.png'], location: 'Hall' } } },
         { is_user: true, mes: 'Only Kit heard this', extra: { group_scene: { present: ['kit.png'], whisper_to: [] } } },
         { mes: 'Mira answers', extra: { group_scene: { present: ['mira.png'], whisper_to: ['kit.png'] } },
             swipe_info: [{ extra: { group_scene: { present: ['kit.png', 'mira.png'], whisper_to: [] } } }, { extra: {} }] },
@@ -33,6 +33,7 @@ test('a renamed member keeps what they heard, their whispers, being away and see
 
     const members = ['kat.png', 'mira.png'];
     assert.deepEqual(readGroupScene(records[0].chat_metadata, members), { away: ['kat.png'], whisper_to: ['kat.png'], sees_all: ['kat.png'], location: 'Hall' });
+    assert.deepEqual(records[0].chat_metadata.group_scene.with_group, ['kat.png']);
     assert.equal(canGroupMemberSee(records[1], 'kat.png'), true);
     assert.equal(canGroupMemberSee(records[1], 'mira.png'), false);
     assert.deepEqual(records[2].extra.group_scene.whisper_to, ['kat.png']);

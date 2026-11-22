@@ -310,6 +310,25 @@ test('server group replies leave out every line before the chat\'s memory starti
     assert.deepEqual(f.records().slice(1, 3).map(record => record.mes), ['Original', 'Answer']);
 });
 
+test('a server speaker who remembers only with the group leaves out lines nobody now in the scene heard with them', async t => {
+    const f = prepared(t, { scene: records => {
+        records[0].chat_metadata = { group_scene: { away: ['Nova.png'], location: '', whisper_to: [], with_group: ['Other.png'] } };
+        records[1].mes = 'They both heard the marigold code.';
+        records[1].extra = { group_scene: { present: ['Nova.png', 'Other.png'], whisper_to: [] } };
+    } });
+    assert.deepEqual(f.request.group.speakers.map(speaker => speaker.avatar), ['Other.png']);
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    await f.completeCandidate(0, { avatar: 'Other.png', name: 'Other', modelOverride: 'fixture-override', reply: 'Other replies.',
+        check: options => {
+            const prompt = promptOf(options);
+            assert.doesNotMatch(prompt, /marigold/, 'Nova heard it with them, but Nova is away');
+            assert.match(prompt, /Everyone, please answer\./);
+        } }, { value: 0 });
+    assert.equal((await runRoleplayWorkflowJob(f.context())).result.status, 'completed');
+    assert.equal(f.records()[1].mes, 'They both heard the marigold code.');
+});
+
 test('members marked away in the saved scene are not picked for a server group reply', async t => {
     const away = records => {
         records[0].chat_metadata = { group_scene: { away: ['Other.png'], location: '', whisper_to: [] } };

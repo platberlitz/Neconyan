@@ -67,6 +67,9 @@ export function renderGroupScene() {
         if (scene.sees_all.includes(avatar)) {
             button.append($('<small class="group_scene_member_tag"></small>').text(t`Sees everything`));
         }
+        if (scene.with_group?.includes(avatar)) {
+            button.append($('<small class="group_scene_member_tag"></small>').text(t`With the group`));
+        }
         if (!present) {
             button.append($('<small class="group_scene_member_tag"></small>').text(t`Away`));
         }

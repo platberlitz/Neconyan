@@ -11,6 +11,44 @@ import { SWIPE_DIRECTION } from './constants.js';
 import { t } from './i18n.js';
 
 let handlers;
+let memoryIds = 0;
+
+function memoryMode(scene, avatar) {
+    if (scene?.sees_all.includes(avatar)) return 'all';
+    return scene?.with_group?.includes(avatar) ? 'group' : 'heard';
+}
+
+/** The member menu's Memory choice: what they heard, only what they heard with the group, or everything. */
+function memoryChoice(avatar) {
+    const modes = [
+        ['heard', t`What they heard`, t`Remembers the lines they were there for.`],
+        ['group', t`Only with the group`, t`Remembers a line only while someone else who heard it is in the scene.`],
+        ['all', t`Everything`, t`Remembers every line, even ones said while they were away. Whispers to others stay private.`],
+    ];
+    const label = $('<span class="group_speaker_memory_label"></span>').attr('id', `group_speaker_memory_${++memoryIds}`).text(t`Memory`);
+    const options = $('<div class="group_speaker_memory_options" role="group"></div>').attr('aria-labelledby', label.attr('id'));
+    const hint = $('<p class="group_speaker_memory_hint" aria-live="polite"></p>');
+    for (const [mode, text] of modes) options.append($('<button type="button" class="menu_button group_speaker_memory_option"></button>').attr('data-memory', mode).text(text));
+    const sync = () => {
+        const mode = memoryMode(currentGroupScene()?.scene, avatar);
+        options.children().each(function () { this.setAttribute('aria-pressed', String(this.dataset.memory === mode)); });
+        hint.text(modes.find(([value]) => value === mode)[2]);
+    };
+    options.on('click', 'button', async function () {
+        const scene = currentGroupScene()?.scene;
+        if (!scene) return;
+        const mode = this.dataset.memory;
+        const others = list => (list || []).filter(member => member !== avatar);
+        await changeGroupScene({
+            sees_all: mode === 'all' ? [...others(scene.sees_all), avatar] : others(scene.sees_all),
+            with_group: mode === 'group' ? [...others(scene.with_group), avatar] : others(scene.with_group),
+        });
+        refreshGroupHeardBadges();
+        sync();
+    });
+    sync();
+    return $('<div class="group_speaker_memory"></div>').append(label, options, hint);
+}
 
 export async function openGroupSpeakerMenu(avatar) {
     const group = groups.find(item => item.id === selected_group);
@@ -28,7 +66,7 @@ export async function openGroupSpeakerMenu(avatar) {
     const start = scene?.heard_from || 0;
     const missed = chat.some((message, index) => index >= start && !message?.is_system && !canGroupMemberSee(message, avatar, rules));
     const heardAny = chat.some(message => !message?.is_system && canGroupMemberSee(message, avatar, rules));
-    const content = $('<div class="group-speaker-menu"></div>').append($('<h3></h3>').text(name));
+    const content = $('<div class="group-speaker-menu"></div>').append($('<h3></h3>').text(name), memoryChoice(avatar));
     const buttons = [];
     if (!away && !muted) {
         buttons.push({ text: t`Speak now`, result: 5, icon: 'fa-comment-dots' });
@@ -39,7 +77,6 @@ export async function openGroupSpeakerMenu(avatar) {
     buttons.push(
         { text: muted ? t`Unmute` : t`Mute`, result: 2, icon: muted ? 'fa-volume-high' : 'fa-volume-xmark' },
         { text: away ? t`Bring into the scene` : t`Mark away`, result: 3, icon: away ? 'fa-door-open' : 'fa-door-closed' },
-        { text: seesAll ? t`Limit to what they heard` : t`Let them see everything`, result: 8, icon: seesAll ? 'fa-eye-slash' : 'fa-eye' },
     );
     if (missed && !seesAll) buttons.push({ text: t`Catch up on what was said`, result: 9, icon: 'fa-forward' });
     if (heardAny && !seesAll) buttons.push({ text: t`Forget everything so far`, result: 10, icon: 'fa-eraser' });
@@ -64,10 +101,6 @@ export async function openGroupSpeakerMenu(avatar) {
     } else if (action === 3) {
         const current = currentGroupScene();
         await changeGroupScene({ away: away ? current.scene.away.filter(member => member !== avatar) : [...current.scene.away, avatar] });
-    } else if (action === 8) {
-        const current = currentGroupScene();
-        await changeGroupScene({ sees_all: seesAll ? current.scene.sees_all.filter(member => member !== avatar) : [...current.scene.sees_all, avatar] });
-        refreshGroupHeardBadges();
     } else if (action === 9) {
         const count = await catchUpGroupMember(avatar);
         if (count) toastr.success(t`${name} now remembers what was said.`);

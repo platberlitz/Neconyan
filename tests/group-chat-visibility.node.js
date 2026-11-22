@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addGroupHearer, beginGroupPromptScope, canGroupMemberSee, canGroupTargetSee, changeGroupHearers, countGroupPromptHiddenMessages, filterGroupPromptMessages, filterGroupTargetMessages, groupHeardCount, groupMessageAudience, getGroupPromptViewers, groupSceneCardMembers, groupScenePrompt, groupSceneTurnNeedsPage, groupTargetViewers, groupWhisperPrompt, hasRestrictedGroupHistory, readGroupScene, readGroupSceneRules, sameGroupViewers, setGroupEveryoneHears, withGroupTargetPrompt } from '../public/scripts/group-chat-visibility.js';
+import { addGroupHearer, beginGroupPromptScope, canGroupMemberSee, canGroupTargetSee, changeGroupHearers, countGroupPromptHiddenMessages, filterGroupPromptMessages, filterGroupTargetMessages, groupHeardCount, groupHeardRules, groupMessageAudience, getGroupPromptViewers, groupSceneCardMembers, groupScenePrompt, groupSceneTurnNeedsPage, groupTargetViewers, groupWhisperPrompt, hasRestrictedGroupHistory, readGroupScene, readGroupSceneRules, sameGroupViewers, setGroupEveryoneHears, withGroupTargetPrompt } from '../public/scripts/group-chat-visibility.js';
 
 test('scene state is bounded to current members and has safe defaults', () => {
     assert.deepEqual(readGroupScene({}, ['kit', 'mira']), { away: [], location: '', whisper_to: [], sees_all: [] });
@@ -254,6 +254,35 @@ test('members remember a group chat only from its memory starting point', () => 
     } finally {
         restore();
     }
+});
+
+test('a member who remembers only with the group needs someone else who heard the line in the scene now', () => {
+    const members = ['kit', 'mira', 'ash'];
+    const line = (present, whisper_to = []) => ({ mes: 'A line', extra: { group_scene: { present, whisper_to } } });
+    const meta = scene => ({ group_scene: { away: [], location: '', whisper_to: [], sees_all: [], with_group: ['kit'], ...scene } });
+    assert.deepEqual(readGroupScene(meta(), members).with_group, ['kit']);
+    // Sees everything wins over 'Only with the group', and unknown members drop out.
+    assert.equal('with_group' in readGroupScene(meta({ sees_all: ['kit'] }), members), false);
+    assert.deepEqual(readGroupScene(meta({ with_group: ['kit', 'gone'] }), members).with_group, ['kit']);
+    const rules = readGroupSceneRules(meta({ away: ['mira'] }));
+    assert.deepEqual(rules.withGroup, { members: ['kit'], away: ['mira'] });
+    // Kit and Mira heard it, but Mira is away now, so Kit forgets it until she is back.
+    assert.equal(canGroupMemberSee(line(['kit', 'mira']), 'kit', rules), false);
+    assert.equal(canGroupMemberSee(line(['kit', 'mira']), 'kit', readGroupSceneRules(meta())), true);
+    // Muted members still count, because only Away leaves the scene.
+    assert.equal(canGroupMemberSee(line(['kit', 'ash']), 'kit', rules), true);
+    // Alone, or with someone a whisper left out, it is forgotten; members in the normal mode are unaffected.
+    assert.equal(canGroupMemberSee(line(['kit']), 'kit', rules), false);
+    assert.equal(canGroupMemberSee(line(['kit', 'ash'], ['kit']), 'kit', rules), false);
+    assert.equal(canGroupMemberSee(line(['kit', 'ash'], ['kit', 'ash']), 'kit', rules), true);
+    assert.equal(canGroupMemberSee(line(['ash']), 'ash', rules), true);
+    assert.equal(canGroupMemberSee(line(['ash']), 'kit', rules), false);
+    // Lines with no hearers recorded, and 'Everyone hears this' lines, belong to everyone.
+    assert.equal(canGroupMemberSee({ mes: 'Unrecorded' }, 'kit', rules), true);
+    assert.equal(canGroupMemberSee({ mes: 'Public', extra: { group_scene: { present: ['kit'], whisper_to: [], everyone: true } } }, 'kit', rules), true);
+    // The heard badge still says who was there.
+    assert.deepEqual(groupHeardCount(line(['kit']), members, rules), { heard: 1, total: 3 });
+    assert.deepEqual(groupHeardRules({ ...rules, before: new Set() }), {});
 });
 
 test('a scene turn stays in the page only for a chosen speaker who is away', () => {

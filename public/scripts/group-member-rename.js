@@ -53,7 +53,7 @@ export function renameGroupSceneRecords(records, from, to) {
     let changed = false;
     for (const record of Array.isArray(records) ? records : []) {
         if (Object.hasOwn(record ?? {}, 'chat_metadata')) {
-            changed = renameScene(record.chat_metadata?.group_scene, ['away', 'whisper_to', 'sees_all'], from, to) || changed;
+            changed = renameScene(record.chat_metadata?.group_scene, ['away', 'whisper_to', 'sees_all', 'with_group'], from, to) || changed;
             continue;
         }
         changed = renameScene(record?.extra?.group_scene, ['present', 'whisper_to'], from, to) || changed;

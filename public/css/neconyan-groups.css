@@ -114,6 +114,16 @@
     background: color-mix(in srgb, var(--neco-ginger) 22%, var(--neco-surface));
 }
 .group_heard_editor button:focus-visible { outline: 2px solid var(--neco-ginger); outline-offset: 2px; }
+.group_speaker_memory { display: grid; gap: 6px; margin-block: 8px 4px; text-align: start; color: var(--neco-ink); }
+.group_speaker_memory_label { font-weight: 600; }
+.group_speaker_memory_options { display: flex; flex-wrap: wrap; gap: 6px; }
+.group_speaker_memory_options .group_speaker_memory_option { flex: 1 1 0; min-width: 0; justify-content: center; margin: 0; min-height: 44px; padding-inline: 8px; white-space: normal; text-align: center; line-height: 1.2; text-wrap: balance; }
+.group_speaker_memory_options .group_speaker_memory_option[aria-pressed="true"] {
+    border-color: var(--neco-ginger);
+    background: color-mix(in srgb, var(--neco-ginger) 22%, var(--neco-surface));
+}
+.group_speaker_memory_option:focus-visible { outline: 2px solid var(--neco-ginger); outline-offset: 2px; }
+.group_speaker_memory_hint { margin: 0; font-size: 0.85em; line-height: 1.4; color: var(--neco-muted); }
 
 @media screen and (min-width: 769px) {
     #group_scene_toggle,
@@ -121,7 +131,8 @@
     #group_scene_location,
     #group_scene_start,
     #group_scene_members .group_scene_member,
-    .group_heard_editor .menu_button { min-height: 36px; }
+    .group_heard_editor .menu_button,
+    .group_speaker_memory_options .group_speaker_memory_option { min-height: 36px; }
     #group_speaker_controls { gap: 6px; }
     #group_speaker_controls > .menu_button {
         width: 36px;

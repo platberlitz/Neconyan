@@ -624,6 +624,19 @@ test('group members remember a chat only from its memory starting point', async 
     assert.equal(viewerState(state, ['Kit.png']), null, 'clearing the start gives the whole chat back');
 });
 
+test('a member who remembers only with the group recalls a memory only while someone else who heard it is in the scene', async () => {
+    const { readGroupSceneRules } = await import('../public/scripts/group-chat-visibility.js');
+    const state = groupStory({ missed: [] });
+    groupEvent(state, { id: 'event:arrival', refs: [state.timeline[1]], text: 'The player brought a gift.', asOf: 1 }, ['Mara.png', 'Kit.png']);
+    const rules = away => readGroupSceneRules({ group_scene: { away, with_group: ['Kit.png'] } });
+    assert.equal(viewerState(state, ['Kit.png'], rules([])), null, 'with Mara in the scene Kit remembers everything they heard together');
+    const alone = viewerState(state, ['Kit.png'], rules(['Mara.png']));
+    assert.ok(alone.state.excludedSources.includes(state.timeline[1].id));
+    assert.equal(alone.state.records.some(record => record.id === 'event:arrival'), false);
+    // Mara remembers on her own as usual, whoever is away.
+    assert.equal(viewerState(state, ['Mara.png'], rules(['Kit.png'])), null);
+});
+
 test('meaning recall falls back without paying for a query when no matching documents can be embedded', async t => {
     const { directories } = disk(t);
     await loadCurrentState(directories, locator);

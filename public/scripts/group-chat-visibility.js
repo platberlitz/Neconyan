@@ -3,7 +3,12 @@ export function readGroupScene(metadata, members) {
     const scene = metadata?.group_scene || {};
     const valid = values => Array.isArray(values) ? [...new Set(values)].filter(avatar => members.includes(avatar)) : [];
     const start = readGroupSceneStart(metadata);
-    return { away: valid(scene.away), location: String(scene.location || '').slice(0, 300), whisper_to: valid(scene.whisper_to), sees_all: valid(scene.sees_all), ...(start ? { heard_from: start } : {}) };
+    const seesAll = valid(scene.sees_all);
+    const withGroup = valid(scene.with_group).filter(avatar => !seesAll.includes(avatar));
+    return {
+        away: valid(scene.away), location: String(scene.location || '').slice(0, 300), whisper_to: valid(scene.whisper_to), sees_all: seesAll,
+        ...(withGroup.length ? { with_group: withGroup } : {}), ...(start ? { heard_from: start } : {}),
+    };
 }
 
 /** The first message members remember in this chat, or 0 when they remember the whole chat. */
@@ -14,17 +19,30 @@ export function readGroupSceneStart(metadata) {
 
 /**
  * Rules a saved chat header applies to every speaker: members who see everything except other people's whispers,
- * and, given the chat's messages, the lines before the chat's memory starting point, which nobody hears.
+ * members who remember a line only with the group, and, given the chat's messages, the lines before the chat's
+ * memory starting point, which nobody hears.
  * @param {object} metadata Chat metadata
  * @param {object[]|null} [messages] Chat messages, without the saved header
  */
 export function readGroupSceneRules(metadata, messages = null) {
-    const seesAll = metadata?.group_scene?.sees_all;
+    const scene = metadata?.group_scene;
+    const list = values => Array.isArray(values) ? values.filter(avatar => typeof avatar === 'string' && avatar) : [];
+    const seesAll = list(scene?.sees_all);
+    const withGroup = list(scene?.with_group).filter(avatar => !seesAll.includes(avatar));
     const start = Array.isArray(messages) ? readGroupSceneStart(metadata) : 0;
     return {
-        ...(Array.isArray(seesAll) && seesAll.length ? { seesAll: [...seesAll] } : {}),
+        ...(seesAll.length ? { seesAll } : {}),
+        ...(withGroup.length ? { withGroup: { members: withGroup, away: list(scene?.away) } } : {}),
         ...(start ? { before: new Set(messages.slice(0, start)) } : {}),
     };
+}
+
+/** The same rules, for saying who heard a line: the memory starting point and 'Only with the group' change only what members remember. */
+export function groupHeardRules(rules = {}) {
+    const heard = { ...rules };
+    delete heard.before;
+    delete heard.withGroup;
+    return heard;
 }
 
 /** Members whose cards a joined-cards prompt includes: everyone still in the scene, and always the speakers. */
@@ -44,6 +62,8 @@ export function groupMessageAudience(scene, members, whisperTargets = []) {
  * `rules.seesAll` lists members who see every message except whispers to someone else;
  * `rules.replyTarget` is the message a speaker is replying to, which they always hear;
  * `rules.before` holds the lines before the chat's memory starting point, which no member hears.
+ * `rules.withGroup` lists members who remember a line only while someone else who heard it is in the scene
+ * (not away; muted members count).
  */
 export function canGroupMemberSee(message, avatar, rules = {}) {
     if (rules.before?.has(message)) return false;
@@ -52,7 +72,11 @@ export function canGroupMemberSee(message, avatar, rules = {}) {
     if (audience.whisper_to?.length && !audience.whisper_to.includes(avatar)) return false;
     if (audience.everyone === true) return true;
     if (rules.seesAll?.includes(avatar) || (rules.replyTarget && message === rules.replyTarget)) return true;
-    return !Array.isArray(audience.present) || audience.present.includes(avatar);
+    if (!Array.isArray(audience.present)) return true;
+    if (!audience.present.includes(avatar)) return false;
+    if (!rules.withGroup?.members.includes(avatar)) return true;
+    return audience.present.some(other => other !== avatar && !rules.withGroup.away.includes(other)
+        && (!audience.whisper_to?.length || audience.whisper_to.includes(other)));
 }
 
 /**
@@ -137,12 +161,11 @@ export function setGroupEveryoneHears(message, members, everyone = true) {
     });
 }
 
-/** How many current members heard a message, or null when all of them did. Whispers have their own badge; the memory starting point does not change who heard a line. */
+/** How many current members heard a message, or null when all of them did. Whispers have their own badge; the memory starting point and 'Only with the group' do not change who heard a line. */
 export function groupHeardCount(message, members, rules = {}) {
     const audience = message?.extra?.group_scene;
     if (!audience || audience.whisper_to?.length || !members?.length) return null;
-    const heardRules = { ...rules };
-    delete heardRules.before;
+    const heardRules = groupHeardRules(rules);
     const heard = members.filter(avatar => canGroupMemberSee(message, avatar, heardRules)).length;
     return heard < members.length ? { heard, total: members.length } : null;
 }
