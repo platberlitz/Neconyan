@@ -425,3 +425,81 @@ body.reduced-motion #neconyan-folder-tabs .neconyan-folder-tab,
 body.reduced-motion #neconyan-folder-tabs .neconyan-folder-tab-add {
     transition: none;
 }
+
+/* Folder rows in the character list have no 'body' grid area, so the Calico
+   row rule pushed their text to the far edge. They are one compact line: icon,
+   name and count, then a short stack of the cards inside. */
+body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block > .bogus_folder_select {
+    grid-template-columns: 40px minmax(0, 1fr) !important;
+    gap: 10px;
+    min-height: 52px;
+    padding: 6px 10px;
+}
+body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block > .bogus_folder_select > :is(.avatar, .bogus_folder_back_placeholder) {
+    grid-area: 1 / 1;
+    width: 40px !important;
+    min-width: 40px !important;
+    max-width: 40px !important;
+    height: 40px !important;
+    min-height: 40px !important;
+    max-height: 40px !important;
+}
+body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block > .bogus_folder_select > .character_select_container {
+    grid-area: 1 / 2;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0 10px;
+    height: auto;
+}
+body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block > .bogus_folder_select > .character_select_container > .character_name_block {
+    display: flex;
+    grid-area: 1 / 1;
+    align-items: baseline;
+    gap: 6px;
+    min-width: 0;
+}
+body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block > .bogus_folder_select .character_name_block > .ch_name {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block > .bogus_folder_select .character_name_block > .bogus_folder_counter {
+    flex: none;
+    max-width: none;
+}
+body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block > .bogus_folder_select .bogus_folder_hidden_counter {
+    position: static;
+    grid-area: 2 / 1;
+}
+body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block > .bogus_folder_select .bogus_folder_hidden_counter:empty {
+    display: none;
+}
+body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block > .bogus_folder_select > .character_select_container > .bogus_folder_avatars_block.tags_inline {
+    grid-area: 1 / 2 / span 2;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 0;
+    height: auto;
+    margin: 0;
+    padding-inline-start: 8px;
+}
+body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block > .bogus_folder_select .bogus_folder_avatars_block > .avatar,
+body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block > .bogus_folder_select .bogus_folder_avatars_block > .avatar img {
+    width: 28px !important;
+    min-width: 28px !important;
+    height: 28px !important;
+    min-height: 28px !important;
+    margin: 0 0 0 -8px;
+}
+body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block > .bogus_folder_select .bogus_folder_avatars_block > .avatar img {
+    margin: 0;
+}
+body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block > .bogus_folder_select .bogus_folder_avatars_block > .avatar:nth-child(n + 7) {
+    display: none;
+}
+@media (max-width: 768px) {
+    body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block > .bogus_folder_select .bogus_folder_avatars_block > .avatar:nth-child(n + 5) {
+        display: none;
+    }
+}

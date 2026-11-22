@@ -96,6 +96,18 @@ for (const phone of [false, true]) {
             await expect(all).toHaveAttribute('aria-pressed', 'true');
             await expect(page.locator('#rm_characters_block .rm_tag_filter .tag.selected')).toHaveCount(0);
 
+            // The folder's own row in the list is one compact line: name beside the icon, cards at the end.
+            const folderRow = page.locator('#rm_print_characters_block > .bogus_folder_select').filter({ has: page.locator('.ch_name', { hasText: /^JanitorAI$/ }) });
+            await expect(folderRow).toHaveCount(1);
+            await expect.poll(() => folderRow.evaluate(row => {
+                const box = selector => row.querySelector(selector).getBoundingClientRect();
+                const [icon, label, count, cards] = [box(':scope > .avatar'), box('.ch_name'), box('.bogus_folder_counter'), box('.bogus_folder_avatars_block')];
+                return row.getBoundingClientRect().height <= 60
+                    && label.left - icon.right <= 16
+                    && count.left >= label.right && count.top < label.bottom
+                    && cards.left >= count.right && cards.top < label.bottom;
+            })).toBe(true);
+
             if (phone) {
                 const touch = await rail.evaluate(node => window.getComputedStyle(node).touchAction);
                 expect(touch).toBe('pan-x');
