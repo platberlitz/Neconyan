@@ -18,9 +18,11 @@ const TOKEN_FIELDS = [
     ['system_prompt', 'System prompt'],
     ['post_history_instructions', 'Post-history instructions'],
 ];
-const CHECKED_HTML_TAGS = new Set(['b', 'i', 'em', 'strong', 'p', 'div', 'span', 'blockquote', 'u', 's', 'small', 'big', 'font', 'a', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6']);
+// Tags whose end tag is optional are left out: unclosed <p> and <li> are valid HTML.
+const CHECKED_HTML_TAGS = new Set(['b', 'i', 'em', 'strong', 'div', 'span', 'blockquote', 'u', 's', 'small', 'big', 'font', 'a', 'ul', 'ol', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6']);
 const USER_SPEECH = /(^|\n)\s*\*{0,2}\s*\{\{\s*user\s*\}\}\s*\*{0,2}\s*(?::|says\b|said\b|asks\b|replies\b|smiles\b|nods\b|laughs\b|sighs\b|turns\b|walks\b|looks\b|leans\b|shakes\b|reaches\b)/i;
-const USER_ACTION = /(^|\n)\s*\*[^*\n]{0,60}\{\{\s*user\s*\}\}/i;
+// The acting subject must be {{user}}, not merely mentioned later in the line.
+const USER_ACTION = /(^|\n)\s*\*{0,2}\s*\{\{\s*user\s*\}\}(?=\s)/i;
 
 function fieldValue(character, field) {
     const data = character?.data?.[field];
@@ -64,8 +66,25 @@ export function cardCssSources(character) {
     return { css: blocks.join('\n'), styleOpen, styleClose };
 }
 
+const APP_SHELL_IDS = new Set(['chat', 'sheld', 'send_form', 'send_textarea', 'top-bar', 'top-settings-holder', 'left-nav-panel', 'right-nav-panel', 'movingDivs']);
+
+/** Every id the card's own fields define, so card CSS can target its own markup. */
+export function cardDefinedIds(character) {
+    const ids = new Set();
+    for (const [field] of TOKEN_FIELDS) {
+        const values = field === 'alternate_greetings' || field === 'group_only_greetings' ? fieldList(character, field) : [fieldValue(character, field)];
+        for (const value of values) {
+            for (const match of String(value ?? '').matchAll(/\bid\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s"'=<>`]+))/gi)) {
+                const id = (match[1] || match[2] || match[3] || '').trim();
+                if (id) ids.add(id);
+            }
+        }
+    }
+    return ids;
+}
+
 /** Selectors that cannot work once card CSS is scoped to .mes_text. */
-export function brokenCardSelectors(css) {
+export function brokenCardSelectors(css, definedIds = new Set()) {
     const broken = [];
     const cleaned = String(css ?? '').replace(/\/\*[\s\S]*?\*\//g, '');
     for (const block of cleaned.matchAll(/([^{}]+)\{/g)) {
@@ -73,7 +92,9 @@ export function brokenCardSelectors(css) {
         if (!prelude || prelude.startsWith('@')) continue;
         for (const selector of prelude.split(',').map(item => item.trim()).filter(Boolean)) {
             if (/^from\b|^to\b|^\d+%$/.test(selector)) continue;
-            if (/(^|[^-\w])#[A-Za-z]/.test(selector) || /(^|[^-\w])(body|html|:root)([^-\w]|$)/i.test(selector)) {
+            const ids = [...selector.matchAll(/#([A-Za-z_][\w-]*)/g)].map(match => match[1]);
+            const unknownId = ids.find(id => !APP_SHELL_IDS.has(id) && !definedIds.has(id));
+            if (unknownId || ids.some(id => APP_SHELL_IDS.has(id)) || /(^|[^-\w])(body|html|:root)([^-\w]|$)/i.test(selector)) {
                 if (!broken.includes(selector)) broken.push(selector);
             }
         }
@@ -128,7 +149,7 @@ export async function checkCharacterCard(character, { name, contextSize = 0, kno
     for (const [field, text, index] of greetings) {
         if (!text) continue;
         if (USER_SPEECH.test(text) || USER_ACTION.test(text)) {
-            push(field, 'card-writes-user', 'warning', `Greeting${index ? ` ${index}` : ''} writes speech or actions for {{user}}.`);
+            push(field, 'card-writes-user', 'warning', `Greeting${index ? ` ${index}` : ''} appears to write speech or actions for {{user}}.`);
         }
         const html = unbalancedHtml(text);
         if (html) push(field, 'card-unbalanced-html', 'warning', `Greeting${index ? ` ${index}` : ''} has an unbalanced HTML tag ${html}.`);
@@ -152,8 +173,11 @@ export async function checkCharacterCard(character, { name, contextSize = 0, kno
 
     const { css, styleOpen, styleClose } = cardCssSources(character);
     if (styleOpen > styleClose) push('', 'card-unclosed-style', 'error', 'A <style> block is opened but never closed.');
-    for (const selector of brokenCardSelectors(css)) {
-        push('', 'card-css-selector', 'warning', `CSS selector ${selector} cannot match: card CSS is placed inside .mes_text and ids are not preserved.`);
+    for (const selector of brokenCardSelectors(css, cardDefinedIds(character))) {
+        const shell = [...selector.matchAll(/#([A-Za-z_][\w-]*)/g)].map(match => match[1]).find(id => APP_SHELL_IDS.has(id));
+        push('', 'card-css-selector', 'warning', shell
+            ? `CSS selector ${selector} cannot match: #${shell} belongs to the app shell, outside the message.`
+            : `CSS selector ${selector} cannot match: no element with that id is defined by this card.`);
     }
 
     const knownBooks = new Set([...knownLorebooks].map(item => String(item)));
@@ -165,20 +189,19 @@ export async function checkCharacterCard(character, { name, contextSize = 0, kno
         if (knownBooks.size && !knownBooks.has(book)) push('', 'card-lorebook-missing', 'warning', `The extra lorebook ${book} does not exist.`);
     }
 
-    if (knownMacros && [...knownMacros].length) {
-        for (const [field] of TOKEN_FIELDS) {
-            const text = field === 'alternate_greetings' || field === 'group_only_greetings'
-                ? fieldList(character, field).join('\n')
-                : fieldValue(character, field);
-            if (!text) continue;
-            for (const item of scanMacroProblems(text, { knownNames: knownMacros })) {
-                push(field, item.rule, item.severity, item.message, item.details);
-            }
+    // Structural problems need no registry; an empty list skips only the unknown-name rule.
+    for (const [field] of TOKEN_FIELDS) {
+        const text = field === 'alternate_greetings' || field === 'group_only_greetings'
+            ? fieldList(character, field).join('\n')
+            : fieldValue(character, field);
+        if (!text) continue;
+        for (const item of scanMacroProblems(text, { knownNames: knownMacros })) {
+            push(field, item.rule, item.severity, item.message, item.details);
         }
-        const note = String(character?.data?.extensions?.depth_prompt?.prompt ?? '').trim();
-        for (const item of scanMacroProblems(note, { knownNames: knownMacros })) {
-            push('extensions.depth_prompt.prompt', item.rule, item.severity, item.message, item.details);
-        }
+    }
+    const note = String(character?.data?.extensions?.depth_prompt?.prompt ?? '').trim();
+    for (const item of scanMacroProblems(note, { knownNames: knownMacros })) {
+        push('extensions.depth_prompt.prompt', item.rule, item.severity, item.message, item.details);
     }
 
     let permanent = 0;

@@ -6,9 +6,11 @@
  * pure, runs under Jest directly, and may later be imported by the server.
  */
 
-const NAME_PREFIX = /^[!?~>#/]*\s*/;
+// Flags precede the identifier and may be spaced out, as in `{{ ! user }}`.
+const FLAGS = /^((?:\s*[!?~>#/])*)\s*/;
 const MACRO_NAME = /^[A-Za-z_][\w-]*/;
-const SCOPED_NAME = /^([#/])([A-Za-z_][\w-]*)/;
+// MacroEngine rewrites this legacy form before parsing, so it never reaches the registry.
+const LEGACY_TIME = /^time_UTC[+-]\d+$/i;
 
 /** A rough token stream of balanced {{...}} pairs plus any leftovers. */
 function scanBraces(text) {
@@ -35,11 +37,12 @@ function scanBraces(text) {
     return { tokens: tokens.sort((a, b) => a.start - b.start), unclosed: stack, extraClosers };
 }
 
-function macroName(body) {
-    const value = String(body ?? '');
-    const prefix = NAME_PREFIX.exec(value)?.[0] ?? '';
-    const name = MACRO_NAME.exec(value.slice(prefix.length))?.[0] ?? '';
-    return { name, prefix };
+function macroToken(body) {
+    const value = String(body ?? '').trim();
+    const flags = FLAGS.exec(value)?.[0] ?? '';
+    const afterFlags = value.slice(flags.length);
+    const name = LEGACY_TIME.exec(afterFlags)?.[0] ?? MACRO_NAME.exec(afterFlags)?.[0] ?? '';
+    return { name, flags: flags.replace(/\s+/g, ''), closing: flags.includes('/') };
 }
 
 /**
@@ -73,31 +76,26 @@ export function scanMacroProblems(text, { knownNames = [] } = {}) {
     }
 
     const known = new Set([...knownNames].map(name => String(name).toLowerCase()));
-    const scope = [];
+    const open = [];
+    const orphanClosers = [];
     for (const token of tokens) {
         const body = token.body.trim();
         // The raw comment macro and its closing form are handled above.
         if (!body || body.startsWith('//')) continue;
-        const scoped = SCOPED_NAME.exec(body);
-        if (scoped) {
-            const [, marker, name] = scoped;
-            if (marker === '#') {
-                scope.push(name.toLowerCase());
-            } else if (scope.length && scope.at(-1) === name.toLowerCase()) {
-                scope.pop();
-            } else {
-                findings.push({
-                    rule: 'macro-unmatched-close',
-                    severity: 'warning',
-                    target: {},
-                    message: `{{/${name}}} has no matching opening macro.`,
-                });
-            }
+        const { name, closing } = macroToken(body);
+        if (!name || name.startsWith('.') || name.startsWith('$')) continue;
+        const lower = name.toLowerCase();
+        if (closing) {
+            // A closer matches the nearest earlier opener of the same name and
+            // implicitly closes any openers nested inside it, case-insensitively.
+            // This mirrors MacroCstWalker.findUnclosedScopes.
+            const match = open.findLastIndex(entry => entry === lower);
+            if (match === -1) orphanClosers.push(name);
+            else open.splice(match);
             continue;
         }
-        const { name } = macroName(body);
-        if (!name || name.startsWith('.') || name.startsWith('$')) continue;
-        if (known.size && !known.has(name.toLowerCase())) {
+        open.push(lower);
+        if (known.size && !known.has(lower) && !LEGACY_TIME.test(name)) {
             findings.push({
                 rule: 'macro-unknown',
                 severity: 'warning',
@@ -107,12 +105,12 @@ export function scanMacroProblems(text, { knownNames = [] } = {}) {
             });
         }
     }
-    for (const name of scope) {
+    for (const name of orphanClosers) {
         findings.push({
-            rule: 'macro-unclosed-scope',
-            severity: 'error',
+            rule: 'macro-unmatched-close',
+            severity: 'info',
             target: {},
-            message: `{{#${name}}} has no matching {{/${name}}}.`,
+            message: `{{/${name}}} has no matching opening macro. Neconyan leaves it as raw text.`,
         });
     }
     return findings;
@@ -121,6 +119,6 @@ export function scanMacroProblems(text, { knownNames = [] } = {}) {
 /** The macro names in saved text, without judgement. Used by the caller's retry. */
 export function macroNames(text) {
     return scanBraces(String(text ?? '')).tokens
-        .map(token => macroName(token.body.trim()).name)
+        .map(token => macroToken(token.body).name)
         .filter(Boolean);
 }

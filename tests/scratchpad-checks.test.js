@@ -1,5 +1,5 @@
 import { describe, expect, test } from '@jest/globals';
-import { cardCssSources, brokenCardSelectors, checkCharacterCard, unbalancedHtml } from '../public/scripts/scratchpad/checks/card.js';
+import { cardCssSources, brokenCardSelectors, cardDefinedIds, checkCharacterCard, unbalancedHtml } from '../public/scripts/scratchpad/checks/card.js';
 import { formatChecks, formatLorebookDetails, formatPresetValues, MAX_FINDINGS_PER_ITEM, targetLabel } from '../public/scripts/scratchpad/checks/index.js';
 import { checkLorebook } from '../public/scripts/scratchpad/checks/lorebook.js';
 import { scanMacroProblems } from '../public/scripts/scratchpad/checks/macros.js';
@@ -34,8 +34,28 @@ describe('Scratchpad macro checks', () => {
     test('finds unbalanced braces, unknown names and broken scoped forms', () => {
         const text = '{{char} {{unknownmacro}} {{//}}hidden{{///}} {{#if}}open';
         expect(rules({ findings: scanMacroProblems(text, { knownNames: ['char', 'user'] }) })).toEqual(expect.arrayContaining([
-            'macro-unbalanced', 'macro-unknown', 'macro-scoped-comment', 'macro-unclosed-scope',
+            'macro-unbalanced', 'macro-unknown', 'macro-scoped-comment',
         ]));
+    });
+
+    test('pairs scoped macros the way the macro engine does', () => {
+        const knownNames = ['if', 'else', 'trim', 'setvar', 'getvar', 'user', 'char'];
+        for (const text of [
+            '{{if 1}}yes{{else}}no{{/if}}',
+            'x{{trim}}  y  {{/trim}}z',
+            '{{setvar::a}}val{{/setvar}}[{{getvar::a}}]',
+            '{{if {{getvar::a}}}}h{{/if}}',
+            '{{#user}} hi',
+            '{{#if 1}}x{{/if}}',
+            '{{time_UTC+2}}',
+        ]) expect(scanMacroProblems(text, { knownNames })).toEqual([]);
+        expect(scanMacroProblems('{{/if}}', { knownNames })).toEqual([expect.objectContaining({ rule: 'macro-unmatched-close', severity: 'info' })]);
+    });
+
+    test('structural problems still run without a macro registry', () => {
+        expect(scanMacroProblems('{{char}', { knownNames: [] })).toContainEqual(expect.objectContaining({ rule: 'macro-unbalanced', severity: 'error' }));
+        expect(scanMacroProblems('{{//}}hidden{{///}}', { knownNames: [] })).toContainEqual(expect.objectContaining({ rule: 'macro-scoped-comment' }));
+        expect(scanMacroProblems('{{unknownmacro}}', { knownNames: [] })).toEqual([]);
     });
 
     test('leaves balanced known macros, nested arguments and raw comments alone', () => {
@@ -81,9 +101,33 @@ describe('Scratchpad card checks', () => {
         expect(result.name).toBe('Ada');
     });
 
+    test('does not flag a card CSS id that its own HTML defines', async () => {
+        const character = card({ first_mes: '<div id="x">Hello</div>', creator_notes: '<style>#x { color: red; }</style>' });
+        const defined = await checkCharacterCard(character, { contextSize: 4096 });
+        expect(defined.findings.some(item => item.rule === 'card-css-selector')).toBe(false);
+        const missing = await checkCharacterCard(card({ first_mes: 'Hello', creator_notes: '<style>#missing { color: red; }</style>' }), { contextSize: 4096 });
+        expect(missing.findings).toContainEqual(expect.objectContaining({ rule: 'card-css-selector', severity: 'warning' }));
+    });
+
     test('warns when permanent card text takes over half the context', async () => {
         const result = await checkCharacterCard(card(), { contextSize: 10, countTokens: () => 6 });
         expect(result.findings).toContainEqual(expect.objectContaining({ rule: 'card-permanent-tokens', severity: 'warning' }));
+    });
+
+    test('does not mistake a mention of {{user}} for writing their actions', async () => {
+        const result = await checkCharacterCard(card({ first_mes: '*She looks at {{user}} and smiles.* Hello there.' }), { contextSize: 4096 });
+        expect(result.findings.some(item => item.rule === 'card-writes-user')).toBe(false);
+        for (const first_mes of ['{{user}}: Hello.', '*{{user}} nods and walks in.*']) {
+            const written = await checkCharacterCard(card({ first_mes }), { contextSize: 4096 });
+            expect(written.findings).toContainEqual(expect.objectContaining({ rule: 'card-writes-user', severity: 'warning' }));
+            expect(written.findings.find(item => item.rule === 'card-writes-user').message).toContain('appears to write');
+        }
+    });
+
+    test('treats optional end tags as valid HTML', () => {
+        expect(unbalancedHtml('<p>One<li>Two')).toBe('');
+        expect(unbalancedHtml('<p>One<li>Two</p></li>')).toBe('');
+        expect(unbalancedHtml('<div>Not closed')).toBe('<div>');
     });
 
     test('marks a shallow card as not fully checked', async () => {
@@ -96,6 +140,15 @@ describe('Scratchpad card checks', () => {
         expect(cardCssSources(card({ creator_notes: '<style>.a { color: red; }</style>' })).css).toContain('.a');
         expect(unbalancedHtml('A <b>bold</b> and <i>italic</i>.')).toBe('');
         expect(unbalancedHtml('A <b>bold sentence.')).toBe('<b>');
+    });
+
+    test('allows ids the card itself defines and flags shell or missing ids', () => {
+        const character = card({ first_mes: '<div id="x">Hello</div>' });
+        expect(cardDefinedIds(character)).toContain('x');
+        expect(brokenCardSelectors('#x { color: red; }', cardDefinedIds(character))).toEqual([]);
+        expect(brokenCardSelectors('#missing { color: red; }', cardDefinedIds(character))).toEqual(['#missing']);
+        expect(brokenCardSelectors('#chat { color: red; }', cardDefinedIds(character))).toEqual(['#chat']);
+        expect(brokenCardSelectors('html body { color: red; }', cardDefinedIds(character))).toEqual(['html body']);
     });
 });
 
@@ -136,6 +189,17 @@ describe('Scratchpad preset checks', () => {
         ]));
     });
 
+    test('separates Continue prefill from Claude Assistant Prefill', () => {
+        const preset = structuredClone(cleanChat);
+        preset.values.continuePrefill = true;
+        preset.values.assistantPrefill = '';
+        expect(checkPreset(preset, { knownMacros: ['char'] }).findings.some(item => item.rule === 'preset-prefill-unsupported')).toBe(false);
+        preset.values.assistantPrefill = 'Start the answer with...';
+        expect(checkPreset(preset, { knownMacros: ['char'] }).findings).toContainEqual(expect.objectContaining({ rule: 'preset-prefill-unsupported', severity: 'warning' }));
+        preset.values.continuePrefill = false;
+        expect(checkPreset(preset, { knownMacros: ['char'] }).findings).toContainEqual(expect.objectContaining({ rule: 'preset-prefill-unsupported' }));
+    });
+
     test('checks Text Completion instruct settings', () => {
         const preset = {
             kind: 'text', name: 'Text',
@@ -173,6 +237,8 @@ describe('Scratchpad lorebook checks', () => {
             'lorebook-probability-zero', 'lorebook-scan-depth-zero', 'lorebook-constant-over-budget',
             'lorebook-did-not-match', 'duplicate-key',
         ]));
+        expect(result.findings.filter(item => item.rule === 'lorebook-did-not-match')).toHaveLength(1);
+        expect(result.findings.find(item => item.rule === 'lorebook-did-not-match').message).toBe('3 entries did not match the recent text.');
         expect(result.findings.some(item => item.message.includes('Always-on entries use'))).toBe(true);
     });
 
@@ -208,6 +274,19 @@ describe('Scratchpad check formatting', () => {
         expect(text).toContain('3 more findings were left out.');
         expect(targetLabel({ kind: 'preset', name: 'P', module: 'main' })).toBe('Preset: P | module main');
         expect(targetLabel({ kind: 'lorebook', name: 'Book', uid: 2, title: 'Lamp' })).toBe('Lorebook: Book | uid 2 | Lamp');
+    });
+
+    test('cuts info before warnings and errors when the cap is reached', () => {
+        const findings = [
+            ...Array.from({ length: 45 }, (_, index) => ({ rule: 'info', severity: 'info', target: { kind: 'card', name: 'Ada' }, message: `Info ${index}.` })),
+            ...Array.from({ length: 5 }, (_, index) => ({ rule: 'warning', severity: 'warning', target: { kind: 'card', name: 'Ada' }, message: `Warning ${index}.` })),
+        ];
+        const text = formatChecks([{ kind: 'card', name: 'Ada', findings }]);
+        expect(text).toContain('Warning 0.');
+        expect(text).toContain('Warning 4.');
+        expect(text).toContain('+ 10 more'.replace('+ ', ''));
+        expect(text).not.toContain('Info 44.');
+        expect(text.split('\n')).toHaveLength(MAX_FINDINGS_PER_ITEM + 1);
     });
 
     test('says a clean item is clean', () => {
@@ -247,6 +326,15 @@ describe('Scratchpad check formatting', () => {
         expect(text).toContain('Connection: Custom (OpenAI-compatible) | Model: local-model');
         expect(text).toContain('Context size: 8192 | Reply length: 512');
         expect(text).toContain('Temperature: 1');
+        expect(text).toContain('Continue prefill: off');
+        expect(text).toContain('Assistant Prefill: none');
+        const prefilled = formatPresetValues({
+            kind: 'chat',
+            values: { contextSize: 4096, replyLength: 256, continuePrefill: true, assistantPrefill: 'Start here.', samplers: [] },
+            connection: { source: 'openai', sourceLabel: 'OpenAI' },
+        });
+        expect(prefilled).toContain('Continue prefill: on');
+        expect(prefilled).toContain('Assistant Prefill: Start here.');
         expect(text).not.toContain('secret');
         expect(text).not.toContain('https://');
     });

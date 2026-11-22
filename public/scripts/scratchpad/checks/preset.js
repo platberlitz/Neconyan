@@ -58,13 +58,13 @@ export function checkPreset(preset, { knownMacros = [], modelContext = 0 } = {})
         }
     }
 
-    if (knownMacros && [...knownMacros].length) {
-        for (const item of modules) {
-            const text = String(item.content ?? '');
-            if (!text) continue;
-            for (const problem of scanMacroProblems(text, { knownNames: knownMacros })) {
-                push(item.id, problem.rule, problem.severity, `${item.name || item.id}: ${problem.message}`, problem.details);
-            }
+    // Structural problems need no registry; an empty list skips only the unknown-name rule.
+    for (const item of modules) {
+        if (item.macroText === false) continue;
+        const text = String(item.content ?? '');
+        if (!text) continue;
+        for (const problem of scanMacroProblems(text, { knownNames: knownMacros })) {
+            push(item.id, problem.rule, problem.severity, `${item.name || item.id}: ${problem.message}`, problem.details);
         }
     }
 
@@ -80,8 +80,8 @@ export function checkPreset(preset, { knownMacros = [], modelContext = 0 } = {})
     if (temperature !== null && (temperature <= 0.05 || temperature >= 1.95)) {
         push('', 'preset-temperature-extreme', 'warning', `Temperature is at an extreme (${temperature}). Replies may become flat or erratic.`);
     }
-    if (preset?.kind === 'chat' && connection.source !== 'claude' && values.continuePrefill && String(values.assistantPrefill ?? '').trim()) {
-        push('', 'preset-prefill-unsupported', 'warning', `The ${connection.sourceLabel || connection.source || 'selected'} connection does not support assistant prefill.`);
+    if (preset?.kind === 'chat' && connection.source !== 'claude' && String(values.assistantPrefill ?? '').trim()) {
+        push('', 'preset-prefill-unsupported', 'warning', `Assistant Prefill is set, but only the Claude source uses it. It is ignored on ${connection.sourceLabel || connection.source || 'this connection'}.`);
     }
     if (preset?.kind === 'text' && values.instructEnabled && !String(values.instructPreset ?? '').trim()) {
         push('instruct', 'preset-instruct-template', 'warning', 'Instruct mode is on but no instruct template is selected.');

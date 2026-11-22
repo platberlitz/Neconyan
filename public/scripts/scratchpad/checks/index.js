@@ -172,7 +172,9 @@ export function formatPresetValues(preset) {
     if (preset?.kind === 'text') {
         lines.push(`Instruct mode: ${values.instructEnabled ? 'on' : 'off'} | Instruct template: ${values.instructPreset || 'none'} | Context template: ${values.contextPreset || 'none'}`);
     } else {
-        lines.push(`Assistant prefill: ${values.continuePrefill ? 'on' : 'off'}`);
+        lines.push(`Continue prefill: ${values.continuePrefill ? 'on' : 'off'}`);
+        const prefill = String(values.assistantPrefill ?? '').trim();
+        lines.push(`Assistant Prefill: ${prefill ? (prefill.length > 500 ? `${prefill.slice(0, 500)}...` : prefill) : 'none'}`);
     }
     return lines.join('\n');
 }

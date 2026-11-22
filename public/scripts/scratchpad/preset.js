@@ -204,6 +204,7 @@ function textModules() {
             marker: false,
             role: 'system',
             depth: null,
+            macroText: true,
             content: [text(sysprompt.content), text(sysprompt.post_history) ? `Post-history instructions:\n${text(sysprompt.post_history)}` : ''].filter(Boolean).join('\n\n'),
         },
         {
@@ -213,6 +214,8 @@ function textModules() {
             marker: false,
             role: '',
             depth: null,
+            // The story string is a Handlebars template, not macro-engine text.
+            macroText: false,
             content: text(context.story_string),
         },
         {
@@ -222,6 +225,8 @@ function textModules() {
             marker: false,
             role: '',
             depth: null,
+            // {{name}} here is an instruct placeholder, not a macro.
+            macroText: false,
             content: '',
         },
     ];
