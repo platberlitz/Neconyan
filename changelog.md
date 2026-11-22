@@ -74,6 +74,7 @@
 - PR #850 (2026-11-21) `feat(server): apply scene rules to server group replies`
 - PR #851 (2026-11-22) `fix(browser): repair the nightly staging checks`
 - PR #852 (2026-11-22) `feat(server): send scene lines and open server replies for scene chats`
+- PR #853 (2026-11-22) `feat(mewmory): recall per group speaker`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
