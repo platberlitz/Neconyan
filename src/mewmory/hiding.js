@@ -11,6 +11,8 @@ import { readConfig } from './models.js';
 import { readContextSourcesSync } from './sources.js';
 import { readJsonShared, readStateShared, sourceSyncOptions } from './store.js';
 import { getCounter, getTokenizerModel } from './tokens.js';
+import { groupLineHeld } from './viewers.js';
+import { readGroupSceneRules } from '../../public/scripts/group-chat-visibility.js';
 
 function writerSettings(directories) {
     const settings = readJsonShared(path.join(directories.root, 'settings.json'), {});
@@ -180,11 +182,13 @@ function preservationCheck(records, archivedState, config, contextSources, sourc
     // normally has no checkpoints when history exclusion is off, so it uses the
     // ordinary processed marks the worker writes for every finished batch.
     const marks = checkpoint ? shadow.checkpoints : shadow.coverage;
+    // A group line stays while someone who heard it cannot read the memory made from it.
+    const held = groupLineHeld(shadow, readGroupSceneRules(records[0]?.chat_metadata));
     return {
         messages,
         isPreserved: index => {
             const ref = shadow.timeline[index + offset];
-            return Boolean(ref && (!sourceEligible(shadow, ref) || sourceRead(marks, ref)));
+            return Boolean(ref && !held(ref) && (!sourceEligible(shadow, ref) || sourceRead(marks, ref)));
         },
     };
 }

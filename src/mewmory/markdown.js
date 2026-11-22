@@ -1,5 +1,6 @@
 import { recordEligible } from './core.js';
 import { dayKey } from './spend.js';
+import { everyoneState } from './viewers.js';
 
 const SECTIONS = [
     ['entity', 'Characters, places and things'],
@@ -56,11 +57,16 @@ function shorten(value, limit) {
     return flat.length > limit ? flat.slice(0, limit - 1).trimEnd() + '…' : flat;
 }
 
-/** Lorebook entries for the memories Mewmory would use now. Points of view and interviews stay out: they are one character's opinion, not world facts. */
+/**
+ * Lorebook entries for the memories Mewmory would use now. Points of view and interviews stay out:
+ * they are one character's opinion, not world facts. A lorebook reaches every group member, so a
+ * group chat exports only what all of them may read.
+ */
 export function loreEntries(state) {
     const known = names(state);
     const nameOf = id => known.get(id) || '';
-    const records = state.records.filter(record => LORE_KINDS[record.kind] && record.status !== 'invalidated' && !record.excluded && recordEligible(state, record))
+    const view = everyoneState(state);
+    const records = view.records.filter(record => LORE_KINDS[record.kind] && record.status !== 'invalidated' && !record.excluded && recordEligible(view, record))
         .sort((a, b) => a.asOf - b.asOf || a.createdAt - b.createdAt).slice(0, LORE_LIMIT);
     return records.map(record => {
         const keys = new Map();

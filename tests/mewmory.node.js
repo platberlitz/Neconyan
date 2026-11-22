@@ -22,7 +22,7 @@ const { forcedMatches, validateSelection, recall, recallInBackground } = await i
 const { expandNeighbours, hybridCandidates, lexicalSearch, searchDocuments, splitPassages, updateIndex } = await import('../src/mewmory/search.js');
 const { loadCurrentState } = await import('../src/mewmory/sources.js');
 const { prepareMewmoryPrompt } = await import('../src/mewmory/prepare.js');
-const { batchState, memberHeard, sameAudience, viewerState } = await import('../src/mewmory/viewers.js');
+const { batchState, everyoneState, groupLineHeld, memberHeard, sameAudience, viewerState } = await import('../src/mewmory/viewers.js');
 const { branchParentLocator, buildBranchMemoryState, chatPath, listStories, mutateState, normalizeLocator, readChatShared, readState, renameChatMemory, renameCharacterMemory, renameWorldMemory, removeChatMemory, removeSourceMemory, statePath, writeJson } = await import('../src/mewmory/store.js');
 const { ensureMewmoryMessageIds } = await import('../public/scripts/mewmory/message-identity.js');
 const { getCounter, getTokenizerModel } = await import('../src/mewmory/tokens.js');
@@ -415,6 +415,32 @@ test('extraction batches keep one audience, build only on what every listener ma
     assert.deepEqual(saved.provenance.audience, { present: ['Mara.png'], whisper_to: [] });
     assert.ok(!state.records.some(record => record.id === 'knowledge:kit-gift'));
     assert.ok(skipped.some(message => /did not hear/.test(message)));
+});
+
+test('group lorebooks and shared memories hold back what some members missed, and hiding keeps lines a listener still needs', async () => {
+    const { loreEntries } = await import('../src/mewmory/markdown.js');
+    const { shareRecords } = await import('../src/mewmory/shared.js');
+    const state = groupStory();
+    groupEvent(state, { id: 'event:arrival', refs: [state.timeline[1]], text: 'The player brought a gift.', asOf: 1 }, ['Mara.png', 'Kit.png']);
+    groupEvent(state, {}, ['Mara.png']);
+    groupEvent(state, { id: 'event:secret', refs: [state.timeline[4]], text: 'Mara hid the receipt.', asOf: 4 }, ['Mara.png']);
+    groupEvent(state, { id: 'event:legacy', refs: [state.timeline[3]], text: 'The player smiled.', asOf: 3 });
+
+    const everyone = everyoneState(state);
+    assert.deepEqual(everyone.records.map(record => record.id), ['event:arrival']);
+    const lore = loreEntries(state).map(entry => entry.id);
+    assert.ok(lore.includes('event:arrival'));
+    assert.ok(!lore.some(id => ['event:gift', 'event:secret', 'event:legacy'].includes(id)));
+    assert.throws(() => shareRecords({}, state, ['event:gift', 'event:secret']), /did not hear/);
+
+    const held = groupLineHeld(state);
+    assert.equal(held(state.timeline[1]), false, 'everyone can read the memory of the arrival');
+    assert.equal(held(state.timeline[2]), false, 'only Mara heard the gift line, and she can read its memory');
+    assert.equal(held(state.timeline[3]), true, 'Kit heard this line but its older memory is closed to him');
+    assert.equal(held(state.timeline[4]), true, 'Kit heard the receipt line but its memory is only for Mara');
+    const plain = base(fixture.messages);
+    assert.equal(groupLineHeld(plain)(plain.timeline[4]), false, 'one-to-one chats are unchanged');
+    assert.equal(everyoneState(plain), plain);
 });
 
 test('meaning recall falls back without paying for a query when no matching documents can be embedded', async t => {
