@@ -443,6 +443,69 @@ test('group lorebooks and shared memories hold back what some members missed, an
     assert.equal(everyoneState(plain), plain);
 });
 
+/** A memory Mara owns in the group story, marked with who heard it unless present is null. */
+function groupKnowledge(state, { id, sequence, text, quote }, present = ['Mara.png', 'Kit.png']) {
+    const record = validateRecord(state, {
+        id, kind: 'knowledge', ownerId: 'npc:mara', subjectIds: ['gift'], text,
+        method: 'witnessed', evidenceText: quote, refs: [state.timeline[sequence]],
+    }, { asOf: sequence, origin: 'objective_extractor' });
+    if (present) record.provenance = { policy: 'test', jobId: 'job', audience: { present, whisper_to: [] } };
+    putRecord(state, record, { automatic: true });
+}
+
+function groupInterviewStory() {
+    const state = groupStory();
+    const mara = validateRecord(state, {
+        id: 'entity:mara', kind: 'entity', entityId: 'npc:mara', name: 'Mara', text: 'Mara', isCharacter: true,
+        refs: [state.timeline[0]], subjectIds: ['npc:mara'],
+    }, { asOf: 0, origin: 'objective_extractor' });
+    mara.provenance = { policy: 'test', jobId: 'job', audience: { present: ['Mara.png', 'Kit.png'], whisper_to: [] } };
+    putRecord(state, mara, { automatic: true });
+    return state;
+}
+
+const readableTo = (state, avatar) => {
+    const view = viewerState(state, [avatar]);
+    return new Set((view?.state ?? state).records.map(record => record.id));
+};
+
+test('group interviews and overviews go to whoever may read the memories they were written from', () => {
+    const state = groupInterviewStory();
+    groupKnowledge(state, { id: 'knowledge:arrival', sequence: 1, text: 'The player brought a gift.', quote: 'I brought you a gift.' });
+    const shared = interview(state, 4, 'knowledge:arrival', 'A kind thought.', 'Mara is touched by the gift.', 'shared');
+    const sharedOverview = state.records.findLast(record => record.kind === 'overview');
+    assert.deepEqual(shared.provenance.audience, { present: ['Mara.png', 'Kit.png'], whisper_to: [] });
+    assert.deepEqual(sharedOverview.provenance.audience, shared.provenance.audience);
+    assert.ok(readableTo(state, 'Kit.png').has(shared.id), 'Kit heard everything this interview was written from, even after missing a line');
+    assert.ok(readableTo(state, 'Kit.png').has(sharedOverview.id));
+
+    groupKnowledge(state, { id: 'knowledge:gift', sequence: 2, text: 'Mara accepted the gift.', quote: 'Mara accepts the gift.' }, ['Mara.png']);
+    const secret = interview(state, 4, 'knowledge:gift', 'I kept it.', 'Mara treasures the gift.', 'secret');
+    const secretOverview = state.records.findLast(record => record.kind === 'overview');
+    assert.ok(Array.isArray(secret.provenance.audience), 'a memory only Mara heard and the shared interview before it both apply');
+    assert.ok(!readableTo(state, 'Kit.png').has(secret.id), 'Kit missed the line the interview was written from');
+    assert.ok(!readableTo(state, 'Kit.png').has(secretOverview.id));
+    assert.ok(readableTo(state, 'Mara.png').has(secret.id));
+    assert.ok(readableTo(state, 'Mara.png').has(secretOverview.id));
+});
+
+test('a group interview built on an older unmarked memory counts every line up to that memory', () => {
+    const early = groupInterviewStory();
+    groupKnowledge(early, { id: 'knowledge:arrival', sequence: 1, text: 'The player brought a gift.', quote: 'I brought you a gift.' }, null);
+    const before = interview(early, 4, 'knowledge:arrival', 'A kind thought.', 'Mara is touched by the gift.', 'early');
+    assert.deepEqual(before.provenance.audience, { present: ['Mara.png', 'Kit.png'], whisper_to: [] });
+    assert.ok(readableTo(early, 'Kit.png').has(before.id));
+
+    const late = groupInterviewStory();
+    groupKnowledge(late, { id: 'knowledge:receipt', sequence: 4, text: 'The player showed a receipt.', quote: 'shows Mara the dated receipt' }, null);
+    const after = interview(late, 4, 'knowledge:receipt', 'It was planned.', 'Mara rethinks the gift.', 'late');
+    assert.ok(!readableTo(late, 'Kit.png').has(after.id), 'the older memory came after the line Kit missed, as the old rule reads it');
+    assert.ok(readableTo(late, 'Mara.png').has(after.id));
+    const { state: plain } = giftHistory();
+    assert.ok(plain.records.filter(record => ['interview', 'overview'].includes(record.kind))
+        .every(record => !Object.hasOwn(record.provenance ?? {}, 'audience')), 'one-to-one chats mark nothing');
+});
+
 test('meaning recall falls back without paying for a query when no matching documents can be embedded', async t => {
     const { directories } = disk(t);
     await loadCurrentState(directories, locator);

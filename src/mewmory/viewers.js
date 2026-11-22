@@ -1,7 +1,10 @@
 import { canGroupMemberSee } from '../../public/scripts/group-chat-visibility.js';
-import { hash, sourceAt } from './core.js';
+import { hash, recordRevision, sourceAt } from './core.js';
 
-const canHear = (audience, viewer, rules) => !audience || canGroupMemberSee({ extra: { group_scene: audience } }, viewer, rules);
+/** A memory built from several memories carries each of their audiences, and a reader must be in all of them. */
+const canHear = (audience, viewer, rules) => Array.isArray(audience)
+    ? audience.every(one => canHear(one, viewer, rules))
+    : !audience || canGroupMemberSee({ extra: { group_scene: audience } }, viewer, rules);
 
 /** Who heard a saved line, or null for a line everyone heard. */
 export function sourceAudience(state, ref) {
@@ -33,6 +36,25 @@ export function groupMembers(state) {
 
 /** Whether a memory version says who may read it. Older memories carry no such mark. */
 const marked = record => Boolean(record?.provenance) && Object.hasOwn(record.provenance, 'audience');
+
+/**
+ * Who may read a memory written only from other memories, such as a Pawspective interview: the
+ * members who may read every version it was built on. An older version names no listeners, so it
+ * counts as every line up to it, as the fallback rule in viewerState reads it.
+ * @param {object} state Mewmory state
+ * @param {{ id: string, version: number }[]} dependencies Memory versions it was built on
+ * @returns {object|object[]|null} One audience, several that all apply, or null for everyone
+ */
+export function memoryAudience(state, dependencies) {
+    const audiences = dependencies.flatMap(({ id, version }) => {
+        const record = recordRevision(state, id, version);
+        if (marked(record)) return [record.provenance.audience].flat();
+        const asOf = record?.asOf ?? Infinity;
+        return state.timeline.filter(ref => sourceAt(state, ref)?.sequence <= asOf).map(ref => sourceAudience(state, ref));
+    }).filter(Boolean);
+    const unique = [...new Map(audiences.map(audience => [audienceKey(audience), audience])).values()];
+    return unique.length ? structuredClone(unique.length === 1 ? unique[0] : unique) : null;
+}
 
 /**
  * The memory a group speaker may read. Lines they did not hear are left out. A memory written
