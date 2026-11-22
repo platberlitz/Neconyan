@@ -117,11 +117,13 @@ for (const phone of [false, true]) {
         expect(box.x).toBeGreaterThanOrEqual(0);
         expect(box.x + box.width).toBeLessThanOrEqual(phone ? 393 : 1280);
         if (process.env.NECONYAN_SCRATCHPAD_SCREENSHOTS === '1') {
+            await page.keyboard.press('Escape');
+            await page.mouse.move(0, 0);
             await page.evaluate(() => window.toastr.clear());
-            await page.screenshot({ path: path.join('..', 'screenshots', 'scratchpad-problem-checks', `${size}-context.png`) });
+            await page.locator('#neconyan-scratchpad').screenshot({ path: path.join('..', 'screenshots', 'scratchpad-problem-checks', `${size}-context.png`) });
             await preview.scrollIntoViewIfNeeded();
             await scrollPreviewTo(preview, '## Checks');
-            await page.screenshot({ path: path.join('..', 'screenshots', 'scratchpad-problem-checks', `${size}-preview.png`) });
+            await page.locator('#neconyan-scratchpad').screenshot({ path: path.join('..', 'screenshots', 'scratchpad-problem-checks', `${size}-preview.png`) });
         }
 
         // One tap on a check prompt turns both switches on and fills the request.
@@ -142,7 +144,7 @@ for (const phone of [false, true]) {
             await page.mouse.move(0, 0);
             await page.evaluate(() => document.activeElement?.blur());
             await page.evaluate(() => window.toastr.clear());
-            await page.screenshot({ path: path.join('..', 'screenshots', 'scratchpad-problem-checks', `${size}-quick-prompts.png`) });
+            await page.locator('#neconyan-scratchpad').screenshot({ path: path.join('..', 'screenshots', 'scratchpad-problem-checks', `${size}-quick-prompts.png`) });
         }
         expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(phone ? 393 : 1280);
     });
