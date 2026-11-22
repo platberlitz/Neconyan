@@ -1629,6 +1629,9 @@ async function firstLoadInit() {
         initServerHistory();
         initSettingsSearch();
         initBulkEdit();
+        import('./scripts/neconyan-character-folders.js')
+            .then(module => module.initCharacterFolders())
+            .catch(error => console.warn('Character folder tabs failed to load', error));
         initReasoning();
         initWelcomeScreen();
         initQuickContextSizeEnhancer();
@@ -20144,9 +20147,12 @@ export async function swipe_right(event = null, { source, repeated, message } = 
  * Imports supported files dropped into the app window.
  * @param {File[]} files Array of files to process
  * @param {Map<File, string>} [data] Extra data to pass to the import function
+ * @param {object} [options]
+ * @param {string} [options.sourceUrl] Page the files were downloaded from, used to sort them into folders
+ * @param {string} [options.sourceId] Site id the files came from, used to sort them into folders
  * @returns {Promise<void>}
  */
-export async function processDroppedFiles(files, data = new Map()) {
+export async function processDroppedFiles(files, data = new Map(), { sourceUrl = '', sourceId = '' } = {}) {
     const allowedMimeTypes = [
         'application/json',
         'image/png',
@@ -20162,13 +20168,16 @@ export async function processDroppedFiles(files, data = new Map()) {
     ];
 
     const avatarFileNames = [];
+    const importedEntries = [];
     for (const file of files) {
         const extension = file.name.split('.').pop().toLowerCase();
         if (allowedMimeTypes.some(x => file.type.startsWith(x)) || allowedExtensions.includes(extension)) {
             const preservedName = data instanceof Map && data.get(file);
+            const replaced = Boolean(preservedName) && characters.some(character => character.avatar === preservedName);
             const avatarFileName = await importCharacter(file, { preserveFileName: preservedName });
             if (avatarFileName !== undefined) {
                 avatarFileNames.push(avatarFileName);
+                importedEntries.push({ avatar: avatarFileName, fileName: file.name, sourceUrl, sourceId, replaced });
             }
         } else {
             toastr.warning(t`Unsupported file type: ` + file.name);
@@ -20177,7 +20186,22 @@ export async function processDroppedFiles(files, data = new Map()) {
 
     if (avatarFileNames.length > 0) {
         await importCharactersTags(avatarFileNames);
+        await announceImportedCharacters(importedEntries);
         await selectImportedChar(avatarFileNames[avatarFileNames.length - 1]);
+    }
+}
+
+/**
+ * Tells listeners (such as folder auto-sort) which characters an import just added.
+ * Runs after the character list and imported tags are up to date.
+ * @param {{ avatar: string, fileName?: string, sourceUrl?: string, sourceId?: string, replaced?: boolean }[]} entries
+ */
+async function announceImportedCharacters(entries) {
+    if (!entries.length) return;
+    try {
+        await eventSource.emit(event_types.CHARACTER_IMPORTED, { entries });
+    } catch (error) {
+        console.warn('Character import listeners failed', error);
     }
 }
 
@@ -22182,15 +22206,18 @@ jQuery(async function () {
         }
 
         const avatarFileNames = [];
+        const importedEntries = [];
         for (const file of e.target.files) {
             const avatarFileName = await importCharacter(file);
             if (avatarFileName !== undefined) {
                 avatarFileNames.push(avatarFileName);
+                importedEntries.push({ avatar: avatarFileName, fileName: file.name });
             }
         }
 
         if (avatarFileNames.length > 0) {
             await importCharactersTags(avatarFileNames);
+            await announceImportedCharacters(importedEntries);
             await selectImportedChar(avatarFileNames[avatarFileNames.length - 1]);
         }
 

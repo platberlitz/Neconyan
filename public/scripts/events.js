@@ -75,6 +75,7 @@ export const event_types = {
     // TODO: Naming convention is inconsistent with other events
     CHARACTER_DELETED: 'characterDeleted',
     CHARACTER_DUPLICATED: 'character_duplicated',
+    CHARACTER_IMPORTED: 'character_imported',
     CHARACTER_RENAMED: 'character_renamed',
     CHARACTER_RENAMED_IN_PAST_CHAT: 'character_renamed_in_past_chat',
     /** @deprecated The event is aliased to STREAM_TOKEN_RECEIVED. */

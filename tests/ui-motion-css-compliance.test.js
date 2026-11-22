@@ -28,6 +28,10 @@ const stylesheets = [
         url: new URL('../public/css/neconyan-help.css', import.meta.url),
     },
     {
+        name: 'character folder tabs',
+        url: new URL('../public/css/neconyan-character-folders.css', import.meta.url),
+    },
+    {
         name: 'Mewmory',
         url: new URL('../public/css/mewmory.css', import.meta.url),
     },

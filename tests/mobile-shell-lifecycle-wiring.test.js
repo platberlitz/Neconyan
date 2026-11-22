@@ -426,6 +426,7 @@ describe('mobile shell lifecycle wiring', () => {
             ['#right-nav-panel', '#HotSwapWrapper .hotswap'],
             ['#right-nav-panel', '#right-nav-panel .rm_tag_controls'],
             ['#right-nav-panel', '#right-nav-panel .neconyan-character-library-footer'],
+            ['#right-nav-panel', '#right-nav-panel .neconyan-folder-tabs-rail'],
             ['#left-nav-panel', '#completion_prompt_manager .completion_prompt_manager_prompt > span:nth-child(3)'],
             ['.popup', '.popup.horizontal_scrolling_dialogue_popup .popup-content'],
             ['#chat', '.mes_text pre code'],

@@ -1008,6 +1008,7 @@ export const MOBILE_SWIPE_RAIL_SELECTOR = [
     '#HotSwapWrapper .hotswap',
     '#right-nav-panel .rm_tag_controls',
     '#right-nav-panel .neconyan-character-library-footer',
+    '#right-nav-panel .neconyan-folder-tabs-rail',
 ].join(', ');
 
 const MOBILE_DOCUMENT_PAN_HORIZONTAL_SCROLL_SELECTOR = [
