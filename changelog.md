@@ -84,6 +84,7 @@
 - PR #860 (2026-11-22) `feat(characters): add folder tabs and auto-sort`
 - PR #861 (2026-11-22) `feat(mewmory): give interviews and overviews an audience`
 - PR #862 (2026-11-22) `feat(mewmory): reopen memories after a catch-up`
+- PR #863 (2026-11-22) `feat(groups): add 'Everyone hears this' lines`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
