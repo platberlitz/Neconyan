@@ -353,17 +353,25 @@ test('preparing a group reply checks its speakers and keeps lines whose memories
     assert.ok(kit.excludedIndices.every(index => index < 2), 'lines after the one Kit missed stay in his prompt');
 });
 
+const groupContext = () => [...fixture.lore,
+    { id: 'character:mara', type: 'character', entityId: 'npc:mara', name: 'Mara', text: 'Mara', meta: { avatar: 'Mara.png' } },
+    { id: 'character:kit', type: 'character', entityId: 'npc:kit', name: 'Kit', text: 'Kit', meta: { avatar: 'Kit.png' } }];
+
+const groupMessages = (missed, present = ['Mara.png']) => fixture.messages.map((message, index) => missed.includes(index)
+    ? { ...structuredClone(message), extra: { ...message.extra, group_scene: { present, whisper_to: [] } } }
+    : { ...structuredClone(message), extra: { ...message.extra, group_scene: { present: ['Mara.png', 'Kit.png'], whisper_to: [] } } });
+
 /** A group story where Mara heard everything and Kit missed the line where she accepts the gift. */
-function groupStory({ present = ['Mara.png'] } = {}) {
-    const messages = fixture.messages.map((message, index) => index === 2
-        ? { ...structuredClone(message), extra: { ...message.extra, group_scene: { present, whisper_to: [] } } }
-        : { ...structuredClone(message), extra: { ...message.extra, group_scene: { present: ['Mara.png', 'Kit.png'], whisper_to: [] } } });
+function groupStory({ present = ['Mara.png'], missed = [2] } = {}) {
     const state = newState({ avatar: '', chat: 'Gift', group: true });
-    syncSources(state, messages, [...fixture.lore,
-        { id: 'character:mara', type: 'character', entityId: 'npc:mara', name: 'Mara', text: 'Mara', meta: { avatar: 'Mara.png' } },
-        { id: 'character:kit', type: 'character', entityId: 'npc:kit', name: 'Kit', text: 'Kit', meta: { avatar: 'Kit.png' } }]);
+    syncSources(state, groupMessages(missed, present), groupContext());
     state.enabled = true;
     return state;
+}
+
+/** Kit catches up on every line but those still missed, as Catch up and Who heard this save it. */
+function catchUp(state, missed = []) {
+    syncSources(state, groupMessages(missed), groupContext());
 }
 
 function groupEvent(state, { id = 'event:gift', refs = [state.timeline[2]], text = 'Mara accepted the gift.', asOf = 2 } = {}, present = null) {
@@ -459,7 +467,7 @@ function groupInterviewStory() {
         id: 'entity:mara', kind: 'entity', entityId: 'npc:mara', name: 'Mara', text: 'Mara', isCharacter: true,
         refs: [state.timeline[0]], subjectIds: ['npc:mara'],
     }, { asOf: 0, origin: 'objective_extractor' });
-    mara.provenance = { policy: 'test', jobId: 'job', audience: { present: ['Mara.png', 'Kit.png'], whisper_to: [] } };
+    mara.provenance = { policy: 'test', jobId: 'job', audience: { present: ['Mara.png', 'Kit.png'], whisper_to: [] }, horizon: 0 };
     putRecord(state, mara, { automatic: true });
     return state;
 }
@@ -504,6 +512,68 @@ test('a group interview built on an older unmarked memory counts every line up t
     const { state: plain } = giftHistory();
     assert.ok(plain.records.filter(record => ['interview', 'overview'].includes(record.kind))
         .every(record => !Object.hasOwn(record.provenance ?? {}, 'audience')), 'one-to-one chats mark nothing');
+});
+
+/** Reads one batch of the group story with the model's answer, as a processing job does. */
+function extractGroup(state, sequence, records) {
+    const input = { ...extractionInput(state, [state.timeline[sequence]], sequence), provenance: { policy: 'test', jobId: 'job' } };
+    applyExtraction(state, { records }, input, []);
+    return input;
+}
+
+const accepts = state => [
+    { id: 'event:accepts', kind: 'event', text: 'Mara accepted the gift and placed it carefully.', refs: [state.timeline[2]], subjectIds: ['gift'], evidenceStatus: 'established' },
+    { id: 'knowledge:accepts', kind: 'knowledge', ownerId: 'npc:mara', subjectIds: ['gift'], text: 'Mara accepted the gift.', method: 'witnessed', evidenceText: 'Mara accepts the gift.', refs: [state.timeline[2]] },
+];
+
+test('a group memory reopens to a member caught up on every line behind it', () => {
+    const state = groupInterviewStory();
+    catchUp(state, [2, 5]);
+    extractGroup(state, 2, accepts(state));
+    const event = state.records.find(record => record.id === 'event:accepts');
+    assert.deepEqual(event.provenance.audience, { present: ['Mara.png'], whisper_to: [] });
+    assert.equal(event.provenance.horizon, 2);
+    const asked = interview(state, 2, 'knowledge:accepts', 'I kept it.', 'Mara treasures the gift.', 'kept');
+    const overview = state.records.findLast(record => record.kind === 'overview');
+    assert.equal(asked.provenance.horizon, 2);
+    assert.equal(overview.provenance.horizon, 2);
+    const ids = ['event:accepts', 'knowledge:accepts', asked.id, overview.id];
+    assert.ok(ids.every(id => !readableTo(state, 'Kit.png').has(id)), 'Kit missed the line all of these came from');
+
+    catchUp(state, [5]);
+    const kit = readableTo(state, 'Kit.png');
+    assert.ok(ids.every(id => kit.has(id)), 'Kit has now heard every line behind them, though he still missed a later one');
+});
+
+test('a memory stays closed while anything its model saw comes from a line the member still missed', () => {
+    const state = groupStory({ missed: [2, 5] });
+    extractGroup(state, 2, accepts(state));
+    const input = extractGroup(state, 5, [
+        { id: 'event:reread', kind: 'event', text: 'Mara reread the receipt for the gift she accepted.', refs: [state.timeline[5]], subjectIds: ['gift'], evidenceStatus: 'established' },
+    ]);
+    assert.ok(input.existing.some(record => record.id === 'event:accepts'), 'the model reading line 5 was shown the memory of line 2');
+    const reread = state.records.find(record => record.id === 'event:reread');
+    assert.equal(reread.provenance.horizon, 5);
+
+    catchUp(state, [2]);
+    assert.ok(!readableTo(state, 'Kit.png').has('event:reread'), 'Kit now heard line 5, but its memory may repeat line 2, which he still missed');
+    catchUp(state);
+    const kit = readableTo(state, 'Kit.png');
+    assert.ok(kit.has('event:reread') && kit.has('event:accepts'));
+});
+
+test('marked group memories saved before horizons stay with their listeners', () => {
+    const state = groupStory({ missed: [2, 4] });
+    groupEvent(state, {}, ['Mara.png']);
+    const input = extractGroup(state, 4, [
+        { id: 'event:receipt', kind: 'event', text: 'The player showed Mara the receipt for the gift.', refs: [state.timeline[4]], subjectIds: ['gift'], evidenceStatus: 'established' },
+    ]);
+    assert.ok(input.existing.some(record => record.id === 'event:gift'));
+    assert.ok(!Object.hasOwn(state.records.find(record => record.id === 'event:receipt').provenance, 'horizon'),
+        'a memory built beside one that cannot say what it came from cannot say either');
+    catchUp(state);
+    const kit = readableTo(state, 'Kit.png');
+    assert.ok(!kit.has('event:gift') && !kit.has('event:receipt'));
 });
 
 test('meaning recall falls back without paying for a query when no matching documents can be embedded', async t => {

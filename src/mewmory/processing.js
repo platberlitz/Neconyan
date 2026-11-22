@@ -8,7 +8,7 @@ import { callJsonRole, readConfig, resolvedRoleIdentity, ROLE_LABELS, roleVersio
 import { loadCurrentState } from './sources.js';
 import { mutateState, readStateShared, statePath } from './store.js';
 import { beginServerWork } from '../android-wake.js';
-import { batchState, memberHeard, memoryAudience, sameAudience, sourceAudience } from './viewers.js';
+import { batchState, memberHeard, memoryAudience, memoryHorizon, sameAudience, sourceAudience } from './viewers.js';
 
 // startProcessing owns production admission, but processBatch is exported for tests and
 // future callers. This separate map joins another direct call to processBatch, so two
@@ -231,6 +231,9 @@ export function applyExtraction(state, output, input, skipped = [], interviewSki
     const chatSources = input.sources.filter(source => source.type === 'chat');
     const audience = chatSources.length ? sourceAudience(state, chatSources[0]) : null;
     const view = batchState(state, audience) || state;
+    // Everything the model saw for this batch, so a member caught up on all of it may read what it wrote.
+    const shown = [...input.existing || [], ...input.authorOverrides || []];
+    const lines = [input.asOf, ...chatSources.map(source => source.sequence)];
     const records = list(output.records ?? [], 'Extracted records', Infinity).slice(0, 80)
         .filter(proposed => proposed && typeof proposed === 'object').map(proposed => tidyProposal(state, proposed, batch, input.asOf, view));
     const order = { entity: 0, state: 1, event: 2, relationship: 3, knowledge: 4, commitment: 5 };
@@ -258,7 +261,10 @@ export function applyExtraction(state, output, input, skipped = [], interviewSki
         record.asOf = Math.max(-1, ...record.refs.map(ref => sourceAt(state, ref).sequence),
             ...record.dependencies.map(dependency => recordRevision(state, dependency.id, dependency.version).asOf));
         // Group memories remember who heard the lines they came from, so only those members recall them.
-        record.provenance = state.locator?.group ? { ...input.provenance, audience: audience ? structuredClone(audience) : null } : input.provenance;
+        if (state.locator?.group) {
+            const horizon = memoryHorizon(state, lines, [...shown, ...record.dependencies]);
+            record.provenance = { ...input.provenance, audience: audience ? structuredClone(audience) : null, ...(horizon !== null ? { horizon } : {}) };
+        } else record.provenance = input.provenance;
         record.inputRefs = chatSources.map(({ id, revision }) => ({ id, revision }));
         putRecord(state, record, { automatic: true });
     } catch (error) {
@@ -349,7 +355,9 @@ export function applyInterview(state, request, output, input, jobId) {
         significance: request.significance, evidenceRefs: request.evidenceRefs,
     }, { asOf: input.asOf, origin: 'generated_interview' });
     // Interviews come only from the owner's saved memories, so in a group they go to whoever may read all of those.
-    const provenance = state.locator?.group ? { ...input.provenance, audience: memoryAudience(state, dependencies) } : input.provenance;
+    const horizon = state.locator?.group ? memoryHorizon(state, [input.asOf], dependencies) : null;
+    const provenance = state.locator?.group
+        ? { ...input.provenance, audience: memoryAudience(state, dependencies), ...(horizon !== null ? { horizon } : {}) } : input.provenance;
     record.provenance = provenance;
     record.evidenceKey = evidenceKey;
     const saved = putRecord(state, record, { automatic: true });
