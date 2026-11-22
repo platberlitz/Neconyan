@@ -2977,7 +2977,7 @@ function loadMewmoryStyles() {
     if (!style) {
         style = document.createElement('link');
         style.id = 'mewmory-css';
-        style.href = 'css/mewmory.css?v=20261124-heard-editor';
+        style.href = 'css/mewmory.css?v=20261125-restore-dock';
         document.head.append(style);
     }
     if (style.rel !== 'stylesheet') {

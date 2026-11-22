@@ -2008,8 +2008,10 @@ body.neconyan #right-nav-panel .sb-character-library-primary-actions > #characte
         width: min(400px, 38vw) !important;
         border-left: 1px solid var(--neco-border) !important;
     }
-    body.neconyan :where(#top-settings-holder):has(> * > #right-nav-panel.openDrawer.pinnedOpen) ~ #sheld {
+    body.neconyan :where(#top-settings-holder):has(> * > #right-nav-panel.openDrawer.pinnedOpen:not(.sb-character-editor-fullscreen)) ~ #sheld {
         right: min(400px, 38vw);
+        content-visibility: visible !important;
+        clip-path: none;
         visibility: visible !important;
         pointer-events: auto !important;
     }

@@ -68,6 +68,8 @@ async function pinForScenario(page, pinned) {
     await page.locator('#sb-topbar-edit-card').click();
     await page.locator('#sb_character_dock_toggle').click();
     await expect(page.locator('#right-nav-panel')).toHaveClass(/pinnedOpen/);
+    await expect(page.locator('#sheld')).toHaveCSS('content-visibility', 'visible');
+    await expect(page.locator('#sheld')).toHaveCSS('clip-path', 'none');
 }
 
 test('bottom bar and composer widen independently of the reading column', async ({ app }) => {
