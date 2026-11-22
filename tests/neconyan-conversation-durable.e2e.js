@@ -880,15 +880,19 @@ test('startup migration survives a native reply completed after the downloaded b
     await sending.close();
     await account.changeStore(store => { store.localStorageMigrated = false; });
     const page = await account.context.newPage();
-    await page.addInitScript(() => localStorage.setItem('sb_conv_thread_migrated.png', JSON.stringify([{ id: 'migrated-user', role: 'user', mes: 'Unsaved local migration.', timestamp: 1700000000000 }])));
+    await page.addInitScript(() => {
+        localStorage.setItem('sb_conv_thread_migrated.png', JSON.stringify([{ id: 'migrated-user', role: 'user', mes: 'Unsaved local migration.', timestamp: 1700000000000 }]));
+        window.addEventListener('neconyan:ready', () => { window.migrationStartupReady = true; }, { once: true });
+    });
     await page.route('**/api/settings/get', async route => {
+        if (route.request().postDataJSON()?.sections) return route.continue();
         const response = await route.fetch();
         await app.release();
         await account.settled(accepted.job.id);
         await route.fulfill({ response });
     });
     await page.goto('/');
-    await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'));
+    await page.waitForFunction(() => window.migrationStartupReady);
     expect(await page.evaluate(async () => (await import('/scripts/neconyan-conversation/store-sync.js')).flushConversationStore())).toBe(true);
     const saved = await account.store();
     expect(saved.characters[account.threadKey].branches.main.messages.filter(message => message.role === 'character')).toHaveLength(2);

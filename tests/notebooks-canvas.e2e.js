@@ -134,7 +134,7 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 393, height: 852 
         const remote = [];
         const writes = [];
         page.on('request', request => {
-            if (request.url().endsWith('/scripts/notebooks/canvas.js')) modules.push(request);
+            if (new URL(request.url()).pathname === '/scripts/notebooks/canvas.js') modules.push(request);
             if (request.url().startsWith('https://example.com/never-fetch')) remote.push(request.url());
             if (request.url().endsWith('/api/notebooks/canvas/update')) writes.push(request);
         });

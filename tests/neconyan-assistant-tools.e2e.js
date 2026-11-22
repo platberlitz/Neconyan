@@ -52,7 +52,11 @@ test('an active assistant reviews and persists real lorebook, agent, preset and 
     await ready(page, navigate);
     const api = page.request;
     const headers = await page.evaluate(() => window.SillyTavern.getContext().getRequestHeaders());
-    const readSettings = async () => (await api.post('/api/settings/get', { headers, data: {} })).json();
+    const readAgents = async () => {
+        const response = await api.post('/api/settings/get', { headers, data: { sections: ['agents'] } });
+        expect(response.ok()).toBe(true);
+        return (await response.json()).inChatAgents;
+    };
     const suffix = Date.now();
     const book = ` Assistant book ${suffix}`;
     const agentId = `assistant-agent-${suffix}`;
@@ -104,11 +108,11 @@ test('an active assistant reviews and persists real lorebook, agent, preset and 
         const savedBook = await (await api.post('/api/worldinfo/get', { headers, data: { name: book } })).json();
         expect(savedBook).toMatchObject({ foreign: 'book metadata', entries: { 0: { content: literal, disable: true, foreign: 'entry metadata' } } });
         expect(await edit(page, 'EditAgent', { id: agentId, field: 'prompt', value: 'New agent instructions' }, 'Old agent', 'New agent instructions')).toMatchObject({ status: 'success', committed: true });
-        expect((await readSettings()).inChatAgents.find(agent => agent.id === agentId)).toMatchObject({ prompt: 'New agent instructions', foreign: { keep: true }, enabled: false });
+        expect((await readAgents()).find(agent => agent.id === agentId)).toMatchObject({ prompt: 'New agent instructions', foreign: { keep: true }, enabled: false });
         const createdAgent = await edit(page, 'CreateAgent', { agent: { name: 'Created helper', kind: 'after-reply', prompt: literal, afterReplyMode: 'append' } }, '',
             agent => expect(agent).toMatchObject({ name: 'Created helper', prompt: literal, enabled: false, phase: 'post', postProcess: { enabled: true, promptTransformEnabled: true, promptTransformMode: 'append' } }));
         expect(createdAgent).toMatchObject({ status: 'success', committed: true, enabled: false, refreshFailed: false });
-        expect((await readSettings()).inChatAgents.find(agent => agent.id === createdAgent.id)).toMatchObject({ prompt: literal, enabled: false });
+        expect((await readAgents()).find(agent => agent.id === createdAgent.id)).toMatchObject({ prompt: literal, enabled: false });
         expect(await invoke(page, 'ReadAgent', { id: createdAgent.id })).toMatchObject({ agent: { name: 'Created helper', prompt: literal } });
         await page.evaluate(async ({ baselineName, presetName }) => {
             const { getPresetManager } = await import('/scripts/preset-manager.js');
