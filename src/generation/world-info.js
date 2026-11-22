@@ -317,9 +317,10 @@ function selectedBooks(settings, saved, character, avatar, personaLorebook) {
 /** Capture the actual saved book selection before private job admission. */
 export function captureRoleplayWorldInfo(base, account, source, { avatar, maxContext, tokenizer = 'o200k_base', trigger = 'normal', serverPrompt = false,
     agentIds = [], agentContext = false, nativeBindingVersion = 1, promptEffect = null, mediaPolicyVersion = 0, mediaBinding = null,
-    bundledMacros = null, browserMacros = null }) {
+    bundledMacros = null, browserMacros = null, groupHears = null }) {
     if (![0, 1].includes(mediaPolicyVersion)) throw roleplayError('ROLEPLAY_INVALID', uiText('The page and the server are running different versions. Reload the page, then try again.'), 409);
     if (!['normal', 'continue', 'swipe', 'regenerate'].includes(trigger) || typeof serverPrompt !== 'boolean'
+        || groupHears !== null && (!Number.isSafeInteger(groupHears) || groupHears < 0)
         || ![0, 1].includes(nativeBindingVersion) || nativeBindingVersion === 0 && agentIds.length
         || promptEffect !== null && !['append', 'continue', 'swipe', 'alternative', 'replace'].includes(promptEffect)) {
         throw roleplayError('ROLEPLAY_INVALID', 'The World Info generation trigger is invalid.', 400);
@@ -327,9 +328,11 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
     return withRoleplayAccount(base, account, lease => {
         const saved = assertRoleplaySourceLocked(lease, source);
         const effect = promptEffect ?? { normal: 'append', regenerate: 'replace', swipe: 'swipe', continue: 'continue' }[trigger];
-        const promptRecords = serverPrompt ? selectRoleplayPromptRecords(saved.records, source, effect, avatar) : saved.records;
+        // A first speaker answering a line they missed hears it now, as in the page.
+        const viewer = groupHears !== null ? { avatar, hears: groupHears } : avatar;
+        const promptRecords = serverPrompt ? selectRoleplayPromptRecords(saved.records, source, effect, viewer) : saved.records;
         // A group speaker who missed a line cannot read Agent variables, which hold no record of who heard them.
-        const groupHistoryRestricted = serverPrompt && groupViewerMissedLines(selectRoleplayPromptRecords(saved.records, source, effect), source, avatar);
+        const groupHistoryRestricted = serverPrompt && groupViewerMissedLines(selectRoleplayPromptRecords(saved.records, source, effect), source, viewer);
         if (!source.dependencies?.some(dependency => dependency.kind === 'character' && dependency.locator.avatar === avatar)) {
             throw roleplayError('ROLEPLAY_INVALID', 'World Info must use a character in the accepted Roleplay source.', 409);
         }
@@ -557,6 +560,7 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             personaPosition: persona.position, personaDepth: persona.depth, personaRole: persona.role, personaEvidence: persona.evidence,
             promptVariables: { local: saved.records[0].chat_metadata?.variables ?? {}, global: extensions.variables?.global ?? {} },
             ...(groupHistoryRestricted ? { groupHistoryRestricted: true } : {}),
+            ...(groupHears !== null ? { groupHears } : {}),
             experimentalMacroEngine: Boolean(settings.power_user?.experimental_macro_engine),
             depthPrompt: { prompt: depthPrompt,
                 depth: (character.data?.data?.extensions ?? character.data?.extensions)?.depth_prompt?.depth ?? 4,
@@ -630,6 +634,7 @@ export function assertRoleplayWorldInfoCurrent(base, snapshot) {
         browserMacros: snapshot.browserMacros ?? null,
         nativeBindingVersion: Object.hasOwn(snapshot, 'nativeBindingVersion') ? snapshot.nativeBindingVersion : 0,
         mediaPolicyVersion: snapshot.mediaPolicyVersion ?? 0, mediaBinding: snapshot.mediaBinding ?? null,
+        groupHears: snapshot.groupHears ?? null,
     });
     // Previously accepted jobs retain their original snapshot shape and write
     // policy; adding the boundary must not invalidate paid work after an update.

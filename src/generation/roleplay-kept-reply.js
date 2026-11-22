@@ -32,6 +32,8 @@ import { withNativeMediaReceipt } from './media-jobs.js';
 import { readRoleplayPreview } from './roleplay-preview.js';
 import { reasoningOnlyResult } from './reasoning-only-result.js';
 import { offRecordReplyExtra } from '../mewmory/message-policy.js';
+import { addGroupHearer } from '../../public/scripts/group-chat-visibility.js';
+import { savedGroupReplyTarget } from './roleplay-group-scene.js';
 
 export const KEPT_REPLY_ARTIFACT = 'roleplay-kept-reply';
 export const MAIN_COMPLETE_ARTIFACT = 'roleplay-main-complete';
@@ -1012,6 +1014,9 @@ export function keepRoleplayReply(context, { reason = 'stopped', rootJobId = nul
                 writeArtifact(directories, job.id, KEPT_REPLY_ARTIFACT, done);
                 return keptReplySummary(done);
             }
+            // A first speaker who answered a line they missed has heard it, while that line is still the one they answered.
+            if (placed.placement === 'append' && Number.isSafeInteger(speaker?.hears)
+                && savedGroupReplyTarget(records.slice(0, -1), avatar) === speaker.hears) addGroupHearer(records[speaker.hears + 1], avatar);
             const rootJob = root === job.id ? job : getJob(directories, root);
             const capacityLimit = rootJob?.intent?.request?.capacity?.limitBytes;
             if (Number.isSafeInteger(capacityLimit) && capacityLimit > 0

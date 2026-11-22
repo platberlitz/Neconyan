@@ -2,6 +2,7 @@ import { verifyBlockedOutputProof } from './blocked-output-proof.js';
 import { readArtifact } from '../jobs/artifacts.js';
 import { roleplayError, roleplayHash } from '../roleplay-store.js';
 import { selectRoleplayPromptRecords } from './roleplay-prompt.js';
+import { roleplayGroupViewer } from './roleplay-group-scene.js';
 import { applyAutomaticCompanionNoteCleanup } from './companion-note-cleanup.js';
 
 const failure = () => roleplayError('ROLEPLAY_AGENT_RECOVERY', 'The saved Agent completion does not match this reply.', 409);
@@ -38,7 +39,7 @@ export function applyAgentCompletionRecords(directories, job, records, output, b
     const intercepted = proof(directories, job, 'roleplay-agent-intercepts:post-main-generation', admitted.intercepts);
     const post = proof(directories, job, 'roleplay-agent-post', admitted.post);
     const companions = proof(directories, job, 'roleplay-companions', admitted.companions);
-    const selected = selectRoleplayPromptRecords(baselineRecords, source, effect, request.worldInfo?.avatar);
+    const selected = selectRoleplayPromptRecords(baselineRecords, source, effect, roleplayGroupViewer(request.worldInfo));
     const generationType = request.worldInfo.global.trigger;
     if (pre.intentHash !== roleplayHash(job.intent) || pre.policyHash !== roleplayHash(request.worldInfo.agents)
         || base.intentHash !== pre.intentHash || base.recordsHash !== roleplayHash(selected) || typeof base.value !== 'string'

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addGroupHearer, beginGroupPromptScope, canGroupMemberSee, canGroupTargetSee, changeGroupHearers, countGroupPromptHiddenMessages, filterGroupPromptMessages, filterGroupTargetMessages, groupHeardCount, groupMessageAudience, getGroupPromptViewers, groupSceneCardMembers, groupScenePrompt, groupSceneTurnNeedsPage, groupTargetViewers, hasRestrictedGroupHistory, readGroupScene, readGroupSceneRules, sameGroupViewers, withGroupTargetPrompt } from '../public/scripts/group-chat-visibility.js';
+import { addGroupHearer, beginGroupPromptScope, canGroupMemberSee, canGroupTargetSee, changeGroupHearers, countGroupPromptHiddenMessages, filterGroupPromptMessages, filterGroupTargetMessages, groupHeardCount, groupMessageAudience, getGroupPromptViewers, groupSceneCardMembers, groupScenePrompt, groupSceneTurnNeedsPage, groupTargetViewers, groupWhisperPrompt, hasRestrictedGroupHistory, readGroupScene, readGroupSceneRules, sameGroupViewers, withGroupTargetPrompt } from '../public/scripts/group-chat-visibility.js';
 
 test('scene state is bounded to current members and has safe defaults', () => {
     assert.deepEqual(readGroupScene({}, ['kit', 'mira']), { away: [], location: '', whisper_to: [], sees_all: [] });
@@ -189,16 +189,18 @@ test('the heard badge counts only lines that some current member missed', () => 
     assert.equal(groupHeardCount(line(['kit']), []), null);
 });
 
-test('a scene turn stays in the page only for whispers, away speakers and an unheard line being answered', () => {
+test('a scene turn stays in the page only for a chosen speaker who is away', () => {
     const members = ['kit', 'mira'];
     const meta = scene => ({ group_scene: { away: [], location: 'The archive', whisper_to: [], ...scene } });
-    const missed = { mes: 'Only Kit heard this.', extra: { group_scene: { present: ['kit'], whisper_to: [] } } };
-    const shared = { mes: 'Both heard this.', extra: { group_scene: { present: members, whisper_to: [] } } };
-    assert.equal(groupSceneTurnNeedsPage([missed, shared], meta(), members, ['mira']), false);
-    assert.equal(groupSceneTurnNeedsPage([shared, missed], meta(), members, ['mira']), true);
-    assert.equal(groupSceneTurnNeedsPage([shared, missed], meta(), members, ['mira'], { hearReplyTarget: false }), false);
-    assert.equal(groupSceneTurnNeedsPage([shared, missed], meta({ sees_all: ['mira'] }), members, ['mira']), false);
-    assert.equal(groupSceneTurnNeedsPage([shared], meta({ whisper_to: ['kit'] }), members, ['kit']), true);
-    assert.equal(groupSceneTurnNeedsPage([shared], meta({ away: ['mira'] }), members, ['kit']), false);
-    assert.equal(groupSceneTurnNeedsPage([shared], meta({ away: ['mira'] }), members, ['mira']), true);
+    assert.equal(groupSceneTurnNeedsPage(meta(), members, ['mira']), false);
+    assert.equal(groupSceneTurnNeedsPage(meta({ whisper_to: ['kit'] }), members, ['kit']), false);
+    assert.equal(groupSceneTurnNeedsPage(meta({ away: ['mira'] }), members, ['kit']), false);
+    assert.equal(groupSceneTurnNeedsPage(meta({ away: ['mira'] }), members, ['mira']), true);
+    assert.equal(groupSceneTurnNeedsPage(undefined, members, ['mira']), false);
+});
+
+test('a whispered reply names the persona and everyone the whisper is for', () => {
+    assert.equal(groupWhisperPrompt('Ash', []), '');
+    assert.equal(groupWhisperPrompt('Ash', ['Kit', 'Mira']),
+        '[Private whisper between Ash and Kit, Mira. Other members cannot hear or react to it. Keep the reply private.]');
 });

@@ -132,7 +132,7 @@ import {
 } from './group-chat-scene.js';
 import { buildEnsemblePrompt, createEnsembleMessages } from './group-chat-ensemble.js';
 import { messageAutomaticGenerationSuppressed } from './generation-outcome.js';
-import { addGroupHearer, beginGroupPromptScope, canGroupMemberSee, changeGroupHearers, filterGroupPromptMessages, groupHeardCount, groupMessageAudience, groupSceneCardMembers, groupScenePrompt, groupSceneTurnNeedsPage, readGroupScene } from './group-chat-visibility.js';
+import { addGroupHearer, beginGroupPromptScope, canGroupMemberSee, changeGroupHearers, filterGroupPromptMessages, groupHeardCount, groupMessageAudience, groupSceneCardMembers, groupScenePrompt, groupSceneTurnNeedsPage, groupWhisperPrompt, readGroupScene } from './group-chat-visibility.js';
 import { initGroupSceneControls, renderGroupScene } from './group-chat-scene-ui.js';
 import { getGroupSpeakerPool } from './group-chat-speakers.js';
 import { initGroupSpeakerMenu } from './group-chat-speaker-menu.js';
@@ -531,7 +531,7 @@ function beginGroupTurnAudience(type) {
 }
 
 /**
- * Server group replies follow the scene, but only the page can whisper or record that a speaker heard the line they answer.
+ * Server group replies follow the scene, whispers and the line each speaker answers, but only the page can write a turn for a chosen speaker who is away.
  * The server refuses the same turns, using the same rule.
  * @param {number[]} speakerIds Chosen speakers
  * @returns {boolean}
@@ -540,14 +540,15 @@ function usesGroupSceneVisibility(speakerIds = []) {
     const group = groups.find(item => item.id === selected_group);
     if (!group) return false;
     const avatars = speakerIds.map(chid => characters[chid]?.avatar).filter(Boolean);
-    return groupSceneTurnNeedsPage(chat, chat_metadata, group.members, avatars, { hearReplyTarget: isHearReplyTargetEnabled(group) });
+    return groupSceneTurnNeedsPage(chat_metadata, group.members, avatars);
 }
 
 function getGroupScenePrompt(group) {
     if (!chat_metadata.group_scene) return '';
     const prompt = groupScenePrompt(readGroupScene(chat_metadata, group.members), group.members.map(avatar => ({ avatar, name: characters[getCharacterIdByAvatar(avatar)]?.name || avatar })));
     const targets = getGroupMessageAudience()?.whisper_to || [];
-    return prompt + (targets.length ? `\n[Private whisper between ${name1} and ${targets.map(avatar => characters[getCharacterIdByAvatar(avatar)]?.name || avatar).join(', ')}. Other members cannot hear or react to it. Keep the reply private.]` : '');
+    const whisper = groupWhisperPrompt(name1, targets.map(avatar => characters[getCharacterIdByAvatar(avatar)]?.name || avatar));
+    return prompt + (whisper ? `\n${whisper}` : '');
 }
 
 async function runWithGroupScene(avatars, callback, type = 'normal') {

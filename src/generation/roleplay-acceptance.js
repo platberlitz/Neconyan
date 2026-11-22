@@ -333,13 +333,12 @@ export function normalizeRoleplayGroupSubmission(body = {}) {
 }
 
 /**
- * Server group replies follow the saved scene, but only append new messages,
- * so whispers and a speaker answering a line they missed stay in the page.
+ * Server group replies follow the saved scene, whispers and the line each
+ * speaker answers, but a chosen speaker who is away stays in the page.
  */
 function assertGroupSceneOpen(lease, records, groupId, speakers) {
     const group = readRoleplayEntityLocked(lease, 'group', groupId).data;
-    if (groupSceneTurnNeedsPage(records.slice(1), records[0]?.chat_metadata, group.members ?? [], speakers,
-        { hearReplyTarget: group.hear_reply_target !== false })) {
+    if (groupSceneTurnNeedsPage(records[0]?.chat_metadata, group.members ?? [], speakers)) {
         throw changed('This group scene turn has to be written in the browser.', 'roleplay_group_scene');
     }
 }
