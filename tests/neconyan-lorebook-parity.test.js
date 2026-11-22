@@ -68,10 +68,10 @@ describe('Test keys', () => {
 describe('Health check', () => {
     test('counts unreadable records without offering to open the wrong entry', () => {
         const book = { entries: {
-            0: entry(0, { key: ['harbour'], content: 'A quiet harbour.' }),
+            0: entry(0, { key: ['harbour'], content: 'Fishing boats return at dawn.' }),
             1: null,
             2: entry(0), // This record must not link to the valid entry in slot 0.
-            3: entry('3', { key: ['market'], content: 'A busy market.' }),
+            3: entry('3', { key: ['market'], content: 'Stalls open at dawn.' }),
             4: { content: 'Missing ID.' },
         } };
         const result = checkLorebookHealth(book);
