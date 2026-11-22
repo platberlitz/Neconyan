@@ -172,29 +172,33 @@ export function captureSavedRoleplayImages(directories, records, display, captio
     });
 }
 
-function books(directories, names) {
+function readAvailableBooks(directories, names) {
     const result = Object.create(null);
     let totalBytes = 0;
     for (const name of new Set(names.flat())) {
         if (typeof name !== 'string' || !name || name.length > 234) throw roleplayError('ROLEPLAY_INVALID', 'Invalid World Info book name.', 400);
-        let book, file;
+        let file;
         try {
-            const filename = getExistingWorldInfoFilename(directories, name);
+            const filename = getExistingWorldInfoFilename(directories, name, { followSymlinks: false });
             file = filename && readRoleplayFile(path.join(directories.worlds, filename), 8 * 1024 * 1024);
-            if (file && (totalBytes += file.bytes.length) <= 16 * 1024 * 1024) {
-                book = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(file.bytes));
-            }
         } catch {
             throw roleplayError('ROLEPLAY_SOURCE_DAMAGED', `A saved World Info book is unreadable: ${name}.`, 409);
         }
-        if (!isValidWorldInfoData(book)) throw roleplayError('ROLEPLAY_SOURCE_DAMAGED', 'A saved World Info book is missing or damaged.', 409);
+        if (!file) continue;
+        if ((totalBytes += file.bytes.length) > 16 * 1024 * 1024) {
+            throw roleplayError('ROLEPLAY_INVALID', 'The saved World Info books exceed their combined size limit.', 409);
+        }
+        // Optional lore must not block a reply. Skip unusable content, not protected read failures.
+        let book;
+        try { book = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(file.bytes)); } catch { continue; }
+        if (!isValidWorldInfoData(book)) continue;
         result[name] = { data: book, hash: roleplayHash(book), rawHash: file.rawHash, physical: file.physical };
     }
     return result;
 }
 
 function boundBooks(directories, snapshot) {
-    const current = books(directories, [...Object.values(snapshot.names).flat(), ...(snapshot.pathfinder?.books ?? []), ...(snapshot.tools?.pathfinder?.books ?? [])]);
+    const current = readAvailableBooks(directories, [...Object.values(snapshot.names).flat(), ...(snapshot.pathfinder?.books ?? []), ...(snapshot.tools?.pathfinder?.books ?? [])]);
     for (const [name, hash] of Object.entries(snapshot.bookHashes)) {
         if (current[name]?.hash !== hash
             || roleplayHash({ rawHash: current[name].rawHash, physical: current[name].physical })
@@ -378,7 +382,11 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             source, { agentContext, trigger, hiddenIds: agents.hiddenIds }) : null;
         const tools = nativeBindingVersion && serverPrompt && !agentContext
             ? captureRoleplayToolBindings(lease, source, avatar, character.data, agents, savedSettings) : null;
-        const selected = books(base.directories, [...Object.values(names).flat(), ...(pathfinder?.books ?? []), ...(tools?.pathfinder?.books ?? [])]);
+        const selected = readAvailableBooks(base.directories, [...Object.values(names).flat(), ...(pathfinder?.books ?? []), ...(tools?.pathfinder?.books ?? [])]);
+        const available = list => list.filter(name => Object.hasOwn(selected, name));
+        for (const scope of Object.keys(names)) names[scope] = available(names[scope]);
+        if (pathfinder) pathfinder.books = available(pathfinder.books);
+        if (tools?.pathfinder) tools.pathfinder.books = available(tools.pathfinder.books);
         const characterTags = savedSettings.tag_map?.[avatar] ?? [];
         if (!Array.isArray(characterTags)) throw roleplayError('ROLEPLAY_INVALID', 'The saved character tags are invalid.', 400);
         const extensions = savedSettings.extension_settings ?? {};
