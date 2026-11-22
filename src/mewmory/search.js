@@ -1,6 +1,6 @@
 import { currentRecords, eligibleRecords, fail, hash, refKey, sourceAt, sourceEligible } from './core.js';
 import { embed, roleVersion } from './models.js';
-import { createVectorReader, querySumOfSquares } from './vector-storage.js';
+import { createVectorEncoder, createVectorReader, querySumOfSquares } from './vector-storage.js';
 import { lexicalSearch } from '../../public/scripts/util/lexical-search.js';
 import { RAG_DEFAULTS } from '../../public/scripts/mewmory/rag-settings.js';
 export { cosine } from './vector-storage.js';
@@ -168,17 +168,20 @@ export async function updateIndex(state, directories, config, { signal, limit = 
     const existing = sameVersion ? state.index.vectors : state.index.build?.version === version ? state.index.build.vectors : {};
     const next = {};
     let dimension;
-    const reader = createVectorReader();
-    for (const document of documents) {
-        const entry = existing[document.id];
-        const width = matchingVectorDimension(reader, entry, hash(document.searchText), dimension);
-        if (!width) continue;
-        dimension ||= width;
-        next[document.id] = entry;
+    {
+        const reader = createVectorReader();
+        for (const document of documents) {
+            const entry = existing[document.id];
+            const width = matchingVectorDimension(reader, entry, hash(document.searchText), dimension);
+            if (!width) continue;
+            dimension ||= width;
+            next[document.id] = entry;
+        }
     }
     const missing = targets.filter(document => !next[document.id]);
     const usage = [];
     const paid = {};
+    const encode = createVectorEncoder({ requireNonzero: true });
     const policy = config.roles.embedding.nativePolicy;
     const batchSize = Math.min(config.retrieval?.batchSize || 10, policy?.source === 'vertexai' ? policy.settings.model.startsWith('gemini-embedding-') ? 1 : 5 : 10);
     for (let start = 0; start < Math.min(limit, missing.length); start += batchSize) {
@@ -192,7 +195,9 @@ export async function updateIndex(state, directories, config, { signal, limit = 
         if (result.vectors.length !== batch.length || !dimension || result.vectors.some(vector => !Array.isArray(vector) || vector.length !== dimension
             || !vector.some(value => value !== 0) || vector.some(value => !Number.isFinite(value)))) fail('Embedding dimensions changed or a vector was invalid. Set a new model revision and rebuild the index.', 502);
         batch.forEach((document, offset) => {
-            const entry = { textHash: hash(document.searchText), vector: result.vectors[offset] };
+            const vectorF32LE = encode(result.vectors[offset]);
+            if (vectorF32LE === null) fail('Embedding dimensions changed or a vector was invalid. Set a new model revision and rebuild the index.', 502);
+            const entry = { textHash: hash(document.searchText), vectorF32LE };
             next[document.id] = entry;
             paid[document.id] = entry;
         });

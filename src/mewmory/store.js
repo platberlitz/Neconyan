@@ -10,6 +10,7 @@ import { recoverFileWriteSync } from '../util.js';
 import { agentCollectionDirectory, readAgentCollection } from '../in-chat-agent-storage.js';
 import { getActiveCompanionResults } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
 import { fail, forkState, hash, newState, object, purgeSources, sourceAt, syncSources, text } from './core.js';
+import { compactArchiveVectors } from './vector-storage.js';
 import { readGroupSceneStart } from '../../public/scripts/group-chat-visibility.js';
 
 export const MAX_ARCHIVE_BYTES = 256 * 1024 * 1024;
@@ -241,6 +242,12 @@ export function readJsonShared(filename, fallback) {
         if (error.code === 'ENOENT') return fallback;
         fail('Mewmory could not read the saved memories for this chat. Restore a valid export before making changes.', 409);
     }
+    const folder = path.dirname(key);
+    if (data?.format === 1 && Array.isArray(data.records)
+        && path.basename(folder) === 'stories' && path.basename(path.dirname(folder)) === 'mewmory'
+        && /^[0-9a-f]{64}\.json$/.test(path.basename(key))) {
+        compactArchiveVectors(data, { inPlace: true });
+    }
     const entry = { dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs, bytes: stat.size, data };
     sharedJsonCache.set(key, entry);
     sharedJsonCacheBytes += entry.bytes;
@@ -449,7 +456,7 @@ export function mutateState(directories, locator, mutate, expectedRevision, { ex
         }
         // Compare serialised text directly; hashing both copies of a large archive cost more than the comparison.
         const before = serializedArchive(filename, identity, shared);
-        const result = mutate(state) || state;
+        const result = compactArchiveVectors(mutate(state) || state);
         if (JSON.stringify(result) !== before || !fs.existsSync(filename)) {
             result.revision = state.revision + 1;
             result.updatedAt = Date.now();

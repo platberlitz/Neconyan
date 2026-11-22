@@ -111,3 +111,66 @@ export function createVectorReader() {
         },
     };
 }
+
+/** Encode owned provider arrays using a single reusable buffer. */
+export function createVectorEncoder({ requireNonzero = false } = {}) {
+    let scratch;
+    return vector => {
+        if (!Array.isArray(vector) || !vector.length || vector.length > MAX_COMPACT_BYTES / FLOAT32_BYTES) return null;
+        const bytes = vector.length * FLOAT32_BYTES;
+        if (!scratch || scratch.length < bytes) scratch = Buffer.allocUnsafe(bytes);
+        let nonzero = false;
+        for (let index = 0; index < vector.length; index++) {
+            const component = vector[index];
+            if (!Number.isFinite(component)) return null;
+            const value = Math.fround(component);
+            if (!Number.isFinite(value)) return null;
+            nonzero ||= value !== 0;
+            scratch.writeFloatLE(value, index * FLOAT32_BYTES);
+        }
+        if (requireNonzero && !nonzero) return null;
+        return scratch.toString('base64', 0, bytes);
+    };
+}
+
+function compactEntry(entry, encode, inPlace) {
+    if (!entry || typeof entry !== 'object') return entry;
+    const legacy = Object.hasOwn(entry, 'vector');
+    const compact = Object.hasOwn(entry, 'vectorF32LE');
+    if (!legacy && (!compact || (typeof entry.vectorF32LE === 'string' && Object.keys(entry).at(-1) === 'vectorF32LE'))) return entry;
+
+    // Ambiguous or unencodable saved embeddings become missing. The entry metadata survives.
+    const encoded = legacy ? (compact ? null : encode(entry.vector)) : entry.vectorF32LE;
+    const result = inPlace ? entry : { ...entry };
+    delete result.vector;
+    delete result.vectorF32LE;
+    // The canonical field position keeps representation-only edits equal during JSON comparison.
+    if (typeof encoded === 'string') result.vectorF32LE = encoded;
+    return result;
+}
+
+function compactMap(vectors, encode, inPlace) {
+    let result = vectors;
+    for (const key of Object.keys(vectors ?? {})) {
+        const entry = vectors[key];
+        const normalized = compactEntry(entry, encode, inPlace);
+        if (entry === normalized) continue;
+        if (result === vectors) result = Array.isArray(vectors) ? vectors.slice() : { ...vectors };
+        result[key] = normalized;
+    }
+    return result;
+}
+
+/** Parsed archives are owned. Mutation results can contain caller-owned maps or entries. */
+export function compactArchiveVectors(state, { inPlace = false } = {}) {
+    const { index } = state;
+    if (!index) return state;
+    const encode = createVectorEncoder();
+    const published = compactMap(index.vectors, encode, inPlace);
+    const staged = compactMap(index.build?.vectors, encode, inPlace);
+    if (published === index.vectors && staged === index.build?.vectors) return state;
+    const normalized = { ...index };
+    if (published !== index.vectors) normalized.vectors = published;
+    if (staged !== index.build?.vectors) normalized.build = { ...index.build, vectors: staged };
+    return { ...state, index: normalized };
+}
