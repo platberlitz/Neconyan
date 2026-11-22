@@ -13,7 +13,7 @@ import { setConfigFilePath } from '../src/util.js';
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
 const {
     continueState, eligibleRecords, forkState, hash, newState, putRecord, recordEligible,
-    POLICY_VERSION, READ_EARLIER, refKey, ROLE_NAMES, sourceAt, syncSources, undoRecord, validateRecord,
+    POLICY_VERSION, READ_EARLIER, refKey, ROLE_NAMES, sourceAt, sourceFingerprint, syncSources, undoRecord, validateRecord,
 } = await import('../src/mewmory/core.js');
 const { activeReferences, assembleContext, generationFingerprint } = await import('../src/mewmory/context.js');
 const { callJsonRole, defaultConfig, embed, isLocalEndpoint, validateEndpoint, saveConfig } = await import('../src/mewmory/models.js');
@@ -23,12 +23,12 @@ const { expandNeighbours, hybridCandidates, lexicalSearch, searchDocuments, spli
 const { loadCurrentState } = await import('../src/mewmory/sources.js');
 const { prepareMewmoryPrompt } = await import('../src/mewmory/prepare.js');
 const { batchState, everyoneState, groupLineHeld, memberHeard, sameAudience, sourceAudience, viewerState } = await import('../src/mewmory/viewers.js');
-const { branchParentLocator, buildBranchMemoryState, chatPath, listStories, mutateState, normalizeLocator, readChatShared, readState, renameChatMemory, renameCharacterMemory, renameWorldMemory, removeChatMemory, removeSourceMemory, statePath, writeJson } = await import('../src/mewmory/store.js');
+const { branchParentLocator, buildBranchMemoryState, chatPath, listStories, mutateState, normalizeLocator, readChatShared, readState, readStateShared, renameChatMemory, renameCharacterMemory, renameWorldMemory, removeChatMemory, removeSourceMemory, statePath, writeJson } = await import('../src/mewmory/store.js');
 const { ensureMewmoryMessageIds } = await import('../public/scripts/mewmory/message-identity.js');
 const { getCounter, getTokenizerModel } = await import('../src/mewmory/tokens.js');
 const { inspectState, restoreRecords } = await import('../src/endpoints/mewmory.js');
 const { createMewmoryProvider } = await import('./mewmory-provider.js');
-const { readConfig, publicConfig, roleVersion } = await import('../src/mewmory/models.js');
+const { readConfig, publicConfig, resolvedRoleIdentity, roleVersion } = await import('../src/mewmory/models.js');
 const { readSecret, writeSecret, SecretManager, SECRET_KEYS } = await import('../src/endpoints/secrets.js');
 const { resolveModelProfile } = await import('../src/mewmory/connection-profiles.js');
 const { EXTRACTION_CONTRACT, PAWSPECTIVE_CONTRACT } = await import('../src/mewmory/contracts.js');
@@ -1108,6 +1108,166 @@ test('safe start pauses interrupted processing instead of resuming it', async t 
     assert.equal(paused.errorStatus, 503);
     assert.match(paused.error, /safe mode/);
     assert.equal(await pauseInterruptedProcessing(async () => [directories]), 0);
+});
+
+test('worker failure/retry repairs nested jobs and finish preserves concurrent index builds', async t => {
+    const { directories } = disk(t, fixture.messages.slice(0, 3));
+    const config = defaultConfig();
+    config.autoUpdate = false;
+    saveConfig(directories, config);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => {
+        state.enabled = true;
+        state.jobs.push({ id: 'interrupted', status: 'processing' });
+    });
+    await startProcessing(directories, locator, {}, async () => {
+        assert.equal(readState(directories, locator).jobs.find(job => job.id === 'interrupted').status, 'failed');
+        throw Object.assign(new Error('Busy fixture'), { status: 503, retryAt: Date.now() + 60000 });
+    });
+    const failed = await waitForProcessing(directories, locator);
+    assert.equal(failed.processing.status, 'failed');
+    assert.equal(failed.processing.failures, 1);
+    assert.equal(failed.processing.busy, true);
+    assert.ok(failed.processing.retryAt > Date.now());
+    assert.deepEqual(failed.coverage, {});
+    assert.deepEqual(failed.checkpoints, {});
+    assert.equal(failed.jobs.at(-1).status, 'failed');
+    let entered, release;
+    const ready = new Promise(resolve => { entered = resolve; });
+    const held = new Promise(resolve => { release = resolve; });
+    await startProcessing(directories, locator, { checkpoint: true }, async (_directories, _config, role) => {
+        entered();
+        await held;
+        return { value: { records: [], interviews: [], activeNpcIds: [] }, usage: { role, input: 50, output: 25 } };
+    });
+    await ready;
+    const newerIndex = { version: 'published', pending: false, vectors: { concurrent: { textHash: 'kept', vector: [0.25, 0.5] } },
+        build: { version: 'staged', owner: 'other-job', cursor: 7, vectors: { next: { vector: [0.75] } } } };
+    mutateState(directories, locator, state => { state.index = structuredClone(newerIndex); });
+    release();
+    const complete = await waitForProcessing(directories, locator);
+    assert.equal(complete.processing.status, 'complete');
+    for (const key of ['failures', 'retryAt', 'busy']) assert.equal(Object.hasOwn(complete.processing, key), false);
+    assert.deepEqual(complete.index, newerIndex);
+    assert.equal(complete.jobs.at(-1).status, 'complete');
+    assert.equal(complete.usage.extractor.requests, 1);
+    assert.equal(complete.usage.extractor.input, 50);
+    assert.equal(Object.keys(complete.checkpoints).length, 3);
+});
+
+for (const action of ['scan', 'pause']) for (const replacement of ['job', 'branch', 'removed']) {
+    test(`${action} rechecks identity under the archive lock after ${replacement} replacement`, async t => {
+        const { directories } = disk(t);
+        const config = defaultConfig();
+        config.autoUpdate = false;
+        saveConfig(directories, config);
+        await loadCurrentState(directories, locator);
+        mutateState(directories, locator, state => {
+            state.enabled = false;
+            state.processing = { status: 'running', automatic: true };
+        });
+        const archive = statePath(directories, locator);
+        const recovery = path.join(directories.root, 'mewmory', 'recovery', hash(normalizeLocator(locator)) + '.json');
+        const mkdir = fs.mkdirSync;
+        let replaced = false;
+        let newer;
+        const mock = t.mock.method(fs, 'mkdirSync', (directory, ...args) => {
+            const result = mkdir(directory, ...args);
+            if (!replaced && String(directory) === path.dirname(archive)) {
+                replaced = true;
+                if (replacement === 'removed') {
+                    fs.rmSync(archive);
+                    fs.rmSync(recovery);
+                } else {
+                    newer = JSON.parse(fs.readFileSync(archive));
+                    newer.revision++;
+                    if (replacement === 'branch') newer.branchId = 'replacement-branch';
+                    else newer.processing.id = 'replacement-job';
+                    writeJson(archive, newer);
+                }
+            }
+            return result;
+        });
+        if (action === 'pause') assert.equal(await pauseInterruptedProcessing(async () => [directories]), 0);
+        else await scanProcessing(directories);
+        mock.mock.restore();
+        assert.equal(replaced, true);
+        if (replacement === 'removed') assert.equal(fs.existsSync(archive), false);
+        else assert.deepEqual(readState(directories, locator), newer);
+    });
+}
+
+test('cancellation rejects a revision changed before the locked write and supports absent job ids', async t => {
+    const { directories } = disk(t);
+    await loadCurrentState(directories, locator);
+    const cancelled = await cancelProcessing(directories, locator);
+    assert.equal(cancelled.processing.status, 'cancelled');
+    assert.equal(cancelled.processing.id, undefined);
+    assert.equal(typeof cancelled.processing.fingerprint, 'string');
+    const config = readConfig(directories);
+    const identities = Object.fromEntries(['extractor', 'pawspective'].map(role => [role, resolvedRoleIdentity(config, role)]));
+    assert.equal(cancelled.processing.fingerprint, hash([sourceFingerprint(cancelled), processingVersion(config, identities),
+        config.revision, cancelled.overrides, cancelled.excludedSources]));
+    assert.equal(inspectState(cancelled, config).health.processing.status, 'cancelled');
+    const archive = statePath(directories, locator);
+    const mkdir = fs.mkdirSync;
+    let changed = false;
+    let archiveLocks = 0;
+    const mock = t.mock.method(fs, 'mkdirSync', (directory, ...args) => {
+        const result = mkdir(directory, ...args);
+        if (String(directory) === path.dirname(archive)) archiveLocks++;
+        // loadCurrentState reconciles first; race the second (cancellation) lock.
+        if (!changed && archiveLocks === 2 && String(directory) === path.dirname(archive)) {
+            changed = true;
+            const newer = JSON.parse(fs.readFileSync(archive));
+            newer.revision++;
+            newer.processing = { id: 'new-job', status: 'running' };
+            writeJson(archive, newer);
+        }
+        return result;
+    });
+    await assert.rejects(cancelProcessing(directories, locator), { status: 409 });
+    mock.mock.restore();
+    assert.equal(changed, true);
+    assert.equal(readState(directories, locator).processing.id, 'new-job');
+    assert.equal(readState(directories, locator).processing.status, 'running');
+});
+
+test('a cancelled held worker keeps concurrent vectors and publishes no partial records or progress', async t => {
+    const { directories } = disk(t, fixture.messages.slice(0, 3));
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; });
+    let entered, release;
+    const ready = new Promise(resolve => { entered = resolve; });
+    const held = new Promise(resolve => { release = resolve; });
+    await startProcessing(directories, locator, { checkpoint: true }, async (_directories, _config, role, _contract, input) => {
+        entered();
+        await held;
+        const source = input.sources.find(source => source.type === 'chat');
+        return { value: { records: [{ id: 'event:cancelled', kind: 'event', text: 'Never publish this.',
+            refs: [{ id: source.id, revision: source.revision }], evidenceStatus: 'established' }], interviews: [], activeNpcIds: [] },
+        usage: { role, input: 11, output: 7 } };
+    });
+    await ready;
+    mutateState(directories, locator, state => {
+        state.index.vectors.concurrent = { textHash: 'new', vector: [0.125] };
+        state.index.build = { owner: 'parallel', version: 'future', vectors: { next: { vector: [0.5] } } };
+    });
+    const cancelled = await cancelProcessing(directories, locator);
+    const expected = readState(directories, locator);
+    release();
+    const final = await waitForProcessing(directories, locator);
+    assert.equal(final.processing.status, 'cancelled');
+    assert.equal(final.processing.fingerprint, cancelled.processing.fingerprint);
+    assert.deepEqual(final.index, expected.index);
+    for (const key of ['records', 'audit', 'coverage', 'checkpoints', 'rolePolicies', 'roleIdentities', 'sceneNpcIds', 'castHistory']) {
+        assert.deepEqual(final[key], expected[key], key + ' must have no partial publication');
+    }
+    assert.equal(final.jobs.at(-1).status, 'failed');
+    assert.equal(final.jobs.at(-1).usage.length, 1);
+    assert.equal(final.usage.extractor.requests, 1);
+    assert.equal(final.usage.extractor.input, 11);
+    for (const key of ['failures', 'retryAt', 'busy']) assert.equal(Object.hasOwn(final.processing, key), false);
 });
 
 test('changing a timeout preserves extraction coverage but changing the provider invalidates it', () => {
@@ -4506,4 +4666,256 @@ test('ask, contradiction and sharing routes report plain errors and keep the arc
     assert.equal((await post('/share', { ids: [] })).status, 400);
     assert.equal((await post('/shared/remove', { id: 'missing' })).status, 404);
     assert.equal(readState(directories, locator).revision, before);
+});
+
+function workingExtraction(input, count = 2) {
+    const source = input.sources.filter(row => row.type === 'chat').at(-1);
+    const refs = [{ id: source.id, revision: source.revision }];
+    const knowledge = Array.from({ length: count }, (_, index) => 'working-' + index);
+    return {
+        records: [
+            { id: 'entity:working-mara', kind: 'entity', entityId: 'npc:mara', name: 'Mara', text: 'Mara', isCharacter: true, subjectIds: ['npc:mara'], refs },
+            { id: 'event:working', kind: 'event', text: 'Mara remembers the harbour.', subjectIds: ['pier'], refs, evidenceStatus: 'established' },
+            ...knowledge.map(name => ({ id: 'knowledge:' + name, kind: 'knowledge', ownerId: 'npc:mara', subjectIds: ['pier'],
+                text: 'Known harbour detail ' + name, method: 'witnessed', evidenceText: source.text.slice(0, 55), refs })),
+        ],
+        interviews: knowledge.map(name => ({ ownerId: 'npc:mara', subjectIds: ['pier'], knowledgeIds: ['knowledge:' + name], refs })),
+        activeNpcIds: ['npc:mara'],
+    };
+}
+
+const workingInterview = (number, valid = true) => ({ changed: true,
+    interview: [{ question: 'What was there?', answer: 'Mara remembers the pier ' + number }],
+    searchDescription: 'Mara remembers the pier ' + number, changeExplanation: '',
+    overviews: valid ? [{ subjectId: 'pier', text: 'The pier mattered to Mara ' + number, status: 'active' }] : [] });
+
+for (const change of ['source edit', 'author correction', 'cancellation']) {
+    test(`held Pawspective rejects ${change} without partial records or progress and keeps concurrent indexes`, { timeout: 10000 }, async t => {
+        const messages = structuredClone(fixture.messages.slice(0, 3));
+        const { directories, write } = disk(t, messages);
+        const config = defaultConfig();
+        Object.assign(config.roles.pawspective, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'working-fixture' });
+        saveConfig(directories, config);
+        await loadCurrentState(directories, locator);
+        mutateState(directories, locator, state => { state.enabled = true; event(state); });
+        const controller = new AbortController();
+        let entered, release;
+        const ready = new Promise(resolve => { entered = resolve; });
+        const held = new Promise(resolve => { release = resolve; });
+        const processing = processBatch(directories, locator, { checkpoint: true, signal: controller.signal }, async (_directories, _config, role, _contract, input) => {
+            if (role === 'extractor') return { value: workingExtraction(input, 1), usage: { role, input: 11, output: 5 } };
+            entered();
+            await held;
+            return { value: workingInterview(1), usage: { role, input: 13, output: 7 } };
+        });
+        await ready;
+        let before;
+        try {
+            if (change === 'source edit') {
+                messages[2].mes = 'The source actually read by extraction was edited.';
+                write(messages);
+                await loadCurrentState(directories, locator);
+            } else if (change === 'author correction') {
+                mutateState(directories, locator, state => {
+                    const record = state.records.find(row => row.id === 'event:gift');
+                    putRecord(state, { ...record, text: 'This correction must survive.', authorOverride: true, origin: 'author' });
+                });
+            } else controller.abort();
+            mutateState(directories, locator, state => {
+                state.index.vectors.concurrent = { textHash: 'newer', vector: [0.125, 0.625] };
+                state.index.build = { owner: 'parallel-owner', version: 'parallel-space', cursor: 19,
+                    vectors: { staged: { textHash: 'staged', vector: [0.375, 0.875] } } };
+            });
+            before = readState(directories, locator);
+        } finally { release(); }
+        await assert.rejects(processing, change === 'cancellation' ? /cancelled/ : /discarded/);
+        const result = readState(directories, locator);
+        for (const key of ['records', 'audit', 'coverage', 'checkpoints', 'rolePolicies', 'roleIdentities', 'sceneNpcIds', 'castHistory', 'index']) {
+            assert.deepEqual(result[key], before[key], key + ' must not publish rejected draft changes');
+        }
+        assert.equal(result.records.some(row => ['entity:working-mara', 'event:working', 'knowledge:working-0'].includes(row.id)
+            || ['interview', 'overview'].includes(row.kind)), false);
+        assert.equal(result.jobs.at(-1).status, change === 'source edit' ? 'superseded' : 'failed');
+        assert.deepEqual(result.jobs.at(-1).usage, [{ role: 'extractor', input: 11, output: 5 }, { role: 'pawspective', input: 13, output: 7 }]);
+        assert.equal(result.usage.extractor.requests, 1);
+        assert.equal(result.usage.pawspective.requests, 1);
+        assert.equal(result.usage.extractor.input, 11);
+        assert.equal(result.usage.pawspective.input, 13);
+    });
+}
+
+test('admitted extraction and interviews keep original inputs, roll back a partial interview, and retain unread appends and newer index metadata', async t => {
+    t.mock.method(Date, 'now', () => 1780009999000);
+    const messages = structuredClone(fixture.messages.slice(0, 3));
+    const { directories, write } = disk(t, messages);
+    const config = defaultConfig();
+    Object.assign(config.roles.pawspective, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'working-fixture' });
+    saveConfig(directories, config);
+    await loadCurrentState(directories, locator);
+    const initial = mutateState(directories, locator, state => {
+        state.enabled = true;
+        state.index = { version: 'original', pending: false, vectors: { original: { textHash: 'before', vector: [0.1, 0.2] } },
+            build: { version: 'old-build', owner: 'old-owner', vectors: { original: { vector: [0.3, 0.4] } } } };
+    });
+    const originalIndex = structuredClone(initial.index);
+    let expected, requests, interviews = 0, heldShared, admittedIndex;
+    const inputs = [];
+    const newerIndex = { version: 'published-later', pending: false, futureMetadata: { preserved: true },
+        vectors: { original: { textHash: 'before', vector: [0.1, 0.2] }, concurrent: { textHash: 'new', vector: [0.5] } },
+        build: { version: 'staged-later', owner: 'new-owner', cursor: 9, futureMetadata: { preserved: 'build' }, vectors: { next: { textHash: 'next', vector: [0.6] } } } };
+    const result = await processBatch(directories, locator, { checkpoint: true }, async (_directories, saved, role, _contract, input) => {
+        inputs.push([role, structuredClone(input)]);
+        if (role === 'extractor') {
+            expected = readState(directories, locator);
+            heldShared = readStateShared(directories, locator);
+            admittedIndex = structuredClone(heldShared.index);
+            assert.deepEqual(admittedIndex, { ...originalIndex, pending: true }, 'Admission retains both full vector maps');
+            const refs = expected.timeline;
+            const originalInput = extractionInput(expected, refs, refs.length - 1, true);
+            originalInput.provenance = { policy: POLICY_VERSION, jobId: expected.jobs.at(-1).id, role,
+                model: saved.roles.extractor.model, modelRevision: saved.roles.extractor.modelRevision };
+            assert.deepEqual(input, originalInput);
+            const value = workingExtraction(input);
+            requests = applyExtraction(expected, value, originalInput);
+            await new Promise(resolve => setImmediate(resolve));
+            write([...messages, { name: 'Mara', is_user: false, send_date: 'unread-working', mes: 'An unread turn arrived during the held request.' }]);
+            mutateState(directories, locator, state => {
+                state.index = structuredClone(newerIndex);
+                state.usage = { selector: { requests: 7, input: 17, output: 3, milliseconds: 5 } };
+            });
+            return { value, usage: { role, input: 11, output: 5 } };
+        }
+        const request = requests[interviews];
+        const originalInput = interviewInput(expected, request, messages.length - 1);
+        originalInput.provenance = { policy: POLICY_VERSION, jobId: expected.jobs.at(-1).id, role,
+            model: saved.roles.pawspective.model, modelRevision: saved.roles.pawspective.modelRevision };
+        assert.deepEqual(input, originalInput, 'Interview inputs use the admitted evidence and previous successful interview');
+        const value = workingInterview(++interviews, interviews === 1);
+        if (interviews === 1) applyInterview(expected, request, value, originalInput, expected.jobs.at(-1).id);
+        else {
+            const records = expected.records;
+            const auditLength = expected.audit.length;
+            assert.throws(() => applyInterview(expected, request, value, originalInput, expected.jobs.at(-1).id), /one short summary/);
+            assert.ok(expected.records.length > records.length, 'The invalid reply attempted a partial interview write');
+            expected.records = records;
+            expected.audit.length = auditLength;
+        }
+        return { value, usage: { role, input: 13, output: 7 } };
+    });
+    assert.equal(interviews, 2);
+    assert.equal(inputs.length, 3);
+    assert.equal(JSON.stringify(inputs).includes('An unread turn arrived'), false);
+    for (const key of ['records', 'audit', 'sceneNpcIds', 'castHistory']) assert.deepEqual(result[key], expected[key], key);
+    assert.equal(result.records.filter(row => row.kind === 'interview').length, 1);
+    assert.equal(result.records.filter(row => row.kind === 'overview').length, 1);
+    assert.equal(JSON.stringify(result.records).includes('Mara remembers the pier 2'), false);
+    assert.deepEqual(result.index, { ...newerIndex, pending: true });
+    assert.deepEqual(heldShared.index, admittedIndex);
+    assert.deepEqual(initial.index, originalIndex);
+    assert.equal(result.timeline.length, 4);
+    assert.equal(sourceAt(result, result.timeline.at(-1)).text, 'An unread turn arrived during the held request.');
+    const policy = processingVersion(readConfig(directories));
+    const marks = Object.fromEntries(result.timeline.slice(0, 3).map(ref => [refKey(ref), policy]));
+    assert.deepEqual(result.coverage, marks);
+    assert.deepEqual(result.checkpoints, marks);
+    assert.equal(result.jobs.length, 1);
+    assert.equal(result.jobs[0].status, 'complete');
+    assert.equal(result.jobs[0].skipped, 1);
+    assert.equal(result.jobs[0].skippedReasons.length, 1);
+    assert.match(result.jobs[0].skippedReasons[0], /one short summary/);
+    assert.deepEqual(result.jobs[0].usage, [{ role: 'extractor', input: 11, output: 5 },
+        { role: 'pawspective', input: 13, output: 7 }, { role: 'pawspective', input: 13, output: 7 }]);
+    assert.equal(result.usage.extractor.requests, 1);
+    assert.equal(result.usage.pawspective.requests, 2);
+    assert.equal(result.usage.selector.requests, 7);
+    assert.equal(result.usage.selector.input, 17);
+    assert.deepEqual(readStateShared(directories, locator), JSON.parse(fs.readFileSync(statePath(directories, locator))));
+});
+
+test('failed completion restores warm disk/cache/guard state and a real worker retry publishes progress and usage once', async t => {
+    const { directories } = disk(t, fixture.messages.slice(0, 3));
+    const config = defaultConfig();
+    config.autoUpdate = false;
+    Object.assign(config.roles.pawspective, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'working-fixture' });
+    saveConfig(directories, config);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => {
+        state.enabled = true;
+        state.index = { version: 'published', pending: false, vectors: { keep: { textHash: 'kept', vector: [0.1, 0.2] } },
+            build: { version: 'next-space', owner: 'parallel', cursor: 4, vectors: { staged: { vector: [0.3, 0.4] } } } };
+    });
+    const archive = statePath(directories, locator);
+    const recovery = path.join(directories.root, 'mewmory', 'recovery', hash(normalizeLocator(locator)) + '.json');
+    let beforeArchive, beforeRecovery, beforeState, shared;
+    const calls = { extractor: 0, pawspective: 0 };
+    const call = async (_directories, _config, role, _contract, input) => {
+        calls[role]++;
+        if (role === 'extractor') {
+            // Admission has persisted. Warm all three store caches before completion.
+            mutateState(directories, locator, () => {});
+            shared = readStateShared(directories, locator);
+            beforeState = structuredClone(shared);
+            listStories(directories);
+            beforeArchive = fs.readFileSync(archive);
+            beforeRecovery = fs.readFileSync(recovery);
+            return { value: workingExtraction(input, 1), usage: { role, input: 11, output: 5 } };
+        }
+        return { value: workingInterview(1), usage: { role, input: 13, output: 7 } };
+    };
+    let injected = false, rollbackSeen = false;
+    const rename = fs.renameSync;
+    const mock = t.mock.method(fs, 'renameSync', (from, to) => {
+        if (!injected && String(to) === archive) {
+            const candidate = JSON.parse(fs.readFileSync(from));
+            if (candidate.jobs.at(-1)?.status === 'complete' && candidate.records.some(row => row.id === 'event:working')) {
+                injected = true;
+                throw new Error('Injected completion archive write failure');
+            }
+        }
+        const result = rename(from, to);
+        if (injected && !rollbackSeen && String(to) === recovery) {
+            rollbackSeen = true;
+            assert.deepEqual(fs.readFileSync(archive), beforeArchive);
+            assert.deepEqual(fs.readFileSync(recovery), beforeRecovery);
+            assert.equal(readStateShared(directories, locator), shared);
+            assert.deepEqual(shared, beforeState);
+            assert.equal(listStories(directories)[0].processing.status, 'running');
+        }
+        return result;
+    });
+    await startProcessing(directories, locator, { checkpoint: true }, call);
+    const failed = await waitForProcessing(directories, locator);
+    mock.mock.restore();
+    assert.equal(injected && rollbackSeen, true);
+    assert.deepEqual(shared, beforeState, 'A held cache reader was never changed by the failed completion or status save');
+    assert.equal(failed.processing.status, 'failed');
+    assert.equal(failed.jobs.at(-1).status, 'failed');
+    assert.equal(failed.jobs.at(-1).usage.length, 2);
+    for (const key of ['records', 'audit', 'coverage', 'checkpoints', 'index', 'sceneNpcIds', 'castHistory']) assert.deepEqual(failed[key], beforeState[key], key);
+    assert.equal(failed.usage.extractor.requests, 1);
+    assert.equal(failed.usage.pawspective.requests, 1);
+    const retainedFailure = structuredClone(failed);
+    await startProcessing(directories, locator, { checkpoint: true }, call);
+    const complete = await waitForProcessing(directories, locator);
+    assert.deepEqual(failed, retainedFailure, 'The retry cannot mutate an earlier isolated read');
+    assert.equal(complete.processing.status, 'complete');
+    assert.equal(complete.processing.failures, undefined);
+    assert.equal(complete.jobs.length, 1);
+    assert.equal(complete.jobs[0].status, 'complete');
+    assert.equal(complete.jobs[0].usage.length, 2);
+    assert.deepEqual(calls, { extractor: 2, pawspective: 2 });
+    assert.equal(complete.usage.extractor.requests, 2);
+    assert.equal(complete.usage.extractor.input, 22);
+    assert.equal(complete.usage.pawspective.requests, 2);
+    assert.equal(complete.usage.pawspective.input, 26);
+    for (const kind of ['event', 'knowledge', 'interview', 'overview']) assert.equal(complete.records.filter(row => row.kind === kind).length, 1, kind);
+    assert.equal(Object.keys(complete.coverage).length, 3);
+    assert.equal(Object.keys(complete.checkpoints).length, 3);
+    assert.deepEqual(complete.index.vectors, beforeState.index.vectors);
+    assert.deepEqual(complete.index.build, beforeState.index.build);
+    const reopened = JSON.parse(fs.readFileSync(archive));
+    assert.deepEqual(readStateShared(directories, locator), reopened);
+    assert.deepEqual(readState(directories, locator), reopened);
+    assert.equal(listStories(directories)[0].processing.status, 'complete');
+    assert.equal(JSON.parse(fs.readFileSync(recovery)).revision, reopened.revision);
 });
