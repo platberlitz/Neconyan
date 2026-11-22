@@ -1,4 +1,4 @@
-/* global window, document */
+/* global window, document, requestAnimationFrame */
 import { expect, test } from '@playwright/test';
 import { acknowledgeSettingsSave } from './chat-scroll-regression-helpers.js';
 import { applyIOSOnlyCss, installIPhoneApp, IPHONE_APP_CONTEXT, IPHONE_APP_USER_AGENT } from './ios-safari-emulation.js';
