@@ -57,6 +57,24 @@ describe('settings setup tasks', () => {
         await expect(waiting).resolves.toBe(true);
     });
 
+    test('time spent starting the app does not use the first reply’s setup budget', async () => {
+        jest.useFakeTimers();
+        const setup = deferred();
+        registerSettingsSetupTask('slow startup', setup.promise);
+        await jest.advanceTimersByTimeAsync(9000);
+        expect(getPendingSettingsSetupTaskNames()).toEqual(['slow startup']);
+        let waited = false;
+        const waiting = waitForSettingsSetup().then(result => {
+            waited = true;
+            return result;
+        });
+        await jest.advanceTimersByTimeAsync(100);
+        expect(waited).toBe(false);
+        setup.resolve();
+        await expect(waiting).resolves.toBe(true);
+        expect(getPendingSettingsSetupTaskNames()).toEqual([]);
+    });
+
     test('failed setup is logged and stops holding replies', async () => {
         const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
         const setup = deferred();
@@ -78,9 +96,16 @@ describe('settings setup tasks', () => {
 
     test('setup that never finishes stops holding replies after its own limit', async () => {
         const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        jest.useFakeTimers();
         registerSettingsSetupTask('never', new Promise(() => {}), { timeoutMs: 20 });
-        await expect(waitForSettingsSetup({ timeoutMs: 1000 })).resolves.toBe(true);
+        const first = waitForSettingsSetup({ timeoutMs: 1000 });
+        await jest.advanceTimersByTimeAsync(10);
+        const second = waitForSettingsSetup({ timeoutMs: 1000 });
+        await jest.advanceTimersByTimeAsync(10);
+        await expect(first).resolves.toBe(true);
+        await expect(second).resolves.toBe(true);
         expect(warn).toHaveBeenCalledWith('[Settings] never is still running; replies no longer wait for it.');
+        expect(warn).toHaveBeenCalledTimes(1);
         expect(getPendingSettingsSetupTaskNames()).toEqual([]);
     });
 });
