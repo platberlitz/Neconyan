@@ -1708,6 +1708,25 @@ body.neconyan #WorldInfo .world_popup_action_group_contents > .menu_button {
     padding: 8px 10px;
 }
 
+body.neconyan #WorldInfo .world_popup_action_group_details[open] {
+    flex-basis: 100%;
+    min-width: 0;
+}
+
+body.neconyan #WorldInfo .world_popup_action_group_details > .world_popup_action_group_contents {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
+    grid-auto-rows: 1fr;
+}
+
+body.neconyan #WorldInfo .world_popup_action_group_details > .world_popup_action_group_contents > .menu_button {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
 body.neconyan #WorldInfo [name="keywordsAndLogicBlock"] {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
