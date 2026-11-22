@@ -5,8 +5,11 @@ import { escapeHtml } from './utils.js';
 import { setWorldInfoButtonClass, world_info } from './world-info.js';
 import {
     LOREBOOK_LINK_KIND,
+    clearLorebookNotice,
+    dismissLorebookLinks,
     findMissingLorebookLinks,
     isLorebookChatCurrent,
+    registerLorebookNotice,
     takeUntoldLorebookLinks,
 } from './lorebook-links.js';
 
@@ -47,7 +50,9 @@ function describeLink(link) {
     const name = link.name;
     const owner = link.owner || t`this character`;
     switch (link.kind) {
-        case LOREBOOK_LINK_KIND.cardMain: return t`'${name}' is the main lorebook of ${owner}.`;
+        case LOREBOOK_LINK_KIND.cardMain: return link.embedded
+            ? t`'${name}' is the main lorebook of ${owner}. The card has a lorebook embedded; choose 'Import Card Lore' in the 'More...' menu of the character editor to import it.`
+            : t`'${name}' is the main lorebook of ${owner}.`;
         case LOREBOOK_LINK_KIND.cardExtra: return t`'${name}' is an extra lorebook of ${owner}.`;
         case LOREBOOK_LINK_KIND.chat: return t`'${name}' is this chat's lorebook.`;
         default: return t`'${name}' is this Conversation's lorebook override.`;
@@ -129,13 +134,16 @@ function relinkHints(links) {
     return hints.map(hint => `<p>${escapeHtml(hint)}</p>`).join('');
 }
 
-async function askAndRemove(links) {
+async function askAndRemove(links, chatKey) {
     const result = await Popup.show.confirm(
         t`Remove missing lorebook links?`,
         `<p>${escapeHtml(t`Only the links are removed. No lorebook is deleted.`)}</p>${linkListHtml(links)}${relinkHints(links)}`,
         { okButton: t`Remove links`, cancelButton: t`Keep them` },
     );
-    if (result !== POPUP_RESULT.AFFIRMATIVE) return;
+    if (result !== POPUP_RESULT.AFFIRMATIVE) {
+        dismissLorebookLinks(chatKey, links);
+        return;
+    }
     let removed = 0;
     for (const link of links) {
         try {
@@ -148,33 +156,38 @@ async function askAndRemove(links) {
     if (removed) toastr.success(t`Removed ${removed} missing lorebook link(s).`);
 }
 
-function showNotice(links) {
+function showNotice(links, chatKey) {
     const buttonClass = 'lorebook-link-notice-review';
-    const content = `${escapeHtml(t`These lorebooks are linked here but no longer exist, so nothing is loaded from them. Nothing has been changed.`)}${linkListHtml(links)}<button type="button" class="menu_button ${buttonClass}">${escapeHtml(t`Review links`)}</button>`;
-    toastr.warning(content, t`Missing lorebook links`, {
+    const content = `${escapeHtml(t`These lorebooks are linked here but could not be found, so nothing is loaded from them. Nothing has been changed.`)}${linkListHtml(links)}<button type="button" class="menu_button ${buttonClass}">${escapeHtml(t`Review links`)}</button>`;
+    clearLorebookNotice();
+    const handle = { links, clear: () => {} };
+    const toast = toastr.warning(content, t`Missing lorebook links`, {
         timeOut: 0,
         extendedTimeOut: 0,
         tapToDismiss: false,
         closeButton: true,
         escapeHtml: false,
+        onCloseClick: () => dismissLorebookLinks(chatKey, links),
         onShown() {
-            const toast = this instanceof HTMLElement ? this : this?.[0];
-            toast?.querySelector?.(`.${buttonClass}`)?.addEventListener('click', () => {
-                toastr.clear($(toast), { force: true });
-                void askAndRemove(links);
+            const element = this instanceof HTMLElement ? this : this?.[0];
+            element?.querySelector?.(`.${buttonClass}`)?.addEventListener('click', () => {
+                clearLorebookNotice();
+                void askAndRemove(links, chatKey);
             });
         },
     });
+    handle.clear = () => toastr.clear(toast, { force: true });
+    registerLorebookNotice(handle);
 }
 
 /**
  * Looks at links the quick in-page check could not place, asks the server, and shows one notice for those
  * that really are gone. A list that fails to load or a lookup that errors says nothing: no warning, and the
  * link stays untold so the next open asks again.
- * @param {{ chatKey: string, candidates: import('./lorebook-links.js').LorebookLink[] }} options
+ * @param {{ chatKey: string, candidates: import('./lorebook-links.js').LorebookLink[], isHeld?: (link: import('./lorebook-links.js').LorebookLink) => boolean }} options
  * @returns {Promise<import('./lorebook-links.js').LorebookLink[]>} the links the notice named
  */
-export async function reportMissingLorebookLinks({ chatKey, candidates }) {
+export async function reportMissingLorebookLinks({ chatKey, candidates, isHeld = () => false }) {
     if (!isLorebookChatCurrent(chatKey)) return [];
     const names = await fetchLorebookNames();
     if (!names || !isLorebookChatCurrent(chatKey)) return [];
@@ -192,7 +205,7 @@ export async function reportMissingLorebookLinks({ chatKey, candidates }) {
     }
 
     takeUntoldLorebookLinks(chatKey, settled);
-    const fresh = takeUntoldLorebookLinks(chatKey, gone);
-    if (fresh.length) showNotice(fresh);
+    const fresh = takeUntoldLorebookLinks(chatKey, gone.filter(link => !isHeld(link)));
+    if (fresh.length && isLorebookChatCurrent(chatKey)) showNotice(fresh, chatKey);
     return fresh;
 }

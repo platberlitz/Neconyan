@@ -2,12 +2,15 @@ import { describe, expect, test } from '@jest/globals';
 import {
     LOREBOOK_LINK_KIND,
     cardLorebookLinks,
+    clearLorebookNotice,
+    dismissLorebookLinks,
     filterUntoldLorebookLinks,
     findMissingLorebookLinks,
     isKnownLorebook,
     listLorebookLinks,
     noteLorebookChatOpened,
     readConversationLorebooks,
+    registerLorebookNotice,
     setConversationLorebookReader,
     takeUntoldLorebookLinks,
 } from '../public/scripts/lorebook-links.js';
@@ -145,5 +148,64 @@ describe('the Conversation reader', () => {
         ]);
         expect(findMissingLorebookLinks(links, ['Other']).map(link => link.name)).toEqual(['Shared']);
         setConversationLorebookReader(null);
+    });
+});
+
+describe('a card that carries its own copy of the lorebook', () => {
+    test('marks only the main link, and only when the card has an embedded book', () => {
+        const plain = cardLorebookLinks(card('Main'), ['Extra']);
+        expect(plain.map(link => link.embedded)).toEqual([false, undefined]);
+        const embedded = cardLorebookLinks({ ...card('Main'), data: { name: 'Ada', extensions: { world: 'Main' }, character_book: { name: 'Main', entries: [] } } }, ['Extra']);
+        expect(embedded.map(link => [link.kind, link.embedded])).toEqual([[LOREBOOK_LINK_KIND.cardMain, true], [LOREBOOK_LINK_KIND.cardExtra, undefined]]);
+        expect(listLorebookLinks({ cards: [{ ...card('Main'), data: { extensions: { world: 'Main' }, character_book: {} } }] })[0].embedded).toBe(true);
+    });
+});
+
+describe('what the person said no to', () => {
+    const cardLink = { kind: LOREBOOK_LINK_KIND.cardMain, name: 'Gone', avatar: 'Ada.png' };
+    const chatLink = { kind: LOREBOOK_LINK_KIND.chat, name: 'Gone chat' };
+
+    test('a dismissed card link stays quiet in every chat of the card, a new link still warns', () => {
+        noteLorebookChatOpened('');
+        noteLorebookChatOpened('ada|one');
+        const other = { kind: LOREBOOK_LINK_KIND.cardExtra, name: 'Other', avatar: 'Ada.png' };
+        dismissLorebookLinks('ada|one', [cardLink]);
+        expect(filterUntoldLorebookLinks('ada|one', [cardLink, other])).toEqual([other]);
+        noteLorebookChatOpened('ada|two');
+        expect(filterUntoldLorebookLinks('ada|two', [cardLink, other])).toEqual([other]);
+        expect(takeUntoldLorebookLinks('ada|two', [cardLink, other])).toEqual([other]);
+    });
+
+    test('a dismissed chat link belongs to that chat only', () => {
+        noteLorebookChatOpened('bea|one');
+        dismissLorebookLinks('bea|one', [chatLink]);
+        expect(filterUntoldLorebookLinks('bea|one', [chatLink])).toEqual([]);
+        noteLorebookChatOpened('bea|two');
+        expect(filterUntoldLorebookLinks('bea|two', [chatLink])).toEqual([chatLink]);
+    });
+
+    test('a notice cleared because the chat changed is not an answer', () => {
+        const link = { kind: LOREBOOK_LINK_KIND.cardMain, name: 'Cleared', avatar: 'Cy.png' };
+        noteLorebookChatOpened('cy|one');
+        let cleared = 0;
+        registerLorebookNotice({ links: [link], clear: () => { cleared++; } });
+        expect(takeUntoldLorebookLinks('cy|one', [link])).toEqual([link]);
+        noteLorebookChatOpened('cy|one');
+        expect(cleared).toBe(0);
+        noteLorebookChatOpened('cy|two');
+        expect(cleared).toBe(1);
+        noteLorebookChatOpened('cy|one');
+        expect(filterUntoldLorebookLinks('cy|one', [link])).toEqual([link]);
+    });
+
+    test('clearing for one card leaves a notice about other links alone', () => {
+        const mine = { kind: LOREBOOK_LINK_KIND.cardMain, name: 'A', avatar: 'Di.png' };
+        let cleared = 0;
+        registerLorebookNotice({ links: [mine], clear: () => { cleared++; } });
+        expect(clearLorebookNotice(link => link.avatar === 'Other.png')).toBe(false);
+        expect(cleared).toBe(0);
+        expect(clearLorebookNotice(link => link.avatar === 'Di.png')).toBe(true);
+        expect(cleared).toBe(1);
+        expect(clearLorebookNotice()).toBe(false);
     });
 });

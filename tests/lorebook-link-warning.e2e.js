@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 
-const INTRO = 'These lorebooks are linked here but no longer exist, so nothing is loaded from them. Nothing has been changed.';
+const INTRO = 'These lorebooks are linked here but could not be found, so nothing is loaded from them. Nothing has been changed.';
 const SHOTS = process.env.NECONYAN_LOREBOOK_SHOTS ? '../screenshots/lorebook-link-warning' : '';
 
 const notices = page => page.locator('.toast-warning').filter({ hasText: 'Missing lorebook links' });
@@ -18,11 +18,14 @@ async function shot(page, name, device) {
 
 const book = (account, name) => account.post('/api/worldinfo/edit', { name, data: { entries: {} } });
 
-async function card(account, name, world = '') {
+/** A plain card. The link is set afterwards, because creating a card with an existing lorebook embeds a copy of it. */
+async function card(account, name, world = '', { embed = false } = {}) {
     const created = await account.context.request.post('/api/characters/create', { headers: account.headers,
-        data: { ch_name: name, description: name + ' lives here.', first_mes: 'Hello from ' + name + '.', world } });
+        data: { ch_name: name, description: name + ' lives here.', first_mes: 'Hello from ' + name + '.', world: embed ? world : '' } });
     expect(created.ok(), await created.text()).toBe(true);
-    return created.text();
+    const avatar = await created.text();
+    if (world && !embed) await merge(account, avatar, { world });
+    return avatar;
 }
 
 async function merge(account, avatar, extensions) {
@@ -58,6 +61,41 @@ async function dialogText(page) {
     const dialog = page.locator('dialog[open]');
     await expect(dialog).toBeVisible();
     return (await dialog.innerText()).replace(/\s+/g, ' ');
+}
+
+const EMBEDDED_LINE = '\'Embedded Lore\' is the main lorebook of Embed Eve. The card has a lorebook embedded; choose \'Import Card Lore\' in the \'More...\' menu of the character editor to import it.';
+
+/** A card that carries its own copy of its lorebook, whose lorebook is gone from this machine (deleted, or never imported). */
+async function embeddedCard(account, name = 'Embed Eve') {
+    const entry = { uid: 0, key: ['ember'], keysecondary: [], comment: 'Ember', content: 'EMBER-LORE the ember glows.', constant: false, selective: false, order: 100, position: 0, disable: false };
+    await account.post('/api/worldinfo/edit', { name: 'Embedded Lore', data: { entries: { 0: entry } } });
+    const avatar = await card(account, name, 'Embedded Lore', { embed: true });
+    const removed = await account.context.request.post('/api/worldinfo/delete', { headers: account.headers, data: { name: 'Embedded Lore' } });
+    expect(removed.ok(), await removed.text()).toBe(true);
+    const saved = await account.post('/api/characters/get', { avatar_url: avatar });
+    expect(saved.data.extensions.world).toBe('Embedded Lore');
+    expect(saved.data.character_book.name).toBe('Embedded Lore');
+    return avatar;
+}
+
+async function setExtras(page, avatar, books) {
+    await page.evaluate(async ([target, list]) => {
+        const world = await import('/scripts/world-info.js');
+        const core = await import('/script.js');
+        world.charSetAuxWorlds(target.replace(/\.[^.]+$/, ''), list);
+        if (!await core.saveSettings(0, { returnResult: true })) throw new Error('Settings save failed');
+    }, [avatar, books]);
+}
+
+const lorebookState = (page, name) => page.evaluate(async lorebook => {
+    const world = await import('/scripts/world-info.js');
+    const data = await world.loadWorldInfo(lorebook);
+    return data ? Object.keys(data.entries ?? {}).length : null;
+}, name);
+
+async function openEditor(page, name) {
+    await page.evaluate(() => window.NeconyanShell.openTab('characters', 'characters'));
+    await page.getByRole('button', { name: `Edit ${name}`, exact: true }).click();
 }
 
 for (const device of ['desktop', 'phone']) {
@@ -100,6 +138,9 @@ for (const device of ['desktop', 'phone']) {
             await page.waitForTimeout(3000);
             await expect(notice).toHaveCount(1);
             expect(await onDisk(account, pip, id)).toEqual(before);
+            await page.evaluate(() => window.SillyTavern.getContext().reloadCurrentChat());
+            await page.waitForTimeout(2500);
+            await expect(notice).toHaveCount(1);
 
             const reviewButton = notice.getByRole('button', { name: 'Review links', exact: true });
             const box = await reviewButton.boundingBox();
@@ -112,29 +153,30 @@ for (const device of ['desktop', 'phone']) {
             expect(asked).toContain('To link another lorebook to a card, open its editor and choose \'Link to Lorebook\' in the \'More...\' menu.');
             expect(asked).toContain('To link another lorebook to this chat, Shift-click or long-press the chat lorebook button in the character or group editor.');
             expect(asked).not.toContain('Conversation');
+            expect(asked).not.toContain('Import Card Lore');
             await shot(page, 'review', device);
             await page.locator('dialog[open] .popup-button-cancel').click();
             await expect(page.locator('dialog[open]')).toHaveCount(0);
             await page.waitForTimeout(2500);
             expect(await onDisk(account, pip, id)).toEqual(before);
-            await expect(notices(page)).toHaveCount(0);
-            await page.evaluate(() => window.SillyTavern.getContext().reloadCurrentChat());
-            await page.waitForTimeout(2500);
-            await expect(notices(page)).toHaveCount(0);
 
             const other = await card(account, 'Other Olive');
             await select(page, other);
-            await page.waitForTimeout(1500);
-            await expect(notices(page)).toHaveCount(0);
             await select(page, pip);
-            await expect(notices(page)).toHaveCount(1, { timeout: 20000 });
+            await page.waitForTimeout(3000);
+            await expect(notices(page)).toHaveCount(0);
+            expect(await onDisk(account, pip, id)).toEqual(before);
+            await page.close();
 
-            await notices(page).getByRole('button', { name: 'Review links', exact: true }).click();
-            await dialogText(page);
-            await page.locator('dialog[open] .popup-button-ok').click();
-            await expect(page.locator('.toast-success').filter({ hasText: 'Removed 3 missing lorebook link(s).' })).toBeVisible();
+            const again = await account.open({ workspace: false });
+            await select(again, pip);
+            await expect(notices(again)).toHaveCount(1, { timeout: 20000 });
+            await notices(again).getByRole('button', { name: 'Review links', exact: true }).click();
+            await dialogText(again);
+            await again.locator('dialog[open] .popup-button-ok').click();
+            await expect(again.locator('.toast-success').filter({ hasText: 'Removed 3 missing lorebook link(s).' })).toBeVisible();
             await expect.poll(() => onDisk(account, pip, id)).toEqual({ main: '', extras: ['Real Book'], chatBook: '' });
-            await shot(page, 'removed', device);
+            await shot(again, 'removed', device);
         });
 
         test(`names a dead override on the Conversation and removes it on request (${device})`, async ({ app }) => {
@@ -217,7 +259,6 @@ for (const device of ['desktop', 'phone']) {
             await expect(notices(page)).toHaveCount(0);
             release();
             await expect(notices(page)).toHaveCount(1, { timeout: 20000 });
-            await notices(page).locator('.toast-close-button').click();
 
             for (const failure of ['error', 'abort']) {
                 mode = failure;
@@ -275,6 +316,173 @@ for (const device of ['desktop', 'phone']) {
             await select(page, odd);
             await expect(notices(page)).toHaveCount(1, { timeout: 20000 });
             expect(await noticeText(notices(page))).toContain('\' Real Book\' is the main lorebook of Odd Otto.');
+        });
+
+        test(`keeps the notice away from the embedded-lorebook offer, then names the way back (${device})`, async ({ app }) => {
+            test.setTimeout(240000);
+            const account = await app.account({ phone });
+            const eve = await embeddedCard(account);
+            const olive = await card(account, 'Other Olive');
+            const page = await account.open({ workspace: false });
+            await setExtras(page, eve, ['Gone Extra']);
+            await select(page, eve);
+            await expect(page.locator('dialog[open]')).toContainText('This character has an embedded World/Lorebook.');
+            await expect(notices(page)).toHaveCount(1, { timeout: 20000 });
+            expect(await noticeText(notices(page))).toBe(`Missing lorebook links ${INTRO} 'Gone Extra' is an extra lorebook of Embed Eve. Review links`);
+            await shot(page, 'embedded-offer', device);
+            await page.locator('dialog[open] .popup-button-cancel').click();
+            await expect(page.locator('dialog[open]')).toHaveCount(0);
+            await page.waitForTimeout(2500);
+            expect(await noticeText(notices(page))).not.toContain('Embedded Lore');
+
+            await select(page, olive);
+            await expect(notices(page)).toHaveCount(0);
+            await select(page, eve);
+            await expect(notices(page)).toHaveCount(1, { timeout: 20000 });
+            await expect(page.locator('dialog[open]')).toHaveCount(0);
+            expect(await noticeText(notices(page))).toBe(`Missing lorebook links ${INTRO} ${EMBEDDED_LINE} 'Gone Extra' is an extra lorebook of Embed Eve. Review links`);
+            await shot(page, 'embedded-notice', device);
+            await notices(page).getByRole('button', { name: 'Review links', exact: true }).click();
+            const asked = await dialogText(page);
+            expect(asked).toContain(EMBEDDED_LINE);
+            expect(asked).not.toContain('no longer exist');
+            await shot(page, 'embedded-review', device);
+            await page.locator('dialog[open] .popup-button-ok').click();
+            await expect(page.locator('.toast-success').filter({ hasText: 'Removed 2 missing lorebook link(s).' })).toBeVisible();
+            await expect.poll(async () => (await onDisk(account, eve)).main).toBe('');
+            const kept = await account.post('/api/characters/get', { avatar_url: eve });
+            expect(kept.data.character_book.name).toBe('Embedded Lore');
+            expect(Object.keys(kept.data.character_book.entries)).toHaveLength(1);
+            expect((await account.context.request.post('/api/worldinfo/get', { headers: account.headers, data: { name: 'Embedded Lore' } })).status()).toBe(404);
+        });
+
+        test(`Import Card Lore brings the embedded lorebook back and the link works again (${device})`, async ({ app }) => {
+            test.setTimeout(240000);
+            const account = await app.account({ phone });
+            const eve = await embeddedCard(account);
+            const olive = await card(account, 'Other Olive');
+            const page = await account.open({ workspace: false });
+            await select(page, eve);
+            await expect(page.locator('dialog[open]')).toContainText('This character has an embedded World/Lorebook.');
+            await page.locator('dialog[open] .popup-button-cancel').click();
+            await select(page, olive);
+            await select(page, eve);
+            await expect(notices(page)).toHaveCount(1, { timeout: 20000 });
+            expect(await lorebookState(page, 'Embedded Lore')).toBeNull();
+
+            await openEditor(page, 'Embed Eve');
+            const menu = page.locator('#char-management-dropdown');
+            await expect(menu.locator('option', { hasText: 'Import Card Lore' })).toHaveCount(1);
+            await menu.selectOption({ label: 'Import Card Lore' });
+            await page.locator('dialog[open] .popup-button-ok').click();
+            await expect(page.locator('.toast-success').filter({ hasText: 'has been imported and linked to the character' })).toBeVisible();
+            expect(await lorebookState(page, 'Embedded Lore')).toBe(1);
+            await expect.poll(async () => (await onDisk(account, eve)).main).toBe('Embedded Lore');
+
+            await select(page, olive);
+            await select(page, eve);
+            await page.waitForTimeout(3000);
+            await expect(notices(page)).toHaveCount(0);
+            expect(await lorebookState(page, 'Embedded Lore')).toBe(1);
+        });
+
+        test(`answering Yes to the embedded-lorebook offer leaves nothing to warn about (${device})`, async ({ app }) => {
+            test.setTimeout(240000);
+            const account = await app.account({ phone });
+            const eve = await embeddedCard(account);
+            const page = await account.open({ workspace: false });
+            await select(page, eve);
+            await expect(page.locator('dialog[open]')).toContainText('This character has an embedded World/Lorebook.');
+            await page.locator('dialog[open] .popup-button-ok').click();
+            await expect(page.locator('.toast-success').filter({ hasText: 'has been imported and linked to the character' })).toBeVisible();
+            await page.waitForTimeout(3000);
+            await expect(notices(page)).toHaveCount(0);
+            expect(await lorebookState(page, 'Embedded Lore')).toBe(1);
+        });
+
+        test(`keeps the notice away from the embedded-lorebook info toast too (${device})`, async ({ app }) => {
+            test.setTimeout(240000);
+            const account = await app.account({ phone, configureSettings(saved) { saved.power_user.world_import_dialog = false; } });
+            const eve = await embeddedCard(account);
+            const olive = await card(account, 'Other Olive');
+            const page = await account.open({ workspace: false });
+            await select(page, eve);
+            await expect(page.locator('.toast-info').filter({ hasText: 'Embed Eve has an embedded World/Lorebook' })).toBeVisible();
+            await page.waitForTimeout(3000);
+            await expect(notices(page)).toHaveCount(0);
+            await expect(page.locator('.toast-info').filter({ hasText: 'Embed Eve has an embedded World/Lorebook' })).toHaveCount(0, { timeout: 20000 });
+            await select(page, olive);
+            await select(page, eve);
+            await expect(notices(page)).toHaveCount(1, { timeout: 20000 });
+            expect(await noticeText(notices(page))).toBe(`Missing lorebook links ${INTRO} ${EMBEDDED_LINE} Review links`);
+        });
+
+        test(`takes the notice away when another chat opens (${device})`, async ({ app }) => {
+            test.setTimeout(240000);
+            const account = await app.account({ phone });
+            const pip = await card(account, 'Probe Pip', 'Gone Main');
+            const olive = await card(account, 'Other Olive');
+            const page = await account.open({ workspace: false });
+            await select(page, pip);
+            await expect(notices(page)).toHaveCount(1, { timeout: 20000 });
+            await select(page, olive);
+            await expect(notices(page)).toHaveCount(0);
+            await page.waitForTimeout(4000);
+            await expect(notices(page)).toHaveCount(0);
+            await select(page, pip);
+            await expect(notices(page)).toHaveCount(1, { timeout: 20000 });
+            expect(await noticeText(notices(page))).toContain('\'Gone Main\' is the main lorebook of Probe Pip.');
+
+            await page.evaluate(async () => {
+                const context = window.SillyTavern.getContext();
+                await context.executeSlashCommandsWithOptions('/newchat', { handleParserErrors: false });
+            });
+            await expect(notices(page)).toHaveCount(0, { timeout: 20000 });
+        });
+
+        test(`takes the Conversation notice away when the workspace closes (${device})`, async ({ app }) => {
+            test.setTimeout(240000);
+            const account = await app.account({ phone });
+            await account.changeStore(store => { store.characters[account.threadKey].settings.lorebook_override = 'Gone Conversation'; });
+            const page = await account.open({ workspace: true });
+            await expect(notices(page)).toHaveCount(1, { timeout: 20000 });
+            await page.evaluate(() => window.dispatchEvent(new CustomEvent('sb:close-conversation-workspace')));
+            await expect(notices(page)).toHaveCount(0, { timeout: 20000 });
+        });
+
+        test(`stays quiet about links the person said no to until the page reloads (${device})`, async ({ app }) => {
+            test.setTimeout(300000);
+            const account = await app.account({ phone });
+            const pip = await card(account, 'Probe Pip', 'Gone Main');
+            const olive = await card(account, 'Other Olive');
+            const page = await account.open({ workspace: false });
+            await select(page, pip);
+            await expect(notices(page)).toHaveCount(1, { timeout: 20000 });
+            await notices(page).locator('.toast-close-button').click();
+            await expect(notices(page)).toHaveCount(0);
+            await select(page, olive);
+            await select(page, pip);
+            await page.waitForTimeout(3500);
+            await expect(notices(page)).toHaveCount(0);
+
+            await setExtras(page, pip, ['Gone Extra']);
+            await select(page, olive);
+            await select(page, pip);
+            await expect(notices(page)).toHaveCount(1, { timeout: 20000 });
+            expect(await noticeText(notices(page))).toBe(`Missing lorebook links ${INTRO} 'Gone Extra' is an extra lorebook of Probe Pip. Review links`);
+            await notices(page).getByRole('button', { name: 'Review links', exact: true }).click();
+            await dialogText(page);
+            await page.locator('dialog[open] .popup-button-cancel').click();
+            await select(page, olive);
+            await select(page, pip);
+            await page.waitForTimeout(3500);
+            await expect(notices(page)).toHaveCount(0);
+            await page.close();
+
+            const reloaded = await account.open({ workspace: false });
+            await select(reloaded, pip);
+            await expect(notices(reloaded)).toHaveCount(1, { timeout: 20000 });
+            expect(await noticeText(notices(reloaded))).toContain('\'Gone Main\' is the main lorebook of Probe Pip. \'Gone Extra\' is an extra lorebook of Probe Pip.');
         });
     });
 }

@@ -11,7 +11,7 @@ export const LOREBOOK_LINK_KIND = Object.freeze({
 });
 
 /**
- * @typedef {{ kind: string, name: string, owner?: string, avatar?: string }} LorebookLink
+ * @typedef {{ kind: string, name: string, owner?: string, avatar?: string, embedded?: boolean }} LorebookLink
  */
 
 function toKnownSet(known) {
@@ -46,7 +46,7 @@ export function cardLorebookLinks(character, extraBooks = []) {
     const owner = String(character?.name ?? character?.data?.name ?? '');
     const links = [];
     const main = String(character?.data?.extensions?.world ?? '');
-    if (main.trim()) links.push({ kind: LOREBOOK_LINK_KIND.cardMain, name: main, owner, avatar });
+    if (main.trim()) links.push({ kind: LOREBOOK_LINK_KIND.cardMain, name: main, owner, avatar, embedded: Boolean(character?.data?.character_book) });
     const list = Array.isArray(extraBooks)
         ? extraBooks
         : Array.isArray(extraBooks?.[filename]) ? extraBooks[filename] : [];
@@ -110,11 +110,47 @@ export function lorebookLinkKey(link) {
 const toldLinks = new Set();
 let openChatKey = '';
 
+/**
+ * 'Said no' for the page session: links the person answered with 'Keep them' or the notice's cross. A card's
+ * link belongs to the card, so it stays quiet in every chat of that card; a chat's or Conversation's own link
+ * belongs to that chat. A notice that was only cleared because the chat changed is not an answer.
+ */
+const dismissedLinks = new Set();
+
+const dismissalKey = (chatKey, link) => (link.kind === LOREBOOK_LINK_KIND.chat || link.kind === LOREBOOK_LINK_KIND.conversation
+    ? `${chatKey}\u0001${lorebookLinkKey(link)}`
+    : lorebookLinkKey(link));
+
+/** Records that the person answered no to these links. */
+export function dismissLorebookLinks(chatKey, links) {
+    for (const link of links) dismissedLinks.add(dismissalKey(String(chatKey ?? ''), link));
+}
+
+/**
+ * The notice on screen, so it can be taken away when the chat changes. The notice module registers one.
+ * @type {{ links: LorebookLink[], clear: () => void }|null}
+ */
+let shownNotice = null;
+
+export function registerLorebookNotice(notice) {
+    shownNotice = notice;
+}
+
+/** Takes the notice off screen (not an answer). With a test, only when one of its links passes it. */
+export function clearLorebookNotice(test) {
+    const notice = shownNotice;
+    if (!notice || (typeof test === 'function' && !notice.links.some(test))) return false;
+    shownNotice = null;
+    notice.clear();
+    return true;
+}
+
 export function noteLorebookChatOpened(chatKey) {
     const key = String(chatKey ?? '');
     if (key === openChatKey) return false;
     openChatKey = key;
     toldLinks.clear();
+    clearLorebookNotice();
     return true;
 }
 
@@ -122,10 +158,12 @@ export function isLorebookChatCurrent(chatKey) {
     return String(chatKey ?? '') === openChatKey;
 }
 
-/** The links not yet told (or settled) in the chat that is open. Changes nothing. */
+const isTold = (chatKey, link) => toldLinks.has(lorebookLinkKey(link)) || dismissedLinks.has(dismissalKey(String(chatKey ?? ''), link));
+
+/** The links not yet told (or settled or said no to) in the chat that is open. Changes nothing. */
 export function filterUntoldLorebookLinks(chatKey, links) {
     if (!isLorebookChatCurrent(chatKey)) return [];
-    return links.filter(link => !toldLinks.has(lorebookLinkKey(link)));
+    return links.filter(link => !isTold(chatKey, link));
 }
 
 /** Marks links as told and returns only the ones that had not been. */
@@ -133,9 +171,8 @@ export function takeUntoldLorebookLinks(chatKey, links) {
     if (!isLorebookChatCurrent(chatKey)) return [];
     const fresh = [];
     for (const link of links) {
-        const key = lorebookLinkKey(link);
-        if (toldLinks.has(key)) continue;
-        toldLinks.add(key);
+        if (isTold(chatKey, link)) continue;
+        toldLinks.add(lorebookLinkKey(link));
         fresh.push(link);
     }
     return fresh;

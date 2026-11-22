@@ -45,7 +45,7 @@ import {
     unfileNeconyanLorebook,
 } from './neconyan-lorebook-folders.js';
 import { createSelectPicker } from './select-picker.js';
-import { filterUntoldLorebookLinks, findMissingLorebookLinks, listLorebookLinks, noteLorebookChatOpened, readConversationLorebooks } from './lorebook-links.js';
+import { LOREBOOK_LINK_KIND, clearLorebookNotice, filterUntoldLorebookLinks, findMissingLorebookLinks, listLorebookLinks, noteLorebookChatOpened, readConversationLorebooks } from './lorebook-links.js';
 
 // Neconyan divergence: World Info is integrated with the fork shell and auxiliary lorebook sources while retaining upstream scan helpers.
 export const world_info_insertion_strategy = {
@@ -1182,9 +1182,7 @@ export function setWorldInfoSettings(settings, data) {
     $('#world_info').trigger('change');
     $('#world_editor_select').trigger('change');
 
-    globalThis.addEventListener?.('sb:conversation-workspace-state-changed', (event) => {
-        if (event?.detail?.open) scheduleLorebookLinkCheck();
-    });
+    globalThis.addEventListener?.('sb:conversation-workspace-state-changed', () => scheduleLorebookLinkCheck());
 
     eventSource.on(event_types.CHAT_CHANGED, async () => {
         scheduleLorebookLinkCheck();
@@ -5766,11 +5764,11 @@ async function checkOpenChatLorebookLinks() {
         const links = conversation
             ? listLorebookLinks({ conversationOverrides: conversation.overrides })
             : listLorebookLinks({ cards, charLore: world_info.charLore, chatLorebook: chat_metadata[METADATA_KEY] });
-        const candidates = filterUntoldLorebookLinks(chatKey, Array.isArray(world_names) ? findMissingLorebookLinks(links, world_names) : links);
+        const candidates = filterUntoldLorebookLinks(chatKey, Array.isArray(world_names) ? findMissingLorebookLinks(links, world_names) : links).filter(link => !isEmbeddedOfferHolding(link));
         if (!candidates.length) return;
 
         const { reportMissingLorebookLinks } = await import('./lorebook-link-notice.js');
-        await reportMissingLorebookLinks({ chatKey, candidates });
+        await reportMissingLorebookLinks({ chatKey, candidates, isHeld: isEmbeddedOfferHolding });
     } catch (error) {
         console.warn('[WI] Could not check the lorebook links of this chat', error);
     }
@@ -6637,6 +6635,26 @@ export function setWorldInfoButtonClass(chid, forceValue = undefined) {
     $('#set_character_world, #world_button').toggleClass('world_set', worldSet);
 }
 
+/** Cards whose embedded-lorebook offer (popup or toast) is on screen right now. */
+const embeddedOffersOnScreen = new Set();
+
+/** Whether the embedded-lorebook offer has not been made for this card yet and would be made now. */
+function embeddedWorldOfferDue(chid) {
+    const character = characters[chid];
+    if (!character?.data?.character_book) return false;
+    const worldName = character.data.extensions?.world;
+    const bookName = character.data.character_book?.name || `${character.name}'s Lorebook`;
+    const fileName = getCharaFilename(null, { manualAvatarKey: character.avatar });
+    const auxBooks = getLinkedAuxBooks(world_info.charLore, fileName);
+    return !accountStorage.getItem(`AlertWI_${character.avatar}`) && !isEmbeddedBookLinked(bookName, worldName, auxBooks, world_names);
+}
+
+/** A dead main link the embedded-lorebook offer is about to deal with, or is dealing with now, is not the notice's to name. */
+function isEmbeddedOfferHolding(link) {
+    if (link.kind !== LOREBOOK_LINK_KIND.cardMain || !link.embedded) return false;
+    return embeddedOffersOnScreen.has(link.avatar) || (characters[this_chid]?.avatar === link.avatar && embeddedWorldOfferDue(this_chid));
+}
+
 export function checkEmbeddedWorld(chid) {
     $('#import_character_info').hide();
 
@@ -6649,12 +6667,11 @@ export function checkEmbeddedWorld(chid) {
 
         // Only show the alert once per character
         const checkKey = `AlertWI_${characters[chid].avatar}`;
-        const worldName = characters[chid]?.data?.extensions?.world;
-        const bookName = characters[chid]?.data?.character_book?.name || `${characters[chid]?.name}'s Lorebook`;
-        const fileName = getCharaFilename(null, { manualAvatarKey: characters[chid].avatar });
-        const auxBooks = getLinkedAuxBooks(world_info.charLore, fileName);
-        if (!accountStorage.getItem(checkKey) && !isEmbeddedBookLinked(bookName, worldName, auxBooks, world_names)) {
+        if (embeddedWorldOfferDue(chid)) {
             accountStorage.setItem(checkKey, 'true');
+            const avatar = characters[chid].avatar;
+            embeddedOffersOnScreen.add(avatar);
+            clearLorebookNotice(link => link.kind === LOREBOOK_LINK_KIND.cardMain && link.avatar === avatar);
 
             if (power_user.world_import_dialog) {
                 const html = `<h3>This character has an embedded World/Lorebook.</h3>
@@ -6666,12 +6683,12 @@ export function checkEmbeddedWorld(chid) {
                         saveCharacterDebounced();
                     }
                 };
-                callGenericPopup(html, POPUP_TYPE.CONFIRM, '', { okButton: 'Yes' }).then(checkResult);
+                callGenericPopup(html, POPUP_TYPE.CONFIRM, '', { okButton: 'Yes' }).then(checkResult).finally(() => embeddedOffersOnScreen.delete(avatar));
             } else {
                 toastr.info(
                     'To import and use it, select "Import Card Lore" in the "More..." dropdown menu on the character panel.',
                     `${characters[chid].name} has an embedded World/Lorebook`,
-                    { timeOut: 5000, extendedTimeOut: 10000 },
+                    { timeOut: 5000, extendedTimeOut: 10000, onHidden: () => embeddedOffersOnScreen.delete(avatar) },
                 );
             }
         }
