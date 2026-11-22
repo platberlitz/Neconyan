@@ -19,6 +19,8 @@ const STACK_LINE_LIMIT = 200;
 
 const SECRET_NAME = '(?:[\\w.-]*(?:api[_-]?key|apikey|access[_-]?key|private[_-]?key|secret|token|passw(?:or)?d|pwd|passphrase|credential|cookie|authorization|auth|session[_-]?id|sessionid|signature)[\\w.-]*|key|sid|jwt|bearer)';
 const SECRET_LINE_NAME = '(?:proxy-authorization|authorization|set-cookie|cookie|x-[\\w-]*(?:key|token|secret|auth)[\\w-]*|[\\w-]*api-key)';
+// Token counts (max_tokens, prompt_tokens, token_limit) are settings and usage, not credentials.
+const COUNT_NAME = '(?![\\w.-]*(?:tokens|token[_-]?(?:count|limit|budget|usage)))';
 const WHOLE_VALUE_NAME = '(?:[\\w.-]*(?:passw(?:or)?d|pwd|passphrase|secret|credential)[\\w.-]*)';
 
 const REDACTIONS = [
@@ -28,7 +30,7 @@ const REDACTIONS = [
     [new RegExp(`(["']?)\\b(${SECRET_LINE_NAME})\\1\\s*[:=]\\s*(?:"(?:[^"\\\\]|\\\\.)*"|'(?:[^'\\\\]|\\\\.)*'|[^\\r\\n]*)`, 'gi'), '$2: [redacted]'],
     // Passwords and secrets may hold spaces, so an unquoted value runs to a separator.
     [new RegExp(`(["']?)\\b(${WHOLE_VALUE_NAME})\\1\\s*[:=]\\s*(?:"(?:[^"\\\\]|\\\\.)*"|'(?:[^'\\\\]|\\\\.)*'|[^\\r\\n,;&}"']+)`, 'gi'), '$2: [redacted]'],
-    [new RegExp(`(["']?)\\b(${SECRET_NAME})\\1\\s*[:=]\\s*(?:"(?:[^"\\\\]|\\\\.)*"|'(?:[^'\\\\]|\\\\.)*'|[^\\s,;&}"']+)`, 'gi'), '$2: [redacted]'],
+    [new RegExp(`(["']?)\\b${COUNT_NAME}(${SECRET_NAME})\\1\\s*[:=]\\s*(?:"(?:[^"\\\\]|\\\\.)*"|'(?:[^'\\\\]|\\\\.)*'|[^\\s,;&}"']+)`, 'gi'), '$2: [redacted]'],
     [/\b(Bearer|Basic|Digest|Negotiate)\s+[A-Za-z0-9._~+/=-]{4,}/gi, '$1 [redacted]'],
     [/\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@]*@/gi, '$1[redacted]@'],
     [/(^|[\s(<"'])[^\s/:@"'<>]+:[^\s/@"'<>]+@(?=[\w[])/g, '$1[redacted]@'],
@@ -204,6 +206,7 @@ function section(heading, builder, source, key, cap) {
  * @param {object|Array} [evidence.serverCrashes] Admin only
  * @param {object|Array} [evidence.logLines] Admin only
  * @param {string[]} [evidence.notes] Parts that could not be read, so the reader does not mistake them for empty
+ * @param {string|number} [evidence.gatheredAt] When the evidence was collected, so the reader can tell how old each item is
  * @returns {string}
  */
 export function formatAppEvidence(evidence = {}, caps = EVIDENCE_CAPS) {
@@ -220,5 +223,6 @@ export function formatAppEvidence(evidence = {}, caps = EVIDENCE_CAPS) {
     ].filter(lines => lines.length);
     if (!parts.length) return '';
     const intro = 'Recorded by Neconyan itself, newest first. Credentials, chat text and prompts are removed before sharing. A part that is missing had nothing to report or is not available to this account.';
-    return [EVIDENCE_HEADING, intro, ...parts.flatMap(lines => ['', ...lines])].join('\n');
+    const gathered = stamp(evidence.gatheredAt);
+    return [EVIDENCE_HEADING, intro, ...(gathered ? [`Gathered at ${gathered}. Times are UTC.`] : []), ...parts.flatMap(lines => ['', ...lines])].join('\n');
 }

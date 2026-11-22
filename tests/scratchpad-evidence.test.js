@@ -44,6 +44,26 @@ describe('redactEvidenceText', () => {
         expect(redactEvidenceText('Rate limit reached for gpt-4o')).toBe('Rate limit reached for gpt-4o');
     });
 
+    test.each([
+        'max_tokens: 8192 > 4096, which is the maximum allowed number of output tokens for this model',
+        'Invalid value for max_completion_tokens: 0. Must be >= 1',
+        'prompt_tokens=120000 total_tokens=124096',
+        'maxOutputTokens: 300 is below the minimum',
+        'token_limit=4096',
+    ])('keeps token counts, which are not credentials: %s', input => {
+        expect(redactEvidenceText(input)).toBe(input);
+    });
+
+    test.each([
+        ['access_token=PlantedCookieValue99 with max_tokens=5', 'max_tokens=5'],
+        ['csrf_token: PlantedCookieValue99', 'csrf_token'],
+        ['{"token":"PlantedCookieValue99"}', 'token'],
+    ])('still removes a real token value from %s', (input, kept) => {
+        const output = redactEvidenceText(input);
+        expectNoSecrets(output);
+        expect(output).toContain(kept);
+    });
+
     test('bounds length and ignores non-strings', () => {
         expect(redactEvidenceText('x '.repeat(5000), 100).length).toBeLessThanOrEqual(110);
         expect(redactEvidenceText(null)).toBe('');
@@ -64,6 +84,13 @@ describe('formatAppEvidence', () => {
 
     test('is empty when there is nothing at all', () => {
         expect(formatAppEvidence({})).toBe('');
+    });
+
+    test('says when the evidence was gathered, so item times can be judged', () => {
+        const text = formatAppEvidence({ environment, gatheredAt: Date.UTC(2026, 0, 2, 3, 4, 5) });
+        expect(text.split('\n')[2]).toBe('Gathered at 2026-01-02T03:04:05.000Z. Times are UTC.');
+        expect(formatAppEvidence({ environment })).not.toContain('Gathered at');
+        expect(formatAppEvidence({ gatheredAt: Date.now() })).toBe('');
     });
 
     test('has a clear heading and the environment part, and leaves out empty parts', () => {

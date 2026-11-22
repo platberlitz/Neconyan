@@ -51,5 +51,6 @@ export async function gatherAppEvidence() {
         serverCrashes: admin?.serverCrashes,
         logLines: admin?.logLines,
         notes,
+        gatheredAt: Date.now(),
     });
 }
