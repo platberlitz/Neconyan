@@ -66,6 +66,11 @@ const MAX_REPLY_BYTES = 256 * 1024;
 const REQUEST_OVERRIDES = new Set(['temperature', 'top_p', 'top_k', 'min_p', 'seed', 'frequency_penalty',
     'presence_penalty', 'repetition_penalty', 'stop', 'stopping_strings']);
 
+/** Agents get no memories recalled for one speaker's view, as in the page. */
+function agentMewmory(memory) {
+    return memory && !memory.viewers ? memory : null;
+}
+
 function requestOverrides(request) {
     const overrides = request.overridePayload ?? {};
     if (!overrides || typeof overrides !== 'object' || Array.isArray(overrides)
@@ -195,10 +200,10 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
         const readAgentMewmory = () => request.serverPrompt ? withRoleplayAccount(base, account, () => {
             const saved = readArtifact(directories, job.id, 'roleplay-mewmory');
             const presentation = readArtifact(directories, job.id, 'roleplay-prompt')?.memoryPresentation;
-            return saved?.enabled && presentation?.version === 1 && presentation.phase === 'terminal'
+            return agentMewmory(saved?.enabled && presentation?.version === 1 && presentation.phase === 'terminal'
                 ? { ...saved, memoryText: presentation.memoryText, factsText: presentation.factsText,
                     interviewText: presentation.interviewText, presentationChoice: presentation.choice }
-                : saved ?? null;
+                : saved);
         }) : null;
         let thinkingOnly = reasoningOnlyResult(result);
         let thinkingRecovery = null;
@@ -943,12 +948,10 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
             throw roleplayError('ROLEPLAY_INVALID', 'This protected chat name cannot identify its Mewmory store exactly.', 409);
         }
         memory = readArtifact(directories, job.id, 'roleplay-mewmory');
-        // Chat-wide memories cannot prove which group members heard their sources, as in the page.
-        if (memory === undefined && groupViewerMissedLines(selectRoleplayPromptRecords(promptSource.records, source, effect), source, request.worldInfo?.avatar)) {
-            memory = { enabled: false, restricted: true, npcText: '', memoryText: '', interviewText: '', factsText: '', excludedIndices: [], presentationVersion: 1 };
-            writeArtifact(directories, job.id, 'roleplay-mewmory', memory);
-        }
         if (memory === undefined) {
+            // A speaker who missed a line recalls only what they heard, as in the page.
+            const viewers = groupViewerMissedLines(selectRoleplayPromptRecords(promptSource.records, source, effect), source, request.worldInfo?.avatar)
+                ? [request.worldInfo.avatar] : null;
             const memoryHistory = promptRecords.slice(1).flatMap((record, index) => vectors?.projection.removed.some(item => item.index === index)
                 || record.is_system && !record.extra?.tool_invocations
                 ? [] : [{ index, text: `${record.name || ''}: ${preparedHistory?.content[index] ?? record.mes ?? ''}` }]);
@@ -961,6 +964,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
             const memoryInput = { locator,
                 tokenizer: (countChat ?? countText).tokenizer,
                 history: memoryHistory,
+                ...(viewers ? { viewers } : {}),
                 ...(request.mewmoryCatchUpOverride ? { mewmoryCatchUpOverride: request.mewmoryCatchUpOverride } : {}),
             };
             const memoryOptions = {
@@ -997,9 +1001,11 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
                 });
             }
             memory.presentationVersion = 1;
+            if (viewers) memory.viewers = viewers;
             writeArtifact(directories, job.id, 'roleplay-mewmory', memory);
             // The reply uses the last picked memories; the Recall selector refreshes them alongside it.
-            if (memory.enabled) {
+            // One speaker's view never refreshes the chat-wide pick, as in recall.
+            if (memory.enabled && !viewers) {
                 const state = memoryAccess(() => loadCurrentStateSync(directories, locator));
                 const offset = state.inheritedTimeline?.length || 0;
                 const excluded = new Set(memory.excludedIndices);
@@ -1029,6 +1035,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
         historyOptions.preparedContent = historyOptions.preparedContent.filter((_value, index) => retainedIndices.has(index));
     }
     const assertMemory = () => {
+        // Replies prepared before speakers had their own recall saved a blank restricted context.
         if (!request.serverPrompt || memory.restricted === true) return;
         if (!memory.enabled && !memoryAccess(() => memoryEnabled(directories, promptSource.locator))) return;
         const current = memoryAccess(() => loadCurrentStateSync(directories, promptSource.locator));
@@ -1280,7 +1287,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
     };
     if (request.worldInfo?.agents) {
         const intercepted = await runRoleplayAgentInterceptors(context, { base, snapshot: request.worldInfo, records: initialRecords, binding: request.binding,
-            mewmory: memoryFinal ?? null, macros: acceptedMacros, generationType: request.worldInfo.global.trigger, assistantName: request.characterName,
+            mewmory: agentMewmory(memoryFinal), macros: acceptedMacros, generationType: request.worldInfo.global.trigger, assistantName: request.characterName,
             assertCurrent: beforeDispatch, generate: generateAgent, timing: 'pre-generation', format: countText ? 'text' : 'chat',
             value: countText ? preparedText : messages });
         if (countText) preparedText = intercepted.value;

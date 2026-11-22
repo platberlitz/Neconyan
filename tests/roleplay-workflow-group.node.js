@@ -12,10 +12,12 @@ const { runPathfinderToolJob } = await import('../src/generation/pathfinder-tool
 const { captureRoleplayWorkflowRequest, admitRoleplayWorkflowJob, runRoleplayWorkflowJob,
     recoverWaitingRoleplayWorkflow } = await import('../src/generation/roleplay-workflow.js');
 const { getJob, recoverJobs, releaseJob, requestCancellation, setJobState, updateJob } = await import('../src/jobs/store.js');
-const { readArtifact, providerStep } = await import('../src/jobs/artifacts.js');
+const { readArtifact, providerStep, writeArtifact } = await import('../src/jobs/artifacts.js');
 const { roleplayHash } = await import('../src/roleplay-store.js');
 const { markRoleplayAgentsFailed, markRoleplayAgentsRefused, requestRoleplayAgentStop } = await import('../src/generation/roleplay-agent-stop.js');
 const { enableMewmoryHiding, rememberSavedChat } = await import('./mewmory-hiding-fixture.js');
+const { putRecord, validateRecord } = await import('../src/mewmory/core.js');
+const { mutateState } = await import('../src/mewmory/store.js');
 
 const controls = { prompts: [{ identifier: 'main', role: 'system', content: '', system_prompt: true },
     { identifier: 'chatHistory', marker: true, system_prompt: true }],
@@ -173,28 +175,71 @@ test('server group replies leave out lines a speaker did not hear and record who
     ]);
 });
 
-test('server group replies carry the scene line and leave Mewmory out for a speaker who missed a line', async t => {
+function sceneMemories(t) {
     const f = prepared(t, { scene: records => {
         records[0].chat_metadata = { group_scene: { away: [], location: 'The archive', whisper_to: [] } };
         records[1].extra = { group_scene: { present: ['Nova.png'], whisper_to: [] } };
     } });
+    enableMewmoryHiding(f.dirs, f.f.locator, { autoHide: false });
+    const remember = (state, id, ref, text, present) => {
+        const record = validateRecord(state, { id, kind: 'event', text, refs: [ref], subjectIds: ['archive'], evidenceStatus: 'established' },
+            { asOf: state.timeline.indexOf(ref), origin: 'objective_extractor' });
+        record.provenance = { policy: 'test', jobId: 'job', audience: { present, whisper_to: [] } };
+        putRecord(state, record, { automatic: true });
+    };
+    mutateState(f.dirs, f.f.locator, state => {
+        remember(state, 'event:secret', state.timeline[0], 'Nova overheard the secret plan.', ['Nova.png']);
+        remember(state, 'event:archive', state.timeline[1], 'Everyone gathered in the archive.', ['Nova.png', 'Other.png']);
+    });
+    return f;
+}
+
+const promptOf = options => options.messages.map(message => String(message.content)).join('\n');
+const childOf = (f, turn) => readArtifact(f.dirs, f.jobId, turn ? `roleplay-workflow-child:${turn}` : 'roleplay-workflow-child').jobId;
+
+test('server group replies carry the scene line and recall only the memories each speaker heard', async t => {
+    const f = sceneMemories(t);
     const line = '[Scene: Location: The archive. Present: Nova, Other.]';
     assert.ok(f.request.group.speakers.every(speaker => speaker.contextPrompt.endsWith(`\n${line}`)));
-    const promptOf = options => options.messages.map(message => String(message.content)).join('\n');
-    const memoryOf = turn => readArtifact(f.dirs, readArtifact(f.dirs, f.jobId,
-        turn ? `roleplay-workflow-child:${turn}` : 'roleplay-workflow-child').jobId, 'roleplay-mewmory');
+    const memoryOf = turn => readArtifact(f.dirs, childOf(f, turn), 'roleplay-mewmory');
     updateJob(f.dirs, f.jobId, { state: 'running' });
     assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
     const count = { value: 0 };
+    let novaPrompt = '';
     await f.completeCandidate(0, { avatar: 'Nova.png', name: 'Nova', modelOverride: '', reply: 'Nova replies.',
-        check: options => assert.ok(promptOf(options).includes(line)) }, count);
-    assert.notEqual(memoryOf(0)?.restricted, true);
+        check: options => { novaPrompt = promptOf(options); } }, count);
+    assert.ok(novaPrompt.includes(line));
+    assert.ok(novaPrompt.includes('Nova overheard the secret plan.'));
+    assert.ok(novaPrompt.includes('Everyone gathered in the archive.'));
+    assert.equal(memoryOf(0).viewers, undefined);
     assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    let otherPrompt = '';
     await f.completeCandidate(1, { avatar: 'Other.png', name: 'Other', modelOverride: 'fixture-override', reply: 'Other replies.',
-        check: options => assert.ok(promptOf(options).includes(line)) }, count);
-    assert.equal(memoryOf(1).restricted, true);
-    assert.equal(memoryOf(1).enabled, false);
+        check: options => { otherPrompt = promptOf(options); } }, count);
+    assert.ok(otherPrompt.includes(line));
+    assert.ok(otherPrompt.includes('Everyone gathered in the archive.'), 'Other should recall the memory of a line they heard');
+    assert.ok(!otherPrompt.includes('Nova overheard the secret plan.'), 'Other should not recall a line they missed');
+    assert.ok(!otherPrompt.includes('Original'), 'the line Other missed should stay out of their history');
+    assert.equal(memoryOf(1).enabled, true);
+    assert.deepEqual(memoryOf(1).viewers, ['Other.png']);
     assert.equal((await runRoleplayWorkflowJob(f.context())).result.status, 'completed');
+});
+
+test('a server group reply prepared before speakers had their own recall still finishes without memories', async t => {
+    const f = sceneMemories(t);
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    const count = { value: 0 };
+    await f.completeCandidate(0, { avatar: 'Nova.png', name: 'Nova', modelOverride: '', reply: 'Nova replies.' }, count);
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    writeArtifact(f.dirs, childOf(f, 1), 'roleplay-mewmory', { enabled: false, restricted: true, npcText: '', memoryText: '',
+        interviewText: '', factsText: '', excludedIndices: [], presentationVersion: 1 });
+    let otherPrompt = '';
+    await f.completeCandidate(1, { avatar: 'Other.png', name: 'Other', modelOverride: 'fixture-override', reply: 'Other replies.',
+        check: options => { otherPrompt = promptOf(options); } }, count);
+    assert.ok(!otherPrompt.includes('Everyone gathered in the archive.'));
+    assert.equal((await runRoleplayWorkflowJob(f.context())).result.status, 'completed');
+    assert.deepEqual(f.records().slice(4).map(record => record.mes), ['Nova replies.', 'Other replies.']);
 });
 
 test('members marked away in the saved scene are not picked for a server group reply', async t => {
