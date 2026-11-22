@@ -22,7 +22,7 @@ const { forcedMatches, validateSelection, recall, recallInBackground } = await i
 const { expandNeighbours, hybridCandidates, lexicalSearch, searchDocuments, splitPassages, updateIndex } = await import('../src/mewmory/search.js');
 const { loadCurrentState } = await import('../src/mewmory/sources.js');
 const { prepareMewmoryPrompt } = await import('../src/mewmory/prepare.js');
-const { viewerState } = await import('../src/mewmory/viewers.js');
+const { batchState, memberHeard, sameAudience, viewerState } = await import('../src/mewmory/viewers.js');
 const { branchParentLocator, buildBranchMemoryState, chatPath, listStories, mutateState, normalizeLocator, readChatShared, readState, renameChatMemory, renameCharacterMemory, renameWorldMemory, removeChatMemory, removeSourceMemory, statePath, writeJson } = await import('../src/mewmory/store.js');
 const { ensureMewmoryMessageIds } = await import('../public/scripts/mewmory/message-identity.js');
 const { getCounter, getTokenizerModel } = await import('../src/mewmory/tokens.js');
@@ -351,6 +351,70 @@ test('preparing a group reply checks its speakers and keeps lines whose memories
     assert.equal(kit.enabled, true);
     assert.doesNotMatch(kit.memoryText, /Mara accepted the gift/);
     assert.ok(kit.excludedIndices.every(index => index < 2), 'lines after the one Kit missed stay in his prompt');
+});
+
+/** A group story where Mara heard everything and Kit missed the line where she accepts the gift. */
+function groupStory({ present = ['Mara.png'] } = {}) {
+    const messages = fixture.messages.map((message, index) => index === 2
+        ? { ...structuredClone(message), extra: { ...message.extra, group_scene: { present, whisper_to: [] } } }
+        : { ...structuredClone(message), extra: { ...message.extra, group_scene: { present: ['Mara.png', 'Kit.png'], whisper_to: [] } } });
+    const state = newState({ avatar: '', chat: 'Gift', group: true });
+    syncSources(state, messages, [...fixture.lore,
+        { id: 'character:mara', type: 'character', entityId: 'npc:mara', name: 'Mara', text: 'Mara', meta: { avatar: 'Mara.png' } },
+        { id: 'character:kit', type: 'character', entityId: 'npc:kit', name: 'Kit', text: 'Kit', meta: { avatar: 'Kit.png' } }]);
+    state.enabled = true;
+    return state;
+}
+
+function groupEvent(state, { id = 'event:gift', refs = [state.timeline[2]], text = 'Mara accepted the gift.', asOf = 2 } = {}, present = null) {
+    const record = validateRecord(state, { id, kind: 'event', text, refs, subjectIds: ['gift'], evidenceStatus: 'established' }, { asOf, origin: 'objective_extractor' });
+    if (present) record.provenance = { policy: 'test', jobId: 'job', audience: { present, whisper_to: [] } };
+    putRecord(state, record, { automatic: true });
+}
+
+test('group memories say who heard them, so later lines stay readable to a member who missed an earlier one', () => {
+    const state = groupStory();
+    groupEvent(state, { id: 'event:arrival', refs: [state.timeline[1]], text: 'The player brought a gift.', asOf: 1 }, ['Mara.png', 'Kit.png']);
+    groupEvent(state, {}, ['Mara.png']);
+    groupEvent(state, { id: 'event:receipt', refs: [state.timeline[4]], text: 'The player showed a receipt.', asOf: 4 }, ['Mara.png', 'Kit.png']);
+    groupEvent(state, { id: 'event:legacy', refs: [state.timeline[5]], text: 'Mara reread the receipt.', asOf: 5 });
+    for (const record of state.records) if (record.id !== 'event:legacy') assert.ok(record.provenance.audience);
+    assert.equal(viewerState(state, ['Mara.png']), null);
+    const kit = viewerState(state, ['Kit.png']);
+    const ids = kit.state.records.map(record => record.id);
+    assert.ok(ids.includes('event:arrival'));
+    assert.ok(ids.includes('event:receipt'), 'a memory from lines Kit heard stays his, even after a line he missed');
+    assert.ok(!ids.includes('event:gift'));
+    assert.ok(!ids.includes('event:legacy'), 'an older memory without listeners is held back after the first missed line');
+    assert.deepEqual([...kit.heldRefs].sort(), [state.timeline[2].id, state.timeline[5].id].sort());
+});
+
+test('extraction batches keep one audience, build only on what every listener may read, and skip knowledge a character never heard', () => {
+    const state = groupStory();
+    assert.deepEqual(sameAudience(state, state.timeline.slice(0, 5)), state.timeline.slice(0, 2));
+    assert.deepEqual(sameAudience(state, state.timeline.slice(2, 5)), state.timeline.slice(2, 3));
+    assert.deepEqual(sameAudience(state, state.timeline.slice(3, 6)), state.timeline.slice(3, 6));
+    groupEvent(state, {}, ['Mara.png']);
+    const existing = story => extractionInput(story, [story.timeline[4]], 4).existing.map(record => record.id);
+    assert.ok(!existing(state).includes('event:gift'), 'Kit heard this batch, so the line he missed is not shown to the model');
+    const shared = groupStory({ present: ['Mara.png', 'Kit.png'] });
+    groupEvent(shared, {}, ['Mara.png', 'Kit.png']);
+    assert.ok(existing(shared).includes('event:gift'));
+    assert.equal(batchState(groupStory({ present: ['Mara.png', 'Kit.png'] }), null), null);
+    assert.ok(memberHeard(state, { present: ['Mara.png'], whisper_to: [] }, 'npc:mara'));
+    assert.ok(!memberHeard(state, { present: ['Mara.png'], whisper_to: [] }, 'npc:kit'));
+    assert.ok(memberHeard(state, { present: ['Mara.png'], whisper_to: [] }, 'npc:stranger'));
+
+    const input = { ...extractionInput(state, [state.timeline[2]], 2), provenance: { policy: 'test', jobId: 'job' } };
+    const skipped = [];
+    applyExtraction(state, { records: [
+        { id: 'event:accepts', kind: 'event', text: 'Mara accepted the gift and placed it carefully.', refs: [state.timeline[2]], subjectIds: ['gift'], evidenceStatus: 'established' },
+        { id: 'knowledge:kit-gift', kind: 'knowledge', ownerId: 'npc:kit', subjectIds: ['gift'], text: 'Kit knows Mara accepted the gift.', method: 'witnessed', evidenceText: 'Mara accepts the gift.', refs: [state.timeline[2]] },
+    ] }, input, skipped);
+    const saved = state.records.find(record => record.id === 'event:accepts');
+    assert.deepEqual(saved.provenance.audience, { present: ['Mara.png'], whisper_to: [] });
+    assert.ok(!state.records.some(record => record.id === 'knowledge:kit-gift'));
+    assert.ok(skipped.some(message => /did not hear/.test(message)));
 });
 
 test('meaning recall falls back without paying for a query when no matching documents can be embedded', async t => {

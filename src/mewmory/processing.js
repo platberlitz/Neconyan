@@ -8,6 +8,7 @@ import { callJsonRole, readConfig, resolvedRoleIdentity, ROLE_LABELS, roleVersio
 import { loadCurrentState } from './sources.js';
 import { mutateState, readStateShared, statePath } from './store.js';
 import { beginServerWork } from '../android-wake.js';
+import { batchState, memberHeard, sameAudience, sourceAudience } from './viewers.js';
 
 // startProcessing owns production admission, but processBatch is exported for tests and
 // future callers. This separate map joins another direct call to processBatch, so two
@@ -124,7 +125,9 @@ export function extractionInput(state, refs, asOf, checkpoint) {
     const sceneText = scene.map(source => source.speaker + '\n' + source.text).join('\n');
     const lowered = sceneText.toLocaleLowerCase();
     const matchScore = matchScorer(sceneText);
-    const records = eligibleRecords(state, { asOf }).filter(record => objectiveKinds.includes(record.kind));
+    // In a group chat the model sees only memories every listener of this batch could read.
+    const view = batchState(state, sourceAudience(state, refs[0])) || state;
+    const records = eligibleRecords(view, { asOf }).filter(record => objectiveKinds.includes(record.kind));
     const entities = currentRecords(records.filter(record => record.kind === 'entity'), record => record.entityId);
     const readEntities = new Set(entities.filter(record => record.origin !== 'character_card').map(record => record.entityId));
     const context = state.contextSources.filter(ref => sourceEligible(state, ref))
@@ -157,8 +160,8 @@ export function extractionInput(state, refs, asOf, checkpoint) {
     return {
         policy: POLICY_VERSION, mode: checkpoint ? 'preservation_checkpoint' : 'live_update', asOf,
         sources: [...scene, ...cards, ...lore], existing: [...reference, ...states, ...relevant],
-        authorOverrides: state.records.filter(record => record.authorOverride && record.asOf <= asOf)
-            .map(record => objectiveKinds.includes(record.kind) && recordEligible(state, record, { asOf }) ? existingRecord(record)
+        authorOverrides: view.records.filter(record => record.authorOverride && record.asOf <= asOf)
+            .map(record => objectiveKinds.includes(record.kind) && recordEligible(view, record, { asOf }) ? existingRecord(record)
                 : { id: record.id, kind: record.kind, excluded: record.excluded, status: record.status }),
     };
 }
@@ -189,12 +192,12 @@ function batchRefs(value, batch) {
 }
 
 /** Repairs the slips cheap models make, so one wrong detail does not sink an otherwise good reply. */
-function tidyProposal(state, proposed, batch, asOf) {
+function tidyProposal(state, proposed, batch, asOf, view = state) {
     const tidy = { ...proposed, id: cleanId(proposed.id), subjectIds: cleanIds(proposed.subjectIds) };
     for (const key of ['entityId', 'ownerId']) if (key in tidy) tidy[key] = cleanId(tidy[key]);
     tidy.refs = batchRefs(proposed.refs, batch);
     tidy.evidenceRefs = batchRefs(proposed.evidenceRefs || [], batch);
-    const usable = eligibleRecords(state, { asOf }).filter(record => objectiveKinds.includes(record.kind));
+    const usable = eligibleRecords(view, { asOf }).filter(record => objectiveKinds.includes(record.kind));
     tidy.dependencies = (Array.isArray(proposed.dependencies) ? proposed.dependencies : [])
         .map(dependency => usable.find(record => record.id === (typeof dependency === 'string' ? dependency : dependency?.id)))
         .filter(Boolean).map(record => ({ id: record.id, version: record.version }));
@@ -225,8 +228,11 @@ export function applyExtraction(state, output, input, skipped = [], interviewSki
     object(output, 'Extraction');
     const refs = new Set(input.sources.map(refKey));
     const batch = new Map(input.sources.map(source => [source.id, { id: source.id, revision: source.revision }]));
+    const chatSources = input.sources.filter(source => source.type === 'chat');
+    const audience = chatSources.length ? sourceAudience(state, chatSources[0]) : null;
+    const view = batchState(state, audience) || state;
     const records = list(output.records ?? [], 'Extracted records', Infinity).slice(0, 80)
-        .filter(proposed => proposed && typeof proposed === 'object').map(proposed => tidyProposal(state, proposed, batch, input.asOf));
+        .filter(proposed => proposed && typeof proposed === 'object').map(proposed => tidyProposal(state, proposed, batch, input.asOf, view));
     const order = { entity: 0, state: 1, event: 2, relationship: 3, knowledge: 4, commitment: 5 };
     const seen = new Set();
     for (const proposed of records.slice().sort((a, b) => (order[a.kind] ?? 9) - (order[b.kind] ?? 9))) try {
@@ -234,7 +240,7 @@ export function applyExtraction(state, output, input, skipped = [], interviewSki
         seen.add(proposed.id);
         let candidate = { ...proposed, ...settleSignificance(state, proposed, refs) };
         if (candidate.kind === 'entity') {
-            const previous = state.records.find(record => record.id === candidate.id && recordEligible(state, record, { asOf: input.asOf }));
+            const previous = view.records.find(record => record.id === candidate.id && recordEligible(view, record, { asOf: input.asOf }));
             if (previous) {
                 candidate = {
                     ...candidate,
@@ -245,11 +251,15 @@ export function applyExtraction(state, output, input, skipped = [], interviewSki
                 for (const ref of previous.refs) refs.add(refKey(ref));
             }
         }
+        if (candidate.kind === 'knowledge' && !memberHeard(state, audience, cleanId(candidate.ownerId))) {
+            fail('A character cannot know a line they did not hear, so that memory was left out.');
+        }
         const record = validateRecord(state, candidate, { asOf: input.asOf, origin: 'objective_extractor', allowedRefs: refs });
         record.asOf = Math.max(-1, ...record.refs.map(ref => sourceAt(state, ref).sequence),
             ...record.dependencies.map(dependency => recordRevision(state, dependency.id, dependency.version).asOf));
-        record.provenance = input.provenance;
-        record.inputRefs = input.sources.filter(source => source.type === 'chat').map(({ id, revision }) => ({ id, revision }));
+        // Group memories remember who heard the lines they came from, so only those members recall them.
+        record.provenance = state.locator?.group ? { ...input.provenance, audience: audience ? structuredClone(audience) : null } : input.provenance;
+        record.inputRefs = chatSources.map(({ id, revision }) => ({ id, revision }));
         putRecord(state, record, { automatic: true });
     } catch (error) {
         if (![400, 409].includes(error.status)) throw error;
@@ -377,7 +387,7 @@ async function runBatch(directories, locator, options, call) {
             || ['pending', 'failed'].includes(current.visibilityRestore?.status)) fail('Mewmory was switched off while memories were updating.', 409);
         options.signal?.throwIfAborted();
     };
-    const refs = pendingSources(state, config, options).slice(0, config.batchMessages);
+    const refs = sameAudience(state, pendingSources(state, config, options).slice(0, config.batchMessages));
     if (!refs.length) return state;
     const asOf = Math.max(...refs.map(ref => sourceAt(state, ref).sequence));
     const snapshot = sourceFingerprint(state);

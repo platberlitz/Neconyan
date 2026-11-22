@@ -267,7 +267,6 @@ export async function recall(directories, locator, {
     const counter = await getCounter(config.writerTokenizer, tokenizer);
     // A group speaker who missed a line reads only what they heard; fingerprints still describe the whole chat.
     const view = viewer?.state || state;
-    const recordAsOf = viewer ? Math.min(asOf, viewer.recordAsOf) : asOf;
     const viewerKey = viewer?.key ?? null;
     const usage = [];
     let indexError = '';
@@ -290,7 +289,7 @@ export async function recall(directories, locator, {
     });
     if (manualQuery) scene.push({ id: 'inspection-query', speaker: 'Author search', text: text(manualQuery, 'Search', 6000) });
     const query = scene.map(cue => cue.speaker + ': ' + cue.text).join('\n');
-    const sourceDocuments = searchDocuments(view, recordAsOf, config);
+    const sourceDocuments = searchDocuments(view, asOf, config);
     // Recall offers saved memory entries (and attached files); raw chat, card and lore passages only when switched on.
     const allDocuments = recallPool(sourceDocuments, config);
     const retainedByRef = new Map(retained.map(item => [refKey(item.ref), String(item.text || '').replace(/\r\n/g, '\n')]));
@@ -323,7 +322,7 @@ export async function recall(directories, locator, {
             indexError = error.message;
         }
     }
-    let forced = forcedMatches(view, allowedDocuments, query, recordAsOf);
+    let forced = forcedMatches(view, allowedDocuments, query, asOf);
     let candidates = [...new Map([...forced, ...hybridCandidates(allowedDocuments, query, vector,
         state.index.vectors, config.candidateLimit, retrieval)].map(document => [document.id, document])).values()];
     // An author's inspection query can change the picks without changing the scene fingerprint.
@@ -346,7 +345,7 @@ export async function recall(directories, locator, {
             relevanceType: 'direct', currentCueRefs: scene.map(cue => cue.id), memoryEvidenceRefs: document.refs.map(refKey),
             justification: 'Selected by ranked retrieval; AI selection is switched off.' })), rejections: [], needsEvidence: [] },
         documents: candidates, usage: [], fallbackUsed: false, error: '',
-    } : await selectMemories(view, directories, config, candidates, scene, allowedDocuments, recordAsOf, signal, call, sourceDocuments);
+    } : await selectMemories(view, directories, config, candidates, scene, allowedDocuments, asOf, signal, call, sourceDocuments);
     usage.push(...selection.usage);
     // A prompt caller checks the source and fingerprint again right after this returns, so it can
     // skip this second source sync. Standalone and background recalls keep every check.
@@ -359,13 +358,13 @@ export async function recall(directories, locator, {
         const byId = new Map(documents.map(document => [document.id, document]));
         const expanded = expandNeighbours([...ids].map(id => byId.get(id)).filter(Boolean), documents, retrieval.neighbourChunks);
         return { expanded, value: assembleContext(view, expanded, {
-            asOf: recordAsOf, counter, memoryTokens: config.memoryTokens, forcedIds: required.map(document => document.id),
+            asOf: asOf, counter, memoryTokens: config.memoryTokens, forcedIds: required.map(document => document.id),
         }) };
     };
     let { expanded: currentDocuments, value: assembly } = assemble(allowedDocuments, selectedIds, forced);
     let fallbackAssembly = assembly;
     if (proof.length && local) {
-        const fallbackForced = forcedMatches(view, allDocuments, query, recordAsOf);
+        const fallbackForced = forcedMatches(view, allDocuments, query, asOf);
         const fallbackCandidates = hybridCandidates(allDocuments, query, vector, state.index.vectors, config.candidateLimit, retrieval);
         const fallbackIds = new Set([...fallbackForced.map(document => document.id),
             ...[...new Set([...(cached?.selections || []).map(item => item.recordId), ...fallbackCandidates.map(item => item.id)])].slice(0, retrieval.resultLimit)]);

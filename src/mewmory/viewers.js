@@ -1,32 +1,107 @@
 import { canGroupMemberSee } from '../../public/scripts/group-chat-visibility.js';
 import { hash, sourceAt } from './core.js';
 
+const canHear = (audience, viewer, rules) => !audience || canGroupMemberSee({ extra: { group_scene: audience } }, viewer, rules);
+
+/** Who heard a saved line, or null for a line everyone heard. */
+export function sourceAudience(state, ref) {
+    return state.sources[ref?.id]?.audience ?? null;
+}
+
+/** Lines heard by the same people share a key, so one extraction batch never mixes listeners. */
+export function audienceKey(audience) {
+    if (!audience) return '';
+    const sorted = value => Array.isArray(value) ? [...new Set(value)].sort() : null;
+    return JSON.stringify([sorted(audience.present), sorted(audience.whisper_to) ?? []]);
+}
+
+/** The first lines of a batch that the same people heard, so each memory has one audience. */
+export function sameAudience(state, refs) {
+    const first = audienceKey(sourceAudience(state, refs[0]));
+    const cut = refs.findIndex(ref => audienceKey(sourceAudience(state, ref)) !== first);
+    return cut > 0 ? refs.slice(0, cut) : refs;
+}
+
+/** The group members a story knows, from its character cards. */
+export function groupMembers(state) {
+    return (state.contextSources || []).flatMap(ref => {
+        if (state.sources[ref.id]?.type !== 'character') return [];
+        const revision = sourceAt(state, ref);
+        return revision?.meta?.avatar ? [{ avatar: revision.meta.avatar, entityId: revision.entityId || '' }] : [];
+    });
+}
+
+/** Whether a memory version says who may read it. Older memories carry no such mark. */
+const marked = record => Boolean(record?.provenance) && Object.hasOwn(record.provenance, 'audience');
+
 /**
- * The memory a group speaker may read. Lines they did not hear are left out, and so is every
- * memory written after the first such line: a memory cites only some of the messages it came
- * from, so one made later could still carry what they missed.
+ * The memory a group speaker may read. Lines they did not hear are left out. A memory written
+ * from one group of listeners says so, and only those listeners read it. An older memory has no
+ * such mark and cites only some of the messages it came from, so a speaker reads it only when
+ * they heard every line up to it.
  * @param {object} state Mewmory state
  * @param {string[]|null} viewers Speakers the prompt is written for
  * @param {{ seesAll?: string[] }} [rules] The chat's scene rules
- * @returns {{ state: object, recordAsOf: number, key: string }|null} Null when they heard everything
+ * @returns {{ state: object, heldRefs: Set<string>, key: string }|null} Null when they may read everything
  */
 export function viewerState(state, viewers, rules = {}) {
     if (!Array.isArray(viewers) || !viewers.length) return null;
     const hidden = [];
-    let recordAsOf = Infinity;
+    let legacyAsOf = Infinity;
     for (const ref of state.timeline) {
-        const audience = state.sources[ref.id]?.audience;
-        if (!audience || viewers.every(viewer => canGroupMemberSee({ extra: { group_scene: audience } }, viewer, rules))) continue;
+        const audience = sourceAudience(state, ref);
+        if (viewers.every(viewer => canHear(audience, viewer, rules))) continue;
         hidden.push(ref.id);
         const sequence = sourceAt(state, ref)?.sequence;
-        if (Number.isFinite(sequence)) recordAsOf = Math.min(recordAsOf, sequence - 1);
+        if (Number.isFinite(sequence)) legacyAsOf = Math.min(legacyAsOf, sequence - 1);
     }
-    if (!hidden.length) return null;
+    const readable = record => marked(record)
+        ? viewers.every(viewer => canHear(record.provenance.audience, viewer, rules))
+        : record.asOf <= legacyAsOf;
+    let changed = hidden.length > 0;
+    // Unreadable versions are blanked rather than dropped, so corrections still count.
+    const audit = state.audit.map(entry => {
+        if (!entry.before || readable(entry.before)) return entry;
+        changed = true;
+        return { ...entry, before: null };
+    });
+    const heldRefs = new Set();
+    const records = state.records.flatMap(record => {
+        if (readable(record)) return [record];
+        changed = true;
+        for (const ref of [...record.refs || [], ...record.evidenceRefs || [], ...record.inputRefs || []]) heldRefs.add(ref.id);
+        // An earlier version they may read stands in, as when a memory is too new for a prompt.
+        const earlier = audit.filter(entry => entry.recordId === record.id && entry.before)
+            .map(entry => entry.before).sort((a, b) => b.version - a.version)[0];
+        return earlier ? [earlier] : [];
+    });
+    if (!changed) return null;
     return {
-        state: { ...state, excludedSources: [...new Set([...(state.excludedSources || []), ...hidden])] },
-        recordAsOf,
+        state: { ...state, excludedSources: [...new Set([...(state.excludedSources || []), ...hidden])], records, audit },
+        heldRefs,
         key: hash([...new Set(viewers)].sort()),
     };
+}
+
+/**
+ * The memory one extraction batch may build on: only what every member who heard the batch may
+ * read, so a new memory never carries a line to someone who missed it.
+ * @param {object} state Mewmory state
+ * @param {object|null} audience Who heard the batch
+ * @returns {object|null} Narrowed state, or null when nothing is held back
+ */
+export function batchState(state, audience) {
+    const members = groupMembers(state).map(member => member.avatar);
+    if (!state.locator?.group || !members.length) return null;
+    const listeners = members.filter(avatar => canHear(audience, avatar));
+    if (!listeners.length) return { ...state, records: [], audit: [] };
+    return viewerState(state, listeners)?.state ?? null;
+}
+
+/** Whether a group member heard a batch, by the entity a memory names them with. */
+export function memberHeard(state, audience, entityId) {
+    const member = groupMembers(state).find(entry => entry.entityId === entityId);
+    return !member || canHear(audience, member.avatar);
 }
 
 /**

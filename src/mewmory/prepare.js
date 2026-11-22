@@ -72,7 +72,7 @@ export async function prepareMewmoryPrompt(directories, body, signal, {
     // author chooses to re-read it.
     const isPreserved = index => {
         const ref = state.timeline[index + offset];
-        if (view && index + offset > view.recordAsOf) return false;
+        if (ref && view?.heldRefs.has(ref.id)) return false;
         return Boolean(ref && (!sourceEligible(state, ref) || sourceRead(state.checkpoints, ref)));
     };
     if (config.excludeHistory && config.historyMode === 'messages') {
