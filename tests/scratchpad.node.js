@@ -112,7 +112,13 @@ test('lorebook activation field instructions stay brief when Problem checks are 
             capabilities: { lore: true, problems: false },
             customPrompt,
         }).text;
-        assert.match(brief, /optional activation settings/);
+        if (customPrompt) {
+            // A custom session prompt in Roleplay gains no lorebook instructions unless Problem checks are on.
+            assert.equal(brief, buildScratchpadSystemPrompt({ assistant: 'miso', capabilities: {}, customPrompt }).text);
+            assert.doesNotMatch(brief, /"type":"lorebook"/);
+        } else {
+            assert.match(brief, /optional activation settings/);
+        }
         assert.doesNotMatch(brief, /Optional activation fields on add or edit/);
         assert.doesNotMatch(brief, /Lorebook activation trace/);
 

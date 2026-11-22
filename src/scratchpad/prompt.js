@@ -258,9 +258,10 @@ export function buildScratchpadSystemPrompt({ assistant, gender, persona: savedP
         webPages ? WEB_PAGES_INSTRUCTIONS : '',
         changeInstructions(capabilities),
     ];
+    const customLore = generalLore || Boolean(capabilities.problems && capabilities.lore);
     const instructions = typeof customPrompt === 'string' && customPrompt.trim()
         ? [customPrompt, contextNotice && !customPrompt.includes(contextNotice) ? contextNotice : '', webSearch ? WEB_SEARCH_INSTRUCTIONS : '', webPages ? WEB_PAGES_INSTRUCTIONS : '',
-            capabilities.notebook || capabilities.persona || capabilities.preset?.length || capabilities.agents || capabilities.authorsNote || capabilities.regex || capabilities.cssSnippets || capabilities.dialogueColors || capabilities.mewmory || capabilities.problems || capabilities.lore ? changeInstructions({ lore: Boolean(capabilities.lore), notebook: capabilities.notebook, persona: capabilities.persona, preset: capabilities.preset, agents: capabilities.agents, authorsNote: capabilities.authorsNote, regex: capabilities.regex, cssSnippets: capabilities.cssSnippets, dialogueColors: capabilities.dialogueColors, mewmory: capabilities.mewmory, problems: capabilities.problems }) : ''].filter(Boolean).join('\n\n')
+            capabilities.notebook || capabilities.persona || capabilities.preset?.length || capabilities.agents || capabilities.authorsNote || capabilities.regex || capabilities.cssSnippets || capabilities.dialogueColors || capabilities.mewmory || capabilities.problems || generalLore ? changeInstructions({ lore: customLore, notebook: capabilities.notebook, persona: capabilities.persona, preset: capabilities.preset, agents: capabilities.agents, authorsNote: capabilities.authorsNote, regex: capabilities.regex, cssSnippets: capabilities.cssSnippets, dialogueColors: capabilities.dialogueColors, mewmory: capabilities.mewmory, problems: capabilities.problems }) : ''].filter(Boolean).join('\n\n')
         : sections.filter(Boolean).join('\n\n');
     const reference = help ? `Neconyan reference for app questions (use it only when ${names.user} asks how something in Neconyan works):\n${help}` : '';
     const preferences = userInstructions.trim() ? `The user's global Scratchpad instructions for you:\n${userInstructions}` : '';
