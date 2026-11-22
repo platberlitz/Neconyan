@@ -3192,6 +3192,61 @@ describe('in-chat agent post-processing runner', () => {
         expect(extensionPrompts.inchat_agent_companion_plot.value).toContain('A door opens.');
     });
 
+    test('a newer kept Plot Compass note takes precedence over an older opening pick', async () => {
+        const agent = createCompanionAgent({ id: 'plot', sourceTemplateId: 'tpl-plot-compass-companion',
+            companion: { includeInChatHistory: true, feedback: { enabled: true, depth: 1 } } });
+        enabledAgents = [agent];
+        const runner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        const content = '**Possible developments:**\n1. A storm arrives.\n2. The host confesses.\n**Next move:** 2. The host confesses.';
+        chatMetadata.inChatAgentPlotCompassOpeningNotes = { plot: { status: 'done', content,
+            plotCompassChoice: { number: 2, text: 'The host confesses.' } } };
+        const host = { mes: 'A reply.', name: 'Mira', is_user: false, extra: {} };
+        chat.push(host);
+        runner.setCompanionResult(host, agent, { status: 'done', content, plotCompassChoice: { number: 1, text: 'A storm arrives.' } });
+
+        runner.injectCompanionFeedbackPrompts([agent]);
+        let injected = extensionPrompts.inchat_agent_companion_plot.value;
+        expect(injected).toContain('[User\'s chosen direction at the time]\n2. The host confesses.');
+        expect(injected).toContain('[User\'s chosen direction]\n1. A storm arrives.\nThe user picked this direction for the next response.');
+        expect(injected).not.toContain('2. The host confesses.\nThe user picked this direction for the next response.');
+
+        runner.updateCompanionResult(host, agent.id, { plotCompassChoice: undefined });
+        runner.injectCompanionFeedbackPrompts([agent]);
+        injected = extensionPrompts.inchat_agent_companion_plot.value;
+        expect(injected).not.toContain('The user picked this direction for the next response.');
+    });
+
+    test('a Plot Compass pick is sent with feedback disabled, respecting visible notes and the rewrite boundary', async () => {
+        const agent = createCompanionAgent({ id: 'plot', sourceTemplateId: 'tpl-plot-compass-companion',
+            companion: { includeInChatHistory: true, feedback: { enabled: false, depth: 1 } } });
+        enabledAgents = [agent];
+        const runner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        const { beginGroupPromptScope } = await import('../public/scripts/group-chat-visibility.js');
+        const content = '**Possible developments:**\n1. A storm arrives.\n2. The host confesses.\n**Next move:** 2. The host confesses.';
+        const visible = { mes: 'Visible.', name: 'Mira', is_user: false, extra: { group_scene: { present: ['mira.png'], whisper_to: [] } } };
+        const hidden = { mes: 'Private.', name: 'Kit', is_user: false, extra: { group_scene: { present: ['kit.png'], whisper_to: [] } } };
+        chat.push(visible, hidden);
+        runner.setCompanionResult(visible, agent, { status: 'done', content, plotCompassChoice: { number: 1, text: 'A storm arrives.' } });
+        runner.setCompanionResult(hidden, agent, { status: 'done', content, plotCompassChoice: { number: 2, text: 'The host confesses.' } });
+
+        const restore = beginGroupPromptScope(['mira.png'], chat);
+        try {
+            runner.injectCompanionFeedbackPrompts([agent]);
+            expect(extensionPrompts.inchat_agent_companion_plot.value).toContain('[User\'s chosen direction]\n1. A storm arrives.');
+            expect(extensionPrompts.inchat_agent_companion_plot.value).not.toContain('The host confesses.');
+        } finally {
+            restore();
+        }
+        runner.deleteCompanionResult(hidden, agent.id);
+        const tail = { mes: 'Rewrite me.', name: 'Mira', is_user: false, extra: {} };
+        chat.push(tail);
+        runner.setCompanionResult(tail, agent, { status: 'done', content, plotCompassChoice: { number: 2, text: 'The host confesses.' } });
+        runner.injectCompanionFeedbackPrompts([agent], { excludeMessage: tail });
+        expect(extensionPrompts.inchat_agent_companion_plot.value).toContain('[User\'s chosen direction]\n1. A storm arrives.');
+        runner.injectCompanionFeedbackPrompts([agent]);
+        expect(extensionPrompts.inchat_agent_companion_plot.value).toContain('[User\'s chosen direction]\n2. The host confesses.');
+    });
+
     test('includes the system prompt and authors note sections when toggled on', async () => {
         const contextCompanion = createCompanionAgent({
             id: 'context-companion',

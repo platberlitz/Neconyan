@@ -74,6 +74,7 @@ import {
     isExpressionsAgent,
     isLocalCompanionAgent,
     isPlotCompassAgent,
+    getPlotCompassChoiceDirective,
     getPlotCompassContentWithChoice,
     isRetryableCompanionFailure,
     isSuppressedCompanionResult,
@@ -1033,8 +1034,8 @@ function getPreviousNotesSection(agent, messageIndex, companion) {
     }).map(result => `${result.messageIndex < 0 ? 'Before the conversation' : `Message ${result.messageIndex}`}:\n${getResolvedCompanionResultContent(result, result.messageIndex, { plotCompass: isPlotCompassAgent(agent) })}`).join('\n\n');
 }
 
-function getResolvedCompanionResultContent(result = {}, messageIndex = -1, { plotCompass = false, instruction = false } = {}) {
-    const content = plotCompass ? getPlotCompassContentWithChoice(result, { instruction }) : result.content ?? '';
+function getResolvedCompanionResultContent(result = {}, messageIndex = -1, { plotCompass = false, instruction = false, historical = false } = {}) {
+    const content = plotCompass ? getPlotCompassContentWithChoice(result, { instruction, historical }) : result.content ?? '';
     return normalizeText(resolveCompanionContentMacros(content, chat[messageIndex]));
 }
 
@@ -2612,21 +2613,28 @@ export function injectCompanionFeedbackPrompts(activeAgents = [], { excludeMessa
         }
 
         const companion = getCompanionConfig(agent);
-        if (!companion.feedback?.enabled) {
+        const plotCompass = isPlotCompassAgent(agent);
+        if (!companion.feedback?.enabled && !plotCompass) {
             continue;
         }
 
-        const notes = collectRecentCompanionResults(agent.id, {
+        // Find the newest note before excluding kept notes, or an older pick can become current.
+        const latest = plotCompass ? collectRecentCompanionResults(agent.id, { beforeMessageIndex, depth: 1 })[0] : null;
+        const notes = companion.feedback?.enabled ? collectRecentCompanionResults(agent.id, {
             beforeMessageIndex,
             depth: companion.feedback.depth,
             excludeChatHistory: true,
-        });
-        if (notes.length === 0) {
-            continue;
-        }
+        }) : [];
 
-        const plotCompass = isPlotCompassAgent(agent);
-        const body = notes.map((result, index) => getResolvedCompanionResultContent(result, result.messageIndex, { plotCompass, instruction: index === 0 })).filter(Boolean).join('\n\n');
+        const parts = notes.map(result => {
+            const current = plotCompass && result.messageIndex === latest?.messageIndex;
+            return getResolvedCompanionResultContent(result, result.messageIndex, { plotCompass, instruction: current, historical: plotCompass && !current });
+        });
+        if (latest && !notes.some(result => result.messageIndex === latest.messageIndex)) {
+            const directive = getPlotCompassChoiceDirective(latest);
+            if (directive) parts.push(normalizeText(resolveCompanionContentMacros(directive, chat[latest.messageIndex])));
+        }
+        const body = parts.filter(Boolean).join('\n\n');
         if (!body) {
             continue;
         }

@@ -156,7 +156,8 @@ for (const phone of [true, false]) {
         await sendReply(page, account, 'I wave the pass.');
         const picked = JSON.stringify(app.provider.calls.at(-1).messages);
         expect(picked).toContain('[User\'s chosen direction]\\n1. Mira bribes the night guard with a forged pass.');
-        expect(picked).toContain('Follow it in place of the Next move above.');
+        expect(picked).toContain('Follow their choice.');
+        expect(picked).not.toContain('Let the rival crew burst in while Mira is mid-sentence.');
 
         // Selecting it again hands the choice back to Plot Compass.
         await page.evaluate(async () => (await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js')).openCompanionPanel());
@@ -206,5 +207,67 @@ for (const phone of [true, false]) {
         }));
         for (const offset of overlaps) expect(offset).toBeGreaterThanOrEqual(0);
         await shot('card');
+    });
+
+    test(`a picked direction on a kept card reaches browser and server replies on ${phone ? 'phone' : 'desktop'}`, async ({ app }) => {
+        const account = await app.account({ phone, activeConnection: true, configureSettings(saved) {
+            saved.accountStorage = { ...saved.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped', 'NeconyanTutorialHidden.v1': 'true' };
+            saved.extension_settings.inChatAgents = { globalSettings: { enabled: true, connectionProfile: 'durable', trackerCompanionAutoLoopVersion: 4 } };
+        } });
+        const created = await account.context.request.post('/api/characters/create', { headers: account.headers, data: {
+            ch_name: 'Kept Plot Director', description: 'A character with no greeting.', first_mes: '',
+        } });
+        expect(created.ok()).toBe(true);
+        const avatar = await created.text();
+        const page = await account.open({ workspace: false });
+        await page.evaluate(async avatar => {
+            const context = window.SillyTavern.getContext();
+            await context.getCharacters();
+            await context.selectCharacterById(context.characters.findIndex(character => character.avatar === avatar), { switchMenu: false });
+            const store = await import('/scripts/extensions/in-chat-agents/agent-store.js');
+            const template = await (await fetch('/scripts/extensions/in-chat-agents/templates/plot-compass-companion.json')).json();
+            await store.saveAgent({ ...template, id: 'plot-fixture', sourceTemplateId: template.id, enabled: true, version: 2,
+                connectionProfile: 'durable', companion: { ...template.companion, trigger: 'manual', displayMode: 'card', includeInChatHistory: true } });
+        }, avatar);
+        await acknowledgeActiveSettings(page);
+        app.provider.mode.reply = { choices: [{ message: { role: 'assistant', content: 'The guard pockets the pass.' }, finish_reason: 'stop' }] };
+
+        for (const server of [false, true]) {
+            const chatName = `Kept Plot Compass ${server ? 'server' : 'browser'}`;
+            const request = await createChat(account, avatar, chatName, [
+                { name: 'You', is_user: true, is_system: false, mes: 'I reach the vault.', send_date: Date.now(), extra: {} },
+                { name: 'Kept Plot Director', is_user: false, is_system: false, mes: 'The vault hums.', send_date: Date.now(), extra: {
+                    inChatAgentCompanionResults: { 'plot-fixture': { status: 'done', content: NOTE, format: 'markdown',
+                        includeInChatHistory: true, chatHistoryPlacement: 'block', updatedAt: new Date().toISOString() } },
+                } },
+            ]);
+            await page.evaluate(async ({ avatar, chatName }) => {
+                await (await import('/script.js')).openSavedCharacterChat(avatar, chatName);
+                (await import('/scripts/extensions/in-chat-agents/companion/companion-ui.js')).refreshCompanionCards();
+            }, { avatar, chatName });
+            await page.evaluate(() => window.toastr?.remove());
+            const card = page.locator('#chat .ica--companion-card[data-agent-id="plot-fixture"]');
+            await card.evaluate(element => { element.open = true; });
+            const pick = card.locator('.ica--plot-choice').first();
+            await pick.click();
+            await expect(pick).toHaveAttribute('aria-pressed', 'true');
+            await expect.poll(async () => (await account.post('/api/chats/get', request))[2]?.extra?.inChatAgentCompanionResults?.['plot-fixture']?.plotCompassChoice,
+                { timeout: 30000 }).toEqual({ number: 1, text: 'Mira bribes the night guard with a forged pass.' });
+            const calls = app.provider.calls.length;
+            await page.locator('#send_textarea').fill('I wave the pass.');
+            if (server) {
+                const submitted = page.waitForResponse(response => response.url().endsWith('/api/roleplay/workflow/submit') && response.status() !== 409);
+                await startNativeReply(page);
+                await account.settled((await (await submitted).json()).jobId);
+            } else {
+                await page.evaluate(async () => { void (await import('/script.js')).Generate('normal', { skipNativeRoleplay: true }); });
+            }
+            await expect(page.locator('#chat .mes').last()).toContainText('The guard pockets the pass.', { timeout: 60000 });
+            expect(app.provider.calls.length).toBeGreaterThan(calls);
+            const prompt = JSON.stringify(app.provider.calls.at(-1).messages);
+            expect(prompt).toContain('[User\'s chosen direction]\\n1. Mira bribes the night guard with a forged pass.');
+            expect(prompt).toContain('The user picked this direction for the next response.');
+            expect(prompt).not.toContain('Let the rival crew burst in while Mira is mid-sentence.');
+        }
     });
 }

@@ -2,6 +2,7 @@ import { describe, expect, test } from '@jest/globals';
 import {
     getPlotCompassChoice,
     getPlotCompassContentWithChoice,
+    getCompanionChatHistoryContributions,
     getPlotCompassPrompt,
     parsePlotCompassChoices,
     PLOT_COMPASS_CHOICES_INSTRUCTION,
@@ -65,9 +66,41 @@ describe('Plot Compass choices', () => {
 
     test('adds the pick to prompts and makes it the instruction for the next reply', () => {
         const result = { content: NOTE, plotCompassChoice: { number: 1, text: 'Mira bribes the night guard for the code.' } };
-        expect(getPlotCompassContentWithChoice(result)).toBe(`${NOTE}\n\n[User's chosen direction]\n1. Mira bribes the night guard for the code.`);
-        expect(getPlotCompassContentWithChoice(result, { instruction: true })).toMatch(/\[User's chosen direction\]\n1\. Mira bribes the night guard for the code\.\nThe user picked this direction for the next response\. Follow it in place of the Next move above\.$/);
+        const projected = getPlotCompassContentWithChoice(result, { instruction: true });
+        expect(projected).toContain('**Next move:** 1. Mira bribes the night guard for the code.');
+        expect(projected).not.toContain('Have the rival crew burst in mid-conversation.');
+        expect(projected).toMatch(/\[User's chosen direction\]\n1\. Mira bribes the night guard for the code\.\nThe user picked this direction for the next response\./);
+        expect(result.content).toBe(NOTE);
         expect(getPlotCompassContentWithChoice({ content: NOTE }, { instruction: true })).toBe(NOTE);
+    });
+
+    test('replaces a multiline recommendation without removing the sections after it', () => {
+        const content = '## Possible developments\n1. A storm arrives.\n2. The host confesses.\n### Next move\n**2.** Go with option 2.\nLet them confess.\n\n## Reminders\nKeep the cat safe.';
+        const result = { content, plotCompassChoice: { number: 1, text: 'A storm arrives.' } };
+        const projected = getPlotCompassContentWithChoice(result);
+        expect(projected).toContain('**Next move:** 1. A storm arrives.');
+        expect(projected).not.toContain('Go with option 2.');
+        expect(projected).not.toContain('Let them confess.');
+        expect(projected).toContain('## Reminders\nKeep the cat safe.');
+    });
+
+    test.each(['**Option 2:** The host confesses.', '**2. The host confesses.**', '**Go with option 2:** The host confesses.'])('replaces a bold recommendation line: %s', recommendation => {
+        const content = `**Possible developments:**\n1. A storm arrives.\n2. The host confesses.\n**Next move:**\n${recommendation}\n**Reminders:** Keep the cat safe.`;
+        const projected = getPlotCompassContentWithChoice({ content, plotCompassChoice: { number: 1, text: 'A storm arrives.' } });
+        expect(projected).not.toContain(recommendation);
+        expect(projected).toContain('**Next move:** 1. A storm arrives.');
+        expect(projected).toContain('**Reminders:** Keep the cat safe.');
+    });
+
+    test('kept notes record a valid historical pick without issuing an old instruction', () => {
+        const result = { status: 'done', includeInChatHistory: true, content: NOTE,
+            plotCompassChoice: { number: 1, text: 'Mira bribes the night guard for the code.' } };
+        const message = { extra: { inChatAgentCompanionResults: { plot: result } } };
+        const [contribution] = getCompanionChatHistoryContributions(message);
+        expect(contribution.content).toContain('[User\'s chosen direction at the time]');
+        expect(contribution.content).not.toContain('Have the rival crew burst in mid-conversation.');
+        expect(contribution.content).not.toContain('for the next response');
+        expect(result.content).toBe(NOTE);
     });
 
     test('asks every installed Plot Compass for numbered directions without a template update', () => {
