@@ -132,7 +132,7 @@ import {
 } from './group-chat-scene.js';
 import { buildEnsemblePrompt, createEnsembleMessages } from './group-chat-ensemble.js';
 import { messageAutomaticGenerationSuppressed } from './generation-outcome.js';
-import { addGroupHearer, beginGroupPromptScope, canGroupMemberSee, changeGroupHearers, filterGroupPromptMessages, groupHeardCount, groupMessageAudience, groupScenePrompt, groupSceneTurnNeedsPage, readGroupScene } from './group-chat-visibility.js';
+import { addGroupHearer, beginGroupPromptScope, canGroupMemberSee, changeGroupHearers, filterGroupPromptMessages, groupHeardCount, groupMessageAudience, groupSceneCardMembers, groupScenePrompt, groupSceneTurnNeedsPage, readGroupScene } from './group-chat-visibility.js';
 import { initGroupSceneControls, renderGroupScene } from './group-chat-scene-ui.js';
 import { getGroupSpeakerPool } from './group-chat-speakers.js';
 import { initGroupSpeakerMenu } from './group-chat-speaker-menu.js';
@@ -1636,6 +1636,7 @@ export function getGroupDepthPrompts(groupId, characterId) {
     }
 
     const depthPrompts = [];
+    const inScene = groupSceneCardMembers(chat_metadata, group.members, [characters[characterId]?.avatar]);
 
     for (const member of group.members) {
         const index = characters.findIndex(x => x.avatar === member);
@@ -1643,6 +1644,11 @@ export function getGroupDepthPrompts(groupId, characterId) {
 
         if (index === -1 || !character) {
             console.debug(`Skipping missing member: ${member}`);
+            continue;
+        }
+
+        if (!inScene.includes(member)) {
+            console.debug(`Skipping away group member: ${member}`);
             continue;
         }
 
@@ -1753,8 +1759,11 @@ export function getGroupCharacterCardsLazy(groupId, characterId) {
      */
     function collectField(fieldName, getter, preprocess = null) {
         const values = [];
+        const speakers = ensemble ? ensemble.members.map(speaker => speaker.avatar) : [characters[characterId]?.avatar];
+        const inScene = groupSceneCardMembers(chat_metadata, group.members, speakers);
         for (const member of group.members) {
             if (ensemble && !ensemble.members.some(speaker => speaker.avatar === member)) continue;
+            if (!inScene.includes(member)) continue;
             const index = characters.findIndex(x => x.avatar === member);
             const character = characters[index];
             if (index === -1 || !character) continue;

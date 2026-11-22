@@ -1,11 +1,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addGroupHearer, beginGroupPromptScope, canGroupMemberSee, changeGroupHearers, countGroupPromptHiddenMessages, filterGroupPromptMessages, filterGroupTargetMessages, groupHeardCount, groupMessageAudience, getGroupPromptViewers, groupScenePrompt, groupSceneTurnNeedsPage, hasRestrictedGroupHistory, readGroupScene, readGroupSceneRules, withGroupTargetPrompt } from '../public/scripts/group-chat-visibility.js';
+import { addGroupHearer, beginGroupPromptScope, canGroupMemberSee, changeGroupHearers, countGroupPromptHiddenMessages, filterGroupPromptMessages, filterGroupTargetMessages, groupHeardCount, groupMessageAudience, getGroupPromptViewers, groupSceneCardMembers, groupScenePrompt, groupSceneTurnNeedsPage, hasRestrictedGroupHistory, readGroupScene, readGroupSceneRules, withGroupTargetPrompt } from '../public/scripts/group-chat-visibility.js';
 
 test('scene state is bounded to current members and has safe defaults', () => {
     assert.deepEqual(readGroupScene({}, ['kit', 'mira']), { away: [], location: '', whisper_to: [], sees_all: [] });
     assert.deepEqual(readGroupScene({ group_scene: { away: ['kit', 'kit', 'removed'], whisper_to: ['mira', 'removed'], location: 'The archive' } }, ['kit', 'mira']),
         { away: ['kit'], whisper_to: ['mira'], location: 'The archive', sees_all: [] });
+});
+
+test('joined cards keep the members still in the scene and always the speakers', () => {
+    const metadata = { group_scene: { away: ['mira', 'removed'] } };
+    assert.deepEqual(groupSceneCardMembers(metadata, ['kit', 'mira', 'nova']), ['kit', 'nova']);
+    assert.deepEqual(groupSceneCardMembers(metadata, ['kit', 'mira', 'nova'], ['mira']), ['kit', 'mira', 'nova']);
+    assert.deepEqual(groupSceneCardMembers({}, ['kit', 'mira']), ['kit', 'mira']);
 });
 
 test('a returning member cannot see messages from while they were away', () => {

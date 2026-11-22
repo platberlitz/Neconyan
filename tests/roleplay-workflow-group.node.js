@@ -23,7 +23,7 @@ prompt_order: [{ character_id: 100001, order: [{ identifier: 'main', enabled: tr
 
 function prepared(t, { text = 'Everyone, please answer.', forcedAvatars, disabled = [], strategy = 1,
     autoSwipe = false, autoContinue = false, pathfinder = false, bundledMacros = null, browserMacros = null,
-    description = null, history = 0, scene = null } = {}) {
+    description = null, history = 0, scene = null, generationMode = 0, promptControls = controls } = {}) {
     const f = fixture(t, true);
     const dirs = f.scope.directories;
     if (description !== null) {
@@ -42,7 +42,7 @@ function prepared(t, { text = 'Everyone, please answer.', forcedAvatars, disable
     fs.writeFileSync(path.join(dirs.characters, 'Other.png'), writeCard(png,
         JSON.stringify({ name: 'Other', description: 'Second member', data: { name: 'Other', description: 'Second member' } })));
     fs.writeFileSync(path.join(dirs.groups, 'group.json'), JSON.stringify({ id: 'group', members: ['Nova.png', 'Other.png'],
-        disabled_members: disabled, chats: ['Source', 'New'], activation_strategy: strategy, generation_mode: 0,
+        disabled_members: disabled, chats: ['Source', 'New'], activation_strategy: strategy, generation_mode: generationMode,
         member_models: { 'Other.png': 'fixture-override' } }));
     if (pathfinder) {
         dirs.worlds = path.join(dirs.root, 'worlds');
@@ -86,7 +86,7 @@ function prepared(t, { text = 'Everyone, please answer.', forcedAvatars, disable
             setJobState(dirs, child.id, 'running');
             await runRoleplayReplyJob({ owner: f.scope.owner, directories: dirs, job: getJob(dirs, child.id),
                 signal: new AbortController().signal }, { contextLimit: () => 4096,
-                promptBackend: () => ({ backend: 'chat', active: { ...controls, function_calling: true },
+                promptBackend: () => ({ backend: 'chat', active: { ...promptControls, function_calling: true },
                     profile: { model: 'fixture' }, source: 'custom' }),
                 ...(pathfinder ? { generatePathfinder: async options => {
                     const step = roleplayHash(['group-sidecar', child.id]);
@@ -206,6 +206,30 @@ test('members marked away in the saved scene are not picked for a server group r
     assert.deepEqual(f.request.group.speakers[0].audience, { present: ['Nova.png'], whisper_to: [] });
     assert.throws(() => prepared(t, { scene: away, forcedAvatars: ['Nova.png', 'Other.png'] }),
         /not distinct enabled members/);
+});
+
+for (const generationMode of [1, 2]) test(`joined-cards mode ${generationMode} leaves an away member's card out of a server group reply`, async t => {
+    const cards = { prompts: [...controls.prompts, { identifier: 'charDescription', marker: true, system_prompt: true }],
+        prompt_order: [{ character_id: 100001, order: [...controls.prompt_order[0].order, { identifier: 'charDescription', enabled: true }] }] };
+    const promptOf = options => options.messages.map(message => String(message.content)).join('\n');
+    const replyPrompt = async away => {
+        const f = prepared(t, { generationMode, promptControls: cards, description: 'Nova card', disabled: generationMode === 2 ? ['Other.png'] : [],
+            forcedAvatars: ['Nova.png'], scene: records => {
+                records[0].chat_metadata = { group_scene: { away, location: '', whisper_to: [] } };
+            } });
+        updateJob(f.dirs, f.jobId, { state: 'running' });
+        assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+        let prompt = '';
+        await f.completeCandidate(0, { avatar: 'Nova.png', name: 'Nova', modelOverride: '', reply: 'Nova replies.',
+            check: options => { prompt = promptOf(options); } }, { value: 0 });
+        return prompt;
+    };
+    const together = await replyPrompt([]);
+    assert.ok(together.includes('Nova card'));
+    assert.ok(together.includes('Second member'), 'the joined card should be present while Other is in the scene');
+    const apart = await replyPrompt(['Other.png']);
+    assert.ok(apart.includes('Nova card'));
+    assert.ok(!apart.includes('Second member'), 'an away member\'s card should stay out of the joined prompt');
 });
 
 test('group speakers keep their owned identities while clearing older history between speakers', async t => {
