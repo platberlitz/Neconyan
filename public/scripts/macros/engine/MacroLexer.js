@@ -61,7 +61,7 @@ const Tokens = Object.freeze({
          * - `/` = closing block marker for scoped macros
          * - `#` = preserve whitespace (don't auto-trim scoped content), also legacy handlebars compatibility
          */
-        Flags: createToken({ name: 'Macro.Flag', pattern: /[!?~#/]/ }),
+        Flags: createToken({ name: 'Macro.Flag', pattern: /[!?~#]|\/(?!\/)|\/(?=\/\/\s*\}\})/ }),
         /**
          * Filter flag (`>`) - separate token because it changes parsing behavior.
          * When present, `|` characters inside the macro are treated as filter/pipe operators.
@@ -205,15 +205,17 @@ const Def = {
         [modes.macro_def]: [
             exits(Tokens.Macro.End, modes.macro_def),
 
-            // An explicit double-slash will be treated above flags to consume, as it'll introduce a comment macro. Directly following is the args then.
+            // Flags come first. The flag pattern takes a `/` only when it is a closing marker: a single slash, or the
+            // first slash of a bare `///}}` that closes a scoped comment. Any other `//` falls through to the comment rule below.
+            using(Tokens.Macro.Flags),
+
+            // An explicit double-slash introduces a comment macro. Directly following is the args then.
             enter(Tokens.Macro.DoubleSlash, modes.macro_comment_args),
 
-            // Variable shorthand prefixes - must come before flags to take precedence
-            // These enter the variable identifier mode to parse variable expressions
+            // Variable shorthand prefixes enter the variable identifier mode to parse variable expressions
             enter(Tokens.Var.LocalPrefix, modes.var_identifier),
             enter(Tokens.Var.GlobalPrefix, modes.var_identifier),
 
-            using(Tokens.Macro.Flags),
             // Filter flag is separate because it affects parsing behavior for pipes
             using(Tokens.Macro.FilterFlag),
 
