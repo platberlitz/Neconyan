@@ -6,6 +6,8 @@
  * pure, runs under Jest directly, and may later be imported by the server.
  */
 
+import { stripScopedComments } from '../../prompt-token-counts.js';
+
 // Flags precede the identifier and may be spaced out, as in `{{ ! user }}`.
 const FLAGS = /^((?:\s*[!?~>#/])*)\s*/;
 const MACRO_NAME = /^[A-Za-z_][\w-]*/;
@@ -52,7 +54,8 @@ function macroToken(body) {
  * @returns {{rule: string, severity: 'error'|'warning'|'info', target: object, message: string, details?: string}[]}
  */
 export function scanMacroProblems(text, { knownNames = [] } = {}) {
-    const source = String(text ?? '');
+    // Text inside a {{//}}...{{///}} block is hidden, so braces in it are not problems.
+    const source = stripScopedComments(String(text ?? ''));
     if (!source.includes('{{')) return [];
     const findings = [];
     const { tokens, unclosed, extraClosers } = scanBraces(source);
@@ -66,21 +69,13 @@ export function scanMacroProblems(text, { knownNames = [] } = {}) {
             details: example,
         });
     }
-    if (source.includes('{{///}}')) {
-        findings.push({
-            rule: 'macro-scoped-comment',
-            severity: 'warning',
-            target: {},
-            message: 'Scoped comments such as {{//}}text{{///}} do not work in Neconyan. Use {{//}} on its own to hide a comment.',
-        });
-    }
 
     const known = new Set([...knownNames].map(name => String(name).toLowerCase()));
     const open = [];
     const orphanClosers = [];
     for (const token of tokens) {
         const body = token.body.trim();
-        // The raw comment macro and its closing form are handled above.
+        // Inline comments and a stray {{///}} hide themselves and are never problems.
         if (!body || body.startsWith('//')) continue;
         const { name, closing } = macroToken(body);
         if (!name || name.startsWith('.') || name.startsWith('$')) continue;

@@ -105,4 +105,40 @@ describe('prompt token display counts', () => {
         expect(isCommentOnlyPromptContent('plain instruction text')).toBe(false);
         expect(isCommentOnlyPromptContent('{{commentary}}')).toBe(false);
     });
+
+    test('reads scoped comments the way the macro engine does', () => {
+        for (const hidden of [
+            '{{//}}text{{///}}',
+            '{{ // }}text{{ /// }}',
+            '{{//}}text{{///}}{{trim}}',
+            '{{comment}}text{{/comment}}',
+            '{{COMMENT}}text{{/Comment}}',
+            '{{#//}}text{{///}}',
+            '{{//}}a{{//}}b{{///}}c{{///}}',
+            '{{//}}a{{comment}}b{{/comment}}c{{///}}',
+            '{{//}}{{user}} and {{unknown}}{{///}}',
+            '{{//}}a { b }} c{{///}}',
+            '{{//}}x{{///}}{{///}}',
+            '{{//}}\nOne\n\nTwo\n{{///}}\n{{comment}}Three{{/comment}}',
+        ]) {
+            expect([hidden, isCommentOnlyPromptContent(hidden)]).toEqual([hidden, true]);
+        }
+    });
+
+    test('keeps text outside, or not closed by, a scoped comment visible', () => {
+        for (const visible of [
+            'A{{//}}hidden{{///}}B',
+            '{{//}}hidden{{///}}\nVisible',
+            '{{//}}text',
+            '{{///}}text',
+            '{{/comment}}',
+            '{{//}}x{{/comment}}',
+            '{{comment}}x{{///}}y',
+            '{{//}}a{{//}}b{{///}}c',
+            '{{//}}a {{ c{{///}}',
+            '{{//}}x{{///}}{{commentary}}',
+        ]) {
+            expect([visible, isCommentOnlyPromptContent(visible)]).toEqual([visible, false]);
+        }
+    });
 });

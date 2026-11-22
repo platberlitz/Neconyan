@@ -31,11 +31,31 @@ function rules(result) {
 }
 
 describe('Scratchpad macro checks', () => {
-    test('finds unbalanced braces, unknown names and broken scoped forms', () => {
+    test('finds unbalanced braces and unknown names', () => {
         const text = '{{char} {{unknownmacro}} {{//}}hidden{{///}} {{#if}}open';
-        expect(rules({ findings: scanMacroProblems(text, { knownNames: ['char', 'user'] }) })).toEqual(expect.arrayContaining([
-            'macro-unbalanced', 'macro-unknown', 'macro-scoped-comment',
-        ]));
+        expect(rules({ findings: scanMacroProblems(text, { knownNames: ['char', 'user'] }) })).toEqual(['macro-unbalanced', 'macro-unknown', 'macro-unknown']);
+    });
+
+    test('raises no finding for a correct scoped comment', () => {
+        const knownNames = ['//', 'comment', 'user', 'char', 'if', 'getvar'];
+        for (const text of [
+            '{{//}}hidden{{///}}',
+            'A{{//}}First line\nSecond line{{///}}B',
+            '{{comment}}hidden{{/comment}}',
+            '{{ // }}hidden{{ /// }}',
+            '{{//}}a { b }} c{{///}}',
+            '{{//}}a } b{{///}}',
+            '{{//}}{{unknownmacro}}{{///}}',
+            '{{//}}a{{//}}b{{///}}c{{///}}',
+            '{{if 1}}{{//}}note{{///}}shown{{/if}}',
+        ]) {
+            expect(scanMacroProblems(text, { knownNames })).toEqual([]);
+            expect(scanMacroProblems(text, { knownNames: [] })).toEqual([]);
+        }
+    });
+
+    test('still reports a macro left open inside a scoped comment, as the engine does', () => {
+        expect(rules({ findings: scanMacroProblems('{{//}}a {{ c{{///}}', { knownNames: ['user'] }) })).toContain('macro-unbalanced');
     });
 
     test('pairs scoped macros the way the macro engine does', () => {
@@ -54,7 +74,6 @@ describe('Scratchpad macro checks', () => {
 
     test('structural problems still run without a macro registry', () => {
         expect(scanMacroProblems('{{char}', { knownNames: [] })).toContainEqual(expect.objectContaining({ rule: 'macro-unbalanced', severity: 'error' }));
-        expect(scanMacroProblems('{{//}}hidden{{///}}', { knownNames: [] })).toContainEqual(expect.objectContaining({ rule: 'macro-scoped-comment' }));
         expect(scanMacroProblems('{{unknownmacro}}', { knownNames: [] })).toEqual([]);
     });
 
