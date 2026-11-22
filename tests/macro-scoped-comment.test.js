@@ -109,6 +109,8 @@ describe('token counter agrees with the evaluator', () => {
             '{{//}}x{{/comment}}',
             '{{comment}}x{{///}}',
             '{{//}}a{{///}}{{///}}',
+            '{{comment x}}{{/comment}}',
+            '{{comment x}}{{comment}}y{{/comment}}',
         ];
         for (const input of inputs) {
             const visible = evaluate(input).trim() !== '';

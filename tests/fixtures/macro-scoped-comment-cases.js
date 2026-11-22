@@ -34,6 +34,8 @@ export const SCOPED_COMMENT_CASES = [
     { name: 'second closer is stray', input: '{{//}}a{{///}}b{{///}}c', before: 'abc', after: 'bc' },
     { name: 'stray alias closer', input: 'A{{/comment}}B', before: 'A{{/comment}}B', after: 'A{{/comment}}B' },
     { name: 'inline comment before a closer', input: 'A{{// x}}b{{///}}C', before: 'AbC', after: 'AbC' },
+    { name: 'inline alias comment before an alias closer', input: 'A{{comment x}}b{{/comment}}C', before: 'A{{comment x}}b{{/comment}}C', after: 'Ab{{/comment}}C' },
+    { name: 'inline alias comment before a scoped alias comment', input: 'A{{comment x}}b{{comment}}y{{/comment}}C', before: 'A{{comment x}}by{{/comment}}C', after: 'AbC' },
     { name: 'if and else', input: '{{if 1}}a{{else}}b{{/if}}', before: 'a', after: 'a' },
     { name: 'trim scope', input: '[{{trim}} x {{/trim}}]', before: '[x]', after: '[x]' },
     { name: 'setvar scope', input: '{{setvar::a}}v{{/setvar}}{{getvar::a}}', before: 'v', after: 'v' },

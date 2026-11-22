@@ -1201,8 +1201,9 @@ class MacroCstWalker {
 
             // Check if the macro can accept scoped content (arity validation)
             if (!this.#canAcceptScopedContent(openInfo.item.node, openInfo.name)) {
-                // An inline comment `{{// text}}` has its own text, so a later `{{///}}` is not its closer
-                if (openInfo.name === '//') continue;
+                // An inline comment `{{// text}}` has its own text, so a later `{{///}}` is not its closer.
+                // The same goes for the alias: `{{comment text}}` stays hidden when a `{{/comment}}` follows.
+                if (this.#isCommentMacro(openInfo.name)) continue;
 
                 // Macro cannot accept scoped content - mark both as keepRaw
                 openInfo.item.keepRaw = true;
