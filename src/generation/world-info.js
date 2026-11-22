@@ -31,7 +31,7 @@ import { captureCompanionCapacity } from './companion-capacity.js';
 import { captureRoleplayToolBindings } from './roleplay-tool-bindings.js';
 import { activeRoleplayAuthorNote, isWorldInfoAuthorNoteActive, selectRoleplayPromptRecords, savedRoleplayMacroSnapshot } from './roleplay-prompt.js';
 import { evaluateCharacterPurrks } from '../purrks.js';
-import { blankUnheardGroupRecords } from './roleplay-group-scene.js';
+import { blankUnheardGroupRecords, groupViewerMissedLines } from './roleplay-group-scene.js';
 
 /**
  * Adds active Purrk text after a card field. Without Purrks the field stays exactly as saved,
@@ -325,8 +325,10 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
     }
     return withRoleplayAccount(base, account, lease => {
         const saved = assertRoleplaySourceLocked(lease, source);
-        const promptRecords = serverPrompt ? selectRoleplayPromptRecords(saved.records, source,
-            promptEffect ?? { normal: 'append', regenerate: 'replace', swipe: 'swipe', continue: 'continue' }[trigger], avatar) : saved.records;
+        const effect = promptEffect ?? { normal: 'append', regenerate: 'replace', swipe: 'swipe', continue: 'continue' }[trigger];
+        const promptRecords = serverPrompt ? selectRoleplayPromptRecords(saved.records, source, effect, avatar) : saved.records;
+        // A group speaker who missed a line cannot read Agent variables, which hold no record of who heard them.
+        const groupHistoryRestricted = serverPrompt && groupViewerMissedLines(selectRoleplayPromptRecords(saved.records, source, effect), source, avatar);
         if (!source.dependencies?.some(dependency => dependency.kind === 'character' && dependency.locator.avatar === avatar)) {
             throw roleplayError('ROLEPLAY_INVALID', 'World Info must use a character in the accepted Roleplay source.', 409);
         }
@@ -503,6 +505,7 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
                 user: persona.name || (saved.records[0].user_name !== 'unused' && saved.records[0].user_name) || 'User' },
             groupNames: members.map(memberName),
             unmutedGroupNames: members.filter(member => !group.disabled_members?.includes(member.avatar)).map(memberName),
+            ...(group ? { groupMembers: members.map(member => ({ avatar: member.avatar, name: memberName(member) ?? member.avatar })) } : {}),
             pinExamples: Boolean(settings.power_user?.pin_examples),
             alwaysForceName: Boolean(settings.power_user?.always_force_name2),
             contextRetention: { html: settings.power_user?.html_context_depth ?? -1, ooc: settings.power_user?.ooc_context_depth ?? -1 },
@@ -551,6 +554,7 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             storyPosition: settings.power_user?.context?.story_string_position ?? 0,
             personaPosition: persona.position, personaDepth: persona.depth, personaRole: persona.role, personaEvidence: persona.evidence,
             promptVariables: { local: saved.records[0].chat_metadata?.variables ?? {}, global: extensions.variables?.global ?? {} },
+            ...(groupHistoryRestricted ? { groupHistoryRestricted: true } : {}),
             experimentalMacroEngine: Boolean(settings.power_user?.experimental_macro_engine),
             depthPrompt: { prompt: depthPrompt,
                 depth: (character.data?.data?.extensions ?? character.data?.extensions)?.depth_prompt?.depth ?? 4,
@@ -628,6 +632,8 @@ export function assertRoleplayWorldInfoCurrent(base, snapshot) {
     // Previously accepted jobs retain their original snapshot shape and write
     // policy; adding the boundary must not invalidate paid work after an update.
     if (!Object.hasOwn(snapshot, 'macroEnhanced')) delete captured.macroEnhanced;
+    if (!Object.hasOwn(snapshot, 'groupMembers')) delete captured.groupMembers;
+    if (!Object.hasOwn(snapshot, 'groupHistoryRestricted')) delete captured.groupHistoryRestricted;
     if (!Object.hasOwn(snapshot, 'macroPolicyVersion')) {
         delete captured.macroPolicyVersion;
         delete captured.browserMacros;

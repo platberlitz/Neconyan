@@ -188,6 +188,8 @@ export function savedRoleplayMacroSnapshot(snapshot, records) {
             mesExamplesRaw: snapshot.characterExamples, charDepthPrompt: snapshot.global.characterDepthPrompt,
             creatorNotes: snapshot.global.creatorNotes },
         variables: snapshot.promptVariables,
+        ...(snapshot.groupHistoryRestricted ? { hiddenVariablePrefix: 'agent_' } : {}),
+        ...(snapshot.groupMembers ? { groupMembers: snapshot.groupMembers } : {}),
         extra: { chat: records.slice(1), chatMetadata: snapshot.metadata, powerUser: snapshot.promptSettings },
     };
 }

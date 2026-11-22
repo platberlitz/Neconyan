@@ -21,7 +21,7 @@ test('a group speaker reads blank rows in place of lines they did not hear', () 
     const mira = blankUnheardGroupRecords(saved, group, 'mira.png');
     assert.equal(mira.length, saved.length);
     assert.deepEqual(mira.map(row => row.mes), [undefined, 'Hello all.', '', '', 'An older public line.']);
-    assert.deepEqual(mira[2], { name: '', is_user: false, is_system: true, mes: '', send_date: 'b', extra: {} });
+    assert.deepEqual(mira[2], { name: '', is_user: false, is_system: true, mes: '', send_date: 'b', extra: { group_scene_unheard: true } });
     assert.equal(saved[2].mes, 'Only Kit hears this.');
 
     const nova = blankUnheardGroupRecords(saved, group, 'nova.png');
