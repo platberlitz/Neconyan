@@ -385,6 +385,19 @@ export function applyInterview(state, request, output, input, jobId) {
     }
 }
 
+function indexMetadata(index) {
+    const descriptors = Object.getOwnPropertyDescriptors(index);
+    delete descriptors.vectors;
+    return Object.defineProperties({}, descriptors);
+}
+
+/** Keep the admitted evidence while releasing its untouched vector graphs before model requests. */
+function processingWorkingState(state) {
+    const index = indexMetadata(state.index);
+    if (state.index.build) index.build = indexMetadata(state.index.build);
+    return { ...state, index };
+}
+
 async function runBatch(directories, locator, options, call) {
     const config = readConfig(directories);
     const roleKeys = Object.fromEntries(['extractor', 'pawspective']
@@ -412,6 +425,7 @@ async function runBatch(directories, locator, options, call) {
         current.jobs.push({ id: jobId, status: 'processing', checkpoint: Boolean(options.checkpoint),
             from: sourceAt(current, refs[0]).sequence, through: asOf, startedAt: Date.now(), policy });
     }, state.revision);
+    state = processingWorkingState(state);
     // Loading and saving a large story is synchronous; let waiting page requests run before building the request.
     await new Promise(resolve => setImmediate(resolve));
     // Extraction reads only up to its newest message, so later replies (and agents rewriting them) cannot make it stale.

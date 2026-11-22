@@ -463,6 +463,49 @@ export function mutateState(directories, locator, mutate, expectedRevision, { ex
     }
 }
 
+/**
+ * Change only processing under the archive lock. All other nested data in the
+ * returned state is shared and read-only, just like readStateShared.
+ */
+export function updateProcessing(directories, locator, guards, { set = {}, remove = [] } = {}) {
+    locator = normalizeLocator(locator);
+    const filename = statePath(directories, locator);
+    const release = acquireChatFileLock(filename);
+    try {
+        if (guards.existingOnly && !fs.existsSync(filename)) return { state: null, changed: false };
+        const shared = readStateShared(directories, locator);
+        if (guards.expectedRevision !== undefined && shared.revision !== guards.expectedRevision) {
+            fail('Mewmory changed while this was running. Reload Mewmory and try again.', 409);
+        }
+        const state = { ...shared };
+        let processing = structuredClone(shared.processing);
+        if (Object.hasOwn(shared, 'processing')) state.processing = processing;
+        const matches = shared.branchId === guards.branchId && Object.hasOwn(guards, 'jobId')
+            && shared.processing?.id === guards.jobId
+            && (guards.status === undefined || shared.processing?.status === guards.status);
+        let changed = false;
+        if (matches) {
+            const patch = structuredClone(set);
+            if (Object.keys(patch).length) processing = { ...processing, ...patch };
+            if (processing != null) for (const key of remove) delete processing[key];
+            if (Object.hasOwn(shared, 'processing') || processing !== undefined) state.processing = processing;
+            // Only processing can differ. Differential checks pin this to the full-state decision.
+            changed = JSON.stringify(processing) !== JSON.stringify(shared.processing) || !fs.existsSync(filename);
+        }
+        if (changed) {
+            state.revision = shared.revision + 1;
+            state.updatedAt = Date.now();
+            writeState(directories, state);
+        } else if (!fs.existsSync(recoveryPath(directories, locator))) {
+            // writeState normalises locator, so even a repair must own its top-level object.
+            writeState(directories, state);
+        }
+        return { state, changed };
+    } finally {
+        release();
+    }
+}
+
 /** Capture the same legacy tracker configuration for real or shadow reconciliation. */
 export function sourceSyncOptions(directories, messages) {
     const legacy = messages.some(message => Object.values(getActiveCompanionResults(message))
