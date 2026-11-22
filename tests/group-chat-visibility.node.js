@@ -225,6 +225,37 @@ test('the heard badge counts only lines that some current member missed', () => 
     assert.equal(groupHeardCount(line(['kit']), []), null);
 });
 
+test('members remember a group chat only from its memory starting point', () => {
+    const members = ['kit', 'mira'];
+    const opening = { mes: 'An old public line' };
+    const everyone = { mes: 'Everyone hears this', extra: { group_scene: { present: ['kit'], whisper_to: [], everyone: true } } };
+    const whisper = { mes: 'A whisper for Mira', extra: { group_scene: { present: members, whisper_to: ['mira'] } } };
+    const later = { mes: 'After the start', extra: { group_scene: { present: ['kit'], whisper_to: [] } } };
+    const messages = [opening, everyone, whisper, later];
+    const metadata = { group_scene: { heard_from: 3, sees_all: ['mira'] } };
+    assert.equal(readGroupScene(metadata, members).heard_from, 3);
+    assert.equal('heard_from' in readGroupScene({ group_scene: { heard_from: 0 } }, members), false);
+    assert.equal(readGroupScene({ group_scene: { heard_from: -2 } }, members).heard_from, undefined);
+    // Without the messages the rules cannot tell which lines came first.
+    assert.deepEqual(readGroupSceneRules(metadata), { seesAll: ['mira'] });
+    const rules = readGroupSceneRules(metadata, messages);
+    assert.deepEqual([...rules.before], [opening, everyone, whisper]);
+    // The starting point beats sees-all, everyone lines, whispers and the line a speaker answers.
+    for (const message of [opening, everyone, whisper]) for (const avatar of members) assert.equal(canGroupMemberSee(message, avatar, { ...rules, replyTarget: message }), false);
+    assert.equal(canGroupMemberSee(later, 'kit', rules), true);
+    assert.equal(canGroupMemberSee(later, 'mira', rules), true);
+    // The heard badge still says who heard the line.
+    assert.deepEqual(groupHeardCount(later, ['kit', 'mira', 'ash'], rules), { heard: 2, total: 3 });
+    assert.equal(groupHeardCount(opening, members, rules), null);
+    const restore = beginGroupPromptScope(['kit'], messages, rules);
+    try {
+        assert.deepEqual(filterGroupPromptMessages(messages), [later]);
+        assert.equal(hasRestrictedGroupHistory(), true);
+    } finally {
+        restore();
+    }
+});
+
 test('a scene turn stays in the page only for a chosen speaker who is away', () => {
     const members = ['kit', 'mira'];
     const meta = scene => ({ group_scene: { away: [], location: 'The archive', whisper_to: [], ...scene } });

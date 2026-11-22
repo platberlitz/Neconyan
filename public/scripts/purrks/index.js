@@ -30,7 +30,7 @@ import {
     saveMetadata,
 } from '../../script.js';
 import { selected_group, groups } from '../group-chats.js';
-import { canGroupMemberSee } from '../group-chat-visibility.js';
+import { canGroupMemberSee, readGroupSceneRules } from '../group-chat-visibility.js';
 import { extension_settings, saveMetadataDebounced, writeExtensionField } from '../extensions.js';
 import { eventSource, event_types } from '../events.js';
 import { ConnectionManagerRequestService } from '../extensions/shared.js';
@@ -721,7 +721,8 @@ function getActiveChatCharacters() {
  */
 function messagesHeardBy(messages, key) {
     if (!key || !Array.isArray(messages)) return messages;
-    return messages.filter(message => canGroupMemberSee(message, key));
+    const rules = readGroupSceneRules(chat_metadata, chat);
+    return messages.filter(message => canGroupMemberSee(message, key, rules));
 }
 
 function hasAnyPurrks(targets) {

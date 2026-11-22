@@ -279,6 +279,37 @@ test('a server group Agent reads the memories its speaker heard', async t => {
     assert.equal((await runRoleplayWorkflowJob(f.context())).result.status, 'completed');
 });
 
+test('server group replies leave out every line before the chat\'s memory starting point, and what was remembered from them', async t => {
+    const f = prepared(t, { scene: records => {
+        records[0].chat_metadata = { group_scene: { away: [], location: '', whisper_to: [], heard_from: 2 } };
+    } });
+    enableMewmoryHiding(f.dirs, f.f.locator, { autoHide: false });
+    mutateState(f.dirs, f.f.locator, state => {
+        const record = validateRecord(state, { id: 'event:archive', kind: 'event', text: 'Everyone gathered in the archive.', refs: [state.timeline[1]],
+            subjectIds: ['archive'], evidenceStatus: 'established' }, { asOf: 1, origin: 'objective_extractor' });
+        record.provenance = { policy: 'test', jobId: 'job', audience: { present: ['Nova.png', 'Other.png'], whisper_to: [] } };
+        putRecord(state, record, { automatic: true });
+    });
+    const memoryOf = turn => readArtifact(f.dirs, childOf(f, turn), 'roleplay-mewmory');
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    const count = { value: 0 };
+    const prompts = [];
+    for (const [turn, avatar, name, modelOverride] of [[0, 'Nova.png', 'Nova', ''], [1, 'Other.png', 'Other', 'fixture-override']]) {
+        await f.completeCandidate(turn, { avatar, name, modelOverride, reply: `${name} replies.`,
+            check: options => { prompts.push(promptOf(options)); } }, count);
+        assert.deepEqual(memoryOf(turn).viewers, [avatar]);
+        await runRoleplayWorkflowJob(f.context());
+    }
+    for (const prompt of prompts) {
+        assert.match(prompt, /Everyone, please answer\./);
+        assert.doesNotMatch(prompt, /Original|\bAnswer\b/, 'lines before the starting point stay out of the history');
+        assert.ok(!prompt.includes('Everyone gathered in the archive.'), 'and so do memories of them');
+    }
+    assert.match(prompts[1], /Nova replies\./);
+    assert.deepEqual(f.records().slice(1, 3).map(record => record.mes), ['Original', 'Answer']);
+});
+
 test('members marked away in the saved scene are not picked for a server group reply', async t => {
     const away = records => {
         records[0].chat_metadata = { group_scene: { away: ['Other.png'], location: '', whisper_to: [] } };

@@ -131,7 +131,7 @@ export async function captureVectors(base, account, input, captured = {}) {
         || viewers.some(avatar => typeof avatar !== 'string' || !avatar))) throw operationError('Choose valid group speakers for vector search.', 400);
     const chat = captured.chat ?? (input.locator ? captureLabChat(base, account, input.locator) : null);
     // A group speaker's search and prompt rows leave out what they did not hear.
-    const sceneRules = readGroupSceneRules(chat?.records?.[0]?.chat_metadata);
+    const sceneRules = readGroupSceneRules(chat?.records?.[0]?.chat_metadata, chat?.records?.slice(1));
     const heard = row => !viewers || viewers.every(avatar => canGroupMemberSee(row, avatar, sceneRules));
     const macros = captured.macros ?? chat?.macros ?? { macroEnhanced: captureEnhancedMacros(settings), names: { user: settings.username || 'User', char: 'Character' }, character: {}, variables: {}, extra: {} };
     const environment = createMacroEnvironment(macros);

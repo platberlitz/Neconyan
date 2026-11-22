@@ -22,6 +22,7 @@ import { bringShared, listShared, removeShared, shareRecords } from '../mewmory/
 import { startOperation } from '../mewmory/operations.js';
 import { listJobs } from '../jobs/store.js';
 import { disableMewmory, resumeVisibilityRestore } from '../mewmory/visibility.js';
+import { readGroupSceneStart } from '../../public/scripts/group-chat-visibility.js';
 
 export const router = express.Router();
 
@@ -686,7 +687,7 @@ route('/restore', async (directories, body) => {
         const { state, token } = recoveryState(directories, locator, body.backup?.state);
         const source = readChat(directories, locator);
         const context = await readContextSources(directories, locator, state);
-        syncSources(state, source.messages, context);
+        syncSources(state, source.messages, context, { groupStart: readGroupSceneStart(source.metadata) });
         purgeMissingContextSources(directories, state);
         const recoveryToken = hash([token, source.metadata, source.messages, context]);
         const result = restoreRecords(state, body.backup);

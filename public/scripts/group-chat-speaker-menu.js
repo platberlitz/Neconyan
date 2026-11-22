@@ -24,7 +24,9 @@ export async function openGroupSpeakerMenu(avatar) {
     const rules = { seesAll: scene?.sees_all || [] };
     const muted = group.disabled_members?.includes(avatar);
     const narrator = getGroupMemberRole(group, characters[chid]) === 'narrator';
-    const missed = chat.some(message => !message?.is_system && !canGroupMemberSee(message, avatar, rules));
+    // Lines before the chat's memory starting point are out of everyone's memory, so there is nothing to catch up on.
+    const start = scene?.heard_from || 0;
+    const missed = chat.some((message, index) => index >= start && !message?.is_system && !canGroupMemberSee(message, avatar, rules));
     const heardAny = chat.some(message => !message?.is_system && canGroupMemberSee(message, avatar, rules));
     const content = $('<div class="group-speaker-menu"></div>').append($('<h3></h3>').text(name));
     const buttons = [];

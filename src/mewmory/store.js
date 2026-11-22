@@ -10,6 +10,7 @@ import { recoverFileWriteSync } from '../util.js';
 import { agentCollectionDirectory, readAgentCollection } from '../in-chat-agent-storage.js';
 import { getActiveCompanionResults } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
 import { fail, forkState, hash, newState, object, purgeSources, sourceAt, syncSources, text } from './core.js';
+import { readGroupSceneStart } from '../../public/scripts/group-chat-visibility.js';
 
 export const MAX_ARCHIVE_BYTES = 256 * 1024 * 1024;
 
@@ -479,7 +480,7 @@ export function synchronize(directories, locator, context = [], source = readCha
         // Older saved results predate the category snapshot; resolve them from the saved Agent library.
         const options = sourceSyncOptions(directories, source.messages);
         return mutateState(directories, locator, state => {
-            syncSources(state, source.messages, context, options);
+            syncSources(state, source.messages, context, { ...options, ...(source.metadata ? { groupStart: readGroupSceneStart(source.metadata) } : {}) });
             // Archive upkeep that must share the same clone and write as the source sync.
             return extraChange ? extraChange(state) || state : state;
         });

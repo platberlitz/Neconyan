@@ -2423,7 +2423,7 @@ function buildBrowserAgentContextMacros(agent, message = null, generationType = 
         })))
         : null;
     const chatId = getCurrentChatId();
-    const rules = readGroupSceneRules(chat_metadata);
+    const rules = readGroupSceneRules(chat_metadata, chat);
     const restricted = chat.some(source => !canGroupTargetSee(source, message, rules));
     // Memories recalled for one speaker's view go only to an Agent writing for that same view.
     const viewers = restricted ? groupTargetViewers(message) ?? getGroupPromptViewers() : null;
@@ -3459,7 +3459,7 @@ function getPromptTransformRecentChat(agent, message, messageIndex) {
         endIndex = foundIndex >= 0 ? foundIndex : chat.length;
     }
 
-    return buildPromptTransformRecentChat(filterGroupTargetMessages(chat.slice(0, endIndex), message, readGroupSceneRules(chat_metadata)), limit, unwrapAssistantResponseWrapper,
+    return buildPromptTransformRecentChat(filterGroupTargetMessages(chat.slice(0, endIndex), message, readGroupSceneRules(chat_metadata, chat)), limit, unwrapAssistantResponseWrapper,
         { skipUserMessages: Boolean(agent?.postProcess?.promptTransformSkipUserMessages) });
 }
 
@@ -4203,7 +4203,7 @@ async function runThinkingRecoveryAgent(agent, message, generationType, reasonin
         name2Override: assistantName,
         original: reasoning,
         dynamicMacros: buildPromptDynamicMacros(reasoning, message, agent, generationType),
-    }).trim(), readGroupSceneRules(chat_metadata));
+    }).trim(), readGroupSceneRules(chat_metadata, chat));
     if (!expandedPrompt) return { ...base, status: 'skipped-empty-prompt', text: '' };
     const helperRequest = appendConfiguredHelperPrefillMessages(buildThinkingRecoveryMessages(expandedPrompt, {
         reasoning, assistantName, generationType, recentChat: getPromptTransformRecentChat(agent, message, messageIndex), continuation, prefix, toolResults,
@@ -4296,7 +4296,7 @@ async function runPromptTransformAgent(agent, message, generationType, messageTe
             name2Override: String(message?.name ?? '').trim(),
             original: transformMessageText,
             dynamicMacros: buildPromptDynamicMacros(transformMessageText, message, agent, generationType),
-        }).trim(), readGroupSceneRules(chat_metadata));
+        }).trim(), readGroupSceneRules(chat_metadata, chat));
 
         if (!expandedPrompt) {
             const result = {

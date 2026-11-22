@@ -170,6 +170,17 @@ async function locationCallback(args, value) {
     return currentGroupScene()?.scene.location || '';
 }
 
+async function heardFromCallback(_args, value) {
+    const group = openGroup();
+    if (!group) return '';
+    const text = String(value ?? '').trim();
+    if (!text) return String(currentGroupScene()?.scene.heard_from || 0);
+    if (!/^\d+$/.test(text) || Number(text) > chat.length) return warnRange(text);
+    if (!idle()) return '';
+    await changeGroupScene({ heard_from: Number(text) });
+    return String(currentGroupScene()?.scene.heard_from || 0);
+}
+
 const memberArgument = () => SlashCommandArgument.fromProps({
     description: t`group member name, optionally followed by a message number or range; the whole chat if none`,
     typeList: [ARGUMENT_TYPE.STRING],
@@ -305,5 +316,13 @@ export function registerGroupSceneSlashCommands() {
         namedArgumentList: [SlashCommandNamedArgument.fromProps({ name: 'clear', description: t`clears the location`, typeList: [ARGUMENT_TYPE.BOOLEAN], isRequired: false })],
         unnamedArgumentList: [SlashCommandArgument.fromProps({ description: t`where the scene is; leave out to read it`, typeList: [ARGUMENT_TYPE.STRING], isRequired: false })],
         helpString: t`Sets or reads where the open group scene takes place.`,
+    }));
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+        name: 'heard-from',
+        aliases: ['presenceMinChatMessage'],
+        callback: heardFromCallback,
+        returns: t`the message members remember from`,
+        unnamedArgumentList: [SlashCommandArgument.fromProps({ description: t`message number (starts with 0); 0 keeps the whole chat; leave out to read it`, typeList: [ARGUMENT_TYPE.NUMBER], isRequired: false, enumProvider: commonEnumProviders.messages() })],
+        helpString: t`Group members remember this chat only from a message on. They forget every message before it, even ones they were there for. Example: /heard-from 12`,
     }));
 }

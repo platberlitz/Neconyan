@@ -247,8 +247,11 @@ function trackerSource(message, previous, trackerAgentIds) {
         '[Tracker output: ' + output.name + '; supplementary state, not dialogue]\n' + output.text)].join('\n\n') };
 }
 
-/** Reconcile only accepted, persisted messages and their completed trackers. Rejected alternatives never enter. */
-export function syncSources(state, messages, context = [], { trackerAgentIds = [] } = {}) {
+/**
+ * Reconcile only accepted, persisted messages and their completed trackers. Rejected alternatives never enter.
+ * `groupStart` is the chat index of a group chat's memory starting point (0 for none); left out, the saved one stays.
+ */
+export function syncSources(state, messages, context = [], { trackerAgentIds = [], groupStart } = {}) {
     const previousTimeline = state.timeline;
     const extractionContext = refs => refs.filter(ref => state.sources[ref.id]?.type !== 'file').map(refKey).join(',');
     const previousContext = extractionContext(state.contextSources);
@@ -316,6 +319,9 @@ export function syncSources(state, messages, context = [], { trackerAgentIds = [
         return ref;
     });
     const timeline = [...inherited, ...local];
+    // Lines before the starting point, inherited ones included, are out of every member's memory.
+    if (Number.isSafeInteger(groupStart) && groupStart > 0) state.groupStart = inherited.length + groupStart;
+    else if (groupStart !== undefined) delete state.groupStart;
     const remaining = new Set(timeline.map(ref => ref.id));
     const deleted = previousTimeline.filter(ref => !remaining.has(ref.id)).map(ref => ref.id);
     if (deleted.length) purgeSources(state, deleted);
@@ -411,7 +417,8 @@ export function sourceFingerprint(state) {
     const value = [state.storyId, state.branchId,
         [...state.timeline, ...state.contextSources].map(ref => [ref, sourceAt(state, ref)?.hash]), state.excludedSources];
     const audiences = state.timeline.flatMap(ref => state.sources[ref.id]?.audience ? [[ref.id, state.sources[ref.id].audience]] : []);
-    return hash(audiences.length ? [...value, audiences] : value);
+    const scene = [...audiences.length ? [audiences] : [], ...state.groupStart > 0 ? [{ groupStart: state.groupStart }] : []];
+    return hash(scene.length ? [...value, ...scene] : value);
 }
 
 export function forkState(parent, locator, through, messages) {
@@ -467,6 +474,8 @@ export function continueState(parent, locator, messages) {
     state.sourceNamespace = state.branchId;
     state.parent = { branchId: parent.branchId, locator: parent.locator, through: parent.timeline.length - 1, continuation: true };
     state.inheritedTimeline = structuredClone(parent.timeline);
+    // The new chat's own scene sets its starting point on the next sync.
+    delete state.groupStart;
     state.records = state.records.map(record => ({ ...record, branchId: state.branchId }));
     copyRecordHistory(state);
     state.recalls = [];

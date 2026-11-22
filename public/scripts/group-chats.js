@@ -132,7 +132,7 @@ import {
 } from './group-chat-scene.js';
 import { buildEnsemblePrompt, createEnsembleMessages } from './group-chat-ensemble.js';
 import { messageAutomaticGenerationSuppressed } from './generation-outcome.js';
-import { addGroupHearer, beginGroupPromptScope, canGroupMemberSee, changeGroupHearers, filterGroupPromptMessages, groupHeardCount, groupMessageAudience, groupSceneCardMembers, groupScenePrompt, groupSceneTurnNeedsPage, groupWhisperPrompt, readGroupScene } from './group-chat-visibility.js';
+import { addGroupHearer, beginGroupPromptScope, canGroupMemberSee, changeGroupHearers, filterGroupPromptMessages, groupHeardCount, groupMessageAudience, groupSceneCardMembers, groupScenePrompt, groupSceneTurnNeedsPage, groupWhisperPrompt, readGroupScene, readGroupSceneRules } from './group-chat-visibility.js';
 import { initGroupSceneControls, renderGroupScene } from './group-chat-scene-ui.js';
 import { getGroupSpeakerPool } from './group-chat-speakers.js';
 import { initGroupSpeakerMenu } from './group-chat-speaker-menu.js';
@@ -414,6 +414,17 @@ function getGroupSceneRules(group) {
     return seesAll.length ? { seesAll } : {};
 }
 
+/** Lines before the chat's memory starting point, which no member hears in a prompt. */
+function getGroupStartRules() {
+    const before = readGroupSceneRules(chat_metadata, chat).before;
+    return before ? { before } : {};
+}
+
+/** Who sees what when members remember: who heard each line, and the chat's memory starting point. */
+function getGroupMemoryRules(group) {
+    return { ...getGroupSceneRules(group), ...getGroupStartRules() };
+}
+
 /** The message a speaker answers: the last line before their turn, or before their own line when they swipe or continue it. */
 function findGroupReplyTarget(group, type) {
     if (!group || !isHearReplyTargetEnabled(group)) return null;
@@ -508,7 +519,8 @@ export function getOpenGroupSceneRules() {
  */
 export function noteLateGroupMember(groupId, avatar) {
     if (groupId !== selected_group || !Array.isArray(chat)) return;
-    if (!chat.some(message => !message?.is_system && !canGroupMemberSee(message, avatar))) return;
+    const start = getGroupStartRules();
+    if (!chat.some(message => !message?.is_system && !start.before?.has(message) && !canGroupMemberSee(message, avatar))) return;
     const name = characters[getCharacterIdByAvatar(avatar)]?.name || avatar;
     toastr.info(t`Tap here to catch them up on what was said.`, t`${name} has not heard the earlier messages`, {
         onclick: async () => {
@@ -558,7 +570,7 @@ async function runWithGroupScene(avatars, callback, type = 'normal') {
     const replyTarget = avatars.length ? findGroupReplyTarget(group, type) : null;
     activeGroupAudience = getGroupMessageAudience();
     activeGroupReplyTarget = replyTarget ? { message: replyTarget, avatars: [...avatars] } : null;
-    const restore = beginGroupPromptScope(avatars, chat, { ...getGroupSceneRules(group), ...(replyTarget ? { replyTarget } : {}) });
+    const restore = beginGroupPromptScope(avatars, chat, { ...getGroupMemoryRules(group), ...(replyTarget ? { replyTarget } : {}) });
     try { return await callback(); } finally { restore(); activeGroupAudience = previous; activeGroupReplyTarget = previousTarget; }
 }
 
@@ -569,7 +581,7 @@ async function runWithGroupScene(avatars, callback, type = 'normal') {
  */
 export function getGroupPurrksMessages(avatar) {
     if (!Array.isArray(chat)) return [];
-    const rules = getGroupSceneRules(groups.find(item => item.id === selected_group));
+    const rules = getGroupMemoryRules(groups.find(item => item.id === selected_group));
     return filterGroupPromptMessages(chat.filter(message => !message?.is_system && canGroupMemberSee(message, avatar, rules)));
 }
 
@@ -593,7 +605,7 @@ export function beginGroupPreviewScope(chid) {
     if (!avatar) return () => {};
     const group = groups.find(item => item.id === selected_group);
     const replyTarget = findGroupReplyTarget(group, 'normal');
-    return beginGroupPromptScope([avatar], chat, { ...getGroupSceneRules(group), ...(replyTarget ? { replyTarget } : {}) });
+    return beginGroupPromptScope([avatar], chat, { ...getGroupMemoryRules(group), ...(replyTarget ? { replyTarget } : {}) });
 }
 
 function getSelectedGroupSpeakerChid(group) {
@@ -2806,9 +2818,10 @@ function getGroupDirectorMembers(members) {
 }
 
 function getGroupDirectorHistory(members) {
+    const start = getGroupStartRules();
     return chat
         .filter(message => message && !message.is_system && !message.extra?.group_scene?.whisper_to?.length
-            && members.every(avatar => canGroupMemberSee(message, avatar)) && String(message.mes || '').trim())
+            && members.every(avatar => canGroupMemberSee(message, avatar, start)) && String(message.mes || '').trim())
         .slice(-12)
         .map(message => ({ name: message.name, text: message.mes, isUser: Boolean(message.is_user) }));
 }

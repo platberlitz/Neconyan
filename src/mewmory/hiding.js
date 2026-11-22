@@ -12,7 +12,7 @@ import { readContextSourcesSync } from './sources.js';
 import { readJsonShared, readStateShared, sourceSyncOptions } from './store.js';
 import { getCounter, getTokenizerModel } from './tokens.js';
 import { groupLineHeld } from './viewers.js';
-import { readGroupSceneRules } from '../../public/scripts/group-chat-visibility.js';
+import { readGroupSceneRules, readGroupSceneStart } from '../../public/scripts/group-chat-visibility.js';
 
 function writerSettings(directories) {
     const settings = readJsonShared(path.join(directories.root, 'settings.json'), {});
@@ -174,7 +174,7 @@ function preservationCheck(records, archivedState, config, contextSources, sourc
     const shadow = structuredClone(index && typeof index === 'object' && !Array.isArray(index)
         ? { ...archivedState, index: { pending: false } } : archivedState);
     const messages = records.slice(1);
-    syncSources(shadow, messages, contextSources, sourceOptions);
+    syncSources(shadow, messages, contextSources, { ...sourceOptions, groupStart: readGroupSceneStart(records[0]?.chat_metadata) });
     const offset = shadow.inheritedTimeline?.length || 0;
     // A message read with an older model or settings keeps its memories, so it
     // still counts as preserved; re-reading it is the author's choice.
