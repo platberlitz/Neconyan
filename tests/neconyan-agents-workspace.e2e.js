@@ -221,6 +221,9 @@ for (const width of [1280, 393]) {
                 for (const agent of agents) expect((await page.request.post('/api/in-chat-agents/save', { headers: requestHeaders, data: agent })).ok()).toBe(true);
                 await openAgents(page);
                 if (await skipTour.isVisible()) await skipTour.click();
+                // Updates are for all installed agents, even when the current search matches none.
+                await searchAgentList(page, 'no matching agent for this search');
+                await expect(page.locator('#ica--agentList .ica--empty-state')).toBeVisible();
                 const banner = page.locator('#ica--updateBanner');
                 await expect(banner).toBeVisible();
                 await expect(banner.locator('.ica--update-banner-title')).toHaveText(/^\d+ agent updates? ready$/);

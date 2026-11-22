@@ -3678,6 +3678,7 @@ function renderAgentList() {
     cancelDebounce(renderAgentListDebounced);
     agentListSearchRenderPending = false;
     agentListRenderPending = false;
+    updateUpdateAllButtonVisibility();
     if (!applyingAgentSetup && selectedAgentSetupId && ['saved', 'modified'].includes(document.getElementById('ica--setupStatus')?.dataset.tone)) showAgentSetupMatch();
     const container = $('#ica--agentList');
     // Record the filter this render used, so a pending 200 ms redraw is distinguishable
@@ -4028,7 +4029,6 @@ function renderAgentList() {
     restoreAgentListScrollState(scrollState);
     updateFixTrackersButtonVisibility();
     updateRerunAgentsButtonVisibility();
-    updateUpdateAllButtonVisibility();
     updateCompanionButtonVisibility();
     updateCompanionPanelHandleVisibility();
 }
@@ -6834,6 +6834,8 @@ function renderAgentListWhenShown() {
         return;
     }
     agentListRenderPending = true;
+    // The workspace banner is above the list and is visible independently of it.
+    updateUpdateAllButtonVisibility();
     updateCancelGenerationButton();
     updateFixTrackersButtonVisibility();
     updateRerunAgentsButtonVisibility();
