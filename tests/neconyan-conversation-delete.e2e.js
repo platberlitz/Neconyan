@@ -592,12 +592,14 @@ test('deleting the open DM when it is the last one closes the workspace', async 
     await waitPageSynced(account, page, 40000);
     const record = await uiDeleteRail(page, A.avatar);
     expect.soft(record.confirm).toBe(soloConfirm(A.name));
-    await delay(3500);
     await expect(page.locator('#sb_conversation_input'), 'the workspace closes').toBeHidden({ timeout: 15000 });
-    const empty = page.locator('#sb_conversation_pals_list > .sb-conversation-empty');
-    // The workspace is closed, so the rail is not on screen; its list holds the empty state.
-    await expect(empty, 'the rail holds its empty state').toHaveCount(1);
     await expectDeletedEverywhere(account, [page], { key: A.threadKey });
+
+    // The closed workspace can defer drawing the rail. Check what the person sees after reopening it.
+    await openWorkspace(page, null);
+    const empty = page.locator('#sb_conversation_pals_list > .sb-conversation-empty');
+    if (!await empty.isVisible()) await page.locator('[data-sb-conversation-action="toggle-pals"]').click();
+    await expect(empty, 'the reopened rail shows its empty state').toBeVisible();
     await reloadToWorkspace(page, null);
     expect(Object.hasOwn((await account.store()).characters, A.threadKey), 'A is gone after a reload').toBe(false);
     await page.close();
