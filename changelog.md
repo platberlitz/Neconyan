@@ -76,6 +76,7 @@
 - PR #852 (2026-11-22) `feat(server): send scene lines and open server replies for scene chats`
 - PR #853 (2026-11-22) `feat(mewmory): recall per group speaker`
 - PR #854 (2026-11-22) `feat(mewmory): write group memories per audience`
+- PR #855 (2026-11-22) `feat(mewmory): keep group secrets out of hiding, sharing and lorebooks`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
