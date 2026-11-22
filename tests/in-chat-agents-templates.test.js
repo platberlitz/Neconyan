@@ -257,23 +257,26 @@ describe('in-chat agent bundled templates', () => {
 
     test('an incomplete template asset load can retry without publishing unformatted templates', async () => {
         const source = fs.readFileSync(indexSourceUrl, 'utf8');
-        const fn = parse(source, { ecmaVersion: 'latest', sourceType: 'module' }).body.find(node => node.type === 'FunctionDeclaration' && node.id.name === 'loadTemplates');
+        const loaders = parse(source, { ecmaVersion: 'latest', sourceType: 'module' }).body
+            .filter(node => node.type === 'FunctionDeclaration' && ['loadTemplates', 'fetchTemplates'].includes(node.id.name));
         for (const failedAsset of ['index.json', 'regex-bundles.json', 'groups.json']) {
             let fail = true;
             const assets = { 'index.json': [{ id: 'tpl-example' }], 'regex-bundles.json': { 'tpl-example': [{ id: 'rule' }] }, 'groups.json': [] };
-            const runtime = { templates: [], templateRegexBundles: {}, templateLoadError: null, console: { warn: jest.fn() },
+            const runtime = { templates: [], templateRegexBundles: {}, templateLoad: null, templateLoadError: null, console: { warn: jest.fn() },
                 REMOVED_BUNDLED_TEMPLATE_IDS: new Set(), REMOVED_BUNDLED_GROUP_IDS: new Set(),
                 getTemplateAssetUrl: name => name, loadBuiltinGroups: jest.fn(),
                 fetch: jest.fn(async name => ({ ok: !fail || name !== failedAsset, json: async () => assets[name] })),
             };
             runtime.mergeTemplateDefaults = template => ({ ...template, regexScripts: runtime.templateRegexBundles[template.id] });
             vm.createContext(runtime);
-            vm.runInContext(source.slice(fn.start, fn.end), runtime);
-            await runtime.loadTemplates();
+            vm.runInContext(loaders.map(fn => source.slice(fn.start, fn.end)).join('\n'), runtime);
+            await Promise.all([runtime.loadTemplates(), runtime.loadTemplates()]);
+            expect(runtime.fetch).toHaveBeenCalledTimes(3);
             expect(runtime.templates).toEqual([]);
             expect(runtime.templateLoadError).not.toBeNull();
             fail = false;
             await runtime.loadTemplates();
+            expect(runtime.fetch).toHaveBeenCalledTimes(6);
             expect(runtime.templates[0].regexScripts).toEqual([{ id: 'rule' }]);
             expect(runtime.templateLoadError).toBeNull();
         }

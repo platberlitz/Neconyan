@@ -247,10 +247,16 @@ for (const width of [393, 769, 900, 1000, 1001, 1280]) {
                             expect(measures.translate).toBe('0px -4px');
                             if (placement === 'below') widths.push(measures.footer.width);
                         } else for (const arrow of arrows) expect(measures.row.bottom - arrow.bottom).toBeCloseTo(13, 0);
-                        // One frame keeps both arrows at the same scroll position; unrelated
-                        // startup notifications must not become part of their measured ink.
+                        // Keep both glyphs in the same frame and measure them on a solid
+                        // backing. A translucent control can show wallpaper pixels through it.
                         const frame = PNG.sync.read(await page.screenshot({ animations: 'disabled', scale: 'css',
-                            style: '#toast-container { visibility: hidden !important; }' }));
+                            style: `#toast-container { visibility: hidden !important; }
+                                #chat .mes :is(.fa-chevron-left, .fa-chevron-right) {
+                                    background: #292524 !important;
+                                    border-radius: 0 !important;
+                                    box-shadow: none !important;
+                                }`,
+                        }));
                         const leftImage = cropControl(frame, arrows.find(c => c.classes.includes('chevron-left')));
                         const rightImage = cropControl(frame, arrows.find(c => c.classes.includes('chevron-right')));
                         const leftInk = iconInkCentre(leftImage), rightInk = iconInkCentre(rightImage);

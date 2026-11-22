@@ -212,13 +212,20 @@ async function openDrawer(page) {
 
 const tick = (page, avatar, on = true) => page.locator(`#sb_conversation_add_dm_picker input.sb-conversation-group-member-checkbox[value="${avatar}"]`).setChecked(on);
 
+function soloRecord(store, key) {
+    const record = store.characters[key];
+    // Opening a drawer can materialise these defaults on a legacy record.
+    // Missing fields and their defaults represent the same saved memory.
+    return record ? { memorySummary: '', memoryMessageCount: 0, memoryUpdatedAt: 0, ...structuredClone(record) } : null;
+}
+
 /** The avatar's solo record on the server and in each page copy. */
 async function captureSolo(account, pages, avatar) {
     for (const [index, page] of pages.entries()) {
         expect(await page.evaluate(async () => (await import('/scripts/neconyan-conversation/store-sync.js')).flushConversationStore()), `page ${index}: the store flushes`).toBe(true);
     }
     const key = account.personaId ? `persona:${account.personaId}:${avatar}` : avatar;
-    const find = store => structuredClone(store.characters[key] ?? null);
+    const find = store => soloRecord(store, key);
     return { key, server: find(await account.store()), pages: await Promise.all(pages.map(async page => find(await pageStore(page)))) };
 }
 
@@ -232,7 +239,7 @@ async function expectMemberGoneEverywhere(account, pages, { groupId, avatar, sol
         expect(prefixOf(store, groupId).length, `${where}: exactly one key under the group prefix`).toBe(1);
         expect(groupOf(store, groupId), `${where}: the group record`).toBeTruthy();
         expect(groupOf(store, groupId).members.includes(avatar), `${where}: the group lacks ${avatar}`).toBe(false);
-        expect(store.characters[soloBefore.key] ?? null, `${where}: the solo record is as it was`).toEqual(soloExpected);
+        expect(soloRecord(store, soloBefore.key), `${where}: the solo record is as it was`).toEqual(soloExpected);
     };
     gone(await account.store(), 'server', soloBefore.server);
     for (const [index, page] of pages.entries()) gone(await pageStore(page), `page ${index}`, soloBefore.pages[index]);

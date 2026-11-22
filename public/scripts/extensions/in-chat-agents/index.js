@@ -758,6 +758,7 @@ function isBundledAgentName(agent) {
 }
 let templateLoadError = null;
 let templateRegexBundles = {};
+let templateLoad = null;
 
 const BUNDLED_CATALOGUE_REVISION_KEY = 'ica--catalogue-revision';
 let autoSeededTemplateIds = new Set();
@@ -3677,6 +3678,7 @@ function renderAgentList() {
     cancelDebounce(renderAgentListDebounced);
     agentListSearchRenderPending = false;
     agentListRenderPending = false;
+    updateUpdateAllButtonVisibility();
     if (!applyingAgentSetup && selectedAgentSetupId && ['saved', 'modified'].includes(document.getElementById('ica--setupStatus')?.dataset.tone)) showAgentSetupMatch();
     const container = $('#ica--agentList');
     // Record the filter this render used, so a pending 200 ms redraw is distinguishable
@@ -4027,7 +4029,6 @@ function renderAgentList() {
     restoreAgentListScrollState(scrollState);
     updateFixTrackersButtonVisibility();
     updateRerunAgentsButtonVisibility();
-    updateUpdateAllButtonVisibility();
     updateCompanionButtonVisibility();
     updateCompanionPanelHandleVisibility();
 }
@@ -4182,14 +4183,15 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
         return;
     }
 
+    // Reference labels and suggested regex scripts need the bundled catalogue.
+    const [html] = await Promise.all([renderExtensionTemplateAsync(MODULE_NAME, 'editor'), loadTemplates()]);
+    if (!savedAgentIsCurrent()) throw new Error('The agent or account changed. Open the editor again.');
     let regexScripts = getAgentRegexScripts(agent).map(script => structuredClone(script));
     const template = findTemplateForAgent(agent);
     const bundledRegexScripts = Array.isArray(template?.regexScripts)
         ? template.regexScripts.map(script => structuredClone(script))
         : [];
 
-    const html = await renderExtensionTemplateAsync(MODULE_NAME, 'editor');
-    if (!savedAgentIsCurrent()) throw new Error('The agent or account changed. Open the editor again.');
     if (!html) {
         toastr.error('Could not load the agent editor. Please refresh the page and try again.');
         return;
@@ -5337,10 +5339,12 @@ async function readBundledCatalogueRevision() {
  * Loads built-in template agents from the templates directory.
  */
 async function loadTemplates() {
-    if (templates.length > 0) {
-        return;
-    }
+    if (templates.length > 0) return;
+    templateLoad ??= fetchTemplates().finally(() => { templateLoad = null; });
+    await templateLoad;
+}
 
+async function fetchTemplates() {
     templateLoadError = null;
     try {
         const [templateResponse, regexBundleResponse, groupResponse] = await Promise.all([
@@ -6830,6 +6834,8 @@ function renderAgentListWhenShown() {
         return;
     }
     agentListRenderPending = true;
+    // The workspace banner is above the list and is visible independently of it.
+    updateUpdateAllButtonVisibility();
     updateCancelGenerationButton();
     updateFixTrackersButtonVisibility();
     updateRerunAgentsButtonVisibility();
@@ -7259,6 +7265,14 @@ registerSettingsSetupTask('in-chat-agents first start', new Promise(resolve => {
         renderAgentSetupControls();
     }
     resolveAgentPanelMounted();
+
+    // An unchanged catalogue is skipped at startup, but Manage still needs it
+    // to compare the installed versions and show available updates.
+    document.addEventListener('sb:shell-tab-activated', async event => {
+        if (event.detail?.tabId !== 'agents' || templates.length) return;
+        await loadTemplates();
+        if (templates.length) renderAgentListWhenShown();
+    });
 
     const savedState = extension_settings.inChatAgents;
     let removedAutoSeededTemplateIds = false;

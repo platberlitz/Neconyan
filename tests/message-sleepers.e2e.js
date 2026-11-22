@@ -4,7 +4,7 @@ import { expect, test } from '@playwright/test';
 import { isolateSettingsSaves, openQuietChatForSmoke } from './chat-scroll-regression-helpers.js';
 
 const styles = ['flatchat', 'bubblechat', 'documentstyle', 'echostyle', 'whisperstyle', 'hushstyle', 'ripplestyle', 'tidestyle'];
-const hopper = '/scripts/extensions/third-party/Neconyan-Hopper/src/ui.js';
+const hopper = '/scripts/extensions/third-party/Neconyan-Hopper/src/ui.js?test-renderers=1';
 test.use({ serviceWorkers: 'block' });
 test.setTimeout(120000);
 
@@ -188,7 +188,7 @@ for (const width of [393, 1280]) {
 
         test('Conversation and nested Meower authors use their own animals', async ({ page }, info) => {
             // Exercise the real private renderers without creating a saved social timeline.
-            await page.route(`**${hopper}`, async route => {
+            await page.route(url => `${url.pathname}${url.search}` === hopper, async route => {
                 const response = await route.fetch();
                 await route.fulfill({ response, body: `${await response.text()}\nexport { postNode, replyNode, repostedReplyNode };` });
             });

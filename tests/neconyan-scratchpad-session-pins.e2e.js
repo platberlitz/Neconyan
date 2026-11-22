@@ -38,9 +38,9 @@ for (const phone of [false, true]) {
         await page.screenshot({ path: `${prefix}-before.png` });
 
         // The older session moves to the top once pinned, and says so.
-        const { source, bucket } = await togglePin(rows.nth(1), 'Pin session');
+        const { source, bucket } = await togglePin(rows.nth(1), `Pin ${older}`);
         expect(await names()).toEqual([older, newer]);
-        const unpin = rows.nth(0).getByRole('button', { name: 'Unpin session', exact: true });
+        const unpin = rows.nth(0).getByRole('button', { name: `Unpin ${older}`, exact: true });
         await expect(unpin).toHaveAttribute('aria-pressed', 'true');
         await expect(unpin).toBeFocused();
         await expect(rows.nth(0).locator('.scratchpad-session-info small')).toContainText('Pinned');
@@ -64,7 +64,7 @@ for (const phone of [false, true]) {
             await page.locator('#themes').selectOption({ label: theme }, { force: true });
             for (const accent of [null, 'Pearl', 'Midnight Ink']) {
                 if (accent) await page.locator(`.sb-accent-profile-apply[aria-label="Apply ${accent} accent profile"]`).evaluate(element => element.click());
-                for (const button of [unpin, rows.nth(1).getByRole('button', { name: 'Pin session', exact: true })]) {
+                for (const button of [unpin, rows.nth(1).getByRole('button', { name: `Pin ${newer}`, exact: true })]) {
                     const contrast = await button.evaluate(async element => {
                         const { contrastRatio } = await import('/scripts/theme-contrast.js');
                         const context = document.createElement('canvas').getContext('2d');
@@ -87,11 +87,11 @@ for (const phone of [false, true]) {
         await newSession('Temporary session');
         const temporary = rows.filter({ hasText: 'Temporary' });
         await expect(temporary).toHaveCount(1);
-        await expect(temporary.getByRole('button', { name: 'Pin session', exact: true })).toHaveCount(0);
+        await expect(temporary.getByRole('button', { name: /^Pin / })).toHaveCount(0);
         expect((await names())[0]).toBe(older);
 
-        await togglePin(rows.nth(0), 'Unpin session');
-        await expect(page.getByRole('button', { name: 'Unpin session', exact: true })).toHaveCount(0);
+        await togglePin(rows.nth(0), `Unpin ${older}`);
+        await expect(page.getByRole('button', { name: /^Unpin / })).toHaveCount(0);
         await expect(rows.locator('.scratchpad-session-info small').filter({ hasText: 'Pinned' })).toHaveCount(0);
     });
 }

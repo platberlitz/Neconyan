@@ -3,7 +3,7 @@
 // Deleting a Conversation DM (solo or group) must stick: on the server, in every open page, after a reload, and for automation.
 import { setTimeout as delay } from 'node:timers/promises';
 import { expect } from '@playwright/test';
-import { test, MODEL } from './neconyan-conversation-durable-fixture.js';
+import { test, MODEL, waitForAgentsFirstStart } from './neconyan-conversation-durable-fixture.js';
 
 test.describe.configure({ mode: 'serial' });
 test.skip(process.env.NECONYAN_CONVERSATION_TEST_DISPOSABLE !== '1', 'Requires the disposable fixture.');
@@ -553,6 +553,8 @@ test('a settings drawer open in another tab for the deleted DM closes without wr
     const gDel = await addGroup(account, 'Doomed', [A.avatar, C.avatar]);
     await serverMode(account);
     const first = await openRecorded(account, B.avatar);
+    // Settle the new account's startup saves before the other tab reads its settings revision.
+    await waitForAgentsFirstStart(first);
     const drawer = page => page.locator('#sb_conversation_settings_drawer');
 
     // Solo: the drawer in the second tab is open for A.
@@ -590,12 +592,14 @@ test('deleting the open DM when it is the last one closes the workspace', async 
     await waitPageSynced(account, page, 40000);
     const record = await uiDeleteRail(page, A.avatar);
     expect.soft(record.confirm).toBe(soloConfirm(A.name));
-    await delay(3500);
     await expect(page.locator('#sb_conversation_input'), 'the workspace closes').toBeHidden({ timeout: 15000 });
-    const empty = page.locator('#sb_conversation_pals_list > .sb-conversation-empty');
-    // The workspace is closed, so the rail is not on screen; its list holds the empty state.
-    await expect(empty, 'the rail holds its empty state').toHaveCount(1);
     await expectDeletedEverywhere(account, [page], { key: A.threadKey });
+
+    // The closed workspace can defer drawing the rail. Check what the person sees after reopening it.
+    await openWorkspace(page, null);
+    const empty = page.locator('#sb_conversation_pals_list > .sb-conversation-empty');
+    if (!await empty.isVisible()) await page.locator('[data-sb-conversation-action="toggle-pals"]').click();
+    await expect(empty, 'the reopened rail shows its empty state').toBeVisible();
     await reloadToWorkspace(page, null);
     expect(Object.hasOwn((await account.store()).characters, A.threadKey), 'A is gone after a reload').toBe(false);
     await page.close();

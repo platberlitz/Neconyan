@@ -21,6 +21,15 @@ const submitPresentationReply = account => account.post('/api/neconyan-conversat
     target: { avatar: account.avatar, personaId: account.personaId, branchId: 'main' },
 });
 
+async function warmSharedBrowserThumbnails(account) {
+    // Image reads from the open tab can fill the destination account's cache
+    // when its cookie changes, independently of the write being tested.
+    for (const [type, file] of [['avatar', account.avatar], ['persona', 'user-default.png']]) {
+        const thumbnail = await account.context.request.get(`/thumbnail?${new URLSearchParams({ type, file })}`);
+        expect(thumbnail.ok()).toBe(true);
+    }
+}
+
 for (const phone of [false, true]) {
     test(`${phone ? 'phone' : 'desktop'} ownership memory refresh updates its open panel and cannot undo a later clear`, async ({ app }) => {
         const account = await app.account({ phone });
@@ -871,15 +880,19 @@ test('startup migration survives a native reply completed after the downloaded b
     await sending.close();
     await account.changeStore(store => { store.localStorageMigrated = false; });
     const page = await account.context.newPage();
-    await page.addInitScript(() => localStorage.setItem('sb_conv_thread_migrated.png', JSON.stringify([{ id: 'migrated-user', role: 'user', mes: 'Unsaved local migration.', timestamp: 1700000000000 }])));
+    await page.addInitScript(() => {
+        localStorage.setItem('sb_conv_thread_migrated.png', JSON.stringify([{ id: 'migrated-user', role: 'user', mes: 'Unsaved local migration.', timestamp: 1700000000000 }]));
+        window.addEventListener('neconyan:ready', () => { window.migrationStartupReady = true; }, { once: true });
+    });
     await page.route('**/api/settings/get', async route => {
+        if (route.request().postDataJSON()?.sections) return route.continue();
         const response = await route.fetch();
         await app.release();
         await account.settled(accepted.job.id);
         await route.fulfill({ response });
     });
     await page.goto('/');
-    await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'));
+    await page.waitForFunction(() => window.migrationStartupReady);
     expect(await page.evaluate(async () => (await import('/scripts/neconyan-conversation/store-sync.js')).flushConversationStore())).toBe(true);
     const saved = await account.store();
     expect(saved.characters[account.threadKey].branches.main.messages.filter(message => message.role === 'character')).toHaveLength(2);
@@ -1185,6 +1198,7 @@ for (const boundary of ['solo chat', 'group chat', 'group metadata']) {
         expect(source.settings.enabled).toBe(true);
         expect(source.settings.roleplay_reactions).toBe(true);
         const destination = path.join(app.directory, 'data', 'second-user');
+        await warmSharedBrowserThumbnails(second);
         const before = (await fs.readdir(destination, { recursive: true })).sort();
         const effects = await second.effects();
         const endpoint = boundary === 'solo chat' ? '/api/chats/save' : boundary === 'group chat' ? '/api/chats/group/save' : '/api/groups/edit';
@@ -1247,8 +1261,17 @@ for (const action of ['cancel', 'restart']) {
         if (action === 'cancel') {
             await account.post(`/api/jobs/${root.id}/cancel`);
             await account.settled(root.id, 'cancelled');
+            // Stop keeps prose already returned by the provider, but does not
+            // execute the command embedded in the as-yet undelivered bubble.
+            const stopped = await account.effects();
+            expect(stopped.branch.messages.slice(0, before.branch.messages.length)).toEqual(before.branch.messages);
+            expect(stopped.branch.messages.slice(before.branch.messages.length)).toEqual([
+                expect.objectContaining({ role: 'character', mes: second }),
+            ]);
+            expect(stopped.reminders).toEqual(before.reminders);
+            expect(stopped.runtimeStatusOverrides).toEqual(before.runtimeStatusOverrides);
             await delay(11200);
-            expect(await account.effects()).toEqual(before);
+            expect(await account.effects()).toEqual(stopped);
         } else {
             await app.restart();
             expect(app.processes[0].signal).toBe('SIGKILL');
@@ -1658,6 +1681,7 @@ for (const media of [false, true]) {
         const second = await app.account({ handle: 'second-user' });
         const page = await first.open();
         const destination = path.join(app.directory, 'data', 'second-user');
+        await warmSharedBrowserThumbnails(second);
         const before = (await fs.readdir(destination, { recursive: true })).sort();
         const endpoint = media ? '/api/images/upload' : '/api/files/upload';
         await page.route('**' + endpoint, async route => {

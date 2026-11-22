@@ -71,7 +71,7 @@ async function saveCell(page, title, key, value, type) {
 for (const viewport of [{ width: 1280, height: 900 }, { width: 393, height: 852 }]) {
     test(`property table is lazy, filtered, numerically sorted and server-paged at ${viewport.width}px`, async ({ page }, info) => {
         const modules = [];
-        page.on('request', request => { if (request.url().endsWith('/scripts/notebooks/property-table.js')) modules.push(request); });
+        page.on('request', request => { if (new URL(request.url()).pathname === '/scripts/notebooks/property-table.js') modules.push(request); });
         const notebookId = await notebook(page, viewport);
         const notes = [];
         for (let index = 0; index < 30; index++) {

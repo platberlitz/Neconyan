@@ -9,7 +9,7 @@ const groups = {
     advanced: ['presets', 'sampling', 'formatting', 'regex', 'preset-tools', 'chat-completion-tabs', 'prompt-tags', 'macro-enhanced', 'prompting-lab', 'deep-swipe'],
     lore: ['persona', 'expressions', 'quick-image-gen', 'botsearcher', 'pathfinder', 'world-info-lab', 'lorebook-distiller', 'time-machine'],
     appearance: ['background', 'dialogue-colors', 'termeownal-ui', 'css-snippets', 'regex-agent-themes'],
-    finer: ['server', 'console-logs', 'debugger', 'report-issue'],
+    finer: ['server', 'console-logs', 'debugger', 'reload-workspace', 'report-issue'],
     modes: ['roleplay', 'conversation', 'meower', 'story'],
 };
 const previousGroup = { advanced: 'primary', lore: 'advanced', appearance: 'lore', finer: 'appearance' };

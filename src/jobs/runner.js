@@ -232,7 +232,12 @@ async function execute(directories, saved, handler, controller) {
 async function reportFailure(directories, id, error, signal) {
     const saved = getJob(directories, id);
     if (saved?.cancellation?.requested) {
-        await settleQuietly(() => setJobState(directories, id, 'cancelled'));
+        // Only a stop during the memory wait can offer Reply now on the
+        // existing message. A stop during model generation is just a stop.
+        const memoryWait = ['roleplay.reply', 'roleplay.candidate'].includes(saved.type) && error?.code === 'MEWMORY_WAIT_ABORTED';
+        await settleQuietly(() => setJobState(directories, id, 'cancelled', {
+            error: memoryWait ? { code: error.code, message: error.message } : null,
+        }));
         return;
     }
     const status = typeof error?.status === 'number' ? error.status : 500;

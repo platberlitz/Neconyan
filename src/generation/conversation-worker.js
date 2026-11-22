@@ -144,7 +144,9 @@ export async function runConversationWorkerTick({ directoriesFor, owners, now = 
         } catch {
             continue;
         }
-        for (const job of jobs) {
+        // Claim shared automatic replies in the order the runner starts batches.
+        // Otherwise a newer batch can claim a chime while blocked by an older send.
+        for (const job of jobs.sort((a, b) => a.createdAt - b.createdAt)) {
             if (!['conversation.reply', 'conversation.participant', 'conversation.summary', 'conversation.schedule', 'conversation.rewrite', 'conversation.selfie'].includes(job.type)) continue;
             try {
                 if (job.type === 'conversation.participant' || job.type === 'conversation.reply' && job.children?.some(id => getJob(directories, id)?.type === 'media.assistant-tool')) {

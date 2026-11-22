@@ -1,6 +1,7 @@
 /* eslint playwright/expect-expect: off -- These checks use node:assert, not Playwright assertions. */
 /* global globalThis */
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -11,7 +12,7 @@ import { setConfigFilePath } from '../src/util.js';
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
 
 const {
-    acceptJob, clearFinishedJobs, dismissJob, explicitRetryRecovery, getJob, JOB_FAILURE_RETENTION_MS, jobKey, listJobs, readJobStore,
+    acceptJob, attachOwnedChild, canonical, clearFinishedJobs, dismissJob, explicitRetryRecovery, getJob, JOB_FAILURE_RETENTION_MS, jobKey, listJobs, readJobStore,
     recordReceipt, recoverJobs, requestCancellation, selectJobs, setJobState, updateJob, markProviderUncertain, markProviderSettled, setJobResume,
 } = await import('../src/jobs/store.js');
 const {
@@ -602,6 +603,38 @@ test('a provider error that merely mentions aborted stays a visible failure', as
     const second = acceptJob(directories, { owner: 'alice', type: 'flaky', submissionKey: 'a2', intent: {} }).job;
     await testExports.runJob(second);
     assert.equal(getJob(directories, second.id).state, 'failed');
+});
+
+test('stopping a Roleplay workflow preserves recovery only for a stopped memory wait', async () => {
+    const directories = tempDirectories('roleplay-stop');
+    setDirectoriesResolver(() => directories);
+    const hash = job => createHash('sha256').update(canonical(job.intent)).digest('hex');
+    const memoryError = { code: 'MEWMORY_WAIT_ABORTED', message: 'Stopped waiting for memories.' };
+    for (const stage of ['memory', 'provider']) {
+        const parent = acceptJob(directories, { owner: 'alice', type: 'media.roleplay-workflow', submissionKey: `${stage}-parent`, intent: {} }).job;
+        const child = acceptJob(directories, { owner: 'alice', type: 'roleplay.reply', submissionKey: `${stage}-child`, intent: {} }).job;
+        attachOwnedChild(directories, parent.id, child.id, { parentIntentHash: hash(parent), childIntentHash: hash(child) });
+        updateJob(directories, parent.id, { state: 'waiting', stage: 'children' });
+
+        let ready;
+        const started = new Promise(resolve => { ready = resolve; });
+        registerHandler(child.type, ({ signal }) => new Promise((resolve, reject) => {
+            signal.addEventListener('abort', () => reject(stage === 'memory'
+                ? Object.assign(new Error(memoryError.message), { code: memoryError.code })
+                : new DOMException('Stopped generating.', 'AbortError')), { once: true });
+            ready();
+        }));
+        const running = testExports.runJob(child);
+        await started;
+        assert.equal(requestCancellation(directories, parent.id).job.state, 'waiting');
+        abortJob(child.id);
+        await running;
+        for (const { id } of [child, parent]) {
+            const saved = getJob(directories, id);
+            assert.equal(saved.state, 'cancelled');
+            assert.deepEqual(saved.error, stage === 'memory' ? memoryError : null);
+        }
+    }
 });
 
 test('an unknown provider outcome is interrupted with an explicit retry, never auto-resubmitted', async () => {

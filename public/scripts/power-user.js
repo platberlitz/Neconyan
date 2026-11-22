@@ -414,7 +414,7 @@ const CHAT_STYLE_BODY_CLASSES = Object.freeze({
 
 const LEGACY_CHAT_STYLE_BODY_CLASSES = Object.freeze([]);
 const NATIVE_CHAT_STYLE_STYLESHEET_ID = 'neconyan-native-chat-styles';
-const NATIVE_CHAT_STYLE_STYLESHEET_HREF = 'css/neconyan-chat-styles.css?v=20261124-heard-editor';
+const NATIVE_CHAT_STYLE_STYLESHEET_HREF = 'css/neconyan-chat-styles.css?v=20261125-restore-dock';
 
 function ensureNativeChatStyleStylesheet() {
     if (document.getElementById(NATIVE_CHAT_STYLE_STYLESHEET_ID)) {
@@ -427,7 +427,8 @@ function ensureNativeChatStyleStylesheet() {
     link.type = 'text/css';
     link.href = NATIVE_CHAT_STYLE_STYLESHEET_HREF;
 
-    const themeStylesheet = document.querySelector('link[href^="css/neconyan-theme.css"]');
+    // The server can rewrite the theme URL. Keep mobile overrides later in the cascade.
+    const themeStylesheet = document.getElementById('neconyan-theme-stylesheet');
     if (themeStylesheet) {
         themeStylesheet.after(link);
         return;
