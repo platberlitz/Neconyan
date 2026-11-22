@@ -99,6 +99,7 @@
 - PR #876 (2026-11-22) `fix(plot-compass): honour selected directions`
 - PR #877 (2026-11-22) `feat(scratchpad): edit lorebook activation settings and trace misses`
 - PR #878 (2026-11-22) `fix(macros): hide text inside scoped comments`
+- PR #879 (2026-11-22) `feat(scratchpad): add App diagnostics so assistants see Neconyan's own errors`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
