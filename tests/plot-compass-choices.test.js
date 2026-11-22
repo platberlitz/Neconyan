@@ -97,7 +97,7 @@ describe('Plot Compass choices', () => {
             plotCompassChoice: { number: 1, text: 'Mira bribes the night guard for the code.' } };
         const message = { extra: { inChatAgentCompanionResults: { plot: result } } };
         const [contribution] = getCompanionChatHistoryContributions(message);
-        expect(contribution.content).toContain("[User's chosen direction at the time]");
+        expect(contribution.content).toContain('[User\'s chosen direction at the time]');
         expect(contribution.content).not.toContain('Have the rival crew burst in mid-conversation.');
         expect(contribution.content).not.toContain('for the next response');
         expect(result.content).toBe(NOTE);

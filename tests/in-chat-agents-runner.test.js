@@ -3206,8 +3206,8 @@ describe('in-chat agent post-processing runner', () => {
 
         runner.injectCompanionFeedbackPrompts([agent]);
         let injected = extensionPrompts.inchat_agent_companion_plot.value;
-        expect(injected).toContain("[User's chosen direction at the time]\n2. The host confesses.");
-        expect(injected).toContain("[User's chosen direction]\n1. A storm arrives.\nThe user picked this direction for the next response.");
+        expect(injected).toContain('[User\'s chosen direction at the time]\n2. The host confesses.');
+        expect(injected).toContain('[User\'s chosen direction]\n1. A storm arrives.\nThe user picked this direction for the next response.');
         expect(injected).not.toContain('2. The host confesses.\nThe user picked this direction for the next response.');
 
         runner.updateCompanionResult(host, agent.id, { plotCompassChoice: undefined });
@@ -3232,7 +3232,7 @@ describe('in-chat agent post-processing runner', () => {
         const restore = beginGroupPromptScope(['mira.png'], chat);
         try {
             runner.injectCompanionFeedbackPrompts([agent]);
-            expect(extensionPrompts.inchat_agent_companion_plot.value).toContain("[User's chosen direction]\n1. A storm arrives.");
+            expect(extensionPrompts.inchat_agent_companion_plot.value).toContain('[User\'s chosen direction]\n1. A storm arrives.');
             expect(extensionPrompts.inchat_agent_companion_plot.value).not.toContain('The host confesses.');
         } finally {
             restore();
@@ -3242,9 +3242,9 @@ describe('in-chat agent post-processing runner', () => {
         chat.push(tail);
         runner.setCompanionResult(tail, agent, { status: 'done', content, plotCompassChoice: { number: 2, text: 'The host confesses.' } });
         runner.injectCompanionFeedbackPrompts([agent], { excludeMessage: tail });
-        expect(extensionPrompts.inchat_agent_companion_plot.value).toContain("[User's chosen direction]\n1. A storm arrives.");
+        expect(extensionPrompts.inchat_agent_companion_plot.value).toContain('[User\'s chosen direction]\n1. A storm arrives.');
         runner.injectCompanionFeedbackPrompts([agent]);
-        expect(extensionPrompts.inchat_agent_companion_plot.value).toContain("[User's chosen direction]\n2. The host confesses.");
+        expect(extensionPrompts.inchat_agent_companion_plot.value).toContain('[User\'s chosen direction]\n2. The host confesses.');
     });
 
     test('includes the system prompt and authors note sections when toggled on', async () => {
