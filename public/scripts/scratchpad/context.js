@@ -20,8 +20,9 @@ import { loadWorldInfo, selected_world_info, world_info, world_info_budget, worl
 import { currentLimits, readCurrentPreset } from './preset.js';
 import { checkCharacterCard } from './checks/card.js';
 import { checkLorebook } from './checks/lorebook.js';
+import { formatLorebookTrace, MAX_TRACE_CHARS, MAX_TRACE_LINES, traceLorebooks } from './checks/lorebook-trace.js';
 import { checkPreset } from './checks/preset.js';
-import { formatChecks, formatLorebookDetails, formatPresetValues } from './checks/index.js';
+import { formatChecks, formatLorebookDetails, formatPresetValues, MAX_DETAIL_CHARS, MAX_DETAIL_LINES } from './checks/index.js';
 import { sameSourceContext } from './source.js';
 import { homePersonaChoice } from './home-persona.js';
 import { shareScenarioNotes } from './scenario-note-references.js';
@@ -331,15 +332,23 @@ function loreActivation(entry) {
         selective: Boolean(entry.selective),
         selectiveLogic: Number(entry.selectiveLogic) || 0,
         probability: entry.probability === undefined || entry.probability === null ? 100 : Number(entry.probability),
+        useProbability: entry.useProbability !== false,
         order: entry.order ?? 100,
         position: entry.position ?? 0,
+        role: entry.role,
+        outletName: entry.outletName,
         depth: entry.depth,
         scanDepth: entry.scanDepth,
         caseSensitive: entry.caseSensitive,
         matchWholeWords: entry.matchWholeWords,
         excludeRecursion: Boolean(entry.excludeRecursion),
         preventRecursion: Boolean(entry.preventRecursion),
+        delayUntilRecursion: entry.delayUntilRecursion,
         group: entry.group,
+        groupOverride: Boolean(entry.groupOverride),
+        groupWeight: entry.groupWeight ?? 100,
+        useGroupScoring: entry.useGroupScoring,
+        ignoreBudget: Boolean(entry.ignoreBudget),
         disabled: Boolean(entry.disable),
         hiddenFromAgents: Boolean(entry.agentBlacklisted),
         sticky: entry.sticky,
@@ -935,12 +944,14 @@ export async function buildContext({ source, settings, pendingText = '', session
             results.push(checkPreset(presetSnapshot, { knownMacros: names, modelContext: presetSnapshot.connection?.modelContext || 0 }));
         }
         if (loreShared && lore.details?.books?.length) {
+            const sanitizedBooks = [];
             for (const detail of lore.details.books) {
                 const raw = detail[RAW_BOOK];
-                // Entries hidden from Agents never reach a check: findings quote titles and keys.
+                // Entries hidden from Agents never reach a check or the trace: findings and trace lines quote titles and keys.
                 const book = raw ? { entries: Object.fromEntries(raw.entries
                     .filter(entry => !entry.agentBlacklisted)
                     .map(entry => [entry.uid, entry.disable ? { ...entry, content: '' } : entry])) } : null;
+                if (book) sanitizedBooks.push({ name: detail.name, source: 'global', raw: book });
                 results.push(await checkLorebook({
                     name: detail.name,
                     book,
@@ -951,17 +962,76 @@ export async function buildContext({ source, settings, pendingText = '', session
                     defaults: { caseSensitive: detail.settings.caseSensitive, matchWholeWords: detail.settings.matchWholeWords },
                 }));
             }
-        }
-        if (results.length) {
+            if (results.length) {
+                const macroNote = !macroRegistryLoaded && results.some(item => item.kind === 'card' || item.kind === 'preset')
+                    ? '\n- info | Macro names | Unknown macro names were not checked because the macro list could not be loaded.'
+                    : '';
+                sections.push(`## Checks\n${formatChecks(results)}${macroNote}`);
+                problemsShared = true;
+            }
+            const firstSettings = lore.details.books[0]?.settings || bookSettings();
+            const chatMessages = general
+                ? [pendingText, sessionText].map(item => String(item ?? '').trim()).filter(Boolean)
+                : all
+                    .filter(item => !item.hidden)
+                    .map(item => (item.name ? `${item.name}: ${item.text}` : String(item.text ?? '')))
+                    .reverse();
+            const primaryCharacter = general ? null : (people[0] || null);
+            const trace = sanitizedBooks.length ? await traceLorebooks({
+                books: sanitizedBooks,
+                messages: chatMessages,
+                settings: {
+                    depth: firstSettings.scanDepth,
+                    ...(firstSettings.tokenBudget > 0 ? { budgetPercent: firstSettings.tokenBudget } : {}),
+                    budgetCap: firstSettings.tokenBudgetCap,
+                    recursive: firstSettings.recursive,
+                    maxRecursionSteps: firstSettings.maxRecursionSteps,
+                    caseSensitive: firstSettings.caseSensitive,
+                    matchWholeWords: firstSettings.matchWholeWords,
+                },
+                maxContext: currentLimits().contextSize || 4096,
+                globalScanData: general ? {} : {
+                    personaDescription: include.persona ? String(sourcePersonaDescription(source) ?? '') : '',
+                    characterDescription: include.card ? String(primaryCharacter?.description ?? '') : '',
+                    characterPersonality: include.card ? String(primaryCharacter?.personality ?? '') : '',
+                    characterDepthPrompt: include.card ? String(primaryCharacter?.data?.extensions?.depth_prompt?.prompt ?? '') : '',
+                    scenario: include.card ? String(primaryCharacter?.scenario ?? '') : '',
+                    creatorNotes: include.card ? String(primaryCharacter?.creator_notes ?? '') : '',
+                },
+                character: general
+                    ? { filename: '', tags: [], tagsAvailable: false }
+                    : { filename: String(primaryCharacter?.avatar ?? '').replace(/\.[^/.]+$/, ''), tags: [], tagsAvailable: false },
+                chatMetadata: source.kind === 'roleplay' ? chat_metadata : null,
+                chatLength: general ? 0 : chatMessages.length,
+                hasChatState: source.kind === 'roleplay',
+                hasChatMessages: !general,
+                expand: general ? value => String(value ?? '') : substituteSource,
+                tokenCount: estimateLocalTokens,
+            }) : null;
+            const hasTrace = Boolean(trace && (trace.activated.length || trace.notActivated.length));
+            const details = formatLorebookDetails(lore, {
+                traced: hasTrace,
+                maxLines: hasTrace ? MAX_DETAIL_LINES - MAX_TRACE_LINES : MAX_DETAIL_LINES,
+                maxChars: hasTrace ? MAX_DETAIL_CHARS - MAX_TRACE_CHARS : MAX_DETAIL_CHARS,
+            });
+            if (details) sections.push(`## Lorebook details\n${details}`);
+            if (hasTrace) {
+                const detailLines = details ? details.split('\n').length : 0;
+                const traceText = formatLorebookTrace(trace, {
+                    maxLines: Math.min(MAX_TRACE_LINES, Math.max(10, MAX_DETAIL_LINES - detailLines)),
+                    maxChars: Math.min(MAX_TRACE_CHARS, Math.max(1000, MAX_DETAIL_CHARS - details.length)),
+                });
+                if (traceText) {
+                    sections.push(`## Lorebook activation trace\n${traceText}`);
+                    problemsShared = true;
+                }
+            }
+        } else if (results.length) {
             const macroNote = !macroRegistryLoaded && results.some(item => item.kind === 'card' || item.kind === 'preset')
                 ? '\n- info | Macro names | Unknown macro names were not checked because the macro list could not be loaded.'
                 : '';
             sections.push(`## Checks\n${formatChecks(results)}${macroNote}`);
             problemsShared = true;
-        }
-        if (loreShared && lore.details?.books?.length) {
-            const details = formatLorebookDetails(lore);
-            if (details) sections.push(`## Lorebook details\n${details}`);
         }
         if (presetSnapshot) sections.push(`## Preset values (read only)\n${formatPresetValues(presetSnapshot)}`);
     }
@@ -1053,11 +1123,15 @@ async function loadKnownMacroNames() {
     }
 }
 
+function estimateLocalTokens(text) {
+    return Math.ceil(byteLength(String(text ?? '')) / 4);
+}
+
 export async function estimateTokens(text) {
     try {
         return await getTokenCountAsync(text);
     } catch {
-        return Math.ceil(new TextEncoder().encode(text).length / 4);
+        return estimateLocalTokens(text);
     }
 }
 

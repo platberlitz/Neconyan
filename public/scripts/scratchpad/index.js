@@ -143,6 +143,11 @@ function checkPrompts() {
             text: t`Check the shared lorebook for problems and explain how to fix them.`,
             include: { lore: true },
         });
+        prompts.push({
+            label: t`Why didn't an entry trigger?`,
+            text: t`Check the activation trace and explain why a lorebook entry did not trigger, and offer a fix if needed.`,
+            include: { lore: true },
+        });
     }
     return prompts;
 }
@@ -2032,17 +2037,36 @@ async function reviewChange(session, message, part, picture) {
     }
 }
 
+function settingDiff(settings, heading = true) {
+    const list = h('div', { class: 'scratchpad-preview-text scratchpad-setting-diff', role: 'group', 'data-i18n-ignore': '', tabindex: '0', 'aria-label': t`Activation settings` },
+        settings.map(row => h('div', { class: 'scratchpad-setting-row' },
+            h('strong', { text: `${row.label}: ` }),
+            h('span', { class: 'ica-transform-diff-part--del', text: row.before }),
+            h('span', { text: ' -> ' }),
+            h('span', { class: 'ica-transform-diff-part--ins', text: row.after }))));
+    return heading
+        ? h('div', { class: 'ica-transform-history' }, h('strong', { text: t`Activation settings` }), list)
+        : list;
+}
+
 function changeDiff(plan, editor = null) {
-    const diff = h('div', { class: 'ica-transform-diff', role: 'group', 'data-i18n-ignore': '', tabindex: '0', 'aria-label': t`Changes` });
-    const update = () => {
-        const edited = editor ? editor.value : plan.after;
-        // The shared renderer escapes every text segment before adding its fixed markup.
-        diff.innerHTML = buildTextDiffMarkup(plan.before, plan.getAfterText ? plan.getAfterText(edited) : edited);
-    };
-    update();
-    editor?.addEventListener('input', update);
-    return h('div', { class: 'ica-transform-history' },
-        h('strong', { text: t`Changes` }), diff);
+    const blocks = [];
+    if (Array.isArray(plan.settings) && plan.settings.length) {
+        blocks.push(settingDiff(plan.settings, !plan.hideTextDiff));
+    }
+    if (!plan.hideTextDiff) {
+        const diff = h('div', { class: 'ica-transform-diff', role: 'group', 'data-i18n-ignore': '', tabindex: '0', 'aria-label': t`Changes` });
+        const update = () => {
+            const edited = editor ? editor.value : plan.after;
+            // The shared renderer escapes every text segment before adding its fixed markup.
+            diff.innerHTML = buildTextDiffMarkup(plan.before, plan.getAfterText ? plan.getAfterText(edited) : edited);
+        };
+        update();
+        editor?.addEventListener('input', update);
+        blocks.push(h('div', { class: 'ica-transform-history' },
+            h('strong', { text: t`Changes` }), diff));
+    }
+    return blocks.length === 1 ? blocks[0] : h('div', { class: 'scratchpad-review-diffs' }, blocks);
 }
 
 /** Reads the live target of one suggestion and builds its review. Throws when it cannot be reviewed now. */
@@ -2066,6 +2090,13 @@ async function prepareReviewPlan(source, session, message, part, picture) {
             }
         },
         agentsShared: currentSettings().include.agents === true, authorsNoteShared: currentSettings().include.authorsNote === true, regexShared: currentSettings().include.regex === true, cssSnippetsShared: currentSettings().include.cssSnippets === true, dialogueColorsShared: currentSettings().include.dialogueColors === true, sharedLorebook: currentSettings().lorebook || '',
+        disabledEntriesListed: currentSettings().include.problems === true && (source.kind === 'general' ? Boolean(currentSettings().lorebook) : currentSettings().include.lore !== false),
+        lorebookGuard: () => {
+            requireScope(source, session.id);
+            if (source.kind === 'general' && (!currentSettings().lorebook || currentSettings().lorebook !== part.change.book)) {
+                throw new Error(t`Share that lorebook in Scratchpad before saving changes to it.`);
+            }
+        },
         mewmoryShared: currentSettings().include.mewmory === true, sessionId: session.id,
         creationGuard: () => requireScope(source, session.id), creatorKey: JSON.stringify([source.key, session.id, message.id, part.index]) });
     requireScope(source, session.id);
@@ -2207,7 +2238,7 @@ async function reviewAllChanges(session, message) {
                 if (!item.committed) {
                     // Earlier saves in this batch may have moved the target, so each change is read again first.
                     const fresh = await prepareReviewPlan(source, session, message, item.part);
-                    if (fresh.before !== item.plan.before || fresh.after !== item.plan.after) {
+                    if (fresh.before !== item.plan.before || fresh.after !== item.plan.after || fresh.snapshot !== item.plan.snapshot) {
                         throw new Error(t`This changed after you reviewed it, so it was not saved. Review it again on its own.`);
                     }
                     const outcome = await commitReviewPlan(source, session, item.part, fresh, item.editor ? item.editor.value : fresh.after);

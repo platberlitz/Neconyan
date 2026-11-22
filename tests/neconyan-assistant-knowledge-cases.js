@@ -61,6 +61,8 @@ export const refreshedKnowledgeCases = [
     ['How do I check my preset or lorebook for problems in Scratchpad?', 'scratchpad.problem-checks', 'Check my preset'],
     ['Do Scratchpad problem checks send my API key or proxy password?', 'scratchpad.problem-checks', 'never includes keys, tokens, passwords, proxy passwords'],
     ['In Scratchpad Problem checks, which lorebook entries were not shared and why?', 'scratchpad.problem-checks', 'no keyword matched'],
+    ['How can Scratchpad explain why a lorebook entry did not trigger?', 'scratchpad.lorebook-activation', '## Lorebook activation trace'],
+    ['Can a Scratchpad assistant change a lorebook entry\'s activation settings like probability or scan depth?', 'scratchpad.lorebook-activation', 'Activation settings as before -> after'],
     ['How does the Scratchpad dialogue colour change card work when an assistant suggests a new colour?', 'scratchpad.dialogue-color-changes', 'tick Dialogue Colors (off by default, also offered in General)'],
     ['How do I share saved Mewmory records with Scratchpad?', 'scratchpad.mewmory', 'tick Mewmory under Also share'],
     ['How do I fix a wrong Mewmory record from Scratchpad?', 'scratchpad.mewmory-corrections', 'Correct memory card'],
