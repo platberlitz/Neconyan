@@ -3,7 +3,7 @@
 // Deleting a Conversation DM (solo or group) must stick: on the server, in every open page, after a reload, and for automation.
 import { setTimeout as delay } from 'node:timers/promises';
 import { expect } from '@playwright/test';
-import { test, MODEL } from './neconyan-conversation-durable-fixture.js';
+import { test, MODEL, waitForAgentsFirstStart } from './neconyan-conversation-durable-fixture.js';
 
 test.describe.configure({ mode: 'serial' });
 test.skip(process.env.NECONYAN_CONVERSATION_TEST_DISPOSABLE !== '1', 'Requires the disposable fixture.');
@@ -553,6 +553,8 @@ test('a settings drawer open in another tab for the deleted DM closes without wr
     const gDel = await addGroup(account, 'Doomed', [A.avatar, C.avatar]);
     await serverMode(account);
     const first = await openRecorded(account, B.avatar);
+    // Settle the new account's startup saves before the other tab reads its settings revision.
+    await waitForAgentsFirstStart(first);
     const drawer = page => page.locator('#sb_conversation_settings_drawer');
 
     // Solo: the drawer in the second tab is open for A.
