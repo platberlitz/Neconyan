@@ -73,6 +73,8 @@ for (const device of ['desktop', 'phone']) {
             const pip = await card(account, 'Probe Pip', 'Real Book');
             const first = await account.open({ workspace: false });
             await select(first, pip);
+            await first.waitForTimeout(2500);
+            await expect(notices(first)).toHaveCount(0);
             await first.evaluate(async avatar => {
                 const world = await import('/scripts/world-info.js');
                 const core = await import('/script.js');
@@ -83,8 +85,6 @@ for (const device of ['desktop', 'phone']) {
                 if (!await core.saveSettings(0, { returnResult: true })) throw new Error('Settings save failed');
             }, pip);
             const id = await chatId(first);
-            await first.waitForTimeout(2000);
-            await expect(notices(first)).toHaveCount(0);
             await merge(account, pip, { world: 'Gone Main' });
             const before = await onDisk(account, pip, id);
             expect(before).toEqual({ main: 'Gone Main', extras: ['Gone Extra', 'Real Book'], chatBook: 'Gone Chat' });

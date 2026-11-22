@@ -5723,8 +5723,32 @@ export async function createNewWorldInfo(worldName, { interactive = false } = {}
 
 let lorebookLinkCheckTimer = null;
 
-/** Runs a moment after a chat or the Conversation workspace opens, once the other open-time events have settled. */
+/** What the open chat is, for the lorebook link check: a key that changes whenever another chat or Conversation opens, and its cards. */
+function describeOpenLorebookScope() {
+    const conversation = readConversationLorebooks();
+    if (conversation) return { chatKey: conversation.key, cards: [], conversation };
+    const context = getContext();
+    const group = context.groupId ? context.groups?.find(item => item.id == context.groupId) : null;
+    const cards = group
+        ? (group.members ?? [])
+            .filter(avatar => !group.disabled_members?.includes(avatar))
+            .map(avatar => characters.find(item => item.avatar === avatar))
+            .filter(Boolean)
+        : [characters[this_chid]].filter(Boolean);
+    const chatId = getCurrentChatId();
+    return { chatKey: chatId ? `${group ? `group:${group.id}` : (cards[0]?.avatar ?? '')}|${chatId}` : '', cards, conversation: null };
+}
+
+/**
+ * Runs a moment after a chat or the Conversation workspace opens, once the other open-time events have settled.
+ * The open itself is noted at once, so opening another chat and coming straight back still counts as a reopen.
+ */
 function scheduleLorebookLinkCheck() {
+    try {
+        noteLorebookChatOpened(describeOpenLorebookScope().chatKey);
+    } catch (error) {
+        console.warn('[WI] Could not note the chat that opened', error);
+    }
     clearTimeout(lorebookLinkCheckTimer);
     lorebookLinkCheckTimer = setTimeout(() => void checkOpenChatLorebookLinks(), 400);
 }
@@ -5736,28 +5760,12 @@ function scheduleLorebookLinkCheck() {
  */
 async function checkOpenChatLorebookLinks() {
     try {
-        const conversation = readConversationLorebooks();
-        let chatKey = '';
-        let links = [];
-        if (conversation) {
-            chatKey = conversation.key;
-            noteLorebookChatOpened(chatKey);
-            links = listLorebookLinks({ conversationOverrides: conversation.overrides });
-        } else {
-            const context = getContext();
-            const group = context.groupId ? context.groups?.find(item => item.id == context.groupId) : null;
-            const cards = group
-                ? (group.members ?? [])
-                    .filter(avatar => !group.disabled_members?.includes(avatar))
-                    .map(avatar => characters.find(item => item.avatar === avatar))
-                    .filter(Boolean)
-                : [characters[this_chid]].filter(Boolean);
-            const chatId = getCurrentChatId();
-            chatKey = chatId ? `${group ? `group:${group.id}` : (cards[0]?.avatar ?? '')}|${chatId}` : '';
-            noteLorebookChatOpened(chatKey);
-            if (!chatKey) return;
-            links = listLorebookLinks({ cards, charLore: world_info.charLore, chatLorebook: chat_metadata[METADATA_KEY] });
-        }
+        const { chatKey, cards, conversation } = describeOpenLorebookScope();
+        noteLorebookChatOpened(chatKey);
+        if (!chatKey) return;
+        const links = conversation
+            ? listLorebookLinks({ conversationOverrides: conversation.overrides })
+            : listLorebookLinks({ cards, charLore: world_info.charLore, chatLorebook: chat_metadata[METADATA_KEY] });
         const candidates = filterUntoldLorebookLinks(chatKey, Array.isArray(world_names) ? findMissingLorebookLinks(links, world_names) : links);
         if (!candidates.length) return;
 
