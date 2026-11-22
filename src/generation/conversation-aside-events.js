@@ -21,7 +21,7 @@ import { getCharacterData, getConversationSettings, normalizeConversationSetting
 import { normalizeConversationGroupRecord } from '../endpoints/conversation-groups.js';
 import { ensureConversationStore, getConversationThreadKey, readUserSettingsWithStatus } from '../endpoints/conversation-store.js';
 import { acceptConversationAside } from './conversation-jobs.js';
-import { readConversationAsideEventSource } from './conversation-roleplay-source.js';
+import { groupAsideHearers, readConversationAsideEventSource } from './conversation-roleplay-source.js';
 
 const MAX_EVENT_KEY = 256;
 const KINDS = new Set(['mention', 'rendered']);
@@ -180,20 +180,25 @@ export async function acceptConversationAsideEvent(request, body = {}) {
         return decide(request, event, [event.source.locator.avatar], 'reaction', refused);
     }
 
-    const members = eligibleMembers(request, activeMembers(saved.group), event.source.groupId, event.personaId);
-    if (!members.length) return refused('no_member');
+    const active = activeMembers(saved.group);
+    // Only members in the Roleplay scene who heard the line can talk about it.
+    const hearers = groupAsideHearers(saved.metadata, saved.messages, active, event.messageIndex);
+    const eligible = eligibleMembers(request, active, event.source.groupId, event.personaId);
+    const members = eligible.filter(avatar => hearers.includes(avatar));
+    if (!members.length) return refused(eligible.length ? 'not_heard' : 'no_member');
     if (event.kind === 'mention') {
         const named = [];
-        for (const avatar of members) {
+        for (const avatar of eligible) {
             const character = await getCharacterData(request, avatar, { allowOverride: false, requireExisting: true })
                 .catch(error => { if (error.status !== 404) throw error; return null; });
             if (!character?.name || !isCharacterMentionedInText(character, saved.source?.mes, [])) continue;
             named.push(avatar);
         }
-        if (!named.length) return refused('no_mention');
+        const heard = named.filter(avatar => members.includes(avatar));
+        if (!heard.length) return refused(named.length ? 'not_heard' : 'no_mention');
         // The first mentioned member in the group's own order answers, so one
         // event can never turn into a burst of paid calls.
-        return decide(request, event, [named[0]], 'mention', refused);
+        return decide(request, event, [heard[0]], 'mention', refused);
     }
 
     if (draw('chance', 100) >= RANDOM_CHANCE_PERCENT) return refused('sampled_out');

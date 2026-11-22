@@ -8,6 +8,7 @@ import { roleplayAccountBase, roleplayLease, saveRoleplayAccount, withRoleplayAc
 import { readRoleplayChatLocked, readRoleplayEntityLocked } from './roleplay-source.js';
 import { buildConversationRoleplayContext, formatPromptText } from '../../public/scripts/neconyan-conversation/shared-helpers.js';
 import { buildGroupAsideDirective, buildRoleplayDMDirective, getRoleplayGroupRevision, getRoleplaySourceMessageRevision } from '../../public/scripts/neconyan-conversation/roleplay-source.js';
+import { canGroupMemberSee, readGroupScene, readGroupSceneRules } from '../../public/scripts/group-chat-visibility.js';
 
 const GROUP_ASIDE_CONTEXT_LIMIT = 8;
 const GROUP_ASIDE_COOLDOWN_MS = 8 * 60 * 1000;
@@ -156,12 +157,27 @@ export function getConversationGroupAsideLastSent(store, key) {
     return Number.isFinite(value) && value > 0 ? value : 0;
 }
 
-function buildGroupContext(messages, endIndex) {
+/**
+ * Members who may send an aside about a group line: in the Roleplay scene now,
+ * and able to hear that line under the scene's rules.
+ * @param {object} metadata The saved chat's metadata
+ * @param {object[]} messages Chat messages, without the saved header
+ */
+export function groupAsideHearers(metadata, messages, members, messageIndex) {
+    const away = readGroupScene(metadata, members).away;
+    const rules = readGroupSceneRules(metadata, messages);
+    return members.filter(avatar => !away.includes(avatar) && canGroupMemberSee(messages[messageIndex], avatar, rules));
+}
+
+/** The last lines up to the aside's line that the member heard, so an aside never repeats what they missed. */
+function buildGroupContext(messages, endIndex, heard = () => true) {
     const end = Math.min(messages.length, Math.max(0, Number(endIndex) + 1));
-    const start = Math.max(0, end - GROUP_ASIDE_CONTEXT_LIMIT);
+    const recent = [];
+    for (let index = end - 1; index >= 0 && recent.length < GROUP_ASIDE_CONTEXT_LIMIT; index -= 1) {
+        if (heard(messages[index])) recent.unshift(messages[index]);
+    }
     const lines = [];
-    for (let index = start; index < end; index += 1) {
-        const message = messages[index];
+    for (const message of recent) {
         const text = String(message?.mes || '').trim();
         if (!text) {
             continue;
@@ -259,12 +275,13 @@ export function readConversationAsideEventSource(request, event) {
     if (event.kind === 'mention' && !(source?.is_user === true || source?.role === 'user')) {
         throw fail('A mention aside requires a user-authored Roleplay message.', 409, 'roleplay_mention_not_user');
     }
-    if (!locator.group) return { locator, messages, instanceId: saved.instanceId, group: null, source };
+    const metadata = saved.records[0]?.chat_metadata;
+    if (!locator.group) return { locator, messages, metadata, instanceId: saved.instanceId, group: null, source };
     const group = saved.group ?? readRoleplayGroup(directories, event.source.groupId);
     if (getRoleplayGroupRevision(group) !== event.groupRevision) {
         throw fail('The source Roleplay group changed after this aside was captured.', 409, 'roleplay_group_revision_mismatch');
     }
-    return { locator, messages, instanceId: saved.instanceId, group, source };
+    return { locator, messages, metadata, instanceId: saved.instanceId, group, source };
 }
 
 export function captureConversationRoleplaySource(request, submission, { characterName = 'Character', userName = 'User', accountLease = null } = {}) {
@@ -318,7 +335,13 @@ export function captureConversationRoleplaySource(request, submission, { charact
         if (!members.includes(submission.target.avatar) || disabled.includes(submission.target.avatar)) {
             throw fail('The recipient is no longer an active member of the source group.', 409, 'roleplay_member_unavailable');
         }
-        const groupContext = buildGroupContext(messages, submission.messageIndex);
+        // A member who is away, or who did not hear the line, has nothing to say about it.
+        const metadata = saved.records[0]?.chat_metadata;
+        if (!groupAsideHearers(metadata, messages, [submission.target.avatar], submission.messageIndex).length) {
+            throw fail('The recipient did not hear that line in the Roleplay scene.', 409, 'roleplay_member_unheard');
+        }
+        const rules = readGroupSceneRules(metadata, messages);
+        const groupContext = buildGroupContext(messages, submission.messageIndex, message => canGroupMemberSee(message, submission.target.avatar, rules));
         if (!groupContext) {
             throw fail('The saved Roleplay chat has no usable context.', 409, 'roleplay_chat_unreadable');
         }

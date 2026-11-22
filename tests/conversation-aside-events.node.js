@@ -59,9 +59,9 @@ function writeCards(directories) {
     }
 }
 
-function writeChat(filePath, messages) {
+function writeChat(filePath, messages, metadata = {}) {
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, [JSON.stringify({ chat_metadata: {} }), ...messages.map(message => JSON.stringify(message))].join('\n') + '\n');
+    fs.writeFileSync(filePath, [JSON.stringify({ chat_metadata: metadata }), ...messages.map(message => JSON.stringify(message))].join('\n') + '\n');
 }
 
 function readStore(directories) {
@@ -379,4 +379,63 @@ test('an ineligible member costs nothing: the server reports the decision instea
     assert.equal(noBranch.accepted, false);
     assert.equal(noBranch.skipped, 'ineligible');
     assert.equal(noBranch.jobId, null);
+});
+
+const { captureConversationRoleplaySource } = await import('../src/generation/conversation-roleplay-source.js');
+
+/** A group chat whose saved Roleplay scene sets who heard each line. */
+function sceneGroup(directories, id, messages, scene = {}) {
+    const group = { id, name: 'Crew', members: ['nova.png', 'lyra.png'], disabled_members: [], chats: ['crew'] };
+    fs.writeFileSync(path.join(directories.groups, `${id}.json`), JSON.stringify(group));
+    writeChat(path.join(directories.groupChats, 'crew.jsonl'), messages, { group_scene: { away: [], location: '', whisper_to: [], sees_all: [], ...scene } });
+    return group;
+}
+
+const both = { present: ['nova.png', 'lyra.png'], whisper_to: [] };
+const novaOnly = { present: ['nova.png'], whisper_to: [] };
+const mention = audience => [{ id: 'm0', role: 'user', name: 'User', mes: '@Lyra are you awake?', extra: { group_scene: audience } }];
+
+test('a group aside goes only to a member who is in the Roleplay scene and heard the line', async () => {
+    for (const [scene, audience] of [[{ away: ['lyra.png'] }, both], [{}, novaOnly]]) {
+        const { directories, request } = setup();
+        const messages = mention(audience);
+        const group = sceneGroup(directories, 'g10', messages, scene);
+        const decided = await acceptConversationAsideEvent(request, groupEvent(directories, { group, messages }));
+        assert.deepEqual({ accepted: decided.accepted, skipped: decided.skipped, jobId: decided.jobId }, { accepted: false, skipped: 'not_heard', jobId: null });
+        assert.equal(listJobs(directories).length, 0);
+    }
+
+    // Lines a member sees everything for, and lines every member hears, still reach them.
+    for (const [scene, audience] of [[{ sees_all: ['lyra.png'] }, novaOnly], [{}, { ...novaOnly, everyone: true }]]) {
+        const { directories, request } = setup();
+        const messages = mention(audience);
+        const group = sceneGroup(directories, 'g11', messages, scene);
+        const decided = await acceptConversationAsideEvent(request, groupEvent(directories, { group, messages }));
+        assert.equal(decided.accepted, true);
+        assert.equal(decided.avatar, 'lyra.png');
+    }
+});
+
+test('a group aside reads only the lines its member heard, and stops once they are away', async () => {
+    const { directories, request } = setup();
+    const messages = [
+        { id: 'm0', role: 'user', name: 'User', mes: 'The bridge creaks.', extra: { group_scene: both } },
+        { id: 'm1', role: 'character', name: 'Nova', mes: 'The code is marigold.', original_avatar: 'nova.png', extra: { group_scene: novaOnly } },
+        { id: 'm2', role: 'user', name: 'User', mes: '@Lyra still with us?', extra: { group_scene: both } },
+    ];
+    const group = sceneGroup(directories, 'g12', messages);
+    const decided = await acceptConversationAsideEvent(request, groupEvent(directories, { group, messages, messageIndex: 2 }));
+    assert.equal(decided.avatar, 'lyra.png');
+    const submission = getJob(directories, decided.jobId).intent.automation.roleplaySource;
+
+    const captured = captureConversationRoleplaySource(request, submission, { characterName: 'Lyra' });
+    assert.match(captured.directive, /The bridge creaks\./);
+    assert.match(captured.directive, /@Lyra still with us\?/);
+    assert.doesNotMatch(captured.directive, /marigold/);
+
+    sceneGroup(directories, 'g12', messages, { away: ['lyra.png'] });
+    const later = { ...submission };
+    delete later.instanceId;
+    assert.throws(() => captureConversationRoleplaySource(request, later, { characterName: 'Lyra' }),
+        error => error.status === 409 && error.apiError === 'roleplay_member_unheard');
 });
