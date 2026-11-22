@@ -309,6 +309,10 @@ export function syncSources(state, messages, context = [], { trackerAgentIds = [
         });
         state.sources[sourceId].identity = String(message.send_date ?? 'undated');
         if (message.mewmory_id) state.sources[sourceId].messageId = message.mewmory_id;
+        // Who heard a group line sits beside its revisions, so changing it never re-reads the message.
+        const audience = message.extra?.group_scene;
+        if (audience && typeof audience === 'object') state.sources[sourceId].audience = structuredClone(audience);
+        else delete state.sources[sourceId].audience;
         return ref;
     });
     const timeline = [...inherited, ...local];
@@ -404,8 +408,10 @@ export function purgeSources(state, sourceIds) {
 }
 
 export function sourceFingerprint(state) {
-    return hash([state.storyId, state.branchId,
-        [...state.timeline, ...state.contextSources].map(ref => [ref, sourceAt(state, ref)?.hash]), state.excludedSources]);
+    const value = [state.storyId, state.branchId,
+        [...state.timeline, ...state.contextSources].map(ref => [ref, sourceAt(state, ref)?.hash]), state.excludedSources];
+    const audiences = state.timeline.flatMap(ref => state.sources[ref.id]?.audience ? [[ref.id, state.sources[ref.id].audience]] : []);
+    return hash(audiences.length ? [...value, audiences] : value);
 }
 
 export function forkState(parent, locator, through, messages) {

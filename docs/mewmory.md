@@ -130,7 +130,7 @@ If the archive is missing or damaged, the selected chat offers recovery from an 
 | Final request | The generation path rechecks source/record/configuration identity and the final prompt’s capacity before sending. |
 | Inspection | A native shell tab loads public/scripts/mewmory/ui.js; authenticated /api/mewmory/* routes resolve user ownership and chat scope. |
 
-Conversation Mode’s independent DM store is not the Roleplay JSONL pipeline. Its existing summary feature is unchanged. Mewmory does not claim hard knowledge isolation for a multi-character RP writer that receives other secrets elsewhere in its normal prompt.
+Conversation Mode’s independent DM store is not the Roleplay JSONL pipeline. Its existing summary feature is unchanged. Mewmory does not claim hard knowledge isolation for a multi-character RP writer that receives other secrets elsewhere in its normal prompt. In a group Roleplay chat, a speaker who missed a line recalls only memories built from lines they heard. Until memories are written per audience, everything written after the first line a speaker missed is held back from them, and those messages stay in their prompt instead of being replaced by memory. That speaker gets no background AI pick, so missed lines never reach the selector. Changing who heard a message updates recall without re-reading it.
 
 ## Validation and evaluation
 

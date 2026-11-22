@@ -22,6 +22,7 @@ const { forcedMatches, validateSelection, recall, recallInBackground } = await i
 const { expandNeighbours, hybridCandidates, lexicalSearch, searchDocuments, splitPassages, updateIndex } = await import('../src/mewmory/search.js');
 const { loadCurrentState } = await import('../src/mewmory/sources.js');
 const { prepareMewmoryPrompt } = await import('../src/mewmory/prepare.js');
+const { viewerState } = await import('../src/mewmory/viewers.js');
 const { branchParentLocator, buildBranchMemoryState, chatPath, listStories, mutateState, normalizeLocator, readChatShared, readState, renameChatMemory, renameCharacterMemory, renameWorldMemory, removeChatMemory, removeSourceMemory, statePath, writeJson } = await import('../src/mewmory/store.js');
 const { ensureMewmoryMessageIds } = await import('../public/scripts/mewmory/message-identity.js');
 const { getCounter, getTokenizerModel } = await import('../src/mewmory/tokens.js');
@@ -295,6 +296,61 @@ test('ranked recall works without a selector and local replies never dispatch mo
     const local = await recall(directories, locator, { local: true, query: 'gift' }, dependencies);
     assert.ok(local.memoryText.length > 0);
     assert.equal(local.inspection.status, 'local');
+});
+
+test('a group speaker recalls only memories from lines they heard, and changing who heard re-reads nothing', async t => {
+    const heardBy = present => fixture.messages.map((message, index) => index === 2
+        ? { ...structuredClone(message), extra: { ...message.extra, group_scene: { present, whisper_to: [] } } }
+        : structuredClone(message));
+    const { directories, write } = disk(t, heardBy(['Mara.png']));
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; event(state); });
+    const config = defaultConfig();
+    config.writerTokenizer = 'cl100k_base';
+    saveConfig(directories, config);
+    const dependencies = { call: async () => assert.fail('No selector is enabled'), embedFn: async () => assert.fail('No embeddings are enabled'), scheduleBackground: false };
+    const ask = async viewers => {
+        const state = await loadCurrentState(directories, locator);
+        return recall(directories, locator, { local: true, query: 'gift', state, viewer: viewerState(state, viewers) }, dependencies);
+    };
+    assert.match((await ask(['Mara.png'])).memoryText, /Mara accepted the gift/);
+    assert.equal(viewerState(await loadCurrentState(directories, locator), ['Mara.png']), null);
+    const missed = await ask(['Kit.png']);
+    assert.doesNotMatch(missed.memoryText, /Mara accepted the gift/);
+    assert.ok(missed.inspection.viewerKey);
+    assert.doesNotMatch((await ask(['Mara.png', 'Kit.png'])).memoryText, /Mara accepted the gift/, 'a memory must be heard by every speaker it is written for');
+
+    const before = await loadCurrentState(directories, locator);
+    write(heardBy(['Mara.png', 'Kit.png']));
+    const after = await loadCurrentState(directories, locator);
+    const ref = after.timeline[2];
+    assert.equal(ref.revision, before.timeline[2].revision, 'who heard a line is not part of its text, so it is not re-read');
+    assert.deepEqual(after.coverage, before.coverage);
+    assert.deepEqual(after.sources[ref.id].audience, { present: ['Mara.png', 'Kit.png'], whisper_to: [] });
+    assert.notEqual(generationFingerprint(after, readConfig(directories)), generationFingerprint(before, readConfig(directories)));
+    assert.match((await ask(['Kit.png'])).memoryText, /Mara accepted the gift/);
+});
+
+test('preparing a group reply checks its speakers and keeps lines whose memories they cannot use', async t => {
+    const messages = fixture.messages.map((message, index) => index === 2
+        ? { ...structuredClone(message), extra: { ...message.extra, group_scene: { present: ['Mara.png'], whisper_to: [] } } }
+        : structuredClone(message));
+    const { directories } = disk(t, messages);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; event(state); });
+    const config = defaultConfig();
+    config.writerTokenizer = 'cl100k_base';
+    saveConfig(directories, config);
+    const history = messages.map((message, index) => ({ index, text: message.name + ': ' + message.mes }));
+    const options = { scheduleBackground: false };
+    await assert.rejects(prepareMewmoryPrompt(directories, { locator, history, viewers: [] }, null, options), /valid group speakers/);
+    await assert.rejects(prepareMewmoryPrompt(directories, { locator, history, viewers: 'Kit.png' }, null, options), /valid group speakers/);
+    const everyone = await prepareMewmoryPrompt(directories, { locator, history }, null, options);
+    assert.match(everyone.memoryText, /Mara accepted the gift/);
+    const kit = await prepareMewmoryPrompt(directories, { locator, history: history.filter(item => item.index !== 2), viewers: ['Kit.png'] }, null, options);
+    assert.equal(kit.enabled, true);
+    assert.doesNotMatch(kit.memoryText, /Mara accepted the gift/);
+    assert.ok(kit.excludedIndices.every(index => index < 2), 'lines after the one Kit missed stay in his prompt');
 });
 
 test('meaning recall falls back without paying for a query when no matching documents can be embedded', async t => {

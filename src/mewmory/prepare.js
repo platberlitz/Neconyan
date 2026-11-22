@@ -7,6 +7,8 @@ import { recall } from './retrieval.js';
 import { loadCurrentState } from './sources.js';
 import { memoryEnabled, mutateState, normalizeLocator, readChat } from './store.js';
 import { getCounter } from './tokens.js';
+import { readViewers, viewerState } from './viewers.js';
+import { readGroupSceneRules } from '../../public/scripts/group-chat-visibility.js';
 import { messageHistoryPlan } from '../../public/scripts/mewmory/history-policy.js';
 import { wrapMewmoryContext } from '../../public/scripts/mewmory/prompt-proof.js';
 
@@ -29,7 +31,10 @@ export async function prepareMewmoryPrompt(directories, body, signal, {
     const config = readConfiguration(directories);
     if (body.mewmoryCatchUpOverride !== undefined && body.mewmoryCatchUpOverride !== 'reply') fail('Choose a valid memory catch-up option.');
     const snapshot = generationFingerprint(state, config);
+    const viewers = readViewers(body.viewers, fail);
     const source = readSource(directories, locator);
+    // A group speaker recalls only memories built from lines they heard.
+    const view = viewerState(state, viewers, readGroupSceneRules(source.metadata));
     if (body.integrity && source.metadata.integrity !== body.integrity) {
         fail('This chat changed in another tab. Reload the chat, then send again.', 409);
     }
@@ -67,6 +72,7 @@ export async function prepareMewmoryPrompt(directories, body, signal, {
     // author chooses to re-read it.
     const isPreserved = index => {
         const ref = state.timeline[index + offset];
+        if (view && index + offset > view.recordAsOf) return false;
         return Boolean(ref && (!sourceEligible(state, ref) || sourceRead(state.checkpoints, ref)));
     };
     if (config.excludeHistory && config.historyMode === 'messages') {
@@ -144,7 +150,7 @@ export async function prepareMewmoryPrompt(directories, body, signal, {
     // and skip recall's pre-commit source sync because the final check below reads the chat again.
     const context = await recall(directories, locator, {
         asOf, tokenizer: body.tokenizer || {}, signal, local: true, retained, marker,
-        state, precommitSync: false, previewHistory: historyUsage, previewId,
+        state, precommitSync: false, previewHistory: historyUsage, previewId, viewer: view,
     }, { loadState, mutate, scheduleBackground, readConfiguration });
     if (!context.enabled) fail('Mewmory was turned off while this reply was being prepared. Retry this reply.', 409);
     if (!context.suppression) fail('Mewmory could not finish preparing its memory context. Retry this reply.', 409);
