@@ -98,6 +98,31 @@ export function batchState(state, audience) {
     return viewerState(state, listeners)?.state ?? null;
 }
 
+/**
+ * The memory every group member may read, for things that reach all of them at once, such as a
+ * lorebook or a memory shared with other chats. Outside a group chat this is the whole story.
+ * @param {object} state Mewmory state
+ * @returns {object} Narrowed state
+ */
+export function everyoneState(state) {
+    const members = state.locator?.group ? groupMembers(state).map(member => member.avatar) : [];
+    return members.length ? viewerState(state, members)?.state ?? state : state;
+}
+
+/**
+ * Whether a saved line must stay in the chat because a member who heard it cannot read the
+ * memory that would replace it.
+ * @param {object} state Mewmory state
+ * @param {{ seesAll?: string[] }} [rules] The chat's scene rules
+ * @returns {(ref: object) => boolean} Check for one timeline line
+ */
+export function groupLineHeld(state, rules = {}) {
+    const members = state.locator?.group ? groupMembers(state).map(member => member.avatar) : [];
+    const views = members.map(avatar => [avatar, viewerState(state, [avatar], rules)]).filter(([, view]) => view?.heldRefs.size);
+    if (!views.length) return () => false;
+    return ref => views.some(([avatar, view]) => view.heldRefs.has(ref.id) && canHear(sourceAudience(state, ref), avatar, rules));
+}
+
 /** Whether a group member heard a batch, by the entity a memory names them with. */
 export function memberHeard(state, audience, entityId) {
     const member = groupMembers(state).find(entry => entry.entityId === entityId);

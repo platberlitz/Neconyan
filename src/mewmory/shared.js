@@ -2,6 +2,7 @@ import { withChatFileLocks } from '../chat-file-lock.js';
 import { fail, hash, putRecord, sourceAt, sourceEligible, validateRecord } from './core.js';
 import { readSharedMemories, readStateShared, statePath, updateSharedMemories } from './store.js';
 import { brief, namer, usable } from './story.js';
+import { everyoneState } from './viewers.js';
 
 export const SHARE_KINDS = ['state', 'event', 'relationship', 'knowledge', 'commitment'];
 const BRING_KINDS = ['event', 'relationship', 'commitment'];
@@ -25,7 +26,11 @@ export function shareRecords(directories, state, ids, { chat = '', now = Date.no
     const nameOf = namer(state);
     const records = usable(state).filter(record => wanted.has(record.id) && SHARE_KINDS.includes(record.kind));
     if (!records.length) fail('Only facts, events, relationships, knowledge and promises can be shared.', 400);
-    const shared = records.map(record => ({
+    // Shared memories reach every character of this chat, so a group shares only what all of them heard.
+    const open = new Set(usable(everyoneState(state)).map(record => record.id + '@' + record.version));
+    const sharable = records.filter(record => open.has(record.id + '@' + record.version));
+    if (!sharable.length) fail('Those memories come from lines some members of this group did not hear, so they stay in this chat.', 409);
+    const shared = sharable.map(record => ({
         id: hash([state.storyId, record.id].join('\u0000')).slice(0, 24),
         recordId: record.id, storyId: state.storyId, chat: String(chat).slice(0, 200),
         characterIds: characters.map(character => character.id), characterNames: characters.map(character => character.name),
