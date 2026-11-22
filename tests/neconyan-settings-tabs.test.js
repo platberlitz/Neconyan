@@ -63,7 +63,7 @@ describe('Neconyan settings theme drawers', () => {
         for (const drawerId of drawerIds) {
             expect(shellTabsSource).toContain(`'${drawerId}'`);
         }
-        expect(shellTabsSource).toContain('content: [frontendIconSettingsGroup, bottomBarSliderGroup],');
+        expect(shellTabsSource).toContain('content: [frontendIconSettingsGroup, bottomBarSliderGroup, createSleeperCoatSettingsGroup()],');
         expect(shellTabsSource).toContain('content: createPanelLookControls(),');
         expect(shellTabsSource).not.toContain('sb-frontend-icon-drawer');
         expect(shellTabsSource).not.toContain('sb-background-visibility-drawer');

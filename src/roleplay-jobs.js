@@ -215,8 +215,8 @@ function effectRecords(records, source, effect, output, request, job, directorie
     }
     const info = originalSwipeInfo(message, swipes, selected);
     const extra = { ...outputExtra };
-    for (const key of ['gen_id', 'off_record']) {
-        if (message.extra?.[key] !== undefined && extra[key] === undefined) extra[key] = message.extra[key];
+    for (const key of ['gen_id', 'off_record', 'group_scene']) {
+        if (message.extra?.[key] !== undefined && extra[key] === undefined) extra[key] = structuredClone(message.extra[key]);
     }
     message.swipes = [...swipes, output.text];
     message.swipe_info = [...info, { ...timing, extra }];

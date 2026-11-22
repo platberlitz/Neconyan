@@ -23,7 +23,7 @@ prompt_order: [{ character_id: 100001, order: [{ identifier: 'main', enabled: tr
 
 function prepared(t, { text = 'Everyone, please answer.', forcedAvatars, disabled = [], strategy = 1,
     autoSwipe = false, autoContinue = false, pathfinder = false, bundledMacros = null, browserMacros = null,
-    description = null, history = 0 } = {}) {
+    description = null, history = 0, scene = null } = {}) {
     const f = fixture(t, true);
     const dirs = f.scope.directories;
     if (description !== null) {
@@ -37,6 +37,7 @@ function prepared(t, { text = 'Everyone, please answer.', forcedAvatars, disable
         })));
     }
     f.records.push({ name: 'User', is_user: true, mes: text, extra: {} });
+    scene?.(f.records);
     fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
     fs.writeFileSync(path.join(dirs.characters, 'Other.png'), writeCard(png,
         JSON.stringify({ name: 'Other', description: 'Second member', data: { name: 'Other', description: 'Second member' } })));
@@ -137,6 +138,50 @@ test('saved whole-group turn completes speakers in order and retains each protec
     assert.equal(f.records()[2].mes, 'Answer');
     assert.equal(count.value, 2);
     assert.deepEqual(await runRoleplayWorkflowJob(f.context()), completed);
+});
+
+test('server group replies leave out lines a speaker did not hear and record who heard each reply', async t => {
+    const f = prepared(t, { scene: records => {
+        records[0].chat_metadata = { group_scene: { away: [], location: '', whisper_to: [] } };
+        records[1].mes = 'Only Nova heard the marigold code.';
+        records[1].extra = { group_scene: { present: ['Nova.png'], whisper_to: [] } };
+    } });
+    assert.deepEqual(f.request.group.speakers.map(speaker => speaker.audience), [
+        { present: ['Nova.png', 'Other.png'], whisper_to: [] },
+        { present: ['Nova.png', 'Other.png'], whisper_to: [] },
+    ]);
+    const promptOf = options => options.messages.map(message => String(message.content)).join('\n');
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    const count = { value: 0 };
+    await f.completeCandidate(0, { avatar: 'Nova.png', name: 'Nova', modelOverride: '', reply: 'Nova replies.',
+        check: options => assert.match(promptOf(options), /marigold/) }, count);
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    await f.completeCandidate(1, { avatar: 'Other.png', name: 'Other', modelOverride: 'fixture-override', reply: 'Other replies.',
+        check: options => {
+            const prompt = promptOf(options);
+            assert.doesNotMatch(prompt, /marigold/);
+            assert.match(prompt, /Nova replies\./);
+        } }, count);
+    const completed = await runRoleplayWorkflowJob(f.context());
+    assert.equal(completed.result.status, 'completed');
+    const saved = f.records();
+    assert.equal(saved[1].mes, 'Only Nova heard the marigold code.');
+    assert.deepEqual(saved.slice(4).map(record => record.extra.group_scene), [
+        { present: ['Nova.png', 'Other.png'], whisper_to: [] },
+        { present: ['Nova.png', 'Other.png'], whisper_to: [] },
+    ]);
+});
+
+test('members marked away in the saved scene are not picked for a server group reply', async t => {
+    const away = records => {
+        records[0].chat_metadata = { group_scene: { away: ['Other.png'], location: '', whisper_to: [] } };
+    };
+    const f = prepared(t, { scene: away });
+    assert.deepEqual(f.request.group.speakers.map(speaker => speaker.avatar), ['Nova.png']);
+    assert.deepEqual(f.request.group.speakers[0].audience, { present: ['Nova.png'], whisper_to: [] });
+    assert.throws(() => prepared(t, { scene: away, forcedAvatars: ['Nova.png', 'Other.png'] }),
+        /not distinct enabled members/);
 });
 
 test('group speakers keep their owned identities while clearing older history between speakers', async t => {

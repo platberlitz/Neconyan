@@ -171,7 +171,7 @@ function messageSleeper(account) {
         src: `/img/neconyan/sleeping-${isUser ? 'tiger-right' : 'calico-left'}.webp`,
         width: 384, height: 308, alt: '', role: 'button', tabindex: '0', title: 'Pet sleeping cat', 'aria-label': 'Pet sleeping cat', draggable: 'false',
     } });
-    // Neconyan applies the coats picked in Shell Style; elsewhere the default cats stay.
+    // Neconyan applies the coats picked in Interface; elsewhere the default cats stay.
     globalThis.NeconyanSleepers?.dress?.(node, isUser);
     return node;
 }

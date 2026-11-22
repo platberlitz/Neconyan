@@ -31,6 +31,7 @@ import { captureCompanionCapacity } from './companion-capacity.js';
 import { captureRoleplayToolBindings } from './roleplay-tool-bindings.js';
 import { activeRoleplayAuthorNote, isWorldInfoAuthorNoteActive, selectRoleplayPromptRecords, savedRoleplayMacroSnapshot } from './roleplay-prompt.js';
 import { evaluateCharacterPurrks } from '../purrks.js';
+import { blankUnheardGroupRecords } from './roleplay-group-scene.js';
 
 /**
  * Adds active Purrk text after a card field. Without Purrks the field stays exactly as saved,
@@ -325,7 +326,7 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
     return withRoleplayAccount(base, account, lease => {
         const saved = assertRoleplaySourceLocked(lease, source);
         const promptRecords = serverPrompt ? selectRoleplayPromptRecords(saved.records, source,
-            promptEffect ?? { normal: 'append', regenerate: 'replace', swipe: 'swipe', continue: 'continue' }[trigger]) : saved.records;
+            promptEffect ?? { normal: 'append', regenerate: 'replace', swipe: 'swipe', continue: 'continue' }[trigger], avatar) : saved.records;
         if (!source.dependencies?.some(dependency => dependency.kind === 'character' && dependency.locator.avatar === avatar)) {
             throw roleplayError('ROLEPLAY_INVALID', 'World Info must use a character in the accepted Roleplay source.', 409);
         }
@@ -444,7 +445,7 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
                             const card = member === avatar ? character : readRoleplayEntityLocked(lease, 'character', member);
                             const memberPurrks = evaluateCharacterPurrks(card.data?.data ?? card.data, {
                                 chatMetadata: saved.records[0].chat_metadata,
-                                messages: promptRecords.slice(1),
+                                messages: blankUnheardGroupRecords(promptRecords, source, member).slice(1),
                                 characterKey: member,
                             });
                             const memberBaseDepth = card.data?.data?.extensions?.depth_prompt?.prompt
@@ -515,7 +516,7 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
                 suffix: group.generation_mode_join_suffix ?? '', members: members.map(member => {
                     const memberPurrks = evaluateCharacterPurrks(member.card.data ?? member.card, {
                         chatMetadata: saved.records[0].chat_metadata,
-                        messages: promptRecords.slice(1),
+                        messages: blankUnheardGroupRecords(promptRecords, source, member.avatar).slice(1),
                         characterKey: member.avatar,
                     });
                     const baseDesc = member.card.data?.description ?? member.card.description ?? '';

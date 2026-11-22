@@ -70,6 +70,8 @@
 - PR #846 (2026-11-21) `perf(models): skip scroll work while the model list is hidden`
 - PR #847 (2026-11-21) `feat(groups): show and edit who heard a message`
 - PR #848 (2026-11-21) `feat(groups): add scene commands, macros and SillyTavern import`
+- PR #849 (2026-11-21) `fix(settings): move the cat picker under interface`
+- PR #850 (2026-11-21) `feat(server): apply scene rules to server group replies`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
