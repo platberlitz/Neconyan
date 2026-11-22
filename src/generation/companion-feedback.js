@@ -1,12 +1,9 @@
-import { getActiveCompanionResults, getPlotCompassContentWithChoice, getPlotCompassOpeningNote, isDiceRollerAgent, isEmptyOutputSentinel, isPlotCompassAgent, normalizeCompanionMacroSyntax, selectCompanionChatHistory } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
+import { getActiveCompanionResults, getPlotCompassChoiceDirective, getPlotCompassContentWithChoice, getPlotCompassOpeningNote, isDiceRollerAgent, isEmptyOutputSentinel, isPlotCompassAgent, normalizeCompanionMacroSyntax, selectCompanionChatHistory } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
 import { buildDiceDirective, findDiceRollsForGeneration } from '../../public/scripts/extensions/in-chat-agents/companion/dice.js';
 import { buildTrackerEchoGuard, getActiveCompanionTrackerLineKeys, getActiveInlineTrackerLineKeys, getActiveInlineTrackerTags, getOwnedCompanionTrackerLineKeys, getOwnedCompanionTrackerShape, getVisibleCompanionTrackerLineKeys } from '../../public/scripts/extensions/in-chat-agents/companion/companion-tracker-context.js';
 import { isNativeCompanion } from './agent-definition.js';
 
 const OUTPUT_LINE_KEY_SCAN_DEPTH = 12;
-
-// The newest Plot Compass note carries the user's picked direction as an instruction for this reply.
-const feedbackNoteText = (agent, note, newest) => isPlotCompassAgent(agent) ? getPlotCompassContentWithChoice(note, { instruction: newest }) : note.content;
 
 export function resolveSavedCompanionText(content, host, snapshot, environment) {
     const names = environment.names;
@@ -61,18 +58,39 @@ export function prepareCompanionFeedback(active, historyAgents, records, snapsho
             position: agent.injection.position, depth: agent.injection.depth, role: ['system', 'user', 'assistant'][agent.injection.role], scan: agent.injection.scan });
     }
     for (const agent of active) {
-        if (!isNativeCompanion(agent) || hidden.has(agent.id) || !agent.companion.feedback.enabled) continue;
+        if (!isNativeCompanion(agent) || hidden.has(agent.id)) continue;
+        const plotCompass = isPlotCompassAgent(agent), enabled = agent.companion.feedback.enabled;
+        if (!enabled && !plotCompass) continue;
+        const opening = plotCompass && getPlotCompassOpeningNote(records[0]?.chat_metadata, agent.id);
+        let latest = null;
+        if (plotCompass) {
+            for (let index = messages.length - 1; index >= 0; index--) {
+                const host = messages[index], result = getActiveCompanionResults(host)[agent.id];
+                if (result?.status !== 'done' || !result.content?.trim() || isEmptyOutputSentinel(result.content)) continue;
+                latest = { host, result };
+                break;
+            }
+            if (!latest && opening && !isEmptyOutputSentinel(opening.content)) latest = { host: null, result: opening };
+        }
         const selected = [];
-        for (let index = messages.length - 1; index >= 0 && selected.length < agent.companion.feedback.depth; index--) {
+        for (let index = messages.length - 1; enabled && index >= 0 && selected.length < agent.companion.feedback.depth; index--) {
             const host = messages[index], result = getActiveCompanionResults(host)[agent.id];
-            if ((host.is_user && !isPlotCompassAgent(agent)) || result?.status !== 'done' || (result.includeInChatHistory === true && !host.is_user) || !result.content?.trim() || isEmptyOutputSentinel(result.content)) continue;
-            selected.unshift(resolveSavedCompanionText(feedbackNoteText(agent, result, selected.length === 0), host, snapshot, environment));
+            if ((host.is_user && !plotCompass) || result?.status !== 'done' || (result.includeInChatHistory === true && !host.is_user) || !result.content?.trim() || isEmptyOutputSentinel(result.content)) continue;
+            selected.unshift({ host, result });
         }
-        const opening = isPlotCompassAgent(agent) && getPlotCompassOpeningNote(records[0]?.chat_metadata, agent.id);
-        if (opening && selected.length < agent.companion.feedback.depth && !isEmptyOutputSentinel(opening.content)) {
-            selected.unshift(resolveSavedCompanionText(feedbackNoteText(agent, opening, selected.length === 0), { is_system: true }, snapshot, environment));
+        if (enabled && opening && selected.length < agent.companion.feedback.depth && !isEmptyOutputSentinel(opening.content)) {
+            selected.unshift({ host: null, result: opening });
         }
-        const body = selected.filter(Boolean).join('\n\n');
+        const parts = selected.map(({ host, result }) => {
+            const current = plotCompass && host === latest?.host && result === latest?.result;
+            const content = plotCompass ? getPlotCompassContentWithChoice(result, { instruction: current, historical: !current }) : result.content;
+            return resolveSavedCompanionText(content, host ?? { is_system: true }, snapshot, environment);
+        });
+        if (latest && !selected.some(({ host, result }) => host === latest.host && result === latest.result)) {
+            const directive = getPlotCompassChoiceDirective(latest.result);
+            if (directive) parts.push(resolveSavedCompanionText(directive, latest.host ?? { is_system: true }, snapshot, environment));
+        }
+        const body = parts.filter(Boolean).join('\n\n');
         if (body) feedback.push({ agent, body, guarded: rememberShape(agent, body) });
     }
     const retained = selectCompanionChatHistory(messages, { policies });

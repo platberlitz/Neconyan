@@ -238,9 +238,11 @@ const PLOT_COMPASS_MAX_CHOICES = 6;
 const PLOT_COMPASS_SECTION_RE = /^\s*(?:#{1,6}\s+)?(?:\*\*|__)?\s*(direction|where we are|possible developments|next move)\s*(?::\s*(?:\*\*|__)|(?:\*\*|__)\s*:|:)\s*(.*)$/i;
 const PLOT_COMPASS_HASH_SECTION_RE = /^\s*#{1,6}\s+(direction|where we are|possible developments|next move)\s*()$/i;
 const PLOT_COMPASS_BOLD_HEADING_RE = /^\s*(?:#{1,6}\s+)?(?:\*\*|__)[^*_\n]{1,60}?(?::\s*(?:\*\*|__)|(?:\*\*|__)\s*:)/;
+const PLOT_COMPASS_OTHER_HEADING_RE = /^\s*(?:#{1,6}\s+|(?:\*\*|__)[^*_\n]{1,60}(?:\*\*|__)\s*:?\s*$)/;
 const PLOT_COMPASS_CHOICE_RE = /^\s*(?:[-*+]\s+)?(?:\*\*|__)?\(?(\d{1,2})[.):](?:\*\*|__)?\s+(\S.*)$/;
 const PLOT_COMPASS_PICK_RE = /^\s*[[(]?\s*(?:(?:option|choice|direction|development|go with|pick)\s*)?#?(\d{1,2})\b/i;
 const PLOT_COMPASS_NAMED_PICK_RE = /\b(?:option|choice|direction|development)\s*#?(\d{1,2})\b/i;
+const PLOT_COMPASS_MOVE_LINE_RE = /^(?:#{1,6}\s+)?(?:[-+]\s+)?(?:(?:go with|pick)\s+)?(?:(?:option|choice|direction|development)\s*)?#?\(?\d{1,2}\b/i;
 
 export function normalizePlotCompassChoiceText(value = '') {
     return String(value ?? '').replaceAll(/[*_`~]+/g, '').replaceAll(/\s+/g, ' ').trim();
@@ -302,16 +304,34 @@ export function getPlotCompassChoice(result) {
     return match ?? null;
 }
 
-/**
- * The note's saved text with the user's pick appended, for prompts. The newest note sent to the
- * main reply passes `instruction` so the pick replaces the note's own Next move.
- */
-export function getPlotCompassContentWithChoice(result, { instruction = false } = {}) {
+/** A current pick is useful even when the note itself is not sent as feedback. */
+export function getPlotCompassChoiceDirective(result) {
+    const choice = getPlotCompassChoice(result);
+    return choice ? `[User's chosen direction]\n${choice.number}. ${choice.text}\nThe user picked this direction for the next response. Follow their choice.` : '';
+}
+
+/** Project a pick into prompt text without changing the saved note or its displayed suggestion. */
+export function getPlotCompassContentWithChoice(result, { instruction = false, historical = false } = {}) {
     const content = String(result?.content ?? '');
     const choice = getPlotCompassChoice(result);
     if (!choice) return content;
-    const note = instruction ? '\nThe user picked this direction for the next response. Follow it in place of the Next move above.' : '';
-    return `${content.trimEnd()}\n\n[User's chosen direction]\n${choice.number}. ${choice.text}${note}`;
+    const lines = content.replaceAll(/\r\n?/g, '\n').split('\n');
+    const projected = [];
+    let replacingMove = false;
+    for (const line of lines) {
+        const heading = line.match(PLOT_COMPASS_SECTION_RE) ?? line.match(PLOT_COMPASS_HASH_SECTION_RE);
+        if (heading?.[1].toLowerCase() === 'next move') {
+            projected.push(`**Next move:** ${choice.number}. ${choice.text}`);
+            replacingMove = true;
+            continue;
+        }
+        const moveLine = replacingMove && PLOT_COMPASS_MOVE_LINE_RE.test(normalizePlotCompassChoiceText(line));
+        if (replacingMove && !moveLine && (heading || PLOT_COMPASS_BOLD_HEADING_RE.test(line) || PLOT_COMPASS_OTHER_HEADING_RE.test(line))) replacingMove = false;
+        if (!replacingMove) projected.push(line);
+    }
+    const label = historical ? "[User's chosen direction at the time]" : "[User's chosen direction]";
+    const picked = instruction ? getPlotCompassChoiceDirective(result) : `${label}\n${choice.number}. ${choice.text}`;
+    return `${projected.join('\n').trimEnd()}\n\n${picked}`;
 }
 
 export function normalizeChatroomReply(value = '') {
@@ -555,7 +575,7 @@ export function getCompanionChatHistoryContributions(message, resolveMacros = co
             identifier: `inchat_agent_companion_history_${agentId}`,
             name: String(result.agentName ?? 'Companion').trim() || 'Companion',
             role: 'assistant',
-            content: String(resolveMacros(normalizeCompanionMacroSyntax(result.content ?? '')) ?? '').trim(),
+            content: String(resolveMacros(normalizeCompanionMacroSyntax(getPlotCompassContentWithChoice(result, { historical: true }))) ?? '').trim(),
             kind: 'retained-history',
         }))
         .filter(contribution => contribution.content);
