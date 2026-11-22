@@ -329,7 +329,7 @@ export function getPlotCompassContentWithChoice(result, { instruction = false, h
         if (replacingMove && !moveLine && (heading || PLOT_COMPASS_BOLD_HEADING_RE.test(line) || PLOT_COMPASS_OTHER_HEADING_RE.test(line))) replacingMove = false;
         if (!replacingMove) projected.push(line);
     }
-    const label = historical ? "[User's chosen direction at the time]" : "[User's chosen direction]";
+    const label = historical ? '[User\'s chosen direction at the time]' : '[User\'s chosen direction]';
     const picked = instruction ? getPlotCompassChoiceDirective(result) : `${label}\n${choice.number}. ${choice.text}`;
     return `${projected.join('\n').trimEnd()}\n\n${picked}`;
 }
