@@ -48,7 +48,7 @@ export async function createChatGenerationParameters(liveSettings, model, type, 
     const serviceTier = source === 'nanogpt' ? await context.getServiceTier(settings) : undefined;
     let bias = {};
     if (settings.bias_preset_selected && ['openai', 'azure_openai', 'openrouter', 'electronhub', 'chutes', 'custom'].includes(source)
-        && Array.isArray(settings.bias_presets[settings.bias_preset_selected]) && settings.bias_presets[settings.bias_preset_selected].length) bias = await context.getLogitBias();
+        && Array.isArray(settings.bias_presets?.[settings.bias_preset_selected]) && settings.bias_presets[settings.bias_preset_selected].length) bias = await context.getLogitBias();
     const data = {
         type, messages, model, log_prompts: Boolean(context.logPrompts),
         temperature: Number(settings.temp_openai), frequency_penalty: Number(settings.freq_pen_openai),

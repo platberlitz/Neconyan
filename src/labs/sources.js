@@ -57,10 +57,14 @@ export function captureLabChat(base, account, locator) {
     });
 }
 
-export async function captureLabConnection(base, { profileId = '', acknowledgement, maxTokens }, macros) {
+// The Chat Completion formatter rejects an empty message list, so a connection check without real messages sends a stand-in.
+const CONNECTION_PROBE_MESSAGES = Object.freeze([{ role: 'user', content: 'Hello' }]);
+
+export async function captureLabConnection(base, { profileId = '', acknowledgement, maxTokens, messages = CONNECTION_PROBE_MESSAGES }, macros) {
     const binding = captureGenerationBinding(base.directories, profileId ? { kind: 'profile', profileId } : { kind: 'active' }, acknowledgement);
     const material = resolveGenerationProfile(base.directories, binding);
-    await validateActiveGenerationContext(material, createMacroEnvironment(macros), [], {}, { maxTokens });
+    const checked = Array.isArray(messages) && messages.length ? messages : CONNECTION_PROBE_MESSAGES;
+    await validateActiveGenerationContext(material, createMacroEnvironment(macros), structuredClone(checked), {}, { maxTokens });
     return { binding, contextLimit: Number(material.contextLimit || material.preset?.openai_max_context
         || material.active?.openai_max_context || readLabSettings(base).max_context || 4096) };
 }

@@ -1,0 +1,505 @@
+/* Character folder tabs and the Organise folders popup. Deferred sheet. */
+
+#neconyan-folder-tabs {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+#neconyan-folder-tabs .neconyan-folder-tabs-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+#neconyan-folder-tabs .neconyan-folder-tabs-toggle {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 36px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    padding: 6px 10px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--neco-ink);
+    font: inherit;
+    font-size: 13px;
+    text-align: start;
+    cursor: pointer;
+}
+
+#neconyan-folder-tabs .neconyan-folder-tabs-toggle:hover {
+    border-color: var(--neco-border);
+    background: var(--neco-raised);
+}
+
+#neconyan-folder-tabs .neconyan-folder-tabs-toggle > i {
+    flex: 0 0 auto;
+    width: 1em;
+    color: var(--neco-muted);
+    transition: rotate 160ms ease;
+}
+
+#neconyan-folder-tabs[data-collapsed='true'] .neconyan-folder-tabs-toggle > i {
+    rotate: -90deg;
+}
+
+#neconyan-folder-tabs .neconyan-folder-tabs-title {
+    flex: 0 0 auto;
+    font-weight: 600;
+}
+
+#neconyan-folder-tabs .neconyan-folder-tabs-current {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--neco-muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#neconyan-folder-tabs .neconyan-folder-tabs-organise {
+    flex: 0 0 auto;
+    min-height: 36px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    padding: 6px 12px;
+    border: 1px solid var(--neco-border);
+    border-radius: 10px;
+    background: var(--neco-surface);
+    color: var(--neco-ink);
+    font: inherit;
+    font-size: 12px;
+    line-height: 1.2;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color 140ms ease, border-color 140ms ease;
+}
+
+#neconyan-folder-tabs .neconyan-folder-tabs-organise > i {
+    color: var(--neco-ginger);
+}
+
+#neconyan-folder-tabs .neconyan-folder-tabs-organise:hover {
+    border-color: var(--neco-ginger);
+    background: color-mix(in srgb, var(--neco-ginger) 12%, var(--neco-surface));
+}
+
+#neconyan-folder-tabs .neconyan-folder-tabs-rail {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-width: 0;
+}
+
+#neconyan-folder-tabs .neconyan-folder-tabs-rail[hidden] {
+    display: none;
+}
+
+#neconyan-folder-tabs .neconyan-folder-tab,
+#neconyan-folder-tabs .neconyan-folder-tab-add {
+    flex: 0 0 auto;
+    min-height: 34px;
+    max-width: 100%;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    padding: 6px 12px;
+    border: 1px solid var(--neco-border);
+    border-radius: 10px;
+    background: var(--neco-surface);
+    color: var(--neco-ink);
+    font: inherit;
+    font-size: 12px;
+    line-height: 1.2;
+    cursor: pointer;
+    transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+#neconyan-folder-tabs .neconyan-folder-tab > i,
+#neconyan-folder-tabs .neconyan-folder-tab-add > i {
+    color: var(--neco-muted);
+}
+
+#neconyan-folder-tabs .neconyan-folder-tab-name {
+    min-width: 0;
+    max-width: 18ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#neconyan-folder-tabs .neconyan-folder-tab-count {
+    min-width: 1.6em;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--neco-raised);
+    color: var(--neco-muted);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+}
+
+#neconyan-folder-tabs .neconyan-folder-tab:hover,
+#neconyan-folder-tabs .neconyan-folder-tab-add:hover {
+    border-color: var(--neco-ginger);
+}
+
+#neconyan-folder-tabs .neconyan-folder-tab[aria-pressed='true'] {
+    border-color: var(--neco-ginger);
+    background: color-mix(in srgb, var(--neco-ginger) 22%, var(--neco-surface));
+    color: var(--neco-ink);
+}
+
+#neconyan-folder-tabs .neconyan-folder-tab[aria-pressed='true'] > i {
+    color: var(--neco-ginger);
+}
+
+#neconyan-folder-tabs .neconyan-folder-tab[aria-pressed='true'] .neconyan-folder-tab-count {
+    background: var(--neco-ginger);
+    color: var(--neco-on-accent);
+}
+
+#neconyan-folder-tabs .neconyan-folder-tab[aria-disabled='true'] {
+    opacity: 0.6;
+}
+
+#neconyan-folder-tabs .neconyan-folder-tab-add {
+    border-style: dashed;
+    background: transparent;
+    color: var(--neco-muted);
+}
+
+#neconyan-folder-tabs :is(.neconyan-folder-tabs-toggle, .neconyan-folder-tabs-organise, .neconyan-folder-tab, .neconyan-folder-tab-add):focus-visible {
+    outline: 2px solid var(--neco-ginger);
+    outline-offset: 2px;
+}
+
+@media (max-width: 768px) {
+    #neconyan-folder-tabs .neconyan-folder-tabs-toggle,
+    #neconyan-folder-tabs .neconyan-folder-tabs-organise,
+    #neconyan-folder-tabs .neconyan-folder-tab,
+    #neconyan-folder-tabs .neconyan-folder-tab-add {
+        min-height: 44px;
+    }
+
+    #neconyan-folder-tabs .neconyan-folder-tabs-rail {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        overflow-y: hidden;
+        overscroll-behavior-x: contain;
+        scrollbar-width: none;
+        touch-action: pan-x;
+    }
+
+    #neconyan-folder-tabs .neconyan-folder-tabs-rail::-webkit-scrollbar {
+        display: none;
+    }
+}
+
+.neconyan-folder-organiser {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    color: var(--neco-ink);
+    text-align: start;
+}
+
+.neconyan-folder-organiser > h3 {
+    margin: 0;
+    font-size: 1.1em;
+}
+
+.neconyan-folder-organiser-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    border: 1px solid var(--neco-border);
+    border-radius: 12px;
+    background: var(--neco-surface);
+}
+
+.neconyan-folder-organiser-section > h4 {
+    margin: 0;
+    font-size: 1em;
+}
+
+.neconyan-folder-organiser-intro,
+.neconyan-folder-organiser-hint,
+.neconyan-folder-organiser-empty,
+.neconyan-folder-organiser-prompt {
+    margin: 0;
+    color: var(--neco-muted);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.neconyan-folder-organiser-prompt {
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: var(--neco-raised);
+    color: var(--neco-ink);
+    white-space: pre-wrap;
+}
+
+.neconyan-folder-organiser-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.neconyan-folder-organiser-label {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.neconyan-folder-organiser-field :is(select, input, textarea) {
+    width: 100%;
+    margin: 0;
+}
+
+.neconyan-folder-organiser-check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 32px;
+    font-size: 13px;
+}
+
+.neconyan-folder-organiser-check > input {
+    flex: 0 0 auto;
+    margin: 0;
+}
+
+.neconyan-folder-organiser-check:has(> input:disabled) {
+    opacity: 0.6;
+}
+
+.neconyan-folder-organiser-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 2px 12px;
+}
+
+.neconyan-folder-organiser-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-inline-start: 12px;
+    border-inline-start: 2px solid var(--neco-border);
+}
+
+.neconyan-folder-organiser-sites {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 8px 12px;
+    padding-top: 8px;
+}
+
+.neconyan-folder-organiser-details > summary {
+    min-height: 32px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    cursor: pointer;
+    list-style: none;
+}
+
+.neconyan-folder-organiser-details > summary::-webkit-details-marker {
+    display: none;
+}
+
+.neconyan-folder-organiser-details > summary::before {
+    content: '\25B8';
+    color: var(--neco-ginger);
+}
+
+.neconyan-folder-organiser-details[open] > summary::before {
+    content: '\25BE';
+}
+
+.neconyan-folder-organiser-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+.neconyan-folder-organiser-actions > .menu_button {
+    width: auto;
+    margin: 0;
+    padding: 6px 12px;
+    font-size: 13px;
+}
+
+.neconyan-folder-organiser-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px;
+    border-radius: 10px;
+    background: var(--neco-raised);
+}
+
+.neconyan-folder-organiser-editor[hidden] {
+    display: none;
+}
+
+.neconyan-folder-organiser-status {
+    margin: 0;
+    font-size: 13px;
+}
+
+.neconyan-folder-organiser-status:empty {
+    display: none;
+}
+
+.neconyan-folder-organiser-results {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.neconyan-folder-organiser-results:empty {
+    display: none;
+}
+
+.neconyan-folder-suggestion {
+    margin: 0;
+    padding: 8px 10px;
+    border: 1px solid var(--neco-border);
+    border-radius: 10px;
+    background: var(--neco-raised);
+}
+
+.neconyan-folder-suggestion > legend {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 4px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.neconyan-folder-suggestion-new {
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--neco-ginger) 22%, var(--neco-surface));
+    font-size: 11px;
+    font-weight: 500;
+}
+
+@media (max-width: 768px) {
+    .neconyan-folder-organiser-check,
+    .neconyan-folder-organiser-details > summary {
+        min-height: 44px;
+    }
+
+    .neconyan-folder-organiser-actions > .menu_button {
+        min-height: 44px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #neconyan-folder-tabs .neconyan-folder-tabs-toggle > i,
+    #neconyan-folder-tabs .neconyan-folder-tabs-organise,
+    #neconyan-folder-tabs .neconyan-folder-tab,
+    #neconyan-folder-tabs .neconyan-folder-tab-add {
+        transition: none;
+    }
+}
+
+body.reduced-motion #neconyan-folder-tabs .neconyan-folder-tabs-toggle > i,
+body.reduced-motion #neconyan-folder-tabs .neconyan-folder-tabs-organise,
+body.reduced-motion #neconyan-folder-tabs .neconyan-folder-tab,
+body.reduced-motion #neconyan-folder-tabs .neconyan-folder-tab-add {
+    transition: none;
+}
+
+/* Folder rows in the character list have no 'body' grid area, so the Calico
+   row rule pushed their text to the far edge. They are one compact line: icon,
+   name and count, then a short stack of the cards inside. */
+body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block > .bogus_folder_select {
+    grid-template-columns: 40px minmax(0, 1fr) !important;
+    gap: 10px;
+    min-height: 52px;
+    padding: 6px 10px;
+}
+body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block > .bogus_folder_select > :is(.avatar, .bogus_folder_back_placeholder) {
+    grid-area: 1 / 1;
+    width: 40px !important;
+    min-width: 40px !important;
+    max-width: 40px !important;
+    height: 40px !important;
+    min-height: 40px !important;
+    max-height: 40px !important;
+}
+body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block > .bogus_folder_select > .character_select_container {
+    grid-area: 1 / 2;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0 10px;
+    height: auto;
+}
+body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block > .bogus_folder_select > .character_select_container > .character_name_block {
+    display: flex;
+    grid-area: 1 / 1;
+    align-items: baseline;
+    gap: 6px;
+    min-width: 0;
+}
+body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block > .bogus_folder_select .character_name_block > .ch_name {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block > .bogus_folder_select .character_name_block > .bogus_folder_counter {
+    flex: none;
+    max-width: none;
+}
+body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block > .bogus_folder_select .bogus_folder_hidden_counter {
+    position: static;
+    grid-area: 2 / 1;
+}
+body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block > .bogus_folder_select .bogus_folder_hidden_counter:empty {
+    display: none;
+}
+body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block > .bogus_folder_select > .character_select_container > .bogus_folder_avatars_block.tags_inline {
+    grid-area: 1 / 2 / span 2;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 0;
+    height: auto;
+    margin: 0;
+    padding-inline-start: 8px;
+}
+body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block > .bogus_folder_select .bogus_folder_avatars_block > .avatar,
+body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block > .bogus_folder_select .bogus_folder_avatars_block > .avatar img {
+    width: 28px !important;
+    min-width: 28px !important;
+    height: 28px !important;
+    min-height: 28px !important;
+    margin: 0 0 0 -8px;
+}
+body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block > .bogus_folder_select .bogus_folder_avatars_block > .avatar img {
+    margin: 0;
+}
+body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block > .bogus_folder_select .bogus_folder_avatars_block > .avatar:nth-child(n + 7) {
+    display: none;
+}
+@media (max-width: 768px) {
+    body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block > .bogus_folder_select .bogus_folder_avatars_block > .avatar:nth-child(n + 5) {
+        display: none;
+    }
+}

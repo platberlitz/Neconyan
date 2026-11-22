@@ -75,6 +75,8 @@ export {
     sortTags,
     compareTagsForSort,
     removeTagFromMap,
+    getTag,
+    createNewTag,
 };
 
 const CHARACTER_FILTER_SELECTOR = '#rm_characters_block .rm_tag_filter';

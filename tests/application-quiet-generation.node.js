@@ -81,6 +81,19 @@ test('an unknown model result is not sent again', async () => {
     assert.equal(calls, 1);
 });
 
+test('a background prompt is accepted on the active Chat Completion connection', async () => {
+    const p = prepared('active');
+    const file = path.join(p.base.directories.root, 'settings.json');
+    const settings = JSON.parse(fs.readFileSync(file, 'utf8'));
+    fs.writeFileSync(file, JSON.stringify({ ...settings, _settingsRevision: 5,
+        active_generation: { api: 'openai', source: 'custom', model: 'fixture' },
+        oai_settings: { ...settings.oai_settings, chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:6000/v1', custom_model: 'fixture' } }));
+    const accepted = await acceptApplicationOperation(p.request, body('active', { profileId: '', acknowledgement: { settingsRevision: 5 } }));
+    assert.equal(accepted.job.state, 'queued');
+    await runOperation(p.context(accepted), { generate: async () => ({ text: 'Moon garden' }) });
+    assert.equal(readOperation(p.base, 'active').result.text, 'Moon garden');
+});
+
 test('group chats and missing prompts are refused before any work is accepted', async () => {
     const p = prepared();
     await assert.rejects(acceptApplicationOperation(p.request, body('group', { locator: { group: true, chat: 'scene' } })), /solo chat/);
