@@ -1,6 +1,8 @@
 import express from 'express';
 import { mewmoryContextLocked, mewmoryRecordLocked, saveMewmoryCorrection } from '../scratchpad/mewmory.js';
 import { getJob } from '../jobs/store.js';
+import { requireAdminMiddleware } from '../users.js';
+import { collectAccountEvidence, collectAdminEvidence } from '../scratchpad/evidence.js';
 import {
     activateSession,
     branchSession,
@@ -339,6 +341,19 @@ router.post('/message/delete', (request, response) => change(request, response, 
 router.post('/proposal/mark', (request, response) => change(request, response, (bucket, body) => {
     markProposal(bucket, requireId(body.sessionId, 'session'), requireId(body.messageId, 'message'), body.index, body.state ?? null);
 }));
+
+router.post('/evidence', async (request, response) => {
+    try {
+        response.json(await collectAccountEvidence(scratchpadAccountBase(request)));
+    } catch (error) { sendError(response, error); }
+});
+
+router.post('/evidence/admin', requireAdminMiddleware, (request, response) => {
+    try {
+        scratchpadAccountBase(request);
+        response.json(collectAdminEvidence());
+    } catch (error) { sendError(response, error); }
+});
 
 router.post('/mewmory/context', (request, response) => {
     try {

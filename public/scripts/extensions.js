@@ -26,6 +26,7 @@ import {
     getExtensionManagerGroup,
     syncExtensionToggleState,
 } from './extensions-manager.js';
+import { setExtensionLoadErrors } from './app-evidence-log.js';
 
 export {
     SimpleMutex as ModuleWorkerWrapper,
@@ -1126,6 +1127,7 @@ async function activateExtensions() {
 
     await Promise.allSettled(promises);
     $('#extensions_details').toggleClass('warning', extensionLoadErrors.size > 0);
+    setExtensionLoadErrors(extensionLoadErrors);
 }
 
 async function addExtensionsButtonAndMenu() {

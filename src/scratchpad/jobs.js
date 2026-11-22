@@ -91,6 +91,7 @@ export function normaliseCapabilities(input, sourceKind = 'roleplay', source = {
         ...(sourceKind !== 'notebook' && value.dialogueColors === true ? { dialogueColors: true } : {}),
         ...(sourceKind === 'roleplay' && value.authorsNote === true ? { authorsNote: true } : {}),
         ...(sourceKind !== 'notebook' && value.problems === true ? { problems: true } : {}),
+        ...(sourceKind !== 'notebook' && value.appEvidence === true ? { appEvidence: true } : {}),
         ...(value.image !== undefined ? { image: value.image === true } : {}) };
 }
 

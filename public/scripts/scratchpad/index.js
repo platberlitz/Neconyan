@@ -149,6 +149,11 @@ function checkPrompts() {
             include: { lore: true },
         });
     }
+    prompts.push({
+        label: t`What went wrong in Neconyan?`,
+        text: t`Use the app diagnostics to tell me what went wrong in Neconyan, and what I should try or share next.`,
+        include: { appEvidence: true },
+    });
     return prompts;
 }
 
@@ -156,7 +161,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     depth: 15,
     picked: [],
     notes: [],
-    include: { card: true, persona: true, authorsNote: true, lore: true, preset: false, hidden: false, agents: false, regex: false, cssSnippets: false, dialogueColors: false, mewmory: false, problems: false },
+    include: { card: true, persona: true, authorsNote: true, lore: true, preset: false, hidden: false, agents: false, regex: false, cssSnippets: false, dialogueColors: false, mewmory: false, problems: false, appEvidence: false },
     loreOverrides: {},
     lorebook: '',
     connection: { kind: 'current' },
@@ -1342,12 +1347,17 @@ async function takePrompt(prompt) {
     if (prompt.include) {
         const before = currentSettings().include || {};
         const changed = [];
-        if (!before.problems) changed.push(t`Problem checks`);
+        const evidence = prompt.include.appEvidence === true;
+        if (evidence) {
+            if (!before.appEvidence) changed.push(t`App diagnostics`);
+        } else if (!before.problems) {
+            changed.push(t`Problem checks`);
+        }
         const labels = { card: t`Character cards`, preset: t`Current preset`, lore: t`Lorebook entries` };
         for (const [key, label] of Object.entries(labels)) {
             if (prompt.include[key] && !before[key]) changed.push(label);
         }
-        const saved = await updateSettings(settings => ({ include: { ...settings.include, problems: true, ...prompt.include } }), { rerenderContext: app.tab === 'context' });
+        const saved = await updateSettings(settings => ({ include: { ...settings.include, ...(evidence ? {} : { problems: true }), ...prompt.include } }), { rerenderContext: app.tab === 'context' });
         if (saved && changed.length) toastr.info(t`Turned on ${changed.join(' and ')} for this session.`, t`Scratchpad`);
     }
     usePrompt(prompt.text);
@@ -2849,6 +2859,8 @@ function renderContext({ force = true } = {}) {
             roleplay || general ? presetCheckbox(include.preset, value => setInclude('preset', value), { general }) : null,
             checkbox(t`Problem checks`, include.problems === true, value => setInclude('problems', value),
                 t`Checks shared cards, presets and lorebooks for likely problems, and shares fuller activation and sampler details.`),
+            checkbox(t`App diagnostics`, include.appEvidence === true, value => setInclude('appEvidence', value),
+                t`Shares Neconyan's recent errors, failed model requests and your failed requests and jobs, so the assistant can explain what went wrong. Admins also share server crash reports and error log lines.`),
             checkbox(t`Agents`, include.agents === true, value => setInclude('agents', value), t`Shares the name, description and prompt of every saved Agent, so an assistant can suggest edits to them.`),
             checkbox(t`Regexes`, include.regex === true, value => setInclude('regex', value), t`Shares the name, Find pattern and replacement of every global regex script, so an assistant can suggest edits to them.`),
             checkbox(t`CSS Snippets`, include.cssSnippets === true, value => setInclude('cssSnippets', value), t`Shares the name and CSS of every saved snippet, so an assistant can suggest edits to them.`),
