@@ -25,12 +25,12 @@ export async function captureRawGeneration(base, account, input = {}) {
     }
     const saved = readLabSettings(base);
     const macros = { macroEnhanced: captureEnhancedMacros(saved), names: { user: String(saved.name1 || 'User'), char: '' }, variables: {}, extra: { chat: [], chatMetadata: {} } };
-    const { binding } = await captureLabConnection(base, { profileId: typeof input.profileId === 'string' ? input.profileId : '',
-        acknowledgement: input.acknowledgement, maxTokens }, macros);
     const messages = [
         ...(systemPrompt.trim() ? [{ role: 'system', content: systemPrompt }] : []),
         ...(prompt.trim() ? [{ role: 'user', content: prompt }] : []),
     ];
+    const { binding } = await captureLabConnection(base, { profileId: typeof input.profileId === 'string' ? input.profileId : '',
+        acknowledgement: input.acknowledgement, maxTokens, messages }, macros);
     return { account, binding, macros, maxTokens, messages };
 }
 
