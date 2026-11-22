@@ -21,7 +21,7 @@ test('a blocked optional notifications module does not block startup, toasts or 
     let moduleRequests = 0;
     let logoutRequests = 0;
     let logoutSnapshot = null;
-    await context.route('**/scripts/push-notifications.js', route => {
+    await context.route(url => url.pathname === '/scripts/push-notifications.js', route => {
         moduleRequests++;
         return route.abort('failed');
     });
