@@ -612,6 +612,13 @@
     min-width: 0;
 }
 
+/* The Characters sheet scrolls the full page of entries. */
+#WorldInfo.sb-shell-embedded-content #world_popup_entries_list {
+    height: auto;
+    max-height: none;
+    overflow: visible;
+}
+
 #world_popup_workspace {
     min-width: 0;
 }
@@ -2411,7 +2418,6 @@ body.neconyan #WorldInfo.sb-shell-embedded-content #world_popup_entries_list .wo
     }
 
     #WorldInfo.sb-shell-embedded-content #world_popup_entries_list {
-        max-height: clamp(280px, 40vh, 420px);
         padding-right: 0;
     }
 

@@ -66,6 +66,23 @@ describe('Test keys', () => {
 });
 
 describe('Health check', () => {
+    test('counts unreadable records without offering to open the wrong entry', () => {
+        const book = { entries: {
+            0: entry(0, { key: ['harbour'], content: 'A quiet harbour.' }),
+            1: null,
+            2: entry(0), // This record must not link to the valid entry in slot 0.
+            3: entry('3', { key: ['market'], content: 'A busy market.' }),
+            4: { content: 'Missing ID.' },
+        } };
+        const result = checkLorebookHealth(book);
+        expect(result.diagnostics).toHaveLength(3);
+        expect(result.diagnostics).toEqual(['1', '2', '4'].map(details => expect.objectContaining({
+            rule: 'damaged-entry', severity: 'error', entryIds: [], details,
+        })));
+        expect(quickHealthCount(book)).toBe(3);
+        expect(book.entries[2].uid).toBe(0);
+    });
+
     test('flags entry-level problems', () => {
         const { diagnostics } = checkLorebookHealth(lorebook(
             entry(0, { key: ['/[bad/'] }),
