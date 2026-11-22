@@ -92,6 +92,7 @@
 - PR #868 (2026-11-22) `perf(mewmory): release unused archive data during extraction`
 - PR #869 (2026-11-22) `chore(release): start staging at 1.6.0`
 - PR #870 (2026-11-22) `fix(lorebook): show full pages and surface damaged entries`
+- PR #871 (2026-11-22) `feat(mewmory): read inline float32 embeddings`
 - PR #872 (2026-11-22) `fix(lorebooks): load saved entry lists and align entry tools`
 
 ### Local Commits
