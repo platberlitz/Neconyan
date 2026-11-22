@@ -56,11 +56,34 @@ export function memoryAudience(state, dependencies) {
     return unique.length ? structuredClone(unique.length === 1 ? unique[0] : unique) : null;
 }
 
+/** The last chat line a saved memory version was built from, or Infinity when nobody can say. */
+function memoryReach(state, id, version) {
+    const record = Number.isInteger(version) ? recordRevision(state, id, version) : state.records.find(entry => entry.id === id);
+    if (!record) return Infinity;
+    const reach = marked(record) ? record.provenance.horizon : record.asOf;
+    return Number.isFinite(reach) ? reach : Infinity;
+}
+
+/**
+ * The last chat line anything behind a new group memory reaches: the lines it was written from
+ * and every memory the model was shown, through what those were built from in turn. A member
+ * who has heard every line up to it may read the memory, whoever heard it at the time.
+ * @param {object} state Mewmory state
+ * @param {number[]} lines Sequences of the lines it was written from
+ * @param {{ id: string, version?: number }[]} [memories] Memory versions the model was shown
+ * @returns {number|null} The line's sequence, or null when a memory it saw cannot say
+ */
+export function memoryHorizon(state, lines, memories = []) {
+    const horizon = Math.max(-1, ...lines.filter(Number.isFinite), ...memories.map(({ id, version }) => memoryReach(state, id, version)));
+    return Number.isFinite(horizon) ? horizon : null;
+}
+
 /**
  * The memory a group speaker may read. Lines they did not hear are left out. A memory written
- * from one group of listeners says so, and only those listeners read it. An older memory has no
- * such mark and cites only some of the messages it came from, so a speaker reads it only when
- * they heard every line up to it.
+ * from one group of listeners says so, and only those listeners read it, until a speaker caught
+ * up later has heard every line up to its horizon. An older memory has no such mark and cites
+ * only some of the messages it came from, so a speaker reads it only when they heard every line
+ * up to it.
  * @param {object} state Mewmory state
  * @param {string[]|null} viewers Speakers the prompt is written for
  * @param {{ seesAll?: string[] }} [rules] The chat's scene rules
@@ -79,6 +102,7 @@ export function viewerState(state, viewers, rules = {}) {
     }
     const readable = record => marked(record)
         ? viewers.every(viewer => canHear(record.provenance.audience, viewer, rules))
+            || Number.isFinite(record.provenance.horizon) && record.provenance.horizon <= legacyAsOf
         : record.asOf <= legacyAsOf;
     let changed = hidden.length > 0;
     // Unreadable versions are blanked rather than dropped, so corrections still count.
