@@ -96,6 +96,21 @@ export function groupScenePrompt(scene, members) {
     return `[Scene: ${scene.location ? `Location: ${scene.location}. ` : ''}Present: ${present.join(', ') || 'nobody'}.${away.length ? ` Away: ${away.join(', ')}. They cannot hear or react to this exchange.` : ''}]`;
 }
 
+/**
+ * Whether a group turn has to be written in the page rather than on the
+ * server. The server writes only new messages, so it cannot whisper or add a
+ * speaker to the heard list of the line they answer.
+ * @param {object[]} messages Chat messages, without the saved header.
+ */
+export function groupSceneTurnNeedsPage(messages, metadata, members, speakers, { hearReplyTarget = true } = {}) {
+    const scene = readGroupScene(metadata, members);
+    if (scene.whisper_to.length || speakers.some(avatar => scene.away.includes(avatar))) return true;
+    if (!hearReplyTarget || !Array.isArray(messages)) return false;
+    const target = messages.findLast(message => message && !message.is_system);
+    const rules = readGroupSceneRules(metadata);
+    return Boolean(target) && speakers.some(avatar => !canGroupMemberSee(target, avatar, rules));
+}
+
 let promptScope = null;
 
 /** Scope every prompt reader to the same audience, without changing the saved chat. */

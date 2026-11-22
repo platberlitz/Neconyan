@@ -132,7 +132,7 @@ import {
 } from './group-chat-scene.js';
 import { buildEnsemblePrompt, createEnsembleMessages } from './group-chat-ensemble.js';
 import { messageAutomaticGenerationSuppressed } from './generation-outcome.js';
-import { addGroupHearer, beginGroupPromptScope, canGroupMemberSee, changeGroupHearers, filterGroupPromptMessages, groupHeardCount, groupMessageAudience, groupScenePrompt, readGroupScene } from './group-chat-visibility.js';
+import { addGroupHearer, beginGroupPromptScope, canGroupMemberSee, changeGroupHearers, filterGroupPromptMessages, groupHeardCount, groupMessageAudience, groupScenePrompt, groupSceneTurnNeedsPage, readGroupScene } from './group-chat-visibility.js';
 import { initGroupSceneControls, renderGroupScene } from './group-chat-scene-ui.js';
 import { getGroupSpeakerPool } from './group-chat-speakers.js';
 import { initGroupSpeakerMenu } from './group-chat-speaker-menu.js';
@@ -531,18 +531,16 @@ function beginGroupTurnAudience(type) {
 }
 
 /**
- * Server group replies read the whole saved chat, so a turn stays in the page while the scene is set or a chosen speaker missed a line.
+ * Server group replies follow the scene, but only the page can whisper or record that a speaker heard the line they answer.
+ * The server refuses the same turns, using the same rule.
  * @param {number[]} speakerIds Chosen speakers
  * @returns {boolean}
  */
 function usesGroupSceneVisibility(speakerIds = []) {
     const group = groups.find(item => item.id === selected_group);
     if (!group) return false;
-    const scene = readGroupScene(chat_metadata, group.members);
-    if (scene.location || scene.away.length || scene.whisper_to.length) return true;
-    const rules = getGroupSceneRules(group);
     const avatars = speakerIds.map(chid => characters[chid]?.avatar).filter(Boolean);
-    return chat.some(message => !message?.is_system && avatars.some(avatar => !canGroupMemberSee(message, avatar, rules)));
+    return groupSceneTurnNeedsPage(chat, chat_metadata, group.members, avatars, { hearReplyTarget: isHearReplyTargetEnabled(group) });
 }
 
 function getGroupScenePrompt(group) {
@@ -2551,6 +2549,7 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
         throwIfAborted();
         const useGroupServer = ordinaryTurn && groupReady
             && (params?.skipNativeRoleplay === false || preferServer || serverRequired);
+        let sceneRefused = false;
         if (useGroupServer) {
             deactivateSendButtons();
             setGroupTypingIndicator(characters[activatedMembers[0]]?.name || '');
@@ -2559,13 +2558,19 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
                 textResult = await groupWorkflows.submitRoleplayGroupTurn({ groupId: selected_group, forcedAvatars,
                     generationId: group_generation_id, signal: params?.signal ?? null });
             } catch (error) {
-                if (!params?.signal?.aborted && error?.name !== 'AbortError') reportGroupReplyFailure(error);
-                throw error;
+                // The saved scene needs the page for this turn and nothing was started, so write it here.
+                sceneRefused = error?.body?.code === 'roleplay_group_scene' && !params?.signal?.aborted && !await serverMustOwn();
+                if (!sceneRefused) {
+                    if (!params?.signal?.aborted && error?.name !== 'AbortError') reportGroupReplyFailure(error);
+                    throw error;
+                }
             }
-            if (selectedSpeakerChid !== -1 && !(params && typeof params.force_chid == 'number')) {
-                clearSelectedGroupSpeaker();
+            if (!sceneRefused) {
+                if (selectedSpeakerChid !== -1 && !(params && typeof params.force_chid == 'number')) {
+                    clearSelectedGroupSpeaker();
+                }
+                return Promise.resolve(textResult);
             }
-            return Promise.resolve(textResult);
         }
         if (automaticRouting && (preferServer || serverRequired) && await serverMustOwn()) {
             throw new Error('The selected Notebook context needs a server reply. Please reload and try again.');

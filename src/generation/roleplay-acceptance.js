@@ -17,7 +17,7 @@ import sanitize from 'sanitize-filename';
 import { normalizeLocator, readJson } from '../mewmory/store.js';
 import { roleplayAccountBase, saveRoleplayAccount, withRoleplayAccount } from '../roleplay-store.js';
 import { getJob, releaseJob } from '../jobs/store.js';
-import { captureRoleplaySourceFromSavedChatLocked, readRoleplayChatLocked } from './roleplay-source.js';
+import { captureRoleplaySourceFromSavedChatLocked, readRoleplayChatLocked, readRoleplayEntityLocked } from './roleplay-source.js';
 import { captureGenerationBinding, getChatProfileContextLimit } from './profiles.js';
 import { readNativeMediaJobPublicationForOwner, readNativeMediaJobResultForOwner } from './media-jobs.js';
 import { captureRoleplayNamedWorkflow, ROLEPLAY_WORKFLOW_NAMES } from './roleplay-workflow-named.js';
@@ -26,7 +26,7 @@ import { closeUnstartedRoleplayWorkflow } from './roleplay-workflow-cancellation
 import { admitAgentJob, captureAgentRequest } from './agent-jobs.js';
 import { normalizeBrowserMacroNames } from '../macros/browser-only.js';
 import { getRoleplaySourceMessageRevision } from '../../public/scripts/neconyan-conversation/roleplay-source.js';
-import { canGroupMemberSee, readGroupSceneRules } from '../../public/scripts/group-chat-visibility.js';
+import { groupSceneTurnNeedsPage } from '../../public/scripts/group-chat-visibility.js';
 import { readRoleplayKeptReply, reconcileRoleplayKeptReplyFamily, roleplayKeptReplyPending, ROLEPLAY_REPLY_CAPABILITY } from './roleplay-kept-reply.js';
 
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
@@ -333,17 +333,14 @@ export function normalizeRoleplayGroupSubmission(body = {}) {
 }
 
 /**
- * Server group replies read the whole saved chat and add no scene line, so a
- * turn stays in the page while the scene is set or a speaker missed a line.
+ * Server group replies follow the saved scene, but only append new messages,
+ * so whispers and a speaker answering a line they missed stay in the page.
  */
-function assertGroupSceneOpen(records, speakers) {
-    const metadata = records[0]?.chat_metadata;
-    const scene = metadata?.group_scene;
-    const rules = readGroupSceneRules(metadata);
-    const sceneSet = Boolean(scene?.location) || [scene?.away, scene?.whisper_to].some(list => Array.isArray(list) && list.length > 0);
-    const missed = records.slice(1).some(row => !row?.is_system && speakers.some(avatar => !canGroupMemberSee(row, avatar, rules)));
-    if (sceneSet || missed) {
-        throw changed('A speaker in this group scene missed part of the chat, so this reply has to be written in the browser.', 'roleplay_group_scene');
+function assertGroupSceneOpen(lease, records, groupId, speakers) {
+    const group = readRoleplayEntityLocked(lease, 'group', groupId).data;
+    if (groupSceneTurnNeedsPage(records.slice(1), records[0]?.chat_metadata, group.members ?? [], speakers,
+        { hearReplyTarget: group.hear_reply_target !== false })) {
+        throw changed('This group scene turn has to be written in the browser.', 'roleplay_group_scene');
     }
 }
 
@@ -360,7 +357,7 @@ export async function acceptRoleplayGroupTurn(request, body = {}) {
         if (saved.records.length - 1 !== submission.messageCount) {
             throw changed('The saved group chat moved on after this turn was captured.', 'roleplay_workflow_anchor');
         }
-        assertGroupSceneOpen(saved.records, submission.forcedAvatars);
+        assertGroupSceneOpen(lease, saved.records, submission.groupId, submission.forcedAvatars);
         const captured = captureRoleplaySourceFromSavedChatLocked(lease, saved, { locator: submission.locator, groupId: submission.groupId });
         if (saved.changed || captured.changed) saveRoleplayAccount(lease);
         return captured.source;

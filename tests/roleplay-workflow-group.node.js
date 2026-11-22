@@ -173,6 +173,30 @@ test('server group replies leave out lines a speaker did not hear and record who
     ]);
 });
 
+test('server group replies carry the scene line and leave Mewmory out for a speaker who missed a line', async t => {
+    const f = prepared(t, { scene: records => {
+        records[0].chat_metadata = { group_scene: { away: [], location: 'The archive', whisper_to: [] } };
+        records[1].extra = { group_scene: { present: ['Nova.png'], whisper_to: [] } };
+    } });
+    const line = '[Scene: Location: The archive. Present: Nova, Other.]';
+    assert.ok(f.request.group.speakers.every(speaker => speaker.contextPrompt.endsWith(`\n${line}`)));
+    const promptOf = options => options.messages.map(message => String(message.content)).join('\n');
+    const memoryOf = turn => readArtifact(f.dirs, readArtifact(f.dirs, f.jobId,
+        turn ? `roleplay-workflow-child:${turn}` : 'roleplay-workflow-child').jobId, 'roleplay-mewmory');
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    const count = { value: 0 };
+    await f.completeCandidate(0, { avatar: 'Nova.png', name: 'Nova', modelOverride: '', reply: 'Nova replies.',
+        check: options => assert.ok(promptOf(options).includes(line)) }, count);
+    assert.notEqual(memoryOf(0)?.restricted, true);
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    await f.completeCandidate(1, { avatar: 'Other.png', name: 'Other', modelOverride: 'fixture-override', reply: 'Other replies.',
+        check: options => assert.ok(promptOf(options).includes(line)) }, count);
+    assert.equal(memoryOf(1).restricted, true);
+    assert.equal(memoryOf(1).enabled, false);
+    assert.equal((await runRoleplayWorkflowJob(f.context())).result.status, 'completed');
+});
+
 test('members marked away in the saved scene are not picked for a server group reply', async t => {
     const away = records => {
         records[0].chat_metadata = { group_scene: { away: ['Other.png'], location: '', whisper_to: [] } };
