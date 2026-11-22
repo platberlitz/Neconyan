@@ -147,20 +147,22 @@ test('saved Chat Completion post-history and example controls follow the active 
         } });
 });
 
-test('a server-owned reply uses the saved prompt order and skips unavailable optional lore', async t => {
+test('a server-owned reply loads saved entry lists in prompt order and skips unavailable optional lore', async t => {
     const f = fixture(t);
     f.records[0].chat_metadata.world_info = 'Deleted Chat Book';
     f.records[1].extra = {};
     fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
     f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
     fs.mkdirSync(f.scope.directories.worlds);
-    fs.writeFileSync(path.join(f.scope.directories.worlds, 'Town.json'), JSON.stringify({ entries: {
-        1: entry(1, 'Original', 'Before the history'),
-    } }));
+    const town = path.join(f.scope.directories.worlds, 'Town.json');
+    const savedTown = JSON.stringify({ entries: [
+        { id: 41, keys: ['Original'], content: 'Before the history', enabled: true, position: 'before_char' },
+    ] });
+    fs.writeFileSync(town, savedTown);
     const malformed = path.join(f.scope.directories.worlds, 'Broken Persona Book.json');
     const invalid = path.join(f.scope.directories.worlds, 'Broken Extra Book.json');
     fs.writeFileSync(malformed, '{');
-    fs.writeFileSync(invalid, '{"entries": []}');
+    fs.writeFileSync(invalid, '{"entries": null}');
     const settingsFile = path.join(f.scope.directories.root, 'settings.json');
     const savedSettings = JSON.stringify({
         power_user: { persona_description_lorebook: 'Broken Persona Book' },
@@ -190,8 +192,9 @@ test('a server-owned reply uses the saved prompt order and skips unavailable opt
     });
     assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Bound answer');
     assert.equal(fs.readFileSync(settingsFile, 'utf8'), savedSettings);
+    assert.equal(fs.readFileSync(town, 'utf8'), savedTown);
     assert.equal(fs.readFileSync(malformed, 'utf8'), '{');
-    assert.equal(fs.readFileSync(invalid, 'utf8'), '{"entries": []}');
+    assert.equal(fs.readFileSync(invalid, 'utf8'), '{"entries": null}');
 });
 
 test('Chat Completion uses its saved prompt order even when a text story template is saved', async t => {

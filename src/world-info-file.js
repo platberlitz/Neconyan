@@ -46,6 +46,8 @@ export function parseSavedWorldInfo(text) {
         }
         native.position = (typeof entry.position === 'number' ? normalizeWorldInfoPosition(entry.position, worldInfoPositions) : undefined) ?? native.position;
         native.order ??= newWorldInfoEntryTemplate.order;
+        // Server snapshots require the same JSON-only shape as a book read from disk.
+        if (native.characterFilter === undefined) delete native.characterFilter;
         if (entry.comment === undefined && typeof entry.name === 'string') native.comment = entry.name;
         entries[uid] = native;
 
