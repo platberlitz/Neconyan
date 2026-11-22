@@ -150,24 +150,35 @@ export function countGroupPromptHiddenMessages() {
     return promptScope ? promptScope.messages.filter(message => !message?.is_system && !isGroupPromptMessageVisible(message)).length : 0;
 }
 
-/** Background Agent work follows its source message even after the active speaker changes. */
-export function canGroupTargetSee(message, target) {
+/** Members a background Agent writes for: its source message's speaker or audience, or null to follow the current prompt. */
+export function groupTargetViewers(target) {
     const audience = target?.extra?.group_scene;
     const avatars = target?.original_avatar ? [target.original_avatar]
         : audience?.whisper_to?.length ? audience.whisper_to : audience?.present;
-    return avatars ? avatars.every(avatar => canGroupMemberSee(message, avatar)) : isGroupPromptMessageVisible(message);
+    return avatars ? [...avatars] : null;
 }
 
-export function filterGroupTargetMessages(messages, target) {
-    return messages.filter(message => canGroupTargetSee(message, target));
+/** Whether two audiences are the same members, null meaning the whole chat. */
+export function sameGroupViewers(left, right) {
+    if (!left || !right) return !left && !right;
+    const wanted = new Set(right);
+    return new Set(left).size === wanted.size && left.every(avatar => wanted.has(avatar));
+}
+
+/** Background Agent work follows its source message even after the active speaker changes. */
+export function canGroupTargetSee(message, target, rules = {}) {
+    const avatars = groupTargetViewers(target);
+    return avatars ? avatars.every(avatar => canGroupMemberSee(message, avatar, rules)) : isGroupPromptMessageVisible(message);
+}
+
+export function filterGroupTargetMessages(messages, target, rules = {}) {
+    return messages.filter(message => canGroupTargetSee(message, target, rules));
 }
 
 /** Synchronous macro expansion for background work must use its own target's audience. */
-export function withGroupTargetPrompt(target, messages, callback) {
-    const audience = target?.extra?.group_scene;
-    const avatars = target?.original_avatar ? [target.original_avatar]
-        : audience?.whisper_to?.length ? audience.whisper_to : audience?.present;
+export function withGroupTargetPrompt(target, messages, callback, rules = {}) {
+    const avatars = groupTargetViewers(target);
     if (!avatars) return callback();
-    const restore = beginGroupPromptScope(avatars, messages);
+    const restore = beginGroupPromptScope(avatars, messages, rules);
     try { return callback(); } finally { restore(); }
 }

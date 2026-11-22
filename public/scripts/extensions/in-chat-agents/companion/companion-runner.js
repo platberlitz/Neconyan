@@ -12,7 +12,7 @@ import {
     substituteParamsExtended,
 } from '../../../../script.js';
 import { withReadOnlyVariables } from '../../../variable-read-only.js';
-import { canGroupTargetSee, withGroupTargetPrompt } from '../../../group-chat-visibility.js';
+import { canGroupTargetSee, readGroupSceneRules, withGroupTargetPrompt } from '../../../group-chat-visibility.js';
 import { power_user } from '../../../power-user.js';
 import { extension_settings, getContext } from '../../../extensions.js';
 import { eventSource, event_types } from '../../../events.js';
@@ -872,7 +872,7 @@ function getRecentConversationSection(messageIndex, companion, contextCapture = 
 
     for (let index = Math.min(messageIndex, chat.length - 1); index >= 0; index--) {
         const message = chat[index];
-        if (!isValidCompanionMessage(message) || !canGroupTargetSee(message, chat[messageIndex])
+        if (!isValidCompanionMessage(message) || !canGroupTargetSee(message, chat[messageIndex], readGroupSceneRules(chat_metadata))
             || (companion.skipUserMessages && message.is_user)) {
             continue;
         }
@@ -971,7 +971,7 @@ async function getWorldInfoSection(messageIndex, companion) {
 
     try {
         const scanLines = chat.slice(0, messageIndex + 1)
-            .filter(message => isValidCompanionMessage(message) && canGroupTargetSee(message, chat[messageIndex]))
+            .filter(message => isValidCompanionMessage(message) && canGroupTargetSee(message, chat[messageIndex], readGroupSceneRules(chat_metadata)))
             .map(message => normalizeText(message?.mes ?? ''))
             .filter(Boolean)
             .reverse();
@@ -992,7 +992,7 @@ export function collectRecentCompanionResults(agentId, { beforeMessageIndex = ch
         // Hidden hosts still count: "hide story above this shard" turns every earlier shard's
         // message into a system note, and dropping those here left the shard with no prior
         // shards to consolidate and trackers with no last known state.
-        if (!holdsReadableCompanionResults(message, { allowUserMessage: isPlotCompassAgent(getAgentById(agentId)) }) || !canGroupTargetSee(message, chat[beforeMessageIndex])) {
+        if (!holdsReadableCompanionResults(message, { allowUserMessage: isPlotCompassAgent(getAgentById(agentId)) }) || !canGroupTargetSee(message, chat[beforeMessageIndex], readGroupSceneRules(chat_metadata))) {
             continue;
         }
 
@@ -1069,10 +1069,10 @@ function normalizeExtraContextSections(extraContextSections = []) {
 async function buildCompanionContextSections(agent, messageIndex, { extraContextSections = [], includePreviousNotes = true, contextCapture = null } = {}) {
     const companion = getCompanionConfig(agent);
     const sections = [];
-    const systemPrompt = withGroupTargetPrompt(chat[messageIndex], chat, () => getSystemPromptSection(companion));
+    const systemPrompt = withGroupTargetPrompt(chat[messageIndex], chat, () => getSystemPromptSection(companion), readGroupSceneRules(chat_metadata));
     const characterCard = getCharacterCardSection(companion, messageIndex);
     const worldInfo = await getWorldInfoSection(messageIndex, companion);
-    const authorsNote = withGroupTargetPrompt(chat[messageIndex], chat, () => getAuthorsNoteSection(companion));
+    const authorsNote = withGroupTargetPrompt(chat[messageIndex], chat, () => getAuthorsNoteSection(companion), readGroupSceneRules(chat_metadata));
     const previousNotes = includePreviousNotes ? getPreviousNotesSection(agent, messageIndex, companion) : '';
     const recentConversation = getRecentConversationSection(messageIndex, companion, contextCapture);
 
@@ -1451,7 +1451,7 @@ function expandCompanionPrompt(agent, messageIndex, generationType = 'normal', r
 
 export async function buildCompanionPromptMessages(agent, messageIndex, generationType = 'normal', { repair = false, extraContextSections = [], contextCapture = null } = {}) {
     const companion = getCompanionConfig(agent);
-    const expandedPrompt = withGroupTargetPrompt(chat[messageIndex], chat, () => expandCompanionPrompt(agent, messageIndex, generationType, repair));
+    const expandedPrompt = withGroupTargetPrompt(chat[messageIndex], chat, () => expandCompanionPrompt(agent, messageIndex, generationType, repair), readGroupSceneRules(chat_metadata));
     const contextSections = await buildCompanionContextSections(agent, messageIndex, { extraContextSections, contextCapture });
     // rawPrompt sends the agent prompt verbatim: tracker prompts define their own exact output
     // format and break when extra format instructions are appended around them. The guard

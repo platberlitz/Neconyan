@@ -25,7 +25,7 @@ prompt_order: [{ character_id: 100001, order: [{ identifier: 'main', enabled: tr
 
 function prepared(t, { text = 'Everyone, please answer.', forcedAvatars, disabled = [], strategy = 1,
     autoSwipe = false, autoContinue = false, pathfinder = false, bundledMacros = null, browserMacros = null,
-    description = null, history = 0, scene = null, generationMode = 0, promptControls = controls } = {}) {
+    description = null, history = 0, scene = null, generationMode = 0, promptControls = controls, agents = [] } = {}) {
     const f = fixture(t, true);
     const dirs = f.scope.directories;
     if (description !== null) {
@@ -58,6 +58,13 @@ function prepared(t, { text = 'Everyone, please answer.', forcedAvatars, disable
             name: 'Pathfinder', category: 'tool', enabled: true, sourceTemplateId: 'tpl-pathfinder',
             settings: { sidecarEnabled: true, pipelineEnabled: false, enabledLorebooks: ['Manual'], includeContextualLorebooks: false } }));
     }
+    if (agents.length) {
+        dirs.inChatAgents = path.join(dirs.root, 'InChatAgents');
+        fs.mkdirSync(dirs.inChatAgents, { recursive: true });
+        for (const agent of agents) fs.writeFileSync(path.join(dirs.inChatAgents, `${agent.id}.json`), JSON.stringify({
+            name: agent.id, enabled: true, category: 'custom', ...agent,
+        }));
+    }
     dirs.openAI_Settings = path.join(dirs.root, 'openai-presets');
     fs.mkdirSync(dirs.openAI_Settings);
     fs.writeFileSync(path.join(dirs.openAI_Settings, 'Main.json'), JSON.stringify({ openai_max_context: 4096 }));
@@ -69,7 +76,7 @@ function prepared(t, { text = 'Everyone, please answer.', forcedAvatars, disable
         oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:18000/v1', function_calling: true },
         extension_settings: { connectionManager: { profiles: [{ id: 'main', api: 'custom', model: 'fixture', preset: 'Main',
             'api-url': 'http://127.0.0.1:18000/v1' }] },
-        ...(pathfinder ? { inChatAgents: { globalSettings: { enabled: true, pathfinderEnabled: true } } } : {}) },
+        ...(pathfinder || agents.length ? { inChatAgents: { globalSettings: { enabled: true, ...(pathfinder ? { pathfinderEnabled: true } : {}) } } } : {}) },
     }));
     const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
     const source = captureRoleplaySource(f.scope, { locator: f.locator, groupId: 'group' });
@@ -94,6 +101,14 @@ function prepared(t, { text = 'Everyone, please answer.', forcedAvatars, disable
                     const step = roleplayHash(['group-sidecar', child.id]);
                     options.onProviderStep(`provider:${step}`);
                     return providerStep(options.jobContext, step, async () => { options.beforeDispatch(); return { text: '' }; });
+                } } : {}),
+                ...(expected.generateAgent ? { generateAgent: async options => {
+                    const step = roleplayHash(['group-agent', child.id, options.stepNamespace ?? '', options.messages]);
+                    options.onProviderStep?.(`provider:${step}`);
+                    return providerStep(options.jobContext, step, async () => {
+                        await options.beforeDispatch?.();
+                        return { text: await expected.generateAgent(options) };
+                    });
                 } } : {}),
                 generate: async options => {
                     count.value++;
@@ -175,8 +190,8 @@ test('server group replies leave out lines a speaker did not hear and record who
     ]);
 });
 
-function sceneMemories(t) {
-    const f = prepared(t, { scene: records => {
+function sceneMemories(t, options = {}) {
+    const f = prepared(t, { ...options, scene: records => {
         records[0].chat_metadata = { group_scene: { away: [], location: 'The archive', whisper_to: [] } };
         records[1].extra = { group_scene: { present: ['Nova.png'], whisper_to: [] } };
     } });
@@ -240,6 +255,28 @@ test('a server group reply prepared before speakers had their own recall still f
     assert.ok(!otherPrompt.includes('Everyone gathered in the archive.'));
     assert.equal((await runRoleplayWorkflowJob(f.context())).result.status, 'completed');
     assert.deepEqual(f.records().slice(4).map(record => record.mes), ['Nova replies.', 'Other replies.']);
+});
+
+test('a server group Agent reads the memories its speaker heard', async t => {
+    const f = sceneMemories(t, { agents: [{ id: 'reader', phase: 'pre', prompt: 'READ {{full-mewmory}}',
+        preProcess: { mode: 'intercept', applyMode: 'wrap', wrapPosition: 'before', wrapPrefix: '<agent>', wrapSuffix: '</agent>', maxTokens: 64 } }] });
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    const count = { value: 0 };
+    const read = {};
+    const reader = name => options => {
+        read[name] = String(options.messages[0].content);
+        return `${name} notes`;
+    };
+    await f.completeCandidate(0, { avatar: 'Nova.png', name: 'Nova', modelOverride: '', reply: 'Nova replies.', generateAgent: reader('Nova') }, count);
+    assert.ok(read.Nova.includes('Nova overheard the secret plan.'));
+    assert.ok(read.Nova.includes('Everyone gathered in the archive.'));
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    await f.completeCandidate(1, { avatar: 'Other.png', name: 'Other', modelOverride: 'fixture-override', reply: 'Other replies.',
+        generateAgent: reader('Other') }, count);
+    assert.ok(read.Other.includes('Everyone gathered in the archive.'), 'the Agent should read what Other heard');
+    assert.ok(!read.Other.includes('Nova overheard the secret plan.'), 'the Agent should not read what Other missed');
+    assert.equal((await runRoleplayWorkflowJob(f.context())).result.status, 'completed');
 });
 
 test('members marked away in the saved scene are not picked for a server group reply', async t => {
