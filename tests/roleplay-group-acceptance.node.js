@@ -77,16 +77,13 @@ test('a group turn is refused when the chat moved on or a chosen speaker is disa
         error => error.status === 409);
 });
 
-test('a group turn is refused when a chosen speaker is away or missed a line', async t => {
+test('a group turn is refused when a chosen speaker is away, and a first speaker who missed the line hears it', async t => {
     const s = saved(t);
     const rewrite = edit => {
         const records = fs.readFileSync(s.f.filename, 'utf8').split('\n').map(line => JSON.parse(line));
         edit(records);
         fs.writeFileSync(s.f.filename, records.map(record => JSON.stringify(record)).join('\n'));
     };
-    rewrite(records => { records.at(-1).extra.group_scene = { present: ['Nova.png'], whisper_to: [] }; });
-    await assert.rejects(acceptRoleplayGroupTurn(s.request(), s.body({ key: 'missed' })),
-        error => error.status === 409 && error.apiError === 'roleplay_group_scene');
     rewrite(records => {
         records.at(-1).extra.group_scene = { present: ['Nova.png', 'Other.png'], whisper_to: [] };
         records[0].chat_metadata = { ...records[0].chat_metadata, group_scene: { away: ['Other.png'], location: '', whisper_to: [] } };
@@ -94,11 +91,19 @@ test('a group turn is refused when a chosen speaker is away or missed a line', a
     await assert.rejects(acceptRoleplayGroupTurn(s.request(), s.body({ key: 'away' })),
         error => error.status === 409 && error.apiError === 'roleplay_group_scene');
     rewrite(records => { records[0].chat_metadata.group_scene.away = []; });
-    const accepted = await acceptRoleplayGroupTurn(s.request(), s.body({ key: 'heard' }));
-    assert.equal(accepted.created, true);
+    const heard = getJob(s.dirs, (await acceptRoleplayGroupTurn(s.request(), s.body({ key: 'heard' }))).jobId);
+    assert.deepEqual(heard.intent.request.group.speakers.map(speaker => speaker.hears ?? null), [null, null]);
+
+    const m = saved(t);
+    const records = fs.readFileSync(m.f.filename, 'utf8').split('\n').map(line => JSON.parse(line));
+    records.at(-1).extra.group_scene = { present: ['Nova.png'], whisper_to: [] };
+    fs.writeFileSync(m.f.filename, records.map(record => JSON.stringify(record)).join('\n'));
+    const missed = getJob(m.dirs, (await acceptRoleplayGroupTurn(m.request(), m.body({ key: 'missed' }))).jobId);
+    assert.deepEqual(missed.intent.request.group.speakers.map(speaker => speaker.hears ?? null), [records.length - 2, null]);
+    assert.equal(missed.intent.request.group.speakers[0].worldInfo.groupHears, records.length - 2);
 });
 
-test('a group turn with a scene location and an all-seeing member is written by the server, but a whisper stays in the page', async t => {
+test('a whispered group turn is written by the server for the members the whisper is for', async t => {
     const s = saved(t);
     const rewrite = edit => {
         const records = fs.readFileSync(s.f.filename, 'utf8').split('\n').map(line => JSON.parse(line));
@@ -106,12 +111,14 @@ test('a group turn with a scene location and an all-seeing member is written by 
         fs.writeFileSync(s.f.filename, records.map(record => JSON.stringify(record)).join('\n'));
     };
     rewrite(records => {
-        records.at(-1).extra.group_scene = { present: ['Nova.png'], whisper_to: [] };
+        records.at(-1).extra.group_scene = { present: ['Nova.png'], whisper_to: ['Nova.png'] };
         records[0].chat_metadata = { ...records[0].chat_metadata, group_scene: { away: [], location: 'The archive', whisper_to: ['Nova.png'], sees_all: ['Other.png'] } };
     });
-    await assert.rejects(acceptRoleplayGroupTurn(s.request(), s.body({ key: 'whisper' })),
-        error => error.status === 409 && error.apiError === 'roleplay_group_scene');
-    rewrite(records => { records[0].chat_metadata.group_scene.whisper_to = []; });
-    const accepted = await acceptRoleplayGroupTurn(s.request(), s.body({ key: 'located' }));
-    assert.equal(accepted.created, true);
+    await assert.rejects(acceptRoleplayGroupTurn(s.request(), s.body({ key: 'whisper-other' })),
+        error => error.status === 409 && /not distinct enabled members/.test(error.message));
+    const job = getJob(s.dirs, (await acceptRoleplayGroupTurn(s.request(), s.body({ key: 'whisper', forcedAvatars: ['Nova.png'] }))).jobId);
+    const [speaker] = job.intent.request.group.speakers;
+    assert.equal(job.intent.request.group.speakers.length, 1);
+    assert.deepEqual(speaker.whisper, ['Nova']);
+    assert.deepEqual(speaker.audience, { present: ['Nova.png', 'Other.png'], whisper_to: ['Nova.png'] });
 });

@@ -25,7 +25,7 @@ prompt_order: [{ character_id: 100001, order: [{ identifier: 'main', enabled: tr
 
 function prepared(t, { text = 'Everyone, please answer.', forcedAvatars, disabled = [], strategy = 1,
     autoSwipe = false, autoContinue = false, pathfinder = false, bundledMacros = null, browserMacros = null,
-    description = null, history = 0, scene = null, generationMode = 0, promptControls = controls, agents = [] } = {}) {
+    description = null, history = 0, scene = null, generationMode = 0, promptControls = controls, agents = [], groupSettings = {} } = {}) {
     const f = fixture(t, true);
     const dirs = f.scope.directories;
     if (description !== null) {
@@ -45,7 +45,7 @@ function prepared(t, { text = 'Everyone, please answer.', forcedAvatars, disable
         JSON.stringify({ name: 'Other', description: 'Second member', data: { name: 'Other', description: 'Second member' } })));
     fs.writeFileSync(path.join(dirs.groups, 'group.json'), JSON.stringify({ id: 'group', members: ['Nova.png', 'Other.png'],
         disabled_members: disabled, chats: ['Source', 'New'], activation_strategy: strategy, generation_mode: generationMode,
-        member_models: { 'Other.png': 'fixture-override' } }));
+        member_models: { 'Other.png': 'fixture-override' }, ...groupSettings }));
     if (pathfinder) {
         dirs.worlds = path.join(dirs.root, 'worlds');
         dirs.inChatAgents = path.join(dirs.root, 'InChatAgents');
@@ -288,6 +288,49 @@ test('members marked away in the saved scene are not picked for a server group r
     assert.deepEqual(f.request.group.speakers[0].audience, { present: ['Nova.png'], whisper_to: [] });
     assert.throws(() => prepared(t, { scene: away, forcedAvatars: ['Nova.png', 'Other.png'] }),
         /not distinct enabled members/);
+});
+
+test('a whispered server group turn is answered by the members it is for, privately', async t => {
+    const f = prepared(t, { text: 'Psst, a word in private.', scene: records => {
+        records[0].chat_metadata = { group_scene: { away: [], location: '', whisper_to: ['Nova.png'] } };
+        records.at(-1).extra = { group_scene: { present: ['Nova.png', 'Other.png'], whisper_to: ['Nova.png'] } };
+    } });
+    assert.deepEqual(f.request.group.speakers.map(speaker => [speaker.avatar, speaker.whisper]), [['Nova.png', ['Nova']]]);
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    let prompt = '';
+    await f.completeCandidate(0, { avatar: 'Nova.png', name: 'Nova', modelOverride: '', reply: 'Nova whispers back.',
+        check: options => { prompt = promptOf(options); } }, { value: 0 });
+    assert.match(prompt, /\[Private whisper between User and Nova\. Other members cannot hear or react to it\. Keep the reply private\.\]/);
+    assert.equal((await runRoleplayWorkflowJob(f.context())).result.status, 'completed');
+    const reply = f.records().at(-1);
+    assert.equal(reply.mes, 'Nova whispers back.');
+    assert.deepEqual(reply.extra.group_scene, { present: ['Nova.png', 'Other.png'], whisper_to: ['Nova.png'] });
+});
+
+for (const hearReplyTarget of [true, false]) test(`a first server speaker who missed the line they answer ${hearReplyTarget ? 'hears it' : 'stays out of it when the group says so'}`, async t => {
+    const f = prepared(t, { forcedAvatars: ['Other.png', 'Nova.png'], groupSettings: hearReplyTarget ? {} : { hear_reply_target: false },
+        scene: records => {
+            records[0].chat_metadata = { group_scene: { away: [], location: '', whisper_to: [] } };
+            records.at(-1).extra = { group_scene: { present: ['Nova.png'], whisper_to: [] } };
+        } });
+    assert.deepEqual(f.request.group.speakers.map(speaker => speaker.hears ?? null), [hearReplyTarget ? 2 : null, null]);
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    const count = { value: 0 };
+    let otherPrompt = '';
+    await f.completeCandidate(0, { avatar: 'Other.png', name: 'Other', modelOverride: 'fixture-override', reply: 'Other replies.',
+        check: options => { otherPrompt = promptOf(options); } }, count);
+    assert.equal(otherPrompt.includes('Everyone, please answer.'), hearReplyTarget);
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    assert.equal(f.records().at(-1).mes, 'Other replies.');
+    assert.deepEqual(f.records()[3].extra.group_scene.present, hearReplyTarget ? ['Nova.png', 'Other.png'] : ['Nova.png']);
+    await f.completeCandidate(1, { avatar: 'Nova.png', name: 'Nova', modelOverride: '', reply: 'Nova replies.',
+        check: options => assert.match(promptOf(options), /Other replies\./) }, count);
+    assert.equal((await runRoleplayWorkflowJob(f.context())).result.status, 'completed');
+    const saved = f.records();
+    assert.deepEqual(saved.slice(4).map(record => record.mes), ['Other replies.', 'Nova replies.']);
+    assert.deepEqual(saved[3].extra.group_scene.present, hearReplyTarget ? ['Nova.png', 'Other.png'] : ['Nova.png']);
 });
 
 for (const generationMode of [1, 2]) test(`joined-cards mode ${generationMode} leaves an away member's card out of a server group reply`, async t => {

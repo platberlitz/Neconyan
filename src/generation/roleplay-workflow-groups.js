@@ -1,6 +1,6 @@
 import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-store.js';
 import { assertRoleplaySourceLocked, readRoleplayEntityLocked } from './roleplay-source.js';
-import { savedGroupAwayMembers, savedGroupReplyAudience } from './roleplay-group-scene.js';
+import { savedGroupAwayMembers, savedGroupReplyAudience, savedGroupReplyTarget } from './roleplay-group-scene.js';
 import { groupScenePrompt, readGroupScene } from '../../public/scripts/group-chat-visibility.js';
 
 const invalid = message => { throw roleplayError('ROLEPLAY_WORKFLOW_INVALID', message, 409); };
@@ -31,19 +31,20 @@ function contextPrompt(name, targetName = '') {
     return `[Group context: write only as ${name}. Pay attention to who addressed whom in the recent chat. If the user calls for ${name}, answer the user. If another character calls for ${name}, answer that character. Characters may also talk to each other naturally when the context calls for it.${targetText}]`;
 }
 
+function memberName(lease, cards, avatar) {
+    if (cards.has(avatar)) return cards.get(avatar).name;
+    try {
+        const card = readRoleplayEntityLocked(lease, 'character', avatar).data;
+        return card.data?.name ?? card.name ?? avatar;
+    } catch {
+        return avatar;
+    }
+}
+
 /** The page's scene line, written only once someone has used the Scene strip in this chat. */
 function groupSceneLine(lease, metadata, members, cards) {
     if (!metadata?.group_scene) return '';
-    const named = members.map(avatar => {
-        if (cards.has(avatar)) return { avatar, name: cards.get(avatar).name };
-        try {
-            const card = readRoleplayEntityLocked(lease, 'character', avatar).data;
-            return { avatar, name: card.data?.name ?? card.name ?? avatar };
-        } catch {
-            return { avatar, name: avatar };
-        }
-    });
-    return groupScenePrompt(readGroupScene(metadata, members), named);
+    return groupScenePrompt(readGroupScene(metadata, members), members.map(avatar => ({ avatar, name: memberName(lease, cards, avatar) })));
 }
 
 /** Freeze the exact enabled member order and model selection before paying for any speaker. */
@@ -59,9 +60,13 @@ export function captureRoleplayGroupSpeakers(base, account, source, { effect, fo
             invalid('The saved group has no bounded unique speaker list.');
         }
         // Members marked away in the saved scene cannot be picked, as in the page.
-        const away = savedGroupAwayMembers(saved.records[0]?.chat_metadata, group.members);
-        const enabled = group.members.filter(avatar => !group.disabled_members?.includes(avatar) && !away.includes(avatar));
-        if (!enabled.length) invalid('The group has no enabled saved speakers.');
+        const metadata = saved.records[0]?.chat_metadata;
+        const away = savedGroupAwayMembers(metadata, group.members);
+        // A whisper turn is answered only by the members it is whispered to, as in the page.
+        const whisper = effect === 'append' ? readGroupScene(metadata, group.members).whisper_to : [];
+        const enabled = group.members.filter(avatar => !group.disabled_members?.includes(avatar) && !away.includes(avatar)
+            && (!whisper.length || whisper.includes(avatar)));
+        if (!enabled.length) invalid(whisper.length ? 'Nobody the whisper is for can answer it.' : 'The group has no enabled saved speakers.');
         const cards = new Map(enabled.map(avatar => {
             const card = readRoleplayEntityLocked(lease, 'character', avatar).data;
             const name = card.data?.name ?? card.name;
@@ -86,7 +91,7 @@ export function captureRoleplayGroupSpeakers(base, account, source, { effect, fo
                 invalid('The selected group message no longer belongs to an enabled speaker.');
             }
             selected = [avatar];
-        } else if (wholeGroup) selected = [...enabled];
+        } else if (wholeGroup || whisper.length) selected = [...enabled];
         else {
             const addressed = enabled.find(avatar => mentions(cards.get(avatar).name, text));
             if (addressed) selected = [addressed];
@@ -129,13 +134,18 @@ export function captureRoleplayGroupSpeakers(base, account, source, { effect, fo
         }
         const targetName = selected.length === 1 && mentions(cards.get(selected[0]).name, text)
             ? last?.is_user ? 'the user' : last?.name || 'another character' : '';
-        const sceneLine = groupSceneLine(lease, saved.records[0]?.chat_metadata, group.members, cards);
-        const speakers = selected.map(avatar => {
+        const sceneLine = groupSceneLine(lease, metadata, group.members, cards);
+        const whisperNames = whisper.map(avatar => memberName(lease, cards, avatar));
+        const speakers = selected.map((avatar, index) => {
             const name = cards.get(avatar).name;
             const modelOverride = group.member_models?.[avatar] ?? '';
             if (typeof modelOverride !== 'string' || modelOverride.length > 256) invalid('A saved group model override is invalid.');
+            // Only the first speaker can answer a line they missed; each later one answers the reply before them.
+            const hears = index === 0 && effect === 'append' && group.hear_reply_target !== false
+                ? savedGroupReplyTarget(saved.records, avatar) : null;
             return { avatar, name, modelOverride: modelOverride.trim(), contextPrompt: [contextPrompt(name, targetName), sceneLine].filter(Boolean).join('\n'),
-                audience: savedGroupReplyAudience(saved.records[0]?.chat_metadata, group.members, avatar) };
+                audience: savedGroupReplyAudience(metadata, group.members, avatar),
+                ...(whisperNames.length ? { whisper: whisperNames } : {}), ...(hears !== null ? { hears } : {}) };
         });
         const value = { version: 1, groupId: source.groupId, sourceHash: roleplayHash(source),
             generationId, speakers, strategy: Number(group.activation_strategy ?? 0) };

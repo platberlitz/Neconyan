@@ -17,6 +17,7 @@ import { captureWorkflowToolLineage } from './roleplay-workflow-lineage.js';
 import { captureRoleplaySourceLocked, readRoleplayChat } from './roleplay-source.js';
 import { captureRoleplayWorkflowPolicy, decideRoleplayWorkflowCandidate } from './roleplay-workflow-policy.js';
 import { captureRoleplayGroupSpeakers } from './roleplay-workflow-groups.js';
+import { recordGroupReplyHearing } from './roleplay-group-scene.js';
 import { addWorkflowAlternatives, collectWorkflowAlternatives } from './roleplay-workflow-alternatives.js';
 import { captureRoleplayWorkflowCapacity, MAX_WORKFLOW_CHAT_BYTES } from './roleplay-workflow-capacity.js';
 import { assertRoleplayNamedWorkflow, ROLEPLAY_WORKFLOW_NAMES, roleplayWorkflowContributions, roleplayWorkflowResultFacts } from './roleplay-workflow-named.js';
@@ -70,7 +71,8 @@ export function captureRoleplayWorkflowRequest(base, account, source, { avatar, 
     const options = { maxContext: contextLimit - maxTokens, trigger: roleplayEffectTrigger(effect),
         promptEffect: effect, serverPrompt: true, mediaPolicyVersion: 1, mediaBinding: binding };
     const speakers = group?.speakers.map(speaker => ({ ...speaker,
-        worldInfo: captureRoleplayWorldInfo(base, account, source, { ...options, avatar: speaker.avatar, bundledMacros, browserMacros }) }));
+        worldInfo: captureRoleplayWorldInfo(base, account, source, { ...options, avatar: speaker.avatar, bundledMacros, browserMacros,
+            groupHears: speaker.hears ?? null }) }));
     const worldInfo = speakers?.[0]?.worldInfo ?? captureRoleplayWorldInfo(base, account, source,
         { ...options, avatar: selectedAvatar, bundledMacros, browserMacros });
     // Story, Guided and Deep Swipe ask for one specific generation, so only the plain
@@ -108,7 +110,8 @@ export function admitRoleplayWorkflowJob(base, account, { operationKey, source, 
         || request.group && (request.group.sourceHash !== roleplayHash(source)
             || request.group.speakers?.[0]?.avatar !== request.avatar
             || request.group.speakers.length > MAX_TURNS || request.group.speakers.some(speaker => !speaker.worldInfo
-                || roleplayHash(speaker.worldInfo.source) !== roleplayHash(source))
+                || roleplayHash(speaker.worldInfo.source) !== roleplayHash(source)
+                || (speaker.worldInfo.groupHears ?? null) !== (speaker.hears ?? null))
             || request.group.hash !== roleplayHash({ version: request.group.version, groupId: request.group.groupId,
                 sourceHash: request.group.sourceHash, generationId: request.group.generationId,
                 speakers: request.group.speakers.map(({ worldInfo: _worldInfo, ...speaker }) => speaker), strategy: request.group.strategy }))) {
@@ -462,7 +465,7 @@ function savedToolHistory(context, job, chosen, turn, priorHistory) {
     return { history, lineage };
 }
 
-function finalPlan(context, job, chosen, { key = FINAL, speakerIndex = null, priorSpeaker = null, alternatives = [], hiding = null } = {}) {
+function finalPlan(context, job, chosen, { key = FINAL, speakerIndex = null, priorSpeaker = null, alternatives = [], hiding = null, hearing = null } = {}) {
     const saved = readArtifact(context.directories, job.id, key);
     if (saved !== undefined) {
         const { hash, ...record } = saved;
@@ -487,7 +490,9 @@ function finalPlan(context, job, chosen, { key = FINAL, speakerIndex = null, pri
         const currentSource = assertRoleplaySourceLocked(lease, source, { effect });
         const original = currentSource.records;
         const withAlternatives = addWorkflowAlternatives(selected, source, effect, chosen.output, original, alternatives);
-        const records = applyOverflowHiding(withAlternatives, hiding, currentSource.locator).records;
+        // A speaker who answered a line they missed has heard it now, as in the page.
+        const heard = hearing && effect === 'append' ? recordGroupReplyHearing(withAlternatives, hearing.avatar, hearing.hears) : withAlternatives;
+        const records = applyOverflowHiding(heard, hiding, currentSource.locator).records;
         const { source: storage } = captureRoleplayStorageSourceLocked(lease, currentSource.locator);
         if (priorSpeaker && (storage.rawHash !== priorSpeaker.result.rawHash
             || storage.instanceId !== priorSpeaker.result.instanceId || storage.revision !== priorSpeaker.result.revision)) {
@@ -629,7 +634,8 @@ function advanceSpeaker(context, job, chosen, index, turnEnd, previous = null, a
     const blocked = Boolean((output.message ?? output.messages?.[0] ?? output)?.extra?.generation_outcome);
     chosen.output = blocked ? output : markWorkflowReply(output, job, chosen.child.id);
     const plan = finalPlan(context, job, chosen, { key: `${FINAL}:${index}`, speakerIndex: index,
-        priorSpeaker: previous, alternatives, hiding });
+        priorSpeaker: previous, alternatives, hiding,
+        ...(Number.isSafeInteger(accepted.hears) ? { hearing: { avatar: accepted.avatar, hears: accepted.hears } } : {}) });
     const result = publishPlan(context, job, chosen, plan, { effectId: `speaker:${index}`, proof: index });
     const record = { parentIntentHash: roleplayHash(job.intent), previousHash: previous?.hash ?? null,
         index, turnEnd, avatar: accepted.avatar, childJobId: chosen.child.id, candidateHash: plan.candidateHash,

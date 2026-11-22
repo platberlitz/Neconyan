@@ -16,6 +16,7 @@
  * prompts: already resolved, bounded, sorted by key and published on every turn.
  */
 import { roleplayError, roleplayHash } from '../roleplay-store.js';
+import { groupWhisperPrompt } from '../../public/scripts/group-chat-visibility.js';
 
 const ROLES = ['system', 'user', 'assistant'];
 const MAX_INSTRUCTION_BYTES = 20 * 1024;
@@ -186,7 +187,8 @@ export function roleplayWorkflowContributions(workflow, { speaker = null, speake
     const extensions = [];
     const instructions = [];
     if (speaker) {
-        extensions.push({ key: `roleplay_group_speaker_${speakerIndex}`, content: speaker.contextPrompt,
+        const whisper = groupWhisperPrompt(speaker.worldInfo?.speakerNames?.user || 'User', speaker.whisper ?? []);
+        extensions.push({ key: `roleplay_group_speaker_${speakerIndex}`, content: [speaker.contextPrompt, whisper].filter(Boolean).join('\n'),
             position: 0, depth: 0, role: 'system', scan: false });
     }
     if (workflow) {

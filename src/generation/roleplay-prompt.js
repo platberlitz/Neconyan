@@ -28,7 +28,7 @@ export function roleplayEffectTrigger(effect) {
 
 /**
  * A saved edit target changes the prompt view; its old text remains on disk until completion.
- * In a group, `viewer` is the speaker, and lines they did not hear are blanked in place.
+ * In a group, `viewer` is the speaker (with the chat index of a missed line they answer), and lines they did not hear are blanked in place.
  */
 export function selectRoleplayPromptRecords(records, source, effect, viewer = null) {
     const anchor = effect === 'replace' ? source.range?.start : source.message?.index;

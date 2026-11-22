@@ -102,19 +102,19 @@ export function groupScenePrompt(scene, members) {
     return `[Scene: ${scene.location ? `Location: ${scene.location}. ` : ''}Present: ${present.join(', ') || 'nobody'}.${away.length ? ` Away: ${away.join(', ')}. They cannot hear or react to this exchange.` : ''}]`;
 }
 
+/** The line a whispered reply carries in its prompt, or '' when nobody is whispered to. */
+export function groupWhisperPrompt(userName, targetNames = []) {
+    return targetNames.length ? `[Private whisper between ${userName} and ${targetNames.join(', ')}. Other members cannot hear or react to it. Keep the reply private.]` : '';
+}
+
 /**
  * Whether a group turn has to be written in the page rather than on the
- * server. The server writes only new messages, so it cannot whisper or add a
- * speaker to the heard list of the line they answer.
- * @param {object[]} messages Chat messages, without the saved header.
+ * server. The server only picks speakers who are in the scene, so a chosen
+ * speaker who is away stays in the page.
  */
-export function groupSceneTurnNeedsPage(messages, metadata, members, speakers, { hearReplyTarget = true } = {}) {
-    const scene = readGroupScene(metadata, members);
-    if (scene.whisper_to.length || speakers.some(avatar => scene.away.includes(avatar))) return true;
-    if (!hearReplyTarget || !Array.isArray(messages)) return false;
-    const target = messages.findLast(message => message && !message.is_system);
-    const rules = readGroupSceneRules(metadata);
-    return Boolean(target) && speakers.some(avatar => !canGroupMemberSee(target, avatar, rules));
+export function groupSceneTurnNeedsPage(metadata, members, speakers) {
+    const away = readGroupScene(metadata, members).away;
+    return speakers.some(avatar => away.includes(avatar));
 }
 
 let promptScope = null;
