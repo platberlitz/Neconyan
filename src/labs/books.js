@@ -4,6 +4,7 @@ import { getExistingWorldInfoFilename, getWorldInfoFilename, getWorldInfoName } 
 import { authoringEvidence, readAuthoringFileLocked, stageAuthoringFileLocked, publishAuthoringFileLocked } from '../authoring-store.js';
 import { roleplayHash, roleplayLease, withRoleplayAccount } from '../roleplay-store.js';
 import { appendWorldInfoCommit, newWorldInfoHistory, readWorldInfoHistory, worldInfoHistoryPath, worldInfoRevision } from '../world-info-history.js';
+import { parseSavedWorldInfo } from '../world-info-file.js';
 import { newWorldInfoEntryTemplate } from '../../public/scripts/world-info-entry.js';
 import { isNativeLorebook, syncLorebookOriginalEntry } from '../../public/scripts/neconyan-lorebook-tools-core.js';
 import { labError, mutateLabRecordLocked, readLabRecord, withLabRecord } from './store.js';
@@ -20,7 +21,7 @@ export function captureLabBookLocked(lease, requestedName, { create = false } = 
     const file = readAuthoringFileLocked(lease, filename);
     if (!file && !create) throw labError('The selected lorebook no longer exists.');
     let book;
-    try { book = file ? JSON.parse(file.bytes.toString('utf8')) : { entries: {} }; } catch { throw labError('The selected lorebook is unreadable.'); }
+    try { book = file ? parseSavedWorldInfo(file.bytes.toString('utf8')) : { entries: {} }; } catch { throw labError('The selected lorebook is unreadable.'); }
     if (!isNativeLorebook(book)) throw labError('The selected lorebook is invalid.');
     return { name: requestedName, relative: path.relative(directories.root, filename), book, create,
         revision: file ? worldInfoRevision(book) : null, evidence: authoringEvidence(file) };

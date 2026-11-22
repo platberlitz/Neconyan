@@ -4,6 +4,7 @@ import { readAuthoringFileLocked, writeAuthoringFileLocked } from '../authoring-
 import { roleplayLease } from '../roleplay-store.js';
 import { assertNativeMediaTargetIdle } from '../generation/media-receipts.js';
 import { appendWorldInfoCommit, newWorldInfoHistory, readWorldInfoHistory, worldInfoRevision, writeWorldInfoHistory } from '../world-info-history.js';
+import { parseSavedWorldInfo } from '../world-info-file.js';
 import { lorebookEntryTitle, syncLorebookOriginalEntry } from '../../public/scripts/neconyan-lorebook-tools-core.js';
 import { newWorldInfoEntryTemplate } from '../../public/scripts/world-info-entry.js';
 import { headingsOf, noteBody, resolveSection, sectionBody, splitFrontmatter } from './markdown.js';
@@ -68,7 +69,7 @@ export function readBookLocked(lease, book) {
     if (!file) return null;
     let data;
     try {
-        data = JSON.parse(file.bytes.toString('utf8'));
+        data = parseSavedWorldInfo(file.bytes.toString('utf8'));
     } catch {
         throw new NotebookError('LOREBOOK_DAMAGED', 'That lorebook could not be read.', 409);
     }

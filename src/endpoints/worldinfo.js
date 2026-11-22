@@ -16,6 +16,7 @@ import {
     readWorldInfoHistory, renameWorldInfoHistory, validateWorldInfoHistory, worldInfoRevision, writeWorldInfoHistory,
 } from '../world-info-history.js';
 import { sanitizeHealthPrefs } from '../../public/scripts/neconyan-lorebook-health.js';
+import { parseSavedWorldInfo } from '../world-info-file.js';
 
 const WORLD_INFO_EXTENSION = '.json';
 // Neconyan divergence: canonical World Info filenames are UTF-8 bounded and written through the fork's safe persistence path.
@@ -172,8 +173,7 @@ export function readWorldInfoFile(directories, worldInfoName, allowDummy) {
     const pathToWorldInfo = path.join(directories.worlds, filename);
 
     const worldInfoText = readRoleplayFile(pathToWorldInfo, 32 * 1024 * 1024)?.bytes.toString('utf8');
-    const worldInfo = JSON.parse(worldInfoText);
-    return worldInfo;
+    return parseSavedWorldInfo(worldInfoText);
 }
 
 export const router = express.Router();
@@ -187,7 +187,7 @@ router.post('/history', authoringRoute((request, response, lease) => {
         if (!filename) return response.sendStatus(404);
         const bookPath = path.join(request.user.directories.worlds, filename);
         if (action === 'commit' || action === 'restore') assertNativeMediaTargetIdle(lease, { kind: 'lorebook', id: filename });
-        let data = JSON.parse(readAuthoringFileLocked(lease, bookPath).bytes.toString('utf8'));
+        let data = parseSavedWorldInfo(readAuthoringFileLocked(lease, bookPath).bytes.toString('utf8'));
         let history = readWorldInfoHistory(bookPath, lease) ?? newWorldInfoHistory();
         if (action === 'lint') {
             // Health check choices live beside the commits so .stproj exports carry them as workspace.lintPrefs.
@@ -326,14 +326,14 @@ router.post('/import', authoringRoute((request, response, lease) => {
         if (request.body.revision !== undefined) {
             const expectedRevision = request.body.revision === '' ? null : request.body.revision;
             const currentFile = readAuthoringFileLocked(lease, pathToNewFile);
-            const currentRevision = currentFile ? worldInfoRevision(JSON.parse(currentFile.bytes.toString('utf8'))) : null;
+            const currentRevision = currentFile ? worldInfoRevision(parseSavedWorldInfo(currentFile.bytes.toString('utf8'))) : null;
             if (currentRevision !== expectedRevision) return response.sendStatus(409);
         }
         if (request.body.history !== undefined) {
             const importedHistory = tryParse(request.body.history);
             if (!validateWorldInfoHistory(importedHistory)) return response.sendStatus(400);
             const current = readAuthoringFileLocked(lease, pathToNewFile);
-            const currentBook = current ? JSON.parse(current.bytes.toString('utf8')) : null;
+            const currentBook = current ? parseSavedWorldInfo(current.bytes.toString('utf8')) : null;
             const history = mergeWorldInfoHistory(readWorldInfoHistory(pathToNewFile, lease), importedHistory, currentBook);
             writeWorldInfoWithHistory(pathToNewFile, fileContents, history, lease);
         } else {
@@ -378,7 +378,7 @@ router.post('/edit', authoringRoute((request, response, lease) => {
 
     if (request.body.revision !== undefined) {
         const currentFile = readAuthoringFileLocked(lease, pathToFile);
-        const currentRevision = currentFile ? worldInfoRevision(JSON.parse(currentFile.bytes.toString('utf8'))) : null;
+        const currentRevision = currentFile ? worldInfoRevision(parseSavedWorldInfo(currentFile.bytes.toString('utf8'))) : null;
         if (currentRevision !== request.body.revision) return response.sendStatus(409);
     }
 
@@ -406,7 +406,7 @@ router.post('/rename', authoringRoute((request, response, lease) => {
     assertNativeMediaTargetIdle(lease, { kind: 'lorebook', id: newFilename });
     if (request.body.revision !== undefined) {
         const current = readAuthoringFileLocked(lease, oldPath);
-        if (!current || worldInfoRevision(JSON.parse(current.bytes.toString('utf8'))) !== request.body.revision) return response.sendStatus(409);
+        if (!current || worldInfoRevision(parseSavedWorldInfo(current.bytes.toString('utf8'))) !== request.body.revision) return response.sendStatus(409);
     }
     const existingTargetFilename = getExistingWorldInfoFilename(request.user.directories, newName);
     if (existingTargetFilename || fs.existsSync(newPath)) {
