@@ -13,6 +13,7 @@ import { debounce_timeout } from './constants.js';
 import { newWorldInfoEntryDefinition, newWorldInfoEntryTemplate } from './world-info-entry.js';
 export { newWorldInfoEntryDefinition, newWorldInfoEntryTemplate } from './world-info-entry.js';
 import { isKeywordActivationSuppressed } from './world-info-policy.js';
+import { hasEditableWorldInfoId } from './world-info-entry-id.js';
 import { getRegexedString, regex_placement } from './extensions/regex/engine.js';
 import { SlashCommandParser } from './slash-commands/SlashCommandParser.js';
 import { SlashCommand } from './slash-commands/SlashCommand.js';
@@ -26,7 +27,8 @@ import { renderTemplateAsync } from './templates.js';
 import { t } from './i18n.js';
 import { accountStorage } from './util/AccountStorage.js';
 import { getOrCreatePersonaDescriptor, setPersonaDescription, updatePersonaLorebookActions, user_avatar } from './personas.js';
-import { escapeCharacterBookRegex, getFreeCharacterBookEntryId, normalizeCharacterBookPosition, serializeCharacterBookKeys, serializeWorldInfoEntry } from './world-info-character-book.js';
+import { getFreeCharacterBookEntryId, serializeCharacterBookKeys, serializeWorldInfoEntry } from './world-info-character-book.js';
+import { convertCharacterBookEntry, worldInfoPositions } from './world-info-character-book-entry.js';
 import { detectEmbeddedLorebookCandidates, findMatchingLorebookName, getLinkedAuxBooks, isEmbeddedBookLinked } from './world-info-batch-helpers.js';
 import { applyWorldInfoTimedEffects, filterWorldInfoInclusionGroups, getTimedEffectWindow, matchesWorldInfoEntry, normalizeWorldInfoKey, parseWorldInfoKeyRegex, passesWorldInfoProbability, prepareWorldInfoEntries, resolveWorldInfoTimedEffects } from './world-info-scan-core.js';
 import { parseLorebookImport } from './neconyan-lorebook-tools-core.js';
@@ -1021,16 +1023,7 @@ export function updateWorldInfoSettings(settings, activeWorldInfo) {
     saveSettingsDebounced();
 }
 
-export const world_info_position = {
-    before: 0,
-    after: 1,
-    ANTop: 2,
-    ANBottom: 3,
-    atDepth: 4,
-    EMTop: 5,
-    EMBottom: 6,
-    outlet: 7,
-};
+export const world_info_position = worldInfoPositions;
 
 export const wi_anchor_position = {
     before: 0,
@@ -2869,16 +2862,13 @@ async function displayWorldEntries(name, data, navigation = navigation_option.no
     // Before printing the WI, we check if we should enable/disable search sorting
     verifyWorldInfoSearchSortRule();
 
-    function getDataArray(callback) {
-        // Convert the data.entries object into an array
-        let entriesArray = Object.keys(data.entries).map(uid => {
-            const entry = data.entries[uid];
-            if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
-                return null;
-            }
+    function getDataArray() {
+        // Only paginate entries the editor can safely address. Health reports broken records.
+        let entriesArray = Object.entries(data.entries).flatMap(([slot, entry]) => {
+            if (!hasEditableWorldInfoId(slot, entry)) return [];
             entry.displayIndex = entry.displayIndex ?? entry.uid;
-            return entry;
-        }).filter(entry => entry !== null);
+            return [entry];
+        });
 
         // Apply the filter and do the chosen sorting
         entriesArray = addMissingWorldInfoFields(entriesArray);
@@ -2891,35 +2881,34 @@ async function displayWorldEntries(name, data, navigation = navigation_option.no
         const keys = entriesArray.flatMap(entry => [...entry.key, ...entry.keysecondary]);
         updateWorldEntryKeyOptionsCache(keys, { reset: true });
 
-        // Run the callback for printing this
-        typeof callback === 'function' && callback(entriesArray);
         return entriesArray;
     }
 
-    updateWorldInfoWorkspaceState({ name, data, filteredEntries: getDataArray().length });
-
+    const entries = getDataArray();
+    const pager = $('#world_info_pagination');
     const storageKey = 'WI_PerPage';
-    const perPageDefault = 25;
+    const pageSizeOptions = [10, 25, 50, 100, 500, 1000];
+    const savedPageSize = Number(accountStorage.getItem(storageKey));
+    const pageSize = pageSizeOptions.includes(savedPageSize) ? savedPageSize : 25;
     let startPage = 1;
 
     if (navigation === navigation_option.previous) {
-        startPage = $('#world_info_pagination').pagination('getCurrentPageNum');
+        startPage = Math.min(pager.pagination('getCurrentPageNum') || 1, Math.max(1, Math.ceil(entries.length / pageSize)));
     }
 
     const navigationTargetUid = requestedUid ?? (isDesktopSplit ? desktopSelectedWorldInfoUid : null);
     if (navigationTargetUid !== null) {
-        const data = getDataArray();
-        const uidIndex = data.findIndex(x => x.uid === navigationTargetUid);
-        const perPage = Number(accountStorage.getItem(storageKey)) || perPageDefault;
+        const uidIndex = entries.findIndex(x => Number(x.uid) === navigationTargetUid);
         if (uidIndex >= 0) {
-            startPage = Math.floor(uidIndex / perPage) + 1;
+            startPage = Math.floor(uidIndex / pageSize) + 1;
         }
     }
 
-    $('#world_info_pagination').pagination({
-        dataSource: getDataArray,
-        pageSize: Number(accountStorage.getItem(storageKey)) || perPageDefault,
-        sizeChangerOptions: [10, 25, 50, 100, 500, 1000],
+    let restorePageSizeFocus = false;
+    pager.prop('hidden', entries.length === 0).pagination({
+        dataSource: entries,
+        pageSize,
+        sizeChangerOptions: pageSizeOptions,
         showSizeChanger: true,
         pageRange: 1,
         pageNumber: startPage,
@@ -2929,9 +2918,8 @@ async function displayWorldEntries(name, data, navigation = navigation_option.no
         nextText: '>',
         formatNavigator: PAGINATION_TEMPLATE,
         showNavigator: true,
-        callback: async function (/** @type {object[]} */ page) {
+        callback: function (/** @type {object[]} */ page) {
             try {
-                clearEntryList(worldEntriesList);
                 clearEntryList(desktopEditorHost);
                 clearWorldInfoDesktopEditor();
 
@@ -2939,7 +2927,7 @@ async function displayWorldEntries(name, data, navigation = navigation_option.no
 
                 for (const entry of page) {
                     try {
-                        const block = await getWorldEntry(name, data, entry, {
+                        const block = buildWorldEntry(name, data, entry, {
                             desktopEditorHost,
                             isDesktopSplit,
                             selectedUid: desktopSelectedWorldInfoUid,
@@ -2962,6 +2950,7 @@ async function displayWorldEntries(name, data, navigation = navigation_option.no
                     blocks.forEach(block => block.find('.drag-handle').attr('title', hint));
                 }
 
+                clearEntryList(worldEntriesList);
                 if (folderUI) {
                     folderUI.render(worldEntriesList[0], blocks, Boolean(String($('#world_info_search').val()).trim()));
                 } else {
@@ -2976,23 +2965,23 @@ async function displayWorldEntries(name, data, navigation = navigation_option.no
                     }
                 }
 
-                const filteredEntryCount = getDataArray().length;
-                const pageSize = Number(accountStorage.getItem(storageKey)) || perPageDefault;
-                $('#world_info_pagination').prop('hidden', filteredEntryCount <= pageSize);
-                updateWorldInfoWorkspaceState({ name, data, filteredEntries: filteredEntryCount });
+                updateWorldInfoWorkspaceState({ name, data, filteredEntries: entries.length });
                 updateWorldInfoResultsSummary({
                     totalEntries: Object.keys(data.entries).length,
-                    filteredEntries: filteredEntryCount,
-                    pageEntries: page.length,
+                    filteredEntries: entries.length,
+                    pageEntries: blocks.length,
                 });
             } catch (error) {
                 console.error('Error while rendering WI entries:', error);
             }
         },
-        afterSizeSelectorChange: function (e) {
-            accountStorage.setItem(storageKey, e.target.value);
-            const pageSize = Number(e.target.value) || perPageDefault;
-            $('#world_info_pagination').prop('hidden', getDataArray().length <= pageSize);
+        beforeSizeSelectorChange: function (event) {
+            restorePageSizeFocus = event.target === document.activeElement;
+        },
+        afterSizeSelectorChange: function (_, size) {
+            accountStorage.setItem(storageKey, String(size));
+            // Pagination.js replaces the selector when it redraws the controls.
+            if (restorePageSizeFocus) pager.find('.J-paginationjs-size-select')[0]?.focus({ preventScroll: true });
         },
         afterPaging: function () {
             $('#world_popup_entries_list textarea[name="comment"]').each(function () {
@@ -3001,26 +2990,13 @@ async function displayWorldEntries(name, data, navigation = navigation_option.no
         },
     });
 
-    if (navigationTargetUid !== null) {
-        const selector = `#world_popup_entries_list [uid="${navigationTargetUid}"]`;
-        waitUntilCondition(() => document.querySelector(selector) !== null).finally(() => {
-            const element = $(selector);
-
-            if (element.length === 0) {
-                console.log(`Could not find element for uid ${navigationTargetUid}`);
-                return;
-            }
-
-            const elementOffset = element.offset();
-            const parentOffset = element.parent().offset();
-            const scrollOffset = elementOffset.top - parentOffset.top;
-            if (isDesktopSplit) {
-                worldEntriesList.scrollTop(scrollOffset);
-            } else {
-                $('#WorldInfo').scrollTop(scrollOffset);
-            }
-            if (flashOnNav) flashHighlight(element);
-        });
+    if (requestedUid !== null) {
+        const element = worldEntriesList.find(`.world_entry[uid="${requestedUid}"]`);
+        const target = isDesktopSplit && !flashOnNav
+            ? desktopEditorHost.children()[0] ?? element[0]
+            : element[0];
+        target?.scrollIntoView({ block: 'nearest' });
+        if (element.length && flashOnNav) flashHighlight(element);
     }
 
     $('#world_popup_new').off('click').on('click', async () => {
@@ -3448,7 +3424,8 @@ function getWIOriginalDataIndex(data, uid) {
     if (Number.isInteger(mappedIndex) && data.originalData?.entries?.[mappedIndex]) {
         return mappedIndex;
     }
-    return data.originalData?.entries?.findIndex(x => String(x.id ?? x.uid) === String(uid)) ?? -1;
+    if (data.originalDataUidMap) return -1;
+    return data.originalData?.entries?.findIndex(x => String(x?.id ?? x?.uid) === String(uid)) ?? -1;
 }
 
 // Neconyan: built-in extension writers need one atomic resync after populating a new imported-book entry.
@@ -4090,6 +4067,10 @@ function setCommentPlaceholder(keys, commentInput) {
  * @param {object} entry - The entry object to be edited.
  */
 export async function getWorldEntry(name, data, entry, options = {}) {
+    return buildWorldEntry(name, data, entry, options);
+}
+
+function buildWorldEntry(name, data, entry, options = {}) {
     if (!data.entries[entry.uid]) return;
     const finishRender = trackWorldInfoEntryRender(data, entry.uid);
 
@@ -4098,7 +4079,7 @@ export async function getWorldEntry(name, data, entry, options = {}) {
         isDesktopSplit = isWorldInfoDesktopSplitLayout(),
         selectedUid = desktopSelectedWorldInfoUid,
     } = options;
-    const isSelectedEntry = isDesktopSplit && selectedUid === entry.uid;
+    const isSelectedEntry = isDesktopSplit && selectedUid === Number(entry.uid);
     const headerTemplate = WI_ENTRY_HEADER_TEMPLATE.clone();
     headerTemplate.data('uid', entry.uid);
     headerTemplate.attr('uid', entry.uid);
@@ -4121,7 +4102,7 @@ export async function getWorldEntry(name, data, entry, options = {}) {
         !skipReset && await resetScrollHeight(this);
         data.entries[uid].comment = value;
         setWIOriginalDataValue(data, uid, 'comment', data.entries[uid].comment);
-        if (desktopSelectedWorldInfoUid === uid) {
+        if (desktopSelectedWorldInfoUid === Number(uid)) {
             setWorldInfoDesktopEditorMeta(data.entries[uid]);
         }
         !noSave && await saveWorldInfo(name, data);
@@ -4155,7 +4136,7 @@ export async function getWorldEntry(name, data, entry, options = {}) {
         const deleted = await deleteWorldInfoEntry(data, uid);
         if (!deleted) return;
         deleteWIOriginalDataValue(data, uid);
-        if (desktopSelectedWorldInfoUid === uid) {
+        if (desktopSelectedWorldInfoUid === Number(uid)) {
             desktopSelectedWorldInfoUid = null;
         }
         await saveWorldInfo(name, data);
@@ -4665,12 +4646,12 @@ export async function getWorldEntry(name, data, entry, options = {}) {
             if ($(event.target).closest('textarea, input, select, option, button, .menu_button, .killSwitch').length) {
                 return;
             }
-            updateEditor(entry.uid, false);
+            updateEditor(Number(entry.uid), false);
         });
         icon.closest('button').on('click', function (event) {
             event.preventDefault();
             event.stopPropagation();
-            updateEditor(entry.uid, false);
+            updateEditor(Number(entry.uid), false);
         });
 
         if (isSelectedEntry) {
@@ -6573,56 +6554,7 @@ export function convertCharacterBook(characterBook) {
 
     characterBook.entries.forEach((entry, index) => {
         const uid = getFreeWorldEntryUid(result);
-        const toRegex = key => entry.use_regex && !parseRegexFromString(key)
-            ? `/${escapeCharacterBookRegex(key)}/`
-            : key;
-        result.entries[uid] = {
-            ...newWorldInfoEntryTemplate,
-            uid,
-            key: Array.isArray(entry.keys) ? entry.keys.map(toRegex) : [],
-            keysecondary: Array.isArray(entry.secondary_keys) ? entry.secondary_keys.map(toRegex) : [],
-            comment: entry.comment || '',
-            content: entry.content,
-            constant: entry.constant || false,
-            selective: entry.selective || false,
-            order: entry.insertion_order,
-            position: normalizeCharacterBookPosition(entry.extensions?.position, entry.position, world_info_position),
-            excludeRecursion: entry.extensions?.exclude_recursion ?? false,
-            preventRecursion: entry.extensions?.prevent_recursion ?? false,
-            delayUntilRecursion: entry.extensions?.delay_until_recursion ?? false,
-            disable: entry.enabled === false,
-            addMemo: !!entry.comment,
-            displayIndex: entry.extensions?.display_index ?? index,
-            probability: entry.extensions?.probability ?? 100,
-            useProbability: entry.extensions?.useProbability ?? true,
-            depth: entry.extensions?.depth ?? DEFAULT_DEPTH,
-            selectiveLogic: entry.extensions?.selectiveLogic ?? world_info_logic.AND_ANY,
-            outletName: entry.extensions?.outlet_name ?? '',
-            group: entry.extensions?.group ?? '',
-            groupOverride: entry.extensions?.group_override ?? false,
-            groupWeight: entry.extensions?.group_weight ?? DEFAULT_WEIGHT,
-            scanDepth: entry.extensions?.scan_depth ?? null,
-            caseSensitive: entry.case_sensitive ?? entry.extensions?.case_sensitive ?? null,
-            matchWholeWords: entry.extensions?.match_whole_words ?? null,
-            useGroupScoring: entry.extensions?.use_group_scoring ?? null,
-            characterFilter: entry.character_filter,
-            automationId: entry.extensions?.automation_id ?? '',
-            role: entry.extensions?.role ?? extension_prompt_roles.SYSTEM,
-            vectorized: entry.extensions?.vectorized ?? false,
-            sticky: entry.extensions?.sticky ?? null,
-            cooldown: entry.extensions?.cooldown ?? null,
-            delay: entry.extensions?.delay ?? null,
-            matchPersonaDescription: entry.extensions?.match_persona_description ?? false,
-            matchCharacterDescription: entry.extensions?.match_character_description ?? false,
-            matchCharacterPersonality: entry.extensions?.match_character_personality ?? false,
-            matchCharacterDepthPrompt: entry.extensions?.match_character_depth_prompt ?? false,
-            matchScenario: entry.extensions?.match_scenario ?? false,
-            matchCreatorNotes: entry.extensions?.match_creator_notes ?? false,
-            extensions: entry.extensions ?? {},
-            triggers: entry.extensions?.triggers || [],
-            ignoreBudget: entry.extensions?.ignore_budget ?? false,
-            agentBlacklisted: entry.extensions?.agent_blacklisted ?? entry.agentBlacklisted ?? false,
-        };
+        result.entries[uid] = convertCharacterBookEntry(entry, uid, index);
         result.originalDataUidMap[uid] = index;
     });
 

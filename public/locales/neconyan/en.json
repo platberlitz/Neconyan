@@ -19368,6 +19368,8 @@
   "Recursion cycles": "Recursion cycles",
   "Self-triggers": "Self-triggers",
   "Malformed wrappers": "Malformed wrappers",
+  "Damaged entries": "Damaged entries",
+  "The editor cannot open this entry because its record or ID is damaged.": "The editor cannot open this entry because its record or ID is damaged.",
   "Errors": "Errors",
   "Warnings": "Warnings",
   "Entry \"${0}\" has a regex-shaped key that is not a valid regex - SillyTavern will not treat it as a regex.": "Entry \"${0}\" has a regex-shaped key that is not a valid regex - SillyTavern will not treat it as a regex.",

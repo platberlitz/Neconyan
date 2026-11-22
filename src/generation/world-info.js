@@ -7,6 +7,7 @@ import { mergeChatPresetSettings } from '../../public/scripts/chat-preset-reques
 import { resolveGenerationProfile } from './profiles.js';
 import { imageSize } from 'image-size';
 import { getExistingWorldInfoFilename, isValidWorldInfoData } from '../endpoints/worldinfo.js';
+import { parseSavedWorldInfo } from '../world-info-file.js';
 import { readJsonShared } from '../mewmory/store.js';
 import { getCounter } from '../mewmory/tokens.js';
 import { readRoleplayFile, roleplayError, roleplayHash, roleplaySettingsHash, saveRoleplayAccount, withRoleplayAccount } from '../roleplay-store.js';
@@ -190,7 +191,7 @@ function readAvailableBooks(directories, names) {
         }
         // Optional lore must not block a reply. Skip unusable content, not protected read failures.
         let book;
-        try { book = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(file.bytes)); } catch { continue; }
+        try { book = parseSavedWorldInfo(new TextDecoder('utf-8', { fatal: true }).decode(file.bytes)); } catch { continue; }
         if (!isValidWorldInfoData(book)) continue;
         result[name] = { data: book, hash: roleplayHash(book), rawHash: file.rawHash, physical: file.physical };
     }

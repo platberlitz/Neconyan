@@ -2,6 +2,7 @@ import path from 'node:path';
 import { registerHandler } from '../jobs/runner.js';
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { getExistingWorldInfoFilename, isValidWorldInfoData } from '../endpoints/worldinfo.js';
+import { parseSavedWorldInfo } from '../world-info-file.js';
 import { readAgentRecordLocked } from '../in-chat-agent-storage.js';
 import { authoringEvidence, readAuthoringFileLocked } from '../authoring-store.js';
 import { getTool, invokeTool, registerTool } from '../tools/registry.js';
@@ -43,7 +44,7 @@ function readableBook(lease, dirs, name, expected = null) {
     const file = readAuthoringFileLocked(lease, bookFile(dirs, filename), MAX_BOOK_BYTES);
     if (!file) throw invalid('The selected lorebook is missing.');
     let book;
-    try { book = JSON.parse(file.bytes.toString('utf8')); } catch { throw invalid('The selected lorebook is unreadable.'); }
+    try { book = parseSavedWorldInfo(file.bytes.toString('utf8')); } catch { throw invalid('The selected lorebook is unreadable.'); }
     if (!isValidWorldInfoData(book)) throw invalid('The selected lorebook is invalid.');
     const evidence = authoringEvidence(file);
     if (expected && (roleplayHash(evidence) !== roleplayHash(expected.evidence) || roleplayHash(book) !== expected.bookHash)) {
@@ -184,7 +185,7 @@ function savedPlan(context, request) {
         }
         const { file, agent } = currentToolSource(context, lease, request);
         let book;
-        try { book = JSON.parse(file.bytes.toString('utf8')); } catch { throw invalid('The accepted lorebook is unreadable.'); }
+        try { book = parseSavedWorldInfo(file.bytes.toString('utf8')); } catch { throw invalid('The accepted lorebook is unreadable.'); }
         const tool = actionName(request.name, request.args);
         const action = request.name === 'Pathfinder_Search'
             ? { result: searchPathfinderBook(request.bookName, book, request.book.bookHash, request.args.node_id ?? ''), changed: false }

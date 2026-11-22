@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.5.8
+## v1.6.0
 
 ### Merged Staging PRs
 - PR #776 (2026-11-20) `fix(settings): keep theme filters in view when pressed`
@@ -90,6 +90,11 @@
 - PR #866 (2026-11-22) `feat(groups): add 'Only with the group' memory mode`
 - PR #867 (2026-11-22) `fix(conversation): let Roleplay group asides follow the scene`
 - PR #868 (2026-11-22) `perf(mewmory): release unused archive data during extraction`
+- PR #869 (2026-11-22) `chore(release): start staging at 1.6.0`
+- PR #870 (2026-11-22) `fix(lorebook): show full pages and surface damaged entries`
+- PR #871 (2026-11-22) `feat(mewmory): read inline float32 embeddings`
+- PR #872 (2026-11-22) `fix(lorebooks): load saved entry lists and align entry tools`
+- PR #873 (2026-11-22) `perf(mewmory): store embeddings as compact float32 values`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`

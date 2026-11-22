@@ -1,6 +1,7 @@
 import { detectMalformedWrapper, entryDelimiterName, entryDelimiterNameFromKey, malformedWrapperLabel } from './neconyan-lorebook-delimiters.js';
 import { classifyKey, findKeyMatches } from './neconyan-lorebook-keytest.js';
 import { lorebookEntryTitle } from './neconyan-lorebook-tools-core.js';
+import { hasEditableWorldInfoId } from './world-info-entry-id.js';
 
 export const HEALTH_LARGE_BOOK_THRESHOLD = 1500;
 const CONTENT_SCAN_LIMIT = 5000;
@@ -8,6 +9,7 @@ const ENTRIES_PER_STEP = 200;
 const SOURCES_PER_STEP = 16;
 
 export const HEALTH_RULES = Object.freeze({
+    'damaged-entry': 'Damaged entries',
     'invalid-regex': 'Invalid regex',
     'duplicate-key': 'Duplicate keys',
     'secondary-keys-ignored': 'Ignored secondary keys',
@@ -66,10 +68,6 @@ function quotedList(items) {
 
 function usableKeys(keys) {
     return Array.isArray(keys) ? keys.filter(key => typeof key === 'string' && key.trim()) : [];
-}
-
-function orderedEntries(book) {
-    return Object.values(book?.entries ?? {}).filter(entry => entry && typeof entry === 'object');
 }
 
 function hasAlternateActivation(entry) {
@@ -254,13 +252,22 @@ function* recursionRules(entries, emit, defaults) {
  * @returns {Generator<number, {diagnostics: object[], hidden: number}>}
  */
 export function* healthCheckSteps(book, { prefs, includeGraphRules = true, defaults = {} } = {}) {
-    const entries = orderedEntries(book);
+    const slots = Object.entries(book?.entries ?? {});
+    const entries = [];
     const clean = sanitizeHealthPrefs(prefs) ?? { ignoredSignatures: [], mutedRules: [] };
     const found = [];
     const emit = (diagnostic, index) => found.push({ diagnostic, index, seq: found.length });
-    for (let offset = 0; offset < entries.length; offset += ENTRIES_PER_STEP) {
-        entries.slice(offset, offset + ENTRIES_PER_STEP).forEach((entry, step) => entryRules(entry, offset + step, emit));
-        yield 0.05 * Math.min(1, (offset + ENTRIES_PER_STEP) / entries.length);
+    for (let offset = 0; offset < slots.length; offset += ENTRIES_PER_STEP) {
+        slots.slice(offset, offset + ENTRIES_PER_STEP).forEach(([slot, entry], step) => {
+            if (hasEditableWorldInfoId(slot, entry)) {
+                entryRules(entry, entries.length, emit);
+                entries.push(entry);
+            } else {
+                emit({ rule: 'damaged-entry', severity: 'error', entryIds: [], details: slot,
+                    message: 'The editor cannot open this entry because its record or ID is damaged.' }, offset + step);
+            }
+        });
+        yield 0.05 * Math.min(1, (offset + ENTRIES_PER_STEP) / slots.length);
     }
     duplicateKeyRules(entries, emit, defaults);
     yield 0.1;
