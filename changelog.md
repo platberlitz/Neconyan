@@ -96,6 +96,7 @@
 - PR #872 (2026-11-22) `fix(lorebooks): load saved entry lists and align entry tools`
 - PR #873 (2026-11-22) `perf(mewmory): store embeddings as compact float32 values`
 - PR #874 (2026-11-22) `feat(scratchpad): check cards, presets and lorebooks for problems`
+- PR #875 (2026-11-22) `perf(characters): limit cards processed at once on a cold list`
 - PR #876 (2026-11-22) `fix(plot-compass): honour selected directions`
 - PR #877 (2026-11-22) `feat(scratchpad): edit lorebook activation settings and trace misses`
 - PR #878 (2026-11-22) `fix(macros): hide text inside scoped comments`
