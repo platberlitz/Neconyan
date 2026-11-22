@@ -1,7 +1,7 @@
 /* eslint playwright/expect-expect: off -- These checks use node:assert, not Playwright assertions. */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { cosine, createVectorReader } from '../src/mewmory/vector-storage.js';
+import { cosine, createVectorEncoder, createVectorReader } from '../src/mewmory/vector-storage.js';
 
 function fromDoubles(values) {
     const bytes = new ArrayBuffer(values.length * 4);
@@ -131,4 +131,21 @@ test('the largest finite Float32 components do not overflow the stored sum of sq
     const stored = Array(32_768).fill(maxFloat32);
     const query = stored.map((_, i) => i % 2 ? 0.5 : 1);
     assert.equal(reader.similarity(fromDoubles(stored), query), referenceCosine(query, stored));
+});
+
+test('encoding matches independently rounded little-endian bits across numeric boundaries', () => {
+    const encode = createVectorEncoder();
+    const shortest = 2 ** -149, highest = 3.4028234663852886e38;
+    const values = Object.freeze([0, -0, -0.25, 0.1, 1 + 2 ** -25, 120.0191, shortest, -shortest,
+        Number.MIN_VALUE, -Number.MIN_VALUE, highest, -highest]);
+    const encoded = encode(values);
+    assert.equal(encoded, fromDoubles(values).vectorF32LE);
+    assert.equal(encode([1]), 'AACAPw==');
+    assert.equal(encode(values), encoded);
+    assert.equal(encode(Array(32_768).fill(1)).length, Math.ceil((128 * 1024) / 3) * 4);
+    for (const invalid of [null, [], [NaN], [Infinity], [Number.MAX_VALUE], Array(32_769).fill(1),
+        [{ valueOf: 1, toString: 2 }], [undefined]]) assert.equal(encode(invalid), null);
+    const strict = createVectorEncoder({ requireNonzero: true });
+    assert.equal(strict([1e-100, -1e-100]), null);
+    assert.equal(encode([1e-100, -1e-100]), fromDoubles([1e-100, -1e-100]).vectorF32LE);
 });

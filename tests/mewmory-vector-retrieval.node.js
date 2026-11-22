@@ -205,7 +205,7 @@ function archiveWithSources() {
     return state;
 }
 
-test('re-index preserves compact and legacy matches in both maps and still writes provider arrays', async () => {
+test('re-index preserves compact and legacy matches in both maps and compacts new provider vectors', async () => {
     for (const staged of [false, true]) {
         const state = archiveWithSources();
         const config = embeddingConfig();
@@ -230,7 +230,7 @@ test('re-index preserves compact and legacy matches in both maps and still write
         const saved = staged ? state.index.build.vectors : state.index.vectors;
         assert.strictEqual(saved[first.id], compact);
         assert.strictEqual(saved[second.id], legacy);
-        assert.deepEqual(result.paid[third.id], { textHash: hash(third.searchText), vector: nextVector });
+        assert.deepEqual(result.paid[third.id], compactEntry(hash(third.searchText), nextVector));
         assert.strictEqual(saved[third.id], result.paid[third.id]);
         assert.equal(saved[fourth.id], undefined);
     }
@@ -259,7 +259,7 @@ test('merge chooses compatible entries from published and staged maps and skips 
     assert.deepEqual(mergeVectorIndex(state, disallowed, [{ version, vectors: { [first.id]: compact } }]).vectors, {});
 });
 
-test('the store continues to read and persist mixed entries opaquely in the reader stage', t => {
+test('the store preserves compact entries while converting legacy entries on the next write', t => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mewmory-vector-reader-'));
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));
     const directories = { root };
@@ -274,9 +274,21 @@ test('the store continues to read and persist mixed entries opaquely in the read
     const cloned = readState(directories, locator);
     cloned.index.vectors.compact.metadata.v = 2;
     assert.deepEqual(before.index.vectors.compact, compact);
-    assert.deepEqual(before.index.vectors.legacy, legacy);
+    const compactLegacy = compactEntry(legacy.textHash, legacy.vector);
+    assert.deepEqual(before.index.vectors.legacy, compactLegacy);
     mutateState(directories, locator, current => { current.reviewedAt = 51; });
     const saved = JSON.parse(fs.readFileSync(archive, 'utf8'));
     assert.equal(saved.reviewedAt, 51);
-    assert.deepEqual(saved.index, state.index);
+    assert.deepEqual(saved.index, { ...state.index, vectors: { compact, legacy: compactLegacy },
+        build: { ...state.index.build, vectors: { legacy: compactLegacy } } });
+});
+
+test('a new paid vector that overflows or rounds wholly to zero does not publish a partial build', async () => {
+    for (const vector of [[Number.MAX_VALUE, 1], [1e-100, -1e-100]]) {
+        const state = archiveWithSources();
+        const before = structuredClone(state.index);
+        await assert.rejects(updateIndex(state, {}, embeddingConfig(), { limit: 1,
+            embedFn: () => ({ vectors: [vector], usage: {} }) }), { status: 502 });
+        assert.deepEqual(state.index, before);
+    }
 });

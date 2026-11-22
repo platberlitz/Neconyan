@@ -115,7 +115,9 @@ test('no-op and mismatched guards preserve revision/time and repair only missing
     const { directories, guards, recovery, archive } = fixture(t);
     const shared = readStateShared(directories, locator);
     const savedLocator = shared.locator;
-    const original = fs.readFileSync(archive, 'utf8');
+    const expected = JSON.parse(fs.readFileSync(archive, 'utf8'));
+    expected.index.vectors.saved = { textHash: 'saved', vectorF32LE: Buffer.from([0, 0, 128, 62, 0, 0, 0, 191]).toString('base64') };
+    expected.index.build.vectors.newer = { textHash: 'newer', vectorF32LE: Buffer.from([0, 0, 64, 63]).toString('base64') };
     for (const guard of [guards, { ...guards, branchId: 'other' }, { ...guards, jobId: 'other' },
         { ...guards, status: 'complete' }, { branchId: guards.branchId }]) {
         fs.rmSync(recovery, { force: true });
@@ -124,7 +126,7 @@ test('no-op and mismatched guards preserve revision/time and repair only missing
         assert.equal(result.state.revision, shared.revision);
         assert.equal(result.state.updatedAt, shared.updatedAt);
         assert.equal(shared.locator, savedLocator);
-        assert.equal(fs.readFileSync(archive, 'utf8'), original);
+        assert.equal(fs.readFileSync(archive, 'utf8'), JSON.stringify(expected));
         assert.deepEqual(JSON.parse(fs.readFileSync(recovery)), diskGuard(shared));
     }
     const bytes = fs.readFileSync(recovery);

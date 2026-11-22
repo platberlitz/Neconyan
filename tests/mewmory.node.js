@@ -43,6 +43,18 @@ const { markServiceBusy, markServiceWorking, parseRetryAfter, resetServiceCooldo
 // Fixture providers share URLs, so one test's rate limit must not pause the next test's requests.
 beforeEach(() => resetServiceCooldowns());
 
+function expectedCompactIndex(index) {
+    const expected = structuredClone(index);
+    for (const map of [expected.vectors, expected.build?.vectors]) for (const entry of Object.values(map ?? {})) {
+        const bytes = new ArrayBuffer(entry.vector.length * 4);
+        const view = new DataView(bytes);
+        entry.vector.forEach((value, offset) => view.setFloat32(offset * 4, Math.fround(value), true));
+        delete entry.vector;
+        entry.vectorF32LE = Buffer.from(bytes).toString('base64');
+    }
+    return expected;
+}
+
 test('RAG prefixes preserve whitespace through saving and real custom and native requests', async t => {
     const { directories } = disk(t);
     const provider = await createMewmoryProvider();
@@ -1148,7 +1160,7 @@ test('worker failure/retry repairs nested jobs and finish preserves concurrent i
     const complete = await waitForProcessing(directories, locator);
     assert.equal(complete.processing.status, 'complete');
     for (const key of ['failures', 'retryAt', 'busy']) assert.equal(Object.hasOwn(complete.processing, key), false);
-    assert.deepEqual(complete.index, newerIndex);
+    assert.deepEqual(complete.index, expectedCompactIndex(newerIndex));
     assert.equal(complete.jobs.at(-1).status, 'complete');
     assert.equal(complete.usage.extractor.requests, 1);
     assert.equal(complete.usage.extractor.input, 50);
@@ -3616,7 +3628,7 @@ test('a background batch saves alongside recall, indexing and appended chat with
     assert.ok(eligibleRecords(state).some(record => record.id === 'event:background'));
     assert.equal(state.recalls.at(-1).id, result.inspection.id);
     assert.equal(state.preview.fingerprint, result.fingerprint);
-    assert.deepEqual(state.index.vectors.concurrent.vector, [1]);
+    assert.deepEqual(state.index.vectors.concurrent, { textHash: 'kept', vectorF32LE: 'AACAPw==' });
     assert.equal(state.usage.selector.requests, 1);
     assert.equal(state.usage.extractor.requests, 1);
     assert.equal(Object.keys(state.checkpoints).length, 3);
@@ -4809,7 +4821,7 @@ test('admitted extraction and interviews keep original inputs, roll back a parti
     assert.equal(result.records.filter(row => row.kind === 'interview').length, 1);
     assert.equal(result.records.filter(row => row.kind === 'overview').length, 1);
     assert.equal(JSON.stringify(result.records).includes('Mara remembers the pier 2'), false);
-    assert.deepEqual(result.index, { ...newerIndex, pending: true });
+    assert.deepEqual(result.index, { ...expectedCompactIndex(newerIndex), pending: true });
     assert.deepEqual(heldShared.index, admittedIndex);
     assert.deepEqual(initial.index, originalIndex);
     assert.equal(result.timeline.length, 4);
