@@ -9,7 +9,7 @@ import { scanWorldInfo, worldInfoScanWindow } from '../src/generation/world-info
 import { activeRoleplayAuthorNote, assertWorldInfoDepthHistory, buildRoleplaySavedHistory, insertRoleplayChatSystem, insertRoleplayPostHistory, insertWorldInfoAuthorNote, insertWorldInfoDepth, insertWorldInfoExamples, insertWorldInfoOutlets } from '../src/generation/roleplay-prompt.js';
 import { write as writeCard } from '../src/character-card-parser.js';
 
-const { assertRoleplayWorldInfoCurrent, captureRoleplayWorldInfo, prepareRoleplayWorldInfo } = await import('../src/generation/world-info.js');
+const { assertRoleplayWorldInfoCurrent, captureRoleplayWorldInfo, captureRoleplayWorldInfoForAgentScan, prepareRoleplayWorldInfo } = await import('../src/generation/world-info.js');
 const { captureRoleplaySource, readRoleplayChat } = await import('../src/generation/roleplay-source.js');
 const { admitRoleplayJob, applyRoleplayJobEffect } = await import('../src/roleplay-jobs.js');
 const { getJob, releaseJob } = await import('../src/jobs/store.js');
@@ -1672,9 +1672,11 @@ test('a book becoming available or unavailable cannot change an accepted reply',
     const capture = () => captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 100 });
     const withoutBook = capture();
     assert.deepEqual(withoutBook.names.global, []);
+    assert.deepEqual(captureRoleplayWorldInfoForAgentScan(f.scope, withoutBook).names.global, []);
 
     fs.writeFileSync(filename, JSON.stringify({ entries: { 1: entry(1, 'Original', 'Restored lore') } }));
     assert.throws(() => assertRoleplayWorldInfoCurrent(f.scope, withoutBook), { code: 'ROLEPLAY_SOURCE_CHANGED' });
+    assert.throws(() => captureRoleplayWorldInfoForAgentScan(f.scope, withoutBook), { code: 'ROLEPLAY_SOURCE_CHANGED' });
     const withBook = capture();
     assert.equal((await prepareRoleplayWorldInfo(f.scope, withBook)).worldInfoBefore, 'Restored lore');
 

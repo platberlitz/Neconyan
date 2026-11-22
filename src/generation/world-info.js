@@ -623,6 +623,22 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
     });
 }
 
+/** Rescan for Agents and Companions with their own budget, not a new selection of native lore. */
+export function captureRoleplayWorldInfoForAgentScan(base, snapshot) {
+    const captured = captureRoleplayWorldInfo(base, snapshot.account, snapshot.source, {
+        avatar: snapshot.avatar, tokenizer: snapshot.tokenizer, maxContext: 4096, serverPrompt: true, trigger: snapshot.global?.trigger,
+        agentIds: snapshot.agents?.forcedIds ?? [], agentContext: snapshot.agentContext ?? false,
+        mediaPolicyVersion: snapshot.mediaPolicyVersion ?? 0, mediaBinding: snapshot.mediaBinding ?? null,
+    });
+    const names = new Set(Object.values(snapshot.names).flat());
+    if (roleplayHash(captured.names) !== roleplayHash(snapshot.names) || [...names].some(name =>
+        captured.bookHashes[name] !== snapshot.bookHashes[name]
+        || roleplayHash(captured.bookEvidence[name] ?? null) !== roleplayHash(snapshot.bookEvidence?.[name] ?? null))) {
+        throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved World Info selection no longer matches your account data.');
+    }
+    return captured;
+}
+
 /** Verify named books, scan them with local token counts, and return an immutable result for a job artifact. */
 export function assertRoleplayWorldInfoCurrent(base, snapshot) {
     if (!snapshot?.account || !snapshot.source || !snapshot.character || !snapshot.names || !snapshot.bookHashes) {

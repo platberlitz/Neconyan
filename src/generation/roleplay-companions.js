@@ -4,7 +4,7 @@ import { readArtifact, writeArtifact, createProviderScope } from '../jobs/artifa
 import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-store.js';
 import { readRoleplaySettingsJson } from './settings-cache.js';
 import { getCounter } from '../mewmory/tokens.js';
-import { captureRoleplayWorldInfo, prepareRoleplayWorldInfo } from './world-info.js';
+import { captureRoleplayWorldInfoForAgentScan, prepareRoleplayWorldInfo } from './world-info.js';
 import { readRoleplayAgents } from './roleplay-agents-source.js';
 import { isNativeCompanion } from './agent-definition.js';
 import { runAgentModelStep } from './agent-model-step.js';
@@ -127,11 +127,7 @@ async function worldInfoContext(context, options, agents, identity) {
     // The capture is synchronous and immediately followed by preparation, so
     // preparation may skip its own opening capture. Its closing check still
     // refuses a book or settings edit that lands during the asynchronous scan.
-    const snapshot = captureRoleplayWorldInfo(options.base, options.snapshot.account, options.snapshot.source, {
-        avatar: options.snapshot.avatar, tokenizer: options.snapshot.tokenizer, maxContext: 4096, serverPrompt: true, trigger: options.snapshot.global.trigger,
-        agentIds: options.snapshot.agents?.forcedIds ?? [], agentContext: options.snapshot.agentContext ?? false,
-        mediaPolicyVersion: options.snapshot.mediaPolicyVersion ?? 0, mediaBinding: options.snapshot.mediaBinding ?? null,
-    });
+    const snapshot = captureRoleplayWorldInfoForAgentScan(options.base, options.snapshot);
     const pre = readArtifact(context.directories, context.job.id, 'roleplay-agents-pre');
     const selection = await prepareRoleplayWorldInfo(options.base, snapshot, { capturedNow: true, macros: options.macros,
         promptChat: options.messages.filter(message => !message.is_system).map(message => String(message.mes ?? '')).reverse(),
