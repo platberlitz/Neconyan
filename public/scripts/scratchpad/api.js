@@ -54,6 +54,8 @@ async function post(path, body, { signal } = {}) {
 
 export const readBucket = (source, options) => post('/bucket', { source }, options);
 export const readNotebookContext = (source, sessionId) => post('/notes/context', { source, sessionId });
+export const readAppEvidence = () => post('/evidence', {});
+export const readAdminAppEvidence = () => post('/evidence/admin', {});
 export const readMewmoryContext = (source, sessionId) => post('/mewmory/context', { source, sessionId });
 export const readMewmoryRecord = (source, sessionId, recordId) => post('/mewmory/record', { source, sessionId, recordId });
 export const correctMewmoryRecord = (source, sessionId, recordId, correction) => post('/mewmory/correct', { source, sessionId, recordId, correction });

@@ -34,7 +34,7 @@ function runtime() {
         getGenerateUrl: () => '/generate', getRequestHeaders: () => ({}),
         getNanoGptServiceTier: async () => '',
         extractReasoningFromData: () => 'reasoning stays separate',
-        fetchResumable: jest.fn(),
+        fetchResumable: jest.fn(), recordProviderFailure: jest.fn(),
         chat_completion_sources: { OPENAI: 'openai', NANOGPT: 'nanogpt' },
         settingsToUpdate: { openai_max_tokens: [null, 'openai_max_tokens'] },
         oai_settings: { openai_max_tokens: 8192, auto_append_reasoning_tags: false },

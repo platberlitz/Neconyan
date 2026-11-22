@@ -2,6 +2,30 @@ import fs from 'node:fs';
 
 let snapshot = () => [];
 export function getRecentRequests() { return snapshot(); }
+
+const FINISHED_REQUEST_LIMIT = 300;
+/** @type {{ at: number, method: string, path: string, bytes: number, status: number, ms: number, closed: boolean, long: boolean, handle: string }[]} */
+const finishedRequests = [];
+
+function recordFinishedRequest(entry) {
+    finishedRequests.push(entry);
+    if (finishedRequests.length > FINISHED_REQUEST_LIMIT) finishedRequests.splice(0, finishedRequests.length - FINISHED_REQUEST_LIMIT);
+}
+
+// Replies that stream or wait on a model are slow by design, so they never count as slow requests.
+function isLongRunningResponse(path, response) {
+    const type = String(response.getHeader?.('content-type') || '');
+    return type.includes('text/event-stream') || /\/generate$/.test(path) || path.startsWith('/api/resumable-generations');
+}
+
+/**
+ * Finished API requests with the account that made them, newest first. Only the
+ * method, operation, size, status and timing are kept, never a URL or a body.
+ * The account handle is for filtering by the caller and must not be sent on.
+ */
+export function getRecentRequestEntries() {
+    return finishedRequests.map(entry => ({ ...entry })).reverse();
+}
 const API_CATEGORIES = new Set(('resumable-generations users moving-ui images quick-replies avatars themes openai google anthropic tokenizers presets secrets novelai extensions assets files characters chats groups worldinfo notebooks scratchpad stats backgrounds sprites content settings horde vector translate extra search account-search backends openrouter nanogpt speech azure minimax data-maid backups image-metadata server-admin in-chat-agents neconyan-conversation chat-navigation mewmory jobs meower labs operations roleplay').split(' '));
 
 // Keep API operation names, never filenames, chat ids, query strings or user routes.
@@ -61,7 +85,20 @@ export function createRequestTrace(file, { limit = 30 } = {}) {
             if (finished) return;
             finished = true;
             entry.done = true;
-            entry.line += ` -> ${response.statusCode}${how === 'close' && !response.writableEnded ? ' (closed)' : ''} ${Date.now() - started}ms`;
+            const closed = how === 'close' && !response.writableEnded;
+            const elapsed = Date.now() - started;
+            entry.line += ` -> ${response.statusCode}${closed ? ' (closed)' : ''} ${elapsed}ms`;
+            recordFinishedRequest({
+                at: started,
+                method: String(request.method || ''),
+                path,
+                bytes,
+                status: response.statusCode,
+                ms: elapsed,
+                closed,
+                long: isLongRunningResponse(path, response),
+                handle: typeof request.user?.profile?.handle === 'string' ? request.user.profile.handle : '',
+            });
             flush();
         };
         response.once('finish', () => finish('finish'));

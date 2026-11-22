@@ -1036,6 +1036,17 @@ export async function buildContext({ source, settings, pendingText = '', session
         if (presetSnapshot) sections.push(`## Preset values (read only)\n${formatPresetValues(presetSnapshot)}`);
     }
 
+    let appEvidenceShared = false;
+    if (include.appEvidence === true) {
+        const { gatherAppEvidence } = await import('./evidence-gather.js');
+        const evidence = await gatherAppEvidence();
+        requireCurrentSource(source);
+        if (evidence) {
+            sections.push(evidence);
+            appEvidenceShared = true;
+        }
+    }
+
     // The head is explicit input, so it keeps its bytes and is never trimmed for messages.
     const head = sections.join('\n\n');
     const headBytes = byteLength(head);
@@ -1108,6 +1119,7 @@ export async function buildContext({ source, settings, pendingText = '', session
             ...(dialogueColorsShared ? { dialogueColors: true } : {}),
             ...(include.authorsNote && source.kind === 'roleplay' ? { authorsNote: true } : {}),
             ...(problemsShared ? { problems: true } : {}),
+            ...(appEvidenceShared ? { appEvidence: true } : {}),
         },
     };
 }

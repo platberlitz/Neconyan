@@ -55,6 +55,8 @@ jest.unstable_mockModule('../public/scripts/world-info.js', () => ({
     world_info_recursive: false, world_info_max_recursion_steps: 0,
     world_info_case_sensitive: false, world_info_match_whole_words: false,
 }));
+const EVIDENCE_SECTION = '## App evidence\nRecorded by Neconyan itself.\n\n### Neconyan and this device\n- Neconyan 1.0.0';
+jest.unstable_mockModule('../public/scripts/scratchpad/evidence-gather.js', () => ({ gatherAppEvidence: async () => EVIDENCE_SECTION }));
 const presetSnapshot = {
     kind: 'chat', api: 'Chat Completion', name: 'Lantern', targets: [],
     modules: [
@@ -183,5 +185,32 @@ describe('Scratchpad shared context without Problem checks is unchanged', () => 
         chatId = '';
         const context = await buildContext({ source: currentSource(), settings: { depth: 0, lorebook: 'Persona lore', include: { card: false, persona: false, preset: true } } });
         expect(context.text).toBe(GENERAL_EXPECTED);
+    });
+});
+
+describe('Scratchpad shared context with App diagnostics', () => {
+    test('the switch off, missing or set to anything but true keeps the exact text and capabilities', async () => {
+        conversationState.conversationWorkspaceOpen = false;
+        chat.push({ name: 'Roleplay', mes: 'A lighthouse.', is_user: true });
+        const plain = await buildContext({ source: currentSource(), settings });
+        for (const appEvidence of [false, undefined, 'yes', 1]) {
+            const other = await buildContext({ source: currentSource(), settings: { ...settings, include: { ...settings.include, appEvidence } } });
+            expect(other.text).toBe(plain.text);
+            expect(other.capabilities).toEqual(plain.capabilities);
+        }
+        expect(plain.text).toBe(ROLEPLAY_EXPECTED);
+        expect(plain.capabilities.appEvidence).toBeUndefined();
+        expect(plain.text).not.toContain('App evidence');
+    });
+
+    test('the switch on adds one headed section and flags the capability, and nothing else changes', async () => {
+        conversationState.conversationWorkspaceOpen = false;
+        chat.push({ name: 'Roleplay', mes: 'A lighthouse.', is_user: true });
+        const plain = await buildContext({ source: currentSource(), settings });
+        const shared = await buildContext({ source: currentSource(), settings: { ...settings, include: { ...settings.include, appEvidence: true } } });
+        expect(shared.capabilities).toEqual({ ...plain.capabilities, appEvidence: true });
+        expect(shared.text.match(/^## App evidence$/gm)).toHaveLength(1);
+        expect(shared.text.replace(`\n\n${EVIDENCE_SECTION}`, '')).toBe(plain.text);
+        expect(shared.text.indexOf('## App evidence')).toBeLessThan(shared.text.indexOf('A lighthouse.'));
     });
 });

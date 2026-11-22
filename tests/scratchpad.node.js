@@ -105,6 +105,29 @@ test('problem findings are offered only when the switch is on, and never for a n
     assert.match(buildScratchpadSystemPrompt({ assistant: 'miso', sourceKind: 'general', capabilities: { problems: true } }).text, /fixed checks, not guesses/);
 });
 
+test('app evidence instructions appear only when the section is shared, and never for a note', () => {
+    assert.equal(store.normaliseSettings({}).include.appEvidence, false);
+    assert.equal(store.normaliseSettings({ include: { appEvidence: true } }).include.appEvidence, true);
+    assert.equal(store.normaliseSettings({ include: { appEvidence: 'yes' } }).include.appEvidence, false);
+    for (const kind of ['roleplay', 'conversation', 'general']) assert.equal(normaliseCapabilities({ appEvidence: true }, kind).appEvidence, true);
+    assert.equal(normaliseCapabilities({ appEvidence: true }, 'notebook').appEvidence, undefined);
+    assert.equal(normaliseCapabilities({ appEvidence: 'yes' }).appEvidence, undefined);
+    for (const customPrompt of ['', 'Be helpful.']) {
+        for (const capabilities of [{}, { lore: true, problems: true }]) {
+            const off = buildScratchpadSystemPrompt({ assistant: 'miso', capabilities, customPrompt }).text;
+            const explicitlyOff = buildScratchpadSystemPrompt({ assistant: 'miso', capabilities: { ...capabilities, appEvidence: false }, customPrompt }).text;
+            const on = buildScratchpadSystemPrompt({ assistant: 'miso', capabilities: { ...capabilities, appEvidence: true }, customPrompt }).text;
+            assert.equal(explicitlyOff, off, 'the switch off leaves the prompt byte for byte as it was');
+            assert.doesNotMatch(off, /App evidence/);
+            assert.match(on, /quote the evidence lines you rely on and keep what the evidence shows apart from what you are guessing/);
+            assert.match(on, /Say plainly when the evidence does not explain the problem/);
+            assert.match(on, /never claim that you changed, fixed, restarted or repaired anything/);
+            assert.ok(on.startsWith(off.slice(0, 200)) || customPrompt, 'the rest of the prompt is unchanged');
+            assert.equal(on.replace(/\n\nApp evidence for this message:[\s\S]*?repaired anything[^\n]*\n?/, '\n\n').replace(/\n{3,}/g, '\n\n').trim(), off.replace(/\n{3,}/g, '\n\n').trim());
+        }
+    }
+});
+
 test('lorebook activation field instructions stay brief when Problem checks are off and expand with trace guidance when on', () => {
     for (const customPrompt of ['', 'Be terse.']) {
         const brief = buildScratchpadSystemPrompt({
@@ -1236,7 +1259,7 @@ test('saved context setups keep only portable choices, are account-owned and pro
     assert.deepEqual(saved.setups, [{
         name: 'Lean read',
         settings: {
-            depth: 4, include: { card: false, persona: true, authorsNote: true, lore: true, preset: true, hidden: false, agents: false, regex: false, cssSnippets: false, dialogueColors: false, mewmory: false, problems: false },
+            depth: 4, include: { card: false, persona: true, authorsNote: true, lore: true, preset: true, hidden: false, agents: false, regex: false, cssSnippets: false, dialogueColors: false, mewmory: false, problems: false, appEvidence: false },
             maxTokens: 512, stream: false, webSearch: true, readLinks: true, prefill: 'Ideas:', partialPrefill: '', feedbackTone: 'harsher',
         },
     }], 'the shared feedback tone travels, and per-assistant tones stay with their session');

@@ -209,6 +209,7 @@ function makeRuntime({ api = 'openai', model = 'gpt-4o', stream = false, buffer 
     for (const name of ['shouldReduceStreamingDomWork', 'shouldGuardMobileChatScroll', 'shouldPinMobileChatToBottom', 'isAndroidStreamingPlatform', 'shouldUsePlainTextStreamingPreview', 'isChatRenderLifecycleRolloutEnabled', 'isHiddenReasoningModel']) {
         context[name] = () => false;
     }
+    context.recordProviderFailure = jest.fn();
     context.activateSendButtons = jest.fn(() => { context.is_send_press = false; });
     context.textgenerationwebui_settings = context.textgen_settings;
     context.deactivateSendButtons = jest.fn(() => { context.is_send_press = true; });
