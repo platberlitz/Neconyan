@@ -8,7 +8,7 @@ import { callJsonRole, readConfig, resolvedRoleIdentity, ROLE_LABELS, roleVersio
 import { loadCurrentState } from './sources.js';
 import { mutateState, readStateShared, statePath } from './store.js';
 import { beginServerWork } from '../android-wake.js';
-import { batchState, memberHeard, sameAudience, sourceAudience } from './viewers.js';
+import { batchState, memberHeard, memoryAudience, sameAudience, sourceAudience } from './viewers.js';
 
 // startProcessing owns production admission, but processBatch is exported for tests and
 // future callers. This separate map joins another direct call to processBatch, so two
@@ -348,7 +348,9 @@ export function applyInterview(state, request, output, input, jobId) {
         previousId: input.priorInterviews.at(-1)?.id || '', changeExplanation: output.changeExplanation,
         significance: request.significance, evidenceRefs: request.evidenceRefs,
     }, { asOf: input.asOf, origin: 'generated_interview' });
-    record.provenance = input.provenance;
+    // Interviews come only from the owner's saved memories, so in a group they go to whoever may read all of those.
+    const provenance = state.locator?.group ? { ...input.provenance, audience: memoryAudience(state, dependencies) } : input.provenance;
+    record.provenance = provenance;
     record.evidenceKey = evidenceKey;
     const saved = putRecord(state, record, { automatic: true });
     if (saved.authorOverride) return;
@@ -367,7 +369,7 @@ export function applyInterview(state, request, output, input, jobId) {
             dependencies: [{ id: saved.id, version: saved.version }],
             significance: request.significance, evidenceRefs: request.evidenceRefs,
         }, { asOf: input.asOf, origin: 'generated_overview' });
-        current.provenance = input.provenance;
+        current.provenance = structuredClone(provenance);
         putRecord(state, current, { automatic: true });
     }
 }
