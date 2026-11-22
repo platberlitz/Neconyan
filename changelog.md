@@ -72,6 +72,7 @@
 - PR #848 (2026-11-21) `feat(groups): add scene commands, macros and SillyTavern import`
 - PR #849 (2026-11-21) `fix(settings): move the cat picker under interface`
 - PR #850 (2026-11-21) `feat(server): apply scene rules to server group replies`
+- PR #851 (2026-11-22) `fix(browser): repair the nightly staging checks`
 - PR #852 (2026-11-22) `feat(server): send scene lines and open server replies for scene chats`
 
 ### Local Commits
