@@ -1,6 +1,6 @@
 import { chat, characters, getCurrentChatId, getThumbnailUrlForViewport, is_send_press, updateMessageMetaBadges } from '../script.js';
 import { getOpenGroupSceneRules, groups, is_group_generating, saveGroupHearers, selected_group } from './group-chats.js';
-import { changeGroupHearers } from './group-chat-visibility.js';
+import { changeGroupHearers, setGroupEveryoneHears } from './group-chat-visibility.js';
 import { getGroupMemberRole } from './group-chat-roles.js';
 import { Popup, POPUP_RESULT, POPUP_TYPE } from './popup.js';
 import { t } from './i18n.js';
@@ -24,6 +24,7 @@ function memberButton(avatar, { pressed, disabled, tags }) {
     const button = $('<button type="button" class="menu_button group_heard_member"></button>')
         .attr('data-avatar', avatar)
         .attr('aria-pressed', String(pressed))
+        .attr('data-locked', disabled ? 'true' : null)
         .prop('disabled', disabled);
     button.append($('<img alt="">').attr('src', getThumbnailUrlForViewport('avatar', avatar)));
     button.append($('<span class="group_heard_member_name"></span>').text(character?.name || avatar.replace(/\.[^.]+$/, '')));
@@ -54,10 +55,12 @@ export async function openGroupHeardEditor(messageId) {
     const members = [...group.members];
     const seesAll = getOpenGroupSceneRules().seesAll || [];
     const audience = message.extra?.group_scene;
-    const original = Array.isArray(audience?.present) ? [...new Set(audience.present)] : [...members];
     const whisperTo = Array.isArray(audience?.whisper_to) ? audience.whisper_to : [];
+    const wasEveryone = audience?.everyone === true && !whisperTo.length;
+    const original = !wasEveryone && Array.isArray(audience?.present) ? [...new Set(audience.present)] : [...members];
     const listed = [...members, ...original.filter(avatar => !members.includes(avatar))];
     const selected = new Set(original);
+    let everyone = wasEveryone;
     let range = 'one';
 
     const content = $('<div class="group_heard_editor"></div>');
@@ -65,6 +68,12 @@ export async function openGroupHeardEditor(messageId) {
     content.append($('<p class="group_heard_hint"></p>').text(t`Members only remember the lines they heard, and their replies are written from those.`));
     if (whisperTo.length) {
         content.append($('<p class="group_heard_hint"></p>').text(t`This was a whisper, so only the people it was for can hear it.`));
+    } else {
+        const toggle = $('<label class="checkbox_label group_heard_everyone"></label>')
+            .append($('<input type="checkbox" data-heard-everyone>').prop('checked', everyone))
+            .append($('<span></span>').text(t`Everyone hears this`));
+        content.append(toggle);
+        content.append($('<p class="group_heard_hint"></p>').text(t`Members who are away now, or join the group later, hear it too.`));
     }
     const list = $('<div class="group_heard_members" role="group"></div>').attr('aria-label', t`Who heard this`);
     for (const avatar of listed) {
@@ -97,10 +106,17 @@ export async function openGroupHeardEditor(messageId) {
     }
 
     const syncButtons = () => {
-        list.find('.group_heard_member:not(:disabled)').each(function () {
-            this.setAttribute('aria-pressed', String(selected.has(this.dataset.avatar)));
+        list.find('.group_heard_member:not([data-locked])').each(function () {
+            this.disabled = everyone;
+            this.setAttribute('aria-pressed', String(everyone || selected.has(this.dataset.avatar)));
         });
+        quick.find('button').prop('disabled', everyone);
     };
+    syncButtons();
+    content.on('change', '[data-heard-everyone]', function () {
+        everyone = this.checked;
+        syncButtons();
+    });
     content.on('click', '.group_heard_member', function () {
         if (this.disabled) return;
         const avatar = this.dataset.avatar;
@@ -149,11 +165,18 @@ export async function openGroupHeardEditor(messageId) {
     const add = exact.filter(avatar => !original.includes(avatar));
     const remove = original.filter(avatar => !exact.includes(avatar));
     const changed = new Set();
-    if (changeGroupHearers(message, { exact }, members)) changed.add(messageId);
-    if (range === 'later' && (add.length || remove.length)) {
-        for (let index = messageId + 1; index < chat.length; index++) {
-            if (chat[index]?.is_system) continue;
-            if (changeGroupHearers(chat[index], { add, remove }, members)) changed.add(index);
+    const laterIndices = range === 'later' ? chat.map((item, index) => index).filter(index => index > messageId && !chat[index]?.is_system) : [];
+    if (everyone || wasEveryone) {
+        for (const index of [messageId, ...laterIndices]) {
+            if (setGroupEveryoneHears(chat[index], members, everyone)) changed.add(index);
+        }
+    }
+    if (!everyone) {
+        if (changeGroupHearers(message, { exact }, members)) changed.add(messageId);
+        if (add.length || remove.length) {
+            for (const index of laterIndices) {
+                if (changeGroupHearers(chat[index], { add, remove }, members)) changed.add(index);
+            }
         }
     }
     if (!changed.size) return;

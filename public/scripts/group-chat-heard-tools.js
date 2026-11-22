@@ -1,4 +1,4 @@
-import { canGroupMemberSee, changeGroupHearers } from './group-chat-visibility.js';
+import { canGroupMemberSee, changeGroupHearers, setGroupEveryoneHears } from './group-chat-visibility.js';
 
 /** The SillyTavern Presence extension marks a message every member may see with this pseudo-member. */
 const PRESENCE_UNIVERSAL_TRACKER = 'presence_universal_tracker';
@@ -6,7 +6,8 @@ const PRESENCE_UNIVERSAL_TRACKER = 'presence_universal_tracker';
 /**
  * Reads what the SillyTavern Presence extension saved in a chat into Neconyan's own records.
  * Each message's `present` list becomes who heard it, and members the extension let see everything
- * become members who see everything. Messages that already have a Neconyan record keep it, and the
+ * become members who see everything. A message the extension marked for every member becomes an
+ * 'Everyone hears this' line. Messages that already have a Neconyan record keep it, and the
  * extension's own fields stay in place.
  * @param {object[]} messages Chat messages, without the header
  * @param {object} metadata Chat metadata
@@ -16,10 +17,11 @@ export function importPresenceRecords(messages, metadata) {
     let changed = false;
     for (const message of Array.isArray(messages) ? messages : []) {
         if (!message || typeof message !== 'object' || !Array.isArray(message.present) || message.extra?.group_scene) continue;
-        if (message.present.includes(PRESENCE_UNIVERSAL_TRACKER)) continue;
-        const present = [...new Set(message.present.filter(avatar => typeof avatar === 'string' && avatar))];
+        const present = [...new Set(message.present.filter(avatar => typeof avatar === 'string' && avatar && avatar !== PRESENCE_UNIVERSAL_TRACKER))];
         if (!message.extra || typeof message.extra !== 'object') message.extra = {};
-        message.extra.group_scene = { present, whisper_to: [] };
+        message.extra.group_scene = message.present.includes(PRESENCE_UNIVERSAL_TRACKER)
+            ? { present, whisper_to: [], everyone: true }
+            : { present, whisper_to: [] };
         changed = true;
     }
     if (!metadata || typeof metadata !== 'object' || metadata.group_scene) return changed;
@@ -61,10 +63,10 @@ function eachInRange(messages, range, callback) {
     return count;
 }
 
-/** Whether a message's record lists the member, counting a message without a record as heard by every member. */
-function listsHearer(message, avatar, members) {
-    const present = message?.extra?.group_scene?.present;
-    return Array.isArray(present) ? present.includes(avatar) : members.includes(avatar);
+/** Who a message's record lists, counting a message without a record, or one every member hears, as heard by every member. */
+function listedHearers(message, members) {
+    const audience = message?.extra?.group_scene;
+    return audience?.everyone !== true && Array.isArray(audience?.present) ? audience.present : members;
 }
 
 /** Removes a member from who heard each message in the range. Returns how many messages changed. */
@@ -86,6 +88,11 @@ export function everyoneHeard(messages, range, members) {
     return eachInRange(messages, range, message => changeGroupHearers(message, { exact: members }, members));
 }
 
+/** Every member hears each message in the range, including members away now or added later. Whispers stay private. */
+export function everyoneHears(messages, range, members) {
+    return eachInRange(messages, range, message => setGroupEveryoneHears(message, members));
+}
+
 /** No member heard any message in the range. */
 export function noOneHeard(messages, range, members) {
     return eachInRange(messages, range, message => changeGroupHearers(message, { exact: [] }, members));
@@ -96,8 +103,7 @@ export function copyHeard(messages, fromIndex, toIndex, members) {
     const source = messages[fromIndex];
     const target = messages[toIndex];
     if (!source || !target || source === target) return false;
-    const present = source.extra?.group_scene?.present;
-    return changeGroupHearers(target, { add: Array.isArray(present) ? present : members }, members);
+    return changeGroupHearers(target, { add: listedHearers(source, members) }, members);
 }
 
 /**
@@ -106,7 +112,7 @@ export function copyHeard(messages, fromIndex, toIndex, members) {
  */
 export function transferHeard(messages, range, from, to, members, { keep = false } = {}) {
     return eachInRange(messages, range, message => {
-        if (!listsHearer(message, from, members)) return false;
+        if (!listedHearers(message, members).includes(from)) return false;
         const whisper = message.extra?.group_scene?.whisper_to;
         const add = whisper?.length && !whisper.includes(to) ? [] : [to];
         return changeGroupHearers(message, { add, remove: keep ? [] : [from] }, members);

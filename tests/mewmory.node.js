@@ -357,14 +357,14 @@ const groupContext = () => [...fixture.lore,
     { id: 'character:mara', type: 'character', entityId: 'npc:mara', name: 'Mara', text: 'Mara', meta: { avatar: 'Mara.png' } },
     { id: 'character:kit', type: 'character', entityId: 'npc:kit', name: 'Kit', text: 'Kit', meta: { avatar: 'Kit.png' } }];
 
-const groupMessages = (missed, present = ['Mara.png']) => fixture.messages.map((message, index) => missed.includes(index)
-    ? { ...structuredClone(message), extra: { ...message.extra, group_scene: { present, whisper_to: [] } } }
+const groupMessages = (missed, present = ['Mara.png'], everyone = false) => fixture.messages.map((message, index) => missed.includes(index)
+    ? { ...structuredClone(message), extra: { ...message.extra, group_scene: { present, whisper_to: [], ...(everyone ? { everyone } : {}) } } }
     : { ...structuredClone(message), extra: { ...message.extra, group_scene: { present: ['Mara.png', 'Kit.png'], whisper_to: [] } } });
 
 /** A group story where Mara heard everything and Kit missed the line where she accepts the gift. */
-function groupStory({ present = ['Mara.png'], missed = [2] } = {}) {
+function groupStory({ present = ['Mara.png'], missed = [2], everyone = false } = {}) {
     const state = newState({ avatar: '', chat: 'Gift', group: true });
-    syncSources(state, groupMessages(missed, present), groupContext());
+    syncSources(state, groupMessages(missed, present, everyone), groupContext());
     state.enabled = true;
     return state;
 }
@@ -395,6 +395,17 @@ test('group memories say who heard them, so later lines stay readable to a membe
     assert.ok(!ids.includes('event:gift'));
     assert.ok(!ids.includes('event:legacy'), 'an older memory without listeners is held back after the first missed line');
     assert.deepEqual([...kit.heldRefs].sort(), [state.timeline[2].id, state.timeline[5].id].sort());
+});
+
+test('a line every member hears gives memories everyone may read, members who missed its listed hearers included', () => {
+    const state = groupStory({ everyone: true });
+    assert.equal(viewerState(state, ['Kit.png']), null, 'Kit hears the line even though only Mara was listed');
+    const input = { ...extractionInput(state, [state.timeline[2]], 2), provenance: { policy: 'test', jobId: 'job' } };
+    applyExtraction(state, { records: [
+        { id: 'event:accepts', kind: 'event', text: 'Mara accepted the gift and placed it carefully.', refs: [state.timeline[2]], subjectIds: ['gift'], evidenceStatus: 'established' },
+    ] }, input, []);
+    assert.equal(state.records.find(record => record.id === 'event:accepts').provenance.audience, null);
+    assert.equal(viewerState(state, ['Kit.png']), null);
 });
 
 test('extraction batches keep one audience, build only on what every listener may read, and skip knowledge a character never heard', () => {

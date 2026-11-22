@@ -6,14 +6,17 @@ const canHear = (audience, viewer, rules) => Array.isArray(audience)
     ? audience.every(one => canHear(one, viewer, rules))
     : !audience || canGroupMemberSee({ extra: { group_scene: audience } }, viewer, rules);
 
+const heardByEveryone = audience => !audience || (audience.everyone === true && !audience.whisper_to?.length);
+
 /** Who heard a saved line, or null for a line everyone heard. */
 export function sourceAudience(state, ref) {
-    return state.sources[ref?.id]?.audience ?? null;
+    const audience = state.sources[ref?.id]?.audience;
+    return heardByEveryone(audience) ? null : audience;
 }
 
 /** Lines heard by the same people share a key, so one extraction batch never mixes listeners. */
 export function audienceKey(audience) {
-    if (!audience) return '';
+    if (heardByEveryone(audience)) return '';
     const sorted = value => Array.isArray(value) ? [...new Set(value)].sort() : null;
     return JSON.stringify([sorted(audience.present), sorted(audience.whisper_to) ?? []]);
 }
