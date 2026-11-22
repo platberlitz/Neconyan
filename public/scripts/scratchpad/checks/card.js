@@ -3,6 +3,7 @@
  * supplies token counting, known macros and the lorebooks that exist.
  */
 import { scanMacroProblems } from './macros.js';
+import { LOREBOOK_LINK_KIND, cardLorebookLinks, findMissingLorebookLinks } from '../../lorebook-links.js';
 
 const GREETING_FIELDS = ['alternate_greetings', 'group_only_greetings'];
 const PERMANENT_FIELDS = ['description', 'personality', 'scenario', 'system_prompt', 'post_history_instructions'];
@@ -36,14 +37,6 @@ function fieldList(character, field) {
     const fromTop = character?.[field];
     const value = Array.isArray(fromData) ? fromData : Array.isArray(fromTop) ? fromTop : [];
     return value.map(item => String(item ?? ''));
-}
-
-function extraLorebooks(character, extraBooks) {
-    const filename = String(character?.avatar ?? '').replace(/\.[^.]+$/, '');
-    const list = Array.isArray(extraBooks)
-        ? extraBooks
-        : Array.isArray(extraBooks?.[filename]) ? extraBooks[filename] : [];
-    return list.map(item => String(item ?? '').trim()).filter(Boolean);
 }
 
 /** Every <style> block a card can carry, plus the surrounding saved text. */
@@ -132,10 +125,10 @@ function finding(name, field, rule, severity, message, details) {
 /**
  * Checks one card.
  * @param {object} character Character record, with data and shallow
- * @param {{name?: string, contextSize?: number, knownMacros?: Iterable<string>, knownLorebooks?: Iterable<string>, extraBooks?: string[]|Record<string, string[]>, countTokens?: (text: string) => number|Promise<number>}} options Check context
+ * @param {{name?: string, contextSize?: number, knownMacros?: Iterable<string>, knownLorebooks?: Iterable<string>|null, extraBooks?: string[]|Record<string, string[]>, countTokens?: (text: string) => number|Promise<number>}} options Check context
  * @returns {Promise<{findings: object[], name: string}>}
  */
-export async function checkCharacterCard(character, { name, contextSize = 0, knownMacros = [], knownLorebooks = [], extraBooks = [], countTokens = text => Math.ceil(String(text ?? '').length / 4) } = {}) {
+export async function checkCharacterCard(character, { name, contextSize = 0, knownMacros = [], knownLorebooks = null, extraBooks = [], countTokens = text => Math.ceil(String(text ?? '').length / 4) } = {}) {
     const cardName = String(name || character?.name || 'Character').trim();
     const findings = [];
     const push = (field, rule, severity, message, details) => findings.push(finding(cardName, field, rule, severity, message, details));
@@ -180,16 +173,13 @@ export async function checkCharacterCard(character, { name, contextSize = 0, kno
             : `CSS selector ${selector} may not match: this card defines no element with that id.`);
     }
 
-    const knownBooks = new Set([...knownLorebooks].map(item => String(item)));
-    const linked = String(character?.data?.extensions?.world ?? '').trim();
-    if (linked && knownBooks.size && !knownBooks.has(linked)) {
-        push('', 'card-lorebook-missing', 'warning', `The linked lorebook ${linked} does not exist.`);
-    }
-    for (const book of extraLorebooks(character, extraBooks)) {
-        if (knownBooks.size && !knownBooks.has(book)) push('', 'card-lorebook-missing', 'warning', `The extra lorebook ${book} does not exist.`);
+    for (const link of findMissingLorebookLinks(cardLorebookLinks(character, extraBooks), knownLorebooks)) {
+        push('', 'card-lorebook-missing', 'warning', link.kind === LOREBOOK_LINK_KIND.cardMain
+            ? `The linked lorebook ${link.name} does not exist.`
+            : `The extra lorebook ${link.name} does not exist.`);
     }
 
-    // Structural problems need no registry; an empty list skips only the unknown-name rule.
+    // Structural problems need no registry; a lorebook list that is not known (null) skips only the unknown-name rule.
     for (const [field] of TOKEN_FIELDS) {
         const text = field === 'alternate_greetings' || field === 'group_only_greetings'
             ? fieldList(character, field).join('\n')

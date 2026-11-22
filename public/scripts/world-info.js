@@ -45,6 +45,7 @@ import {
     unfileNeconyanLorebook,
 } from './neconyan-lorebook-folders.js';
 import { createSelectPicker } from './select-picker.js';
+import { filterUntoldLorebookLinks, findMissingLorebookLinks, listLorebookLinks, noteLorebookChatOpened, readConversationLorebooks } from './lorebook-links.js';
 
 // Neconyan divergence: World Info is integrated with the fork shell and auxiliary lorebook sources while retaining upstream scan helpers.
 export const world_info_insertion_strategy = {
@@ -1181,7 +1182,12 @@ export function setWorldInfoSettings(settings, data) {
     $('#world_info').trigger('change');
     $('#world_editor_select').trigger('change');
 
+    globalThis.addEventListener?.('sb:conversation-workspace-state-changed', (event) => {
+        if (event?.detail?.open) scheduleLorebookLinkCheck();
+    });
+
     eventSource.on(event_types.CHAT_CHANGED, async () => {
+        scheduleLorebookLinkCheck();
         const hasWorldInfo = !!chat_metadata[METADATA_KEY] && world_names.includes(chat_metadata[METADATA_KEY]);
         $('.chat_lorebook_button').toggleClass('world_set', hasWorldInfo);
         // Pre-cache the world info data for the chat for quicker first prompt generation
@@ -5713,6 +5719,53 @@ export async function createNewWorldInfo(worldName, { interactive = false } = {}
     }
 
     return true;
+}
+
+let lorebookLinkCheckTimer = null;
+
+/** Runs a moment after a chat or the Conversation workspace opens, once the other open-time events have settled. */
+function scheduleLorebookLinkCheck() {
+    clearTimeout(lorebookLinkCheckTimer);
+    lorebookLinkCheckTimer = setTimeout(() => void checkOpenChatLorebookLinks(), 400);
+}
+
+/**
+ * Lists the lorebooks the open chat links and, only when one is not in the page's list, hands it to the lazily
+ * loaded notice. In the Conversation workspace that is the lorebook override of the open Conversation; in a
+ * Roleplay chat it is the card (or group member) links and the chat's own lorebook. Changes no link and no data.
+ */
+async function checkOpenChatLorebookLinks() {
+    try {
+        const conversation = readConversationLorebooks();
+        let chatKey = '';
+        let links = [];
+        if (conversation) {
+            chatKey = conversation.key;
+            noteLorebookChatOpened(chatKey);
+            links = listLorebookLinks({ conversationOverrides: conversation.overrides });
+        } else {
+            const context = getContext();
+            const group = context.groupId ? context.groups?.find(item => item.id == context.groupId) : null;
+            const cards = group
+                ? (group.members ?? [])
+                    .filter(avatar => !group.disabled_members?.includes(avatar))
+                    .map(avatar => characters.find(item => item.avatar === avatar))
+                    .filter(Boolean)
+                : [characters[this_chid]].filter(Boolean);
+            const chatId = getCurrentChatId();
+            chatKey = chatId ? `${group ? `group:${group.id}` : (cards[0]?.avatar ?? '')}|${chatId}` : '';
+            noteLorebookChatOpened(chatKey);
+            if (!chatKey) return;
+            links = listLorebookLinks({ cards, charLore: world_info.charLore, chatLorebook: chat_metadata[METADATA_KEY] });
+        }
+        const candidates = filterUntoldLorebookLinks(chatKey, Array.isArray(world_names) ? findMissingLorebookLinks(links, world_names) : links);
+        if (!candidates.length) return;
+
+        const { reportMissingLorebookLinks } = await import('./lorebook-link-notice.js');
+        await reportMissingLorebookLinks({ chatKey, candidates });
+    } catch (error) {
+        console.warn('[WI] Could not check the lorebook links of this chat', error);
+    }
 }
 
 async function getCharacterLore() {
