@@ -177,7 +177,7 @@ export async function checkCharacterCard(character, { name, contextSize = 0, kno
         const shell = [...selector.matchAll(/#([A-Za-z_][\w-]*)/g)].map(match => match[1]).find(id => APP_SHELL_IDS.has(id));
         push('', 'card-css-selector', 'warning', shell
             ? `CSS selector ${selector} cannot match: #${shell} belongs to the app shell, outside the message.`
-            : `CSS selector ${selector} cannot match: no element with that id is defined by this card.`);
+            : `CSS selector ${selector} may not match: this card defines no element with that id.`);
     }
 
     const knownBooks = new Set([...knownLorebooks].map(item => String(item)));

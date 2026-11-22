@@ -106,7 +106,11 @@ describe('Scratchpad card checks', () => {
         const defined = await checkCharacterCard(character, { contextSize: 4096 });
         expect(defined.findings.some(item => item.rule === 'card-css-selector')).toBe(false);
         const missing = await checkCharacterCard(card({ first_mes: 'Hello', creator_notes: '<style>#missing { color: red; }</style>' }), { contextSize: 4096 });
-        expect(missing.findings).toContainEqual(expect.objectContaining({ rule: 'card-css-selector', severity: 'warning' }));
+        expect(missing.findings).toContainEqual(expect.objectContaining({
+            rule: 'card-css-selector',
+            severity: 'warning',
+            message: 'CSS selector #missing may not match: this card defines no element with that id.',
+        }));
     });
 
     test('warns when permanent card text takes over half the context', async () => {
