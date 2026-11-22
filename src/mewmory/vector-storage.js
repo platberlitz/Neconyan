@@ -4,20 +4,11 @@ import { endianness } from 'node:os';
 const MAX_COMPACT_BYTES = 128 * 1024;
 const MAX_BASE64_CHARS = Math.ceil(MAX_COMPACT_BYTES / 3) * 4;
 const FLOAT32_BYTES = 4;
-const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-const NON_BASE64_CHARACTER = /[^A-Za-z0-9+/]/;
 const LITTLE_ENDIAN = endianness() === 'LE';
 
 function compactByteLength(value) {
     if (typeof value !== 'string' || !value.length || value.length > MAX_BASE64_CHARS || value.length % 4) return 0;
     const padding = value.endsWith('==') ? 2 : value.endsWith('=') ? 1 : 0;
-    const end = value.length - padding;
-    if (NON_BASE64_CHARACTER.test(padding ? value.slice(0, end) : value)) return 0;
-    if (padding) {
-        // The decoder accepts noncanonical final characters. Unused bits must be zero.
-        const lastSymbol = BASE64_ALPHABET.indexOf(value[end - 1]);
-        if (lastSymbol & (padding === 2 ? 15 : 3)) return 0;
-    }
     const length = value.length / 4 * 3 - padding;
     return length % FLOAT32_BYTES === 0 && length <= MAX_COMPACT_BYTES ? length : 0;
 }
@@ -61,6 +52,7 @@ export function createVectorReader() {
             scratch = Buffer.from(storage);
             if (LITTLE_ENDIAN) floats = new Float32Array(storage);
         }
+        // The writer emits canonical base64. Readers require the exact decoded width.
         return scratch.write(value, 0, bytes, 'base64') === bytes ? length : 0;
     }
 

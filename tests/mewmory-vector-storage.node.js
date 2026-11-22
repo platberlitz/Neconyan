@@ -72,17 +72,10 @@ test('legacy lookup trusts the array shape and uses the original cosine', () => 
     }
 });
 
-test('invalid padded bytes, noncanonical bit spellings and nonfinite compact values are missing embeddings', () => {
+test('wrong decoded widths, truncated payloads and nonfinite compact values are missing embeddings', () => {
     const reader = createVectorReader();
-    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-    const noncanonical = values => {
-        const value = fromDoubles(values).vectorF32LE;
-        const paddingIndex = value.indexOf('=');
-        const lastSymbol = alphabet.indexOf(value[paddingIndex - 1]);
-        return value.slice(0, paddingIndex - 1) + alphabet[lastSymbol | 1] + value.slice(paddingIndex);
-    };
-    const malformed = ['', '____', 'AA A', 'AAAAA===', 'AAAAAAA\n', 'AA==AA==', 'AA!A', 'AAAA===A', 'AACAPw', 'AAAA',
-        noncanonical([1]), noncanonical([1, 2]), Buffer.alloc(5).toString('base64')];
+    const malformed = ['', '____', 'AA A', 'AAAAA===', 'AAAAAAA\n', 'AA==AA==', 'AA!A', 'AAAA===A', 'AACAPw', 'AAC Pw==',
+        'AAAA', Buffer.alloc(5).toString('base64'), Buffer.alloc(6).toString('base64')];
     for (const bits of [0x7f800000, 0xff800000, 0x7fc00000, 0xffc00000, 0x7f800001, 0xff800001]) {
         const bytes = Buffer.alloc(4);
         bytes.writeUInt32LE(bits);
@@ -93,6 +86,25 @@ test('invalid padded bytes, noncanonical bit spellings and nonfinite compact val
         assert.equal(reader.similarity({ vectorF32LE: value }, [1]), null, value);
     }
     assert.equal(reader.similarity(fromDoubles([1]), [1]), 1);
+});
+
+test('compact decoding accepts equivalent alphabet and unused-bit aliases at the exact stored width', () => {
+    const reader = createVectorReader();
+    const query = [0.25, 1];
+    const values = [1 - 2 ** -24, -0.5];
+    const canonical = fromDoubles(values).vectorF32LE;
+    const urlSafe = canonical.replaceAll('+', '-').replaceAll('/', '_');
+    assert.notEqual(urlSafe, canonical);
+    const vectors = [
+        [urlSafe, values, query],
+        ['AACAPx==', [1], [1]], // Same four bytes as AACAPw==.
+        ['AACAPwAAAMB=', [1, -2], query], // Same eight bytes as AACAPwAAAMA=.
+    ];
+    for (const [vectorF32LE, expected, input] of vectors) {
+        const entry = { vectorF32LE };
+        assert.equal(reader.dimension(entry), expected.length);
+        assert.equal(reader.similarity(entry, input), referenceCosine(input, expected));
+    }
 });
 
 test('compact scoring and dimension lookup both reject a nonfinite tail in reused scratch', () => {
