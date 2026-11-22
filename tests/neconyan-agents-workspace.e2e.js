@@ -19,7 +19,7 @@ test.beforeEach(async ({ page }) => {
     await page.route(/\/api\/.*\/generate-quiet(?:\?|$)/, route => route.fulfill({ status: 503, json: { error: 'Generation is disabled during agent UI checks.' } }));
 });
 
-async function openAgents(page, withChat = false, navigate = action => action()) {
+async function openAgents(page, withChat = false, navigate = action => action(), beforeOpen = () => {}) {
     await navigate(() => page.goto('/', { waitUntil: 'domcontentloaded' }));
     await expect(page.locator('[data-neconyan-cat]')).toBeVisible({ timeout: 45000 });
     await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'));
@@ -32,6 +32,7 @@ async function openAgents(page, withChat = false, navigate = action => action())
         const skipTour = page.getByRole('region', { name: 'Neconyan interactive tutorial' }).getByRole('button', { name: 'Skip', exact: true });
         if (await skipTour.isVisible()) await skipTour.click();
     }
+    await beforeOpen();
     await page.evaluate(() => window.NeconyanShell.openTab('left', 'agents'));
     await expect(page.locator('#ica--settings')).toBeVisible({ timeout: 45000 });
 }
@@ -165,9 +166,7 @@ for (const width of [1280, 393]) {
                     catalogueRequests++;
                     return route.continue();
                 });
-                await openAgents(page, false, async navigate => {
-                    await navigate();
-                    await expect(page.locator('[data-neconyan-cat]')).toBeVisible();
+                await openAgents(page, false, undefined, () => {
                     expect(catalogueRequests).toBe(0);
                 });
                 await page.locator('#ica--agentTabs .ica--agent-tab[data-tab="all"]').click();
