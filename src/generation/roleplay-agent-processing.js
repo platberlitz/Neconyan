@@ -21,7 +21,7 @@ import { runAgentModelStep } from './agent-model-step.js';
 import { stripSavedAuxiliaryTrackerEchoes } from '../../public/scripts/extensions/in-chat-agents/companion/companion-tracker-context.js';
 import { validateRoleplayToolHistory } from './roleplay-contributions.js';
 import { requireJobApproval } from './job-approvals.js';
-import { captureRoleplayWorldInfo, prepareRoleplayWorldInfo } from './world-info.js';
+import { captureRoleplayWorldInfoForAgentScan, prepareRoleplayWorldInfo } from './world-info.js';
 import { activeRoleplayAuthorNote } from './roleplay-prompt.js';
 import { agentMessageExtra, agentTransformHistory, reconcileAgentTrackerMetadata } from './agent-message-state.js';
 import { beginDiagnosticAgent, endDiagnosticAgent } from '../diagnostic-activity.js';
@@ -127,11 +127,7 @@ async function scannedAgentLoreText(context, options, agents, identity) {
     const name = options.namespace ? `roleplay-agent-lore:${options.namespace}` : 'roleplay-agent-lore';
     const previous = readPhase(context, snapshot.account, name, identity);
     if (previous) return previous.text;
-    const captured = captureRoleplayWorldInfo(options.base, snapshot.account, snapshot.source, {
-        avatar: snapshot.avatar, tokenizer: snapshot.tokenizer, maxContext: 4096, serverPrompt: true, trigger: snapshot.global?.trigger,
-        agentIds: snapshot.agents?.forcedIds ?? [], agentContext: snapshot.agentContext ?? false,
-        mediaPolicyVersion: snapshot.mediaPolicyVersion ?? 0, mediaBinding: snapshot.mediaBinding ?? null,
-    });
+    const captured = captureRoleplayWorldInfoForAgentScan(options.base, snapshot);
     const pre = readArtifact(context.directories, context.job.id, 'roleplay-agents-pre');
     const selection = await prepareRoleplayWorldInfo(options.base, captured, { capturedNow: true, macros: options.macros,
         promptChat: (options.records ?? []).filter(message => !message.is_system).map(message => String(message.mes ?? '')).reverse(),

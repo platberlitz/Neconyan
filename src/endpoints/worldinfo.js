@@ -60,14 +60,19 @@ function getLegacyWorldInfoFilename(name) {
     return sanitize(`${String(name ?? '')}${WORLD_INFO_EXTENSION}`);
 }
 
-export function getExistingWorldInfoFilename(directories, name) {
+export function getExistingWorldInfoFilename(directories, name, { followSymlinks = true } = {}) {
+    const exists = filename => {
+        if (!filename) return false;
+        const filePath = path.join(directories.worlds, filename);
+        return followSymlinks ? fs.existsSync(filePath) : Boolean(fs.lstatSync(filePath, { throwIfNoEntry: false }));
+    };
     const legacyFilename = getLegacyWorldInfoFilename(name);
-    if (legacyFilename && fs.existsSync(path.join(directories.worlds, legacyFilename))) {
+    if (exists(legacyFilename)) {
         return legacyFilename;
     }
 
     const canonicalFilename = getWorldInfoFilename(name);
-    if (canonicalFilename && fs.existsSync(path.join(directories.worlds, canonicalFilename))) {
+    if (exists(canonicalFilename)) {
         return canonicalFilename;
     }
 

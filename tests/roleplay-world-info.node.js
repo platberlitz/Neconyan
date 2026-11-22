@@ -9,7 +9,7 @@ import { scanWorldInfo, worldInfoScanWindow } from '../src/generation/world-info
 import { activeRoleplayAuthorNote, assertWorldInfoDepthHistory, buildRoleplaySavedHistory, insertRoleplayChatSystem, insertRoleplayPostHistory, insertWorldInfoAuthorNote, insertWorldInfoDepth, insertWorldInfoExamples, insertWorldInfoOutlets } from '../src/generation/roleplay-prompt.js';
 import { write as writeCard } from '../src/character-card-parser.js';
 
-const { assertRoleplayWorldInfoCurrent, captureRoleplayWorldInfo, prepareRoleplayWorldInfo } = await import('../src/generation/world-info.js');
+const { assertRoleplayWorldInfoCurrent, captureRoleplayWorldInfo, captureRoleplayWorldInfoForAgentScan, prepareRoleplayWorldInfo } = await import('../src/generation/world-info.js');
 const { captureRoleplaySource, readRoleplayChat } = await import('../src/generation/roleplay-source.js');
 const { admitRoleplayJob, applyRoleplayJobEffect } = await import('../src/roleplay-jobs.js');
 const { getJob, releaseJob } = await import('../src/jobs/store.js');
@@ -147,8 +147,9 @@ test('saved Chat Completion post-history and example controls follow the active 
         } });
 });
 
-test('a server-owned reply uses the saved default Chat Completion prompt order', async t => {
+test('a server-owned reply uses the saved prompt order and skips unavailable optional lore', async t => {
     const f = fixture(t);
+    f.records[0].chat_metadata.world_info = 'Deleted Chat Book';
     f.records[1].extra = {};
     fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
     f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
@@ -156,12 +157,21 @@ test('a server-owned reply uses the saved default Chat Completion prompt order',
     fs.writeFileSync(path.join(f.scope.directories.worlds, 'Town.json'), JSON.stringify({ entries: {
         1: entry(1, 'Original', 'Before the history'),
     } }));
-    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
-        world_info_settings: { world_info: { globalSelect: ['Town'] }, world_info_budget: 100 },
-    }));
+    const malformed = path.join(f.scope.directories.worlds, 'Broken Persona Book.json');
+    const invalid = path.join(f.scope.directories.worlds, 'Broken Extra Book.json');
+    fs.writeFileSync(malformed, '{');
+    fs.writeFileSync(invalid, '{"entries": []}');
+    const settingsFile = path.join(f.scope.directories.root, 'settings.json');
+    const savedSettings = JSON.stringify({
+        power_user: { persona_description_lorebook: 'Broken Persona Book' },
+        world_info_settings: { world_info: { globalSelect: ['Deleted Global Book', 'Town'],
+            charLore: [{ name: 'Nova', extraBooks: ['Broken Extra Book'] }] }, world_info_budget: 100 },
+    });
+    fs.writeFileSync(settingsFile, savedSettings);
     const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
     const source = captureRoleplaySource(f.scope, { locator: f.locator });
     const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 200 });
+    assert.deepEqual(worldInfo.names, { global: ['Town'], chat: [], persona: [], character: [] });
     const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'default-ordered-main', effect: 'append', source,
         request: { binding: { profileId: 'saved', fingerprint: 'bound' }, serverPrompt: true, messages: [],
             maxTokens: 20, characterName: 'Nova', worldInfo } });
@@ -179,6 +189,9 @@ test('a server-owned reply uses the saved default Chat Completion prompt order',
         },
     });
     assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Bound answer');
+    assert.equal(fs.readFileSync(settingsFile, 'utf8'), savedSettings);
+    assert.equal(fs.readFileSync(malformed, 'utf8'), '{');
+    assert.equal(fs.readFileSync(invalid, 'utf8'), '{"entries": []}');
 });
 
 test('Chat Completion uses its saved prompt order even when a text story template is saved', async t => {
@@ -1641,6 +1654,35 @@ test('a saved lore book cannot follow an alias or exchange its physical identity
     fs.symlinkSync(`${filename}.old`, filename);
     assert.throws(() => captureRoleplayWorldInfo(f.scope, account, source,
         { avatar: 'Nova.png', maxContext: 100 }), { code: 'ROLEPLAY_SOURCE_DAMAGED' });
+    fs.unlinkSync(`${filename}.old`);
+    assert.throws(() => captureRoleplayWorldInfo(f.scope, account, source,
+        { avatar: 'Nova.png', maxContext: 100 }), { code: 'ROLEPLAY_SOURCE_DAMAGED' });
+});
+
+test('a book becoming available or unavailable cannot change an accepted reply', async t => {
+    const f = fixture(t);
+    const worlds = f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
+    fs.mkdirSync(worlds);
+    const filename = path.join(worlds, 'Town.json');
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        world_info_settings: { world_info: { globalSelect: ['Town'] } },
+    }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = f.source();
+    const capture = () => captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 100 });
+    const withoutBook = capture();
+    assert.deepEqual(withoutBook.names.global, []);
+    assert.deepEqual(captureRoleplayWorldInfoForAgentScan(f.scope, withoutBook).names.global, []);
+
+    fs.writeFileSync(filename, JSON.stringify({ entries: { 1: entry(1, 'Original', 'Restored lore') } }));
+    assert.throws(() => assertRoleplayWorldInfoCurrent(f.scope, withoutBook), { code: 'ROLEPLAY_SOURCE_CHANGED' });
+    assert.throws(() => captureRoleplayWorldInfoForAgentScan(f.scope, withoutBook), { code: 'ROLEPLAY_SOURCE_CHANGED' });
+    const withBook = capture();
+    assert.equal((await prepareRoleplayWorldInfo(f.scope, withBook)).worldInfoBefore, 'Restored lore');
+
+    fs.writeFileSync(filename, '{');
+    await assert.rejects(prepareRoleplayWorldInfo(f.scope, withBook), { code: 'ROLEPLAY_SOURCE_CHANGED' });
+    assert.deepEqual(capture().names.global, []);
 });
 
 test('production lore activation macros read only this job’s saved selection, including on replay', async t => {

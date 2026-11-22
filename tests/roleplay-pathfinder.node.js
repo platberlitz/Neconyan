@@ -100,8 +100,10 @@ test('server retrieval activity distinguishes pending, failed and empty successf
     assert.equal(readPathfinderActivity(f.f.scope, { ...input, locator: { ...f.f.locator, group: true } }), null);
 });
 
-test('native two-stage retrieval binds manual lore, uses the explicit profile, and injects only selected text', async t => {
-    const f = prepared(t, { connectionProfile: 'aux' });
+test('native two-stage retrieval skips missing lore, uses the explicit profile, and injects only selected text', async t => {
+    const f = prepared(t, { connectionProfile: 'aux', settings: { enabledLorebooks: ['Missing', 'Manual'] } });
+    assert.deepEqual(f.worldInfo.pathfinder.books, ['Manual']);
+    assert.deepEqual(f.worldInfo.tools.pathfinder.books, ['Manual']);
     const requests = [];
     const name = '["Manual",12] Location: Observatory';
     await f.run(paidResponse(f, { candidate: JSON.stringify({ candidates: [name] }),
