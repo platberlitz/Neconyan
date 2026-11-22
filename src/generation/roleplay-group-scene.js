@@ -3,8 +3,9 @@ import { addGroupHearer, canGroupMemberSee, groupMessageAudience, readGroupScene
 /**
  * A group speaker's prompt keeps every saved position, so prompt bookkeeping
  * (attachments, captions, memory and Agent history indexes) still lines up.
- * Lines the speaker did not hear become empty hidden rows that keep only a
- * mark saying so, which `{{groupHeard}}` reads.
+ * Lines the speaker did not hear, and lines before the chat's memory starting
+ * point, become empty hidden rows that keep only a mark saying so, which
+ * `{{groupHeard}}` reads.
  * `viewer` is the speaker's avatar, or `{ avatar, hears }` for a speaker who
  * answers the saved line at chat index `hears` and so hears it, as in the page.
  */
@@ -12,7 +13,7 @@ export function blankUnheardGroupRecords(records, source, viewer) {
     const avatar = typeof viewer === 'string' ? viewer : viewer?.avatar;
     if (!source?.locator?.group || typeof avatar !== 'string' || !avatar || !Array.isArray(records)) return records;
     const target = Number.isSafeInteger(viewer?.hears) ? records[viewer.hears + 1] : null;
-    const rules = { ...readGroupSceneRules(records[0]?.chat_metadata), ...(target ? { replyTarget: target } : {}) };
+    const rules = { ...readGroupSceneRules(records[0]?.chat_metadata, records.slice(1)), ...(target ? { replyTarget: target } : {}) };
     let blanked = null;
     records.forEach((record, index) => {
         if (index === 0 || !record || canGroupMemberSee(record, avatar, rules)) return;

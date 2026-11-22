@@ -22,7 +22,7 @@ const { forcedMatches, validateSelection, recall, recallInBackground } = await i
 const { expandNeighbours, hybridCandidates, lexicalSearch, searchDocuments, splitPassages, updateIndex } = await import('../src/mewmory/search.js');
 const { loadCurrentState } = await import('../src/mewmory/sources.js');
 const { prepareMewmoryPrompt } = await import('../src/mewmory/prepare.js');
-const { batchState, everyoneState, groupLineHeld, memberHeard, sameAudience, viewerState } = await import('../src/mewmory/viewers.js');
+const { batchState, everyoneState, groupLineHeld, memberHeard, sameAudience, sourceAudience, viewerState } = await import('../src/mewmory/viewers.js');
 const { branchParentLocator, buildBranchMemoryState, chatPath, listStories, mutateState, normalizeLocator, readChatShared, readState, renameChatMemory, renameCharacterMemory, renameWorldMemory, removeChatMemory, removeSourceMemory, statePath, writeJson } = await import('../src/mewmory/store.js');
 const { ensureMewmoryMessageIds } = await import('../public/scripts/mewmory/message-identity.js');
 const { getCounter, getTokenizerModel } = await import('../src/mewmory/tokens.js');
@@ -585,6 +585,43 @@ test('marked group memories saved before horizons stay with their listeners', ()
     catchUp(state);
     const kit = readableTo(state, 'Kit.png');
     assert.ok(!kit.has('event:gift') && !kit.has('event:receipt'));
+});
+
+test('group members remember a chat only from its memory starting point', async () => {
+    const { sourceFingerprint } = await import('../src/mewmory/core.js');
+    const state = groupStory({ missed: [] });
+    extractGroup(state, 2, accepts(state));
+    const accepted = state.records.find(record => record.id === 'event:accepts');
+    assert.equal(accepted.provenance.floor, 2);
+    assert.equal(viewerState(state, ['Kit.png']), null);
+    const before = sourceFingerprint(state);
+
+    syncSources(state, groupMessages([]), groupContext(), { groupStart: 4 });
+    assert.equal(state.groupStart, 4);
+    assert.notEqual(sourceFingerprint(state), before, 'recall picks again when the starting point moves');
+    syncSources(state, groupMessages([]), groupContext());
+    assert.equal(state.groupStart, 4, 'a sync that does not read the scene keeps the saved starting point');
+    for (const avatar of ['Kit.png', 'Mara.png']) {
+        const view = viewerState(state, [avatar]);
+        assert.ok(state.timeline.slice(0, 4).every(ref => view.state.excludedSources.includes(ref.id)),
+            'every line before the start is out of memory, even for members who heard it');
+        assert.ok(!view.state.excludedSources.includes(state.timeline[4].id));
+        assert.ok(!readableTo(state, avatar).has('event:accepts'), 'and so is what was remembered from those lines');
+    }
+    assert.equal(groupLineHeld(state)(state.timeline[2]), false, 'hiding does not wait for memories nobody may read');
+    assert.equal(batchState(state, sourceAudience(state, state.timeline[2]), 2), null, 'a batch from before the start reads the chat as it was');
+
+    const input = extractGroup(state, 5, [
+        { id: 'event:reread', kind: 'event', text: 'Mara reread the receipt for the gift.', refs: [state.timeline[5]], subjectIds: ['gift'], evidenceStatus: 'established' },
+    ]);
+    assert.ok(!input.existing.some(record => record.id === 'event:accepts'), 'the model is not shown memories from before the start');
+    assert.equal(state.records.find(record => record.id === 'event:reread').provenance.floor, 5);
+    assert.ok(readableTo(state, 'Kit.png').has('event:reread'));
+
+    syncSources(state, groupMessages([]), groupContext(), { groupStart: 0 });
+    assert.equal(Object.hasOwn(state, 'groupStart'), false);
+    assert.equal(sourceFingerprint(state), before);
+    assert.equal(viewerState(state, ['Kit.png']), null, 'clearing the start gives the whole chat back');
 });
 
 test('meaning recall falls back without paying for a query when no matching documents can be embedded', async t => {

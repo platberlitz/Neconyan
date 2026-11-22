@@ -31,7 +31,7 @@ export function renderGroupScene() {
     const strip = document.getElementById('group_scene_strip');
     if (!strip) return;
     const current = currentGroupScene();
-    const inUse = Boolean(current && (current.scene.location || current.scene.away.length || current.scene.whisper_to.length));
+    const inUse = Boolean(current && (current.scene.location || current.scene.away.length || current.scene.whisper_to.length || current.scene.heard_from));
     if (!current) sceneExpanded = false;
     // The strip stays out of the way until it is opened or the scene holds something worth showing.
     strip.classList.toggle('displayNone', !current || !(sceneExpanded || inUse));
@@ -44,6 +44,7 @@ export function renderGroupScene() {
     const summary = scene.location || t`Scene`;
     $('#group_scene_summary').text(`${summary} · ${t`${present} of ${group.members.length} present`}`);
     $('#group_scene_location').val(scene.location);
+    $('#group_scene_start').val(scene.heard_from || '');
     const whisper = $('#group_scene_whisper').empty().append($('<option value=""></option>').text(t`To everyone`));
     for (const avatar of group.members) {
         const name = characters.find(item => item.avatar === avatar)?.name || avatar;
@@ -84,6 +85,10 @@ export function initGroupSceneControls() {
     $('#group_scene_toggle').on('click', () => toggleGroupScene());
     $('#group_speaker_controls').on('click', '#group_scene_open', () => toggleGroupScene());
     $('#group_scene_location').on('change', function () { void changeGroupScene({ location: this.value }); });
+    $('#group_scene_start').on('change', function () {
+        const start = Math.max(0, Math.floor(Number(this.value) || 0));
+        void changeGroupScene({ heard_from: start });
+    });
     $('#group_scene_whisper').on('change', function () { void changeGroupScene({ whisper_to: this.value ? [this.value] : [] }); });
     $('#group_scene_members').on('click', '[data-avatar]', function () {
         const current = currentGroupScene();
