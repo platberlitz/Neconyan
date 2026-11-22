@@ -87,6 +87,7 @@ jest.unstable_mockModule('../public/scripts/events.js', () => ({
 const { enableMewmoryForNewChat, getMewmoryLocator, getMewmoryScope, getOverflowMessages, hideOverflowAutomatically, hideOverflowMessages, initMewmory, mewmory, notifyMewmory, prepareMewmoryGeneration, processMewmory, refreshMewmory, requestMewmory, stopMewmoryBackfill, validateMewmoryGeneration } = await import('../public/scripts/mewmory/index.js');
 const { mewmoryConfigAutosave } = await import('../public/scripts/mewmory/config-autosave.js');
 const { setAgentWorkProbe } = await import('../public/scripts/extensions/in-chat-agents/agent-work-state.js');
+const { beginGroupPromptScope } = await import('../public/scripts/group-chat-visibility.js');
 const config = { revision: 1, roles: {}, autoHideTokens: 30 };
 const response = data => ({ ok: true, json: async () => data });
 const enabledChatView = () => {
@@ -374,6 +375,24 @@ test('first generation checks its saved chat without loading the closed memory p
     expect(await prepareMewmoryGeneration(messages)).toEqual({ enabled: false, chat: messages });
     expect(fetch.mock.calls.map(([url]) => url)).toEqual(['/api/mewmory/prepare']);
     expect(JSON.parse(fetch.mock.calls[0][1].body).locator.chat).toBe('first');
+});
+
+test('a group speaker who missed a line asks for memories as that speaker', async () => {
+    const heard = { mes: 'Hello', mewmorySourceIndex: 0, extra: { group_scene: { present: ['kit.png', 'mira.png'], whisper_to: [] } } };
+    const missed = { mes: 'Secret', mewmorySourceIndex: 1, extra: { group_scene: { present: ['kit.png'], whisper_to: [] } } };
+    const restore = beginGroupPromptScope(['mira.png'], [heard, missed]);
+    try {
+        fetch.mockResolvedValueOnce(response({ enabled: false, excludedIndices: [], npcText: '', memoryText: '' }));
+        await prepareMewmoryGeneration([heard]);
+        expect(fetch.mock.calls.map(([url]) => url)).toEqual(['/api/mewmory/prepare']);
+        expect(JSON.parse(fetch.mock.calls[0][1].body).viewers).toEqual(['mira.png']);
+    } finally {
+        restore();
+    }
+    fetch.mockClear();
+    fetch.mockResolvedValueOnce(response({ enabled: false, excludedIndices: [], npcText: '', memoryText: '' }));
+    await prepareMewmoryGeneration([heard]);
+    expect(JSON.parse(fetch.mock.calls[0][1].body).viewers).toBeUndefined();
 });
 
 test('a chat already known to be off asks for a reply without its history', async () => {

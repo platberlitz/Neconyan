@@ -426,6 +426,7 @@ export const refreshedKnowledgeCases = [
     ['What does a Narrator add to a group?', 'groups.narrator-role', 'describe the setting, consequences and supporting characters'],
     ['How do I whisper to one character in a group?', 'groups.scene-presence', 'other members cannot hear or react to it'],
     ['How do I mark a group member away?', 'groups.scene-presence', 'Mark away'],
+    ['After I Mark away a group member, what can they still recall?', 'groups.scene-presence', 'Mewmory recalls only memories built from lines that member heard'],
     ['How do I let one group member see every line, even ones they were away for?', 'groups.scene-memory', 'Let them see everything'],
     ['A new group member has not heard the earlier messages, how do I catch them up?', 'groups.scene-memory', 'Catch up on what was said'],
     ['Does a member hear the line they reply to if they were away?', 'groups.scene-memory', 'Members hear the line they reply to'],

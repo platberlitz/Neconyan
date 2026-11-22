@@ -16,7 +16,7 @@ import { uuidv4 } from '../utils.js';
 import { getPreparedMewmoryContext, setPreparedMewmoryContext } from '../extensions/in-chat-agents/agent-context-macros.js';
 import { isAgentWorkPending, waitForAgentWorkIdle } from '../extensions/in-chat-agents/agent-work-state.js';
 import { t, translate } from '../i18n.js';
-import { hasRestrictedGroupHistory } from '../group-chat-visibility.js';
+import { getGroupPromptViewers, hasRestrictedGroupHistory } from '../group-chat-visibility.js';
 import { MEWMORY_CATCH_UP_TIMEOUT_MS, observeMewmoryCatchUp } from './catch-up.js';
 import { decorateMessages, MEWMORY_OFF_RECORD_KEY, putBackOnRecord, recallSummary, stampMessage } from './in-chat.js';
 
@@ -871,11 +871,8 @@ export async function prepareMewmoryGeneration(messages, { signal, mewmoryCatchU
     setPreparedMewmoryContext(null, null);
     if (!locator) return { enabled: false, chat: messages };
     const currentKey = getMewmoryScope();
-    // Chat-wide records cannot prove which scene participants heard their sources.
-    if (hasRestrictedGroupHistory()) {
-        lastRecall = { scope: currentKey, summary: null };
-        return { enabled: false, chat: messages };
-    }
+    // A group speaker who missed lines recalls only memories built from what they heard.
+    const viewers = hasRestrictedGroupHistory() ? getGroupPromptViewers() : null;
     const generation = getChatGeneration();
     mewmory.preparing = true;
     notifyMewmory();
@@ -895,6 +892,7 @@ export async function prepareMewmoryGeneration(messages, { signal, mewmoryCatchU
         const input = {
             locator, tokenizer, integrity: chat_metadata.integrity,
             ...(mewmoryCatchUpOverride ? { mewmoryCatchUpOverride } : {}),
+            ...(viewers ? { viewers } : {}),
             ...(omittedHistory ? { historyOmitted: true } : { history }),
         };
         let result = await requestMewmory('prepare', input, { signal });
