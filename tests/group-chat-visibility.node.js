@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addGroupHearer, beginGroupPromptScope, canGroupMemberSee, canGroupTargetSee, changeGroupHearers, countGroupPromptHiddenMessages, filterGroupPromptMessages, filterGroupTargetMessages, groupHeardCount, groupMessageAudience, getGroupPromptViewers, groupSceneCardMembers, groupScenePrompt, groupSceneTurnNeedsPage, groupTargetViewers, groupWhisperPrompt, hasRestrictedGroupHistory, readGroupScene, readGroupSceneRules, sameGroupViewers, withGroupTargetPrompt } from '../public/scripts/group-chat-visibility.js';
+import { addGroupHearer, beginGroupPromptScope, canGroupMemberSee, canGroupTargetSee, changeGroupHearers, countGroupPromptHiddenMessages, filterGroupPromptMessages, filterGroupTargetMessages, groupHeardCount, groupMessageAudience, getGroupPromptViewers, groupSceneCardMembers, groupScenePrompt, groupSceneTurnNeedsPage, groupTargetViewers, groupWhisperPrompt, hasRestrictedGroupHistory, readGroupScene, readGroupSceneRules, sameGroupViewers, setGroupEveryoneHears, withGroupTargetPrompt } from '../public/scripts/group-chat-visibility.js';
 
 test('scene state is bounded to current members and has safe defaults', () => {
     assert.deepEqual(readGroupScene({}, ['kit', 'mira']), { away: [], location: '', whisper_to: [], sees_all: [] });
@@ -176,6 +176,42 @@ test('changing who heard a line updates the message and its own swipe records on
     assert.equal(older.extra, undefined);
     assert.equal(changeGroupHearers(older, { remove: ['ash'] }, members), true);
     assert.deepEqual(older.extra.group_scene, { present: ['kit', 'mira'], whisper_to: [] });
+});
+
+test('an everyone line reaches every member, now and later, until a change leaves someone out', () => {
+    const members = ['kit', 'mira'];
+    const message = {
+        mes: 'The bell rings over the whole town.',
+        extra: { group_scene: { present: ['kit'], whisper_to: [] } },
+        swipe_id: 0,
+        swipe_info: [{ extra: { group_scene: { present: ['kit'], whisper_to: [] } } }],
+    };
+    assert.equal(setGroupEveryoneHears(message, members), true);
+    assert.deepEqual(message.extra.group_scene, { present: ['kit', 'mira'], whisper_to: [], everyone: true });
+    assert.deepEqual(message.swipe_info[0].extra.group_scene, { present: ['kit', 'mira'], whisper_to: [], everyone: true });
+    assert.equal(setGroupEveryoneHears(message, members), false);
+    assert.equal(canGroupMemberSee(message, 'ash'), true, 'a member who joins later hears it');
+    assert.equal(groupHeardCount(message, [...members, 'ash']), null);
+    assert.equal(addGroupHearer(message, 'ash'), false, 'nobody needs adding to an everyone line');
+
+    assert.equal(changeGroupHearers(message, { add: ['kit'] }, members), false, 'adding someone who already hears it keeps the line for everyone');
+    assert.equal(changeGroupHearers(message, { exact: members }, members), false);
+    assert.equal(message.extra.group_scene.everyone, true);
+    assert.equal(changeGroupHearers(message, { remove: ['mira'] }, members), true);
+    assert.deepEqual(message.extra.group_scene, { present: ['kit'], whisper_to: [] });
+    assert.equal(canGroupMemberSee(message, 'ash'), false);
+
+    assert.equal(setGroupEveryoneHears(message, members), true);
+    assert.equal(setGroupEveryoneHears(message, members, false), true, 'turning it off keeps the list it had');
+    assert.deepEqual(message.extra.group_scene, { present: ['kit', 'mira'], whisper_to: [] });
+    assert.equal(canGroupMemberSee(message, 'ash'), false);
+
+    const whisper = { extra: { group_scene: { present: ['kit', 'mira'], whisper_to: ['kit'] } } };
+    assert.equal(setGroupEveryoneHears(whisper, members), false, 'a whisper stays private');
+    assert.equal(canGroupMemberSee({ extra: { group_scene: { present: [], whisper_to: ['kit'], everyone: true } } }, 'mira'), false);
+    const older = { mes: 'Older public line' };
+    assert.equal(setGroupEveryoneHears(older, members), true);
+    assert.deepEqual(older.extra.group_scene, { present: ['kit', 'mira'], whisper_to: [], everyone: true });
 });
 
 test('the heard badge counts only lines that some current member missed', () => {

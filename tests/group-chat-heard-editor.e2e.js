@@ -100,4 +100,38 @@ test('people can see and change who heard each group message, for one line or fr
     await expect.poll(async () => (await heardBy(page)).every(list => !list.includes(mira))).toBe(true);
     await expect(badges).toHaveCount(6);
     await expect(badges.first()).toHaveText('Heard by 1 of 2');
+
+    // 'Everyone hears this' locks the list on, from the first line on.
+    await first.locator('.group-heard-badge').click();
+    const editor = openPopup(page);
+    const everyone = editor.locator('[data-heard-everyone]');
+    await expect(everyone).not.toBeChecked();
+    await everyone.check();
+    for (const member of await editor.locator('.group_heard_member').all()) {
+        await expect(member).toBeDisabled();
+        await expect(member).toHaveAttribute('aria-pressed', 'true');
+    }
+    await expect(editor.locator('[data-heard-none]')).toBeDisabled();
+    await editor.locator('.group_heard_range_option').filter({ hasText: 'From here on' }).click();
+    await editor.locator('.popup-button-ok').click();
+    await expect(editor).toBeHidden();
+    const everyoneLines = async () => {
+        const messages = await readSceneChat(page);
+        return messages.slice(messages.findIndex(message => message.mes === LINES[0])).filter(message => !message.is_system).map(message => message.extra?.group_scene?.everyone === true);
+    };
+    await expect.poll(everyoneLines).toEqual([true, true, true, true, true]);
+    // Only Kit's greeting, before the range, still shows a badge.
+    await expect(badges).toHaveCount(1);
+    await expect(row(page, 'Hello from Scene Kit.').locator('.group-heard-badge')).toHaveCount(1);
+
+    // Turning it off keeps everyone on the list, as an ordinary list.
+    await first.locator('.extraMesButtonsHint').click();
+    await first.locator('.mes_heard').click();
+    await expect(openPopup(page).locator('[data-heard-everyone]')).toBeChecked();
+    await openPopup(page).locator('[data-heard-everyone]').uncheck();
+    await saveEditor(page, 'Scene Mira', 'This message');
+    expect(await everyoneLines()).toEqual([false, true, true, true, true]);
+    expect((await heardBy(page))[0]).toEqual([kit]);
+    await expect(first.locator('.group-heard-badge')).toHaveText('Heard by 1 of 2');
+    await expect(badges).toHaveCount(2);
 });

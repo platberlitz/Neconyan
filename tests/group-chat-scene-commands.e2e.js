@@ -70,6 +70,15 @@ test('scene commands and macros change and read who heard each line, and SillyTa
     expect(await heardBy(page)).toEqual([[kit, mira].sort(), [kit, mira].sort(), [kit], [kit]]);
     await expect(page.locator('#chat .mes .group-heard-badge').first()).toHaveText('Heard by 1 of 2');
 
+    // An 'Everyone hears this' line reaches every member, and the badge goes.
+    expect(await run(page, `/heard-everyone ${painting}`)).toBe('1');
+    expect(await run(page, `/heard-everyone ${painting}`)).toBe('0');
+    expect((await readSceneChat(page))[painting].extra.group_scene).toEqual({ present: [kit, mira], whisper_to: [], everyone: true });
+    await expect(page.locator('#chat .mes .group-heard-badge')).toHaveCount(1);
+    expect(await run(page, `/heard-none ${painting}`)).toBe('1');
+    expect((await readSceneChat(page))[painting].extra.group_scene.everyone).toBeUndefined();
+    expect(await run(page, `/heard-remember name="Scene Kit" ${painting}`)).toBe('1');
+
     // A chat saved by the SillyTavern Presence extension: lists on each message and an all-seeing member.
     await page.evaluate(async ({ kitAvatar, miraAvatar }) => {
         const { chat, chat_metadata } = await import('/script.js');
@@ -86,7 +95,7 @@ test('scene commands and macros change and read who heard each line, and SillyTa
     await reopen(page, group);
     const imported = await readSceneChat(page);
     expect(imported.find(message => message.mes === LINES[2]).extra.group_scene).toEqual({ present: [kit], whisper_to: [] });
-    expect(imported.find(message => message.mes === LINES[3]).extra?.group_scene).toBeUndefined();
+    expect(imported.find(message => message.mes === LINES[3]).extra.group_scene).toEqual({ present: [], whisper_to: [], everyone: true });
     expect(imported.find(message => message.mes === LINES[2]).present).toEqual([kit]);
     expect(await page.evaluate(async () => (await import('/script.js')).chat_metadata.group_scene?.sees_all)).toEqual([mira]);
 });

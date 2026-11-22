@@ -24,6 +24,7 @@ export function groupMessageAudience(scene, members, whisperTargets = []) {
 
 /**
  * Missing audience means an older public message, before scene tracking was enabled.
+ * `everyone: true` marks a line every member hears, including members away now or added later.
  * `rules.seesAll` lists members who see every message except whispers to someone else;
  * `rules.replyTarget` is the message a speaker is replying to, which they always hear.
  */
@@ -31,6 +32,7 @@ export function canGroupMemberSee(message, avatar, rules = {}) {
     const audience = message?.extra?.group_scene;
     if (!audience) return true;
     if (audience.whisper_to?.length && !audience.whisper_to.includes(avatar)) return false;
+    if (audience.everyone === true) return true;
     if (rules.seesAll?.includes(avatar) || (rules.replyTarget && message === rules.replyTarget)) return true;
     return !Array.isArray(audience.present) || audience.present.includes(avatar);
 }
@@ -47,7 +49,7 @@ export function addGroupHearer(message, avatar, { everySwipe = false } = {}) {
     const chosen = everySwipe ? swipes : [swipes[message?.swipe_id ?? 0]];
     let changed = false;
     for (const audience of new Set([message?.extra?.group_scene, ...chosen.map(info => info?.extra?.group_scene)])) {
-        if (!Array.isArray(audience?.present) || audience.present.includes(avatar)) continue;
+        if (!Array.isArray(audience?.present) || audience.everyone === true || audience.present.includes(avatar)) continue;
         if (audience.whisper_to?.length && !audience.whisper_to.includes(avatar)) continue;
         audience.present.push(avatar);
         changed = true;
@@ -55,22 +57,8 @@ export function addGroupHearer(message, avatar, { everySwipe = false } = {}) {
     return changed;
 }
 
-/**
- * Changes who heard a message, on the message and on every swipe with its own record.
- * A message without a record counts as heard by every member.
- * @param {object} message Chat message
- * @param {{ exact?: string[]|null, add?: string[], remove?: string[] }} change `exact` replaces the list; `add` and `remove` adjust it
- * @param {string[]} members Current group members
- * @returns {boolean} Whether anything changed
- */
-export function changeGroupHearers(message, { exact = null, add = [], remove = [] } = {}, members = []) {
-    if (!message || typeof message !== 'object') return false;
-    const update = audience => {
-        const before = Array.isArray(audience?.present) ? audience.present : members;
-        const next = exact ? [...new Set(exact)] : [...new Set([...before, ...add])].filter(avatar => !remove.includes(avatar));
-        if (next.length === new Set(before).size && next.every(avatar => before.includes(avatar))) return null;
-        return { ...(audience || {}), present: next, whisper_to: [...(audience?.whisper_to || [])] };
-    };
+/** Applies `update` to the record on a message and on every swipe with its own record. */
+function updateGroupAudiences(message, update) {
     let changed = false;
     const next = update(message.extra?.group_scene);
     if (next) {
@@ -86,6 +74,49 @@ export function changeGroupHearers(message, { exact = null, add = [], remove = [
         changed = true;
     }
     return changed;
+}
+
+/**
+ * Changes who heard a message, on the message and on every swipe with its own record.
+ * A message without a record, or one every member hears, counts as heard by every member;
+ * a change that leaves someone out turns an 'everyone' line into an ordinary list.
+ * @param {object} message Chat message
+ * @param {{ exact?: string[]|null, add?: string[], remove?: string[] }} change `exact` replaces the list; `add` and `remove` adjust it
+ * @param {string[]} members Current group members
+ * @returns {boolean} Whether anything changed
+ */
+export function changeGroupHearers(message, { exact = null, add = [], remove = [] } = {}, members = []) {
+    if (!message || typeof message !== 'object') return false;
+    return updateGroupAudiences(message, audience => {
+        const before = audience?.everyone !== true && Array.isArray(audience?.present) ? audience.present : members;
+        const next = exact ? [...new Set(exact)] : [...new Set([...before, ...add])].filter(avatar => !remove.includes(avatar));
+        if (next.length === new Set(before).size && next.every(avatar => before.includes(avatar))) return null;
+        const changed = { ...(audience || {}), present: next, whisper_to: [...(audience?.whisper_to || [])] };
+        delete changed.everyone;
+        return changed;
+    });
+}
+
+/**
+ * Marks a message as heard by every member, now and later, or turns that back into the list it had.
+ * Whispers stay private.
+ * @param {object} message Chat message
+ * @param {string[]} members Current group members
+ * @param {boolean} [everyone]
+ * @returns {boolean} Whether anything changed
+ */
+export function setGroupEveryoneHears(message, members, everyone = true) {
+    if (!message || typeof message !== 'object') return false;
+    return updateGroupAudiences(message, audience => {
+        if (audience?.whisper_to?.length || (audience?.everyone === true) === everyone) return null;
+        if (!everyone) {
+            const listed = { ...audience };
+            delete listed.everyone;
+            return listed;
+        }
+        const present = Array.isArray(audience?.present) ? audience.present : [];
+        return { ...(audience || {}), present: [...new Set([...present, ...members])], whisper_to: [], everyone: true };
+    });
 }
 
 /** How many current members heard a message, or null when all of them did. Whispers have their own badge. */

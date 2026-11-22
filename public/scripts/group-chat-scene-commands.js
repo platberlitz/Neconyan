@@ -1,6 +1,6 @@
 import { characters, chat, is_send_press } from '../script.js';
 import { refreshGroupHeardBadges } from './group-chat-heard-editor.js';
-import { copyHeard, everyoneHeard, forgetHeard, heardBy, noOneHeard, parseHeardRange, rememberHeard, transferHeard } from './group-chat-heard-tools.js';
+import { copyHeard, everyoneHeard, everyoneHears, forgetHeard, heardBy, noOneHeard, parseHeardRange, rememberHeard, transferHeard } from './group-chat-heard-tools.js';
 import { changeGroupScene, currentGroupScene } from './group-chat-scene-ui.js';
 import { findGroupMemberId, getOpenGroupSceneRules, groups, is_group_generating, saveGroupHearers, selected_group } from './group-chats.js';
 import { t } from './i18n.js';
@@ -234,6 +234,13 @@ export function registerGroupSceneSlashCommands() {
         returns: t`how many messages changed`,
         unnamedArgumentList: [rangeArgument()],
         helpString: t`No group member heard the messages in a range, or the whole chat.`,
+    }));
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+        name: 'heard-everyone',
+        callback: rangeEdit(everyoneHears),
+        returns: t`how many messages changed`,
+        unnamedArgumentList: [rangeArgument()],
+        helpString: t`Every member hears the messages in a range, or the whole chat, including members who are away now or join the group later. Whispers stay private.`,
     }));
     SlashCommandParser.addCommandObject(SlashCommand.fromProps({
         name: 'heard-copy',
