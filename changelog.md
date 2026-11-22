@@ -87,6 +87,7 @@
 - PR #863 (2026-11-22) `feat(groups): add 'Everyone hears this' lines`
 - PR #864 (2026-11-22) `fix(roleplay): skip unavailable lorebooks in server replies`
 - PR #865 (2026-11-22) `feat(groups): add a memory starting point per chat`
+- PR #866 (2026-11-22) `feat(groups): add 'Only with the group' memory mode`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
