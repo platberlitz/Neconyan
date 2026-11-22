@@ -77,6 +77,7 @@
 - PR #853 (2026-11-22) `feat(mewmory): recall per group speaker`
 - PR #854 (2026-11-22) `feat(mewmory): write group memories per audience`
 - PR #855 (2026-11-22) `feat(mewmory): keep group secrets out of hiding, sharing and lorebooks`
+- PR #856 (2026-11-22) `fix(groups): leave away members' cards out of joined-cards prompts`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
