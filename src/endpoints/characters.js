@@ -80,6 +80,7 @@ const shallowCardCache = createFileSummaryCache({ maxBytes: 32 * 1024 * 1024, ma
 // Remember absence too: most cards are not bundled assistants. Keep only the
 // two fields the picker and installer use, rather than retaining full cards.
 const assistantMetadataCache = createFileSummaryCache({ maxBytes: 1024 * 1024, maxEntries: 4096 });
+const CHARACTER_LIST_PROCESS_CONCURRENCY = 16;
 // Stats for every character's chats share one bound, so a large library cannot
 // start thousands of file stats at once during a list rebuild.
 const CHARACTER_CHAT_STATS_CONCURRENCY = 32;
@@ -2844,11 +2845,21 @@ router.post('/all', async function (request, response) {
         const initialProbes = useShallowCharacters
             ? buildCharacterListChatProbes(request.user.directories, pngFiles, lastChatByFile)
             : undefined;
-        const processingPromises = pngFiles.map(file => processCharacter(file, request.user.directories, {
-            shallow: useShallowCharacters,
-            fileStat: fileStats.get(file),
-        }));
-        const data = (await Promise.all(processingPromises)).filter(c => c.name);
+        const characters = new Array(pngFiles.length);
+        let nextIndex = 0;
+        const workers = Array.from({ length: Math.min(CHARACTER_LIST_PROCESS_CONCURRENCY, pngFiles.length) }, async () => {
+            while (nextIndex < pngFiles.length) {
+                const index = nextIndex;
+                nextIndex++;
+                const file = pngFiles[index];
+                characters[index] = await processCharacter(file, request.user.directories, {
+                    shallow: useShallowCharacters,
+                    fileStat: fileStats.get(file),
+                });
+            }
+        });
+        await Promise.all(workers);
+        const data = characters.filter(c => c.name);
         // Neconyan: the sidecar owns the date added. The last-chat pointer is NOT baked
         // into the cached objects: each card keeps its own pointer as the fallback, and
         // the sidecar value is overlaid per request below so later switches and seeds
