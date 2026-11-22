@@ -31,6 +31,7 @@ import {
     loreScanText,
     sourceConnectionProfile,
     sourceCharacters,
+    sourceLorebookNames,
     sourcePersona,
     sourceMessages,
     sourceUserName,
@@ -87,10 +88,12 @@ function assistantRole(id) {
 
 function quickPrompts() {
     const image = app.imageAvailability?.image ? [{ label: t`Image idea`, text: t`Suggest an image based on my idea, using my Quick Image Gen settings. Ask what I want to depict first.` }] : [];
+    const checks = checkPrompts();
     if (app.source?.kind === 'general') return [
         { label: t`Brainstorm`, text: t`Help me brainstorm some ideas. Ask what I am working on first.` },
         { label: t`Help me decide`, text: t`Help me think through a decision. Ask me about the options and what matters to me.` },
         { label: t`Create a character`, text: t`Help me create a character. Ask about the idea, then propose a new character card for me to review.` },
+        ...checks,
         ...image,
     ];
     if (app.source?.kind === 'notebook') return [
@@ -98,6 +101,7 @@ function quickPrompts() {
         { label: t`Develop ideas`, text: t`Suggest three ways to develop the ideas in the shared note.` },
         { label: t`Check consistency`, text: t`Check the shared note for contradictions, missing details and unclear passages.` },
         { label: t`Suggest edits`, text: t`Suggest focused improvements to the shared note. Propose changes only where the shared permissions allow them.` },
+        ...checks,
         ...image,
     ];
     return [
@@ -106,15 +110,48 @@ function quickPrompts() {
         { label: t`Catch me up`, text: t`Summarise what has happened so far in a few short paragraphs.` },
         { label: t`Continuity check`, text: t`Check the recent messages for contradictions, slipped details or anything that does not match the characters or lore.` },
         { label: t`Lore gaps`, text: t`Which people, places or things in this chat deserve a lorebook entry that they do not have yet? Suggest the entries.` },
+        ...checks,
         ...image,
     ];
+}
+
+/** The check prompts for items this session can actually inspect. Tapping one also turns on its sharing switches. */
+function checkPrompts() {
+    const source = app.source;
+    if (!source || source.kind === 'notebook') return [];
+    const settings = currentSettings();
+    const include = settings.include || {};
+    const general = source.kind === 'general';
+    const prompts = [];
+    if (sourceCharacters(source).length) {
+        prompts.push({
+            label: t`Check my card`,
+            text: t`Check the shared card for problems and explain how to fix them.`,
+            include: { card: true },
+        });
+    }
+    if ((source.kind === 'roleplay' || (general && include.preset)) && currentPresetName()) {
+        prompts.push({
+            label: t`Check my preset`,
+            text: t`Check the shared preset for problems and explain how to fix them.`,
+            include: { preset: true },
+        });
+    }
+    if (general ? Boolean(settings.lorebook) : sourceLorebookNames(source).length) {
+        prompts.push({
+            label: t`Check my lorebook`,
+            text: t`Check the shared lorebook for problems and explain how to fix them.`,
+            include: { lore: true },
+        });
+    }
+    return prompts;
 }
 
 const DEFAULT_SETTINGS = Object.freeze({
     depth: 15,
     picked: [],
     notes: [],
-    include: { card: true, persona: true, authorsNote: true, lore: true, preset: false, hidden: false, agents: false, regex: false, cssSnippets: false, dialogueColors: false, mewmory: false },
+    include: { card: true, persona: true, authorsNote: true, lore: true, preset: false, hidden: false, agents: false, regex: false, cssSnippets: false, dialogueColors: false, mewmory: false, problems: false },
     loreOverrides: {},
     lorebook: '',
     connection: { kind: 'current' },
@@ -1284,7 +1321,7 @@ function usePrompt(text) {
 
 /** The user's own prompts come first, then the built-in ones for this kind of Scratchpad, then the editor button. */
 function quickPromptChips() {
-    const chip = prompt => iconButton(prompt.label, () => usePrompt(prompt.text), { className: 'scratchpad-chip' });
+    const chip = prompt => iconButton(prompt.label, () => void takePrompt(prompt), { className: 'scratchpad-chip' });
     const saved = app.quickPrompts.prompts.map(prompt => {
         const element = chip(prompt);
         element.classList.add('scratchpad-chip-saved');
@@ -1293,6 +1330,22 @@ function quickPromptChips() {
     });
     return [...saved, ...quickPrompts().map(chip),
         iconButton('', () => void openQuickPromptEditor(), { icon: 'fa-pen', title: t`Edit quick prompts`, className: 'scratchpad-chip scratchpad-chip-edit' })];
+}
+
+/** Fills the composer, after switching on the sharing a check prompt needs for this session. */
+async function takePrompt(prompt) {
+    if (prompt.include) {
+        const before = currentSettings().include || {};
+        const changed = [];
+        if (!before.problems) changed.push(t`Problem checks`);
+        const labels = { card: t`Character cards`, preset: t`Current preset`, lore: t`Lorebook entries` };
+        for (const [key, label] of Object.entries(labels)) {
+            if (prompt.include[key] && !before[key]) changed.push(label);
+        }
+        const saved = await updateSettings(settings => ({ include: { ...settings.include, problems: true, ...prompt.include } }), { rerenderContext: app.tab === 'context' });
+        if (saved && changed.length) toastr.info(t`Turned on ${changed.join(' and ')} for this session.`, t`Scratchpad`);
+    }
+    usePrompt(prompt.text);
 }
 
 async function openQuickPromptEditor() {
@@ -1320,11 +1373,15 @@ function render() {
 function renderHeader() {
     const sourceKind = app.source?.kind || '';
     const savedPrompts = `${getCurrentUserHandle()}:${app.quickPrompts.revision}`;
+    const settings = currentSettings();
+    const include = settings.include || {};
+    const quickState = JSON.stringify([include.problems, include.card, include.preset, include.lore, settings.lorebook, app.source?.avatar]);
     if (app.el.quick.dataset.sourceKind !== sourceKind || app.el.quick.dataset.imagesAvailable !== String(app.imageAvailability.image)
-        || app.el.quick.dataset.savedPrompts !== savedPrompts) {
+        || app.el.quick.dataset.savedPrompts !== savedPrompts || app.el.quick.dataset.quickState !== quickState) {
         app.el.quick.dataset.sourceKind = sourceKind;
         app.el.quick.dataset.imagesAvailable = String(app.imageAvailability.image);
         app.el.quick.dataset.savedPrompts = savedPrompts;
+        app.el.quick.dataset.quickState = quickState;
         app.el.quick.replaceChildren(...quickPromptChips());
     }
     const session = activeSession();
@@ -2759,6 +2816,8 @@ function renderContext({ force = true } = {}) {
             roleplay ? checkbox(t`Mewmory`, include.mewmory === true, value => setInclude('mewmory', value), t`Reads saved memories from this Roleplay chat on the server. Pinned memories come first, followed by recent ones; unavailable or excluded memories are left out.`) : null,
             general ? null : checkbox(t`Lorebook entries`, include.lore, value => setInclude('lore', value), t`Entries are shared when their keywords appear, or when you set them to Always below.`),
             roleplay || general ? presetCheckbox(include.preset, value => setInclude('preset', value), { general }) : null,
+            checkbox(t`Problem checks`, include.problems === true, value => setInclude('problems', value),
+                t`Checks shared cards, presets and lorebooks for likely problems, and shares fuller activation and sampler details.`),
             checkbox(t`Agents`, include.agents === true, value => setInclude('agents', value), t`Shares the name, description and prompt of every saved Agent, so an assistant can suggest edits to them.`),
             checkbox(t`Regexes`, include.regex === true, value => setInclude('regex', value), t`Shares the name, Find pattern and replacement of every global regex script, so an assistant can suggest edits to them.`),
             checkbox(t`CSS Snippets`, include.cssSnippets === true, value => setInclude('cssSnippets', value), t`Shares the name and CSS of every saved snippet, so an assistant can suggest edits to them.`),
