@@ -553,6 +553,11 @@ export function formatLorebookTrace(trace, { maxLines = MAX_TRACE_LINES, maxChar
     };
 
     tryPush(scopeText);
+    if (trace.hiddenCount > 0) {
+        tryPush(trace.hiddenCount === 1
+            ? '1 entry hidden from Agents was left out of this trace. In a real reply it can still use budget, win an inclusion group or trigger other entries, so the result may differ.'
+            : `${trace.hiddenCount} entries hidden from Agents were left out of this trace. In a real reply they can still use budget, win an inclusion group or trigger other entries, so the result may differ.`);
+    }
 
     if (trace.activated.length) {
         const items = trace.activated.map(item =>

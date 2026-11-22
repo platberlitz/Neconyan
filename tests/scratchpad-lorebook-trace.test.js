@@ -283,6 +283,29 @@ describe('lorebook activation trace reasons', () => {
         expect(formatted).toMatch(/omitted to fit the shared limit/i);
         expect(formatted.split('\n').length).toBeLessThanOrEqual(7);
     });
+
+    test('says how many hidden entries were left out, and nothing else about them', async () => {
+        const build = entries => traceLorebooks({
+            books: [{ name: 'HarbourBook', source: 'global', raw: { entries } }],
+            messages: ['The harbour is quiet.'],
+            settings: { depth: 2 },
+            hasChatMessages: true,
+        });
+        const visible = entry(0, { comment: 'Open Entry', key: ['harbour'] });
+        const hidden = uid => entry(uid, { comment: `VEILED TITLE ${uid}`, key: ['veiledkey'], content: 'VeiledText', agentBlacklisted: true });
+
+        const none = formatLorebookTrace(await build({ 0: visible }));
+        expect(none).not.toMatch(/hidden from Agents/);
+
+        const one = formatLorebookTrace(await build({ 0: visible, 1: hidden(1) }));
+        expect(one.split('\n')[1]).toBe('1 entry hidden from Agents was left out of this trace. In a real reply it can still use budget, win an inclusion group or trigger other entries, so the result may differ.');
+
+        const two = formatLorebookTrace(await build({ 0: visible, 1: hidden(1), 2: hidden(2) }));
+        expect(two.split('\n')[1]).toMatch(/^2 entries hidden from Agents were left out of this trace\./);
+        for (const text of [one, two]) {
+            expect(text.toLowerCase()).not.toContain('veiled');
+        }
+    });
 });
 
 describe('Scratchpad context integration, privacy, and General isolation', () => {
