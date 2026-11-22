@@ -1,7 +1,9 @@
 import { currentRecords, eligibleRecords, fail, hash, refKey, sourceAt, sourceEligible } from './core.js';
 import { embed, roleVersion } from './models.js';
+import { createVectorReader } from './vector-storage.js';
 import { lexicalSearch } from '../../public/scripts/util/lexical-search.js';
 import { RAG_DEFAULTS } from '../../public/scripts/mewmory/rag-settings.js';
+export { cosine } from './vector-storage.js';
 export { terms, lexicalSearch } from '../../public/scripts/util/lexical-search.js';
 
 export function interviewText(record) {
@@ -86,27 +88,16 @@ export function recallPool(documents, config = {}) {
     return documents.filter(document => document.kind !== 'source' || document.dataType === 'file');
 }
 
-export function cosine(left, right) {
-    if (left.length !== right.length) return -1;
-    let dot = 0, a = 0, b = 0;
-    for (let index = 0; index < left.length; index++) {
-        dot += left[index] * right[index];
-        a += left[index] ** 2;
-        b += right[index] ** 2;
-    }
-    return a && b ? dot / Math.sqrt(a * b) : -1;
-}
-
-function matchesVector(entry, textHash, dimension) {
-    return Array.isArray(entry?.vector) && entry.textHash === textHash && entry.vector.length > 0
-        && (!dimension || entry.vector.length === dimension);
+function matchingVectorDimension(reader, entry, textHash, dimension) {
+    return entry?.textHash === textHash ? reader.dimension(entry, dimension) : 0;
 }
 
 export function searchableVectorDimension(documents, index, config) {
     if (!config.roles.embedding.enabled || index.version !== roleVersion(config, 'embedding')) return undefined;
+    const reader = createVectorReader();
     for (const document of documents) {
-        const entry = index.vectors[document.id];
-        if (matchesVector(entry, hash(document.searchText))) return entry.vector.length;
+        const dimension = matchingVectorDimension(reader, index.vectors[document.id], hash(document.searchText));
+        if (dimension) return dimension;
     }
     return undefined;
 }
@@ -117,9 +108,17 @@ export function rankedCandidates(documents, query, vector, index, limit, options
     const mode = settings.mode === 'semantic' && !vector ? 'keyword' : settings.mode;
     const lexical = mode !== 'semantic' ? lexicalSearch(documents, query, documents.length) : [];
     // ponytail: linear per-story vector search; use a measured ANN backend when large archives outgrow it.
-    const semantic = vector && mode !== 'keyword' ? documents.filter(document => matchesVector(index[document.id], hash(document.searchText), vector.length))
-        .map(document => ({ document, score: cosine(vector, index[document.id].vector) }))
-        .filter(item => item.score > settings.minSimilarity).sort((a, b) => b.score - a.score) : [];
+    const semantic = [];
+    if (vector && mode !== 'keyword') {
+        const reader = createVectorReader();
+        for (const document of documents) {
+            const entry = index[document.id];
+            if (entry?.textHash !== hash(document.searchText)) continue;
+            const score = reader.similarity(entry, vector);
+            if (score !== null && score > settings.minSimilarity) semantic.push({ document, score });
+        }
+        semantic.sort((a, b) => b.score - a.score);
+    }
     const scores = new Map();
     for (const [kind, ranked] of [['keyword', lexical], ['semantic', semantic]]) ranked.forEach(({ document, score }, rank) => {
         const weight = mode === 'hybrid' && vector ? kind === 'semantic' ? settings.semanticWeight : 1 - settings.semanticWeight : 1;
@@ -168,10 +167,12 @@ export async function updateIndex(state, directories, config, { signal, limit = 
     const existing = sameVersion ? state.index.vectors : state.index.build?.version === version ? state.index.build.vectors : {};
     const next = {};
     let dimension;
+    const reader = createVectorReader();
     for (const document of documents) {
         const entry = existing[document.id];
-        if (!matchesVector(entry, hash(document.searchText), dimension)) continue;
-        dimension ||= entry.vector.length;
+        const width = matchingVectorDimension(reader, entry, hash(document.searchText), dimension);
+        if (!width) continue;
+        dimension ||= width;
         next[document.id] = entry;
     }
     const missing = targets.filter(document => !next[document.id]);
@@ -218,11 +219,14 @@ export function mergeVectorIndex(state, config, indexes = [state.index]) {
     const textHashes = new Map(documents.map(document => [document.id, hash(document.searchText)]));
     const vectors = {};
     let dimension;
+    const reader = createVectorReader();
     for (const index of indexes) {
         const entries = index?.version === version ? index.vectors : index?.build?.version === version ? index.build.vectors : {};
         for (const [id, entry] of Object.entries(entries || {})) {
-            if (!textHashes.has(id) || !matchesVector(entry, textHashes.get(id), dimension)) continue;
-            dimension ||= entry.vector.length;
+            if (!textHashes.has(id)) continue;
+            const width = matchingVectorDimension(reader, entry, textHashes.get(id), dimension);
+            if (!width) continue;
+            dimension ||= width;
             vectors[id] = entry;
         }
     }
