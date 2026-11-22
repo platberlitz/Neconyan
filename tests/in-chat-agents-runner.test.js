@@ -11017,6 +11017,41 @@ describe('in-chat agent post-processing runner', () => {
         setPreparedMewmoryContext(null, null);
     });
 
+    test('an Agent reads memories recalled for one speaker only when it writes for that speaker', async () => {
+        const { buildPromptDynamicMacros } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        const { getPreparedMewmoryContext, setPreparedMewmoryContext } = await import('../public/scripts/extensions/in-chat-agents/agent-context-macros.js');
+        const { beginGroupPromptScope } = await import('../public/scripts/group-chat-visibility.js');
+        const scene = present => ({ group_scene: { present, whisper_to: [] } });
+        const miraReply = { name: 'Mira', original_avatar: 'mira.png', mes: 'Mira answers', extra: scene(['kit.png', 'mira.png']) };
+        const kitReply = { name: 'Kit', original_avatar: 'kit.png', mes: 'Kit answers', extra: scene(['kit.png', 'mira.png']) };
+        const saved = chat.splice(0, chat.length, { mes: 'Public' }, { mes: 'Kit only', extra: scene(['kit.png']) }, miraReply, kitReply);
+        const agent = { phase: 'pre', prompt: '{{mewmory-facts}}' };
+        const facts = message => buildPromptDynamicMacros('Reply', message, agent)['mewmory-facts'];
+        try {
+            setPreparedMewmoryContext('chat-a', { enabled: true, factsText: 'Mira facts', viewers: ['mira.png'] });
+            expect(facts(kitReply)).toBe('');
+            expect(getPreparedMewmoryContext('chat-a').mewmoryMacrosUsed).toBeUndefined();
+            expect(facts(miraReply)).toBe('Mira facts');
+            expect(getPreparedMewmoryContext('chat-a').mewmoryMacrosUsed).toBe(true);
+            const restore = beginGroupPromptScope(['mira.png'], chat);
+            try {
+                expect(facts(null)).toBe('Mira facts');
+            } finally {
+                restore();
+            }
+
+            setPreparedMewmoryContext('chat-a', { enabled: true, factsText: 'Chat facts' });
+            expect(facts(kitReply)).toBe('Chat facts');
+            expect(facts(miraReply)).toBe('');
+            chatMetadata.group_scene = { sees_all: ['mira.png'] };
+            expect(facts(miraReply)).toBe('Chat facts');
+        } finally {
+            delete chatMetadata.group_scene;
+            chat.splice(0, chat.length, ...saved);
+            setPreparedMewmoryContext(null, null);
+        }
+    });
+
     test('fills the active lore, Author\'s Note and tracker macros for agent prompts', async () => {
         const { buildPromptDynamicMacros, initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
         initAgentRunner();

@@ -61,14 +61,15 @@ import { assertRoleplayBundledMacrosCaptured } from './roleplay-bundled-macros.j
 import { preserveInterruptedRoleplayReply, recordRoleplayMainReplyComplete } from './roleplay-kept-reply.js';
 import { reasoningOnlyResult } from './reasoning-only-result.js';
 import { groupViewerMissedLines } from './roleplay-group-scene.js';
+import { sameGroupViewers } from '../../public/scripts/group-chat-visibility.js';
 
 const MAX_REPLY_BYTES = 256 * 1024;
 const REQUEST_OVERRIDES = new Set(['temperature', 'top_p', 'top_k', 'min_p', 'seed', 'frequency_penalty',
     'presence_penalty', 'repetition_penalty', 'stop', 'stopping_strings']);
 
-/** Agents get no memories recalled for one speaker's view, as in the page. */
-function agentMewmory(memory) {
-    return memory && !memory.viewers ? memory : null;
+/** Server Agents write for the speaker, so memories recalled for one speaker's view reach them only for that speaker, as in the page. */
+function agentMewmory(memory, speaker) {
+    return memory && (!memory.viewers || sameGroupViewers(memory.viewers, [speaker])) ? memory : null;
 }
 
 function requestOverrides(request) {
@@ -203,7 +204,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
             return agentMewmory(saved?.enabled && presentation?.version === 1 && presentation.phase === 'terminal'
                 ? { ...saved, memoryText: presentation.memoryText, factsText: presentation.factsText,
                     interviewText: presentation.interviewText, presentationChoice: presentation.choice }
-                : saved);
+                : saved, request.worldInfo?.avatar);
         }) : null;
         let thinkingOnly = reasoningOnlyResult(result);
         let thinkingRecovery = null;
@@ -1287,7 +1288,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
     };
     if (request.worldInfo?.agents) {
         const intercepted = await runRoleplayAgentInterceptors(context, { base, snapshot: request.worldInfo, records: initialRecords, binding: request.binding,
-            mewmory: agentMewmory(memoryFinal), macros: acceptedMacros, generationType: request.worldInfo.global.trigger, assistantName: request.characterName,
+            mewmory: agentMewmory(memoryFinal, request.worldInfo?.avatar), macros: acceptedMacros, generationType: request.worldInfo.global.trigger, assistantName: request.characterName,
             assertCurrent: beforeDispatch, generate: generateAgent, timing: 'pre-generation', format: countText ? 'text' : 'chat',
             value: countText ? preparedText : messages });
         if (countText) preparedText = intercepted.value;

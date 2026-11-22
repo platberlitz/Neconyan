@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addGroupHearer, beginGroupPromptScope, canGroupMemberSee, changeGroupHearers, countGroupPromptHiddenMessages, filterGroupPromptMessages, filterGroupTargetMessages, groupHeardCount, groupMessageAudience, getGroupPromptViewers, groupSceneCardMembers, groupScenePrompt, groupSceneTurnNeedsPage, hasRestrictedGroupHistory, readGroupScene, readGroupSceneRules, withGroupTargetPrompt } from '../public/scripts/group-chat-visibility.js';
+import { addGroupHearer, beginGroupPromptScope, canGroupMemberSee, canGroupTargetSee, changeGroupHearers, countGroupPromptHiddenMessages, filterGroupPromptMessages, filterGroupTargetMessages, groupHeardCount, groupMessageAudience, getGroupPromptViewers, groupSceneCardMembers, groupScenePrompt, groupSceneTurnNeedsPage, groupTargetViewers, hasRestrictedGroupHistory, readGroupScene, readGroupSceneRules, sameGroupViewers, withGroupTargetPrompt } from '../public/scripts/group-chat-visibility.js';
 
 test('scene state is bounded to current members and has safe defaults', () => {
     assert.deepEqual(readGroupScene({}, ['kit', 'mira']), { away: [], location: '', whisper_to: [], sees_all: [] });
@@ -67,6 +67,33 @@ test('background Agent history and macro expansion follow their target after the
     assert.equal(filterGroupPromptMessages(messages), messages);
     assert.throws(() => withGroupTargetPrompt(miraReply, messages, () => { throw new Error('Failed macro'); }));
     assert.equal(filterGroupPromptMessages(messages), messages);
+});
+
+test('background Agents writing for a member who sees everything read the lines that member heard', () => {
+    const heardByKit = { mes: 'Kit only', extra: { group_scene: { present: ['kit'], whisper_to: [] } } };
+    const whisperToKit = { mes: 'Whisper', extra: { group_scene: { present: ['kit', 'mira'], whisper_to: ['kit'] } } };
+    const messages = [heardByKit, whisperToKit];
+    const miraReply = { original_avatar: 'mira' };
+    const rules = readGroupSceneRules({ group_scene: { sees_all: ['mira'] } });
+    assert.deepEqual(filterGroupTargetMessages(messages, miraReply, rules), [heardByKit]);
+    assert.equal(canGroupTargetSee(heardByKit, miraReply, rules), true);
+    withGroupTargetPrompt(miraReply, messages, () => {
+        assert.deepEqual(filterGroupPromptMessages(messages), [heardByKit]);
+    }, rules);
+});
+
+test('an Agent target names the members it writes for, and audiences compare as sets', () => {
+    assert.deepEqual(groupTargetViewers({ original_avatar: 'mira', extra: { group_scene: { present: ['kit'], whisper_to: [] } } }), ['mira']);
+    assert.deepEqual(groupTargetViewers({ is_user: true, extra: { group_scene: { present: ['kit', 'mira'], whisper_to: ['kit'] } } }), ['kit']);
+    assert.deepEqual(groupTargetViewers({ is_user: true, extra: { group_scene: { present: ['kit', 'mira'], whisper_to: [] } } }), ['kit', 'mira']);
+    assert.equal(groupTargetViewers({ is_user: true }), null);
+    assert.equal(groupTargetViewers(null), null);
+    assert.equal(sameGroupViewers(null, null), true);
+    assert.equal(sameGroupViewers(['kit'], null), false);
+    assert.equal(sameGroupViewers(null, ['kit']), false);
+    assert.equal(sameGroupViewers(['kit', 'mira'], ['mira', 'kit']), true);
+    assert.equal(sameGroupViewers(['kit'], ['kit', 'mira']), false);
+    assert.equal(sameGroupViewers(['kit', 'kit'], ['kit', 'mira']), false);
 });
 
 test('a scoped turn names its speakers and counts the lines they missed', () => {

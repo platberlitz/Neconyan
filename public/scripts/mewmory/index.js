@@ -938,6 +938,8 @@ export async function prepareMewmoryGeneration(messages, { signal, mewmoryCatchU
             mewmory.view.preview = result;
             mewmory.view.previewCurrent = true;
         }
+        // Agents check whose view these memories were recalled for before reading them.
+        if (viewers) result.viewers = viewers;
         setPreparedMewmoryContext(locator.chat, result);
         return { ...result, locator, tokenizer, scope: currentKey, chat: messages.filter(message => !excluded.has(message.mewmorySourceIndex)) };
     } catch (error) {

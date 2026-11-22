@@ -24,7 +24,7 @@ import { extension_settings, getContext } from '../../extensions.js';
 import { t } from '../../i18n.js';
 import { eventSource, event_types } from '../../events.js';
 import { is_group_generating } from '../../group-chats.js';
-import { canGroupTargetSee, filterGroupPromptMessages, filterGroupTargetMessages, withGroupTargetPrompt } from '../../group-chat-visibility.js';
+import { canGroupTargetSee, filterGroupPromptMessages, filterGroupTargetMessages, getGroupPromptViewers, groupTargetViewers, readGroupSceneRules, sameGroupViewers, withGroupTargetPrompt } from '../../group-chat-visibility.js';
 import { POPUP_RESULT, POPUP_TYPE, callGenericPopup } from '../../popup.js';
 import { ToolManager } from '../../tool-calling.js';
 import {
@@ -2423,21 +2423,25 @@ function buildBrowserAgentContextMacros(agent, message = null, generationType = 
         })))
         : null;
     const chatId = getCurrentChatId();
+    const rules = readGroupSceneRules(chat_metadata);
+    const restricted = chat.some(source => !canGroupTargetSee(source, message, rules));
+    // Memories recalled for one speaker's view go only to an Agent writing for that same view.
+    const viewers = restricted ? groupTargetViewers(message) ?? getGroupPromptViewers() : null;
     const preparedMemory = getPreparedMewmoryContext(chatId);
+    const memory = preparedMemory && sameGroupViewers(preparedMemory.viewers ?? null, viewers) ? preparedMemory : null;
     // Companions write after the reply, so they cannot copy memory into the main prompt.
-    if (preparedMemory && !isCompanionAgent(agent) && ['full-mewmory', 'mewmory-facts', 'mewmory-interview'].some(name => usesAgentMacro(agent?.prompt, name))) preparedMemory.mewmoryMacrosUsed = true;
-    const restricted = chat.some(source => !canGroupTargetSee(source, message));
+    if (memory && !isCompanionAgent(agent) && ['full-mewmory', 'mewmory-facts', 'mewmory-interview'].some(name => usesAgentMacro(agent?.prompt, name))) memory.mewmoryMacrosUsed = true;
     const trackers = !restricted && usesAgentMacro(agent?.prompt, TRACKER_STATE_MACRO) ? captureTrackerState(getEnabledAgents(), chat_metadata) : null;
     const secretsTrackers = !restricted && usesAgentMacro(agent?.prompt, SECRETS_TRACKER_MACRO) ? captureSecretsTrackerState(getEnabledAgents(), chat_metadata) : null;
     const messageIndex = message ? chat.indexOf(message) : -1;
     const continuityNotes = usesAgentMacro(agent?.prompt, CONTINUITY_NOTES_MACRO)
-        ? latestContinuityNotes(filterGroupTargetMessages(messageIndex >= 0 ? chat.slice(0, messageIndex) : chat, message), getEnabledAgents()) : '';
+        ? latestContinuityNotes(filterGroupTargetMessages(messageIndex >= 0 ? chat.slice(0, messageIndex) : chat, message, rules), getEnabledAgents()) : '';
     const continuityCorrections = message && usesAgentMacro(agent?.prompt, CONTINUITY_CORRECTIONS_MACRO)
         ? buildContinuityCorrectionsText(continuityCorrectionsFromRuns(getAgentExtraValue(message, PROMPT_RUNS_EXTRA_KEY), getEnabledAgents())) : '';
     const presetPrompts = context.mainApi === 'openai' && usesAgentMacro(agent?.prompt, PRESET_PROMPTS_MACRO)
         ? getPreparedPresetPrompts(chatId, generationType) ?? capturePresetPrompts(context.chatCompletionSettings, generationType) : null;
     return {
-        ...buildAgentContextMacros({ mewmory: restricted ? null : getPreparedMewmoryContext(chatId), groupCards, userName: context.name1, charName: context.name2,
+        ...buildAgentContextMacros({ mewmory: memory, groupCards, userName: context.name1, charName: context.name2,
             lore: restricted ? '' : getPreparedActiveLore(chatId), authorsNote: context.extensionPrompts?.[AUTHORS_NOTE_PROMPT_KEY]?.value, trackers, secretsTrackers, continuityNotes, presetPrompts }),
         [CONTINUITY_CORRECTIONS_MACRO]: continuityCorrections,
     };
@@ -3455,7 +3459,7 @@ function getPromptTransformRecentChat(agent, message, messageIndex) {
         endIndex = foundIndex >= 0 ? foundIndex : chat.length;
     }
 
-    return buildPromptTransformRecentChat(filterGroupTargetMessages(chat.slice(0, endIndex), message), limit, unwrapAssistantResponseWrapper,
+    return buildPromptTransformRecentChat(filterGroupTargetMessages(chat.slice(0, endIndex), message, readGroupSceneRules(chat_metadata)), limit, unwrapAssistantResponseWrapper,
         { skipUserMessages: Boolean(agent?.postProcess?.promptTransformSkipUserMessages) });
 }
 
@@ -4199,7 +4203,7 @@ async function runThinkingRecoveryAgent(agent, message, generationType, reasonin
         name2Override: assistantName,
         original: reasoning,
         dynamicMacros: buildPromptDynamicMacros(reasoning, message, agent, generationType),
-    }).trim());
+    }).trim(), readGroupSceneRules(chat_metadata));
     if (!expandedPrompt) return { ...base, status: 'skipped-empty-prompt', text: '' };
     const helperRequest = appendConfiguredHelperPrefillMessages(buildThinkingRecoveryMessages(expandedPrompt, {
         reasoning, assistantName, generationType, recentChat: getPromptTransformRecentChat(agent, message, messageIndex), continuation, prefix, toolResults,
@@ -4292,7 +4296,7 @@ async function runPromptTransformAgent(agent, message, generationType, messageTe
             name2Override: String(message?.name ?? '').trim(),
             original: transformMessageText,
             dynamicMacros: buildPromptDynamicMacros(transformMessageText, message, agent, generationType),
-        }).trim());
+        }).trim(), readGroupSceneRules(chat_metadata));
 
         if (!expandedPrompt) {
             const result = {

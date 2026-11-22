@@ -382,16 +382,16 @@ test('a group speaker who missed a line asks for memories as that speaker', asyn
     const missed = { mes: 'Secret', mewmorySourceIndex: 1, extra: { group_scene: { present: ['kit.png'], whisper_to: [] } } };
     const restore = beginGroupPromptScope(['mira.png'], [heard, missed]);
     try {
-        fetch.mockResolvedValueOnce(response({ enabled: false, excludedIndices: [], npcText: '', memoryText: '' }));
-        await prepareMewmoryGeneration([heard]);
+        fetch.mockResolvedValueOnce(response({ enabled: true, excludedIndices: [], npcText: '', memoryText: 'Mira heard this.' }));
+        expect((await prepareMewmoryGeneration([heard])).viewers).toEqual(['mira.png']);
         expect(fetch.mock.calls.map(([url]) => url)).toEqual(['/api/mewmory/prepare']);
         expect(JSON.parse(fetch.mock.calls[0][1].body).viewers).toEqual(['mira.png']);
     } finally {
         restore();
     }
     fetch.mockClear();
-    fetch.mockResolvedValueOnce(response({ enabled: false, excludedIndices: [], npcText: '', memoryText: '' }));
-    await prepareMewmoryGeneration([heard]);
+    fetch.mockResolvedValueOnce(response({ enabled: true, excludedIndices: [], npcText: '', memoryText: 'Everyone heard this.' }));
+    expect((await prepareMewmoryGeneration([heard])).viewers).toBeUndefined();
     expect(JSON.parse(fetch.mock.calls[0][1].body).viewers).toBeUndefined();
 });
 
