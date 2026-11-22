@@ -59,6 +59,7 @@ import { canDictate, DICTATION_SERVICES, DictationError, dictationService, MAX_D
 import { expandTypedTools, MAX_ROLL_DICE, MAX_ROLL_SIDES, TypedToolError } from './typed-tools.js';
 import { canReadAloud, isReadingAloud, stopReadAloud, toggleReadAloud } from './read-aloud.js';
 import { editQuickPrompts } from './quick-prompts.js';
+import { findShortcuts, parseShortcut, replaceShortcut } from './check-shortcuts.js';
 import { MAX_PINNED_NOTE_BYTES, pinnedNoteContext } from './pinned-note.js';
 import { canRehearse } from './rehearsal.js';
 import { assistantFeedbackTone, DEFAULT_FEEDBACK_TONE, FEEDBACK_TONES, isFeedbackTone, normaliseFeedbackTone } from './feedback-tone.js';
@@ -115,46 +116,54 @@ function quickPrompts() {
     ];
 }
 
-/** The check prompts for items this session can actually inspect. Tapping one also turns on its sharing switches. */
-function checkPrompts() {
+/**
+ * Every check this session knows about, in the order of the quick prompts. `problem` says what is missing when a check cannot run
+ * now and is empty when it can. The quick prompts offer the checks without a problem; the /check and /why shortcuts read the same list.
+ */
+function checkAvailability() {
     const source = app.source;
-    if (!source || source.kind === 'notebook') return [];
+    if (!source) return [];
+    const notebook = source.kind === 'notebook';
     const settings = currentSettings();
     const include = settings.include || {};
     const general = source.kind === 'general';
-    const prompts = [];
-    if (sourceCharacters(source).length) {
-        prompts.push({
-            label: t`Check my card`,
-            text: t`Check the shared card for problems and explain how to fix them.`,
-            include: { card: true },
-        });
+    const noNotes = t`Checks aren't offered in a note discussion. Open General Scratchpad or a chat to run one.`;
+    const books = notebook ? [] : general ? [settings.lorebook].filter(Boolean) : sourceLorebookNames(source);
+    const presetName = notebook ? '' : currentPresetName();
+    const presetShared = source.kind === 'roleplay' || (general && Boolean(include.preset));
+    let presetProblem = '';
+    if (notebook) presetProblem = noNotes;
+    else if (!general && source.kind !== 'roleplay') presetProblem = t`Conversation chats can't share a preset. Open a Roleplay chat, or General Scratchpad with your preset shared, to check one.`;
+    else if (!presetShared && !presetName) presetProblem = t`No preset is shared and none is equipped. Equip a preset, then turn on Current preset under Also share in the Context tab.`;
+    else if (!presetShared) presetProblem = t`No preset is shared. Turn on Current preset under Also share in the Context tab, then try again.`;
+    else if (!presetName) presetProblem = t`No preset is equipped, so there is nothing to check. Equip a preset, then try again.`;
+    let bookProblem = '';
+    if (notebook) bookProblem = noNotes;
+    else if (!books.length) {
+        if (general) bookProblem = t`No lorebook is picked. Pick one under Share a lorebook in the Context tab, then try again.`;
+        else if (source.kind === 'conversation') bookProblem = t`No lorebook is linked to this Conversation. Link one to its character or to your persona, then try again.`;
+        else bookProblem = t`No lorebook is linked to this chat. Link one to the character, your persona or the chat, or turn one on for every chat, then try again.`;
     }
-    if ((source.kind === 'roleplay' || (general && include.preset)) && currentPresetName()) {
-        prompts.push({
-            label: t`Check my preset`,
-            text: t`Check the shared preset for problems and explain how to fix them.`,
-            include: { preset: true },
-        });
-    }
-    if (general ? Boolean(settings.lorebook) : sourceLorebookNames(source).length) {
-        prompts.push({
-            label: t`Check my lorebook`,
-            text: t`Check the shared lorebook for problems and explain how to fix them.`,
-            include: { lore: true },
-        });
-        prompts.push({
-            label: t`Why didn't an entry trigger?`,
-            text: t`Check the activation trace and explain why a lorebook entry did not trigger, and offer a fix if needed.`,
-            include: { lore: true },
-        });
-    }
-    prompts.push({
-        label: t`What went wrong in Neconyan?`,
-        text: t`Use the app diagnostics to tell me what went wrong in Neconyan, and what I should try or share next.`,
-        include: { appEvidence: true },
-    });
-    return prompts;
+    const cardProblem = notebook ? noNotes : sourceCharacters(source).length ? '' : general
+        ? t`General Scratchpad has no character card to share here. Open Scratchpad from a chat, or from a character you have selected, then try again.`
+        : t`This chat has no character card to check.`;
+    const whyText = t`Check the activation trace and explain why a lorebook entry did not trigger, and offer a fix if needed.`;
+    return [
+        { key: 'card', command: '/check card', label: t`Check my card`, problem: cardProblem,
+            text: t`Check the shared card for problems and explain how to fix them.`, include: { card: true } },
+        { key: 'preset', command: '/check preset', label: t`Check my preset`, problem: presetProblem,
+            text: t`Check the shared preset for problems and explain how to fix them.`, include: { preset: true } },
+        { key: 'lorebook', command: '/check lorebook', label: t`Check my lorebook`, problem: bookProblem,
+            text: t`Check the shared lorebook for problems and explain how to fix them.`, include: { lore: true } },
+        { key: 'why', command: '/why <entry>', label: t`Why didn't an entry trigger?`, problem: bookProblem, text: whyText, include: { lore: true } },
+        { key: 'app', command: '/check app', label: t`What went wrong in Neconyan?`, problem: notebook ? noNotes : '',
+            text: t`Use the app diagnostics to tell me what went wrong in Neconyan, and what I should try or share next.`, include: { appEvidence: true } },
+    ];
+}
+
+/** The check prompts for items this session can actually inspect. Tapping one also turns on its sharing switches. */
+function checkPrompts() {
+    return checkAvailability().filter(item => !item.problem).map(({ label, text, include }) => ({ label, text, include }));
 }
 
 const DEFAULT_SETTINGS = Object.freeze({
@@ -1130,6 +1139,81 @@ function typedToolProblem(error) {
     }
 }
 
+/** A notice section: a heading, then one line each for the commands it covers. */
+function noticeSection(title, lines) {
+    return h('div', { class: 'scratchpad-notice' }, h('strong', { text: title }), h('ul', {}, lines.map(line => h('li', {}, ...line))));
+}
+
+/** The /tools notice: the tools that work out a value, then the shortcuts that run a check, each under its own heading. */
+function showToolsHelp() {
+    const body = h('div', {},
+        h('strong', { text: t`Tools that work out a value` }),
+        h('p', { text: t`Start a line with /roll 2d6+1, /calc 12*(3+4), /pick tea | coffee | cocoa or /now. Scratchpad swaps the line for its result before sending.` }),
+        h('strong', { text: t`Shortcuts that run a check` }),
+        h('p', { text: t`Start a line with /check card, /check preset, /check lorebook, /check app, or /why and the name or key of an entry. Scratchpad turns on the sharing that check needs and sends it. Send /check on its own to see which are ready now.` }));
+    toastr.info(body, t`Typed tools`, { timeOut: 12000, escapeHtml: false });
+    app.el.composer.focus();
+}
+
+/** The notice for a bare /check: what can be checked right now, then what cannot and why. */
+function showCheckList() {
+    const checks = checkAvailability();
+    const ready = checks.filter(item => !item.problem);
+    const sections = [];
+    if (ready.length) sections.push(noticeSection(t`Ready to check`, ready.map(item => [h('code', { text: item.command }), ` - ${item.label}`])));
+    const blocked = new Map();
+    for (const item of checks.filter(check => check.problem)) blocked.set(item.problem, [...blocked.get(item.problem) ?? [], item.command]);
+    if (blocked.size) sections.push(noticeSection(t`Not available right now`, [...blocked].map(([problem, commands]) => [h('code', { text: commands.join(', ') }), ` - ${problem}`])));
+    toastr.info(h('div', {}, ...sections), t`Checks`, { timeOut: 15000, escapeHtml: false });
+    app.el.composer.focus();
+}
+
+/**
+ * Turns a /check or /why line into the request its quick prompt would have filled in, after switching on the same sharing.
+ * Resolves to the message to send, or to null when nothing should be sent (the notice has been shown). `scan` is the text
+ * the lorebook reading should use when it must not include an entry name typed after /why.
+ */
+async function resolveShortcut(typed, source, sessionId) {
+    const { lines, shortcuts } = findShortcuts(typed);
+    const stop = message => {
+        toastr.warning(message, t`Nothing was sent`);
+        app.el.composer.focus();
+        return null;
+    };
+    if (shortcuts.length > 1) return stop(t`Use one /check or /why shortcut per message, because each one turns on its own sharing. Keep one and send again.`);
+    const [{ index }] = shortcuts;
+    const shortcut = parseShortcut(shortcuts[0]);
+    const word = shortcut.word;
+    if (shortcut.kind === 'check' && !word) {
+        if (lines.some((line, position) => position !== index && line.trim())) return stop(t`Say what to check after /check: card, preset, lorebook or app. Send /check on its own to see which are ready now.`);
+        showCheckList();
+        return null;
+    }
+    if (shortcut.kind === 'check' && !shortcut.target) return stop(t`Scratchpad can't check '${word}'. Use /check card, /check preset, /check lorebook or /check app, or send /check on its own to see which are ready now.`);
+    const prompt = checkAvailability().find(item => item.key === (shortcut.kind === 'why' ? 'why' : shortcut.target));
+    if (!prompt) return stop(t`Scratchpad can't run that check here.`);
+    if (prompt.problem) return stop(prompt.problem);
+    const name = shortcut.kind === 'why' ? shortcut.name : '';
+    const request = name ? t`Check the activation trace and explain why the lorebook entry '${name}' (its title or one of its keys) did not trigger, and offer a fix if needed.` : prompt.text;
+    app.sending = true;
+    renderComposer();
+    try {
+        const saved = await applyCheckSwitches(prompt);
+        requireScope(source, sessionId);
+        if (!saved) return stop(t`Scratchpad could not turn on the sharing this check needs, so nothing was sent.`);
+    } catch (error) {
+        reportError(error, t`Scratchpad could not send that.`);
+        return null;
+    } finally {
+        app.sending = false;
+        renderComposer();
+    }
+    return {
+        text: replaceShortcut(lines, index, request, shortcut.rest),
+        scan: name && source.kind === 'general' ? replaceShortcut(lines, index, prompt.text) : undefined,
+    };
+}
+
 async function send({ regenerate = '', discuss = false, rehearsal = false } = {}) {
     if (app.sending || app.swiping || app.readingFiles.has(app.attachments)) return;
     const source = app.source;
@@ -1144,12 +1228,12 @@ async function send({ regenerate = '', discuss = false, rehearsal = false } = {}
     // A discussion round sends its own request; anything typed in the box rides along as the point to focus on.
     const request = t`Read each other's answers to my last message. Say where you agree, where you disagree and why, and what you would now change in your own answer.`;
     let typed = draft.trim();
+    let scan;
     if (!regenerate && !discuss) {
         try {
             const expanded = expandTypedTools(typed, { labels: { picked: t`Picked`, from: t`from`, now: t`Now` } });
             if (expanded.help) {
-                toastr.info(t`Start a line with /roll 2d6+1, /calc 12*(3+4), /pick tea | coffee | cocoa or /now. Scratchpad swaps the line for its result before sending.`, t`Typed tools`, { timeOut: 12000 });
-                app.el.composer.focus();
+                showToolsHelp();
                 return;
             }
             typed = expanded.text;
@@ -1158,6 +1242,12 @@ async function send({ regenerate = '', discuss = false, rehearsal = false } = {}
             toastr.warning(typedToolProblem(error), t`Nothing was sent`);
             app.el.composer.focus();
             return;
+        }
+        if (findShortcuts(typed).shortcuts.length) {
+            const resolved = await resolveShortcut(typed, source, initialSessionId);
+            if (!resolved) return;
+            typed = resolved.text;
+            scan = resolved.scan;
         }
     }
     const text = regenerate ? '' : discuss ? [request, typed].filter(Boolean).join('\n\n') : typed;
@@ -1190,7 +1280,7 @@ async function send({ regenerate = '', discuss = false, rehearsal = false } = {}
         }
         const assistants = retried ? [retried.assistant || session.assistant] : sessionAssistants(session);
         const genders = Object.fromEntries(ASSISTANTS.map(item => [item.id, getAssistantGender(item.id)]));
-        const query = regenerate ? (session.messages.slice(0, session.messages.indexOf(retried)).findLast(item => item.role === 'user')?.text ?? '') : replyTo?.text ?? text;
+        const query = regenerate ? (session.messages.slice(0, session.messages.indexOf(retried)).findLast(item => item.role === 'user')?.text ?? '') : replyTo?.text ?? scan ?? text;
         const context = await buildContext({ source, settings, pendingText: query, sessionText: sessionText(session) });
         await refreshImageAvailability();
         const help = [...new Set(await Promise.all(assistants.map(assistant => buildHelp({ assistant, gender: genders[assistant], text: query }))))].filter(Boolean).join('\n\n');
@@ -1342,24 +1432,28 @@ function quickPromptChips() {
         iconButton('', () => void openQuickPromptEditor(), { icon: 'fa-pen', title: t`Edit quick prompts`, className: 'scratchpad-chip scratchpad-chip-edit' })];
 }
 
+/** Switches on the sharing a check prompt needs for this session and says what changed. Resolves to null when that could not be saved. */
+async function applyCheckSwitches(prompt) {
+    const before = currentSettings().include || {};
+    const changed = [];
+    const evidence = prompt.include.appEvidence === true;
+    if (evidence) {
+        if (!before.appEvidence) changed.push(t`App diagnostics`);
+    } else if (!before.problems) {
+        changed.push(t`Problem checks`);
+    }
+    const labels = { card: t`Character cards`, preset: t`Current preset`, lore: t`Lorebook entries` };
+    for (const [key, label] of Object.entries(labels)) {
+        if (prompt.include[key] && !before[key]) changed.push(label);
+    }
+    const saved = await updateSettings(settings => ({ include: { ...settings.include, ...(evidence ? {} : { problems: true }), ...prompt.include } }), { rerenderContext: app.tab === 'context' });
+    if (saved && changed.length) toastr.info(t`Turned on ${changed.join(' and ')} for this session.`, t`Scratchpad`);
+    return saved;
+}
+
 /** Fills the composer, after switching on the sharing a check prompt needs for this session. */
 async function takePrompt(prompt) {
-    if (prompt.include) {
-        const before = currentSettings().include || {};
-        const changed = [];
-        const evidence = prompt.include.appEvidence === true;
-        if (evidence) {
-            if (!before.appEvidence) changed.push(t`App diagnostics`);
-        } else if (!before.problems) {
-            changed.push(t`Problem checks`);
-        }
-        const labels = { card: t`Character cards`, preset: t`Current preset`, lore: t`Lorebook entries` };
-        for (const [key, label] of Object.entries(labels)) {
-            if (prompt.include[key] && !before[key]) changed.push(label);
-        }
-        const saved = await updateSettings(settings => ({ include: { ...settings.include, ...(evidence ? {} : { problems: true }), ...prompt.include } }), { rerenderContext: app.tab === 'context' });
-        if (saved && changed.length) toastr.info(t`Turned on ${changed.join(' and ')} for this session.`, t`Scratchpad`);
-    }
+    if (prompt.include) await applyCheckSwitches(prompt);
     usePrompt(prompt.text);
 }
 
