@@ -183,7 +183,7 @@ test('a changed versioned asset replaces its cache entry', async () => {
 
 test('cached versioned stylesheets and libraries load without revalidation', async () => {
     const paths = [
-        '/css/neconyan.css?v=20261126-memory-start',
+        '/css/neconyan.css?v=20261126-with-group',
         '/lib/jquery-3.7.1.min.js?v=20261117-startup',
     ];
     const cache = new Map(paths.map(pathname => [`${ORIGIN}${pathname}`, makeResponse('cached')]));

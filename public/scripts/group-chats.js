@@ -420,9 +420,10 @@ function getGroupStartRules() {
     return before ? { before } : {};
 }
 
-/** Who sees what when members remember: who heard each line, and the chat's memory starting point. */
+/** Who sees what when members remember: who heard each line, members who remember only with the group, and the chat's memory starting point. */
 function getGroupMemoryRules(group) {
-    return { ...getGroupSceneRules(group), ...getGroupStartRules() };
+    const withGroup = readGroupSceneRules(chat_metadata).withGroup;
+    return { ...getGroupSceneRules(group), ...(withGroup ? { withGroup } : {}), ...getGroupStartRules() };
 }
 
 /** The message a speaker answers: the last line before their turn, or before their own line when they swipe or continue it. */

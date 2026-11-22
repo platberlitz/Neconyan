@@ -414,7 +414,7 @@ const CHAT_STYLE_BODY_CLASSES = Object.freeze({
 
 const LEGACY_CHAT_STYLE_BODY_CLASSES = Object.freeze([]);
 const NATIVE_CHAT_STYLE_STYLESHEET_ID = 'neconyan-native-chat-styles';
-const NATIVE_CHAT_STYLE_STYLESHEET_HREF = 'css/neconyan-chat-styles.css?v=20261126-memory-start';
+const NATIVE_CHAT_STYLE_STYLESHEET_HREF = 'css/neconyan-chat-styles.css?v=20261126-with-group';
 
 function ensureNativeChatStyleStylesheet() {
     if (document.getElementById(NATIVE_CHAT_STYLE_STYLESHEET_ID)) {

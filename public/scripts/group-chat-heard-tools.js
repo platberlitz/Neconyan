@@ -1,4 +1,4 @@
-import { canGroupMemberSee, changeGroupHearers, setGroupEveryoneHears } from './group-chat-visibility.js';
+import { canGroupMemberSee, changeGroupHearers, groupHeardRules, setGroupEveryoneHears } from './group-chat-visibility.js';
 
 /** The SillyTavern Presence extension marks a message every member may see with this pseudo-member. */
 const PRESENCE_UNIVERSAL_TRACKER = 'presence_universal_tracker';
@@ -6,7 +6,8 @@ const PRESENCE_UNIVERSAL_TRACKER = 'presence_universal_tracker';
 /**
  * Reads what the SillyTavern Presence extension saved in a chat into Neconyan's own records.
  * Each message's `present` list becomes who heard it, and members the extension let see everything
- * become members who see everything. A message the extension marked for every member becomes an
+ * become members who see everything, and members it let see only what the group saw together remember
+ * 'Only with the group'. A message the extension marked for every member becomes an
  * 'Everyone hears this' line. Messages that already have a Neconyan record keep it, and the
  * extension's own fields stay in place.
  * @param {object[]} messages Chat messages, without the header
@@ -26,12 +27,14 @@ export function importPresenceRecords(messages, metadata) {
     }
     if (!metadata || typeof metadata !== 'object' || metadata.group_scene) return changed;
     const modes = metadata.presence_extension?.char_mode;
+    const inMode = mode => modes && typeof modes === 'object' ? Object.keys(modes).filter(avatar => modes[avatar] === mode) : [];
     const seesAll = new Set([
         ...(Array.isArray(metadata.ignore_presence) ? metadata.ignore_presence : []),
-        ...(modes && typeof modes === 'object' ? Object.keys(modes).filter(avatar => modes[avatar] === 'ignore') : []),
+        ...inMode('ignore'),
     ].filter(avatar => typeof avatar === 'string' && avatar));
-    if (!seesAll.size) return changed;
-    metadata.group_scene = { away: [], location: '', whisper_to: [], sees_all: [...seesAll] };
+    const withGroup = inMode('on_group_present').filter(avatar => avatar && !seesAll.has(avatar));
+    if (!seesAll.size && !withGroup.length) return changed;
+    metadata.group_scene = { away: [], location: '', whisper_to: [], sees_all: [...seesAll], ...(withGroup.length ? { with_group: withGroup } : {}) };
     return true;
 }
 
@@ -127,5 +130,6 @@ export function heardBy(message, members, rules = {}) {
     if (!message || typeof message !== 'object') return [];
     const present = message.extra?.group_scene?.present;
     const listed = [...new Set([...members, ...(Array.isArray(present) ? present : [])])];
-    return listed.filter(avatar => canGroupMemberSee(message, avatar, members.includes(avatar) ? rules : {}));
+    const heard = groupHeardRules(rules);
+    return listed.filter(avatar => canGroupMemberSee(message, avatar, members.includes(avatar) ? heard : {}));
 }
