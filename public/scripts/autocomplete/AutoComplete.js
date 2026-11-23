@@ -102,6 +102,57 @@ export class AutoComplete {
             this.domWrap.classList.add('autoComplete-wrap');
             if (isFloating) this.domWrap.classList.add('isFloating');
         }
+        this.headerDom = document.createElement('div'); {
+            this.headerDom.classList.add('nn-ac-header');
+            this.headerDom.setAttribute('role', 'toolbar');
+            this.headerDom.setAttribute('aria-label', 'Autocomplete controls');
+            this.headerDom.addEventListener('pointerdown', (evt) => evt.preventDefault());
+            this.headerDom.addEventListener('mousedown', (evt) => evt.preventDefault());
+
+            const title = document.createElement('span');
+            title.classList.add('nn-ac-title');
+            this.headerIconDom = document.createElement('i');
+            this.headerIconDom.classList.add('fa-solid', 'fa-terminal', 'nn-ac-badge-icon');
+            this.headerIconDom.setAttribute('aria-hidden', 'true');
+            this.headerContextDom = document.createElement('span');
+            this.headerContextDom.classList.add('nn-ac-context');
+            this.headerContextDom.textContent = 'Slash commands';
+            title.append(this.headerIconDom, this.headerContextDom);
+
+            this.headerCountDom = document.createElement('span');
+            this.headerCountDom.classList.add('nn-ac-count');
+            this.headerCountDom.setAttribute('aria-live', 'polite');
+
+            const hints = document.createElement('span');
+            hints.classList.add('nn-ac-hints');
+            hints.setAttribute('aria-hidden', 'true');
+            for (const label of ['↑↓', 'Tab', 'Ctrl+Space']) {
+                const key = document.createElement('kbd');
+                key.textContent = label;
+                hints.append(key);
+            }
+
+            this.detailsToggleBtn = document.createElement('button');
+            this.detailsToggleBtn.type = 'button';
+            this.detailsToggleBtn.classList.add('nn-ac-details-toggle');
+            this.detailsToggleBtn.setAttribute('aria-label', 'Toggle command details');
+            this.detailsToggleBtn.title = 'Toggle command details';
+            this.detailsToggleBtn.setAttribute('aria-pressed', 'false');
+            const toggleIcon = document.createElement('i');
+            toggleIcon.classList.add('fa-solid', 'fa-circle-info');
+            toggleIcon.setAttribute('aria-hidden', 'true');
+            this.detailsToggleBtn.append(toggleIcon);
+            this.bindNonBlurringAction(this.detailsToggleBtn, () => this.toggleDetails());
+
+            const headingGroup = document.createElement('span');
+            headingGroup.classList.add('nn-ac-header-left');
+            headingGroup.append(title, this.headerCountDom);
+            const controls = document.createElement('span');
+            controls.classList.add('nn-ac-header-right');
+            controls.append(hints, this.detailsToggleBtn);
+            this.headerDom.append(headingGroup, controls);
+            this.domWrap.append(this.headerDom);
+        }
         this.dom = document.createElement('ul'); {
             this.dom.classList.add('autoComplete');
             this.domWrap.append(this.dom);
@@ -109,6 +160,35 @@ export class AutoComplete {
         this.detailsWrap = document.createElement('div'); {
             this.detailsWrap.classList.add('autoComplete-detailsWrap');
             if (isFloating) this.detailsWrap.classList.add('isFloating');
+        }
+        this.detailsHeaderDom = document.createElement('div'); {
+            this.detailsHeaderDom.classList.add('nn-ac-details-header');
+            this.detailsHeaderDom.addEventListener('pointerdown', (evt) => evt.preventDefault());
+            this.detailsHeaderDom.addEventListener('mousedown', (evt) => evt.preventDefault());
+
+            const detailsTitle = document.createElement('span');
+            detailsTitle.classList.add('nn-ac-details-title');
+            const detailsIcon = document.createElement('i');
+            detailsIcon.classList.add('fa-solid', 'fa-circle-info');
+            detailsIcon.setAttribute('aria-hidden', 'true');
+            this.detailsTitleTextDom = document.createElement('span');
+            this.detailsTitleTextDom.classList.add('nn-ac-details-title-text');
+            this.detailsTitleTextDom.textContent = 'Command details';
+            detailsTitle.append(detailsIcon, this.detailsTitleTextDom);
+
+            this.detailsCloseBtn = document.createElement('button');
+            this.detailsCloseBtn.type = 'button';
+            this.detailsCloseBtn.classList.add('nn-ac-details-close');
+            this.detailsCloseBtn.setAttribute('aria-label', 'Close details');
+            this.detailsCloseBtn.title = 'Close details';
+            const closeIcon = document.createElement('i');
+            closeIcon.classList.add('fa-solid', 'fa-xmark');
+            closeIcon.setAttribute('aria-hidden', 'true');
+            this.detailsCloseBtn.append(closeIcon);
+            this.bindNonBlurringAction(this.detailsCloseBtn, () => this.closeDetails());
+
+            this.detailsHeaderDom.append(detailsTitle, this.detailsCloseBtn);
+            this.detailsWrap.append(this.detailsHeaderDom);
         }
         this.detailsDom = document.createElement('div'); {
             this.detailsDom.classList.add('autoComplete-details');
@@ -178,6 +258,8 @@ export class AutoComplete {
         this.windowResizeHandler = () => {
             if (!this.getLayer()) {
                 window.removeEventListener('resize', this.windowResizeHandler);
+                window.visualViewport?.removeEventListener('resize', this.windowResizeHandler);
+                window.visualViewport?.removeEventListener('scroll', this.windowResizeHandler);
                 this.hide();
                 return;
             }
@@ -187,6 +269,175 @@ export class AutoComplete {
             this.updatePositionDebounced();
         };
         window.addEventListener('resize', this.windowResizeHandler);
+        window.visualViewport?.addEventListener('resize', this.windowResizeHandler);
+        window.visualViewport?.addEventListener('scroll', this.windowResizeHandler);
+    }
+
+    /**
+     * Bind a click/tap action to a button without blurring the active textarea.
+     * Handles mouse pointerdown, touch tap-without-drag, and programmatic click
+     * without double-firing.
+     * @param {HTMLButtonElement} button
+     * @param {() => void} handler
+     */
+    bindNonBlurringAction(button, handler) {
+        let handledByPointer = false;
+        let pointerStart = null;
+        button.addEventListener('pointerdown', (evt) => {
+            evt.preventDefault();
+            evt.stopPropagation();
+            if (evt.pointerType === 'mouse') {
+                handledByPointer = true;
+                pointerStart = null;
+                handler();
+            } else {
+                handledByPointer = false;
+                pointerStart = { x: evt.clientX, y: evt.clientY };
+            }
+        });
+        button.addEventListener('mousedown', (evt) => {
+            evt.preventDefault();
+            evt.stopPropagation();
+        });
+        button.addEventListener('pointerup', (evt) => {
+            if (!pointerStart) return;
+            const moved = Math.hypot(evt.clientX - pointerStart.x, evt.clientY - pointerStart.y);
+            pointerStart = null;
+            if (moved <= 10) {
+                evt.preventDefault();
+                evt.stopPropagation();
+                handledByPointer = true;
+                handler();
+            }
+        });
+        button.addEventListener('pointercancel', () => {
+            pointerStart = null;
+        });
+        button.addEventListener('click', (evt) => {
+            evt.preventDefault();
+            evt.stopPropagation();
+            if (handledByPointer) {
+                handledByPointer = false;
+                return;
+            }
+            handler();
+        });
+    }
+
+    /**
+     * Get the bounding box of an autocomplete option row, supporting both
+     * real block/flex/grid rows and upstream display: contents rows.
+     * @param {AutoCompleteOption|null} item
+     * @returns {DOMRect|null}
+     */
+    getItemRect(item) {
+        const dom = item?.dom;
+        if (!dom) return null;
+        const rect = dom.getBoundingClientRect();
+        if (rect.width > 0 || rect.height > 0) return rect;
+        return dom.children[0]?.getBoundingClientRect() ?? rect;
+    }
+
+    /**
+     * @returns {boolean} True when Neconyan's native shell styling (not Termeownal) is active.
+     */
+    isNeconyanLayout() {
+        return Boolean(document.body?.classList.contains('neconyan') && !document.body?.classList.contains('sbterm'));
+    }
+
+    /**
+     * Measure visualViewport-bounded viewport geometry.
+     */
+    getViewportMetrics() {
+        const docW = document.documentElement?.clientWidth || window.innerWidth;
+        const docH = document.documentElement?.clientHeight || window.innerHeight;
+        const vv = window.visualViewport;
+        const vpLeft = Math.max(0, vv ? vv.offsetLeft : 0);
+        const vpTop = Math.max(0, vv ? vv.offsetTop : 0);
+        const vpWidth = vv ? Math.min(vv.width, docW) : docW;
+        const vpHeight = vv ? Math.min(vv.height, docH) : docH;
+        const vpRight = Math.min(docW, vpLeft + vpWidth);
+        const vpBottom = Math.min(docH, vpTop + vpHeight);
+        return {
+            docW,
+            docH,
+            vpLeft,
+            vpTop,
+            vpWidth,
+            vpHeight,
+            vpRight,
+            vpBottom,
+            isPhone: vpWidth <= 768,
+        };
+    }
+
+    /**
+     * Synchronise header context label, live match count, and details toggle state.
+     */
+    updateHeaderState() {
+        if (!this.headerDom) return;
+        const selectableItems = this.result.filter(it => it?.isSelectable !== false && !(it instanceof BlankAutoCompleteOption));
+        const count = selectableItems.length;
+        const isMacro = Boolean(this.domWrap.dataset.macrosAutocompleteStyle)
+            || selectableItems.some(it => it?.dom?.classList?.contains('macro-ac-item'));
+
+        let contextLabel = 'Slash commands';
+        let detailsTitle = 'Command details';
+        let iconClass = 'fa-terminal';
+        if (isMacro) {
+            contextLabel = 'Macros';
+            detailsTitle = 'Macro details';
+            iconClass = 'fa-code';
+        } else if (count > 0 && selectableItems.every(it => it.type === 'namedArgument')) {
+            contextLabel = 'Arguments';
+            detailsTitle = 'Argument details';
+        } else if (count > 0 && selectableItems.every(it => it.type === 'variable')) {
+            contextLabel = 'Variables';
+            detailsTitle = 'Variable details';
+        } else if (count > 0 && selectableItems[0]?.type && selectableItems[0].type !== 'command' && selectableItems[0].type !== 'blank') {
+            contextLabel = 'Options';
+            detailsTitle = 'Option details';
+        }
+
+        if (this.headerContextDom) {
+            this.headerContextDom.textContent = contextLabel;
+        }
+        if (this.headerIconDom) {
+            this.headerIconDom.classList.toggle('fa-terminal', iconClass === 'fa-terminal');
+            this.headerIconDom.classList.toggle('fa-code', iconClass === 'fa-code');
+        }
+        if (this.headerCountDom) {
+            this.headerCountDom.textContent = count === 0
+                ? 'No matches'
+                : (count === 1 ? '1 match' : `${count} matches`);
+        }
+        if (this.detailsTitleTextDom) {
+            this.detailsTitleTextDom.textContent = detailsTitle;
+        }
+        if (this.detailsToggleBtn) {
+            const canToggle = count > 0 && Boolean(this.selectedItem) && this.isReplaceable;
+            const active = canToggle && this.isShowingDetails;
+            this.detailsToggleBtn.disabled = !canToggle;
+            this.detailsToggleBtn.hidden = !canToggle;
+            this.detailsToggleBtn.setAttribute('aria-pressed', active ? 'true' : 'false');
+            this.detailsToggleBtn.classList.toggle('is-active', active);
+        }
+    }
+
+    /**
+     * Dismiss the details panel without blurring the active textarea.
+     */
+    closeDetails() {
+        this.isShowingDetails = false;
+        if (!this.isReplaceable) {
+            this.hide();
+            return;
+        }
+        if (this.detailsWrap?.isConnected) {
+            this.detailsWrap.remove();
+        }
+        this.updateHeaderState();
+        this.updatePosition();
     }
 
     /**
@@ -551,6 +802,7 @@ export class AutoComplete {
         this.isActive = false;
         this.isShowingDetails = false;
         this.wasForced = false;
+        this.updateHeaderState();
     }
 
 
@@ -561,6 +813,7 @@ export class AutoComplete {
         if (!this.isActive) return this.domWrap.remove();
         const layer = this.getLayer();
         if (!layer) return this.hide();
+        this.updateHeaderState();
         if (this.isReplaceable) {
             this.dom.innerHTML = '';
             const frag = document.createDocumentFragment();
@@ -576,8 +829,10 @@ export class AutoComplete {
                 frag.append(item.dom);
             }
             this.dom.append(frag);
+            if (this.domWrap.parentElement !== layer) {
+                layer.append(this.domWrap);
+            }
             this.updatePosition();
-            layer.append(this.domWrap);
         } else {
             this.domWrap.remove();
         }
@@ -589,13 +844,20 @@ export class AutoComplete {
      */
     renderDetails() {
         if (!this.isActive) return this.detailsWrap.remove();
-        if (!this.isShowingDetails && this.isReplaceable) return this.detailsWrap.remove();
+        if (!this.isShowingDetails && this.isReplaceable) {
+            this.detailsWrap.remove();
+            this.updateHeaderState();
+            return;
+        }
         const layer = this.getLayer();
         if (!layer) return this.hide();
         this.detailsDom.innerHTML = '';
         this.detailsDom.append(this.selectedItem?.renderDetails() ?? 'NO ITEM');
-        layer.append(this.detailsWrap);
-        this.updateDetailsPositionDebounced();
+        if (this.detailsWrap.parentElement !== layer) {
+            layer.append(this.detailsWrap);
+        }
+        this.updateHeaderState();
+        this.updateDetailsPosition(layer);
     }
 
     /**
@@ -603,6 +865,105 @@ export class AutoComplete {
      */
     getLayer() {
         return this.textarea?.isConnected ? this.textarea.closest('dialog, body') : null;
+    }
+
+    /**
+     * Compute viewport-clamped non-floating Neconyan geometry for autocomplete list and details.
+     * @param {HTMLElement} layer
+     */
+    computeNeconyanGeometry(layer) {
+        const metrics = this.getViewportMetrics();
+        const gutter = 8;
+        const gap = 8;
+        const inputRect = this.textarea.getBoundingClientRect();
+        const sheldRect = document.querySelector('#sheld')?.getBoundingClientRect() ?? inputRect;
+        const formRect = this.textarea.closest('#send_form')?.getBoundingClientRect() ?? null;
+        const layerRect = layer === document.body
+            ? { left: 0, top: 0, right: metrics.docW, bottom: metrics.docH, width: metrics.docW, height: metrics.docH }
+            : layer.getBoundingClientRect();
+
+        const anchorTop = formRect ? Math.min(inputRect.top, formRect.top) : inputRect.top;
+        const popupBottom = Math.min(metrics.vpBottom - gutter, anchorTop - gap);
+        const availH = Math.max(0, Math.floor(popupBottom - metrics.vpTop - gutter));
+
+        const relLeft = (x) => Math.round(x - layerRect.left);
+        const relRight = (x) => Math.round(layerRect.right - x);
+        const relBottom = (y) => Math.ceil(layerRect.bottom - y);
+
+        const minLeft = metrics.vpLeft + gutter;
+        const maxRight = metrics.vpRight - gutter;
+
+        // If two panels cannot fit, the details card takes the list's place until closed.
+        const short = availH < 236;
+        const showBoth = this.isShowingDetails && this.isReplaceable;
+        const switchToDetails = showBoth && short;
+        if (metrics.isPhone || short) {
+            const showingStacked = showBoth && !short;
+            const wrapMaxH = showingStacked
+                ? Math.min(220, Math.floor((availH - gap) * 0.4))
+                : Math.min(360, availH);
+            return {
+                gap,
+                showingStacked,
+                switchToDetails,
+                popupBottom,
+                availH,
+                listLeft: minLeft,
+                listRight: maxRight,
+                detailsLeft: minLeft,
+                detailsRight: maxRight,
+                wrapMaxH,
+                relLeft,
+                relRight,
+                relBottom,
+            };
+        }
+
+        const rectMap = {};
+        rectMap[AUTOCOMPLETE_WIDTH.INPUT] = inputRect;
+        rectMap[AUTOCOMPLETE_WIDTH.CHAT] = sheldRect;
+        rectMap[AUTOCOMPLETE_WIDTH.FULL] = { left: minLeft, right: maxRight };
+
+        const prefLeft = power_user.stscript.autocomplete.width.left ?? AUTOCOMPLETE_WIDTH.CHAT;
+        const prefRight = power_user.stscript.autocomplete.width.right ?? AUTOCOMPLETE_WIDTH.CHAT;
+        const rawLeft = (rectMap[prefLeft] ?? sheldRect).left;
+        const rawRight = (rectMap[prefRight] ?? sheldRect).right;
+
+        let listLeft = Math.max(minLeft, Math.min(rawLeft, maxRight - 300));
+        let listRight = Math.min(maxRight, Math.max(rawRight, listLeft + 300));
+        let detailsLeft = listLeft;
+        let detailsRight = listRight;
+
+        if (this.isShowingDetails && this.isReplaceable) {
+            const rightBound = Math.min(maxRight, Math.max(listRight, listLeft + 860));
+            if (rightBound - listLeft < 620) {
+                listLeft = Math.max(minLeft, rightBound - 620);
+            }
+            const span = Math.max(580, rightBound - listLeft);
+            const detailsW = Math.min(430, Math.max(280, Math.round((span - gap) * 0.42)));
+            listRight = Math.max(listLeft + 280, rightBound - detailsW - gap);
+            detailsLeft = listRight + gap;
+            detailsRight = rightBound;
+        } else if (!this.isReplaceable) {
+            detailsLeft = listLeft;
+            detailsRight = Math.min(maxRight, Math.max(listRight, listLeft + 520));
+        }
+
+        return {
+            gap,
+            showingStacked: false,
+            switchToDetails,
+            popupBottom,
+            availH,
+            listLeft,
+            listRight,
+            detailsLeft,
+            detailsRight,
+            wrapMaxH: Math.min(440, availH),
+            relLeft,
+            relRight,
+            relBottom,
+        };
     }
 
 
@@ -619,21 +980,30 @@ export class AutoComplete {
         }
         if (this.isFloating) {
             this.updateFloatingPosition(layer);
+        } else if (this.isNeconyanLayout()) {
+            const geo = this.computeNeconyanGeometry(layer);
+            const bottomVal = `${geo.relBottom(geo.popupBottom)}px`;
+            this.domWrap.classList.toggle('nn-ac-layout-hidden', geo.switchToDetails || geo.availH < 64);
+            this.domWrap.style.setProperty('--bottom', bottomVal);
+            this.dom.style.setProperty('--bottom', bottomVal);
+            this.domWrap.style.bottom = bottomVal;
+            this.domWrap.style.setProperty('--leftOffset', `${geo.relLeft(geo.listLeft)}px`);
+            this.domWrap.style.setProperty('--rightOffset', `${geo.relRight(geo.listRight)}px`);
+            this.domWrap.style.setProperty('--nn-ac-wrap-max-h', `${geo.wrapMaxH}px`);
         } else {
             const rect = {};
             rect[AUTOCOMPLETE_WIDTH.INPUT] = this.textarea.getBoundingClientRect();
-            rect[AUTOCOMPLETE_WIDTH.CHAT] = document.querySelector('#sheld').getBoundingClientRect();
+            rect[AUTOCOMPLETE_WIDTH.CHAT] = document.querySelector('#sheld')?.getBoundingClientRect() ?? rect[AUTOCOMPLETE_WIDTH.INPUT];
             rect[AUTOCOMPLETE_WIDTH.FULL] = layer.getBoundingClientRect();
             this.domWrap.style.setProperty('--bottom', `${window.innerHeight - rect[AUTOCOMPLETE_WIDTH.INPUT].top}px`);
             this.dom.style.setProperty('--bottom', `${window.innerHeight - rect[AUTOCOMPLETE_WIDTH.INPUT].top}px`);
             this.domWrap.style.bottom = `${window.innerHeight - rect[AUTOCOMPLETE_WIDTH.INPUT].top}px`;
             if (this.isShowingDetails) {
-                this.domWrap.style.setProperty('--leftOffset', '1vw');
                 this.domWrap.style.setProperty('--leftOffset', `max(1vw, ${rect[power_user.stscript.autocomplete.width.left].left}px)`);
-                this.domWrap.style.setProperty('--rightOffset', `calc(100vw - min(${rect[power_user.stscript.autocomplete.width.right].right}px, ${this.isShowingDetails ? 74 : 0}vw)`);
+                this.domWrap.style.setProperty('--rightOffset', `calc(100vw - min(${rect[power_user.stscript.autocomplete.width.right].right}px, ${this.isShowingDetails ? 74 : 99}vw))`);
             } else {
                 this.domWrap.style.setProperty('--leftOffset', `max(1vw, ${rect[power_user.stscript.autocomplete.width.left].left}px)`);
-                this.domWrap.style.setProperty('--rightOffset', `calc(100vw - min(99vw, ${rect[power_user.stscript.autocomplete.width.right].right}px)`);
+                this.domWrap.style.setProperty('--rightOffset', `calc(100vw - min(99vw, ${rect[power_user.stscript.autocomplete.width.right].right}px))`);
             }
         }
         this.updateDetailsPosition(layer);
@@ -652,18 +1022,27 @@ export class AutoComplete {
         if (this.isShowingDetails || !this.isReplaceable) {
             if (this.isFloating) {
                 this.updateFloatingDetailsPosition(null, layer);
+            } else if (this.isNeconyanLayout()) {
+                const geo = this.computeNeconyanGeometry(layer);
+                const stackSpace = geo.showingStacked ? Math.ceil(this.domWrap.getBoundingClientRect().height) + geo.gap : 0;
+                this.detailsWrap.classList.toggle('full', !this.isReplaceable);
+                this.detailsWrap.classList.toggle('nn-ac-layout-hidden', geo.availH < 64);
+                this.detailsWrap.style.setProperty('--leftOffset', `${geo.relLeft(geo.detailsLeft)}px`);
+                this.detailsWrap.style.setProperty('--rightOffset', `${geo.relRight(geo.detailsRight)}px`);
+                this.detailsWrap.style.setProperty('--bottomOffset', `${geo.relBottom(geo.popupBottom - stackSpace)}px`);
+                this.detailsWrap.style.setProperty('--nn-ac-details-max-h', `${Math.min(480, geo.availH - stackSpace)}px`);
             } else {
                 const rect = {};
                 rect[AUTOCOMPLETE_WIDTH.INPUT] = this.textarea.getBoundingClientRect();
-                rect[AUTOCOMPLETE_WIDTH.CHAT] = document.querySelector('#sheld').getBoundingClientRect();
+                rect[AUTOCOMPLETE_WIDTH.CHAT] = document.querySelector('#sheld')?.getBoundingClientRect() ?? rect[AUTOCOMPLETE_WIDTH.INPUT];
                 rect[AUTOCOMPLETE_WIDTH.FULL] = layer.getBoundingClientRect();
                 if (this.isReplaceable) {
                     this.detailsWrap.classList.remove('full');
-                    const selRect = this.selectedItem.dom.children[0].getBoundingClientRect();
-                    this.detailsWrap.style.setProperty('--targetOffset', `${selRect.top}`);
+                    const selRect = this.getItemRect(this.selectedItem);
+                    this.detailsWrap.style.setProperty('--targetOffset', `${selRect ? selRect.top : rect[AUTOCOMPLETE_WIDTH.INPUT].top}`);
                     this.detailsWrap.style.setProperty('--rightOffset', '1vw');
                     this.detailsWrap.style.setProperty('--bottomOffset', `calc(100vh - ${rect[AUTOCOMPLETE_WIDTH.INPUT].top}px)`);
-                    this.detailsWrap.style.setProperty('--leftOffset', `calc(100vw - ${this.domWrap.style.getPropertyValue('--rightOffset')}`);
+                    this.detailsWrap.style.setProperty('--leftOffset', `calc(100vw - ${this.domWrap.style.getPropertyValue('--rightOffset')})`);
                 } else {
                     this.detailsWrap.classList.add('full');
                     this.detailsWrap.style.setProperty('--targetOffset', `${rect[AUTOCOMPLETE_WIDTH.INPUT].top}`);
@@ -812,8 +1191,9 @@ export class AutoComplete {
      */
     toggleDetails() {
         this.isShowingDetails = !this.isShowingDetails;
-        this.renderDetailsDebounced();
+        this.updateHeaderState();
         this.updatePosition();
+        this.renderDetails();
     }
 
 
@@ -897,12 +1277,13 @@ export class AutoComplete {
      * @param {number} newIdx
      */
     selectItemAtIndex(newIdx) {
-        this.selectedItem.dom.classList.remove('selected');
+        if (!this.result[newIdx]?.dom) return;
+        this.selectedItem?.dom?.classList.remove('selected');
         this.selectedItem = this.result[newIdx];
         this.selectedItem.dom.classList.add('selected');
-        const rect = this.selectedItem.dom.children[0].getBoundingClientRect();
+        const rect = this.getItemRect(this.selectedItem);
         const rectParent = this.dom.getBoundingClientRect();
-        if (rect.top < rectParent.top || rect.bottom > rectParent.bottom) {
+        if (rect && (rect.top < rectParent.top || rect.bottom > rectParent.bottom)) {
             this.dom.scrollTop += rect.top < rectParent.top ? rect.top - rectParent.top : rect.bottom - rectParent.bottom;
         }
         this.renderDetailsDebounced();

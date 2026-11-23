@@ -671,3 +671,57 @@
     -webkit-text-stroke-width: 0;
     paint-order: normal;
 }
+
+/* Slash command autocomplete & command browser */
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(.autoComplete-wrap, .autoComplete-detailsWrap:not(.isFloating), .slashCommandBrowser) {
+    border-radius: 0;
+    border: 1px solid var(--w98-dark);
+    background: var(--w98-face);
+    background-image: none;
+    box-shadow: var(--w98-raised);
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(.autoComplete-wrap > .nn-ac-header, .autoComplete-detailsWrap > .nn-ac-details-header, .slashCommandBrowser > .nn-scb-header, .slashCommandBrowser .nn-scb-details-bar) {
+    background: var(--w98-caption);
+    color: var(--w98-title-ink);
+    border-bottom: 1px solid var(--w98-shadow);
+    border-radius: 0;
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(.nn-ac-title, .nn-ac-details-title, .slashCommandBrowser .nn-scb-title) {
+    color: var(--w98-title-ink);
+    font-family: var(--mainFontFamily);
+    font-weight: 700;
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(.autoComplete-wrap > ul.autoComplete, .slashCommandBrowser > .commandContainer > .autoComplete, .slashCommandBrowser > .search > .searchLabel > .searchInput) {
+    border-radius: 0;
+    background: var(--w98-field);
+    border: 1px solid var(--w98-shadow);
+    box-shadow: var(--w98-sunken);
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(.autoComplete-wrap > ul.autoComplete > .item, .slashCommandBrowser .autoComplete > .item) {
+    border-radius: 0;
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(.autoComplete-wrap > ul.autoComplete > .item::before, .slashCommandBrowser .autoComplete > .item::before, .autoComplete-wrap > ul.autoComplete > .item::after, .slashCommandBrowser .autoComplete > .item::after) {
+    display: none;
+    content: none;
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(.nn-ac-details-toggle, .nn-ac-details-close, .slashCommandBrowser .nn-scb-filter-btn, .slashCommandBrowser .nn-scb-details-back, .slashCommandBrowser .nn-scb-details-close) {
+    --neconyan-control-radius: 0px;
+    border-radius: 0;
+    border: 1px solid var(--w98-dark);
+    background: var(--w98-face);
+    color: var(--neco-ink);
+    box-shadow: var(--w98-raised);
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) .autoComplete-wrap .nn-ac-header .nn-ac-details-toggle[aria-pressed='true'],
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) .slashCommandBrowser .nn-scb-filters .nn-scb-filter-btn[aria-pressed='true'] {
+    background: var(--neco-ginger);
+    color: var(--neco-on-accent);
+    box-shadow: var(--w98-sunken);
+}

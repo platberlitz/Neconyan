@@ -22572,6 +22572,8 @@ jQuery(async function () {
             '#toast-container',
             '#neconyan-crash-notice',
             '.select2-results',
+            '.autoComplete-wrap',
+            '.autoComplete-detailsWrap',
         ];
 
         for (const id of forbiddenTargets) {

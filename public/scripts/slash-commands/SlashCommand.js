@@ -246,13 +246,19 @@ export class SlashCommand {
                         src.classList.add('fa-solid');
                         if (this.isExtension) {
                             src.classList.add('isExtension');
-                            src.classList.add('fa-cubes');
+                            src.classList.add(this.isThirdParty ? 'fa-puzzle-piece' : 'fa-cubes');
                             if (this.isThirdParty) src.classList.add('isThirdParty');
                             else src.classList.add('isCore');
                         } else {
                             src.classList.add('isCore');
                             src.classList.add('fa-star-of-life');
                         }
+                        const srcLabel = document.createElement('span');
+                        srcLabel.classList.add('nn-source-label');
+                        srcLabel.textContent = this.isExtension
+                            ? (this.isThirdParty ? t`Third-party` : t`Extension`)
+                            : t`Core`;
+                        src.append(srcLabel);
                         src.title = [
                             this.isExtension ? 'Extension' : 'Core',
                             this.isThirdParty ? 'Third Party' : (this.isExtension ? 'Core' : null),

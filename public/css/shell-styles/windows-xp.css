@@ -592,3 +592,48 @@
     -webkit-text-stroke-width: 0;
     paint-order: normal;
 }
+
+/* Slash command autocomplete & command browser */
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) :is(.autoComplete-wrap, .autoComplete-detailsWrap:not(.isFloating), .slashCommandBrowser) {
+    border-radius: 8px;
+    border: 1px solid var(--xp-frame);
+    background: var(--xp-face);
+    background-image: none;
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) :is(.autoComplete-wrap > .nn-ac-header, .autoComplete-detailsWrap > .nn-ac-details-header, .slashCommandBrowser > .nn-scb-header, .slashCommandBrowser .nn-scb-details-bar) {
+    background: var(--xp-caption);
+    color: var(--xp-caption-ink);
+    border-bottom: 1px solid var(--xp-frame);
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) :is(.nn-ac-title, .nn-ac-details-title, .slashCommandBrowser .nn-scb-title) {
+    color: var(--xp-caption-ink);
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) :is(.autoComplete-wrap > ul.autoComplete, .slashCommandBrowser > .commandContainer > .autoComplete, .slashCommandBrowser > .search > .searchLabel > .searchInput) {
+    border-radius: 4px;
+    background: var(--xp-field);
+    border: 1px solid var(--xp-button-edge);
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) :is(.autoComplete-wrap > ul.autoComplete > .item::after, .slashCommandBrowser .autoComplete > .item::after) {
+    display: none;
+    content: none;
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) :is(.nn-ac-details-toggle, .nn-ac-details-close, .slashCommandBrowser .nn-scb-filter-btn, .slashCommandBrowser .nn-scb-details-back, .slashCommandBrowser .nn-scb-details-close) {
+    --neconyan-control-radius: 4px;
+    border-radius: 4px;
+    border: 1px solid var(--xp-button-edge);
+    background: var(--xp-button);
+    color: var(--neco-ink);
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) .autoComplete-wrap .nn-ac-header .nn-ac-details-toggle[aria-pressed='true'],
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) .slashCommandBrowser .nn-scb-filters .nn-scb-filter-btn[aria-pressed='true'] {
+    background: var(--xp-select);
+    border-color: var(--xp-frame);
+    color: var(--xp-select-ink);
+}
