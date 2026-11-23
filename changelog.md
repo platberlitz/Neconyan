@@ -139,6 +139,7 @@
 - PR #918 (2026-11-23) `fix(conversation): load the card's linked lorebooks on character default`
 - PR #919 (2026-11-23) `fix(folders): unblock AI sorting after background jobs end`
 - PR #920 (2026-11-23) `feat(groups): refresh group chats and configure director timeout`
+- PR #921 (2026-11-23) `feat(slash-commands): restyle autocomplete and command help`
 - PR #922 (2026-11-23) `perf(chats): avoid repeated reads and checksums during saves`
 
 ### Local Commits
