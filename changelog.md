@@ -113,6 +113,7 @@
 - PR #891 (2026-11-23) `fix(purrks): preserve chosen names in bulk-delete captions`
 - PR #892 (2026-11-23) `fix(i18n): keep the tracked characters list label translated`
 - PR #893 (2026-11-23) `fix(server): explain out-of-memory stops and start again after a crash`
+- PR #894 (2026-11-23) `fix(browser): record why a page reloaded and keep the keep-alive honest`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
