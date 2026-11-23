@@ -19290,7 +19290,9 @@ async function openCharacterWorldPopup() {
     // Append to primary dropdown.
     const primarySelect = template.find('.character_world_info_selector');
     world_names.forEach((item, i) => {
-        primarySelect.append(new Option(item, String(i), item === worldId, item === worldId));
+        const option = new Option(item, String(i), item === worldId, item === worldId);
+        option.setAttribute('data-i18n-ignore', '');
+        primarySelect.append(option);
     });
 
     // Append to extras dropdown.

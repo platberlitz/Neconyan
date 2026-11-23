@@ -7,7 +7,7 @@ import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import sanitize from 'sanitize-filename';
 import { withChatFileLocks } from './chat-file-lock.js';
-import { clearChatRecoveryState, createCharacterChatTarget, createGroupChatTarget, markChatDeleted, parseChatJsonl,
+import { chatJsonlEqualsRecords, clearChatRecoveryState, createCharacterChatTarget, createGroupChatTarget, detachChatHeader, markChatDeleted, parseChatJsonl,
     rekeyChatRecoveryState, restoreChatSnapshotIfMatches, runChatRecoveryBestEffort } from './chat-recovery.js';
 import { assertRoleplaySourceLocked, assertPendingRoleplayDependencies, captureRoleplayDependenciesLocked, normaliseRoleplayLocator,
     roleplayChatPath, roleplayParsedContentHash, roleplayPathKey, roleplayGroupContentHash, normaliseRoleplayGroupId,
@@ -226,21 +226,37 @@ function prunableReceipts(state, scope, keepKeyHash) {
     return pruned;
 }
 
-function preparedFromPayload(pending, bytes) {
+// `staged` holds the records of the call that has just staged this payload. The payload only has to parse to
+// exactly those records (which is what hashes to `pending.after.contentHash`, computed from them when staging)
+// instead of being parsed into a second copy of the chat. The text is read from the payload bytes when a writer
+// asks for it and is not kept here. Anything that does not match, or a replay with no staged write, takes the
+// full parse below.
+function preparedFromStaged(pending, bytes, staged) {
+    if (!staged || !chatJsonlEqualsRecords(bytes, staged.records)) return null;
+    const inputRecords = detachChatHeader(staged.records);
+    if (pending.before?.integrity) inputRecords[0].chat_metadata.integrity = pending.before.integrity;
+    else delete inputRecords[0].chat_metadata.integrity;
+    return { changed: pending.changed, inputRecords, records: staged.records, get serialized() { return bytes.toString('utf8'); },
+        integrity: pending.after.integrity };
+}
+
+function preparedFromPayload(pending, bytes, staged = null) {
+    const confirmed = preparedFromStaged(pending, bytes, staged);
+    if (confirmed) return confirmed;
     const parsed = parseChatJsonl(bytes);
     if (parsed.status !== 'ok' || roleplayParsedContentHash(parsed.records) !== pending.after.contentHash) throw conflict();
-    const inputRecords = structuredClone(parsed.records);
+    const inputRecords = detachChatHeader(parsed.records);
     if (pending.before?.integrity) inputRecords[0].chat_metadata.integrity = pending.before.integrity;
     else delete inputRecords[0].chat_metadata.integrity;
     return { changed: pending.changed, inputRecords, records: parsed.records, serialized: bytes.toString('utf8'), integrity: pending.after.integrity };
 }
 
-function publishPending(lease, host, filename, before, payload, expectedJournal) {
+function publishPending(lease, host, filename, before, payload, expectedJournal, staged = null) {
     const { state: { pending }, scope } = roleplayLease(lease);
-    const prepared = preparedFromPayload(pending, payload.bytes);
+    const prepared = preparedFromPayload(pending, payload.bytes, staged);
     if (payload.filename === null) {
         prepared.changed = false;
-        prepared.inputRecords = structuredClone(prepared.records);
+        prepared.inputRecords = detachChatHeader(prepared.records);
     }
     try {
         return host.publish({ filePath: filename, before, payloadPath: payload.filename,
@@ -264,7 +280,7 @@ function publishPending(lease, host, filename, before, payload, expectedJournal)
     }
 }
 
-function applyPending(lease, host) {
+function applyPending(lease, host, staged = null) {
     const { state, scope } = roleplayLease(lease);
     const pending = state.pending;
     if (!pending || pending.kind !== 'chat-write') throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'There is no matching chat save to check.');
@@ -299,7 +315,7 @@ function applyPending(lease, host) {
             saveRoleplayAccount(lease);
         }
         createRoleplayDirectory(path.dirname(filename), scope.directories.root);
-        file = publishPending(lease, host, filename, pending.before, payload, expectedJournal);
+        file = publishPending(lease, host, filename, pending.before, payload, expectedJournal, staged);
     } else {
         if (!file || !pending.before || !isDeepStrictEqual(file.physical, pending.before.physical)
             || parseChatJsonl(file.bytes).status === 'ok') throw conflict();
@@ -313,7 +329,10 @@ function applyPending(lease, host) {
         });
         file = publishPending(lease, host, filename, file, { filename: null, bytes: file.bytes }, expectedJournal);
     }
-    if (!file || file.rawHash !== pending.after.rawHash || roleplayParsedContentHash(parseChatJsonl(file.bytes).records) !== pending.after.contentHash) throw conflict();
+    // Matching the staged records exactly is enough; anything else is judged by the recorded content hash as before.
+    if (!file || file.rawHash !== pending.after.rawHash
+        || !((staged && chatJsonlEqualsRecords(file.bytes, staged.records))
+            || roleplayParsedContentHash(parseChatJsonl(file.bytes).records) === pending.after.contentHash)) throw conflict();
     pending.phase = 'chat-applied';
     pending.appliedPhysical = file.physical;
     try { saveRoleplayAccount(lease); } catch (error) { throw Object.assign(error, { chatCommitted: true, integrity: pending.after.integrity }); }
@@ -910,7 +929,9 @@ export function roleplayChatWriteIdentity(lease, input) {
     return writeIntent(roleplayLease(lease).state, input);
 }
 
-function prepareAndApplyChatWrite(lease, input, host, intent, { source, before, beforeBytes, instanceId, expectedVacancy = null }) {
+// Everything up to the staged transaction lives in its own frame, so the prepared chat's text and the parsed
+// source can be collected before the staged payload is read back and published.
+function stageChatWrite(lease, input, host, intent, { source, before, beforeBytes, instanceId, expectedVacancy = null }) {
     const { state, scope } = roleplayLease(lease);
     const { operationKeyHash, intentHash, mode, locator, backup } = intent;
     let revision = before ? before.revision + 1 : 1;
@@ -934,10 +955,21 @@ function prepareAndApplyChatWrite(lease, input, host, intent, { source, before, 
     stageRoleplayPayload(lease, id, pending.after.payload, bytes, CHAT_LIMIT);
     for (const payload of memory.payloads) stageRoleplayPayload(lease, id, payload.name, payload.bytes, MAX_ARCHIVE_BYTES);
     state.pending = pending;
+    return { records: prepared.records };
+}
+
+function prepareAndApplyChatWrite(lease, input, host, intent, context) {
+    const staged = stageChatWrite(lease, input, host, intent, context);
     try {
         saveRoleplayAccount(lease);
-        return applyPending(lease, host);
+        return applyPending(lease, host, staged);
     } catch (error) { throw Object.assign(error, { roleplayWritePending: true }); }
+}
+
+// Keeps only what the write needs, so the parsed source chat can be collected before the new one is prepared.
+function assertUpdateSource(lease, source) {
+    const saved = assertRoleplaySourceLocked(lease, source);
+    return { instanceId: saved.instanceId, integrity: saved.records[0].chat_metadata.integrity ?? '' };
 }
 
 /** Reuse an already held account lock; the lease is still checked and confirmed before admission. */
@@ -963,11 +995,11 @@ export function commitSingleChatWriteLocked(lease, input, host) {
     let source, before = null, instanceId, expectedVacancy = null;
     const filename = roleplayChatPath(scope, locator);
     if (mode === 'update') {
-        const saved = assertRoleplaySourceLocked(lease, input.source);
+        const saved = assertUpdateSource(lease, input.source);
         source = structuredClone(input.source);
         instanceId = saved.instanceId;
         const resource = state.resources[instanceId];
-        before = { ...resource.head, revision: resource.revision, integrity: saved.records[0].chat_metadata.integrity ?? '' };
+        before = { ...resource.head, revision: resource.revision, integrity: saved.integrity };
     } else {
         const vacancy = state.paths[roleplayPathKey(state, 'chat', locator)];
         const occupied = readRoleplayFile(filename, CHAT_LIMIT, { allowMissingParent: true });

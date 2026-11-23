@@ -115,6 +115,11 @@
 - PR #892 (2026-11-23) `fix(i18n): keep the tracked characters list label translated`
 - PR #893 (2026-11-23) `fix(server): explain out-of-memory stops and start again after a crash`
 - PR #894 (2026-11-23) `fix(browser): record why a page reloaded and keep the keep-alive honest`
+- PR #896 (2026-11-23) `fix(i18n): match the English checkpoint tooltip to its translation key`
+- PR #897 (2026-11-23) `perf(chats): hold fewer copies of a chat while saving and loading`
+- PR #899 (2026-11-23) `fix(i18n): preserve names in the primary lorebook picker`
+- PR #900 (2026-11-23) `fix(i18n): make the structured prefill slot hint translatable`
+- PR #901 (2026-11-23) `test(chat): verify the intended Tide message reaches the lower edge`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`

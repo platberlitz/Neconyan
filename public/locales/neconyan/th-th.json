@@ -3022,7 +3022,6 @@
   "Run card scripts": "เรียกใช้สคริปต์การ์ด",
   "Jump to swipe history": "ไปยังประวัติการปัด",
   "Screenshot message(s)": "แคปเจอร์ข้อความ",
-  "[data-tooltip]Open checkpoint chat\nShift+Click to replace the existing checkpoint with a new one": "จุดตรวจสอบ",
   "Checkpoint": "จุดตรวจสอบ",
   "Edit message": "แก้ไขข้อความ",
   "Delete + Add Swipe": "ลบ + เพิ่มการปัด",

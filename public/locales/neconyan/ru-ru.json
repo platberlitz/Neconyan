@@ -1837,7 +1837,6 @@
   "Run card scripts": "Запустить скрипты карточки",
   "Jump to swipe history": "Перейти к истории свайпов",
   "Screenshot message(s)": "Скриншот сообщения(й)",
-  "[data-tooltip]Open checkpoint chat\nShift+Click to replace the existing checkpoint with a new one": "Контрольная точка",
   "Checkpoint": "Контрольная точка",
   "Edit message": "Редактировать сообщение",
   "Delete + Add Swipe": "Удалить + добавить свайп",
