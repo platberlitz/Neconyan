@@ -120,6 +120,7 @@
 - PR #899 (2026-11-23) `fix(i18n): preserve names in the primary lorebook picker`
 - PR #900 (2026-11-23) `fix(i18n): make the structured prefill slot hint translatable`
 - PR #901 (2026-11-23) `test(chat): verify the intended Tide message reaches the lower edge`
+- PR #902 (2026-11-23) `perf(mewmory): stop redoing whole-archive work on every status check`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
