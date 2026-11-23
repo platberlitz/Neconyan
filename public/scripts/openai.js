@@ -12,7 +12,7 @@ import { capturePresetPrompts, setPreparedPresetPrompts } from './extensions/in-
 */
 import { Fuse, DOMPurify } from '../lib.js';
 import { REVERSE_PROXY_SUPPORTED_SOURCES, resolveChatReasoningEffort } from './chat-request-controls.js';
-import { checkChatReasoningEffort, getNativeReasoningRoute, resolveKnownInvalidNoneEffort } from './chat-reasoning-capabilities.js';
+import { checkChatReasoningEffort, customReasoningLevelsApplicable, getNativeReasoningRoute, resolveKnownInvalidNoneEffort } from './chat-reasoning-capabilities.js';
 import { isImageInputIssue } from './prompt-media-policy.js';
 
 import {
@@ -552,6 +552,7 @@ const default_settings = {
     custom_reasoning_param_format: custom_reasoning_param_formats.OPENAI,
     custom_reasoning_enabled_value: 'enabled',
     custom_reasoning_disabled_value: 'disabled',
+    custom_reasoning_documented_levels: false,
     enable_web_search: false,
     request_images: false,
     request_image_aspect_ratio: '',
@@ -3793,6 +3794,12 @@ const CHAT_COMPLETION_SAMPLER_CONTROLS = Object.freeze({
     seed: { selector: '#seed_openai', setting: 'seed' },
 });
 
+/** Show the 'Hide unsupported reasoning levels' switch only where it can do something. */
+function syncCustomReasoningLevelsSwitch() {
+    $('#custom_reasoning_documented_levels_block').toggle(customReasoningLevelsApplicable({ ...oai_settings, chat_completion_source: 'custom' }));
+    $('#custom_reasoning_documented_levels').prop('checked', oai_settings.custom_reasoning_documented_levels === true);
+}
+
 function updateChatCompletionReasoningAvailability() {
     const select = document.getElementById('openai_reasoning_effort');
     if (!(select instanceof HTMLSelectElement)) return;
@@ -3825,12 +3832,15 @@ function updateChatCompletionReasoningAvailability() {
     for (const option of select.options) {
         const label = labels[option.value] ?? option.textContent;
         option.disabled = support.state === 'no-selector' || support.forbiddenEfforts.includes(option.value)
-            || (option.value !== 'auto' && support.state === 'effort-list' && !support.supportedEfforts.includes(option.value));
+            || (option.value !== 'auto' && !(option.value === 'none' && support.noneAlwaysOffered)
+                && support.state === 'effort-list' && !support.supportedEfforts.includes(option.value));
         option.hidden = option.disabled;
         option.textContent = option.disabled
             ? translate('${0} (unavailable)', 'scoped.nanogpt.reasoning.unavailable').replace('${0}', () => label) : label;
     }
-    const unavailable = !support.supported;
+    const invalidNone = oai_settings.reasoning_effort != null && resolveKnownInvalidNoneEffort({ source, model,
+        metadata: getChatCompletionSamplerMetadata(oai_settings, model), route: getChatReasoningRoute(oai_settings), effort: oai_settings.reasoning_effort }) === undefined;
+    const unavailable = !support.supported && !(invalidNone && support.noneAlwaysOffered);
     const label = labels[select.value] ?? select.value;
     select.disabled = support.state === 'no-selector';
     select.dataset.reasoningNoSelector = String(select.disabled);
@@ -3840,24 +3850,28 @@ function updateChatCompletionReasoningAvailability() {
     select.dataset.reasoningUnavailable = String(unavailable);
     const noSelectorMessage = t`This model does not expose an effort setting. Your saved choice is kept for other models.`;
     const mandatoryMessage = t`Reasoning cannot be disabled for this model. Choose another model to turn it off.`;
-    const invalidNone = oai_settings.reasoning_effort != null && resolveKnownInvalidNoneEffort({ source, model,
-        metadata: getChatCompletionSamplerMetadata(oai_settings, model), route: getChatReasoningRoute(oai_settings), effort: oai_settings.reasoning_effort }) === undefined;
     const omittedNoneMessage = t`None is unavailable for this model. No reasoning effort override is sent.`;
-    select.dataset.reasoningTitle = invalidNone ? omittedNoneMessage : support.state === 'no-selector' ? noSelectorMessage
+    const noneSendsNothingMessage = t`None isn't a documented level for this model, so no reasoning setting is sent.`;
+    const noneMessage = invalidNone && support.noneAlwaysOffered ? noneSendsNothingMessage : omittedNoneMessage;
+    const aliasTarget = support.effortAliases?.[select.value];
+    const aliasMessage = aliasTarget && unavailable ? t`${label} acts as ${labels[aliasTarget]} on this model. Choose ${choices}.` : '';
+    select.dataset.reasoningTitle = invalidNone ? noneMessage : support.state === 'no-selector' ? noSelectorMessage
         : unavailable && support.state === 'unknown' && support.forbidden ? mandatoryMessage
-            : unavailable && !names.length ? t`No listed reasoning effort is available for this model.`
-                : unavailable ? t`Reasoning Effort: ${label}, unavailable for this model. Choose ${choices}.`
-                    : `${t`Reasoning Effort`}: ${label}`;
+            : aliasMessage ? aliasMessage
+                : unavailable && !names.length ? t`No listed reasoning effort is available for this model.`
+                    : unavailable ? t`Reasoning Effort: ${label}, unavailable for this model. Choose ${choices}.`
+                        : `${t`Reasoning Effort`}: ${label}`;
     const hint = document.getElementById(source === 'openrouter' ? 'openrouter_reasoning_effort_hint'
         : source === 'nanogpt' ? 'nanogpt_reasoning_effort_hint' : 'native_reasoning_effort_hint');
     if (hint) {
-        hint.textContent = invalidNone ? omittedNoneMessage : support.state === 'no-selector' ? noSelectorMessage
+        hint.textContent = invalidNone ? noneMessage : support.state === 'no-selector' ? noSelectorMessage
             : support.state === 'unknown' && support.forbiddenEfforts.length ? mandatoryMessage
-                : support.state === 'effort-list' && !names.length ? t`No listed reasoning effort is available for this model.`
-                    : support.state === 'effort-list'
-                        ? (unavailable ? t`This model supports ${supportedList}. Choose one before sending.` : t`This model supports ${supportedList}.`)
-                        : source === 'nanogpt' ? t`Reasoning efforts are sent exactly, aside from minimum which is sent as 'minimal'.`
-                            : t`Available reasoning levels are not known for this model.`;
+                : aliasMessage ? aliasMessage
+                    : support.state === 'effort-list' && !names.length ? t`No listed reasoning effort is available for this model.`
+                        : support.state === 'effort-list'
+                            ? (unavailable ? t`This model supports ${supportedList}. Choose one before sending.` : t`This model supports ${supportedList}.`)
+                            : source === 'nanogpt' ? t`Reasoning efforts are sent exactly, aside from minimum which is sent as 'minimal'.`
+                                : t`Available reasoning levels are not known for this model.`;
     }
     $('#native_reasoning_effort_hint').toggle(support.nativeFallback || (support.state === 'effort-list' && !['nanogpt', 'openrouter'].includes(source)));
     const signature = JSON.stringify([source, model, support.nativeFallback, support.state, support.supportedEfforts, support.forbiddenEfforts, select.value, unavailable, controlAvailable]);
@@ -6955,6 +6969,7 @@ function loadOpenAISettings(data, settings) {
 
     restoreOpenAIPresetSelection();
     $('#bind_preset_to_connection').prop('checked', oai_settings.bind_preset_to_connection);
+    syncCustomReasoningLevelsSwitch();
     $('#bind_preset_to_sampling').prop('checked', shouldIncludeSamplingFieldsInPreset(oai_settings));
     updateBindPresetToConnectionHelp();
     updateBindPresetToSamplingHelp();
@@ -9313,6 +9328,8 @@ async function onCustomizeParametersClick() {
     template.find('#custom_reasoning_param_format').val(oai_settings.custom_reasoning_param_format).on('input', function () {
         oai_settings.custom_reasoning_param_format = String($(this).val());
         syncCustomReasoningFormatView(template);
+        syncCustomReasoningLevelsSwitch();
+        updateChatCompletionReasoningAvailability();
         saveSettingsDebounced();
     });
 
@@ -9320,6 +9337,8 @@ async function onCustomizeParametersClick() {
     const bindTrimmedTextSetting = (selector, key) => {
         template.find(selector).val(oai_settings[key]).on('input', function () {
             oai_settings[key] = String($(this).val()).trim();
+            syncCustomReasoningLevelsSwitch();
+            updateChatCompletionReasoningAvailability();
             saveSettingsDebounced();
         }).on('blur', function () {
             $(this).val(oai_settings[key]);
@@ -10237,14 +10256,14 @@ function registerChatCompletionProfileSlashCommands() {
     });
     registerChatCompletionProfileSlashCommand({
         name: 'custom-reasoning-param-format',
-        callback: runEnumChatCompletionSettingCallback('custom-reasoning-param-format', 'custom_reasoning_param_format', '#custom_reasoning_param_format', Object.values(custom_reasoning_param_formats), () => syncCustomReasoningFormatView()),
+        callback: runEnumChatCompletionSettingCallback('custom-reasoning-param-format', 'custom_reasoning_param_format', '#custom_reasoning_param_format', Object.values(custom_reasoning_param_formats), () => { syncCustomReasoningFormatView(); syncCustomReasoningLevelsSwitch(); updateChatCompletionReasoningAvailability(); }),
         description: 'custom reasoning parameter format',
         enumList: Object.values(custom_reasoning_param_formats),
         forceEnum: true,
     });
     registerChatCompletionProfileSlashCommand({
         name: 'custom-reasoning-param-name',
-        callback: runStringChatCompletionSettingCallback('custom-reasoning-param-name', 'custom_reasoning_param_name', '#custom_reasoning_param_name'),
+        callback: runStringChatCompletionSettingCallback('custom-reasoning-param-name', 'custom_reasoning_param_name', '#custom_reasoning_param_name', () => { syncCustomReasoningLevelsSwitch(); updateChatCompletionReasoningAvailability(); }),
         description: 'custom reasoning parameter name',
     });
     registerChatCompletionProfileSlashCommand({
@@ -10256,6 +10275,12 @@ function registerChatCompletionProfileSlashCommands() {
         name: 'custom-reasoning-disabled-value',
         callback: runStringChatCompletionSettingCallback('custom-reasoning-disabled-value', 'custom_reasoning_disabled_value', '#custom_reasoning_disabled_value'),
         description: 'custom reasoning disabled value',
+    });
+    registerChatCompletionProfileSlashCommand({
+        name: 'custom-reasoning-documented-levels',
+        callback: runBooleanChatCompletionSettingCallback('custom-reasoning-documented-levels', 'custom_reasoning_documented_levels', '#custom_reasoning_documented_levels', () => updateChatCompletionReasoningAvailability()),
+        description: 'custom hide unsupported reasoning levels',
+        typeList: [ARGUMENT_TYPE.BOOLEAN],
     });
     registerChatCompletionProfileSlashCommand({
         name: 'custom-include-body',
@@ -10922,6 +10947,12 @@ export function initOpenAI() {
     });
     $('#vertexai_model_id').on('input', function () {
         oai_settings.vertexai_model = String($(this).val());
+        saveSettingsDebounced();
+    });
+
+    $('#custom_reasoning_documented_levels').on('input', function () {
+        oai_settings.custom_reasoning_documented_levels = !!$(this).prop('checked');
+        updateChatCompletionReasoningAvailability();
         saveSettingsDebounced();
     });
 

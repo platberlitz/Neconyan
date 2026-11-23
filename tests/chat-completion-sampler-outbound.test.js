@@ -788,4 +788,154 @@ describe('Chat Completion sampler wire filtering', () => {
         expect(capturedBody.frequency_penalty).toBe(1);
         expect(capturedBody.presence_penalty).toBe(0);
     });
+
+    // M90: native rows added for new models. Each send is paired with a refusal for the same model, so the send counts only when the row is active.
+    test.each([
+        ['openai', 'gpt-6-sol', 'none', 'min', 'reasoning_effort', 'none'],
+        ['openai', 'gpt-6.1-sol', 'max', 'min', 'reasoning_effort', 'max'],
+        ['makersuite', 'gemini-4-neon', 'xhigh', 'min', 'generationConfig.thinkingConfig.thinkingLevel', 'xhigh'],
+        ['vertexai', 'gemini-4-hydrogen', 'high', 'min', 'generationConfig.thinkingConfig.thinkingLevel', 'high'],
+        ['moonshot', 'kimi-k3.1-pro', 'low', 'medium', 'reasoning_effort', 'low'],
+        ['zai', 'glm-5.3-flashx', 'max', 'medium', 'reasoning_effort', 'max'],
+        ['mistralai', 'zai-glm-5-3-flash', 'max', 'medium', 'reasoning_effort', 'max'],
+    ])('new native row %s %s sends %s and refuses %s', async (source, model, effort, refused, field, expected) => {
+        const sent = await request(source, await buildNative(source, model, effort));
+        expect(sent.status).toBe(200);
+        expect(capturedBody).toHaveProperty(field, expected);
+        nodeFetchMock.mockClear();
+        const response = await request(source, await buildNative(source, model, refused));
+        expect(response.status).toBe(400);
+        expect((await response.json()).error.code).toBe('UNSUPPORTED_REASONING_EFFORT');
+        expect(nodeFetchMock).not.toHaveBeenCalled();
+    });
+
+    test('native gpt-6.2-astra sends high and, with its None refused by the row, sends no effort', async () => {
+        expect((await request('openai', await buildNative('openai', 'gpt-6.2-astra', 'high'))).status).toBe(200);
+        expect(capturedBody.reasoning_effort).toBe('high');
+        expect((await request('openai', await buildNative('openai', 'gpt-6.2-astra', 'none'))).status).toBe(200);
+        expect(capturedBody).not.toHaveProperty('reasoning_effort');
+    });
+
+    test('native makersuite gemini-4-carbon refuses Extra High without dispatch', async () => {
+        const response = await request('makersuite', await buildNative('makersuite', 'gemini-4-carbon', 'xhigh'));
+        expect(response.status).toBe(400);
+        expect((await response.json()).error.code).toBe('UNSUPPORTED_REASONING_EFFORT');
+        expect(nodeFetchMock).not.toHaveBeenCalled();
+    });
+
+    describe('Custom documented reasoning levels', () => {
+        const customRequest = (model, effort, overrides = {}) => request('custom', {
+            custom_url: 'http://127.0.0.1:9/v1',
+            custom_reasoning_param_name: 'reasoning_effort',
+            custom_reasoning_param_format: 'openai',
+            custom_reasoning_documented_levels: true,
+            model,
+            reasoning_effort: effort,
+            ...overrides,
+        });
+        const expectRefused = async (response, messageStart) => {
+            expect(response.status).toBe(400);
+            const { error } = await response.json();
+            expect(error.code).toBe('UNSUPPORTED_REASONING_EFFORT');
+            if (messageStart) expect(error.message.startsWith(messageStart)).toBe(true);
+            expect(nodeFetchMock).not.toHaveBeenCalled();
+        };
+
+        test('unlisted levels are refused for the model and its re-hosts', async () => {
+            expect.hasAssertions();
+            await expectRefused(await customRequest('smol-kimi/kimi-k3', 'medium'));
+            await expectRefused(await customRequest('smol-alibaba/kimi-k3', 'medium'));
+        });
+
+        test('listed levels are sent under the configured name, and an unlisted None sends nothing', async () => {
+            expect((await customRequest('smol-kimi/kimi-k3', 'low')).status).toBe(200);
+            expect(capturedBody.reasoning_effort).toBe('low');
+            expect((await customRequest('smol-kimi/kimi-k3', 'none')).status).toBe(200);
+            expect(capturedBody).not.toHaveProperty('reasoning_effort');
+            expect((await customRequest('deepseek-v4-pro-0813', 'none')).status).toBe(200);
+            expect(capturedBody.reasoning_effort).toBe('none');
+        });
+
+        test('a saved alias is refused with the acts-as message, never sent as another level', async () => {
+            expect.hasAssertions();
+            await expectRefused(await customRequest('deepseek-v4-pro-0813', 'medium'), 'Medium acts as High on this model.');
+            await expectRefused(await customRequest('grok-4.5', 'xhigh'), 'Extra High acts as High');
+            await expectRefused(await customRequest('deepseek-v4-pro-0813', 'minimal'), 'Minimum acts as Low on this model.');
+        });
+
+        test('GLM-5.2 sends none and high, and refuses the aliases', async () => {
+            expect((await customRequest('smol-glm/glm-5.2', 'none')).status).toBe(200);
+            expect(capturedBody.reasoning_effort).toBe('none');
+            expect((await customRequest('smol-glm/glm-5.2', 'high')).status).toBe(200);
+            expect(capturedBody.reasoning_effort).toBe('high');
+            nodeFetchMock.mockClear();
+            await expectRefused(await customRequest('smol-glm/glm-5.2', 'low'), 'Low acts as High on this model.');
+        });
+
+        test('Minimum is sent as minimal and Auto sends nothing', async () => {
+            expect((await customRequest('[free]gpt-5', 'min')).status).toBe(200);
+            expect(capturedBody.reasoning_effort).toBe('minimal');
+            expect((await customRequest('[free]gpt-5', 'auto')).status).toBe(200);
+            expect(capturedBody).not.toHaveProperty('reasoning_effort');
+        });
+
+        test('with the switch off, nothing is hidden', async () => {
+            expect((await customRequest('smol-kimi/kimi-k3', 'medium', { custom_reasoning_documented_levels: false })).status).toBe(200);
+            expect(capturedBody.reasoning_effort).toBe('medium');
+        });
+
+        test('with the boolean format, the effort string is not filtered', async () => {
+            expect((await customRequest('smol-kimi/kimi-k3', 'medium', { custom_reasoning_param_format: 'boolean' })).status).toBe(200);
+        });
+    });
+
+    describe('Custom Auto sends nothing on unmatched models', () => {
+        test('a named parameter with the switch off', async () => {
+            const body = { custom_url: 'http://127.0.0.1:9/v1', custom_reasoning_param_name: 'reasoning_effort', custom_reasoning_param_format: 'openai',
+                custom_reasoning_documented_levels: false, model: 'kilo/particle-ai/particle-1:free' };
+            expect((await request('custom', { ...body, reasoning_effort: 'auto' })).status).toBe(200);
+            expect(capturedBody).not.toHaveProperty('reasoning_effort');
+            expect((await request('custom', { ...body, reasoning_effort: 'high' })).status).toBe(200);
+            expect(capturedBody.reasoning_effort).toBe('high');
+        });
+
+        test('a blank parameter name on a model that takes the default path', async () => {
+            const body = { custom_url: 'http://127.0.0.1:9/v1', model: 'gpt-5.4' };
+            expect((await request('custom', { ...body, reasoning_effort: 'auto' })).status).toBe(200);
+            expect(capturedBody).not.toHaveProperty('reasoning_effort');
+            expect((await request('custom', { ...body, reasoning_effort: 'high' })).status).toBe(200);
+            expect(capturedBody.reasoning_effort).toBe('high');
+        });
+    });
+
+    describe('Claude on Custom keeps its reasoning fields', () => {
+        async function buildCustomClaude(model, settingsOverrides, effort = 'high') {
+            const settings = { chat_completion_source: 'custom', reasoning_effort: effort, temp_openai: 1, top_p_openai: 1,
+                freq_pen_openai: 0, pres_pen_openai: 0, typical_p_openai: 1, n: 1, openai_max_tokens: 32,
+                custom_url: 'http://127.0.0.1:9/v1', custom_reasoning_documented_levels: false, ...settingsOverrides };
+            const { generate_data } = await createChatGenerationParameters(settings, model, 'normal', [{ role: 'user', content: 'Hello' }], {
+                appendReasoning: messages => messages, userName: 'User', characterName: 'Character', getGroupNames: () => [],
+                getLogitBias: async () => ({}), getStoppingStrings: () => [], getIncludeReasoning: () => settings.include_reasoning === true,
+                getReasoningEffort: snapshot => resolveChatReasoningEffort(settings, model, undefined, snapshot),
+                getVerbosity: () => undefined, canPerformToolCalls: () => false, registerTools: async () => {},
+                reverseProxySources: [], validateReverseProxy: () => {}, getAssistantPrefill: () => '',
+                getServiceTier: async () => undefined, getSamplerMetadata: () => undefined,
+            });
+            return generate_data;
+        }
+
+        test('the OpenAI effort string reaches claude-code/claude-opus-5-5 with the switch off, and samplers are removed', async () => {
+            const data = await buildCustomClaude('claude-code/claude-opus-5-5', { custom_reasoning_param_format: 'openai', custom_reasoning_param_name: 'reasoning_effort' });
+            expect((await request('custom', data)).status).toBe(200);
+            expect(capturedBody.reasoning_effort).toBe('high');
+            expect(capturedBody).not.toHaveProperty('temperature');
+        });
+
+        test('a thinking object with reasoning not requested sends type disabled (known consequence)', async () => {
+            const data = await buildCustomClaude('claude-sonnet-5-5', { custom_reasoning_param_format: 'thinking_object', custom_reasoning_param_name: 'thinking',
+                include_reasoning: false }, 'auto');
+            expect((await request('custom', data)).status).toBe(200);
+            expect(capturedBody.thinking).toEqual({ type: 'disabled' });
+        });
+    });
 });

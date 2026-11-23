@@ -43,7 +43,7 @@
                 <input id="custom_reasoning_disabled_value" class="text_pole" type="text" placeholder="disabled" autocapitalize="off" autocorrect="off" spellcheck="false">
             </label>
         </div>
-        <small class="sb-custom-reasoning-format-hint" data-format="openai" data-i18n="custom_reasoning_format_openai_hint">Sends your Reasoning Effort setting as text, for example high. Nothing is sent when the effort is None, except to GPT-5.1 and newer, which receive none.</small>
+        <small class="sb-custom-reasoning-format-hint" data-format="openai" data-i18n="custom_reasoning_format_openai_hint">Sends your Reasoning Effort setting as text, for example high. None is sent as none to GPT-5.1 and newer and, with Hide unsupported reasoning levels on, to recognised models that can turn reasoning off. Otherwise None sends nothing.</small>
         <small class="sb-custom-reasoning-format-hint" data-format="boolean" data-i18n="custom_reasoning_format_boolean_hint">Sends true when reasoning is requested and false when it is not.</small>
         <small class="sb-custom-reasoning-format-hint" data-format="string" data-i18n="custom_reasoning_format_string_hint">Sends the Enabled Value when reasoning is requested and the Disabled Value when it is not.</small>
         <small class="sb-custom-reasoning-format-hint" data-format="thinking_object" data-i18n="custom_reasoning_format_thinking_object_hint">Sends an object with a type field: the Enabled Value when reasoning is requested, the Disabled Value when it is not. This is the shape GLM and Kimi endpoints expect for a thinking key.</small>

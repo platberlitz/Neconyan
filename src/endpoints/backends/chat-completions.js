@@ -231,6 +231,11 @@ function resolveCustomOpenAiReasoningEffort(requestBody) {
         return undefined;
     }
 
+    // Neconyan: Auto means 'send nothing' on every Custom model, not the literal 'auto'.
+    if (String(requestBody.reasoning_effort).trim().toLowerCase() === 'auto') {
+        return undefined;
+    }
+
     return toWireReasoningEffort(requestBody.reasoning_effort);
 }
 
@@ -819,11 +824,11 @@ async function sendMakerSuiteRequest(request, response) {
             }
         }
 
-        if (isThinkingConfigModel(model) || (request.reasoningCapabilities?.nativeFallback && reasoningEffort)) {
+        if (isThinkingConfigModel(model) || ((request.reasoningCapabilities?.nativeFallback || request.reasoningCapabilities?.reason === 'documented-native-efforts') && reasoningEffort)) {
             const thinkingConfig = {};
             const shouldIncludeThoughts = includeReasoning;
 
-            const thinkingBudget = request.reasoningCapabilities?.nativeFallback && reasoningEffort
+            const thinkingBudget = (request.reasoningCapabilities?.nativeFallback || request.reasoningCapabilities?.reason === 'documented-native-efforts') && reasoningEffort
                 ? reasoningEffort : calculateGoogleBudgetTokens(generationConfig.maxOutputTokens, reasoningEffort, model);
             if (typeof thinkingBudget === 'number' && Number.isInteger(thinkingBudget)) {
                 thinkingConfig.thinkingBudget = thinkingBudget;
@@ -3134,12 +3139,16 @@ export async function handleChatCompletionsGenerate(request, response) {
         if (!reasoningSupport.supported) {
             const labels = { none: 'None', min: 'Minimum', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra High', max: 'Maximum' };
             const choices = reasoningSupport.supportedEfforts.map(value => labels[value]).join(' or ');
-            const selected = labels[request.body.reasoning_effort] ?? 'This reasoning level';
-            const message = reasoningSupport.state === 'no-selector'
-                ? 'This model does not expose an effort setting. Remove the effort override or choose another model.'
-                : reasoningSupport.state === 'unknown' && reasoningSupport.forbidden
-                    ? 'Reasoning cannot be disabled for this model. Choose another model to turn it off.'
-                    : `${selected} is not available for this model. Choose ${choices} in Reasoning Effort, then try again.`;
+            const canonical = request.body.reasoning_effort === 'minimal' ? 'min' : request.body.reasoning_effort;
+            const selected = labels[canonical] ?? 'This reasoning level';
+            const aliasTarget = reasoningSupport.effortAliases?.[canonical];
+            const message = aliasTarget && labels[aliasTarget]
+                ? `${selected} acts as ${labels[aliasTarget]} on this model. Choose ${choices} in Reasoning Effort, then try again.`
+                : reasoningSupport.state === 'no-selector'
+                    ? 'This model does not expose an effort setting. Remove the effort override or choose another model.'
+                    : reasoningSupport.state === 'unknown' && reasoningSupport.forbidden
+                        ? 'Reasoning cannot be disabled for this model. Choose another model to turn it off.'
+                        : `${selected} is not available for this model. Choose ${choices} in Reasoning Effort, then try again.`;
             return response.status(400).json({ error: {
                 code: 'UNSUPPORTED_REASONING_EFFORT',
                 message,
@@ -3624,7 +3633,8 @@ export async function handleChatCompletionsGenerate(request, response) {
         if (request.body.reasoning_effort
             && shouldUseDefaultOpenAiReasoningEffort
             && [CHAT_COMPLETION_SOURCES.CUSTOM, CHAT_COMPLETION_SOURCES.OPENAI, CHAT_COMPLETION_SOURCES.OPENAI_RESPONSES].includes(request.body.chat_completion_source)
-            && (OPENAI_REASONING_EFFORT_MODELS.includes(request.body.model) || reasoningSupport.nativeFallback)) {
+            && !(request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.CUSTOM && request.body.reasoning_effort === 'auto')
+            && (OPENAI_REASONING_EFFORT_MODELS.includes(request.body.model) || reasoningSupport.nativeFallback || reasoningSupport.reason === 'documented-native-efforts')) {
             bodyParams['reasoning_effort'] = toWireReasoningEffort(request.body.reasoning_effort);
         }
 

@@ -207,13 +207,23 @@ describe('reasoning effort on Z.AI and Moonshot requests', () => {
 
         test.each([['min', 'minimal', 'minimal'], ['medium', 'medium', 'medium'], ['xhigh', 'xhigh', 'xhigh'], ['none', undefined, 'none']])(
             'keeps K3 proxy and unlisted native K3.1 behaviour for %s', async (effort, proxyExpected, nativeExpected) => {
-                for (const [fields, expected] of [[{ model: 'kimi-k3', reverse_proxy: 'https://fixture.invalid/v1', proxy_password: 'fixture' }, proxyExpected], [{ model: 'kimi-k3.1-pro' }, nativeExpected]]) {
+                for (const [fields, expected] of [[{ model: 'kimi-k3', reverse_proxy: 'https://fixture.invalid/v1', proxy_password: 'fixture' }, proxyExpected], [{ model: 'kimi-k3.1' }, nativeExpected]]) {
                     const response = await makeRequest(CHAT_COMPLETION_SOURCES.MOONSHOT, { ...fields, reasoning_effort: effort });
                     expect(response.status).toBe(200);
                     expect(capturedBody.reasoning_effort).toBe(expected);
                 }
             },
         );
+
+        test('native K3.1 Pro follows its documented list: refuses medium and sends low', async () => {
+            const refused = await makeRequest(CHAT_COMPLETION_SOURCES.MOONSHOT, { model: 'kimi-k3.1-pro', reasoning_effort: 'medium' });
+            expect(refused.status).toBe(400);
+            expect((await refused.json()).error.code).toBe('UNSUPPORTED_REASONING_EFFORT');
+            expect(nodeFetchMock).not.toHaveBeenCalled();
+            const sent = await makeRequest(CHAT_COMPLETION_SOURCES.MOONSHOT, { model: 'kimi-k3.1-pro', reasoning_effort: 'low' });
+            expect(sent.status).toBe(200);
+            expect(capturedBody.reasoning_effort).toBe('low');
+        });
 
         test('does not add the thinking object that K3 rejects', async () => {
             const response = await makeRequest(CHAT_COMPLETION_SOURCES.MOONSHOT, {

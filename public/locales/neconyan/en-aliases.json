@@ -567,9 +567,10 @@
   "custom_exclude_body_hint": "Keys removed from every request body before it is sent. One key per line, each starting with a dash.",
   "custom_include_headers_hint": "Extra HTTP headers sent with every request. One header per line, written as Name: value. An Authorization header here replaces the saved API key.",
   "custom_reasoning_param_hint": "Adds one key to the request body that switches the model's reasoning on or off. It follows the Request model reasoning toggle and the Reasoning Effort setting. A key of the same name in Include Body Parameters wins.",
-  "custom_reasoning_format_openai_hint": "Sends your Reasoning Effort setting as text, for example high. Nothing is sent when the effort is None, except to GPT-5.1 and newer, which receive none.",
+  "custom_reasoning_format_openai_hint": "Sends your Reasoning Effort setting as text, for example high. None is sent as none to GPT-5.1 and newer and, with Hide unsupported reasoning levels on, to recognised models that can turn reasoning off. Otherwise None sends nothing.",
   "custom_reasoning_format_boolean_hint": "Sends true when reasoning is requested and false when it is not.",
   "custom_reasoning_format_string_hint": "Sends the Enabled Value when reasoning is requested and the Disabled Value when it is not.",
   "custom_reasoning_format_thinking_object_hint": "Sends an object with a type field: the Enabled Value when reasoning is requested, the Disabled Value when it is not. This is the shape GLM and Kimi endpoints expect for a thinking key.",
+  "custom_reasoning_documented_levels_hint": "For recognised models. Others keep every level.",
   "char_import_janny_cloudflare": "JannyAI links work too. JannyAI sits behind a Cloudflare check: if the import fails, open BotSearcher, choose JannyAI and press \"Open JannyAI login window\" to pass the check, then import again."
 }
