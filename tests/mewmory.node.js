@@ -1,5 +1,5 @@
 /* eslint playwright/expect-expect: off -- These checks use node:assert, not Playwright assertions. */
-/* global globalThis */
+/* global globalThis, Atomics, SharedArrayBuffer, WeakRef */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -12,21 +12,22 @@ import { setConfigFilePath } from '../src/util.js';
 
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
 const {
-    continueState, eligibleRecords, forkState, hash, newState, putRecord, recordEligible,
-    POLICY_VERSION, READ_EARLIER, refKey, ROLE_NAMES, sourceAt, sourceFingerprint, syncSources, undoRecord, validateRecord,
+    continueState, currentRecords, eligibleRecords, forkState, hash, newState, putRecord, recordEligible, recordEligibleIn, recordRevision, recordRevisionIn,
+    eligibilityLookups, eligibilityStats, POLICY_VERSION, purgeSources, READ_EARLIER, refKey, ROLE_NAMES, sourceAt, sourceEligible, sourceFingerprint, syncSources, undoRecord, validateRecord,
 } = await import('../src/mewmory/core.js');
 const { activeReferences, assembleContext, generationFingerprint } = await import('../src/mewmory/context.js');
 const { callJsonRole, defaultConfig, embed, isLocalEndpoint, validateEndpoint, saveConfig } = await import('../src/mewmory/models.js');
-const { applyExtraction, applyInterview, extractionInput, interviewInput, pendingSources, processBatch, processingVersion } = await import('../src/mewmory/processing.js');
+const { applyExtraction, applyInterview, extractionInput, interviewInput, pendingCounts, pendingSources, processBatch, processingVersion, testHooks: processingHooks } = await import('../src/mewmory/processing.js');
 const { forcedMatches, validateSelection, recall, recallInBackground } = await import('../src/mewmory/retrieval.js');
-const { expandNeighbours, hybridCandidates, lexicalSearch, searchDocuments, splitPassages, updateIndex } = await import('../src/mewmory/search.js');
-const { loadCurrentState } = await import('../src/mewmory/sources.js');
+const { expandNeighbours, hybridCandidates, lexicalSearch, recallPool, searchDocuments, searchStats, splitPassages, updateIndex } = await import('../src/mewmory/search.js');
+const { loadCurrentState, loadCurrentStateSync } = await import('../src/mewmory/sources.js');
+const { createMemoryPressureCheck } = await import('../src/memory-pressure.js');
 const { prepareMewmoryPrompt } = await import('../src/mewmory/prepare.js');
 const { batchState, everyoneState, groupLineHeld, memberHeard, sameAudience, sourceAudience, viewerState } = await import('../src/mewmory/viewers.js');
-const { branchParentLocator, buildBranchMemoryState, chatPath, listStories, mutateState, normalizeLocator, readChatShared, readState, readStateShared, renameChatMemory, renameCharacterMemory, renameWorldMemory, removeChatMemory, removeSourceMemory, statePath, writeJson } = await import('../src/mewmory/store.js');
+const { branchParentLocator, buildBranchMemoryState, cacheUsage, chatPath, cloneState, listStories, mutateState, normalizeLocator, readChatShared, readJsonShared, readState, readStateShared, sharedJsonHooks, recoveryPath, renameChatMemory, renameCharacterMemory, renameWorldMemory, removeChatMemory, removeSourceMemory, statePath, synchronize, writeJson } = await import('../src/mewmory/store.js');
 const { ensureMewmoryMessageIds } = await import('../public/scripts/mewmory/message-identity.js');
 const { getCounter, getTokenizerModel } = await import('../src/mewmory/tokens.js');
-const { inspectState, restoreRecords } = await import('../src/endpoints/mewmory.js');
+const { inspectState, requestBodyExceeds, restoreRecords } = await import('../src/endpoints/mewmory.js');
 const { createMewmoryProvider } = await import('./mewmory-provider.js');
 const { readConfig, publicConfig, resolvedRoleIdentity, roleVersion } = await import('../src/mewmory/models.js');
 const { readSecret, writeSecret, SecretManager, SECRET_KEYS } = await import('../src/endpoints/secrets.js');
@@ -4930,4 +4931,823 @@ test('failed completion restores warm disk/cache/guard state and a real worker r
     assert.deepEqual(readState(directories, locator), reopened);
     assert.equal(listStories(directories)[0].processing.status, 'complete');
     assert.equal(JSON.parse(fs.readFileSync(recovery)).revision, reopened.revision);
+});
+
+// Work counters: these tests check how much serialising, cloning and parsing a call does, never how long it takes.
+function countWork(work) {
+    const original = { stringify: JSON.stringify, parse: JSON.parse, clone: globalThis.structuredClone };
+    const counts = { stringifyCalls: 0, stringifiedChars: 0, largestStringify: 0, parseCalls: 0, largestParse: 0, clones: 0 };
+    JSON.stringify = function stringify(...args) {
+        const text = original.stringify.apply(this, args);
+        counts.stringifyCalls++;
+        if (typeof text === 'string') {
+            counts.stringifiedChars += text.length;
+            counts.largestStringify = Math.max(counts.largestStringify, text.length);
+        }
+        return text;
+    };
+    JSON.parse = function parse(text, ...rest) {
+        counts.parseCalls++;
+        counts.largestParse = Math.max(counts.largestParse, String(text).length);
+        return original.parse.call(this, text, ...rest);
+    };
+    globalThis.structuredClone = (...args) => { counts.clones++; return original.clone(...args); };
+    const restore = () => {
+        Object.assign(JSON, { stringify: original.stringify, parse: original.parse });
+        globalThis.structuredClone = original.clone;
+    };
+    let value;
+    try {
+        value = work();
+    } catch (error) {
+        restore();
+        throw error;
+    }
+    if (!(value instanceof Promise)) {
+        restore();
+        return { counts, value };
+    }
+    return value.then(result => { restore(); return { counts, value: result }; }, error => { restore(); throw error; });
+}
+
+const plain = value => JSON.parse(JSON.stringify(value));
+const identityOf = file => { const stat = fs.statSync(file); return [stat.ino, stat.size, stat.mtimeMs, stat.ctimeMs].join(':'); };
+// Runs every registered reclaimer, as the server does when memory runs short.
+const reclaimMemory = () => assert.equal(createMemoryPressureCheck({ sample: () => ({ available: 0, total: 1e9, heapUsed: 0, heapLimit: 0 }) })(), true);
+const bulkMessages = (count = 160) => Array.from({ length: count }, (_, index) => ({
+    name: index % 2 ? 'Mara' : 'You', is_user: index % 2 === 0, send_date: new Date(Date.UTC(2026, 0, 1) + index * 60000).toISOString(),
+    mes: `Message ${index}: ` + 'The lantern sat beside the ledger, and Mara said nothing. '.repeat(12),
+}));
+const MESSAGE_COUNT = 160;
+// A file read and stamped in one pass is trusted only once it was quiet before that pass began.
+const letFilesSettle = () => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 80);
+
+test('loading an unchanged story again does no whole-archive work, writes nothing and equals the full path', t => {
+    const { directories } = disk(t, bulkMessages());
+    const archive = statePath(directories, locator);
+    const first = loadCurrentStateSync(directories, locator);
+    assert.ok(fs.statSync(archive).size > 100_000, 'a realistic archive, not a toy');
+    const files = [archive, recoveryPath(directories, locator)];
+    const written = files.map(identityOf);
+    // The first read after a write parses what was written; the one measured below is the second.
+    loadCurrentStateSync(directories, locator);
+    const { counts, value: second } = countWork(() => loadCurrentStateSync(directories, locator));
+    assert.deepEqual(files.map(identityOf), written, 'neither the archive nor its recovery guard was written');
+    assert.equal(counts.clones, 0, 'no clone');
+    assert.ok(counts.largestStringify < 2000, 'no archive or message was serialised');
+    assert.ok(counts.stringifyCalls < MESSAGE_COUNT / 4, 'messages were not hashed one by one: ' + counts.stringifyCalls);
+    assert.ok(counts.largestParse < 50_000, 'the archive was not parsed again');
+    assert.deepEqual(plain(second), plain(first));
+    const full = countWork(() => loadCurrentStateSync(directories, locator, { fresh: true }));
+    assert.ok(full.counts.stringifyCalls >= MESSAGE_COUNT && full.counts.clones > 0, 'the full path hashes every message and clones the archive');
+    assert.deepEqual(plain(full.value), plain(second));
+    assert.deepEqual(files.map(identityOf), written, 'the full path found nothing to change either');
+});
+
+test('every input of a synchronise invalidates the unchanged-story shortcut', async t => {
+    const messages = bulkMessages();
+    const { directories, write } = disk(t, messages);
+    const { write: writeCard } = await import('../src/character-card-parser.js');
+    const png = fs.readFileSync(new URL('../default/content/backgrounds/__transparent.png', import.meta.url));
+    const card = description => fs.writeFileSync(path.join(directories.characters, 'Mara.png'), writeCard(png, JSON.stringify({ name: 'Mara', description })));
+    directories.files = path.join(directories.root, 'user/files');
+    fs.mkdirSync(directories.files, { recursive: true });
+    const settingsFile = path.join(directories.root, 'settings.json');
+    const bookFile = path.join(directories.worlds, 'Book.json');
+    const book = text => writeJson(bookFile, { entries: { 1: { uid: 1, comment: 'Harbour', content: text, key: ['harbour'] } } });
+    const noteFile = path.join(directories.files, 'note.txt');
+    card('Original card text');
+    book('Lighthouse first');
+    fs.writeFileSync(noteFile, 'Note first');
+    letFilesSettle();
+    const settings = extra => writeJson(settingsFile, { world_info: { globalSelect: ['Book'] }, extension_settings: { attachments: [{ url: '/user/files/note.txt' }, { url: '/user/files/later.txt' }] }, ...extra });
+    settings();
+    const archive = statePath(directories, locator);
+    let state = loadCurrentStateSync(directories, locator);
+    const reload = () => {
+        const { counts, value } = countWork(() => loadCurrentStateSync(directories, locator));
+        assert.ok(counts.stringifyCalls >= MESSAGE_COUNT, 'the change was reconciled, not skipped');
+        return value;
+    };
+    const text = value => JSON.stringify(value.sources);
+    assert.match(text(state), /Original card text/);
+    assert.match(text(state), /Lighthouse first/);
+    assert.match(text(state), /Note first/);
+    const hit = () => assert.ok(countWork(() => loadCurrentStateSync(directories, locator)).counts.stringifyCalls < MESSAGE_COUNT / 4, 'unchanged input is skipped');
+    hit();
+
+    // The same size every time, so only the file's identity can tell.
+    card('Changed card text!!');
+    state = reload();
+    assert.match(text(state), /Changed card text/);
+    hit();
+    book('Lighthouse other');
+    state = reload();
+    assert.match(text(state), /Lighthouse other/);
+    hit();
+    fs.writeFileSync(noteFile, 'Note other');
+    letFilesSettle();
+    state = reload();
+    assert.match(text(state), /Note other/);
+    hit();
+    // A file that did not exist when the story was last reconciled.
+    fs.writeFileSync(path.join(directories.files, 'later.txt'), 'Arrived later');
+    letFilesSettle();
+    state = reload();
+    assert.match(text(state), /Arrived later/);
+    hit();
+    write([...messages, { name: 'Mara', is_user: false, send_date: '2027-01-01T00:00:00.000Z', mes: 'A brand new line.' }]);
+    state = reload();
+    assert.equal(state.timeline.length, MESSAGE_COUNT + 1);
+    hit();
+    // Another writer replaces the archive with an older picture of the story.
+    const stale = readState(directories, locator);
+    stale.timeline = stale.timeline.slice(0, 10);
+    writeJson(archive, stale);
+    state = reload();
+    assert.equal(state.timeline.length, MESSAGE_COUNT + 1);
+    hit();
+    mutateState(directories, locator, current => { current.reviewedAt = 7; });
+    state = reload();
+    assert.equal(state.reviewedAt, 7);
+    hit();
+    fs.rmSync(recoveryPath(directories, locator));
+    reload();
+    assert.ok(fs.existsSync(recoveryPath(directories, locator)), 'a missing recovery guard is written again');
+    hit();
+    const config = readConfig(directories);
+    config.roles.extractor = { ...config.roles.extractor, enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'one' };
+    saveConfig(directories, config);
+    state = reload();
+    assert.ok(Object.keys(state.rolePolicies).includes(processingVersion(readConfig(directories))));
+    hit();
+    // Settings that change nothing Mewmory folds in leave the story alone.
+    saveConfig(directories, { ...readConfig(directories), memoryTokens: 4000 });
+    hit();
+    const fileIds = value => value.contextSources.filter(ref => ref.id.startsWith('file:'));
+    assert.equal(fileIds(state).length, 2);
+    settings({ extension_settings: {} });
+    state = reload();
+    assert.equal(fileIds(state).length, 0, 'attachments removed from settings.json');
+    assert.ok(state.contextSources.some(ref => ref.id.startsWith('lore:')));
+    hit();
+    settings();
+    state = reload();
+    assert.equal(fileIds(state).length, 2);
+    hit();
+    saveConfig(directories, { ...readConfig(directories), retrieval: { ...readConfig(directories).retrieval, includeFiles: false } });
+    state = reload();
+    assert.equal(fileIds(state).length, 0, 'attached files switched off in Mewmory settings');
+    hit();
+    // Memory pressure empties the caches but keeps the stamps, so the first load afterwards is not a full reconcile.
+    reclaimMemory();
+    hit();
+    assert.ok(countWork(() => loadCurrentStateSync(directories, locator, { fresh: true })).counts.stringifyCalls >= MESSAGE_COUNT, 'a fresh load always reconciles');
+    hit();
+    // A synchronise that is handed its own extra change always runs it.
+    let ran = 0;
+    synchronize(directories, locator, [], readChatShared(directories, locator), current => { ran++; current.reviewedAt = 9; });
+    assert.equal(ran, 1);
+    assert.equal(readStateShared(directories, locator).reviewedAt, 9);
+    assert.equal(reload().reviewedAt, 9);
+});
+
+test('a persona avatar that disappears is noticed even when everything else is unchanged', t => {
+    const { directories } = disk(t, bulkMessages(100));
+    const avatars = path.join(directories.root, 'User Avatars');
+    fs.mkdirSync(avatars, { recursive: true });
+    fs.writeFileSync(path.join(avatars, 'me.png'), 'avatar bytes');
+    letFilesSettle();
+    writeJson(path.join(directories.root, 'settings.json'), { power_user: { default_persona: 'me.png', personas: { 'me.png': 'Persona' },
+        persona_descriptions: { 'me.png': { description: 'A traveller' } } } });
+    const loaded = loadCurrentStateSync(directories, locator);
+    assert.equal(sourceAt(loaded, loaded.contextSources[0]).meta.persona, 'me.png');
+    assert.ok(countWork(() => loadCurrentStateSync(directories, locator)).counts.stringifyCalls < 50, 'the second load is the shortcut');
+    fs.rmSync(path.join(avatars, 'me.png'));
+    assert.throws(() => loadCurrentStateSync(directories, locator), /persona avatar is missing/);
+});
+
+test('callers that reassign fields of a loaded state never change the shared archive', async t => {
+    const { directories } = disk(t, bulkMessages(24));
+    const provider = await createMewmoryProvider();
+    t.after(() => new Promise(resolve => provider.server.close(resolve)));
+    const config = defaultConfig();
+    Object.assign(config.roles.embedding, { enabled: true, endpoint: provider.url, model: 'embedding' });
+    saveConfig(directories, config);
+    loadCurrentStateSync(directories, locator);
+    const shared = readStateShared(directories, locator);
+    const snapshot = JSON.stringify(shared);
+    for (const attempt of ['shortcut', 'full']) {
+        if (attempt === 'full') reclaimMemory();
+        const view = loadCurrentStateSync(directories, locator);
+        assert.notEqual(view, readStateShared(directories, locator), attempt);
+        await updateIndex(view, directories, readConfig(directories));
+        assert.ok(Object.keys(view.index.vectors).length > 0, 'the loaded copy took the new index');
+        view.index = { version: 'replaced', vectors: {}, pending: false };
+        view.records = [];
+        view.enabled = true;
+        view.index.pending = true;
+        assert.equal(JSON.stringify(readStateShared(directories, locator)), snapshot, attempt);
+        assert.equal(loadCurrentStateSync(directories, locator).index.version, '', attempt);
+    }
+    // The shortcut state is read-only all the way down, as the shared state always has been.
+    const frozen = structuredClone(readStateShared(directories, locator));
+    const freeze = value => { if (value && typeof value === 'object' && !Object.isFrozen(value)) { Object.freeze(value); Object.values(value).forEach(freeze); } };
+    freeze(frozen);
+    const config2 = readConfig(directories);
+    assert.doesNotThrow(() => { inspectState(frozen, config2); pendingSources(frozen, config2); assembleContext(frozen, [], { counter }); });
+});
+
+test('a changed archive is serialised once, written byte for byte as before, and unchanged ones are not written', t => {
+    const { directories } = disk(t, bulkMessages());
+    const archive = statePath(directories, locator);
+    loadCurrentStateSync(directories, locator);
+    const vector = index => Buffer.from(new Float32Array([index, 1, 2, 3]).buffer).toString('base64');
+    mutateState(directories, locator, state => {
+        state.enabled = true;
+        state.index = { version: 'space', pending: false, vectors: Object.fromEntries(Array.from({ length: 150 }, (_, index) =>
+            ['doc:' + index, { textHash: 'hash' + index, vectorF32LE: vector(index) }])) };
+    });
+    const mutator = state => { state.reviewedAt = 5; state.records.push({ id: 'x', note: 'ünïcode - “quoted”' }); delete state.preview; };
+    const clock = 1_900_000_000_000;
+    t.mock.method(Date, 'now', () => clock);
+    // What the earlier implementation wrote: clone, mutate, bump revision and time, normalise the locator, serialise.
+    const previous = readStateShared(directories, locator);
+    const expected = structuredClone(previous);
+    mutator(expected);
+    Object.assign(expected, { revision: previous.revision + 1, updatedAt: clock, locator: normalizeLocator(expected.locator) });
+    const reference = JSON.stringify(expected);
+    const size = fs.readFileSync(archive, 'utf8').length;
+    const changed = countWork(() => mutateState(directories, locator, mutator));
+    assert.equal(fs.readFileSync(archive, 'utf8'), reference);
+    assert.ok(changed.counts.stringifiedChars < size * 1.5, `serialised ${changed.counts.stringifiedChars} characters for a ${size} character archive`);
+    assert.equal(JSON.parse(fs.readFileSync(recoveryPath(directories, locator), 'utf8')).revision, previous.revision + 1);
+    // An archive written by an older version: no updatedAt, and a locator whose keys are in another order.
+    const old = readState(directories, locator);
+    delete old.updatedAt;
+    old.locator = { group: false, chat: locator.chat, avatar: locator.avatar };
+    fs.writeFileSync(archive, JSON.stringify(old));
+    const reread = readStateShared(directories, locator);
+    const expectedOld = structuredClone(reread);
+    mutator(expectedOld);
+    Object.assign(expectedOld, { revision: reread.revision + 1, updatedAt: clock, locator: normalizeLocator(expectedOld.locator) });
+    mutateState(directories, locator, mutator);
+    assert.equal(fs.readFileSync(archive, 'utf8'), JSON.stringify(expectedOld));
+
+    const before = identityOf(archive);
+    const after = fs.readFileSync(archive, 'utf8').length;
+    const unchanged = countWork(() => mutateState(directories, locator, () => {}));
+    assert.equal(identityOf(archive), before, 'an unchanged mutation writes nothing');
+    assert.ok(unchanged.counts.stringifiedChars < after * 1.2, 'and compares with the text it kept, serialising the result once');
+    assert.equal(unchanged.value.revision, readStateShared(directories, locator).revision);
+});
+
+test('the clone shares embedding vectors and nothing a mutator does reaches a state read earlier', t => {
+    const { directories } = disk(t, bulkMessages(40));
+    loadCurrentStateSync(directories, locator);
+    const vectors = Object.fromEntries(Array.from({ length: 30 }, (_, index) => [`doc:${index}`, { textHash: 'h' + index,
+        vectorF32LE: Buffer.from(new Float32Array([index, 2]).buffer).toString('base64') }]));
+    mutateState(directories, locator, state => {
+        state.index = { version: 'space', pending: false, vectors, build: { version: 'next', vectors: { ...vectors }, cursor: 3 } };
+    });
+    const shared = readStateShared(directories, locator);
+    const snapshot = JSON.stringify(shared);
+    const copy = cloneState(shared);
+    assert.deepEqual(copy, shared);
+    for (const [owner, other] of [[copy.index.vectors, shared.index.vectors], [copy.index.build.vectors, shared.index.build.vectors]]) {
+        assert.notEqual(owner, other, 'the map is the clone\'s own');
+        assert.equal(Object.keys(owner).length, 30);
+        for (const [id, entry] of Object.entries(owner)) assert.equal(entry, other[id], 'the entries are shared, not copied');
+    }
+    assert.notEqual(copy.index, shared.index);
+    assert.notEqual(copy.index.build, shared.index.build);
+    assert.notEqual(copy.sources, shared.sources);
+    assert.deepEqual(Object.keys(copy), Object.keys(shared), 'key order decides the bytes written');
+    const mutators = [
+        state => { state.index.vectors.added = { textHash: 'added', vectorF32LE: 'AAAA' }; delete state.index.vectors['doc:1']; delete state.index.build.vectors['doc:2']; },
+        state => { state.index.pending = true; state.index.version = 'other'; },
+        state => { state.index.build.cursor = 9; state.index.build.version = 'newer'; },
+        state => { state.index = { ...state.index, vectors: {}, build: undefined }; },
+        state => { purgeSources(state, state.timeline.slice(0, 5).map(ref => ref.id)); },
+        state => { state.index.vectors = Object.fromEntries(Object.entries(state.index.vectors).slice(0, 3)); },
+    ];
+    for (const mutator of mutators) {
+        mutateState(directories, locator, mutator);
+        assert.equal(JSON.stringify(shared), snapshot, 'the earlier state is untouched');
+    }
+});
+
+test('pending counts agree with the three pending queries they replace', () => {
+    const state = base();
+    const config = defaultConfig();
+    const policy = processingVersion(config);
+    state.coverage = { [refKey(state.timeline[0])]: policy, [refKey(state.timeline[1])]: READ_EARLIER, [refKey(state.timeline[2])]: 'old policy' };
+    state.checkpoints = { [refKey(state.timeline[1])]: policy, [refKey(state.timeline[3])]: READ_EARLIER };
+    state.excludedSources = [state.timeline[4].id];
+    for (const followCheckpoints of [false, true]) {
+        const unread = pendingSources(state, config, { unreadOnly: true }).length;
+        const checkpointUnread = pendingSources(state, config, { checkpoint: true, unreadOnly: true }).length;
+        const rereadPending = pendingSources(state, config, { checkpoint: followCheckpoints }).length - (followCheckpoints ? checkpointUnread : unread);
+        assert.deepEqual(pendingCounts(state, config, { followCheckpoints }), { unread, checkpointUnread, rereadPending }, String(followCheckpoints));
+        assert.ok(unread > 0 && rereadPending !== 0 || followCheckpoints, 'the fixture exercises each count');
+    }
+});
+
+test('inspecting an unchanged archive twice leaves the archive file and its revision alone', async t => {
+    const { directories } = disk(t, bulkMessages());
+    const express = (await import('express')).default;
+    const { router } = await import('../src/endpoints/mewmory.js');
+    const app = express();
+    app.use(express.json());
+    app.use((request, response, next) => { request.user = { directories }; next(); });
+    app.use(router);
+    const server = await new Promise(resolve => { const listener = app.listen(0, '127.0.0.1', () => resolve(listener)); });
+    t.after(() => new Promise(resolve => server.close(resolve)));
+    const inspect = async () => (await fetch('http://127.0.0.1:' + server.address().port + '/inspect', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ locator }) })).json();
+    const first = await inspect();
+    const archive = statePath(directories, locator);
+    const before = identityOf(archive);
+    await inspect();
+    const warm = await countWork(inspect);
+    const second = warm.value;
+    const third = await inspect();
+    assert.equal(warm.counts.clones, 0, 'no copy of the archive');
+    assert.ok(warm.counts.stringifyCalls < MESSAGE_COUNT / 2, 'no message was hashed: ' + warm.counts.stringifyCalls);
+    assert.equal(identityOf(archive), before, 'inspection is read-only once the story is reconciled');
+    assert.equal(second.revision, first.revision);
+    assert.deepEqual(third, second);
+    assert.equal(second.health.pending, MESSAGE_COUNT);
+});
+
+test('a request body is accepted from Content-Length only when printing it again cannot exceed the limit', () => {
+    const request = (headers, body = { text: 'x'.repeat(50) }) => ({ body, get: name => headers[name] });
+    const printed = body => Buffer.byteLength(JSON.stringify(body));
+    // Within a sixth of the limit, whatever it prints as: no serialising.
+    const fast = countWork(() => requestBodyExceeds(request({ 'Content-Length': '100' }), 1000));
+    assert.equal(fast.value, false);
+    assert.equal(fast.counts.stringifyCalls, 0);
+    // 1e20 is four characters long and prints as twenty-one, so a declared 250 bytes can print as 1,100 and must be measured.
+    const grown = { values: Array.from({ length: 50 }, () => 1e20) };
+    assert.ok(printed(grown) > 1000 && 250 < 1000);
+    assert.equal(requestBodyExceeds(request({ 'Content-Length': '250' }, grown), 1000), true, 'the old limit cannot be slipped past');
+    assert.equal(requestBodyExceeds(request({ 'Content-Length': '250' }, { values: [1, 2, 3] }), 1000), false);
+    // No usable length: measured, as before.
+    for (const headers of [{}, { 'Content-Length': 'many' }, { 'Content-Length': '-5' }, { 'Content-Length': '12', 'Content-Encoding': 'gzip' }]) {
+        assert.equal(requestBodyExceeds(request(headers, grown), 1000), true, JSON.stringify(headers));
+        assert.equal(requestBodyExceeds(request(headers), 1000), false, JSON.stringify(headers));
+    }
+    assert.equal(requestBodyExceeds(request({}, null), 1), true);
+    assert.equal(requestBodyExceeds(request({}, null), 2), false);
+});
+
+test('preparing a reply reads the chat through the shared reader instead of parsing it again', async t => {
+    const { directories } = disk(t, bulkMessages(40));
+    saveConfig(directories, { ...defaultConfig(), writerTokenizer: 'o200k_base' });
+    mutateState(directories, locator, state => { state.enabled = true; }, 0);
+    await loadCurrentState(directories, locator);
+    let chatLinesParsed = 0;
+    const parse = JSON.parse;
+    JSON.parse = function counted(text, ...rest) { if (typeof text === 'string' && text.includes('"send_date"') && text.includes('"mes"')) chatLinesParsed++; return parse.call(this, text, ...rest); };
+    try {
+        const result = await prepareMewmoryPrompt(directories, { locator, history: [{ index: 0, text: 'hello' }], tokenizer: {} }, undefined, { scheduleBackground: false });
+        assert.equal(result.enabled, true);
+    } finally {
+        JSON.parse = parse;
+    }
+    assert.equal(chatLinesParsed, 0, 'the chat was not parsed a second time');
+});
+
+test('recall documents are built only for the pool recall can rank, and the passages the selector may ask for come on demand', () => {
+    const state = base();
+    syncSources(state, fixture.messages, [...fixture.lore, { id: 'file:note', type: 'file', name: 'note.txt', text: 'A saved file about the moon.', meta: { url: '/user/files/note.txt' } }]);
+    event(state);
+    for (const includePassages of [false, true]) for (const includeFiles of [false, true]) {
+        const config = { ...defaultConfig(), retrieval: { ...defaultConfig().retrieval, includePassages, includeFiles } };
+        const pool = recallPool(searchDocuments(state, Infinity, config, { poolOnly: true }), config);
+        assert.deepEqual(pool, recallPool(searchDocuments(state, Infinity, config), config), JSON.stringify({ includePassages, includeFiles }));
+        assert.ok(pool.length > 0);
+        if (!includePassages) assert.ok(searchDocuments(state, Infinity, config, { poolOnly: true }).length < searchDocuments(state, Infinity, config).length,
+            'chat, card and lore passages are not built');
+    }
+});
+
+test('cache budgets count estimated heap, never evict the entry just inserted, and empty under memory pressure', t => {
+    const { directories } = disk(t, bulkMessages());
+    reclaimMemory();
+    assert.deepEqual(Object.values(cacheUsage()).map(entry => entry.bytes), [0, 0, 0]);
+    loadCurrentStateSync(directories, locator);
+    loadCurrentStateSync(directories, locator);
+    const usage = cacheUsage();
+    const archive = statePath(directories, locator);
+    assert.equal(usage.chatRead.bytes, 5 * fs.statSync(chatPath(directories, locator)).size, 'parsed chat is estimated at five times its file');
+    assert.ok(usage.sharedJson.bytes >= 5 * fs.statSync(archive).size && usage.sharedJson.bytes % 5 === 0);
+    assert.equal(usage.writtenStates.bytes, 2 * fs.readFileSync(archive, 'utf8').length, 'saved text is counted at two bytes a character');
+    assert.ok(usage.writtenStates.max <= 48 * 1024 * 1024 && usage.sharedJson.max === usage.chatRead.max);
+    const big = path.join(directories.root, 'big.json');
+    fs.writeFileSync(big, JSON.stringify({ blob: 'x'.repeat(Math.ceil(usage.sharedJson.max / 5) + 1024) }));
+    const parsed = readJsonShared(big, null);
+    assert.ok(cacheUsage().sharedJson.bytes > usage.sharedJson.max, 'one entry may exceed the budget');
+    assert.equal(readJsonShared(big, null), parsed, 'and it is still cached for the next reader');
+    reclaimMemory();
+    assert.deepEqual(Object.values(cacheUsage()).map(entry => entry.bytes), [0, 0, 0]);
+});
+
+// The earlier eligibility rules, which scan every record and audit entry for each question, kept as the reference.
+function scanningEligibility() {
+    const content = record => {
+        const copy = { ...record };
+        for (const key of ['version', 'createdAt', 'provenance', 'inputRefs', 'origin', 'authorOverride', 'pinned', 'excluded',
+            'status', 'significance', 'evidenceRefs', 'restoredOrigin']) delete copy[key];
+        return hash(copy);
+    };
+    const revision = (state, id, version) => {
+        const current = state.records.find(record => record.id === id);
+        if (!current || current.version === version) return current;
+        if (current.excluded || ['invalidated', 'deleted'].includes(current.status)) return null;
+        const changes = state.audit.filter(entry => entry.recordId === id && entry.afterVersion > version);
+        const previous = changes.find(entry => entry.before?.version === version)?.before;
+        if (!previous) return null;
+        return content(previous) === content(current) || changes.every(entry => entry.historical) ? previous : null;
+    };
+    const eligible = (state, record, { asOf = Infinity, includeExcluded = false } = {}, seen = new Set()) => {
+        if (!record || record.storyId !== state.storyId || record.branchId !== state.branchId
+            || record.asOf > asOf || ['invalidated', 'deleted'].includes(record.status)
+            || (!includeExcluded && record.excluded) || seen.has(record.id + '@' + record.version)) return false;
+        if (!record.refs.length || ![...record.refs, ...(record.evidenceRefs || [])].every(ref => sourceEligible(state, ref, asOf))) return false;
+        if (!(record.inputRefs || []).every(ref => sourceEligible(state, ref))) return false;
+        const next = new Set(seen).add(record.id + '@' + record.version);
+        if (['knowledge', 'interview', 'overview'].includes(record.kind)) {
+            const owners = state.records.filter(owner => owner.kind === 'entity' && owner.entityId === record.ownerId)
+                .flatMap(owner => owner.asOf <= asOf ? [owner] : state.audit
+                    .filter(entry => entry.recordId === owner.id && entry.before?.asOf <= asOf)
+                    .map(entry => revision(state, owner.id, entry.before.version)));
+            const owner = currentRecords(owners.filter(item => eligible(state, item, { asOf }, next)), item => item.entityId)[0];
+            if (record.ownerId === 'player' || !owner?.isCharacter) return false;
+        }
+        return (record.dependencies || []).every(dependency => eligible(state, revision(state, dependency.id, dependency.version), { asOf, includeExcluded }, next));
+    };
+    const all = (state, options) => state.records.flatMap(record => {
+        if (eligible(state, record, options)) return [record];
+        if (!Number.isFinite(options?.asOf) || record.asOf <= options.asOf) return [];
+        return state.audit.filter(entry => entry.recordId === record.id && entry.before?.asOf <= options.asOf)
+            .map(entry => revision(state, record.id, entry.before.version)).filter(candidate => eligible(state, candidate, options))
+            .sort((a, b) => b.asOf - a.asOf || b.version - a.version).slice(0, 1);
+    });
+    return { revision, eligible, all };
+}
+
+test('eligibility through lookups answers exactly as scanning every record and audit entry does', () => {
+    const { state } = giftHistory();
+    putRecord(state, { ...state.records.find(record => record.id === 'knowledge:gift'), text: 'Mara suspected the gift was pity.',
+        origin: 'author', authorOverride: true, createdAt: Date.now() });
+    putRecord(state, { ...state.records.find(record => record.id === 'event:gift'), excluded: true, origin: 'author', authorOverride: true, createdAt: Date.now() });
+    state.records.find(record => record.kind === 'overview').status = 'invalidated';
+    const reference = scanningEligibility();
+    const everyVersion = [...state.records, ...state.audit.map(entry => entry.before).filter(Boolean)];
+    assert.ok(state.audit.length >= 4 && everyVersion.length > state.records.length, 'a history with older versions');
+    const key = record => record && record.id + '@' + record.version;
+    for (const asOf of [Infinity, -1, 0, 1, 2, 3, 4, 5, 6, 9]) for (const includeExcluded of [false, true]) {
+        const options = { asOf, includeExcluded };
+        assert.deepEqual(eligibleRecords(state, options).map(key), reference.all(state, options).map(key), JSON.stringify(options));
+        for (const record of everyVersion) assert.equal(recordEligible(state, record, options), reference.eligible(state, record, options), key(record) + JSON.stringify(options));
+    }
+    assert.deepEqual(eligibleRecords(state).map(key), reference.all(state).map(key));
+    for (const record of state.records) for (const version of [0, 1, 2, 3, 4, 9]) {
+        assert.equal(key(recordRevision(state, record.id, version)), key(reference.revision(state, record.id, version)), record.id + '@' + version);
+    }
+    assert.equal(recordRevision(state, 'missing', 1), reference.revision(state, 'missing', 1));
+    // The same answers from the tables that eligibleRecords, inspection and a reply's context share.
+    const lookups = eligibilityLookups(state);
+    for (const options of [{}, { asOf: 2 }, { asOf: 5, includeExcluded: true }]) {
+        for (const record of everyVersion) assert.equal(recordEligibleIn(state, lookups, record, options), reference.eligible(state, record, options), key(record));
+    }
+    for (const record of state.records) for (const version of [0, 1, 2, 3, 4, 9]) {
+        assert.equal(key(recordRevisionIn(state, lookups, record.id, version)), key(reference.revision(state, record.id, version)), record.id + '@' + version);
+    }
+});
+
+test('eligibility lookups are built once for a pass over many records and never for asking about one', () => {
+    const { state } = giftHistory();
+    const documents = searchDocuments(state, Infinity, { ...defaultConfig() }).filter(document => document.recordId);
+    assert.ok(documents.length >= 4);
+    // A caller that asks about one record at a time scans, as it always did: no table is built however often it asks.
+    const builds = () => eligibilityStats.builds;
+    const start = builds();
+    for (let round = 0; round < 20; round++) for (const record of state.records) { recordEligible(state, record); recordRevision(state, record.id, 1); }
+    assert.equal(builds() - start, 0);
+    // One pass over every record builds one table set.
+    const before = builds();
+    eligibleRecords(state);
+    assert.equal(builds() - before, 1);
+    // One reply's context builds a few table sets (character references, overviews, names, the documents) and the
+    // documents themselves share one: it does not grow with the number of memories offered.
+    const crowded = Array.from({ length: 40 }, () => documents).flat();
+    const small = builds();
+    assembleContext(state, documents, { counter, memoryTokens: 100000 });
+    const forSmall = builds() - small;
+    const large = builds();
+    assembleContext(state, crowded, { counter, memoryTokens: 100000 });
+    const perExtraDocument = (builds() - large - forSmall) / (crowded.length - documents.length);
+    assert.ok(forSmall <= 4 + 2 * documents.filter(document => ['interview', 'overview'].includes(document.kind)).length, 'builds for a reply: ' + forSmall);
+    // Only an interview or overview asks for the overviews again (two passes each); plain memories add none.
+    assert.ok(perExtraDocument <= 2, 'builds per extra document: ' + perExtraDocument);
+    const plain = documents.filter(document => !['interview', 'overview'].includes(document.kind));
+    const base = builds();
+    assembleContext(state, Array.from({ length: 80 }, () => plain).flat(), { counter, memoryTokens: 100000 });
+    assert.ok(builds() - base <= 4, 'eighty plain memories build ' + (builds() - base));
+});
+
+function batchConfig(directories, { batchMessages = 4, pawspective = false } = {}) {
+    const config = defaultConfig();
+    Object.assign(config.roles.extractor, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'test' });
+    config.roles.pawspective.enabled = pawspective;
+    config.batchMessages = batchMessages;
+    config.autoUpdate = false;
+    saveConfig(directories, config);
+    return config;
+}
+
+const emptyExtraction = { value: { records: [], interviews: [], activeNpcIds: [] }, usage: { role: 'extractor' } };
+
+test('while a model request is out, a batch holds the text only of the sources it sent', async t => {
+    const { directories } = disk(t, bulkMessages(30));
+    batchConfig(directories);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; });
+    let held;
+    let seen;
+    processingHooks.beforeModelRequest = state => { held = state; };
+    t.after(() => { processingHooks.beforeModelRequest = null; });
+    await processBatch(directories, locator, {}, async (_directories, _config, _role, _contract, input) => {
+        const sent = new Set(input.sources.map(source => source.id));
+        const revisions = ([id]) => held.sources[id].revisions;
+        const unsent = Object.entries(held.sources).filter(([id]) => !sent.has(id));
+        seen = {
+            sent: sent.size, unsent: unsent.length,
+            textInUnsent: unsent.flatMap(revisions).filter(revision => ['text', 'storyText', 'trackerOutputs'].some(key => key in revision)).length,
+            revisionsKept: unsent.flatMap(revisions).every(revision => typeof revision.hash === 'string' && Number.isInteger(revision.sequence) && typeof revision.enabled === 'boolean'),
+            textInSent: [...sent].every(id => held.sources[id].revisions.every(revision => typeof revision.text === 'string')),
+            vectors: Object.hasOwn(held.index, 'vectors'),
+            memory: Array.isArray(held.records) && Array.isArray(held.audit) && held.castHistory !== undefined,
+        };
+        return emptyExtraction;
+    });
+    assert.deepEqual(seen, { sent: 5, unsent: 26, textInUnsent: 0, revisionsKept: true, textInSent: true, vectors: false, memory: true });
+    assert.equal(pendingSources(await loadCurrentState(directories, locator), readConfig(directories)).length, 26, 'and the batch still completes');
+});
+
+test('a worker running several batches holds nothing of the previous batch while the next model request is out', async t => {
+    const v8 = await import('node:v8');
+    const vm = await import('node:vm');
+    v8.setFlagsFromString('--expose_gc');
+    const collect = vm.runInNewContext('gc');
+    const { directories } = disk(t, bulkMessages(30));
+    batchConfig(directories);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; });
+    const results = [];
+    processingHooks.afterBatch = result => { results.push(new WeakRef(result)); };
+    t.after(() => { processingHooks.afterBatch = null; });
+    let requests = 0;
+    let released = null;
+    await startProcessing(directories, locator, { all: true, checkpoint: true }, async () => {
+        requests++;
+        if (requests === 3) {
+            await new Promise(resolve => setImmediate(resolve));
+            collect(); collect();
+            released = results.slice(0, 2).map(reference => reference.deref() === undefined);
+        }
+        return emptyExtraction;
+    });
+    await waitForProcessing(directories, locator);
+    assert.ok(requests >= 3);
+    assert.deepEqual(released, [true, true], 'earlier batches are not kept alive by the worker');
+});
+
+test('recall builds passage documents only for what it can rank, and builds the rest when the selector asks for evidence', async t => {
+    const { directories } = disk(t);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; event(state); });
+    const config = defaultConfig();
+    config.writerTokenizer = 'cl100k_base';
+    Object.assign(config.roles.selector, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'selector' });
+    saveConfig(directories, config);
+    const complete = { status: 'complete', selections: [], rejections: [], needsEvidence: [] };
+    const built = [];
+    let requests = 0;
+    const call = async (_directories, _config, role, _contract, input) => {
+        built.push(searchStats.passageDocuments);
+        requests++;
+        const value = requests === 1 && input.candidates.length ? { ...complete, status: 'needs_evidence', needsEvidence: [input.candidates[0].recordId] } : complete;
+        return { value, usage: { role } };
+    };
+    const start = searchStats.passageDocuments;
+    await recall(directories, locator, { query: 'gift' }, { call, scheduleBackground: false });
+    assert.equal(requests, 2, 'the selector asked for evidence');
+    assert.equal(built[0] - start, 0, 'no passage document was built to put the first question to the selector');
+    assert.ok(built[1] - start > 0, 'the passages were built when the evidence was wanted');
+    // Switching passages on offers them, so they are built up front.
+    saveConfig(directories, { ...readConfig(directories), retrieval: { ...readConfig(directories).retrieval, includePassages: true } });
+    built.length = 0;
+    requests = 5;
+    const before = searchStats.passageDocuments;
+    await recall(directories, locator, { query: 'gift' }, { call, scheduleBackground: false });
+    assert.ok(built[0] - before > 0);
+});
+
+test('stamps cover a group chat: its folder of groups, each group file and its members\' cards', async t => {
+    const group = normalizeLocator({ group: true, chat: 'Group' });
+    const { directories } = disk(t);
+    const { write: writeCard } = await import('../src/character-card-parser.js');
+    const png = fs.readFileSync(new URL('../default/content/backgrounds/__transparent.png', import.meta.url));
+    for (const name of ['Mara', 'Kit']) fs.writeFileSync(path.join(directories.characters, name + '.png'), writeCard(png, JSON.stringify({ name, description: name + ' card' })));
+    fs.writeFileSync(chatPath(directories, group), [{ chat_metadata: {} }, ...bulkMessages(80)].map(row => JSON.stringify(row)).join('\n'));
+    const groupFile = path.join(directories.groups, 'group.json');
+    writeJson(groupFile, { id: 'group', chat_id: group.chat, members: ['Mara.png'] });
+    const members = () => loadCurrentStateSync(directories, group).contextSources.filter(ref => ref.id.startsWith('character:') && ref.id !== 'character:player').length;
+    const full = () => countWork(() => loadCurrentStateSync(directories, group)).counts.stringifyCalls >= 80;
+    assert.equal(members(), 1);
+    assert.equal(full(), false, 'unchanged: the shortcut');
+    // Edited in place, so the folder itself does not change: only the file's own stamp can tell.
+    fs.writeFileSync(groupFile, JSON.stringify({ id: 'group', chat_id: group.chat, members: ['Mara.png', 'Kit.png'] }));
+    assert.equal(full(), true, 'a changed group file reconciles');
+    assert.equal(members(), 2);
+    assert.equal(full(), false);
+    writeJson(path.join(directories.groups, 'another.json'), { id: 'another', chat_id: 'Elsewhere', chats: [group.chat], members: ['Kit.png'] });
+    assert.equal(full(), true, 'a new group file in the folder reconciles');
+    assert.equal(full(), false);
+    fs.rmSync(groupFile);
+    assert.equal(full(), true, 'a removed group file reconciles');
+    assert.equal(members(), 1);
+    assert.equal(full(), false);
+});
+
+test('a chat with saved tracker results from before the category snapshot still takes the shortcut, and notices a change to the Agent library', async t => {
+    const { COMPANION_RESULTS_EXTRA_KEY } = await import('../public/scripts/extensions/in-chat-agents/companion/companion-shared.js');
+    const messages = bulkMessages(80);
+    messages[3].extra = { [COMPANION_RESULTS_EXTRA_KEY]: { 'tpl-achievements-tracker': { status: 'done', content: 'Achievement unlocked: patience', agentName: 'Achievements' } } };
+    const { directories } = disk(t, messages);
+    const agents = path.join(directories.root, 'InChatAgents');
+    fs.mkdirSync(agents, { recursive: true });
+    const template = JSON.parse(fs.readFileSync(new URL('../public/scripts/extensions/in-chat-agents/templates/achievements-tracker.json', import.meta.url), 'utf8'));
+    const agentFile = path.join(agents, 'tpl-achievements-tracker.json');
+    const trackerText = state => JSON.stringify(state.sources[state.timeline[3].id].revisions.at(-1));
+    const full = () => countWork(() => loadCurrentStateSync(directories, locator)).counts.stringifyCalls >= 80;
+    assert.doesNotMatch(trackerText(loadCurrentStateSync(directories, locator)), /Achievement unlocked/, 'without the agent the note is not a tracker note');
+    loadCurrentStateSync(directories, locator);
+    assert.equal(full(), false, 'unchanged: the shortcut, although the chat has legacy tracker results');
+    fs.writeFileSync(agentFile, JSON.stringify(template));
+    assert.equal(full(), true, 'adding the agent to the library reconciles');
+    assert.match(trackerText(loadCurrentStateSync(directories, locator)), /Achievement unlocked/);
+    assert.equal(full(), false);
+    fs.writeFileSync(agentFile, JSON.stringify({ ...template, category: 'companion' }));
+    assert.equal(full(), true, 'editing it reconciles');
+    assert.equal(full(), false);
+    fs.rmSync(agentFile);
+    assert.equal(full(), true, 'removing it reconciles');
+});
+
+test('a file stamped after it was read is trusted only once it was quiet before the read began, and a mismatch is never trusted', t => {
+    const { directories } = disk(t, bulkMessages(80));
+    directories.files = path.join(directories.root, 'user/files');
+    fs.mkdirSync(directories.files, { recursive: true });
+    writeJson(path.join(directories.root, 'settings.json'), { extension_settings: { attachments: [{ url: '/user/files/note.txt' }] } });
+    const noteFile = path.join(directories.files, 'note.txt');
+    const full = () => countWork(() => loadCurrentStateSync(directories, locator)).counts.stringifyCalls >= 80;
+    fs.writeFileSync(noteFile, 'Fresh note');
+    loadCurrentStateSync(directories, locator);
+    assert.equal(full(), true, 'a file written just before the read could have been replaced during it: no shortcut yet');
+    letFilesSettle();
+    loadCurrentStateSync(directories, locator);
+    assert.equal(full(), false, 'once the file has been quiet, the shortcut');
+    // A stamp that does not describe the file that was read is dropped.
+    fs.writeFileSync(noteFile, 'Another note');
+    letFilesSettle();
+    const identity = fs.statSync;
+    t.mock.method(fs, 'statSync', (filename, options) => {
+        const stat = identity.call(fs, filename, options);
+        return options?.bigint && String(filename).endsWith('note.txt') ? { ...stat, ino: stat.ino + 1n, isFile: () => true } : stat;
+    });
+    loadCurrentStateSync(directories, locator);
+    t.mock.restoreAll();
+    assert.equal(full(), true, 'the mismatch left nothing to trust');
+});
+
+test('the periodic safety pass of the worker reconciles from scratch instead of taking the shortcut', async t => {
+    const { directories } = disk(t, bulkMessages(80));
+    const config = defaultConfig();
+    Object.assign(config.roles.extractor, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'test' });
+    config.autoUpdate = true;
+    saveConfig(directories, config);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => {
+        state.enabled = true;
+        syncSources(state, bulkMessages(80), []);
+        for (const ref of state.timeline) state.checkpoints[refKey(ref)] = processingVersion(config);
+    });
+    await loadCurrentState(directories, locator);
+    await loadCurrentState(directories, locator);
+    const call = async () => assert.fail('nothing is waiting to be read');
+    const loadsDuring = async () => (await countWork(() => scanProcessing(directories, call))).counts.stringifyCalls;
+    let now = Date.now();
+    t.mock.method(Date, 'now', () => now);
+    await scanProcessing(directories, call);
+    assert.ok(await loadsDuring() < 40, 'a second pass right away skips the story');
+    now += 5 * 60_000;
+    assert.ok(await loadsDuring() < 40, 'five minutes later it still does');
+    now += 11 * 60_000;
+    assert.ok(await loadsDuring() >= 80, 'after ten minutes the safety pass hashes every message even though no input changed');
+});
+
+test('every Mewmory route, a batch, recall and indexing only read the shared state, which stays deeply frozen', async t => {
+    const messages = structuredClone(fixture.messages);
+    let next = 0;
+    ensureMewmoryMessageIds(messages, () => 'frozen-' + next++);
+    const { directories } = disk(t, messages);
+    const provider = await createMewmoryProvider();
+    t.after(() => new Promise(resolve => provider.server.close(resolve)));
+    const config = defaultConfig();
+    config.writerTokenizer = 'cl100k_base';
+    config.batchMessages = 3;
+    for (const [name, role] of Object.entries(config.roles)) Object.assign(role, { enabled: true, endpoint: provider.url, model: name });
+    saveConfig(directories, config);
+    await loadCurrentState(directories, locator);
+    const gift = giftHistory().state;
+    mutateState(directories, locator, state => {
+        for (const key of ['records', 'audit', 'overrides', 'castHistory', 'sceneNpcIds']) state[key] = structuredClone(gift[key]);
+        state.enabled = true;
+    });
+    const freeze = value => { if (value && typeof value === 'object' && !Object.isFrozen(value)) { Object.freeze(value); Object.values(value).forEach(freeze); } };
+    sharedJsonHooks.onParse = freeze;
+    t.after(() => { sharedJsonHooks.onParse = null; });
+    const errors = [];
+    t.mock.method(console, 'error', (...args) => { errors.push(args.map(String).join(' ')); });
+    const express = (await import('express')).default;
+    const { router } = await import('../src/endpoints/mewmory.js');
+    const app = express();
+    app.use(express.json({ limit: '50mb' }));
+    app.use((request, response, next) => { request.user = { directories, profile: { handle: 'default-user' } }; next(); });
+    app.use(router);
+    const server = await new Promise(resolve => { const listener = app.listen(0, '127.0.0.1', () => resolve(listener)); });
+    t.after(() => new Promise(resolve => server.close(resolve)));
+    const post = async (route, body = {}) => {
+        const response = await fetch('http://127.0.0.1:' + server.address().port + route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ locator, ...body }) });
+        return { status: response.status, body: await response.json().catch(() => null) };
+    };
+    const inspect = async () => (await post('/inspect')).body;
+    const statuses = {};
+    const run = async (route, body) => { statuses[route] = (await post(route, typeof body === 'function' ? body(await inspect()) : body)).status; };
+    for (const [route, body] of [
+        ['/config/get'], ['/inspect'], ['/duplicates'], ['/story'], ['/lore'], ['/export'], ['/export/markdown'], ['/estimate'], ['/validate', { fingerprint: 'x' }],
+        ['/character', { entityId: 'npc:mara' }], ['/record/history', { id: 'event:gift' }], ['/message', { index: 2 }], ['/shared'],
+        ['/source/get', current => ({ ref: current.sources[0] })],
+        ['/search', { query: 'gift', mode: 'keyword' }], ['/search', { query: 'gift', mode: 'hybrid' }],
+        ['/recall', { query: 'gift' }], ['/tokens', { texts: ['one two'] }], ['/ask', { question: 'What did Mara do with the gift?' }], ['/conflicts'],
+        ['/prepare', { history: [{ index: 0, text: 'hello' }], tokenizer: {} }],
+        ['/share', { ids: ['event:gift'] }],
+        ['/scene', current => ({ revision: current.revision, activeNpcIds: null })],
+        ['/review/seen', current => ({ revision: current.revision })],
+        ['/record/action', current => ({ revision: current.revision, id: 'event:gift', action: 'pin' })],
+        ['/record/action', current => ({ revision: current.revision, id: 'event:gift', action: 'pin' })],
+        ['/source/exclude', current => ({ revision: current.revision, id: current.sources[0].id, exclude: true })],
+        ['/source/exclude', current => ({ revision: current.revision, id: current.sources[0].id, exclude: false })],
+        ['/record/merge', current => ({ revision: current.revision, keep: 'event:gift', ids: ['event:gift', 'knowledge:gift'] })],
+        ['/index', {}], ['/process', { all: true, background: true }], ['/process/cancel'], ['/restore', current => ({ revision: current.revision, backup: { format: 'mewmory-export-1', state: current }, apply: false })],
+    ]) await run(route, body);
+    await recall(directories, locator, { query: 'gift' }, { call: async (_d, _c, role) => ({ value: { status: 'complete', selections: [], rejections: [], needsEvidence: [] }, usage: { role } }), scheduleBackground: false });
+    await waitForProcessing(directories, locator);
+    // Not one request hit a TypeError for editing a frozen object, and the routes that need no model answered.
+    assert.deepEqual(errors.filter(line => /TypeError|read only|not extensible|Cannot (add|assign|delete)/.test(line)), []);
+    for (const route of ['/inspect', '/duplicates', '/story', '/lore', '/export', '/export/markdown', '/estimate', '/character', '/record/history', '/message', '/shared', '/source/get', '/search', '/scene', '/review/seen', '/record/action', '/source/exclude']) {
+        assert.equal(statuses[route], 200, route);
+    }
+    assert.ok(Object.keys(statuses).length >= 30);
+});
+
+test('a background recall keeps the index it found when nothing touched it and respects a reset made while it picked', async t => {
+    const { directories } = disk(t);
+    const provider = await createMewmoryProvider();
+    t.after(() => new Promise(resolve => provider.server.close(resolve)));
+    const config = defaultConfig();
+    config.writerTokenizer = 'cl100k_base';
+    Object.assign(config.roles.embedding, { enabled: true, endpoint: provider.url, model: 'embedding' });
+    Object.assign(config.roles.selector, { enabled: true, endpoint: provider.url, model: 'selector' });
+    saveConfig(directories, config);
+    await loadCurrentState(directories, locator);
+    const indexed = mutateState(directories, locator, state => { state.enabled = true; event(state); });
+    await updateIndex(indexed, directories, readConfig(directories));
+    mutateState(directories, locator, () => indexed, indexed.revision);
+    const stored = () => Object.keys(readStateShared(directories, locator).index.vectors).length;
+    const before = stored();
+    assert.ok(before > 0);
+    const pick = changeIndex => async (_directories, _config, role) => {
+        changeIndex?.();
+        return { value: { status: 'complete', selections: [], rejections: [], needsEvidence: [] }, usage: { role } };
+    };
+    const recallWith = changeIndex => recall(directories, locator, { background: true, query: 'gift' }, { call: pick(changeIndex), scheduleBackground: false });
+    await recallWith();
+    assert.equal(stored(), before, 'an index nobody touched is kept');
+    await recallWith(() => mutateState(directories, locator, state => { state.index = { version: '', vectors: {}, pending: true }; }));
+    assert.equal(stored(), 0, 'a reset made during the pick is not undone by the older snapshot');
 });

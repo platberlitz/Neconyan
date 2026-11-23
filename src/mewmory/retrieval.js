@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import {
     eligibleRecords, fail, hash, list, object, refKey, sourceAt, sourceEligible, text,
 } from './core.js';
@@ -38,6 +39,14 @@ export function recallInBackground(directories, locator, options = {}, dependenc
     running.set(key, job);
     job.catch(error => { if (!controller.signal.aborted) console.warn('Mewmory background recall:', error.message); });
     return job;
+}
+
+/**
+ * The index as it is now, to compare with later. Only the two small wrappers are copied: the vector maps
+ * and their entries are never edited in place, and a deep comparison passes over any entry both sides share.
+ */
+function indexShell(index) {
+    return { ...index, ...(index.build && typeof index.build === 'object' ? { build: { ...index.build } } : {}) };
 }
 
 export function recallFingerprint(state, config, sourceCount) {
@@ -190,7 +199,7 @@ export function forcedMatches(state, documents, query, asOf) {
     return documents.filter(document => ids.has(document.recordId));
 }
 
-async function selectMemories(state, directories, config, documents, scene, allDocuments, asOf, signal, call, sourceDocuments = allDocuments) {
+async function selectMemories(state, directories, config, documents, scene, allDocuments, asOf, signal, call, sourceDocuments = () => allDocuments) {
     const usage = [];
     let evidence = new Map();
     let { candidates, overviews } = candidateInput(state, documents, asOf);
@@ -229,7 +238,7 @@ async function selectMemories(state, directories, config, documents, scene, allD
         const expansion = allDocuments.filter(document => !supplied.has(document.id) && document.kind !== 'source'
             && linkedIds.has(document.recordId)).slice(0, 12);
         documents = [...new Map([...documents, ...expansion].map(document => [document.id, document])).values()];
-        evidence = evidenceFor(requested.filter(document => document.kind !== 'source'), sourceDocuments);
+        evidence = evidenceFor(requested.filter(document => document.kind !== 'source'), sourceDocuments());
         ({ candidates, overviews } = candidateInput(state, documents, asOf, evidence));
         try { status = await select('selector'); } catch (failure) { signal?.throwIfAborted(); error = failure.message; }
     }
@@ -263,7 +272,7 @@ export async function recall(directories, locator, {
     // Background picks read only messages up to asOf; a reply after it (and agents rewriting that reply) must not discard them.
     const sourceCount = background && Number.isFinite(asOf) ? Math.max(0, Math.min(timelineLength, Math.floor(asOf) + 1)) : timelineLength;
     const validationFingerprint = background ? recallFingerprint(state, config, sourceCount) : generationFingerprint(state, config);
-    const indexSnapshot = hash(state.index);
+    const indexSnapshot = indexShell(state.index);
     const counter = await getCounter(config.writerTokenizer, tokenizer);
     // A group speaker who missed a line reads only what they heard; fingerprints still describe the whole chat.
     const view = viewer?.state || state;
@@ -289,9 +298,10 @@ export async function recall(directories, locator, {
     });
     if (manualQuery) scene.push({ id: 'inspection-query', speaker: 'Author search', text: text(manualQuery, 'Search', 6000) });
     const query = scene.map(cue => cue.speaker + ': ' + cue.text).join('\n');
-    const sourceDocuments = searchDocuments(view, asOf, config);
-    // Recall offers saved memory entries (and attached files); raw chat, card and lore passages only when switched on.
-    const allDocuments = recallPool(sourceDocuments, config);
+    // Recall offers saved memory entries (and attached files); raw chat, card and lore passages only when switched on,
+    // so only those are built. The selector's request for original passages builds the full set when it comes.
+    const allDocuments = recallPool(searchDocuments(view, asOf, config, { poolOnly: true }), config);
+    const sourceDocuments = () => searchDocuments(view, asOf, config);
     const retainedByRef = new Map(retained.map(item => [refKey(item.ref), String(item.text || '').replace(/\r\n/g, '\n')]));
     const retainedPairs = retained.map(item => [refKey(item.ref), item.text]);
     const coverageSignature = hash(retainedPairs);
@@ -408,7 +418,7 @@ export async function recall(directories, locator, {
             fail('The chat, Mewmory settings, or a memory you edited changed while memories were being picked. Send or regenerate again.', 409);
         }
         const indexState = background ? { ...current, timeline: current.timeline.slice(0, timelineLength) } : current;
-        if (!local && assemblyFingerprint(indexState, config) === fingerprint && hash(current.index) === indexSnapshot) {
+        if (!local && assemblyFingerprint(indexState, config) === fingerprint && isDeepStrictEqual(current.index, indexSnapshot)) {
             current.index = { ...state.index, pending: state.index.pending || current.timeline.length > timelineLength };
         } else if (!local && background) {
             // Merge only vectors paid for by this run. The snapshot loaded before updateIndex may

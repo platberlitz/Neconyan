@@ -1,5 +1,5 @@
 import process from 'node:process';
-import { formatWithOptions } from 'node:util';
+import { formatWithOptions, inspect, types } from 'node:util';
 
 const MAX_SERVER_LOG_ENTRIES = 1500;
 const MAX_SERVER_LOG_MESSAGE_LENGTH = 12000;
@@ -86,8 +86,17 @@ function truncateMessage(value) {
     return `${value.slice(0, MAX_SERVER_LOG_MESSAGE_LENGTH - 1).trimEnd()}…`;
 }
 
+/**
+ * A kept line must own its characters. The pieces a long output is split into, and a truncated line, are
+ * views onto the whole parent string, so keeping one of them keeps the whole output alive. Appending a
+ * character forces a flat copy of just this text, and slicing that off leaves a view onto the copy.
+ */
+function detachedText(value) {
+    return value.length < 13 ? value : `${value}\0`.slice(0, -1);
+}
+
 function appendLogEntry(stream, message) {
-    const normalizedMessage = truncateMessage(String(message ?? ''));
+    const normalizedMessage = detachedText(truncateMessage(String(message ?? '')));
     if (!normalizedMessage) {
         return;
     }
@@ -146,13 +155,126 @@ function consumeStreamChunk(stream, chunk, encoding) {
     consumeNormalizedOutput(stream, chunk, encoding);
 }
 
+// What util.inspect prints is bounded by its depth and by these defaults for arrays and strings, but not by how
+// many properties an object has, so a logged object with a million keys is formatted line by line however little
+// of it the buffer keeps.
+const FORMAT_DEPTH = 10;
+const INSPECT_ARRAY_ITEMS = 100;
+const INSPECT_STRING_CHARACTERS = 10000;
+// An argument that would print more than this many values, or this much text, is cut before it is formatted. It
+// would fill the whole 1,500 line buffer three times over, and only its last lines would survive. Everything
+// smaller is formatted exactly as util.format always did.
+const FORMAT_VALUE_LIMIT = 5000;
+const FORMAT_CHARACTER_LIMIT = 1_000_000;
+// A cut argument keeps its first lines only: at most this many for the whole call (under 7% of the buffer,
+// shared by its cut arguments, at least five each), from a copy of at most this many values whose arrays show
+// 20 items and whose strings 1,000 characters.
+const CUT_CALL_LINES = 100;
+const CUT_COPY_VALUES = 40;
+const CUT_ARRAY_ITEMS = 20;
+const CUT_STRING_CHARACTERS = 1000;
+
+/** Objects whose own data properties are read to size or copy them: plain objects, arrays, maps and sets. */
+function isReadable(value) {
+    if (types.isProxy(value)) return false;
+    const prototype = Object.getPrototypeOf(value);
+    return prototype === Object.prototype || prototype === null || Array.isArray(value) || types.isMap(value) || types.isSet(value);
+}
+
+/**
+ * The values util.inspect would print for an object, without running a getter or a proxy trap (an accessor
+ * is printed as [Getter], so it counts as one value and is not read). Returns null for what is not read.
+ */
+function* shownValues(value) {
+    if (types.isMap(value) || types.isSet(value)) {
+        let shown = 0;
+        for (const entry of types.isMap(value) ? Map.prototype.entries.call(value) : Set.prototype.values.call(value)) {
+            if (shown++ >= INSPECT_ARRAY_ITEMS) return;
+            yield* types.isMap(value) ? entry : [entry];
+        }
+        return;
+    }
+    const keys = Array.isArray(value) ? Array.from({ length: Math.min(value.length, INSPECT_ARRAY_ITEMS) }, (_, index) => String(index)) : Object.keys(value);
+    for (const key of keys) {
+        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        yield descriptor && Object.hasOwn(descriptor, 'value') ? descriptor.value : undefined;
+    }
+}
+
+/** Whether an argument would print more than the limits above. Shared references count each time they print; a reference back to an object being printed prints once as [Circular]. */
+function exceedsFormatLimit(root) {
+    const left = { values: FORMAT_VALUE_LIMIT, characters: FORMAT_CHARACTER_LIMIT };
+    const ancestors = new Set();
+    const exceeds = (value, depth) => {
+        if (typeof value === 'string') return (left.characters -= Math.min(value.length, INSPECT_STRING_CHARACTERS)) < 0;
+        if (--left.values < 0) return true;
+        // An object deeper than the print depth prints as [Object]; an ancestor prints as [Circular].
+        if (!value || typeof value !== 'object' || depth > FORMAT_DEPTH || ancestors.has(value) || !isReadable(value)) return false;
+        ancestors.add(value);
+        try {
+            for (const child of shownValues(value)) if (exceeds(child, depth + 1)) return true;
+            return false;
+        } finally {
+            ancestors.delete(value);
+        }
+    };
+    return exceeds(root, 0);
+}
+
+/** A copy of at most CUT_COPY_VALUES values of an argument, keeping shared and circular references and never running a getter. */
+function cutCopy(root) {
+    const left = { values: CUT_COPY_VALUES };
+    const copies = new Map();
+    const copy = (value, depth) => {
+        if (!value || typeof value !== 'object') return value;
+        if (copies.has(value)) return copies.get(value);
+        if (!isReadable(value)) return `[${types.isProxy(value) ? 'Proxy' : Object.getPrototypeOf(value)?.constructor?.name ?? 'Object'}]`;
+        if (depth > FORMAT_DEPTH) return Array.isArray(value) ? ['…'] : { '…': 'deeper' };
+        const array = Array.isArray(value);
+        const result = array ? [] : types.isMap(value) ? new Map() : types.isSet(value) ? new Set() : Object.getPrototypeOf(value) === null ? Object.create(null) : {};
+        copies.set(value, result);
+        const mark = () => { if (array) result.push('…'); else if (types.isMap(value)) result.set('…', 'more'); else if (types.isSet(value)) result.add('…'); else result['…'] = 'more'; };
+        if (types.isMap(value) || types.isSet(value)) {
+            for (const entry of types.isMap(value) ? Map.prototype.entries.call(value) : Set.prototype.values.call(value)) {
+                if (--left.values < 0 || result.size >= CUT_ARRAY_ITEMS) { mark(); break; }
+                if (types.isMap(value)) result.set(copy(entry[0], depth + 1), copy(entry[1], depth + 1)); else result.add(copy(entry, depth + 1));
+            }
+            return result;
+        }
+        const keys = array ? Array.from({ length: Math.min(value.length, CUT_ARRAY_ITEMS) }, (_, index) => String(index)) : Object.keys(value);
+        for (const key of keys) {
+            if (--left.values < 0) { mark(); break; }
+            const descriptor = Object.getOwnPropertyDescriptor(value, key);
+            if (descriptor && !Object.hasOwn(descriptor, 'value')) {
+                // Printed as [Getter], [Setter] or [Getter/Setter] without being run.
+                Object.defineProperty(result, key, { enumerable: true, get: descriptor.get && (() => undefined), set: descriptor.set && (() => {}) });
+            } else result[key] = copy(descriptor?.value, depth + 1);
+        }
+        if (array && value.length > keys.length) mark();
+        return result;
+    };
+    return copy(root, 0);
+}
+
+function cutText(argument, lines, options) {
+    const text = inspect(cutCopy(argument), { ...options, maxArrayLength: CUT_ARRAY_ITEMS, maxStringLength: CUT_STRING_CHARACTERS }).split('\n');
+    return [...text.slice(0, lines - 1), '… (a value too large to keep in the log; only its start is kept)'].join('\n');
+}
+
 function captureConsoleCall(stream, args) {
-    const formattedMessage = formatWithOptions({
+    const options = {
         colors: false,
-        depth: 10,
+        depth: FORMAT_DEPTH,
         breakLength: Infinity,
         compact: false,
-    }, ...args);
+    };
+    // Only an argument too large to be kept is formatted differently; the terminal always gets the original arguments.
+    const cut = args.map(argument => argument !== null && typeof argument === 'object' && exceedsFormatLimit(argument));
+    const cutCount = cut.filter(Boolean).length;
+    const lines = Math.max(5, Math.floor(CUT_CALL_LINES / Math.max(1, cutCount)));
+    const shown = args.map((argument, index) => cut[index] ? cutText(argument, lines, options) : argument);
+    // A cut first argument is printed through %s so any % in its text is not read as a format.
+    const formattedMessage = cut[0] ? formatWithOptions(options, '%s', ...shown) : formatWithOptions(options, ...shown);
 
     consumeNormalizedOutput(stream, formattedMessage, 'utf8', { flushTrailing: true });
 }

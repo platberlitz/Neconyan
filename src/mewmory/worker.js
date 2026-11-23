@@ -217,7 +217,8 @@ export async function scanProcessing(directories, call, { reconcile = true } = {
                 const last = reconciled.get(key);
                 if (last?.idle && Date.now() - last.at < RECONCILE_REFRESH_MS
                     && last.stamp === hash([shared, chat, fileStamp(key)])) continue;
-                state = await loadCurrentState(directories, story.locator);
+                // The periodic pass is the safety net for an input nothing noticed changing, so it reconciles from scratch.
+                state = await loadCurrentState(directories, story.locator, { fresh: Boolean(last?.idle) && Date.now() - last.at >= RECONCILE_REFRESH_MS });
             } else {
                 state = readStateShared(directories, story.locator);
             }

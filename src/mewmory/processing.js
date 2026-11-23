@@ -10,6 +10,9 @@ import { mutateState, readStateShared, statePath } from './store.js';
 import { beginServerWork } from '../android-wake.js';
 import { batchState, memberHeard, memoryAudience, memoryFloor, memoryHorizon, sameAudience, sourceAudience } from './viewers.js';
 
+/** Lets a test look at the working state as a model request goes out, and at the state a batch hands back. */
+export const testHooks = { beforeModelRequest: null, afterBatch: null };
+
 // startProcessing owns production admission, but processBatch is exported for tests and
 // future callers. This separate map joins another direct call to processBatch, so two
 // direct callers cannot pay for the same extraction twice or race its memory write. The
@@ -44,6 +47,26 @@ export function pendingSources(state, config, { checkpoint = false, through = In
     const coverage = checkpoint ? state.checkpoints : state.coverage;
     return state.timeline.filter(ref => sourceEligible(state, ref, through)
         && (unreadOnly ? !sourceRead(coverage, ref) : coverage[refKey(ref)] !== policy));
+}
+
+/**
+ * What the inspection shows from one pass over the timeline: messages not yet read, messages without a
+ * preservation checkpoint, and messages that count as read but under an older policy. The same marks
+ * pendingSources applies, without walking and checking every message three times.
+ */
+export function pendingCounts(state, config, { followCheckpoints = false } = {}) {
+    const policy = processingVersion(config);
+    const marks = followCheckpoints ? state.checkpoints : state.coverage;
+    let unread = 0;
+    let checkpointUnread = 0;
+    let pending = 0;
+    for (const ref of state.timeline) {
+        if (!sourceEligible(state, ref)) continue;
+        if (!sourceRead(state.coverage, ref)) unread++;
+        if (!sourceRead(state.checkpoints, ref)) checkpointUnread++;
+        if (marks[refKey(ref)] !== policy) pending++;
+    }
+    return { unread, checkpointUnread, rereadPending: pending - (followCheckpoints ? checkpointUnread : unread) };
 }
 
 export function addUsage(state, entries) {
@@ -192,19 +215,22 @@ function batchRefs(value, batch) {
 }
 
 /** Repairs the slips cheap models make, so one wrong detail does not sink an otherwise good reply. */
-function tidyProposal(state, proposed, batch, asOf, view = state) {
+function tidyProposal(state, proposed, batch, usableRecords) {
     const tidy = { ...proposed, id: cleanId(proposed.id), subjectIds: cleanIds(proposed.subjectIds) };
     for (const key of ['entityId', 'ownerId']) if (key in tidy) tidy[key] = cleanId(tidy[key]);
     tidy.refs = batchRefs(proposed.refs, batch);
     tidy.evidenceRefs = batchRefs(proposed.evidenceRefs || [], batch);
-    const usable = eligibleRecords(view, { asOf }).filter(record => objectiveKinds.includes(record.kind));
-    tidy.dependencies = (Array.isArray(proposed.dependencies) ? proposed.dependencies : [])
-        .map(dependency => usable.find(record => record.id === (typeof dependency === 'string' ? dependency : dependency?.id)))
+    const proposedDependencies = Array.isArray(proposed.dependencies) ? proposed.dependencies : [];
+    tidy.dependencies = proposedDependencies
+        .map(dependency => usableRecords().find(record => record.id === (typeof dependency === 'string' ? dependency : dependency?.id)))
         .filter(Boolean).map(record => ({ id: record.id, version: record.version }));
     if (tidy.kind === 'knowledge' && typeof tidy.evidenceText === 'string') {
-        const sources = [...tidy.refs, ...batch.values()];
-        const found = sources.map(ref => ({ ref, quote: findQuote(sourceAt(state, ref)?.text || '', tidy.evidenceText) }))
-            .find(item => item.quote);
+        // The first source that holds the quote decides; the later ones are not searched.
+        let found = null;
+        for (const ref of [...tidy.refs, ...batch.values()]) {
+            const quote = findQuote(sourceAt(state, ref)?.text || '', tidy.evidenceText);
+            if (quote) { found = { ref, quote }; break; }
+        }
         if (found) {
             tidy.evidenceText = found.quote;
             tidy.refs = uniqueRefs([...tidy.refs, found.ref]);
@@ -234,8 +260,11 @@ export function applyExtraction(state, output, input, skipped = [], interviewSki
     // Everything the model saw for this batch, so a member caught up on all of it may read what it wrote.
     const shown = [...input.existing || [], ...input.authorOverrides || []];
     const lines = [input.asOf, ...chatSources.map(source => source.sequence)];
+    // Nothing is saved until every proposal is tidied, so one list of usable memories serves them all.
+    let usable;
+    const usableRecords = () => usable ??= eligibleRecords(view, { asOf: input.asOf }).filter(record => objectiveKinds.includes(record.kind));
     const records = list(output.records ?? [], 'Extracted records', Infinity).slice(0, 80)
-        .filter(proposed => proposed && typeof proposed === 'object').map(proposed => tidyProposal(state, proposed, batch, input.asOf, view));
+        .filter(proposed => proposed && typeof proposed === 'object').map(proposed => tidyProposal(state, proposed, batch, usableRecords));
     const order = { entity: 0, state: 1, event: 2, relationship: 3, knowledge: 4, commitment: 5 };
     const seen = new Set();
     for (const proposed of records.slice().sort((a, b) => (order[a.kind] ?? 9) - (order[b.kind] ?? 9))) try {
@@ -398,6 +427,16 @@ function processingWorkingState(state) {
     return { ...state, index };
 }
 
+/**
+ * Applying a reply only needs the wording of the sources this batch sent (quotes are checked against it);
+ * every other source is read for its flags, sequence and hash. Dropping the rest of the chat's text lets
+ * it go while the model request is out, which can take minutes.
+ */
+function dropUnsentText(state, sentIds) {
+    state.sources = Object.fromEntries(Object.entries(state.sources).map(([id, source]) => [id, sentIds.has(id) ? source
+        : { ...source, revisions: source.revisions.map(({ text, storyText, trackerOutputs, ...kept }) => kept) }]));
+}
+
 async function runBatch(directories, locator, options, call) {
     const config = readConfig(directories);
     const roleKeys = Object.fromEntries(['extractor', 'pawspective']
@@ -443,7 +482,9 @@ async function runBatch(directories, locator, options, call) {
         snapshotRead = readFingerprint(state, sourceCount, contextIds);
         input.provenance = { policy: POLICY_VERSION, jobId, role: 'extractor', model: config.roles.extractor.model, modelRevision: config.roles.extractor.modelRevision };
         const dataTypes = [...new Set([...input.sources.map(source => source.type), ...(input.existing.length || input.authorOverrides.length ? ['memory'] : [])])];
+        dropUnsentText(state, new Set(input.sources.map(source => source.id)));
         assertEnabled();
+        testHooks.beforeModelRequest?.(state);
         const extraction = await call(directories, config, 'extractor', extractionContract(config), input, { dataTypes, signal: options.signal });
         usage.push(extraction.usage);
         const requestAsOf = request => Math.max(-1, ...request.refs.map(ref => sourceAt(state, ref).sequence));
@@ -568,7 +609,9 @@ export async function processBatch(directories, locator, options = {}, call = ca
     running.set(key, job);
     const endWork = beginServerWork();
     try {
-        return await job;
+        const result = await job;
+        testHooks.afterBatch?.(result);
+        return result;
     } finally {
         running.delete(key);
         endWork();

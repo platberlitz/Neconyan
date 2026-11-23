@@ -37,7 +37,7 @@ export function statePath(directories, locator) {
     return path.join(directories.root, 'mewmory', 'stories', hash(normalizeLocator(locator)) + '.json');
 }
 
-function recoveryPath(directories, locator) {
+export function recoveryPath(directories, locator) {
     return path.join(directories.root, 'mewmory', 'recovery', hash(normalizeLocator(locator)) + '.json');
 }
 
@@ -54,10 +54,11 @@ export function buildMemoryRecoveryGuard(state) {
     return guard;
 }
 
-function writeState(directories, state) {
+/** `serialized` is the finished text of `state` (normalised locator included) when the caller already built it. */
+function writeState(directories, state, serialized) {
     state.locator = normalizeLocator(state.locator);
     // Archives reach several megabytes; serialise once for both the size check and the write.
-    const serialized = JSON.stringify(state);
+    serialized ??= JSON.stringify(state);
     if (Buffer.byteLength(serialized) > MAX_ARCHIVE_BYTES) fail('This chat’s memory file has reached the 256 MiB size limit.', 413);
     const guard = buildMemoryRecoveryGuard(state);
     // Persist rejection counters before prose. A failed archive write can only make recovery stricter.
@@ -84,12 +85,15 @@ function writeState(directories, state) {
  * the file still has the device, inode, size and times it had straight after the save.
  */
 const writtenStates = new Map();
-const WRITTEN_STATE_MAX_CHARS = 32 * 1024 * 1024;
-let writtenStateChars = 0;
+// V8 keeps JSON text that holds any character above U+00FF (a curly quote, a dash, an emoji) at two bytes per
+// character, and JavaScript cannot tell which representation a string has, so the budget counts the worst case.
+const WRITTEN_STATE_MAX_BYTES = 48 * 1024 * 1024;
+const writtenStateBytes = serialized => serialized.length * 2;
+let writtenStateTotal = 0;
 
 const statIdentity = stat => [stat.dev, stat.ino, stat.size, stat.mtimeMs, stat.ctimeMs].join(':');
 
-function fileIdentity(filename) {
+export function fileIdentity(filename) {
     try {
         return statIdentity(fs.statSync(filename));
     } catch {
@@ -101,15 +105,15 @@ function forgetWrittenState(filename) {
     const written = writtenStates.get(filename);
     if (!written) return;
     writtenStates.delete(filename);
-    writtenStateChars -= written.serialized.length;
+    writtenStateTotal -= writtenStateBytes(written.serialized);
 }
 
 function rememberWrittenState(filename, serialized, identity = fileIdentity(filename)) {
     forgetWrittenState(filename);
-    if (!identity || serialized.length > WRITTEN_STATE_MAX_CHARS) return;
+    if (!identity || writtenStateBytes(serialized) > WRITTEN_STATE_MAX_BYTES) return;
     writtenStates.set(filename, { identity, serialized });
-    writtenStateChars += serialized.length;
-    while (writtenStateChars > WRITTEN_STATE_MAX_CHARS) forgetWrittenState(writtenStates.keys().next().value);
+    writtenStateTotal += writtenStateBytes(serialized);
+    while (writtenStateTotal > WRITTEN_STATE_MAX_BYTES) forgetWrittenState(writtenStates.keys().next().value);
 }
 
 /**
@@ -192,11 +196,17 @@ export function readJson(filename, fallback) {
  * between callers, so treat it as read-only; never mutate it. A cached copy is
  * reused only while the file still has the same device, inode, size and
  * modification time, so an edited or replaced file is read again on its next
- * use. The cache is bounded by source bytes rather than entry count because a
+ * use. The cache is bounded by estimated heap bytes rather than entry count because a
  * single archive may be large.
  */
 const sharedJsonCache = new Map();
-const SHARED_JSON_CACHE_MAX_BYTES = 64 * 1024 * 1024;
+// Parsed JSON takes several times its file size on the heap. Measured with forced collections: an MVU-style
+// nested chat 4.4x, a prose chat 3.8x, an archive 3.7x, small-key objects alone 3.4x. The estimate rounds up to 5.
+const PARSED_SIZE_FACTOR = 5;
+// Estimated heap. This is the earlier 64 MiB of files at the estimated size of parsed data, so what an ordinary
+// account keeps cached (the tester's five archives and settings.json together are 31 MiB of files) is unchanged;
+// the figure now states the memory that holds, and the memory-pressure reclaimer empties it.
+const SHARED_JSON_CACHE_MAX_BYTES = 64 * 1024 * 1024 * PARSED_SIZE_FACTOR;
 let sharedJsonCacheBytes = 0;
 
 function sameCachedFileStat(cached, stat) {
@@ -210,6 +220,9 @@ function removeCachedJson(key) {
     sharedJsonCache.delete(key);
     sharedJsonCacheBytes -= cached.bytes;
 }
+
+/** Lets a test see (and for instance freeze) every value the shared cache is about to keep. */
+export const sharedJsonHooks = { onParse: null };
 
 export function readJsonShared(filename, fallback) {
     const key = path.resolve(filename);
@@ -248,7 +261,8 @@ export function readJsonShared(filename, fallback) {
         && /^[0-9a-f]{64}\.json$/.test(path.basename(key))) {
         compactArchiveVectors(data, { inPlace: true });
     }
-    const entry = { dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs, bytes: stat.size, data };
+    sharedJsonHooks.onParse?.(data, key);
+    const entry = { dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs, bytes: stat.size * PARSED_SIZE_FACTOR, data };
     sharedJsonCache.set(key, entry);
     sharedJsonCacheBytes += entry.bytes;
     while (sharedJsonCacheBytes > SHARED_JSON_CACHE_MAX_BYTES && sharedJsonCache.size > 1) {
@@ -258,7 +272,8 @@ export function readJsonShared(filename, fallback) {
 }
 
 const chatReadCache = new Map();
-const CHAT_READ_CACHE_MAX_BYTES = 64 * 1024 * 1024;
+// Estimated heap again (see PARSED_SIZE_FACTOR): the same 64 MiB of chat files as before.
+const CHAT_READ_CACHE_MAX_BYTES = 64 * 1024 * 1024 * PARSED_SIZE_FACTOR;
 let chatReadCacheBytes = 0;
 
 function removeCachedChat(key) {
@@ -298,13 +313,22 @@ export function readChatShared(directories, locator) {
     removeCachedChat(key);
     const result = readChatJsonlStrict(key, { recover: false });
     const source = chatSourceFromResult(result, filename);
-    const entry = { dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs, bytes: stat.size, source };
+    const entry = { dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs, bytes: stat.size * PARSED_SIZE_FACTOR, source };
     chatReadCache.set(key, entry);
     chatReadCacheBytes += entry.bytes;
     while (chatReadCacheBytes > CHAT_READ_CACHE_MAX_BYTES && chatReadCache.size > 1) {
         removeCachedChat(chatReadCache.keys().next().value);
     }
     return source;
+}
+
+/** What the store's caches hold now and may hold at most, in estimated heap bytes. */
+export function cacheUsage() {
+    return {
+        writtenStates: { bytes: writtenStateTotal, max: WRITTEN_STATE_MAX_BYTES, entries: writtenStates.size },
+        sharedJson: { bytes: sharedJsonCacheBytes, max: SHARED_JSON_CACHE_MAX_BYTES, entries: sharedJsonCache.size },
+        chatRead: { bytes: chatReadCacheBytes, max: CHAT_READ_CACHE_MAX_BYTES, entries: chatReadCache.size },
+    };
 }
 
 const storySummaryCache = new Map();
@@ -314,6 +338,8 @@ registerMemoryReclaimer(() => {
     chatReadCache.clear();
     chatReadCacheBytes = 0;
     storySummaryCache.clear();
+    writtenStates.clear();
+    writtenStateTotal = 0;
 });
 // Summaries are a few hundred bytes. The worker lists every story each scan, so a cap below the
 // story count evicted each entry just before it was needed and every scan re-parsed every archive.
@@ -442,7 +468,75 @@ export function memoryEnabled(directories, locator) {
     }
 }
 
-export function mutateState(directories, locator, mutate, expectedRevision, { existingOnly = false } = {}) {
+// The map is copied (a few pointers per entry) so adding or removing an entry cannot reach the shared one;
+// the entries stay shared.
+const copyVectorMap = vectors => Array.isArray(vectors) ? vectors.slice() : vectors && typeof vectors === 'object' ? { ...vectors } : vectors;
+
+function cloneIndexShell(index) {
+    const copy = {};
+    for (const key of Object.keys(index)) {
+        const value = index[key];
+        copy[key] = key === 'vectors' ? copyVectorMap(value)
+            : key === 'build' && value && typeof value === 'object' && !Array.isArray(value) ? cloneIndexShell(value) : structuredClone(value);
+    }
+    return copy;
+}
+
+/**
+ * An owned copy of a shared state for a mutator. The embedding vectors are the one part whose entries are not
+ * copied: they are immutable (every writer builds a new entry and assigns it to a copy of the map), and they
+ * are most of a large archive. Key order is kept, because it decides the bytes written.
+ */
+export function cloneState(shared) {
+    const state = {};
+    for (const key of Object.keys(shared)) {
+        const value = shared[key];
+        state[key] = key === 'index' && value && typeof value === 'object' && !Array.isArray(value)
+            ? cloneIndexShell(value) : structuredClone(value);
+    }
+    return state;
+}
+
+/** The text of each top-level key, so the three fields a write changes can be swapped in without serialising again. */
+function topLevelText(state) {
+    const entries = [];
+    for (const key of Object.keys(state)) {
+        const text = JSON.stringify(state[key]);
+        if (text !== undefined) entries.push({ key, name: JSON.stringify(key), text });
+    }
+    return entries;
+}
+
+/** Whether `entries` joined as one object give exactly `serialized`, without building that text. */
+function sameSerialized(serialized, entries) {
+    let position = 0;
+    for (const [index, { name, text }] of entries.entries()) {
+        const head = (index ? ',' : '{') + name + ':';
+        if (!serialized.startsWith(head, position)) return false;
+        position += head.length;
+        if (!serialized.startsWith(text, position)) return false;
+        position += text.length;
+    }
+    return serialized.length === position + (entries.length ? 1 : 2) && serialized.endsWith(entries.length ? '}' : '{}');
+}
+
+/** The text JSON.stringify would give after assigning `changes` to the state, keys it lacked going last in order. */
+function joinSerialized(entries, changes) {
+    const parts = [];
+    const used = new Set();
+    for (const { key, name, text } of entries) {
+        used.add(key);
+        parts.push(name + ':' + (Object.hasOwn(changes, key) ? JSON.stringify(changes[key]) : text));
+    }
+    for (const [key, value] of Object.entries(changes)) if (!used.has(key)) parts.push(JSON.stringify(key) + ':' + JSON.stringify(value));
+    // The braces ride on the first and last (small) pieces so the join is one flat string, not a wrapper that copies it again.
+    if (!parts.length) return '{}';
+    parts[0] = '{' + parts[0];
+    parts[parts.length - 1] += '}';
+    return parts.join(',');
+}
+
+export function mutateState(directories, locator, mutate, expectedRevision, { existingOnly = false, onSettled } = {}) {
     locator = normalizeLocator(locator);
     const filename = statePath(directories, locator);
     const release = acquireChatFileLock(filename);
@@ -450,20 +544,31 @@ export function mutateState(directories, locator, mutate, expectedRevision, { ex
         if (existingOnly && !fs.existsSync(filename)) return null;
         const identity = fileIdentity(filename);
         const shared = readStateShared(directories, locator);
-        const state = structuredClone(shared);
+        const state = cloneState(shared);
         if (expectedRevision !== undefined && state.revision !== expectedRevision) {
             fail('Mewmory changed while this was running. Reload Mewmory and try again.', 409);
         }
         // Compare serialised text directly; hashing both copies of a large archive cost more than the comparison.
-        const before = serializedArchive(filename, identity, shared);
+        let before = identity ? serializedArchive(filename, identity, shared) : null;
         const result = compactArchiveVectors(mutate(state) || state);
-        if (JSON.stringify(result) !== before || !fs.existsSync(filename)) {
+        // One serialisation serves the comparison and the write: only revision, updatedAt and locator differ between them.
+        let entries = topLevelText(result);
+        const changed = before === null || !fs.existsSync(filename) || !sameSerialized(before, entries);
+        // Once compared, the old text is of no more use, and the pieces are not needed after they are joined: at most
+        // two full texts are alive at any moment, and only one while the file is written.
+        before = null;
+        if (changed) {
+            forgetWrittenState(filename);
             result.revision = state.revision + 1;
             result.updatedAt = Date.now();
-            writeState(directories, result);
+            result.locator = normalizeLocator(result.locator);
+            const serialized = joinSerialized(entries, { revision: result.revision, updatedAt: result.updatedAt, locator: result.locator });
+            entries = null;
+            writeState(directories, result, serialized);
         } else if (!fs.existsSync(recoveryPath(directories, locator))) {
             writeState(directories, result);
         }
+        onSettled?.({ changed, shared, identity: fileIdentity(filename), guard: fileIdentity(recoveryPath(directories, locator)) });
         return result;
     } finally {
         release();
@@ -513,16 +618,20 @@ export function updateProcessing(directories, locator, guards, { set = {}, remov
     }
 }
 
+/** True when a saved tracker result predates the category snapshot, so syncing it reads the Agent library. */
+export const hasLegacyTrackerResults = messages => messages.some(message => Object.values(getActiveCompanionResults(message))
+    .some(result => result?.status === 'done' && !result.agentCategory));
+
 /** Capture the same legacy tracker configuration for real or shadow reconciliation. */
 export function sourceSyncOptions(directories, messages) {
-    const legacy = messages.some(message => Object.values(getActiveCompanionResults(message))
-        .some(result => result?.status === 'done' && !result.agentCategory));
+    const legacy = hasLegacyTrackerResults(messages);
     const trackerAgentIds = legacy ? readAgentCollection(agentCollectionDirectory(directories)).records
         .filter(agent => agent.category === 'tracker').map(agent => agent.id) : [];
     return { trackerAgentIds };
 }
 
-export function synchronize(directories, locator, context = [], source = readChatShared(directories, locator), extraChange) {
+/** `onSettled` receives what mutateState reports once the archive is saved or found unchanged, still under its lock. */
+export function synchronize(directories, locator, context = [], source = readChatShared(directories, locator), extraChange, onSettled) {
     locator = normalizeLocator(locator);
     // Native saves take this lock first too; never reconcile a chat snapshot read before it.
     return withChatFileLocks([chatPath(directories, locator)], () => {
@@ -533,7 +642,7 @@ export function synchronize(directories, locator, context = [], source = readCha
             syncSources(state, source.messages, context, { ...options, ...(source.metadata ? { groupStart: readGroupSceneStart(source.metadata) } : {}) });
             // Archive upkeep that must share the same clone and write as the source sync.
             return extraChange ? extraChange(state) || state : state;
-        });
+        }, undefined, { onSettled });
     });
 }
 
