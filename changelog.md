@@ -108,6 +108,7 @@
 - PR #885 (2026-11-23) `fix(i18n): localise author’s note examples`
 - PR #886 (2026-11-23) `fix(i18n): collect multiline attribute captions correctly`
 - PR #887 (2026-11-23) `test: fix remaining tests-folder lint errors`
+- PR #888 (2026-11-23) `refactor(i18n): remove the retired select2 name selector`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
