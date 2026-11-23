@@ -6,20 +6,32 @@ const openai = [
     ['gpt-5', ['min', 'low', 'medium', 'high']], ['gpt-5-2025-08-07', ['min', 'low', 'medium', 'high']],
     ['gpt-5.1', ['none', 'low', 'medium', 'high']], ['gpt-5.1-2025-11-13', ['none', 'low', 'medium', 'high']],
     ['gpt-5.2', ['none', 'low', 'medium', 'high', 'xhigh']], ['gpt-5.2-2025-12-11', ['none', 'low', 'medium', 'high', 'xhigh']],
+    ['gpt-5.4', ['none', 'low', 'medium', 'high', 'xhigh']], ['gpt-5.4-2026-03-05', ['none', 'low', 'medium', 'high', 'xhigh']],
     ['gpt-5.5', ['none', 'low', 'medium', 'high', 'xhigh']], ['gpt-5.5-2026-04-23', ['none', 'low', 'medium', 'high', 'xhigh']],
+    ...['gpt-5.6', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-6-sol', 'gpt-6-luna', 'gpt-6.1-terra']
+        .map(model => [model, ['none', 'low', 'medium', 'high', 'xhigh', 'max']]),
     ['gpt-6-astra', ['low', 'medium', 'high', 'xhigh', 'max']],
+    ['gpt-6.1-sol', ['low', 'medium', 'high', 'xhigh', 'max']],
+    ...['gpt-6.2-astra', 'gpt-6.2-sol'].map(model => [model, ['min', 'low', 'medium', 'high', 'xhigh', 'max']]),
 ];
 const fixtures = [
     ...['openai', 'openai_responses'].flatMap(source => openai.map(([model, efforts]) => [source, model, efforts])),
     ...['gemini-3.8-flash', 'gemini-3.1-pro-preview'].map(model => ['makersuite', model, ['low', 'medium', 'high']]),
     ...['gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3-flash-preview'].map(model => ['makersuite', model, ['min', 'low', 'medium', 'high']]),
+    ...['gemini-4-neon', 'gemini-4-hydrogen'].map(model => ['makersuite', model, ['low', 'medium', 'high', 'xhigh']]),
+    ...['gemini-4-carbon', 'gemini-4-argon'].map(model => ['makersuite', model, ['low', 'medium', 'high']]),
     ['vertexai', 'gemini-3.1-pro-preview', ['low', 'medium', 'high']], ['vertexai', 'gemini-3-flash-preview', ['min', 'low', 'medium', 'high']],
+    ['vertexai', 'gemini-4-hydrogen', ['low', 'medium', 'high', 'xhigh']],
+    ...['gemini-4-carbon', 'gemini-4-argon', 'gemini-3.8-flash', 'gemini-3.7-flash'].map(model => ['vertexai', model, ['low', 'medium', 'high']]),
+    ...['gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'].map(model => ['vertexai', model, ['min', 'low', 'medium', 'high']]),
     ['deepseek', 'deepseek-v4-pro', ['none', 'low', 'high', 'max']], ['moonshot', 'kimi-k3', ['low', 'high', 'max']],
+    ...['kimi-k3.1-pro', 'kimi-k3.1-pro-highspeed'].map(model => ['moonshot', model, ['low', 'high', 'max']]),
     ...['deepseek-v4-flash', 'deepseek-flash'].map(model => ['deepseek', model, ['none', 'low', 'high', 'max']]),
-    ...['glm-5.3', 'glm-5.3-flash'].map(model => ['zai', model, ['low', 'high', 'max']]),
+    ...['glm-5.3', 'glm-5.3-flash', 'glm-5.3-flashx'].map(model => ['zai', model, ['low', 'high', 'max']]),
     ['minimax', 'MiniMax-M3.1-Flash', ['low', 'medium', 'high', 'xhigh', 'max']],
     ...['mistral-small-2603', 'mistral-medium-3-5'].map(model => ['mistralai', model, ['none', 'high']]),
     ['mistralai', 'mistral-large-4-0', ['low', 'medium', 'high']], ['mistralai', 'zai-glm-5-3', ['low', 'high', 'max']],
+    ['mistralai', 'mistral-large-4', ['low', 'medium', 'high']], ['mistralai', 'zai-glm-5-3-flash', ['low', 'high', 'max']],
     ...['openai/gpt-oss-20b', 'openai/gpt-oss-120b'].flatMap(model => ['groq', 'aimlapi'].map(source => [source, model, ['low', 'medium', 'high']])),
     ['groq', 'qwen/qwen3.8-27b', ['none', 'low', 'medium', 'high']], ['groq', 'meta-models/muse-spark-open', ['low', 'medium', 'high', 'xhigh']],
     ...['accounts/fireworks/models/gpt-oss-20b', 'accounts/fireworks/models/gpt-oss-120b'].map(model => ['fireworks', model, ['low', 'medium', 'high']]),
@@ -94,8 +106,8 @@ describe('finite native reasoning contracts', () => {
     });
 
     test('does not inherit native tables for aliases, deployments or other source names', () => {
-        for (const [source, model] of [['openai', 'gpt-5.4'], ['openai', 'gpt-5.1-chat-latest'], ['vertexai', 'gemini-3.8-flash'],
-            ['azure_openai', 'gpt-5.1'], ['custom', 'gpt-5.1'], ['linkapi', 'kimi-k3'], ['mistralai', 'mistral-large-4']]) {
+        for (const [source, model] of [['openai', 'gpt-5.4-mini'], ['openai', 'gpt-5.1-chat-latest'], ['vertexai', 'gemini-4-neon'],
+            ['azure_openai', 'gpt-5.1'], ['custom', 'gpt-5.1'], ['linkapi', 'kimi-k3'], ['mistralai', 'mistral-large-latest']]) {
             expect(getChatReasoningCapabilities({ source, model, route: route(source) }).state).toBe('unknown');
         }
     });

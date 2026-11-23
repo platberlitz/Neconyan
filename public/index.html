@@ -2046,7 +2046,7 @@
                                                 <option data-i18n="openai_reasoning_effort_xhigh" value="xhigh">Extra High</option>
                                                 <option data-i18n="openai_reasoning_effort_maximum" value="max">Maximum</option>
                                             </select>
-                                            <div class="toggle-description justifyLeft marginBot5" data-source="custom,xai,pollinations,perplexity,cometapi,electronhub,azure_openai,chutes" data-i18n="OpenAI-style options: low, medium, high, xhigh. Every effort is sent exactly as picked, aside from Minimum, which is sent as 'minimal'. None is sent verbatim to GPT-5.1 and newer. Other models get no effort level.">
+                                            <div class="toggle-description justifyLeft marginBot5" data-reasoning-legacy-hint data-source="custom,xai,pollinations,perplexity,cometapi,electronhub,azure_openai,chutes" data-i18n="OpenAI-style options: low, medium, high, xhigh. Every effort is sent exactly as picked, aside from Minimum, which is sent as 'minimal'. None is sent verbatim to GPT-5.1 and newer. Other models get no effort level.">
                                                 OpenAI-style options: low, medium, high, xhigh. Every effort is sent exactly as picked, aside from Minimum, which is sent as 'minimal'. None is sent verbatim to GPT-5.1 and newer. Other models get no effort level.
                                             </div>
                                             <div class="toggle-description justifyLeft marginBot5" data-source="claude" data-i18n="Allocates a portion of the response length for thinking (min: 1024 tokens, low: 10%, medium: 25%, high: 50%, max: 95%), but minimum 1024 tokens. Auto does not request thinking.">
@@ -2076,7 +2076,7 @@
                                             <div id="openrouter_reasoning_effort_hint" class="toggle-description justifyLeft marginBot5" data-source="openrouter">
                                                 Available reasoning levels are not known for this model.
                                             </div>
-                                            <div id="native_reasoning_effort_hint" class="toggle-description justifyLeft marginBot5" data-source="openai,makersuite,vertexai,deepseek,moonshot,zai,minimax,mistralai,groq,aimlapi,fireworks">
+                                            <div id="native_reasoning_effort_hint" class="toggle-description justifyLeft marginBot5" data-source="custom,openai,makersuite,vertexai,deepseek,moonshot,zai,minimax,mistralai,groq,aimlapi,fireworks">
                                                 Available reasoning levels are not known for this model.
                                             </div>
                                         </div>
@@ -3857,6 +3857,13 @@
                                 <small data-i18n="Use the custom model name to pick a closer timestamp icon while keeping the provider label as Custom.">
                                     Use the custom model name to pick a closer timestamp icon while keeping the provider label as Custom.
                                 </small>
+                            </div>
+                            <div class="range-block" id="custom_reasoning_documented_levels_block">
+                                <label class="checkbox_label widthFreeExpand" for="custom_reasoning_documented_levels">
+                                    <input id="custom_reasoning_documented_levels" type="checkbox" aria-describedby="custom_reasoning_documented_levels_hint">
+                                    <span data-i18n="Hide unsupported reasoning levels">Hide unsupported reasoning levels</span>
+                                </label>
+                                <small id="custom_reasoning_documented_levels_hint" data-i18n="custom_reasoning_documented_levels_hint">For recognised models. Others keep every level.</small>
                             </div>
                         </form>
                         <div id="xai_form" data-source="xai">

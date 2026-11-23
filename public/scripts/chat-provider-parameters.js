@@ -133,7 +133,7 @@ export function applyChatProviderParameters(data, settings, {
     }
     if (source === 'custom') {
         for (const key of ['custom_url', 'custom_include_body', 'custom_exclude_body', 'custom_include_headers',
-            'custom_reasoning_param_name', 'custom_reasoning_param_format', 'custom_reasoning_enabled_value', 'custom_reasoning_disabled_value']) data[key] = settings[key];
+            'custom_reasoning_param_name', 'custom_reasoning_param_format', 'custom_reasoning_enabled_value', 'custom_reasoning_disabled_value', 'custom_reasoning_documented_levels']) data[key] = settings[key];
     }
     if (source === 'cohere') {
         data.top_p = Math.min(Math.max(Number(settings.top_p_openai), 0.01), 0.99);
@@ -246,7 +246,7 @@ export function applyChatProviderParameters(data, settings, {
     // Missing browser version evidence is not a route claim; retain intent for the authoritative server guard.
     const pendingMakerRoute = data.chat_completion_source === 'makersuite' && !reasoningRoute.reverseProxy
         && reasoningRoute.googleApiVersion == null;
-    applyClaudeModelParameterConstraints(data, { preserveReasoning: ['claude', 'linkapi'].includes(source) || declaredOpenRouterReasoning || reasoningCapabilities.nativeFallback || pendingMakerRoute || declaredNanoGptReasoning });
+    applyClaudeModelParameterConstraints(data, { preserveReasoning: ['claude', 'linkapi'].includes(source) || declaredOpenRouterReasoning || reasoningCapabilities.nativeFallback || pendingMakerRoute || declaredNanoGptReasoning || source === 'custom' });
     if (['custom', 'moonshot', 'nanogpt', 'openrouter'].includes(source) && isKimiK3Model(model)) applyKimiK3ModelParameterConstraints(data);
     if (samplerMetadata) data.model_sampler_metadata = structuredClone(samplerMetadata);
     filterChatCompletionSamplingParameters(data, { source, model, metadata: samplerMetadata, stripMetadata: false });

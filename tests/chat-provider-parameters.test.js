@@ -114,7 +114,7 @@ test('keeps existing Claude-family omission for unknown, stale and non-OpenRoute
     for (const [source, metadata] of [
         ['openrouter', undefined],
         ['openrouter', { source: 'openrouter', model: `${model}:free`, reasoning: { supported_efforts: ['high'] } }],
-        ['custom', { source: 'openrouter', model, reasoning: { supported_efforts: ['high'] } }],
+        ['azure_openai', { source: 'openrouter', model, reasoning: { supported_efforts: ['high'] } }],
     ]) {
         const settings = { ...baseSettings, chat_completion_source: source, reasoning_effort: 'high' };
         const { generate_data: data } = await createChatGenerationParameters(settings, model, 'normal', [{ role: 'user', content: 'Hello' }], {
@@ -123,6 +123,26 @@ test('keeps existing Claude-family omission for unknown, stale and non-OpenRoute
         });
         expect(data.reasoning_effort).toBeUndefined();
         expect(data.temperature).toBeUndefined();
+    }
+});
+
+test.each([
+    ['claude-code/claude-opus-5-5', 'openai'], ['claude-code/claude-opus-5-5', 'thinking_object'],
+    ['anthropic/claude-sonnet-5', 'openai'], ['anthropic/claude-sonnet-5', 'thinking_object'],
+    ['claude-fable-5-2', 'openai'], ['claude-fable-5-2', 'thinking_object'],
+])('keeps Claude reasoning fields on Custom and removes samplers (%s, %s)', async (model, format) => {
+    for (const documentedLevels of [false, true]) {
+        const settings = { ...baseSettings, chat_completion_source: 'custom', reasoning_effort: 'high',
+            custom_reasoning_param_format: format, custom_reasoning_param_name: format === 'openai' ? 'reasoning_effort' : 'thinking',
+            custom_reasoning_documented_levels: documentedLevels };
+        const { generate_data: data } = await createChatGenerationParameters(settings, model, 'normal', [{ role: 'user', content: 'Hello' }], {
+            ...context, getReasoningEffort: snapshot => resolveChatReasoningEffort(settings, model, undefined, snapshot),
+        });
+        expect(data.reasoning_effort).toBe('high');
+        expect(data.custom_reasoning_param_name).toBe(settings.custom_reasoning_param_name);
+        expect(data.custom_reasoning_documented_levels).toBe(documentedLevels);
+        expect(data.temperature).toBeUndefined();
+        expect(data.top_p).toBeUndefined();
     }
 });
 
@@ -149,8 +169,8 @@ test.each([
     ['nanogpt', { source: 'nanogpt', model: `${nanoClaudeModel}:online`, reasoning_efforts: ['high'] }],
     ['nanogpt', { source: 'nanogpt', model: nanoClaudeModel, reasoning_efforts: [] }],
     ['nanogpt', { source: 'nanogpt', model: nanoClaudeModel, reasoning_efforts: ['auto'] }],
-    ['custom', undefined],
-    ['custom', { source: 'nanogpt', model: nanoClaudeModel, reasoning_efforts: ['low', 'high'] }],
+    ['azure_openai', undefined],
+    ['azure_openai', { source: 'nanogpt', model: nanoClaudeModel, reasoning_efforts: ['low', 'high'] }],
 ])('keeps Claude-family omission for undeclared NanoGPT and for sources that do not preserve (%s, %j)', async (source, metadata) => {
     const model = nanoClaudeModel;
     const settings = { ...baseSettings, chat_completion_source: source, reasoning_effort: 'high' };

@@ -80,7 +80,7 @@ export async function buildChatPresetPayload(activeSettings, preset, overridePre
         'reverse_proxy', 'proxy_password', 'custom_url', 'vertexai_region', 'zai_endpoint', 'siliconflow_endpoint',
         'minimax_endpoint', 'linkapi_endpoint', 'custom_include_body', 'custom_exclude_body', 'custom_include_headers',
         'reasoning_effort', 'verbosity', 'request_image_resolution', 'request_image_aspect_ratio',
-        'custom_reasoning_param_name', 'custom_reasoning_param_format', 'custom_reasoning_enabled_value', 'custom_reasoning_disabled_value',
+        'custom_reasoning_param_name', 'custom_reasoning_param_format', 'custom_reasoning_enabled_value', 'custom_reasoning_disabled_value', 'custom_reasoning_documented_levels',
     ]) {
         if (overridePayload[field] !== undefined) settings[field] = overridePayload[field];
     }
