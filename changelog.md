@@ -102,6 +102,7 @@
 - PR #878 (2026-11-22) `fix(macros): hide text inside scoped comments`
 - PR #879 (2026-11-22) `feat(scratchpad): add App diagnostics so assistants see Neconyan's own errors`
 - PR #880 (2026-11-22) `feat(scratchpad): add /check and /why shortcuts for diagnoses`
+- PR #881 (2026-11-23) `feat(lorebooks): warn when a linked lorebook no longer exists`
 - PR #882 (2026-11-22) `test(mobile-layout): declare requestAnimationFrame for lint`
 - PR #883 (2026-11-23) `fix(browser): clear the latest nightly staging failures`
 - PR #884 (2026-11-23) `test(android): report a missing JDK before checking headers`
