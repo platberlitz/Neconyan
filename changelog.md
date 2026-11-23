@@ -126,6 +126,7 @@
 - PR #905 (2026-11-23) `fix(server): count logged strings towards the log buffer cut limit`
 - PR #906 (2026-11-23) `feat(shell): tell people once when the page reloaded itself for an update`
 - PR #907 (2026-11-23) `fix(crash-diagnostics): record the stopped server build`
+- PR #908 (2026-11-23) `feat(reasoning): let custom endpoints hide unsupported reasoning levels`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
