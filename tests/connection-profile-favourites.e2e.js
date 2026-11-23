@@ -15,6 +15,12 @@ const folders = [
     { id: 'only', name: 'Only favourites', sortOrder: 1 },
 ];
 
+async function capturePickerScreenshot(page, size) {
+    if (process.env.NECONYAN_QUICK_FIX_SCREENSHOTS) {
+        await page.screenshot({ path: `${process.env.NECONYAN_QUICK_FIX_SCREENSHOTS}/profile-folders-${size}.png` });
+    }
+}
+
 async function openConnections(page) {
     await page.goto('/');
     await page.waitForFunction(() => window.NeconyanShell && document.body.classList.contains('neconyan-rail-ready'));
@@ -40,6 +46,44 @@ for (const { size, viewport, hasTouch } of [
     { size: 'phone', viewport: { width: 393, height: 852 }, hasTouch: true },
     { size: 'desktop', viewport: { width: 1280, height: 900 }, hasTouch: false },
 ]) {
+    test(`profile folder keeps its chosen name in Portuguese on ${size}`, async ({ browser }) => {
+        const context = await browser.newContext({ viewport, hasTouch, serviceWorkers: 'block', reducedMotion: 'reduce' });
+        try {
+            const page = await context.newPage();
+            await page.addInitScript(() => window.localStorage.setItem('language', 'pt-pt'));
+            await isolateSettingsSaves(page, settings => {
+                settings.firstRun = false;
+                settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped' };
+                settings.extension_settings.connectionManager = {
+                    folders: [{ id: 'mixed', name: 'Default Stats', sortOrder: 0 }],
+                    profiles: initialProfiles.filter(item => item.folderId === 'mixed'),
+                    selectedProfile: 'folder-favourite',
+                };
+            });
+            await openConnections(page);
+            await expect(page.locator('html')).toHaveAttribute('lang', 'pt-pt');
+            const groups = page.locator('#connection_profiles optgroup');
+            await expect(groups.last()).toHaveAttribute('label', '📁 Default Stats');
+            await page.locator('#sb-connection_profiles-picker-button').click();
+            const picker = page.locator('#sb-connection_profiles-picker');
+            const headings = picker.locator('.sb-select-picker-group[role="heading"]');
+            const checkHeadings = async () => {
+                await expect(headings).toHaveText(['★ Favoritos', '📁 Default Stats']);
+                await expect(headings.first()).not.toHaveAttribute('data-i18n-ignore', '');
+                await expect(headings.last()).toHaveAttribute('data-i18n-ignore', '');
+            };
+            await capturePickerScreenshot(page, size);
+            await checkHeadings();
+            const search = picker.locator('.sb-chat-picker-search');
+            await search.fill('Elm');
+            await expect(headings).toHaveText(['📁 Default Stats']);
+            await search.fill('');
+            await checkHeadings();
+        } finally {
+            await context.close();
+        }
+    });
+
     for (const selectedId of ['folder-favourite', 'root-favourite']) {
         test(`favourite connection profiles stay unique and return to their place on ${size}: ${selectedId}`, async ({ browser }) => {
             const context = await browser.newContext({ viewport, hasTouch, serviceWorkers: 'block', reducedMotion: 'reduce' });
