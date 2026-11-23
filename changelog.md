@@ -141,6 +141,7 @@
 - PR #920 (2026-11-23) `feat(groups): refresh group chats and configure director timeout`
 - PR #921 (2026-11-23) `feat(slash-commands): restyle autocomplete and command help`
 - PR #922 (2026-11-23) `perf(chats): avoid repeated reads and checksums during saves`
+- PR #924 (2026-11-23) `fix(character-folders): stop Sort with AI replaying a lost request`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
