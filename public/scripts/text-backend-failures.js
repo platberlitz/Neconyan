@@ -1,14 +1,17 @@
-// Notes failed requests to KoboldAI (classic), NovelAI and text completion backends in the
-// App diagnostics log. It only watches: it never changes a request, a prompt or a toast.
+// Notes failed requests to KoboldAI (classic), NovelAI, text completion and chat completion
+// backends in the App diagnostics log. It only watches: it never changes a request, a prompt
+// or a toast. Every failure goes through recordRequestFailure, which cuts out any stretch of the
+// message that repeats the prompt or the reply and hides server addresses.
 // It imports nothing but the recorder, so the generation modules can use it without any
 // module-order risk.
 import { recordProviderFailure } from './app-evidence-log.js';
 
 const ECHO_WINDOW = 16;
 const ECHO_SCAN_LIMIT = 2000;
-const SOURCE_SCAN_LIMIT = 400000;
+const SOURCE_HEAD = 100000;
+const SOURCE_TAIL = 300000;
 const LONG_TEXT = 80;
-const PROMPT_KEYS = ['prompt', 'input', 'memory', 'authors_note', 'negative_prompt', 'system_prompt'];
+const PROMPT_KEYS = ['prompt', 'input', 'memory', 'authors_note', 'negative_prompt', 'system_prompt', 'system', 'content', 'text'];
 const MESSAGE_KEYS = ['error', 'message', 'detail', 'response', 'msg', 'reason', 'description'];
 const STATUS_KEYS = ['status', 'status_code', 'statusCode', 'provider_status'];
 const TEXT_REMOVED = '[text removed]';
@@ -95,6 +98,16 @@ export function readBackendFailure(body, fromHttp = 0, fallback = '') {
 }
 
 /**
+ * A sentence for the person when a backend answered with an error that is not text, such as
+ * the app server's { error: true, status, response }: the backend's own message when it sent
+ * one, otherwise a plain sentence.
+ * @param {unknown} body A parsed object or a JSON string
+ */
+export function readableBackendError(body) {
+    return dig(body, 0).message || NOT_REACHED;
+}
+
+/**
  * Hides where a self-hosted backend lives: URLs, IP addresses and host:port pairs.
  * @param {unknown} value
  */
@@ -148,9 +161,9 @@ function collectTexts(node, found, depth) {
         if (node.length >= LONG_TEXT) found.push(node);
         return;
     }
-    if (depth > 3 || !node || typeof node !== 'object') return;
+    if (depth > 5 || !node || typeof node !== 'object') return;
     if (Array.isArray(node)) {
-        for (const item of node.slice(0, 50)) collectTexts(item, found, depth + 1);
+        for (const item of node.slice(0, 2000)) collectTexts(item, found, depth + 1);
         return;
     }
     for (const [key, item] of Object.entries(node)) {
@@ -167,7 +180,8 @@ function collectTexts(node, found, depth) {
  */
 export function withoutEchoes(message, sources) {
     const text = String(message ?? '').slice(0, ECHO_SCAN_LIMIT);
-    const corpus = sources.filter(source => typeof source === 'string' && source.trim()).map(source => squeeze(source).text).join('\n').slice(0, SOURCE_SCAN_LIMIT);
+    const joined = sources.filter(source => typeof source === 'string' && source.trim()).map(source => squeeze(source).text).join('\n');
+    const corpus = joined.length > SOURCE_HEAD + SOURCE_TAIL ? `${joined.slice(0, SOURCE_HEAD)}\n${joined.slice(-SOURCE_TAIL)}` : joined;
     if (!text || corpus.length < ECHO_WINDOW) return text;
     const seen = new Set();
     for (let i = 0; i + ECHO_WINDOW <= corpus.length; i++) seen.add(corpus.slice(i, i + ECHO_WINDOW));
@@ -194,6 +208,41 @@ export function withoutEchoes(message, sources) {
 const RECENT_REQUESTS = 5;
 /** @type {{ sources: string[], received: string }[]} What the last few failed requests sent and got, newest first */
 const recentRequests = [];
+
+/**
+ * What a request sent and what came back so far, so a failure message that quotes either can be cut.
+ * The sent text is only read if the request fails.
+ * @param {unknown} data The request body as the page built it
+ * @returns {{ data: unknown, received: string }}
+ */
+export function requestText(data) {
+    return { data, received: '' };
+}
+
+/**
+ * The one place a failed model request is written to the App diagnostics log, for every kind of
+ * connection. Server addresses are hidden and any stretch of the message that repeats the prompt
+ * or a reply received so far is cut out before the recorder redacts and caps it.
+ * @param {{ provider: unknown, model?: unknown, status?: unknown, message?: unknown, request?: { data: unknown, received: string } | null }} failure
+ */
+export function recordRequestFailure({ provider, model = '', status = 0, message = '', request = null }) {
+    try {
+        const sources = [];
+        if (request) collectTexts(request.data, sources, 0);
+        if (request) {
+            recentRequests.unshift({ sources, received: request.received });
+            recentRequests.length = Math.min(recentRequests.length, RECENT_REQUESTS);
+        }
+        recordProviderFailure({
+            provider,
+            model: withoutServerAddresses(model),
+            status,
+            message: withoutEchoes(withoutServerAddresses(message), [...sources, request?.received ?? '']),
+        });
+    } catch {
+        // Diagnostics never get in the way of a request.
+    }
+}
 
 /**
  * Cuts out of a text any stretch that quotes what the last few failed text backend requests sent or
@@ -239,28 +288,14 @@ export function backendLabel(kind, type = '') {
  * @param {{ kind: 'kobold' | 'novel' | 'text', type?: string, model?: unknown, data?: unknown, signal?: AbortSignal | null }} request
  */
 export function watchTextBackend({ kind, type = '', model = '', data = null, signal = null }) {
-    const sources = [];
-    collectTexts(data, sources, 0);
-    const sent = { sources, received: '' };
+    const sent = { data, received: '' };
     let recorded = false;
 
     /** @param {string} message @param {number} status */
     const record = (message, status) => {
         if (recorded) return;
         recorded = true;
-        try {
-            recentRequests.unshift(sent);
-            recentRequests.length = Math.min(recentRequests.length, RECENT_REQUESTS);
-            const clean = withoutEchoes(withoutServerAddresses(message), [...sources, sent.received]);
-            recordProviderFailure({
-                provider: backendLabel(kind, type),
-                model: withoutServerAddresses(model),
-                status,
-                message: clean,
-            });
-        } catch {
-            // Diagnostics never get in the way of a request.
-        }
+        recordRequestFailure({ provider: backendLabel(kind, type), model, status, message, request: sent });
     };
 
     const watch = {

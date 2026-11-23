@@ -14,8 +14,7 @@ import EventSourceStream from './sse-stream.js';
 import { fetchResumable } from './resumable-generation.js';
 import { buildChatPresetPayload, createChatRequestData } from './chat-preset-request.js';
 import { isGenerationLengthFinish } from './generation-request-controls.js';
-import { recordProviderFailure } from './app-evidence-log.js';
-import { watchTextBackend } from './text-backend-failures.js';
+import { recordRequestFailure, requestText, watchTextBackend } from './text-backend-failures.js';
 
 // #region Type Definitions
 /**
@@ -414,7 +413,7 @@ export class ChatCompletionService {
             if (!response.ok || json.error) {
                 const error = new Error(String(json.error?.message || json.error || 'Response not OK'));
                 error.status = response.status;
-                recordProviderFailure({ provider: data.chat_completion_source, model: data.model, status: Number(json.provider_status) || response.status, message: error.message });
+                recordRequestFailure({ provider: data.chat_completion_source, model: data.model, status: Number(json.provider_status) || response.status, message: error.message, request: requestText(data) });
                 throw error;
             }
 
@@ -440,9 +439,9 @@ export class ChatCompletionService {
 
         if (!response.ok) {
             const text = await response.text();
-            const failure = { provider: data.chat_completion_source, model: data.model };
+            const failure = { provider: data.chat_completion_source, model: data.model, request: requestText(data) };
             tryParseStreamingError(response, text, { quiet: true, failure });
-            recordProviderFailure({ ...failure, status: response.status, message: response.statusText });
+            recordRequestFailure({ ...failure, status: response.status, message: response.statusText });
 
             const error = new Error(`Got response status ${response.status}`);
             error.status = response.status;
@@ -452,6 +451,7 @@ export class ChatCompletionService {
         const eventStream = new EventSourceStream();
         response.body.pipeThrough(eventStream);
         const reader = eventStream.readable.getReader();
+        const chatFailure = { provider: data.chat_completion_source, model: data.model, request: requestText(data) };
         return async function* streamData() {
             let text = '';
             const swipes = [];
@@ -465,7 +465,8 @@ export class ChatCompletionService {
                 }
                 const rawData = value.data;
                 if (rawData === '[DONE]') return;
-                tryParseStreamingError(response, rawData, { quiet: true, failure: { provider: data.chat_completion_source, model: data.model } });
+                if (chatFailure.request) chatFailure.request.received = text;
+                tryParseStreamingError(response, rawData, { quiet: true, failure: chatFailure });
                 const parsed = JSON.parse(rawData);
                 completed ||= streamCompletionSignal(parsed);
                 if (isGenerationLengthFinish(parsed)) state.finishReason = 'length';
