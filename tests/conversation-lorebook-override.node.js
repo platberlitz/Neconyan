@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, test } from 'node:test';
 import { setConfigFilePath } from '../src/util.js';
 
 setConfigFilePath(path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'default', 'config.yaml'));
-const { captureConversationLorebook } = await import('../src/generation/conversation-lorebook.js');
+const { captureConversationLorebook, conversationCharacterLorebooks } = await import('../src/generation/conversation-lorebook.js');
 
 const entry = (uid, extra) => ({
     uid, key: [], keysecondary: [], comment: `c${uid}`, content: '', constant: false, selective: false,
@@ -100,5 +100,115 @@ describe('Conversation Lorebook Override scan', () => {
         const result = await scan('hi');
         assert.match(result.text, /CHOSEN-LORE/);
         assert.doesNotMatch(result.text, /OTHER-LORE/);
+    });
+});
+
+describe('Conversation Character default lorebooks', () => {
+    let root;
+    let directories;
+    const nova = { name: 'Nova', extensions: { world: 'Main' } };
+
+    function book(name, entries) {
+        fs.writeFileSync(path.join(directories.worlds, `${name}.json`), JSON.stringify({ entries }));
+    }
+    function saveSettings({ charLore = [], scan, globalSelect = [] } = {}) {
+        fs.writeFileSync(path.join(root, 'settings.json'), JSON.stringify({
+            world_info_settings: { world_info: { charLore, globalSelect }, ...scan },
+        }));
+    }
+    const capture = (text, extra = {}) => captureConversationLorebook({
+        directories, name: '', messages: messages(text), character: nova, avatar: 'nova.png', ...extra,
+    });
+
+    beforeEach(() => {
+        root = fs.mkdtempSync(path.join(os.tmpdir(), 'conv-lorebook-default-'));
+        directories = { root, worlds: path.join(root, 'worlds') };
+        fs.mkdirSync(directories.worlds);
+        book('Main', {
+            0: entry(0, { key: ['zephyr'], content: 'MAIN-KEYED' }),
+            1: entry(1, { constant: true, content: 'MAIN-CONSTANT' }),
+            2: entry(2, { constant: true, probability: 0, useProbability: true, content: 'MAIN-NEVER' }),
+        });
+        book('Extra', {
+            0: entry(0, { key: ['harbour'], content: 'EXTRA-KEYED' }),
+            1: entry(1, { constant: true, content: 'EXTRA-CONSTANT' }),
+        });
+        book('Global', { 0: entry(0, { constant: true, content: 'GLOBAL-LORE' }) });
+        book('Unlinked', { 0: entry(0, { constant: true, content: 'UNLINKED-LORE' }) });
+        saveSettings({ charLore: [{ name: 'nova', extraBooks: ['Extra'] }], globalSelect: ['Global'] });
+    });
+
+    afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
+
+    test('the linked books are the main book, then extra books for that card file, without repeats', () => {
+        saveSettings({ charLore: [{ name: 'nova', extraBooks: ['Extra', 'Main', 'Extra', ''] }, { name: 'other', extraBooks: ['Unlinked'] }] });
+        assert.deepEqual(conversationCharacterLorebooks(directories, nova, 'nova.png'), ['Main', 'Extra']);
+        assert.deepEqual(conversationCharacterLorebooks(directories, { data: { extensions: { world: 'Main' } } }, 'nova.png'), ['Main', 'Extra']);
+        assert.deepEqual(conversationCharacterLorebooks(directories, {}, 'nova.png'), ['Extra', 'Main']);
+        assert.deepEqual(conversationCharacterLorebooks(directories, nova, ''), ['Main']);
+        assert.deepEqual(conversationCharacterLorebooks(directories, { name: 'Plain' }, 'plain.png'), []);
+    });
+
+    test('keyed and constant entries from the main and extra books load together', async () => {
+        const result = await capture('The zephyr reached the harbour.');
+        assert.equal(result.characterDefault, true);
+        assert.equal(result.found, true);
+        assert.deepEqual(result.books, ['Main', 'Extra']);
+        assert.equal(result.name, 'Main, Extra');
+        for (const text of ['MAIN-KEYED', 'MAIN-CONSTANT', 'EXTRA-KEYED', 'EXTRA-CONSTANT']) assert.match(result.text, new RegExp(text));
+        assert.doesNotMatch(result.text, /MAIN-NEVER|GLOBAL-LORE|UNLINKED-LORE/);
+        const quiet = await capture('Just the weather.');
+        assert.doesNotMatch(quiet.text, /MAIN-KEYED|EXTRA-KEYED/);
+        assert.match(quiet.text, /MAIN-CONSTANT/);
+        assert.match(quiet.text, /EXTRA-CONSTANT/);
+    });
+
+    test('only books that added entries are named', async () => {
+        book('Extra', { 0: entry(0, { key: ['harbour'], content: 'EXTRA-KEYED' }) });
+        const result = await capture('Nothing keyed here.');
+        assert.equal(result.name, 'Main');
+        assert.deepEqual(result.books, ['Main', 'Extra']);
+    });
+
+    test('a card with no linked lorebook loads nothing', async () => {
+        assert.equal(await capture('zephyr', { character: { name: 'Plain' }, avatar: 'plain.png' }), null);
+    });
+
+    test('a missing or unreadable linked book is skipped and its sibling still loads', async () => {
+        saveSettings({ charLore: [{ name: 'nova', extraBooks: ['Gone', 'Broken', 'Folder', 'x'.repeat(300), 'Extra'] }] });
+        fs.writeFileSync(path.join(directories.worlds, 'Broken.json'), '{not json');
+        fs.mkdirSync(path.join(directories.worlds, 'Folder.json'));
+        const result = await capture('harbour', { character: { name: 'Nova', extensions: { world: 'Missing' } } });
+        assert.deepEqual(result.books, ['Extra']);
+        assert.equal(result.name, 'Extra');
+        assert.match(result.text, /EXTRA-KEYED/);
+        const none = await capture('harbour', { character: { name: 'Nova', extensions: { world: 'Missing' } }, avatar: 'lonely.png' });
+        assert.deepEqual(none, { name: '', books: [], found: false, text: '', characterDefault: true });
+    });
+
+    test('a named override reads only that book and a missing one never falls back', async () => {
+        const chosen = await capture('zephyr harbour', { name: 'Unlinked' });
+        assert.deepEqual(chosen, { name: 'Unlinked', found: true, text: 'UNLINKED-LORE' });
+        assert.deepEqual(await capture('zephyr harbour', { name: 'Nope' }), { name: 'Nope', found: false, text: '' });
+    });
+
+    test('character filters match the card file name without its extension', async () => {
+        book('Main', {
+            0: entry(0, { constant: true, characterFilter: { names: ['nova'], isExclude: false }, content: 'FOR-NOVA' }),
+            1: entry(1, { constant: true, characterFilter: { names: ['other'], isExclude: false }, content: 'FOR-OTHER' }),
+        });
+        const result = await capture('hi');
+        assert.match(result.text, /FOR-NOVA/);
+        assert.doesNotMatch(result.text, /FOR-OTHER/);
+    });
+
+    test('the account scan settings and budget apply across the linked books', async () => {
+        book('Main', { 0: entry(0, { constant: true, order: 2, content: 'FIRST-LORE' }) });
+        book('Extra', { 0: entry(0, { constant: true, order: 1, content: 'SECOND '.repeat(200) }) });
+        saveSettings({ charLore: [{ name: 'nova', extraBooks: ['Extra'] }], scan: { world_info_budget: 5 } });
+        const result = await capture('hi', { maxContext: 1000 });
+        assert.match(result.text, /FIRST/);
+        assert.doesNotMatch(result.text, /SECOND/);
+        assert.equal(result.name, 'Main');
     });
 });

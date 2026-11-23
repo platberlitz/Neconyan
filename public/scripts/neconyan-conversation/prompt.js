@@ -275,12 +275,14 @@ export async function updateConversationMemorySummary(avatar = getCurrentCharAva
 }
 
 /**
- * Ask the server to scan the Lorebook Override book against these messages. A failed request returns null,
- * which leaves the prompt with only the focus sentence rather than blocking the reply.
+ * Ask the server to scan the Lorebook Override book against these messages, or with no override the speaking
+ * card's linked lorebooks. `linkedBooks` lists the card's links; with no override and no links there is nothing
+ * to scan, so no request is made. A failed request returns null, which leaves the prompt with at most the focus
+ * sentence rather than blocking the reply.
  */
-export async function fetchConversationLorebook(settings, avatar, messages, { personaId = getConversationPersonaId(), account, maxContext } = {}) {
+export async function fetchConversationLorebook(settings, avatar, messages, { personaId = getConversationPersonaId(), account, maxContext, linkedBooks = [] } = {}) {
     const name = String(settings?.lorebook_override || '').trim();
-    if (!name) return null;
+    if (!name && !(Array.isArray(linkedBooks) && linkedBooks.length && avatar)) return null;
     try {
         const { lorebook } = await requestConversationBinding('lorebook/scan', {
             name, avatar, userName: getConversationPersonaName(personaId, 'User'), maxContext,

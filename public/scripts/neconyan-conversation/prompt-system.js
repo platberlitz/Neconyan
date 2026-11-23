@@ -30,6 +30,8 @@ export function composeConversationSystemPrompt({
     if (settings.lorebook_override && (!lorebook || lorebook.found)) {
         fields.push(`Conversation lorebook focus: ${settings.lorebook_override}. Prefer this lore/context over roleplay scene continuity.`);
         if (lorebook?.text) fields.push(`Lorebook entries from ${lorebook.name}:\n${lorebook.text}`);
+    } else if (!settings.lorebook_override && lorebook?.text) {
+        fields.push(`Lorebook entries from ${lorebook.name}:\n${lorebook.text}`);
     }
     if (availability) {
         fields.push(personaStatus

@@ -358,11 +358,15 @@ When enabled, Conversation Mode can occasionally create a DM aside based on a ne
 
 ### Lorebook Override
 
-**Lorebook Override** selects one World Info book for the Conversation. Leaving it on **Character default (no override)** loads no lorebook at all: Conversation never reads the character's linked lorebook, the chat lorebook or the global lorebooks, so no entry reaches the model.
+**Lorebook Override** selects one World Info book for the Conversation, or leaves the choice to the character.
 
-When a book is selected, its entries are scanned against the Conversation's recent messages by the book's own rules (keys, constant entries, selective logic, probability, scan depth and the World Info budget), and the entries that activate are added to the system prompt right after the line 'Conversation lorebook focus: <book>'. Only the selected book is read. Card, chat and global lorebooks stay out of Conversation. This applies to every reply: solo and group DMs, ordinary replies, Regenerate, and automatic or idle replies.
+On **Character default (no override)** the replying character's own linked lorebooks are loaded: its main lorebook and any extra lorebooks linked to the card, in that order, each read once. Their entries are scanned together against the Conversation's recent messages by the books' own rules (keys, constant entries, selective logic, probability, scan depth, character filters and the World Info budget), and the entries that activate are added to the system prompt under 'Lorebook entries from <books>', naming only the books that gave an entry. There is no focus line. In a group DM each member that replies loads only its own lorebooks. A card with no linked lorebook loads nothing, and its prompt is unchanged. A linked book that cannot be found or read is skipped, and the card's other linked books still load.
 
-If the selected book cannot be found, nothing is loaded and the focus line is left out. The **Missing lorebook links** notice reports the missing book.
+When a book is selected, its entries are scanned the same way, and the entries that activate are added to the system prompt right after the line 'Conversation lorebook focus: <book>'. Only the selected book is read; the card's own lorebooks stay out while an override is set.
+
+Chat lorebooks, persona lorebooks and the global lorebooks never reach Conversation, whichever option is chosen. Both options apply to every reply: solo and group DMs, ordinary replies, Regenerate, and automatic or idle replies.
+
+If the selected book cannot be found, nothing is loaded, the card's own lorebooks are not used in its place and the focus line is left out. The **Missing lorebook links** notice reports the missing book.
 
 Deleting or renaming a lorebook in World Info keeps the override honest. A rename moves the override of every Conversation (each DM and each member of a group) to the new name. A delete sets it back to **Character default (no override)**. An override for any other book, including one whose name only looks similar, stays as it was. A book removed outside the app is not seen, so its override stays and the notice reports it.
 
