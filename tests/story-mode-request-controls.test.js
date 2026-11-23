@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { EventEmitter } from 'node:events';
 import vm from 'node:vm';
 import * as generationOutcome from '../public/scripts/generation-outcome.js';
-import { watchTextBackend } from '../public/scripts/text-backend-failures.js';
+import { recordRequestFailure, requestText, watchTextBackend } from '../public/scripts/text-backend-failures.js';
 import { rememberGroupSpeaker, restoreGroupSpeaker } from '../public/scripts/group-chat-speakers.js';
 import { parse } from 'acorn';
 import { applyGenerationRequestControls, isGenerationLengthFinish, limitGenerationProse, reasoningOnlyWarningKind, requestUsesReasoning } from '../public/scripts/generation-request-controls.js';
@@ -212,6 +212,8 @@ function makeRuntime({ api = 'openai', model = 'gpt-4o', stream = false, buffer 
     }
     context.recordProviderFailure = jest.fn();
     context.watchTextBackend = watchTextBackend;
+    context.recordRequestFailure = recordRequestFailure;
+    context.requestText = requestText;
     context.activateSendButtons = jest.fn(() => { context.is_send_press = false; });
     context.textgenerationwebui_settings = context.textgen_settings;
     context.deactivateSendButtons = jest.fn(() => { context.is_send_press = true; });

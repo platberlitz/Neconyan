@@ -7,6 +7,9 @@ import {
     backendLabel,
     isStoppedRequest,
     readBackendFailure,
+    readableBackendError,
+    recordRequestFailure,
+    requestText,
     watchTextBackend,
     withoutEchoes,
     withoutRecentRequestText,
@@ -273,6 +276,76 @@ describe('text that other parts of the evidence quote from a failed request', ()
         expect(withoutRecentRequestText(undefined)).toBeUndefined();
         expect(withoutRecentRequestText(42)).toBe(42);
         expect(withoutRecentRequestText('', { addresses: 'message' })).toBe('');
+    });
+});
+
+describe('chat completion failures go through the same cut', () => {
+    const request = () => requestText({
+        chat_completion_source: 'openai',
+        model: 'gpt-test',
+        messages: [{ role: 'system', content: 'Be brief.' }, { role: 'user', content: `Tell me ${PROMPT}` }, { role: 'user', content: [{ type: 'text', text: 'second part, short' }] }],
+    });
+
+    test('a short chat message quoted by the error is cut, and the status, provider and model stay', () => {
+        recordRequestFailure({ provider: 'openai', model: 'gpt-test', status: 429, message: `Quota exceeded. Input began with: "Tell me ${PROMPT}" at ${URL_WITH_LOGIN} using ${KEY}`, request: request() });
+        const [entry] = getProviderFailures();
+        expect(entry).toMatchObject({ provider: 'openai', model: 'gpt-test', status: 429 });
+        expect(entry.message).toContain('Quota exceeded.');
+        expect(entry.message).toContain('[text removed]');
+        expect(entry.message).toContain('[server address]');
+        expectClean();
+    });
+
+    test('a reply received before the failure is cut too', () => {
+        const sent = request();
+        sent.received = REPLY;
+        recordRequestFailure({ provider: 'openai', model: 'gpt-test', status: 500, message: `The stream broke after "${REPLY}"`, request: sent });
+        expectClean();
+        expect(getProviderFailures()[0].message).toContain('The stream broke after');
+    });
+
+    test('a message that quotes nothing reads as it did', () => {
+        recordRequestFailure({ provider: 'claude', model: 'm', status: 500, message: 'The upstream model fell over.', request: request() });
+        expect(getProviderFailures()[0]).toMatchObject({ provider: 'claude', model: 'm', status: 500, message: 'The upstream model fell over.' });
+    });
+
+    test('the same request text is also cut where other parts of the evidence quote it', () => {
+        recordRequestFailure({ provider: 'openai', model: 'm', status: 400, message: 'bad', request: request() });
+        expect(withoutRecentRequestText(`Error: could not send "Tell me ${PROMPT}"`)).not.toContain('violet lighthouse');
+    });
+});
+
+describe('a reply of { error: true } reads as a sentence', () => {
+    test.each([
+        [{ error: true, status: 400, response: 'Context size exceeded' }, 'Context size exceeded'],
+        [{ error: true, status: 502, response: JSON.stringify({ error: { message: 'model is loading' } }) }, 'model is loading'],
+        [{ error: true }, 'The app server got no reply from the backend (no error message was sent).'],
+        [{ error: { code: 400 } }, 'The app server got no reply from the backend (no error message was sent).'],
+    ])('%j', (body, expected) => {
+        expect(readableBackendError(body)).toBe(expected);
+    });
+
+    test('the text completion toast only ever gets a string', () => {
+        const source = readFileSync(new URL('../public/scripts/textgen-settings.js', import.meta.url), 'utf8');
+        expect(source).toContain('message = readableBackendError(data)');
+    });
+});
+
+describe('a failed send does not end as an unhandled rejection', () => {
+    const script = readFileSync(new URL('../public/script.js', import.meta.url), 'utf8');
+
+    test('Generate marks the failures it has handled and the send button swallows only those', () => {
+        expect(script).toContain('noteReportedGenerationFailure(exception);');
+        expect(script).toContain('if (isReportedGenerationFailure(error)) console.debug(\'The send failed\', error);');
+        expect(script).toContain('else if (!isReportedImageRefusal(error)) throw error;');
+    });
+
+    test('chat completion records through the shared cut and nothing writes to the recorder directly', () => {
+        for (const file of ['openai.js', 'custom-request.js']) {
+            const source = readFileSync(new URL(`../public/scripts/${file}`, import.meta.url), 'utf8');
+            expect(source).toContain('recordRequestFailure');
+            expect(source).not.toContain('recordProviderFailure');
+        }
     });
 });
 

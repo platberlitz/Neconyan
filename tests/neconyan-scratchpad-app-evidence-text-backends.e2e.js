@@ -29,6 +29,8 @@ const PLANTED = [
 // What a backend might send back: it quotes the prompt, a server address with a login and a key.
 const ERROR_TEXT = `Context size exceeded. Input began with: "${PROMPT_SENTENCE}" while calling ${SERVER_URL} using Authorization: Bearer ${SECRETS.bearer} and key ${SECRETS.apiKey}.`;
 const REPLY_OK = 'The mock reply is fine.';
+const OOM_TEXT = 'Not enough memory to load the model.';
+const NOT_REACHED = 'The app server got no reply from the backend (no error message was sent).';
 const MODELS = { kobold: 'mock-kobold-model', novel: 'clio-v1', text: 'mock-text-model' };
 
 const baseline = process.env.NECONYAN_TEST_CHECKOUT_ROOT;
@@ -75,6 +77,12 @@ async function createBackends() {
         const finish = () => kind === 'novel' ? `event: newToken\ndata: ${JSON.stringify({ token: '', final: true })}\n\n`
             : kind === 'text' ? `data: ${JSON.stringify({ content: '', stop: true, stop_type: 'eos' })}\n\n` : '';
         if (mode === 'drop') return request.socket.destroy();
+        if (mode === 'oom' || mode === 'bare') {
+            response.statusCode = 500;
+            if (mode === 'bare') return response.end();
+            response.setHeader('Content-Type', 'application/json');
+            return response.end(JSON.stringify({ error: { code: 500, message: OOM_TEXT, type: 'server_error' } }));
+        }
         if (mode === 'error') {
             response.statusCode = 400;
             response.setHeader('Content-Type', 'application/json');
@@ -224,6 +232,46 @@ function noPlanted(label, text) {
     for (const value of PLANTED) expect(text.toLowerCase(), `${label} leaks ${value}`).not.toContain(value.toLowerCase());
 }
 
+/** Shows the evidence the way Scratchpad does with the switch on, then sends a real question and returns what the model received. */
+async function shareEvidence({ page, app, account, phone, size, label, expectedLines }) {
+    await openScratchpad(page);
+    await page.getByRole('tab', { name: 'Context', exact: true }).click();
+    if (phone) await applyIOSOnlyCss(page);
+    const toggle = page.getByRole('checkbox', { name: /^App diagnostics/ });
+    await toggle.check();
+    await page.getByRole('button', { name: 'Show preview', exact: true }).click();
+    const preview = page.locator('pre.scratchpad-preview-text');
+    await expect(preview).toContainText('### Failed model requests');
+    const section = evidenceOnly(await preview.innerText());
+    const lines = failureLines(section);
+    expect(lines).toHaveLength(expectedLines);
+    if (!baseline) noPlanted('preview evidence', section);
+    // A failed request leaves nothing extra in the browser errors.
+    expect(section).not.toContain('### Browser errors and crash reports');
+
+    await page.getByRole('tab', { name: 'Context', exact: true }).click();
+    await page.locator('#scratchpad-connection-miso').selectOption('durable');
+    await page.getByRole('checkbox', { name: /^Stream replies/ }).uncheck();
+    await page.getByRole('tab', { name: 'Chat', exact: true }).click();
+    app.provider.mode.httpError = null;
+    app.provider.mode.reply = { choices: [{ message: { content: 'The evidence lists the failures.' } }] };
+    const question = `What went wrong in Neconyan? (${size} ${label})`;
+    await page.locator('.scratchpad-composer').fill(question);
+    const [response] = await Promise.all([
+        page.waitForResponse('**/api/scratchpad/send'),
+        page.locator('.scratchpad-send').click(),
+    ]);
+    expect(response.ok(), await response.text()).toBe(true);
+    await account.settled((await response.json()).job.id);
+    const calls = app.provider.calls.filter(call => call.messages?.at(-1)?.content === question);
+    expect(calls).toHaveLength(1);
+    const sent = evidenceOnly(calls[0].messages.map(message => String(message.content)).join('\n'));
+    expect(sent).toContain('### Failed model requests');
+    expect(failureLines(sent).map(withoutTime)).toEqual(lines.map(withoutTime));
+    if (!baseline) noPlanted('request to the model', sent);
+    return { lines, section, sent };
+}
+
 for (const phone of [false, true]) {
     for (const kind of ['kobold', 'novel', 'text']) {
         test(`${phone ? 'phone' : 'desktop'} ${kind} failures reach App diagnostics once, privately`, async ({ app }) => {
@@ -315,54 +363,21 @@ for (const phone of [false, true]) {
             for (const stream of [false, true]) await attempt(page, kind, via(stream), { mode: 'ok', stream, text: 'Fine again' });
             expect(await failures(page)).toHaveLength(total);
 
-            // What the assistant is given: the evidence section of Scratchpad, with the switch on.
-            await openScratchpad(page);
-            await page.getByRole('tab', { name: 'Context', exact: true }).click();
-            if (phone) await applyIOSOnlyCss(page);
-            const toggle = page.getByRole('checkbox', { name: /^App diagnostics/ });
-            await toggle.check();
-            await page.getByRole('button', { name: 'Show preview', exact: true }).click();
-            const preview = page.locator('pre.scratchpad-preview-text');
-            await expect(preview).toContainText('### Failed model requests');
-            const section = evidenceOnly(await preview.innerText());
-            const lines = failureLines(section);
-            fs.writeFileSync(path.join(output, `${size}-${kind}-lines.txt`), lines.join('\n') + '\n');
+            const shared = await shareEvidence({ page, app, account, phone, size, label: kind, expectedLines: core.length });
+            fs.writeFileSync(path.join(output, `${size}-${kind}-lines.txt`), shared.lines.join('\n') + '\n');
             fs.writeFileSync(path.join(output, `${size}-${kind}-log.txt`), log.join('\n') + '\n');
-            expect(lines).toHaveLength(core.length);
-            noPlanted('preview evidence', section);
-
-            // The real request to the model carries the same lines.
-            await page.getByRole('tab', { name: 'Context', exact: true }).click();
-            await page.locator('#scratchpad-connection-miso').selectOption('durable');
-            await page.getByRole('checkbox', { name: /^Stream replies/ }).uncheck();
-            await page.getByRole('tab', { name: 'Chat', exact: true }).click();
-            app.provider.mode.reply = { choices: [{ message: { content: 'The evidence lists the failures.' } }] };
-            const question = `What went wrong in Neconyan? (${size} ${kind})`;
-            await page.locator('.scratchpad-composer').fill(question);
-            const [response] = await Promise.all([
-                page.waitForResponse('**/api/scratchpad/send'),
-                page.locator('.scratchpad-send').click(),
-            ]);
-            expect(response.ok(), await response.text()).toBe(true);
-            await account.settled((await response.json()).job.id);
-            const calls = app.provider.calls.filter(call => call.messages?.at(-1)?.content === question);
-            expect(calls).toHaveLength(1);
-            const sent = evidenceOnly(calls[0].messages.map(message => String(message.content)).join('\n'));
-            expect(sent).toContain('### Failed model requests');
-            expect(failureLines(sent).map(withoutTime)).toEqual(lines.map(withoutTime));
-            noPlanted('request to the model', sent);
             expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(phone ? 393 : 1280);
-            // A failed send ends as an unhandled rejection in the app today (staging does too); a broken module or boot is what must not show up.
-            expect(app.navigationErrors.filter(error => /ReferenceError|SyntaxError|does not provide an export|is not defined|Cannot read|text-backend-failures/.test(String(error).replace(/\n\s+at .*text-backend-failures\.js[^\n]*/g, '')))).toEqual([]);
+            // A failed request ends in a toast and one log entry, not in an unhandled rejection or a broken module.
+            expect(app.navigationErrors).toEqual([]);
         });
     }
 }
 
-// Chat completion already records its failures. Run this file against another checkout (NECONYAN_TEST_CHECKOUT_ROOT)
-// and the files it writes hold the same entries, which is how 'unchanged' is shown.
+// Chat completion records its failures too. Run this file against another checkout (NECONYAN_TEST_CHECKOUT_ROOT) and the
+// entries it writes show that the provider, model and status read the same there; only the message is cleaned here.
 for (const phone of [false, true]) {
-    test(`${phone ? 'phone' : 'desktop'} chat completion entries stay as they were, one per failed request`, async ({ app }) => {
-        test.setTimeout(240000);
+    test(`${phone ? 'phone' : 'desktop'} chat completion entries keep their fields and lose the prompt, one per failed request`, async ({ app }) => {
+        test.setTimeout(300000);
         const size = phone ? 'phone' : 'desktop';
         fs.mkdirSync(output, { recursive: true });
         const account = await app.account({ phone, contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {}, activeConnection: true, configureSettings: saved => { saved.power_user.auto_label_chat = false; } });
@@ -370,24 +385,93 @@ for (const phone of [false, true]) {
         const page = await account.open({ workspace: false });
         await acknowledgeActiveSettings(page);
         await selectCharacter(page, account.avatar);
+        const quoting = `Quota exceeded for the plan. Input began with: "Tell me ${PROMPT_SENTENCE}" while calling ${SERVER_URL} using Authorization: Bearer ${SECRETS.bearer} and key ${SECRETS.apiKey}.`;
+        const cases = [
+            { name: 'plain HTTP 429', stream: false, status: 429, httpError: { status: 429, body: { error: { message: quoting } } } },
+            { name: 'plain HTTP 500', stream: false, status: 500, httpError: { status: 500, body: { error: { message: 'The upstream model fell over.' } } } },
+            { name: 'plain error in an answer', stream: false, status: 0, reply: { error: { message: quoting } } },
+            { name: 'stream HTTP 429', stream: true, status: 429, httpError: { status: 429, body: { error: { message: quoting } } } },
+            { name: 'stream HTTP 500', stream: true, status: 500, httpError: { status: 500, body: { error: { message: 'The upstream model fell over.' } } } },
+            { name: 'stream error after a reply', stream: true, status: 0, streamEvents: [{ choices: [{ delta: { content: `Here is ${REPLY_SENTENCE} and then ` } }] }, { error: { message: `The stream broke after "${REPLY_SENTENCE}". ${quoting}` } }] },
+        ];
         const seen = [];
-        for (const stream of [false, true]) {
-            await page.evaluate(async stream => { (await import('/scripts/openai.js')).oai_settings.stream_openai = stream; }, stream);
-            for (const [status, message] of [[429, `Quota exceeded for the plan. ${PROMPT_SENTENCE}`], [500, 'The upstream model fell over.']]) {
-                await clearFailures(page);
-                app.provider.mode.httpError = { status, body: { error: { message } } };
-                const before = app.provider.calls.length;
-                await WAYS.send(page, `Chat completion ${stream ? 'stream' : 'plain'} ${status}`);
-                await expect.poll(() => app.provider.calls.length).toBeGreaterThan(before);
-                await idle(page);
-                const entries = await failures(page);
-                expect(entries, `${stream ? 'streamed' : 'plain'} ${status} is one entry`).toHaveLength(1);
-                seen.push({ stream, entry: { ...entries[0] } });
+        const toasts = [];
+        await clearFailures(page);
+        for (const item of cases) {
+            await page.evaluate(async stream => { (await import('/scripts/openai.js')).oai_settings.stream_openai = stream; }, item.stream);
+            Object.assign(app.provider.mode, { httpError: item.httpError ?? null, reply: item.reply ?? null, streamEvents: item.streamEvents ?? null });
+            const before = app.provider.calls.length;
+            await WAYS.send(page, `Tell me ${PROMPT_SENTENCE} (${item.name})`);
+            await expect.poll(() => app.provider.calls.length, { timeout: 30000 }).toBeGreaterThan(before);
+            await expect.poll(() => page.evaluate(async () => !(await import('/script.js')).is_send_press), { timeout: 60000 }).toBe(true);
+            toasts.push({ name: item.name, toasts: await page.evaluate(() => [...document.querySelectorAll('#toast-container .toast')].map(toast => toast.textContent.trim())) });
+            await page.evaluate(() => window.toastr.clear());
+            const entries = await failures(page);
+            expect(entries, `${item.name} adds one entry`).toHaveLength(Math.min(seen.length + 1, 5));
+            expect(entries[0]).toMatchObject({ provider: 'custom', model: 'conversation-fixture' });
+            if (item.status) expect(entries[0].status).toBe(item.status);
+            seen.push({ name: item.name, entry: { ...entries[0] } });
+            if (!baseline) noPlanted(`${item.name} entry`, JSON.stringify(entries));
+        }
+        Object.assign(app.provider.mode, { httpError: null, reply: null, streamEvents: null });
+        const fields = seen.map(({ name, entry }) => ({ name, provider: entry.provider, model: entry.model, status: entry.status }));
+        fs.writeFileSync(path.join(output, `chat-${size}-fields${baseline ? '-staging' : ''}.json`), JSON.stringify(fields, null, 2) + '\n');
+        fs.writeFileSync(path.join(output, `chat-${size}-entries${baseline ? '-staging' : ''}.json`), JSON.stringify(seen, null, 2) + '\n');
+        fs.writeFileSync(path.join(output, `chat-${size}-toasts${baseline ? '-staging' : ''}.json`), JSON.stringify(toasts, null, 2) + '\n');
+
+        // The last five failures are what the assistant is shown; the prompt, the reply, the keys and the server address are not in them.
+        const shared = await shareEvidence({ page, app, account, phone, size, label: 'chat completion', expectedLines: 5 });
+        fs.writeFileSync(path.join(output, `chat-${size}-lines${baseline ? '-staging' : ''}.txt`), shared.lines.join('\n') + '\n');
+        expect(app.navigationErrors).toEqual([]);
+    });
+}
+
+// The app server answers { error: true, status, response } when a text backend fails. The toast used to read 'true'
+// and the toast code threw a TypeError. Screenshots of it go to ../screenshots/error-true-toast when asked for.
+for (const phone of [false, true]) {
+    test(`${phone ? 'phone' : 'desktop'} a text backend error reads as a sentence in the toast`, async ({ app }) => {
+        test.setTimeout(240000);
+        const size = phone ? 'phone' : 'desktop';
+        const phase = baseline ? 'before' : 'after';
+        const shots = path.join('..', 'screenshots', 'error-true-toast');
+        fs.mkdirSync(shots, { recursive: true });
+        fs.mkdirSync(output, { recursive: true });
+        backends.mode('text', 'ok');
+        const account = await app.account({ phone, contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {}, configureSettings: configure('text') });
+        if (phone) await installIPhoneSafari(account.context, { standalone: true });
+        const page = await account.open({ workspace: false });
+        await acknowledgeActiveSettings(page);
+        if (phone) await applyIOSOnlyCss(page);
+        await selectCharacter(page, account.avatar);
+        await expect.poll(() => page.evaluate(async () => (await import('/script.js')).online_status), { timeout: 30000 }).not.toBe('no_connection');
+        const shown = [];
+        // 'drop' and 'bare' make the app server answer { error: true, status, response }, which a streamed reply reads as well.
+        const matrix = [
+            { mode: 'drop', stream: true, expected: 'socket hang up', shot: true },
+            { mode: 'drop', stream: false, expected: 'socket hang up' },
+            { mode: 'bare', stream: false, expected: NOT_REACHED, shot: true },
+            { mode: 'oom', stream: false, expected: OOM_TEXT },
+            { mode: 'oom', stream: true, expected: OOM_TEXT },
+        ];
+        for (const { mode, stream, expected, shot } of matrix) {
+            await setStreaming(page, 'text', stream);
+            backends.mode('text', mode);
+            const before = backends.calls('text').length;
+            await WAYS.send(page, `Please go on (${mode} ${stream ? 'stream' : 'plain'})`);
+            await expect.poll(() => backends.calls('text').length, { timeout: 30000 }).toBeGreaterThan(before);
+            await expect.poll(() => page.evaluate(async () => !(await import('/script.js')).is_send_press), { timeout: 60000 }).toBe(true);
+            // Before this change some of these had no toast at all, so give a late one a moment to show.
+            await page.locator('#toast-container .toast').first().waitFor({ timeout: 3000 }).catch(() => undefined);
+            const texts = await page.evaluate(() => [...document.querySelectorAll('#toast-container .toast')].map(toast => toast.textContent.trim()));
+            shown.push({ mode, stream, texts });
+            if (shot) await page.screenshot({ path: path.join(shots, `${size}-${mode}-${stream ? 'stream' : 'plain'}-${phase}.png`) });
+            await page.evaluate(() => window.toastr.clear());
+            if (!baseline) {
+                expect(texts.join(' | '), `${mode} ${stream ? 'streamed' : 'plain'} toast`).toContain(expected);
+                expect(texts.some(text => /^(Text Completion API|Text generation error)?\s*true$/.test(text)), 'no toast reads just true').toBe(false);
             }
         }
-        app.provider.mode.httpError = null;
-        fs.writeFileSync(path.join(output, `chat-${size}-entries${baseline ? '-staging' : ''}.json`), JSON.stringify(seen, null, 2) + '\n');
-        expect(seen.map(item => item.entry.status)).toEqual([429, 500, 429, 500]);
-        for (const { entry } of seen) expect(entry.provider).toBe('custom');
+        fs.writeFileSync(path.join(output, `${size}-error-true-toast-${phase}.json`), JSON.stringify(shown, null, 2) + '\n');
+        expect(app.navigationErrors).toEqual([]);
     });
 }
