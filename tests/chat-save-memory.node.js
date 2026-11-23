@@ -244,6 +244,41 @@ test('roleplayHash gives the same hash or the same refusal as the round-trip imp
     for (const [label, value] of Object.entries(refused)) assert.equal(outcome(() => referenceRoleplayHash(value)).code, 'ROLEPLAY_INVALID', `the old implementation refuses ${label}`);
     for (const value of accepted) assert.equal(typeof outcome(() => referenceRoleplayHash(value)).value, 'string');
     samples.push(...Object.values(refused), ...accepted);
+    // Values that look like plain data to a quick check but that the round-trip implementation refuses. Each is built
+    // afresh for every call because some of them keep state.
+    const sealed = (make, prototype) => () => Object.setPrototypeOf(make(), prototype);
+    const lookAlikes = {
+        'arguments object': () => (function () { return arguments; })(1, 2),
+        'arguments object inside data': () => ({ list: (function () { return arguments; })(1, 2) }),
+        Math: () => Math,
+        'Date given the Object prototype': sealed(() => new Date(0), Object.prototype),
+        'String given the Object prototype': sealed(() => new String('x'), Object.prototype),
+        'Number given the Object prototype': sealed(() => new Number(1), Object.prototype),
+        'Boolean given the Object prototype': sealed(() => new Boolean(true), Object.prototype),
+        'RegExp given the Object prototype': sealed(() => /x/, Object.prototype),
+        'Error given the Object prototype': sealed(() => new Error('x'), Object.prototype),
+        'Date given the Object prototype inside data': () => [{ when: Object.setPrototypeOf(new Date(0), Object.prototype) }],
+        'hidden toStringTag on an object': () => Object.defineProperty({ a: 1 }, Symbol.toStringTag, { value: 'Hidden' }),
+        'hidden toStringTag on an array': () => Object.defineProperty([1, 2], Symbol.toStringTag, { value: 'Hidden' }),
+        'getter that answers differently on each read': () => { let reads = 0; return { get a() { reads += 1; return reads; } }; },
+        'nested getter that answers differently on each read': () => { let reads = 0; return { list: [{ get a() { reads += 1; return reads; } }] }; },
+        'array index getter that answers differently on each read': () => {
+            let reads = 0;
+            return Object.defineProperty([0, 1], 1, { get() { reads += 1; return reads; }, enumerable: true });
+        },
+        'getter that answers nothing': () => ({ get a() { return undefined; } }),
+        'getter that answers a date': () => ({ get a() { return new Date(0); } }),
+    };
+    for (const [label, make] of Object.entries(lookAlikes)) {
+        const expected = outcome(() => referenceRoleplayHash(make()));
+        const actual = outcome(() => roleplayHash(make()));
+        assert.equal(expected.code, 'ROLEPLAY_INVALID', `the old implementation refuses ${label}`);
+        assert.deepEqual(actual, expected, label);
+    }
+    // A getter that always answers the same is accepted by the old implementation, and keeps its hash.
+    const steady = () => ({ get a() { return 1; }, list: Object.defineProperty([0], 0, { get() { return 5; }, enumerable: true }) });
+    assert.equal(typeof outcome(() => referenceRoleplayHash(steady())).value, 'string');
+    assert.deepEqual(outcome(() => roleplayHash(steady())), outcome(() => referenceRoleplayHash(steady())));
     for (let index = 0; index < 4000; index++) samples.push(randomValue(random));
     let hashed = 0;
     for (const sample of samples) {

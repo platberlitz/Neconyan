@@ -161,9 +161,9 @@ export function canonical(value) {
 /**
  * True only for the values JSON.stringify would round-trip exactly (a tree of plain objects,
  * dense arrays, strings, booleans, null and finite numbers other than -0), each with this realm's
- * Object or Array prototype and no toJSON. Anything else, such as undefined, -0, dates, functions,
- * symbols, bigints, cycles, custom or foreign prototypes, is refused so callers keep their legacy
- * handling of it.
+ * Object or Array prototype, no toJSON and only data properties. Anything else, such as undefined, -0,
+ * dates, functions, symbols, bigints, cycles, custom or foreign prototypes, is refused so callers keep
+ * their legacy handling of it.
  */
 export function isStrictJsonTree(value, ancestors = new Set()) {
     if (value === null) return true;
@@ -180,27 +180,43 @@ export function isStrictJsonTree(value, ancestors = new Set()) {
     }
     // JSON.stringify would call a toJSON hook, enumerable or not, and write something else.
     if (typeof value.toJSON === 'function') return false;
+    // Arguments, Math, and Date, String or Error objects given another prototype keep an internal tag (or a hidden
+    // Symbol.toStringTag) that the prototype checks below cannot see.
+    const isArray = Array.isArray(value);
+    if (Object.prototype.toString.call(value) !== (isArray ? '[object Array]' : '[object Object]')) return false;
     if (ancestors.has(value)) return false;
     ancestors.add(value);
     try {
-        if (Array.isArray(value)) {
+        if (isArray) {
             if (Object.getPrototypeOf(value) !== Array.prototype) return false;
             for (let index = 0; index < value.length; index += 1) {
-                if (!Object.hasOwn(value, index) || !isStrictJsonTree(value[index], ancestors)) return false;
+                if (!isStrictJsonProperty(value, index, ancestors)) return false;
             }
             // Every index is an own property above, so any further enumerable key makes the count differ.
             if (Object.keys(value).length !== value.length) return false;
-            return !Object.getOwnPropertySymbols(value).some(symbol => Object.prototype.propertyIsEnumerable.call(value, symbol));
+            return !hasEnumerableSymbol(value);
         }
         if (Object.getPrototypeOf(value) !== Object.prototype) return false;
-        if (Object.getOwnPropertySymbols(value).some(symbol => Object.prototype.propertyIsEnumerable.call(value, symbol))) return false;
+        if (hasEnumerableSymbol(value)) return false;
         for (const key of Object.keys(value)) {
-            if (!isStrictJsonTree(value[key], ancestors)) return false;
+            if (!isStrictJsonProperty(value, key, ancestors)) return false;
         }
         return true;
     } finally {
         ancestors.delete(value);
     }
+}
+
+function hasEnumerableSymbol(value) {
+    const symbols = Object.getOwnPropertySymbols(value);
+    return symbols.length > 0 && symbols.some(symbol => Object.prototype.propertyIsEnumerable.call(value, symbol));
+}
+
+// An own data property whose value is strict JSON. An accessor is refused rather than called: it could answer
+// differently each time it is read, and the checked path then settles it as it always has.
+function isStrictJsonProperty(owner, key, ancestors) {
+    const descriptor = Object.getOwnPropertyDescriptor(owner, key);
+    return descriptor !== undefined && 'value' in descriptor && isStrictJsonTree(descriptor.value, ancestors);
 }
 
 /**
@@ -227,13 +243,17 @@ export function canonicalSha256(value) {
             emit(']');
         } else if (node && typeof node === 'object') {
             emit('{');
-            Object.keys(node).sort().forEach((key, index) => {
+            const keys = Object.keys(node).sort();
+            for (let index = 0; index < keys.length; index += 1) {
                 if (index > 0) emit(',');
-                emit(JSON.stringify(key));
+                emit(JSON.stringify(keys[index]));
                 emit(':');
-                walk(node[key]);
-            });
+                walk(node[keys[index]]);
+            }
             emit('}');
+        } else if (typeof node === 'number' && Number.isFinite(node)) {
+            // Both print a finite number the same way, and this skips a JSON.stringify call per number.
+            emit(String(node));
         } else {
             emit(JSON.stringify(node ?? null));
         }
