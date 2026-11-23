@@ -747,6 +747,16 @@ test('Tide controls sit in the container and the container alone paints the lowe
     await expect(assistant.locator('.mes_block > .nn-response-controls')).toHaveCount(1);
 
     // R7-AC6/R7-AC14: the container is the only surface at the lower edge.
+    // Give the first real row enough preceding content to reach the edge at native scroll positions.
+    const spacer = await page.locator('#chat').evaluateHandle(chat => {
+        const element = document.createElement('div');
+        element.inert = true;
+        element.style.flex = 'none';
+        element.style.height = `${chat.clientHeight}px`;
+        chat.prepend(element);
+        return element;
+    });
+    const crossings = [];
     const cap = page.locator('#neconyan-bubbles-bottom-boundary');
     const barRect = () => page.locator('#sb-bottom-chat-bar').evaluate(element => element.getBoundingClientRect().toJSON());
     const atEdge = async selector => {
@@ -756,6 +766,13 @@ test('Tide controls sit in the container and the container alone paints the lowe
             chat.scrollTop += box.top + box.height / 2 - chat.getBoundingClientRect().bottom + 1;
         });
         await settle();
+        const position = await page.locator(selector).evaluate(element => {
+            const { top, bottom } = element.getBoundingClientRect();
+            const edge = element.closest('#chat').getBoundingClientRect().bottom;
+            return { top, bottom, edge };
+        });
+        crossings.push({ selector, ...position });
+        expect(position.top < position.edge && position.bottom > position.edge, `${selector} crosses the chat edge: ${JSON.stringify(position)}`).toBe(true);
     };
     const bar = await barRect();
     // The assistant container starts left of the bar, so it sticks out and paints the cap.
@@ -763,6 +780,7 @@ test('Tide controls sit in the container and the container alone paints the lowe
     expect(assistantContainer.left, 'assistant container sticks out left').toBeLessThan(bar.left);
     await atEdge('#chat > .mes[mesid="0"] > .nn-tide-container');
     await expect(cap).toBeVisible();
+    await expect(cap).toHaveAttribute('data-message-id', '0');
     const edge = await cap.evaluate(element => {
         const surface = element.querySelector('div'), box = element.getBoundingClientRect();
         const containerElement = document.querySelector(`#chat > .mes[mesid="${element.dataset.messageId}"] > .nn-tide-container`);
@@ -812,8 +830,10 @@ test('Tide controls sit in the container and the container alone paints the lowe
     expect(single.visibility, 'the one-line bubble stays visible').toBe('visible');
     expect(single.display, 'the one-line bubble stays rendered').not.toBe('none');
     expect(single.underbar, 'no hiding class exists').toBe(0);
+    expect(single.crosses, JSON.stringify(single)).toBe(true);
     expect(single.containerCrosses, JSON.stringify(single)).toBe(true);
     expect(single.capHidden, 'the container paints its cap').toBe(false);
+    await expect(cap).toHaveAttribute('data-message-id', '2');
 
     // R7-AC14: while editing, the crossing container is the surface like any other and the
     // editor's scrollbar lane stays clear.
@@ -830,6 +850,7 @@ test('Tide controls sit in the container and the container alone paints the lowe
     // crosses the edge too (asserted below through the painted cap).
     await atEdge('#chat > .mes[mesid="0"] .edit_textarea');
     await expect(cap).toBeVisible();
+    await expect(cap).toHaveAttribute('data-message-id', '0');
     expect(await cap.evaluate(element => getComputedStyle(element.querySelector('div')).borderBottomLeftRadius), 'cap radius while editing').toBe('22px');
     const lane = await editor.evaluate(element => {
         const chat = element.closest('.mes').parentElement, box = element.getBoundingClientRect();
@@ -869,6 +890,7 @@ test('Tide controls sit in the container and the container alone paints the lowe
     await expect(editor).toHaveCount(0);
 
     // R7 fix B: tablet keeps the managed wrapper, with the native cluster static inside it.
+    await spacer.evaluate(element => element.remove());
     await page.setViewportSize({ width: 900, height: 900 });
     await expect(editRow).toHaveClass(/nn-tide-layout/);
     await expect(editRow.locator('.mes_block > .nn-response-controls')).toHaveCount(1);
@@ -897,7 +919,7 @@ test('Tide controls sit in the container and the container alone paints the lowe
     expect(teardown.markers).toBe(0);
     expect(teardown.properties).toEqual([]);
     expect(teardown.container).toBe(1);
-    await info.attach('Tide container controls', { body: Buffer.from(JSON.stringify({ edge, lane, tabletCluster, below })), contentType: 'application/json' });
+    await info.attach('Tide container controls', { body: Buffer.from(JSON.stringify({ crossings, edge, lane, tabletCluster, below })), contentType: 'application/json' });
 });
 
 test('Tide below bars and narrow clusters share one size on both roles', async ({ app }, info) => {
