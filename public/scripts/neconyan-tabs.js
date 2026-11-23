@@ -6646,7 +6646,10 @@ async function handleClearCookiesAndCacheClick(event) {
         const clearedCookieCount = clearAllBrowserCookies();
         globalThis.toastr?.success?.('Cookies and cache cleared. Reloading Neconyan...', 'Cookies cleared');
         console.info(`[Cache] Expired ${clearedCookieCount} browser cookies and queued ${serverCookieResult?.expirationAttempts ?? 0} server cookie expirations before reload`);
-        window.setTimeout(() => window.location.reload(), 1000);
+        window.setTimeout(() => {
+            globalThis.NeconyanCrashDiagnostics?.noteReload?.({ reason: 'cache-cleared' });
+            window.location.reload();
+        }, 1000);
     } catch (error) {
         console.error('Failed to clear cookies and cache', error);
         globalThis.toastr?.error?.(String(error?.message || error), 'Clear failed');
@@ -14551,6 +14554,7 @@ async function waitForServerReturn(expectedRevision = '', { clearCacheBeforeRelo
         if (clearCacheBeforeReload && typeof window.NeconyanClearFrontendCache === 'function') {
             await window.NeconyanClearFrontendCache({ skipConfirmation: true, saveBeforeClear: false });
         }
+        globalThis.NeconyanCrashDiagnostics?.noteReload?.({ reason: 'server-restarted' });
         location.reload();
     }
     const timeoutAt = Date.now() + 180000;
@@ -16030,6 +16034,7 @@ async function handleSillyTavernFolderImport() {
         setServerAdminMessage(refs.note, result?.message || 'Folder import finished. Reloading…', 'good');
         toastr.success(result?.message || 'Folder import finished. Reloading…', 'Import SillyTavern');
         await wait(700);
+        globalThis.NeconyanCrashDiagnostics?.noteReload?.({ reason: 'import-finished' });
         location.reload();
     } catch (error) {
         console.error('Failed to import SillyTavern folder.', error);
@@ -16130,6 +16135,7 @@ async function handleSillyTavernZipImport(file) {
         setServerAdminMessage(refs.note, result?.message || 'Backup ZIP imported. Reloading…', 'good');
         toastr.success(result?.message || 'Backup ZIP imported. Reloading…', 'Import SillyTavern');
         await wait(700);
+        globalThis.NeconyanCrashDiagnostics?.noteReload?.({ reason: 'import-finished' });
         location.reload();
     } catch (error) {
         console.error('Failed to import SillyTavern backup ZIP.', error);
@@ -16160,7 +16166,10 @@ function showSkippedImportFiles(refs, heading, skips, result, mountReportDownloa
     reload.type = 'button';
     reload.className = 'menu_button';
     reload.textContent = 'Reload to use the imported data';
-    reload.addEventListener('click', () => location.reload());
+    reload.addEventListener('click', () => {
+        globalThis.NeconyanCrashDiagnostics?.noteReload?.({ reason: 'import-finished' });
+        location.reload();
+    });
     refs.note.append('\n', reload);
     mountReportDownload(refs.note, result);
     if (count) toastr.warning(`${count === 1 ? '1 file could' : `${count} files could`} not be imported. Review the report before reloading.`, 'Import SillyTavern');

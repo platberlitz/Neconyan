@@ -14,7 +14,9 @@ process.env.SILLYTAVERN_PERFORMANCE_USEDISKCACHE = 'false';
 
 const { acceptJob, setJobState } = await import('../src/jobs/store.js');
 const { createRequestTrace, getRecentRequestEntries, getRecentRequests } = await import('../src/request-trace.js');
-const { initialiseCrashDiagnostics, writeCrashReport } = await import('../src/crash-diagnostics.js');
+const { consumeFatalReport, initialiseCrashDiagnostics, writeCrashReport } = await import('../src/crash-diagnostics.js');
+const { describeChildStop } = await import('../src/server-crash-evidence.js');
+const { nodeFatalReport } = await import('./fatal-report-fixture.js');
 const { collectAccountEvidence, collectAdminEvidence, ownJobEvidence, ownRequestEvidence } = await import('../src/scratchpad/evidence.js');
 const { router } = await import('../src/endpoints/scratchpad.js');
 const { formatAppEvidence } = await import('../public/scripts/scratchpad/evidence.js');
@@ -123,6 +125,42 @@ test('admin evidence redacts crash reports and keeps only warning and error line
     assert.ok(evidence.logLines.items.every(line => line.stream === 'stderr'));
     assertClean(evidence);
     assertClean(formatAppEvidence({ ...evidence }));
+});
+
+test('admin evidence hands the assistant the memory figures of an out-of-memory stop', t => {
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), 'evidence-oom-'));
+    t.after(() => fs.rmSync(work, { recursive: true, force: true }));
+    initialiseCrashDiagnostics(work);
+    const directory = path.join(work, 'crash-reports');
+    fs.writeFileSync(path.join(directory, 'fatal-77.json'), JSON.stringify(nodeFatalReport()));
+    const MIB = 1024 * 1024;
+    const samples = [400, 600, 900].map((heap, index) => ({
+        at: new Date(Date.UTC(2026, 10, 23, 10, 0, index * 10)).toISOString(), uptimeSeconds: index * 10, rss: (heap + 100) * MIB, heapUsed: heap * MIB, heapTotal: (heap + 50) * MIB,
+        heapLimit: 1014 * MIB, external: MIB, arrayBuffers: MIB, deviceAvailable: 3000 * MIB, deviceTotal: 12288 * MIB,
+    }));
+    const stop = describeChildStop({ pid: 77, code: null, signal: 'SIGABRT', fatal: consumeFatalReport(directory, 77), memory: { samples, peak: samples[2] }, heapLimitArgument: '--max-old-space-size=1024' });
+    writeCrashReport(stop.kind, stop.explanation, stop.extra);
+
+    const evidence = collectAdminEvidence();
+    const [item] = evidence.serverCrashes.items;
+    assert.equal(item.kind, 'server-out-of-memory');
+    assert.match(item.message, /ran out of JavaScript memory and stopped\. It was using 1010 MB of its 1014 MB limit/);
+    assert.ok(item.detail.length >= 3 && item.detail.length <= 6);
+    const text = formatAppEvidence({ ...evidence });
+    assert.match(text, /server-out-of-memory: The server ran out of JavaScript memory/);
+    assert.match(text, /JavaScript heap used 1010 MB of a 1014 MB limit/);
+    assert.match(text, /Heap in MB, oldest to newest \(3 readings\): 400, 600, 900\. Highest reading 900 MB/);
+    assert.match(text, /Neconyan set --max-old-space-size=1024 for this device/);
+    assert.match(text, /Next step: If this device has memory to spare/);
+    assertClean(evidence);
+});
+
+test('admin evidence for a crash with no memory figures carries no detail lines', t => {
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), 'evidence-plain-'));
+    t.after(() => fs.rmSync(work, { recursive: true, force: true }));
+    initialiseCrashDiagnostics(work);
+    writeCrashReport('uncaughtException', new Error('Plain failure'));
+    assert.deepEqual(collectAdminEvidence().serverCrashes.items[0].detail, []);
 });
 
 test('the evidence routes need a signed-in account and the admin route refuses everyone else on the server', async t => {

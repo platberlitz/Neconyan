@@ -86,6 +86,20 @@ async function openAndroidCrashReports() {
     const { showAndroidCrashReports } = await import('./android-native-bridge.js');
     if (showAndroidCrashReports() !== true) globalThis.toastr?.warning?.('Android controls are not ready. Reload this page and try again.');
 }
+const megabytes = value => Number.isFinite(value) && value >= 0 ? `${Math.round(value / 1048576)} MB` : 'unknown';
+// A server report has no page activity. It may carry Node's own account of an out-of-memory stop and the server's last readings.
+function serverMemoryLine(report) {
+    const fatal = report?.child?.fatal ?? report?.fatal;
+    const samples = report?.child?.memory?.samples;
+    const parts = [];
+    if (fatal?.outOfMemory) parts.push(`Node reported an out-of-memory stop with the JavaScript heap at ${megabytes(fatal.heap?.used)} of a ${megabytes(fatal.heap?.limit)} limit.`);
+    if (Array.isArray(samples) && samples.length) {
+        const last = samples.at(-1);
+        const when = Number.isFinite(Date.parse(last?.at)) ? new Date(last.at).toLocaleString() : 'time unavailable';
+        parts.push(`The server's newest of ${samples.length} memory readings (${when}): heap ${megabytes(last?.heapUsed)} of ${megabytes(last?.heapLimit)}, device memory ${megabytes(last?.deviceAvailable)} available.`);
+    }
+    return parts.join(' ');
+}
 export function openCrashReportReader({ browserReports = globalThis.NeconyanCrashDiagnostics?.getReports?.() ?? { reports: [] }, selectedReportId,
     popup = showRetainedReportPopup, loadServerReports, nativeReader = typeof globalThis.NeconyanExport?.showCrashReports === 'function' ? openAndroidCrashReports : undefined } = {}) {
     const stylesheet = document.querySelector('link[href^="css/neconyan-crash-reports.css"]');
@@ -93,7 +107,7 @@ export function openCrashReportReader({ browserReports = globalThis.NeconyanCras
     const content = element('div', '', 'neconyan-crash-report sbdbg-report');
     content.append(element('h3', 'Saved crash reports'), element('p', 'Reports stay on this device or your server. Error messages and system traces may contain private text. Review before sharing.'));
     if (browserReports.storageError) content.append(element('p', browserReports.storageError));
-    const reports = [...(browserReports.reports ?? []).slice(-5).reverse(), ...(browserReports.recoveries ?? []).slice(-8).reverse(), ...(browserReports.retainedActivities ?? []).slice(0, 8)];
+    const reports = [...(browserReports.reports ?? []).slice(-5).reverse(), ...(browserReports.recoveries ?? []).slice(-8).reverse(), ...(browserReports.reloads ?? []).slice(-8).reverse(), ...(browserReports.retainedActivities ?? []).slice(0, 8)];
     const select = element('select', '', 'text_pole'); select.setAttribute('aria-label', 'Select a crash report');
     const summary = element('p'); summary.setAttribute('role', 'status');
     const activity = element('p');
@@ -114,7 +128,7 @@ export function openCrashReportReader({ browserReports = globalThis.NeconyanCras
         activity.textContent = safe ? `Last known activity: ${safe.mode}${safe.chat.messageCount !== null ? `, ${safe.chat.messageCount} messages` : ''}.`
             + (safe.agents.running.length ? ` Running ${safe.agents.running.map(agent => agent.label).join(' and ')}.` : '')
             + (safe.chat.agentHistoryEntries !== null ? ` Agent history: ${safe.chat.agentHistoryEntries} entries.` : '')
-            + (safe.at ? ` Last activity recorded at ${new Date(safe.at).toLocaleString()}.` : '') : 'No earlier activity sample was available.';
+            + (safe.at ? ` Last activity recorded at ${new Date(safe.at).toLocaleString()}.` : '') : redact(serverMemoryLine(selected)) || 'No earlier activity sample was available.';
     };
     const populate = () => {
         const previous = selected;

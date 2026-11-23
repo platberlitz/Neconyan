@@ -181,6 +181,25 @@ test('server report reloads deduplicate the picker', async ({ page }) => {
     await expect(options).toHaveCount(1);
 });
 
+test('a server out-of-memory report shows its heap figures and the server\'s last memory reading', async ({ page }) => {
+    const MIB = 1024 * 1024;
+    const report = {
+        schema: 1, id: 'server-oom', runtime: 'server', kind: 'server-out-of-memory', at: '2026-11-23T10:05:00.000Z',
+        error: { message: 'The server ran out of JavaScript memory and stopped. It was using 1010 MB of its 1014 MB limit when Node reported: Allocation failed - JavaScript heap out of memory.' },
+        child: {
+            pid: 7, signal: 'SIGABRT', exitCode: null,
+            fatal: { outOfMemory: true, event: 'Allocation failed - JavaScript heap out of memory', heap: { used: 1010 * MIB, limit: 1014 * MIB } },
+            memory: { samples: [{ at: '2026-11-23T10:04:55.000Z', heapUsed: 990 * MIB, heapLimit: 1014 * MIB, deviceAvailable: 3000 * MIB }] },
+        },
+    };
+    await page.route('**/api/server-admin/crash-reports', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ reports: [report] }) }));
+    await openReader(page);
+    await page.getByRole('button', { name: 'Load server reports' }).click();
+    await expect(page.getByText('Node reported an out-of-memory stop with the JavaScript heap at 1010 MB of a 1014 MB limit.')).toBeVisible();
+    await expect(page.getByText('heap 990 MB of 1014 MB, device memory 3000 MB available.')).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: 'The server ran out of JavaScript memory and stopped. It was using 1010 MB of its 1014 MB limit' })).toBeVisible();
+});
+
 test('recovery wording reflects a before-reply Agent phase', async ({ page }) => {
     await page.addInitScript(() => {
         sessionStorage.setItem('neconyan.crash-tab.v1', 'pre-tab');

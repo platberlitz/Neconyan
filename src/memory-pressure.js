@@ -1,5 +1,6 @@
 import os from 'node:os';
 import v8 from 'node:v8';
+import { SERVER_MEMORY_SAMPLE_MESSAGE } from './server-plugin-update-ipc.js';
 
 const reclaimers = new Set();
 const MIB = 1024 * 1024;
@@ -44,11 +45,44 @@ export function createMemoryPressureCheck({ sample = readMemory, now = Date.now,
     };
 }
 
+/** One reading of this process and the device, as plain numbers in bytes. */
+export function readMemorySample({ processObject = process } = {}) {
+    const usage = processObject.memoryUsage();
+    return {
+        at: new Date().toISOString(),
+        uptimeSeconds: processObject.uptime(),
+        rss: usage.rss,
+        heapUsed: usage.heapUsed,
+        heapTotal: usage.heapTotal,
+        heapLimit: v8.getHeapStatistics().heap_size_limit,
+        external: usage.external,
+        arrayBuffers: usage.arrayBuffers,
+        deviceAvailable: typeof processObject.availableMemory === 'function' ? processObject.availableMemory() : os.freemem(),
+        deviceTotal: os.totalmem(),
+    };
+}
+
+/**
+ * Sends each reading to the supervisor, which keeps the newest ones for the crash
+ * report if this process dies without being able to describe itself. It does
+ * nothing without a connected IPC channel and never throws or holds the process open.
+ */
+export function createMemorySampleReporter({ processObject = process, read = readMemorySample } = {}) {
+    return () => {
+        try {
+            if (typeof processObject.send !== 'function' || processObject.connected === false) return;
+            processObject.send({ type: SERVER_MEMORY_SAMPLE_MESSAGE, sample: read({ processObject }) }, () => { /* A closed channel is the supervisor's concern. */ });
+        } catch { /* Some runtimes cannot provide every counter, and the channel may have closed. */ }
+    };
+}
+
 let timer;
 export function startMemoryPressureMonitor() {
     if (timer) return;
     const check = createMemoryPressureCheck();
-    timer = setInterval(check, 10_000);
+    const report = createMemorySampleReporter();
+    const tick = () => { check(); report(); };
+    timer = setInterval(tick, 10_000);
     timer.unref?.();
-    check();
+    tick();
 }

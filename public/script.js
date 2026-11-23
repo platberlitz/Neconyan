@@ -323,7 +323,7 @@ import {
     getInstructStoppingSequences,
 } from './scripts/instruct-mode.js';
 import { initLocales, showLanguageChoicePrompt, t } from './scripts/i18n.js';
-import { hasServedCodeChanged } from './scripts/server-restart-monitor.js';
+import { describeServedCodeChange, hasServedCodeChanged, isPlaceholderPackageVersion } from './scripts/server-restart-monitor.js';
 import { getFriendlyTokenizerName, getTokenCount, getTokenCountAsync, initTokenizers, saveTokenCache } from './scripts/tokenizers.js';
 import {
     user_avatar,
@@ -1148,10 +1148,14 @@ function checkServedCodeIsCurrent() {
     if (document.visibilityState === 'hidden' || !loadedServerVersion || servedCodeCheck) return;
     servedCodeCheck = (async () => {
         const response = await fetch('/version', { cache: 'no-store' });
-        if (!response.ok || !hasServedCodeChanged(loadedServerVersion, await response.json())) return;
+        const served = response.ok ? await response.json() : null;
+        if (!served || !hasServedCodeChanged(loadedServerVersion, served)) return;
+        // Leaves a note for the next page, so this reload is never mistaken for the browser discarding the page.
+        const change = describeServedCodeChange(loadedServerVersion, served);
         if (canReloadForServedCode()) {
             cancelDebounce(saveSettingsDebounced);
             if (await saveSettings(0, { returnResult: true }) !== false && canReloadForServedCode()) {
+                globalThis.NeconyanCrashDiagnostics?.noteReload?.({ reason: 'served-code-changed', ...change });
                 location.reload();
                 return;
             }
@@ -1160,7 +1164,10 @@ function checkServedCodeIsCurrent() {
         servedCodeToastShown = true;
         toastr.info(t`Neconyan was updated. Tap here to load the new version.`, t`Update ready`, {
             timeOut: 0, extendedTimeOut: 0, tapToDismiss: true,
-            onclick: () => location.reload(),
+            onclick: () => {
+                globalThis.NeconyanCrashDiagnostics?.noteReload?.({ reason: 'update-toast', ...change });
+                location.reload();
+            },
             onHidden: () => { servedCodeToastShown = false; },
         });
     })().catch(() => {}).finally(() => { servedCodeCheck = null; });
@@ -2293,6 +2300,7 @@ export async function getCharacters() {
                 }
             } else {
                 await Popup.show.text(t`ERROR: The active character is no longer available.`, t`The page will be refreshed to prevent data loss. Press "OK" to continue.`);
+                globalThis.NeconyanCrashDiagnostics?.noteReload?.({ reason: 'data-protection' });
                 return location.reload();
             }
         }
@@ -13812,6 +13820,7 @@ export async function renameCharacter(name = null, { silent = false, renameChats
         else toastr.error(t`Something went wrong. The page will be reloaded.`, t`Rename Character`);
 
         console.log('Renaming character error:', error);
+        globalThis.NeconyanCrashDiagnostics?.noteReload?.({ reason: 'data-protection' });
         location.reload();
         return false;
     }
@@ -14239,6 +14248,7 @@ async function saveChatImmediately(...args) {
 
         if (!forceSaveConfirmed) {
             console.warn('Chat integrity check failed, and user did not confirm the overwrite. Reloading the page.');
+            globalThis.NeconyanCrashDiagnostics?.noteReload?.({ reason: 'data-protection' });
             window.location.reload();
             return false;
         }
@@ -14989,6 +14999,7 @@ async function promptSettingsConflictReload() {
         );
 
         if (confirmation === POPUP_RESULT.AFFIRMATIVE) {
+            globalThis.NeconyanCrashDiagnostics?.noteReload?.({ reason: 'settings-conflict' });
             window.location.reload();
             return;
         }
@@ -15145,7 +15156,7 @@ export async function getSettings(initLoaderHandle = null, initialData = null) {
         if (data.enable_extensions) {
             const enableAutoUpdate = Boolean(data.enable_extensions_auto_update);
             const isVersionChanged = settings.currentVersion !== currentVersion;
-            if (await maybeAutoClearCacheOnVersionChange(isVersionChanged)) {
+            if (await maybeAutoClearCacheOnVersionChange(isVersionChanged, settings.currentVersion)) {
                 return;
             }
             await loadExtensionSettings(settings, isVersionChanged, enableAutoUpdate);
@@ -15601,7 +15612,10 @@ export async function reloadNeconyanWorkspace() {
             t`Unsaved changes or temporary messages will be lost if you reload now.`,
             { okButton: t`Reload Neconyan`, cancelButton: t`Cancel` },
         ) !== POPUP_RESULT.AFFIRMATIVE) return;
-        if (canReload()) window.location.reload();
+        if (canReload()) {
+            globalThis.NeconyanCrashDiagnostics?.noteReload?.({ reason: 'user-requested' });
+            window.location.reload();
+        }
     } finally {
         reloadingWorkspace = false;
     }
@@ -15750,12 +15764,21 @@ async function clearAllCacheAndReload() {
     }
 
     toastr.success(t`Cache cleared. Reloading Neconyan...`, t`Cache cleared`);
-    window.setTimeout(() => window.location.reload(), 1000);
+    window.setTimeout(() => {
+        globalThis.NeconyanCrashDiagnostics?.noteReload?.({ reason: 'cache-cleared' });
+        window.location.reload();
+    }, 1000);
     return true;
 }
 
-async function maybeAutoClearCacheOnVersionChange(isVersionChanged) {
+async function maybeAutoClearCacheOnVersionChange(isVersionChanged, previousVersion) {
     if (!isVersionChanged || !power_user.auto_clear_cache_on_update) {
+        return false;
+    }
+
+    // A placeholder on either side ('UNKNOWN' from a server that could not read package.json, or '0.0.0'
+    // when /version did not answer) is not an update, and would otherwise clear the cache and reload.
+    if (isPlaceholderPackageVersion(previousVersion) || isPlaceholderPackageVersion(currentVersion)) {
         return false;
     }
 
@@ -15776,6 +15799,7 @@ async function maybeAutoClearCacheOnVersionChange(isVersionChanged) {
     }
 
     toastr.info(t`Neconyan updated. Clearing cached UI data and reloading...`, t`Update detected`);
+    globalThis.NeconyanCrashDiagnostics?.noteReload?.({ reason: 'cache-cleared-after-update', from: previousVersion, to: currentVersion });
     window.setTimeout(() => window.location.reload(true), 1000);
     return true;
 }
@@ -19267,7 +19291,9 @@ async function openCharacterWorldPopup() {
     world_names.forEach((item, i) => {
         const array = (menu_type == 'create' ? create_save.extra_books : existingCharLore?.extraBooks);
         const isSelected = !!array?.includes(item);
-        extrasSelect.append(new Option(item, String(i), isSelected, isSelected));
+        const option = new Option(item, String(i), isSelected, isSelected);
+        option.setAttribute('data-i18n-ignore', '');
+        extrasSelect.append(option);
     });
 
     let extrasPicker = null;

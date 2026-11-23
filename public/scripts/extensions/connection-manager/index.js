@@ -1184,6 +1184,7 @@ function renderConnectionProfiles(profiles) {
 
         const optgroup = document.createElement('optgroup');
         optgroup.label = `📁 ${folder.name}`;
+        optgroup.setAttribute('data-i18n-ignore', '');
         for (const profile of folderProfiles) {
             optgroup.appendChild(createProfileOption(profile));
         }

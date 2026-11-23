@@ -6,7 +6,7 @@ const read = path => readFileSync(new URL(`../public/scripts/${path}`, import.me
 describe('streamed observer work', () => {
     test('the accessibility observer tests one union selector before walking every rule', () => {
         const source = read('a11y.js');
-        expect(source).toContain("const anyA11ySelector = Object.keys(a11yRules).join(', ');");
+        expect(source).toContain('const anyA11ySelector = Object.keys(a11yRules).join(\', \');');
         expect(source).toContain('if (!element.matches(anyA11ySelector) && !element.querySelector(anyA11ySelector)) {');
     });
 

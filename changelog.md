@@ -104,6 +104,16 @@
 - PR #880 (2026-11-22) `feat(scratchpad): add /check and /why shortcuts for diagnoses`
 - PR #882 (2026-11-22) `test(mobile-layout): declare requestAnimationFrame for lint`
 - PR #883 (2026-11-23) `fix(browser): clear the latest nightly staging failures`
+- PR #884 (2026-11-23) `test(android): report a missing JDK before checking headers`
+- PR #885 (2026-11-23) `fix(i18n): localise author’s note examples`
+- PR #886 (2026-11-23) `fix(i18n): collect multiline attribute captions correctly`
+- PR #887 (2026-11-23) `test: fix remaining tests-folder lint errors`
+- PR #888 (2026-11-23) `refactor(i18n): remove the retired select2 name selector`
+- PR #889 (2026-11-23) `fix(lorebooks): preserve names in the additional lorebooks picker`
+- PR #891 (2026-11-23) `fix(purrks): preserve chosen names in bulk-delete captions`
+- PR #892 (2026-11-23) `fix(i18n): keep the tracked characters list label translated`
+- PR #893 (2026-11-23) `fix(server): explain out-of-memory stops and start again after a crash`
+- PR #894 (2026-11-23) `fix(browser): record why a page reloaded and keep the keep-alive honest`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`

@@ -16,7 +16,7 @@ describe('Time Machine start-up', () => {
     });
 
     test('both UI paths schedule the background check instead of running it inline', () => {
-        expect(source.match(/^        scheduleHistoryPreparation\(\);$/gm)).toHaveLength(1);
-        expect(source.match(/^    scheduleHistoryPreparation\(\);$/gm)).toHaveLength(1);
+        expect(source.match(/^ {8}scheduleHistoryPreparation\(\);$/gm)).toHaveLength(1);
+        expect(source.match(/^ {4}scheduleHistoryPreparation\(\);$/gm)).toHaveLength(1);
     });
 });

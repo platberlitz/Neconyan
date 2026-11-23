@@ -1,4 +1,4 @@
-/* global globalThis */
+/* global globalThis, document */
 import { createHash } from 'node:crypto';
 import { afterAll, beforeEach, describe, expect, jest, test } from '@jest/globals';
 

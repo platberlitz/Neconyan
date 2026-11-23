@@ -36,7 +36,8 @@ import { eventSource, event_types } from '../events.js';
 import { ConnectionManagerRequestService } from '../extensions/shared.js';
 import { extractProfileResponseText } from '../extensions/in-chat-agents/llm-utils.js';
 import { callGenericPopup, POPUP_TYPE, POPUP_RESULT } from '../popup.js';
-import { t } from '../i18n.js';
+import { localizeMessage, t } from '../i18n.js';
+import { uiText } from '../ui-text.js';
 
 const SCENE_DIRECTOR_TIMEOUT_MS = 20000;
 const NORMAL_TURN_TYPES = new Set([undefined, null, '', 'normal']);
@@ -529,7 +530,13 @@ function renderEditorPurrkCard(item) {
     toggle.type = 'checkbox';
     toggle.className = 'neconyan-purrk-toggle';
     toggle.checked = selection ? selection.selectedIds.has(itemId) : Boolean(item.enabled);
-    toggle.setAttribute('aria-label', selection ? t`Select ${item.label || itemId} for deletion` : t`Enable ${item.label || itemId}`);
+    if (selection) {
+        const frame = localizeMessage(uiText('Select ${0} for deletion'));
+        toggle.setAttribute('aria-label', frame.replaceAll('${0}', () => item.label || itemId));
+        toggle.setAttribute('data-i18n-ignore', '');
+    } else {
+        toggle.setAttribute('aria-label', t`Enable ${item.label || itemId}`);
+    }
     toggle.addEventListener('change', () => {
         if (selection) {
             if (toggle.checked) selection.selectedIds.add(itemId);
