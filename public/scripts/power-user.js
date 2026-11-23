@@ -1550,6 +1550,7 @@ export function syncLowMemorySettingsUi({ chatWindowChanged = false } = {}) {
 
 function formatBackgroundKeepAliveStatus({ enabled, playing, lastError }) {
     if (lastError === 'blocked') return t`The browser blocked the sound. Tap anywhere in Neconyan once, then switch away again.`;
+    if (lastError === 'interrupted') return t`The browser or another app stopped the sound while you were away, so Android may reload Neconyan.`;
     if (lastError) return t`The sound could not start in this browser.`;
     if (!enabled) return t`Off. Android may reload Neconyan if you stay away for long.`;
     if (playing) return t`Keeping Neconyan open.`;

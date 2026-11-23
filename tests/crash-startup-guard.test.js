@@ -82,6 +82,16 @@ describe('startup crash-loop guard', () => {
         expect(localStorage.getItem(FAILURES_KEY)).toBeNull();
     });
 
+    test('a reload Neconyan started itself is not a failed start, a recovery or a safe start', () => {
+        const { api, localStorage } = harness({ storedCount: 1, previous: previousRunning({ state: 'closed' }) });
+        api.noteReload({ reason: 'served-code-changed', from: 'c0c45f1', to: 'd4e5f6a' });
+        expect(api.getStartupGuardState()).toMatchObject({ failures: 0, safeStart: false });
+        expect(localStorage.getItem(FAILURES_KEY)).toBeNull();
+        expect(api.getReports().recoveries).toHaveLength(0);
+        expect(api.getReports().reloads).toHaveLength(1);
+        expect(api.getStartupGuardState().holdActive).toBe(false);
+    });
+
     test('a fresh tab never inherits a safe start from another tab', () => {
         const { api } = harness({ storedCount: 5 });
         expect(api.getStartupGuardState()).toMatchObject({ failures: 5, safeStart: false });

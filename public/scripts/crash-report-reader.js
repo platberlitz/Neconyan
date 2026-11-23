@@ -107,7 +107,7 @@ export function openCrashReportReader({ browserReports = globalThis.NeconyanCras
     const content = element('div', '', 'neconyan-crash-report sbdbg-report');
     content.append(element('h3', 'Saved crash reports'), element('p', 'Reports stay on this device or your server. Error messages and system traces may contain private text. Review before sharing.'));
     if (browserReports.storageError) content.append(element('p', browserReports.storageError));
-    const reports = [...(browserReports.reports ?? []).slice(-5).reverse(), ...(browserReports.recoveries ?? []).slice(-8).reverse(), ...(browserReports.retainedActivities ?? []).slice(0, 8)];
+    const reports = [...(browserReports.reports ?? []).slice(-5).reverse(), ...(browserReports.recoveries ?? []).slice(-8).reverse(), ...(browserReports.reloads ?? []).slice(-8).reverse(), ...(browserReports.retainedActivities ?? []).slice(0, 8)];
     const select = element('select', '', 'text_pole'); select.setAttribute('aria-label', 'Select a crash report');
     const summary = element('p'); summary.setAttribute('role', 'status');
     const activity = element('p');
