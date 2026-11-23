@@ -111,6 +111,7 @@
 - PR #888 (2026-11-23) `refactor(i18n): remove the retired select2 name selector`
 - PR #889 (2026-11-23) `fix(lorebooks): preserve names in the additional lorebooks picker`
 - PR #891 (2026-11-23) `fix(purrks): preserve chosen names in bulk-delete captions`
+- PR #892 (2026-11-23) `fix(i18n): keep the tracked characters list label translated`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
