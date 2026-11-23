@@ -40,7 +40,7 @@ test('kept log lines do not pin the long output they were cut from', () => {
     assert.equal(report.truncated, 'console line 99 ' + 'x'.repeat(11999 - 'console line 99 '.length) + '…', 'a huge line is stored as its first 11,999 characters');
 });
 
-test('the stored text of anything that fits is exactly what util.format produced before the cut existed', () => {
+test('a call of up to 100 lines is stored exactly as util.format printed it, a longer one as its exact first 99 lines and a marker', () => {
     const { status, stderr, report } = runScript(`
         import { formatWithOptions } from 'node:util';
         const root = process.argv.at(-1);
@@ -67,30 +67,37 @@ test('the stored text of anything that fits is exactly what util.format produced
             shortStrings: [Object.fromEntries(Array.from({ length: 500 }, (_, index) => ['key' + index, 'ab']))],
             emptyStrings: [Object.fromEntries(Array.from({ length: 500 }, (_, index) => ['key' + index, '']))],
             longString: ['x'.repeat(20000)],
+            atTheBound: [Object.fromEntries(Array.from({ length: 98 }, (_, index) => ['key' + index, index]))],
+            oneOverTheBound: [Object.fromEntries(Array.from({ length: 99 }, (_, index) => ['key' + index, index]))],
+            manyLines: ['a string of lines', 'row\\n'.repeat(5000)],
         };
         const mismatches = [];
         const lengths = {};
+        const marked = [];
         for (const [name, args] of Object.entries(cases)) {
             const before = getServerLogSnapshot({ limit: 600 }).latestId;
             console.log(...args);
             const stored = getServerLogSnapshot({ limit: 600 }).entries.filter(entry => entry.id > before).map(entry => entry.message);
             const expected = formatWithOptions(options, ...args).split('\\n').filter(Boolean).map(line => line.length > 12000 ? line.slice(0, 11999).trimEnd() + '…' : line);
             lengths[name] = stored.length;
-            if (JSON.stringify(stored) !== JSON.stringify(expected)) mismatches.push({ name, stored: stored.slice(0, 6), expected: expected.slice(0, 6) });
+            // More than 100 lines: the first 99 exactly, then one marker line. Otherwise all of them exactly.
+            const over = expected.length > 100;
+            const head = over ? expected.slice(0, 99) : expected;
+            if (over && /only its start is kept/.test(stored.at(-1))) marked.push(name);
+            if (JSON.stringify(stored.slice(0, head.length)) !== JSON.stringify(head) || stored.length !== (over ? 100 : expected.length)) mismatches.push({ name, stored: stored.slice(0, 6), expected: expected.slice(0, 6) });
         }
-        process.stderr.write(JSON.stringify({ mismatches, getterRuns, lengths }) + '\\n');
+        process.stderr.write(JSON.stringify({ mismatches, getterRuns, lengths, marked }) + '\\n');
     `, { silent: true });
     assert.equal(status, 0, stderr);
     assert.deepEqual(report.mismatches, []);
     assert.equal(report.getterRuns, 0, 'a getter is never run');
     assert.equal(report.lengths.circular, 5, 'a circular value stays five lines');
-    assert.ok(report.lengths.bigButFine > 500, 'a value that fits is not cut');
-    assert.ok(report.lengths.shortStrings > 500 && report.lengths.emptyStrings > 500, 'strings that fit are not cut');
+    assert.equal(report.lengths.atTheBound, 100, 'exactly 100 lines are all kept');
+    assert.deepEqual(report.marked.toSorted(), ['bigButFine', 'emptyStrings', 'longList', 'manyLines', 'oneOverTheBound', 'shortStrings'], 'only the calls over 100 lines end with the marker');
+    for (const name of report.marked) assert.equal(report.lengths[name], 100, `${name} stores 100 lines`);
 });
 
-test('a large object of strings that still fits the caps is stored exactly, and one string more is cut', () => {
-    // The snapshot reads at most 600 lines, so this reads the whole buffer. The buffer keeps the last 1,500 lines, so
-    // the 4,000 lines of an object with 4,000 empty strings are compared as that many from the end.
+test('a large object that fits the value caps keeps its exact first 99 lines and a marker, and one string more is cut', () => {
     const { status, stderr, report } = runScript(`
         import { formatWithOptions } from 'node:util';
         const root = process.argv.at(-1);
@@ -110,15 +117,21 @@ test('a large object of strings that still fits the caps is stored exactly, and 
             console.log('case', value);
             const stored = globalThis.__neconyanServerLogBuffer.entries.filter(entry => entry.id >= before).map(entry => entry.message);
             const expected = formatWithOptions(options, 'case', value).split('\\n').filter(Boolean);
-            results[name] = { exact: JSON.stringify(stored) === JSON.stringify(expected.slice(-1500)), stored: stored.length, expected: expected.length, cut: stored.some(line => line.includes('only its start is kept')) };
+            results[name] = {
+                firstLinesExact: JSON.stringify(stored.slice(0, 99)) === JSON.stringify(expected.slice(0, 99)),
+                stored: stored.length,
+                expected: expected.length,
+                lineMarker: /only its start is kept/.test(stored.at(-1)),
+                argumentMarker: stored.some(line => line.includes('a value too large to keep')),
+            };
         }
         process.stderr.write(JSON.stringify(results) + '\\n');
     `, { silent: true });
     assert.equal(status, 0, stderr);
-    assert.deepEqual(report.thousandShort, { exact: true, stored: 1002, expected: 1002, cut: false });
-    assert.deepEqual(report.fourThousandEmpty, { exact: true, stored: 1500, expected: 4002, cut: false });
-    assert.deepEqual(report.lastOneThatFits, { exact: true, stored: 1500, expected: 5001, cut: false });
-    assert.equal(report.firstOneCut.cut, true, 'the 5,001st value is the first one cut');
+    assert.deepEqual(report.thousandShort, { firstLinesExact: true, stored: 100, expected: 1002, lineMarker: true, argumentMarker: false });
+    assert.deepEqual(report.fourThousandEmpty, { firstLinesExact: true, stored: 100, expected: 4002, lineMarker: true, argumentMarker: false });
+    assert.deepEqual(report.lastOneThatFits, { firstLinesExact: true, stored: 100, expected: 5001, lineMarker: true, argumentMarker: false });
+    assert.equal(report.firstOneCut.argumentMarker, true, 'the 5,001st value is the first one cut before it is formatted');
     assert.ok(report.firstOneCut.stored <= 100);
 });
 
@@ -140,16 +153,67 @@ for (const [title, count, text] of [
     ['20,000 two-character strings', 20000, 'ab'],
     ['200,000 empty strings', 200000, ''],
     ['5,000 empty strings, one more than fits', 5000, ''],
+    ['4,999 empty strings, the most that fits', 4999, ''],
 ]) {
-    test(`an object of ${title} is cut to a small share of the buffer and leaves the earlier lines in place`, () => {
+    test(`one call that logs an object of ${title} stores at most 100 lines and leaves the earlier lines in place`, () => {
         const { status, stderr, report } = runScript(bigCallScript(count, text), { silent: true });
         assert.equal(status, 0, stderr);
         assert.equal(report.kept, 100, 'no earlier line was evicted');
         assert.ok(report.total - 100 <= 100, `one call added ${report.total - 100} lines`);
-        assert.match(report.text, /^big \{/);
+        assert.match(report.text, /^big \{\n {2}key0: /);
         assert.match(report.text, /only its start is kept/);
     });
 }
+
+test('long strings and many arguments are bounded to 100 lines per call too', () => {
+    const { status, stderr, report } = runScript(`
+        const root = process.argv.at(-1);
+        console.log = () => {};
+        console.error = () => {};
+        await import(root + '/src/server-log-buffer.js');
+        for (let line = 0; line < 100; line++) console.log('earlier line ' + line);
+        const lines = () => globalThis.__neconyanServerLogBuffer.entries.map(entry => entry.message);
+        console.log('rows', 'row\\n'.repeat(20000));
+        const afterRows = lines().length;
+        console.error(...Array.from({ length: 60 }, (_, index) => 'argument ' + index + '\\nsecond line\\nthird line of it'));
+        process.stderr.write(JSON.stringify({ kept: lines().filter(line => line.startsWith('earlier line')).length, rows: afterRows - 100, args: lines().length - afterRows, last: lines().at(-1), rowsFirst: lines()[100], argsFirst: lines()[afterRows] }) + '\\n');
+    `, { silent: true });
+    assert.equal(status, 0, stderr);
+    assert.equal(report.kept, 100, 'no earlier line was evicted');
+    assert.equal(report.rows, 100);
+    assert.equal(report.args, 100, 'the 121 lines of the sixty arguments are cut to 100');
+    assert.equal(report.rowsFirst, 'rows row');
+    assert.equal(report.argsFirst, 'argument 0');
+    assert.match(report.last, /only its start is kept/);
+});
+
+test('console.dir and console.table are bounded to 100 lines per call, and a raw write is stored as it arrived', () => {
+    // console.table prints through console.log. console.dir writes to the stream itself, so it is bounded where that write is made.
+    const { status, stderr, report } = runScript(`
+        const root = process.argv.at(-1);
+        console.log = () => {};
+        await import(root + '/src/server-log-buffer.js');
+        for (let line = 0; line < 100; line++) console.log('earlier line ' + line);
+        const lines = () => globalThis.__neconyanServerLogBuffer.entries.map(entry => entry.message);
+        const added = run => { const before = lines().length; run(); return lines().slice(before); };
+        const dirSmall = added(() => console.dir({ a: 1 }));
+        const dirBig = added(() => console.dir(Object.fromEntries(Array.from({ length: 4999 }, (_, index) => ['key' + index, '']))));
+        const table = added(() => console.table(Array.from({ length: 2000 }, (_, index) => ({ index }))));
+        const raw = added(() => process.stdout.write('raw row\\n'.repeat(300)));
+        process.stderr.write(JSON.stringify({ kept: lines().filter(line => line.startsWith('earlier line')).length, dirSmall, dirBig: { length: dirBig.length, first: dirBig[0], second: dirBig[1], last: dirBig.at(-1) }, table: { length: table.length, last: table.at(-1) }, raw: raw.length }) + '\\n');
+    `, { silent: true });
+    assert.equal(status, 0, stderr);
+    assert.equal(report.kept, 100, 'no earlier line was evicted');
+    assert.deepEqual(report.dirSmall, ['{ a: 1 }'], 'a small console.dir is stored as it printed');
+    assert.equal(report.dirBig.length, 100);
+    assert.match(report.dirBig.first, /^\{/);
+    assert.match(report.dirBig.second, /^ {2}key0: ''/);
+    assert.match(report.dirBig.last, /only its start is kept/);
+    assert.equal(report.table.length, 100);
+    assert.match(report.table.last, /only its start is kept/);
+    // The stream path cannot tell where a message ends (a pipe delivers one in pieces), so a raw write is not bounded.
+    assert.equal(report.raw, 300);
+});
 
 test('a cut argument prints as its text whichever way the format reads it', () => {
     const { status, stderr, report } = runScript(`
@@ -205,18 +269,18 @@ test('a value too large to keep is cut to a small share of the buffer and leaves
         for (let index = 0; index < 8000; index++) nested['k' + index] = { index, again: circular };
         let getterRuns = 0;
         Object.defineProperty(nested, 'trap', { enumerable: true, get() { getterRuns++; throw new Error('not run'); } });
-        console.log('a call with several arguments', nested, 'a small one', { fine: Array.from({ length: 50 }, (_, index) => index) }, circular);
+        console.log('a call with several arguments', nested, 'a small one', { fine: Array.from({ length: 10 }, (_, index) => 'small item ' + index) }, circular);
         const after = getServerLogSnapshot({ limit: 600 }).entries.map(entry => entry.message);
         const kept = after.filter(line => line.startsWith('earlier line')).length;
         process.stderr.write(JSON.stringify({ kept, total: after.length, getterRuns, text: after.join('\\n') }) + '\\n');
     `, { silent: true });
     assert.equal(status, 0, stderr);
     assert.equal(report.kept, 100, 'no earlier line was evicted');
-    // At most 100 lines for the two cut arguments together, plus the 52 lines the small argument always prints.
-    assert.ok(report.total - 100 <= 100 + 52, `one call added ${report.total - 100} lines`);
+    // At most 100 lines for the whole call: two cut arguments of up to 50 lines each and the small one between them.
+    assert.ok(report.total - 100 <= 100, `one call added ${report.total - 100} lines`);
     assert.equal(report.getterRuns, 0);
     assert.match(report.text, /a small one/);
-    assert.match(report.text, /49\b/, 'the small argument still shows all 50 items');
+    assert.match(report.text, /'small item 9'/, 'the small argument still shows all its items');
     assert.match(report.text, /only its start is kept/);
 });
 
@@ -251,7 +315,9 @@ test('what reaches the terminal is exactly what it was without the buffer', () =
         console.log('plain', 1, { a: [1, 2, { b: new Map([[1, 2]]) }] }, Array.from({ length: 150 }, (_, index) => index));
         console.error(new Error('boom').message, { nested: { deeper: { deepest: { value: 1 } } } });
         console.log('big', big);
+        console.log('wide', Object.fromEntries(Array.from({ length: 500 }, (_, index) => ['key' + index, index % 3 ? 'ab' : ''])));
         console.log('%s is %d years', 'Mara', 3, 'extra', { z: 1 });
+        console.dir(Object.fromEntries(Array.from({ length: 300 }, (_, index) => ['dir' + index, index])));
         console.warn(Object.create(null, { hidden: { value: 1, enumerable: true } }));
         process.stdout.write('raw write\\n');
         process.stderr.write(JSON.stringify({ done: true }) + '\\n');
@@ -263,4 +329,5 @@ test('what reaches the terminal is exactly what it was without the buffer', () =
     assert.equal(buffered.stdout, bare.stdout);
     assert.equal(buffered.stderr, bare.stderr);
     assert.ok(bare.stdout.includes('k2999'), 'the terminal still shows every key');
+    assert.ok(bare.stdout.includes('key499') && bare.stdout.includes('dir299'), 'the terminal still shows a call of more than 100 lines whole');
 });
