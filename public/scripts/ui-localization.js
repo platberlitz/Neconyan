@@ -8,7 +8,6 @@ const userText = [
     '.sb-conversation-group-member-name',
     '.sb-chat-file-preview', '.sb-conversation-file-name', '.sb-import-file-name',
     '#sb-topbar-title', '#rm_button_selected_ch h2', '.qr--button-label', '#image_list_header_name',
-    '.sb-user-names',
     '#an_chara_name', '#extension_floating_chara_editing', '.group_select_block_list', '.select_chat_block_filename', '.sb-chat-file-title', '.scratchpad-source',
     '.sbca-filename', '.sbca-owner', '.sbca-owner-choice-name', '.an-note-name', '.neconyan-lorebook-book-name',
     '.neconyan-folder-tab', '.neconyan-folder-tabs-current',
