@@ -33,8 +33,9 @@ const REDACTIONS = [
     [new RegExp(`(["']?)\\b(${WHOLE_VALUE_NAME})\\1\\s*[:=]\\s*(?:"(?:[^"\\\\]|\\\\.)*"|'(?:[^'\\\\]|\\\\.)*'|[^\\r\\n,;&}"']+)`, 'gi'), '$2: [redacted]'],
     [new RegExp(`(["']?)\\b${COUNT_NAME}(${SECRET_NAME})\\1\\s*[:=]\\s*(?:"(?:[^"\\\\]|\\\\.)*"|'(?:[^'\\\\]|\\\\.)*'|[^\\s,;&}"']+)`, 'gi'), '$2: [redacted]'],
     [/\b(Bearer|Basic|Digest|Negotiate)\s+[A-Za-z0-9._~+/=-]{4,}/gi, '$1 [redacted]'],
-    [/\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@]*@/gi, '$1[redacted]@'],
-    [/(^|[\s(<"'])[^\s/:@"'<>]+:[^\s/@"'<>]+@(?=[\w[])/g, '$1[redacted]@'],
+    // Greedy, so a password that holds an @ goes whole; a scheme-less //user:pass@host goes too.
+    [/\b([a-z][a-z0-9+.-]*:\/\/)[^\s/]*@/gi, '$1[redacted]@'],
+    [/(^|[\s(<"'/])[^\s/:@"'<>]+:[^\s/@"'<>]+@(?=[\w[])/g, '$1[redacted]@'],
     [/\?(?=[\w%.~[\]-]+=)[^\s"'<>)]*/g, '?[redacted]'],
     [/(\bhttps?:\/\/[^\s#"'<>)]*)#[^\s"'<>)]*/gi, '$1#[redacted]'],
     [/\beyJ[A-Za-z0-9_-]{6,}(?:\.[A-Za-z0-9_-]{2,}){1,2}/g, '[redacted]'],

@@ -64,6 +64,23 @@ describe('redactEvidenceText', () => {
         expect(output).toContain(kept);
     });
 
+    test.each([
+        ['connect ECONNREFUSED http://user:pass@192.168.1.5:5001/v1/completions?key=abc', 'user:pass', 'key=abc'],
+        ['proxy at //user:pw@host.lan:80/x failed', 'user:pw', 'pw@'],
+        ['could not reach http://user:p@ss@host.lan:5000/x', 'p@ss', 'ss@host'],
+        ['HTTP://Admin:Secret99@HOST:5000/path?KEY=abc123 refused', 'Admin', 'Secret99'],
+        ['dial user:pw@host.lan:5000 failed', 'user:pw', 'pw@host'],
+    ])('removes the login in a server address from %s', (input, ...gone) => {
+        const output = redactEvidenceText(input);
+        for (const text of gone) expect(output).not.toContain(text);
+        expect(output).toContain('[redacted]@');
+    });
+
+    test('leaves an address without a login or an at sign in a path alone', () => {
+        expect(redactEvidenceText('see http://host.lan:5000/a@b.c ok')).toBe('see http://host.lan:5000/a@b.c ok');
+        expect(redactEvidenceText('write to bob@example.com')).toBe('write to bob@example.com');
+    });
+
     test('bounds length and ignores non-strings', () => {
         expect(redactEvidenceText('x '.repeat(5000), 100).length).toBeLessThanOrEqual(110);
         expect(redactEvidenceText(null)).toBe('');
