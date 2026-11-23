@@ -35,12 +35,19 @@ function worldsOf(lease) {
     return directories.worlds || path.join(directories.root, 'worlds');
 }
 
+function isRecord(value) {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
 function bindingsFile(lease, notebookId) {
     return path.join(notebookControlRoot(rootOf(lease), notebookId), 'lore-bindings.json');
 }
 
 export function readBindingsLocked(lease, notebookId) {
     const value = readJsonLocked(lease, bindingsFile(lease, notebookId), () => ({ schema: BINDING_SCHEMA, revision: null, bindings: {} }));
+    if (!isRecord(value) || (value.bindings != null && !isRecord(value.bindings))) {
+        throw new NotebookError('NOTEBOOK_CONTROL_DAMAGED', 'These lore links could not be read.', 500);
+    }
     if (value.schema > BINDING_SCHEMA) throw new NotebookError('NOTEBOOK_SCHEMA_UNSUPPORTED', 'These lore links were saved by a newer version of Neconyan.', 409);
     value.bindings ||= {};
     return value;
@@ -335,6 +342,32 @@ function bindingIdFor(notebookId, noteId, selector, book) {
     return `lb_${sha256(`${notebookId}:${noteId}:${selectorKey(selector)}:${book}`).slice(0, 16)}`;
 }
 
+function sameSelector(stored, key) {
+    try {
+        return selectorKey(normaliseSelector(stored)) === key;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * The binding a publication of this section updates. A repaired binding, or one
+ * a lorebook rename could not move to its derived id, keeps its own id, so it
+ * is found by note, section, book and entry instead.
+ */
+function bindingForPublication(value, notebookId, noteId, selector, book, uid) {
+    const derived = bindingIdFor(notebookId, noteId, selector, book);
+    const direct = value.bindings[derived];
+    const wanted = uid === null || uid === undefined ? null : String(uid);
+    if (direct && (wanted === null || String(direct.uid) === wanted)) return { bindingId: derived, binding: direct };
+    const key = selectorKey(selector);
+    const matches = Object.entries(value.bindings).filter(([, binding]) => isRecord(binding)
+        && binding.noteId === noteId && binding.book === book && sameSelector(binding.selector, key)
+        && (wanted === null || String(binding.uid) === wanted));
+    if (matches.length === 1) return { bindingId: matches[0][0], binding: matches[0][1] };
+    return { bindingId: derived, binding: direct ?? null };
+}
+
 /* ---------- preview and publication ---------- */
 
 export function previewPublicationLocked(lease, { notebookId, noteId, selector, book, uid = null, title = null }) {
@@ -351,8 +384,7 @@ export function previewPublicationLocked(lease, { notebookId, noteId, selector, 
     if (Buffer.byteLength(source.text) > MAX_LORE_TEXT) throw new NotebookError('LORE_SOURCE_TOO_LARGE', 'That section is too large for one lore entry.', 413);
     const target = requireBookLocked(lease, filename);
     const existingBindings = readBindingsLocked(lease, notebookId);
-    const bindingId = bindingIdFor(notebookId, noteId, normalised, filename);
-    const binding = existingBindings.bindings[bindingId];
+    const { bindingId, binding } = bindingForPublication(existingBindings, notebookId, noteId, normalised, filename, uid);
     const effectiveUid = uid ?? binding?.uid ?? null;
     const current = entryOf(target, effectiveUid);
     if (effectiveUid !== null && effectiveUid !== undefined && !current) {
@@ -489,6 +521,69 @@ export function detachBindingLocked(lease, { operationId, notebookId, bindingId 
         writeBindingsLocked(lease, notebookId, value);
         return { status: 'success', committed: true, bindingId, detached: true };
     });
+}
+
+/**
+ * Follows a whole lorebook file being renamed (`to` is the new filename) or
+ * deleted (`to` is null). Renamed bindings keep their entry, publication,
+ * policy and history, under the id the new filename gives them when it is
+ * free. Two bindings of one section (one of them repaired onto it) would get
+ * the same id, so the second keeps its own and none is lost. Deleted ones
+ * are detached, and so is any binding that already pointed at a missing book
+ * of the new name, so it cannot claim the renamed book's entries. A file
+ * whose links cannot be followed throws NOTEBOOK_CONTROL_DAMAGED before
+ * anything is written. Returns the number of bindings changed; nothing is
+ * written when it is zero.
+ */
+export function relinkBookBindingsLocked(lease, notebookId, from, to = null) {
+    const value = readBindingsLocked(lease, notebookId);
+    const entries = Object.entries(value.bindings);
+    const damaged = () => new NotebookError('NOTEBOOK_CONTROL_DAMAGED', 'These lore links could not be read.', 500);
+    if (value.detached != null && !Array.isArray(value.detached)) throw damaged();
+    const affected = binding => isRecord(binding) && (binding.book === from || (to && binding.book === to));
+    for (const [, binding] of entries) {
+        if (!affected(binding)) continue;
+        if (typeof binding.noteId !== 'string' || (binding.history != null && !Array.isArray(binding.history))) throw damaged();
+        try {
+            normaliseSelector(binding.selector);
+        } catch {
+            throw damaged();
+        }
+    }
+    const at = now();
+    const bindings = {};
+    const taken = new Set(entries.filter(([, binding]) => !affected(binding)).map(([key]) => key));
+    const freeId = (preferred, own) => {
+        if (!taken.has(preferred)) return preferred;
+        if (!taken.has(own)) return own;
+        let n = 2;
+        while (taken.has(`${preferred}_${n}`)) n++;
+        return `${preferred}_${n}`;
+    };
+    const detached = [];
+    let changed = 0;
+    for (const [key, binding] of entries) {
+        if (affected(binding) && binding.book === from && to) {
+            const id = freeId(bindingIdFor(notebookId, binding.noteId, normaliseSelector(binding.selector), to), key);
+            taken.add(id);
+            const moved = { ...binding, id, book: to };
+            pushBindingHistory(moved, { action: 'book-renamed', from, to });
+            bindings[id] = moved;
+            changed++;
+        } else if (affected(binding)) {
+            const record = { ...binding };
+            delete record.pending;
+            detached.push({ ...record, detachedAt: at, detachedReason: binding.book === from ? 'book-deleted' : 'book-replaced', history: undefined });
+            changed++;
+        } else {
+            bindings[key] = binding;
+        }
+    }
+    if (!changed) return 0;
+    value.bindings = bindings;
+    if (detached.length) value.detached = [...(value.detached ?? []), ...detached].slice(-100);
+    writeBindingsLocked(lease, notebookId, value);
+    return changed;
 }
 
 /** Explicitly replaces the bound draft region with the current lore text. */

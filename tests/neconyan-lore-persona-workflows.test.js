@@ -26,6 +26,8 @@ function extractFunction(source, name) {
 const worldInfoSource = readFileSync(new URL('../public/scripts/world-info.js', import.meta.url), 'utf8');
 const personaSource = readFileSync(new URL('../public/scripts/personas.js', import.meta.url), 'utf8');
 const scriptSource = readFileSync(new URL('../public/script.js', import.meta.url), 'utf8');
+const cleanupSource = readFileSync(new URL('../public/scripts/lorebook-link-cleanup.js', import.meta.url), 'utf8');
+const rewriteSource = readFileSync(new URL('../public/scripts/lorebook-link-rewrite.js', import.meta.url), 'utf8');
 
 describe('Lorebook control actions', () => {
     test('clearing selection disables old entry tools and clears the count', async () => {
@@ -103,34 +105,55 @@ describe('Lorebook control actions', () => {
 });
 
 describe('Persona lorebook links', () => {
-    test('deleting the active linked book refreshes the controls and missing links cannot be opened', async () => {
+    function personaContext({ saveSettings = async () => true } = {}) {
         const controls = new Map();
         const control = selector => {
             if (!controls.has(selector)) {
                 controls.set(selector, {
-                    label: '', disabled: false,
+                    label: '', disabled: false, classes: {},
                     text(value) { this.label = value; return this; },
                     prop(_, value) { this.disabled = value; return this; },
-                    attr() { return this; }, trigger() { return this; }, toggleClass() { return this; }, val: () => '',
+                    attr() { return this; }, trigger() { return this; },
+                    toggleClass(name, value) { this.classes[name] = value; return this; }, val: () => '',
                 });
             }
             return controls.get(selector);
         };
         const context = vm.createContext({
-            $: control, world_names: ['Notes'], user_avatar: 'active.png',
-            power_user: { personas: { 'active.png': 'Active', 'other.png': 'Other' }, persona_description_lorebook: 'Notes', persona_descriptions: { 'active.png': { lorebook: 'Notes' }, 'other.png': { lorebook: 'Notes' } } },
+            $: control, control, world_names: ['Notes'], user_avatar: 'active.png',
+            power_user: {
+                personas: { 'active.png': 'Active', 'other.png': 'Other', 'similar.png': 'Similar', 'dotted.png': 'Dotted' },
+                persona_description_lorebook: 'Notes',
+                persona_descriptions: {
+                    'active.png': { lorebook: 'Notes' }, 'other.png': { lorebook: 'Notes' },
+                    'similar.png': { lorebook: 'Notes 2' }, 'case.png': { lorebook: 'notes' }, 'dotted.png': { lorebook: 'Notes. ' },
+                },
+            },
             t: (parts, ...values) => parts.reduce((text, part, index) => text + part + (values[index] ?? ''), ''),
-            getRequestHeaders: () => ({}), fetch: async () => ({ ok: true }),
+            getRequestHeaders: () => ({}), fetch: async () => ({ ok: true, json: async () => ({ ok: true }) }),
             blockWorldInfoSaves: () => () => {}, settleWorldInfoSave: async () => {}, invalidateWorldInfoCache() {},
             worldInfoCommittedEntryInstances: new Map(), worldInfoEditor: null, selected_world_info: [], saveSettingsDebounced() {},
-            updateNeconyanLorebookFolders: async () => {}, unlinkDeletedWorldInfo: async () => {},
+            updateNeconyanLorebookFolders: async () => {},
             eventSource: { emit: async () => {} }, event_types: { WORLDINFO_DELETED: 'deleted' },
+            saveSettings,
         });
         context.updateWorldInfoList = async () => { context.world_names.length = 0; };
-        context.getOrCreatePersonaDescriptor = () => context.power_user.persona_descriptions[context.user_avatar];
+        vm.runInContext(extractFunction(rewriteSource, 'linkPointsAt'), context);
+        vm.runInContext(extractFunction(rewriteSource, 'planPersonaLorebookRewrites'), context);
+        vm.runInContext(extractFunction(cleanupSource, 'showPersonaLorebook'), context);
+        vm.runInContext(extractFunction(cleanupSource, 'rewritePersonaLinks'), context);
         vm.runInContext(extractFunction(personaSource, 'updatePersonaLorebookActions'), context);
         context.setPersonaDescription = () => context.updatePersonaLorebookActions();
+        context.unlinkDeletedWorldInfo = name => context.rewritePersonaLinks(name, null);
         vm.runInContext(extractFunction(worldInfoSource, 'deleteWorldInfo'), context);
+        return context;
+    }
+
+    const lorebooks = context => Object.fromEntries(Object.entries(context.power_user.persona_descriptions).map(([avatar, item]) => [avatar, item.lorebook]));
+
+    test('deleting a linked book clears it from every persona and missing links cannot be opened', async () => {
+        const context = personaContext();
+        const { control } = context;
         context.world_names = undefined;
         context.updatePersonaLorebookActions();
         expect(control('#persona_lore_status').label).toBe('Loading lorebooks...');
@@ -143,10 +166,109 @@ describe('Persona lorebook links', () => {
         await context.deleteWorldInfo('Notes');
         expect(control('#persona_lore_status').label).toBe('None');
         expect(control('#persona_lore_open_button').disabled).toBe(true);
+        expect(control('#persona_lore_button').classes.world_set).toBe(false);
+        expect(context.power_user.persona_description_lorebook).toBe('');
+        expect(lorebooks(context)).toEqual({ 'active.png': '', 'other.png': '', 'similar.png': 'Notes 2', 'case.png': 'notes', 'dotted.png': '' });
         context.user_avatar = 'other.png';
         context.updatePersonaLorebookActions();
-        expect(control('#persona_lore_status').label).toBe('Missing: Notes');
-        expect(control('#persona_lore_open_button').disabled).toBe(true);
+        expect(control('#persona_lore_status').label).toBe('None');
+        context.user_avatar = 'similar.png';
+        context.updatePersonaLorebookActions();
+        expect(control('#persona_lore_status').label).toBe('Missing: Notes 2');
+    });
+
+    test('renaming a linked book moves every persona link and saves before the controls change', async () => {
+        const order = [];
+        const context = personaContext({ saveSettings: async (_, options) => { order.push(['save', options, context.power_user.persona_description_lorebook]); return true; } });
+        context.world_names = ['Renamed', 'Notes 2', 'notes'];
+        const update = context.updatePersonaLorebookActions;
+        context.updatePersonaLorebookActions = () => { order.push(['refresh']); update(); };
+        await expect(context.rewritePersonaLinks('Notes', 'Renamed')).resolves.toBe(3);
+        expect(order[0]).toEqual(['save', { returnResult: true }, 'Renamed']);
+        expect(order.slice(1).every(([kind]) => kind === 'refresh')).toBe(true);
+        expect(lorebooks(context)).toEqual({ 'active.png': 'Renamed', 'other.png': 'Renamed', 'similar.png': 'Notes 2', 'case.png': 'notes', 'dotted.png': 'Renamed' });
+        expect(context.control('#persona_lore_status').label).toBe('Renamed');
+        expect(context.control('#persona_lore_button').classes.world_set).toBe(true);
+        context.user_avatar = 'other.png';
+        context.updatePersonaLorebookActions();
+        expect(context.control('#persona_lore_status').label).toBe('Renamed');
+        await expect(context.rewritePersonaLinks('Notes', 'Again')).resolves.toBe(0);
+    });
+
+    test('a failed settings save puts every persona link back and keeps the controls on the old book', async () => {
+        const context = personaContext({ saveSettings: async () => false });
+        const before = lorebooks(context);
+        await expect(context.rewritePersonaLinks('Notes', null)).rejects.toThrow('Settings could not be saved.');
+        expect(lorebooks(context)).toEqual(before);
+        expect(context.power_user.persona_description_lorebook).toBe('Notes');
+        expect(context.control('#persona_lore_status').label).toBe('Notes');
+        expect(context.control('#persona_lore_button').classes.world_set).toBe(true);
+
+        const thrown = personaContext({ saveSettings: async () => { throw new Error('offline'); } });
+        await expect(thrown.rewritePersonaLinks('Notes', 'Renamed')).rejects.toThrow('offline');
+        expect(lorebooks(thrown)).toEqual(before);
+        expect(thrown.power_user.persona_description_lorebook).toBe('Notes');
+    });
+
+    test('a rollback keeps a persona link the user changed while the save was running', async () => {
+        let release;
+        const context = personaContext({ saveSettings: () => new Promise(resolve => { release = resolve; }) });
+        const pending = context.rewritePersonaLinks('Notes', 'Renamed');
+        context.power_user.persona_descriptions['other.png'].lorebook = 'Chosen';
+        release(false);
+        await expect(pending).rejects.toThrow('Settings could not be saved.');
+        expect(lorebooks(context)).toMatchObject({ 'active.png': 'Notes', 'other.png': 'Chosen', 'dotted.png': 'Notes. ' });
+    });
+});
+
+describe('Notebook links in the link-cleanup report', () => {
+    const context = vm.createContext({
+        t: (strings, ...values) => strings.reduce((text, part, index) => text + part + (index < values.length ? values[index] : ''), ''),
+    });
+    vm.runInContext(extractFunction(cleanupSource, 'skippedReason'), context);
+    vm.runInContext(extractFunction(cleanupSource, 'notebookResults'), context);
+
+    test('a damaged part names only that part, and a whole notebook says it was left as it is', () => {
+        const result = context.notebookResults({
+            links: 5,
+            skipped: [
+                { notebookId: 'a', name: 'Notebook', part: 'associations', code: 'NOTEBOOK_CONTROL_DAMAGED' },
+                { notebookId: 'a', name: 'Notebook', part: 'bindings', code: 'NOTEBOOK_SCHEMA_UNSUPPORTED' },
+                { notebookId: 'b', name: 'Second', part: 'policies', code: 'NOTEBOOK_CONTROL_DAMAGED' },
+                { notebookId: 'c', name: null, part: 'notebook', code: 'NOTEBOOK_CONTROL_DAMAGED' },
+                { notebookId: 'd', name: 'Fourth', part: 'notebook', code: 'NOTEBOOK_SCHEMA_UNSUPPORTED' },
+                { notebookId: 'd', name: 'Fourth', part: 'notebook', code: 'NOTEBOOK_SCHEMA_UNSUPPORTED' },
+            ],
+        });
+        expect(result.moved).toBe(5);
+        expect(JSON.parse(JSON.stringify(result.failed))).toEqual([
+            { label: 'Notebook \'Notebook\'', reason: 'Its related lorebooks and entries could not be updated, so they were left as they are. Everything else in it was updated.', notebook: true },
+            { label: 'Notebook \'Notebook\'', reason: 'Its lore links could not be updated, so they were left as they are. Everything else in it was updated.', notebook: true },
+            { label: 'Notebook \'Second\'', reason: 'Its context settings could not be updated, so they were left as they are. Everything else in it was updated.', notebook: true },
+            { label: 'Notebook \'c\'', reason: 'It could not be read, so it was left as it is.', notebook: true },
+            { label: 'Notebook \'Fourth\'', reason: 'It was saved by a newer version of Neconyan, so it was left as it is.', notebook: true },
+        ]);
+    });
+
+    test('a warning with only Notebook parts leaves out the advice about the missing-lorebook notice', () => {
+        const shown = [];
+        const reporter = vm.createContext({
+            t: context.t,
+            escapeHtml: text => String(text),
+            toastr: { error: (body, title) => shown.push({ body, title }) },
+        });
+        vm.runInContext(extractFunction(cleanupSource, 'reportFailures'), reporter);
+        const notebookOnly = { label: 'Notebook \'A\'', reason: 'Why.', notebook: true };
+        reporter.reportFailures('Old', 'New', [notebookOnly]);
+        reporter.reportFailures('Old', null, [notebookOnly, { label: 'this chat', reason: 'Why.' }]);
+        expect(shown.map(item => item.title)).toEqual(['Lorebook links not fully updated', 'Lorebook links not fully updated']);
+        expect(shown[0].body).not.toContain('missing-lorebook notice');
+        expect(shown[0].body).toContain('<li>Notebook \'A\': Why.</li>');
+        expect(shown[1].body).toContain('missing-lorebook notice');
+    });
+
+    test('no report adds nothing', () => {
+        expect(JSON.parse(JSON.stringify(context.notebookResults(null)))).toEqual({ moved: 0, failed: [] });
     });
 });
 
