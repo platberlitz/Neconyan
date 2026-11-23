@@ -123,4 +123,40 @@ describeDirectoryFsync('tryWriteFileSync durable writes', () => {
         expect(fs.readFileSync(filename, 'utf8')).toBe('original');
         expect(fs.readdirSync(tempRoot)).toEqual(['source']);
     });
+
+    test('in-place and replacement expectedFileHash verification stream-hashes multi-chunk files without full-file reads', () => {
+        tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-stream-hash-'));
+        const filename = path.join(tempRoot, 'large-chat.jsonl');
+        const original = Buffer.from('café 日本語 '.repeat(12_000), 'utf8'); // > 128 KiB, multiple 64 KiB chunks
+        const updated = Buffer.from('updated line\n', 'utf8');
+        fs.writeFileSync(filename, original);
+        const expectedHash = crypto.createHash('sha256').update(original).digest('hex');
+
+        expect(() => tryWriteFileSync(filename, updated, 'utf8', {
+            preserveFileIdentity: true,
+            invalidateBeforeWrite: true,
+            preserveOnWriteError: true,
+            expectedFileHash: '0'.repeat(64),
+        })).toThrow(/Refused to overwrite a changed file/);
+        expect(fs.readFileSync(filename)).toEqual(original);
+
+        tryWriteFileSync(filename, updated, 'utf8', {
+            preserveFileIdentity: true,
+            invalidateBeforeWrite: true,
+            preserveOnWriteError: true,
+            expectedFileHash: expectedHash,
+        });
+        expect(fs.readFileSync(filename)).toEqual(updated);
+
+        const updatedHash = crypto.createHash('sha256').update(updated).digest('hex');
+        expect(() => tryWriteFileSync(filename, 'third', 'utf8', {
+            replaceFileOnly: true,
+            expectedFileHash: 'f'.repeat(64),
+        })).toThrow(/Refused to replace a changed file/);
+        tryWriteFileSync(filename, 'third', 'utf8', {
+            replaceFileOnly: true,
+            expectedFileHash: updatedHash,
+        });
+        expect(fs.readFileSync(filename, 'utf8')).toBe('third');
+    });
 });

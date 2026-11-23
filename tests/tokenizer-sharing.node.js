@@ -3,16 +3,23 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import tiktoken from 'tiktoken';
+import { getTiktokenEncoding } from '../src/tiktoken-cache.js';
 import { setConfigFilePath } from '../src/util.js';
 
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
 const { getTiktokenTokenizer, getTokenizerModel, TEXT_COMPLETION_MODELS } = await import('../src/endpoints/tokenizers.js');
+const { getCounter } = await import('../src/mewmory/tokens.js');
 
-test('models with the same encoding share one tokenizer allocation', () => {
+test('models with the same encoding share one tokenizer allocation', async () => {
     assert.equal(getTiktokenTokenizer('gpt-3.5-turbo'), getTiktokenTokenizer('gpt-4'));
     assert.equal(getTiktokenTokenizer('gpt-4'), getTiktokenTokenizer('gpt-4-32k'));
     assert.equal(getTiktokenTokenizer('gpt-4o'), getTiktokenTokenizer('o1'));
     assert.notEqual(getTiktokenTokenizer('gpt-4'), getTiktokenTokenizer('gpt-4o'));
+    assert.equal(getTiktokenEncoding('o200k_base'), getTiktokenTokenizer('gpt-4o'));
+    assert.equal(getTiktokenEncoding('cl100k_base'), getTiktokenTokenizer('gpt-4'));
+    const mewmoryCounter = await getCounter('o200k_base');
+    assert.equal(mewmoryCounter.name, 'o200k_base');
+    assert.equal(mewmoryCounter.count('Hello world!'), getTiktokenTokenizer('gpt-4o').encode('Hello world!', [], []).length);
 });
 
 test('shared encodings preserve token IDs and decoding for all supported OpenAI model families', () => {

@@ -7,6 +7,8 @@ import { fork } from 'node:child_process';
 import { once } from 'node:events';
 import { test } from 'node:test';
 import { createMemoryPressureCheck, createMemorySampleReporter, isMemoryPressure, readMemorySample } from '../src/memory-pressure.js';
+import { decisionCache } from '../src/decision-cache.js';
+import { isConstrainedMobileRuntime } from '../src/runtime.js';
 import { SERVER_MEMORY_SAMPLE_MESSAGE } from '../src/server-plugin-update-ipc.js';
 import { parseMemorySample } from '../src/server-crash-evidence.js';
 import { readParsedSettingsFile } from '../src/settings-file-cache.js';
@@ -17,6 +19,31 @@ test('either available RAM or heap pressure triggers cleanup, missing counters d
     assert.equal(isMemoryPressure({ available: 32e6, total: 2e9 }), true);
     assert.equal(isMemoryPressure({ available: 2e9, total: 4e9, heapUsed: 800, heapLimit: 1000 }), true);
     assert.equal(isMemoryPressure({ available: 2e9, total: 4e9, heapUsed: 700, heapLimit: 1000 }), false);
+    assert.equal(isMemoryPressure({ available: 4e9, total: 8e9, heapUsed: 400e6, heapLimit: 2048e6, rss: 1800e6 }), true);
+    assert.equal(isMemoryPressure({ available: 4e9, total: 8e9, heapUsed: 400e6, heapLimit: 2048e6, rss: 1400e6 }), false);
+});
+
+test('constrained mobile runtimes trigger memory pressure earlier on heap and RSS', () => {
+    const MiB = 1024 * 1024;
+    assert.equal(isMemoryPressure({ available: 4096 * MiB, total: 12288 * MiB, heapUsed: 400 * MiB, heapLimit: 2048 * MiB, rss: 800 * MiB, constrained: true }), true);
+    assert.equal(isMemoryPressure({ available: 4096 * MiB, total: 12288 * MiB, heapUsed: 400 * MiB, heapLimit: 2048 * MiB, rss: 600 * MiB, constrained: true }), false);
+    assert.equal(isMemoryPressure({ available: 4096 * MiB, total: 12288 * MiB, heapUsed: 700 * MiB, heapLimit: 1024 * MiB, rss: 500 * MiB, constrained: true }), true);
+    assert.equal(isConstrainedMobileRuntime({ platform: 'linux', env: {} }), false);
+    assert.equal(isConstrainedMobileRuntime({ platform: 'android', env: {} }), true);
+    assert.equal(isConstrainedMobileRuntime({ platform: 'linux', env: { TERMUX_VERSION: '0.118.1' } }), true);
+    assert.equal(isConstrainedMobileRuntime({ platform: 'linux', env: { PREFIX: '/data/data/com.termux/files/usr' } }), true);
+    assert.equal(isConstrainedMobileRuntime({ platform: 'linux', env: { HOME: '/data/data/com.termux/files/home' } }), true);
+    assert.equal(isConstrainedMobileRuntime({ platform: 'linux', env: { NECONYAN_ANDROID_APP: '1' } }), true);
+    assert.equal(isConstrainedMobileRuntime({ platform: 'darwin', env: { NECONYAN_IOS_APP: '1' } }), true);
+});
+
+test('decision cache clears when memory pressure triggers registered reclaimers', () => {
+    decisionCache.clear();
+    decisionCache.set('k1', { value: 'cached' });
+    assert.deepEqual(decisionCache.get('k1'), { value: 'cached' });
+    const check = createMemoryPressureCheck({ sample: () => ({ heapUsed: 900, heapLimit: 1000 }) });
+    assert.equal(check(), true);
+    assert.equal(decisionCache.get('k1'), undefined);
 });
 
 test('cooldown avoids repeatedly rebuilding caches under sustained pressure', () => {

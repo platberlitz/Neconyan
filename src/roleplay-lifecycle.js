@@ -236,7 +236,8 @@ function preparedFromStaged(pending, bytes, staged) {
     const inputRecords = detachChatHeader(staged.records);
     if (pending.before?.integrity) inputRecords[0].chat_metadata.integrity = pending.before.integrity;
     else delete inputRecords[0].chat_metadata.integrity;
-    return { changed: pending.changed, inputRecords, records: staged.records, get serialized() { return bytes.toString('utf8'); },
+    return { changed: pending.changed, inputRecords, records: staged.records, bytes,
+        get serialized() { return bytes.toString('utf8'); },
         integrity: pending.after.integrity };
 }
 
@@ -248,7 +249,9 @@ function preparedFromPayload(pending, bytes, staged = null) {
     const inputRecords = detachChatHeader(parsed.records);
     if (pending.before?.integrity) inputRecords[0].chat_metadata.integrity = pending.before.integrity;
     else delete inputRecords[0].chat_metadata.integrity;
-    return { changed: pending.changed, inputRecords, records: parsed.records, serialized: bytes.toString('utf8'), integrity: pending.after.integrity };
+    return { changed: pending.changed, inputRecords, records: parsed.records, bytes,
+        get serialized() { return bytes.toString('utf8'); },
+        integrity: pending.after.integrity };
 }
 
 function publishPending(lease, host, filename, before, payload, expectedJournal, staged = null) {

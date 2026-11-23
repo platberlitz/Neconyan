@@ -5360,6 +5360,27 @@ test('cache budgets count estimated heap, never evict the entry just inserted, a
     assert.deepEqual(Object.values(cacheUsage()).map(entry => entry.bytes), [0, 0, 0]);
 });
 
+test('constrained mobile runtimes lower Mewmory cache caps while keeping the active entry cached', t => {
+    const previousTermux = process.env.TERMUX_VERSION;
+    const desktopMax = cacheUsage();
+    try {
+        process.env.TERMUX_VERSION = '0.118.1';
+        const mobileMax = cacheUsage();
+        assert.ok(mobileMax.writtenStates.max < desktopMax.writtenStates.max);
+        assert.ok(mobileMax.sharedJson.max < desktopMax.sharedJson.max);
+        assert.equal(mobileMax.sharedJson.max, mobileMax.chatRead.max);
+        const { directories } = disk(t, bulkMessages());
+        reclaimMemory();
+        loadCurrentStateSync(directories, locator);
+        assert.ok(cacheUsage().chatRead.entries >= 1);
+        reclaimMemory();
+        assert.deepEqual(Object.values(cacheUsage()).map(entry => entry.bytes), [0, 0, 0]);
+    } finally {
+        if (previousTermux === undefined) delete process.env.TERMUX_VERSION;
+        else process.env.TERMUX_VERSION = previousTermux;
+    }
+});
+
 // The earlier eligibility rules, which scan every record and audit entry for each question, kept as the reference.
 function scanningEligibility() {
     const content = record => {

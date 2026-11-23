@@ -1,4 +1,5 @@
 import compression from 'compression';
+import { isNativeTermuxEnvironment } from '../runtime.js';
 
 function getHeaderValue(response, headerName) {
     const value = response?.getHeader?.(headerName);
@@ -14,8 +15,10 @@ function hasCacheDirective(response, directive) {
     return cacheControl.split(',').map(part => part.trim()).includes(directive);
 }
 
-function isBundledAppShell() {
-    return process.env.NECONYAN_ANDROID_APP === '1' || process.env.NECONYAN_IOS_APP === '1';
+function isLocalMobileRuntime() {
+    return process.env.NECONYAN_ANDROID_APP === '1'
+        || process.env.NECONYAN_IOS_APP === '1'
+        || isNativeTermuxEnvironment();
 }
 
 /**
@@ -25,10 +28,10 @@ function isBundledAppShell() {
  * @returns {boolean}
  */
 export function shouldCompressResponse(request, response) {
-    if (isBundledAppShell()) {
-        // The phone apps fetch from their own server on the same device. The
-        // WebView holds its own cache, and compressing costs more CPU there
-        // than copying the bytes across the loopback.
+    if (isLocalMobileRuntime()) {
+        // Phone apps and Termux serve the browser on the same device over
+        // loopback, where gzipping large chat payloads burns CPU and RAM
+        // without saving real network transfer.
         return false;
     }
 

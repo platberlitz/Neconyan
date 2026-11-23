@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { registerMemoryReclaimer } from '../memory-pressure.js';
+import { isConstrainedMobileRuntime } from '../runtime.js';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import sanitize from 'sanitize-filename';
@@ -88,6 +89,8 @@ const writtenStates = new Map();
 // V8 keeps JSON text that holds any character above U+00FF (a curly quote, a dash, an emoji) at two bytes per
 // character, and JavaScript cannot tell which representation a string has, so the budget counts the worst case.
 const WRITTEN_STATE_MAX_BYTES = 48 * 1024 * 1024;
+const CONSTRAINED_WRITTEN_STATE_MAX_BYTES = 16 * 1024 * 1024;
+const writtenStateMaxBytes = () => (isConstrainedMobileRuntime() ? CONSTRAINED_WRITTEN_STATE_MAX_BYTES : WRITTEN_STATE_MAX_BYTES);
 const writtenStateBytes = serialized => serialized.length * 2;
 let writtenStateTotal = 0;
 
@@ -110,10 +113,11 @@ function forgetWrittenState(filename) {
 
 function rememberWrittenState(filename, serialized, identity = fileIdentity(filename)) {
     forgetWrittenState(filename);
-    if (!identity || writtenStateBytes(serialized) > WRITTEN_STATE_MAX_BYTES) return;
+    const maxBytes = writtenStateMaxBytes();
+    if (!identity || writtenStateBytes(serialized) > maxBytes) return;
     writtenStates.set(filename, { identity, serialized });
     writtenStateTotal += writtenStateBytes(serialized);
-    while (writtenStateTotal > WRITTEN_STATE_MAX_BYTES) forgetWrittenState(writtenStates.keys().next().value);
+    while (writtenStateTotal > maxBytes) forgetWrittenState(writtenStates.keys().next().value);
 }
 
 /**
@@ -207,6 +211,8 @@ const PARSED_SIZE_FACTOR = 5;
 // account keeps cached (the tester's five archives and settings.json together are 31 MiB of files) is unchanged;
 // the figure now states the memory that holds, and the memory-pressure reclaimer empties it.
 const SHARED_JSON_CACHE_MAX_BYTES = 64 * 1024 * 1024 * PARSED_SIZE_FACTOR;
+const CONSTRAINED_SHARED_JSON_CACHE_MAX_BYTES = 16 * 1024 * 1024 * PARSED_SIZE_FACTOR;
+const sharedJsonCacheMaxBytes = () => (isConstrainedMobileRuntime() ? CONSTRAINED_SHARED_JSON_CACHE_MAX_BYTES : SHARED_JSON_CACHE_MAX_BYTES);
 let sharedJsonCacheBytes = 0;
 
 function sameCachedFileStat(cached, stat) {
@@ -265,7 +271,8 @@ export function readJsonShared(filename, fallback) {
     const entry = { dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs, bytes: stat.size * PARSED_SIZE_FACTOR, data };
     sharedJsonCache.set(key, entry);
     sharedJsonCacheBytes += entry.bytes;
-    while (sharedJsonCacheBytes > SHARED_JSON_CACHE_MAX_BYTES && sharedJsonCache.size > 1) {
+    const maxBytes = sharedJsonCacheMaxBytes();
+    while (sharedJsonCacheBytes > maxBytes && sharedJsonCache.size > 1) {
         removeCachedJson(sharedJsonCache.keys().next().value);
     }
     return data;
@@ -274,6 +281,8 @@ export function readJsonShared(filename, fallback) {
 const chatReadCache = new Map();
 // Estimated heap again (see PARSED_SIZE_FACTOR): the same 64 MiB of chat files as before.
 const CHAT_READ_CACHE_MAX_BYTES = 64 * 1024 * 1024 * PARSED_SIZE_FACTOR;
+const CONSTRAINED_CHAT_READ_CACHE_MAX_BYTES = 16 * 1024 * 1024 * PARSED_SIZE_FACTOR;
+const chatReadCacheMaxBytes = () => (isConstrainedMobileRuntime() ? CONSTRAINED_CHAT_READ_CACHE_MAX_BYTES : CHAT_READ_CACHE_MAX_BYTES);
 let chatReadCacheBytes = 0;
 
 function removeCachedChat(key) {
@@ -316,7 +325,8 @@ export function readChatShared(directories, locator) {
     const entry = { dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs, bytes: stat.size * PARSED_SIZE_FACTOR, source };
     chatReadCache.set(key, entry);
     chatReadCacheBytes += entry.bytes;
-    while (chatReadCacheBytes > CHAT_READ_CACHE_MAX_BYTES && chatReadCache.size > 1) {
+    const maxBytes = chatReadCacheMaxBytes();
+    while (chatReadCacheBytes > maxBytes && chatReadCache.size > 1) {
         removeCachedChat(chatReadCache.keys().next().value);
     }
     return source;
@@ -325,9 +335,9 @@ export function readChatShared(directories, locator) {
 /** What the store's caches hold now and may hold at most, in estimated heap bytes. */
 export function cacheUsage() {
     return {
-        writtenStates: { bytes: writtenStateTotal, max: WRITTEN_STATE_MAX_BYTES, entries: writtenStates.size },
-        sharedJson: { bytes: sharedJsonCacheBytes, max: SHARED_JSON_CACHE_MAX_BYTES, entries: sharedJsonCache.size },
-        chatRead: { bytes: chatReadCacheBytes, max: CHAT_READ_CACHE_MAX_BYTES, entries: chatReadCache.size },
+        writtenStates: { bytes: writtenStateTotal, max: writtenStateMaxBytes(), entries: writtenStates.size },
+        sharedJson: { bytes: sharedJsonCacheBytes, max: sharedJsonCacheMaxBytes(), entries: sharedJsonCache.size },
+        chatRead: { bytes: chatReadCacheBytes, max: chatReadCacheMaxBytes(), entries: chatReadCache.size },
     };
 }
 
