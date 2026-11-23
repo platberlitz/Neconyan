@@ -195,6 +195,17 @@ test('a durably rejected submission can be released before job acceptance', asyn
     expect(f.request).toHaveBeenCalledTimes(1);
 });
 
+test('a missing job whose saved record is refused releases the pending scope', async () => {
+    const f = fixture();
+    f.request.mockResolvedValueOnce({ record: f.accepted });
+    const done = f.client.run('raw-generation', {}).catch(error => error);
+    await observe(f);
+    f.request.mockResolvedValueOnce({ ...f.accepted, state: 'refused', error: 'Upstream overloaded' });
+    await f.observer.onStop('missing');
+    expect(await done).toMatchObject({ refused: true, message: 'Upstream overloaded' });
+    expect(f.entries.size).toBe(0);
+});
+
 test('pendingKey exposes only its account scope key and read forwards abort options', async () => {
     const f = fixture();
     f.entries.set('neconyan-labs:alice:distill', JSON.stringify({ key: 'retained-key', body: { kind: 'distill' } }));

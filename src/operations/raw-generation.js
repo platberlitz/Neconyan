@@ -1,5 +1,6 @@
 import { runChatProfile } from '../generation/service.js';
 import { isDefiniteProviderRefusal, readArtifact, writeArtifact } from '../jobs/artifacts.js';
+import { getJob } from '../jobs/store.js';
 import { createMacroEnvironment } from '../macros/index.js';
 import { captureEnhancedMacros } from '../macros/enhanced.js';
 import { captureLabConnection, readLabSettings } from '../labs/sources.js';
@@ -49,7 +50,11 @@ export async function runRawGeneration(context, plan, { generate = runChatProfil
             ...(plan.reasoningEffort && plan.binding.kind === 'active' && plan.binding.backend === 'chat' ? { rawOptions: { reasoningEffort: plan.reasoningEffort } } : {}),
             signal: context.signal, stepNamespace: 'raw', beforeDispatch: () => withOperation(context, () => {}) });
     } catch (error) {
-        if (isDefiniteProviderRefusal(error?.status)) error.operationRefused = true;
+        if (error?.code !== 'PROVIDER_OUTCOME_UNKNOWN'
+            && getJob(context.directories, context.job.id)?.recoverability !== 'unknown-outcome'
+            && isDefiniteProviderRefusal(error?.providerStatus ?? error?.status)) {
+            error.operationRefused = true;
+        }
         throw error;
     }
     const text = String(typeof response === 'string' ? response : response?.text ?? '').trim();
