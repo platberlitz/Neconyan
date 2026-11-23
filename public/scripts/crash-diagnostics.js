@@ -159,7 +159,24 @@
         const count = unfinished ? Math.min(99, previousCount + 1) : previous ? 0 : previousCount;
         return { count, unfinished, safeStart: unfinished && count >= 2 };
     }
-    const api = { redact, describeError, validateActivity, validateEvents, safeAgentLabel, templateLabel: id => typeof id === 'string' ? own(LABELS, id) || null : null, isIOSWebKitBrowser, evaluateStartupGuard };
+    // Only the reloads Neconyan starts by itself for an update, with nobody asking, earn a notice.
+    const RELOAD_NOTICE_REASONS = ['served-code-changed', 'cache-cleared-after-update'];
+    const RELOAD_NOTICE_MAX_AGE_MS = 120000;
+    // Pure decision for the one-time 'Neconyan updated' notice. 'show' announces the newest reload note,
+    // 'suppress' marks it handled without showing it (a crash notice or the safe start has the screen), 'skip' leaves it alone.
+    function evaluateReloadNotice(input) {
+        const { reloads, announcedId = '', now = Date.now(), navigationType = '', crashNoticePending = false, safeStart = false } = input ?? {};
+        const record = Array.isArray(reloads) ? reloads[reloads.length - 1] : null;
+        const id = safeId(own(record, 'id'));
+        const at = own(record, 'at');
+        const age = typeof at === 'string' ? now - Date.parse(at) : NaN;
+        if (!id || own(record, 'kind') !== 'page-reloaded-by-app' || !RELOAD_NOTICE_REASONS.includes(own(record, 'reason')) || id === announcedId) return { action: 'skip', id };
+        // A few seconds of clock drift are tolerated; an older note belongs to an earlier visit.
+        if (!Number.isFinite(age) || age < -5000 || age > RELOAD_NOTICE_MAX_AGE_MS) return { action: 'skip', id };
+        if (navigationType !== 'reload') return { action: 'skip', id };
+        return { action: crashNoticePending || safeStart ? 'suppress' : 'show', id };
+    }
+    const api = { redact, describeError, validateActivity, validateEvents, safeAgentLabel, templateLabel: id => typeof id === 'string' ? own(LABELS, id) || null : null, isIOSWebKitBrowser, evaluateStartupGuard, evaluateReloadNotice };
     globalThis.NeconyanCrashDiagnostics = api;
     if (typeof window === 'undefined' || !window.document) return;
 
@@ -421,7 +438,8 @@
         }
     } catch { /* Reload notes are optional context. */ }
     // Called right before Neconyan reloads the page itself, so the next page can say why. It is
-    // not a crash, never raises a notice and never touches the recovery list or the startup counter.
+    // not a crash, never raises a crash notice and never touches the recovery list or the startup counter.
+    // Only the automatic update reloads later earn the short 'Neconyan updated' notice (claimReloadNotice).
     api.noteReload = guarded(input => {
         const now = Date.now();
         const awayMs = lastAway && now - lastAway.endedAt < 30000 ? lastAway.ms : null;
@@ -740,6 +758,28 @@
     api.getStartupGuardState = () => ({ failures: startupFailureCount, safeStart: startupSafeStart, holdActive: startupHoldActive,
         choice: startupHoldChoice, lowMemoryAuto: startupLowMemoryAuto, ios: isIOSWebKitBrowser() });
     api.isStartupHoldActive = () => startupHoldActive;
+    const RELOAD_ANNOUNCED_KEY = 'neconyan.page-reload-announced.v1';
+    // The notes this page found when it loaded, so a note this page writes right before reloading is never announced by it.
+    const reloadsAtLoad = reloads.slice();
+    function loadNavigationType() {
+        try {
+            const entry = globalThis.performance?.getEntriesByType?.('navigation')?.[0];
+            if (typeof entry?.type === 'string') return entry.type;
+            return globalThis.performance?.navigation?.type === 1 ? 'reload' : '';
+        } catch { return ''; }
+    }
+    // True once per reload note, and only when this page load is that reload. The newest note is remembered as
+    // handled even when it is held back, so it never appears later. A browser that cannot remember it shows nothing.
+    api.claimReloadNotice = guarded(() => {
+        let announcedId = '';
+        try { announcedId = safeId(localStorage.getItem(RELOAD_ANNOUNCED_KEY)); } catch { /* Without storage the notice could repeat, so it stays hidden below. */ }
+        const decision = evaluateReloadNotice({ reloads: reloadsAtLoad, announcedId, now: Date.now(), navigationType: loadNavigationType(),
+            crashNoticePending: Boolean(pendingRecovery) || Boolean(document.getElementById('neconyan-crash-notice')),
+            safeStart: startupSafeStart || startupSafeStartShown || startupHoldActive });
+        if (decision.action === 'skip') return false;
+        try { localStorage.setItem(RELOAD_ANNOUNCED_KEY, decision.id); } catch { return false; }
+        return decision.action === 'show';
+    });
     api.waitForStartupGate = guarded(() => {
         if (!startupSafeStart || startupHoldChoice) return Promise.resolve(startupHoldChoice);
         if (startupGatePromise) return startupGatePromise;

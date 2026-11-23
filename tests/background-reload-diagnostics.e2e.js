@@ -27,12 +27,12 @@ test.beforeEach(async ({ context }) => {
     });
 });
 
-async function waitForApp(page) {
+async function waitForApp(page, { keepNotice = false } = {}) {
     await expect.poll(() => page.evaluate(() => window.NeconyanCrashDiagnostics?.getActivity?.()?.snapshot?.ready === true), { timeout: 120000 }).toBe(true);
-    await page.evaluate(() => {
+    await page.evaluate(keepNotice => {
         document.querySelector('#neconyan-tour-coachmark [data-tour-coach-skip]')?.click();
-        document.querySelector('#nn-update-toast')?.remove();
-    });
+        if (!keepNotice) document.querySelector('#nn-update-toast')?.remove();
+    }, keepNotice);
 }
 
 async function openApp(page) {
@@ -135,6 +135,87 @@ test('a page with a draft only offers the update, and tapping the notice reloads
     expect(reloads[0]).toMatchObject({ reason: 'update-toast', to: 'deadbeef' });
     expect(await page.evaluate(() => NeconyanCrashDiagnostics.getReports().recoveries.length)).toBe(0);
 });
+
+const ANNOUNCED_KEY = 'neconyan.page-reload-announced.v1';
+const updateNotice = page => page.locator('#nn-update-toast').filter({ hasText: 'Neconyan updated' });
+
+/** The 'Update available' check would put its own notice in the same corner. */
+const stubUpdateStatus = context => context.route('**/api/server-admin/status', route => route.fulfill({ json: { repository: { isRepo: false } } }));
+
+test('an update reload shows Neconyan updated once, with only Dismiss to press, and no later load shows it again', async ({ page, context }) => {
+    await stubUpdateStatus(context);
+    const mode = await rewriteVersion(context);
+    await openApp(page);
+    // A first visit is a navigation, not a reload.
+    await expect(updateNotice(page)).toHaveCount(0);
+
+    mode.value = 'changed';
+    await setVisibility(page, 'hidden');
+    const reloaded = page.waitForEvent('framenavigated', { predicate: frame => frame === page.mainFrame() });
+    await setVisibility(page, 'visible');
+    await reloaded;
+    mode.value = 'real';
+    await waitForApp(page, { keepNotice: true });
+
+    const notice = updateNotice(page);
+    await expect(notice).toBeVisible();
+    await expect(notice).toHaveAttribute('role', 'status');
+    await expect(notice.locator('strong')).toHaveText('Neconyan updated');
+    await expect(notice).toContainText('The page reloaded to load the new version.');
+    // Nothing to act on: the body is text, and Dismiss is the only button.
+    expect(await notice.locator('.nn-update-toast-open').evaluate(element => element.tagName)).toBe('DIV');
+    await expect(notice.getByRole('button')).toHaveCount(1);
+    const noteId = await page.evaluate(() => NeconyanCrashDiagnostics.getReports().reloads.at(-1).id);
+    expect(await page.evaluate(key => localStorage.getItem(key), ANNOUNCED_KEY)).toBe(noteId);
+    const box = await notice.boundingBox();
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(393);
+    expect(box.y + box.height).toBeLessThanOrEqual(852);
+
+    await notice.getByRole('button', { name: 'Dismiss' }).click();
+    await expect(page.locator('#nn-update-toast')).toHaveCount(0);
+
+    // The person pressing the browser's reload button on the same page.
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await waitForApp(page, { keepNotice: true });
+    await page.waitForTimeout(2000);
+    await expect(page.locator('#nn-update-toast')).toHaveCount(0);
+
+    // A new tab in the same browser.
+    const other = await context.newPage();
+    await other.goto('/', { waitUntil: 'domcontentloaded' });
+    await waitForApp(other, { keepNotice: true });
+    await other.waitForTimeout(2000);
+    await expect(other.locator('#nn-update-toast')).toHaveCount(0);
+    expect(await other.evaluate(key => localStorage.getItem(key), ANNOUNCED_KEY)).toBe(noteId);
+});
+
+test('the cleared-cache update reload shows the notice and it closes by itself', async ({ page, context }) => {
+    await stubUpdateStatus(context);
+    await openApp(page);
+    await page.evaluate(() => NeconyanCrashDiagnostics.noteReload({ reason: 'cache-cleared-after-update', from: '1.2.3', to: '1.2.4' }));
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await waitForApp(page, { keepNotice: true });
+    const notice = updateNotice(page);
+    await expect(notice).toBeVisible();
+    await expect(notice).toContainText('The page reloaded to load the new version.');
+    // Nothing hovers or focuses it, so it leaves after its eight seconds.
+    await expect(notice).toHaveCount(0, { timeout: 20000 });
+});
+
+for (const reason of ['user-requested', 'update-toast', 'server-restarted']) {
+    test(`a reload noted as ${reason} shows no Neconyan updated notice`, async ({ page, context }) => {
+        await stubUpdateStatus(context);
+        await openApp(page);
+        await page.evaluate(reason => NeconyanCrashDiagnostics.noteReload({ reason, from: '1.2.3', to: '1.2.4' }), reason);
+        await page.reload({ waitUntil: 'domcontentloaded' });
+        await waitForApp(page, { keepNotice: true });
+        await page.waitForTimeout(2000);
+        await expect(page.locator('#nn-update-toast')).toHaveCount(0);
+        expect(await page.evaluate(key => localStorage.getItem(key), ANNOUNCED_KEY)).toBeNull();
+        expect(await page.evaluate(() => NeconyanCrashDiagnostics.getReports().reloads.at(-1).reason)).toBe(reason);
+    });
+}
 
 test('Stay open in the background reports real playback, treats a plain pause as an interruption and retries a faulty element once', async ({ page }) => {
     await openApp(page);

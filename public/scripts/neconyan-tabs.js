@@ -14001,6 +14001,49 @@ async function showUpdateToast(repository) {
     scheduleUpdateToastDismissal(toast);
 }
 
+/**
+ * The short notice after Neconyan reloaded the page by itself for an update. It has no action, so its body is
+ * plain text and only Dismiss is a button. An 'Update available' notice that is already up (or arrives later) wins.
+ */
+async function showReloadNotice() {
+    await loadUpdateToastStyles();
+    if (document.getElementById('nn-update-toast')) return;
+    const toast = document.createElement('div');
+    toast.id = 'nn-update-toast';
+    toast.className = 'nn-update-toast';
+    toast.setAttribute('role', 'status');
+    toast.innerHTML = `
+        <div class="nn-update-toast-open">
+            <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+            <span class="nn-update-toast-text">
+                <strong>Neconyan updated</strong>
+                <span>The page reloaded to load the new version.</span>
+            </span>
+        </div>
+        <button type="button" class="nn-update-toast-close" aria-label="Dismiss" title="Dismiss">
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+        </button>`;
+    toast.querySelector('.nn-update-toast-close').addEventListener('click', dismissUpdateToast);
+    document.body.append(toast);
+    scheduleUpdateToastDismissal(toast);
+}
+
+/** Once per automatic update reload. A page that is still hidden waits until it is seen. */
+function announceReloadAfterUpdate() {
+    const diagnostics = globalThis.NeconyanCrashDiagnostics;
+    if (typeof diagnostics?.claimReloadNotice !== 'function') return;
+    if (document.hidden) {
+        const announceWhenSeen = () => {
+            if (document.hidden) return;
+            document.removeEventListener('visibilitychange', announceWhenSeen);
+            announceReloadAfterUpdate();
+        };
+        document.addEventListener('visibilitychange', announceWhenSeen);
+        return;
+    }
+    if (diagnostics.claimReloadNotice()) void showReloadNotice();
+}
+
 async function checkForNeconyanUpdate() {
     if (document.hidden) {
         nnUpdateToastSkippedWhileHidden = true;
@@ -23210,6 +23253,7 @@ if (ctx?.eventSource && ctx?.event_types) {
 
 // Run links after every APP_READY listener, including async Home and extension setup.
 window.addEventListener('neconyan:ready', () => {
+    announceReloadAfterUpdate();
     startNeconyanUpdateToast();
 });
 
