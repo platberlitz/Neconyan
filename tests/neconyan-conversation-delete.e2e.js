@@ -643,6 +643,7 @@ test('a stale tab that changed a deleted group\'s settings does not bring it bac
     // The stale tab learns of the delete once, through its own refresh: its copy must lose the group, although it changed it.
     await second.evaluate(async () => { await (await import('/scripts/neconyan-conversation/store-sync.js')).refreshConversationStore(); });
     expect(((await pageStore(second)).groups || []).some(group => group.id === gDel.id), 'the stale tab drops the deleted group when it catches up').toBe(false);
+    expect(Object.keys((await pageStore(second)).characters).filter(key => key.includes(gDel.id)), 'the stale tab drops the deleted group keys when it catches up').toEqual([]);
     // Leaving the deleted group opens another pal, whose first open writes a chat link ID (/api/chat-navigation/establish). Let both tabs catch up with that write.
     await expect.poll(() => second.evaluate(async () => (await import('/scripts/neconyan-conversation/notifications.js')).getActiveConversationThreadKey()), { timeout: 30000 }).not.toContain(gDel.id);
     await waitPageSynced(account, second, 40000);
