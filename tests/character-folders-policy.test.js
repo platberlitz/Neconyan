@@ -4,9 +4,11 @@ import {
     buildAiSortPrompt,
     buildFolderTabs,
     chunkForAiSort,
+    classifyAiSortError,
     cleanFolderName,
     createCustomPrompt,
     defaultCharacterFolderSettings,
+    describeAiSortPlan,
     detectImportSource,
     detectSourceFromUrl,
     mergeNewFolderSpellings,
@@ -16,6 +18,48 @@ import {
     resolveAiSortPrompt,
     summarizeCharacterForSort,
 } from '../public/scripts/neconyan-character-folders-policy.js';
+
+describe('AI sort planning and error messages', () => {
+    test('uses the same batch bounds as the runner', () => {
+        expect(describeAiSortPlan({ characterCount: 500, batchSize: 25, allowNewFolders: true, existingFolderCount: 0 }))
+            .toEqual({ characterCount: 500, batchCount: 20, batchSize: 25, blockedReason: null });
+        expect(describeAiSortPlan({ characterCount: 61, batchSize: 80, allowNewFolders: false, existingFolderCount: 1 }))
+            .toEqual({ characterCount: 61, batchCount: 2, batchSize: 60, blockedReason: null });
+    });
+
+    test('explains when no requests can be made', () => {
+        expect(describeAiSortPlan({ characterCount: 0, batchSize: 25, allowNewFolders: true, existingFolderCount: 0 }).blockedReason).toBe('empty_scope');
+        expect(describeAiSortPlan({ characterCount: 61, batchSize: 25, allowNewFolders: false, existingFolderCount: 0 }))
+            .toEqual({ characterCount: 61, batchCount: 0, batchSize: 25, blockedReason: 'no_folders_allowed' });
+    });
+
+    test.each([
+        [{ code: 'settings_conflict' }, /reload/i, true],
+        [{ code: 'active_settings_ack_required' }, /save your settings/i, true],
+        [{ code: 'settings_save_failed' }, /save your settings/i, true],
+        [new Error('Save the active connection settings before generating a reply.'), /in Connections/, true],
+        [{ code: 'no_connection' }, /Connect to a model/, true],
+        [{ message: 'The active provider does not have a saved API key.' }, /Check your API key/, true],
+        [{ status: 401 }, /Check your API key/, true],
+        [{ status: 403 }, /Check your API key/, true],
+        [{ status: 429 }, /usage limits/, true],
+        [{ code: 'insufficient_quota' }, /usage limits/, true],
+        [{ code: 'context_length_exceeded' }, /Lower 'Characters per request'/, true],
+        [new Error('Prompt is too long'), /Lower 'Characters per request'/, true],
+        [new TypeError('Failed to fetch'), /internet/, true],
+        [{ message: 'The request was cancelled' }, /stopped/i, true],
+        [{ name: 'AbortError' }, /stopped/i, true],
+        [{ code: 'empty_model_reply' }, /could not be read/, false],
+        [new Error('Non-JSON response'), /could not be read/, false],
+    ])('classifies %j without surfacing provider details', (error, message, fatal) => {
+        expect(classifyAiSortError(error)).toEqual({ message: expect.stringMatching(message), fatal });
+    });
+
+    test('strict replies distinguish an empty list from an unreadable reply', () => {
+        expect(parseAiSortResponse('{"assignments":[]}', { count: 5, strict: true })).toEqual([]);
+        expect(() => parseAiSortResponse('not JSON', { count: 5, strict: true })).toThrow('Could not read the sorting reply');
+    });
+});
 
 function enabledSettings(overrides = {}) {
     const settings = defaultCharacterFolderSettings();

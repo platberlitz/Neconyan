@@ -7,12 +7,19 @@ const source = readFileSync(new URL('../public/script.js', import.meta.url), 'ut
 const MODULE_NAME = 'NeconyanCardTimeMachine';
 const exported = name => source.match(new RegExp(`export function ${name}\\([\\s\\S]*?\\n\\}`))[0].replace('export ', '');
 const local = name => source.match(new RegExp(`(?:async )?function ${name}\\([\\s\\S]*?\\n\\}`))[0];
+const utils = readFileSync(new URL('../public/scripts/utils.js', import.meta.url), 'utf8');
 const runtimeSource = [
+    'const debounceMap = new WeakMap();',
+    ...['debounce', 'cancelDebounce'].map(name => utils.match(new RegExp(`export function ${name}\\([\\s\\S]*?\\n\\}`))[0].replace('export ', '')),
+    source.match(/const scheduleSettingsSave = [\s\S]*?saveSettingsDebounced\.cancel = [^\n]+/)[0].replace('export const saveSettingsDebounced', 'globalThis.saveSettingsDebounced'),
     exported('adoptServerSettingsWrite'),
     exported('registerSamePageServerWriteRecovery'),
     local('consumeRecentSamePageWrite'),
     local('recoverSamePageSettingsConflict'),
     local('saveSettingsInner'),
+    local('checkGenerationSettingsSaved'),
+    local('runAcknowledgedGeneration'),
+    ...['quiet', 'raw'].map(kind => `const ${kind}Prepare = ${source.match(new RegExp(`runAcknowledgedGeneration\\(client, '${kind}-generation',[\\s\\S]*?prepareInput: (async [\\s\\S]*?\\n                \\}),`))[1]}; globalThis.${kind}Prepare = ${kind}Prepare;`),
     source.match(/export async function saveSettings\([\s\S]*?\n\}/)[0].replace('export ', ''),
 ].join('\n');
 
@@ -40,7 +47,7 @@ function runtime({ version = 8, revision = 4, wait = 1000 } = {}) {
         getCurrentUserHandle: () => context.account,
         getRequestHeaders: () => ({ 'Content-Type': 'application/json' }),
         promptSettingsConflictReload: jest.fn(async () => {}),
-        saveSettingsDebounced: jest.fn(),
+        DEFAULT_SAVE_EDIT_TIMEOUT: 1000,
         console: { warn: jest.fn(), error: jest.fn(), log: jest.fn() },
         toastr: { error: jest.fn() },
         t: strings => strings[0],
@@ -58,6 +65,8 @@ function runtime({ version = 8, revision = 4, wait = 1000 } = {}) {
         rememberSavedSettings: () => ({ account: 'alice', body: 'accepted', acknowledgement: null }),
         matchesDownloadedSettings: () => false,
         captureActiveGenerationSelection: () => ({}),
+        getActiveGenerationAcknowledgement: () => context.acknowledgedGenerationSettings,
+        saveChatConditional: jest.fn(async () => {}),
         getWorldInfoSettings: () => ({}),
         extension_settings: {},
         buildSettingsPayloadExtensionSettings: () => structuredClone(context.extension_settings),
@@ -105,6 +114,113 @@ function withBodies(context, responses) {
     });
     return bodies;
 }
+
+describe('settings saves before generation', () => {
+    test('the skip path does not restore the old acknowledgement after adopting a server write', async () => {
+        const context = runtime();
+        context.lastSavedSettings = { account: 'alice', revision: 0, acknowledgement: context.acknowledgedGenerationSettings };
+        const bodies = withBodies(context, [success()]);
+        expect(context.adoptServerSettingsWrite({ account: 'alice', previousVersion: 8, previousSettingsRevision: 4, version: 9, settingsRevision: 5 })).toBe(true);
+        await expect(context.saveSettings(0, { returnResult: true, skipIfUnchanged: true })).resolves.toBe(true);
+        expect(bodies[0]._settingsRevision).toBe(5);
+        expect(context.acknowledgedGenerationSettings.settingsRevision).toBe(6);
+    });
+
+    test('force writes even with a matching revision and cancels the pending debounced save', async () => {
+        jest.useFakeTimers();
+        try {
+            const context = runtime();
+            const bodies = withBodies(context, [success()]);
+            context.saveSettingsDebounced();
+            context.lastSavedSettings = { account: 'alice', revision: context.settingsMutationRevision, acknowledgement: context.acknowledgedGenerationSettings };
+            await expect(context.saveSettings(0, { returnResult: true, skipIfUnchanged: true, force: true })).resolves.toBe(true);
+            await jest.runAllTimersAsync();
+            expect(bodies).toHaveLength(1);
+            expect(context.acknowledgedGenerationSettings.settingsRevision).toBe(6);
+        } finally {
+            jest.useRealTimers();
+        }
+    });
+
+    test('cancelDebounce on the public wrapper cancels the pending settings write', async () => {
+        jest.useFakeTimers();
+        try {
+            const context = runtime();
+            context.fetch.mockResolvedValue(success());
+            context.saveSettingsDebounced();
+            expect(jest.getTimerCount()).toBe(1);
+            context.cancelDebounce(context.saveSettingsDebounced);
+            expect(jest.getTimerCount()).toBe(0);
+            await jest.runAllTimersAsync();
+            expect(context.fetch).not.toHaveBeenCalled();
+        } finally {
+            jest.useRealTimers();
+        }
+    });
+
+    const refusal = Object.assign(new Error('The active connection settings are not acknowledged.'), {
+        status: 409, code: 'active_settings_ack_required', notAccepted: true,
+    });
+
+    test.each([
+        { status: 500 }, { code: 'uncertain' }, { notAccepted: false }, { notAccepted: undefined },
+    ])('never resubmits generation after an error without proof of refusal (%j)', async overrides => {
+        const context = runtime();
+        const error = Object.assign(new Error('Provider outcome unknown'), refusal, overrides);
+        const client = { run: jest.fn().mockRejectedValue(error) };
+        await expect(context.runAcknowledgedGeneration(client, 'raw-generation', {}, { prepareInput: context.rawPrepare })).rejects.toBe(error);
+        expect(client.run).toHaveBeenCalledTimes(1);
+        expect(context.fetch).not.toHaveBeenCalled();
+    });
+
+    test('checks the forced save before re-submitting and does not retry a second refusal', async () => {
+        const context = runtime();
+        const input = { prompt: 'A prompt' };
+        const bodies = withBodies(context, [success()]);
+        const client = { run: jest.fn().mockRejectedValueOnce(refusal).mockImplementation(async (_kind, body, options) => {
+            expect(await options.prepareInput(body)).toMatchObject({ ...input, acknowledgement: { settingsRevision: 6 } });
+            throw refusal;
+        }) };
+        await expect(context.runAcknowledgedGeneration(client, 'raw-generation', input, { prepareInput: context.rawPrepare })).rejects.toBe(refusal);
+        expect(client.run).toHaveBeenCalledTimes(2);
+        expect(bodies).toHaveLength(1);
+    });
+
+    test('quiet retry preserves the awaited chat save before forcing a fresh acknowledgement', async () => {
+        const context = runtime();
+        const stages = [];
+        context.saveChatConditional.mockImplementation(async () => { await Promise.resolve(); stages.push('chat'); });
+        const responses = [success(), success(11, 7)];
+        context.fetch.mockImplementation(async () => { stages.push('settings'); return responses.shift(); });
+        const prepareInput = jest.fn(context.quietPrepare);
+        const client = { run: jest.fn(async (_kind, body, options) => {
+            const prepared = await options.prepareInput(body);
+            stages.push(`submit:${prepared.acknowledgement.settingsRevision}`);
+            if (prepared.acknowledgement.settingsRevision === 6) throw refusal;
+            return prepared;
+        }) };
+        const input = { prompt: 'A quiet prompt' };
+        await expect(context.runAcknowledgedGeneration(client, 'quiet-generation', input, { prepareInput })).resolves.toMatchObject(input);
+        expect(stages).toEqual(['chat', 'settings', 'submit:6', 'chat', 'settings', 'submit:7']);
+        expect(prepareInput.mock.calls).toEqual([[input, false], [input, true]]);
+        expect(context.saveChatConditional.mock.calls).toEqual(Array.from({ length: 2 }, () => [{ throwOnError: true, throwOnPromptError: true }]));
+        expect(client.run).toHaveBeenCalledTimes(2);
+    });
+
+    test.each([
+        [conflict(), 'settings_conflict'], [{ ok: false, status: 500 }, 'settings_save_failed'],
+    ])('refuses to build a second submission when the forced save fails (%s)', async (response, code) => {
+        const context = runtime();
+        withBodies(context, [response]);
+        const submit = jest.fn();
+        const client = { run: jest.fn().mockRejectedValueOnce(refusal).mockImplementation(async (_kind, body, options) => {
+            submit(await options.prepareInput(body));
+        }) };
+        await expect(context.runAcknowledgedGeneration(client, 'raw-generation', {}, { prepareInput: context.rawPrepare })).rejects.toMatchObject({ code });
+        expect(submit).not.toHaveBeenCalled();
+        expect(context.fetch).toHaveBeenCalledTimes(1);
+    });
+});
 
 describe('same-page settings conflict recovery', () => {
     test('an unrelated 409 keeps the original prompt and performs no extra request', async () => {

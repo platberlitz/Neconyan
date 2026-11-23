@@ -611,6 +611,8 @@ export function cancelDebounce(func) {
     if (debounceMap.has(func)) {
         clearTimeout(debounceMap.get(func));
         debounceMap.delete(func);
+    } else if (typeof func?.cancel === 'function') {
+        func.cancel();
     }
 }
 

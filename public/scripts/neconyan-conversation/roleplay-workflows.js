@@ -1222,12 +1222,12 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, messageI
  * A new account's one-time setup (the Agents' first start, Dialogue Colors' trim rules)
  * changes settings a few seconds after the page opens, so it is waited for first.
  */
-async function acknowledgedSettingsRevision() {
+async function acknowledgedSettingsRevision({ force = false } = {}) {
     await waitForSettingsSetup();
     let failure = null;
     for (let attempt = 1; attempt <= SETTINGS_PROOF_ATTEMPTS; attempt++) {
         try {
-            if (await saveSettings(0, { returnResult: true })) {
+            if (await saveSettings(0, { returnResult: true, force })) {
                 return getActiveGenerationAcknowledgement().settingsRevision;
             }
         } catch (error) {
@@ -1307,7 +1307,7 @@ async function submitRoleplayWorkflowRequest({ name, intent, locator, anchorInde
             if (error.body?.code !== 'roleplay_settings_ack_required') pending.delete(account);
         }
         if (error.body?.code === 'roleplay_settings_ack_required') {
-            const retry = { ...payload, acknowledgement: { account, settingsRevision: await acknowledgedSettingsRevision() } };
+            const retry = { ...payload, acknowledgement: { account, settingsRevision: await acknowledgedSettingsRevision({ force: true }) } };
             pending.set(account, { signature, payload: retry });
             accepted = await postSubmission(retry, account);
         } else {
@@ -1403,7 +1403,7 @@ export async function runRoleplayAgentAction({ mode, agentIds = [], companionId 
             accepted = await postSubmission(payload, account, '/api/roleplay/agent/submit');
         } catch (error) {
             if (error.body?.code !== 'roleplay_settings_ack_required') throw error;
-            payload = { ...payload, acknowledgement: { account, settingsRevision: await acknowledgedSettingsRevision() } };
+            payload = { ...payload, acknowledgement: { account, settingsRevision: await acknowledgedSettingsRevision({ force: true }) } };
             accepted = await postSubmission(payload, account, '/api/roleplay/agent/submit');
         }
     } catch (error) {
@@ -1461,7 +1461,7 @@ export async function submitRoleplayGroupTurn({ groupId, forcedAvatars, generati
         // This refusal happens before admission. An uncertain outcome must not be repeated.
         if (error.status !== 409 || error.body?.code !== 'roleplay_settings_ack_required') throw error;
         signal?.throwIfAborted();
-        payload.acknowledgement = { account, settingsRevision: await acknowledgedSettingsRevision() };
+        payload.acknowledgement = { account, settingsRevision: await acknowledgedSettingsRevision({ force: true }) };
         signal?.throwIfAborted();
         accepted = await postSubmission({ ...payload, name: 'group.reply' }, account, '/api/roleplay/group/submit');
     }

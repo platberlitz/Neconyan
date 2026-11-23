@@ -1,8 +1,8 @@
-import { characters, entitiesFilter, generateRaw, online_status, saveSettingsDebounced } from '../script.js';
+import { characters, entitiesFilter, generateRaw, getGeneratingModel, online_status, saveSettingsDebounced } from '../script.js';
 import { eventSource, event_types } from './events.js';
 import { FILTER_TYPES } from './filters.js';
 import { groups } from './group-chats.js';
-import { t } from './i18n.js';
+import { t, translate } from './i18n.js';
 import { Popup, POPUP_RESULT, POPUP_TYPE } from './popup.js';
 import { power_user } from './power-user.js';
 import {
@@ -26,7 +26,9 @@ import {
     buildAiSortPrompt,
     buildFolderTabs,
     chunkForAiSort,
+    classifyAiSortError,
     createCustomPrompt,
+    describeAiSortPlan,
     detectImportSource,
     isFolderTag,
     mergeNewFolderSpellings,
@@ -532,13 +534,13 @@ function renderAutoSortSection(container) {
 
 /**
  * @param {HTMLElement} container
- * @param {{ controller: AbortController|null }} run
+ * @param {{ controller: AbortController|null, refreshPlan?: () => void, closed?: boolean }} run
  */
 function renderAiSection(container, run) {
     const settings = getSettings();
     container.replaceChildren();
     container.append(el('h4', '', t`Sort with AI`));
-    container.append(el('p', 'neconyan-folder-organiser-intro', t`Your connected model reads each character and suggests a folder. Nothing changes until you check the suggestions and press Apply.`));
+    container.append(el('p', 'neconyan-folder-organiser-intro', t`Your connected model reads character names, tags and short excerpts from their cards in batches, then suggests folders for you to review. Nothing moves until you press Apply.`));
 
     const chosen = resolveAiSortPrompt(settings.ai.promptId, settings) ?? resolveAiSortPrompt(AI_SORT_PRESETS[0].id, settings);
     const promptOptions = [
@@ -631,11 +633,13 @@ function renderAiSection(container, run) {
     ], settings.ai.scope, (value) => {
         getSettings().ai.scope = value === 'all' ? 'all' : 'unsorted';
         saveSettings();
+        refreshPlan();
     })));
 
     const allowNew = checkbox(t`Let the AI make new folders`, chosen.existingOnly ? false : settings.ai.allowNewFolders, (checked) => {
         getSettings().ai.allowNewFolders = checked;
         saveSettings();
+        refreshPlan();
     });
     allowNew.input.disabled = chosen.existingOnly;
     options.append(allowNew.label);
@@ -650,23 +654,67 @@ function renderAiSection(container, run) {
         current.ai.batchSize = normalizeCharacterFolderSettings({ ai: { batchSize: batch.value } }).ai.batchSize;
         batch.value = String(current.ai.batchSize);
         saveSettings();
+        refreshPlan();
     });
+    batch.addEventListener('input', refreshPlan);
     options.append(labelled(t`Characters per request`, batch, t`Smaller batches suit models with short context.`));
     container.append(options);
 
     const status = el('p', 'neconyan-folder-organiser-status');
     status.setAttribute('role', 'status');
     const results = el('div', 'neconyan-folder-organiser-results');
+    const plan = el('div', 'neconyan-folder-ai-plan');
+    const modelLine = el('strong');
+    const planLine = el('span');
+    plan.setAttribute('role', 'status');
+    plan.append(modelLine, planLine);
     const runButton = button(t`Suggest folders`, 'fa-wand-magic-sparkles', () => {
         if (run.controller) {
             run.controller.abort();
             return;
         }
-        runAiSort({ prompt: chosen, status, results, runButton, run });
+        const job = getJob();
+        if (job.plan.blockedReason || online_status === 'no_connection') return;
+        void runAiSort({ prompt: chosen, job, status, results, runButton, run, setControlsLocked, refreshPlan });
     }, true);
     const runActions = el('div', 'neconyan-folder-organiser-actions');
     runActions.append(runButton);
-    container.append(runActions, status, results);
+    const controls = [...container.querySelectorAll('input, select, textarea, button')];
+    function setControlsLocked(locked) {
+        for (const control of controls) control.disabled = locked || (control === allowNew.input && chosen.existingOnly);
+    }
+    function getJob() {
+        const { ai } = getSettings();
+        const folders = getFolderTags();
+        const items = pickCharactersForAiSort(ai.scope, folders);
+        const allowNewFolders = !chosen.existingOnly && ai.allowNewFolders;
+        const plan = describeAiSortPlan({ characterCount: items.length, batchSize: batch.valueAsNumber, allowNewFolders, existingFolderCount: folders.length });
+        return { items, folders, allowNewFolders, plan };
+    }
+    function refreshPlan() {
+        const disconnected = online_status === 'no_connection';
+        const model = disconnected ? '' : getGeneratingModel();
+        if (model) modelLine.textContent = t`Model: ${model}`;
+        else modelLine.textContent = disconnected ? t`No model connected` : t`Active model`;
+        const { plan: { characterCount, batchCount, blockedReason } } = getJob();
+        if (disconnected) planLine.textContent = t`Connect to a model in Connections, then try again.`;
+        else if (blockedReason === 'empty_scope') {
+            planLine.textContent = characters.some(character => character?.avatar) && getSettings().ai.scope === 'unsorted'
+                ? t`Every character is already in a folder. Choose Every character to sort them again.`
+                : t`There are no characters to sort yet.`;
+        } else if (blockedReason === 'no_folders_allowed') {
+            planLine.textContent = chosen.existingOnly
+                ? t`Make a folder first, or choose a different way to sort.`
+                : t`Make a folder first, or let the AI make new folders.`;
+        } else {
+            planLine.textContent = characterCount === 1 ? t`1 character in 1 batch`
+                : batchCount === 1 ? t`${characterCount} characters in 1 batch` : t`${characterCount} characters in ${batchCount} batches`;
+        }
+        runButton.disabled = !run.controller && (disconnected || Boolean(blockedReason));
+    }
+    run.refreshPlan = refreshPlan;
+    container.append(plan, runActions, status, results);
+    refreshPlan();
 }
 
 function setRunButton(node, running) {
@@ -676,20 +724,9 @@ function setRunButton(node, running) {
     if (iconNode) iconNode.className = `fa-solid ${running ? 'fa-stop' : 'fa-wand-magic-sparkles'}`;
 }
 
-function pickCharactersForAiSort(scope) {
-    const folderIds = new Set(tags.filter(isFolderTag).map(tag => tag.id));
-    const tagNames = new Map(tags.map(tag => [tag.id, tag.name]));
-    return characters
-        .filter(character => character?.avatar)
-        .filter(character => scope === 'all' || !(tag_map[character.avatar] ?? []).some(id => folderIds.has(id)))
-        .map(character => ({
-            avatar: character.avatar,
-            name: character.name,
-            summary: summarizeCharacterForSort(
-                character,
-                (tag_map[character.avatar] ?? []).filter(id => !folderIds.has(id)).map(id => tagNames.get(id)).filter(Boolean),
-            ),
-        }));
+function pickCharactersForAiSort(scope, folderTags) {
+    const folderIds = new Set(folderTags.map(tag => tag.id));
+    return characters.filter(character => character?.avatar && (scope === 'all' || !(tag_map[character.avatar] ?? []).some(id => folderIds.has(id))));
 }
 
 /**
@@ -698,98 +735,95 @@ function pickCharactersForAiSort(scope) {
  * @param {HTMLElement} input.status
  * @param {HTMLElement} input.results
  * @param {HTMLElement} input.runButton
- * @param {{ controller: AbortController|null }} input.run
+ * @param {{ items: any[], folders: any[], allowNewFolders: boolean, plan: ReturnType<typeof describeAiSortPlan> }} input.job
+ * @param {{ controller: AbortController|null, closed?: boolean }} input.run
+ * @param {(locked: boolean) => void} input.setControlsLocked
+ * @param {() => void} input.refreshPlan
  */
-async function runAiSort({ prompt, status, results, runButton, run }) {
-    if (online_status === 'no_connection') {
-        toastr.warning(t`Connect to a model first, then try again.`, t`Sort with AI`);
-        return;
-    }
-    const settings = getSettings();
-    const items = pickCharactersForAiSort(settings.ai.scope);
+async function runAiSort({ prompt, job, status, results, runButton, run, setControlsLocked, refreshPlan }) {
     results.replaceChildren();
-    if (!items.length) {
-        status.textContent = settings.ai.scope === 'unsorted'
-            ? t`Every character is already in a folder. Choose Every character to sort them again.`
-            : t`There are no characters to sort yet.`;
-        return;
-    }
-
-    const allowNewFolders = !prompt.existingOnly && settings.ai.allowNewFolders;
-    const folders = getFolderTags().map(tag => tag.name);
-    if (!allowNewFolders && !folders.length) {
-        status.textContent = t`Make a folder first, or let the AI make new folders.`;
-        return;
-    }
-
+    delete status.dataset.tone;
+    const { items, allowNewFolders } = job;
+    const folders = job.folders.map(tag => tag.name);
+    const folderIds = new Set(job.folders.map(tag => tag.id));
+    const tagNames = new Map(tags.map(tag => [tag.id, tag.name]));
     const controller = new AbortController();
     run.controller = controller;
     setRunButton(runButton, true);
-    const batches = chunkForAiSort(items, settings.ai.batchSize);
+    setControlsLocked(true);
+    const batches = chunkForAiSort(items, job.plan.batchSize);
     const suggestions = [];
-    let failed = 0;
-    let requestError = '';
+    let batchError = '';
+    let stopReason = '';
+    let consecutiveUnreadable = 0;
 
     try {
         for (let index = 0; index < batches.length; index++) {
             if (controller.signal.aborted) break;
             const batchItems = batches[index];
-            status.textContent = t`Asking the model about batch ${index + 1} of ${batches.length}...`;
+            status.textContent = t`Checking batch ${index + 1} of ${batches.length} · ${suggestions.length} suggestions so far...`;
             const knownFolders = [...new Set([...folders, ...suggestions.filter(item => item.isNew).map(item => item.folder)])];
             const request = buildAiSortPrompt({
                 instructions: prompt.prompt,
                 folders: knownFolders,
-                characters: batchItems.map(item => item.summary),
+                characters: batchItems.map(character => summarizeCharacterForSort(character,
+                    (tag_map[character.avatar] ?? []).filter(id => !folderIds.has(id)).map(id => tagNames.get(id)).filter(Boolean))),
                 allowNewFolders,
             });
             try {
                 const reply = await generateRaw({
                     prompt: request.prompt,
                     systemPrompt: request.systemPrompt,
-                    responseLength: Math.min(4096, 200 + batchItems.length * 40),
+                    responseLength: Math.min(8192, 1024 + batchItems.length * 60),
                     signal: controller.signal,
                 });
-                const parsed = parseAiSortResponse(reply, { count: batchItems.length, folders: knownFolders, allowNewFolders });
-                if (!parsed.length) failed++;
+                if (controller.signal.aborted) break;
+                const parsed = parseAiSortResponse(reply, { count: batchItems.length, folders: knownFolders, allowNewFolders, strict: true });
+                consecutiveUnreadable = 0;
                 for (const item of parsed) {
                     const character = batchItems[item.index];
-                    suggestions.push({ avatar: character.avatar, name: character.name, folder: item.folder, isNew: item.isNew });
+                    suggestions.push({ avatar: character.avatar, name: character.name, folder: item.folder, isNew: !folders.includes(item.folder) });
                 }
             } catch (error) {
                 if (controller.signal.aborted) break;
                 console.warn('[Character folders] AI sort batch failed', error);
-                requestError = String(error?.message || error || '');
-                failed++;
+                const classification = classifyAiSortError(error);
+                if (classification.fatal) {
+                    stopReason = translate(classification.message);
+                    break;
+                }
+                batchError = translate(classification.message);
+                if (++consecutiveUnreadable === 2) {
+                    stopReason = t`Stopped after 2 unreadable replies in a row. Try another prompt, another model or fewer characters per request.`;
+                    break;
+                }
             }
         }
     } finally {
         run.controller = null;
         setRunButton(runButton, false);
+        setControlsLocked(false);
+        refreshPlan();
     }
 
+    if (run.closed) return;
     const merged = mergeNewFolderSpellings(suggestions);
     const stopped = controller.signal.aborted;
-    if (!merged.length) {
-        if (stopped) {
-            status.textContent = t`Stopped before the model suggested anything.`;
-        } else if (requestError) {
-            status.textContent = [t`The model request failed.`, requestError].join(' ');
-            toastr.error(requestError, t`Sort with AI`);
-        } else {
-            status.textContent = t`The model did not suggest any folders. Try another prompt or a smaller batch.`;
-        }
-        return;
+    if (stopReason || stopped || batchError) {
+        const reason = stopReason || (stopped ? t`Sorting stopped.` : batchError);
+        const next = merged.length ? t`Review and apply these suggestions, then run again with 'Only characters not in a folder yet'.` : '';
+        status.dataset.tone = stopped ? 'info' : 'error';
+        status.textContent = [reason, next].filter(Boolean).join(' ');
+        if (!stopped) toastr.error(status.textContent, t`Sort with AI`);
+        else if (merged.length) toastr.info(status.textContent, t`Sort with AI`);
+    } else {
+        status.textContent = merged.length ? t`Untick anything you disagree with, then press Apply.`
+            : t`The model did not suggest any folders. Try another prompt or a smaller batch.`;
     }
-    status.textContent = [
-        merged.length === 1 ? t`1 suggestion ready.` : t`${merged.length} suggestions ready.`,
-        stopped ? t`Stopped early.` : '',
-        failed ? (requestError ? [t`Some requests failed.`, requestError].join(' ') : t`Some replies could not be read.`) : '',
-        t`Untick anything you disagree with, then press Apply.`,
-    ].filter(Boolean).join(' ');
-    renderSuggestions(results, merged, status);
+    if (merged.length) renderSuggestions(results, merged, status, refreshPlan);
 }
 
-function renderSuggestions(container, suggestions, status) {
+function renderSuggestions(container, suggestions, status, refreshPlan) {
     container.replaceChildren();
     const byFolder = new Map();
     for (const item of suggestions) {
@@ -797,34 +831,85 @@ function renderSuggestions(container, suggestions, status) {
         byFolder.get(item.folder).push(item);
     }
 
+    const folderCount = byFolder.size;
+    const total = suggestions.length;
+    const summary = total === 1 ? t`1 suggestion for 1 folder`
+        : folderCount === 1 ? t`${total} suggestions for 1 folder` : t`${total} suggestions across ${folderCount} folders`;
+    const selection = el('span', 'neconyan-folder-selection');
+    selection.setAttribute('role', 'status');
     const checks = [];
-    for (const [folder, items] of [...byFolder.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
-        const group = el('fieldset', 'neconyan-folder-suggestion');
-        const legend = el('legend');
-        legend.append(icon(items[0].isNew ? 'fa-folder-plus' : 'fa-folder'), el('span', '', folder));
-        if (items[0].isNew) legend.append(el('span', 'neconyan-folder-suggestion-new', t`new folder`));
-        group.append(legend);
-        for (const item of items) {
-            const row = checkbox(item.name, true, () => {});
-            checks.push({ input: row.input, item });
-            group.append(row.label);
-        }
-        container.append(group);
-    }
-
+    const groups = [];
     const actions = el('div', 'neconyan-folder-organiser-actions');
     const apply = button(t`Apply`, 'fa-check', () => {
         const chosen = checks.filter(entry => entry.input.checked).map(entry => entry.item);
         const count = applySuggestions(chosen);
         container.replaceChildren();
+        delete status.dataset.tone;
         status.textContent = count === 1 ? t`Moved 1 character into a folder.` : t`Moved ${count} characters into folders.`;
+        refreshPlan();
     }, true);
     const discard = button(t`Discard`, 'fa-xmark', () => {
         container.replaceChildren();
         status.textContent = '';
+        delete status.dataset.tone;
     });
-    actions.append(apply, discard);
-    container.append(actions);
+    const selectAll = button(t`Select all`, '', () => setChecked(checks, true));
+    const selectNone = button(t`Select none`, '', () => setChecked(checks, false));
+    const caption = el('div', 'neconyan-folder-results-summary');
+    caption.append(el('strong', '', summary), selection);
+    actions.append(apply, selectAll, selectNone, discard);
+    container.append(caption, actions);
+
+    function setChecked(entries, checked) {
+        for (const entry of entries) entry.input.checked = checked;
+        updateSelection();
+    }
+    function updateSelection() {
+        let selected = 0;
+        for (const { input, rows } of groups) {
+            const count = rows.filter(row => row.input.checked).length;
+            input.checked = count === rows.length;
+            input.indeterminate = count > 0 && count < rows.length;
+            selected += count;
+        }
+        selection.textContent = t`${selected} of ${total} selected`;
+        apply.disabled = selected === 0;
+        selectAll.disabled = selected === total;
+        selectNone.disabled = selected === 0;
+    }
+
+    for (const [folder, items] of [...byFolder.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+        const group = el('div', 'neconyan-folder-suggestion');
+        const header = el('div', 'neconyan-folder-suggestion-heading');
+        const list = el('div', 'neconyan-folder-suggestion-list');
+        list.id = `neconyan-folder-suggestion-${groups.length}`;
+        list.hidden = total > 25;
+        const rows = [];
+        const check = checkbox('', true, checked => setChecked(rows, checked));
+        check.input.setAttribute('aria-label', t`Select suggestions for ${folder}`);
+        const toggle = button(folder, items.some(item => item.isNew) ? 'fa-folder-plus' : 'fa-folder', () => {
+            list.hidden = !list.hidden;
+            toggle.setAttribute('aria-expanded', String(!list.hidden));
+        });
+        toggle.setAttribute('aria-expanded', String(!list.hidden));
+        toggle.setAttribute('aria-controls', list.id);
+        const caption = el('span', 'neconyan-folder-suggestion-caption');
+        caption.append(...toggle.childNodes, el('span', 'neconyan-folder-suggestion-count', String(items.length)));
+        if (items.some(item => item.isNew)) caption.append(el('span', 'neconyan-folder-suggestion-new', t`new folder`));
+        toggle.append(caption, icon('fa-chevron-down'));
+        header.append(check.label, toggle);
+        for (const item of items) {
+            const row = checkbox(item.name, true, updateSelection);
+            const entry = { input: row.input, item };
+            checks.push(entry);
+            rows.push(entry);
+            list.append(row.label);
+        }
+        groups.push({ input: check.input, rows });
+        group.append(header, list);
+        container.append(group);
+    }
+    updateSelection();
 }
 
 /**
@@ -861,7 +946,8 @@ export async function openOrganiser() {
     const tabsSection = el('section', 'neconyan-folder-organiser-section');
     const autoSection = el('section', 'neconyan-folder-organiser-section');
     const aiSection = el('section', 'neconyan-folder-organiser-section');
-    const run = { controller: null };
+    aiSection.classList.add('neconyan-folder-ai');
+    const run = { controller: null, refreshPlan: null, closed: false };
     renderTabsSection(tabsSection);
     renderAutoSortSection(autoSection);
     renderAiSection(aiSection, run);
@@ -872,9 +958,19 @@ export async function openOrganiser() {
         cancelButton: false,
         wide: true,
         allowVerticalScrolling: true,
-        onClose: () => run.controller?.abort(),
+        onClose: () => {
+            run.closed = true;
+            run.controller?.abort();
+        },
     });
-    await popup.show();
+    const planEvents = [event_types.ONLINE_STATUS_CHANGED, event_types.CHATCOMPLETION_MODEL_CHANGED, event_types.CONNECTION_PROFILE_LOADED];
+    const refreshPlan = () => run.refreshPlan?.();
+    for (const eventType of planEvents) eventSource.on(eventType, refreshPlan);
+    try {
+        await popup.show();
+    } finally {
+        for (const eventType of planEvents) eventSource.removeListener(eventType, refreshPlan);
+    }
     scheduleRender();
 }
 

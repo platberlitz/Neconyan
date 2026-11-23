@@ -11,6 +11,8 @@ function page({ version = 8, revision = 4 } = {}) {
         lastServerSettingsRevision: revision,
         recentSamePageServerWrite: null,
         acknowledgedGenerationSettings: { account: 'alice', settingsRevision: revision, controls: {} },
+        lastSavedSettings: { acknowledgement: { settingsRevision: revision } },
+        downloadedSettings: { payload: { _settingsRevision: revision } },
         getCurrentUserHandle: () => 'alice',
     };
     runInNewContext(`${adoptSource}\nglobalThis.adopt = adoptServerSettingsWrite;`, context);
@@ -22,6 +24,8 @@ describe('adoptServerSettingsWrite', () => {
         const context = page();
         expect(context.adopt({ account: 'alice', previousVersion: 8, previousSettingsRevision: 4, version: 9, settingsRevision: 5 })).toBe(true);
         expect([context.lastServerSettingsVersion, context.lastServerSettingsRevision, context.acknowledgedGenerationSettings.settingsRevision]).toEqual([9, 5, 5]);
+        expect(context.lastSavedSettings).toBeNull();
+        expect(context.downloadedSettings).toBeNull();
     });
 
     test('adopts a server write that followed Conversation-only writes this page did not see', () => {
