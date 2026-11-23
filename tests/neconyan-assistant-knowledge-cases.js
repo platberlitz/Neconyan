@@ -389,6 +389,7 @@ export const refreshedKnowledgeCases = [
     ['Why is the Rerun agents button missing from my messages?', 'agents.rerun', 'only appears while Agents is On'],
     ['Why did my old tab reload by itself after the server updated?', 'navigation.update-ready-reload', 'it saves your settings and reloads straight away'],
     ['What does Update ready, tap here to load the new version mean?', 'navigation.update-ready-reload', 'nothing is discarded'],
+    ['What is the Neconyan updated notice that says The page reloaded to load the new version?', 'navigation.update-ready-reload', 'It shows once, closes by itself and has Dismiss'],
     ['Where did Bulk Edit go on the Regexes page?', 'tools.regex', 'Select several adds tick boxes'],
     ['Where do I choose the Termeownal Sakura Latte or Catppuccin Mocha palette?', 'tools.terminal', 'including the newer Catppuccin Mocha'],
     ['Where is Redo cleanup in Character Expressions now?', 'images.expression-generation', 'Under More image tools, Redo cleanup'],

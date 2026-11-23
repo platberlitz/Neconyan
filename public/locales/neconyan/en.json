@@ -5430,6 +5430,8 @@
   "Neconyan v${0}": "Neconyan v${0}",
   "Neconyan was updated. Tap here to load the new version.": "Neconyan was updated. Tap here to load the new version.",
   "Update ready": "Update ready",
+  "Neconyan updated": "Neconyan updated",
+  "The page reloaded to load the new version.": "The page reloaded to load the new version.",
   "X-CSRF-Token": "X-CSRF-Token",
   "Collapse ${0}": "Collapse ${0}",
   "Expand ${0}": "Expand ${0}",
