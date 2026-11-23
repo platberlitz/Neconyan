@@ -8,6 +8,7 @@ import { beforeEach, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
+import querystring from 'node:querystring';
 import { setConfigFilePath } from '../src/util.js';
 
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
@@ -5292,6 +5293,12 @@ test('a request body is accepted from Content-Length only when printing it again
     assert.ok(printed(grown) > 1000 && 250 < 1000);
     assert.equal(requestBodyExceeds(request({ 'Content-Length': '250' }, grown), 1000), true, 'the old limit cannot be slipped past');
     assert.equal(requestBodyExceeds(request({ 'Content-Length': '250' }, { values: [1, 2, 3] }), 1000), false);
+    // A form body of control characters prints as six bytes each plus seven around them, so 1,000 bytes can print as 6,007.
+    const form = querystring.parse('\u0001'.repeat(1000));
+    assert.equal(printed(form), 6007);
+    assert.equal(requestBodyExceeds(request({ 'Content-Length': '1000', 'Content-Type': 'application/x-www-form-urlencoded' }, form), 6000), true, 'seven bytes over the limit are not accepted');
+    assert.equal(requestBodyExceeds(request({ 'Content-Length': '1000' }, form), 6007), false);
+    assert.equal(requestBodyExceeds(request({ 'Content-Length': '1000' }, form), 6023), false);
     // No usable length: measured, as before.
     for (const headers of [{}, { 'Content-Length': 'many' }, { 'Content-Length': '-5' }, { 'Content-Length': '12', 'Content-Encoding': 'gzip' }]) {
         assert.equal(requestBodyExceeds(request(headers, grown), 1000), true, JSON.stringify(headers));
@@ -5417,6 +5424,37 @@ test('eligibility through lookups answers exactly as scanning every record and a
         assert.equal(key(recordRevision(state, record.id, version)), key(reference.revision(state, record.id, version)), record.id + '@' + version);
     }
     assert.equal(recordRevision(state, 'missing', 1), reference.revision(state, 'missing', 1));
+    // Older versions whose changes were all historical, or whose wording did not change, are found; a real correction hides them.
+    const crafted = structuredClone(state);
+    const template = crafted.records.find(record => record.id === 'event:gift');
+    const version = (id, number, extra = {}) => ({ ...structuredClone(template), id, version: number, excluded: false, status: 'active', text: 'wording ' + number, ...extra });
+    const history = (id, texts, historical, extra = []) => {
+        const versions = texts.map((text, index) => version(id, index + 1, { text, ...extra[index] }));
+        crafted.records.push(versions.at(-1));
+        versions.slice(0, -1).forEach((before, index) => crafted.audit.push({ id: id + index, recordId: id, before, afterVersion: index + 2, historical: historical[index], action: 'generated', at: 1 }));
+    };
+    history('craft:historical', ['one', 'two', 'three'], [true, true]);
+    history('craft:mixed', ['one', 'two', 'three'], [true, false]);
+    history('craft:same', ['same', 'same', 'same'], [false, false], [{ status: 'background' }, { status: 'resolved' }]);
+    crafted.records.push({ ...version('craft:dependent', 1), dependencies: [{ id: 'craft:historical', version: 1 }, { id: 'craft:same', version: 1 }, { id: 'craft:mixed', version: 1 }] });
+    crafted.records.push({ ...version('craft:dependent2', 1), dependencies: [{ id: 'craft:historical', version: 2 }, { id: 'craft:same', version: 2 }] });
+    const craftedLookups = eligibilityLookups(crafted);
+    const found = id => [1, 2, 3].map(number => key(recordRevision(crafted, id, number)));
+    assert.deepEqual(found('craft:historical'), ['craft:historical@1', 'craft:historical@2', 'craft:historical@3'], 'changes that are all historical keep the older versions');
+    assert.deepEqual(found('craft:mixed'), [null, null, 'craft:mixed@3'], 'a correction among the changes hides them');
+    assert.deepEqual(found('craft:same'), ['craft:same@1', 'craft:same@2', 'craft:same@3'], 'unchanged wording keeps them whatever else changed');
+    for (const id of ['craft:historical', 'craft:mixed', 'craft:same']) for (const number of [0, 1, 2, 3, 4]) {
+        assert.equal(key(recordRevision(crafted, id, number)), key(reference.revision(crafted, id, number)), id + '@' + number);
+        assert.equal(key(recordRevisionIn(crafted, craftedLookups, id, number)), key(reference.revision(crafted, id, number)), id + '@' + number + ' from the tables');
+    }
+    for (const record of crafted.records.filter(item => item.id.startsWith('craft:'))) for (const options of [{}, { includeExcluded: true }, { asOf: 0 }]) {
+        const expected = reference.eligible(crafted, record, options);
+        assert.equal(recordEligible(crafted, record, options), expected, record.id);
+        assert.equal(recordEligibleIn(crafted, craftedLookups, record, options), expected, record.id + ' from the tables');
+    }
+    assert.deepEqual(eligibleRecords(crafted).map(key), reference.all(crafted).map(key));
+    assert.equal(recordEligible(crafted, crafted.records.find(item => item.id === 'craft:dependent2')), true);
+    assert.equal(recordEligible(crafted, crafted.records.find(item => item.id === 'craft:dependent')), false, 'a dependency on a hidden version fails');
     // The same answers from the tables that eligibleRecords, inspection and a reply's context share.
     const lookups = eligibilityLookups(state);
     for (const options of [{}, { asOf: 2 }, { asOf: 5, includeExcluded: true }]) {
@@ -5717,6 +5755,18 @@ test('every Mewmory route, a batch, recall and indexing only read the shared sta
     ]) await run(route, body);
     await recall(directories, locator, { query: 'gift' }, { call: async (_d, _c, role) => ({ value: { status: 'complete', selections: [], rejections: [], needsEvidence: [] }, usage: { role } }), scheduleBackground: false });
     await waitForProcessing(directories, locator);
+    // A batch that runs past its model request to the end, and an index pass over entries that already exist, on frozen parses.
+    // Neither may hide a failure: a batch that fails throws here, and recall reports an index failure as indexError.
+    const pendingBefore = (await inspect()).health.pending;
+    assert.ok(pendingBefore > 0, 'something is left for the batch to read');
+    await processBatch(directories, locator, {}, async () => emptyExtraction);
+    assert.ok((await inspect()).health.pending < pendingBefore, 'the batch committed');
+    await post('/index', {});
+    const entries = Object.keys(readStateShared(directories, locator).index.vectors).length;
+    assert.ok(entries > 0 && Object.isFrozen(readStateShared(directories, locator).index.vectors), 'entries exist and are frozen');
+    assert.equal((await post('/index', {})).status, 200, 'an index pass over existing entries');
+    const indexed = await recall(directories, locator, { query: 'gift' }, { call: async (_d, _c, role) => ({ value: { status: 'complete', selections: [], rejections: [], needsEvidence: [] }, usage: { role } }), scheduleBackground: false });
+    assert.equal(indexed.inspection.indexError, '', 'recall indexed over existing entries without an error');
     // Not one request hit a TypeError for editing a frozen object, and the routes that need no model answered.
     assert.deepEqual(errors.filter(line => /TypeError|read only|not extensible|Cannot (add|assign|delete)/.test(line)), []);
     for (const route of ['/inspect', '/duplicates', '/story', '/lore', '/export', '/export/markdown', '/estimate', '/character', '/record/history', '/message', '/shared', '/source/get', '/search', '/scene', '/review/seen', '/record/action', '/source/exclude']) {

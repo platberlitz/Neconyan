@@ -26,9 +26,10 @@ import { readGroupSceneStart } from '../../public/scripts/group-chat-visibility.
 
 export const router = express.Router();
 
-// JSON.stringify can print a number token longer than the token it was read from (1e20 is four characters and
-// prints as 21), by at most a factor of 21/4. Nothing else grows: escapes shrink and every other token is the same.
+// Printing a body again turns each raw byte into at most 6 (a control character becomes \u00XX, and 1e20 grows by only
+// 21/4), and adds at most 16 bytes of braces, quotes and colons around them: 6n + 7 is the worst case, from n control bytes in a form body.
 const REPRINT_GROWTH_LIMIT = 6;
+const REPRINT_GROWTH_EXTRA = 16;
 
 /**
  * Whether the request body measures more than `limit` once printed again, which is how the limit has always been
@@ -40,7 +41,7 @@ export function requestBodyExceeds(request, limit) {
     const declared = request.get('Content-Length');
     const encoding = request.get('Content-Encoding');
     if (typeof declared === 'string' && /^\d{1,15}$/.test(declared) && (!encoding || encoding.toLowerCase() === 'identity')
-        && Number(declared) * REPRINT_GROWTH_LIMIT <= limit) return false;
+        && Number(declared) * REPRINT_GROWTH_LIMIT + REPRINT_GROWTH_EXTRA <= limit) return false;
     return Buffer.byteLength(JSON.stringify(request.body || {})) > limit;
 }
 
