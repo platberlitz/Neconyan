@@ -132,6 +132,7 @@
 - PR #911 (2026-11-23) `fix(generation): let background jobs pass the character regex check`
 - PR #912 (2026-11-23) `fix(folders): fix Sort with AI settings sync and large libraries`
 - PR #913 (2026-11-23) `fix(companions): include composed Author's Notes for Companions`
+- PR #914 (2026-11-23) `fix(reasoning): recognise prefixed custom models`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
