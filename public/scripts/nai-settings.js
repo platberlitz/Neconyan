@@ -14,6 +14,7 @@ import { MAX_CONTEXT_DEFAULT, MAX_RESPONSE_DEFAULT, power_user } from './power-u
 import { getTextTokens, tokenizers } from './tokenizers.js';
 import { getEventSourceStream } from './sse-stream.js';
 import { fetchResumable } from './resumable-generation.js';
+import { watchTextBackend } from './text-backend-failures.js';
 import {
     getSortableDelay,
     getStringHash,
@@ -777,17 +778,23 @@ function tryParseStreamingError(response, decoded) {
 export async function generateNovelWithStreaming(generate_data, signal) {
     generate_data.streaming = nai_settings.streaming_novel;
 
-    const response = await fetchResumable('/api/novelai/generate', {
-        headers: getRequestHeaders(),
-        body: JSON.stringify(generate_data),
-        method: 'POST',
-        signal: signal,
+    const watch = watchTextBackend({ kind: 'novel', model: generate_data.model, data: generate_data, signal });
+    return watch.run(async () => {
+        const response = await fetchResumable('/api/novelai/generate', {
+            headers: getRequestHeaders(),
+            body: JSON.stringify(generate_data),
+            method: 'POST',
+            signal: signal,
+        });
+        if (!response.ok) {
+            const body = await response.text();
+            watch.rejected(response, body);
+            tryParseStreamingError(response, body);
+            throw new Error(`Got response status ${response.status}`);
+        }
+        await watch.inspect(response);
+        return readNovelStream(response);
     });
-    if (!response.ok) {
-        tryParseStreamingError(response, await response.text());
-        throw new Error(`Got response status ${response.status}`);
-    }
-    return readNovelStream(response);
 }
 
 /** @param {Response} response Live or retained provider response */

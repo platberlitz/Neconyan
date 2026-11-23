@@ -395,6 +395,7 @@ import { compressRequest, setRequestCompressionConfig } from './scripts/request-
 import { canJumpToSwipeForMessage, canOpenSwipePickerForMessage, initSwipePicker } from './scripts/swipe-picker.js';
 import { bindIOSFastTapSendButton, isIOSWebKitPlatform } from './scripts/mobile-send-button.js';
 import { formatMobileStreamingPreview, getMobileStreamingBottomPinBehavior, getStreamingUpdateInterval, isAndroidStreamingPlatform, shouldReduceStreamingDomWork, shouldUsePlainTextStreamingPreview } from './scripts/mobile-streaming.js';
+import { watchTextBackend } from './scripts/text-backend-failures.js';
 import { fetchResumable, setGenerationContext, releaseGenerationContext, listRecoverableGenerations, openHeldGeneration, discardGeneration, heldReplyHasMore } from './scripts/resumable-generation.js';
 import { captureRecoveryAnchor, getHeldReplyTarget } from './scripts/held-generation-recovery.js';
 import { applyGenerationRequestControls, isGenerationLengthFinish, limitGenerationProse, reasoningOnlyWarningKind } from './scripts/generation-request-controls.js';
@@ -9239,20 +9240,7 @@ export async function generateRawData({ prompt = '', api = null, instructOverrid
         } else if (api === 'textgenerationwebui' && typeof onChunk === 'function') {
             data = await generateTextGenWithStreaming(generateData, abortController.signal);
         } else {
-            const generateUrl = getGenerateUrl(api);
-            const response = await fetchResumable(generateUrl, {
-                method: 'POST',
-                headers: getRequestHeaders(),
-                cache: 'no-cache',
-                body: JSON.stringify(generateData),
-                signal: abortController.signal,
-            });
-
-            if (!response.ok) {
-                throw await response.json();
-            }
-
-            data = await response.json();
+            data = await requestBackendJson(api, generateData, abortController.signal);
         }
 
         if (typeof data === 'function' && typeof onChunk === 'function') {
@@ -12338,19 +12326,39 @@ export async function sendGenerationRequest(type, data, options = {}) {
         return await generateHorde(data.prompt, data, signal, true);
     }
 
-    const response = await fetchResumable(getGenerateUrl(main_api), {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        cache: 'no-cache',
-        body: JSON.stringify(data),
-        signal,
+    return await requestBackendJson(main_api, data, signal);
+}
+
+/**
+ * Sends one non-streaming request to the KoboldAI, NovelAI or text completion route and returns the JSON reply.
+ * Failures are noted for the App diagnostics log on the way; what is thrown or returned is unchanged.
+ * @param {string} api Main API id
+ * @param {object} data Generation data
+ * @param {AbortSignal} signal
+ * @returns {Promise<any>}
+ */
+async function requestBackendJson(api, data, signal) {
+    const kind = api === 'kobold' ? 'kobold' : api === 'novel' ? 'novel' : 'text';
+    const model = kind === 'kobold' ? (api === main_api && online_status !== 'no_connection' ? online_status : '') : data?.model;
+    const watch = watchTextBackend({ kind, type: data?.api_type ?? textgen_settings.type, model, data, signal });
+    return await watch.run(async () => {
+        const response = await fetchResumable(getGenerateUrl(api), {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            cache: 'no-cache',
+            body: JSON.stringify(data),
+            signal,
+        });
+
+        if (!response.ok) {
+            watch.rejected(response, await response.clone().text());
+            throw await response.json();
+        }
+
+        const json = await response.json();
+        watch.answered(json);
+        return json;
     });
-
-    if (!response.ok) {
-        throw await response.json();
-    }
-
-    return await response.json();
 }
 
 /**
