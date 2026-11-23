@@ -5,9 +5,9 @@ import { test } from './neconyan-conversation-durable-fixture.js';
 const android = 'Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/AP1A; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/130.0.0.0 Mobile Safari/537.36';
 const books = ['Aster harbour', 'Birch forest', 'Cedar village'];
 
-async function capturePickerScreenshot(page, device) {
+async function capturePickerScreenshot(page, device, picker) {
     if (process.env.NECONYAN_QUICK_FIX_SCREENSHOTS) {
-        await page.screenshot({ path: `${process.env.NECONYAN_QUICK_FIX_SCREENSHOTS}/extra-lorebook-${device}.png` });
+        await page.screenshot({ path: `${process.env.NECONYAN_QUICK_FIX_SCREENSHOTS}/${picker}-lorebook-${device}.png` });
     }
 }
 
@@ -23,15 +23,48 @@ async function openPicker(page, avatar, editLabel = 'Edit Durable Nova') {
     await expect(page.locator('dialog[open] .character_world')).toBeVisible();
 }
 
+async function openPortuguesePicker(app, device) {
+    const account = await app.account({ phone: device === 'phone' });
+    await account.context.addInitScript(() => window.localStorage.setItem('language', 'pt-pt'));
+    for (const name of ['Aster harbour', 'Default']) await account.post('/api/worldinfo/edit', { name, data: { entries: {} } });
+    const page = await account.open({ workspace: false });
+    await openPicker(page, account.avatar, 'Editar Durable Nova');
+    return { account, page };
+}
+
 for (const device of ['phone', 'desktop']) {
+    test(`primary lorebook keeps its chosen name in Portuguese on ${device}`, async ({ app }) => {
+        test.setTimeout(120000);
+        const { account, page } = await openPortuguesePicker(app, device);
+        await expect(page.locator('html')).toHaveAttribute('lang', 'pt-pt');
+        const dialog = page.locator('dialog[open]');
+        const select = dialog.locator('.character_world_info_selector');
+        const empty = select.locator('option[value=""]');
+        const selected = select.locator('option:checked');
+        await expect(select).toBeVisible();
+        await expect(select).toHaveValue('');
+        await expect(empty).toHaveJSProperty('label', '--- Nenhum ---');
+        const book = dialog.locator('.character_extra_world_info_selector option').filter({ hasText: /^Default$/ });
+        await expect(book).toHaveAttribute('value', '1');
+        const value = await book.getAttribute('value');
+        await select.selectOption(value);
+        await expect(select).toHaveValue(value);
+        await capturePickerScreenshot(page, device, 'primary');
+        await expect(selected).toHaveJSProperty('label', 'Default');
+        await dialog.locator('.popup-button-ok').click();
+        await expect.poll(async () => (await account.post('/api/characters/get', { avatar_url: account.avatar })).data.extensions.world).toBe('Default');
+        await page.reload({ waitUntil: 'domcontentloaded' });
+        await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'));
+        await openPicker(page, account.avatar, 'Editar Durable Nova');
+        await expect(select).toHaveValue(value);
+        await expect(selected).toHaveJSProperty('label', 'Default');
+        await expect(empty).toHaveJSProperty('label', '--- Nenhum ---');
+    });
+
     test(`additional lorebook keeps its chosen name in Portuguese on ${device}`, async ({ app }) => {
         test.setTimeout(120000);
-        const account = await app.account({ phone: device === 'phone' });
-        await account.context.addInitScript(() => window.localStorage.setItem('language', 'pt-pt'));
-        for (const name of ['Aster harbour', 'Default']) await account.post('/api/worldinfo/edit', { name, data: { entries: {} } });
-        const page = await account.open({ workspace: false });
+        const { account, page } = await openPortuguesePicker(app, device);
         await expect(page.locator('html')).toHaveAttribute('lang', 'pt-pt');
-        await openPicker(page, account.avatar, 'Editar Durable Nova');
         const dialog = page.locator('dialog[open]');
         const select = dialog.locator('.character_extra_world_info_selector');
         const option = select.locator('option[value="1"]');
@@ -39,7 +72,7 @@ for (const device of ['phone', 'desktop']) {
         await expect(dialog.locator('[data-i18n="Additional Lorebooks"]')).toHaveText('Lorebooks adicionais');
         await trigger.click();
         const row = dialog.locator('.sb-chat-picker-row').last();
-        await capturePickerScreenshot(page, device);
+        await capturePickerScreenshot(page, device, 'extra');
         await expect(option).toHaveJSProperty('label', 'Default');
         await expect(row).toHaveText('Default');
         await expect(row).toHaveAttribute('title', 'Default');
