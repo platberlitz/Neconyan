@@ -41,7 +41,7 @@ import { AbortReason } from './util/AbortReason.js';
 import { getSortableDelay, onlyUnique } from './utils.js';
 import { textgen_types, APHRODITE_DEFAULT_ORDER, createTextProviderParameters, replaceMacrosInList as replaceListMacros } from './text-provider-parameters.js';
 import { setting_names, TEXT_PROVIDER_URLS } from './text-preset-request.js';
-import { watchTextBackend } from './text-backend-failures.js';
+import { readableBackendError, watchTextBackend } from './text-backend-failures.js';
 export { textgen_types, APHRODITE_DEFAULT_ORDER };
 export { setting_names } from './text-preset-request.js';
 
@@ -1454,7 +1454,9 @@ function tryParseStreamingError(response, decoded) {
         // No JSON. Do nothing.
     }
 
-    const message = data?.error?.message || data?.error || data?.message || data?.detail;
+    let message = data?.error?.message || data?.error || data?.message || data?.detail;
+    // The app server sends { error: true, status, response }, which is not a message the toast can show.
+    if (message && typeof message !== 'string') message = readableBackendError(data);
 
     if (message) {
         toastr.error(message, 'Text Completion API');
