@@ -20,8 +20,10 @@ import validateAvatarUrlMiddleware from '../middleware/validateFileName.js';
 import { renameChatFile } from '../chat-rename.js';
 import { captureBranchMemory, chatMemoryExists, removeChatMemory, renameChatMemory } from '../mewmory/store.js';
 import { applyOverflowHiding, prepareAutomaticHiding, prepareMessageHidingPolicy } from '../mewmory/hiding.js';
-import { confirmRoleplayAccount, inspectRoleplayFile, inspectRoleplayFileStat, readRoleplayFile, readRoleplayWriteJournal, roleplayAvatarOwner, roleplayError, roleplayHash, roleplayLease, roleplayPathKey, saveRoleplayAccount, withRoleplayAccount, withUntrackedRoleplayFiles } from '../roleplay-store.js';
+import { confirmRoleplayAccount, inspectRoleplayFile, inspectRoleplayFileStat, readRoleplayFile, readRoleplayWriteJournal, roleplayAvatarOwner, roleplayError, roleplayFilePhysical, roleplayHash, roleplayLease, roleplayPathKey,
+    sameRoleplayFile, sameRoleplayFileStat, saveRoleplayAccount, withRoleplayAccount, withUntrackedRoleplayFiles } from '../roleplay-store.js';
 import { registerMemoryReclaimer } from '../memory-pressure.js';
+import { createUtf8Validator, invalidUtf8Error } from '../utf8-validation.js';
 import { normaliseRoleplayLocator, readRoleplayChatLocked, roleplayChatPath, ROLEPLAY_METADATA_KEY } from '../generation/roleplay-source.js';
 import { cleanupRoleplayReceiptsLocked, commitRoleplayLifecycleLocked, commitSingleChatImport, forgetRoleplayReceiptLocked, commitSingleChatWriteLocked, repairSingleChatWriteLocked, roleplayTrackedInstance } from '../roleplay-lifecycle.js';
 import {
@@ -1102,19 +1104,17 @@ function decodeChatFileSnapshot(data, { strict, keepData }) {
     if (keepData === true) {
         return strict ? new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(data) : data.toString('utf8');
     }
-    // Valid UTF-8 is what the strict decoder accepts, so only invalid bytes need it, to refuse them in its own words.
-    if (strict && !isUtf8(data)) {
-        const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
-        const sliceBytes = 1024 * 1024;
-        for (let offset = 0; offset < data.byteLength; offset += sliceBytes) {
-            decoder.decode(data.subarray(offset, offset + sliceBytes), { stream: offset + sliceBytes < data.byteLength });
-        }
-    }
+    // Valid UTF-8 is what the strict decoder accepts; invalid bytes are refused in its own words.
+    if (strict && !isUtf8(data)) throw invalidUtf8Error();
     // keepData 'bytes' hands back the bytes themselves, checked as strictly, for a caller that never needs the text.
     return keepData === 'bytes' ? data : null;
 }
 
-function readChatFileSnapshot(filePath, { strict = false, maxBytes = Number.MAX_SAFE_INTEGER, keepData = true } = {}) {
+/**
+ * Reads the file once, refusing it if it changes meanwhile. Missing files return null; with `expectedHash`, so do
+ * other bytes, before their encoding is judged, so a changed file is told as changed and not as invalid text.
+ */
+function readChatFileSnapshot(filePath, { strict = false, maxBytes = Number.MAX_SAFE_INTEGER, keepData = true, expectedHash = null } = {}) {
     let initialPathStats;
     try {
         initialPathStats = fs.lstatSync(filePath, { bigint: true });
@@ -1142,8 +1142,7 @@ function readChatFileSnapshot(filePath, { strict = false, maxBytes = Number.MAX_
         let offset = 0;
         let hash = '';
         let decoded = null;
-        let utf8Error = null;
-        let decoder = null;
+        let validator = null;
         let hasher = null;
 
         if (keepData) {
@@ -1157,19 +1156,13 @@ function readChatFileSnapshot(filePath, { strict = false, maxBytes = Number.MAX_
         } else {
             const chunk = Buffer.allocUnsafe(Math.min(64 * 1024, Math.max(1, expectedSize)));
             hasher = crypto.createHash('sha256');
-            decoder = strict ? new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }) : null;
+            validator = strict ? createUtf8Validator() : null;
             while (offset < expectedSize) {
                 const bytesRead = fs.readSync(fileDescriptor, chunk, 0, Math.min(chunk.length, expectedSize - offset), offset);
                 if (bytesRead === 0) break;
                 const slice = chunk.subarray(0, bytesRead);
                 hasher.update(slice);
-                if (decoder && !utf8Error) {
-                    try {
-                        decoder.decode(slice, { stream: true });
-                    } catch (error) {
-                        utf8Error = error;
-                    }
-                }
+                validator?.update(slice);
                 offset += bytesRead;
             }
         }
@@ -1189,17 +1182,12 @@ function readChatFileSnapshot(filePath, { strict = false, maxBytes = Number.MAX_
             throw Object.assign(new Error(`Chat file changed while it was being read: ${filePath}`), { code: 'ESTALE' });
         }
 
+        hash = keepData ? crypto.createHash('sha256').update(data).digest('hex') : hasher.digest('hex');
+        if (expectedHash !== null && hash !== expectedHash) return null;
         if (keepData) {
             decoded = decodeChatFileSnapshot(data, { strict, keepData });
-            hash = crypto.createHash('sha256').update(data).digest('hex');
-        } else {
-            if (utf8Error) {
-                throw utf8Error;
-            }
-            if (decoder) {
-                decoder.decode();
-            }
-            hash = hasher.digest('hex');
+        } else if (validator && !validator.end()) {
+            throw invalidUtf8Error();
         }
 
         return {
@@ -2109,8 +2097,11 @@ function preparedMatchesBytes(prepared, bytes) {
     return prepared.patch ? prepared.patch.matches(bytes) : preparedTextMatchesBytes(prepared, bytes) && chatJsonlEqualsRecords(bytes, prepared.records);
 }
 
-/** Private managed publication: no automatic recovery, memory capture or generation work. */
-export function publishNativeChatWrite({ filePath, before, payloadPath, payloadHash, prepared,
+/**
+ * Private managed publication: no automatic recovery, memory capture or generation work. `payloadFile` may be the
+ * lifecycle's own flushed, hashed read of the payload, used while its path still names that very file unchanged.
+ */
+export function publishNativeChatWrite({ filePath, before, payloadPath, payloadFile = null, payloadHash, prepared,
     handle, cardName, backupDirectory, recoveryTarget = null, force = false, allowShrink = false, deferBackup = false, deferSequenceId, expectedJournal = null }) {
     if (typeof filePath !== 'string' || !path.isAbsolute(filePath)
         || (payloadPath === null ? !before || prepared?.changed !== false
@@ -2124,45 +2115,64 @@ export function publishNativeChatWrite({ filePath, before, payloadPath, payloadH
         recoveryTarget = normalizeChatRecoveryTarget({ ...recoveryTarget, maxRecoveryStates: maxTotalChatBackups });
         if (path.resolve(recoveryTarget.activePath) !== path.resolve(filePath)) throw new TypeError('Invalid managed recovery target.');
     }
+    const limit = 64 * 1024 * 1024;
     // Proven output can finish the existing no-op backup path without its temporary after-image.
-    const payload = readRoleplayFile(payloadPath ?? filePath, 64 * 1024 * 1024, { flush: true });
+    const payloadSource = payloadPath ?? filePath;
+    const payload = payloadFile?.rawHash === payloadHash && sameRoleplayFile(payloadSource, payloadFile, limit) ? payloadFile
+        : readRoleplayFile(payloadSource, limit, { flush: true });
     // The bytes must be the prepared text and parse to the prepared records. Comparing bytes and
     // checking the records row by row proves the same without a second text or a second parse of the chat.
     if (!payload || payload.rawHash !== payloadHash || !preparedMatchesBytes(prepared, payload.bytes)) throw new InvalidChatDataError('Prepared chat payload changed.');
-    // Only the file's hash and identity are compared here, so it is read in small pieces instead of held whole.
-    const inspect = () => {
-        const file = inspectRoleplayFile(filePath, 64 * 1024 * 1024);
-        if (before === null ? file !== null : !file || file.rawHash !== before.rawHash || !isDeepStrictEqual(file.physical, before.physical)) {
-            throw Object.assign(new IntegrityMismatchError('Managed chat source changed.'), { code: 'ESTALE' });
-        }
-        // Never let legacy undo recovery precede the protected transaction's own classification.
+    const sourceChanged = () => Object.assign(new IntegrityMismatchError('Managed chat source changed.'), { code: 'ESTALE' });
+    const recordedIdentity = stat => (before === null ? stat === null : Boolean(stat) && isDeepStrictEqual(roleplayFilePhysical(stat), before.physical));
+    // Never let legacy undo recovery precede the protected transaction's own classification.
+    const assertJournal = () => {
         try {
             const journal = readRoleplayWriteJournal(filePath);
             if (expectedJournal === null ? journal !== null : !journal || journal.rawHash !== expectedJournal.rawHash
                 || !isDeepStrictEqual(journal.physical, expectedJournal.physical)) throw new Error('Recovery journal changed.');
         } catch (cause) { throw new InvalidChatDataError('An earlier chat write needs explicit reconciliation.', { cause }); }
-        return file;
     };
-    inspect(); // Includes safe, existing parent validation before the lock helper can create directories.
+    // The safe path, the recorded identity and the journal. `identityOnly` skips reading the bytes, for a caller
+    // whose very next step hashes them anyway; otherwise only the file's hash is compared, so it is read in small pieces.
+    const inspect = ({ identityOnly = false } = {}) => {
+        if (identityOnly) {
+            if (!recordedIdentity(inspectRoleplayFileStat(filePath, limit))) throw sourceChanged();
+        } else {
+            const file = inspectRoleplayFile(filePath, limit);
+            if (before === null ? file !== null : !file || file.rawHash !== before.rawHash || !isDeepStrictEqual(file.physical, before.physical)) throw sourceChanged();
+        }
+        assertJournal();
+    };
+    // Includes safe, existing parent validation before the lock helper can create directories. The bytes are
+    // checked once the lock is held.
+    inspect({ identityOnly: true });
     const release = acquireChatFileLock(filePath);
     let result;
     try {
-        inspect();
-        const snapshot = before === null ? null : readChatFileSnapshot(filePath, { strict: true, maxBytes: 64 * 1024 * 1024, keepData: false });
-        if (before && (!snapshot || snapshot.hash !== before.rawHash
-            || String(snapshot.pathStats.dev) !== before.physical.dev || String(snapshot.pathStats.ino) !== before.physical.ino
-            || String(snapshot.pathStats.birthtimeNs) !== before.physical.birthtimeNs)) {
-            throw Object.assign(new IntegrityMismatchError('Managed chat source changed before publication.'), { code: 'ESTALE' });
+        // One locked read is both checks: the protected file the transaction recorded, and the strict snapshot
+        // the writer compares and backs up. Its path is checked as safe and unchanged before and after the read.
+        let snapshot = null;
+        if (before === null) {
+            inspect();
+        } else {
+            const stat = inspectRoleplayFileStat(filePath, limit);
+            if (!recordedIdentity(stat)) throw sourceChanged();
+            snapshot = readChatFileSnapshot(filePath, { strict: true, maxBytes: limit, keepData: prepared.patch ? 'bytes' : true, expectedHash: before.rawHash });
+            if (!snapshot || !sameRoleplayFileStat(stat, snapshot.descriptorStats)
+                || !sameRoleplayFileStat(inspectRoleplayFileStat(filePath, limit), snapshot.descriptorStats)) throw sourceChanged();
+            assertJournal();
         }
         if (prepared.changed === false && (before === null || payload.rawHash !== before.rawHash)) throw new InvalidChatDataError('Invalid managed no-op.');
         result = trySaveChatLocked(prepared.inputRecords, filePath, force, handle, cardName, backupDirectory,
-            { recoveryTarget, allowShrink, deferBackup, deferSequenceId, expectedSnapshot: snapshot, nativePrepared: prepared,
+            { recoveryTarget, allowShrink, deferBackup, deferSequenceId, expectedSnapshot: snapshot, lockedSnapshot: snapshot, nativePrepared: prepared,
                 payloadBytes: payload.bytes, createOnly: before === null, validateNativeSource: inspect });
-        const saved = readRoleplayFile(filePath, 64 * 1024 * 1024, { flush: true });
+        // The written file is flushed and hashed in pieces; its bytes are the payload's, which have that same hash.
+        const saved = inspectRoleplayFile(filePath, limit, { flush: true });
         if (!saved || saved.rawHash !== payloadHash || (before && !isDeepStrictEqual(saved.physical, before.physical))) {
             throw new IntegrityMismatchError('Managed chat output changed during publication.');
         }
-        result = { ...result, file: saved };
+        result = { ...result, file: { bytes: payload.bytes, rawHash: saved.rawHash, physical: saved.physical } };
     } catch (failure) {
         try { release(); } catch (cause) { console.warn('Managed chat lock cleanup also failed:', cause?.code || cause?.name); }
         throw Object.assign(failure, { chatWriteUncertain: true, integrity: prepared.integrity });
@@ -2174,7 +2184,7 @@ export function publishNativeChatWrite({ filePath, before, payloadPath, payloadH
     return result;
 }
 
-function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handle, cardName, backupDirectory, { deferBackup = false, deferSequenceId = undefined, recoveryTarget = null, allowShrink = false, persistDerivedMetadata = false, expectedSnapshot = null, nativePrepared = null, payloadBytes = null, createOnly = false, validateNativeSource = null } = {}) {
+function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handle, cardName, backupDirectory, { deferBackup = false, deferSequenceId = undefined, recoveryTarget = null, allowShrink = false, persistDerivedMetadata = false, expectedSnapshot = null, lockedSnapshot = null, nativePrepared = null, payloadBytes = null, createOnly = false, validateNativeSource = null } = {}) {
     const doIntegrityCheck = (checkIntegrity && !skipIntegrityCheck);
     const incomingIntegrity = chatData?.[0]?.chat_metadata?.integrity;
     const chatIntegritySlug = doIntegrityCheck && typeof incomingIntegrity === 'string' ? incomingIntegrity : '';
@@ -2219,7 +2229,8 @@ function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handl
         existingFile = fs.existsSync(filePath);
         if (createOnly && existingFile) throw Object.assign(new Error('The managed create destination already exists.'), { code: 'ESTALE' });
         if (existingFile) {
-            currentSnapshot = readChatFileSnapshot(filePath, { strict: Boolean(expectedSnapshot), maxBytes: nativePrepared ? 64 * 1024 * 1024 : Number.MAX_SAFE_INTEGER, keepData: patched ? 'bytes' : true });
+            // A managed write hands over the snapshot it has just read and checked as its source under this lock.
+            currentSnapshot = lockedSnapshot ?? readChatFileSnapshot(filePath, { strict: Boolean(expectedSnapshot), maxBytes: nativePrepared ? 64 * 1024 * 1024 : Number.MAX_SAFE_INTEGER, keepData: patched ? 'bytes' : true });
         }
     } catch (error) {
         if (error?.code === 'ESTALE') {
@@ -2239,7 +2250,7 @@ function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handl
         || currentSnapshot.pathStats.birthtimeNs !== expectedSnapshot.pathStats.birthtimeNs)) {
         throw Object.assign(new IntegrityMismatchError('Native chat source changed during mutation.'), { code: 'ESTALE' });
     }
-    validateNativeSource?.();
+    if (!lockedSnapshot) validateNativeSource?.();
 
     if (existingFile) {
         if (currentSnapshot) {
@@ -2248,7 +2259,8 @@ function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handl
                 && currentSnapshot.descriptorStats.ino === activeFileStats.ino;
             preserveFileIdentity = activeFileStats.isFile() && activeFileStats.nlink === 1n && descriptorMatchesPath;
             replaceFileOnly = !preserveFileIdentity;
-            expectedFileIdentity = { dev: activeFileStats.dev, ino: activeFileStats.ino };
+            // A native source is the file with this creation time too, as its snapshot was compared.
+            expectedFileIdentity = { dev: activeFileStats.dev, ino: activeFileStats.ino, ...(expectedSnapshot ? { birthtimeNs: activeFileStats.birthtimeNs } : {}) };
             expectedFileHash = currentSnapshot.hash;
         } else {
             const activeFileStats = fs.lstatSync(filePath, { bigint: true });
@@ -2356,7 +2368,8 @@ function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handl
             console.warn('Failed to write the exact chat recovery snapshot; continuing with the active chat save.', error);
         }
     }
-    if (unchangedChatData !== null && currentSnapshot) {
+    // A managed source check below reads and hashes the file against the same source, so it covers this one.
+    if (unchangedChatData !== null && currentSnapshot && !validateNativeSource) {
         try {
             assertChatFileSnapshotCurrent(filePath, currentSnapshot, nativePrepared ? { strict: true, maxBytes: 64 * 1024 * 1024 } : undefined);
         } catch (error) {
@@ -2366,8 +2379,10 @@ function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handl
             throw new IntegrityMismatchError(`Chat changed after it was checked: "${filePath}".`, { cause: error });
         }
     }
-    // Backup I/O must not silently invalidate the recorded source or journal handoff.
-    validateNativeSource?.();
+    // Backup I/O must not silently invalidate the recorded source or journal handoff. An in-place write first hashes
+    // the very file it has opened against expectedFileHash, at this identity, so the identity is all it needs here.
+    validateNativeSource?.({ identityOnly: unchangedChatData === null && preserveFileIdentity
+        && typeof expectedFileHash === 'string' && expectedFileIdentity?.birthtimeNs !== undefined });
     if (unchangedChatData === null) {
         try {
             tryWriteFileSync(filePath, persistedChatData, 'utf8', {

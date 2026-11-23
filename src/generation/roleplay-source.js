@@ -377,7 +377,8 @@ export function captureRoleplayDependenciesLocked(lease, locator, groupId) {
     return { dependencies, changed: changed || dependencies.some(item => item.changed) };
 }
 
-export function readRoleplayChatLocked(lease, input, { enrolMissing = true } = {}) {
+/** `keepFile` also returns the verified read itself, for a write prepared on exactly these bytes; a load leaves it out. */
+export function readRoleplayChatLocked(lease, input, { enrolMissing = true, keepFile = false } = {}) {
     const held = roleplayLease(lease);
     const { scope, state } = held;
     if (state.pending) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'An earlier Roleplay transaction must be reconciled first.');
@@ -400,7 +401,7 @@ export function readRoleplayChatLocked(lease, input, { enrolMissing = true } = {
         if (parsed.status !== 'ok') throw roleplayError('ROLEPLAY_SOURCE_DAMAGED', 'The Roleplay chat needs recovery.');
         const contentHash = reusableChatContentHash(state, locator, file) ?? roleplayParsedContentHash(parsed.records);
         const entry = enrol(lease, 'chat', locator, file, contentHash, parsed.records[0].chat_metadata[ROLEPLAY_METADATA_KEY]);
-        const result = { ...descriptor(state, entry), records: parsed.records, changed: entry.changed, filePath: filename };
+        const result = { ...descriptor(state, entry), records: parsed.records, changed: entry.changed, filePath: filename, ...(keepFile ? { file } : {}) };
         CHAT_READ_SNAPSHOTS.set(result, { token: chatReadToken(held), physical: file.physical });
         return result;
     } finally { release(); }
@@ -539,8 +540,8 @@ export function captureRoleplaySource(scope, input) {
 }
 
 /** Ordinary storage edits bind the chat itself; they do not authorise generation. */
-export function captureRoleplayStorageSourceLocked(lease, locator) {
-    const saved = readRoleplayChatLocked(lease, locator);
+export function captureRoleplayStorageSourceLocked(lease, locator, { keepFile = false } = {}) {
+    const saved = readRoleplayChatLocked(lease, locator, { keepFile });
     const { accountId, dataEpoch, instanceId, revision, rawHash } = saved;
     return { source: { kind: 'storage', accountId, dataEpoch, instanceId, revision, rawHash,
         locator: saved.locator, dependencies: [] }, saved, changed: saved.changed };
@@ -584,7 +585,7 @@ export function describeRoleplaySourceChange(expected, current) {
     return result('chat-saved', 'The chat was saved by another change (an edit, a new message, or an extension rewriting messages)');
 }
 
-export function assertRoleplaySourceLocked(lease, source, { effect } = {}) {
+export function assertRoleplaySourceLocked(lease, source, { effect, keepFile = false } = {}) {
     if (source?.kind !== undefined && source.kind !== 'storage') throw roleplayError('ROLEPLAY_INVALID', 'Invalid Roleplay source kind.', 400);
     let locator = source.locator;
     if (effect) {
@@ -598,9 +599,9 @@ export function assertRoleplaySourceLocked(lease, source, { effect } = {}) {
     }
     let captured;
     if (source.kind === 'storage') {
-        captured = captureRoleplayStorageSourceLocked(lease, locator);
+        captured = captureRoleplayStorageSourceLocked(lease, locator, { keepFile });
     } else {
-        const saved = readRoleplayChatLocked(lease, locator);
+        const saved = readRoleplayChatLocked(lease, locator, { keepFile });
         const count = saved.records.length - 1;
         if (source.message?.index >= count || source.range?.start + source.range?.count > count) {
             const error = roleplayError('ROLEPLAY_SOURCE_CHANGED', `The message this was for was deleted, ${SOURCE_CHANGE_OUTCOME}`);

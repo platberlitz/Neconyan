@@ -2983,6 +2983,18 @@ export function recoverFileWritesInDirectorySync(directory) {
 }
 
 /**
+ * Whether bigint file stats name the expected file. A recorded creation time must be present and match,
+ * since an inode number alone can be handed to a new file as soon as the old one is deleted.
+ * @param {{dev: bigint, ino: bigint, birthtimeNs?: bigint}} stats
+ * @param {{dev: bigint, ino: bigint, birthtimeNs?: bigint}} expected
+ * @returns {boolean}
+ */
+export function sameFileIdentity(stats, expected) {
+    return stats.dev === expected.dev && stats.ino === expected.ino
+        && (expected.birthtimeNs === undefined || stats.birthtimeNs === expected.birthtimeNs);
+}
+
+/**
  * Writes to a file, creating it's parent directories if needed.
  * @param {string} filePath
  * @param {string|Buffer} data
@@ -3096,9 +3108,7 @@ export function tryWriteFileSync(filePath, data, options = typeof data === 'stri
             try {
                 const descriptorStats = fs.fstatSync(fileDescriptor, { bigint: true });
                 const pathStats = fs.lstatSync(filePath, { bigint: true });
-                const matchesExpectedIdentity = !expectedFileIdentity
-                    || (descriptorStats.dev === expectedFileIdentity.dev && descriptorStats.ino === expectedFileIdentity.ino
-                        && (expectedFileIdentity.birthtimeNs === undefined || descriptorStats.birthtimeNs === expectedFileIdentity.birthtimeNs));
+                const matchesExpectedIdentity = !expectedFileIdentity || sameFileIdentity(descriptorStats, expectedFileIdentity);
                 if (!descriptorStats.isFile() || !pathStats.isFile()
                     || descriptorStats.dev !== pathStats.dev || descriptorStats.ino !== pathStats.ino
                     || !matchesExpectedIdentity) {
@@ -3248,7 +3258,7 @@ export function tryWriteFileSync(filePath, data, options = typeof data === 'stri
             return;
         }
         const initialStats = fs.lstatSync(filePath, { bigint: true });
-        if (expectedFileIdentity && (initialStats.dev !== expectedFileIdentity.dev || initialStats.ino !== expectedFileIdentity.ino)) {
+        if (expectedFileIdentity && !sameFileIdentity(initialStats, expectedFileIdentity)) {
             throw Object.assign(new Error(`Refused to replace a changed file: ${filePath}`), { code: 'ESTALE' });
         }
         if (expectedFileHash) {
