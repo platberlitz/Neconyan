@@ -36,7 +36,8 @@ function nodeHeaderDirectory() {
 
 test('the native launcher compiles against the real Node and JNI headers', t => {
     if (spawnSync('g++', ['--version']).error) return t.skip('g++ is not installed');
-    if (spawnSync('sh', ['-c', 'command -v javac']).error) return t.skip('a JDK is not installed');
+    const javac = spawnSync('sh', ['-c', 'command -v javac']);
+    if (javac.error || javac.status !== 0) return t.skip('a JDK is not installed');
     const includes = jdkIncludeDirectories();
     const nodeInclude = nodeHeaderDirectory();
     if (!includes || !nodeInclude) return t.skip('Node or JNI headers are not available on this runner');
