@@ -6,7 +6,7 @@ export function composeConversationSystemPrompt({
     settings, character = {}, charName = character.name || 'Character', userName = 'User', groupId = '',
     partnerNames = [], threadCharacter = null, timeContext = '', participantContext = '',
     authorNote = '', availability = '', personaStatus = '', personaContext = '', memorySummary = '',
-    soloMemory = null, groupMemories = [], lifeContext = '', gamesContext = '',
+    soloMemory = null, groupMemories = [], lifeContext = '', gamesContext = '', lorebook = null,
 }) {
     let opening = `You are ${charName} in a private direct-message conversation with ${userName}.`;
     if (groupId) {
@@ -27,7 +27,10 @@ export function composeConversationSystemPrompt({
     if (character.personality) fields.push(`Personality:\n${formatPromptText(character.personality, 1600)}`);
     if (character.scenario) fields.push(`Background context:\n${formatPromptText(character.scenario, 1200)}`);
     if (authorNote) fields.push(`Conversation author's note:\n${String(authorNote).replace('{{char}}', charName).replace('{{user}}', userName)}`);
-    if (settings.lorebook_override) fields.push(`Conversation lorebook focus: ${settings.lorebook_override}. Prefer this lore/context over roleplay scene continuity.`);
+    if (settings.lorebook_override && (!lorebook || lorebook.found)) {
+        fields.push(`Conversation lorebook focus: ${settings.lorebook_override}. Prefer this lore/context over roleplay scene continuity.`);
+        if (lorebook?.text) fields.push(`Lorebook entries from ${lorebook.name}:\n${lorebook.text}`);
+    }
     if (availability) {
         fields.push(personaStatus
             ? `User presence: ${userName} is ${availability}. Their Conversation status: ${personaStatus}.`

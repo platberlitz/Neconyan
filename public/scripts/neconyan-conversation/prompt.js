@@ -274,7 +274,25 @@ export async function updateConversationMemorySummary(avatar = getCurrentCharAva
     return false;
 }
 
-export function buildConversationSystemPrompt(settings, avatar = getCurrentCharAvatar(), { threadAvatar = avatar, branchId = '', groupId = getConversationGroupIdForAvatar(threadAvatar), personaId = getConversationPersonaId() } = {}) {
+/**
+ * Ask the server to scan the Lorebook Override book against these messages. A failed request returns null,
+ * which leaves the prompt with only the focus sentence rather than blocking the reply.
+ */
+export async function fetchConversationLorebook(settings, avatar, messages, { personaId = getConversationPersonaId(), account } = {}) {
+    const name = String(settings?.lorebook_override || '').trim();
+    if (!name) return null;
+    try {
+        const { lorebook } = await requestConversationBinding('lorebook/scan', {
+            name, avatar, userName: getConversationPersonaName(personaId, 'User'),
+            messages: (messages || []).map(message => ({ name: message.name, mes: message.mes })),
+        }, account);
+        return lorebook ?? null;
+    } catch {
+        return null;
+    }
+}
+
+export function buildConversationSystemPrompt(settings, avatar = getCurrentCharAvatar(), { threadAvatar = avatar, branchId = '', groupId = getConversationGroupIdForAvatar(threadAvatar), personaId = getConversationPersonaId(), lorebook = null } = {}) {
     const character = getCharacterForAvatar(avatar);
     const charName = character?.name || getCurrentCharName();
     const userName = getConversationPersonaName(personaId, 'User');
@@ -298,7 +316,7 @@ export function buildConversationSystemPrompt(settings, avatar = getCurrentCharA
         lifeContext = `Current life context: It is ${timeLabel} for ${charName}, who is currently ${current.activity} (status: ${current.status}). Let this naturally color your availability, mood, and what you mention. Stay in this moment of your day.`;
     }
     const promptContext = {
-        settings, character, charName, userName, groupId, partnerNames, threadCharacter, personaContext, lifeContext,
+        settings, character, charName, userName, groupId, partnerNames, threadCharacter, personaContext, lifeContext, lorebook,
         timeContext: getConversationLocalTimeContext(now),
         authorNote: settings.authors_note || getCharacterAuthorNote(avatar),
         availability: getAvailabilityCopy(getUserStatus()).label.toLowerCase(),

@@ -46,7 +46,7 @@ import { dressSleeper } from '../neconyan-sleeper-coats.js';
 import { getConversationMessageAvatar, getConversationMessageReceipt } from './pals-rail.js';
 import { escapeRegExp, getCharacterMentionHandles, parseAvatarList } from './partners.js';
 import { getConnectionProfiles } from './personas.js';
-import { buildConversationPromptMessages, buildConversationSystemPrompt, renderConversationAttachments } from './prompt.js';
+import { buildConversationPromptMessages, buildConversationSystemPrompt, fetchConversationLorebook, renderConversationAttachments } from './prompt.js';
 import { registerConversationRenderer, scheduleInterfaceRefresh, schedulePalsRailRender, scheduleTimelineRender } from './render-scheduler.js';
 import { escapeHtmlAttribute, escapeHtmlText, getConversationMessageExtraFingerprint, hashConversationRenderFingerprint } from './render-utils.js';
 import { getConversationReplyMaxTokens } from './schedule.js';
@@ -1519,11 +1519,13 @@ export async function regenerateConversationMessage(messageId) {
             speakerName,
             { groupId: context.groupId, personaId: context.personaId },
         );
+        const lorebook = await fetchConversationLorebook(settings, speakerAvatar, sourceMessages.slice(0, -1), { personaId: context.personaId, account: getCurrentUserHandle() });
         const systemPrompt = await buildConversationSystemPrompt(settings, speakerAvatar, {
             threadAvatar: context.avatar,
             branchId: context.branchId,
             groupId: context.groupId,
             personaId: context.personaId,
+            lorebook,
         });
         const outcome = await withTypingParticipant(
             { avatar: speakerAvatar, name: speakerName },

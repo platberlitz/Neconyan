@@ -16,6 +16,7 @@ import { getCurrentActivityFromSchedule } from '../../public/scripts/neconyan-co
 import { buildAssistantKnowledge, getAssistantKnowledgeBudget, isNeconyanAssistant } from '../../public/scripts/neconyan-assistant-knowledge.js';
 import { composePersonaDescription, conversationPersonaSelection } from '../../public/scripts/neconyan-conversation/persona-description.js';
 import { buildConversationMessageReplyReference } from '../endpoints/conversation-messages.js';
+import { captureConversationLorebook } from './conversation-lorebook.js';
 import { buildConversationPromptMessages, buildConversationSystemPrompt, getCharacterData, getConversationSettings } from '../endpoints/conversation-generation.js';
 import { getConversationThreadKey } from '../endpoints/conversation-store.js';
 import { clamp, parsePositiveInt, unScopeConversationStorageKey } from '../endpoints/conversation-utils.js';
@@ -320,20 +321,25 @@ export async function buildConversationParticipantSnapshot(request, current, tar
     const savedContext = await buildSavedConversationContext(request, current, target, character, settings, timeZone, now, { speakerAvatar: avatar });
     const characters = localCharacters(current, target.personaId);
     const activity = resolveParticipantActivity(characters, avatar, target.personaId, current.store.runtimeStatusOverrides, now, timeZone) || manualActivity(settings);
-    let system = buildConversationSystemPrompt({ settings, character, userName, groupId: target.groupId, branch: current.branch, context: {
-        ...savedContext.context, timeContext, personaContext,
-        availability: (AVAILABILITY_COPY[current.store.userStatus] || AVAILABILITY_COPY.online).label.toLowerCase(),
-        personaStatus: String(current.store.userPersonaStatus || '').replace(/\s+/g, ' ').trim().slice(0, 80),
-    } });
-    let assistantKnowledgeTokens = null;
-    if (isNeconyanAssistant(character)) {
-        let limit = null;
+    let limit = null;
+    if (settings.lorebook_override || isNeconyanAssistant(character)) {
         try {
             limit = getChatProfileContextLimit(directories, binding);
         } catch {
             limit = null;
         }
-        const usable = limit && limit > settings.reply_max_tokens ? limit - settings.reply_max_tokens : null;
+    }
+    const usable = limit && limit > settings.reply_max_tokens ? limit - settings.reply_max_tokens : null;
+    const lorebook = await captureConversationLorebook({
+        directories, name: settings.lorebook_override, messages: current.branch.messages, userName, character, maxContext: usable ?? undefined,
+    });
+    let system = buildConversationSystemPrompt({ settings, character, userName, groupId: target.groupId, branch: current.branch, context: {
+        ...savedContext.context, timeContext, personaContext, lorebook,
+        availability: (AVAILABILITY_COPY[current.store.userStatus] || AVAILABILITY_COPY.online).label.toLowerCase(),
+        personaStatus: String(current.store.userPersonaStatus || '').replace(/\s+/g, ' ').trim().slice(0, 80),
+    } });
+    let assistantKnowledgeTokens = null;
+    if (isNeconyanAssistant(character)) {
         assistantKnowledgeTokens = usable ? getAssistantKnowledgeBudget(usable) : FALLBACK_ASSISTANT_KNOWLEDGE_TOKENS;
         const knowledge = await buildAssistantKnowledge({ character, messages: promptMessages, maxTokens: assistantKnowledgeTokens });
         if (knowledge.text) system = `${system}\n\n${knowledge.text}`;

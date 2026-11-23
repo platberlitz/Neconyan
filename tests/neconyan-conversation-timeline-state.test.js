@@ -85,6 +85,7 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/personas
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/prompt.js', () => ({
     buildConversationPromptMessages,
     buildConversationSystemPrompt: () => '',
+    fetchConversationLorebook: async () => null,
     renderConversationAttachments: jest.fn(),
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/render-scheduler.js', () => ({
