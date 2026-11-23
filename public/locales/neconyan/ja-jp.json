@@ -3035,7 +3035,6 @@
   "Run card scripts": "カードスクリプトを実行",
   "Jump to swipe history": "スワイプ履歴へジャンプ",
   "Screenshot message(s)": "メッセージをスクリーンショット",
-  "[data-tooltip]Open checkpoint chat\nShift+Click to replace the existing checkpoint with a new one": "チェックポイント",
   "Checkpoint": "チェックポイント",
   "Edit message": "メッセージを編集",
   "Delete + Add Swipe": "削除 + スワイプを追加",

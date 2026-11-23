@@ -863,7 +863,6 @@
   "Run card scripts": "运行卡片脚本",
   "Jump to swipe history": "跳转到滑动历史",
   "Screenshot message(s)": "截取消息截图",
-  "[data-tooltip]Open checkpoint chat\nShift+Click to replace the existing checkpoint with a new one": "检查点",
   "Checkpoint": "检查点",
   "Edit message": "编辑消息",
   "Delete + Add Swipe": "删除并添加滑动",

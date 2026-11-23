@@ -2442,7 +2442,6 @@
   "Run card scripts": "Exécuter les scripts de carte",
   "Jump to swipe history": "Aller à l'historique des swipes",
   "Screenshot message(s)": "Capturer le(s) message(s)",
-  "[data-tooltip]Open checkpoint chat\nShift+Click to replace the existing checkpoint with a new one": "Point de contrôle",
   "Checkpoint": "Point de contrôle",
   "Edit message": "Modifier le message",
   "Delete + Add Swipe": "Supprimer + ajouter un swipe",
