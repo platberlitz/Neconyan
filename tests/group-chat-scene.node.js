@@ -3,9 +3,15 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 import {
+    GROUP_DIRECTOR_TIMEOUT_DEFAULT_SECONDS,
+    GROUP_DIRECTOR_TIMEOUT_MAX_SECONDS,
+    GROUP_DIRECTOR_TIMEOUT_MIN_SECONDS,
+    GROUP_DIRECTOR_TIMEOUT_MS,
     appendGroupSpeakerStops,
     buildDirectorPrompt,
     buildOwnLinesReminder,
+    getGroupDirectorTimeoutMs,
+    getGroupDirectorTimeoutSeconds,
     getGroupTalkBurstCount,
     getOtherMemberNames,
     isHearReplyTargetEnabled,
@@ -181,4 +187,38 @@ test('a provider limit cut from the full stop list matches asking with that limi
             assert.deepEqual(full.slice(0, limit), appendGroupSpeakerStops(existing.slice(0, limit), names, limit), `${existing.length} stops, limit ${limit}`);
         }
     }
+});
+
+test('scene director timeout defaults to 30 seconds and clamps valid overrides', () => {
+    assert.equal(GROUP_DIRECTOR_TIMEOUT_DEFAULT_SECONDS, 30);
+    assert.equal(GROUP_DIRECTOR_TIMEOUT_MIN_SECONDS, 1);
+    assert.equal(GROUP_DIRECTOR_TIMEOUT_MAX_SECONDS, 300);
+    assert.equal(GROUP_DIRECTOR_TIMEOUT_MS, 30000);
+    assert.equal(getGroupDirectorTimeoutSeconds({}), 30);
+    assert.equal(getGroupDirectorTimeoutSeconds(null), 30);
+    assert.equal(getGroupDirectorTimeoutSeconds({ director_timeout: '' }), 30);
+    assert.equal(getGroupDirectorTimeoutSeconds({ director_timeout: 0 }), 30);
+    assert.equal(getGroupDirectorTimeoutSeconds({ director_timeout: -5 }), 30);
+    assert.equal(getGroupDirectorTimeoutSeconds({ director_timeout: 'abc' }), 30);
+    assert.equal(getGroupDirectorTimeoutSeconds({ director_timeout: 0.4 }), 1);
+    assert.equal(getGroupDirectorTimeoutSeconds({ director_timeout: 1 }), 1);
+    assert.equal(getGroupDirectorTimeoutSeconds({ director_timeout: 45 }), 45);
+    assert.equal(getGroupDirectorTimeoutSeconds({ director_timeout: '12.6' }), 13);
+    assert.equal(getGroupDirectorTimeoutSeconds({ director_timeout: 999 }), 300);
+    assert.equal(getGroupDirectorTimeoutMs({}), 30000);
+    assert.equal(getGroupDirectorTimeoutMs({ director_timeout: 15 }), 15000);
+});
+
+test('scene director timeout is wired into the editor, runtime and server', () => {
+    const groupChats = readFileSync(new URL('../public/scripts/group-chats.js', import.meta.url), 'utf8');
+    const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+    const server = readFileSync(new URL('../src/endpoints/groups.js', import.meta.url), 'utf8');
+    assert.match(html, /id="rm_group_director_timeout_block"/);
+    assert.match(html, /<input id="rm_group_director_timeout" class="text_pole" type="number" min="1" max="300" step="1" value="30"/);
+    assert.match(server, /director_timeout: getGroupDirectorTimeoutSeconds\(body\)/);
+    assert.match(server, /group\.director_timeout = getGroupDirectorTimeoutSeconds\(group\)/);
+    assert.match(groupChats, /getGroupDirectorTimeoutMs\(group\)/);
+    assert.match(groupChats, /function onGroupDirectorTimeoutInput\(/);
+    assert.match(groupChats, /\$\('#rm_group_director_timeout'\)\.on\('change', onGroupDirectorTimeoutInput\);/);
+    assert.match(groupChats, /director_timeout: directorTimeout,/);
 });

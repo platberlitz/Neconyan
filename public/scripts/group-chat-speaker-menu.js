@@ -69,7 +69,7 @@ export async function openGroupSpeakerMenu(avatar) {
     const content = $('<div class="group-speaker-menu"></div>').append($('<h3></h3>').text(name), memoryChoice(avatar));
     const buttons = [];
     if (!away && !muted) {
-        buttons.push({ text: t`Speak now`, result: 5, icon: 'fa-comment-dots' });
+        buttons.push({ text: t`Speak now`, result: 5, icon: 'fa-comment-dots', classes: ['menu_button_primary', 'group-speaker-menu-primary'] });
         if (chat.at(-1) && !chat.at(-1).is_user && !chat.at(-1).is_system && canGroupMemberSee(chat.at(-1), avatar, rules)) {
             buttons.push({ text: t`Regenerate last reply as ${name}`, result: 6, icon: 'fa-rotate' });
         }
@@ -79,7 +79,7 @@ export async function openGroupSpeakerMenu(avatar) {
         { text: away ? t`Bring into the scene` : t`Mark away`, result: 3, icon: away ? 'fa-door-open' : 'fa-door-closed' },
     );
     if (missed && !seesAll) buttons.push({ text: t`Catch up on what was said`, result: 9, icon: 'fa-forward' });
-    if (heardAny && !seesAll) buttons.push({ text: t`Forget everything so far`, result: 10, icon: 'fa-eraser' });
+    if (heardAny && !seesAll) buttons.push({ text: t`Forget everything so far`, result: 10, icon: 'fa-eraser', classes: ['group-speaker-menu-danger'] });
     buttons.push(
         { text: narrator ? t`Use as character` : t`Use as Narrator / GM`, result: 7, icon: 'fa-feather' },
         { text: t`Edit card`, result: 4, icon: 'fa-pen' },

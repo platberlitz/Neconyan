@@ -38,7 +38,7 @@ describe('mobile character drawer top row css', () => {
     test('uses full touch target controls in editor mode', () => {
         const editorRowRule = getRuleBody(mobileStylesCss, '#right-nav-panel:is([data-menu-type="character_edit"], [data-menu-type="create"]) #CharListButtonAndHotSwaps');
         const editorWrapperRule = getRuleBody(mobileStylesCss, '#right-nav-panel:is([data-menu-type="character_edit"], [data-menu-type="create"]) #CharListButtonAndHotSwaps > .flexFlowColumn.flex-container');
-        const editorHotswapRule = getRuleBody(mobileShellCss, '#right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"]) #HotSwapWrapper');
+        const editorHotswapRule = getRuleBody(mobileShellCss, '#right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"], [data-menu-type="group_edit"], [data-menu-type="group_create"]) #HotSwapWrapper');
         const backRule = getRuleBody(mobileStylesCss, '#right-nav-panel:is([data-menu-type="character_edit"], [data-menu-type="create"]) #sb-character-back-to-list');
         const closeRule = getRuleBody(mobileStylesCss, '#right-nav-panel:is([data-menu-type="character_edit"], [data-menu-type="create"]) #sb-character-mobile-close');
 

@@ -119,12 +119,13 @@ import {
     appendGroupSpeakerStops,
     buildDirectorPrompt,
     buildOwnLinesReminder,
+    getGroupDirectorTimeoutMs,
+    getGroupDirectorTimeoutSeconds,
     getGroupTalkBurstCount,
     getOtherMemberNames,
     GROUP_DIRECTOR_MAX_SPEAKERS,
     GROUP_DIRECTOR_RESPONSE_TOKENS,
     GROUP_DIRECTOR_STRATEGY,
-    GROUP_DIRECTOR_TIMEOUT_MS,
     isHearReplyTargetEnabled,
     isKeepOwnLinesEnabled,
     parseDirectorResponse,
@@ -1083,25 +1084,33 @@ let groupDirectorFallbackNoticeChat = '';
  * Tell the user once per chat that the Scene Director did not choose this turn, and why.
  * @param {string} failure 'timeout', 'error' or 'unusable'
  */
-function notifyGroupDirectorFallback(failure) {
+function notifyGroupDirectorFallback(failure, group = null) {
     const chatId = String(getCurrentChatId() || '');
     if (groupDirectorFallbackNoticeChat === chatId) {
         return;
     }
     groupDirectorFallbackNoticeChat = chatId;
-    const seconds = Math.round(GROUP_DIRECTOR_TIMEOUT_MS / 1000);
+    const seconds = getGroupDirectorTimeoutSeconds(group);
+    const timeoutMessage = seconds === 1
+        ? t`The Scene Director took longer than 1 second, so the usual order picked who speaks. A faster connection profile for the director, in the group's settings, helps.`
+        : t`The Scene Director took longer than ${seconds} seconds, so the usual order picked who speaks. A faster connection profile for the director, in the group's settings, helps.`;
     const message = failure === 'timeout'
-        ? t`The Scene Director took longer than ${seconds} seconds, so the usual order picked who speaks. A faster connection profile for the director, in the group's settings, helps.`
+        ? timeoutMessage
         : t`The Scene Director's answer could not be used, so the usual order picked who speaks. Check the director's connection profile in the group's settings.`;
     toastr.warning(message, t`Scene Director`);
 }
 
-function describeGroupDirectorStatus(preview, names) {
+function describeGroupDirectorStatus(preview, names, group = null) {
     if (!preview) {
         return t`Scene Director is on: before each reply it picks who answers.`;
     }
     if (preview.fallback === 'timeout') {
-        return t`Last turn: the Scene Director took longer than ${Math.round(GROUP_DIRECTOR_TIMEOUT_MS / 1000)} seconds, so the usual order picked the speaker.`;
+        const seconds = Number.isFinite(Number(preview.timeoutSeconds))
+            ? Number(preview.timeoutSeconds)
+            : getGroupDirectorTimeoutSeconds(group);
+        return seconds === 1
+            ? t`Last turn: the Scene Director took longer than 1 second, so the usual order picked the speaker.`
+            : t`Last turn: the Scene Director took longer than ${seconds} seconds, so the usual order picked the speaker.`;
     }
     if (preview.fallback) {
         return t`Last turn: the Scene Director's answer could not be used, so the usual order picked the speaker.`;
@@ -1151,7 +1160,7 @@ function updateGroupNextUp(directed = null) {
     $('#group_next_up').text(text).toggleClass('displayNone', !text);
     // The scene panel says what the director did last, so its work is visible without reading the console.
     const isDirector = strategy === group_activation_strategy.DIRECTOR;
-    directorStatus.text(isDirector ? describeGroupDirectorStatus(currentPreview, names) : '').toggleClass('displayNone', !isDirector);
+    directorStatus.text(isDirector ? describeGroupDirectorStatus(currentPreview, names, group) : '').toggleClass('displayNone', !isDirector);
     // Ring the avatars instead of spending a row of the composer on the preview.
     avatarButtons.each(function () {
         const avatar = String($(this).data('avatar') || '');
@@ -2520,8 +2529,8 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
                 }
             } else if (groupDirectorFailure) {
                 directorNote = t`usual order, the Scene Director did not choose`;
-                updateGroupNextUp({ chids: [], reason: '', fallback: groupDirectorFailure });
-                notifyGroupDirectorFallback(groupDirectorFailure);
+                updateGroupNextUp({ chids: [], reason: '', fallback: groupDirectorFailure, timeoutSeconds: getGroupDirectorTimeoutSeconds(group) });
+                notifyGroupDirectorFallback(groupDirectorFailure, group);
             }
         }
 
@@ -2879,13 +2888,14 @@ export async function runGroupSceneDirector(group, members, { signal = null, max
     const controller = new AbortController();
     const stop = () => controller.abort();
     signal?.addEventListener?.('abort', stop, { once: true });
+    const timeoutMs = getGroupDirectorTimeoutMs(group);
     let timer = null;
     const timeout = new Promise(resolve => {
         timer = setTimeout(() => {
             timedOut = true;
             controller.abort();
             resolve(null);
-        }, GROUP_DIRECTOR_TIMEOUT_MS);
+        }, timeoutMs);
     });
 
     try {
@@ -3254,7 +3264,11 @@ async function reorderGroupMember(groupId, groupMember, direction) {
 async function onGroupActivationStrategyInput(e) {
     const strategy = Number(e.target.value);
     const group = openGroupId && groups.find((x) => x.id == openGroupId);
-    syncGroupDirectorProfileBlock(strategy, group ? group.director_profile : $('#rm_group_director_profile').val());
+    syncGroupDirectorProfileBlock(
+        strategy,
+        group ? group.director_profile : $('#rm_group_director_profile').val(),
+        group ? group.director_timeout : $('#rm_group_director_timeout').val(),
+    );
     if (group) {
         group.activation_strategy = strategy;
         await editGroup(openGroupId, false, false);
@@ -3265,6 +3279,16 @@ async function onGroupDirectorProfileInput(e) {
     const group = openGroupId && groups.find((x) => x.id == openGroupId);
     if (group) {
         group.director_profile = String(e.target.value || '');
+        await editGroup(openGroupId, false, false);
+    }
+}
+
+async function onGroupDirectorTimeoutInput(e) {
+    const seconds = getGroupDirectorTimeoutSeconds({ director_timeout: e.target.value });
+    $(e.target).val(seconds);
+    const group = openGroupId && groups.find((x) => x.id == openGroupId);
+    if (group && group.director_timeout !== seconds) {
+        group.director_timeout = seconds;
         await editGroup(openGroupId, false, false);
     }
 }
@@ -3303,9 +3327,11 @@ async function populateGroupDirectorProfiles(selectedId = '') {
     select.val(selected);
 }
 
-function syncGroupDirectorProfileBlock(strategy, profileId = '') {
+function syncGroupDirectorProfileBlock(strategy, profileId = '', timeoutSeconds = undefined) {
     const isDirector = Number(strategy) === group_activation_strategy.DIRECTOR;
     $('#rm_group_director_profile_block').toggleClass('displayNone', !isDirector);
+    $('#rm_group_director_timeout_block').toggleClass('displayNone', !isDirector);
+    $('#rm_group_director_timeout').val(getGroupDirectorTimeoutSeconds({ director_timeout: timeoutSeconds }));
     if (isDirector) {
         void populateGroupDirectorProfiles(profileId);
     }
@@ -3722,7 +3748,7 @@ function select_group_chats(groupId, skipAnimation) {
     $('#rm_group_members_filter').val('').trigger('input');
     $('#rm_group_activation_strategy').val(replyStrategy);
     $(`#rm_group_activation_strategy option[value="${replyStrategy}"]`).prop('selected', true);
-    syncGroupDirectorProfileBlock(replyStrategy, group?.director_profile);
+    syncGroupDirectorProfileBlock(replyStrategy, group?.director_profile, group?.director_timeout);
     $('#rm_group_talk_burst').val(Math.min(8, Math.max(1, Math.round(Number(group?.talk_burst)) || 3)));
     $('#rm_group_generation_mode').val(generationMode);
     $(`#rm_group_generation_mode option[value="${generationMode}"]`).prop('selected', true);
@@ -4098,6 +4124,7 @@ async function createGroup() {
     let activationStrategy = Number($('#rm_group_activation_strategy').find(':selected').val()) ?? group_activation_strategy.NATURAL;
     let generationMode = Number($('#rm_group_generation_mode').find(':selected').val()) ?? group_generation_mode.SWAP;
     const directorProfile = String($('#rm_group_director_profile').val() || '');
+    const directorTimeout = getGroupDirectorTimeoutSeconds({ director_timeout: $('#rm_group_director_timeout').val() });
     const talkBurst = getGroupTalkBurstCount({ talk_burst: $('#rm_group_talk_burst').val() });
     const members = newGroupMembers.filter(onlyUnique);
     if (members.length === 0) {
@@ -4132,6 +4159,7 @@ async function createGroup() {
         hideMutedSprites: hideMutedSprites,
         activation_strategy: activationStrategy,
         director_profile: directorProfile,
+        director_timeout: directorTimeout,
         talk_burst: talkBurst,
         generation_mode: generationMode,
         disabled_members: [],
@@ -4572,6 +4600,7 @@ jQuery(() => {
     });
     $('#rm_group_activation_strategy').on('change', onGroupActivationStrategyInput);
     $('#rm_group_director_profile').on('change', onGroupDirectorProfileInput);
+    $('#rm_group_director_timeout').on('change', onGroupDirectorTimeoutInput);
     $('#rm_group_talk_burst').on('change', onGroupTalkBurstInput);
     $('#rm_group_generation_mode').on('change', onGroupGenerationModeInput);
     $('#rm_group_generation_mode_join_prefix').on('input', onGroupGenerationModeTemplateInput);
