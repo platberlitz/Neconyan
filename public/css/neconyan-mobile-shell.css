@@ -2553,7 +2553,7 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
     #right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"], [data-menu-type="group_edit"], [data-menu-type="group_create"]) #right-nav-panel-tabs {
         position: relative;
         display: grid;
-        grid-template-columns: minmax(0, 1fr) auto var(--sb-mobile-touch-target, 44px);
+        grid-template-columns: minmax(0, 1fr) var(--sb-mobile-touch-target, 44px) var(--sb-mobile-touch-target, 44px);
         grid-template-areas:
             'title fullscreen close'
             'meta meta meta';
@@ -2563,6 +2563,10 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
         padding: 0;
         border: 0;
         background: none;
+    }
+
+    #right-nav-panel.openDrawer:is([data-menu-type="group_edit"], [data-menu-type="group_create"]) #right-nav-panel-tabs {
+        grid-template-columns: minmax(0, 1fr) auto var(--sb-mobile-touch-target, 44px);
     }
 
     #right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"], [data-menu-type="group_edit"], [data-menu-type="group_create"]) #rm_button_selected_ch {
