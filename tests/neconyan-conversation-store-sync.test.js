@@ -51,6 +51,21 @@ describe('conversation store sync merge', () => {
         expect(mergeConversationStore(server, local, saved).characters).toEqual({ alice: server.characters.alice });
     });
 
+    test('a deleted group drops a thread key the page created after its baseline, while a new local group keeps its key', () => {
+        const deleted = { id: 'G1', personaId: '', members: ['A', 'B'], conversation_settings: { auto_character_chat: true } };
+        const added = { id: 'G2', personaId: '', members: ['A', 'C'], conversation_settings: {} };
+        const groupThread = () => thread({ main: branch('main', [message('g', 'History')], 12) });
+        const saved = store({}, { groups: [deleted] });
+        const local = store({
+            'persona:user-default.png:group:G1:A': groupThread(),
+            'group:G2:A': groupThread(),
+        }, { groups: [deleted, added] });
+        const server = store({}, { groups: [] });
+        const merged = mergeConversationStore(server, local, saved);
+        expect(merged.groups.map(group => group.id)).toEqual(['G2']);
+        expect(Object.keys(merged.characters)).toEqual(['group:G2:A']);
+    });
+
     test('a repeated server unread count wins over a stale local clear', () => {
         const wrap = (messages, unread, readThrough) => store({ alice: thread({ main: branch('main', messages, 10, { unread, readThrough }) }) });
         const messages = [message('read', 'Seen'), message('a', 'First')];
