@@ -3588,8 +3588,6 @@ export function updateCharList({ keepGallery = false } = {}) {
     const masterSeedInput = document.getElementById('dc-gradient-master-seed');
     if (masterSeedInput) masterSeedInput.value = settings.gradientRandomMasterSeed || 'Generated on first randomization';
     installCharListDelegation(list);
-    list.setAttribute('role', 'list');
-    list.setAttribute('aria-label', 'Tracked characters');
     const activeElement = document.activeElement;
     const focusedControl = activeElement?.closest?.('.dc-char[data-key] [data-focus-id]');
     const focusState = focusedControl ? {
@@ -4727,7 +4725,7 @@ function buildSettingsPanelHtml() {
                         </div>
                     </details>
                     <small><span id="dc-count">0</span> tracked characters</small>
-                    <div id="dc-char-list" class="dc-char-list"></div>
+                    <div id="dc-char-list" class="dc-char-list" role="list" aria-label="Tracked characters" data-i18n="[aria-label]Tracked characters"></div>
                     <section id="dc-bulk-toolbar" class="dc-bulk-toolbar" aria-label="Selected character actions" hidden>
                         <div class="dc-bulk-toolbar-head">
                             <output id="dc-selection-count" role="status" aria-live="polite">0 selected</output>
