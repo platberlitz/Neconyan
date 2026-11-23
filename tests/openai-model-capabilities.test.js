@@ -6,7 +6,9 @@ import {
     applyClaudeModelParameterConstraints,
     applyGrokModelParameterConstraints,
     applyKimiK3ModelParameterConstraints,
+    getChatCompletionSamplerCapabilities,
     isKimiK3Model,
+    zaiSupportsReasoningEffort,
 } from '../public/scripts/openai-model-capabilities.js';
 
 const openAiSource = fs.readFileSync(fileURLToPath(new URL('../public/scripts/openai.js', import.meta.url)), 'utf8');
@@ -18,7 +20,7 @@ const presetManagerSource = fs.readFileSync(fileURLToPath(new URL('../public/scr
 
 describe('OpenAI-compatible Claude model capabilities', () => {
     test('removes unsupported parameters from provider-prefixed Claude 5 requests', () => {
-        for (const model of ['anthropic/claude-sonnet-5', 'anthropic/claude-opus-5']) {
+        for (const model of ['anthropic/claude-sonnet-5', 'anthropic/claude-opus-5', 'anthropic/claude-opus-5.5', '[anthropic]claude-opus-5-5', 'vertex/claude-opus-5-5@20260601']) {
             const payload = {
                 model,
                 temperature: 0.8,
@@ -66,7 +68,7 @@ describe('OpenAI-compatible Claude model capabilities', () => {
 
 describe('Grok model capabilities', () => {
     test('removes penalty samplers from Grok reasoning model requests', () => {
-        for (const model of ['grok-4.6', 'grok-4.5', 'grok-4-0709', 'grok-code-fast-1', 'grok-3-mini', 'x-ai/Grok-4.6', '[SP]grok-4.6']) {
+        for (const model of ['grok-4.6', 'grok-4.5', 'grok-4-0709', 'grok-code-fast-1', 'grok-3-mini', 'x-ai/Grok-4.6', '[SP]grok-4.6', 'models: 【xai】 - grok-4.5']) {
             const payload = {
                 model,
                 temperature: 0.8,
@@ -88,7 +90,7 @@ describe('Grok model capabilities', () => {
     });
 
     test('leaves payloads for other models unchanged', () => {
-        for (const model of ['grok-3', 'grok-2-vision', 'gpt-5.1', 'claude-sonnet-5', '', undefined]) {
+        for (const model of ['grok-3', 'grok-2-vision', 'gpt-5.1', 'claude-sonnet-5', '[path/grok-4:fast]other-model', '', undefined]) {
             const payload = {
                 model,
                 frequency_penalty: 0.2,
@@ -131,6 +133,7 @@ describe('Kimi K3 model capabilities', () => {
         '[kimi]kimi-k3', '[kimi] kimi-k3', ' [KIMI]KIMI-K3 ',
         '[free][kimi]kimi-k3.1-pro', '[free] moonshotai/kimi-k3.1-pro-highspeed',
         'provider/[kimi]kimi-k3', 'models:[kimi]kimi-k3.1',
+        '[kimi]/kimi-k3', '[kimi] / kimi-k3', '[kimi]-kimi-k3', '【kimi】kimi-k3', 'models:[kimi]kimi-k3',
     ])('recognizes bracket-labelled K3 model %s', model => {
         expect(isKimiK3Model(model)).toBe(true);
     });
@@ -204,4 +207,21 @@ describe('Kimi K3 model capabilities', () => {
         expect(powerUserSource).toMatch(/\$\('\.start-reply-with-input'\)\.on\('input', function \(\) \{/);
         expect(presetManagerSource).toMatch(/\$\('\.start-reply-with-input'\)\.val\(power_user\.user_prompt_bias\);/);
     });
+});
+
+test.each([
+    ['[anthropic]claude-opus-5-5', 'claude-opus-5-5'], ['anthropic:claude-opus-5-5', 'claude-opus-5-5'],
+    ['[kimi]kimi-k3', 'kimi-k3'], ['[kimi] / kimi-k3', 'kimi-k3'], ['models:[kimi]kimi-k3', 'kimi-k3'],
+    ['smol-openai/gpt-5.4', 'gpt-5.4'], ['[openai]/gpt-5.4', 'gpt-5.4'], ['openai:gpt-5.4', 'gpt-5.4'],
+    ['[openai]/gpt-6-astra', 'gpt-6-astra'], ['smol-openai/gpt-6-astra', 'gpt-6-astra'], ['[openai]o3', 'o3'],
+    ['[free]gpt-6.1-sol', 'gpt-6.1-sol'], ['[route/kimi-k3:fast]other-model', 'other-model'],
+    ['[route/claude-opus-5-5:fast]other-model', 'other-model'], ['[o3]gpt-4o', 'gpt-4o'],
+])('gives Custom model %s the sampler controls of %s', (model, unwrapped) => {
+    const capabilities = id => getChatCompletionSamplerCapabilities({ source: 'custom', model: id });
+    expect(capabilities(model).supported).toEqual(capabilities(unwrapped).supported);
+});
+
+test.each(['[zai]glm-5.2', 'models:【zai】-glm-5.3', '[zai] / glm-5.2'])('matches Z.AI reasoning for %s', model => {
+    expect(zaiSupportsReasoningEffort(model)).toBe(true);
+    expect(zaiSupportsReasoningEffort('[route/glm-5.2:fast]glm-5.1')).toBe(false);
 });

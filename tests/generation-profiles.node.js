@@ -45,6 +45,17 @@ function nanoReasoningFixture(t, { metadata = false, preset = false, tier = 'def
         options: { context: { owner: 'tester', directories: fixture.directories }, messages: [{ role: 'user', content: 'Owned reasoning probe.' }], maxTokens: 128 } };
 }
 
+test('Meower inherits Custom documented levels only when the profile is silent', async () => {
+    const { meowerReasoningOverrides } = await import('../public/scripts/extensions/third-party/Neconyan-Hopper/src/core.js');
+    const preset = { reasoning_effort: 'high', custom_reasoning_documented_levels: 'true', stop: ['ROLEPLAY STOP'] };
+    assert.deepEqual(meowerReasoningOverrides({ profile: {}, preset }), {
+        reasoning_effort: 'high', custom_reasoning_documented_levels: 'true',
+    });
+    assert.deepEqual(meowerReasoningOverrides({ effort: 'low', profile: { 'custom-reasoning-documented-levels': 'false' }, preset }), {
+        reasoning_effort: 'low',
+    });
+});
+
 test('existing Meower inheritance reaches final NanoGPT wire bodies for active, profile, preset and omitted effort', async t => {
     const { reasoningOverridesFrom } = await import('../public/scripts/extensions/third-party/Neconyan-Hopper/src/core.js');
     const fixture = nanoReasoningFixture(t, { preset: true });

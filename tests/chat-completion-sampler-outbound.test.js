@@ -847,6 +847,48 @@ describe('Chat Completion sampler wire filtering', () => {
             await expectRefused(await customRequest('smol-alibaba/kimi-k3', 'medium'));
         });
 
+        test.each([
+            ['anthropic/claude-opus-5-5', 'min'], ['[anthropic]claude-opus-5-5', 'min'], ['anthropic/claude-opus-5.5', 'min'],
+            ['anthropic:claude-opus-5-5', 'min'], ['vertex/claude-opus-5-5@20260601', 'min'], ['[kimi]/kimi-k3', 'medium'],
+            ['models:[kimi]kimi-k3', 'medium'], ['[kimi] / kimi-k3', 'medium'],
+        ])('validates %s before dispatch and keeps the wire model ID', async (model, invalidEffort) => {
+            await expectRefused(await customRequest(model, invalidEffort, { custom_reasoning_documented_levels: 'true' }));
+            expect((await customRequest(model, 'high')).status).toBe(200);
+            expect(capturedBody).toMatchObject({ model, reasoning_effort: 'high' });
+            for (const key of ['temperature', 'top_p', 'frequency_penalty', 'presence_penalty']) expect(capturedBody).not.toHaveProperty(key);
+        });
+
+        test.each(['kimi-k3:thinking', 'gpt-6-sol:online', '[kimi-k3]other-model', '[route/kimi-k3:fast]other-model', '[kimi-k3]'])('leaves undocumented levels available for %s', async model => {
+            expect((await customRequest(model, 'medium')).status).toBe(200);
+            expect(capturedBody).toMatchObject({ model, reasoning_effort: 'medium' });
+        });
+
+        test.each([[true, 'on'], [false, 'false']])('passes the coerced Custom toggle %j to preset and wire controls', async (expected, input) => {
+            const active = { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:9/v1',
+                custom_reasoning_param_format: 'openai', custom_reasoning_param_name: 'reasoning_effort' };
+            const model = '[kimi]/kimi-k3';
+            for (const fromActiveSettings of [true, false]) {
+                const toggle = { custom_reasoning_documented_levels: input };
+                const payload = await buildChatPresetPayload(fromActiveSettings ? { ...active, ...toggle } : active, {}, {},
+                    { model, reasoning_effort: 'medium', ...(fromActiveSettings ? {} : toggle) },
+                    async settings => {
+                        expect(getNativeReasoningRoute(settings).customReasoningLevels).toBe(expected);
+                        return { generate_data: { ...settings, model } };
+                    });
+                expect(payload.custom_reasoning_documented_levels).toBe(expected);
+                const response = await request('custom', payload);
+                expect(response.status).toBe(expected ? 400 : 200);
+            }
+        });
+
+        test.each([
+            ['models:【anthropic】-claude-fable-5.1@20260601', 'adaptive'],
+            ['[route/claude-fable-5-1:fast]other-model', 'enabled'],
+        ])('derives the Custom thinking type for %s from the model, not its tags', async (model, type) => {
+            expect((await customRequest(model, 'high', { custom_include_body: 'thinking:\n  type: enabled' })).status).toBe(200);
+            expect(capturedBody.thinking).toEqual({ type });
+        });
+
         test('listed levels are sent under the configured name, and an unlisted None sends nothing', async () => {
             expect((await customRequest('smol-kimi/kimi-k3', 'low')).status).toBe(200);
             expect(capturedBody.reasoning_effort).toBe('low');

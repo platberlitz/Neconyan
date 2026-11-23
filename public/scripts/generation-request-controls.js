@@ -1,5 +1,5 @@
 import { isKimiK3Model } from './openai-model-capabilities.js';
-import { getChatReasoningCapabilities, getNativeReasoningRoute } from './chat-reasoning-capabilities.js';
+import { getChatReasoningCapabilities, getNativeReasoningRoute, stripModelBracketTags } from './chat-reasoning-capabilities.js';
 
 function positiveLimit(value) {
     return Number.isFinite(value) && value > 0 ? Math.max(1, Math.floor(value)) : 0;
@@ -16,7 +16,7 @@ export function requestUsesReasoning(data) {
     if (Array.isArray(data.model)) {
         return data.model.some(model => typeof model === 'string' && requestUsesReasoning({ ...data, model }));
     }
-    const model = String(data.model ?? '').toLowerCase();
+    const model = stripModelBracketTags(data.model).toLowerCase();
     const effort = String(data.reasoning?.effort ?? data.reasoning_effort ?? '').toLowerCase();
     const thinking = data.thinking;
     const thinkingConfig = data.thinkingConfig ?? data.generationConfig?.thinkingConfig;

@@ -13,7 +13,7 @@ export function coerceRequestBoolean(value) {
 
 export function normalizeChatCompletionBooleanFields(payload) {
     if (!payload || typeof payload !== 'object') return;
-    for (const field of ['include_reasoning', 'enable_web_search', 'request_images']) {
+    for (const field of ['include_reasoning', 'enable_web_search', 'request_images', 'custom_reasoning_documented_levels']) {
         if (payload[field] !== undefined) payload[field] = coerceRequestBoolean(payload[field]);
     }
 }
@@ -38,6 +38,7 @@ export function mergeChatPresetSettings(activeSettings, preset) {
         const mapping = settingsToUpdate[key];
         if (mapping) settings[mapping[1]] = value;
     }
+    normalizeChatCompletionBooleanFields(settings);
     return settings;
 }
 
@@ -80,7 +81,7 @@ export async function buildChatPresetPayload(activeSettings, preset, overridePre
         'reverse_proxy', 'proxy_password', 'custom_url', 'vertexai_region', 'zai_endpoint', 'siliconflow_endpoint',
         'minimax_endpoint', 'linkapi_endpoint', 'custom_include_body', 'custom_exclude_body', 'custom_include_headers',
         'reasoning_effort', 'verbosity', 'request_image_resolution', 'request_image_aspect_ratio',
-        'custom_reasoning_param_name', 'custom_reasoning_param_format', 'custom_reasoning_enabled_value', 'custom_reasoning_disabled_value', 'custom_reasoning_documented_levels',
+        'custom_reasoning_param_name', 'custom_reasoning_param_format', 'custom_reasoning_enabled_value', 'custom_reasoning_disabled_value',
     ]) {
         if (overridePayload[field] !== undefined) settings[field] = overridePayload[field];
     }
@@ -89,7 +90,7 @@ export async function buildChatPresetPayload(activeSettings, preset, overridePre
         settings.show_thoughts = overridePayload.include_reasoning;
         if (!settings.show_thoughts) settings.auto_append_reasoning_tags = false;
     }
-    for (const field of ['enable_web_search', 'request_images']) {
+    for (const field of ['enable_web_search', 'request_images', 'custom_reasoning_documented_levels']) {
         if (overridePayload[field] !== undefined) settings[field] = overridePayload[field];
     }
     const { generate_data: payload } = await generate(settings, overridePayload.model, 'quiet', overridePayload.messages);

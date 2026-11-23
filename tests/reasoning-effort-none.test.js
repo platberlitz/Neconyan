@@ -9,6 +9,14 @@ const readSource = (relativePath) => fs.readFileSync(fileURLToPath(new URL(relat
 const indexSource = readSource('../public/index.html');
 
 describe('reasoning effort \'none\'', () => {
+    test.each(['openai/gpt-5.4', 'smol-openai/gpt-5.4', '[openai]/gpt-5.4', '[free]gpt-5.4', 'openai:gpt-5.4', 'openai/gpt-5.10'])('keeps legacy Custom None for %s', model => {
+        const settings = { chat_completion_source: 'custom', custom_reasoning_documented_levels: false, reasoning_effort: 'none' };
+        expect(resolveChatReasoningEffort(settings, model)).toBe('none');
+    });
+
+    test.each(['[gpt-5.4]gpt-4o', 'openai/not-gpt-5.4', 'openai/gpt-5.4fake', 'openai/gpt-5', 'openai/gpt-5.0'])('does not mistake %s for GPT-5.1+ on Custom', model => {
+        expect(resolveChatReasoningEffort({ chat_completion_source: 'custom', reasoning_effort: 'none' }, model)).toBeUndefined();
+    });
     test('the client suppresses native invalid None and preserves legacy OpenAI-style behaviour', () => {
         // Unknown and proxy-style
         // routes keep their previous None handling. GPT-5.1 accepts the literal value.

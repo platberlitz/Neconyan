@@ -181,10 +181,15 @@ for (const phone of [false, true]) {
     });
 
     test(`${viewport} Meower settings persist a local effort without mutating the connection`, async ({ app }) => {
-        const account = await app.account({ phone, configureSettings(saved) {
-            Object.assign(saved.extension_settings.connectionManager.profiles[0], { 'reasoning-effort': 'low', 'custom-reasoning-param-format': 'openai', 'custom-reasoning-param-name': 'reasoning_effort' });
+        const model = 'models:[anthropic]claude-opus-5.5';
+        const account = await app.account({ phone, seedConversation: false, configureSettings(saved) {
+            Object.assign(saved.extension_settings.connectionManager.profiles[0], { model, 'reasoning-effort': 'low',
+                'custom-reasoning-param-format': 'openai', 'custom-reasoning-param-name': 'reasoning_effort', 'custom-reasoning-documented-levels': 'true' });
             saved.oai_settings.reasoning_effort = 'xhigh';
+            saved.oai_settings.custom_reasoning_documented_levels = false;
         } });
+        const consoleErrors = [];
+        account.context.on('console', message => { if (message.type() === 'error') consoleErrors.push(`${message.location().url}: ${message.text()}`); });
         await seed(account);
         app.provider.mode.reply = { choices: [{ message: { content: JSON.stringify({ posts: [], interactions: [], strangers: [], follows: [], trends: [] }) } }] };
         const page = await openMeower(account);
@@ -197,9 +202,13 @@ for (const phone of [false, true]) {
             await page.locator('.sbtw-shell').getByText('Reply budget (tokens)', { exact: true }).scrollIntoViewIfNeeded();
             await page.screenshot({ path: new URL(`../screenshots/meower-reasoning-settings-${viewport}-before.png`, import.meta.url).pathname });
         }
-        await page.locator('.sbtw-shell').getByRole('combobox', { name: 'Reasoning effort', exact: true }).selectOption('xhigh');
-        await expect(page.locator('.sbtw-shell').getByRole('combobox', { name: 'Reasoning effort', exact: true })).toHaveValue('xhigh');
-        const betweenEffortAndBudget = await page.locator('.sbtw-shell').getByRole('combobox', { name: 'Reasoning effort', exact: true }).evaluate(select => {
+        const effort = page.locator('.sbtw-shell').getByRole('combobox', { name: 'Reasoning effort', exact: true });
+        // The picker renders this control inside a label; assert the native option property directly.
+        await expect(effort.locator('option[value="min"]')).toHaveJSProperty('disabled', true);
+        await expect(effort.locator('option[value="xhigh"]')).toHaveJSProperty('disabled', false);
+        await effort.selectOption('xhigh');
+        await expect(effort).toHaveValue('xhigh');
+        const betweenEffortAndBudget = await effort.evaluate(select => {
             let sibling = select.closest('.sbtw-field').nextSibling;
             let text = '';
             while (sibling) {
@@ -219,6 +228,7 @@ for (const phone of [false, true]) {
         const job = await accepted(page, '/api/meower/refresh/submit', () => page.getByRole('button', { name: 'Refresh timeline', exact: true }).click());
         await account.settled(job.id);
         expect(app.provider.calls).toHaveLength(1);
+        expect(app.provider.calls[0].body.model).toBe(model);
         expect(app.provider.calls[0].body.reasoning_effort).toBe('xhigh');
         expect(app.provider.calls[0].max_tokens).toBe(32768);
         expect((await readStore(account)).settings.reasoningEffort).toBe('xhigh');
@@ -230,6 +240,8 @@ for (const phone of [false, true]) {
         await reopened.locator('.sbtw-shell').getByRole('button', { name: 'Settings', exact: true }).click();
         await reopened.locator('.sbtw-shell').getByText('Generation', { exact: true }).click();
         await expect(reopened.locator('.sbtw-shell').getByRole('combobox', { name: 'Reasoning effort', exact: true })).toHaveValue('xhigh');
+        expect(consoleErrors).toEqual([]);
+        expect(app.navigationErrors).toEqual([]);
     });
 
     test(`${viewport} Meower wraps a 500-character operation refusal after the toast expires`, async ({ app }) => {

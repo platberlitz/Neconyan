@@ -187,10 +187,11 @@ describe('Kimi K3 chat completion requests', () => {
         expectFixedParametersOmitted();
     });
 
-    test('sends a plain smol-alibaba K3 prefill as partial without stock reasoning', async () => {
-        const response = await makeRequest(CHAT_COMPLETION_SOURCES.CUSTOM, { model: 'smol-alibaba/kimi-k3' });
+    test.each(['smol-alibaba/kimi-k3', '【free】-smol-alibaba/ [kimi]kimi-k3'])('sends a plain %s prefill as partial without stock reasoning', async model => {
+        const response = await makeRequest(CHAT_COMPLETION_SOURCES.CUSTOM, { model });
 
         expect(response.status).toBe(200);
+        expect(capturedBody.model).toBe(model);
         expect(capturedBody.messages.at(-1)).toEqual({ role: 'assistant', content: 'Prefill', partial: true });
     });
 

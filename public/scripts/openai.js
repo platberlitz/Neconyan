@@ -64,6 +64,7 @@ import { getEventSourceStream } from './sse-stream.js';
 import { fetchResumable } from './resumable-generation.js';
 import { applyGenerationRequestControls, isGenerationLengthFinish } from './generation-request-controls.js';
 import { createChatGenerationParameters } from './chat-provider-parameters.js';
+import { coerceRequestBoolean } from './chat-preset-request.js';
 import { settingsToUpdate } from './chat-preset-mapping.js';
 export { settingsToUpdate } from './chat-preset-mapping.js';
 import {
@@ -6821,6 +6822,9 @@ export class ChatCompletion {
  */
 function migrateChatCompletionSettings(settings) {
     migrateNanoGptProviderSettings(settings);
+    if (settings.custom_reasoning_documented_levels !== undefined) {
+        settings.custom_reasoning_documented_levels = coerceRequestBoolean(settings.custom_reasoning_documented_levels);
+    }
     const migrateMap = [
         { oldKey: 'group_nudge_prompt', oldValue: legacy_group_nudge_prompt, newKey: 'group_nudge_prompt', newValue: default_group_nudge_prompt },
         { oldKey: 'names_in_completion', oldValue: true, newKey: 'names_behavior', newValue: character_names_behavior.COMPLETION },

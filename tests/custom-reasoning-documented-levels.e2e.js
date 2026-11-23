@@ -8,7 +8,7 @@ import { dismissOnboardingIfPresent, dismissOpenDialogIfPresent } from './chat-s
 const test = disposableTest.extend({
     baseURL: async ({ app }, use) => use(app.url),
     page: async ({ app, viewport, hasTouch }, use) => {
-        const account = await app.account({ phone: hasTouch, configureSettings(saved) {
+        const account = await app.account({ phone: hasTouch, seedConversation: false, configureSettings(saved) {
             saved.extension_settings.lockedExtensionsUnlockApplied = true;
             saved.extension_settings.disabledExtensions.push('in-chat-agents', 'guided-generations', 'quick-image-gen');
             saved.power_user.reply_generation_location = 'browser';
@@ -41,12 +41,15 @@ const savedProfile = {
     'custom-reasoning-documented-levels': 'true', exclude: [],
 };
 
-async function prepare(page, baseURL, { model = 'smol-kimi/kimi-k3', effort = 'auto', format = 'openai', name = 'reasoning_effort', levels = false, seedProfile = null } = {}) {
+const generatePath = '/api/backends/chat-completions/generate';
+
+async function prepare(page, baseURL, { model = 'smol-kimi/kimi-k3', effort = 'auto', format = 'openai', name = 'reasoning_effort', levels = false, seedProfile = null, live = false } = {}) {
     const origin = new URL(baseURL).origin;
     expect(['127.0.0.1', 'localhost', '[::1]']).toContain(new URL(baseURL).hostname);
     await page.context().route('**/*', async route => {
         const url = new URL(route.request().url());
         if (url.origin !== origin) return route.abort();
+        if (live) return route.continue();
         if (seedProfile && url.pathname === '/api/settings/get') {
             const response = await route.fetch();
             const envelope = await response.json();
@@ -68,12 +71,12 @@ async function prepare(page, baseURL, { model = 'smol-kimi/kimi-k3', effort = 'a
     });
     await page.goto(baseURL, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !document.getElementById('preloader'), null, { timeout: 60000 });
-    await page.waitForFunction(async () => (await import('/script.js')).settingsReady || document.querySelector('dialog[open] .onboarding'));
+    await expect.poll(() => page.evaluate(async () => Boolean((await import('/script.js')).settingsReady || document.querySelector('dialog[open] .onboarding'))), { timeout: 60000 }).toBe(true);
     await dismissOnboardingIfPresent(page);
     const welcomeSave = page.locator('dialog[open]:has(.onboarding) .popup-button-ok');
     if (await welcomeSave.isVisible()) await welcomeSave.click();
     await dismissOpenDialogIfPresent(page);
-    await page.waitForFunction(async () => (await import('/script.js')).settingsReady);
+    await expect.poll(() => page.evaluate(async () => (await import('/script.js')).settingsReady), { timeout: 60000 }).toBe(true);
     await expect(page.locator('body')).toHaveClass(/neconyan-rail-ready/, { timeout: 60000 });
     const tour = page.locator('#neconyan-tour-coachmark');
     if (await tour.isVisible()) await tour.locator('[data-tour-coach-skip]').click();
@@ -261,7 +264,7 @@ for (const mobile of [false, true]) {
             await waitForSettingsSaveWindow(page);
             await page.reload({ waitUntil: 'domcontentloaded' });
             await page.waitForFunction(() => !document.getElementById('preloader'), null, { timeout: 60000 });
-            await page.waitForFunction(async () => (await import('/script.js')).settingsReady);
+            await expect.poll(() => page.evaluate(async () => (await import('/script.js')).settingsReady), { timeout: 60000 }).toBe(true);
             await openConnections(page);
             await page.locator('#chat_completion_source').selectOption('custom');
             await expect(page.locator('#custom_reasoning_documented_levels')).toBeChecked();
@@ -272,11 +275,79 @@ for (const mobile of [false, true]) {
             const select = await openEffortSelect(page);
             expect(await optionState(select, ['auto', 'none', 'low', 'medium', 'high', 'max'])).toEqual({
                 auto: false, none: false, low: false, medium: true, high: false, max: false });
-            await openConnections(page);
-            await setModel(page, 'smol-alibaba/cmaas-qwen3.8-flash');
-            await openEffortSelect(page);
-            for (const value of ['auto', 'none', 'min', 'low', 'medium', 'high', 'xhigh', 'max']) await expect(select.locator(`option[value="${value}"]`)).toBeEnabled();
+            for (const unknown of ['smol-alibaba/cmaas-qwen3.8-flash', 'gpt-6-sol:online', 'kimi-k3:thinking',
+                'claude-opus-5.5-lite', 'kimi-k3-pro', '[kimi-k3]other-model', '[kimi-k3]']) {
+                await openConnections(page);
+                await setModel(page, unknown);
+                await openEffortSelect(page);
+                await expectEveryOptionEnabled(select);
+            }
         });
+
+        for (const [canonical, variants, unavailable, labels] of [
+            ['claude-opus-5-5', ['anthropic/claude-opus-5-5', '[anthropic]claude-opus-5-5', 'anthropic/claude-opus-5.5', 'anthropic:claude-opus-5-5'],
+                'min', ['Auto', 'None', 'Low', 'Medium', 'High', 'Extra High', 'Maximum']],
+            ['kimi-k3', ['[kimi]/kimi-k3', '[kimi] / kimi-k3'], 'medium', ['Auto', 'None', 'Low', 'High', 'Maximum']],
+        ]) {
+            test(`${canonical} prefixed models use maker controls and keep the exact outbound ID`, async ({ page, baseURL, app }, testInfo) => {
+                const errors = [];
+                page.on('pageerror', error => errors.push(String(error)));
+                page.on('console', message => { if (message.type() === 'error') errors.push(`${message.location().url}: ${message.text()}`); });
+                await prepare(page, baseURL, { levels: 'true', live: true });
+                await expect(page.locator('#custom_reasoning_documented_levels')).toBeChecked();
+                await page.locator('#api_button_openai').click();
+                const headers = await page.evaluate(async () => (await import('/script.js')).getRequestHeaders());
+                const button = page.locator('#sb-reasoning-effort-button');
+                const picker = page.locator('#sb-reasoning-effort-picker');
+                const high = picker.getByRole('option', { name: 'High', exact: true });
+                const inspect = async model => {
+                    await openConnections(page);
+                    await setModel(page, model);
+                    const select = await openEffortSelect(page);
+                    await expect(select.locator(`option[value="${unavailable}"]`)).toBeDisabled();
+                    await expect(select.locator('option[value="high"]')).toBeEnabled();
+                    await select.selectOption('high');
+                    await page.evaluate(() => window.NeconyanShell.openTab('left', 'sampling'));
+                    await expect(page.locator('#sb-sampling-openai')).toBeVisible();
+                    for (const key of ['temp', 'top_p', 'freq_pen', 'pres_pen']) await expect(page.locator(`#${key}_openai`)).toBeHidden();
+                    await page.locator('#left-nav-panel .sb-shell-close').click();
+                    await button.click();
+                    await expect(picker.getByRole('option')).toHaveText(labels);
+                    await expect(high).toHaveAttribute('aria-selected', 'true');
+                    const dimensions = async locator => {
+                        const { width, height } = await locator.boundingBox();
+                        return [Math.round(width), Math.round(height)];
+                    };
+                    return { picker: await dimensions(picker), button: await dimensions(button), composer: await dimensions(page.locator('#send_textarea')) };
+                };
+                const canonicalLayout = await inspect(canonical);
+                await high.click();
+                for (const model of variants) {
+                    await test.step(model, async () => {
+                        expect(await inspect(model)).toEqual(canonicalLayout);
+                        await shot(page, testInfo, size, model.replace(/[^a-z0-9.-]/gi, '_'), picker);
+                        await high.click();
+                        const sent = page.waitForResponse(response => new URL(response.url()).pathname === generatePath);
+                        await page.locator('#send_textarea').fill(`Check ${model}`);
+                        await page.locator('#send_but').click();
+                        const response = await sent;
+                        expect(response.status()).toBe(200);
+                        expect(response.request().postDataJSON()).toMatchObject({ model, reasoning_effort: 'high', custom_reasoning_documented_levels: true });
+                        await expect.poll(() => app.provider.calls.filter(call => call.model === model).at(-1)?.body).toMatchObject({ model, reasoning_effort: 'high' });
+                        const last = app.provider.calls.filter(call => call.model === model).at(-1).body;
+                        for (const sampler of ['temperature', 'top_p', 'frequency_penalty', 'presence_penalty']) expect(last).not.toHaveProperty(sampler);
+                        const calls = app.provider.calls.length;
+                        const refused = await page.request.post(baseURL + generatePath, { headers, data: { ...response.request().postDataJSON(), reasoning_effort: unavailable } });
+                        expect(refused.status()).toBe(400);
+                        expect((await refused.json()).error.code).toBe('UNSUPPORTED_REASONING_EFFORT');
+                        expect(app.provider.calls).toHaveLength(calls);
+                        await expect(page.locator('#chat > .mes[is_user="false"] .mes_text').last()).toContainText('Durable first reply.');
+                        await expect(page.locator('body')).not.toHaveAttribute('data-generating', /.+/);
+                    });
+                }
+                expect(errors).toEqual([]);
+            });
+        }
 
         test('a saved alias shows as unavailable and names the level it acts as', async ({ page, baseURL }, testInfo) => {
             await prepare(page, baseURL, { model: 'qwen3.8-max', effort: 'high', levels: true });
