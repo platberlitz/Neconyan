@@ -270,7 +270,11 @@ test('Lorebooks and Personas preserve edits, controls, and narrow layouts', asyn
                     expect(tabs[0]).toBe(tabs[1]);
                 }
             } else {
-                await expect(page.locator('#world_info_pagination')).toBeHidden();
+                // The pager stays visible on a single page so the page-size picker is reachable.
+                const pager = page.locator('#world_info_pagination');
+                await expect(pager).toBeVisible();
+                await expect(pager.locator('.paginationjs-nav')).toHaveText('1-2 .. 2');
+                await expect(pager.locator('select')).toBeVisible();
                 await expect(page.locator('#WIEntryHeaderTitlesPC')).toHaveCount(0);
                 if (width === 1280) expect(layout.list.right).toBeLessThanOrEqual(layout.editor.left);
                 expect(layout.actions.length).toBeGreaterThan(0);

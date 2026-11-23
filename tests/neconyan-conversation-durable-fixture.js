@@ -73,7 +73,10 @@ export const test = base.extend({
         const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'conversation-libraries-'));
         try {
             // Seed a previously compiled bundle on slow hosts; the server still checks its input-derived cache key.
-            if (process.env.NECONYAN_TEST_LIBRARY_CACHE) await fs.cp(process.env.NECONYAN_TEST_LIBRARY_CACHE, directory, { recursive: true });
+            // The checkout's own data root is warm after the release server preparer loads it, so a cold worker in CI
+            // does not spend the fixture's whole readiness wait compiling the same libraries again.
+            const source = process.env.NECONYAN_TEST_LIBRARY_CACHE || path.join(root, 'data', '_webpack');
+            if (await fs.stat(source).then(stat => stat.isDirectory()).catch(() => false)) await fs.cp(source, directory, { recursive: true });
             await use(directory);
         }
         finally { await fs.rm(directory, { recursive: true, force: true }); }

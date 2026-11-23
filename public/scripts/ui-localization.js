@@ -11,6 +11,7 @@ const userText = [
     '.sb-user-names',
     '#an_chara_name', '#extension_floating_chara_editing', '.group_select_block_list', '.select_chat_block_filename', '.sb-chat-file-title', '.scratchpad-source',
     '.sbca-filename', '.sbca-owner', '.sbca-owner-choice-name', '.an-note-name', '.neconyan-lorebook-book-name',
+    '.neconyan-folder-tab', '.neconyan-folder-tabs-current',
 ].join(',');
 const attributes = ['title', 'placeholder', 'aria-label'];
 const nonEmptyDictionaries = new WeakSet();

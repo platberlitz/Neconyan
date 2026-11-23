@@ -13,6 +13,24 @@ export function cloneConversationValue(value) {
     return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 }
 
+const PERSONA_THREAD_PREFIX = 'persona:';
+const GROUP_THREAD_PREFIX = 'group:';
+
+/** The group a thread key belongs to, '' for a solo key. Kept dependency-free so the merge stays pure. */
+function groupIdFromThreadKey(key) {
+    let value = String(key || '');
+    if (value.startsWith(PERSONA_THREAD_PREFIX)) {
+        const rest = value.slice(PERSONA_THREAD_PREFIX.length);
+        const separator = rest.indexOf(':');
+        if (separator < 0) return '';
+        value = rest.slice(separator + 1);
+    }
+    if (!value.startsWith(GROUP_THREAD_PREFIX)) return '';
+    const rest = value.slice(GROUP_THREAD_PREFIX.length);
+    const separator = rest.indexOf(':');
+    return separator < 0 ? '' : rest.slice(0, separator);
+}
+
 function canonicalConversationValue(value) {
     if (Array.isArray(value)) {
         return value.map(canonicalConversationValue);
@@ -431,6 +449,16 @@ export function mergeConversationStore(serverStore, localStore, savedStore) {
         }
         if (!conversationValuesEqual(localValue, serverValue)) {
             return null;
+        }
+    }
+    // A stale page can hold a group thread key its baseline never recorded. Once
+    // the reconciled group records no longer name that group, the key is orphaned.
+    const survivingGroupIds = new Set((Array.isArray(merged.groups) ? merged.groups : [])
+        .map(group => String(group?.id || '')).filter(Boolean));
+    if (isPlainConversationObject(merged.characters)) {
+        for (const key of Object.keys(merged.characters)) {
+            const groupId = groupIdFromThreadKey(key);
+            if (groupId && !survivingGroupIds.has(groupId)) delete merged.characters[key];
         }
     }
     return merged;
