@@ -8,7 +8,7 @@ import {
     loadRoleplayChat,
     saveMetadata,
     saveRoleplayChatRequest,
-    saveSettingsDebounced,
+    saveSettings,
     this_chid,
 } from '../script.js';
 import { selected_group } from './group-chats.js';
@@ -39,6 +39,7 @@ function isOpenChat(item) {
 async function rewriteOpenChat(from, to) {
     const { changed, value } = rewriteChatLorebook(chat_metadata, from, to);
     if (!changed) return 0;
+    const previous = chat_metadata[METADATA_KEY];
     const generation = getChatGeneration();
     if (value === null) {
         delete chat_metadata[METADATA_KEY];
@@ -46,16 +47,36 @@ async function rewriteOpenChat(from, to) {
     } else {
         chat_metadata[METADATA_KEY] = value;
     }
-    if (generation !== getChatGeneration()) throw new Error(t`The chat changed while its lorebook link was updated.`);
-    if (await saveMetadata() === false) throw new Error(t`The chat could not be saved.`);
+    const restore = () => {
+        if (generation !== getChatGeneration()) return;
+        chat_metadata[METADATA_KEY] = previous;
+        $('.chat_lorebook_button').toggleClass('world_set', Boolean(previous));
+    };
+    try {
+        if (await saveMetadata() === false) {
+            restore();
+            throw new Error(t`The chat could not be saved.`);
+        }
+    } catch (error) {
+        restore();
+        throw error;
+    }
     return 1;
 }
 
-function rewriteExtraBooks(from, to) {
-    const { charLore, cards } = rewriteCharLore(world_info.charLore, from, to);
+async function rewriteExtraBooks(from, to) {
+    const previous = world_info.charLore;
+    const { charLore, cards } = rewriteCharLore(previous, from, to);
     if (!cards.length) return 0;
     Object.assign(world_info, { charLore });
-    saveSettingsDebounced();
+    try {
+        if (!await saveSettings(0, { returnResult: true })) {
+            throw new Error(t`Settings could not be saved.`);
+        }
+    } catch (error) {
+        if (world_info.charLore === charLore) Object.assign(world_info, { charLore: previous });
+        throw error;
+    }
     return cards.length;
 }
 
@@ -108,10 +129,12 @@ async function rewriteClosedChat(item, from, to) {
     return 1;
 }
 
-async function closedChatSteps(from, to) {
+async function closedChatSteps(from, to, handledOpenGeneration) {
     const steps = [];
     for (const item of await listChats()) {
         if (!item?.file_id || !(item.avatar || item.group) || !rewriteChatLorebook(item.chat_metadata, from, to).changed) continue;
+        // Step 1 already tried the chat that was open when cleanup started; do not retry or report it twice.
+        if (isOpenChat(item) && getChatGeneration() === handledOpenGeneration) continue;
         const where = item.group ? t`group chat ${item.file_id}` : t`chat ${item.file_id} of ${characters.find(card => card?.avatar === item.avatar)?.name ?? item.avatar}`;
         steps.push({
             label: where,
@@ -167,14 +190,15 @@ function reportFailures(from, to, failed) {
  * @returns {Promise<{ moved: number, failed: Array<{ label: string, reason: string }> }>}
  */
 export async function rewriteLorebookLinks(from, to = null) {
+    const initialChatGeneration = getChatGeneration();
     const steps = [
         { label: t`this chat`, run: () => rewriteOpenChat(from, to) },
-        { label: t`extra lorebooks of characters`, run: async () => rewriteExtraBooks(from, to) },
+        { label: t`extra lorebooks of characters`, run: () => rewriteExtraBooks(from, to) },
         ...planCardLinkRewrites(characters, from, to).map(plan => ({ label: plan.owner || plan.avatar, run: () => rewriteCard(plan) })),
     ];
     const cardsAndSettings = await runLorebookLinkSteps(steps);
     let chatSteps = [];
-    const chatListing = await runLorebookLinkSteps([{ label: t`the list of chats`, run: async () => { chatSteps = await closedChatSteps(from, to); } }]);
+    const chatListing = await runLorebookLinkSteps([{ label: t`the list of chats`, run: async () => { chatSteps = await closedChatSteps(from, to, initialChatGeneration); } }]);
     const chats = await runLorebookLinkSteps(chatSteps);
     const conversation = await runLorebookLinkSteps([{ label: t`Conversation lorebook overrides`, run: () => rewriteConversation(from, to) }]);
     const results = [cardsAndSettings, chatListing, chats, conversation];

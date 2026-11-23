@@ -437,5 +437,60 @@ for (const device of ['desktop', 'phone']) {
             await expect(notices(reopened)).toHaveCount(1, { timeout: 20000 });
             await expect(notices(reopened)).toContainText('\'Target Book\' is the main lorebook of Main Mia.');
         });
+
+        test(`a failed open card, open chat or extra-lorebook save keeps its link and reports once (${device})`, async ({ app }) => {
+            test.setTimeout(240000);
+            const account = await app.account({ phone });
+            let page = await account.open({ workspace: false });
+            await book(account, TARGET, { 0: entry('Target lore.') });
+            const cards = {
+                mia: await card(account, 'Main Mia', TARGET),
+                ed: await card(account, 'Extra Ed'),
+                pat: await card(account, 'Plain Pat', TARGET),
+            };
+            await select(page, cards.mia);
+            await setChatBook(page, TARGET);
+            const chats = { mia: { group: false, avatar: cards.mia, chat: await chatId(page) } };
+            await setExtras(page, cards.ed, [TARGET]);
+            await page.waitForTimeout(2500);
+            await page.close();
+            page = await account.open({ workspace: false });
+            await select(page, cards.mia);
+
+            await page.route('**/api/characters/merge-attributes', async route => {
+                if (route.request().postData()?.includes(cards.mia)) await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ message: 'The disk is full.' }) });
+                else await route.continue();
+            });
+            await page.route(/\/api\/chats\/(save|patch)$/, route => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'Chat disk full.' }) }));
+            await page.route('**/api/settings/save', route => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'Settings disk full.' }) }));
+
+            await openBook(page, TARGET);
+            await removeBook(page);
+            const failure = page.locator('.toast-error').filter({ hasText: 'Lorebook links not fully updated' });
+            await expect(failure).toHaveCount(1, { timeout: 30000 });
+            await expect(failure.locator('li')).toHaveCount(3);
+            await expect(failure).toContainText('this chat: The chat could not be saved.');
+            await expect(failure).toContainText('extra lorebooks of characters: Settings could not be saved.');
+            await expect(failure).toContainText('Main Mia: The disk is full.');
+            await expect(failure).not.toContainText('Plain Pat');
+
+            const memory = await page.evaluate(async edKey => {
+                const world = await import('/scripts/world-info.js');
+                const context = window.SillyTavern.getContext();
+                return {
+                    openCardField: window.document.getElementById('character_world')?.value ?? '',
+                    openChatBook: context.chatMetadata?.world_info ?? '',
+                    edExtras: world.world_info.charLore?.find(item => item.name === edKey)?.extraBooks ?? [],
+                };
+            }, cards.ed.replace(/\.[^.]+$/, ''));
+            expect(memory.openCardField, 'the open card editor keeps its link when the card save failed').toBe(TARGET);
+            expect(memory.openChatBook, 'the open chat restores its link when the chat save failed').toBe(TARGET);
+            expect(memory.edExtras, 'extra lorebooks restore their links when settings save failed').toEqual([TARGET]);
+
+            const disk = await readDisk(account, { cards, chats });
+            expect(disk.mains, 'other cards still finish while the failed one stays linked').toEqual({ mia: TARGET, ed: '', pat: '' });
+            expect(disk.chats, 'the failed open chat stays linked on disk').toEqual({ mia: TARGET });
+            expect(disk.extras[cards.ed.replace(/\.[^.]+$/, '')], 'the failed extra lorebooks stay linked on disk').toEqual([TARGET]);
+        });
     });
 }

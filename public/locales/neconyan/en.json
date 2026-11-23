@@ -24922,7 +24922,7 @@
   "Auxiliary Lorebook links have been updated. Would you like to update primary lorebook links for ${0} character(s) as well?": "Auxiliary Lorebook links have been updated. Would you like to update primary lorebook links for ${0} character(s) as well?",
   "Missing lorebook links": "Missing lorebook links",
   "These lorebooks are linked here but could not be found, so nothing is loaded from them. Nothing has been changed.": "These lorebooks are linked here but could not be found, so nothing is loaded from them. Nothing has been changed.",
-  "The chat changed while its lorebook link was updated.": "The chat changed while its lorebook link was updated.",
+  "Settings could not be saved.": "Settings could not be saved.",
   "The chat could not be saved.": "The chat could not be saved.",
   "The server answered ${0}.": "The server answered ${0}.",
   "The chat list was not readable.": "The chat list was not readable.",

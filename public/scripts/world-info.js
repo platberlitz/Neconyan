@@ -2852,15 +2852,7 @@ async function displayWorldEntries(name, data, navigation = navigation_option.no
             return;
         }
 
-        if (world_info.charLore) {
-            world_info.charLore = world_info.charLore
-                .map(charLore => ({ ...charLore, extraBooks: charLore.extraBooks?.filter(book => book !== name) ?? [] }))
-                .filter(charLore => charLore.extraBooks.length > 0);
-
-            saveSettingsDebounced();
-        }
-
-        // Selected world_info automatically refreshes
+        // Selected world_info and character extra lorebooks are reconciled inside deleteWorldInfo after the server accepts the delete.
         await deleteWorldInfo(name);
     });
 
@@ -5499,6 +5491,9 @@ async function unlinkDeletedWorldInfo(name) {
 function syncOpenCardLorebookField(oldName, newName) {
     const field = $('#character_world');
     if (!linkPointsAt(field.val(), oldName)) return;
+    if (menu_type !== 'create' && this_chid !== undefined && linkPointsAt(characters[this_chid]?.data?.extensions?.world, oldName)) {
+        return;
+    }
     field.val(newName ?? '');
     setWorldInfoButtonClass(undefined, Boolean(newName));
 }
