@@ -5,16 +5,61 @@ import { test } from './neconyan-conversation-durable-fixture.js';
 const android = 'Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/AP1A; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/130.0.0.0 Mobile Safari/537.36';
 const books = ['Aster harbour', 'Birch forest', 'Cedar village'];
 
-async function openPicker(page, avatar) {
+async function capturePickerScreenshot(page, device) {
+    if (process.env.NECONYAN_QUICK_FIX_SCREENSHOTS) {
+        await page.screenshot({ path: `${process.env.NECONYAN_QUICK_FIX_SCREENSHOTS}/extra-lorebook-${device}.png` });
+    }
+}
+
+async function openPicker(page, avatar, editLabel = 'Edit Durable Nova') {
     await page.evaluate(async target => {
         const context = window.SillyTavern.getContext();
         const id = context.characters.findIndex(character => character.avatar === target);
         await context.selectCharacterById(id);
         window.NeconyanShell.openTab('characters', 'characters');
     }, avatar);
-    await page.getByRole('button', { name: 'Edit Durable Nova', exact: true }).click();
-    await page.locator('#char-management-dropdown').selectOption({ label: 'Link to Lorebook' });
+    await page.getByRole('button', { name: editLabel, exact: true }).click();
+    await page.locator('#char-management-dropdown').selectOption(await page.locator('#set_character_world').elementHandle());
     await expect(page.locator('dialog[open] .character_world')).toBeVisible();
+}
+
+for (const device of ['phone', 'desktop']) {
+    test(`additional lorebook keeps its chosen name in Portuguese on ${device}`, async ({ app }) => {
+        test.setTimeout(120000);
+        const account = await app.account({ phone: device === 'phone' });
+        await account.context.addInitScript(() => window.localStorage.setItem('language', 'pt-pt'));
+        for (const name of ['Aster harbour', 'Default']) await account.post('/api/worldinfo/edit', { name, data: { entries: {} } });
+        const page = await account.open({ workspace: false });
+        await expect(page.locator('html')).toHaveAttribute('lang', 'pt-pt');
+        await openPicker(page, account.avatar, 'Editar Durable Nova');
+        const dialog = page.locator('dialog[open]');
+        const select = dialog.locator('.character_extra_world_info_selector');
+        const option = select.locator('option[value="1"]');
+        const trigger = dialog.locator('.sb-select-picker-button');
+        await expect(dialog.locator('[data-i18n="Additional Lorebooks"]')).toHaveText('Lorebooks adicionais');
+        await trigger.click();
+        const row = dialog.locator('.sb-chat-picker-row').last();
+        await capturePickerScreenshot(page, device);
+        await expect(option).toHaveJSProperty('label', 'Default');
+        await expect(row).toHaveText('Default');
+        await expect(row).toHaveAttribute('title', 'Default');
+        await row.click();
+        await dialog.locator('h3').click();
+        await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+        await expect(trigger).toHaveText('Default');
+        await expect(trigger).toHaveAttribute('title', 'Default');
+        await expect(select).toHaveValues(['1']);
+        await dialog.locator('.popup-button-ok').click();
+        await expect.poll(async () => {
+            const settings = JSON.parse((await account.post('/api/settings/get')).settings);
+            return settings.world_info_settings?.world_info?.charLore?.find(lore => lore.name === account.avatar.replace(/\.png$/, ''))?.extraBooks;
+        }).toEqual(['Default']);
+        await page.reload({ waitUntil: 'domcontentloaded' });
+        await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'));
+        await openPicker(page, account.avatar, 'Editar Durable Nova');
+        await expect(select).toHaveValues(['1']);
+        await expect(trigger).toHaveText('Default');
+    });
 }
 
 for (const device of ['phone', 'tablet', 'desktop']) {
