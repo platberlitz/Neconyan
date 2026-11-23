@@ -106,6 +106,7 @@
 - PR #883 (2026-11-23) `fix(browser): clear the latest nightly staging failures`
 - PR #884 (2026-11-23) `test(android): report a missing JDK before checking headers`
 - PR #885 (2026-11-23) `fix(i18n): localise author’s note examples`
+- PR #886 (2026-11-23) `fix(i18n): collect multiline attribute captions correctly`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
