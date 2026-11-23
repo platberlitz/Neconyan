@@ -285,6 +285,8 @@ async function quietChatForSmoke(page) {
     });
 }
 
+const pagesSkippingTour = new WeakSet();
+
 export async function openQuietChatForSmoke(page, options = {}) {
     const { chatSaveDelayMs = 0, selectCharacter = true } = options;
     const storage = createMockRoleplayStore(() => null, { realReads: true });
@@ -308,6 +310,18 @@ export async function openQuietChatForSmoke(page, options = {}) {
     await dismissOpenDialogIfPresent(page);
     await quietChatForSmoke(page);
     await waitForChatRenderIdle(page, { idleMs: 500, timeoutMs: 10000, waitForImages: false });
+    // A fresh account opens the first-use tour, which covers menus and panels on phones.
+    // Earlier tests on a shared server usually finish it, so skip it here too.
+    const skipTour = page.locator('#neconyan-tour-coachmark [data-tour-coach-skip]');
+    const dismissTour = async () => {
+        await skipTour.click();
+        await skipTour.waitFor({ state: 'hidden' });
+    };
+    if (await skipTour.isVisible()) await dismissTour();
+    if (!pagesSkippingTour.has(page)) {
+        pagesSkippingTour.add(page);
+        await page.addLocatorHandler(skipTour, dismissTour);
+    }
 }
 
 export async function waitForAnimationFrames(page, frameCount = 2) {

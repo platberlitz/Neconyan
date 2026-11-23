@@ -46,4 +46,12 @@
     /* Popups */
     :root[data-sb-compact-mode='true'] body.neconyan dialog.popup { padding: 10px 14px; }
     :root[data-sb-compact-mode='true'] body.neconyan dialog.popup .popup-controls .menu_button { min-height: 34px; }
+
+    /* Slash command autocomplete & browser (desktop-only tighter density) */
+    :root[data-sb-compact-mode='true'] body.neconyan:not(.sbterm) .autoComplete-wrap > .nn-ac-header { padding: 5px 8px; }
+    :root[data-sb-compact-mode='true'] body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete,
+    :root[data-sb-compact-mode='true'] body.neconyan:not(.sbterm) .slashCommandBrowser > .commandContainer > .autoComplete { padding: 4px; gap: 2px; }
+    :root[data-sb-compact-mode='true'] body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item,
+    :root[data-sb-compact-mode='true'] body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete > .item { min-height: 30px; padding: 4px 10px; }
+    :root[data-sb-compact-mode='true'] body.neconyan:not(.sbterm) .slashCommandBrowser { padding: 12px; gap: 8px; }
 }

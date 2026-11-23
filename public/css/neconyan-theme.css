@@ -1214,7 +1214,7 @@ select.text_pole:where(:not([multiple]):not([size]):not(.select2-hidden-accessib
 }
 
 #form_sheld.isExecutingCommandsFromChatInput #send_textarea {
-    --progColor: rgb(146, 190, 252);
+    --progColor: color-mix(in srgb, var(--neco-ginger) 28%, transparent);
 }
 
 :root[data-sb-compact-mode='true'] #send_form {

@@ -2977,7 +2977,7 @@ function loadMewmoryStyles() {
     if (!style) {
         style = document.createElement('link');
         style.id = 'mewmory-css';
-        style.href = 'css/mewmory.css?v=20261127-group-ui-director';
+        style.href = 'css/mewmory.css?v=20261127-slash-commands-ui';
         document.head.append(style);
     }
     if (style.rel !== 'stylesheet') {

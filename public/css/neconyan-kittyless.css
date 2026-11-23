@@ -67,9 +67,22 @@
     content: none;
 }
 
-/* The chat tools menu drops its paw prints but keeps a plain divider. */
-:root[data-sb-kittyless='true'] body.neconyan:not(.sbterm) :is(#options > .options-content, #extensionsMenu) {
+/* The chat tools menu and slash-command surfaces drop their paw prints cleanly. */
+:root[data-sb-kittyless='true'] body.neconyan:not(.sbterm) :is(#options > .options-content, #extensionsMenu),
+:root[data-sb-kittyless='true'][data-neconyan-palette='calico'] body.neconyan:not(.sbterm) :is(.autoComplete-wrap, .autoComplete-detailsWrap, .slashCommandBrowser),
+:root[data-sb-kittyless='true'] body.neconyan:not(.sbterm) :is(.autoComplete-wrap, .autoComplete-detailsWrap, .slashCommandBrowser) {
     background-image: none;
+}
+
+:root[data-sb-kittyless='true'][data-neconyan-palette='calico'] body.neconyan:not(.sbterm) :is(.autoComplete-wrap > ul.autoComplete > .item:not(.blank), .slashCommandBrowser .autoComplete > .item:not(.blank)),
+:root[data-sb-kittyless='true'] body.neconyan:not(.sbterm) :is(.autoComplete-wrap > ul.autoComplete > .item:not(.blank), .slashCommandBrowser .autoComplete > .item:not(.blank)) {
+    padding-right: 12px;
+}
+
+:root[data-sb-kittyless='true'][data-neconyan-palette='calico'] body.neconyan:not(.sbterm) :is(.autoComplete-wrap > ul.autoComplete > .item:not(.blank), .slashCommandBrowser .autoComplete > .item:not(.blank))::after,
+:root[data-sb-kittyless='true'] body.neconyan:not(.sbterm) :is(.autoComplete-wrap > ul.autoComplete > .item:not(.blank), .slashCommandBrowser .autoComplete > .item:not(.blank))::after {
+    display: none;
+    content: none;
 }
 :root[data-sb-kittyless='true'] body.neconyan:not(.sbterm) #options .options-content > hr {
     height: 1px;
