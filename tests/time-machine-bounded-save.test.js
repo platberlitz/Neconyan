@@ -18,8 +18,11 @@ const runtimeSource = [
     local('recoverSamePageSettingsConflict'),
     local('saveSettingsInner'),
     local('checkGenerationSettingsSaved'),
+    exported('getActiveGenerationAcknowledgement'),
+    local('matchesLiveGenerationSettings'),
+    local('acknowledgeGenerationSettings'),
     local('runAcknowledgedGeneration'),
-    ...['quiet', 'raw'].map(kind => `const ${kind}Prepare = ${source.match(new RegExp(`runAcknowledgedGeneration\\(client, '${kind}-generation',[\\s\\S]*?prepareInput: (async [\\s\\S]*?\\n                \\}),`))[1]}; globalThis.${kind}Prepare = ${kind}Prepare;`),
+    ...['quiet', 'raw'].map(kind => `const ${kind}Prepare = ${source.match(new RegExp(`runAcknowledgedGeneration\\(client, '${kind}-generation',[\\s\\S]*?prepareInput: (async \\(body, force\\) => [\\s\\S]*?),\\n            \\}\\);`))[1]}; globalThis.${kind}Prepare = ${kind}Prepare;`),
     source.match(/export async function saveSettings\([\s\S]*?\n\}/)[0].replace('export ', ''),
 ].join('\n');
 
@@ -61,11 +64,10 @@ function runtime({ version = 8, revision = 4, wait = 1000 } = {}) {
             const number = Number(value);
             return Number.isSafeInteger(number) && number >= 0 ? number : 0;
         },
-        generationSettingsSnapshot: () => ({}),
+        generationSettingsSnapshot: settings => ({ effort: settings.oai_settings?.reasoning_effort }),
         rememberSavedSettings: () => ({ account: 'alice', body: 'accepted', acknowledgement: null }),
         matchesDownloadedSettings: () => false,
         captureActiveGenerationSelection: () => ({}),
-        getActiveGenerationAcknowledgement: () => context.acknowledgedGenerationSettings,
         saveChatConditional: jest.fn(async () => {}),
         getWorldInfoSettings: () => ({}),
         extension_settings: {},
@@ -156,6 +158,30 @@ describe('settings saves before generation', () => {
         } finally {
             jest.useRealTimers();
         }
+    });
+
+    test('a generation control changed in memory without a save request is saved before generating', async () => {
+        const context = runtime();
+        context.lastSavedSettings = { account: 'alice', revision: context.settingsMutationRevision, acknowledgement: context.acknowledgedGenerationSettings };
+        context.oai_settings.reasoning_effort = 'high';
+        const bodies = withBodies(context, [success()]);
+        await expect(context.rawPrepare({ prompt: 'A prompt' }, false)).resolves.toEqual({ prompt: 'A prompt', acknowledgement: { account: 'alice', settingsRevision: 6 } });
+        expect(bodies).toHaveLength(1);
+        expect(bodies[0].oai_settings.reasoning_effort).toBe('high');
+    });
+
+    test('an acknowledgement that never matches the live settings stops after three saves with a refusal code', async () => {
+        const context = runtime();
+        context.fetch = jest.fn(async () => {
+            const saves = context.fetch.mock.calls.length;
+            context.oai_settings.reasoning_effort = `moving-${saves}`;
+            return success(9 + saves, 5 + saves);
+        });
+        context.oai_settings.reasoning_effort = 'high';
+        await expect(context.rawPrepare({ prompt: 'A prompt' }, false)).rejects.toMatchObject({
+            code: 'active_settings_ack_required', message: 'Save the active connection settings before generating a reply.',
+        });
+        expect(context.fetch).toHaveBeenCalledTimes(3);
     });
 
     const refusal = Object.assign(new Error('The active connection settings are not acknowledged.'), {

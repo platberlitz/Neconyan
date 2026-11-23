@@ -334,6 +334,7 @@ export async function buildChatProfileRequest(directories, binding, messages, ma
         const model = modelOverride.trim() || profile.model;
         const settings = { ...active, openai_max_tokens: rawOptions.preserveReasoningBudget ? active.openai_max_tokens : maxTokens };
         if (Number.isFinite(rawOptions.temperature)) settings.temp_openai = rawOptions.temperature;
+        if (typeof rawOptions.reasoningEffort === 'string') settings.reasoning_effort = rawOptions.reasoningEffort;
         const { generate_data: generated } = await generate(settings, model, 'quiet', messages);
         const payload = createChatRequestData({ ...generated, ...overridePayload,
             stream: false, messages, model, chat_completion_source: source, secret_id: profile['secret-id'], active_connection: true, ...proxy });

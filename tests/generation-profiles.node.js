@@ -809,6 +809,9 @@ for (const backend of ['chat', 'text']) test(`explicit saved-active ${backend} c
         assert.equal(payload.max_tokens, 73);
         assert.equal(payload.custom_url, 'http://127.0.0.1:6000');
         assert.equal(payload.reverse_proxy, '');
+        const effortPayload = await buildChatProfileRequest(fixture.directories, binding, [{ role: 'user', content: 'Hello' }], 73,
+            async controls => ({ generate_data: { reasoning_effort: controls.reasoning_effort } }), { rawOptions: { reasoningEffort: 'none' } });
+        assert.equal(effortPayload.reasoning_effort, 'none');
     }
     settings.extension_settings.connectionManager.selectedProfile = 'another-wrong-profile';
     fixture.save();

@@ -126,6 +126,7 @@ export async function validateActiveGenerationContext(material, macroEnvironment
                 name1: isolated.names.user, name2: isolated.names.char, selectedGroup: groupNames.length > 0, substitute });
         const settings = { ...material.active, openai_max_tokens: rawOptions.preserveReasoningBudget ? material.active.openai_max_tokens : maxTokens };
         if (Number.isFinite(rawOptions.temperature)) settings.temp_openai = rawOptions.temperature;
+        if (typeof rawOptions.reasoningEffort === 'string') settings.reasoning_effort = rawOptions.reasoningEffort;
         // Exercise the shared formatter's actual stop passes without catalogue or tokeniser requests.
         await createChatGenerationParameters(settings, material.profile.model, 'quiet', prompt, {
             getReasoningRoute: () => getNativeReasoningRoute(settings, { googleApiVersion: settings.chat_completion_source === 'makersuite' ? getConfigValue('gemini.apiVersion', 'v1beta') : undefined }),
@@ -223,7 +224,7 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
         }
         if (raw) await validateActiveGenerationContext(material, macroEnvironment, messages, rawOptions, { maxTokens, groupNames, ephemeralStops, preparedText, preparedMessages });
         if (raw) {
-            const allowed = ['instructOverride', 'quietToLoud', 'systemPrompt', 'prefill', 'trimNames', 'temperature', 'jsonSchema', 'cacheScope', 'preserveReasoningBudget'];
+            const allowed = ['instructOverride', 'quietToLoud', 'systemPrompt', 'prefill', 'trimNames', 'temperature', 'reasoningEffort', 'jsonSchema', 'cacheScope', 'preserveReasoningBudget'];
             if (Object.keys(rawOptions).some(key => !allowed.includes(key))) fail('This raw generation option cannot run on the server.', 409);
             if (['proxy_password', 'custom_include_headers', 'custom_include_body'].some(key => Object.hasOwn(overridePayload, key))) {
                 fail('Save authentication overrides in the active connection before generating a reply.', 409);

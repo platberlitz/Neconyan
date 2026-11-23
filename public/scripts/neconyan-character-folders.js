@@ -756,6 +756,7 @@ async function runAiSort({ prompt, job, status, results, runButton, run, setCont
     let batchError = '';
     let stopReason = '';
     let consecutiveUnreadable = 0;
+    let consecutiveEmpty = 0;
 
     try {
         for (let index = 0; index < batches.length; index++) {
@@ -775,11 +776,15 @@ async function runAiSort({ prompt, job, status, results, runButton, run, setCont
                     prompt: request.prompt,
                     systemPrompt: request.systemPrompt,
                     responseLength: Math.min(8192, 1024 + batchItems.length * 60),
+                    // Thinking models can spend the whole reply reasoning about long character cards and
+                    // return nothing, and some reject the saved effort outright; folder labels need none.
+                    reasoningEffort: 'none',
                     signal: controller.signal,
                 });
                 if (controller.signal.aborted) break;
                 const parsed = parseAiSortResponse(reply, { count: batchItems.length, folders: knownFolders, allowNewFolders, strict: true });
                 consecutiveUnreadable = 0;
+                consecutiveEmpty = 0;
                 for (const item of parsed) {
                     const character = batchItems[item.index];
                     suggestions.push({ avatar: character.avatar, name: character.name, folder: item.folder, isNew: !folders.includes(item.folder) });
@@ -793,8 +798,11 @@ async function runAiSort({ prompt, job, status, results, runButton, run, setCont
                     break;
                 }
                 batchError = translate(classification.message);
+                consecutiveEmpty = classification.empty ? consecutiveEmpty + 1 : 0;
                 if (++consecutiveUnreadable === 2) {
-                    stopReason = t`Stopped after 2 unreadable replies in a row. Try another prompt, another model or fewer characters per request.`;
+                    stopReason = consecutiveEmpty === 2
+                        ? t`Stopped after 2 empty replies in a row. Choose another model in Connections, then try again.`
+                        : t`Stopped after 2 unreadable replies in a row. Try another prompt, another model or fewer characters per request.`;
                     break;
                 }
             }
