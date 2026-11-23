@@ -112,6 +112,7 @@
 - PR #889 (2026-11-23) `fix(lorebooks): preserve names in the additional lorebooks picker`
 - PR #891 (2026-11-23) `fix(purrks): preserve chosen names in bulk-delete captions`
 - PR #892 (2026-11-23) `fix(i18n): keep the tracked characters list label translated`
+- PR #893 (2026-11-23) `fix(server): explain out-of-memory stops and start again after a crash`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
