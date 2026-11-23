@@ -45,7 +45,7 @@ import {
     unfileNeconyanLorebook,
 } from './neconyan-lorebook-folders.js';
 import { createSelectPicker } from './select-picker.js';
-import { LOREBOOK_LINK_KIND, clearLorebookNotice, filterUntoldLorebookLinks, findMissingLorebookLinks, listLorebookLinks, noteLorebookChatOpened, readConversationLorebooks } from './lorebook-links.js';
+import { clearLorebookNotice, filterUntoldLorebookLinks, findMissingLorebookLinks, listLorebookLinks, noteLorebookChatOpened, readConversationLorebooks } from './lorebook-links.js';
 
 // Neconyan divergence: World Info is integrated with the fork shell and auxiliary lorebook sources while retaining upstream scan helpers.
 export const world_info_insertion_strategy = {
@@ -5764,7 +5764,8 @@ async function checkOpenChatLorebookLinks() {
         const links = conversation
             ? listLorebookLinks({ conversationOverrides: conversation.overrides })
             : listLorebookLinks({ cards, charLore: world_info.charLore, chatLorebook: chat_metadata[METADATA_KEY] });
-        const candidates = filterUntoldLorebookLinks(chatKey, Array.isArray(world_names) ? findMissingLorebookLinks(links, world_names) : links).filter(link => !isEmbeddedOfferHolding(link));
+        if (isEmbeddedOfferHolding()) return;
+        const candidates = filterUntoldLorebookLinks(chatKey, Array.isArray(world_names) ? findMissingLorebookLinks(links, world_names) : links);
         if (!candidates.length) return;
 
         const { reportMissingLorebookLinks } = await import('./lorebook-link-notice.js');
@@ -6649,10 +6650,13 @@ function embeddedWorldOfferDue(chid) {
     return !accountStorage.getItem(`AlertWI_${character.avatar}`) && !isEmbeddedBookLinked(bookName, worldName, auxBooks, world_names);
 }
 
-/** A dead main link the embedded-lorebook offer is about to deal with, or is dealing with now, is not the notice's to name. */
-function isEmbeddedOfferHolding(link) {
-    if (link.kind !== LOREBOOK_LINK_KIND.cardMain || !link.embedded) return false;
-    return embeddedOffersOnScreen.has(link.avatar) || (characters[this_chid]?.avatar === link.avatar && embeddedWorldOfferDue(this_chid));
+/**
+ * Whether the embedded-lorebook offer of the open card is about to show or is on screen. The missing-links notice
+ * waits for the next time the chat opens then, so it never covers the offer or names a lorebook the offer may import.
+ */
+function isEmbeddedOfferHolding() {
+    const avatar = characters[this_chid]?.avatar;
+    return Boolean(avatar) && (embeddedOffersOnScreen.has(avatar) || embeddedWorldOfferDue(this_chid));
 }
 
 export function checkEmbeddedWorld(chid) {
@@ -6671,7 +6675,7 @@ export function checkEmbeddedWorld(chid) {
             accountStorage.setItem(checkKey, 'true');
             const avatar = characters[chid].avatar;
             embeddedOffersOnScreen.add(avatar);
-            clearLorebookNotice(link => link.kind === LOREBOOK_LINK_KIND.cardMain && link.avatar === avatar);
+            clearLorebookNotice();
 
             if (power_user.world_import_dialog) {
                 const html = `<h3>This character has an embedded World/Lorebook.</h3>

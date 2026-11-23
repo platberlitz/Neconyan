@@ -318,7 +318,7 @@ for (const device of ['desktop', 'phone']) {
             expect(await noticeText(notices(page))).toContain('\' Real Book\' is the main lorebook of Odd Otto.');
         });
 
-        test(`keeps the notice away from the embedded-lorebook offer, then names the way back (${device})`, async ({ app }) => {
+        test(`shows no notice while the embedded-lorebook offer is open, then names the way back (${device})`, async ({ app }) => {
             test.setTimeout(240000);
             const account = await app.account({ phone });
             const eve = await embeddedCard(account);
@@ -327,13 +327,13 @@ for (const device of ['desktop', 'phone']) {
             await setExtras(page, eve, ['Gone Extra']);
             await select(page, eve);
             await expect(page.locator('dialog[open]')).toContainText('This character has an embedded World/Lorebook.');
-            await expect(notices(page)).toHaveCount(1, { timeout: 20000 });
-            expect(await noticeText(notices(page))).toBe(`Missing lorebook links ${INTRO} 'Gone Extra' is an extra lorebook of Embed Eve. Review links`);
+            await page.waitForTimeout(3000);
+            await expect(notices(page)).toHaveCount(0);
             await shot(page, 'embedded-offer', device);
             await page.locator('dialog[open] .popup-button-cancel').click();
             await expect(page.locator('dialog[open]')).toHaveCount(0);
             await page.waitForTimeout(2500);
-            expect(await noticeText(notices(page))).not.toContain('Embedded Lore');
+            await expect(notices(page)).toHaveCount(0);
 
             await select(page, olive);
             await expect(notices(page)).toHaveCount(0);
