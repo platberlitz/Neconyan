@@ -1426,8 +1426,8 @@ describe('bundled catalogue revision', () => {
 
     test('startup skips the library only when the saved revision matches', () => {
         const source = fs.readFileSync(indexSourceUrl, 'utf8');
-        expect(source).toContain("fetch(getTemplateAssetUrl('revision.json'))");
-        expect(source).toContain("const BUNDLED_CATALOGUE_REVISION_KEY = 'ica--catalogue-revision';");
+        expect(source).toContain('fetch(getTemplateAssetUrl(\'revision.json\'))');
+        expect(source).toContain('const BUNDLED_CATALOGUE_REVISION_KEY = \'ica--catalogue-revision\';');
         expect(source).toContain('accountStorage.getItem(BUNDLED_CATALOGUE_REVISION_KEY) === catalogueRevision');
         expect(source).toContain('catalogueReady ? Promise.resolve() : loadTemplates()');
         expect(source).toContain('accountStorage.setItem(BUNDLED_CATALOGUE_REVISION_KEY, catalogueRevision);');

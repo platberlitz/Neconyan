@@ -1,3 +1,4 @@
+/* global globalThis */
 import { readFileSync } from 'node:fs';
 import { beforeEach, expect, jest, test } from '@jest/globals';
 

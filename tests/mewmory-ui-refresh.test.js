@@ -1,3 +1,4 @@
+/* global document */
 import { readFile } from 'node:fs/promises';
 import { beforeEach, expect, jest, test } from '@jest/globals';
 

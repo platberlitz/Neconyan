@@ -114,7 +114,7 @@ describe('frontend asset manifest rewriting', () => {
             fs.mkdirSync(path.join(work, 'scripts'));
             fs.writeFileSync(path.join(work, 'lib.js'), 'export const lib = 1;');
             fs.writeFileSync(path.join(work, 'script.js'), 'export const app = 1;');
-            fs.writeFileSync(path.join(work, 'scripts', 'tabs.js'), "import '../script.js';");
+            fs.writeFileSync(path.join(work, 'scripts', 'tabs.js'), 'import \'../script.js\';');
             const map = buildPublicModuleImportMap(work);
             const html = [
                 '<script type="importmap">{ "imports": { "#macro-vendor": "./lib.js" } }</script>',

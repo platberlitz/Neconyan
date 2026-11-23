@@ -14,14 +14,14 @@ function read(relative) {
 describe('message editing state classes', () => {
     test('the message editor marks its message while it is open and clears it on every exit', () => {
         const source = read('public/script.js');
-        expect(source).toContain("messageElement[0]?.classList.add('is_editing');");
-        expect(source).toContain("thisMesDiv.removeClass('is_editing');");
-        expect(source).toContain("$(div).closest('.mes').removeClass('is_editing');");
+        expect(source).toContain('messageElement[0]?.classList.add(\'is_editing\');');
+        expect(source).toContain('thisMesDiv.removeClass(\'is_editing\');');
+        expect(source).toContain('$(div).closest(\'.mes\').removeClass(\'is_editing\');');
     });
 
     test('the reasoning editor marks its message while it is open and clears it on every exit', () => {
         const source = read('public/scripts/reasoning.js');
-        expect(source).toContain("messageBlock.closest('.mes').addClass('is_reasoning_editing');");
+        expect(source).toContain('messageBlock.closest(\'.mes\').addClass(\'is_reasoning_editing\');');
         const clears = source.match(/messageBlock\.closest\('\.mes'\)\.removeClass\('is_reasoning_editing'\);/g) ?? [];
         expect(clears).toHaveLength(3);
     });

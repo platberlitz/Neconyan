@@ -13,7 +13,7 @@ describe('start-up character list', () => {
         const boot = source.slice(start, end);
         expect(start).toBeGreaterThan(-1);
         expect(boot.indexOf('requestSettingsData()')).toBeLessThan(boot.indexOf('getClientVersion()'));
-        expect(boot).toContain("startupCharacterListPromise = fetch('/api/characters/all'");
+        expect(boot).toContain('startupCharacterListPromise = fetch(\'/api/characters/all\'');
     });
 
     test('getCharacters uses the started response and clears the slot', () => {
@@ -22,6 +22,6 @@ describe('start-up character list', () => {
         const getCharacters = source.slice(start, end);
         expect(getCharacters).toContain('const pendingResponse = startupCharacterListPromise;');
         expect(getCharacters).toContain('startupCharacterListPromise = null;');
-        expect(getCharacters).toContain("pendingResponse ?? fetch('/api/characters/all'");
+        expect(getCharacters).toContain('pendingResponse ?? fetch(\'/api/characters/all\'');
     });
 });
