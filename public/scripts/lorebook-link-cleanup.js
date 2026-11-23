@@ -208,7 +208,10 @@ function reportFailures(from, to, failed) {
     const intro = to === null
         ? t`'${from}' was deleted, but these links to it could not be removed. Everything else was updated.`
         : t`'${from}' was renamed to '${to}', but these links could not be moved. Everything else was updated.`;
-    const advice = t`Until they are fixed, the missing-lorebook notice names them when you open them. Try again, or choose another lorebook there.`;
+    // The missing-lorebook notice covers chats and cards; a skipped Notebook part already says why in its own line.
+    const advice = failed.every(item => item.notebook)
+        ? ''
+        : t`Until they are fixed, the missing-lorebook notice names them when you open them. Try again, or choose another lorebook there.`;
     toastr.error(`${escapeHtml(intro)}<ul class="justifyLeft">${list}</ul>${escapeHtml(advice)}`, t`Lorebook links not fully updated`, {
         timeOut: 0,
         extendedTimeOut: 0,
@@ -219,22 +222,35 @@ function reportFailures(from, to, failed) {
 }
 
 /**
+ * Why one skipped part of a notebook was left alone. A whole notebook is only skipped when its manifest cannot be
+ * read; a damaged part leaves just that part, and the rest of the notebook was still updated.
+ * @param {{ part?: string, code?: string }} item
+ * @returns {string}
+ */
+function skippedReason(item) {
+    switch (item?.part) {
+        case 'bindings': return t`Its lore links could not be updated, so they were left as they are. Everything else in it was updated.`;
+        case 'associations': return t`Its related lorebooks and entries could not be updated, so they were left as they are. Everything else in it was updated.`;
+        case 'policies': return t`Its context settings could not be updated, so they were left as they are. Everything else in it was updated.`;
+    }
+    return item?.code === 'NOTEBOOK_SCHEMA_UNSUPPORTED'
+        ? t`It was saved by a newer version of Neconyan, so it was left as it is.`
+        : t`It could not be read, so it was left as it is.`;
+}
+
+/**
  * What the server did to Notebook links while it renamed or deleted the lorebook, in the same shape as the steps here.
- * @param {{ links?: number, skipped?: Array<{ notebookId: string, name?: string|null, code?: string }> }|null} report
- * @returns {{ moved: number, failed: Array<{ label: string, reason: string }> }}
+ * @param {{ links?: number, skipped?: Array<{ notebookId: string, name?: string|null, part?: string, code?: string }> }|null} report
+ * @returns {{ moved: number, failed: Array<{ label: string, reason: string, notebook: true }> }}
  */
 function notebookResults(report) {
     const seen = new Set();
     const failed = [];
     for (const item of Array.isArray(report?.skipped) ? report.skipped : []) {
-        if (seen.has(item?.notebookId)) continue;
-        seen.add(item?.notebookId);
-        failed.push({
-            label: t`Notebook '${item?.name || item?.notebookId}'`,
-            reason: item?.code === 'NOTEBOOK_SCHEMA_UNSUPPORTED'
-                ? t`It was saved by a newer version of Neconyan, so it was left as it is.`
-                : t`It could not be read, so it was left as it is.`,
-        });
+        const key = `${item?.notebookId}\u0000${item?.part}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        failed.push({ label: t`Notebook '${item?.name || item?.notebookId}'`, reason: skippedReason(item), notebook: true });
     }
     return { moved: Number(report?.links) || 0, failed };
 }

@@ -3,6 +3,7 @@ import { readAuthoringFileLocked, writeAuthoringFileLocked } from '../authoring-
 import { roleplayLease } from '../roleplay-store.js';
 import { invalidateContextCache } from './context.js';
 import { relinkBookBindingsLocked } from './lore.js';
+import { NotebookError } from './paths.js';
 import {
     invalidateNotebookCache,
     listNotebookIdsLocked,
@@ -21,7 +22,7 @@ import {
  */
 
 const BOOK_KINDS = new Set(['lorebook', 'lore-entry']);
-// A notebook this version cannot read is reported and left exactly as it is.
+// A control file this version cannot read is reported and left exactly as it is.
 const UNREADABLE = new Set(['NOTEBOOK_SCHEMA_UNSUPPORTED', 'NOTEBOOK_CONTROL_DAMAGED']);
 
 /** The new id for a stored book reference, keeping its '.json' form, or null when it names another book. */
@@ -37,6 +38,29 @@ function relabel(label, from, to) {
     if (label === from) return to;
     const suffix = ` (${from})`;
     return label.endsWith(suffix) ? `${label.slice(0, -suffix.length)} (${to})` : label;
+}
+
+function isRecord(value) {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function damaged(message) {
+    return new NotebookError('NOTEBOOK_CONTROL_DAMAGED', message, 500);
+}
+
+/**
+ * Reads a manifest for relinking. A manifest that is not an object leaves the
+ * whole notebook alone; associations of the wrong shape are reported apart, as
+ * rewriting the manifest would otherwise replace them with an empty set.
+ */
+function readManifestForLinks(lease, notebookId, control) {
+    const raw = readJsonLocked(lease, path.join(control, 'manifest.json'), null);
+    if (!isRecord(raw)) throw damaged('The notebook manifest could not be read.');
+    const manifest = readManifestLocked(lease, notebookId);
+    const lists = raw.associations;
+    const associationsOk = (raw.notes == null || isRecord(raw.notes))
+        && (lists == null || (isRecord(lists) && Object.values(lists).every(list => Array.isArray(list) && list.every(isRecord))));
+    return { manifest, associationsOk };
 }
 
 function associationKey(item) {
@@ -124,8 +148,10 @@ function rootOf(lease) {
 
 /**
  * Moves (`toFilename` set) or removes (`toFilename` null) every Notebook link
- * to one lorebook file. Notebooks this version cannot read are skipped and
- * listed, never rewritten. A failed write puts back every file already
+ * to one lorebook file. A part this version cannot read (the lore links, the
+ * associations or the policies) is skipped, listed and never rewritten, while
+ * the other parts are still updated; an unreadable manifest skips the whole
+ * notebook. A failed write puts back every file already
  * changed and throws. `undo()` reverses a finished run, for a rename that
  * fails later.
  */
@@ -153,8 +179,9 @@ export function relinkNotebookLorebooksLocked(lease, { fromFilename, toFilename 
         for (const notebookId of listNotebookIdsLocked(lease)) {
             const control = notebookControlRoot(rootOf(lease), notebookId);
             let manifest;
+            let associationsOk;
             try {
-                manifest = readManifestLocked(lease, notebookId);
+                ({ manifest, associationsOk } = readManifestForLinks(lease, notebookId, control));
             } catch (error) {
                 if (!UNREADABLE.has(error?.code)) throw error;
                 report.skipped.push(skipped(lease, notebookId, 'notebook', error));
@@ -172,8 +199,10 @@ export function relinkNotebookLorebooksLocked(lease, { fromFilename, toFilename 
                 report.skipped.push(skipped(lease, notebookId, 'bindings', error, name));
             }
 
-            const changedAssociations = relinkAssociations(manifest, from, to);
-            if (changedAssociations) {
+            const changedAssociations = associationsOk ? relinkAssociations(manifest, from, to) : 0;
+            if (!associationsOk) {
+                report.skipped.push(skipped(lease, notebookId, 'associations', damaged('These associations could not be read.'), name));
+            } else if (changedAssociations) {
                 keep(notebookId, path.join(control, 'manifest.json'));
                 writeManifestStructureLocked(lease, manifest);
                 links += changedAssociations;

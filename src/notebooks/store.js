@@ -172,6 +172,10 @@ export function writeManifestStructureLocked(lease, manifest) {
 
 export function readPoliciesLocked(lease, notebookId) {
     const policies = readJsonLocked(lease, controlFile(rootOf(lease), notebookId, 'policies.json'), emptyPolicies);
+    const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+    if (!isRecord(policies) || (policies.notes != null && !isRecord(policies.notes))) {
+        throw new NotebookError('NOTEBOOK_CONTROL_DAMAGED', 'The notebook permissions could not be read.', 500);
+    }
     policies.notes ||= {};
     return policies;
 }

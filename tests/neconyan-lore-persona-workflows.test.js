@@ -221,6 +221,57 @@ describe('Persona lorebook links', () => {
     });
 });
 
+describe('Notebook links in the link-cleanup report', () => {
+    const context = vm.createContext({
+        t: (strings, ...values) => strings.reduce((text, part, index) => text + part + (index < values.length ? values[index] : ''), ''),
+    });
+    vm.runInContext(extractFunction(cleanupSource, 'skippedReason'), context);
+    vm.runInContext(extractFunction(cleanupSource, 'notebookResults'), context);
+
+    test('a damaged part names only that part, and a whole notebook says it was left as it is', () => {
+        const result = context.notebookResults({
+            links: 5,
+            skipped: [
+                { notebookId: 'a', name: 'Notebook', part: 'associations', code: 'NOTEBOOK_CONTROL_DAMAGED' },
+                { notebookId: 'a', name: 'Notebook', part: 'bindings', code: 'NOTEBOOK_SCHEMA_UNSUPPORTED' },
+                { notebookId: 'b', name: 'Second', part: 'policies', code: 'NOTEBOOK_CONTROL_DAMAGED' },
+                { notebookId: 'c', name: null, part: 'notebook', code: 'NOTEBOOK_CONTROL_DAMAGED' },
+                { notebookId: 'd', name: 'Fourth', part: 'notebook', code: 'NOTEBOOK_SCHEMA_UNSUPPORTED' },
+                { notebookId: 'd', name: 'Fourth', part: 'notebook', code: 'NOTEBOOK_SCHEMA_UNSUPPORTED' },
+            ],
+        });
+        expect(result.moved).toBe(5);
+        expect(JSON.parse(JSON.stringify(result.failed))).toEqual([
+            { label: 'Notebook \'Notebook\'', reason: 'Its related lorebooks and entries could not be updated, so they were left as they are. Everything else in it was updated.', notebook: true },
+            { label: 'Notebook \'Notebook\'', reason: 'Its lore links could not be updated, so they were left as they are. Everything else in it was updated.', notebook: true },
+            { label: 'Notebook \'Second\'', reason: 'Its context settings could not be updated, so they were left as they are. Everything else in it was updated.', notebook: true },
+            { label: 'Notebook \'c\'', reason: 'It could not be read, so it was left as it is.', notebook: true },
+            { label: 'Notebook \'Fourth\'', reason: 'It was saved by a newer version of Neconyan, so it was left as it is.', notebook: true },
+        ]);
+    });
+
+    test('a warning with only Notebook parts leaves out the advice about the missing-lorebook notice', () => {
+        const shown = [];
+        const reporter = vm.createContext({
+            t: context.t,
+            escapeHtml: text => String(text),
+            toastr: { error: (body, title) => shown.push({ body, title }) },
+        });
+        vm.runInContext(extractFunction(cleanupSource, 'reportFailures'), reporter);
+        const notebookOnly = { label: 'Notebook \'A\'', reason: 'Why.', notebook: true };
+        reporter.reportFailures('Old', 'New', [notebookOnly]);
+        reporter.reportFailures('Old', null, [notebookOnly, { label: 'this chat', reason: 'Why.' }]);
+        expect(shown.map(item => item.title)).toEqual(['Lorebook links not fully updated', 'Lorebook links not fully updated']);
+        expect(shown[0].body).not.toContain('missing-lorebook notice');
+        expect(shown[0].body).toContain('<li>Notebook \'A\': Why.</li>');
+        expect(shown[1].body).toContain('missing-lorebook notice');
+    });
+
+    test('no report adds nothing', () => {
+        expect(JSON.parse(JSON.stringify(context.notebookResults(null)))).toEqual({ moved: 0, failed: [] });
+    });
+});
+
 describe('Lorebook workspace state', () => {
     const stateSource = extractFunction(worldInfoSource, 'getWorldInfoWorkspaceState');
     const context = vm.createContext({});

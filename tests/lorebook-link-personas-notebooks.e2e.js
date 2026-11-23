@@ -303,5 +303,32 @@ for (const device of ['desktop', 'phone']) {
             await expect(page.locator('#persona_lore_button')).toHaveClass(/world_set/);
             await personaShot(page, 'rename-failed', device);
         });
+
+        test('a damaged part of a Notebook is named in the warning and the rest of it still moves', async ({ app }) => {
+            test.setTimeout(180000);
+            const { account, page } = await setup(app, phone);
+            const ids = await notebook(page);
+            const manifestFile = path.join(app.dataRoot, 'default-user', 'notebook-control', ids.notebookId, 'manifest.json');
+            const manifest = JSON.parse(await fs.readFile(manifestFile, 'utf8'));
+            manifest.associations[ids.noteId] = [null, ...manifest.associations[ids.noteId]];
+            const damaged = `${JSON.stringify(manifest, null, 2)}\n`;
+            await fs.writeFile(manifestFile, damaged);
+
+            await openBook(page, TARGET);
+            await renameBook(page, RENAMED);
+            const failure = page.locator('.toast-error').filter({ hasText: 'Lorebook links not fully updated' });
+            await expect(failure).toHaveCount(1, { timeout: 30000 });
+            await expect(failure.locator('li')).toHaveText([
+                'Notebook \'Lore links\': Its related lorebooks and entries could not be updated, so they were left as they are. Everything else in it was updated.',
+            ]);
+            await expect(failure).not.toContainText('missing-lorebook notice');
+            await shot(page, 'rename-damaged-part', device);
+
+            expect(await fs.readFile(manifestFile, 'utf8')).toBe(damaged);
+            const after = await linked(page, ids);
+            expect(after.bindings).toEqual([expect.objectContaining({ book: RENAMED, uid: 0, status: 'in_sync' })]);
+            expect(after.scopes).toEqual([{ kind: 'lorebook', id: RENAMED, label: RENAMED }, { kind: 'lorebook', id: SIMILAR, label: SIMILAR }]);
+            expect(await savedPersonas(account)).toEqual({ active: RENAMED, [ACTIVE]: RENAMED, [OTHER]: RENAMED, [NEAR]: SIMILAR });
+        });
     });
 }

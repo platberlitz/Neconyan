@@ -75,10 +75,10 @@ async function prepared(t) {
     return { run, root, directories, first, second, noteA, noteB, noteC, other, post, control };
 }
 
-function publish(run, notebookId, noteId, bookName, uid = 3) {
-    const preview = run(lease => lore.previewPublicationLocked(lease, { notebookId, noteId, selector: established, book: bookName, uid }));
+function publish(run, notebookId, noteId, bookName, uid = 3, selector = established) {
+    const preview = run(lease => lore.previewPublicationLocked(lease, { notebookId, noteId, selector, book: bookName, uid }));
     return run(lease => lore.publishToLoreLocked(lease, {
-        operationId: op('publish'), notebookId, noteId, selector: established, book: bookName, uid,
+        operationId: op('publish'), notebookId, noteId, selector, book: bookName, uid,
         expectedSourceHash: preview.sourceHash, expectedTargetHash: preview.targetHash,
     }));
 }
@@ -235,7 +235,7 @@ test('deleting one entry still leaves its binding waiting on the missing entry',
     assert.equal(f.run(lease => store.readManifestLocked(lease, f.first)).associations[f.noteA].length, 5);
 });
 
-test('a notebook this version cannot read is left as it is and reported', async t => {
+test('files from a newer version are reported and left as they are, one part or the whole notebook', async t => {
     const f = await prepared(t);
     linkEverything(f);
     const newer = read(f, f.first, 'lore-bindings.json').toString().replace('"schema": 1', '"schema": 99');
@@ -301,6 +301,101 @@ test('a stale binding to a missing book of the new name is detached so the renam
         changes: [{ type: 'replace_selection', find: 'to the healer.', replace: 'to the healer, again.' }],
     }));
     assert.equal(publish(run, first, noteA, 'Renamed World').status, 'success');
+});
+
+test('two bindings repaired onto one section both survive a rename and keep publishing', async t => {
+    const f = await prepared(t);
+    const { run, first, noteA } = f;
+    const unresolved = { kind: 'heading', path: ['Magic system', 'Unresolved ideas'] };
+    const list = () => run(lease => lore.listBindingsLocked(lease, first, { noteId: noteA })).sort((a, b) => a.uid - b.uid);
+    assert.equal(publish(run, first, noteA, 'Test World', 3).status, 'success');
+    assert.equal(publish(run, first, noteA, 'Test World', 4, unresolved).status, 'success');
+    const repaired = list().find(binding => binding.uid === 4);
+    run(lease => lore.repairBindingLocked(lease, { operationId: op('repair'), notebookId: first, bindingId: repaired.id, selector: established }));
+    assert.deepEqual(list().map(binding => binding.selector.path), [established.path, established.path]);
+
+    // 'Update lore' sends the binding's own section and entry; a repaired binding keeps its id and is still found.
+    assert.equal(publish(run, first, noteA, 'Test World', 4).status, 'success');
+    assert.equal(list().length, 2);
+
+    const data = JSON.parse(fs.readFileSync(path.join(f.directories.worlds, 'Test World.json'), 'utf8'));
+    const renamed = await f.post('/api/worldinfo/rename', { oldName: 'Test World', newName: 'Renamed World', data });
+    assert.equal(renamed.status, 200);
+    assert.equal(renamed.json.notebooks.links, 2);
+    const moved = list();
+    assert.deepEqual(moved.map(binding => [binding.uid, binding.book, binding.status]), [[3, 'Renamed World', 'in_sync'], [4, 'Renamed World', 'in_sync']]);
+    assert.notEqual(moved[0].id, moved[1].id);
+    assert.deepEqual(moved[1].history.map(item => item.action).filter(action => action !== 'publish'), ['repair', 'book-renamed']);
+
+    const { entry } = run(lease => store.readNoteLocked(lease, { notebookId: first, noteId: noteA }));
+    run(lease => store.updateNoteLocked(lease, {
+        operationId: op('edit'), notebookId: first, noteId: noteA, expectedRevision: entry.hash,
+        changes: [{ type: 'replace_selection', find: 'to the healer.', replace: 'to the healer, twice.' }],
+    }));
+    assert.deepEqual(list().map(binding => binding.status), ['draft_changed', 'draft_changed']);
+    assert.equal(publish(run, first, noteA, 'Renamed World', 3).status, 'success');
+    assert.equal(publish(run, first, noteA, 'Renamed World', 4).status, 'success');
+    const published = JSON.parse(fs.readFileSync(path.join(f.directories.worlds, 'Renamed World.json'), 'utf8'));
+    assert.equal(published.entries[3].content, 'Healing transfers the injury to the healer, twice.');
+    assert.equal(published.entries[4].content, 'Healing transfers the injury to the healer, twice.');
+    assert.deepEqual(list().map(binding => [binding.id, binding.status]), moved.map(binding => [binding.id, 'in_sync']));
+
+    const deleted = await f.post('/api/worldinfo/delete', { name: 'Renamed World' });
+    assert.equal(deleted.status, 200);
+    assert.equal(deleted.json.notebooks.links, 2);
+    assert.deepEqual(list(), []);
+    const detached = run(lease => lore.readBindingsLocked(lease, first)).detached;
+    assert.deepEqual(detached.map(binding => [binding.uid, binding.detachedReason]).sort(), [[3, 'book-deleted'], [4, 'book-deleted']]);
+});
+
+test('damaged Notebook parts are reported and left byte for byte while the rest is updated', async t => {
+    const f = await prepared(t);
+    linkEverything(f);
+    const { run, first, second, noteA, other } = f;
+    run(lease => store.setAssociationsLocked(lease, {
+        operationId: op('associations'), notebookId: second, noteId: other, associations: [
+            { kind: 'lorebook', id: 'Test World 2', label: 'Test World 2' }, { kind: 'lorebook', id: 'Test World', label: 'Test World' },
+        ],
+    }));
+    const third = run(lease => store.createNotebookLocked(lease, { operationId: op('notebook'), name: 'Third' })).notebook.id;
+    const fourth = run(lease => store.createNotebookLocked(lease, { operationId: op('notebook'), name: 'Fourth' })).notebook.id;
+
+    // A null beside a real association, policies and lore links that are JSON null, and a manifest that is JSON null.
+    const manifest = JSON.parse(read(f, first, 'manifest.json'));
+    manifest.associations[noteA] = [null, ...manifest.associations[noteA]];
+    fs.writeFileSync(f.control(first, 'manifest.json'), JSON.stringify(manifest, null, 2));
+    fs.writeFileSync(f.control(second, 'policies.json'), 'null');
+    fs.writeFileSync(f.control(third, 'lore-bindings.json'), 'null');
+    fs.writeFileSync(f.control(fourth, 'manifest.json'), 'null');
+    const damaged = [[first, 'manifest.json'], [second, 'policies.json'], [third, 'lore-bindings.json'], [fourth, 'manifest.json']];
+    const saved = damaged.map(([notebookId, file]) => read(f, notebookId, file));
+    const expectedSkipped = byNotebook([
+        { notebookId: first, name: 'Notebook', part: 'associations', code: 'NOTEBOOK_CONTROL_DAMAGED' },
+        { notebookId: second, name: 'Second', part: 'policies', code: 'NOTEBOOK_CONTROL_DAMAGED' },
+        { notebookId: third, name: 'Third', part: 'bindings', code: 'NOTEBOOK_CONTROL_DAMAGED' },
+        { notebookId: fourth, name: null, part: 'notebook', code: 'NOTEBOOK_CONTROL_DAMAGED' },
+    ]);
+
+    const data = JSON.parse(fs.readFileSync(path.join(f.directories.worlds, 'Test World.json'), 'utf8'));
+    const renamed = await f.post('/api/worldinfo/rename', { oldName: 'Test World', newName: 'Renamed World', data });
+    assert.equal(renamed.status, 200);
+    assert.deepEqual(byNotebook(renamed.json.notebooks.skipped), expectedSkipped);
+    assert.equal(fs.existsSync(path.join(f.directories.worlds, 'Renamed World.json')), true);
+    assert.deepEqual(damaged.map(([notebookId, file]) => read(f, notebookId, file)), saved);
+    // Healthy parts of the same notebooks still moved: first's lore link and scopes, second's associations.
+    const [binding] = run(lease => lore.listBindingsLocked(lease, first, { noteId: noteA }));
+    assert.deepEqual([binding.book, binding.status], ['Renamed World', 'in_sync']);
+    assert.equal(run(lease => store.readPoliciesLocked(lease, first)).notes[noteA].context.scopes[0].id, 'Renamed World');
+    assert.deepEqual(run(lease => store.readManifestLocked(lease, second)).associations[other].map(item => item.id), ['Test World 2', 'Renamed World']);
+    assert.equal(renamed.json.notebooks.links, 5);
+
+    const deleted = await f.post('/api/worldinfo/delete', { name: 'Renamed World' });
+    assert.equal(deleted.status, 200);
+    assert.deepEqual(byNotebook(deleted.json.notebooks.skipped), expectedSkipped);
+    assert.equal(fs.existsSync(path.join(f.directories.worlds, 'Renamed World.json')), false);
+    assert.deepEqual(damaged.map(([notebookId, file]) => read(f, notebookId, file)), saved);
+    assert.deepEqual(run(lease => lore.listBindingsLocked(lease, first, { noteId: noteA })), []);
+    assert.deepEqual(run(lease => store.readManifestLocked(lease, second)).associations[other].map(item => item.id), ['Test World 2']);
 });
 
 test('book references match exactly, with or without .json', () => {
