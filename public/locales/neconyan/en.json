@@ -19628,6 +19628,8 @@
   "The model sent a reply that could not be read. Try another prompt or fewer characters per request.": "The model sent a reply that could not be read. Try another prompt or fewer characters per request.",
   "The model sent an empty reply. Try again, or choose another model in Connections.": "The model sent an empty reply. Try again, or choose another model in Connections.",
   "Stopped after 2 unreadable replies in a row. Try another prompt, another model or fewer characters per request.": "Stopped after 2 unreadable replies in a row. Try another prompt, another model or fewer characters per request.",
+  "The model's provider failed on this batch. Try again in a moment, or choose another model in Connections.": "The model's provider failed on this batch. Try again in a moment, or choose another model in Connections.",
+  "Stopped after 2 failed requests in a row. The model's provider may be down; try again in a moment, or choose another model in Connections.": "Stopped after 2 failed requests in a row. The model's provider may be down; try again in a moment, or choose another model in Connections.",
   "Stopped after 2 empty replies in a row. Choose another model in Connections, then try again.": "Stopped after 2 empty replies in a row. Choose another model in Connections, then try again.",
   "Check that your model is available in Connections, then try again.": "Check that your model is available in Connections, then try again.",
   "Change Reasoning Effort in Connections, then try again.": "Change Reasoning Effort in Connections, then try again.",

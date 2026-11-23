@@ -757,6 +757,7 @@ async function runAiSort({ prompt, job, status, results, runButton, run, setCont
     let stopReason = '';
     let consecutiveUnreadable = 0;
     let consecutiveEmpty = 0;
+    let consecutiveFailed = 0;
 
     try {
         for (let index = 0; index < batches.length; index++) {
@@ -785,6 +786,7 @@ async function runAiSort({ prompt, job, status, results, runButton, run, setCont
                 const parsed = parseAiSortResponse(reply, { count: batchItems.length, folders: knownFolders, allowNewFolders, strict: true });
                 consecutiveUnreadable = 0;
                 consecutiveEmpty = 0;
+                consecutiveFailed = 0;
                 for (const item of parsed) {
                     const character = batchItems[item.index];
                     suggestions.push({ avatar: character.avatar, name: character.name, folder: item.folder, isNew: !folders.includes(item.folder) });
@@ -799,10 +801,13 @@ async function runAiSort({ prompt, job, status, results, runButton, run, setCont
                 }
                 batchError = translate(classification.message);
                 consecutiveEmpty = classification.empty ? consecutiveEmpty + 1 : 0;
+                consecutiveFailed = classification.failed ? consecutiveFailed + 1 : 0;
                 if (++consecutiveUnreadable === 2) {
                     stopReason = consecutiveEmpty === 2
                         ? t`Stopped after 2 empty replies in a row. Choose another model in Connections, then try again.`
-                        : t`Stopped after 2 unreadable replies in a row. Try another prompt, another model or fewer characters per request.`;
+                        : consecutiveFailed === 2
+                            ? t`Stopped after 2 failed requests in a row. The model's provider may be down; try again in a moment, or choose another model in Connections.`
+                            : t`Stopped after 2 unreadable replies in a row. Try another prompt, another model or fewer characters per request.`;
                     break;
                 }
             }

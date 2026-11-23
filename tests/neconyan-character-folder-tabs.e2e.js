@@ -347,6 +347,50 @@ test.describe('Sort with AI', () => {
         }
     });
 
+    for (const phone of [false, true]) {
+        test(`a batch whose job vanished does not block the next run: ${phone ? 'iPhone emulation after switching model' : 'desktop'}`, async ({ browser }, testInfo) => {
+            const { context, page, organiser } = await aiFixture(browser, testInfo, phone, { batchSize: 5, count: 6 });
+            try {
+                // The server restarted and pruned the job, as happened with a provider outage.
+                const lost = 'ai-sort-vanished-job';
+                const submissions = [];
+                await page.route(`**/api/jobs/${lost}`, route => route.fulfill({ status: 404, json: { error: 'Job not found.' } }));
+                await page.route('**/api/operations/records/*', route => {
+                    const key = decodeURIComponent(new URL(route.request().url()).pathname.split('/').pop());
+                    return route.fulfill({ json: { key, kind: 'raw-generation', state: 'accepted', jobId: lost } });
+                });
+                await page.route('**/api/operations/submit', route => {
+                    const { key, kind } = route.request().postDataJSON();
+                    submissions.push(key);
+                    if (submissions.length === 1) return route.fulfill({ status: 202, json: { record: { key, kind, state: 'accepted', jobId: lost } } });
+                    return completeBatch(route, [{ id: 1, folder: 'Coastal Towns' }]);
+                });
+                const suggest = organiser.getByRole('button', { name: 'Suggest folders' });
+                const status = organiser.locator('.neconyan-folder-organiser-status');
+                await suggest.click();
+                await expect(status).toHaveAttribute('data-tone', 'error');
+                await screenshot(page, `vanished-batch-${phone ? 'phone' : 'desktop'}`, status);
+                await expect(status).toContainText('The model\'s provider failed on this batch.');
+                await expect(status).not.toContainText('Check that your model is available');
+                if (phone) {
+                    await page.evaluate(async () => {
+                        const { oai_settings } = await import('/scripts/openai.js');
+                        const script = await import('/script.js');
+                        oai_settings.custom_model = 'deepseek-flash';
+                        script.setOnlineStatus('deepseek-flash');
+                    });
+                }
+                await suggest.click();
+                await expect(organiser.getByText('1 suggestion for 1 folder')).toBeVisible();
+                expect(submissions).toHaveLength(2);
+                expect(submissions[1]).not.toBe(submissions[0]);
+                await expect(status).not.toContainText('failed');
+            } finally {
+                await context.close();
+            }
+        });
+    }
+
     test('sorts with a saved generation setting changed in memory without a save', async ({ browser }, testInfo) => {
         const { context, page, organiser } = await aiFixture(browser, testInfo, false, { batchSize: 5, count: 6 });
         try {

@@ -7800,7 +7800,9 @@ export async function generateQuietPrompt({ quietPrompt = '', quietToLoud = fals
             const locator = { group: false, avatar: characters[this_chid].avatar, chat: String(getCurrentChatId()) };
             const input = { prompt: String(quietPrompt ?? ''), locator, ...(Number(requestResponseLength) >= 1 ? { maxTokens: Math.min(32768, Math.floor(Number(requestResponseLength))) } : {}) };
             const record = await runAcknowledgedGeneration(client, 'quiet-generation', input, {
-                scope: `quiet:${getStringHash(JSON.stringify(input))}`,
+                // The model is part of the scope: switching models never replays another model's request.
+                scope: `quiet:${getStringHash(JSON.stringify([getGeneratingApi(), getGeneratingModel(), input]))}`,
+                releaseFinished: true,
                 signal: stop.signal,
                 prepareInput: async (body, force) => {
                     await saveChatConditional({ throwOnError: true, throwOnPromptError: true });
@@ -9354,7 +9356,9 @@ export async function generateRaw({ prompt = '', api = null, instructOverride = 
             const input = { prompt, systemPrompt, ...(Number(responseLength) >= 1 ? { maxTokens: Math.min(32768, Math.floor(Number(responseLength))) } : {}),
                 ...(typeof reasoningEffort === 'string' ? { reasoningEffort } : {}) };
             const record = await runAcknowledgedGeneration(client, 'raw-generation', input, {
-                scope: `raw:${getStringHash(JSON.stringify(input))}`,
+                // The model is part of the scope: switching models never replays another model's request.
+                scope: `raw:${getStringHash(JSON.stringify([getGeneratingApi(), getGeneratingModel(), input]))}`,
+                releaseFinished: true,
                 signal: stop.signal,
                 prepareInput: async (body, force) => ({ ...body, acknowledgement: await acknowledgeGenerationSettings(force) }),
             });
