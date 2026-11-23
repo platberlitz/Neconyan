@@ -22,6 +22,7 @@ import {
 import { getEventSourceStream } from './sse-stream.js';
 import { fetchResumable } from './resumable-generation.js';
 import { getSortableDelay, versionCompare } from './utils.js';
+import { watchTextBackend } from './text-backend-failures.js';
 
 export let koboldai_settings;
 export let koboldai_setting_names;
@@ -263,17 +264,23 @@ function tryParseStreamingError(response, decoded) {
 }
 
 export async function generateKoboldWithStreaming(generate_data, signal) {
-    const response = await fetchResumable('/api/backends/kobold/generate', {
-        headers: getRequestHeaders(),
-        body: JSON.stringify(generate_data),
-        method: 'POST',
-        signal: signal,
+    const watch = watchTextBackend({ kind: 'kobold', model: main_api === 'kobold' && online_status !== 'no_connection' ? online_status : '', data: generate_data, signal });
+    return watch.run(async () => {
+        const response = await fetchResumable('/api/backends/kobold/generate', {
+            headers: getRequestHeaders(),
+            body: JSON.stringify(generate_data),
+            method: 'POST',
+            signal: signal,
+        });
+        if (!response.ok) {
+            const body = await response.text();
+            watch.rejected(response, body);
+            tryParseStreamingError(response, body);
+            throw new Error(`Got response status ${response.status}`);
+        }
+        await watch.inspect(response);
+        return readKoboldStream(response);
     });
-    if (!response.ok) {
-        tryParseStreamingError(response, await response.text());
-        throw new Error(`Got response status ${response.status}`);
-    }
-    return readKoboldStream(response);
 }
 
 /** @param {Response} response Live or retained provider response */

@@ -126,7 +126,7 @@ import { isKimiK3Model, buildChatCompletionSamplerMetadata, getChatCompletionSam
 import { TOOL_CALL_RECURSE_LIMIT_DEFAULT, normalizeToolCallRecurseLimit } from './tool-call-recurse-limit.js';
 import { LINKAPI_ENDPOINT, getLinkApiRequestFormat } from './linkapi-utils.js';
 import { IN_CHAT_AGENT_PROMPT_KEY_PREFIX, RUNTIME_AGENTS_IDENTIFIER, collectInChatAgentInspectionRecords, getInChatAgentContributionKind, isInChatAgentPromptIdentifier, trimOldestRetainedContribution } from './in-chat-agent-inspection.js';
-import { recordProviderFailure } from './app-evidence-log.js';
+import { recordRequestFailure, requestText } from './text-backend-failures.js';
 
 export {
     openai_messages_count,
@@ -1959,7 +1959,7 @@ export function keepPromptBiasLast(chat, bias) {
  * @param {string} decoded - response text or decoded stream data
  * @param {object} [options]
  * @param {boolean?} [options.quiet=false] Suppress toast messages
- * @param {{ provider: string, model: string }?} [options.failure] Provider and model to note in the app evidence log
+ * @param {{ provider: string, model: string, request?: { data: unknown, received: string } }?} [options.failure] Provider, model and request to note in the app evidence log
  */
 export function tryParseStreamingError(response, decoded, { quiet = false, eventType = '', failure = null } = {}) {
     let data;
@@ -1968,7 +1968,7 @@ export function tryParseStreamingError(response, decoded, { quiet = false, event
     const outcome = classifyGenerationOutcome(data);
     if (outcome) throw providerBlockedError(outcome);
     const message = data.error?.message || (typeof data.message === 'string' ? data.message : '') || data.detail?.error?.message || (response.status >= 400 ? response.statusText : '') || 'The AI service rejected the reply.';
-    if (failure) recordProviderFailure({ ...failure, status: Number(data.provider_status) || (response.ok ? 0 : response.status), message });
+    if (failure) recordRequestFailure({ ...failure, status: Number(data.provider_status) || (response.ok ? 0 : response.status), message });
     checkQuotaError(data, { quiet });
     checkModerationError(data, { quiet });
     if (!quiet) toastr.error(message, 'Chat Completion API');
@@ -5538,7 +5538,7 @@ async function sendOpenAIRequest(type, messages, signal, { jsonSchema = null, ca
 
     console.log(`[OpenAI frontend] sendOpenAIRequest: type=${type} source=${generate_data.chat_completion_source} model=${generate_data.model} stream=${generate_data.stream}`);
 
-    const failureSource = { provider: generate_data.chat_completion_source, model: generate_data.model };
+    const failureSource = { provider: generate_data.chat_completion_source, model: generate_data.model, request: requestText(generate_data) };
     const generate_url = '/api/backends/chat-completions/generate';
     const response = await fetchResumable(generate_url, {
         method: 'POST',
@@ -5547,14 +5547,14 @@ async function sendOpenAIRequest(type, messages, signal, { jsonSchema = null, ca
         signal: signal,
     }).catch(async error => {
         if (generate_data.structured_prefill) (await import('./structured-prefill.js')).reportStructuredPrefillStatus({ verification: 'failed' });
-        if (!signal?.aborted && error?.name !== 'AbortError') recordProviderFailure({ ...failureSource, status: 0, message: error?.message });
+        if (!signal?.aborted && error?.name !== 'AbortError') recordRequestFailure({ ...failureSource, status: 0, message: error?.message });
         throw error;
     });
 
     if (!response.ok) {
         if (generate_data.structured_prefill) (await import('./structured-prefill.js')).reportStructuredPrefillStatus({ verification: 'failed' });
         tryParseStreamingError(response, await response.text(), { failure: failureSource });
-        recordProviderFailure({ ...failureSource, status: response.status, message: response.statusText });
+        recordRequestFailure({ ...failureSource, status: response.status, message: response.statusText });
         throw new Error(`Got response status ${response.status}`);
     }
     if (stream) {
@@ -5569,7 +5569,7 @@ async function sendOpenAIRequest(type, messages, signal, { jsonSchema = null, ca
 
         if (data.error) {
             const message = data.error.message || response.statusText || t`Unknown error`;
-            recordProviderFailure({ ...failureSource, status: Number(data.provider_status) || 0, message });
+            recordRequestFailure({ ...failureSource, status: Number(data.provider_status) || 0, message });
             toastr.error(message, t`API returned an error`);
             throw new Error(message);
         }
@@ -5663,6 +5663,7 @@ export function readChatCompletionStream(response, { canMultiSwipe = false, expe
                 // The red toast is gone for a classified error, so keep the provider's own message in the console.
                 if (!previous && state.outcomes[index]?.status === 'error' && frame.error) console.warn('The provider ended the reply with an error.', frame.error);
                 if (generationErrorEnvelope(frame, value.type)) {
+                    if (failure?.request) failure.request.received = text;
                     if (!state.outcome) tryParseStreamingError(response, rawData, { eventType: value.type, failure });
                     if (!state.outcome) throw new Error('The AI service rejected the reply.');
                     continue;

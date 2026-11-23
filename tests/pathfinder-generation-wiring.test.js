@@ -10,6 +10,7 @@ import { limitGenerationProse, isGenerationLengthFinish } from '../public/script
 import { buildAssistantKnowledge, getAssistantKnowledgeBudget } from '../public/scripts/neconyan-assistant-knowledge.js';
 import { isChatNavigationBlocked } from '../public/scripts/chat-navigation-flight.js';
 import { getPendingChatNameCommit } from '../public/scripts/chat-label.js';
+import { readableBackendError } from '../public/scripts/text-backend-failures.js';
 import { isSlashCommandText } from '../public/scripts/slash-commands/SlashCommandRuntimeUtils.js';
 import { captureRecoveryAnchor } from '../public/scripts/held-generation-recovery.js';
 import { substituteWorldInfoGreeting } from '../public/scripts/world-info-scan-chat.js';
@@ -193,6 +194,9 @@ function createHost({ agentsExtension = false } = {}) {
     context.getCurrentUserHandle = () => 'test-user';
     context.reportBrowserImageRefusal = () => false;
     context.isReportedImageRefusal = () => false;
+    context.isReportedGenerationFailure = () => false;
+    context.noteReportedGenerationFailure = () => {};
+    context.readableBackendError = readableBackendError;
     context.clearStreamingProcessorIfCurrent = processor => { if (context.streamingProcessor === processor) context.streamingProcessor = null; };
     context.setExtensionPrompt = jest.fn((key, value) => { context.extension_prompts[key] = { value }; });
     context.getExtensionPrompt = async () => context.extension_prompts.pathfinder_pipeline_retrieval?.value ?? '';

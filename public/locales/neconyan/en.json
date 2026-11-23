@@ -1937,6 +1937,7 @@
   "ST Server cannot be reached": "ST Server cannot be reached",
   "API Error": "API Error",
   "Text generation error": "Text generation error",
+  "The app server got no reply from the backend (no error message was sent).": "The app server got no reply from the backend (no error message was sent).",
   "You must first select a character to duplicate!": "You must first select a character to duplicate!",
   "Character Duplicated": "Character Duplicated",
   "No character name provided.": "No character name provided.",

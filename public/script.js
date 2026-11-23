@@ -395,6 +395,7 @@ import { compressRequest, setRequestCompressionConfig } from './scripts/request-
 import { canJumpToSwipeForMessage, canOpenSwipePickerForMessage, initSwipePicker } from './scripts/swipe-picker.js';
 import { bindIOSFastTapSendButton, isIOSWebKitPlatform } from './scripts/mobile-send-button.js';
 import { formatMobileStreamingPreview, getMobileStreamingBottomPinBehavior, getStreamingUpdateInterval, isAndroidStreamingPlatform, shouldReduceStreamingDomWork, shouldUsePlainTextStreamingPreview } from './scripts/mobile-streaming.js';
+import { readableBackendError, watchTextBackend } from './scripts/text-backend-failures.js';
 import { fetchResumable, setGenerationContext, releaseGenerationContext, listRecoverableGenerations, openHeldGeneration, discardGeneration, heldReplyHasMore } from './scripts/resumable-generation.js';
 import { captureRecoveryAnchor, getHeldReplyTarget } from './scripts/held-generation-recovery.js';
 import { applyGenerationRequestControls, isGenerationLengthFinish, limitGenerationProse, reasoningOnlyWarningKind } from './scripts/generation-request-controls.js';
@@ -5495,10 +5496,32 @@ export async function sendTextareaMessage() {
     try {
         generation = await Generate(generateType);
     } catch (error) {
-        if (!isReportedImageRefusal(error)) throw error;
+        // A failed request has had its toast, its log line and its clean-up in Generate; the send buttons start this
+        // call without waiting for it, so rethrowing here would only add an unhandled rejection to the browser errors.
+        if (isReportedGenerationFailure(error)) console.debug('The send failed', error);
+        else if (!isReportedImageRefusal(error)) throw error;
     }
     showSwipeButtons();
     return generation;
+}
+
+/** Errors that Generate's own failure handler has already shown, logged and cleaned up after */
+const reportedGenerationFailures = new WeakSet();
+/** The same for a failure that is not an object, such as the text a Stop abort carries */
+let reportedGenerationReason;
+
+/** @param {unknown} exception */
+function noteReportedGenerationFailure(exception) {
+    if (exception && typeof exception === 'object') reportedGenerationFailures.add(exception);
+    else reportedGenerationReason = exception;
+}
+
+/** @param {unknown} error */
+function isReportedGenerationFailure(error) {
+    if (error && typeof error === 'object') return reportedGenerationFailures.has(error);
+    const reported = error !== undefined && error === reportedGenerationReason;
+    if (reported) reportedGenerationReason = undefined;
+    return reported;
 }
 
 // Neconyan: Extracted message text preparation from messageFormatting for mobile streaming performance.
@@ -9239,20 +9262,7 @@ export async function generateRawData({ prompt = '', api = null, instructOverrid
         } else if (api === 'textgenerationwebui' && typeof onChunk === 'function') {
             data = await generateTextGenWithStreaming(generateData, abortController.signal);
         } else {
-            const generateUrl = getGenerateUrl(api);
-            const response = await fetchResumable(generateUrl, {
-                method: 'POST',
-                headers: getRequestHeaders(),
-                cache: 'no-cache',
-                body: JSON.stringify(generateData),
-                signal: abortController.signal,
-            });
-
-            if (!response.ok) {
-                throw await response.json();
-            }
-
-            data = await response.json();
+            data = await requestBackendJson(api, generateData, abortController.signal);
         }
 
         if (typeof data === 'function' && typeof onChunk === 'function') {
@@ -11671,7 +11681,11 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
      * @throws {Error|object} Re-throws the exception
      */
         async function onError(exception) {
-            if (!isCurrent()) throw exception;
+            if (!isCurrent()) {
+                // A generation that was stopped or replaced: its abort is not a failure, and nothing else will catch it.
+                noteReportedGenerationFailure(exception);
+                throw exception;
+            }
             suppressAutomaticGeneration(agentGenerationContext);
             if (isBlockedGeneration(exception?.generationOutcome)) {
                 notifyBlocked(false);
@@ -11688,6 +11702,9 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
             } else if (typeof exception?.error?.message === 'string') {
                 // If the response JSON was thrown (novel|textgenerationwebui|kobold), show the error message.
                 toastr.error(exception.error.message, t`Text generation error`, { timeOut: 10000, extendedTimeOut: 20000 });
+            } else if (exception?.error === true) {
+                // The app server's { error: true, status, response } for a text backend that failed.
+                toastr.error(readableBackendError(exception), t`Text generation error`, { timeOut: 10000, extendedTimeOut: 20000 });
             }
 
             if (!isAuxiliaryGeneration) {
@@ -11696,6 +11713,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                 streamingProcessor = null;
             }
             console.log(exception);
+            noteReportedGenerationFailure(exception);
             throw exception;
         }
     } catch (error) {
@@ -12338,19 +12356,39 @@ export async function sendGenerationRequest(type, data, options = {}) {
         return await generateHorde(data.prompt, data, signal, true);
     }
 
-    const response = await fetchResumable(getGenerateUrl(main_api), {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        cache: 'no-cache',
-        body: JSON.stringify(data),
-        signal,
+    return await requestBackendJson(main_api, data, signal);
+}
+
+/**
+ * Sends one non-streaming request to the KoboldAI, NovelAI or text completion route and returns the JSON reply.
+ * Failures are noted for the App diagnostics log on the way; what is thrown or returned is unchanged.
+ * @param {string} api Main API id
+ * @param {object} data Generation data
+ * @param {AbortSignal} signal
+ * @returns {Promise<any>}
+ */
+async function requestBackendJson(api, data, signal) {
+    const kind = api === 'kobold' ? 'kobold' : api === 'novel' ? 'novel' : 'text';
+    const model = kind === 'kobold' ? (api === main_api && online_status !== 'no_connection' ? online_status : '') : data?.model;
+    const watch = watchTextBackend({ kind, type: data?.api_type ?? textgen_settings.type, model, data, signal });
+    return await watch.run(async () => {
+        const response = await fetchResumable(getGenerateUrl(api), {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            cache: 'no-cache',
+            body: JSON.stringify(data),
+            signal,
+        });
+
+        if (!response.ok) {
+            watch.rejected(response, await response.clone().text());
+            throw await response.json();
+        }
+
+        const json = await response.json();
+        watch.answered(json);
+        return json;
     });
-
-    if (!response.ok) {
-        throw await response.json();
-    }
-
-    return await response.json();
 }
 
 /**
