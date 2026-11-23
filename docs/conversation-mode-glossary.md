@@ -358,9 +358,11 @@ When enabled, Conversation Mode can occasionally create a DM aside based on a ne
 
 ### Lorebook Override
 
-**Lorebook Override** selects a specific World Info book for the Conversation. Leaving it on **Character default (no override)** uses normal character-linked behavior.
+**Lorebook Override** selects one World Info book for the Conversation. Leaving it on **Character default (no override)** loads no lorebook at all: Conversation never reads the character's linked lorebook, the chat lorebook or the global lorebooks, so no entry reaches the model.
 
-When an override is selected, the system prompt tells the model to prefer that lore focus over normal roleplay-scene continuity.
+When a book is selected, its entries are scanned against the Conversation's recent messages by the book's own rules (keys, constant entries, selective logic, probability, scan depth and the World Info budget), and the entries that activate are added to the system prompt right after the line 'Conversation lorebook focus: <book>'. Only the selected book is read. Card, chat and global lorebooks stay out of Conversation. This applies to every reply: solo and group DMs, ordinary replies, Regenerate, and automatic or idle replies.
+
+If the selected book cannot be found, nothing is loaded and the focus line is left out. The **Missing lorebook links** notice reports the missing book.
 
 ### Connection Profile
 
