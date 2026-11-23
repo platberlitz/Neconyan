@@ -670,6 +670,8 @@ export const refreshedKnowledgeCases = [
     ['Where do I get a PixAI API key?', 'images.pixai', 'email api@withpixai.art'],
     ['Which PixAI model is the default?', 'images.pixai', 'Tsubaki.3 (the default)'],
     ['Why is Mode missing for Haruka v2?', 'images.pixai', 'appears for Tsubaki models only'],
+    ['Does the Conversation Lorebook Override load the chosen book\'s entries?', 'conversation.settings', 'Lorebook Override loads only the chosen book'],
+    ['In DM settings, what does Lorebook Override do on Character default (no override)?', 'conversation.settings', 'Character default (no override) loads no lorebook'],
     ['Does the PixAI prompt helper cost extra?', 'images.pixai', 'rewrite it at extra cost'],
     ['Do steps and sampler work with Tsubaki?', 'images.pixai', 'apply to Haruka v2 and Hoshino v2 only'],
     ['How do I use PixAI LoRAs in Quick Image Gen?', 'images.pixai-loras', 'copy the version link or its last number'],

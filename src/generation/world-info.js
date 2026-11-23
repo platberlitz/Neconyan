@@ -173,7 +173,14 @@ export function captureSavedRoleplayImages(directories, records, display, captio
     });
 }
 
-function readAvailableBooks(directories, names) {
+/** The account's saved World Info scan settings, with the same defaults the Roleplay capture uses. */
+export function readWorldInfoScanSettings(directories) {
+    const savedSettings = readJsonShared(path.join(directories.root, 'settings.json'), {});
+    const settings = { ...savedSettings, ...savedSettings.world_info_settings };
+    return Object.fromEntries(SETTINGS.map(key => [key, settings[key] ?? DEFAULTS[key]]));
+}
+
+export function readAvailableBooks(directories, names) {
     const result = Object.create(null);
     let totalBytes = 0;
     for (const name of new Set(names.flat())) {
