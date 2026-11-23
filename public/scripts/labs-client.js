@@ -184,7 +184,7 @@ export function createLabClient({ request, observeJob, account, storage, uuid = 
         }
     }
 
-    async function run(kind, input, { scope = kind, prepareInput = value => value, key: presetKey, ...options } = {}) {
+    async function run(kind, input, { scope = kind, prepareInput = value => value, key: presetKey, releaseFinished = false, ...options } = {}) {
         options.signal?.throwIfAborted();
         const storageKey = `${storagePrefix}:${account}:${scope}`;
         const raw = storage.getItem(storageKey);
@@ -192,8 +192,9 @@ export function createLabClient({ request, observeJob, account, storage, uuid = 
         if (pending && (typeof pending.key !== 'string' || !pending.key || (pending.body && pending.body.kind !== kind))) {
             throw new Error(`The retained ${label} request is invalid. It has not been repeated.`);
         }
+        const replaying = Boolean(pending && !pending.body);
         let record;
-        if (pending && !pending.body) record = await read(pending.key);
+        if (replaying) record = await read(pending.key);
         else {
             if (!pending) {
                 const body = { ...await prepareInput(input), kind, key: presetKey ?? uuid() };
@@ -217,9 +218,15 @@ export function createLabClient({ request, observeJob, account, storage, uuid = 
         } catch (error) {
             // Read-only scans can be explicitly retried after a terminal failure.
             // Paid requests and uncertain transport/readback failures stay retained.
-            const failedScan = ['archive-inventory', 'archive-search'].includes(kind)
-                && ['failed', 'interrupted', 'cancelled', 'missing'].includes(error.jobState);
-            if (error.cancelled || error.refused || failedScan) storage.removeItem(storageKey);
+            const ended = ['failed', 'interrupted', 'cancelled', 'missing'].includes(error.jobState);
+            const failedScan = ['archive-inventory', 'archive-search'].includes(kind) && ended;
+            // Short helper prompts opt in: work that ended without a reply has nothing
+            // left to recover, so a new click asks the model again instead of replaying it.
+            const finished = releaseFinished && ended;
+            if (error.cancelled || error.refused || failedScan || finished) storage.removeItem(storageKey);
+            if (finished && replaying && !error.cancelled) {
+                return run(kind, input, { scope, prepareInput, key: presetKey, releaseFinished, ...options });
+            }
             throw error;
         }
     }

@@ -59,6 +59,10 @@ describe('AI sort planning and error messages', () => {
         [new Error('No message generated'), /empty reply/, false, { empty: true }],
         [{ code: 'invalid_model_reply' }, /could not be read/, false],
         [new Error('Non-JSON response'), /could not be read/, false],
+        [new Error('Chat completion request error: 502 Bad Gateway'), /provider failed/, false, { failed: true }],
+        [{ status: 503 }, /provider failed/, false, { failed: true }],
+        [{ message: 'The job is unavailable. Its saved Application record has been retained.', jobState: 'missing' }, /provider failed/, false, { failed: true }],
+        [{ message: 'Application work is interrupted. Review it in Jobs before retrying.', jobState: 'interrupted' }, /provider failed/, false, { failed: true }],
     ])('classifies %j without surfacing provider details', (error, message, fatal, extra = {}) => {
         expect(classifyAiSortError(error)).toEqual({ message: expect.stringMatching(message), fatal, ...extra });
     });

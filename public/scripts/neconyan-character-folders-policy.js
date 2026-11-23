@@ -511,6 +511,9 @@ export function classifyAiSortError(error) {
         return { message: 'The model sent an empty reply. Try again, or choose another model in Connections.', fatal: false, empty: true };
     } else if (code === 'invalid_model_reply' || /non.json|invalid json|unexpected token/.test(detail)) {
         return { message: 'The model sent a reply that could not be read. Try another prompt or fewer characters per request.', fatal: false };
+    } else if (status >= 500 || ['failed', 'interrupted', 'missing'].includes(error?.jobState)
+        || /bad gateway|service unavailable|gateway time-?out|internal server error|overloaded|\b50[0-4]\b|job is unavailable|work is (?:failed|interrupted)/.test(detail)) {
+        return { message: 'The model\'s provider failed on this batch. Try again in a moment, or choose another model in Connections.', fatal: false, failed: true };
     } else {
         message = 'Check that your model is available in Connections, then try again.';
     }
