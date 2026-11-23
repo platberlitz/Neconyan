@@ -159,6 +159,33 @@ function recordContent(record) {
     return hash(content);
 }
 
+/** Counts the lookup tables built, so a test can show a caller does not rebuild them per record. */
+export const eligibilityStats = { builds: 0 };
+
+/**
+ * Tables over a state's records and audit, built on first use, for a caller that asks about many records of a
+ * state it does not edit meanwhile (eligibleRecords, inspection, assembling a reply's context): scanning the
+ * records and the audit for each of a few hundred records made listing them take seconds. A caller that asks about
+ * one record at a time passes nothing and scans, which is the cheaper way to ask once.
+ */
+export function eligibilityLookups(state) {
+    let built;
+    return () => {
+        if (built) return built;
+        eligibilityStats.builds++;
+        const byId = new Map();
+        const entities = new Map();
+        const audit = new Map();
+        const add = (map, key, value) => (map.get(key) ?? map.set(key, []).get(key)).push(value);
+        for (const record of state.records) {
+            if (!byId.has(record.id)) byId.set(record.id, record);
+            if (record.kind === 'entity') add(entities, record.entityId, record);
+        }
+        for (const entry of state.audit) add(audit, entry.recordId, entry);
+        return built = { byId, entities, audit };
+    };
+}
+
 /** A development preserves history; a correction invalidates the superseded interpretation. */
 export function recordRevision(state, id, version) {
     const current = state.records.find(record => record.id === id);
@@ -194,13 +221,47 @@ export function recordEligible(state, record, { asOf = Infinity, includeExcluded
     });
 }
 
+/** recordRevision answered from the tables of eligibilityLookups. */
+export function recordRevisionIn(state, lookups, id, version) {
+    const current = lookups().byId.get(id);
+    if (!current || current.version === version) return current;
+    if (current.excluded || ['invalidated', 'deleted'].includes(current.status)) return null;
+    const changes = (lookups().audit.get(id) ?? []).filter(entry => entry.afterVersion > version);
+    const previous = changes.find(entry => entry.before?.version === version)?.before;
+    if (!previous) return null;
+    return recordContent(previous) === recordContent(current) || changes.every(entry => entry.historical)
+        ? previous : null;
+}
+
+/** recordEligible answered from the tables of eligibilityLookups; the rules are the same lines as above. */
+export function recordEligibleIn(state, lookups, record, { asOf = Infinity, includeExcluded = false } = {}, seen = new Set()) {
+    if (!record || record.storyId !== state.storyId || record.branchId !== state.branchId
+        || record.asOf > asOf || ['invalidated', 'deleted'].includes(record.status)
+        || (!includeExcluded && record.excluded) || seen.has(record.id + '@' + record.version)) return false;
+    if (!record.refs.length || ![...record.refs, ...(record.evidenceRefs || [])]
+        .every(ref => sourceEligible(state, ref, asOf))) return false;
+    if (!(record.inputRefs || []).every(ref => sourceEligible(state, ref))) return false;
+    const next = new Set(seen).add(record.id + '@' + record.version);
+    if (['knowledge', 'interview', 'overview'].includes(record.kind)) {
+        const owners = (lookups().entities.get(record.ownerId) ?? [])
+            .flatMap(owner => owner.asOf <= asOf ? [owner] : (lookups().audit.get(owner.id) ?? [])
+                .filter(entry => entry.before?.asOf <= asOf)
+                .map(entry => recordRevisionIn(state, lookups, owner.id, entry.before.version)));
+        const owner = currentRecords(owners.filter(owner => recordEligibleIn(state, lookups, owner, { asOf }, next)), owner => owner.entityId)[0];
+        if (record.ownerId === 'player' || !owner?.isCharacter) return false;
+    }
+    return (record.dependencies || []).every(dependency => recordEligibleIn(state, lookups,
+        recordRevisionIn(state, lookups, dependency.id, dependency.version), { asOf, includeExcluded }, next));
+}
+
 export function eligibleRecords(state, options) {
+    const lookups = eligibilityLookups(state);
     return state.records.flatMap(record => {
-        if (recordEligible(state, record, options)) return [record];
+        if (recordEligibleIn(state, lookups, record, options)) return [record];
         if (!Number.isFinite(options?.asOf) || record.asOf <= options.asOf) return [];
-        const historical = state.audit.filter(entry => entry.recordId === record.id && entry.before?.asOf <= options.asOf)
-            .map(entry => recordRevision(state, record.id, entry.before.version))
-            .filter(candidate => recordEligible(state, candidate, options))
+        const historical = (lookups().audit.get(record.id) ?? []).filter(entry => entry.before?.asOf <= options.asOf)
+            .map(entry => recordRevisionIn(state, lookups, record.id, entry.before.version))
+            .filter(candidate => recordEligibleIn(state, lookups, candidate, options))
             .sort((a, b) => b.asOf - a.asOf || b.version - a.version);
         return historical.slice(0, 1);
     });

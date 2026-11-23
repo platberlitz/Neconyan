@@ -61,20 +61,19 @@ function getLegacyWorldInfoFilename(name) {
     return sanitize(`${String(name ?? '')}${WORLD_INFO_EXTENSION}`);
 }
 
+/** The two file names a World Info name can be saved under, in the order they are looked up. */
+export function getWorldInfoFilenameCandidates(name) {
+    return [getLegacyWorldInfoFilename(name), getWorldInfoFilename(name)];
+}
+
 export function getExistingWorldInfoFilename(directories, name, { followSymlinks = true } = {}) {
     const exists = filename => {
         if (!filename) return false;
         const filePath = path.join(directories.worlds, filename);
         return followSymlinks ? fs.existsSync(filePath) : Boolean(fs.lstatSync(filePath, { throwIfNoEntry: false }));
     };
-    const legacyFilename = getLegacyWorldInfoFilename(name);
-    if (exists(legacyFilename)) {
-        return legacyFilename;
-    }
-
-    const canonicalFilename = getWorldInfoFilename(name);
-    if (exists(canonicalFilename)) {
-        return canonicalFilename;
+    for (const filename of getWorldInfoFilenameCandidates(name)) {
+        if (exists(filename)) return filename;
     }
 
     return null;
