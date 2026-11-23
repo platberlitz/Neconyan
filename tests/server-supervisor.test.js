@@ -1,13 +1,16 @@
+/* global globalThis */
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { getCrashReports } from '../src/crash-diagnostics.js';
+import { FATAL_REPORT_PRIVATE_TEXT, nodeFatalReport } from './fatal-report-fixture.js';
 
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
 
 import {
     RESTART_EXIT_CODE,
+    resolveChildHeapArguments,
     runSupervisor,
     SERVER_PLUGIN_PREPARE_LEASE_MS,
     SERVER_PLUGIN_UPDATE_EXIT_CODE,
@@ -17,6 +20,7 @@ import {
     SUPERVISOR_SHUTDOWN_MESSAGE,
 } from '../src/server-supervisor.js';
 import {
+    SERVER_MEMORY_SAMPLE_MESSAGE,
     SERVER_PLUGIN_UPDATE_CANCEL_MESSAGE,
     SERVER_PLUGIN_UPDATE_PREPARE_MESSAGE,
     SERVER_PLUGIN_UPDATE_SUPERVISOR_API_ENV,
@@ -74,6 +78,33 @@ function updatePayload() {
 
 async function tick() {
     await new Promise(resolve => setImmediate(resolve));
+}
+
+async function waitFor(condition, label) {
+    for (let attempt = 0; attempt < 500; attempt++) {
+        if (condition()) return;
+        await tick();
+    }
+    throw new Error(`Timed out waiting for ${label}`);
+}
+
+const MIB = 1024 * 1024;
+
+function memorySample(overrides = {}) {
+    return {
+        at: new Date().toISOString(), uptimeSeconds: 30, rss: 300 * MIB, heapUsed: 200 * MIB, heapTotal: 250 * MIB, heapLimit: 1024 * MIB,
+        external: 10 * MIB, arrayBuffers: 2 * MIB, deviceAvailable: 4096 * MIB, deviceTotal: 12288 * MIB, ...overrides,
+    };
+}
+
+function announceStartup(child) {
+    child.emit('message', { type: SERVER_STARTUP_READY_MESSAGE, plugins: [] });
+}
+
+function stopChild(child, code, signal) {
+    child.exitCode = code;
+    child.signalCode = signal;
+    child.emit('exit', code, signal);
 }
 
 const TRACKED_EVENTS = ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGBREAK', 'exit'];
@@ -576,5 +607,383 @@ describe('server supervisor', () => {
         process.emit('exit', 0);
 
         expect(children[0].kill).not.toHaveBeenCalled();
+    });
+
+    describe('JavaScript heap limit on Android', () => {
+        const android = { platform: 'android', versions: { node: '24.13.0' }, execArgv: [], env: {} };
+
+        test.each([
+            ['a 12 GB phone', 12 * 1024 ** 3, '--max-old-space-size=2048'],
+            ['an 8 GB phone, exactly at the ceiling', 8 * 1024 ** 3, '--max-old-space-size=2048'],
+            ['a 6 GB phone', 6 * 1024 ** 3, '--max-old-space-size=1536'],
+            ['a 3 GB phone, never below the V8 default', 3 * 1024 ** 3, '--max-old-space-size=1024'],
+            ['a 512 MB device', 512 * 1024 ** 2, '--max-old-space-size=1024'],
+        ])('sets the limit for %s', (_name, totalMemoryBytes, expected) => {
+            expect(resolveChildHeapArguments({ ...android, totalMemoryBytes })).toEqual([expected]);
+        });
+
+        test.each([
+            ['a flag in execArgv', { execArgv: ['--max-old-space-size=3000'] }],
+            ['the underscore spelling in execArgv', { execArgv: ['--max_old_space_size=3000'] }],
+            ['the flag in NODE_OPTIONS', { env: { NODE_OPTIONS: '--max-old-space-size=3000' } }],
+            ['the underscore spelling in NODE_OPTIONS', { env: { NODE_OPTIONS: '--no-warnings --max_old_space_size=3000' } }],
+            ['Bun', { versions: { bun: '1.4.0' } }],
+            ['Linux', { platform: 'linux' }],
+            ['macOS', { platform: 'darwin' }],
+            ['Windows', { platform: 'win32' }],
+        ])('leaves the limit alone with %s', (_name, change) => {
+            expect(resolveChildHeapArguments({ ...android, ...change, totalMemoryBytes: 12 * 1024 ** 3 })).toEqual([]);
+        });
+
+        test.each([
+            ['zero', 0], ['negative', -1], ['NaN', Number.NaN], ['Infinity', Number.POSITIVE_INFINITY], ['a string', '12884901888'], ['null', null],
+        ])('sets nothing when the total memory is %s', (_name, totalMemoryBytes) => {
+            expect(resolveChildHeapArguments({ ...android, totalMemoryBytes })).toEqual([]);
+        });
+
+        test('puts the flag before the forwarded runtime flags and records it in the crash report', async () => {
+            const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-supervisor-heap-'));
+            const info = jest.spyOn(console, 'info').mockImplementation(() => { });
+            jest.spyOn(console, 'error').mockImplementation(() => { });
+            try {
+                const { children, spawnFn } = createSpawnPlan(['manual']);
+                const exitFn = jest.fn();
+                const run = runSupervisor({ argv: ['node', 'server.js', '--listen'], execArgv: ['--trace-warnings'], heapArguments: ['--max-old-space-size=2048'], spawnFn, exitFn });
+                await tick();
+                expect(spawnFn.mock.calls[0][1]).toEqual(['--max-old-space-size=2048', '--trace-warnings', 'server.js', '--listen']);
+                expect(info).toHaveBeenCalledWith(expect.stringContaining('--max-old-space-size=2048'));
+                children[0].pid = 5150;
+                children[0].emit('message', { type: 'neconyan:crash-directory', directory });
+                stopChild(children[0], null, 'SIGABRT');
+                await run;
+                expect(getCrashReports(directory)[0].child.heapLimitArgument).toBe('--max-old-space-size=2048');
+            } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+        });
+
+        afterEach(() => {
+            jest.restoreAllMocks();
+        });
+
+        test('uses the same decision by default, which adds nothing off Android', async () => {
+            const { spawnFn } = createSpawnPlan([[0, null]]);
+            await runSupervisor({ argv: ['node', 'server.js'], execArgv: ['--trace-warnings'], spawnFn, exitFn: jest.fn() });
+            expect(spawnFn.mock.calls[0][1]).toEqual([...resolveChildHeapArguments({ execArgv: ['--trace-warnings'] }), '--trace-warnings', 'server.js']);
+            expect(resolveChildHeapArguments({ platform: 'linux', execArgv: [] })).toEqual([]);
+        });
+    });
+
+    describe('automatic restart after an unexpected stop', () => {
+        let error;
+        let info;
+
+        beforeEach(() => {
+            error = jest.spyOn(console, 'error').mockImplementation(() => { });
+            info = jest.spyOn(console, 'info').mockImplementation(() => { });
+        });
+
+        afterEach(() => {
+            jest.restoreAllMocks();
+        });
+
+        const options = { argv: ['node', 'server.js'], execArgv: [], heapArguments: [], restartDelayMs: 0 };
+
+        test('starts the server again after a ready server dies from a signal, without reopening the browser', async () => {
+            const { children, spawnFn } = createSpawnPlan(['manual', 'manual']);
+            const exitFn = jest.fn();
+            const run = runSupervisor({ ...options, spawnFn, exitFn });
+            await tick();
+            announceStartup(children[0]);
+            stopChild(children[0], null, 'SIGABRT');
+
+            await waitFor(() => spawnFn.mock.calls.length === 2, 'the second start');
+            expect(exitFn).not.toHaveBeenCalled();
+            expect(spawnFn.mock.calls[0][2].env.NECONYAN_SKIP_BROWSER_AUTO_LAUNCH).toBeUndefined();
+            expect(spawnFn.mock.calls[1][2].env.NECONYAN_SKIP_BROWSER_AUTO_LAUNCH).toBe('1');
+            expect(error).toHaveBeenCalledWith('[Neconyan] The server stopped unexpectedly: it was terminated by SIGABRT.');
+            expect(info).toHaveBeenCalledWith('[Neconyan] Starting the server again...');
+
+            stopChild(children[1], 0, null);
+            await run;
+            expect(exitFn).toHaveBeenCalledWith(0);
+            expect(spawnFn).toHaveBeenCalledTimes(2);
+        });
+
+        test('restarts after a ready server exits with an error code', async () => {
+            const { children, spawnFn } = createSpawnPlan(['manual', 'manual']);
+            const exitFn = jest.fn();
+            const run = runSupervisor({ ...options, spawnFn, exitFn });
+            await tick();
+            announceStartup(children[0]);
+            stopChild(children[0], 1, null);
+            await waitFor(() => spawnFn.mock.calls.length === 2, 'the second start');
+            expect(error).toHaveBeenCalledWith('[Neconyan] The server stopped unexpectedly: it exited with code 1.');
+            stopChild(children[1], 0, null);
+            await run;
+        });
+
+        test('never restarts a server that died before announcing startup', async () => {
+            const { children, spawnFn } = createSpawnPlan(['manual']);
+            const exitFn = jest.fn();
+            const run = runSupervisor({ ...options, spawnFn, exitFn });
+            await tick();
+            stopChild(children[0], null, 'SIGKILL');
+            await run;
+            expect(spawnFn).toHaveBeenCalledTimes(1);
+            expect(exitFn).toHaveBeenCalledWith(1);
+            expect(error).not.toHaveBeenCalledWith(expect.stringContaining('stopped unexpectedly'));
+            expect(info).not.toHaveBeenCalledWith(expect.stringContaining('Starting the server again'));
+        });
+
+        test('a ready server that exits cleanly is not treated as a crash', async () => {
+            const { children, spawnFn } = createSpawnPlan(['manual']);
+            const exitFn = jest.fn();
+            const run = runSupervisor({ ...options, spawnFn, exitFn });
+            await tick();
+            announceStartup(children[0]);
+            stopChild(children[0], 0, null);
+            await run;
+            expect(spawnFn).toHaveBeenCalledTimes(1);
+            expect(exitFn).toHaveBeenCalledWith(0);
+            expect(error).not.toHaveBeenCalledWith(expect.stringContaining('stopped unexpectedly'));
+        });
+
+        test('stops on the third unexpected stop inside the window', async () => {
+            const { children, spawnFn } = createSpawnPlan(['manual', 'manual', 'manual']);
+            const exitFn = jest.fn();
+            let time = 1_000_000;
+            const run = runSupervisor({ ...options, spawnFn, exitFn, now: () => time });
+            for (let index = 0; index < 3; index++) {
+                await waitFor(() => children.length === index + 1, `start ${index + 1}`);
+                announceStartup(children[index]);
+                time += 60_000;
+                stopChild(children[index], null, 'SIGSEGV');
+                if (index < 2) await waitFor(() => children.length === index + 2, `restart ${index + 2}`);
+            }
+            await run;
+            expect(spawnFn).toHaveBeenCalledTimes(3);
+            expect(exitFn).toHaveBeenCalledWith(1);
+            expect(error).toHaveBeenCalledWith(expect.stringContaining('The server stopped 3 times in 10 minutes and is not being restarted.'));
+        });
+
+        test('allows a restart again once earlier stops fall outside the window', async () => {
+            const { children, spawnFn } = createSpawnPlan(['manual', 'manual', 'manual', 'manual']);
+            const exitFn = jest.fn();
+            let time = 1_000_000;
+            const run = runSupervisor({ ...options, spawnFn, exitFn, now: () => time });
+            const crash = async index => {
+                await waitFor(() => children.length === index + 1, `start ${index + 1}`);
+                announceStartup(children[index]);
+                stopChild(children[index], null, 'SIGSEGV');
+                await waitFor(() => children.length === index + 2, `restart ${index + 2}`);
+            };
+            await crash(0);
+            time += 1000;
+            await crash(1);
+            time += 11 * 60_000;
+            await crash(2);
+            expect(exitFn).not.toHaveBeenCalled();
+            stopChild(children[3], 0, null);
+            await run;
+            expect(spawnFn).toHaveBeenCalledTimes(4);
+            expect(exitFn).toHaveBeenCalledWith(0);
+        });
+
+        test('a shutdown signal during the restart delay stops without starting another server', async () => {
+            const delay = 60_000;
+            const timeouts = jest.spyOn(globalThis, 'setTimeout');
+            const { children, spawnFn } = createSpawnPlan(['manual']);
+            const exitFn = jest.fn();
+            const started = Date.now();
+            const run = runSupervisor({ ...options, restartDelayMs: delay, spawnFn, exitFn });
+            await tick();
+            announceStartup(children[0]);
+            stopChild(children[0], null, 'SIGABRT');
+            await waitFor(() => timeouts.mock.calls.some(call => call[1] === delay), 'the restart delay');
+            expect(spawnFn).toHaveBeenCalledTimes(1);
+
+            process.emit('SIGINT');
+            await run;
+            expect(Date.now() - started).toBeLessThan(delay / 2);
+            expect(spawnFn).toHaveBeenCalledTimes(1);
+            expect(exitFn).toHaveBeenCalledWith(1);
+            expect(children[0].send).not.toHaveBeenCalled();
+            expect(info).not.toHaveBeenCalledWith(expect.stringContaining('Starting the server again'));
+        });
+
+        test('a shutdown request does not restart a ready server that then dies from a signal', async () => {
+            const { children, spawnFn } = createSpawnPlan(['manual']);
+            const exitFn = jest.fn();
+            const run = runSupervisor({ ...options, spawnFn, exitFn });
+            await tick();
+            announceStartup(children[0]);
+            process.emit('SIGTERM');
+            stopChild(children[0], null, 'SIGKILL');
+            await run;
+            expect(spawnFn).toHaveBeenCalledTimes(1);
+            expect(exitFn).toHaveBeenCalledWith(1);
+            expect(error).not.toHaveBeenCalledWith(expect.stringContaining('stopped unexpectedly'));
+        });
+
+        test('leaves the plugin update exit and rollback paths alone', async () => {
+            const { children, spawnFn } = createSpawnPlan(['manual', 'manual', 'manual']);
+            const exitFn = jest.fn();
+            const pluginUpdate = createPluginUpdateOperations();
+            const run = runSupervisor({ ...options, spawnFn, exitFn, pluginUpdate });
+            await tick();
+            announceStartup(children[0]);
+            children[0].emit('message', { type: SERVER_PLUGIN_UPDATE_PREPARE_MESSAGE, requestId: 'prepare', payload: updatePayload() });
+            stopChild(children[0], SERVER_PLUGIN_UPDATE_EXIT_CODE, null);
+            await waitFor(() => children.length === 2, 'the updated server');
+            // The updated server dies before announcing startup: rolled back, never counted as an unexpected stop.
+            stopChild(children[1], null, 'SIGSEGV');
+            await waitFor(() => children.length === 3, 'the rolled-back server');
+            expect(pluginUpdate.rollback).toHaveBeenCalledWith(expect.objectContaining({ expectedPluginId: 'example-plugin' }), expect.stringContaining('exited before startup'));
+            expect(error).not.toHaveBeenCalledWith(expect.stringContaining('stopped unexpectedly'));
+            stopChild(children[2], 0, null);
+            await run;
+            expect(exitFn).toHaveBeenCalledWith(0);
+        });
+    });
+
+    describe('what the crash report says about a stopped server', () => {
+        let directory;
+        let crashFiles;
+
+        beforeEach(() => {
+            directory = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-supervisor-evidence-'));
+            crashFiles = () => fs.readdirSync(directory).sort();
+            jest.spyOn(console, 'error').mockImplementation(() => { });
+            jest.spyOn(console, 'info').mockImplementation(() => { });
+        });
+
+        afterEach(() => {
+            jest.restoreAllMocks();
+            fs.rmSync(directory, { recursive: true, force: true });
+        });
+
+        const options = { argv: ['node', 'server.js'], execArgv: [], heapArguments: [], restartDelayMs: 0 };
+
+        async function startChild(children, index, pid) {
+            await waitFor(() => children.length === index + 1, `start ${index + 1}`);
+            const child = children[index];
+            child.pid = pid;
+            fs.writeFileSync(path.join(directory, `running-${pid}.json`), '{}');
+            child.emit('message', { type: 'neconyan:crash-directory', directory });
+            announceStartup(child);
+            return child;
+        }
+
+        test('an out-of-memory stop is reported as one, with the figures, readings and no private text', async () => {
+            const { children, spawnFn } = createSpawnPlan(['manual', 'manual']);
+            const exitFn = jest.fn();
+            const run = runSupervisor({ ...options, spawnFn, exitFn });
+            const child = await startChild(children, 0, 4242);
+            for (let index = 0; index < 15; index++) {
+                child.emit('message', { type: SERVER_MEMORY_SAMPLE_MESSAGE, sample: memorySample({ heapUsed: (100 + (index === 1 ? 600 : index)) * MIB }) });
+            }
+            child.emit('message', { type: SERVER_MEMORY_SAMPLE_MESSAGE, sample: memorySample({ rss: -1 }) });
+            child.emit('message', { type: SERVER_MEMORY_SAMPLE_MESSAGE, sample: 'not a sample' });
+            fs.writeFileSync(path.join(directory, 'fatal-4242.json'), JSON.stringify(nodeFatalReport()));
+            stopChild(child, null, 'SIGABRT');
+
+            await waitFor(() => children.length === 2, 'the restart');
+            const [report] = getCrashReports(directory);
+            expect(report.kind).toBe('server-out-of-memory');
+            expect(report.error.message).toBe('The server ran out of JavaScript memory and stopped. It was using 1010 MB of its 1014 MB limit when Node reported: Allocation failed - JavaScript heap out of memory.');
+            expect(report.child).toMatchObject({ pid: 4242, signal: 'SIGABRT', exitCode: null });
+            expect(report.child.fatal).toMatchObject({ outOfMemory: true, trigger: 'OOMError', heap: { used: 1010 * MIB, limit: 1014 * MIB } });
+            expect(report.child.fatal.heap.spaces).toEqual({ new_space: { used: 2 * MIB, size: 16 * MIB }, old_space: { used: 890 * MIB, size: 900 * MIB } });
+            expect(report.child.memory.samples).toHaveLength(12);
+            expect(report.child.memory.samples.at(-1).heapUsed).toBe(114 * MIB);
+            expect(report.child.memory.peak.heapUsed).toBe(700 * MIB);
+            expect(report.limitation).toContain('child.memory holds the server');
+            expect(report.nextStep).toContain('NODE_OPTIONS=--max-old-space-size=<MB>');
+            const text = JSON.stringify(report);
+            for (const secret of Object.values(FATAL_REPORT_PRIVATE_TEXT)) expect(text).not.toContain(secret);
+            expect(crashFiles().filter(name => !name.startsWith('crash-'))).toEqual([]);
+
+            stopChild(children[1], 0, null);
+            await run;
+            expect(exitFn).toHaveBeenCalledWith(0);
+        });
+
+        test('another fatal error is quoted rather than called out of memory', async () => {
+            const { children, spawnFn } = createSpawnPlan(['manual', 'manual']);
+            const run = runSupervisor({ ...options, spawnFn, exitFn: jest.fn() });
+            const child = await startChild(children, 0, 4243);
+            fs.writeFileSync(path.join(directory, 'fatal-4243.json'), JSON.stringify(nodeFatalReport({ header: { event: 'Check failed: handle->IsEmpty()', trigger: 'FatalError' } })));
+            stopChild(child, null, 'SIGABRT');
+            await waitFor(() => children.length === 2, 'the restart');
+            const [report] = getCrashReports(directory);
+            expect(report.kind).toBe('server-fatal-error');
+            expect(report.error.message).toBe('The server stopped after Node reported a fatal error: Check failed: handle->IsEmpty().');
+            expect(report.nextStep).toBeUndefined();
+            stopChild(children[1], 0, null);
+            await run;
+        });
+
+        test('without a fatal report the cause stays unestablished, with readings attached as an observation', async () => {
+            const { children, spawnFn } = createSpawnPlan(['manual', 'manual']);
+            const run = runSupervisor({ ...options, spawnFn, exitFn: jest.fn() });
+            const child = await startChild(children, 0, 4244);
+            child.emit('message', { type: SERVER_MEMORY_SAMPLE_MESSAGE, sample: memorySample({ heapUsed: 980 * MIB, heapLimit: 1000 * MIB }) });
+            stopChild(child, null, 'SIGKILL');
+            await waitFor(() => children.length === 2, 'the restart');
+            const [report] = getCrashReports(directory);
+            expect(report.kind).toBe('child-process-signal');
+            expect(report.error.message).toMatch(/^The operating system terminated the server with SIGKILL\. A signal alone does not establish why it was sent\. The last reading, \d+ seconds? before it stopped, showed the JavaScript heap at 98% of its 1000 MB limit\.$/);
+            expect(report.error.message).not.toMatch(/ran out/i);
+            expect(report.child.fatal).toBeUndefined();
+            expect(report.child.memory.samples).toHaveLength(1);
+            expect(report.nextStep).toBeUndefined();
+            stopChild(children[1], 0, null);
+            await run;
+        });
+
+        test('readings belong to one server: the next one starts empty and the report says so', async () => {
+            const { children, spawnFn } = createSpawnPlan(['manual', 'manual', 'manual']);
+            const run = runSupervisor({ ...options, spawnFn, exitFn: jest.fn() });
+            const first = await startChild(children, 0, 4245);
+            first.emit('message', { type: SERVER_MEMORY_SAMPLE_MESSAGE, sample: memorySample() });
+            stopChild(first, null, 'SIGKILL');
+            const second = await startChild(children, 1, 4246);
+            stopChild(second, null, 'SIGKILL');
+            await waitFor(() => children.length === 3, 'the third start');
+            const reports = getCrashReports(directory);
+            expect(reports).toHaveLength(2);
+            const firstReport = reports.find(report => report.child.pid === 4245);
+            const secondReport = reports.find(report => report.child.pid === 4246);
+            expect(firstReport.child.memory.samples).toHaveLength(1);
+            expect(secondReport.child).not.toHaveProperty('memory');
+            expect(secondReport.limitation).toContain('No memory reading arrived from the server before it stopped.');
+            stopChild(children[2], 0, null);
+            await run;
+        });
+
+        test('a stale raw fatal report is deleted even when the stop was requested, and still reported as fatal', async () => {
+            const { children, spawnFn } = createSpawnPlan(['manual']);
+            const exitFn = jest.fn();
+            const run = runSupervisor({ ...options, spawnFn, exitFn });
+            const child = await startChild(children, 0, 4247);
+            process.emit('SIGTERM');
+            fs.writeFileSync(path.join(directory, 'fatal-4247.json'), JSON.stringify(nodeFatalReport()));
+            stopChild(child, null, 'SIGABRT');
+            await run;
+            expect(fs.existsSync(path.join(directory, 'fatal-4247.json'))).toBe(false);
+            expect(getCrashReports(directory).map(report => report.kind)).toEqual(['server-out-of-memory']);
+            expect(spawnFn).toHaveBeenCalledTimes(1);
+        });
+
+        test('a damaged fatal report is deleted and the signal is reported as before', async () => {
+            const { children, spawnFn } = createSpawnPlan(['manual']);
+            const run = runSupervisor({ ...options, spawnFn, exitFn: jest.fn() });
+            const child = await startChild(children, 0, 4248);
+            process.emit('SIGTERM');
+            fs.writeFileSync(path.join(directory, 'fatal-4248.json'), '{"header": ');
+            stopChild(child, null, 'SIGABRT');
+            await run;
+            expect(fs.existsSync(path.join(directory, 'fatal-4248.json'))).toBe(false);
+            expect(getCrashReports(directory)).toEqual([]);
+        });
     });
 });

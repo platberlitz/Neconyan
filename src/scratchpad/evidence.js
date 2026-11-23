@@ -83,6 +83,35 @@ export async function collectAccountEvidence(base) {
     };
 }
 
+const MIB = 1024 * 1024;
+const megabytes = value => (Number.isFinite(value) && value >= 0 ? `${Math.round(value / MIB)} MB` : 'unknown');
+
+/**
+ * The server's own memory figures from a crash report, as short lines: what Node
+ * reported as it stopped and the readings the server sent before then. Without
+ * them an out-of-memory stop and an unexplained signal look alike.
+ */
+function serverCrashDetail(report) {
+    const lines = [];
+    const fatal = report?.child?.fatal ?? report?.fatal;
+    if (fatal && typeof fatal === 'object') {
+        const heap = fatal.heap ?? {};
+        lines.push(`Node's fatal-error report: ${fatal.event || 'no event'}${fatal.trigger ? ` (${fatal.trigger})` : ''}${fatal.outOfMemory ? ', an out-of-memory stop' : ''}. JavaScript heap used ${megabytes(heap.used)} of a ${megabytes(heap.limit)} limit (${megabytes(heap.total)} reserved, ${megabytes(heap.available)} available). Process memory ${megabytes(fatal.rss)}, device memory ${megabytes(fatal.device?.free)} free of ${megabytes(fatal.device?.total)}.`);
+    }
+    const memory = report?.child?.memory;
+    const samples = Array.isArray(memory?.samples) ? memory.samples : [];
+    if (samples.length) {
+        const last = samples.at(-1);
+        lines.push(`The server's own memory readings, taken every 10 seconds, newest at ${last.at}: heap ${megabytes(last.heapUsed)} of ${megabytes(last.heapLimit)}, process ${megabytes(last.rss)}, device memory ${megabytes(last.deviceAvailable)} available of ${megabytes(last.deviceTotal)}.`);
+        lines.push(`Heap in MB, oldest to newest (${samples.length} readings): ${samples.map(sample => Math.round(sample.heapUsed / MIB)).join(', ')}.${memory.peak ? ` Highest reading ${megabytes(memory.peak.heapUsed)} at ${memory.peak.at}.` : ''}`);
+    } else if (report?.child) {
+        lines.push('No memory reading arrived from the server before it stopped.');
+    }
+    if (typeof report?.child?.heapLimitArgument === 'string') lines.push(`Neconyan set ${report.child.heapLimitArgument} for this device.`);
+    if (typeof report?.nextStep === 'string') lines.push(`Next step: ${report.nextStep}`);
+    return lines.slice(0, 6).map(line => redactEvidenceText(line, 400));
+}
+
 /**
  * Evidence about the whole server. Only the admin route may call this, because
  * crash reports and log lines can mention other accounts.
@@ -94,6 +123,7 @@ export function collectAdminEvidence() {
         name: redactEvidenceText(report?.error?.name, 80),
         message: redactEvidenceText(report?.error?.message),
         stack: typeof report?.error?.stack === 'string' ? report.error.stack.split('\n').slice(0, 8).map(line => redactEvidenceText(line, 200)).join('\n') : '',
+        detail: serverCrashDetail(report),
         version: redactEvidenceText(report?.environment?.app?.version, 40),
     }));
     const snapshot = getServerLogSnapshot({ limit: 600 });

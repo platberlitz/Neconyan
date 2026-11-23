@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 
@@ -14,6 +15,7 @@ import {
     validateServerPluginUpdatePayload,
 } from './server-plugin-update-helper.js';
 import {
+    SERVER_MEMORY_SAMPLE_MESSAGE,
     SERVER_PLUGIN_UPDATE_CANCEL_MESSAGE,
     SERVER_PLUGIN_UPDATE_PREPARE_MESSAGE,
     SERVER_PLUGIN_UPDATE_RESPONSE_MESSAGE,
@@ -21,6 +23,7 @@ import {
     SERVER_PLUGIN_UPDATE_SUPERVISOR_API_VERSION,
     SERVER_STARTUP_READY_MESSAGE,
 } from './server-plugin-update-ipc.js';
+import { createMemoryEvidence, describeChildStop } from './server-crash-evidence.js';
 import { serverDirectory } from './server-directory.js';
 
 export const RESTART_EXIT_CODE = 75;
@@ -32,6 +35,40 @@ export const SUPERVISOR_SHUTDOWN_MESSAGE = 'neconyan:shutdown';
 export const SUPERVISOR_FORCE_KILL_TIMEOUT_MS = 5000;
 export const SERVER_PLUGIN_ACTIVATION_TIMEOUT_MS = 150_000;
 export const SERVER_PLUGIN_PREPARE_LEASE_MS = 2 * 60_000;
+export const SERVER_AUTO_RESTART_DELAY_MS = 1000;
+export const SERVER_CRASH_LOOP_LIMIT = 3;
+export const SERVER_CRASH_LOOP_WINDOW_MS = 10 * 60_000;
+
+const HEAP_FLAG = /--max[-_]old[-_]space[-_]size/;
+// V8 caps the default heap at about 1 GB on Android whatever the device has.
+const ANDROID_HEAP_DEFAULT_MB = 1024;
+const ANDROID_HEAP_CEILING_MB = 2048;
+
+/**
+ * JavaScript heap limit to pass to the server on Android (Termux), where V8's
+ * default is about 1 GB regardless of device memory. An explicit setting in the
+ * runtime flags or NODE_OPTIONS always wins, and other platforms and Bun are untouched.
+ * @param {object} [options]
+ * @param {string} [options.platform] Operating system
+ * @param {NodeJS.ProcessVersions} [options.versions] Runtime versions
+ * @param {string[]} [options.execArgv] Runtime flags forwarded to the child
+ * @param {NodeJS.ProcessEnv} [options.env] Environment the child inherits
+ * @param {number} [options.totalMemoryBytes] Device memory
+ * @returns {string[]} Nothing, or one --max-old-space-size flag
+ */
+export function resolveChildHeapArguments({
+    platform = process.platform,
+    versions = process.versions,
+    execArgv = [],
+    env = process.env,
+    totalMemoryBytes = os.totalmem(),
+} = {}) {
+    if (platform !== 'android' || versions?.bun) return [];
+    if (execArgv.some(argument => HEAP_FLAG.test(String(argument))) || HEAP_FLAG.test(String(env?.NODE_OPTIONS ?? ''))) return [];
+    if (typeof totalMemoryBytes !== 'number' || !Number.isFinite(totalMemoryBytes) || totalMemoryBytes <= 0) return [];
+    const quarter = Math.floor(totalMemoryBytes / 4 / 1048576);
+    return [`--max-old-space-size=${Math.max(ANDROID_HEAP_DEFAULT_MB, Math.min(ANDROID_HEAP_CEILING_MB, quarter))}`];
+}
 
 function createTimeout(ms, value) {
     let timer;
@@ -95,6 +132,11 @@ export function shouldSupervise(env = process.env) {
  * @param {string[]} [options.execArgv] Runtime flags to forward to the child
  * @param {typeof spawn} [options.spawnFn] Spawn implementation
  * @param {(code: number) => never} [options.exitFn] Exit implementation
+ * @param {string[]} [options.heapArguments] Heap flags added before the forwarded runtime flags
+ * @param {number} [options.restartDelayMs] Pause before restarting a server that stopped unexpectedly
+ * @param {number} [options.crashLoopLimit] Unexpected stops within the window that end automatic restarts
+ * @param {number} [options.crashLoopWindowMs] Length of that window
+ * @param {() => number} [options.now] Clock for the window
  * @returns {Promise<never>} Never resolves; exits the process instead
  */
 export async function runSupervisor({
@@ -102,6 +144,11 @@ export async function runSupervisor({
     execArgv = process.execArgv ?? [],
     spawnFn = spawn,
     exitFn = process.exit,
+    heapArguments = resolveChildHeapArguments({ execArgv }),
+    restartDelayMs = SERVER_AUTO_RESTART_DELAY_MS,
+    crashLoopLimit = SERVER_CRASH_LOOP_LIMIT,
+    crashLoopWindowMs = SERVER_CRASH_LOOP_WINDOW_MS,
+    now = Date.now,
     pluginUpdate = {
         apply: applyServerPluginRelease,
         discard: discardQueuedServerPluginRelease,
@@ -121,6 +168,8 @@ export async function runSupervisor({
     let pendingPluginUpdate = null;
     let pendingPluginUpdateTimer = null;
     let activatingPluginUpdate = null;
+    let wakeRestartDelay = null;
+    let unexpectedStops = [];
 
     const recoverPluginUpdates = () => {
         try {
@@ -170,14 +219,28 @@ export async function runSupervisor({
     };
 
     const forceStopChild = () => {
-        if (child && child.exitCode === null) {
+        if (child && child.exitCode === null && !child.signalCode) {
             child.kill('SIGKILL');
         }
     };
 
+    // Not unref'd: while this runs the supervisor has no child, so nothing else keeps it alive.
+    const waitBeforeRestart = ms => new Promise(resolve => {
+        let timer;
+        const finish = () => {
+            clearTimeout(timer);
+            wakeRestartDelay = null;
+            resolve();
+        };
+        timer = setTimeout(finish, ms);
+        wakeRestartDelay = finish;
+    });
+
     const requestShutdown = () => {
         shuttingDown = true;
-        if (!child || child.exitCode !== null) {
+        wakeRestartDelay?.();
+        // A server killed by a signal has no exit code, only a signal code.
+        if (!child || child.exitCode !== null || child.signalCode) {
             return;
         }
 
@@ -227,10 +290,15 @@ export async function runSupervisor({
         }
 
         try {
-            child = spawnFn(argv[0], [...execArgv, ...argv.slice(1)], { stdio: ['inherit', 'inherit', 'inherit', 'ipc'], env });
+            if (isFirstLaunch && heapArguments.length) {
+                console.info(`[Neconyan] Setting the JavaScript heap limit for this device (${heapArguments.join(' ')}). Set NODE_OPTIONS=--max-old-space-size=<MB> to choose another.`);
+            }
+            child = spawnFn(argv[0], [...heapArguments, ...execArgv, ...argv.slice(1)], { stdio: ['inherit', 'inherit', 'inherit', 'ipc'], env });
             const activeChild = child;
             let crashDirectory;
             let rollbackRequested = false;
+            let startupAnnounced = false;
+            const memoryEvidence = createMemoryEvidence();
             let resolveStartup;
             const startupPromise = new Promise(resolve => {
                 resolveStartup = resolve;
@@ -252,7 +320,12 @@ export async function runSupervisor({
                     return;
                 }
                 if (message?.type === SERVER_STARTUP_READY_MESSAGE) {
+                    startupAnnounced = true;
                     resolveStartup({ plugins: Array.isArray(message.plugins) ? message.plugins : [] });
+                    return;
+                }
+                if (message?.type === SERVER_MEMORY_SAMPLE_MESSAGE) {
+                    memoryEvidence.add(message.sample);
                     return;
                 }
 
@@ -297,20 +370,21 @@ export async function runSupervisor({
             };
             child.on('message', onMessage);
             const exitPromise = once(child, 'exit').then(async ([code, signal]) => {
-                if (crashDirectory) {
-                    const { writeCrashReport, clearCrashMarker } = await import('./crash-diagnostics.js');
-                    const expected = shuttingDown || rollbackRequested || (!signal && [0, RESTART_EXIT_CODE, SERVER_PLUGIN_UPDATE_EXIT_CODE, SUPERVISOR_RELOAD_EXIT_CODE].includes(code));
-                    const needsReport = !expected && (signal || fs.existsSync(path.join(crashDirectory, `running-${activeChild.pid}.json`)));
-                    const explanation = signal
-                        ? `The operating system terminated the server with ${signal}. A signal alone does not establish why it was sent.`
-                        : `The server exited with code ${code} without completing its exit handler. No further cause was supplied.`;
-                    const saved = needsReport && writeCrashReport(signal ? 'child-process-signal' : 'child-process-exit', explanation, {
-                        child: { pid: activeChild.pid, signal, exitCode: code },
-                        limitation: 'The environment describes the surviving supervisor. The child could not report its final stack or memory.',
-                    }, crashDirectory);
-                    if (expected || saved) clearCrashMarker(crashDirectory, activeChild.pid);
-                }
-                return { code, signal };
+                const stoppedAt = now();
+                const expected = shuttingDown || rollbackRequested || (!signal && [0, RESTART_EXIT_CODE, SERVER_PLUGIN_UPDATE_EXIT_CODE, SUPERVISOR_RELOAD_EXIT_CODE].includes(code));
+                // A server that never finished starting is not restarted: a broken config or a busy port would loop.
+                const restartable = !expected && startupAnnounced;
+                const diagnostics = crashDirectory ? await import('./crash-diagnostics.js') : null;
+                // Always read, so the raw file Node wrote is deleted even when no report is needed.
+                const fatal = diagnostics?.consumeFatalReport(crashDirectory, activeChild.pid) ?? null;
+                const needsReport = Boolean(diagnostics) && (Boolean(fatal) || (!expected && (signal || fs.existsSync(path.join(crashDirectory, `running-${activeChild.pid}.json`)))));
+                const stop = needsReport || restartable
+                    ? describeChildStop({ pid: activeChild.pid, code, signal, fatal, memory: memoryEvidence.snapshot(), heapLimitArgument: heapArguments[0] ?? null, stoppedAt })
+                    : null;
+                if (restartable) console.error(`[Neconyan] The server stopped unexpectedly: ${stop.headline}.`);
+                const saved = needsReport && diagnostics.writeCrashReport(stop.kind, stop.explanation, stop.extra, crashDirectory);
+                if (diagnostics && (expected || saved)) diagnostics.clearCrashMarker(crashDirectory, activeChild.pid);
+                return { code, signal, restartable };
             });
 
             if (activatingPluginUpdate) {
@@ -371,7 +445,7 @@ export async function runSupervisor({
                 activatingPluginUpdate = null;
             }
 
-            const { code, signal } = await exitPromise;
+            const { code, signal, restartable } = await exitPromise;
             child.off('message', onMessage);
             if (forceKillTimer) {
                 clearTimeout(forceKillTimer);
@@ -425,6 +499,23 @@ export async function runSupervisor({
             if (code === SUPERVISOR_RELOAD_EXIT_CODE && !shuttingDown) {
                 console.info('[Neconyan] Host update requires a fresh supervisor process.');
                 return exitFn(RESTART_EXIT_CODE);
+            }
+
+            if (restartable && !shuttingDown) {
+                const time = now();
+                unexpectedStops = [...unexpectedStops.filter(at => time - at < crashLoopWindowMs), time];
+                if (unexpectedStops.length >= crashLoopLimit) {
+                    const minutes = Math.round(crashLoopWindowMs / 60_000);
+                    console.error(`[Neconyan] The server stopped ${unexpectedStops.length} times in ${minutes >= 1 ? `${minutes} minute${minutes === 1 ? '' : 's'}` : 'a short time'} and is not being restarted. Start it again by hand once the cause is fixed.`);
+                    return exitFn(signal ? 1 : (code ?? 0));
+                }
+                await waitBeforeRestart(restartDelayMs);
+                if (shuttingDown) {
+                    return exitFn(signal ? 1 : (code ?? 0));
+                }
+                console.info('[Neconyan] Starting the server again...');
+                isFirstLaunch = false;
+                continue;
             }
 
             return exitFn(signal ? 1 : (code ?? 0));

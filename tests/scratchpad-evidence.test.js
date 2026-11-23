@@ -126,6 +126,17 @@ describe('formatAppEvidence', () => {
         expect(text).toMatch(/8 older items were left out\./);
     });
 
+    test('prints a server crash report\'s detail lines under it and ignores anything that is not text', () => {
+        const text = formatAppEvidence({
+            environment,
+            serverCrashes: [{ at: '2026-11-01T10:00:00.000Z', kind: 'server-out-of-memory', message: 'The server ran out of JavaScript memory and stopped.', detail: ['JavaScript heap used 1010 MB of a 1014 MB limit.', 7, '', null, 'Next step: raise the limit.'] }],
+        });
+        const lines = text.split('\n');
+        const head = lines.findIndex(line => line.includes('server-out-of-memory: The server ran out of JavaScript memory'));
+        expect(head).toBeGreaterThan(-1);
+        expect(lines.slice(head + 1, head + 3)).toEqual(['  JavaScript heap used 1010 MB of a 1014 MB limit.', '  Next step: raise the limit.']);
+    });
+
     test('never prints planted secrets from any part', () => {
         const dirty = 'Authorization: Bearer sk-PLANTEDsecretKEY1234567890 at https://u:hunter2-planted@h.example/x?token=planted-url-token-abc';
         const text = formatAppEvidence({
