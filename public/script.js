@@ -19267,7 +19267,9 @@ async function openCharacterWorldPopup() {
     world_names.forEach((item, i) => {
         const array = (menu_type == 'create' ? create_save.extra_books : existingCharLore?.extraBooks);
         const isSelected = !!array?.includes(item);
-        extrasSelect.append(new Option(item, String(i), isSelected, isSelected));
+        const option = new Option(item, String(i), isSelected, isSelected);
+        option.setAttribute('data-i18n-ignore', '');
+        extrasSelect.append(option);
     });
 
     let extrasPicker = null;
