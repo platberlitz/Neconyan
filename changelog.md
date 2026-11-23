@@ -123,6 +123,7 @@
 - PR #902 (2026-11-23) `perf(mewmory): stop redoing whole-archive work on every status check`
 - PR #904 (2026-11-23) `fix(creator): start the macro preview time limit when the worker is ready`
 - PR #905 (2026-11-23) `fix(server): count logged strings towards the log buffer cut limit`
+- PR #906 (2026-11-23) `feat(shell): tell people once when the page reloaded itself for an update`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
