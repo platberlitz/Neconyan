@@ -10,10 +10,13 @@ import {
     deriveAccounts,
     digestLines,
     normalizeSettings,
+    reasoningOverridesFrom,
 } from './core.js';
 import { createStorageClient } from './storage-client.js';
 import { createStorageTransport } from './storage-transport.js';
 import { checkChatReasoningEffort, getNativeReasoningRoute } from '../../../../chat-reasoning-capabilities.js';
+import { normalizeChatCompletionBooleanFields } from '../../../../chat-preset-request.js';
+import { resolveProfileRequestOverrides } from '../../../../connection-profile-request.js';
 
 // getContext() copies chatId / characterId / chatMetadata by value, so a cached reference
 // silently reads the wrong chat. Always resolve it fresh.
@@ -525,8 +528,17 @@ export function reasoningConnection(profileId = getSettings().profileId) {
         const profile = listConnectionProfiles().find(profile => profile.id === profileId);
         const mapping = profile && context.CONNECT_API_MAP?.[profile.api];
         if (!mapping || profile.mode === 'tc' || mapping.selected !== 'openai') return { chat: false };
-        return { chat: true, source: mapping.source, model: profile.model,
-            metadata: context.getChatCompletionSamplerMetadata?.({ chat_completion_source: mapping.source }, profile.model) };
+        const settings = { chat_completion_source: mapping.source };
+        const connection = { chat: true, source: mapping.source, model: profile.model,
+            metadata: context.getChatCompletionSamplerMetadata?.(settings, profile.model) };
+        if (mapping.source === 'custom') {
+            const preset = profile.preset ? context.getPresetManager?.('openai')?.getCompletionPresetByName(profile.preset) : undefined;
+            const { overrides } = resolveProfileRequestOverrides(profile, {});
+            Object.assign(settings, reasoningOverridesFrom(profile, preset), overrides);
+            normalizeChatCompletionBooleanFields(settings);
+            connection.route = getNativeReasoningRoute(settings);
+        }
+        return connection;
     }
     if (context.mainApi !== 'openai') return { chat: false };
     const model = context.getChatCompletionModel?.(controls);

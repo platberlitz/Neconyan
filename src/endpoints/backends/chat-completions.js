@@ -14,7 +14,8 @@ import { getLocalPromptCacheValue, isLikelyLocalServerUrl } from '../../../publi
 import { getLinkApiBaseUrl, getLinkApiRequestFormat } from '../../../public/scripts/linkapi-utils.js';
 import { applyGrokModelParameterConstraints, applyKimiK3ModelParameterConstraints, isKimiK3Model, filterChatCompletionSamplingParameters, zaiSupportsReasoningEffort } from '../../../public/scripts/openai-model-capabilities.js';
 import { applyGenerationRequestControls, requestUsesReasoning } from '../../../public/scripts/generation-request-controls.js';
-import { checkChatReasoningEffort, getNativeReasoningRoute, GOOGLE_IMAGE_GENERATION_MODELS, resolveKnownInvalidNoneEffort } from '../../../public/scripts/chat-reasoning-capabilities.js';
+import { checkChatReasoningEffort, getNativeReasoningRoute, GOOGLE_IMAGE_GENERATION_MODELS, resolveKnownInvalidNoneEffort, stripModelBracketTags } from '../../../public/scripts/chat-reasoning-capabilities.js';
+import { coerceRequestBoolean } from '../../../public/scripts/chat-preset-request.js';
 
 import {
     AIMLAPI_HEADERS,
@@ -3125,6 +3126,9 @@ export async function handleChatCompletionsGenerate(request, response) {
         // reasoning effort the frontend never validated, and the pass-through sources forward it
         // to the provider verbatim.
         applyReasoningEffortNormalization(request.body);
+        if (request.body.custom_reasoning_documented_levels !== undefined) {
+            request.body.custom_reasoning_documented_levels = coerceRequestBoolean(request.body.custom_reasoning_documented_levels);
+        }
         const reasoningIdentity = {
             source: request.body.chat_completion_source,
             model: request.body.model,
@@ -3735,7 +3739,7 @@ export async function handleChatCompletionsGenerate(request, response) {
         // Neconyan: Fable 5.1 rejects legacy thinking types supplied by Custom endpoint settings.
         if (!isTextCompletion
             && request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.CUSTOM
-            && /claude-fable-5(?:-1|\.1)(?:[-/:]|$)/i.test(String(requestBody.model))) {
+            && /(?:^|[/:])claude-fable-5(?:-1|\.1)(?:[-/:@]|$)/i.test(stripModelBracketTags(requestBody.model))) {
             requestBody.thinking = { type: 'adaptive' };
         }
 
@@ -3767,7 +3771,7 @@ export async function handleChatCompletionsGenerate(request, response) {
                 }
                 // Neconyan: smol-alibaba answers an empty reply when a plain prefill carries the stock
                 // reasoning, but continues fine without it (it echoes the prefill; the client dedupes).
-                seedKimiK3PartialReasoning(requestBody.messages, { stockReasoning: !/(?:^|[/:])smol-alibaba\//i.test(String(requestBody.model)) });
+                seedKimiK3PartialReasoning(requestBody.messages, { stockReasoning: !/(?:^|[/:])smol-alibaba\//i.test(stripModelBracketTags(requestBody.model)) });
             }
         }
 

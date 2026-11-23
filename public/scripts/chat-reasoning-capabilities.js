@@ -131,16 +131,27 @@ const CUSTOM_MODEL_INDEX = (() => {
     return index;
 })();
 
-const DATE_SNAPSHOT = /-(?:\d{4}-\d{2}-\d{2}|\d{8}|(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01]))$/;
+const DATE_SNAPSHOT = /(?:@\d{8}|-(?:\d{4}-\d{2}-\d{2}|\d{8}|(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])))$/;
+
+/** Remove routing tags for capability checks only; never rewrite the model sent upstream. */
+export function stripModelBracketTags(model) {
+    return String(model ?? '').trim().replace(/(^|[/:])\s*(?:(?:\[[^\]]*\]|【[^】]*】)\s*[-_:]?\s*)*/g, '$1');
+}
+
+function findCustomModel(text) {
+    const key = text.replace(/^(claude-(?:opus|sonnet|haiku|fable)-\d+)\.(?=\d)/, '$1-');
+    return CUSTOM_MODEL_INDEX.get(key) ?? CUSTOM_MODEL_INDEX.get(key.replace(DATE_SNAPSHOT, ''));
+}
 
 /** Find the maker's row for a Custom model ID, ignoring routing wrappers. Returns { id, maker, efforts, aliases } or null. */
 export function resolveCustomReasoningModel(model) {
     if (typeof model !== 'string') return null;
-    let text = model.trim().toLowerCase().replace(/(^|[/:])(?:\[[^\]]*\]\s*)+/g, '$1');
-    text = text.split('/').pop();
-    text = text.replace(/:free$/, '').replace(/-free$/, '');
-    if (!text) return null;
-    const hit = CUSTOM_MODEL_INDEX.get(text) ?? CUSTOM_MODEL_INDEX.get(text.replace(DATE_SNAPSHOT, ''));
+    const text = stripModelBracketTags(model).toLowerCase().split('/').pop();
+    const parts = text.replace(/:free$/, '').replace(/-free$/, '').split(':');
+    const id = parts.pop();
+    // A namespace may precede the model, but a qualifier must not replace a recognised model.
+    if (parts.some(part => !/^[a-z0-9][a-z0-9_.-]*$/.test(part) || findCustomModel(part))) return null;
+    const hit = findCustomModel(id);
     return hit ? { id: hit.id, maker: hit.maker, efforts: [...hit.efforts], aliases: { ...hit.aliases } } : null;
 }
 

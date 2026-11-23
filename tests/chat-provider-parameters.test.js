@@ -127,6 +127,8 @@ test('keeps existing Claude-family omission for unknown, stale and non-OpenRoute
 });
 
 test.each([
+    ['anthropic/claude-opus-5-5', 'openai'], ['anthropic/claude-opus-5.5', 'openai'],
+    ['[anthropic]claude-opus-5-5', 'openai'], ['anthropic:claude-opus-5-5', 'openai'],
     ['claude-code/claude-opus-5-5', 'openai'], ['claude-code/claude-opus-5-5', 'thinking_object'],
     ['anthropic/claude-sonnet-5', 'openai'], ['anthropic/claude-sonnet-5', 'thinking_object'],
     ['claude-fable-5-2', 'openai'], ['claude-fable-5-2', 'thinking_object'],
@@ -139,11 +141,22 @@ test.each([
             ...context, getReasoningEffort: snapshot => resolveChatReasoningEffort(settings, model, undefined, snapshot),
         });
         expect(data.reasoning_effort).toBe('high');
+        expect(data.model).toBe(model);
         expect(data.custom_reasoning_param_name).toBe(settings.custom_reasoning_param_name);
         expect(data.custom_reasoning_documented_levels).toBe(documentedLevels);
         expect(data.temperature).toBeUndefined();
         expect(data.top_p).toBeUndefined();
     }
+});
+
+test.each(['[kimi]/kimi-k3', '[kimi] / kimi-k3', 'models:[kimi]kimi-k3'])('keeps Custom Kimi effort without unsupported samplers for %s', async model => {
+    const settings = { ...baseSettings, chat_completion_source: 'custom', reasoning_effort: 'low',
+        custom_reasoning_param_format: 'openai', custom_reasoning_param_name: 'reasoning_effort', custom_reasoning_documented_levels: true };
+    const { generate_data: data } = await createChatGenerationParameters(settings, model, 'normal', [], {
+        ...context, getReasoningEffort: snapshot => resolveChatReasoningEffort(settings, model, undefined, snapshot),
+    });
+    expect(data).toMatchObject({ model, reasoning_effort: 'low', custom_reasoning_documented_levels: true });
+    for (const key of ['temperature', 'top_p', 'frequency_penalty', 'presence_penalty']) expect(data[key]).toBeUndefined();
 });
 
 test.each(['anthropic/claude-sonnet-5', 'anthropic/claude-opus-5', 'anthropic/claude-fable-5'])(

@@ -9,6 +9,7 @@ import {
     getNativeReasoningRoute,
     resolveCustomReasoningModel,
     resolveKnownInvalidNoneEffort,
+    stripModelBracketTags,
 } from '../public/scripts/chat-reasoning-capabilities.js';
 import { resolveChatReasoningEffort } from '../public/scripts/chat-request-controls.js';
 
@@ -17,8 +18,25 @@ const customRoute = (overrides = {}) => getNativeReasoningRoute({ ...customSetti
 const lookup = id => resolveCustomReasoningModel(id)?.id ?? null;
 const allRows = Object.entries(CUSTOM_COMPATIBLE_EFFORTS).flatMap(([maker, rows]) => Object.entries(rows).map(([id, efforts]) => ({ maker, id: id.toLowerCase(), efforts })));
 
+test.each([
+    [' [kimi] / kimi-k3 ', '/kimi-k3'],
+    ['proxy/ 【route:kimi】 _ [free] - kimi-k3', 'proxy/kimi-k3'],
+    ['models: [route/kimi-k3:fast] : kimi-k3', 'models:kimi-k3'],
+    ['proxy/ models: kimi-k3', 'proxy/models:kimi-k3'],
+    ['not[kimi]kimi-k3', 'not[kimi]kimi-k3'],
+])('strips only boundary routing tags in %s', (input, expected) => {
+    expect(stripModelBracketTags(input)).toBe(expected);
+});
+
 describe('resolveCustomReasoningModel', () => {
     test.each([
+        ...['[kimi]/kimi-k3', '[kimi] / kimi-k3', '[kimi]-kimi-k3', '[kimi]:kimi-k3', '【kimi】kimi-k3',
+            'models:kimi-k3', 'models:[kimi]kimi-k3', 'models:[kimi]kimi-k3:free'].map(model => [model, 'kimi-k3']),
+        ...['anthropic/claude-opus-5-5', '[anthropic]claude-opus-5-5', 'anthropic/claude-opus-5.5',
+            'anthropic:claude-opus-5-5', 'proxy/anthropic:claude-opus-5-5', 'vertex/claude-opus-5-5@20260601'].map(model => [model, 'claude-opus-5-5']),
+        ...['sonnet-5.5', 'haiku-5.5', 'fable-5.2', 'fable-5.1', 'opus-4.8', 'opus-4.7', 'opus-4.6', 'sonnet-4.6']
+            .map(version => [`claude-${version}`, `claude-${version.replace('.', '-')}`]),
+        ['[openai]/gpt-5.4', 'gpt-5.4'], ['smol-openai/gpt-6-astra', 'gpt-6-astra'],
         ['smol-openai/gpt-6.1-sol', 'gpt-6.1-sol'], ['[free]gpt-6.1-sol', 'gpt-6.1-sol'], ['gpt-5.5-2026-04-23', 'gpt-5.5-2026-04-23'],
         ['smol-openai/gpt-6.2-astra', 'gpt-6.2-astra'], ['smol-google/gemini-4-neon', 'gemini-4-neon'],
         ['smol-google/gemini-3.5-flash-lite', 'gemini-3.5-flash-lite'], ['glm-5.3-flash-free', 'glm-5.3-flash'],
@@ -46,6 +64,8 @@ describe('resolveCustomReasoningModel', () => {
         'smol-alibaba/cmaas-qwen3.8-flash', 'smol-xai/grok-4.20-0309-reasoning', 'smol-xai/grok-4.20-multi-agent-0309',
         'smol-xai/grok-imagine-image', 'claude-code/claude-sonnet-4-5-20250929', 'claude-code/claude-opus-4-20250514',
         'claude-code/claude-opus-4-5-20251101', 'kilo/particle-ai/particle-1:free', 'gpt-6-sol:online', '', '   ', undefined, 42,
+        'models:kimi-k3:thinking', 'kimi-k3:thinking', 'kimi-k3:claude-opus-5-5', '[kimi-k3]other-model', '[route/kimi-k3:fast]other-model', '[kimi-k3]',
+        'claude-opus-5.5-lite', 'kimi-k3-pro', 'proxy/claude-opus-5.5-mini', 'kimi-k3@20260601:thinking',
     ])('%p does not match', input => {
         expect(lookup(input)).toBeNull();
     });

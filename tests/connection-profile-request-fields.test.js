@@ -136,6 +136,15 @@ test('service tiers stay scoped to the profile or its bound preset, including ex
 });
 
 describe('Connection Profile chat-completion request field mapping', () => {
+    test.each([['true', true], ['false', false]])('maps the Custom toggle %s for a bracket-prefixed profile', (stored, expected) => {
+        const profile = { ...createReasoningProfile(), api: 'custom', model: '[kimi]/kimi-k3', 'custom-reasoning-documented-levels': stored };
+        const key = 'custom_reasoning_documented_levels';
+        const result = getChatCompletionProfileRequestOverrides(profile, {});
+        expect(result.overrides[key]).toBe(expected);
+        expect(result.profileFieldNames).toContain(key);
+        expect(getChatCompletionProfileRequestOverrides(profile, { [key]: !expected }).overrides).not.toHaveProperty(key);
+    });
+
     test('leaves existing profiles without reasoning request keys unchanged', () => {
         const legacyProfile = {
             id: 'profile-legacy',

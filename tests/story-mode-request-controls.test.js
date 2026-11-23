@@ -339,6 +339,8 @@ describe('request-local output controls', () => {
         { model: 'openai/o3', max_completion_tokens: 8192 },
         { model: 'gpt-5.1', reasoning_effort: 'high' },
         { model: 'gpt-6-astra' },
+        { model: '[openai]o3' },
+        { model: '[openai]gpt-5.4', reasoning_effort: 'high' },
         { model: 'deepseek-reasoner', reasoning_effort: 'none' },
         { model: 'deepseek-ai/DeepSeek-R1' },
         { model: 'moonshot/kimi-k3' },
@@ -353,6 +355,10 @@ describe('request-local output controls', () => {
         expect(requestUsesReasoning(preset)).toBe(true);
         expect(applyGenerationRequestControls(preset, { maxOutputTokens: 160 })).toBe(preset);
         expect(applyGenerationRequestControls(preset, { responseLength: 64, preserveReasoningBudget: true })).toBe(preset);
+    });
+
+    test.each(['[o3]gpt-4o', '[route/o3:fast]gpt-4o', '[gpt-5.4]gpt-4o'])('does not read reasoning models from tags in %s', model => {
+        expect(requestUsesReasoning({ model })).toBe(false);
     });
 
     describe('native DeepSeek v4-pro explicit None', () => {

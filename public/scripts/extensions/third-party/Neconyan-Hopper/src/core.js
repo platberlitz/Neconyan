@@ -471,6 +471,7 @@ export const REASONING_REQUEST_FIELDS = Object.freeze([
     ['custom-reasoning-param-name', 'custom_reasoning_param_name'],
     ['custom-reasoning-enabled-value', 'custom_reasoning_enabled_value'],
     ['custom-reasoning-disabled-value', 'custom_reasoning_disabled_value'],
+    ['custom-reasoning-documented-levels', 'custom_reasoning_documented_levels'],
 ]);
 
 export function reasoningOverridesFrom(profile, preset) {

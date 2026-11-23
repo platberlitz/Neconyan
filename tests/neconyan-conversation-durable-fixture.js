@@ -151,7 +151,7 @@ export const test = base.extend({
             async release() {
                 await fetch(provider.url.replace(/\/v1$/, '') + '/fixture/release', { method: 'POST', body: '{}' });
             },
-            async account({ handle = 'default-user', phone = false, contextOptions = {}, textProfile = false, activeConnection = false, tts = false, settings = {}, configureSettings = () => {} } = {}) {
+            async account({ handle = 'default-user', phone = false, contextOptions = {}, textProfile = false, activeConnection = false, tts = false, seedConversation = true, settings = {}, configureSettings = () => {} } = {}) {
                 const context = await browser.newContext({ baseURL: app.url, serviceWorkers: 'block', reducedMotion: 'reduce',
                     viewport: phone ? { width: 393, height: 852 } : { width: 1280, height: 900 }, hasTouch: phone, isMobile: phone, ...contextOptions });
                 contexts.push(context);
@@ -216,25 +216,34 @@ export const test = base.extend({
                 const avatar = await created.text();
                 const personaId = saved.user_avatar || '';
                 const initial = await post('/api/neconyan-conversation/store/get');
-                const store = initial.store;
-                Object.assign(store.settings, { connection_profile: 'durable', idle_action: 'disabled', idle_followup: false,
-                    idle_spontaneous: false, ...settings });
-                await post('/api/neconyan-conversation/store/save', { store, version: initial.version });
-                const current = await post('/api/neconyan-conversation/store/get');
-                const thread = await post('/api/neconyan-conversation/thread/save', { avatar, personaId, version: current.version,
-                    messages: [{ id: 'seed-user', role: 'user', name: 'User', mes: 'Original question.', timestamp: 1700000000000 }] });
-                const latest = await post('/api/neconyan-conversation/store/get');
-                Object.assign(latest.store.characters[thread.threadKey].settings, { enabled: true, availability: 'online', reply_delay_multiplier: 0,
-                    connection_profile: activeConnection ? '' : 'durable',
-                    auto_message: false, proactive_messaging: false, auto_character_chat: false,
-                    roleplay_reactions: false, multi_char: false, image_gen_enabled: false, ...settings });
-                await post('/api/neconyan-conversation/store/save', latest);
+                let threadKey;
+                if (seedConversation) {
+                    const store = initial.store;
+                    Object.assign(store.settings, { connection_profile: 'durable', idle_action: 'disabled', idle_followup: false,
+                        idle_spontaneous: false, ...settings });
+                    await post('/api/neconyan-conversation/store/save', { store, version: initial.version });
+                    const current = await post('/api/neconyan-conversation/store/get');
+                    const thread = await post('/api/neconyan-conversation/thread/save', { avatar, personaId, version: current.version,
+                        messages: [{ id: 'seed-user', role: 'user', name: 'User', mes: 'Original question.', timestamp: 1700000000000 }] });
+                    threadKey = thread.threadKey;
+                    const latest = await post('/api/neconyan-conversation/store/get');
+                    Object.assign(latest.store.characters[threadKey].settings, { enabled: true, availability: 'online', reply_delay_multiplier: 0,
+                        connection_profile: activeConnection ? '' : 'durable',
+                        auto_message: false, proactive_messaging: false, auto_character_chat: false,
+                        roleplay_reactions: false, multi_char: false, image_gen_enabled: false, ...settings });
+                    await post('/api/neconyan-conversation/store/save', latest);
+                } else {
+                    // These fresh accounts have no legacy browser data to migrate. Seed that
+                    // state before boot so the unrelated migration does not race settings saves.
+                    initial.store.localStorageMigrated = true;
+                    await post('/api/neconyan-conversation/store/save', initial);
+                }
                 const account = {
-                    context, post, headers, avatar, personaId, threadKey: thread.threadKey,
+                    context, post, headers, avatar, personaId, threadKey,
                     async store() { return (await post('/api/neconyan-conversation/store/get')).store; },
                     async effects() {
                         const store = await account.store();
-                        const branch = store.characters[thread.threadKey]?.branches.main;
+                        const branch = store.characters[threadKey]?.branches.main;
                         // Opening a thread legitimately refreshes its preview and display timestamp.
                         if (branch) { delete branch.preview; delete branch.updatedAt; delete branch.unread; delete branch.readThrough; delete branch.pendingPresentations; }
                         return { branch, reminders: store.reminders,
@@ -252,7 +261,7 @@ export const test = base.extend({
                         }
                     },
                     async branch(id) {
-                        const slot = (await account.store()).characters[thread.threadKey];
+                        const slot = (await account.store()).characters[threadKey];
                         return slot?.branches[id || slot.activeBranchId];
                     },
                     async job(id) {
@@ -271,8 +280,8 @@ export const test = base.extend({
                     },
                     async open({ workspace = true, timeout = 20000, readyTimeout = 60000, skipTour = true, waitForFirstStart = true } = {}) {
                         const page = await context.newPage();
-                        // Update notices depend on the checkout's remote, not this disposable account.
-                        await page.route('**/api/server-admin/status', route => route.fulfill({ status: 403, json: { error: 'Update checks are outside this fixture.' } }));
+                        // Return a no-update status so these fixtures do not depend on the checkout's remote.
+                        await page.route('**/api/server-admin/status', route => route.fulfill({ json: { repository: { isRepo: false } } }));
                         navigationErrors.push(trackNavigationErrors(page).errors);
                         page.setDefaultTimeout(timeout);
                         await page.goto('/', { waitUntil: 'domcontentloaded' });
