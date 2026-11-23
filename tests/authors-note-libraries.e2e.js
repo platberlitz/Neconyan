@@ -24,6 +24,72 @@ async function dismissCrashNotice(page) {
     if (await dismiss.isVisible()) await dismiss.click();
 }
 
+const personaKey = 'Example:\n[{{user}} speaks formally and never swears.]';
+const personaFixture = 'Beispiel:\n[{{user}} spricht förmlich und flucht nie.]';
+
+async function prepareGermanExamples(page, translatedPersona) {
+    await page.addInitScript(() => window.localStorage.setItem('language', 'de-de'));
+    if (translatedPersona) {
+        await page.route('**/locales/neconyan/de-de.json', async route => {
+            const response = await route.fetch();
+            await route.fulfill({ response, json: { ...await response.json(), [personaKey]: personaFixture } });
+        });
+    }
+}
+
+async function captureNoteExample(page, input, filename) {
+    const directory = process.env.NECONYAN_QUICK_FIX_SCREENSHOTS;
+    if (!directory) return;
+    await input.scrollIntoViewIfNeeded();
+    await mkdir(directory, { recursive: true });
+    await page.screenshot({ path: `${directory}/${filename}.png`, scale: 'css' });
+}
+
+for (const phone of [true, false]) {
+    const viewport = phone ? 'phone' : 'desktop';
+    test.describe(`Note placeholders on ${viewport}`, () => {
+        test.use(phone ? IPHONE_SAFARI_CONTEXT : { viewport: { width: 1280, height: 900 } });
+
+        for (const translatedPersona of [false, true]) {
+            const personaExample = translatedPersona ? personaFixture : personaKey;
+            const variant = translatedPersona ? 'fixture' : 'stock';
+            test(`German examples with ${translatedPersona ? 'a persona translation fixture' : 'the shipped dictionary'}`, async ({ page }) => {
+                const scenario = 'Beispiel:\n[Szenario: verrückte Abenteuer; Genre: romantische Komödie; Stil: wortreich, kreativ]';
+                await prepareGermanExamples(page, translatedPersona);
+                await isolateSettingsSaves(page, settings => {
+                    settings.firstRun = false;
+                    settings.accountStorage ??= {};
+                    settings.accountStorage['NeconyanTutorialStatus.v1'] = 'skipped';
+                    settings.extension_settings.note = { default: '', chara: [] };
+                });
+                await openReadyChat(page);
+                await expect(page.locator('html')).toHaveAttribute('lang', 'de-de');
+                await dismissCrashNotice(page);
+                await switchPersona(page, 'note-examples.png');
+                await page.evaluate(async () => (await import('/scripts/authors-note.js')).openAuthorsNotePanel('character'));
+                const fields = [
+                    ['character', 'chara', scenario],
+                    ['persona', 'persona', personaExample],
+                    ['defaults', 'default', scenario],
+                ];
+                for (const [tab, slot, example] of fields) {
+                    await page.locator(`#an_tab_${tab}`).click();
+                    const input = page.locator(`#extension_floating_${slot}`);
+                    await expect(input).toBeVisible();
+                    await expect(input).toHaveValue('');
+                    await captureNoteExample(page, input, `note-${viewport}-${tab}-${variant}`);
+                    await expect.soft(input).toHaveAttribute('placeholder', example);
+                    await input.fill(`My ${slot} note.`);
+                }
+                for (const [tab, slot] of fields) {
+                    await page.locator(`#an_tab_${tab}`).click();
+                    await expect(page.locator(`#extension_floating_${slot}`)).toHaveValue(`My ${slot} note.`);
+                }
+            });
+        }
+    });
+}
+
 for (const { phone, copied } of [true, false].flatMap(phone => [false, true].map(copied => ({ phone, copied })))) {
     const viewport = phone ? 'phone' : 'desktop';
     test.describe(`Character note libraries on ${viewport} (old copies: ${copied})`, () => {

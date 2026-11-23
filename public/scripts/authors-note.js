@@ -1292,6 +1292,9 @@ function onAllowWIScanCheckboxChanged() {
  */
 // Inserts the extension first since it's statically imported
 export function initAuthorsNote() {
+    const scenarioExample = t`Example:\n[Scenario: wacky adventures; Genre: romantic comedy; Style: verbose, creative]`;
+    $('#extension_floating_chara, #extension_floating_default').attr('placeholder', scenarioExample);
+    $('#extension_floating_persona').attr('placeholder', t`Example:\n[{{user}} speaks formally and never swears.]`);
     $('#extension_floating_prompt').on('input', onExtensionFloatingPromptInput);
     $('#extension_floating_interval').on('input', onExtensionFloatingIntervalInput);
     $('#extension_floating_depth').on('input', onExtensionFloatingDepthInput);
