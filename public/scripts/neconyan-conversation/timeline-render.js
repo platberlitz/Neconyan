@@ -1519,7 +1519,10 @@ export async function regenerateConversationMessage(messageId) {
             speakerName,
             { groupId: context.groupId, personaId: context.personaId },
         );
-        const lorebook = await fetchConversationLorebook(settings, speakerAvatar, sourceMessages.slice(0, -1), { personaId: context.personaId, account: getCurrentUserHandle() });
+        // Size the World Info budget from the speaker's real context window, as the server paths do.
+        const contextLimit = Number(bindingContext.bindingRequest?.contextLimits?.[speakerAvatar]) - getConversationReplyMaxTokens(settings);
+        const lorebook = await fetchConversationLorebook(settings, speakerAvatar, sourceMessages.slice(0, -1), {
+            personaId: context.personaId, account: getCurrentUserHandle(), maxContext: contextLimit > 0 ? contextLimit : undefined });
         const systemPrompt = await buildConversationSystemPrompt(settings, speakerAvatar, {
             threadAvatar: context.avatar,
             branchId: context.branchId,

@@ -182,4 +182,21 @@ for (const phone of [true, false]) {
         expect(directText).not.toContain('OTHER-LORE');
         expect(directText).not.toContain('CARD-LORE');
     });
+
+    test(`${device}: Regenerate sizes the lorebook budget from the speaker's context window`, async ({ app }) => {
+        const account = await app.account({ phone, activeConnection: true, settings: { lorebook_override: BOOK, reply_max_tokens: 300 },
+            configureSettings: saved => { saved.oai_settings.openai_max_context = 20000; } });
+        await plant(account);
+        await account.changeStore(store => store.characters[account.threadKey].branches.main.messages.push(
+            { id: 'zephyr-user', role: 'user', name: 'User', mes: 'Remind me about the zephyr.', timestamp: 1700000000001 },
+            { id: 'old-reply', role: 'character', name: 'Durable Nova', mes: 'Original reply.', timestamp: 1700000000002 },
+        ));
+        const page = await account.open();
+        await page.locator('.sb-conversation-message[data-message-id="old-reply"] .sb-conversation-more-actions').click();
+        const accepted = page.waitForResponse(response => response.url().endsWith('/rewrite/submit') && response.status() === 202);
+        const scan = page.waitForRequest(request => request.url().endsWith('/lorebook/scan'));
+        await page.locator('[data-sb-conversation-action="regenerate-message"][data-message-id="old-reply"]').click();
+        expect((await scan).postDataJSON().maxContext).toBe(20000 - 300);
+        await account.settled((await (await accepted).json()).job.id);
+    });
 }
