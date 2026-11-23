@@ -13,6 +13,8 @@ const submitConversationRewrite = jest.fn();
 const requestConversationSelfie = jest.fn();
 const captureConversationTextBinding = jest.fn(async () => ({}));
 const buildConversationPromptMessages = jest.fn(async () => []);
+const fetchConversationLorebook = jest.fn(async () => null);
+const worldInfo = {};
 const saveConversationThread = jest.fn();
 const commitCharacterReplyCommands = jest.fn();
 const revealUi = jest.fn();
@@ -41,7 +43,7 @@ await jest.unstable_mockModule('../public/script.js', () => ({
 let momentFactory = () => ({ isValid: () => false });
 await jest.unstable_mockModule('../public/scripts/utils.js', () => ({ timestampToMoment: value => momentFactory(value) }));
 await jest.unstable_mockModule('../public/scripts/personas.js', () => ({ user_avatar: 'persona-a.png' }));
-await jest.unstable_mockModule('../public/scripts/world-info.js', () => ({ world_info: {}, world_names: [] }));
+await jest.unstable_mockModule('../public/scripts/world-info.js', () => ({ world_info: worldInfo, world_names: [] }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/context.js', () => ({
     createConversationBranch: (name, id = 'new-branch') => ({ id, name, messages: [] }),
     getActiveConversationBranch: (avatar, options = {}) => {
@@ -85,7 +87,7 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/personas
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/prompt.js', () => ({
     buildConversationPromptMessages,
     buildConversationSystemPrompt: () => '',
-    fetchConversationLorebook: async () => null,
+    fetchConversationLorebook,
     renderConversationAttachments: jest.fn(),
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/render-scheduler.js', () => ({
@@ -317,6 +319,38 @@ describe('conversation timeline operation identity', () => {
         expect(reportConversationGenerationError).toHaveBeenCalledTimes(1);
         expect(reportConversationGenerationError).toHaveBeenCalledWith('regenerate', refusal, { level: 'warning', origin: {
             workspace: 'conversation', account: 'tester', avatar: 'char.png', groupId: '', personaId: 'persona-a.png', branchId: 'branch-a', lifetimeSeed: 'seed-a', createdAt: '111' } });
+    });
+
+    test('regeneration passes only the speaker card\'s own linked lorebooks from world_info.charLore', async () => {
+        fetchConversationLorebook.mockClear();
+        submitConversationRewrite.mockResolvedValue({ messageId: 'message-2' });
+        try {
+            worldInfo.charLore = [
+                { name: 'other', extraBooks: ['Other Book'] },
+                { name: 'char', extraBooks: [] },
+            ];
+            await regenerateConversationMessage('message-2');
+            expect(fetchConversationLorebook).toHaveBeenLastCalledWith(
+                expect.anything(),
+                'char.png',
+                expect.anything(),
+                expect.objectContaining({ linkedBooks: [] }),
+            );
+
+            worldInfo.charLore = [
+                { name: 'other', extraBooks: ['Other Book'] },
+                { name: 'char', extraBooks: ['Extra Book'] },
+            ];
+            await regenerateConversationMessage('message-2');
+            expect(fetchConversationLorebook).toHaveBeenLastCalledWith(
+                expect.anything(),
+                'char.png',
+                expect.anything(),
+                expect.objectContaining({ linkedBooks: ['Extra Book'] }),
+            );
+        } finally {
+            delete worldInfo.charLore;
+        }
     });
 
     test('says the server is still writing when the page stops watching', async () => {

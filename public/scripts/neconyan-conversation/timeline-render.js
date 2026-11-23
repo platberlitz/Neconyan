@@ -16,7 +16,7 @@ import { getCurrentUserHandle } from '../user.js';
 import { conversationImageOrigin } from '../prompt-media-policy.js';
 import { timestampToMoment } from '../utils.js';
 import { world_info, world_names } from '../world-info.js';
-import { cardLorebookLinks } from '../lorebook-links.js';
+import { listLorebookLinks } from '../lorebook-links.js';
 import {
     CHROME_IDS,
     CONVERSATION_ATTACHMENT_ACCEPT,
@@ -1522,7 +1522,10 @@ export async function regenerateConversationMessage(messageId) {
         );
         // Size the World Info budget from the speaker's real context window, as the server paths do.
         const contextLimit = Number(bindingContext.bindingRequest?.contextLimits?.[speakerAvatar]) - getConversationReplyMaxTokens(settings);
-        const linkedBooks = cardLorebookLinks(getCharacterForAvatar(speakerAvatar), world_info?.charLore ?? []).map(link => link.name);
+        const speakerCard = getCharacterForAvatar(speakerAvatar) ?? (speakerAvatar ? { avatar: speakerAvatar } : null);
+        const linkedBooks = speakerCard
+            ? listLorebookLinks({ cards: [speakerCard], charLore: world_info?.charLore ?? [] }).map(link => link.name)
+            : [];
         const lorebook = await fetchConversationLorebook(settings, speakerAvatar, sourceMessages.slice(0, -1), {
             personaId: context.personaId, account: getCurrentUserHandle(), maxContext: contextLimit > 0 ? contextLimit : undefined, linkedBooks });
         const systemPrompt = await buildConversationSystemPrompt(settings, speakerAvatar, {

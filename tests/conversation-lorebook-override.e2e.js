@@ -79,7 +79,11 @@ async function plant(account, { links = true, main = 'Card Book' } = {}) {
 
 const outsideBooks = saved => {
     saved.world_info_settings ??= {};
-    saved.world_info_settings.world_info = { ...(saved.world_info_settings.world_info || {}), globalSelect: ['Global Book'] };
+    saved.world_info_settings.world_info = {
+        ...(saved.world_info_settings.world_info || {}),
+        globalSelect: ['Global Book'],
+        charLore: [{ name: 'unrelated-card', extraBooks: ['Other Book'] }],
+    };
     const persona = saved.user_avatar;
     if (persona) {
         saved.power_user.persona_descriptions = { ...(saved.power_user.persona_descriptions || {}) };
