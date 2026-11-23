@@ -128,6 +128,7 @@
 - PR #907 (2026-11-23) `fix(crash-diagnostics): record the stopped server build`
 - PR #908 (2026-11-23) `feat(reasoning): let custom endpoints hide unsupported reasoning levels`
 - PR #909 (2026-11-23) `feat(conversation): load the Lorebook Override book into replies`
+- PR #910 (2026-11-23) `perf(server): cut memory pressure and chat-save buffers`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
