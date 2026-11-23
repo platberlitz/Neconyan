@@ -5,7 +5,7 @@ import { isDeepStrictEqual, TextDecoder, types } from 'node:util';
 import sanitize from 'sanitize-filename';
 import { acquireChatFileLock, getChatFileLockPath } from './chat-file-lock.js';
 import { assertDataRootRepairOwner } from './data-root-owner.js';
-import { canonical, getJob, retireJobStore, validateOwner } from './jobs/store.js';
+import { canonical, canonicalSha256, getJob, isStrictJsonTree, retireJobStore, validateOwner } from './jobs/store.js';
 import { preserveMeowerReceipts } from './meower-retirement.js';
 import { saveResetContent, loadResetContent, installResetContent } from './account-reset-content.js';
 import { decodeFileWriteRecovery, fsyncDirectorySync, setFileWriteRecoveryGuard, tryWriteFileSync, FILE_WRITE_RECOVERY_SUFFIX, FILE_WRITE_RECOVERY_MAX_BYTES } from './util.js';
@@ -47,6 +47,11 @@ export function roleplayError(code, message, status = 409) {
 }
 
 export function roleplayHash(value) {
+    // A value that is already a strict JSON tree needs no stringify, parse and compare round trip,
+    // which for a whole chat held three extra copies of it. Anything else takes the checked path.
+    let strict = false;
+    try { strict = isStrictJsonTree(value); } catch { /* The checked path below reports it as it always has. */ }
+    if (strict) return canonicalSha256(value);
     const json = JSON.stringify(value);
     if (json === undefined || !isDeepStrictEqual(JSON.parse(json), value)) {
         throw roleplayError('ROLEPLAY_INVALID', 'Roleplay identity requires JSON-only values.', 400);
