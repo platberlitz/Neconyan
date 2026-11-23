@@ -163,7 +163,9 @@ const INSPECT_ARRAY_ITEMS = 100;
 const INSPECT_STRING_CHARACTERS = 10000;
 // An argument that would print more than this many values, or this much text, is cut before it is formatted. It
 // would fill the whole 1,500 line buffer three times over, and only its last lines would survive. Everything
-// smaller is formatted exactly as util.format always did.
+// smaller is formatted exactly as util.format always did. Every value counts as one, a string and an empty string
+// too, because each prints at least one line; a string also counts its characters (at most the 10,000 that
+// util.inspect prints), so a few long strings are cut by the text limit and many short ones by the value limit.
 const FORMAT_VALUE_LIMIT = 5000;
 const FORMAT_CHARACTER_LIMIT = 1_000_000;
 // A cut argument keeps its first lines only: at most this many for the whole call (under 7% of the buffer,
@@ -201,13 +203,13 @@ function* shownValues(value) {
     }
 }
 
-/** Whether an argument would print more than the limits above. Shared references count each time they print; a reference back to an object being printed prints once as [Circular]. */
+/** Whether an argument would print more than the limits above: more values (strings included), or more text. Shared references count each time they print; a reference back to an object being printed prints once as [Circular]. */
 function exceedsFormatLimit(root) {
     const left = { values: FORMAT_VALUE_LIMIT, characters: FORMAT_CHARACTER_LIMIT };
     const ancestors = new Set();
     const exceeds = (value, depth) => {
-        if (typeof value === 'string') return (left.characters -= Math.min(value.length, INSPECT_STRING_CHARACTERS)) < 0;
         if (--left.values < 0) return true;
+        if (typeof value === 'string') return (left.characters -= Math.min(value.length, INSPECT_STRING_CHARACTERS)) < 0;
         // An object deeper than the print depth prints as [Object]; an ancestor prints as [Circular].
         if (!value || typeof value !== 'object' || depth > FORMAT_DEPTH || ancestors.has(value) || !isReadable(value)) return false;
         ancestors.add(value);
@@ -261,6 +263,15 @@ function cutText(argument, lines, options) {
     return [...text.slice(0, lines - 1), '… (a value too large to keep in the log; only its start is kept)'].join('\n');
 }
 
+/**
+ * What stands in for a cut argument. util.format prints it as the text however the format reads it: as an
+ * argument, through %s, %o or %O, and as a JSON string through %j. A plain string would be printed as itself by
+ * %s, but %o and %O would inspect it, quoting it as one line, and a string first argument would be read as a format.
+ */
+function cutArgument(text) {
+    return { [inspect.custom]: () => text, toString: () => text, toJSON: () => text };
+}
+
 function captureConsoleCall(stream, args) {
     const options = {
         colors: false,
@@ -272,9 +283,9 @@ function captureConsoleCall(stream, args) {
     const cut = args.map(argument => argument !== null && typeof argument === 'object' && exceedsFormatLimit(argument));
     const cutCount = cut.filter(Boolean).length;
     const lines = Math.max(5, Math.floor(CUT_CALL_LINES / Math.max(1, cutCount)));
-    const shown = args.map((argument, index) => cut[index] ? cutText(argument, lines, options) : argument);
-    // A cut first argument is printed through %s so any % in its text is not read as a format.
-    const formattedMessage = cut[0] ? formatWithOptions(options, '%s', ...shown) : formatWithOptions(options, ...shown);
+    const shown = args.map((argument, index) => cut[index] ? cutArgument(cutText(argument, lines, options)) : argument);
+    // A cut first argument is an object, so format does not read any % in its text as a format.
+    const formattedMessage = formatWithOptions(options, ...shown);
 
     consumeNormalizedOutput(stream, formattedMessage, 'utf8', { flushTrailing: true });
 }

@@ -64,6 +64,8 @@ test('the stored text of anything that fits is exactly what util.format produced
             percent: ['%s is %d', 'Mara', 3, { z: 1 }],
             error: [new Error('boom').message, { code: 'E' }],
             bigButFine: [Object.fromEntries(Array.from({ length: 500 }, (_, index) => ['key' + index, index]))],
+            shortStrings: [Object.fromEntries(Array.from({ length: 500 }, (_, index) => ['key' + index, 'ab']))],
+            emptyStrings: [Object.fromEntries(Array.from({ length: 500 }, (_, index) => ['key' + index, '']))],
             longString: ['x'.repeat(20000)],
         };
         const mismatches = [];
@@ -83,6 +85,112 @@ test('the stored text of anything that fits is exactly what util.format produced
     assert.equal(report.getterRuns, 0, 'a getter is never run');
     assert.equal(report.lengths.circular, 5, 'a circular value stays five lines');
     assert.ok(report.lengths.bigButFine > 500, 'a value that fits is not cut');
+    assert.ok(report.lengths.shortStrings > 500 && report.lengths.emptyStrings > 500, 'strings that fit are not cut');
+});
+
+test('a large object of strings that still fits the caps is stored exactly, and one string more is cut', () => {
+    // The snapshot reads at most 600 lines, so this reads the whole buffer. The buffer keeps the last 1,500 lines, so
+    // the 4,000 lines of an object with 4,000 empty strings are compared as that many from the end.
+    const { status, stderr, report } = runScript(`
+        import { formatWithOptions } from 'node:util';
+        const root = process.argv.at(-1);
+        console.log = () => {};
+        await import(root + '/src/server-log-buffer.js');
+        const options = { colors: false, depth: 10, breakLength: Infinity, compact: false };
+        const strings = (count, text) => Object.fromEntries(Array.from({ length: count }, (_, index) => ['key' + index, text]));
+        const cases = {
+            thousandShort: strings(1000, 'ab'),
+            fourThousandEmpty: strings(4000, ''),
+            lastOneThatFits: strings(4999, ''),
+            firstOneCut: strings(5000, ''),
+        };
+        const results = {};
+        for (const [name, value] of Object.entries(cases)) {
+            const before = globalThis.__neconyanServerLogBuffer.nextId;
+            console.log('case', value);
+            const stored = globalThis.__neconyanServerLogBuffer.entries.filter(entry => entry.id >= before).map(entry => entry.message);
+            const expected = formatWithOptions(options, 'case', value).split('\\n').filter(Boolean);
+            results[name] = { exact: JSON.stringify(stored) === JSON.stringify(expected.slice(-1500)), stored: stored.length, expected: expected.length, cut: stored.some(line => line.includes('only its start is kept')) };
+        }
+        process.stderr.write(JSON.stringify(results) + '\\n');
+    `, { silent: true });
+    assert.equal(status, 0, stderr);
+    assert.deepEqual(report.thousandShort, { exact: true, stored: 1002, expected: 1002, cut: false });
+    assert.deepEqual(report.fourThousandEmpty, { exact: true, stored: 1500, expected: 4002, cut: false });
+    assert.deepEqual(report.lastOneThatFits, { exact: true, stored: 1500, expected: 5001, cut: false });
+    assert.equal(report.firstOneCut.cut, true, 'the 5,001st value is the first one cut');
+    assert.ok(report.firstOneCut.stored <= 100);
+});
+
+/** One console.log of a single large object after 100 earlier lines: how much of the buffer does that call take? */
+function bigCallScript(count, text) {
+    return `
+        const root = process.argv.at(-1);
+        console.log = () => {};
+        await import(root + '/src/server-log-buffer.js');
+        for (let line = 0; line < 100; line++) console.log('earlier line ' + line);
+        const value = Object.fromEntries(Array.from({ length: ${count} }, (_, index) => ['key' + index, ${JSON.stringify(text)}]));
+        console.log('big', value);
+        const lines = globalThis.__neconyanServerLogBuffer.entries.map(entry => entry.message);
+        process.stderr.write(JSON.stringify({ kept: lines.filter(line => line.startsWith('earlier line')).length, total: lines.length, text: lines.slice(100).join('\\n') }) + '\\n');
+    `;
+}
+
+for (const [title, count, text] of [
+    ['20,000 two-character strings', 20000, 'ab'],
+    ['200,000 empty strings', 200000, ''],
+    ['5,000 empty strings, one more than fits', 5000, ''],
+]) {
+    test(`an object of ${title} is cut to a small share of the buffer and leaves the earlier lines in place`, () => {
+        const { status, stderr, report } = runScript(bigCallScript(count, text), { silent: true });
+        assert.equal(status, 0, stderr);
+        assert.equal(report.kept, 100, 'no earlier line was evicted');
+        assert.ok(report.total - 100 <= 100, `one call added ${report.total - 100} lines`);
+        assert.match(report.text, /^big \{/);
+        assert.match(report.text, /only its start is kept/);
+    });
+}
+
+test('a cut argument prints as its text whichever way the format reads it', () => {
+    const { status, stderr, report } = runScript(`
+        const root = process.argv.at(-1);
+        console.log = () => {};
+        const { getServerLogSnapshot } = await import(root + '/src/server-log-buffer.js');
+        const huge = Object.fromEntries(Array.from({ length: 20000 }, (_, index) => [index === 0 ? '%s %d' : 'k' + index, { k: index }]));
+        const stored = (...args) => {
+            const before = getServerLogSnapshot({ limit: 600 }).latestId;
+            console.log(...args);
+            return getServerLogSnapshot({ limit: 600 }).entries.filter(entry => entry.id > before).map(entry => entry.message);
+        };
+        const calls = {
+            plain: stored('value:', huge),
+            percentS: stored('value: %s', huge),
+            percentO: stored('value: %o', huge),
+            percentCapitalO: stored('value: %O', huge),
+            percentJ: stored('value: %j', huge),
+            numbers: stored('numbers: %d %i %f %c|', huge, huge, huge, huge),
+            first: stored(huge, 'then %s', 'tail'),
+        };
+        process.stderr.write(JSON.stringify(calls) + '\\n');
+    `, { silent: true });
+    assert.equal(status, 0, stderr);
+    for (const [name, lines] of Object.entries(report)) {
+        assert.ok(lines.length <= 100, `${name} added ${lines.length} lines`);
+    }
+    // The cut text is ordinary lines after the text before it, not one quoted string: %o used to inspect the text as a string.
+    for (const name of ['plain', 'percentS', 'percentO', 'percentCapitalO']) {
+        assert.equal(report[name][0], 'value: {', name);
+        assert.ok(report[name].length > 50, `${name} is multi-line`);
+        assert.match(report[name][1], /^ {2}'%s %d': \{/, `${name} keeps the text of the keys as it is`);
+        assert.match(report[name].at(-1), /only its start is kept/, name);
+    }
+    assert.equal(report.percentJ.length, 1, 'JSON prints the text as one JSON string');
+    assert.match(report.percentJ[0], /^value: "\{\\n/);
+    assert.deepEqual(report.numbers, ['numbers: NaN NaN NaN |'], 'a cut value is not a number, and %c prints nothing');
+    // A cut first argument is not read as a format string, although its text holds %s and %d.
+    assert.equal(report.first[0], '{');
+    assert.match(report.first[1], /^ {2}'%s %d': \{/);
+    assert.match(report.first.at(-1), /only its start is kept\) then %s tail$/, 'the arguments after it are appended as they are');
 });
 
 test('a value too large to keep is cut to a small share of the buffer and leaves the other lines in place', () => {
@@ -136,8 +244,8 @@ test('a huge logged object is cut down before it is formatted, not after', () =>
 
 test('what reaches the terminal is exactly what it was without the buffer', () => {
     const script = `
-        const root = process.argv.at(-1);
-        if (process.argv.at(-2) === 'with-buffer') await import(root + '/src/server-log-buffer.js');
+        const root = process.argv.at(-2);
+        if (process.argv.at(-1) === 'with-buffer') await import(root + '/src/server-log-buffer.js');
         const big = {};
         for (let key = 0; key < 3000; key++) big['k' + key] = { key, text: 'value ' + key };
         console.log('plain', 1, { a: [1, 2, { b: new Map([[1, 2]]) }] }, Array.from({ length: 150 }, (_, index) => index));
