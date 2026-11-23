@@ -138,12 +138,13 @@ test('admin evidence hands the assistant the memory figures of an out-of-memory 
         at: new Date(Date.UTC(2026, 10, 23, 10, 0, index * 10)).toISOString(), uptimeSeconds: index * 10, rss: (heap + 100) * MIB, heapUsed: heap * MIB, heapTotal: (heap + 50) * MIB,
         heapLimit: 1014 * MIB, external: MIB, arrayBuffers: MIB, deviceAvailable: 3000 * MIB, deviceTotal: 12288 * MIB,
     }));
-    const stop = describeChildStop({ pid: 77, code: null, signal: 'SIGABRT', fatal: consumeFatalReport(directory, 77), memory: { samples, peak: samples[2] }, heapLimitArgument: '--max-old-space-size=1024' });
+    const stop = describeChildStop({ pid: 77, code: null, signal: 'SIGABRT', app: { version: '1.5.7', revision: 'a1b2c3d4' }, fatal: consumeFatalReport(directory, 77), memory: { samples, peak: samples[2] }, heapLimitArgument: '--max-old-space-size=1024' });
     writeCrashReport(stop.kind, stop.explanation, stop.extra);
 
     const evidence = collectAdminEvidence();
     const [item] = evidence.serverCrashes.items;
     assert.equal(item.kind, 'server-out-of-memory');
+    assert.equal(item.version, '1.5.7');
     assert.match(item.message, /ran out of JavaScript memory and stopped\. It was using 1010 MB of its 1014 MB limit/);
     assert.ok(item.detail.length >= 3 && item.detail.length <= 6);
     const text = formatAppEvidence({ ...evidence });

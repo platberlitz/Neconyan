@@ -124,7 +124,7 @@ export function collectAdminEvidence() {
         message: redactEvidenceText(report?.error?.message),
         stack: typeof report?.error?.stack === 'string' ? report.error.stack.split('\n').slice(0, 8).map(line => redactEvidenceText(line, 200)).join('\n') : '',
         detail: serverCrashDetail(report),
-        version: redactEvidenceText(report?.environment?.app?.version, 40),
+        version: redactEvidenceText(report.child ? report.child.app?.version : report.environment?.app?.version, 40),
     }));
     const snapshot = getServerLogSnapshot({ limit: 600 });
     // Only warnings and errors are shared. Ordinary output can hold whole prompts when prompt

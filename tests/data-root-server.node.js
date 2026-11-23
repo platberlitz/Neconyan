@@ -9,6 +9,7 @@ import { once } from 'node:events';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import test from 'node:test';
 import YAML from 'yaml';
+import { getCrashReports } from '../src/crash-diagnostics.js';
 import { DATA_ROOT_OWNER_DIRECTORY, inspectDataRootOwner } from '../src/data-root-owner.js';
 
 const app = fileURLToPath(new URL('../', import.meta.url));
@@ -30,11 +31,11 @@ function probe(portNumber) {
         request.on('timeout', () => request.destroy());
     });
 }
-async function waitReady(child, portNumber, output) {
+async function waitReady(child, portNumber, output, check = () => true) {
     const deadline = Date.now() + 60000;
     while (Date.now() < deadline) {
         if (child.exitCode !== null || child.signalCode !== null) throw new Error(`Server exited before ready: ${output()}`);
-        if (await probe(portNumber)) return;
+        if (await probe(portNumber) && check()) return;
         await sleep(250);
     }
     throw new Error(`Server did not become ready: ${output()}`);
@@ -179,6 +180,59 @@ test('a Termux-like start without the app binding keeps the strict lease checks'
     assert.notEqual(run.child.exitCode, 0);
     assert.deepEqual(fs.readFileSync(run.planted.filename), run.planted.bytes);
     assert.equal(run.logs.split('neconyan_fs binding is missing').length - 1, 1);
+});
+
+test('a Termux-like server records its build and reopens the same data after SIGABRT', { timeout: 180000, skip: process.platform !== 'linux' }, async t => {
+    const { directory, data, configPath } = serverFixture('data');
+    const portNumber = await port();
+    const env = { ...process.env, NECONYAN_SAFE_START: '1', TERMUX_VERSION: 'test' };
+    delete env.NECONYAN_SUPERVISED;
+    delete env.NECONYAN_ANDROID_APP;
+    delete env.NECONYAN_IOS_APP;
+    const child = spawn(process.execPath, ['--import', preload(directory, false), 'server.js', '--configPath', configPath,
+        '--dataRoot', data, '--port', String(portNumber), '--browserLaunchEnabled', 'false'], {
+        cwd: app, env, stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let logs = '';
+    child.stdout.on('data', chunk => { logs += chunk; });
+    child.stderr.on('data', chunk => { logs += chunk; });
+    t.after(async () => {
+        if (child.exitCode === null && child.signalCode === null) {
+            child.kill('SIGTERM');
+            await once(child, 'exit');
+        }
+        fs.rmSync(directory, { recursive: true, force: true });
+    });
+
+    await waitReady(child, portNumber, () => logs);
+    const owner = inspectDataRootOwner(data);
+    assert.equal(owner.platform, 'android');
+    assert.notEqual(owner.pid, child.pid, 'the server is supervised');
+    const chat = path.join(data, 'default-user', 'chats', 'test-chat.jsonl');
+    const saved = '{"name":"Test","mes":"Saved before the stop"}\n';
+    fs.writeFileSync(chat, saved);
+    process.kill(owner.pid, 'SIGABRT');
+
+    await waitReady(child, portNumber, () => logs, () => {
+        const replacement = inspectDataRootOwner(data);
+        return replacement && replacement.pid !== owner.pid;
+    });
+    assert.equal(fs.readFileSync(chat, 'utf8'), saved);
+    assert.match(logs, /Reclaimed a stale data folder lease \(process-ended\)/);
+
+    const reports = getCrashReports(path.join(data, 'crash-reports'));
+    assert.equal(reports.length, 1);
+    const [report] = reports;
+    assert.equal(report.kind, 'child-process-signal');
+    assert.match(report.error.message, /A signal alone does not establish why it was sent/);
+    assert.equal(report.child.pid, owner.pid);
+    assert.equal(report.child.signal, 'SIGABRT');
+    assert.ok(report.child.memory.samples.length >= 1);
+    assert.equal(report.environment.pid, child.pid);
+    assert.deepEqual(report.environment.app, {});
+    const { version } = JSON.parse(fs.readFileSync(path.join(app, 'package.json'), 'utf8'));
+    const revision = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: app, encoding: 'utf8' }).trim();
+    assert.deepEqual(report.child.app, { version, revision });
 });
 
 // Simulated iOS app starts (IOS-LEASE-01). The real server.js runs; only the platform is faked.
