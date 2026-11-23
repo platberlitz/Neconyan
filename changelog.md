@@ -133,6 +133,7 @@
 - PR #912 (2026-11-23) `fix(folders): fix Sort with AI settings sync and large libraries`
 - PR #913 (2026-11-23) `fix(companions): include composed Author's Notes for Companions`
 - PR #914 (2026-11-23) `fix(reasoning): recognise prefixed custom models`
+- PR #915 (2026-11-23) `fix(folders): make Sort with AI work with thinking models and stale settings`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
