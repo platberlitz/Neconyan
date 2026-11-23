@@ -27,6 +27,7 @@ describe('settings saves skip unchanged serialisation', () => {
 
     test('both helper generations ask for an unchanged save to be skipped', () => {
         const calls = source.match(/saveSettings\(0, \{ returnResult: true, skipIfUnchanged: true \}\)/g) ?? [];
-        expect(calls).toHaveLength(2);
+        expect(calls).toHaveLength(1);
+        expect(source.match(/acknowledgement: await acknowledgeGenerationSettings\(force\)/g)).toHaveLength(2);
     });
 });

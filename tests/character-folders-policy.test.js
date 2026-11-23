@@ -49,10 +49,15 @@ describe('AI sort planning and error messages', () => {
         [new TypeError('Failed to fetch'), /internet/, true],
         [{ message: 'The request was cancelled' }, /stopped/i, true],
         [{ name: 'AbortError' }, /stopped/i, true],
-        [{ code: 'empty_model_reply' }, /could not be read/, false],
+        [new Error('Invalid value for reasoning.effort on model "tencent/hy4-flash": "low". Supported values are: none, high.'), /Change Reasoning Effort/, true],
+        [{ code: 'UNSUPPORTED_REASONING_EFFORT' }, /Change Reasoning Effort/, true],
+        [{ code: 'empty_model_reply' }, /empty reply/, false, { empty: true }],
+        [new Error('The model returned an empty reply.'), /empty reply/, false, { empty: true }],
+        [new Error('No message generated'), /empty reply/, false, { empty: true }],
+        [{ code: 'invalid_model_reply' }, /could not be read/, false],
         [new Error('Non-JSON response'), /could not be read/, false],
-    ])('classifies %j without surfacing provider details', (error, message, fatal) => {
-        expect(classifyAiSortError(error)).toEqual({ message: expect.stringMatching(message), fatal });
+    ])('classifies %j without surfacing provider details', (error, message, fatal, extra = {}) => {
+        expect(classifyAiSortError(error)).toEqual({ message: expect.stringMatching(message), fatal, ...extra });
     });
 
     test('strict replies distinguish an empty list from an unreadable reply', () => {

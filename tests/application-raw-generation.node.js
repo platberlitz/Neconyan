@@ -85,6 +85,22 @@ test('a plain prompt is accepted on the active Chat Completion connection', asyn
     assert.equal(readOperation(p.base, 'active').result.text, 'Red');
 });
 
+test('a plain prompt can turn reasoning off for one request on the active Chat Completion connection', async () => {
+    const p = prepared('effort');
+    const file = path.join(p.base.directories.root, 'settings.json');
+    const settings = JSON.parse(fs.readFileSync(file, 'utf8'));
+    fs.writeFileSync(file, JSON.stringify({ ...settings, _settingsRevision: 3,
+        active_generation: { api: 'openai', source: 'custom', model: 'fixture' },
+        oai_settings: { ...settings.oai_settings, chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:6000/v1', custom_model: 'fixture', reasoning_effort: 'high' } }));
+    const accepted = await acceptApplicationOperation(p.request, body('effort', { profileId: '', reasoningEffort: 'none', acknowledgement: { settingsRevision: 3 } }));
+    let rawOptions;
+    await runOperation(p.context(accepted), { generate: async options => { rawOptions = options.rawOptions; return { text: 'Red' }; } });
+    assert.deepEqual(rawOptions, { reasoningEffort: 'none' });
+    assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).oai_settings.reasoning_effort, 'high');
+    await assert.rejects(acceptApplicationOperation(p.request, body('effort-bad', { profileId: '', reasoningEffort: 'lots', acknowledgement: { settingsRevision: 3 } })), /reasoning effort/);
+    assert.equal(readOperation(p.base, 'effort-bad'), null);
+});
+
 test('the operation endpoint proves a stale active settings acknowledgement was refused before admission', async () => {
     const p = prepared('stale-active');
     const file = path.join(p.base.directories.root, 'settings.json');

@@ -497,13 +497,17 @@ export function classifyAiSortError(error) {
         message = 'Check your API key in Connections, reconnect and try again.';
     } else if (status === 429 || /rate.?limit|quota|too many requests|insufficient (credits|balance)/.test(`${code} ${detail}`)) {
         message = 'Wait a moment or check your provider\'s usage limits, then try again.';
+    } else if (/reasoning[._ -]?effort/.test(`${code} ${detail}`)) {
+        message = 'Change Reasoning Effort in Connections, then try again.';
     } else if (status === 413 || /context[_ -]length|context window|(?:prompt|input|request|context) (?:is )?too (?:long|large)|too many tokens|maximum context/.test(`${code} ${detail}`)) {
         message = 'Lower \'Characters per request\' and try again.';
     } else if (/no_connection|no connection|not connected|unsupported .*backend|not supported by|connect to a model|choose a .*model/.test(`${code} ${detail}`)) {
         message = 'Connect to a model in Connections, then try again.';
     } else if (/offline|network|failed to fetch|load failed|timed? ?out|connection (?:lost|refused|reset)|econnreset|econnrefused/.test(`${code} ${detail}`)) {
         message = 'Check your internet and model connection, then try again.';
-    } else if (['empty_model_reply', 'invalid_model_reply'].includes(code) || /empty (?:reply|response|output)|(?:reply|response|output) (?:was|is) empty|no (?:reply|text|message generated)|non.json|invalid json|unexpected token/.test(detail)) {
+    } else if (code === 'empty_model_reply' || /empty (?:reply|response|output)|(?:reply|response|output) (?:was|is) empty|no (?:reply|text|message generated)/.test(detail)) {
+        return { message: 'The model sent an empty reply. Try again, or choose another model in Connections.', fatal: false, empty: true };
+    } else if (code === 'invalid_model_reply' || /non.json|invalid json|unexpected token/.test(detail)) {
         return { message: 'The model sent a reply that could not be read. Try another prompt or fewer characters per request.', fatal: false };
     } else {
         message = 'Check that your model is available in Connections, then try again.';

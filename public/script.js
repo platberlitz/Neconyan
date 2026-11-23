@@ -7732,6 +7732,20 @@ function checkGenerationSettingsSaved(saved) {
     throw Object.assign(new Error(t`Connection settings could not be saved. Check your connection to Neconyan, then try again.`), { code: 'settings_save_failed' });
 }
 
+/** Save the active controls and prove it, waiting out saves another caller queued meanwhile. */
+async function acknowledgeGenerationSettings(force) {
+    for (let attempt = 0; ; attempt++) {
+        checkGenerationSettingsSaved(force && attempt === 0
+            ? await saveSettings(0, { returnResult: true, force: true })
+            : await saveSettings(0, { returnResult: true, skipIfUnchanged: true }));
+        try {
+            return getActiveGenerationAcknowledgement();
+        } catch (error) {
+            if (attempt >= 2) throw Object.assign(error, { code: 'active_settings_ack_required' });
+        }
+    }
+}
+
 async function runAcknowledgedGeneration(client, kind, input, { prepareInput, ...options }) {
     const run = force => client.run(kind, input, { ...options, prepareInput: body => prepareInput(body, force) });
     try {
@@ -7787,10 +7801,7 @@ export async function generateQuietPrompt({ quietPrompt = '', quietToLoud = fals
                 signal: stop.signal,
                 prepareInput: async (body, force) => {
                     await saveChatConditional({ throwOnError: true, throwOnPromptError: true });
-                    checkGenerationSettingsSaved(force
-                        ? await saveSettings(0, { returnResult: true, force: true })
-                        : await saveSettings(0, { returnResult: true, skipIfUnchanged: true }));
-                    return { ...body, acknowledgement: getActiveGenerationAcknowledgement() };
+                    return { ...body, acknowledgement: await acknowledgeGenerationSettings(force) };
                 },
             });
             let result = String(record?.result?.text ?? '');
@@ -9176,6 +9187,7 @@ export function createRawPrompt(prompt, api, instructOverride, quietToLoud, syst
  * @prop {string} [systemPrompt] System prompt to use.
  * @prop {number} [responseLength] Maximum response length. If unset, the global default value is used.
  * @prop {number} [temperature] Request-local sampling temperature.
+ * @prop {string} [reasoningEffort] Request-local Chat Completion reasoning effort, such as 'none'.
  * @prop {boolean} [preserveReasoningBudget=false] Keep the preset's total allowance for reasoning requests
  * @prop {boolean} [trimNames] Whether to allow trimming "{{user}}:" and "{{char}}:" from the response.
  * @prop {string} [prefill] An optional prefill for the prompt.
@@ -9192,7 +9204,7 @@ export function createRawPrompt(prompt, api, instructOverride, quietToLoud, syst
  * @param {GenerateRawParams} params Parameters for generating a message
  * @returns {Promise<object | string>} Raw API response data, or a JSON string extracted from the response when `jsonSchema` is provided.
  */
-export async function generateRawData({ prompt = '', api = null, instructOverride = false, quietToLoud = false, systemPrompt = '', responseLength = null, prefill = '', jsonSchema = null, signal = null, cacheScope = 'auxiliary', preserveReasoningBudget = false, temperature, literalPrompt = false, onChunk } = {}) {
+export async function generateRawData({ prompt = '', api = null, instructOverride = false, quietToLoud = false, systemPrompt = '', responseLength = null, prefill = '', jsonSchema = null, signal = null, cacheScope = 'auxiliary', preserveReasoningBudget = false, temperature, reasoningEffort, literalPrompt = false, onChunk } = {}) {
     if (!api) {
         api = main_api;
     }
@@ -9281,7 +9293,7 @@ export async function generateRawData({ prompt = '', api = null, instructOverrid
         if (api === 'koboldhorde') {
             data = await generateHorde(prompt.toString(), generateData, abortController.signal, false);
         } else if (api === 'openai') {
-            data = await sendOpenAIRequest('quiet', generateData, abortController.signal, { jsonSchema, cacheScope, temperature, ...requestControls, stream: typeof onChunk === 'function' ? true : undefined });
+            data = await sendOpenAIRequest('quiet', generateData, abortController.signal, { jsonSchema, cacheScope, temperature, reasoningEffort, ...requestControls, stream: typeof onChunk === 'function' ? true : undefined });
         } else if (api === 'textgenerationwebui' && typeof onChunk === 'function') {
             data = await generateTextGenWithStreaming(generateData, abortController.signal);
         } else {
@@ -9318,7 +9330,7 @@ export async function generateRawData({ prompt = '', api = null, instructOverrid
  * @param {GenerateRawParams} params Parameters for generating a message
  * @returns {Promise<string>} Generated output: a cleaned-up message string when `jsonSchema` is not provided, or an extracted JSON string conforming to `jsonSchema` when it is.
  */
-export async function generateRaw({ prompt = '', api = null, instructOverride = false, quietToLoud = false, systemPrompt = '', responseLength = null, trimNames = true, prefill = '', jsonSchema = null, signal = null, cacheScope = 'auxiliary', preserveReasoningBudget = false, temperature } = {}) {
+export async function generateRaw({ prompt = '', api = null, instructOverride = false, quietToLoud = false, systemPrompt = '', responseLength = null, trimNames = true, prefill = '', jsonSchema = null, signal = null, cacheScope = 'auxiliary', preserveReasoningBudget = false, temperature, reasoningEffort } = {}) {
     if (arguments.length > 0 && typeof arguments[0] !== 'object') {
         console.trace('generateRaw called with positional arguments. Please use an object instead.');
         [prompt, api, instructOverride, quietToLoud, systemPrompt, responseLength, trimNames, prefill, jsonSchema] = arguments;
@@ -9336,16 +9348,12 @@ export async function generateRaw({ prompt = '', api = null, instructOverride = 
         try {
             const { getOperationClient } = await import('./scripts/operations-client.js');
             const client = await getOperationClient();
-            const input = { prompt, systemPrompt, ...(Number(responseLength) >= 1 ? { maxTokens: Math.min(32768, Math.floor(Number(responseLength))) } : {}) };
+            const input = { prompt, systemPrompt, ...(Number(responseLength) >= 1 ? { maxTokens: Math.min(32768, Math.floor(Number(responseLength))) } : {}),
+                ...(typeof reasoningEffort === 'string' ? { reasoningEffort } : {}) };
             const record = await runAcknowledgedGeneration(client, 'raw-generation', input, {
                 scope: `raw:${getStringHash(JSON.stringify(input))}`,
                 signal: stop.signal,
-                prepareInput: async (body, force) => {
-                    checkGenerationSettingsSaved(force
-                        ? await saveSettings(0, { returnResult: true, force: true })
-                        : await saveSettings(0, { returnResult: true, skipIfUnchanged: true }));
-                    return { ...body, acknowledgement: getActiveGenerationAcknowledgement() };
-                },
+                prepareInput: async (body, force) => ({ ...body, acknowledgement: await acknowledgeGenerationSettings(force) }),
             });
             const message = String(record?.result?.text ?? '').trim();
             if (!message) {
@@ -9357,7 +9365,7 @@ export async function generateRaw({ prompt = '', api = null, instructOverride = 
         }
     }
 
-    const data = await generateRawData({ prompt, api, instructOverride, quietToLoud, systemPrompt, responseLength, prefill, jsonSchema, signal, cacheScope, preserveReasoningBudget, temperature });
+    const data = await generateRawData({ prompt, api, instructOverride, quietToLoud, systemPrompt, responseLength, prefill, jsonSchema, signal, cacheScope, preserveReasoningBudget, temperature, reasoningEffort });
 
     // JSON string (matching the provided schema) will already be extracted.
     if (jsonSchema) {
@@ -15405,17 +15413,21 @@ async function recoverSamePageSettingsConflict(account, rejectedSettingsRevision
 /** Return proof of the saved active controls, never mutable settings or credentials. */
 export function getActiveGenerationAcknowledgement() {
     const saved = acknowledgedGenerationSettings;
+    if (pendingSettingsAcknowledgements || !saved || saved.account !== getCurrentUserHandle()
+        || !matchesLiveGenerationSettings(saved.controls)) {
+        throw new Error('Save the active connection settings before generating a reply.');
+    }
+    return { account: saved.account, settingsRevision: saved.settingsRevision };
+}
+
+function matchesLiveGenerationSettings(controls) {
     const current = generationSettingsSnapshot({
         main_api, active_generation: captureActiveGenerationSelection(), max_context, oai_settings, textgenerationwebui_settings: textgen_settings,
         kai_settings, nai_settings, horde_settings,
         power_user, proxies, selected_proxy, custom_endpoint_presets,
         selected_custom_endpoint_preset, extension_settings,
     });
-    if (pendingSettingsAcknowledgements || !saved || saved.account !== getCurrentUserHandle()
-        || JSON.stringify(saved.controls) !== JSON.stringify(current)) {
-        throw new Error('Save the active connection settings before generating a reply.');
-    }
-    return { account: saved.account, settingsRevision: saved.settingsRevision };
+    return JSON.stringify(controls) === JSON.stringify(current);
 }
 
 function captureActiveGenerationSelection() {
@@ -15512,8 +15524,11 @@ async function saveSettingsInner(loopCounter = 0, account = getCurrentUserHandle
         lastSavedSettings = null;
         downloadedSettings = null;
     }
+    // A control changed in memory without asking for a save still needs a real one, or the
+    // reused acknowledgement no longer describes the settings the request will run with.
     if (skipIfUnchanged && lastSavedSettings?.account === account
-        && lastSavedSettings.revision === settingsMutationRevision) {
+        && lastSavedSettings.revision === settingsMutationRevision
+        && matchesLiveGenerationSettings(lastSavedSettings.acknowledgement?.controls)) {
         acknowledgedGenerationSettings = lastSavedSettings.acknowledgement;
         return true;
     }

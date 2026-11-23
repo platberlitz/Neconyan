@@ -191,6 +191,7 @@ test.describe('Sort with AI', () => {
                 expect(retry.body.acknowledgement.settingsRevision).toBeGreaterThan(first.body.acknowledgement.settingsRevision);
                 expect(retry.body.prompt).toBe(first.body.prompt);
                 expect(retry.body.maxTokens).toBe(1324);
+                expect(requests.map(request => request.body.reasoningEffort)).toEqual(['none', 'none']);
                 await checkButtonAccents(page, organiser.getByRole('button', { name: 'Suggest folders' }).or(organiser.getByRole('button', { name: 'Apply', exact: true })));
             } finally {
                 await context.close();
@@ -321,6 +322,46 @@ test.describe('Sort with AI', () => {
             await expect(page.locator('#toast-container .toast-error')).toContainText(message);
             await expect(organiser.getByText('1 suggestion for 1 folder')).toBeVisible();
             expect(submissions).toBe(4);
+        } finally {
+            await context.close();
+        }
+    });
+
+    test('stops after two consecutive empty replies and points at the model', async ({ browser }, testInfo) => {
+        const { context, page, organiser } = await aiFixture(browser, testInfo, false, { batchSize: 25, count: 501 });
+        try {
+            let submissions = 0;
+            await page.route('**/api/operations/submit', route => {
+                submissions++;
+                return completeBatchWithText(route, '');
+            });
+            await expect(organiser.getByText('500 characters in 20 batches')).toBeVisible();
+            await organiser.getByRole('button', { name: 'Suggest folders' }).click();
+            const message = 'Stopped after 2 empty replies in a row. Choose another model in Connections, then try again.';
+            await expect(organiser.locator('.neconyan-folder-organiser-status')).toContainText(message);
+            await expect(page.locator('#toast-container .toast-error')).toContainText(message);
+            expect(submissions).toBe(2);
+        } finally {
+            await context.close();
+        }
+    });
+
+    test('sorts with a saved generation setting changed in memory without a save', async ({ browser }, testInfo) => {
+        const { context, page, organiser } = await aiFixture(browser, testInfo, false, { batchSize: 5, count: 6 });
+        try {
+            const requests = [];
+            await page.route('**/api/operations/submit', route => {
+                requests.push(route.request().postDataJSON());
+                return completeBatch(route, [{ id: 1, folder: 'Coastal Towns' }]);
+            });
+            await page.evaluate(async () => {
+                const { oai_settings } = await import('/scripts/openai.js');
+                oai_settings.openai_max_tokens = Number(oai_settings.openai_max_tokens) + 1;
+            });
+            await organiser.getByRole('button', { name: 'Suggest folders' }).click();
+            await expect(organiser.getByText('1 suggestion for 1 folder')).toBeVisible();
+            expect(requests.length).toBeGreaterThan(0);
+            await expect(page.locator('#toast-container .toast-error')).toHaveCount(0);
         } finally {
             await context.close();
         }
