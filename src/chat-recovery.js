@@ -501,9 +501,62 @@ function isTombstoned(target) {
     return true;
 }
 
+function regularFileEqualsBuffer(filePath, expected) {
+    let initialStats;
+    try {
+        initialStats = fs.lstatSync(filePath, { bigint: true });
+    } catch (error) {
+        if (error?.code === 'ENOENT') {
+            return false;
+        }
+        throw error;
+    }
+    if (initialStats.isSymbolicLink() || !initialStats.isFile()) {
+        return false;
+    }
+    if (initialStats.size !== BigInt(expected.byteLength)) {
+        return false;
+    }
+
+    const openFlags = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0);
+    let fileDescriptor;
+    try {
+        fileDescriptor = fs.openSync(filePath, openFlags);
+    } catch (error) {
+        if (['ENOENT', 'ELOOP'].includes(error?.code)) {
+            return false;
+        }
+        throw error;
+    }
+    try {
+        const descriptorStats = fs.fstatSync(fileDescriptor, { bigint: true });
+        if (!descriptorStats.isFile()
+            || descriptorStats.dev !== initialStats.dev
+            || descriptorStats.ino !== initialStats.ino
+            || descriptorStats.size !== BigInt(expected.byteLength)) {
+            return false;
+        }
+        const chunk = Buffer.allocUnsafe(Math.min(64 * 1024, Math.max(1, expected.byteLength)));
+        let offset = 0;
+        while (offset < expected.byteLength) {
+            const toRead = Math.min(chunk.byteLength, expected.byteLength - offset);
+            const bytesRead = fs.readSync(fileDescriptor, chunk, 0, toRead, offset);
+            if (bytesRead === 0) {
+                return false;
+            }
+            if (chunk.compare(expected, offset, offset + bytesRead, 0, bytesRead) !== 0) {
+                return false;
+            }
+            offset += bytesRead;
+        }
+        return fs.readSync(fileDescriptor, chunk, 0, 1, offset) === 0;
+    } finally {
+        fs.closeSync(fileDescriptor);
+    }
+}
+
 function isStoredSnapshotCurrent(latestPath, data) {
-    const existing = readRegularFile(latestPath);
-    return existing.status === 'ok' && toBuffer(existing.data).equals(toBuffer(data));
+    return regularFileEqualsBuffer(latestPath, toBuffer(data));
 }
 
 function storeValidSnapshot(target, parsed) {

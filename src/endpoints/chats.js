@@ -3,7 +3,6 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import readline from 'node:readline';
 import process from 'node:process';
-import { isUtf8 } from 'node:buffer';
 import { isDeepStrictEqual, TextDecoder, types } from 'node:util';
 
 import express from 'express';
@@ -18,7 +17,8 @@ import validateAvatarUrlMiddleware from '../middleware/validateFileName.js';
 import { renameChatFile } from '../chat-rename.js';
 import { captureBranchMemory, chatMemoryExists, removeChatMemory, renameChatMemory } from '../mewmory/store.js';
 import { applyOverflowHiding, prepareAutomaticHiding, prepareMessageHidingPolicy } from '../mewmory/hiding.js';
-import { confirmRoleplayAccount, inspectRoleplayFileStat, readRoleplayFile, readRoleplayWriteJournal, roleplayAvatarOwner, roleplayError, roleplayHash, roleplayLease, roleplayPathKey, saveRoleplayAccount, withRoleplayAccount, withUntrackedRoleplayFiles } from '../roleplay-store.js';
+import { confirmRoleplayAccount, inspectRoleplayFile, inspectRoleplayFileStat, readRoleplayFile, readRoleplayWriteJournal, roleplayAvatarOwner, roleplayError, roleplayHash, roleplayLease, roleplayPathKey, saveRoleplayAccount, withRoleplayAccount, withUntrackedRoleplayFiles } from '../roleplay-store.js';
+import { registerMemoryReclaimer } from '../memory-pressure.js';
 import { normaliseRoleplayLocator, readRoleplayChatLocked, roleplayChatPath, ROLEPLAY_METADATA_KEY } from '../generation/roleplay-source.js';
 import { cleanupRoleplayReceiptsLocked, commitRoleplayLifecycleLocked, commitSingleChatImport, forgetRoleplayReceiptLocked, commitSingleChatWriteLocked, repairSingleChatWriteLocked, roleplayTrackedInstance } from '../roleplay-lifecycle.js';
 import {
@@ -107,7 +107,7 @@ function logBackupEvent(action, details = {}) {
 }
 
 function getSerializedBackupSizeDetails(data) {
-    const sizeBytes = Buffer.byteLength(String(data ?? ''), 'utf8');
+    const sizeBytes = Buffer.isBuffer(data) ? data.byteLength : Buffer.byteLength(String(data ?? ''), 'utf8');
     return {
         bytes: sizeBytes,
         size: formatBytes(sizeBytes),
@@ -343,30 +343,175 @@ function getLatestBackupFilePath(directory, prefix) {
     return backupFiles[0]?.filePath ?? null;
 }
 
-// The same answer as isSameSerializedChatForBackup on the backup read as text, but the backup is
-// compared as bytes, so a large backup never becomes a second text beside the chat. A file that is not
-// valid UTF-8 would not survive that round trip, so it is read as text exactly as it used to be.
+// The same answer as isSameSerializedChatForBackup on the backup read as text, streamed in small
+// chunks so a large backup neither loads a whole-file Buffer nor builds a second UTF-8 Buffer for
+// the chat. A file that is not valid UTF-8 falls back to reading as text exactly as it used to be.
 function isDuplicateOfBackupFile(backupFile, data) {
-    let bytes = null;
-    try {
-        if (fs.existsSync(backupFile)) {
-            bytes = fs.readFileSync(backupFile);
-        }
-    } catch (error) {
-        console.error(`Error reading ${backupFile}: ${error.message}`);
-    }
-    if (!bytes?.length) {
+    if (!fs.existsSync(backupFile)) {
         return false;
     }
-    if (!isUtf8(bytes)) {
-        return isSameSerializedChatForBackup(bytes.toString('utf8'), data);
+
+    const isBufferData = Buffer.isBuffer(data);
+    let dataFirstLine = '';
+    let dataRestText = '';
+    let dataRestBytes = null;
+    if (isBufferData) {
+        const newlineByteIndex = data.indexOf(0x0a);
+        const rawFirstLine = newlineByteIndex === -1
+            ? data.toString('utf8')
+            : data.subarray(0, newlineByteIndex).toString('utf8');
+        dataFirstLine = splitSerializedChatForBackupComparison(rawFirstLine).firstLine;
+        dataRestBytes = newlineByteIndex === -1 ? Buffer.alloc(0) : data.subarray(newlineByteIndex);
+    } else {
+        const dataParts = splitSerializedChatForBackupComparison(data);
+        dataFirstLine = dataParts.firstLine;
+        dataRestText = dataParts.rest;
     }
 
-    const newline = bytes.indexOf(0x0a);
-    const backupFirstLine = splitSerializedChatForBackupComparison(bytes.toString('utf8', 0, newline === -1 ? bytes.length : newline)).firstLine;
-    const dataParts = splitSerializedChatForBackupComparison(data);
-    return backupFirstLine === dataParts.firstLine
-        && Buffer.from(dataParts.rest, 'utf8').equals(newline === -1 ? Buffer.alloc(0) : bytes.subarray(newline));
+    const chunk = Buffer.allocUnsafe(64 * 1024);
+    const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+    let firstLine = '';
+    let sawNewline = false;
+    let sawAnyBytes = false;
+    let restCursor = 0;
+    let fd = null;
+
+    const verifyTrailingUtf8 = () => {
+        const probe = Buffer.allocUnsafe(4);
+        const probeBytes = fs.readSync(fd, probe, 0, probe.length, null);
+        if (probeBytes > 0) {
+            decoder.decode(probe.subarray(0, probeBytes), { stream: true });
+        } else {
+            decoder.decode();
+        }
+    };
+
+    const consumeRestBytes = (slice) => {
+        if (!slice.length) {
+            return true;
+        }
+        if (restCursor + slice.length > dataRestBytes.length) {
+            verifyTrailingUtf8();
+            return false;
+        }
+        if (!slice.equals(dataRestBytes.subarray(restCursor, restCursor + slice.length))) {
+            verifyTrailingUtf8();
+            return false;
+        }
+        restCursor += slice.length;
+        return true;
+    };
+
+    const consumeText = (text) => {
+        if (!text) {
+            return true;
+        }
+        if (!sawNewline) {
+            const newlineIndex = text.indexOf('\n');
+            if (newlineIndex === -1) {
+                firstLine += text;
+                return true;
+            }
+            firstLine += text.slice(0, newlineIndex);
+            sawNewline = true;
+            if (splitSerializedChatForBackupComparison(firstLine).firstLine !== dataFirstLine) {
+                return false;
+            }
+            const remainder = text.slice(newlineIndex);
+            if (!dataRestText.startsWith(remainder, restCursor)) {
+                return false;
+            }
+            restCursor += remainder.length;
+            return true;
+        }
+        if (!dataRestText.startsWith(text, restCursor)) {
+            return false;
+        }
+        restCursor += text.length;
+        return true;
+    };
+
+    try {
+        fd = fs.openSync(backupFile, 'r');
+        while (true) {
+            const bytesRead = fs.readSync(fd, chunk, 0, chunk.length, null);
+            if (bytesRead === 0) {
+                break;
+            }
+            sawAnyBytes = true;
+            const slice = chunk.subarray(0, bytesRead);
+            if (isBufferData) {
+                if (!sawNewline) {
+                    const newlineByteIndex = slice.indexOf(0x0a);
+                    if (newlineByteIndex === -1) {
+                        firstLine += decoder.decode(slice, { stream: true });
+                        continue;
+                    }
+                    firstLine += decoder.decode(slice.subarray(0, newlineByteIndex), { stream: false });
+                    sawNewline = true;
+                    if (splitSerializedChatForBackupComparison(firstLine).firstLine !== dataFirstLine) {
+                        return false;
+                    }
+                    const restSlice = slice.subarray(newlineByteIndex);
+                    decoder.decode(restSlice, { stream: true });
+                    if (!consumeRestBytes(restSlice)) {
+                        return false;
+                    }
+                } else {
+                    decoder.decode(slice, { stream: true });
+                    if (!consumeRestBytes(slice)) {
+                        return false;
+                    }
+                }
+            } else {
+                const decoded = decoder.decode(slice, { stream: true });
+                if (!consumeText(decoded)) {
+                    return false;
+                }
+            }
+        }
+        if (!sawAnyBytes) {
+            return false;
+        }
+        const tail = decoder.decode();
+        if (isBufferData) {
+            if (!sawNewline) {
+                firstLine += tail;
+            }
+        } else if (!consumeText(tail)) {
+            return false;
+        }
+    } catch (error) {
+        if (fd !== null) {
+            try { fs.closeSync(fd); } catch { /* ignore */ }
+            fd = null;
+        }
+        if (error instanceof TypeError) {
+            try {
+                const bytes = fs.readFileSync(backupFile);
+                if (!bytes?.length) {
+                    return false;
+                }
+                const expectedText = isBufferData ? data.toString('utf8') : data;
+                return isSameSerializedChatForBackup(bytes.toString('utf8'), expectedText);
+            } catch (readError) {
+                console.error(`Error reading ${backupFile}: ${readError.message}`);
+                return false;
+            }
+        }
+        console.error(`Error reading ${backupFile}: ${error.message}`);
+        return false;
+    } finally {
+        if (fd !== null) {
+            fs.closeSync(fd);
+        }
+    }
+
+    if (!sawNewline) {
+        const restEmpty = isBufferData ? dataRestBytes.length === 0 : dataRestText === '';
+        return restEmpty && splitSerializedChatForBackupComparison(firstLine).firstLine === dataFirstLine;
+    }
+    return isBufferData ? restCursor === dataRestBytes.length : restCursor === dataRestText.length;
 }
 
 function isDuplicateRegularChatBackup(directory, backupPrefix, data) {
@@ -957,12 +1102,40 @@ function readChatFileSnapshot(filePath, { strict = false, maxBytes = Number.MAX_
         if (!initialDescriptorStats.isFile() || initialDescriptorStats.size > BigInt(maxBytes)) {
             throw Object.assign(new Error(`Chat file cannot be read safely: ${filePath}`), { code: 'EINVAL' });
         }
-        const data = Buffer.alloc(Number(initialDescriptorStats.size));
+        const expectedSize = Number(initialDescriptorStats.size);
+        let data = null;
         let offset = 0;
-        while (offset < data.byteLength) {
-            const bytesRead = fs.readSync(fileDescriptor, data, offset, data.byteLength - offset, offset);
-            if (bytesRead === 0) break;
-            offset += bytesRead;
+        let hash = '';
+        let decoded = null;
+        let utf8Error = null;
+        let decoder = null;
+        let hasher = null;
+
+        if (keepData) {
+            data = Buffer.alloc(expectedSize);
+            while (offset < expectedSize) {
+                const bytesRead = fs.readSync(fileDescriptor, data, offset, expectedSize - offset, offset);
+                if (bytesRead === 0) break;
+                offset += bytesRead;
+            }
+        } else {
+            const chunk = Buffer.allocUnsafe(Math.min(64 * 1024, Math.max(1, expectedSize)));
+            hasher = crypto.createHash('sha256');
+            decoder = strict ? new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }) : null;
+            while (offset < expectedSize) {
+                const bytesRead = fs.readSync(fileDescriptor, chunk, 0, Math.min(chunk.length, expectedSize - offset), offset);
+                if (bytesRead === 0) break;
+                const slice = chunk.subarray(0, bytesRead);
+                hasher.update(slice);
+                if (decoder && !utf8Error) {
+                    try {
+                        decoder.decode(slice, { stream: true });
+                    } catch (error) {
+                        utf8Error = error;
+                    }
+                }
+                offset += bytesRead;
+            }
         }
 
         const finalDescriptorStats = fs.fstatSync(fileDescriptor, { bigint: true });
@@ -975,14 +1148,27 @@ function readChatFileSnapshot(filePath, { strict = false, maxBytes = Number.MAX_
             || finalDescriptorStats.ctimeNs !== initialDescriptorStats.ctimeNs;
         const regularPathChangedTarget = initialPathStats.isFile()
             && (initialDescriptorStats.dev !== initialPathStats.dev || initialDescriptorStats.ino !== initialPathStats.ino);
-        if (pathChanged || descriptorChanged || regularPathChangedTarget || offset !== data.byteLength
+        if (pathChanged || descriptorChanged || regularPathChangedTarget || offset !== expectedSize
             || (strict && finalDescriptorStats.nlink !== 1n)) {
             throw Object.assign(new Error(`Chat file changed while it was being read: ${filePath}`), { code: 'ESTALE' });
         }
 
+        if (keepData) {
+            decoded = decodeChatFileSnapshot(data, { strict, keepData });
+            hash = crypto.createHash('sha256').update(data).digest('hex');
+        } else {
+            if (utf8Error) {
+                throw utf8Error;
+            }
+            if (decoder) {
+                decoder.decode();
+            }
+            hash = hasher.digest('hex');
+        }
+
         return {
-            data: decodeChatFileSnapshot(data, { strict, keepData }),
-            hash: crypto.createHash('sha256').update(data).digest('hex'),
+            data: decoded,
+            hash,
             pathStats: initialPathStats,
             descriptorStats: initialDescriptorStats,
         };
@@ -1033,6 +1219,9 @@ const CHAT_INFO_CACHE_MAX_BYTES = 32 * 1024 * 1024;
 const CHAT_INFO_CACHE_MAX_ENTRIES = 32768;
 const CHAT_INFO_PARSE_CONCURRENCY = 8;
 const chatInfoCache = createFileSummaryCache({ maxBytes: CHAT_INFO_CACHE_MAX_BYTES, maxEntries: CHAT_INFO_CACHE_MAX_ENTRIES });
+registerMemoryReclaimer(() => {
+    chatInfoCache.clear();
+});
 const chatInfoParseLimit = createLimiter(CHAT_INFO_PARSE_CONCURRENCY);
 
 /** @type {Map<string, Promise<{kind: 'empty' | 'valid' | 'corrupt', parsed?: object}>>} */
@@ -1770,11 +1959,20 @@ export const roleplayBrowserHost = { prepare: prepareBrowserChatWrite, publish: 
 // In its own frame: a prepared write may read its text from its bytes on every access, and that text must not
 // stay referenced by the publication that only compares it.
 function preparedTextMatchesBytes(prepared, bytes) {
+    if (Buffer.isBuffer(prepared.bytes)) {
+        return prepared.bytes.equals(bytes);
+    }
     const text = prepared.serialized;
     return typeof text === 'string' && Buffer.from(text, 'utf8').equals(bytes);
 }
 
-function getPreparedChatSizeDetails(prepared) {
+function getPreparedChatSizeDetails(prepared, payloadBytesLength = null) {
+    if (Number.isInteger(payloadBytesLength) && payloadBytesLength >= 0) {
+        return {
+            bytes: payloadBytesLength,
+            size: formatBytes(payloadBytesLength),
+        };
+    }
     return getSerializedBackupSizeDetails(prepared.serialized);
 }
 
@@ -1799,7 +1997,7 @@ export function publishNativeChatWrite({ filePath, before, payloadPath, payloadH
     if (!payload || payload.rawHash !== payloadHash || !preparedTextMatchesBytes(prepared, payload.bytes)
         || !chatJsonlEqualsRecords(payload.bytes, prepared.records)) throw new InvalidChatDataError('Prepared chat payload changed.');
     const inspect = () => {
-        const file = readRoleplayFile(filePath, 64 * 1024 * 1024);
+        const file = inspectRoleplayFile(filePath, 64 * 1024 * 1024);
         if (before === null ? file !== null : !file || file.rawHash !== before.rawHash || !isDeepStrictEqual(file.physical, before.physical)) {
             throw Object.assign(new IntegrityMismatchError('Managed chat source changed.'), { code: 'ESTALE' });
         }
@@ -1825,7 +2023,7 @@ export function publishNativeChatWrite({ filePath, before, payloadPath, payloadH
         if (prepared.changed === false && (before === null || payload.rawHash !== before.rawHash)) throw new InvalidChatDataError('Invalid managed no-op.');
         result = trySaveChatLocked(prepared.inputRecords, filePath, force, handle, cardName, backupDirectory,
             { recoveryTarget, allowShrink, deferBackup, deferSequenceId, expectedSnapshot: snapshot, nativePrepared: prepared,
-                createOnly: before === null, validateNativeSource: inspect });
+                payloadBytes: payload.bytes, createOnly: before === null, validateNativeSource: inspect });
         const saved = readRoleplayFile(filePath, 64 * 1024 * 1024, { flush: true });
         if (!saved || saved.rawHash !== payloadHash || (before && !isDeepStrictEqual(saved.physical, before.physical))) {
             throw new IntegrityMismatchError('Managed chat output changed during publication.');
@@ -1842,7 +2040,7 @@ export function publishNativeChatWrite({ filePath, before, payloadPath, payloadH
     return result;
 }
 
-function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handle, cardName, backupDirectory, { deferBackup = false, deferSequenceId = undefined, recoveryTarget = null, allowShrink = false, persistDerivedMetadata = false, expectedSnapshot = null, nativePrepared = null, createOnly = false, validateNativeSource = null } = {}) {
+function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handle, cardName, backupDirectory, { deferBackup = false, deferSequenceId = undefined, recoveryTarget = null, allowShrink = false, persistDerivedMetadata = false, expectedSnapshot = null, nativePrepared = null, payloadBytes = null, createOnly = false, validateNativeSource = null } = {}) {
     const doIntegrityCheck = (checkIntegrity && !skipIntegrityCheck);
     const incomingIntegrity = chatData?.[0]?.chat_metadata?.integrity;
     const chatIntegritySlug = doIntegrityCheck && typeof incomingIntegrity === 'string' ? incomingIntegrity : '';
@@ -1854,7 +2052,7 @@ function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handl
     // while the existing file is read, compared and backed up.
     let jsonlData = nativePrepared ? null : prepared.serialized;
     const getJsonlData = () => jsonlData ??= prepared.serialized;
-    const savedChatSizeDetails = getPreparedChatSizeDetails(prepared);
+    const savedChatSizeDetails = getPreparedChatSizeDetails(prepared, Buffer.isBuffer(payloadBytes) ? payloadBytes.byteLength : null);
     logBackupEvent('chat-save', {
         handle,
         chat: cardName,
@@ -2001,7 +2199,7 @@ function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handl
     // Neconyan: the regular backup still runs for an unchanged save. An agent run defers every
     // backup and closes with one non-deferred save, which can land unchanged; skipping it there would
     // leave the whole run without a backup. isDuplicateRegularChatBackup collapses the steady state.
-    const persistedChatData = unchangedChatData ?? getJsonlData();
+    const persistedChatData = unchangedChatData ?? (Buffer.isBuffer(payloadBytes) ? payloadBytes : getJsonlData());
     let hasRecoverySnapshot = false;
 
     if (isBackupEnabled && recoveryTarget) {

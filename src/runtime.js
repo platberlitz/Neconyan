@@ -12,6 +12,21 @@ export function isNativeTermuxEnvironment() {
         || (typeof process.env.HOME === 'string' && process.env.HOME.startsWith('/data/data/com.termux/files/home'));
 }
 
+export function isConstrainedMobileRuntime({ platform = process.platform, env = process.env } = {}) {
+    if (env?.NECONYAN_ANDROID_APP === '1' || env?.NECONYAN_IOS_APP === '1') {
+        return true;
+    }
+    if (platform === 'android') {
+        return true;
+    }
+    if (env === process.env && platform === process.platform) {
+        return isNativeTermuxEnvironment();
+    }
+    return Boolean(env?.TERMUX_VERSION)
+        || env?.PREFIX === '/data/data/com.termux/files/usr'
+        || (typeof env?.HOME === 'string' && env.HOME.startsWith('/data/data/com.termux/files/home'));
+}
+
 export function getRuntimeName() {
     if (isBunRuntime()) {
         return 'Bun';

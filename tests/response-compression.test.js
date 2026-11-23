@@ -74,20 +74,32 @@ describe('response compression middleware', () => {
         }))).toBe(false);
     });
 
-    test('skips compression inside the bundled phone apps', () => {
+    test('skips compression inside the bundled phone apps and Termux', () => {
         const android = process.env.NECONYAN_ANDROID_APP;
         const ios = process.env.NECONYAN_IOS_APP;
+        const termuxVersion = process.env.TERMUX_VERSION;
+        const prefix = process.env.PREFIX;
         try {
             process.env.NECONYAN_ANDROID_APP = '1';
             expect(shouldCompressResponse({}, createResponse({ 'Content-Type': 'application/json' }))).toBe(false);
             delete process.env.NECONYAN_ANDROID_APP;
             process.env.NECONYAN_IOS_APP = '1';
             expect(shouldCompressResponse({}, createResponse({ 'Content-Type': 'application/json' }))).toBe(false);
+            delete process.env.NECONYAN_IOS_APP;
+            process.env.TERMUX_VERSION = '0.118.1';
+            expect(shouldCompressResponse({}, createResponse({ 'Content-Type': 'application/json' }))).toBe(false);
+            delete process.env.TERMUX_VERSION;
+            process.env.PREFIX = '/data/data/com.termux/files/usr';
+            expect(shouldCompressResponse({}, createResponse({ 'Content-Type': 'application/json' }))).toBe(false);
         } finally {
             if (android === undefined) delete process.env.NECONYAN_ANDROID_APP;
             else process.env.NECONYAN_ANDROID_APP = android;
             if (ios === undefined) delete process.env.NECONYAN_IOS_APP;
             else process.env.NECONYAN_IOS_APP = ios;
+            if (termuxVersion === undefined) delete process.env.TERMUX_VERSION;
+            else process.env.TERMUX_VERSION = termuxVersion;
+            if (prefix === undefined) delete process.env.PREFIX;
+            else process.env.PREFIX = prefix;
         }
     });
 

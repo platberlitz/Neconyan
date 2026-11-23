@@ -27,15 +27,33 @@ const chatText = chat.map(record => JSON.stringify(record)).join('\n');
 /** Runs `operation` while counting the work that touches a whole chat or a large part of it. */
 function measure(operation) {
     const whole = chatText.length * 0.6;
-    const meters = { parsedChars: 0, stringifiedChars: 0, largeTexts: 0, largeClones: 0 };
-    const originals = { parse: JSON.parse, stringify: JSON.stringify, clone: globalThis.structuredClone, decode: TextDecoder.prototype.decode,
-        toString: Buffer.prototype.toString, readFileSync: fs.readFileSync };
+    const wholeBytes = Buffer.byteLength(chatText, 'utf8') * 0.6;
+    const meters = { parsedChars: 0, stringifiedChars: 0, largeTexts: 0, largeClones: 0, largeBuffers: 0 };
+    const originals = {
+        parse: JSON.parse,
+        stringify: JSON.stringify,
+        clone: globalThis.structuredClone,
+        decode: TextDecoder.prototype.decode,
+        toString: Buffer.prototype.toString,
+        readFileSync: fs.readFileSync,
+        alloc: Buffer.alloc,
+        allocUnsafe: Buffer.allocUnsafe,
+        from: Buffer.from,
+        concat: Buffer.concat,
+    };
     const large = text => {
         if (typeof text === 'string' && text.length >= whole) {
             meters.largeTexts += 1;
             if (process.env.CHAT_COST_REPORT === '2') console.log('  whole-chat text:', new Error().stack.split('\n').slice(2, 6).map(line => line.trim().replace(/\(.*\/src\//, '(')).join(' < '));
         }
         return text;
+    };
+    const largeBuffer = buffer => {
+        if (Buffer.isBuffer(buffer) && buffer.byteLength >= wholeBytes) {
+            meters.largeBuffers += 1;
+            if (process.env.CHAT_COST_REPORT === '2') console.log('  whole-chat buffer:', buffer.byteLength, new Error().stack.split('\n').slice(2, 6).map(line => line.trim().replace(/\(.*\/src\//, '(')).join(' < '));
+        }
+        return buffer;
     };
     JSON.parse = function (text, ...rest) {
         if (typeof text === 'string') { meters.parsedChars += text.length; large(text); }
@@ -52,7 +70,15 @@ function measure(operation) {
     };
     TextDecoder.prototype.decode = function (...args) { return large(originals.decode.apply(this, args)); };
     Buffer.prototype.toString = function (...args) { return large(originals.toString.apply(this, args)); };
-    fs.readFileSync = function (...args) { return large(originals.readFileSync.apply(this, args)); };
+    Buffer.alloc = function (...args) { return largeBuffer(originals.alloc.apply(this, args)); };
+    Buffer.allocUnsafe = function (...args) { return largeBuffer(originals.allocUnsafe.apply(this, args)); };
+    Buffer.from = function (...args) { return largeBuffer(originals.from.apply(this, args)); };
+    Buffer.concat = function (...args) { return largeBuffer(originals.concat.apply(this, args)); };
+    fs.readFileSync = function (...args) {
+        const result = originals.readFileSync.apply(this, args);
+        if (Buffer.isBuffer(result)) return largeBuffer(result);
+        return large(result);
+    };
     syncBuiltinESMExports();
     try {
         operation();
@@ -61,6 +87,10 @@ function measure(operation) {
         globalThis.structuredClone = originals.clone;
         TextDecoder.prototype.decode = originals.decode;
         Buffer.prototype.toString = originals.toString;
+        Buffer.alloc = originals.alloc;
+        Buffer.allocUnsafe = originals.allocUnsafe;
+        Buffer.from = originals.from;
+        Buffer.concat = originals.concat;
         fs.readFileSync = originals.readFileSync;
         syncBuiltinESMExports();
     }
@@ -89,9 +119,11 @@ function measureSave(t, operationKey, makeRecords) {
 
 test('one save of a large chat does a bounded amount of whole-chat work', t => {
     const cost = measureSave(t, 'changed', first => [...first, message(MESSAGES + 1)]);
-    // Before the change: 2 whole-chat clones, 19 whole-chat texts, 13.10 chats parsed and 9.40 serialised (this test measured them).
+    // Before #897: 2 whole-chat clones, 19 whole-chat texts, 13.10 chats parsed and 9.40 serialised.
+    // Before this change: 5 whole-chat texts and 29 whole-chat buffers.
     assert.equal(cost.largeClones, 0, 'no whole-chat structuredClone');
-    assert.ok(cost.largeTexts <= 5, `whole-chat texts built: ${cost.largeTexts}`);
+    assert.ok(cost.largeTexts <= 2, `whole-chat texts built: ${cost.largeTexts}`);
+    assert.ok(cost.largeBuffers <= 12, `whole-chat buffers built: ${cost.largeBuffers}`);
     assert.ok(cost.parsedChats <= 7.045, `chats parsed: ${cost.parsedChats}`);
     assert.ok(cost.stringifiedChats <= 3.711, `chats serialised: ${cost.stringifiedChats}`);
 });
@@ -100,10 +132,11 @@ test('a save that changes nothing does no more whole-chat work than one that app
     const changed = measureSave(t, 'changed', first => [...first, message(MESSAGES + 1)]);
     const unchanged = measureSave(t, 'unchanged', first => structuredClone(first));
     assert.equal(unchanged.largeClones, 0);
-    assert.ok(unchanged.largeTexts <= 4, `whole-chat texts built: ${unchanged.largeTexts}`);
+    assert.ok(unchanged.largeTexts <= 2, `whole-chat texts built: ${unchanged.largeTexts}`);
+    assert.ok(unchanged.largeBuffers <= changed.largeBuffers, `whole-chat buffers built: ${unchanged.largeBuffers} vs ${changed.largeBuffers}`);
     assert.ok(unchanged.parsedChats <= 7.03, `chats parsed: ${unchanged.parsedChats}`);
     assert.ok(unchanged.stringifiedChats <= 2.695, `chats serialised: ${unchanged.stringifiedChats}`);
-    for (const meter of ['largeTexts', 'largeClones', 'parsedChars', 'stringifiedChars']) {
+    for (const meter of ['largeTexts', 'largeClones', 'largeBuffers', 'parsedChars', 'stringifiedChars']) {
         assert.ok(unchanged[meter] <= changed[meter], `${meter}: ${unchanged[meter]} for a save that changes nothing, ${changed[meter]} for an append`);
     }
 });
@@ -117,6 +150,7 @@ test('loading a saved chat reads it once and builds no whole-chat text', t => {
     assert.equal(loaded.records.length, MESSAGES + 2);
     assert.equal(cost.largeClones, 0);
     assert.equal(cost.largeTexts, 0, 'a load reads rows one at a time');
+    assert.ok(cost.largeBuffers <= 2, `whole-chat buffers built: ${cost.largeBuffers}`);
     assert.ok(cost.parsedChats <= 1.006, `chats parsed: ${cost.parsedChats}`);
     assert.ok(cost.stringifiedChars <= 400, `characters serialised: ${cost.stringifiedChars}`);
 });
@@ -129,5 +163,6 @@ test('the measurement sees whole-chat work', () => {
     });
     assert.equal(cost.largeClones, 1);
     assert.equal(cost.largeTexts, 3);
+    assert.equal(cost.largeBuffers, 1);
     assert.ok(cost.stringifiedChats > 0.9 && cost.parsedChats > 0.9);
 });

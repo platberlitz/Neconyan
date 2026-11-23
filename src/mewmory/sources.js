@@ -14,9 +14,14 @@ import {
 } from './store.js';
 import { fileCollections } from '../operations/vector-sources.js';
 import { selectSavedRoleplayPersona } from '../generation/world-info.js';
+import { registerMemoryReclaimer } from '../memory-pressure.js';
 
 const cardTextCache = new Map();
 const CARD_TEXT_CACHE_MAX_ENTRIES = 128;
+
+registerMemoryReclaimer(() => {
+    cardTextCache.clear();
+});
 
 /** Decoding a card PNG costs a crc32 pass plus base64 decode; the text is immutable, so share it. */
 function readCharacterCardTextSync(filename) {

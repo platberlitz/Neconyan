@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { registerMemoryReclaimer } from './memory-pressure.js';
 
 /** Completed, validated decision responses only. Request identities are retained as hashes. */
 export class DecisionCache {
@@ -46,7 +47,15 @@ export class DecisionCache {
         this.entries.set(key, { json, bytes, expires: now + this.ttlMs });
         this.bytes += bytes;
     }
+
+    clear() {
+        this.entries.clear();
+        this.bytes = 0;
+    }
 }
 
 // Shared process-wide bound; separate caller/account identities prevent cross-account reuse.
 export const decisionCache = new DecisionCache();
+registerMemoryReclaimer(() => {
+    decisionCache.clear();
+});
