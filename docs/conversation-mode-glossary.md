@@ -364,6 +364,8 @@ When a book is selected, its entries are scanned against the Conversation's rece
 
 If the selected book cannot be found, nothing is loaded and the focus line is left out. The **Missing lorebook links** notice reports the missing book.
 
+Deleting or renaming a lorebook in World Info keeps the override honest. A rename moves the override of every Conversation (each DM and each member of a group) to the new name. A delete sets it back to **Character default (no override)**. An override for any other book, including one whose name only looks similar, stays as it was. A book removed outside the app is not seen, so its override stays and the notice reports it.
+
 ### Connection Profile
 
 **Connection Profile** is marked Global and is used for all Conversation Mode model generations. Leaving it on **Use current connection** follows the currently active connection profile. The selected profile is used for ordinary Conversation replies and Conversation sidecar generations such as memory and schedules where applicable. Changing this setting affects solo and group Conversations globally.

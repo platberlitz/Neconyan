@@ -123,7 +123,7 @@ describe('Persona lorebook links', () => {
             getRequestHeaders: () => ({}), fetch: async () => ({ ok: true }),
             blockWorldInfoSaves: () => () => {}, settleWorldInfoSave: async () => {}, invalidateWorldInfoCache() {},
             worldInfoCommittedEntryInstances: new Map(), worldInfoEditor: null, selected_world_info: [], saveSettingsDebounced() {},
-            updateNeconyanLorebookFolders: async () => {},
+            updateNeconyanLorebookFolders: async () => {}, unlinkDeletedWorldInfo: async () => {},
             eventSource: { emit: async () => {} }, event_types: { WORLDINFO_DELETED: 'deleted' },
         });
         context.updateWorldInfoList = async () => { context.world_names.length = 0; };

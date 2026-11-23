@@ -100,7 +100,7 @@ function createHost(initialBook = book()) {
         t: (strings, ...values) => String.raw({ raw: strings }, ...values),
         toastr: { error: jest.fn(), success: jest.fn(), warning: jest.fn(), info: jest.fn() },
         Popup: HostPopup,
-        saveSettingsDebounced: jest.fn(), updateWorldInfoLinks: jest.fn(async () => {}),
+        saveSettingsDebounced: jest.fn(), updateWorldInfoLinks: jest.fn(async () => {}), unlinkDeletedWorldInfo: jest.fn(async () => {}), syncOpenCardLorebookField: jest.fn(),
         saveSettings: jest.fn(async () => true),
         clearWorldInfoDesktopEditor: jest.fn(),
         document: { activeElement: null, createElement: createDomElement },
