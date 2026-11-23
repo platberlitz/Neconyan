@@ -19,6 +19,7 @@ import { subscribeJobsChanged } from '../jobs/notifications.js';
 import { getDiagnosticJobActivity } from '../diagnostic-activity.js';
 import { assertScratchpadImageRetry } from '../scratchpad/images.js';
 import { retryDistillJob } from '../labs/store.js';
+import { retryApplicationJob } from '../operations/jobs.js';
 
 export const router = express.Router();
 
@@ -407,6 +408,9 @@ router.post('/:id/retry', async (request, response) => {
         if (!job || job.owner !== owner) return response.status(404).json({ error: 'That job could not be found.' });
         if (!['failed', 'interrupted'].includes(job.state)) return response.status(409).json({ error: 'Only jobs that failed or were interrupted can be tried again.' });
         if (job.type === 'labs.distill') return response.json({ job: retryDistillJob({ owner, directories }, job) });
+        if (job.type.startsWith('operations.') && job.intent?.operations) {
+            return response.json({ job: retryApplicationJob({ owner, directories }, job) });
+        }
         assertScratchpadImageRetry(directories, job);
         if (job.type === 'media.roleplay-workflow') {
             return withRoleplayAccount({ directories, owner }, job.intent.media, () => {

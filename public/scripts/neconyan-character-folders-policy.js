@@ -499,6 +499,8 @@ export function classifyAiSortError(error) {
         message = 'Wait a moment or check your provider\'s usage limits, then try again.';
     } else if (/reasoning[._ -]?effort/.test(`${code} ${detail}`)) {
         message = 'Change Reasoning Effort in Connections, then try again.';
+    } else if (code === 'job_store_full' || /application storage|job history storage|storage (?:is full|has no room)|too large to (?:store|keep)/.test(detail)) {
+        message = 'Background job storage is full. If jobs are still running, wait for them to finish, then try again.';
     } else if (status === 413 || /context[_ -]length|context window|(?:prompt|input|request|context) (?:is )?too (?:long|large)|too many tokens|maximum context/.test(`${code} ${detail}`)) {
         message = 'Lower \'Characters per request\' and try again.';
     } else if (/no_connection|no connection|not connected|unsupported .*backend|not supported by|connect to a model|choose a .*model/.test(`${code} ${detail}`)) {

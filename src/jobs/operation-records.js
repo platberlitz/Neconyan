@@ -70,18 +70,24 @@ export function createOperationRecords({ namespace, label, errorCode, recordLimi
         return entry;
     }
 
-    function save(filename, value, before, { wasOpen = false } = {}) {
+    const reserveScanner = base => {
+        const context = {};
+        return value => reserves(value, base, context);
+    };
+
+    function save(base, filename, value, before, { wasOpen = false } = {}) {
         const bytes = JSON.stringify(value);
         if (Buffer.byteLength(bytes) > recordLimit(value.kind)) throw labError('The saved Labs result is too large to store.', 413);
-        // An open record already holds its full reservation, so rewriting it cannot change the store total.
-        if (!(before && wasOpen && reserves(value))) {
-            let reserved = reserves(value) ? recordLimit(value.kind) : Buffer.byteLength(bytes);
+        // An open record already holds its full reservation, so rewriting it cannot increase the store total.
+        if (!(before && wasOpen)) {
+            const isReserved = reserveScanner(base);
+            let reserved = isReserved(value) ? recordLimit(value.kind) : Buffer.byteLength(bytes);
             for (const name of fs.readdirSync(path.dirname(filename))) {
                 const other = path.join(path.dirname(filename), name);
                 if (other === filename || !/^[a-f0-9]{64}\.json$/.test(name)) continue;
                 const item = summarize(other);
                 if (!item.value) throw labError('A saved Labs record is missing.');
-                reserved += reserves(item.value) ? recordLimit(item.value.kind) : item.size;
+                reserved += isReserved(item.value) ? recordLimit(item.value.kind) : item.size;
             }
             if (reserved > storeLimit) throw labError('Labs storage is full. Existing records were kept.', 413);
         }
@@ -107,19 +113,28 @@ export function createOperationRecords({ namespace, label, errorCode, recordLimi
             .map(name => path.join(directory, name)) : [];
         const present = new Set(filenames);
         for (const filename of summaries.keys()) if (path.dirname(filename) === directory && !present.has(filename)) summaries.delete(filename);
-        return filenames.map(summarize);
+        return filenames.map(filename => ({ filename, ...summarize(filename) }));
     }
 
-    function reserve(base, target, account, kind = '') {
+    function reserve(base, target, account, kind = '', { excludeKey = null } = {}) {
+        const excluded = excludeKey ? filenameFor(base, account, excludeKey) : null;
+        const isReserved = reserveScanner(base);
         let used = recordLimit(kind);
-        for (const { size, value } of records(base)) {
+        if (used > storeLimit) throw labError('Labs storage has no room for another result. Existing records were kept.', 413);
+        for (const { filename, size, value } of records(base)) {
+            if (filename === excluded) continue;
             if (!value) throw labError('A saved Labs record is missing.');
-            const open = reserves(value);
+            const open = isReserved(value);
             used += open ? recordLimit(value.kind) : size;
             if (used > storeLimit) throw labError('Labs storage has no room for another result. Existing records were kept.', 413);
-            if (open && value.applyTarget && Object.keys(value.effects).length && roleplayHash(value.account) === roleplayHash(stamp(account))
+            if (['preparing', 'accepted'].includes(value.state) && value.applyTarget && Object.keys(value.effects).length && roleplayHash(value.account) === roleplayHash(stamp(account))
             && roleplayHash(value.applyTarget) === roleplayHash(target)) throw labError('That item has an unfinished reviewed Labs change.');
         }
+    }
+
+    function reserveLabLocked(lease, target, kind = '', options = {}) {
+        const { scope } = roleplayLease(lease);
+        reserve(scope, target, scope, kind, options);
     }
 
     /** Called by ordinary authoring writers under the same account lock. */
@@ -139,7 +154,10 @@ export function createOperationRecords({ namespace, label, errorCode, recordLimi
             const filename = filenameFor(base, account, key);
             const { value, file } = read(filename);
             if (value && !belongs(value, account)) throw labError('This Labs request belongs to an earlier state of your account.');
-            if (value && reconcile(value, lease)) save(filename, value, file);
+            if (value) {
+                const wasOpen = reserves(value, base);
+                if (reconcile(value, lease)) save(base, filename, value, file, { wasOpen });
+            }
             return value;
         });
     }
@@ -151,10 +169,9 @@ export function createOperationRecords({ namespace, label, errorCode, recordLimi
             const filename = filenameFor(base, account, key);
             const existing = read(filename).value;
             if (existing) return false;
-            if (kind !== 'distill' || namespace !== 'labs') reserve(base, null, account);
             createRoleplayDirectory(directoryFor(base), roleplayStoreDirectory(base));
             const plan = {};
-            save(filename, { version: 1, key, account: stamp(account), kind, label: 'Refused Labs submission',
+            save(base, filename, { version: 1, key, account: stamp(account), kind, label: 'Refused Labs submission',
                 requestHash: roleplayHash({ kind, input }), plan, planHash: roleplayHash(plan), applyTarget: null,
                 state: 'refused', jobId: '', effects: {}, error: message, createdAt: Date.now() }, null);
             return true;
@@ -181,8 +198,8 @@ export function createOperationRecords({ namespace, label, errorCode, recordLimi
             if (!value || !belongs(value, currentAccount) || value.jobId !== context.job.id || value.planHash !== identity.planHash
             || roleplayHash(value.account) !== roleplayHash(identity.account)
             || value.kind !== context.job.type.slice(namespace.length + 1)) throw labError('This job does not belong to that Labs record.');
-            let wasOpen = reserves(value);
-            return operation({ lease, value, save: () => { file = save(filename, value, file, { wasOpen }); wasOpen = reserves(value); }, base, account: identity.account });
+            let wasOpen = reserves(value, base);
+            return operation({ lease, value, save: () => { file = save(base, filename, value, file, { wasOpen }); wasOpen = reserves(value, base); }, base, account: identity.account });
         });
     }
 
@@ -192,8 +209,9 @@ export function createOperationRecords({ namespace, label, errorCode, recordLimi
         const filename = filenameFor(scope, scope, key);
         const { file, value } = read(filename);
         if (!value || roleplayHash(value.account) !== roleplayHash(stamp(scope))) throw labError('The related Labs record is unavailable.');
+        const wasOpen = reserves(value, scope);
         const result = operation(value);
-        if (!result?.unchanged) save(filename, value, file);
+        if (!result?.unchanged) save(scope, filename, value, file, { wasOpen });
         return result;
     }
 
@@ -218,7 +236,7 @@ export function createOperationRecords({ namespace, label, errorCode, recordLimi
                 value = { version: 1, key, account: stamp(account), kind, label, requestHash, plan, planHash: roleplayHash(plan),
                     applyTarget, state: 'preparing', jobId: null, effects: {}, createdAt: Date.now() };
                 if (namespace === 'labs' && kind === 'distill') value.requestInput = input;
-                file = save(filename, value, null);
+                file = save(base, filename, value, null);
             }
             beforeAcceptLocked(lease, value);
             let accepted;
@@ -228,16 +246,16 @@ export function createOperationRecords({ namespace, label, errorCode, recordLimi
                     target: applyTarget || { kind: namespace, id: roleplayHash([account.accountId, key]) }, paused: true, label: value.label });
             } catch (error) {
                 // This named store refusal precedes its ledger write. A lost write/acknowledgement is deliberately excluded.
-                if (namespace === 'labs' && kind === 'distill' && error.code === 'JOB_STORE_FULL') {
+                if (error.code === 'JOB_STORE_FULL') {
                     value.state = 'refused'; value.jobId = ''; value.error = error.message;
-                    save(filename, value, file);
+                    save(base, filename, value, file, { wasOpen: true });
                     error.notAccepted = true;
                 }
                 throw error;
             }
             value.jobId = accepted.job.id;
             value.state = 'accepted';
-            save(filename, value, file);
+            save(base, filename, value, file, { wasOpen: true });
             return { ...accepted, record: value };
         });
     }
@@ -246,12 +264,13 @@ export function createOperationRecords({ namespace, label, errorCode, recordLimi
         if (!context.job.type.startsWith(`${namespace}.`) || context.job.state !== 'waiting' || context.job.stage !== 'preparing') return;
         const identity = context.job.intent?.[namespace];
         if (!identity) throw labError('The paused Labs identity is missing.');
-        const ready = withRoleplayAccount({ owner: context.owner, directories: context.directories }, identity.account, () => {
-            const filename = filenameFor(context, identity.account, identity.key);
+        const base = { owner: context.owner, directories: context.directories };
+        const ready = withRoleplayAccount(base, identity.account, () => {
+            const filename = filenameFor(base, identity.account, identity.key);
             const { file, value } = read(filename);
             if (!value || value.planHash !== identity.planHash || value.kind !== context.job.type.slice(namespace.length + 1)
             || value.jobId && value.jobId !== context.job.id) throw labError('A paused Labs record is damaged and needs repair.');
-            if (value.state === 'preparing') { value.jobId = context.job.id; value.state = 'accepted'; save(filename, value, file); }
+            if (value.state === 'preparing') { value.jobId = context.job.id; value.state = 'accepted'; save(base, filename, value, file, { wasOpen: true }); }
             return canRelease(context, value);
         });
         if (ready) releaseJob(context.directories, context.job.id);
@@ -283,14 +302,16 @@ export function createOperationRecords({ namespace, label, errorCode, recordLimi
             write: value => {
                 const filename = filenameFor(base, account, value.key);
                 createRoleplayDirectory(directoryFor(base), roleplayStoreDirectory(base));
-                save(filename, value, read(filename).file);
+                const existing = read(filename);
+                save(base, filename, value, existing.file, { wasOpen: Boolean(existing.value && reserves(existing.value, base)) });
             },
             all: (kind = '') => records(base).map(item => item.value).filter(value => value && belongs(value, account) && (!kind || value.kind === kind))
                 .map(value => read(filenameFor(base, account, value.key)).value),
         });
     }
 
-    return Object.freeze({ error: labError, assertTargetIdle: assertLabsTargetIdle, read: readLabRecord,
-        refuse: refuseLabSubmission, list: listLabRecords, withRecord: withLabRecord, mutateLocked: mutateLabRecordLocked,
-        admit: admitLabJob, finalize: finalizeLabSubmission, finish: finishLabJob, transaction, transactionLocked });
+    return Object.freeze({ error: labError, assertTargetIdle: assertLabsTargetIdle, reserveLocked: reserveLabLocked,
+        read: readLabRecord, refuse: refuseLabSubmission, list: listLabRecords, withRecord: withLabRecord,
+        mutateLocked: mutateLabRecordLocked, admit: admitLabJob, finalize: finalizeLabSubmission, finish: finishLabJob,
+        transaction, transactionLocked });
 }

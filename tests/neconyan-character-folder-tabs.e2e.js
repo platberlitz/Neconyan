@@ -67,6 +67,7 @@ async function aiFixture(browser, testInfo, phone, { batchSize, baseline = false
             settings.accountStorage = {
                 ...settings.accountStorage,
                 'NeconyanTutorialStatus.v1': 'skipped',
+                'NeconyanAssistantSeed.v1': 'done',
                 'neconyanToolTourInvite.character-library': 'seen',
                 WelcomePage_PanelMode: 'full',
             };
@@ -366,6 +367,37 @@ test.describe('Sort with AI', () => {
             await context.close();
         }
     });
+
+    async function checkStorageRefusal(browser, testInfo, phone, baseline = false) {
+        const { context, page, organiser } = await aiFixture(browser, testInfo, phone, { batchSize: 5, count: 6, baseline });
+        try {
+            await page.route('**/api/operations/submit', route => route.fulfill({
+                status: 413,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    code: 'APPLICATION_WORK_CHANGED',
+                    notAccepted: true,
+                    error: 'Application storage has no room for another result. Existing records were kept.',
+                }),
+            }));
+            await organiser.getByRole('button', { name: 'Suggest folders' }).click();
+            const message = baseline ? 'Lower \'Characters per request\' and try again.'
+                : 'Background job storage is full. If jobs are still running, wait for them to finish, then try again.';
+            const status = organiser.locator('.neconyan-folder-organiser-status');
+            await expect(status).toHaveText(message);
+            await expect(status).toHaveAttribute('data-tone', 'error');
+            if (!baseline) await expect(page.locator('#toast-container .toast-error')).toContainText(message);
+            await screenshot(page, `${baseline ? 'before' : 'after'}-${phone ? 'phone' : 'desktop'}-storage-refusal`, status);
+        } finally {
+            await context.close();
+        }
+    }
+
+    for (const phone of [true, false]) {
+        const device = phone ? 'phone' : 'desktop';
+        test(`reports full background job storage: ${device}`, ({ browser }, testInfo) => checkStorageRefusal(browser, testInfo, phone));
+        if (baselineDir && screenshotDir) test(`staging storage refusal: ${device}`, ({ browser }, testInfo) => checkStorageRefusal(browser, testInfo, phone, true));
+    }
 });
 
 for (const phone of [false, true]) {

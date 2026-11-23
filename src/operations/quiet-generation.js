@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { readArtifact, writeArtifact, isDefiniteProviderRefusal } from '../jobs/artifacts.js';
+import { getJob } from '../jobs/store.js';
 import { runChatProfile } from '../generation/service.js';
 import { createMacroEnvironment } from '../macros/index.js';
 import { capturePromptingContext, promptingMaterial } from '../labs/prompting-context.js';
@@ -58,7 +59,11 @@ export async function runQuietGeneration(context, plan, { generate = runChatProf
             characterName: plan.context.macros.names.char, rawOptions: { includePreset: true, includeInstruct: !capture.combinedPrompt },
             beforeDispatch: () => withOperation(context, () => {}) });
     } catch (error) {
-        if (isDefiniteProviderRefusal(error.status)) error.operationRefused = true;
+        if (error?.code !== 'PROVIDER_OUTCOME_UNKNOWN'
+            && getJob(context.directories, context.job.id)?.recoverability !== 'unknown-outcome'
+            && isDefiniteProviderRefusal(error?.providerStatus ?? error?.status)) {
+            error.operationRefused = true;
+        }
         throw error;
     }
     const result = { text: typeof reply === 'string' ? reply : String(reply?.text ?? '') };

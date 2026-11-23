@@ -100,3 +100,24 @@ test('group chats and missing prompts are refused before any work is accepted', 
     await assert.rejects(acceptApplicationOperation(p.request, body('empty', { prompt: '  ' })), /prompt/);
     assert.equal(readOperation(p.base, 'group'), null);
 });
+
+test('definite upstream 529 refusal marks quiet-generation refused while PROVIDER_OUTCOME_UNKNOWN stays accepted', async () => {
+    const p = prepared('quiet-refusal');
+    const refusedAccepted = await acceptApplicationOperation(p.request, body('quiet-529'));
+    await assert.rejects(
+        runOperation(p.context(refusedAccepted), {
+            generate: async () => { throw Object.assign(new Error('Provider overloaded'), { status: 502, providerStatus: 529 }); },
+        }),
+        error => error.operationRefused === true,
+    );
+    assert.equal(readOperation(p.base, 'quiet-529').state, 'refused');
+
+    const unknownAccepted = await acceptApplicationOperation(p.request, body('quiet-unknown-503'));
+    await assert.rejects(
+        runOperation(p.context(unknownAccepted), {
+            generate: async () => { throw Object.assign(new Error('The result from the AI service is unknown.'), { status: 503, code: 'PROVIDER_OUTCOME_UNKNOWN' }); },
+        }),
+        error => error.code === 'PROVIDER_OUTCOME_UNKNOWN' && error.operationRefused !== true,
+    );
+    assert.equal(readOperation(p.base, 'quiet-unknown-503').state, 'accepted');
+});

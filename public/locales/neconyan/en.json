@@ -19623,6 +19623,7 @@
   "Check your API key in Connections, reconnect and try again.": "Check your API key in Connections, reconnect and try again.",
   "Wait a moment or check your provider's usage limits, then try again.": "Wait a moment or check your provider's usage limits, then try again.",
   "Lower 'Characters per request' and try again.": "Lower 'Characters per request' and try again.",
+  "Background job storage is full. If jobs are still running, wait for them to finish, then try again.": "Background job storage is full. If jobs are still running, wait for them to finish, then try again.",
   "Check your internet and model connection, then try again.": "Check your internet and model connection, then try again.",
   "The model sent a reply that could not be read. Try another prompt or fewer characters per request.": "The model sent a reply that could not be read. Try another prompt or fewer characters per request.",
   "The model sent an empty reply. Try again, or choose another model in Connections.": "The model sent an empty reply. Try again, or choose another model in Connections.",

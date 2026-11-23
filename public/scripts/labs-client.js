@@ -70,7 +70,8 @@ export function createLabClient({ request, observeJob, account, storage, uuid = 
                     if (reason === 'missing') {
                         read(record.key).then(saved => saved.state === 'completed' ? resolve(saved)
                             : reject(lifecycle === 'distill' ? distillError(saved)
-                                : Object.assign(new Error(`The job is unavailable. Its saved ${label} record has been retained.`), { jobState: 'missing' })), reject);
+                                : saved.state === 'refused' ? refusal(saved)
+                                    : Object.assign(new Error(`The job is unavailable. Its saved ${label} record has been retained.`), { jobState: 'missing' })), reject);
                     } else if (reason === 'aborted') {
                         try { resolve(await observationClosed(record, signal)); } catch (error) { reject(error); }
                     } else reject(new Error(reason));
