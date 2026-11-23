@@ -20,6 +20,8 @@ import { commitSingleChatWrite } from '../src/roleplay-lifecycle.js';
 import { canonicalMemoryPaths } from '../src/mewmory/prepared-branch.js';
 import { readRoleplayAccount, readRoleplayFile, roleplayHash, roleplayPathKey } from '../src/roleplay-store.js';
 import { canonical } from '../src/jobs/store.js';
+import { clearChatPatchIndexes } from '../src/chat-patch.js';
+import { patchFor } from './chat-patch-helpers.js';
 
 let counter = 0;
 const uuid = () => {
@@ -454,6 +456,41 @@ test('same as before: saving writes the bytes, hashes and ledger it always has',
     observed['create with non-ASCII text'] = observe(t, { create: true, next: append(initial) });
     observed['edit with the regular backup written'] = observe(t, { ...scenarios['edit a message in place'], deferBackup: false });
     matchesGolden('saves', observed);
+});
+
+// A patch of the same final chat leaves what the recorded whole saves left: GOLDEN was made by the code before
+// patching existed, so this holds the patch path to the bytes, hashes and ledger of the reference and not only to
+// the whole-save path of today. The intent hash is the one thing that differs, because it names the request.
+function observePatched(t, { start, next, then = [], deferBackup = false, host = roleplayBrowserHost }) {
+    counter = 0;
+    clearChatPatchIndexes();
+    const f = fixture(t);
+    fs.writeFileSync(f.filename, rows(start));
+    let result;
+    for (const [step, records] of [next, ...then].entries()) {
+        const { accountId, dataEpoch, instanceId, revision, rawHash, locator } = f.source();
+        const source = { kind: 'storage', accountId, dataEpoch, instanceId, revision, rawHash, locator, dependencies: [] };
+        const baseLines = fs.readFileSync(f.filename, 'utf8').split('\n').slice(1);
+        result = commitSingleChatWrite(f.scope, { operationKey: `update-${step}`, mode: 'update', sourceKind: 'storage', source, patch: patchFor(baseLines, records), backup: { deferBackup } }, host);
+    }
+    const state = readRoleplayAccount(f.scope);
+    const head = state.resources[state.paths[roleplayPathKey(state, 'chat', f.locator)].instanceId].head;
+    return {
+        changed: result.changed, revision: result.revision, rawHash: result.rawHash, integrity: result.integrity,
+        file: sha(fs.readFileSync(f.filename)), headRaw: head.rawHash, headContent: head.contentHash,
+        receipts: Object.values(state.submissions).map(({ outcome: saved }) => String(saved?.rawHash)),
+        backups: backupFingerprints(f.scope.directories.backups),
+    };
+}
+
+test('same as before: a patch of the same final chat writes the bytes, hashes and ledger the whole saves always wrote', t => {
+    const golden = JSON.parse(fs.readFileSync(new URL('./chat-save-memory.golden.json', import.meta.url), 'utf8')).saves;
+    const withoutIntent = observed => ({ ...observed, receipts: observed.receipts.map(receipt => receipt.split(' ').at(-1)) });
+    for (const [name, scenario] of Object.entries(scenarios)) {
+        const patched = observePatched(t, scenario);
+        assert.deepEqual(patched, withoutIntent(golden[name]), name);
+    }
+    assert.deepEqual(observePatched(t, { ...scenarios['edit a message in place'], deferBackup: false }), withoutIntent(golden['edit with the regular backup written']));
 });
 
 test('same as before: preparing refuses what it always refused, with the same error, and prepares the same output', () => {

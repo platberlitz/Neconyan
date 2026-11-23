@@ -3,7 +3,7 @@ import path from 'node:path';
 import { isDeepStrictEqual, TextDecoder } from 'node:util';
 import { withChatFileLocks } from '../chat-file-lock.js';
 import { normaliseRoleplayLocator, roleplayChatPath } from '../generation/roleplay-source.js';
-import { createRoleplayDirectory, readRoleplayFile, roleplayError } from '../roleplay-store.js';
+import { createRoleplayDirectory, inspectRoleplayFile, readRoleplayFile, roleplayError } from '../roleplay-store.js';
 import { tryWriteFileSync } from '../util.js';
 import { hash } from './core.js';
 import { buildBranchMemoryState, buildMemoryRecoveryGuard, MAX_ARCHIVE_BYTES } from './store.js';
@@ -58,8 +58,13 @@ function pairEvidence(pair) {
     return pair ? { archive: fingerprint(pair.archive), guard: fingerprint(pair.guard) } : null;
 }
 
-/** Called under the account lock, before the chat transaction publishes any bytes. */
-export function prepareBranchMemoryCapture(directories, locator, { metadata, messages }, { mode }) {
+/**
+ * Called under the account lock, before the chat transaction publishes any bytes.
+ * `captured.messages` is read only when a new branch has no memory of its own and its parent has some, so a
+ * caller that builds the messages on demand does so just for that case.
+ */
+export function prepareBranchMemoryCapture(directories, locator, captured, { mode }) {
+    const { metadata } = captured;
     validateMode(mode);
     const child = canonicalMemoryPaths(directories, locator);
     if (mode === 'create') assertAbsent(child);
@@ -85,7 +90,7 @@ export function prepareBranchMemoryCapture(directories, locator, { metadata, mes
             if (current) throw damaged();
             const source = readPair(parent);
             if (!source) return { plan: { kind: 'absent', parentLocator, parent: null }, payloads: [] };
-            const state = buildBranchMemoryState(source.state, child.locator, messages);
+            const state = buildBranchMemoryState(source.state, child.locator, captured.messages);
             const archive = Buffer.from(JSON.stringify(state));
             const guard = Buffer.from(JSON.stringify(buildMemoryRecoveryGuard(state)));
             if (archive.length > MAX_ARCHIVE_BYTES || guard.length > MAX_ARCHIVE_BYTES) throw roleplayError('ROLEPLAY_MEMORY_FULL', 'Prepared memory exceeds its storage limit.', 413);
@@ -125,7 +130,7 @@ export function applyPreparedBranchMemoryCapture(directories, locator, plan, { m
     if (!plan && mode !== 'create') return;
     const filename = roleplayChatPath({ directories }, locator);
     const inspectChat = () => {
-        if (!isDeepStrictEqual(fingerprint(readRoleplayFile(filename, 64 * 1024 * 1024)), chat)) throw damaged();
+        if (!isDeepStrictEqual(fingerprint(inspectRoleplayFile(filename, 64 * 1024 * 1024)), chat)) throw damaged();
     };
     inspectChat();
     return withChatFileLocks([filename], () => {

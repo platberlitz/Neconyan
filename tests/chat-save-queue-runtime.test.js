@@ -7,6 +7,7 @@ import { getChatBackupSaveOptions } from '../public/scripts/chat-backup-sequence
 import { getPendingChatNameCommit } from '../public/scripts/chat-label.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { beginRoleplaySave, bindRoleplayAccount, confirmRoleplayOverwrite, finishRoleplaySave, parseRoleplayRead, rememberRoleplayRead, roleplayAccountStamp, sendRoleplaySave } from '../public/scripts/roleplay-save-chain.js';
+import { fingerprintMessages, rememberChatPatchBase } from '../public/scripts/chat-patch-save.js';
 
 const source = readFileSync(new URL('../public/script.js', import.meta.url), 'utf8');
 const ast = parse(source, { ecmaVersion: 'latest', sourceType: 'module' });
@@ -254,7 +255,7 @@ for (const change of ['different chat in one group', 'superseding load of the sa
         const gate = new Promise(resolve => { release = resolve; });
         const runtime = vm.createContext({
             console, groups: [group], selected_group: 'group', chat: [], chat_metadata: {}, owner,
-            roleplayAccountStamp, rememberRoleplayRead,
+            roleplayAccountStamp, rememberRoleplayRead, rememberChatPatchBase, fingerprintMessages,
             getCurrentUserHandle: () => runtime.owner,
             getChatGeneration: () => generation, incrementChatGeneration: () => { generation++; },
             validateGroup: async () => {}, unshallowGroupMembers: async () => {},

@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { isUtf8 } from 'node:buffer';
 import fs from 'node:fs';
 import path from 'node:path';
 import { isDeepStrictEqual, TextDecoder } from 'node:util';
@@ -135,11 +136,12 @@ function toBuffer(data) {
  * chat never exists as one text. A newline byte never occurs inside a multi-byte sequence, so a
  * line decodes exactly as it would inside the whole text; only the first line may lose a BOM.
  */
-function* decodeChatJsonlLines(buffer) {
+function* decodeChatJsonlLines(buffer, isTrusted) {
     let start = 0;
-    for (let first = true; ; first = false) {
+    for (let first = true, line = 0; ; first = false, line++) {
         const end = buffer.indexOf(0x0a, start);
-        yield (first ? utf8Decoder : utf8LineDecoder).decode(buffer.subarray(start, end === -1 ? buffer.length : end));
+        // A line the caller already holds as valid is counted, not decoded again.
+        yield isTrusted?.(line) ? null : (first ? utf8Decoder : utf8LineDecoder).decode(buffer.subarray(start, end === -1 ? buffer.length : end));
         if (end === -1) {
             return;
         }
@@ -153,7 +155,7 @@ function* decodeChatJsonlLines(buffer) {
  * same order) without keeping the records.
  * @returns {{status: 'ok', count: number}|{status: 'stopped'}|ReturnType<typeof corruptResult>}
  */
-function scanChatJsonl(data, onRecord) {
+function scanChatJsonl(data, onRecord, isTrusted) {
     let buffer;
     try {
         buffer = toBuffer(data);
@@ -161,7 +163,7 @@ function scanChatJsonl(data, onRecord) {
         return corruptResult('invalid-utf8', data);
     }
 
-    const lines = decodeChatJsonlLines(buffer);
+    const lines = decodeChatJsonlLines(buffer, isTrusted);
     let failure = null;
     let count = 0;
     let recognizedHeader = false;
@@ -174,6 +176,10 @@ function scanChatJsonl(data, onRecord) {
         }
         if (step.done) {
             break;
+        }
+        if (step.value === null) {
+            count++;
+            continue;
         }
         if (step.value.trim() === '') {
             continue;
@@ -576,11 +582,20 @@ function storeValidSnapshot(target, parsed) {
     }
 }
 
-export function writeLatestChatSnapshot(target, data) {
+/**
+ * @param {object} target
+ * @param {string|Buffer|Uint8Array} data
+ * @param {{trustedLines?: Array<[number, number]>}} [options] Line ranges (zero based, end exclusive, header is line 0)
+ *   that are the bytes of a chat this server already read and checked, and are not checked again. Only honoured
+ *   for text that is valid UTF-8, and never for the header line.
+ */
+export function writeLatestChatSnapshot(target, data, { trustedLines = [] } = {}) {
     const normalizedTarget = normalizeChatRecoveryTarget(target);
     const bytes = toBuffer(data);
+    const ranges = trustedLines.filter(([from, to]) => from >= 1 && to > from);
+    const isTrusted = ranges.length > 0 && isUtf8(bytes) ? line => ranges.some(([from, to]) => line >= from && line < to) : undefined;
     // The snapshot is only checked here, so its records are never kept.
-    const scan = scanChatJsonl(bytes, () => undefined);
+    const scan = scanChatJsonl(bytes, () => undefined, isTrusted);
     if (scan.status !== 'ok') {
         throw new TypeError(`Invalid chat JSONL snapshot: ${scan.reason}.`);
     }

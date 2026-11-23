@@ -47,8 +47,18 @@ async function prepare(app, phone, companionCount = 0, companionTrigger = 'manua
     return { account, group, file };
 }
 
+// The server rewrites a chat in place and, to survive a crash, first flips the file's first byte and flushes; it puts the byte back
+// when the rest is written and flushed. A reader that does not take the chat lock can land in that window, so it reads again
+// until the file is whole (a file that stays unreadable for a full second is a real failure and is reported).
 async function readRows(file) {
-    return (await fs.readFile(file, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
+    for (let attempt = 0; ; attempt++) {
+        try {
+            return (await fs.readFile(file, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
+        } catch (error) {
+            if (!(error instanceof SyntaxError) || attempt >= 40) throw error;
+            await delay(25);
+        }
+    }
 }
 
 async function openGroup({ account, group }) {

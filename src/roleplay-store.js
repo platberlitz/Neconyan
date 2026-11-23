@@ -399,7 +399,8 @@ function readProtectedHandle(filename, limit, fd, { flush, collectBytes }, stat 
     const current = fs.fstatSync(fd, { bigint: true });
     if (!stat || !sameFileStat(current, stat)) throw protectedReadRefusal('opened-file-changed');
     const size = Number(stat.size);
-    const bytes = Buffer.alloc(collectBytes ? size : Math.min(size, 64 * 1024));
+    // A short read is refused below, so a collected buffer is always fully written before it is used.
+    const bytes = collectBytes ? Buffer.allocUnsafe(size) : Buffer.alloc(Math.min(size, 64 * 1024));
     const hash = crypto.createHash('sha256');
     let offset = 0;
     while (offset < size) {
