@@ -104,7 +104,7 @@ describe('paper texture regression guards', () => {
         expect(paperThemeCss).toMatch(/:root\[data-nn-paper-texture\]\s+body::after\s*\{/);
         expect(paperThemeCss).toMatch(/:root\[data-nn-paper-texture\]\s+:where\(body:not\(\.nnchat\)\)\s+\.mes::after\s*\{/);
         const tabs = readFileSync(path.join(repoRoot, 'public/scripts/neconyan-tabs.js'), 'utf8');
-        expect(tabs).toContain("toggleAttribute('data-nn-paper-texture'");
+        expect(tabs).toContain('toggleAttribute(\'data-nn-paper-texture\'');
     });
 
     test('keeps the page overlay off the safe-area strips so iOS finds the top bar', () => {

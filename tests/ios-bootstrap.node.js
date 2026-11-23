@@ -201,7 +201,7 @@ test('iOS native version is generated from package.json rather than hardcoded in
 test('the iOS lease policy is tied to the bootstrap, the Swift data path and the server start', () => {
     const bootstrap = fs.readFileSync(path.join(root, 'ios/server-bootstrap.mjs'), 'utf8');
     assert.match(bootstrap, /enableCompileCache\(compileCachePath\)/);
-    assert.ok(bootstrap.includes("path.join(statePath, 'node-cache')"));
+    assert.ok(bootstrap.includes('path.join(statePath, \'node-cache\')'));
     const marker = bootstrap.indexOf('process.env.NECONYAN_IOS_APP = \'1\'');
     assert.ok(marker > 0);
     assert.ok(marker < bootstrap.indexOf('await import(\'./server.js\')'));

@@ -10,7 +10,7 @@ const groupChats = fs.readFileSync(path.join(root, '..', 'public', 'scripts', 'g
 
 describe('start-up group list prefetch', () => {
     test('starts the group request beside the character request', () => {
-        const character = script.indexOf("startupCharacterListPromise = fetch('/api/characters/all'");
+        const character = script.indexOf('startupCharacterListPromise = fetch(\'/api/characters/all\'');
         const groups = script.indexOf('prefetchGroups();');
         const locales = script.indexOf('await initLocales(initialSettingsData);', character);
         expect(character).toBeGreaterThan(-1);

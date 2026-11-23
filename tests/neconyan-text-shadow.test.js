@@ -20,6 +20,6 @@ describe('universal text shadow', () => {
     test('keeps the class in step with the shadow width setting', () => {
         const powerUser = read('public/scripts/power-user.js');
 
-        expect(powerUser).toContain("document.body?.classList.toggle('neconyan-text-shadow', Number(power_user.shadow_width) > 0)");
+        expect(powerUser).toContain('document.body?.classList.toggle(\'neconyan-text-shadow\', Number(power_user.shadow_width) > 0)');
     });
 });

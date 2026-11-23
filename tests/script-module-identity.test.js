@@ -66,7 +66,7 @@ describe('frontend module identity', () => {
     test('the home route rewrites the page on every install', () => {
         const serverSource = readFileSync(path.join(repoRoot, 'src', 'server-main.js'), 'utf8');
         expect(serverSource).toContain('readRewrittenFrontendHtml(undefined, { enabled: shouldServeFrontendAssets() })');
-        expect(serverSource).not.toContain("response.sendFile('index.html'");
+        expect(serverSource).not.toContain('response.sendFile(\'index.html\'');
     });
 
     test('cache-busted module tags are never bare-imported elsewhere', () => {

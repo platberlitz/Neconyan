@@ -21,6 +21,6 @@ test('the alias catalogue holds only English strings that differ from their key'
 
 test('the locale loader asks for the alias catalogue', () => {
     const source = fs.readFileSync(path.join(root, 'public', 'scripts', 'i18n.js'), 'utf8');
-    assert.ok(source.includes("readSupplement('en-aliases')"));
-    assert.ok(!source.includes("readSupplement('en')"));
+    assert.ok(source.includes('readSupplement(\'en-aliases\')'));
+    assert.ok(!source.includes('readSupplement(\'en\')'));
 });
