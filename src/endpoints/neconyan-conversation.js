@@ -806,16 +806,20 @@ router.post('/rewrite/submit', asyncRoute(async (request, response) => {
     }
 }));
 
-/** Scan the Lorebook Override book for a prompt the page builds itself (Regenerate). The server owns the scanner and the book files. */
+/**
+ * Scan lorebooks for a prompt the page builds itself (Regenerate): the Lorebook Override book, or with no override the
+ * speaking card's linked lorebooks. The server owns the scanner and the book files.
+ */
 router.post('/lorebook/scan', asyncRoute(async (request, response) => {
     const body = request.body || {};
     const name = typeof body.name === 'string' ? body.name.trim() : '';
-    if (!name) return response.send({ lorebook: null });
+    const avatar = typeof body.avatar === 'string' ? body.avatar : '';
+    if (!name && !avatar) return response.send({ lorebook: null });
     const messages = (Array.isArray(body.messages) ? body.messages : []).slice(-64)
         .map(message => ({ name: String(message?.name ?? '').slice(0, 200), mes: String(message?.mes ?? '') }));
     let character = {};
     try {
-        character = await getCharacterData(request, String(body.avatar || ''));
+        character = await getCharacterData(request, avatar, { allowOverride: false });
     } catch {
         character = {};
     }
@@ -826,6 +830,7 @@ router.post('/lorebook/scan', asyncRoute(async (request, response) => {
         messages,
         userName: String(body.userName || 'User').slice(0, 200),
         character,
+        avatar,
         maxContext: Number.isFinite(maxContext) ? Math.floor(maxContext) : undefined,
     });
     return response.send({ lorebook });
@@ -989,6 +994,7 @@ router.post('/message/send', asyncRoute(async (request, response) => {
             messages: branch.messages,
             userName,
             character,
+            avatar: target.avatar,
             maxContext: Math.floor(inputLimit),
         });
         let systemPrompt = buildConversationSystemPrompt({

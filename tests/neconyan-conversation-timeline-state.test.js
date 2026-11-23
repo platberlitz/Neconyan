@@ -41,7 +41,7 @@ await jest.unstable_mockModule('../public/script.js', () => ({
 let momentFactory = () => ({ isValid: () => false });
 await jest.unstable_mockModule('../public/scripts/utils.js', () => ({ timestampToMoment: value => momentFactory(value) }));
 await jest.unstable_mockModule('../public/scripts/personas.js', () => ({ user_avatar: 'persona-a.png' }));
-await jest.unstable_mockModule('../public/scripts/world-info.js', () => ({ world_names: [] }));
+await jest.unstable_mockModule('../public/scripts/world-info.js', () => ({ world_info: {}, world_names: [] }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/context.js', () => ({
     createConversationBranch: (name, id = 'new-branch') => ({ id, name, messages: [] }),
     getActiveConversationBranch: (avatar, options = {}) => {

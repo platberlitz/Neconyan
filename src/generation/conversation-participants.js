@@ -16,7 +16,7 @@ import { getCurrentActivityFromSchedule } from '../../public/scripts/neconyan-co
 import { buildAssistantKnowledge, getAssistantKnowledgeBudget, isNeconyanAssistant } from '../../public/scripts/neconyan-assistant-knowledge.js';
 import { composePersonaDescription, conversationPersonaSelection } from '../../public/scripts/neconyan-conversation/persona-description.js';
 import { buildConversationMessageReplyReference } from '../endpoints/conversation-messages.js';
-import { captureConversationLorebook } from './conversation-lorebook.js';
+import { captureConversationLorebook, conversationCharacterLorebooks } from './conversation-lorebook.js';
 import { buildConversationPromptMessages, buildConversationSystemPrompt, getCharacterData, getConversationSettings } from '../endpoints/conversation-generation.js';
 import { getConversationThreadKey } from '../endpoints/conversation-store.js';
 import { clamp, parsePositiveInt, unScopeConversationStorageKey } from '../endpoints/conversation-utils.js';
@@ -322,7 +322,8 @@ export async function buildConversationParticipantSnapshot(request, current, tar
     const characters = localCharacters(current, target.personaId);
     const activity = resolveParticipantActivity(characters, avatar, target.personaId, current.store.runtimeStatusOverrides, now, timeZone) || manualActivity(settings);
     let limit = null;
-    if (settings.lorebook_override || isNeconyanAssistant(character)) {
+    if (settings.lorebook_override || isNeconyanAssistant(character)
+        || conversationCharacterLorebooks(directories, character, avatar).length) {
         try {
             limit = getChatProfileContextLimit(directories, binding);
         } catch {
@@ -331,7 +332,7 @@ export async function buildConversationParticipantSnapshot(request, current, tar
     }
     const usable = limit && limit > settings.reply_max_tokens ? limit - settings.reply_max_tokens : null;
     const lorebook = await captureConversationLorebook({
-        directories, name: settings.lorebook_override, messages: current.branch.messages, userName, character, maxContext: usable ?? undefined,
+        directories, name: settings.lorebook_override, messages: current.branch.messages, userName, character, avatar, maxContext: usable ?? undefined,
     });
     let system = buildConversationSystemPrompt({ settings, character, userName, groupId: target.groupId, branch: current.branch, context: {
         ...savedContext.context, timeContext, personaContext, lorebook,
