@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { getCrashReports } from '../src/crash-diagnostics.js';
+import { SERVER_CRASH_BUILD_MESSAGE } from '../src/server-crash-evidence.js';
 import { FATAL_REPORT_PRIVATE_TEXT, nodeFatalReport } from './fatal-report-fixture.js';
 
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
@@ -1066,15 +1067,17 @@ describe('server supervisor', () => {
             await run;
         });
 
-        test('readings belong to one server: the next one starts empty and the report says so', async () => {
+        test('readings and build details belong to one server: the next one starts empty', async () => {
             const plan = createSpawnPlan(['manual', 'manual', 'manual']);
             const { children } = plan;
             const run = supervise(plan, { ...options(), spawnFn: plan.spawnFn, exitFn: jest.fn() });
             const first = await startChild(children, 0, 4245);
             first.emit('message', { type: SERVER_MEMORY_SAMPLE_MESSAGE, sample: memorySample() });
+            first.emit('message', { type: SERVER_CRASH_BUILD_MESSAGE, app: { version: '1.5.7.1', revision: 'a1b2c3d4', branch: 'private-branch', directory: '/private/checkout' } });
             stopChild(first, null, 'SIGKILL');
             await restartAfterReport(children, 2);
             const second = await startChild(children, 1, 4246);
+            second.emit('message', { type: SERVER_CRASH_BUILD_MESSAGE, app: { version: '1.5.7 /private/checkout', revision: 'a'.repeat(65) } });
             stopChild(second, null, 'SIGKILL');
             await restartAfterReport(children, 3);
             const reports = getCrashReports(directory);
@@ -1082,7 +1085,9 @@ describe('server supervisor', () => {
             const firstReport = reports.find(report => report.child.pid === 4245);
             const secondReport = reports.find(report => report.child.pid === 4246);
             expect(firstReport.child.memory.samples).toHaveLength(1);
+            expect(firstReport.child.app).toEqual({ version: '1.5.7.1', revision: 'a1b2c3d4' });
             expect(secondReport.child).not.toHaveProperty('memory');
+            expect(secondReport.child).not.toHaveProperty('app');
             expect(secondReport.limitation).toContain('No memory reading arrived from the server before it stopped.');
             stopChild(children[2], 0, null);
             await run;

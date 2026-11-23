@@ -23,7 +23,7 @@ import {
     SERVER_PLUGIN_UPDATE_SUPERVISOR_API_VERSION,
     SERVER_STARTUP_READY_MESSAGE,
 } from './server-plugin-update-ipc.js';
-import { createMemoryEvidence, describeChildStop } from './server-crash-evidence.js';
+import { createMemoryEvidence, describeChildStop, parseCrashBuild, SERVER_CRASH_BUILD_MESSAGE } from './server-crash-evidence.js';
 import { serverDirectory } from './server-directory.js';
 
 export const RESTART_EXIT_CODE = 75;
@@ -300,6 +300,7 @@ export async function runSupervisor({
             child = spawnFn(argv[0], [...heapArguments, ...execArgv, ...argv.slice(1)], { stdio: ['inherit', 'inherit', 'inherit', 'ipc'], env });
             const activeChild = child;
             let crashDirectory;
+            let app = null;
             let rollbackRequested = false;
             let startupAnnounced = false;
             const memoryEvidence = createMemoryEvidence();
@@ -321,6 +322,10 @@ export async function runSupervisor({
                 if (child !== activeChild) return;
                 if (message?.type === 'neconyan:crash-directory' && typeof message.directory === 'string') {
                     crashDirectory = message.directory;
+                    return;
+                }
+                if (message?.type === SERVER_CRASH_BUILD_MESSAGE) {
+                    app = parseCrashBuild(message.app) ?? app;
                     return;
                 }
                 if (message?.type === SERVER_STARTUP_READY_MESSAGE) {
@@ -383,7 +388,7 @@ export async function runSupervisor({
                 const fatal = diagnostics?.consumeFatalReport(crashDirectory, activeChild.pid) ?? null;
                 const needsReport = Boolean(diagnostics) && (Boolean(fatal) || (!expected && (signal || fs.existsSync(path.join(crashDirectory, `running-${activeChild.pid}.json`)))));
                 const stop = needsReport || restartable
-                    ? describeChildStop({ pid: activeChild.pid, code, signal, fatal, memory: memoryEvidence.snapshot(), heapLimitArgument: heapArguments[0] ?? null, stoppedAt })
+                    ? describeChildStop({ pid: activeChild.pid, code, signal, app, fatal, memory: memoryEvidence.snapshot(), heapLimitArgument: heapArguments[0] ?? null, stoppedAt })
                     : null;
                 if (restartable) console.error(`[Neconyan] The server stopped unexpectedly: ${stop.headline}.`);
                 const saved = needsReport && diagnostics.writeCrashReport(stop.kind, stop.explanation, stop.extra, crashDirectory);

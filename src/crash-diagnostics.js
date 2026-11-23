@@ -5,7 +5,7 @@ import v8 from 'node:v8';
 import { randomUUID } from 'node:crypto';
 import '../public/scripts/crash-diagnostics.js';
 import { isBenignStreamAbort } from './stream-disconnect-guard.js';
-import { describeFatalStop } from './server-crash-evidence.js';
+import { describeFatalStop, parseCrashBuild, SERVER_CRASH_BUILD_MESSAGE } from './server-crash-evidence.js';
 
 const { describeError, redact } = globalThis.NeconyanCrashDiagnostics;
 const MAX_REPORTS = 10;
@@ -47,7 +47,13 @@ export function getCrashReportStatus() {
 export function setCrashContext({ requests, activity, appVersion, shutdown } = {}) {
     if (requests) requestSnapshot = requests;
     if (activity) activitySnapshot = activity;
-    if (appVersion) version = appVersion;
+    if (appVersion) {
+        version = appVersion;
+        const app = parseCrashBuild(appVersion);
+        if (app && process.send && process.connected) {
+            try { process.send({ type: SERVER_CRASH_BUILD_MESSAGE, app }, () => {}); } catch { /* A disconnected supervisor doesn't block startup. */ }
+        }
+    }
     if (shutdown) shuttingDown = shutdown;
 }
 

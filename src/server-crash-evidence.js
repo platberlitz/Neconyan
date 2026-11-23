@@ -7,10 +7,21 @@
 const MIB = 1024 * 1024;
 
 export const MEMORY_SAMPLE_LIMIT = 12;
+export const SERVER_CRASH_BUILD_MESSAGE = 'neconyan:crash-build';
 const SAMPLE_NUMBERS = ['uptimeSeconds', 'rss', 'heapUsed', 'heapTotal', 'heapLimit', 'external', 'arrayBuffers', 'deviceAvailable', 'deviceTotal'];
 
 const isCount = value => typeof value === 'number' && Number.isFinite(value) && value >= 0;
 const megabytes = bytes => Math.round(bytes / MIB);
+
+/** Keep only the package version and Git revision, not private branch names or paths. */
+export function parseCrashBuild(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const { version, revision } = value;
+    const build = {};
+    if (typeof version === 'string' && version.length <= 60 && /^\d+(?:\.\d+){2,3}(?:-[0-9a-z.-]+)?(?:\+[0-9a-z.-]+)?$/i.test(version)) build.version = version;
+    if (typeof revision === 'string' && /^[0-9a-f]{4,64}$/i.test(revision)) build.revision = revision;
+    return Object.keys(build).length ? build : null;
+}
 
 /**
  * Accepts one memory reading sent by the server process. Anything that is not a
@@ -103,14 +114,16 @@ function lastReadingNote(last, stoppedAt) {
  * @param {number} stop.pid Child process id
  * @param {number|null} stop.code Exit code
  * @param {string|null} stop.signal Terminating signal
+ * @param {object|null} [stop.app] The validated build of the child that stopped
  * @param {object|null} [stop.fatal] Extract of the report Node wrote as the process stopped
  * @param {{ samples: object[], peak: object }|null} [stop.memory] The child's own readings
  * @param {string|null} [stop.heapLimitArgument] Heap flag the supervisor added
  * @param {number} [stop.stoppedAt] When the supervisor saw the exit, in epoch milliseconds
  * @returns {{ kind: string, explanation: string, headline: string, extra: object }} extra is the report's additional fields
  */
-export function describeChildStop({ pid, code, signal, fatal = null, memory = null, heapLimitArgument = null, stoppedAt = Date.now() }) {
+export function describeChildStop({ pid, code, signal, app = null, fatal = null, memory = null, heapLimitArgument = null, stoppedAt = Date.now() }) {
     const child = { pid, signal, exitCode: code };
+    if (app) child.app = app;
     if (heapLimitArgument) child.heapLimitArgument = heapLimitArgument;
     if (fatal) child.fatal = fatal;
     if (memory) child.memory = memory;
