@@ -471,6 +471,17 @@ for (const phone of [false, true]) {
                 expect(texts.some(text => /^(Text Completion API|Text generation error)?\s*true$/.test(text)), 'no toast reads just true').toBe(false);
             }
         }
+        // A streamed request that the app server turns down with no message at all, such as a bare 'Bad Request', still gets a toast.
+        if (!baseline) {
+            const route = '**/api/backends/text-completions/generate';
+            await setStreaming(page, 'text', true);
+            await page.route(route, request => request.fulfill({ status: 400, contentType: 'text/plain', body: 'Bad Request' }));
+            await WAYS.send(page, 'Please go on (bare 400 stream)');
+            await expect.poll(() => page.evaluate(() => [...document.querySelectorAll('#toast-container .toast')].map(toast => toast.textContent.trim()).join(' | ')), { timeout: 30000 }).toContain('HTTP 400: Bad Request');
+            await expect.poll(() => page.evaluate(async () => !(await import('/script.js')).is_send_press), { timeout: 60000 }).toBe(true);
+            await page.unroute(route);
+            await page.evaluate(() => window.toastr.clear());
+        }
         fs.writeFileSync(path.join(output, `${size}-error-true-toast-${phase}.json`), JSON.stringify(shown, null, 2) + '\n');
         expect(app.navigationErrors).toEqual([]);
     });

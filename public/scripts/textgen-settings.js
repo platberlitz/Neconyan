@@ -1306,6 +1306,9 @@ export async function generateTextGenWithStreaming(generate_data, signal) {
             const body = await response.text();
             watch.rejected(response, body);
             tryParseStreamingError(response, body);
+            // Reached only when the body held no error message, such as the bare 'Bad Request' of a missing server address.
+            const said = body.trim() ? readableBackendError(body).slice(0, 300) : response.statusText;
+            toastr.error(said ? `HTTP ${response.status}: ${said}` : `HTTP ${response.status}`, 'Text Completion API');
             throw new Error(`Got response status ${response.status}`);
         }
 
