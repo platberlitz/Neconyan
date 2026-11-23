@@ -74,7 +74,7 @@ test('the reporter swallows a failing channel and a counter that cannot be read'
     assert.equal(sent, 0);
 });
 
-test('a supervised process reports its first reading as the monitor starts and does not stay alive for it', async t => {
+test('a supervised process reports its first reading as the monitor starts and does not stay alive for it', { timeout: 30_000 }, async t => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'neco-memory-fork-'));
     t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
     const script = path.join(dir, 'monitor.mjs');
@@ -83,7 +83,8 @@ test('a supervised process reports its first reading as the monitor starts and d
     t.after(() => child.kill('SIGKILL'));
     const messages = [];
     child.on('message', message => messages.push(message));
-    const [code, signal] = await once(child, 'exit');
+    // A message can still arrive after 'exit', so wait for the channel to close as well.
+    const [[code, signal]] = await Promise.all([once(child, 'exit'), once(child, 'disconnect')]);
     assert.deepEqual([code, signal], [0, null]);
     assert.equal(messages.length, 1);
     assert.equal(messages[0].type, SERVER_MEMORY_SAMPLE_MESSAGE);

@@ -137,6 +137,8 @@ export function shouldSupervise(env = process.env) {
  * @param {number} [options.crashLoopLimit] Unexpected stops within the window that end automatic restarts
  * @param {number} [options.crashLoopWindowMs] Length of that window
  * @param {() => number} [options.now] Clock for the window
+ * @param {typeof setTimeout} [options.setTimer] Timer used for the restart delay
+ * @param {typeof clearTimeout} [options.clearTimer] Cancels a timer made by setTimer
  * @returns {Promise<never>} Never resolves; exits the process instead
  */
 export async function runSupervisor({
@@ -149,6 +151,8 @@ export async function runSupervisor({
     crashLoopLimit = SERVER_CRASH_LOOP_LIMIT,
     crashLoopWindowMs = SERVER_CRASH_LOOP_WINDOW_MS,
     now = Date.now,
+    setTimer = setTimeout,
+    clearTimer = clearTimeout,
     pluginUpdate = {
         apply: applyServerPluginRelease,
         discard: discardQueuedServerPluginRelease,
@@ -228,11 +232,11 @@ export async function runSupervisor({
     const waitBeforeRestart = ms => new Promise(resolve => {
         let timer;
         const finish = () => {
-            clearTimeout(timer);
+            clearTimer(timer);
             wakeRestartDelay = null;
             resolve();
         };
-        timer = setTimeout(finish, ms);
+        timer = setTimer(finish, ms);
         wakeRestartDelay = finish;
     });
 

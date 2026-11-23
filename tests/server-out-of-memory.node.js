@@ -24,8 +24,10 @@ test('a real server that runs out of heap is reported as out of memory, restarte
     const crashDirectory = path.join(dataRoot, 'crash-reports');
     const child = path.join(cwd, 'child.mjs');
     fs.mkdirSync(path.join(cwd, 'plugins'));
-    // Starts, announces startup, sends its first memory reading, then exhausts a 40 MB heap.
-    // Its replacement finds the flag and exits cleanly.
+    // Starts, announces startup and sends its first memory reading, then waits for the runner's 'go'
+    // before exhausting a 40 MB heap. The runner sends it only after the supervisor has handled that
+    // reading, so the test never depends on how long the machine takes to deliver it. Its replacement
+    // finds the flag and exits cleanly.
     fs.writeFileSync(child, `
         import fs from 'node:fs';
         import { initialiseCrashDiagnostics, installCrashHandlers } from ${JSON.stringify(url('crash-diagnostics.js'))};
@@ -36,15 +38,24 @@ test('a real server that runs out of heap is reported as out of memory, restarte
         installCrashHandlers();
         if (fs.existsSync(flag)) process.exit(0);
         fs.writeFileSync(flag, '');
+        process.on('message', message => { if (message === 'go') { ${exhaustHeap} } });
         startMemoryPressureMonitor();
         notifyServerStartup([]);
-        setTimeout(() => { ${exhaustHeap} }, 400);
     `);
     const runner = `
+        import { spawn } from 'node:child_process';
         import { runSupervisor } from ${JSON.stringify(url('server-supervisor.js'))};
         await runSupervisor({
             argv: [process.execPath, ${JSON.stringify(child)}, ${JSON.stringify(dataRoot)}, ${JSON.stringify(flag)}],
             execArgv: ['--max-old-space-size=40'], heapArguments: [], restartDelayMs: 0, pluginsRoot: ${JSON.stringify(path.join(cwd, 'plugins'))},
+            // This listener is added before the supervisor's own, so the reply waits one turn for it to have run.
+            spawnFn: (...args) => {
+                const server = spawn(...args);
+                server.on('message', message => {
+                    if (message?.type === 'neconyan:memory-sample') setImmediate(() => server.send('go'));
+                });
+                return server;
+            },
         });
     `;
 
