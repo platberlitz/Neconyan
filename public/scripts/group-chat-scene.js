@@ -74,12 +74,38 @@ export function buildOwnLinesReminder(speakerName, otherNames, userName = '') {
 }
 
 export const GROUP_DIRECTOR_STRATEGY = 4;
-export const GROUP_DIRECTOR_TIMEOUT_MS = 3000;
+export const GROUP_DIRECTOR_TIMEOUT_DEFAULT_SECONDS = 30;
+export const GROUP_DIRECTOR_TIMEOUT_MIN_SECONDS = 1;
+export const GROUP_DIRECTOR_TIMEOUT_MAX_SECONDS = 300;
+export const GROUP_DIRECTOR_TIMEOUT_MS = GROUP_DIRECTOR_TIMEOUT_DEFAULT_SECONDS * 1000;
 export const GROUP_DIRECTOR_MAX_SPEAKERS = 3;
 export const GROUP_DIRECTOR_RESPONSE_TOKENS = 160;
 const DIRECTOR_HISTORY_MESSAGES = 8;
 const DIRECTOR_MESSAGE_CHARS = 360;
 const DIRECTOR_SUMMARY_CHARS = 140;
+
+/**
+ * How many seconds the Scene Director may take before falling back to the usual order.
+ * @param {{ director_timeout?: number | string } | null | undefined} group
+ * @returns {number}
+ */
+export function getGroupDirectorTimeoutSeconds(group) {
+    const value = group?.director_timeout;
+    const raw = typeof value === 'number' || typeof value === 'string' ? Number(value) : NaN;
+    if (!Number.isFinite(raw) || raw <= 0) {
+        return GROUP_DIRECTOR_TIMEOUT_DEFAULT_SECONDS;
+    }
+    return Math.min(GROUP_DIRECTOR_TIMEOUT_MAX_SECONDS, Math.max(GROUP_DIRECTOR_TIMEOUT_MIN_SECONDS, Math.round(raw)));
+}
+
+/**
+ * Millisecond timeout for a group's Scene Director request.
+ * @param {{ director_timeout?: number | string } | null | undefined} group
+ * @returns {number}
+ */
+export function getGroupDirectorTimeoutMs(group) {
+    return getGroupDirectorTimeoutSeconds(group) * 1000;
+}
 
 function squash(text, max) {
     const flat = String(text || '').replace(/\s+/g, ' ').trim();

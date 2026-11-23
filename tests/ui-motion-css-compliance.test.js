@@ -71,6 +71,14 @@ const stylesheets = [
         name: 'Sunken Reef shell style',
         url: new URL('../public/css/shell-styles/sunken-reef.css', import.meta.url),
     },
+    {
+        name: 'Neconyan group chats',
+        url: new URL('../public/css/neconyan-groups.css', import.meta.url),
+    },
+    {
+        name: 'Group chats base styles',
+        url: new URL('../public/css/rm-groups.css', import.meta.url),
+    },
 ].map(stylesheet => ({
     ...stylesheet,
     source: readFileSync(fileURLToPath(stylesheet.url), 'utf8').replace(/\r\n/g, '\n'),

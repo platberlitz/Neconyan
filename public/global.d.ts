@@ -35,6 +35,7 @@ declare global {
         generation_mode_join_suffix?: string;
         activation_strategy?: number;
         director_profile?: string;
+        director_timeout?: number;
         keep_own_lines?: boolean;
         talk_burst?: number;
         ensemble_replies?: boolean;

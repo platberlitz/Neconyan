@@ -5,6 +5,7 @@ import path from 'node:path';
 import express from 'express';
 import sanitize from 'sanitize-filename';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
+import { getGroupDirectorTimeoutSeconds } from '../../public/scripts/group-chat-scene.js';
 
 import { color, getConfigValue, tryParse } from '../util.js';
 import { getFileNameValidationFunction } from '../middleware/validateFileName.js';
@@ -270,6 +271,7 @@ router.post('/create', (request, response) => {
             member_roles: Object.fromEntries(Object.entries(body.member_roles || {}).filter(([avatar, role]) => (body.members || []).includes(avatar) && ['character', 'narrator'].includes(role))),
             activation_strategy: body.activation_strategy ?? 4,
             director_profile: typeof body.director_profile === 'string' ? body.director_profile : '',
+            director_timeout: getGroupDirectorTimeoutSeconds(body),
             talk_burst: Math.min(8, Math.max(1, Math.round(Number(body.talk_burst)) || 3)),
             generation_mode: body.generation_mode ?? 0,
             disabled_members: body.disabled_members ?? [],
@@ -305,6 +307,9 @@ router.post('/edit', getFileNameValidationFunction('id'), (request, response) =>
     }
     const { roleplay } = request.body;
     const group = { ...request.body };
+    if (Object.hasOwn(group, 'director_timeout')) {
+        group.director_timeout = getGroupDirectorTimeoutSeconds(group);
+    }
     delete group.roleplay;
     delete group.__roleplay;
     if (!roleplay || !roleplay.account || !roleplay.source || typeof roleplay.operationKey !== 'string') {

@@ -6710,7 +6710,7 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
     }
 
     #right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) #rm_group_top_bar .avatar,
-    #right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) #rm_group_top_bar .avatar img {
+    #right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) #rm_group_top_bar .avatar:not(.avatar_collage) > img {
         width: 92px !important;
         min-width: 92px !important;
         max-width: 92px !important;
@@ -6870,14 +6870,10 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
 #right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) #GroupFavDelOkBack > #rm_group_restore_avatar {
     grid-column: 1;
     grid-row: 1;
+    justify-self: start;
     position: static;
     transform: none;
     margin-left: 0 !important;
-}
-
-#right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) #GroupFavDelOkBack > #rm_group_restore_avatar {
-    justify-self: start;
-    margin-left: 46px !important;
 }
 
 #right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) #GroupFavDelOkBack > .flex1 {

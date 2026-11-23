@@ -546,7 +546,10 @@ for (const phone of [false, true]) {
             await page.evaluate(async id => (await import('/scripts/group-chats.js')).select_group_chats(id, false), created.id);
         };
         await openEditor();
-        const control = phone ? page.locator('#group_favorite_button') : page.locator('#rm_button_selected_ch h2');
+        const title = page.locator('#rm_button_selected_ch h2');
+        await expect(title).toBeVisible();
+        await expect(title).toHaveText('Before group edit');
+        const control = phone ? page.locator('#group_favorite_button') : title;
         await expect(control).toBeVisible();
         await control.click();
         if (!phone) {

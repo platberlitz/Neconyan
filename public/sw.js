@@ -1,4 +1,4 @@
-const NN_SW_CACHE_VERSION = 'neconyan-cache-v20261126-ai-folder-sort';
+const NN_SW_CACHE_VERSION = 'neconyan-cache-v20261127-group-ui-director';
 // Storage revision for the service worker caches. It is separate from the
 // stylesheet query version so old entries can be evicted without touching CSS.
 const NN_SW_CACHE_EPOCH = '20261018a-native-startup';

@@ -2284,7 +2284,7 @@ body.neconyan #right-nav-panel #rm_group_chats_block .group_member_icon { displa
 body.neconyan #right-nav-panel #rm_group_chats_block .group_member_icon [data-action] { align-items: center; justify-content: center; gap: 6px; width: auto; height: auto; min-width: 44px; min-height: 44px; padding: 8px; opacity: 1; filter: none; }
 body.neconyan #right-nav-panel #rm_group_chats_block .group_member_icon [data-action] > span { font-family: var(--mainFontFamily); font-size: 12px; font-weight: 500; line-height: 1.3; }
 body.neconyan #right-nav-panel #rm_group_chats_block #rm_group_top_bar .avatar,
-body.neconyan #right-nav-panel #rm_group_chats_block #rm_group_top_bar .avatar img { width: 64px !important; min-width: 64px !important; max-width: 64px !important; height: 64px !important; min-height: 64px !important; max-height: 64px !important; }
+body.neconyan #right-nav-panel #rm_group_chats_block #rm_group_top_bar .avatar:not(.avatar_collage) > img { width: 64px !important; min-width: 64px !important; max-width: 64px !important; height: 64px !important; min-height: 64px !important; max-height: 64px !important; }
 
 /* Use the bar width so pinned panels get compact controls too. */
 @container (max-width: 560px) {

@@ -82,12 +82,32 @@ test('the scene director picks who answers and shows why', async ({ app }) => {
     await expect(page.locator('#group_scene_director_status')).toHaveText('Last turn: the Scene Director picked Durable Mira · Mira knows the archive');
 });
 
-test('a stuck director model falls back to the usual order within seconds', async ({ app }) => {
+test('a stuck director model respects the configured timeout and falls back to the usual order', async ({ app }) => {
     app.provider.mode.reply = { choices: [{ message: { role: 'assistant', content: 'Fallback reply.' } }] };
     const account = await createDirectorAccount(app);
     const group = await createDirectedGroup(account, { director_profile: 'durable' });
+    expect(group.director_timeout).toBe(30);
     const page = await account.open({ workspace: false });
     await openGroup(page, group);
+
+    // Verify the editor defaults to 30 seconds and persists custom timeout changes.
+    await page.getByRole('button', { name: 'Characters', exact: true }).click();
+    await page.getByRole('tab', { name: 'Groups', exact: true }).click();
+    await page.evaluate(async id => {
+        (await import('/scripts/group-chats.js')).select_group_chats(id, false);
+    }, group.id);
+    const timeoutInput = page.locator('#rm_group_director_timeout');
+    await expect(timeoutInput).toBeVisible();
+    await expect(timeoutInput).toHaveValue('30');
+    await timeoutInput.fill('2');
+    await timeoutInput.dispatchEvent('change');
+    await expect.poll(async () => {
+        const groups = await account.post('/api/groups/all');
+        return groups.find(item => item.id === group.id)?.director_timeout;
+    }, { timeout: 15000 }).toBe(2);
+    await page.locator('#rightNavDrawerIcon').click();
+    await expect(page.locator('#right-nav-panel')).not.toHaveClass(/openDrawer/);
+
     app.provider.mode.hold = 'unused-named-model';
     const before = app.provider.calls.length;
     await page.evaluate(() => {
@@ -111,9 +131,9 @@ test('a stuck director model falls back to the usual order within seconds', asyn
     expect(elapsed).toBeLessThan(10000);
     const names = ['Durable Nova', 'Durable Kit', 'Durable Mira'];
     expect(names).toContain((await lastReply(page))?.name);
-    await expect(page.locator('#group_scene_director_status')).toContainText('the Scene Director took longer than 3 seconds, so the usual order picked the speaker');
+    await expect(page.locator('#group_scene_director_status')).toContainText('the Scene Director took longer than 2 seconds, so the usual order picked the speaker');
     const toasts = await page.evaluate(() => window.__toasts);
-    expect(toasts.filter(text => text.includes('The Scene Director took longer than 3 seconds'))).toHaveLength(1);
+    expect(toasts.filter(text => text.includes('The Scene Director took longer than 2 seconds'))).toHaveLength(1);
 });
 
 test('the director can hand the scene back to the user without forcing another reply', async ({ app }) => {

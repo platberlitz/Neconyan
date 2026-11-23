@@ -451,6 +451,7 @@ export const refreshedKnowledgeCases = [
     ['Can I use a different font for code blocks?', 'appearance.fonts', 'Noto Sans Mono for code'],
     ['What does Scene Director do in a roleplay group?', 'groups.scene-director', 'picks 0 to 3 members'],
     ['Can Scene Director choose nobody?', 'groups.scene-director', 'can choose nobody when the scene should wait for you'],
+    ['How long does Scene Director wait before falling back, and can I change it?', 'groups.scene-director', '30 seconds by default, editable from 1 to 300 seconds'],
     ['What does the Director model dropdown change?', 'groups.director-model', 'does not change the model that writes the character replies'],
     ['How many replies does Let them talk write?', 'groups.let-them-talk', '1 to 8'],
     ['How do I stop Let them talk?', 'groups.let-them-talk', 'The button changes to Stop'],
