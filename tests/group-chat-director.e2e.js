@@ -105,7 +105,7 @@ test('a stuck director model respects the configured timeout and falls back to t
         const groups = await account.post('/api/groups/all');
         return groups.find(item => item.id === group.id)?.director_timeout;
     }, { timeout: 15000 }).toBe(2);
-    await page.locator('#rightNavDrawerIcon').click();
+    await page.locator('#sb_character_editor_exit').click();
     await expect(page.locator('#right-nav-panel')).not.toHaveClass(/openDrawer/);
 
     app.provider.mode.hold = 'unused-named-model';
