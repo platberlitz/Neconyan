@@ -2693,6 +2693,34 @@ test('server replies use the saved character profile and persona Author\'s Note'
         { code: 'ROLEPLAY_INVALID' });
 });
 
+test('server group replies fall back to legacy group character Author\'s Notes when chat metadata has none', t => {
+    const f = fixture(t, true);
+    fs.writeFileSync(path.join(f.scope.directories.characters, 'Nova.png'), writeCard(png, JSON.stringify({
+        name: 'Nova', data: { name: 'Nova' },
+    })));
+    fs.writeFileSync(path.join(f.scope.directories.characters, 'Other.png'), writeCard(png, JSON.stringify({
+        name: 'Other', data: { name: 'Other' },
+    })));
+    fs.writeFileSync(path.join(f.scope.directories.groups, 'group.json'), JSON.stringify({
+        id: 'group', members: ['Nova.png', 'Other.png'], disabled_members: [], chats: ['Source', 'New'], generation_mode: 0,
+    }));
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        user_avatar: 'sam.png',
+        extension_settings: {
+            note: {
+                default: 'Default group note.',
+                chara: [{ name: 'group:group:Other', useChara: true, prompt: 'Legacy group character note.', position: 1 }],
+                persona: { 'sam.png': { useNote: true, prompt: 'Sam group persona note.', position: 2 } },
+            },
+        },
+    }));
+    const snapshot = captureRoleplayWorldInfo(f.scope,
+        { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch },
+        f.source(),
+        { avatar: 'Nova.png', maxContext: 100 });
+    assert.equal(activeRoleplayAuthorNote(snapshot.authorNote), 'Legacy group character note.\nDefault group note.\nSam group persona note.');
+});
+
 test('a long saved chat keeps only the scanned window while timed lore counts every message', async t => {
     const f = fixture(t);
     const filler = 'x'.repeat(2048);

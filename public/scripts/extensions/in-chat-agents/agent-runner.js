@@ -21,6 +21,7 @@ import {
     updateMessageTokenAccounting,
 } from '../../../script.js';
 import { extension_settings, getContext } from '../../extensions.js';
+import { resolveActiveAuthorsNote } from '../../authors-note-profiles.js';
 import { t } from '../../i18n.js';
 import { eventSource, event_types } from '../../events.js';
 import { is_group_generating } from '../../group-chats.js';
@@ -2440,9 +2441,29 @@ function buildBrowserAgentContextMacros(agent, message = null, generationType = 
         ? buildContinuityCorrectionsText(continuityCorrectionsFromRuns(getAgentExtraValue(message, PROMPT_RUNS_EXTRA_KEY), getEnabledAgents())) : '';
     const presetPrompts = context.mainApi === 'openai' && usesAgentMacro(agent?.prompt, PRESET_PROMPTS_MACRO)
         ? getPreparedPresetPrompts(chatId, generationType) ?? capturePresetPrompts(context.chatCompletionSettings, generationType) : null;
+    const extensionAuthorsNote = context.extensionPrompts?.[AUTHORS_NOTE_PROMPT_KEY]?.value;
+    const activeGroup = context.groupId && Array.isArray(context.groups)
+        ? context.groups.find(group => String(group?.id ?? '') === String(context.groupId))
+        : null;
+    const hasCharacterId = context.characterId !== undefined && context.characterId !== null && context.characterId !== '';
+    const authorsNote = typeof extensionAuthorsNote === 'string'
+        ? extensionAuthorsNote
+        : resolveActiveAuthorsNote({
+            chatMetadata: chat_metadata,
+            noteSettings: extension_settings?.note,
+            groupId: context.groupId || '',
+            characterAvatar: (!context.groupId && hasCharacterId ? context.characters?.[context.characterId]?.avatar : '')
+                || message?.original_avatar
+                || '',
+            groupAvatars: context.groupId
+                ? [message?.original_avatar, ...(Array.isArray(activeGroup?.members) ? activeGroup.members : [])].filter(Boolean)
+                : [],
+            personaAvatar: context.userAvatar || '',
+            userMessages: (messageIndex >= 0 ? chat.slice(0, messageIndex + 1) : chat).filter(item => item?.is_user).length,
+        });
     return {
         ...buildAgentContextMacros({ mewmory: memory, groupCards, userName: context.name1, charName: context.name2,
-            lore: restricted ? '' : getPreparedActiveLore(chatId), authorsNote: context.extensionPrompts?.[AUTHORS_NOTE_PROMPT_KEY]?.value, trackers, secretsTrackers, continuityNotes, presetPrompts }),
+            lore: restricted ? '' : getPreparedActiveLore(chatId), authorsNote, trackers, secretsTrackers, continuityNotes, presetPrompts }),
         [CONTINUITY_CORRECTIONS_MACRO]: continuityCorrections,
     };
 }

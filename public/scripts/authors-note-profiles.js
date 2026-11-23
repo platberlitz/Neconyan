@@ -183,6 +183,50 @@ export function getPersonaNoteEntry(store, personaAvatar) {
     return entry && typeof entry === 'object' ? entry : null;
 }
 
+export function findGroupCharacterNoteEntry(chara, groupId, avatars = [], chatNoteChara = null) {
+    if (chatNoteChara && typeof chatNoteChara === 'object' && !Array.isArray(chatNoteChara)) {
+        return chatNoteChara;
+    }
+    if (!Array.isArray(chara) || !groupId) {
+        return null;
+    }
+
+    const seen = new Set();
+    for (const avatar of Array.isArray(avatars) ? avatars : []) {
+        if (!avatar) {
+            continue;
+        }
+        const avatarName = String(avatar).replace(/\.[^/.]+$/, '');
+        for (const key of [`group:${groupId}:${avatarName}`, `group:${groupId}:${avatar}`]) {
+            if (seen.has(key)) {
+                continue;
+            }
+            seen.add(key);
+            const entry = chara.find(item => item && typeof item === 'object' && item.name === key);
+            if (entry && (entry.prompt || entry.useChara)) {
+                return entry;
+            }
+        }
+    }
+
+    return null;
+}
+
+export function isAuthorsNoteActive(interval, userMessages = 0) {
+    if (interval === null || interval === undefined || interval === '') {
+        return false;
+    }
+    const step = Number(interval);
+    if (!Number.isFinite(step) || step <= 0) {
+        return false;
+    }
+    if (step === 1) {
+        return true;
+    }
+    const count = Number(userMessages ?? 0);
+    return Number.isFinite(count) && count > 0 && count % step === 0;
+}
+
 /**
  * Snapshot of the character and persona notes in effect for one reply, in the shape the server
  * prompt builders validate: `scoped` for the character, `persona` for the persona. `scoped.notes`
@@ -228,4 +272,39 @@ export function composeAuthorsNote(base, notes) {
 
     const middle = replace.length ? replace : [String(base ?? '')];
     return [...before, ...middle, ...after].filter(Boolean).join('\n');
+}
+
+/**
+ * Resolves the effective Author's Note for a chat turn: checks insertion frequency and composes
+ * the chat (or default) note with any enabled character and persona Author's Notes.
+ */
+export function resolveActiveAuthorsNote({
+    chatMetadata = null,
+    noteSettings = null,
+    groupId = '',
+    characterAvatar = '',
+    groupAvatars = [],
+    personaAvatar = '',
+    userMessages = 0,
+} = {}) {
+    const settings = noteSettings && typeof noteSettings === 'object' ? noteSettings : {};
+    const interval = chatMetadata?.note_interval ?? settings.defaultInterval ?? 1;
+    if (!isAuthorsNoteActive(interval, userMessages)) {
+        return '';
+    }
+
+    const basePrompt = String(chatMetadata?.note_prompt ?? settings.default ?? '');
+    const characterEntry = groupId
+        ? findGroupCharacterNoteEntry(settings.chara, groupId, groupAvatars, chatMetadata?.note_chara)
+        : findCharacterNoteEntry(settings.chara, characterAvatar);
+    const personaEntry = getPersonaNoteEntry(settings.persona, personaAvatar);
+    const { scoped, persona } = captureScopedAuthorsNotes(characterEntry, personaEntry, personaAvatar);
+    const characterNotes = scoped?.useChara
+        ? (Array.isArray(scoped.notes) ? scoped.notes : [scoped])
+        : [];
+
+    return composeAuthorsNote(basePrompt, [
+        ...characterNotes.map(part => ({ enabled: true, prompt: part.prompt, position: part.position })),
+        { enabled: Boolean(persona?.useNote), prompt: persona?.prompt, position: persona?.position },
+    ]);
 }

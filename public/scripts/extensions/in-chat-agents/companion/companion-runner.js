@@ -15,6 +15,7 @@ import { withReadOnlyVariables } from '../../../variable-read-only.js';
 import { canGroupTargetSee, readGroupSceneRules, withGroupTargetPrompt } from '../../../group-chat-visibility.js';
 import { power_user } from '../../../power-user.js';
 import { extension_settings, getContext } from '../../../extensions.js';
+import { resolveActiveAuthorsNote } from '../../../authors-note-profiles.js';
 import { eventSource, event_types } from '../../../events.js';
 import { getWorldInfoPrompt } from '../../../world-info.js';
 import { getStringHash } from '../../../utils.js';
@@ -1047,13 +1048,37 @@ function getSystemPromptSection(companion) {
     return normalizeText(substituteParams(String(power_user?.sysprompt?.content ?? '')));
 }
 
-function getAuthorsNoteSection(companion) {
+function getAuthorsNoteSection(companion, messageIndex = chat.length - 1) {
     if (!companion.includeAuthorsNote) {
         return '';
     }
 
-    const note = String(chat_metadata?.note_prompt ?? '').trim()
-        || String(extension_settings?.note?.default ?? '').trim();
+    const context = getContext();
+    const message = chat[messageIndex];
+    const groupId = context?.groupId || '';
+    const activeGroup = groupId && Array.isArray(context?.groups)
+        ? context.groups.find(group => String(group?.id ?? '') === String(groupId))
+        : null;
+    const hasCharacterId = context?.characterId !== undefined && context?.characterId !== null && context?.characterId !== '';
+    const characterAvatar = (!groupId && hasCharacterId ? context?.characters?.[context.characterId]?.avatar : '')
+        || message?.original_avatar
+        || '';
+    const groupAvatars = groupId
+        ? [message?.original_avatar, ...(Array.isArray(activeGroup?.members) ? activeGroup.members : [])].filter(Boolean)
+        : [];
+    const safeEnd = Number.isInteger(messageIndex)
+        ? Math.min(chat.length, Math.max(0, messageIndex + 1))
+        : chat.length;
+    const userMessages = chat.slice(0, safeEnd).filter(item => item?.is_user).length;
+    const note = resolveActiveAuthorsNote({
+        chatMetadata: chat_metadata,
+        noteSettings: extension_settings?.note,
+        groupId,
+        characterAvatar,
+        groupAvatars,
+        personaAvatar: context?.userAvatar || '',
+        userMessages,
+    });
     return normalizeText(substituteParams(note));
 }
 
@@ -1076,7 +1101,7 @@ async function buildCompanionContextSections(agent, messageIndex, { extraContext
     const systemPrompt = withGroupTargetPrompt(chat[messageIndex], chat, () => getSystemPromptSection(companion), readGroupSceneRules(chat_metadata, chat));
     const characterCard = getCharacterCardSection(companion, messageIndex);
     const worldInfo = await getWorldInfoSection(messageIndex, companion);
-    const authorsNote = withGroupTargetPrompt(chat[messageIndex], chat, () => getAuthorsNoteSection(companion), readGroupSceneRules(chat_metadata, chat));
+    const authorsNote = withGroupTargetPrompt(chat[messageIndex], chat, () => getAuthorsNoteSection(companion, messageIndex), readGroupSceneRules(chat_metadata, chat));
     const previousNotes = includePreviousNotes ? getPreviousNotesSection(agent, messageIndex, companion) : '';
     const recentConversation = getRecentConversationSection(messageIndex, companion, contextCapture);
 

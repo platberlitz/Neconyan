@@ -67,6 +67,7 @@ describe('in-chat agent post-processing runner', () => {
     let contextCharacterId;
     let contextGroups;
     let contextGroupId;
+    let contextUserAvatar;
     let getWorldInfoPrompt;
     let pathfinderRuntimeSettings;
     let replacePathfinderSettings;
@@ -182,6 +183,7 @@ describe('in-chat agent post-processing runner', () => {
         contextCharacterId = undefined;
         contextGroups = [];
         contextGroupId = null;
+        contextUserAvatar = '';
         getWorldInfoPrompt = jest.fn(async () => ({ worldInfoString: '' }));
         pathfinderRuntimeSettings = { pipelinePrompts: {}, pipelines: {} };
         replacePathfinderSettings = jest.fn(settings => {
@@ -317,6 +319,7 @@ describe('in-chat agent post-processing runner', () => {
                 characterId: contextCharacterId,
                 groups: contextGroups,
                 groupId: contextGroupId,
+                userAvatar: contextUserAvatar,
                 name2: 'Mira',
                 extensionPrompts,
                 getCharacterCardFields: jest.fn(({ chid = contextCharacterId } = {}) => {
@@ -3270,6 +3273,158 @@ describe('in-chat agent post-processing runner', () => {
         const plainMessages = await companionRunner.buildCompanionPromptMessages(plainCompanion, 1);
         expect(plainMessages[1].content).not.toContain('[System Prompt]');
         expect(plainMessages[1].content).not.toContain('[Author\'s Note]');
+    });
+
+    test('composes character, persona and chat Author\'s Notes for single and batched companions', async () => {
+        const companionA = createCompanionAgent({
+            id: 'note-companion-a',
+            name: 'Note Companion A',
+            prompt: 'Check note: {{active-authors-note}}',
+            companion: { includeAuthorsNote: true, includeCharacterCard: false, batch: true, batchAgentIds: ['note-companion-b'] },
+        });
+        const companionB = createCompanionAgent({
+            id: 'note-companion-b',
+            name: 'Note Companion B',
+            prompt: 'Track scene details.',
+            companion: { includeAuthorsNote: true, includeCharacterCard: false },
+        });
+        enabledAgents = [companionA, companionB];
+        globalSettings.companionExecutionMode = 'sequential';
+        generateQuietPrompt.mockResolvedValueOnce([
+            '<<<companion:note-companion-a>>>A ok<<<end:note-companion-a>>>',
+            '<<<companion:note-companion-b>>>B ok<<<end:note-companion-b>>>',
+        ].join('\n'));
+        contextCharacters = [{ name: 'Mira', avatar: 'Mira.png' }];
+        contextCharacterId = 0;
+        contextUserAvatar = 'sam.png';
+        chatMetadata.note_prompt = 'Chat rain note for {{char}}.';
+        extensionSettings.note = {
+            default: 'Fallback default note.',
+            chara: [{
+                name: 'individual:Mira',
+                useChara: true,
+                perPersona: true,
+                profiles: [{ id: 'shared', name: 'Shared', prompt: 'Shared note.', position: 1 }],
+                activeProfiles: ['shared'],
+                personaNoteLibraries: {
+                    'sam.png': {
+                        profiles: [
+                            { id: 'before', name: 'Before', prompt: 'Character before note.', position: 1 },
+                            { id: 'after', name: 'After', prompt: 'Character after note.', position: 2 },
+                        ],
+                        activeProfile: 'before',
+                        activeProfiles: ['before', 'after'],
+                    },
+                },
+            }],
+            persona: {
+                'sam.png': {
+                    useNote: true,
+                    prompt: 'Persona note for {{user}}.',
+                    position: 1,
+                },
+            },
+        };
+
+        const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        const { buildPromptDynamicMacros } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        chat.push(
+            { mes: 'Hello there.', name: 'User', is_user: true, is_system: false, extra: {} },
+            { mes: 'Assistant reply', name: 'Mira', is_user: false, is_system: false, extra: {} },
+        );
+
+        const expectedSectionNote = [
+            'Character before note.',
+            'Persona note for Traveler.',
+            'Chat rain note for Assistant.',
+            'Character after note.',
+        ].join('\n');
+        const expectedMacroNote = [
+            'Character before note.',
+            'Persona note for {{user}}.',
+            'Chat rain note for Mira.',
+            'Character after note.',
+        ].join('\n');
+
+        const singleMessages = await companionRunner.buildCompanionPromptMessages(companionA, 1);
+        expect(singleMessages[1].content).toContain(`[Author's Note]\n${expectedSectionNote}`);
+
+        await companionRunner.runCompanionStage({
+            messageIndex: 1,
+            message: chat[1],
+            activeAgents: [companionA, companionB],
+        });
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        expect(generateQuietPrompt.mock.calls[0][0].quietPrompt).toContain(`[Author's Note]\n${expectedSectionNote}`);
+
+        const dynamicMacros = buildPromptDynamicMacros(chat[1].mes, chat[1], companionA, 'normal');
+        expect(dynamicMacros['active-authors-note']).toBe(expectedMacroNote);
+    });
+
+    test('respects cleared chat notes, replace position, insertion frequency and group notes in companions', async () => {
+        const companion = createCompanionAgent({
+            id: 'note-edge-companion',
+            companion: { includeAuthorsNote: true, includeCharacterCard: false },
+        });
+        enabledAgents = [companion];
+        contextCharacters = [{ name: 'Mira', avatar: 'Mira.png' }];
+        contextCharacterId = 0;
+        contextUserAvatar = 'sam.png';
+        extensionSettings.note = {
+            default: 'Should not reappear when cleared.',
+            chara: [{
+                name: 'individual:Mira',
+                useChara: true,
+                prompt: 'Character replaces chat.',
+                position: 0,
+            }],
+            persona: {
+                'sam.png': { useNote: true, prompt: 'Persona note stays.', position: 2 },
+            },
+        };
+        chatMetadata.note_prompt = 'Chat note to replace.';
+        const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        chat.push(
+            { mes: 'First user turn.', name: 'User', is_user: true, is_system: false, extra: {} },
+            { mes: 'First reply.', name: 'Mira', is_user: false, is_system: false, extra: {} },
+        );
+
+        const replaced = await companionRunner.buildCompanionPromptMessages(companion, 1);
+        expect(replaced[1].content).toContain('[Author\'s Note]\nCharacter replaces chat.\nPersona note stays.');
+        expect(replaced[1].content).not.toContain('Chat note to replace.');
+
+        // Insertion frequency 0 turns Author's Notes off completely.
+        chatMetadata.note_interval = 0;
+        const disabled = await companionRunner.buildCompanionPromptMessages(companion, 1);
+        expect(disabled[1].content).not.toContain('[Author\'s Note]');
+
+        // Insertion frequency 2 skips odd user turns and fires on turn 2.
+        chatMetadata.note_interval = 2;
+        const skippedTurn = await companionRunner.buildCompanionPromptMessages(companion, 1);
+        expect(skippedTurn[1].content).not.toContain('[Author\'s Note]');
+        chat.push(
+            { mes: 'Second user turn.', name: 'User', is_user: true, is_system: false, extra: {} },
+            { mes: 'Second reply.', name: 'Mira', is_user: false, is_system: false, extra: {} },
+        );
+        const activeTurn = await companionRunner.buildCompanionPromptMessages(companion, 3);
+        expect(activeTurn[1].content).toContain('[Author\'s Note]\nCharacter replaces chat.\nPersona note stays.');
+
+        // Clearing the chat note does not fall back to extension_settings.note.default.
+        chatMetadata.note_interval = 1;
+        chatMetadata.note_prompt = '';
+        extensionSettings.note.chara[0].useChara = false;
+        extensionSettings.note.persona['sam.png'].useNote = false;
+        const cleared = await companionRunner.buildCompanionPromptMessages(companion, 3);
+        expect(cleared[1].content).not.toContain('[Author\'s Note]');
+        expect(cleared[1].content).not.toContain('Should not reappear when cleared.');
+
+        // Group chats read chat_metadata.note_chara and persona Author's Notes.
+        contextGroupId = 'grp-notes';
+        contextGroups = [{ id: 'grp-notes', members: ['Mira.png'] }];
+        chatMetadata.note_chara = { name: 'group:grp-notes', useChara: true, prompt: 'Group note rule.', position: 1 };
+        extensionSettings.note.persona['sam.png'].useNote = true;
+        const groupMessages = await companionRunner.buildCompanionPromptMessages(companion, 3);
+        expect(groupMessages[1].content).toContain('[Author\'s Note]\nGroup note rule.\nPersona note stays.');
     });
 
     test('excludes the rewritten tail message from feedback on swipes', async () => {
