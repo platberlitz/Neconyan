@@ -924,7 +924,7 @@ export async function buildContext({ source, settings, pendingText = '', session
         };
         if (include.card && people.length) {
             const names = await macroNames();
-            const knownLorebooks = Array.isArray(world_names) ? world_names : [];
+            const knownLorebooks = Array.isArray(world_names) ? world_names : null;
             const contextSize = currentLimits().contextSize;
             for (const character of people) {
                 const filename = String(character?.avatar ?? '').replace(/\.[^.]+$/, '');
