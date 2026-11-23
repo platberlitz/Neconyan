@@ -8,7 +8,7 @@ import { selectToolHistoryReasoning } from '../../public/scripts/chat-input-capa
 import { shouldRetainContextAtDepth, stripHtmlTagsFromContext, stripOocBlocksFromContext } from '../../public/scripts/ooc-blocks.js';
 import { formatRoleplayTextExamples } from '../../public/scripts/roleplay-text-format.js';
 import { formatPromptReasoning } from '../../public/scripts/reasoning-prompt-format.js';
-import { composeAuthorsNote, isValidNotePosition } from '../../public/scripts/authors-note-profiles.js';
+import { composeAuthorsNote, isAuthorsNoteActive, isValidNotePosition } from '../../public/scripts/authors-note-profiles.js';
 import { applyAgentHistoryRegex, prepareCompanionPromptHistory } from './agent-history.js';
 import { blankUnheardGroupRecords } from './roleplay-group-scene.js';
 
@@ -214,8 +214,7 @@ export function roleplayMacroCapabilities(snapshot, material, maxTokens, maxCont
     };
 }
 
-export const isWorldInfoAuthorNoteActive = note => note?.interval === 1
-    || note?.interval > 1 && note.userMessages > 0 && note.userMessages % note.interval === 0;
+export const isWorldInfoAuthorNoteActive = note => isAuthorsNoteActive(note?.interval, note?.userMessages);
 
 /** Resolve the saved note once for both World Info scanning and prompt placement. */
 export function activeRoleplayAuthorNote(note) {

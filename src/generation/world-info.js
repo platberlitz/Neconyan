@@ -20,7 +20,7 @@ import { scanWorldInfo, worldInfoScanWindow } from './world-info-scan.js';
 import { normalizeExtensionBootId } from '../../public/scripts/extension-boot-lifecycle/index.js';
 import { captureEnhancedMacros } from '../macros/enhanced.js';
 import { getStringHash } from '../../public/scripts/macro-primitives.js';
-import { captureScopedAuthorsNotes, findCharacterNoteEntry, getPersonaNoteEntry } from '../../public/scripts/authors-note-profiles.js';
+import { captureScopedAuthorsNotes, findCharacterNoteEntry, findGroupCharacterNoteEntry, getPersonaNoteEntry } from '../../public/scripts/authors-note-profiles.js';
 import { captureWorldInfoHookPolicy, worldInfoActivationActions } from './world-info-hook-policy.js';
 import { capturePathfinderSource } from './world-info-pathfinder.js';
 import { captureIncomingRoleplayTranslation, captureRoleplayInputTranslation } from './roleplay-translation.js';
@@ -413,7 +413,8 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             throw roleplayError('ROLEPLAY_INVALID', 'Saved Author\'s Note settings are invalid.', 409);
         }
         const personaAvatar = persona.evidence?.avatar ?? settings.user_avatar ?? '';
-        const scopedNotes = captureScopedAuthorsNotes(saved.locator.group ? saved.records[0].chat_metadata?.note_chara
+        const scopedNotes = captureScopedAuthorsNotes(saved.locator.group
+            ? findGroupCharacterNoteEntry(note.chara, source.groupId, [avatar, ...members.map(member => member.avatar)], saved.records[0].chat_metadata?.note_chara)
             : findCharacterNoteEntry(note.chara, avatar), getPersonaNoteEntry(note.persona, personaAvatar), personaAvatar);
         const attachments = agentContext ? [] : savedAttachments(base.directories, promptRecords);
         const images = agentContext ? [] : captureSavedRoleplayImages(base.directories, promptRecords, settings.power_user?.media_display ?? 'list', extensions.caption, mediaPolicy);

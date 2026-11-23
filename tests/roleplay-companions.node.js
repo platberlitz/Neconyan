@@ -31,7 +31,7 @@ const controls = { prompts: [{ identifier: 'main', role: 'system', system_prompt
 prompt_order: [{ character_id: 100001, order: [{ identifier: 'main', enabled: true }, { identifier: 'worldInfoBefore', enabled: true }, { identifier: 'chatHistory', enabled: true }] }] };
 const companion = (id, options = {}) => ({ id, name: id.toUpperCase(), enabled: true, category: 'companion', execution: 'companion',
     phase: 'pre', prompt: `TASK_${id.toUpperCase()}`, companion: { includeWorldInfo: false, ...options } });
-function prepared(t, agents, { global = {}, profiles = [], effect = 'append', changeRecords, extraCard = false, imagePolicy = false, previewParent = null } = {}) {
+function prepared(t, agents, { global = {}, profiles = [], effect = 'append', changeRecords, extraCard = false, imagePolicy = false, previewParent = null, note = null, userAvatar = undefined } = {}) {
     const f = fixture(t), directories = f.scope.directories;
     directories.worlds = path.join(directories.root, 'worlds');
     directories.inChatAgents = path.join(directories.root, 'InChatAgents');
@@ -43,10 +43,10 @@ function prepared(t, agents, { global = {}, profiles = [], effect = 'append', ch
     if (extraCard) fs.copyFileSync(path.join(directories.characters, 'Nova.png'), path.join(directories.characters, 'Kit.png'));
     fs.writeFileSync(path.join(directories.worlds, 'Bells.json'), JSON.stringify({ entries: { 1: { uid: 1, key: ['evening-bell'],
         content: 'THE_COMPANION_BELL_LORE', position: 0, order: 100, disable: false } } }));
-    const settings = { name1: 'Ari', power_user: { sysprompt: { content: 'Saved system instructions' } },
+    const settings = { name1: 'Ari', ...(userAvatar ? { user_avatar: userAvatar } : {}), power_user: { sysprompt: { content: 'Saved system instructions' } },
         world_info_settings: { world_info: { globalSelect: ['Bells'] }, world_info_budget: 200 },
         oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:18000/v1' },
-        extension_settings: { note: { default: 'Saved author note' }, connectionManager: { profiles: [{ id: 'main', name: 'Saved Main',
+        extension_settings: { note: { default: 'Saved author note', ...(note ?? {}) }, connectionManager: { profiles: [{ id: 'main', name: 'Saved Main',
             api: 'custom', model: 'fixture', 'api-url': 'http://127.0.0.1:18000/v1' }, ...profiles] },
         inChatAgents: { globalSettings: { enabled: true, connectionProfile: 'main', postMainInterceptShowMessageFirst: false, ...global } } } };
     fs.writeFileSync(path.join(directories.root, 'settings.json'), JSON.stringify(settings));
@@ -995,4 +995,99 @@ test('pending cards exclude a saved Companion even when it is listed after an un
     const pending = [{ id: 'held' }, { id: 'saved' }];
     const cards = pendingRoleplayCompanionCards(pending, agent => agent.id === 'saved');
     assert.deepEqual(cards.map(agent => agent.id), ['held'], 'a durable result listed later is not shown running');
+});
+
+test('server Companions receive composed character, persona and chat Author\'s Notes in context and macros', async t => {
+    const note = {
+        default: 'Default note that chat overrides.',
+        chara: [{
+            name: 'individual:Nova',
+            useChara: true,
+            perPersona: true,
+            profiles: [{ id: 'shared', name: 'Shared', prompt: 'Shared note.', position: 1 }],
+            activeProfiles: ['shared'],
+            personaNoteLibraries: {
+                'sam.png': {
+                    profiles: [
+                        { id: 'before', name: 'Before', prompt: 'Nova character before.', position: 1 },
+                        { id: 'after', name: 'After', prompt: 'Nova character after.', position: 2 },
+                    ],
+                    activeProfile: 'before',
+                    activeProfiles: ['before', 'after'],
+                },
+            },
+        }],
+        persona: {
+            'sam.png': { useNote: true, prompt: 'Sam persona note for {{user}}.', position: 1 },
+        },
+    };
+    const seenSingle = [];
+    const singleAgent = {
+        ...companion('notes', { includeAuthorsNote: true, includeCharacterCard: false }),
+        prompt: 'MACRO_CHECK: {{active-authors-note}}',
+    };
+    const single = prepared(t, [singleAgent], {
+        userAvatar: 'sam.png',
+        note,
+        changeRecords: records => {
+            records[0].chat_metadata = { ...(records[0].chat_metadata ?? {}), note_prompt: 'Chat note for {{char}}.' };
+        },
+    });
+    await single.run({
+        generate: paid('main', 'Main reply'),
+        generateAgent: paid('agent', ({ messages }) => {
+            seenSingle.push(structuredClone(messages));
+            return { text: 'Observed note' };
+        }),
+    });
+    const expected = [
+        'Nova character before.',
+        'Sam persona note for User.',
+        'Chat note for Nova.',
+        'Nova character after.',
+    ].join('\n');
+    assert.equal(seenSingle.length, 1);
+    assert.match(seenSingle[0][0].content, new RegExp(`MACRO_CHECK: ${expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    assert.match(seenSingle[0][1].content, new RegExp(`\\[Author's Note\\]\\n${expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+
+    // Batched Companions receive the exact same composed Author's Note section.
+    const seenBatch = [];
+    const batch = prepared(t, [
+        companion('batch-a', { includeAuthorsNote: true, includeCharacterCard: false, batch: true, batchAgentIds: ['batch-b'] }),
+        companion('batch-b', { includeAuthorsNote: true, includeCharacterCard: false }),
+    ], {
+        userAvatar: 'sam.png',
+        note,
+        changeRecords: records => {
+            records[0].chat_metadata = { ...(records[0].chat_metadata ?? {}), note_prompt: 'Chat note for {{char}}.' };
+        },
+    });
+    await batch.run({
+        generate: paid('main', 'Main reply'),
+        generateAgent: paid('agent', ({ messages }) => {
+            seenBatch.push(structuredClone(messages));
+            return { text: '<<<companion:batch-a>>>A<<<end:batch-a>>>\n<<<companion:batch-b>>>B<<<end:batch-b>>>' };
+        }),
+    });
+    assert.equal(seenBatch.length, 1);
+    assert.match(seenBatch[0][1].content, new RegExp(`\\[Author's Note\\]\\n${expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+
+    // Explicitly cleared chat note and disabled interval omit [Author's Note].
+    const seenDisabled = [];
+    const disabled = prepared(t, [companion('quiet', { includeAuthorsNote: true, includeCharacterCard: false })], {
+        userAvatar: 'sam.png',
+        note,
+        changeRecords: records => {
+            records[0].chat_metadata = { ...(records[0].chat_metadata ?? {}), note_prompt: 'Chat note', note_interval: 0 };
+        },
+    });
+    await disabled.run({
+        generate: paid('main', 'Main reply'),
+        generateAgent: paid('agent', ({ messages }) => {
+            seenDisabled.push(structuredClone(messages));
+            return { text: 'Quiet note' };
+        }),
+    });
+    assert.equal(seenDisabled.length, 1);
+    assert.doesNotMatch(seenDisabled[0][1].content, /\[Author's Note\]/);
 });

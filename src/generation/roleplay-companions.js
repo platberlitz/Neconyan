@@ -5,6 +5,8 @@ import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-st
 import { readRoleplaySettingsJson } from './settings-cache.js';
 import { getCounter } from '../mewmory/tokens.js';
 import { captureRoleplayWorldInfoForAgentScan, prepareRoleplayWorldInfo } from './world-info.js';
+import { activeRoleplayAuthorNote } from './roleplay-prompt.js';
+import { resolveActiveAuthorsNote } from '../../public/scripts/authors-note-profiles.js';
 import { readRoleplayAgents } from './roleplay-agents-source.js';
 import { isNativeCompanion } from './agent-definition.js';
 import { runAgentModelStep } from './agent-model-step.js';
@@ -224,7 +226,16 @@ export async function runRoleplayCompanions(context, options) {
         return value;
     });
     input.systemPrompt = String(settings.power_user?.sysprompt?.content ?? '');
-    input.authorsNote = clean(records[0]?.chat_metadata?.note_prompt) || String(settings.extension_settings?.note?.default ?? '');
+    input.authorsNote = snapshot.authorNote
+        ? activeRoleplayAuthorNote(snapshot.authorNote)
+        : resolveActiveAuthorsNote({
+            chatMetadata: records[0]?.chat_metadata,
+            noteSettings: settings.extension_settings?.note,
+            groupId: snapshot.source?.groupId ?? '',
+            characterAvatar: snapshot.source?.locator?.avatar ?? '',
+            personaAvatar: settings.user_avatar ?? '',
+            userMessages: messages.filter(message => message?.is_user).length,
+        });
     // World Info and the tokenizer are only paid for by a Companion that asks
     // for them. A Companion without World Info can leave before that scan starts.
     let worldInfoPromise = null;
