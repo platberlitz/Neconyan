@@ -491,6 +491,43 @@ export function detachBindingLocked(lease, { operationId, notebookId, bindingId 
     });
 }
 
+/**
+ * Follows a whole lorebook file being renamed (`to` is the new filename) or
+ * deleted (`to` is null). Renamed bindings keep their entry, publication,
+ * policy and history under the id the new filename gives them. Deleted ones
+ * are detached, and so is any binding that already pointed at a missing book
+ * of the new name, so it cannot claim the renamed book's entries. Returns the
+ * number of bindings changed; nothing is written when it is zero.
+ */
+export function relinkBookBindingsLocked(lease, notebookId, from, to = null) {
+    const value = readBindingsLocked(lease, notebookId);
+    const at = now();
+    const bindings = {};
+    const detached = [];
+    let changed = 0;
+    for (const [key, binding] of Object.entries(value.bindings)) {
+        if (binding?.book === from && to) {
+            const id = bindingIdFor(notebookId, binding.noteId, binding.selector, to);
+            const moved = { ...binding, id, book: to };
+            pushBindingHistory(moved, { action: 'book-renamed', from, to });
+            bindings[id] = moved;
+            changed++;
+        } else if (binding?.book === from || (to && binding?.book === to)) {
+            const record = { ...binding };
+            delete record.pending;
+            detached.push({ ...record, detachedAt: at, detachedReason: binding.book === from ? 'book-deleted' : 'book-replaced', history: undefined });
+            changed++;
+        } else {
+            bindings[key] = binding;
+        }
+    }
+    if (!changed) return 0;
+    value.bindings = bindings;
+    if (detached.length) value.detached = [...(value.detached ?? []), ...detached].slice(-100);
+    writeBindingsLocked(lease, notebookId, value);
+    return changed;
+}
+
 /** Explicitly replaces the bound draft region with the current lore text. */
 export function pullLoreIntoNoteLocked(lease, { operationId, notebookId, bindingId, expectedRevision, expectedLoreHash, actor = { kind: 'user' } }) {
     const args = { notebookId, bindingId, expectedRevision, expectedLoreHash };

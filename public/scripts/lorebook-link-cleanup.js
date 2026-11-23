@@ -17,11 +17,14 @@ import { clearLorebookNotice } from './lorebook-links.js';
 import {
     linkPointsAt,
     planCardLinkRewrites,
+    planPersonaLorebookRewrites,
     rewriteCharLore,
     rewriteChatLorebook,
     rewriteConversationOverrides,
     runLorebookLinkSteps,
 } from './lorebook-link-rewrite.js';
+import { setPersonaDescription, updatePersonaLorebookActions, user_avatar } from './personas.js';
+import { power_user } from './power-user.js';
 import { beginRoleplaySave, finishRoleplaySave } from './roleplay-save-chain.js';
 import { escapeHtml, uuidv4 } from './utils.js';
 import { world_info } from './world-info.js';
@@ -78,6 +81,41 @@ async function rewriteExtraBooks(from, to) {
         throw error;
     }
     return cards.length;
+}
+
+function showPersonaLorebook(activeChanged) {
+    if (activeChanged) setPersonaDescription();
+    $('#persona_lore_button').toggleClass('world_set', Boolean(power_user.persona_description_lorebook));
+    updatePersonaLorebookActions();
+}
+
+/** Every persona's lorebook, active or not, saved at once; on a failed save the old names come back. */
+async function rewritePersonaLinks(from, to) {
+    const descriptions = power_user.persona_descriptions ?? {};
+    const plan = planPersonaLorebookRewrites({ active: power_user.persona_description_lorebook, descriptions, avatar: user_avatar }, from, to);
+    if (!plan) return 0;
+    const previousActive = power_user.persona_description_lorebook;
+    const activeAvatar = user_avatar;
+    const previous = new Map(plan.avatars.map(avatar => [avatar, descriptions[avatar].lorebook]));
+    for (const avatar of plan.avatars) descriptions[avatar].lorebook = plan.lorebook;
+    if (plan.active) power_user.persona_description_lorebook = plan.lorebook;
+    try {
+        if (!await saveSettings(0, { returnResult: true })) {
+            throw new Error(t`Settings could not be saved.`);
+        }
+    } catch (error) {
+        for (const [avatar, lorebook] of previous) {
+            const descriptor = power_user.persona_descriptions?.[avatar];
+            if (descriptor?.lorebook === plan.lorebook) descriptor.lorebook = lorebook;
+        }
+        if (plan.active && user_avatar === activeAvatar && power_user.persona_description_lorebook === plan.lorebook) {
+            power_user.persona_description_lorebook = previousActive;
+        }
+        showPersonaLorebook(plan.active);
+        throw error;
+    }
+    showPersonaLorebook(plan.active);
+    return plan.personas;
 }
 
 async function rewriteCard({ avatar, update }) {
@@ -181,19 +219,43 @@ function reportFailures(from, to, failed) {
 }
 
 /**
+ * What the server did to Notebook links while it renamed or deleted the lorebook, in the same shape as the steps here.
+ * @param {{ links?: number, skipped?: Array<{ notebookId: string, name?: string|null, code?: string }> }|null} report
+ * @returns {{ moved: number, failed: Array<{ label: string, reason: string }> }}
+ */
+function notebookResults(report) {
+    const seen = new Set();
+    const failed = [];
+    for (const item of Array.isArray(report?.skipped) ? report.skipped : []) {
+        if (seen.has(item?.notebookId)) continue;
+        seen.add(item?.notebookId);
+        failed.push({
+            label: t`Notebook '${item?.name || item?.notebookId}'`,
+            reason: item?.code === 'NOTEBOOK_SCHEMA_UNSUPPORTED'
+                ? t`It was saved by a newer version of Neconyan, so it was left as it is.`
+                : t`It could not be read, so it was left as it is.`,
+        });
+    }
+    return { moved: Number(report?.links) || 0, failed };
+}
+
+/**
  * Moves every link to a lorebook to its new name, or removes it when the lorebook is deleted: the open chat, the
- * extra lorebooks of cards, the main lorebook of each card (saved through the card's own route, changing only that
- * link), the chats that are not open, and the Conversation 'Lorebook Override' of every thread. A step that fails
- * is reported in one error and the rest still run.
+ * extra lorebooks of cards, the lorebook of every persona, the main lorebook of each card (saved through the card's
+ * own route, changing only that link), the chats that are not open, and the Conversation 'Lorebook Override' of
+ * every thread. Notebook links are moved by the server with the lorebook itself; its report joins this one. A step
+ * that fails is reported in one error and the rest still run.
  * @param {string} from Name that was renamed or deleted
  * @param {string|null} [to] New name, or null for a delete
+ * @param {{ notebooks?: object|null }} [options] The server's report on Notebook links
  * @returns {Promise<{ moved: number, failed: Array<{ label: string, reason: string }> }>}
  */
-export async function rewriteLorebookLinks(from, to = null) {
+export async function rewriteLorebookLinks(from, to = null, { notebooks = null } = {}) {
     const initialChatGeneration = getChatGeneration();
     const steps = [
         { label: t`this chat`, run: () => rewriteOpenChat(from, to) },
         { label: t`extra lorebooks of characters`, run: () => rewriteExtraBooks(from, to) },
+        { label: t`personas`, run: () => rewritePersonaLinks(from, to) },
         ...planCardLinkRewrites(characters, from, to).map(plan => ({ label: plan.owner || plan.avatar, run: () => rewriteCard(plan) })),
     ];
     const cardsAndSettings = await runLorebookLinkSteps(steps);
@@ -201,7 +263,7 @@ export async function rewriteLorebookLinks(from, to = null) {
     const chatListing = await runLorebookLinkSteps([{ label: t`the list of chats`, run: async () => { chatSteps = await closedChatSteps(from, to, initialChatGeneration); } }]);
     const chats = await runLorebookLinkSteps(chatSteps);
     const conversation = await runLorebookLinkSteps([{ label: t`Conversation lorebook overrides`, run: () => rewriteConversation(from, to) }]);
-    const results = [cardsAndSettings, chatListing, chats, conversation];
+    const results = [cardsAndSettings, chatListing, chats, conversation, notebookResults(notebooks)];
     const moved = results.reduce((sum, result) => sum + result.moved, 0);
     const failed = results.flatMap(result => result.failed);
     clearLorebookNotice(link => linkPointsAt(link.name, from));

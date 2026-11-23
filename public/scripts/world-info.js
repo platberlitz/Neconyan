@@ -26,7 +26,7 @@ import { StructuredCloneMap } from './util/StructuredCloneMap.js';
 import { renderTemplateAsync } from './templates.js';
 import { t } from './i18n.js';
 import { accountStorage } from './util/AccountStorage.js';
-import { getOrCreatePersonaDescriptor, setPersonaDescription, updatePersonaLorebookActions, user_avatar } from './personas.js';
+import { setPersonaDescription, updatePersonaLorebookActions } from './personas.js';
 import { getFreeCharacterBookEntryId, serializeCharacterBookKeys, serializeWorldInfoEntry } from './world-info-character-book.js';
 import { convertCharacterBookEntry, worldInfoPositions } from './world-info-character-book-entry.js';
 import { detectEmbeddedLorebookCandidates, findMatchingLorebookName, getLinkedAuxBooks, isEmbeddedBookLinked } from './world-info-batch-helpers.js';
@@ -5421,7 +5421,7 @@ async function renameWorldInfo(name, data) {
             saveSettingsDebounced();
         }
 
-        await updateWorldInfoLinks(oldName, newName);
+        await updateWorldInfoLinks(oldName, newName, renamed?.notebooks ?? null);
         await updateWorldInfoList();
         syncOpenCardLorebookField(oldName, newName);
 
@@ -5449,41 +5449,27 @@ async function renameWorldInfo(name, data) {
 }
 
 /**
- * Moves every link to a renamed lorebook to its new name: the persona lorebooks here, and everything else through
- * the shared rewrite in lorebook-link-cleanup.js.
+ * Moves every link to a renamed lorebook to its new name through the shared rewrite in lorebook-link-cleanup.js.
  * @param {string} oldName Previous WI file name
  * @param {string} newName New WI file name
+ * @param {object|null} [notebooks] The server's report on the Notebook links it moved
  * @returns {Promise<void>}
  */
-async function updateWorldInfoLinks(oldName, newName) {
-    if (power_user.persona_description_lorebook === oldName) {
-        power_user.persona_description_lorebook = newName;
-        const descriptor = getOrCreatePersonaDescriptor();
-        descriptor.lorebook = newName;
-        setPersonaDescription();
-        saveSettingsDebounced();
-    }
-
-    for (const descriptor of Object.values(power_user.persona_descriptions ?? {})) {
-        if (descriptor?.lorebook === oldName) {
-            descriptor.lorebook = newName;
-            saveSettingsDebounced();
-        }
-    }
-
+async function updateWorldInfoLinks(oldName, newName, notebooks = null) {
     const { rewriteLorebookLinks } = await import('./lorebook-link-cleanup.js');
-    await rewriteLorebookLinks(oldName, newName);
+    await rewriteLorebookLinks(oldName, newName, { notebooks });
 }
 
 /**
- * Removes every link to a deleted lorebook (cards, extra lorebooks, chats, Conversation overrides) and clears the open
- * character editor's lorebook field.
+ * Removes every link to a deleted lorebook (cards, extra lorebooks, personas, chats, Conversation overrides) and
+ * clears the open character editor's lorebook field.
  * @param {string} name Deleted WI file name
+ * @param {object|null} [notebooks] The server's report on the Notebook links it removed
  * @returns {Promise<void>}
  */
-async function unlinkDeletedWorldInfo(name) {
+async function unlinkDeletedWorldInfo(name, notebooks = null) {
     const { rewriteLorebookLinks } = await import('./lorebook-link-cleanup.js');
-    await rewriteLorebookLinks(name, null);
+    await rewriteLorebookLinks(name, null, { notebooks });
     syncOpenCardLorebookField(name, null);
 }
 
@@ -5523,6 +5509,7 @@ export async function deleteWorldInfo(worldInfoName) {
             return false;
         }
         saveTarget = null;
+        const deleted = await response.json().catch(() => null);
 
         invalidateWorldInfoCache(worldInfoName);
         worldInfoCommittedEntryInstances.delete(worldInfoName);
@@ -5543,18 +5530,7 @@ export async function deleteWorldInfo(worldInfoName) {
         }
         $('#world_editor_select').trigger('change');
 
-        await unlinkDeletedWorldInfo(worldInfoName);
-
-        if (power_user.persona_description_lorebook === worldInfoName) {
-            power_user.persona_description_lorebook = '';
-            if (power_user.personas[user_avatar]) {
-                const object = getOrCreatePersonaDescriptor();
-                object.lorebook = '';
-            }
-            $('#persona_lore_button').toggleClass('world_set', false);
-            setPersonaDescription();
-            saveSettingsDebounced();
-        }
+        await unlinkDeletedWorldInfo(worldInfoName, deleted?.notebooks ?? null);
     } finally {
         releaseSaveBlock(saveTarget);
         if (saveTarget === null) await eventSource.emit(event_types.WORLDINFO_DELETED, worldInfoName);

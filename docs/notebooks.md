@@ -227,6 +227,8 @@ Publishing is manual by default: saving the note later does not change the lore.
 | Section not found | The heading you published was renamed, removed or duplicated. Nothing is published until you pick the section again. |
 | Note missing / Entry missing | One side was deleted. The other side is kept. Nothing is recreated automatically. |
 
+Renaming a lorebook in World Info moves every Notebook link to the new name: published links stay in sync and keep publishing, and Lore-tab associations still open their book or entry. Deleting a whole lorebook detaches its published links (the note text stays as it is) and removes its associations and lorebook reference scopes. Deleting one entry still shows Entry missing. A notebook saved by a newer version of Neconyan is left alone and named in the warning.
+
 **Keep lore updated when saved** is an optional switch for one link. It only applies to your own edits; assistant edits and imported files still wait for review.
 
 Published, enabled and used in this chat are three different things. Publishing writes text into a lorebook entry. Whether that entry is switched on, and whether the lorebook is attached to the current chat, are still controlled by World Info as usual. Publishing never attaches a lorebook to anything.

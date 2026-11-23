@@ -64,6 +64,26 @@ export function rewriteCharLore(charLore, from, to) {
 }
 
 /**
+ * Which persona lorebooks the change touches: the active persona's copy and the lorebook saved with every persona,
+ * active or not. A delete leaves them empty.
+ * @param {{ active?: unknown, descriptions?: Record<string, {lorebook?: string}>, avatar?: string }} personas
+ * @param {string} from
+ * @param {string|null} to
+ * @returns {{ lorebook: string, active: boolean, avatars: string[], personas: number }|null} The name to store, whether
+ * the active copy changes, the personas whose saved lorebook changes and how many personas that is, or null for none
+ */
+export function planPersonaLorebookRewrites({ active = '', descriptions = {}, avatar = '' } = {}, from, to) {
+    const avatars = Object.entries(descriptions ?? {})
+        .filter(([, descriptor]) => descriptor && typeof descriptor === 'object' && linkPointsAt(descriptor.lorebook, from))
+        .map(([key]) => key);
+    const activeHit = linkPointsAt(active, from);
+    const personas = new Set(avatars);
+    if (activeHit) personas.add(String(avatar ?? ''));
+    if (!personas.size) return null;
+    return { lorebook: to ?? '', active: activeHit, avatars, personas: personas.size };
+}
+
+/**
  * The cards whose main lorebook is this one, with the field to write so nothing else on the card changes.
  * @param {object[]} cards Character records
  * @param {string} from

@@ -2,6 +2,7 @@ import { describe, expect, test } from '@jest/globals';
 import {
     linkPointsAt,
     planCardLinkRewrites,
+    planPersonaLorebookRewrites,
     rewriteCharLore,
     rewriteChatLorebook,
     rewriteConversationOverrides,
@@ -117,6 +118,40 @@ describe('planCardLinkRewrites', () => {
 
     test('never asks for a change to the embedded copy', () => {
         for (const item of planCardLinkRewrites(cards, 'Target Book', 'Renamed')) expect(Object.keys(item.update)).toEqual(['extensions']);
+    });
+});
+
+describe('planPersonaLorebookRewrites', () => {
+    const descriptions = () => ({
+        'ada.png': { lorebook: 'Target Book' },
+        'bea.png': { lorebook: 'Target Book. ' },
+        'cal.png': { lorebook: 'Target Book 2' },
+        'dee.png': { lorebook: 'target book' },
+        'eve.png': { lorebook: '' },
+        'fay.png': null,
+    });
+
+    test('finds active and inactive personas, trailing spaces and dots included', () => {
+        expect(planPersonaLorebookRewrites({ active: 'Target Book', descriptions: descriptions(), avatar: 'ada.png' }, 'Target Book', 'Renamed'))
+            .toEqual({ lorebook: 'Renamed', active: true, avatars: ['ada.png', 'bea.png'], personas: 2 });
+    });
+
+    test('a deleted book clears the links', () => {
+        expect(planPersonaLorebookRewrites({ active: 'Target Book', descriptions: descriptions(), avatar: 'zed.png' }, 'Target Book', null))
+            .toEqual({ lorebook: '', active: true, avatars: ['ada.png', 'bea.png'], personas: 3 });
+    });
+
+    test('similar names and other cases are left alone', () => {
+        expect(planPersonaLorebookRewrites({ active: 'Target Book 2', descriptions: { 'dee.png': { lorebook: 'target book' } } }, 'Target Book', null)).toBeNull();
+        expect(planPersonaLorebookRewrites({ active: 'Targe', descriptions: descriptions() }, 'Target', 'Renamed')).toBeNull();
+    });
+
+    test('does not change what it is given', () => {
+        const input = descriptions();
+        const before = structuredClone(input);
+        planPersonaLorebookRewrites({ active: 'Target Book', descriptions: input, avatar: 'ada.png' }, 'Target Book', 'Renamed');
+        expect(input).toEqual(before);
+        expect(planPersonaLorebookRewrites(undefined, 'Target Book', null)).toBeNull();
     });
 });
 

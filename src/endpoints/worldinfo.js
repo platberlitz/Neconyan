@@ -17,8 +17,19 @@ import {
 } from '../world-info-history.js';
 import { sanitizeHealthPrefs } from '../../public/scripts/neconyan-lorebook-health.js';
 import { parseSavedWorldInfo } from '../world-info-file.js';
+import { relinkNotebookLorebooksLocked } from '../notebooks/lorebook-links.js';
+import { notifyNotebookChanged } from '../notebooks/events.js';
 
 const WORLD_INFO_EXTENSION = '.json';
+
+/** Tells open Notebooks their lorebook links changed, once the account lock is released. */
+function announceNotebookChanges(request, report) {
+    const owner = request.user?.profile?.handle;
+    if (!owner || !report?.notebooks?.length) return;
+    setImmediate(() => {
+        for (const notebookId of report.notebooks) notifyNotebookChanged({ owner, notebookId, kind: 'lore-links' });
+    });
+}
 // Neconyan divergence: canonical World Info filenames are UTF-8 bounded and written through the fork's safe persistence path.
 const MAX_FILENAME_BYTES = 255;
 const ATOMIC_WRITE_SUFFIX_BYTES = 16;
@@ -283,11 +294,19 @@ router.post('/delete', authoringRoute((request, response, lease) => {
     const pathToWorldInfo = path.join(request.user.directories.worlds, filename);
 
     assertNativeMediaTargetIdle(lease, { kind: 'lorebook', id: filename });
-    deleteAuthoringFileLocked(lease, pathToWorldInfo);
+    // Notebook links go first, so a book that cannot be deleted keeps them.
+    const notebooks = relinkNotebookLorebooksLocked(lease, { fromFilename: filename });
+    try {
+        deleteAuthoringFileLocked(lease, pathToWorldInfo);
+    } catch (error) {
+        notebooks.undo();
+        throw error;
+    }
     deleteWorldInfoHistory(pathToWorldInfo, lease);
     removeSourceMemory(request.user.directories, { world: path.parse(filename).name });
+    announceNotebookChanges(request, notebooks.report);
 
-    return response.sendStatus(200);
+    return response.send({ ok: true, notebooks: notebooks.report });
 }));
 
 router.post('/import', authoringRoute((request, response, lease) => {
@@ -418,16 +437,20 @@ router.post('/rename', authoringRoute((request, response, lease) => {
         fs.renameSync(oldPath, newPath);
         fsyncDirectorySync(path.dirname(oldPath));
         let undoMemory;
+        let notebooks;
         try {
             undoMemory = renameWorldMemory(request.user.directories, getWorldInfoName(oldName), canonicalName);
+            notebooks = relinkNotebookLorebooksLocked(lease, { fromFilename: oldFilename, toFilename: newFilename });
             renameWorldInfoHistory(oldPath, newPath, lease);
         } catch (error) {
+            notebooks?.undo();
             undoMemory?.();
             fs.renameSync(newPath, oldPath);
             fsyncDirectorySync(path.dirname(oldPath));
             throw error;
         }
-        return response.send({ ok: true, name: canonicalName, revision: worldInfoRevision(data) });
+        announceNotebookChanges(request, notebooks.report);
+        return response.send({ ok: true, name: canonicalName, revision: worldInfoRevision(data), notebooks: notebooks.report });
     } catch (err) {
         console.error('World Info rename failed:', err);
         return response.sendStatus(err.status || 500);

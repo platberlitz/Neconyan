@@ -148,10 +148,11 @@ function createHost(initialBook = book()) {
             case '/api/worldinfo/rename':
                 books.delete(body.oldName);
                 books.set(body.newName, structuredClone(body.data));
-                result = { ok: true, name: body.newName, revision: JSON.stringify(body.data) };
+                result = { ok: true, name: body.newName, revision: JSON.stringify(body.data), notebooks: { links: 1, notebooks: ['nb'], skipped: [] } };
                 break;
             case '/api/worldinfo/delete':
                 books.delete(body.name);
+                result = { ok: true, notebooks: { links: 2, notebooks: ['nb'], skipped: [] } };
                 break;
             case '/api/worldinfo/import': {
                 const name = String(body.get('name'));
@@ -1427,6 +1428,15 @@ describe('World Info lifecycle coordination', () => {
         expect(host.context.worldInfoCache.has('Lore')).toBe(false);
         expect(host.books.get('Renamed')).toMatchObject({ entries: { 0: { depth: 9 } }, extensions: external.extensions });
         expect(host.context.eventSource.emit).toHaveBeenCalledWith(event_types.WORLDINFO_RENAMED, 'Lore', 'Renamed');
+    });
+
+    test('rename and delete pass the server report on Notebook links to the link cleanup', async () => {
+        const host = createHost();
+        const data = await host.context.loadWorldInfo('Lore');
+        await host.context.renameWorldInfo('Lore', data);
+        expect(host.context.updateWorldInfoLinks).toHaveBeenCalledWith('Lore', 'Renamed', { links: 1, notebooks: ['nb'], skipped: [] });
+        await host.context.deleteWorldInfo('Renamed');
+        expect(host.context.unlinkDeletedWorldInfo).toHaveBeenCalledWith('Renamed', { links: 2, notebooks: ['nb'], skipped: [] });
     });
 
     test.each(['delete', 'replace', 'import'])('%s discards blocked saves and publishes only installed data', async operation => {

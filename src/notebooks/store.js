@@ -163,6 +163,13 @@ function bumpStructure(manifest) {
     manifest.structureRevision = sha256(`${manifest.structureRevision}:${crypto.randomUUID()}`);
 }
 
+/** Saves a manifest whose associations changed outside a note operation. */
+export function writeManifestStructureLocked(lease, manifest) {
+    bumpStructure(manifest);
+    writeManifest(lease, manifest);
+    invalidateNotebookCache(lease, manifest.id);
+}
+
 export function readPoliciesLocked(lease, notebookId) {
     const policies = readJsonLocked(lease, controlFile(rootOf(lease), notebookId, 'policies.json'), emptyPolicies);
     policies.notes ||= {};
