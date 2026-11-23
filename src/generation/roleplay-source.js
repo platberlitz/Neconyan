@@ -8,7 +8,7 @@ import { acquireChatFileLock } from '../chat-file-lock.js';
 import { parseChatJsonl } from '../chat-recovery.js';
 import { read as readCharacterCard } from '../character-card-parser.js';
 import { TavernCardValidator } from '../validator/TavernCardValidator.js';
-import { canonical } from '../jobs/store.js';
+import { canonicalSha256, isStrictJsonTree } from '../jobs/store.js';
 import { inspectRoleplayFileStat, readRoleplayFile, roleplayAvatarOwner, validRoleplayAvatar, roleplayError, roleplayHash, roleplayLease, roleplayPathKey, saveRoleplayAccount, withRoleplayAccountLock } from '../roleplay-store.js';
 
 export { roleplayPathKey } from '../roleplay-store.js';
@@ -111,53 +111,11 @@ export function roleplayContentHash(records) {
 const isPlainRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value)
     && Object.getPrototypeOf(value) === Object.prototype;
 
-/**
- * True only for the values JSON.stringify would round-trip exactly. The parsed
- * chat path needs this check because the direct canonical hash below would
- * otherwise hash undefined as null, or turn -0 into 0, where the legacy path
- * refuses the record outright.
- */
-function isParsedChatValue(value, ancestors) {
-    if (value === null) return true;
-    switch (typeof value) {
-        case 'string':
-        case 'boolean':
-            return true;
-        case 'number':
-            return Number.isFinite(value) && !Object.is(value, -0);
-        case 'object':
-            break;
-        default:
-            return false;
-    }
-    if (ancestors.has(value)) return false;
-    ancestors.add(value);
-    try {
-        if (Array.isArray(value)) {
-            for (let index = 0; index < value.length; index += 1) {
-                if (!Object.hasOwn(value, index) || !isParsedChatValue(value[index], ancestors)) return false;
-            }
-            for (const key of Object.keys(value)) {
-                if (!/^(?:0|[1-9]\d*)$/.test(key) || Number(key) >= value.length) return false;
-            }
-            return !Object.getOwnPropertySymbols(value).some(symbol => Object.prototype.propertyIsEnumerable.call(value, symbol));
-        }
-        if (Object.getPrototypeOf(value) !== Object.prototype) return false;
-        if (Object.getOwnPropertySymbols(value).some(symbol => Object.prototype.propertyIsEnumerable.call(value, symbol))) return false;
-        for (const key of Object.keys(value)) {
-            if (!isParsedChatValue(value[key], ancestors)) return false;
-        }
-        return true;
-    } finally {
-        ancestors.delete(value);
-    }
-}
-
 function canHashParsedChat(records) {
     if (!Array.isArray(records) || records.length === 0) return false;
     const header = records[0];
     if (!isPlainRecord(header) || !isPlainRecord(header.chat_metadata)) return false;
-    return isParsedChatValue(records, new Set());
+    return isStrictJsonTree(records);
 }
 
 /**
@@ -179,7 +137,7 @@ export function roleplayParsedContentHash(records) {
     const copy = records.slice();
     copy[0] = { ...records[0], chat_metadata: { ...records[0].chat_metadata } };
     delete copy[0].chat_metadata.integrity;
-    return crypto.createHash('sha256').update(canonical(copy)).digest('hex');
+    return canonicalSha256(copy);
 }
 
 /**
