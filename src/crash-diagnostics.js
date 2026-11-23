@@ -1,13 +1,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import v8 from 'node:v8';
 import { randomUUID } from 'node:crypto';
 import '../public/scripts/crash-diagnostics.js';
 import { isBenignStreamAbort } from './stream-disconnect-guard.js';
+import { describeFatalStop } from './server-crash-evidence.js';
 
 const { describeError, redact } = globalThis.NeconyanCrashDiagnostics;
 const MAX_REPORTS = 10;
 const MAX_BYTES = 128 * 1024;
+// A compact fatal-error report is about 10 KB; anything far larger is not one.
+const MAX_FATAL_REPORT_BYTES = 2 * 1024 * 1024;
 let directory;
 let marker;
 let fatalRecorded = false;
@@ -19,11 +23,22 @@ let version = {};
 const runId = randomUUID();
 let latestStatus = null;
 
+function reportSummary(report) {
+    if (report.kind === 'server-out-of-memory') return 'The server ran out of JavaScript memory and stopped.';
+    if (report.kind === 'server-fatal-error') return 'The server stopped after Node reported a fatal error.';
+    if (report.kind === 'unclean-previous-exit') {
+        if (report.fatal?.outOfMemory) return 'The previous server process ran out of JavaScript memory and stopped.';
+        if (report.fatal) return 'The previous server process stopped after Node reported a fatal error.';
+        return 'The previous server process did not close normally. No definite cause was supplied.';
+    }
+    return 'A saved server crash report is available.';
+}
+
 function reportStatus(report) {
     const preview = redact(report.error?.message || 'No error message was supplied.', 400);
-    return { id: report.id, at: typeof report.at === 'string' && report.at.length <= 40 ? report.at : null, kind: redact(report.kind, 80), summary: report.kind === 'unclean-previous-exit'
-        ? 'The previous server process did not close normally. No definite cause was supplied.' : 'A saved server crash report is available.',
-    errorPreview: preview.slice(0, 200) };
+    // The preview carries the explanation, so an out-of-memory report keeps its figures.
+    return { id: report.id, at: typeof report.at === 'string' && report.at.length <= 40 ? report.at : null, kind: redact(report.kind, 80), summary: reportSummary(report),
+        errorPreview: preview.slice(0, 320) };
 }
 export function getCrashReportStatus() {
     return { schema: 1, runId, latest: latestStatus ? { ...latestStatus } : null };
@@ -36,11 +51,15 @@ export function setCrashContext({ requests, activity, appVersion, shutdown } = {
     if (shutdown) shuttingDown = shutdown;
 }
 
+function heapLimit() {
+    try { return v8.getHeapStatistics().heap_size_limit; } catch { return undefined; }
+}
+
 function runtimeContext() {
     return {
         pid: process.pid, uptimeSeconds: process.uptime(), versions: process.versions,
         platform: process.platform, arch: process.arch, osRelease: os.release(),
-        memory: process.memoryUsage(), systemMemory: { total: os.totalmem(), free: os.freemem() },
+        memory: { ...process.memoryUsage(), heapLimit: heapLimit() }, systemMemory: { total: os.totalmem(), free: os.freemem() },
         resourceUsage: process.resourceUsage?.(), activeResourceTypes: process.getActiveResourcesInfo?.(), app: version,
     };
 }
@@ -102,6 +121,107 @@ function removeMarker() {
     try { if (marker) fs.unlinkSync(marker); } catch { /* Already removed or storage unavailable. */ }
 }
 
+export const fatalReportName = pid => `fatal-${pid}.json`;
+
+/**
+ * Asks Node to write a diagnostic report if it dies from a fatal error such as
+ * running out of JavaScript heap, a case where no JavaScript can run afterwards.
+ * Only that trigger is enabled; the handlers below cover uncaught errors and
+ * signals. Network and environment sections are never written, and the raw file
+ * is deleted as soon as consumeFatalReport has read it.
+ */
+function enableFatalReports(dir) {
+    try {
+        const report = process.report;
+        if (!report) return;
+        report.compact = true;
+        report.excludeNetwork = true;
+        if ('excludeEnv' in report) report.excludeEnv = true;
+        report.directory = path.resolve(dir);
+        report.filename = fatalReportName(process.pid);
+        // Last, so a failure above can never leave reports going to the working directory.
+        report.reportOnFatalError = true;
+    } catch { /* Bun and unusual runtimes may lack or refuse this. Startup must not depend on it. */ }
+}
+
+const wholeNumber = value => Number.isFinite(value) && value >= 0 ? Math.round(value) : null;
+
+// Frames end in the path of the module they ran in, which names the install location and the
+// account. Only its file name stays, and frames Node could not name say nothing, so they go.
+function nativeFrame(frame) {
+    const symbol = typeof frame?.symbol === 'string' ? frame.symbol : '';
+    const match = /^(.*?)\s*\[([^\]]*)\]\s*$/s.exec(symbol);
+    const name = (match ? match[1] : symbol).trim();
+    if (!name) return '';
+    return redact(match ? `${name} [${match[2].split(/[\\/]/).pop()}]` : name, 200);
+}
+
+// Node writes the dump time as local time marked with a Z, so the epoch timestamp is used.
+function dumpTime(header) {
+    const stamp = Number(header.dumpEventTimeStamp);
+    return Number.isFinite(stamp) && stamp > 0 && stamp < 8.64e15 ? new Date(stamp).toISOString() : null;
+}
+
+function fatalExtract(raw) {
+    const header = raw?.header;
+    if (!header || typeof header !== 'object') return null;
+    const event = typeof header.event === 'string' ? header.event : '';
+    const trigger = typeof header.trigger === 'string' ? header.trigger : '';
+    const heap = raw.javascriptHeap ?? {};
+    const usage = raw.resourceUsage ?? {};
+    const spaces = {};
+    for (const [name, space] of Object.entries(heap.heapSpaces ?? {}).slice(0, 16)) {
+        if (!/^[a-z_]{1,40}$/.test(name) || !space || typeof space !== 'object') continue;
+        if (space.used > 0 || space.memorySize > 0) spaces[name] = { used: wholeNumber(space.used), size: wholeNumber(space.memorySize) };
+    }
+    return {
+        event: redact(event, 200),
+        trigger: redact(trigger, 80),
+        at: dumpTime(header),
+        outOfMemory: trigger === 'OOMError' || /heap out of memory|Allocation failed/i.test(event),
+        heap: { used: wholeNumber(heap.usedMemory), total: wholeNumber(heap.totalMemory), limit: wholeNumber(heap.memoryLimit), available: wholeNumber(heap.availableMemory), spaces },
+        rss: wholeNumber(usage.rss),
+        maxRss: wholeNumber(usage.maxRss),
+        device: { free: wholeNumber(usage.free_memory), total: wholeNumber(usage.total_memory) },
+        nativeStack: (Array.isArray(raw.nativeStack) ? raw.nativeStack : []).slice(0, 20).map(nativeFrame).filter(Boolean),
+    };
+}
+
+/**
+ * Reads the report Node wrote when a process died from a fatal error and
+ * returns a small extract: the cause, memory figures and the top of the native
+ * stack. The raw file also holds the host name, working directory and command
+ * line, so none of it is copied, and the file is deleted whatever happens.
+ * @param {string} dir Crash report directory
+ * @param {number} pid Process id that wrote the report
+ * @returns {object|null} The extract, or null when there is no readable report
+ */
+export function consumeFatalReport(dir, pid) {
+    if (!dir || !Number.isInteger(pid) || pid <= 0) return null;
+    const file = path.join(dir, fatalReportName(pid));
+    let text;
+    try {
+        const stat = fs.lstatSync(file);
+        if (stat.isFile() && stat.size <= MAX_FATAL_REPORT_BYTES) text = fs.readFileSync(file, 'utf8');
+    } catch (error) {
+        if (error?.code === 'ENOENT') return null;
+    }
+    try { fs.unlinkSync(file); } catch { /* Already removed or storage unavailable. */ }
+    try { return text === undefined ? null : fatalExtract(JSON.parse(text)); } catch { return null; }
+}
+
+/** Raw fatal reports whose process left no marker would otherwise accumulate. */
+function removeStaleFatalReports(dir) {
+    const names = fs.readdirSync(dir);
+    const owned = new Set(names.map(name => /^running-(\d+)\.json$/.exec(name)?.[1]).filter(Boolean));
+    for (const name of names) {
+        const pid = /^fatal-(\d+)\.json$/.exec(name)?.[1];
+        if (pid && !owned.has(pid)) {
+            try { fs.unlinkSync(path.join(dir, name)); } catch { /* Already removed. */ }
+        }
+    }
+}
+
 export function clearCrashMarker(dir, pid) {
     if (!Number.isInteger(pid) || pid <= 0) return;
     try { fs.unlinkSync(path.join(dir, `running-${pid}.json`)); } catch { /* Already removed. */ }
@@ -112,6 +232,7 @@ export function initialiseCrashDiagnostics(dataRoot) {
     directory = path.join(dataRoot, 'crash-reports');
     try {
         fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+        enableFatalReports(directory);
         for (const name of fs.readdirSync(directory).filter(name => /^running-\d+\.json$/.test(name))) {
             const file = path.join(directory, name);
             try {
@@ -120,10 +241,16 @@ export function initialiseCrashDiagnostics(dataRoot) {
                 if (!Number.isInteger(previous.pid) || previous.pid <= 0) continue;
                 // EPERM means the PID now belongs to another user's process, so ours is gone.
                 try { process.kill(previous.pid, 0); continue; } catch (error) { if (error.code !== 'ESRCH' && error.code !== 'EPERM') continue; }
-                const saved = writeCrashReport('unclean-previous-exit', 'The previous process ended without running its exit handler. The operating system did not supply a cause; power loss, forced termination and native failures cannot be distinguished.', { previous, limitation: 'The environment was measured on recovery, not at the time of the previous exit.' }, directory);
+                const fatal = consumeFatalReport(directory, previous.pid);
+                const stop = fatal && describeFatalStop(fatal, 'The previous server process');
+                const saved = writeCrashReport('unclean-previous-exit', stop?.explanation ?? 'The previous process ended without running its exit handler. The operating system did not supply a cause; power loss, forced termination and native failures cannot be distinguished.', {
+                    previous, ...(fatal && { fatal }),
+                    limitation: `The environment was measured on recovery, not at the time of the previous exit.${fatal ? ' fatal is taken from the report Node wrote as that process stopped.' : ''}`,
+                }, directory);
                 if (saved) fs.unlinkSync(file);
             } catch { /* One damaged marker must not block startup. */ }
         }
+        try { removeStaleFatalReports(directory); } catch { /* Housekeeping only. */ }
         marker = path.join(directory, `running-${process.pid}.json`);
         fs.writeFileSync(marker, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString(), versions: process.versions }), { mode: 0o600 });
         const latest = getCrashReports(directory)[0];

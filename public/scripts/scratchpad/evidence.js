@@ -137,7 +137,9 @@ function browserErrorLines(reports) {
 function serverCrashLines(reports) {
     return newestFirst(reports).map(report => {
         const head = withTime(report.at, `${oneLine(report.kind || 'crash', 60)}: ${oneLine([report.name, report.message].filter(Boolean).join(': ') || 'no message')}${report.version ? ` (Neconyan ${oneLine(report.version, 40)})` : ''}`);
-        return [`- ${head}`, ...stackTop(report.stack).map(line => `  ${line}`)];
+        // Memory figures from the server's own readings and Node's fatal-error report.
+        const detail = (Array.isArray(report.detail) ? report.detail : []).filter(line => typeof line === 'string' && line.trim()).slice(0, 6).map(line => `  ${oneLine(line, 400)}`);
+        return [`- ${head}`, ...detail, ...stackTop(report.stack).map(line => `  ${line}`)];
     });
 }
 
@@ -203,7 +205,7 @@ function section(heading, builder, source, key, cap) {
  * @param {object|Array} [evidence.modelFailures] Recent failed model requests
  * @param {object|Array} [evidence.requests] This account's failed or slow server requests
  * @param {object|Array} [evidence.jobs] This account's failed jobs
- * @param {object|Array} [evidence.serverCrashes] Admin only
+ * @param {object|Array} [evidence.serverCrashes] Admin only; each may carry `detail`, short lines of memory figures
  * @param {object|Array} [evidence.logLines] Admin only
  * @param {string[]} [evidence.notes] Parts that could not be read, so the reader does not mistake them for empty
  * @param {string|number} [evidence.gatheredAt] When the evidence was collected, so the reader can tell how old each item is

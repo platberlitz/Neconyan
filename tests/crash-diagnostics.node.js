@@ -7,7 +7,8 @@ import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { once } from 'node:events';
 import { test } from 'node:test';
 import vm from 'node:vm';
-import { getCrashReports, writeCrashReport } from '../src/crash-diagnostics.js';
+import { consumeFatalReport, fatalReportName, getCrashReports, writeCrashReport } from '../src/crash-diagnostics.js';
+import { FATAL_REPORT_PRIVATE_TEXT, nodeFatalReport } from './fatal-report-fixture.js';
 
 const { describeError, redact } = globalThis.NeconyanCrashDiagnostics;
 const moduleUrl = new URL('../src/crash-diagnostics.js', import.meta.url).href;
@@ -79,7 +80,7 @@ test('a fatal error still prints diagnostic details when its report cannot be sa
 });
 
 function runModule(script) {
-    return spawnSync(process.execPath, ['--input-type=module', '-e', `import {initialiseCrashDiagnostics,installCrashHandlers,setCrashContext} from ${JSON.stringify(moduleUrl)}; ${script}`], { encoding: 'utf8' });
+    return spawnSync(process.execPath, ['--input-type=module', '-e', `import {initialiseCrashDiagnostics,installCrashHandlers,setCrashContext,getCrashReportStatus} from ${JSON.stringify(moduleUrl)}; ${script}`], { encoding: 'utf8' });
 }
 
 test('errors during a fatal shutdown are printed without replacing the original report', t => {
@@ -120,6 +121,164 @@ test('retains ten private reports and ignores damaged files', t => {
     if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o777, 0o600);
     fs.writeFileSync(file, '{');
     assert.equal(getCrashReports(directory).length, 9);
+});
+
+test('every saved report stays within its size cap, including the new server memory fields', t => {
+    const directory = temporary(t);
+    const samples = Array.from({ length: 12 }, (_, index) => ({ at: new Date(index * 1000).toISOString(), heapUsed: index, heapLimit: 1e9, rss: 1, deviceAvailable: 1, deviceTotal: 2 }));
+    for (let i = 0; i < 12; i++) assert.ok(writeCrashReport('server-out-of-memory', `Failure ${i}`, { child: { pid: i + 1, memory: { samples, peak: samples[0] }, fatal: { nativeStack: ['x'.repeat(200)] } }, nextStep: 'Raise the limit.' }, directory));
+    const files = fs.readdirSync(directory);
+    assert.equal(files.length, 10);
+    for (const name of files) assert.ok(fs.statSync(path.join(directory, name)).size <= 128 * 1024);
+    assert.equal(getCrashReports(directory)[0].child.memory.samples.length, 12);
+    // Evidence far over the cap is replaced by a small report rather than written whole.
+    const oversized = writeCrashReport('server-out-of-memory', 'Too much', { child: { fatal: { nativeStack: ['y'.repeat(200000)] } } }, directory);
+    assert.ok(oversized);
+    assert.ok(fs.statSync(path.join(directory, `${oversized}`)).size <= 128 * 1024);
+    assert.equal(getCrashReports(directory)[0].omitted, 'Context exceeded report size limit');
+});
+
+test('a report records the JavaScript heap limit beside the other memory figures', t => {
+    const directory = temporary(t);
+    writeCrashReport('test', new Error('Failure'), {}, directory);
+    const { memory } = getCrashReports(directory)[0].environment;
+    assert.ok(memory.heapLimit > memory.heapUsed);
+});
+
+test('Node\'s fatal-error report is reduced to a small extract with nothing private, then deleted', t => {
+    const directory = temporary(t);
+    const file = path.join(directory, fatalReportName(4321));
+    fs.writeFileSync(file, JSON.stringify(nodeFatalReport()));
+    const extract = consumeFatalReport(directory, 4321);
+    assert.equal(fs.existsSync(file), false);
+    assert.equal(extract.event, 'Allocation failed - JavaScript heap out of memory');
+    assert.equal(extract.trigger, 'OOMError');
+    assert.equal(extract.outOfMemory, true);
+    assert.equal(extract.at, '2026-11-23T10:05:00.000Z');
+    const MIB = 1024 * 1024;
+    assert.deepEqual(extract.heap, {
+        used: 1010 * MIB, total: 1020 * MIB, limit: 1014 * MIB, available: 4 * MIB,
+        spaces: { new_space: { used: 2 * MIB, size: 16 * MIB }, old_space: { used: 890 * MIB, size: 900 * MIB } },
+    });
+    assert.deepEqual([extract.rss, extract.maxRss, extract.device], [1200 * MIB, 1250 * MIB, { free: 2000 * MIB, total: 12288 * MIB }]);
+    // Only a module's file name stays, and frames Node could not name are dropped.
+    assert.deepEqual(extract.nativeStack, [
+        'node::OOMErrorHandler(char const*, v8::OOMDetails const&) [node]',
+        'v8::Object::operator[](unsigned long) [node.exe]',
+        'bare_symbol_without_module',
+    ]);
+    assert.deepEqual(Object.keys(extract).sort(), ['at', 'device', 'event', 'heap', 'maxRss', 'nativeStack', 'outOfMemory', 'rss', 'trigger']);
+    const text = JSON.stringify(extract);
+    for (const secret of Object.values(FATAL_REPORT_PRIVATE_TEXT)) assert.ok(!text.includes(secret), `the extract holds ${secret}`);
+});
+
+test('only a heap out-of-memory report counts as out of memory', t => {
+    const directory = temporary(t);
+    const write = (pid, header) => { fs.writeFileSync(path.join(directory, fatalReportName(pid)), JSON.stringify(nodeFatalReport({ header }))); return consumeFatalReport(directory, pid); };
+    assert.equal(write(1, { event: 'Check failed: node->IsReady()', trigger: 'FatalError' }).outOfMemory, false);
+    assert.equal(write(2, { event: 'Reached heap limit Allocation failed - JavaScript heap out of memory', trigger: 'FatalError' }).outOfMemory, true);
+    assert.equal(write(3, { event: 'something else', trigger: 'OOMError' }).outOfMemory, true);
+});
+
+test('an unreadable, oversized, misplaced or missing fatal report returns nothing and leaves no raw file', t => {
+    const directory = temporary(t);
+    const name = pid => path.join(directory, fatalReportName(pid));
+    assert.equal(consumeFatalReport(directory, 5), null);
+    fs.writeFileSync(name(6), '{"header": ');
+    assert.equal(consumeFatalReport(directory, 6), null);
+    assert.equal(fs.existsSync(name(6)), false);
+    fs.writeFileSync(name(7), JSON.stringify({ unrelated: true }));
+    assert.equal(consumeFatalReport(directory, 7), null);
+    assert.equal(fs.existsSync(name(7)), false);
+    fs.writeFileSync(name(8), JSON.stringify({ header: { event: 'x'.repeat(3 * 1024 * 1024) } }));
+    assert.equal(consumeFatalReport(directory, 8), null);
+    assert.equal(fs.existsSync(name(8)), false);
+    fs.writeFileSync(name(9), '[]');
+    assert.equal(consumeFatalReport(directory, 9), null);
+    assert.equal(fs.existsSync(name(9)), false);
+    for (const pid of [0, -1, 1.5, NaN, '5', undefined]) assert.equal(consumeFatalReport(directory, pid), null);
+    assert.equal(consumeFatalReport('', 5), null);
+    // A link is removed without reading what it points to.
+    const target = path.join(directory, 'target.json');
+    fs.writeFileSync(target, JSON.stringify(nodeFatalReport()));
+    fs.symlinkSync(target, name(10));
+    assert.equal(consumeFatalReport(directory, 10), null);
+    assert.equal(fs.existsSync(name(10)), false);
+    assert.equal(fs.existsSync(target), true);
+});
+
+test('the child asks Node for a fatal-error report in its crash folder, with no network or environment data', t => {
+    const root = temporary(t);
+    const result = runModule(`initialiseCrashDiagnostics(${JSON.stringify(root)});
+        const { report } = process;
+        console.log(JSON.stringify({ fatal: report.reportOnFatalError, signal: report.reportOnSignal, uncaught: report.reportOnUncaughtException,
+            directory: report.directory, filename: report.filename, compact: report.compact, network: report.excludeNetwork, env: report.excludeEnv, pid: process.pid }));`);
+    assert.equal(result.status, 0, result.stderr);
+    const settings = JSON.parse(result.stdout);
+    assert.deepEqual(settings, {
+        fatal: true, signal: false, uncaught: false, directory: path.join(fs.realpathSync(root), 'crash-reports'),
+        filename: `fatal-${settings.pid}.json`, compact: true, network: true, env: true, pid: settings.pid,
+    });
+});
+
+test('startup survives a runtime without diagnostic reports or one that refuses the settings', t => {
+    for (const setup of ['delete process.report; Object.defineProperty(process, \'report\', { value: undefined, configurable: true });', 'Object.defineProperty(process, \'report\', { get() { throw new Error(\'refused\'); }, configurable: true });']) {
+        const root = temporary(t);
+        const result = runModule(`${setup} initialiseCrashDiagnostics(${JSON.stringify(root)}); installCrashHandlers(); console.log('started');`);
+        assert.equal(result.status, 0, result.stderr);
+        assert.match(result.stdout, /started/);
+    }
+});
+
+test('raw fatal reports with no marker are deleted at startup, while one belonging to a running process is kept', t => {
+    const root = temporary(t);
+    const directory = path.join(root, 'crash-reports');
+    fs.mkdirSync(directory);
+    fs.writeFileSync(path.join(directory, fatalReportName(2147480000)), JSON.stringify(nodeFatalReport()));
+    fs.writeFileSync(path.join(directory, fatalReportName(process.pid)), JSON.stringify(nodeFatalReport()));
+    fs.writeFileSync(path.join(directory, `running-${process.pid}.json`), JSON.stringify({ pid: process.pid }));
+    const result = runModule(`initialiseCrashDiagnostics(${JSON.stringify(root)}); installCrashHandlers();`);
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(fs.readdirSync(directory).sort(), [fatalReportName(process.pid), `running-${process.pid}.json`].sort());
+});
+
+test('the next start states an out-of-memory stop from the previous process\'s fatal report', t => {
+    const root = temporary(t);
+    const directory = path.join(root, 'crash-reports');
+    fs.mkdirSync(directory);
+    const deadPid = 2147480001;
+    fs.writeFileSync(path.join(directory, `running-${deadPid}.json`), JSON.stringify({ pid: deadPid, startedAt: '2026-11-23T10:00:00.000Z' }));
+    fs.writeFileSync(path.join(directory, fatalReportName(deadPid)), JSON.stringify(nodeFatalReport()));
+    const result = runModule(`initialiseCrashDiagnostics(${JSON.stringify(root)}); installCrashHandlers();
+        console.log(JSON.stringify(getCrashReportStatus()));`);
+    assert.equal(result.status, 0, result.stderr);
+    const [report, ...others] = getCrashReports(directory);
+    assert.equal(others.length, 0);
+    assert.equal(report.kind, 'unclean-previous-exit');
+    assert.equal(report.previous.pid, deadPid);
+    assert.equal(report.fatal.outOfMemory, true);
+    assert.equal(report.error.message, 'The previous server process ran out of JavaScript memory and stopped. It was using 1010 MB of its 1014 MB limit when Node reported: Allocation failed - JavaScript heap out of memory.');
+    assert.deepEqual(fs.readdirSync(directory).filter(name => !name.startsWith('crash-')), []);
+    for (const secret of Object.values(FATAL_REPORT_PRIVATE_TEXT)) assert.ok(!JSON.stringify(report).includes(secret), `the report holds ${secret}`);
+    // The browser notice and the assistant evidence are built from this status.
+    const { latest } = JSON.parse(result.stdout);
+    assert.equal(latest.kind, 'unclean-previous-exit');
+    assert.equal(latest.summary, 'The previous server process ran out of JavaScript memory and stopped.');
+    assert.match(latest.errorPreview, /^The previous server process ran out of JavaScript memory and stopped\. It was using 1010 MB of its 1014 MB limit when Node reported: Allocation failed/);
+});
+
+test('the status of an out-of-memory report says so in its summary and keeps the figures in its preview', t => {
+    const root = temporary(t);
+    const directory = path.join(root, 'crash-reports');
+    fs.mkdirSync(directory);
+    writeCrashReport('server-out-of-memory', 'The server ran out of JavaScript memory and stopped. It was using 1010 MB of its 1014 MB limit when Node reported: Allocation failed - JavaScript heap out of memory.', { child: { pid: 1 } }, directory);
+    const result = runModule(`initialiseCrashDiagnostics(${JSON.stringify(root)}); console.log(JSON.stringify(getCrashReportStatus()));`);
+    assert.equal(result.status, 0, result.stderr);
+    const { latest } = JSON.parse(result.stdout);
+    assert.equal(latest.kind, 'server-out-of-memory');
+    assert.equal(latest.summary, 'The server ran out of JavaScript memory and stopped.');
+    assert.match(latest.errorPreview, /1010 MB of its 1014 MB limit when Node reported: Allocation failed - JavaScript heap out of memory\.$/);
+    assert.ok(Buffer.byteLength(result.stdout) < 2048);
 });
 
 function browser(storage, broken = false, session = new Map(), options = {}) {
