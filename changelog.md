@@ -116,6 +116,7 @@
 - PR #893 (2026-11-23) `fix(server): explain out-of-memory stops and start again after a crash`
 - PR #894 (2026-11-23) `fix(browser): record why a page reloaded and keep the keep-alive honest`
 - PR #896 (2026-11-23) `fix(i18n): match the English checkpoint tooltip to its translation key`
+- PR #899 (2026-11-23) `fix(i18n): preserve names in the primary lorebook picker`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
