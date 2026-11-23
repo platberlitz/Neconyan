@@ -83,6 +83,22 @@ test('a plain prompt is accepted on the active Chat Completion connection', asyn
     assert.equal(readOperation(p.base, 'active').result.text, 'Red');
 });
 
+test('a plain prompt is accepted on the active connection when a character\'s regex scripts are allowed', async () => {
+    const p = prepared('allowed-regex');
+    const file = path.join(p.base.directories.root, 'settings.json');
+    const settings = JSON.parse(fs.readFileSync(file, 'utf8'));
+    fs.writeFileSync(file, JSON.stringify({ ...settings, _settingsRevision: 3,
+        extension_settings: { ...settings.extension_settings, character_allowed_regex: ['Someone.png'] },
+        active_generation: { api: 'openai', source: 'custom', model: 'fixture' },
+        oai_settings: { ...settings.oai_settings, chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:6000/v1', custom_model: 'fixture' } }));
+    const accepted = await acceptApplicationOperation(p.request, body('allowed', { profileId: '', acknowledgement: { settingsRevision: 3 } }));
+    assert.equal(accepted.job.state, 'queued');
+    let scope;
+    await runOperation(p.context(accepted), { generate: async options => { scope = options.macroEnvironment.extra.characterScope; return { text: 'Red' }; } });
+    assert.equal(scope, 'none');
+    assert.equal(readOperation(p.base, 'allowed').result.text, 'Red');
+});
+
 test('an empty prompt is refused before any work is accepted', async () => {
     const p = prepared();
     await assert.rejects(acceptApplicationOperation(p.request, body('empty', { prompt: ' ', systemPrompt: '' })), /prompt/);

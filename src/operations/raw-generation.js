@@ -24,7 +24,7 @@ export async function captureRawGeneration(base, account, input = {}) {
         throw operationError('Choose a reply length between 1 and 32768 tokens.', 400);
     }
     const saved = readLabSettings(base);
-    const macros = { macroEnhanced: captureEnhancedMacros(saved), names: { user: String(saved.name1 || 'User'), char: '' }, variables: {}, extra: { chat: [], chatMetadata: {} } };
+    const macros = { macroEnhanced: captureEnhancedMacros(saved), names: { user: String(saved.name1 || 'User'), char: '' }, variables: {}, extra: { chat: [], chatMetadata: {}, characterScope: 'none' } };
     const messages = [
         ...(systemPrompt.trim() ? [{ role: 'system', content: systemPrompt }] : []),
         ...(prompt.trim() ? [{ role: 'user', content: prompt }] : []),

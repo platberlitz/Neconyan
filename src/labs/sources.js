@@ -53,7 +53,8 @@ export function captureLabChat(base, account, locator) {
                 macroEnhanced: captureEnhancedMacros(settings, character.extensions, { personaAvatar: persona.evidence?.avatar, group: Boolean(selected.group) }),
                 character: { ...character, persona: persona?.description || '' },
                 variables: { global: settings.extension_settings?.variables?.global || {}, local: parsed.records[0].chat_metadata?.variables || {} },
-                extra: { chat: parsed.records.slice(1), chatMetadata: parsed.records[0].chat_metadata || {} } } };
+                extra: { chat: parsed.records.slice(1), chatMetadata: parsed.records[0].chat_metadata || {},
+                    ...(selected.group ? { characterScope: 'none' } : { character, characterAvatar: selected.avatar }) } } };
     });
 }
 

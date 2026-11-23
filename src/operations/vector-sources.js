@@ -133,7 +133,7 @@ export async function captureVectors(base, account, input, captured = {}) {
     // A group speaker's search and prompt rows leave out what they did not hear.
     const sceneRules = readGroupSceneRules(chat?.records?.[0]?.chat_metadata, chat?.records?.slice(1));
     const heard = row => !viewers || viewers.every(avatar => canGroupMemberSee(row, avatar, sceneRules));
-    const macros = captured.macros ?? chat?.macros ?? { macroEnhanced: captureEnhancedMacros(settings), names: { user: settings.username || 'User', char: 'Character' }, character: {}, variables: {}, extra: {} };
+    const macros = captured.macros ?? chat?.macros ?? { macroEnhanced: captureEnhancedMacros(settings), names: { user: settings.username || 'User', char: 'Character' }, character: {}, variables: {}, extra: { characterScope: 'none' } };
     const environment = createMacroEnvironment(macros);
     const sources = [];
     if (chat) sources.push({ relative: path.relative(base.directories.root, roleplayChatPath(base, chat.locator)),
