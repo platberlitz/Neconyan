@@ -7,5 +7,6 @@ try {
         variables: { local: workerData.variables, global: {} },
         extra: { characterScope: 'none' },
     });
+    parentPort.postMessage({ ready: true });
     parentPort.postMessage({ output: environment.evaluate(workerData.text) });
 } catch (error) { parentPort.postMessage({ error: error.message }); }
