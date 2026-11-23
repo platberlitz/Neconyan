@@ -165,7 +165,7 @@ describe('background chat renames', () => {
             reloadCurrentChat: jest.fn(async () => {}),
             refreshCurrentChatFromSaved: jest.fn(async () => {}),
             loadRoleplayChat: jest.fn(async () => ({ records: [{ chat_metadata: {} }, ...context.chat], evidence: { source: 'renamed' } })),
-            rememberRoleplayRead: jest.fn(() => true),
+            rememberRoleplayRead: jest.fn(() => true), rememberChatPatchBase: jest.fn(), fingerprintMessages: jest.fn(() => new Uint32Array(0)),
             eventSource: { emit: jest.fn(async () => {}) },
             event_types: { CHAT_RENAMED: 'chat_renamed' },
             toastr: { warning: jest.fn() },

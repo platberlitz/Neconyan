@@ -64,6 +64,7 @@ import { fetchWithCsrfRetry } from './scripts/csrf-token-refresh.js';
 import { installSessionExpiryNotifier } from './scripts/session-expiry.js';
 import { roleplaySaveNotice } from './scripts/roleplay-reply-notice.js';
 import { beginRoleplaySave, bindRoleplayAccount, confirmRoleplayOverwrite, finishRoleplaySave, parseRoleplayRead, rememberRoleplayRead, roleplayAccountStamp, sendRoleplayLifecycle, sendRoleplaySave } from './scripts/roleplay-save-chain.js';
+import { fingerprintMessages, rememberChatPatchBase, snapshotChatMessages, digestMessageFingerprints } from './scripts/chat-patch-save.js';
 import { getCharacterDefinitionFormValues, getSuspiciousEmptyCharacterDefinitionSave } from './scripts/character-save-guard.js';
 // Neconyan: keep model-produced chat filenames behind a strict, independently tested parser.
 import { CHAT_LABEL_TITLE_LIMIT, beginChatNameCommit, createChatAutoNamer, extractGeneratedChatLabel, getPendingChatNameCommit, getPlainChatLabelMessage, normalizeGeneratedChatLabel, truncateChatLabelText } from './scripts/chat-label.js';
@@ -1375,7 +1376,7 @@ export async function loadRoleplayChat(locator, { allowCreate = false, signal } 
 /** The shared transport keeps retries byte-identical while refreshing only CSRF and compression. */
 export function saveRoleplayChatRequest(token, payload) {
     return sendRoleplaySave(token, payload,
-        (body, stamp) => fetchWithCsrfRetry(token.locator.group ? '/api/chats/group/save' : '/api/chats/save', () => compressRequest({
+        (body, stamp, kind) => fetchWithCsrfRetry(`/api/chats/${token.locator.group ? 'group/' : ''}${kind === 'patch' ? 'patch' : 'save'}`, () => compressRequest({
             method: 'POST', cache: 'no-cache', headers: roleplayRequestHeaders(stamp), body,
         }), { refreshCsrfToken }),
         (locator, stamp) => requestRoleplayChat(locator, stamp, true));
@@ -4501,9 +4502,10 @@ function getQueuedChatIntegrityKey(avatarUrl, chatName) {
     return `${avatarUrl}\0${chatName}`;
 }
 
+/** Serialises each message once, so the queued save keeps exactly what the chat held now and no copy of the chat exists. */
 function cloneChatSavePayload(chatData) {
     ensureMewmoryMessageIds(chatData, uuidv4);
-    return structuredClone(chatData);
+    return snapshotChatMessages(chatData);
 }
 
 function applyQueuedChatIntegrity(metadata, integrityKey, isActiveChatSave) {
@@ -5362,6 +5364,7 @@ async function adoptSavedChatTail(signal) {
         : rebuildWindow ? Math.max(0, Math.min(firstMessageId || 0, saved.length - windowSize)) : Math.max(first, firstMessageId);
     const redraw = rebuildWindow || startIndex <= lastMessageId + 1 && first < saved.length;
     if (!rememberRoleplayRead(locator, evidence)) return false;
+    rememberChatPatchBase(evidence.source, fingerprintMessages(records, 1));
 
     savedChatRedraw = { wasShowingTail, isCurrent };
     const metadata = header?.chat_metadata ?? {};
@@ -14749,6 +14752,8 @@ export async function getChat({ allowMissingPersisted = false, switchMenu = true
         if (this_chid !== characterId || chatGeneration !== generation || selected_group) return false;
         if (exactChat) characters[characterId].chat = exactChat;
         if (!rememberRoleplayRead(locator, evidence)) throw new Error('A chat save is still in progress. Keep your current edits.');
+        // What the server holds for this file version, taken before the page changes any message.
+        if (Array.isArray(data) && data.length > 0) rememberChatPatchBase(evidence.source, fingerprintMessages(data, 1));
         if (Array.isArray(data) && data.length > 0) {
             /** @type {ChatHeader} */
             const chatHeader = data.shift();
@@ -19040,7 +19045,9 @@ function chatSaveFingerprint(options) {
             Boolean(options.allowShrink),
             group ? { ...group, date_last_chat: undefined } : null,
             { ...chat_metadata, integrity: undefined },
-            chat,
+            // One fingerprint per message stands for the chat, so no string of the whole chat is built.
+            chat.length,
+            digestMessageFingerprints(fingerprintMessages(chat)),
         ]);
     } catch {
         return null;
@@ -20660,7 +20667,9 @@ async function adoptRenamedChatRead(savedSnapshot = JSON.stringify(chat)) {
         // A new message may already be visible, with its save waiting for this
         // commit. Adopt only the known saved predecessor without replacing it.
         if (!Array.isArray(records) || JSON.stringify(records.slice(1)) !== savedSnapshot) return false;
-        return rememberRoleplayRead(locator, evidence);
+        if (!rememberRoleplayRead(locator, evidence)) return false;
+        rememberChatPatchBase(evidence.source, fingerprintMessages(records, 1));
+        return true;
     } catch (error) {
         console.warn('Could not adopt the renamed chat read evidence.', error);
         return false;

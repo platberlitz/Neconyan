@@ -11,7 +11,7 @@ import { chatJsonlEqualsRecords, clearChatRecoveryState, createCharacterChatTarg
     rekeyChatRecoveryState, restoreChatSnapshotIfMatches, runChatRecoveryBestEffort } from './chat-recovery.js';
 import { assertRoleplaySourceLocked, assertPendingRoleplayDependencies, captureRoleplayDependenciesLocked, normaliseRoleplayLocator,
     roleplayChatPath, roleplayParsedContentHash, roleplayPathKey, roleplayGroupContentHash, normaliseRoleplayGroupId,
-    assertRoleplayGroupData, readRoleplayEntityLocked, readRoleplayChatLocked, roleplayEntityContent } from './generation/roleplay-source.js';
+    assertRoleplayGroupData, readRoleplayEntityLocked, readRoleplayChatLocked, roleplayEntityContent, assertRoleplayPatchSourceLocked } from './generation/roleplay-source.js';
 import { assertRoleplayTransactionCapacity, confirmRoleplayAccount, createRoleplayDirectory, readRoleplayFile, readRoleplayPayload, withRoleplayFileHandle,
     roleplayError, roleplayHash, roleplayLease, saveRoleplayAccount, stageRoleplayPayload, withRoleplayAccountLock, ROLEPLAY_LARGEST_PHYSICAL,
     largestRoleplayJournal, roleplayPayloadDirectory, initialiseRoleplayAccount, readRoleplayWriteJournal, roleplayAvatarOwner,
@@ -232,6 +232,8 @@ function prunableReceipts(state, scope, keepKeyHash) {
 // asks for it and is not kept here. Anything that does not match, or a replay with no staged write, takes the
 // full parse below.
 function preparedFromStaged(pending, bytes, staged) {
+    // A patch built these bytes from the saved file's own lines and the new ones: its header, new lines and kept lines are checked again.
+    if (staged?.patch) return staged.patch.matches(bytes) ? staged.prepared : null;
     if (!staged || !chatJsonlEqualsRecords(bytes, staged.records)) return null;
     const inputRecords = detachChatHeader(staged.records);
     if (pending.before?.integrity) inputRecords[0].chat_metadata.integrity = pending.before.integrity;
@@ -334,8 +336,10 @@ function applyPending(lease, host, staged = null) {
     }
     // Matching the staged records exactly is enough; anything else is judged by the recorded content hash as before.
     if (!file || file.rawHash !== pending.after.rawHash
-        || !((staged && chatJsonlEqualsRecords(file.bytes, staged.records))
+        || !((staged?.patch ? staged.patch.matches(file.bytes) : staged && chatJsonlEqualsRecords(file.bytes, staged.records))
             || roleplayParsedContentHash(parseChatJsonl(file.bytes).records) === pending.after.contentHash)) throw conflict();
+    // These exact bytes are the file now: what is known of their lines serves the next patch.
+    staged?.patch?.commit(pending.after.rawHash);
     pending.phase = 'chat-applied';
     pending.appliedPhysical = file.physical;
     try { saveRoleplayAccount(lease); } catch (error) { throw Object.assign(error, { chatCommitted: true, integrity: pending.after.integrity }); }
@@ -912,7 +916,8 @@ function writeIntent(state, input) {
             || Array.isArray(input.mewmoryHidePolicy) || Object.keys(input.mewmoryHidePolicy).some(key => !['type', 'lastDisableId'].includes(key))
             || !['manual', 'automatic'].includes(input.mewmoryHidePolicy.type)
             || typeof input.mewmoryHidePolicy.lastDisableId !== 'string' || input.mewmoryHidePolicy.lastDisableId.length > 256))
-        || (input.force !== undefined && typeof input.force !== 'boolean')) {
+        || (input.force !== undefined && typeof input.force !== 'boolean')
+        || (input.patch !== undefined && (input.records !== undefined || mode !== 'update' || !input.patch || typeof input.patch !== 'object'))) {
         throw roleplayError('ROLEPLAY_INVALID', 'Invalid chat write intent.', 400);
     }
     const locator = normaliseRoleplayLocator(mode === 'update' ? input.source?.locator : input.destination);
@@ -921,7 +926,7 @@ function writeIntent(state, input) {
     // Keep existing untagged, unforced intent hashes valid across this additive storage cutover.
     const intentHash = roleplayHash({ accountId: state.accountId, dataEpoch: state.dataEpoch, mode, locator,
         source: input.source ?? null, groupId: input.groupId ?? null, expectedVacancy: input.expectedVacancy ?? null,
-        records: input.records, allowShrink: input.allowShrink === true, backup,
+        ...(input.patch ? { patch: input.patch } : { records: input.records }), allowShrink: input.allowShrink === true, backup,
         ...(input.sourceKind === 'storage' ? { sourceKind: 'storage' } : {}), ...(input.force === true ? { force: true } : {}),
         ...(input.mewmoryHidePolicy ? { mewmoryHidePolicy: input.mewmoryHidePolicy } : {}) });
     return { operationKeyHash: key(state, input.operationKey), intentHash, mode, locator, backup };
@@ -941,16 +946,21 @@ function stageChatWrite(lease, input, host, intent, { source, before, beforeByte
     if (!Number.isSafeInteger(revision)) throw roleplayError('ROLEPLAY_STORE_FULL', 'The chat cannot be saved safely. Try again, or reload the page.');
     rejectUndoJournal(roleplayChatPath(scope, locator));
     const id = crypto.randomUUID();
-    const prepared = host.prepare(input.records, { beforeBytes, marker: { schema: 1, instanceId, revision, writeId: id },
-        force: input.force === true, allowShrink: input.allowShrink === true });
+    const marker = { schema: 1, instanceId, revision, writeId: id };
+    const prepared = input.patch
+        ? host.preparePatch(input.patch, { beforeBytes, beforeRawHash: before.rawHash, beforeContentHash: before.contentHash, marker,
+            force: input.force === true, allowShrink: input.allowShrink === true })
+        : host.prepare(input.records, { beforeBytes, marker, force: input.force === true, allowShrink: input.allowShrink === true });
     if (!prepared.changed) revision = before.revision;
-    const bytes = Buffer.from(prepared.serialized, 'utf8');
-    const memory = prepareBranchMemoryCapture(scope.directories, locator, {
-        metadata: prepared.records[0].chat_metadata, messages: prepared.records.slice(1),
-    }, { mode });
+    const bytes = prepared.patch ? prepared.bytes : Buffer.from(prepared.serialized, 'utf8');
+    // A patched chat has its messages built only if a new branch has to inherit memory from its parent.
+    const memory = prepareBranchMemoryCapture(scope.directories, locator, prepared.patch
+        ? { metadata: prepared.header.chat_metadata, get messages() { return prepared.patch.materializeMessages(); } }
+        : { metadata: prepared.records[0].chat_metadata, messages: prepared.records.slice(1) }, { mode });
     const pending = { schema: 1, kind: 'chat-write', id, operationKeyHash, intentHash, accountId: state.accountId,
         dataEpoch: state.dataEpoch, mode, locator, instanceId, source, expectedVacancy, before,
-        after: { revision, rawHash: crypto.createHash('sha256').update(bytes).digest('hex'), contentHash: roleplayParsedContentHash(prepared.records),
+        after: { revision, rawHash: crypto.createHash('sha256').update(bytes).digest('hex'),
+            contentHash: prepared.patch ? prepared.contentHash : roleplayParsedContentHash(prepared.records),
             integrity: prepared.integrity, writeId: prepared.changed ? id : before.writeId, byteLength: bytes.length, payload: 'chat.after.jsonl' },
         changed: prepared.changed, phase: 'prepared', appliedPhysical: null, memory: memory.plan, repair: null, journal: null,
         backup, allowShrink: input.allowShrink === true, reservedBytes: 16 * 1024, ...(input.force === true ? { force: true } : {}) };
@@ -958,7 +968,7 @@ function stageChatWrite(lease, input, host, intent, { source, before, beforeByte
     stageRoleplayPayload(lease, id, pending.after.payload, bytes, CHAT_LIMIT);
     for (const payload of memory.payloads) stageRoleplayPayload(lease, id, payload.name, payload.bytes, MAX_ARCHIVE_BYTES);
     state.pending = pending;
-    return { records: prepared.records };
+    return prepared.patch ? { records: null, patch: prepared.patch, prepared } : { records: prepared.records };
 }
 
 function prepareAndApplyChatWrite(lease, input, host, intent, context) {
@@ -995,10 +1005,13 @@ export function commitSingleChatWriteLocked(lease, input, host) {
         if (state.pending.intentHash !== intentHash) throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'A chat save waiting to finish is different from this one.');
         return applyPending(lease, host);
     }
-    let source, before = null, instanceId, expectedVacancy = null;
+    let source, before = null, instanceId, expectedVacancy = null, patchRead = null;
     const filename = roleplayChatPath(scope, locator);
+    if (input.patch && typeof host.preparePatch !== 'function') throw new TypeError('The native chat writer host cannot build a patch.');
     if (mode === 'update') {
-        const saved = assertUpdateSource(lease, input.source);
+        // A patch is judged from one read of the saved bytes; no part of the saved chat is parsed but its header.
+        patchRead = input.patch ? assertRoleplayPatchSourceLocked(lease, input.source) : null;
+        const saved = patchRead ?? assertUpdateSource(lease, input.source);
         source = structuredClone(input.source);
         instanceId = saved.instanceId;
         const resource = state.resources[instanceId];
@@ -1019,7 +1032,7 @@ export function commitSingleChatWriteLocked(lease, input, host) {
         }
         instanceId = crypto.randomUUID();
     }
-    const beforeFile = before ? readRoleplayFile(filename, CHAT_LIMIT) : null;
+    const beforeFile = patchRead ? patchRead.file : before ? readRoleplayFile(filename, CHAT_LIMIT) : null;
     if (before && !sameObservation(beforeFile, before)) throw conflict();
     return prepareAndApplyChatWrite(lease, input, host, intent, { source, before, beforeBytes: beforeFile?.bytes ?? null, instanceId, expectedVacancy });
 }

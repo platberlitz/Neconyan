@@ -6,6 +6,7 @@ import sanitize from 'sanitize-filename';
 import { registerMemoryReclaimer } from '../memory-pressure.js';
 import { acquireChatFileLock } from '../chat-file-lock.js';
 import { parseChatJsonl } from '../chat-recovery.js';
+import { chatPatchMismatch, parseChatHeaderBytes } from '../chat-patch.js';
 import { read as readCharacterCard } from '../character-card-parser.js';
 import { TavernCardValidator } from '../validator/TavernCardValidator.js';
 import { canonicalSha256, isStrictJsonTree } from '../jobs/store.js';
@@ -402,6 +403,42 @@ export function readRoleplayChatLocked(lease, input, { enrolMissing = true } = {
         const result = { ...descriptor(state, entry), records: parsed.records, changed: entry.changed, filePath: filename };
         CHAT_READ_SNAPSHOTS.set(result, { token: chatReadToken(held), physical: file.physical });
         return result;
+    } finally { release(); }
+}
+
+/**
+ * The checks of `assertRoleplaySourceLocked` for an ordinary chat edit, made from one read of the saved file and
+ * without parsing its messages: the same file, version, owner and write marker the save was based on. Anything
+ * short of an exact match throws a patch mismatch before anything is written, and the page sends the whole chat,
+ * which is judged by the full checks as always.
+ * @returns {{instanceId: string, integrity: string, file: object, header: object}}
+ */
+export function assertRoleplayPatchSourceLocked(lease, source) {
+    const held = roleplayLease(lease);
+    const { scope, state } = held;
+    if (state.pending) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'An earlier Roleplay transaction must be reconciled first.');
+    if (source?.kind !== 'storage') throw chatPatchMismatch('source');
+    const locator = normaliseRoleplayLocator(source.locator);
+    const instanceId = state.paths[roleplayPathKey(state, 'chat', locator)]?.instanceId;
+    if (!instanceId) throw chatPatchMismatch('untracked');
+    const filename = roleplayChatPath(scope, locator);
+    if (!inspectRoleplayFileStat(filename, CHAT_READ_LIMIT)) throw chatPatchMismatch('missing');
+    const release = acquireChatFileLock(filename);
+    try {
+        const file = readRoleplayFile(filename, CHAT_READ_LIMIT);
+        if (!file) throw chatPatchMismatch('missing');
+        // The recorded head has to be this very file, or its content hash cannot be reused without reading every message.
+        if (reusableChatContentHash(state, locator, file) === null) throw chatPatchMismatch('head');
+        const firstLineEnd = file.bytes.indexOf(0x0a);
+        const header = parseChatHeaderBytes(file.bytes, firstLineEnd === -1 ? file.bytes.length : firstLineEnd);
+        if (!header) throw chatPatchMismatch('header');
+        const resource = state.resources[instanceId];
+        if (resource.head.writeId !== null && !isDeepStrictEqual(header.chat_metadata[ROLEPLAY_METADATA_KEY],
+            { schema: 1, instanceId, revision: resource.revision, writeId: resource.head.writeId })) throw chatPatchMismatch('marker');
+        const current = { kind: 'storage', accountId: state.accountId, dataEpoch: state.dataEpoch, instanceId, revision: resource.revision,
+            rawHash: resource.head.rawHash, locator: structuredClone(resource.locator), dependencies: [] };
+        if (!isDeepStrictEqual(current, source)) throw chatPatchMismatch('source');
+        return { instanceId, integrity: header.chat_metadata.integrity ?? '', file, header };
     } finally { release(); }
 }
 

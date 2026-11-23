@@ -9,6 +9,8 @@ import { syncBuiltinESMExports } from 'node:module';
 import test from 'node:test';
 import { fixture } from './roleplay-transactions-fixture.js';
 import { roleplayBrowserHost } from '../src/endpoints/chats.js';
+import { clearChatPatchIndexes } from '../src/chat-patch.js';
+import { patchFor, savedMessageLines } from './chat-patch-helpers.js';
 import { readRoleplayChat } from '../src/generation/roleplay-source.js';
 import { commitSingleChatWrite } from '../src/roleplay-lifecycle.js';
 
@@ -153,6 +155,50 @@ test('loading a saved chat reads it once and builds no whole-chat text', t => {
     assert.ok(cost.largeBuffers <= 2, `whole-chat buffers built: ${cost.largeBuffers}`);
     assert.ok(cost.parsedChats <= 1.006, `chats parsed: ${cost.parsedChats}`);
     assert.ok(cost.stringifiedChars <= 400, `characters serialised: ${cost.stringifiedChars}`);
+});
+
+// A patch continues the saved version of the file it names: the source is a storage source, as a browser save has.
+function patchSaves(t) {
+    clearChatPatchIndexes();
+    const { f, first } = savedChat(t);
+    const { accountId, dataEpoch, instanceId, revision, rawHash, locator } = f.source();
+    let source = { kind: 'storage', accountId, dataEpoch, instanceId, revision, rawHash, locator, dependencies: [] };
+    let records = first;
+    const save = (operationKey, change) => {
+        records = change(records);
+        const input = { operationKey, mode: 'update', sourceKind: 'storage', source, patch: patchFor(savedMessageLines(f.filename), records), backup: { deferBackup: false } };
+        let result;
+        const cost = measure(() => { result = commitSingleChatWrite(f.scope, input, roleplayBrowserHost); });
+        source = { ...source, revision: result.revision, rawHash: result.rawHash };
+        if (process.env.CHAT_COST_REPORT) console.log(operationKey, JSON.stringify(cost));
+        return cost;
+    };
+    return { save, f };
+}
+
+test('a patch of a large chat parses it once, to know its lines, and then does no whole-chat work', t => {
+    const { save } = patchSaves(t);
+    const cold = save('cold patch', records => [...records, message(MESSAGES + 1)]);
+    const warm = save('warm patch', records => [...records, message(MESSAGES + 2)]);
+    const edited = save('edit in the middle', records => records.map((record, index) => index === 100 ? { ...record, mes: 'Edited in the middle' } : record));
+    const unchanged = save('no change', records => structuredClone(records));
+    for (const [label, cost] of Object.entries({ cold, warm, edited, unchanged })) {
+        assert.equal(cost.largeClones, 0, `${label}: no whole-chat structuredClone`);
+        assert.equal(cost.largeTexts, 0, `${label}: no whole-chat text`);
+    }
+    // Whole-file buffers are the protected write's own reads and writes of the file, its staged copy and its new bytes (a Buffer.concat
+    // counts twice, as the buffer and as its allocation): a full save of the same chat builds 12, a patch no more than 10, and 8 when it changes nothing.
+    for (const [label, cost] of Object.entries({ cold, warm, edited })) assert.ok(cost.largeBuffers <= 10, `${label}: whole-chat buffers built: ${cost.largeBuffers}`);
+    assert.ok(unchanged.largeBuffers <= 8, `unchanged: whole-chat buffers built: ${unchanged.largeBuffers}`);
+    // The first patch of a file version reads each line once, for its index; later ones read only what the patch carries and
+    // the account ledger. Limits are what was measured, rounded up to the third decimal, as above.
+    assert.ok(cold.parsedChats <= 1.03, `cold: chats parsed ${cold.parsedChats}`);
+    assert.ok(cold.stringifiedChats <= 0.85, `cold: chats serialised ${cold.stringifiedChats}`);
+    const limits = { warm: [0.025, 0.08], edited: [0.032, 0.098], unchanged: [0.01, 0.097] };
+    for (const [label, cost] of Object.entries({ warm, edited, unchanged })) {
+        assert.ok(cost.parsedChats <= limits[label][0], `${label}: chats parsed ${cost.parsedChats}`);
+        assert.ok(cost.stringifiedChats <= limits[label][1], `${label}: chats serialised ${cost.stringifiedChats}`);
+    }
 });
 
 test('the measurement sees whole-chat work', () => {

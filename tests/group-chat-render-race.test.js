@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { parse } from 'acorn';
 import { expect, jest, test } from '@jest/globals';
 import { bindRoleplayAccount, roleplayAccountStamp, rememberRoleplayRead } from '../public/scripts/roleplay-save-chain.js';
+import { fingerprintMessages, rememberChatPatchBase } from '../public/scripts/chat-patch-save.js';
 import { renderMessagesInBatches } from '../public/scripts/chat-render-lifecycle/render-batch.js';
 
 const groupSource = fs.readFileSync(new URL('../public/scripts/group-chats.js', import.meta.url), 'utf8');
@@ -35,7 +36,7 @@ for (const lifecycle of [false, true]) for (const peek of [false, true]) {
         const responseControls = jest.fn();
         const runtime = vm.createContext({
             console: { info: no, warn: no, error: no }, performance, groups, selected_group: 'A', chat: [], chat_metadata: {}, this_chid: undefined,
-            roleplayAccountStamp, rememberRoleplayRead, getCurrentUserHandle: () => owner,
+            roleplayAccountStamp, rememberRoleplayRead, rememberChatPatchBase, fingerprintMessages, getCurrentUserHandle: () => owner,
             getChatGeneration: () => generation, incrementChatGeneration: () => generation++,
             validateGroup: async () => {}, unshallowGroupMembers: async () => {}, loadItemizedPrompts: async () => {},
             loadGroupChat: async id => ({ records: [{ chat_metadata: { tainted: true, integrity: id } },
@@ -102,7 +103,7 @@ for (const switchDuringReceived of [false, true]) {
         const events = [];
         const runtime = vm.createContext({
             console, groups: ['A', 'B'].map(id => ({ id, chat_id: id, chats: [id], members: [] })),
-            selected_group: 'A', chat: [], chat_metadata: {}, roleplayAccountStamp, rememberRoleplayRead,
+            selected_group: 'A', chat: [], chat_metadata: {}, roleplayAccountStamp, rememberRoleplayRead, rememberChatPatchBase, fingerprintMessages,
             getCurrentUserHandle: () => owner, getChatGeneration: () => generation, incrementChatGeneration: () => generation++,
             validateGroup: async () => {}, unshallowGroupMembers: async () => {}, loadItemizedPrompts: async () => {},
             loadGroupChat: async id => id === 'A' ? { records: [], evidence: { account, vacancy: 0 } }

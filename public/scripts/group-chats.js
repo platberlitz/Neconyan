@@ -22,6 +22,7 @@ import {
     uuidv4,
 } from './utils.js';
 import { ensureMewmoryMessageIds } from './mewmory/message-identity.js';
+import { fingerprintMessages, rememberChatPatchBase, snapshotChatMessages } from './chat-patch-save.js';
 import { evaluateCharacterPurrks } from './purrks/model.js';
 import { RA_CountCharTokens, humanizedDateTime, dragElement, favsToHotswap, getMessageTimeStamp } from './RossAscends-mods.js';
 import { power_user, loadMovingUIState, sortEntitiesList } from './power-user.js';
@@ -1450,6 +1451,8 @@ export async function getGroupChat(groupId, reload = false, { switchMenu = true,
         return;
     }
     const metadata = data?.[0]?.chat_metadata ?? {};
+    // What the server holds for this file version, taken before the page changes any message.
+    const savedFingerprints = Array.isArray(data) && data.length > 1 ? fingerprintMessages(data, 1) : null;
 
     // Remove chat file header if present
     if (Array.isArray(data) && data.length && Object.hasOwn(data[0], 'chat_metadata')) {
@@ -1469,6 +1472,7 @@ export async function getGroupChat(groupId, reload = false, { switchMenu = true,
         toastr.error(t`The last save has not finished yet. Your current edits are kept, so try again in a moment.`);
         return;
     }
+    if (savedFingerprints) rememberChatPatchBase(loaded.evidence.source, savedFingerprints);
 
     let freshGroupGreetingMessageId = -1;
     let greetingStillCurrent;
@@ -1817,7 +1821,7 @@ function resetSelectedGroup() {
 
 function cloneGroupChatSavePayload(chatData) {
     ensureMewmoryMessageIds(chatData, uuidv4);
-    return structuredClone(chatData);
+    return snapshotChatMessages(chatData);
 }
 
 function applyQueuedGroupChatIntegrity(metadata, chatId, isActiveGroupChatSave) {
