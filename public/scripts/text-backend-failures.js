@@ -41,7 +41,7 @@ function plainText(text) {
  */
 function dig(value, depth) {
     const none = { message: '', status: 0 };
-    if (depth > 4 || value === null || value === undefined) return none;
+    if (depth > 8 || value === null || value === undefined) return none;
     if (typeof value === 'string') {
         const text = value.trim();
         if (!text) return none;
@@ -191,6 +191,29 @@ export function withoutEchoes(message, sources) {
     return result + text.slice(cursor);
 }
 
+const RECENT_REQUESTS = 5;
+/** @type {{ sources: string[], received: string }[]} What the last few failed requests sent and got, newest first */
+const recentRequests = [];
+
+/**
+ * Cuts out of a text any stretch that quotes what the last few failed text backend requests sent or
+ * received. An error the page did not catch carries the backend's message, and some backends
+ * quote the prompt in it, so the browser errors in the shared evidence go through this.
+ * @param {unknown} text
+ * @param {{ addresses?: 'message' | 'stack' | false }} [options] Also replace server addresses: in all of a message, or in the lines of a stack that are not frames (frames name the app's own scripts)
+ */
+export function withoutRecentRequestText(text, { addresses = false } = {}) {
+    if (typeof text !== 'string' || !text || !recentRequests.length) return text;
+    try {
+        const cut = withoutEchoes(text, recentRequests.flatMap(request => [...request.sources, request.received]));
+        if (addresses === 'message') return withoutServerAddresses(cut);
+        if (addresses === 'stack') return cut.split('\n').map(line => (/^\s*at\s/.test(line) ? line : withoutServerAddresses(line))).join('\n');
+        return cut;
+    } catch {
+        return text;
+    }
+}
+
 /**
  * True for a request the person stopped, or one that was cut off on purpose (such as the
  * length limit), which is not a failure.
@@ -218,7 +241,7 @@ export function backendLabel(kind, type = '') {
 export function watchTextBackend({ kind, type = '', model = '', data = null, signal = null }) {
     const sources = [];
     collectTexts(data, sources, 0);
-    let received = '';
+    const sent = { sources, received: '' };
     let recorded = false;
 
     /** @param {string} message @param {number} status */
@@ -226,7 +249,9 @@ export function watchTextBackend({ kind, type = '', model = '', data = null, sig
         if (recorded) return;
         recorded = true;
         try {
-            const clean = withoutEchoes(withoutServerAddresses(message), [...sources, received]);
+            recentRequests.unshift(sent);
+            recentRequests.length = Math.min(recentRequests.length, RECENT_REQUESTS);
+            const clean = withoutEchoes(withoutServerAddresses(message), [...sources, sent.received]);
             recordProviderFailure({
                 provider: backendLabel(kind, type),
                 model: withoutServerAddresses(model),
@@ -279,7 +304,7 @@ export function watchTextBackend({ kind, type = '', model = '', data = null, sig
             return async function* observed(...args) {
                 try {
                     for await (const chunk of /** @type {any} */ (stream)(...args)) {
-                        if (typeof chunk?.text === 'string') received = chunk.text;
+                        if (typeof chunk?.text === 'string') sent.received = chunk.text;
                         yield chunk;
                     }
                 } catch (error) {

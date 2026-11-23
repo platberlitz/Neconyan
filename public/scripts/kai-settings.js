@@ -264,7 +264,7 @@ function tryParseStreamingError(response, decoded) {
 }
 
 export async function generateKoboldWithStreaming(generate_data, signal) {
-    const watch = watchTextBackend({ kind: 'kobold', model: online_status === 'no_connection' ? '' : online_status, data: generate_data, signal });
+    const watch = watchTextBackend({ kind: 'kobold', model: main_api === 'kobold' && online_status !== 'no_connection' ? online_status : '', data: generate_data, signal });
     return watch.run(async () => {
         const response = await fetchResumable('/api/backends/kobold/generate', {
             headers: getRequestHeaders(),
