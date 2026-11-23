@@ -3,7 +3,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test, { after } from 'node:test';
+import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
+import express from 'express';
 import { setConfigFilePath } from '../src/util.js';
 
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
@@ -81,6 +83,37 @@ test('a plain prompt is accepted on the active Chat Completion connection', asyn
     await runOperation(p.context(accepted), { generate: async options => { sent = options.messages; return { text: 'Red' }; } });
     assert.deepEqual(sent, [{ role: 'system', content: 'Pick one colour.' }, { role: 'user', content: 'Red or blue?' }]);
     assert.equal(readOperation(p.base, 'active').result.text, 'Red');
+});
+
+test('the operation endpoint proves a stale active settings acknowledgement was refused before admission', async () => {
+    const p = prepared('stale-active');
+    const file = path.join(p.base.directories.root, 'settings.json');
+    const settings = JSON.parse(fs.readFileSync(file, 'utf8'));
+    fs.writeFileSync(file, JSON.stringify({ ...settings, _settingsRevision: 3,
+        active_generation: { api: 'openai', source: 'custom', model: 'fixture' },
+        oai_settings: { ...settings.oai_settings, chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:6000/v1', custom_model: 'fixture' } }));
+    const { router } = await import('../src/endpoints/operations.js');
+    const app = express();
+    app.use(express.json(), (req, _res, next) => { req.user = p.request.user; next(); });
+    app.use('/api/operations', router);
+    const server = app.listen(0, '127.0.0.1');
+    try {
+        await once(server, 'listening');
+        const response = await fetch(`http://127.0.0.1:${server.address().port}/api/operations/submit`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body('stale-active', { profileId: '', acknowledgement: { settingsRevision: 2 } })),
+        });
+        assert.equal(response.status, 409);
+        assert.deepEqual(await response.json(), {
+            code: 'active_settings_ack_required', notAccepted: true,
+            error: 'The active connection settings are not acknowledged. Save them before generating a reply.',
+        });
+        const record = readOperation(p.base, 'stale-active');
+        assert.equal(record.state, 'refused');
+        assert.equal(record.jobId, '');
+    } finally {
+        await new Promise(resolve => server.close(resolve));
+    }
 });
 
 test('a plain prompt is accepted on the active connection when a character\'s regex scripts are allowed', async () => {

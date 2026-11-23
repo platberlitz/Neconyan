@@ -446,13 +446,18 @@ export function cleanFolderName(name) {
  * @param {number} input.count How many characters were in the batch
  * @param {string[]} input.folders Existing folder names
  * @param {boolean} input.allowNewFolders
+ * @param {boolean} [input.strict] Report malformed replies rather than treating them as no assignments
  * @returns {{ index: number, folder: string, isNew: boolean }[]} index is 0-based within the batch
  */
-export function parseAiSortResponse(text, { count, folders = [], allowNewFolders = true }) {
+export function parseAiSortResponse(text, { count, folders = [], allowNewFolders = true, strict = false }) {
     const parsed = extractJson(text);
     const list = Array.isArray(parsed) ? parsed
         : Array.isArray(parsed?.assignments) ? parsed.assignments
-            : [];
+            : null;
+    if (!list) {
+        if (strict) throw Object.assign(new Error('Could not read the sorting reply'), { code: String(text || '').trim() ? 'invalid_model_reply' : 'empty_model_reply' });
+        return [];
+    }
     const existing = new Map(folders.map(name => [normalizeFolderName(name), name]));
     const seen = new Set();
     const result = [];
@@ -468,6 +473,42 @@ export function parseAiSortResponse(text, { count, folders = [], allowNewFolders
         result.push({ index, folder: match ?? folder, isNew: !match });
     }
     return result;
+}
+
+export function describeAiSortPlan({ characterCount, batchSize, allowNewFolders, existingFolderCount }) {
+    const count = Math.max(0, Math.floor(Number(characterCount) || 0));
+    const size = clampInteger(batchSize, AI_SORT_BATCH_MIN, AI_SORT_BATCH_MAX, AI_SORT_DEFAULT_BATCH);
+    const blockedReason = !count ? 'empty_scope' : (!allowNewFolders && !existingFolderCount ? 'no_folders_allowed' : null);
+    return { characterCount: count, batchCount: blockedReason ? 0 : Math.ceil(count / size), batchSize: size, blockedReason };
+}
+
+export function classifyAiSortError(error) {
+    const code = String(error?.code || '').toLowerCase();
+    const status = Number(error?.status);
+    const detail = String(error?.message || error || '').toLowerCase();
+    let message;
+    if (error?.name === 'AbortError' || /^(aborted|cancelled|canceled)$/.test(code) || /\b(aborted|cancelled|canceled)\b/.test(detail)) {
+        message = 'Sorting stopped.';
+    } else if (code === 'settings_conflict') {
+        message = 'Reload this page to get the settings saved on another device, then try again.';
+    } else if (['active_settings_ack_required', 'settings_save_failed'].includes(code) || /save the (active connection settings|current active provider)|active connection settings are not acknowledged/.test(detail)) {
+        message = 'Save your settings in Connections, then try again.';
+    } else if (status === 401 || status === 403 || /api[_ -]?key|unauthori[sz]ed|authentication|invalid token/.test(`${code} ${detail}`)) {
+        message = 'Check your API key in Connections, reconnect and try again.';
+    } else if (status === 429 || /rate.?limit|quota|too many requests|insufficient (credits|balance)/.test(`${code} ${detail}`)) {
+        message = 'Wait a moment or check your provider\'s usage limits, then try again.';
+    } else if (status === 413 || /context[_ -]length|context window|(?:prompt|input|request|context) (?:is )?too (?:long|large)|too many tokens|maximum context/.test(`${code} ${detail}`)) {
+        message = 'Lower \'Characters per request\' and try again.';
+    } else if (/no_connection|no connection|not connected|unsupported .*backend|not supported by|connect to a model|choose a .*model/.test(`${code} ${detail}`)) {
+        message = 'Connect to a model in Connections, then try again.';
+    } else if (/offline|network|failed to fetch|load failed|timed? ?out|connection (?:lost|refused|reset)|econnreset|econnrefused/.test(`${code} ${detail}`)) {
+        message = 'Check your internet and model connection, then try again.';
+    } else if (['empty_model_reply', 'invalid_model_reply'].includes(code) || /empty (?:reply|response|output)|(?:reply|response|output) (?:was|is) empty|no (?:reply|text|message generated)|non.json|invalid json|unexpected token/.test(detail)) {
+        return { message: 'The model sent a reply that could not be read. Try another prompt or fewer characters per request.', fatal: false };
+    } else {
+        message = 'Check that your model is available in Connections, then try again.';
+    }
+    return { message, fatal: true };
 }
 
 /**

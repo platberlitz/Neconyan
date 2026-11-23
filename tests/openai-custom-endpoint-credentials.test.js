@@ -70,6 +70,8 @@ function createHarness({ profile = normalizeCustomEndpointPreset({ name: 'Saved 
         lastServerSettingsVersion: 1,
         lastServerSettingsRevision: 1,
         recentSamePageServerWrite: null,
+        cancelDebounce: jest.fn(),
+        scheduleSettingsSave: jest.fn(),
         settings: {},
         accountStorage: { getState: () => ({}) },
         getWorldInfoSettings: () => ({}),

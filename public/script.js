@@ -931,6 +931,7 @@ export const saveSettingsDebounced = (loopCounter = 0) => {
     settingsMutationRevision++;
     scheduleSettingsSave(loopCounter);
 };
+saveSettingsDebounced.cancel = () => cancelDebounce(scheduleSettingsSave);
 /** @type {ReturnType<typeof setTimeout> | null} */
 let pendingCharacterSaveTimer = null;
 let characterSavePromise = Promise.resolve(true);
@@ -7723,6 +7724,26 @@ function nativeOperationsReady() {
     }
 }
 
+function checkGenerationSettingsSaved(saved) {
+    if (saved) return;
+    if (settingsConflictReloadRequired) {
+        throw Object.assign(new Error(t`Settings changed on another device or tab. Reload Neconyan before trying again.`), { code: 'settings_conflict' });
+    }
+    throw Object.assign(new Error(t`Connection settings could not be saved. Check your connection to Neconyan, then try again.`), { code: 'settings_save_failed' });
+}
+
+async function runAcknowledgedGeneration(client, kind, input, { prepareInput, ...options }) {
+    const run = force => client.run(kind, input, { ...options, prepareInput: body => prepareInput(body, force) });
+    try {
+        return await run(false);
+    } catch (error) {
+        // The first request must have been refused before admission. Never start a
+        // second paid request when a submission or a model outcome is uncertain.
+        if (error?.status !== 409 || error?.code !== 'active_settings_ack_required' || error?.notAccepted !== true) throw error;
+    }
+    return run(true);
+}
+
 export async function generateQuietPrompt({ quietPrompt = '', quietToLoud = false, skipWIAN = false, quietImage = null, quietName = null, responseLength = null, forceChId = null, jsonSchema = null, removeReasoning = true, trimToSentence = false, signal = null, cacheScope = 'auxiliary', preserveReasoningBudget = false } = {}) {
     if (arguments.length > 0 && typeof arguments[0] !== 'object') {
         console.trace('generateQuietPrompt called with positional arguments. Please use an object instead.');
@@ -7761,12 +7782,14 @@ export async function generateQuietPrompt({ quietPrompt = '', quietToLoud = fals
             const client = await getOperationClient();
             const locator = { group: false, avatar: characters[this_chid].avatar, chat: String(getCurrentChatId()) };
             const input = { prompt: String(quietPrompt ?? ''), locator, ...(Number(requestResponseLength) >= 1 ? { maxTokens: Math.min(32768, Math.floor(Number(requestResponseLength))) } : {}) };
-            const record = await client.run('quiet-generation', input, {
+            const record = await runAcknowledgedGeneration(client, 'quiet-generation', input, {
                 scope: `quiet:${getStringHash(JSON.stringify(input))}`,
                 signal: stop.signal,
-                prepareInput: async body => {
+                prepareInput: async (body, force) => {
                     await saveChatConditional({ throwOnError: true, throwOnPromptError: true });
-                    await saveSettings(0, { returnResult: true, skipIfUnchanged: true });
+                    checkGenerationSettingsSaved(force
+                        ? await saveSettings(0, { returnResult: true, force: true })
+                        : await saveSettings(0, { returnResult: true, skipIfUnchanged: true }));
                     return { ...body, acknowledgement: getActiveGenerationAcknowledgement() };
                 },
             });
@@ -9314,11 +9337,13 @@ export async function generateRaw({ prompt = '', api = null, instructOverride = 
             const { getOperationClient } = await import('./scripts/operations-client.js');
             const client = await getOperationClient();
             const input = { prompt, systemPrompt, ...(Number(responseLength) >= 1 ? { maxTokens: Math.min(32768, Math.floor(Number(responseLength))) } : {}) };
-            const record = await client.run('raw-generation', input, {
+            const record = await runAcknowledgedGeneration(client, 'raw-generation', input, {
                 scope: `raw:${getStringHash(JSON.stringify(input))}`,
                 signal: stop.signal,
-                prepareInput: async body => {
-                    await saveSettings(0, { returnResult: true, skipIfUnchanged: true });
+                prepareInput: async (body, force) => {
+                    checkGenerationSettingsSaved(force
+                        ? await saveSettings(0, { returnResult: true, force: true })
+                        : await saveSettings(0, { returnResult: true, skipIfUnchanged: true }));
                     return { ...body, acknowledgement: getActiveGenerationAcknowledgement() };
                 },
             });
@@ -15222,7 +15247,7 @@ export async function getSettings(initLoaderHandle = null, initialData = null) {
 }
 
 //MARK: saveSettings()
-export async function saveSettings(loopCounter = 0, { returnResult = false, skipIfUnchanged = false } = {}) {
+export async function saveSettings(loopCounter = 0, { returnResult = false, skipIfUnchanged = false, force = false } = {}) {
     const account = getCurrentUserHandle();
     if (accountImportSettingsPause?.account === account) {
         accountImportSettingsPause.dirty = true;
@@ -15230,7 +15255,7 @@ export async function saveSettings(loopCounter = 0, { returnResult = false, skip
     }
     pendingSettingsAcknowledgements++;
     const saveTask = settingsSaveQueue.then(() => account === getCurrentUserHandle()
-        ? saveSettingsInner(loopCounter, account, true, { skipIfUnchanged })
+        ? saveSettingsInner(loopCounter, account, true, { skipIfUnchanged, force })
         : false);
     settingsSaveQueue = saveTask.catch(() => {});
     try {
@@ -15306,6 +15331,8 @@ export function adoptServerSettingsWrite({ account, previousVersion, previousSet
     if (!Number.isSafeInteger(version) || version <= previousVersion || !Number.isSafeInteger(settingsRevision)) return false;
     lastServerSettingsVersion = version;
     lastServerSettingsRevision = settingsRevision;
+    lastSavedSettings = null;
+    downloadedSettings = null;
     if (acknowledgedGenerationSettings?.account === account) {
         acknowledgedGenerationSettings = { ...acknowledgedGenerationSettings, settingsRevision };
     }
@@ -15453,7 +15480,8 @@ function matchesDownloadedSettings(account, payload, serializedPayload) {
     }
 }
 
-async function saveSettingsInner(loopCounter = 0, account = getCurrentUserHandle(), allowSamePageRecovery = true, { skipIfUnchanged = false } = {}) {
+async function saveSettingsInner(loopCounter = 0, account = getCurrentUserHandle(), allowSamePageRecovery = true, { skipIfUnchanged = false, force = false } = {}) {
+    cancelDebounce(scheduleSettingsSave);
     if (recentSamePageServerWrite && recentSamePageServerWrite.account !== account) recentSamePageServerWrite = null;
     acknowledgedGenerationSettings = null;
     if (!settingsReady) {
@@ -15480,6 +15508,10 @@ async function saveSettingsInner(loopCounter = 0, account = getCurrentUserHandle
 
     // Helper generations call this only to make sure the settings they read are on
     // disk. When nothing asked for another save, skip building the payload at all.
+    if (force) {
+        lastSavedSettings = null;
+        downloadedSettings = null;
+    }
     if (skipIfUnchanged && lastSavedSettings?.account === account
         && lastSavedSettings.revision === settingsMutationRevision) {
         acknowledgedGenerationSettings = lastSavedSettings.acknowledgement;
@@ -15573,7 +15605,7 @@ async function saveSettingsInner(loopCounter = 0, account = getCurrentUserHandle
                 if (proof && proof.account === account && proof.previousSettingsRevision === payload._settingsRevision
                     && lastServerSettingsRevision === proof.settingsRevision) {
                     // Rebuild from current memory on the one retry. Never resend serializedPayload.
-                    return await saveSettingsInner(loopCounter, account, false);
+                    return await saveSettingsInner(loopCounter, account, false, { force });
                 }
             }
             lastServerSettingsVersion = normalizeSettingsVersion(conflict?.version);

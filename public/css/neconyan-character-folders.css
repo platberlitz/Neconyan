@@ -364,6 +364,29 @@
     display: none;
 }
 
+.neconyan-folder-ai-plan,
+.neconyan-folder-organiser-status:is([data-tone='error'], [data-tone='info']) {
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: var(--neco-raised);
+    color: var(--neco-ink);
+    overflow-wrap: anywhere;
+}
+
+.neconyan-folder-ai-plan {
+    display: grid;
+    gap: 2px;
+    font-size: 13px;
+}
+
+.neconyan-folder-organiser-status[data-tone='error'] {
+    border-inline-start: 3px solid var(--sb-color-danger);
+}
+
+.neconyan-folder-organiser-status[data-tone='info'] {
+    border-inline-start: 3px solid var(--neco-ginger);
+}
+
 .neconyan-folder-organiser-results {
     display: flex;
     flex-direction: column;
@@ -374,21 +397,80 @@
     display: none;
 }
 
+.neconyan-folder-results-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 2px 8px;
+}
+
+.neconyan-folder-organiser-results .neconyan-folder-organiser-actions > .menu_button {
+    flex: 0 0 auto;
+    padding-inline: 10px;
+    white-space: nowrap;
+}
+
 .neconyan-folder-suggestion {
-    margin: 0;
-    padding: 8px 10px;
     border: 1px solid var(--neco-border);
     border-radius: 10px;
     background: var(--neco-raised);
 }
 
-.neconyan-folder-suggestion > legend {
+.neconyan-folder-suggestion-heading {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 0 4px;
+}
+
+.neconyan-folder-suggestion-heading > label {
+    justify-content: center;
+    flex: 0 0 44px;
+    gap: 0;
+}
+
+.neconyan-folder-organiser-results .neconyan-folder-suggestion .neconyan-folder-suggestion-heading > .menu_button {
+    flex: 1;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    min-width: 0;
+    margin: 0;
+    padding: 6px 10px 6px 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    text-align: start;
+    overflow-wrap: anywhere;
+}
+
+.neconyan-folder-organiser-results .neconyan-folder-suggestion .neconyan-folder-suggestion-heading > .menu_button:is(:hover, :focus-visible) {
+    background: color-mix(in srgb, var(--neco-ginger) 12%, transparent);
+}
+
+.neconyan-folder-suggestion-caption {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+}
+
+.neconyan-folder-suggestion-heading [aria-expanded='true'] .fa-chevron-down {
+    rotate: 180deg;
+}
+
+.neconyan-folder-suggestion-list {
+    padding-inline: 12px;
+    border-top: 1px solid var(--neco-border);
+    overflow-wrap: anywhere;
+}
+
+.neconyan-folder-ai :is(.menu_button, .neconyan-folder-organiser-check, select, input[type='number']) {
+    min-height: 44px;
+}
+
+.neconyan-folder-selection,
+.neconyan-folder-suggestion-count {
     font-size: 13px;
-    font-weight: 600;
+    font-variant-numeric: tabular-nums;
 }
 
 .neconyan-folder-suggestion-new {
