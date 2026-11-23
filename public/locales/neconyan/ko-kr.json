@@ -2862,7 +2862,6 @@
   "Run card scripts": "카드 스크립트 실행",
   "Jump to swipe history": "스와이프 기록으로 이동",
   "Screenshot message(s)": "메시지 스크린샷",
-  "[data-tooltip]Open checkpoint chat\nShift+Click to replace the existing checkpoint with a new one": "체크포인트",
   "Checkpoint": "체크포인트",
   "Edit message": "메시지 편집",
   "Delete + Add Swipe": "삭제 + 스와이프 추가",
