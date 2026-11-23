@@ -78,7 +78,7 @@ function collectHtml($) {
     });
     $('[data-i18n]').each((_index, element) => {
         for (const spec of $(element).attr('data-i18n').split(';')) {
-            const match = spec.match(/^\[([^\]]+)\](.+)$/);
+            const match = spec.match(/^\[([^\]]+)\](.+)$/s);
             const value = match ? $(element).attr(match[1]) : $(element).text().trim();
             if (!String(match ? match[2] : spec).includes(hole) && !String(value).includes(hole)) add(match ? match[2] : spec, value);
         }
@@ -89,7 +89,7 @@ function collectHtml($) {
     });
     $('[title],[placeholder],[aria-label]').each((_index, element) => {
         // An attribute that data-i18n reaches through a scoped key is looked up by that key alone, never as an exact caption.
-        const scopedAttributes = new Set(($(element).attr('data-i18n') || '').split(';').map(spec => spec.match(/^\[([^\]]+)\](.+)$/)).filter(match => match?.[2].startsWith(scopedPrefix)).map(match => match[1]));
+        const scopedAttributes = new Set(($(element).attr('data-i18n') || '').split(';').map(spec => spec.match(/^\[([^\]]+)\](.+)$/s)).filter(match => match?.[2].startsWith(scopedPrefix)).map(match => match[1]));
         for (const attribute of captionAttributes) if (!scopedAttributes.has(attribute)) addCaption($(element).attr(attribute));
     });
 }

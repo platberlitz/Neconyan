@@ -498,7 +498,6 @@
   "Example: {{user}} is a 7’5” catperson who can’t stop meowing and mrrping.": "Example:\n{{user}} is a 7’5” catperson who can’t stop meowing and mrrping.",
   "WI Entry Status: constant, normal, or vectorized": "WI Entry Status:\rConstant\rNormal\rVectorized",
   "prompt_manager_preview": "Preview",
-  "[data-tooltip]Open checkpoint chat\nShift+Click to replace the existing checkpoint with a new one": "Checkpoint",
   "Neconyan keeps the full workspace close at hand.": "Choose a character or start a chat. More controls are available in Model and Settings.",
   "scoped.prompt_media.RMV-04": "Image kept",
   "Use another folder of images for this character, for example _space": "Use another folder of images for this character, for example",

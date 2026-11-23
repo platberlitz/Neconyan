@@ -80,6 +80,7 @@ test('an attribute that data-i18n reaches through a scoped key is not an exact c
         'public/index.html': [
             '<html><body>',
             '<button data-i18n="[title]scoped.test.TIP" title="Hold to talk">Go</button>',
+            '<button data-i18n="[title]scoped.test.MULTI&#10;LINE" title="Multiline scoped tooltip">Go</button>',
             '<input data-i18n="[placeholder]scoped.test.HOLD;[title]Exact title key" placeholder="Type something here" title="Exact title text">',
             '<input data-i18n="[aria-label]Exact aria key" aria-label="Exact aria text">',
             '<button data-i18n="scoped.test.LABEL" title="Unrelated tooltip text">Scoped label</button>',
@@ -91,6 +92,8 @@ test('an attribute that data-i18n reaches through a scoped key is not an exact c
         const keys = list(scratch);
         for (const key of ['scoped.test.TIP', 'scoped.test.HOLD', 'scoped.test.LABEL', 'Exact title key', 'Exact aria key']) assert.ok(keys.has(key), `not collected: ${key}`);
         assert.ok(!keys.has('Hold to talk'), 'a scoped title became an exact caption');
+        assert.ok(keys.has('scoped.test.MULTI\nLINE'));
+        assert.ok(!keys.has('Multiline scoped tooltip'), 'a multiline scoped key also collected its title');
         assert.ok(!keys.has('Type something here'), 'a scoped placeholder became an exact caption');
         // The scoped key covers its own attribute only.
         assert.ok(keys.has('Unrelated tooltip text'), 'a title the scoped label does not cover is still collected');
