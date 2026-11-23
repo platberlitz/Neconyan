@@ -22,14 +22,14 @@ const initialPurrks = normalizeCharacterPurrks({
     ],
 });
 
-async function openEditor(page, avatar, name = 'Durable Nova') {
+async function openEditor(page, avatar, editLabel = 'Edit Durable Nova') {
     await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'));
     await page.evaluate(async avatar => {
         const context = window.SillyTavern.getContext();
         await context.selectCharacterById(context.characters.findIndex(character => character.avatar === avatar));
         window.NeconyanShell.openTab('characters', 'characters');
     }, avatar);
-    await page.getByRole('button', { name: `Edit ${name}`, exact: true }).click();
+    await page.getByRole('button', { name: editLabel, exact: true }).click();
     const panel = await page.locator('#character_purrks_block').evaluate(node => node.closest('[data-sb-character-editor-panel]').dataset.sbCharacterEditorPanel);
     await page.locator(`[data-sb-character-editor-tab="${panel}"]`).click();
     const block = page.locator('#character_purrks_block');
@@ -47,10 +47,10 @@ async function screenshot(page, phone, phase, info) {
     await info.attach(`Purrks ${phase}`, { path: file, contentType: 'image/png' });
 }
 
-async function seedPurrks(account, avatar = account.avatar) {
+async function seedPurrks(account, avatar = account.avatar, purrks = initialPurrks) {
     const response = await account.context.request.post('/api/characters/merge-attributes', {
         headers: account.headers,
-        data: { avatar, data: { extensions: { neconyan_purrks: initialPurrks } } },
+        data: { avatar, data: { extensions: { neconyan_purrks: purrks } } },
     });
     expect(response.ok()).toBe(true);
 }
@@ -116,6 +116,49 @@ async function checkBulkControlContrast(page, selector, phone) {
     await page.locator('#themes').selectOption({ label: 'Neconyan Calico Dark' }, { force: true });
     return results;
 }
+
+test('bulk deletion keeps the chosen name in Portuguese checkbox captions', async ({ app }) => {
+    test.setTimeout(120000);
+    const account = await app.account();
+    await account.context.addInitScript(() => window.localStorage.setItem('language', 'pt-pt'));
+    const labels = ['Default', 'card: Default', 'card: $& and $1'];
+    const items = labels.map((label, i) => ({ ...initialPurrks.items[i], label }));
+    await seedPurrks(account, account.avatar, { ...initialPurrks, items });
+    const page = await account.open({ workspace: false });
+    await expect(page.locator('html')).toHaveAttribute('lang', 'pt-pt');
+    const block = await openEditor(page, account.avatar, 'Editar Durable Nova');
+    const first = block.locator(`[data-purrk-id="${items[0].id}"] input.neconyan-purrk-toggle`);
+    const second = block.locator(`[data-purrk-id="${items[1].id}"] input.neconyan-purrk-toggle`);
+    await expect(first).toHaveAccessibleName('Ativar Default');
+    await expect(second).toHaveAccessibleName('Ativar card: Default');
+    const bulk = block.locator('#character_purrks_bulk_delete_btn');
+    await bulk.click();
+    await expect(first).toHaveAccessibleName('Selecionar Default for deletion');
+    await expect(second).toHaveAccessibleName('Selecionar card: Default for deletion');
+    await second.check();
+    await expect(second).toBeChecked();
+    await block.getByRole('button', { name: 'Cancelar', exact: true }).click();
+    await expect(first).toHaveAccessibleName('Ativar Default');
+    await expect(second).toHaveAccessibleName('Ativar card: Default');
+    await bulk.click();
+    await expect(second).not.toBeChecked();
+    await expect(second).toHaveAccessibleName('Selecionar card: Default for deletion');
+    await page.close();
+
+    // Exercise an exact translation that moves and repeats the slot before interpolating the chosen name.
+    await account.context.route('**/locales/neconyan/pt-pt.json', async route => {
+        const response = await route.fetch();
+        const supplement = await response.json();
+        supplement['Select ${0} for deletion'] = '${0} — apagar ${0}';
+        await route.fulfill({ response, json: supplement });
+    });
+    const fresh = await account.open({ workspace: false });
+    await expect(fresh.locator('html')).toHaveAttribute('lang', 'pt-pt');
+    const editor = await openEditor(fresh, account.avatar, 'Editar Durable Nova');
+    await editor.locator('#character_purrks_bulk_delete_btn').click();
+    await expect(editor.locator(`[data-purrk-id="${items[2].id}"] input.neconyan-purrk-toggle`))
+        .toHaveAccessibleName('card: $& and $1 — apagar card: $& and $1');
+});
 
 for (const phone of [true, false]) {
     test(`Purrks bulk deletion keeps unselected items on ${phone ? 'phone' : 'desktop'}`, async ({ app }, info) => {
@@ -249,7 +292,7 @@ test('Purrks selection stays with its editor and also works before saving a new 
         await context.selectCharacterById(context.characters.findIndex(character => character.avatar === avatar));
     }, otherAvatar);
     await confirmation.locator('.popup-button-ok').click();
-    await openEditor(page, otherAvatar, 'Other Nova');
+    await openEditor(page, otherAvatar, 'Edit Other Nova');
     await expect(block.locator('.neconyan-purrk-card')).toHaveCount(4);
     expect(await savedPurrks(account)).toEqual(initialPurrks);
     expect(await savedPurrks(account, otherAvatar)).toEqual(initialPurrks);
