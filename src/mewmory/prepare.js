@@ -5,7 +5,7 @@ import { readConfig } from './models.js';
 import { processingVersion } from './processing.js';
 import { recall } from './retrieval.js';
 import { loadCurrentState } from './sources.js';
-import { memoryEnabled, mutateState, normalizeLocator, readChat } from './store.js';
+import { memoryEnabled, mutateState, normalizeLocator, readChatShared } from './store.js';
 import { getCounter } from './tokens.js';
 import { readViewers, viewerState } from './viewers.js';
 import { readGroupSceneRules } from '../../public/scripts/group-chat-visibility.js';
@@ -13,7 +13,8 @@ import { messageHistoryPlan } from '../../public/scripts/mewmory/history-policy.
 import { wrapMewmoryContext } from '../../public/scripts/mewmory/prompt-proof.js';
 
 export async function prepareMewmoryPrompt(directories, body, signal, {
-    loadState = loadCurrentState, mutate = mutateState, readSource = readChat, scheduleBackground = true, readConfiguration = readConfig,
+    // The shared chat read is the one loadState just used; this function only reads what it returns.
+    loadState = loadCurrentState, mutate = mutateState, readSource = readChatShared, scheduleBackground = true, readConfiguration = readConfig,
     deterministicMarker = false, isEnabled = loadState === loadCurrentState ? memoryEnabled : null,
 } = {}) {
     const locator = normalizeLocator(body.locator);

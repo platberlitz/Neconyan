@@ -2,12 +2,12 @@ import { prepareMewmoryPrompt } from '../mewmory/prepare.js';
 import express from 'express';
 import { abortOnRequestClose } from '../util.js';
 import {
-    continueState, eligibleRecords, fail, forgetReaders, hash, list, object, putRecord, recordEligible, recordRevision,
+    continueState, eligibilityLookups, eligibleRecords, fail, forgetReaders, hash, list, object, putRecord, recordEligible, recordEligibleIn, recordRevision,
     refKey, retireCoverage, sourceAt, sourceEligible, sourceRead, SOURCE_TYPES, strings, syncSources, text, undoRecord, validateRecord,
 } from '../mewmory/core.js';
 import { activeReferences, assemblyFingerprint, currentOverviews, generationFingerprint, playerReferences } from '../mewmory/context.js';
 import { embed, publicConfig, readConfig, roleVersion, saveConfig } from '../mewmory/models.js';
-import { addUsage, pendingSources } from '../mewmory/processing.js';
+import { addUsage, pendingCounts, pendingSources } from '../mewmory/processing.js';
 import { cancelProcessing, startProcessing, waitForProcessing } from '../mewmory/worker.js';
 import { recall } from '../mewmory/retrieval.js';
 import { hybridCandidates, searchDocuments, searchableVectorDimension, updateIndex } from '../mewmory/search.js';
@@ -26,6 +26,25 @@ import { readGroupSceneStart } from '../../public/scripts/group-chat-visibility.
 
 export const router = express.Router();
 
+// Printing a body again turns each raw byte into at most 6 (a control character becomes \u00XX, and 1e20 grows by only
+// 21/4), and adds at most 16 bytes of braces, quotes and colons around them: 6n + 7 is the worst case, from n control bytes in a form body.
+const REPRINT_GROWTH_LIMIT = 6;
+const REPRINT_GROWTH_EXTRA = 16;
+
+/**
+ * Whether the request body measures more than `limit` once printed again, which is how the limit has always been
+ * measured. Content-Length says so without serialising a body that can be a whole prompt history or archive again, but
+ * only as a fast accept: when the declared bytes times the largest growth the printing can cause are still within
+ * the limit. Any other body (no usable length, compressed, or larger than that) is measured as before.
+ */
+export function requestBodyExceeds(request, limit) {
+    const declared = request.get('Content-Length');
+    const encoding = request.get('Content-Encoding');
+    if (typeof declared === 'string' && /^\d{1,15}$/.test(declared) && (!encoding || encoding.toLowerCase() === 'identity')
+        && Number(declared) * REPRINT_GROWTH_LIMIT + REPRINT_GROWTH_EXTRA <= limit) return false;
+    return Buffer.byteLength(JSON.stringify(request.body || {})) > limit;
+}
+
 function route(url, handler, { accountScoped = false } = {}) {
     router.post(url, async (request, response) => {
         const controller = new AbortController();
@@ -40,7 +59,7 @@ function route(url, handler, { accountScoped = false } = {}) {
                     code: 'MEWMORY_ACCOUNT_CHANGED',
                 });
             }
-            if (Buffer.byteLength(JSON.stringify(request.body || {})) > MAX_ARCHIVE_BYTES + 1024 * 1024) fail('This request to Mewmory is too large to accept.', 413);
+            if (requestBodyExceeds(request, MAX_ARCHIVE_BYTES + 1024 * 1024)) fail('This request to Mewmory is too large to accept.', 413);
             const result = await handler(request.user.directories, request.body || {}, controller.signal, owner);
             if (!response.destroyed) response.json(result);
         } catch (error) {
@@ -153,9 +172,11 @@ export function inspectState(state, config, { query = '', kind = '', ownerId = '
     const search = String(query).toLocaleLowerCase();
     const from = messageBound(fromMessage);
     const to = messageBound(toMessage);
+    // One set of lookups serves every record checked below.
+    const lookups = eligibilityLookups(state);
     const flags = {
         pinned: record => Boolean(record.pinned), excluded: record => Boolean(record.excluded),
-        edited: record => Boolean(record.authorOverride), unused: record => !recordEligible(state, record),
+        edited: record => Boolean(record.authorOverride), unused: record => !recordEligibleIn(state, lookups, record),
         new: record => unreviewed(state, record),
     };
     const flagged = Object.hasOwn(flags, flag) ? flags[flag] : null;
@@ -173,10 +194,7 @@ export function inspectState(state, config, { query = '', kind = '', ownerId = '
         watermark = sourceAt(state, ref)?.sequence ?? watermark;
     }
     const followCheckpoints = config.excludeHistory === true;
-    const unread = pendingSources(state, config, { unreadOnly: true }).length;
-    const checkpointUnread = pendingSources(state, config, { checkpoint: true, unreadOnly: true }).length;
-    const rereadPending = pendingSources(state, config, { checkpoint: followCheckpoints }).length
-        - (followCheckpoints ? checkpointUnread : unread);
+    const { unread, checkpointUnread, rereadPending } = pendingCounts(state, config, { followCheckpoints });
     return {
         locator: state.locator, revision: state.revision, storyId: state.storyId, branchId: state.branchId,
         parent: state.parent, enabled: state.enabled, activeNpcIds: state.activeNpcIds,
@@ -184,7 +202,7 @@ export function inspectState(state, config, { query = '', kind = '', ownerId = '
         activeReferences: activeReferences(state), playerReferences: playerReferences(state), overviews: currentOverviews(state),
         entities: eligibleRecords(state).filter(record => record.kind === 'entity'),
         records: filtered.slice(page, page + 80).map(record => ({
-            ...record, eligible: recordEligible(state, record),
+            ...record, eligible: recordEligibleIn(state, lookups, record),
             unavailableSources: record.refs.filter(ref => !sourceEligible(state, ref)).map(refKey),
         })),
         total: filtered.length, recordCount: state.records.length, offset: page,

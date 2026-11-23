@@ -40,7 +40,11 @@ export function splitPassages(text, { chunkSize = 1800, chunkOverlap = 200 } = {
     return result;
 }
 
-export function searchDocuments(state, asOf = Infinity, config = {}) {
+/** How many passage documents searchDocuments has built, so a test can show recall builds them only when it must. */
+export const searchStats = { passageDocuments: 0 };
+
+/** With `poolOnly`, the documents recallPool would keep: passages of chat, cards and lore are not built when recall will not offer them. */
+export function searchDocuments(state, asOf = Infinity, config = {}, { poolOnly = false } = {}) {
     const options = { ...RAG_DEFAULTS, ...config.retrieval };
     const eligible = eligibleRecords(state, { asOf });
     const names = new Map(currentRecords(eligible.filter(record => record.kind === 'entity'), record => record.entityId)
@@ -63,11 +67,13 @@ export function searchDocuments(state, asOf = Infinity, config = {}) {
         if (!sourceEligible(state, ref, asOf)) continue;
         const source = state.sources[ref.id];
         if (source.type === 'file' && !options.includeFiles) continue;
+        if (poolOnly && !options.includePassages && source.type !== 'file') continue;
         const revision = sourceAt(state, ref);
         // Small source passages keep recovery and embeddings bounded; the full revision stays in the archive.
         // Tracker notes reach the writer only as records restated by the extractor. The story text is a prefix
         // of the revision text, so passage offsets still point at the same characters.
         const passages = splitPassages(revision.storyText ?? revision.text, options);
+        searchStats.passageDocuments += passages.length;
         passages.forEach((passage, index) => documents.push({
             id: 'source:' + refKey(ref) + ':' + index, kind: 'source', dataType: source.type,
             text: passage.text, searchText: revision.speaker + '\n' + passage.text, refs: [ref],
@@ -161,14 +167,15 @@ export function expandNeighbours(documents, allDocuments, count = 0) {
 export async function updateIndex(state, directories, config, { signal, limit = 32, embedFn = embed, recallOnly = false } = {}) {
     const version = roleVersion(config, 'embedding');
     if (!config.roles.embedding.enabled) return { usage: [], remaining: 0, paid: {}, version };
-    const documents = searchDocuments(state, Infinity, config).filter(document => config.roles.embedding.allowedData.includes(document.dataType));
-    // Recall embeds only what it can offer; a manual rebuild also covers original passages for archive search.
-    const targets = recallOnly ? recallPool(documents, config) : documents;
     const sameVersion = state.index.version === version;
     const existing = sameVersion ? state.index.vectors : state.index.build?.version === version ? state.index.build.vectors : {};
     const next = {};
     let dimension;
-    {
+    // The documents only plan this request; they go out of scope here so the chat's passages are not held while embeddings are fetched.
+    const { missing, missingCount, total } = (() => {
+        const documents = searchDocuments(state, Infinity, config).filter(document => config.roles.embedding.allowedData.includes(document.dataType));
+        // Recall embeds only what it can offer; a manual rebuild also covers original passages for archive search.
+        const targets = recallOnly ? recallPool(documents, config) : documents;
         const reader = createVectorReader();
         for (const document of documents) {
             const entry = existing[document.id];
@@ -177,8 +184,9 @@ export async function updateIndex(state, directories, config, { signal, limit = 
             dimension ||= width;
             next[document.id] = entry;
         }
-    }
-    const missing = targets.filter(document => !next[document.id]);
+        const missing = targets.filter(document => !next[document.id]);
+        return { missing: missing.slice(0, limit), missingCount: missing.length, total: documents.length };
+    })();
     const usage = [];
     const paid = {};
     const encode = createVectorEncoder({ requireNonzero: true });
@@ -204,8 +212,8 @@ export async function updateIndex(state, directories, config, { signal, limit = 
     }
     // Completing the recall pool makes it usable, but the archive also searches
     // passages that an automatic recall does not pay to embed.
-    const remaining = documents.length - Object.keys(next).length;
-    if (missing.length <= limit || sameVersion) state.index = { version, vectors: next, pending: remaining > 0 };
+    const remaining = total - Object.keys(next).length;
+    if (missingCount <= limit || sameVersion) state.index = { version, vectors: next, pending: remaining > 0 };
     else state.index = { ...state.index, pending: true, build: { version, vectors: next } };
     return { usage, remaining, paid, version };
 }
