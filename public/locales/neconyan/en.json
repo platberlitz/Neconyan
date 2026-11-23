@@ -4313,7 +4313,7 @@
   "Banned phrases (one per line)": "Banned phrases (one per line)",
   "Words match from a word start: gaze blocks gazed, but not stargaze. Punctuation matches anywhere. Keep the list short. Some providers reject these patterns.": "Words match from a word start: gaze blocks gazed, but not stargaze. Punctuation matches anywhere. Keep the list short. Some providers reject these patterns.",
   "Template slots": "Template slots",
-  "] keeps the following text visible. [[end]] ends the reply at that point. [[pg]] inserts text from the starter model below.": "] keeps the following text visible. [[end]] ends the reply at that point. [[pg]] inserts text from the starter model below.",
+  "Use [[keep]] to keep the following text visible. [[end]] ends the reply at that point. [[pg]] inserts text from the starter model below.": "Use [[keep]] to keep the following text visible. [[end]] ends the reply at that point. [[pg]] inserts text from the starter model below.",
   "Starter model": "Starter model",
   "Generate the [[pg]] slot": "Generate the [[pg]] slot",
   "Starter connection profile": "Starter connection profile",
