@@ -3,6 +3,7 @@ import { describe, expect, jest, test } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import * as generationOutcome from '../public/scripts/generation-outcome.js';
+import { watchTextBackend } from '../public/scripts/text-backend-failures.js';
 import { parse } from 'acorn';
 import { isGenerationLengthFinish } from '../public/scripts/generation-request-controls.js';
 import { buildChatPresetPayload, createChatRequestData } from '../public/scripts/chat-preset-request.js';
@@ -34,7 +35,7 @@ function runtime() {
         getGenerateUrl: () => '/generate', getRequestHeaders: () => ({}),
         getNanoGptServiceTier: async () => '',
         extractReasoningFromData: () => 'reasoning stays separate',
-        fetchResumable: jest.fn(), recordProviderFailure: jest.fn(),
+        fetchResumable: jest.fn(), recordProviderFailure: jest.fn(), watchTextBackend,
         chat_completion_sources: { OPENAI: 'openai', NANOGPT: 'nanogpt' },
         settingsToUpdate: { openai_max_tokens: [null, 'openai_max_tokens'] },
         oai_settings: { openai_max_tokens: 8192, auto_append_reasoning_tags: false },
