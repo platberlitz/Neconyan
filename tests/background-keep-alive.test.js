@@ -1,3 +1,6 @@
+/* global globalThis */
+import fs from 'node:fs';
+
 import { describe, expect, jest, test } from '@jest/globals';
 import {
     BACKGROUND_KEEP_ALIVE_STORAGE_KEY,
@@ -37,19 +40,33 @@ function createDocument() {
     };
 }
 
-function createAudioStub(playImplementation = () => Promise.resolve()) {
+// Like a browser, it reports real playback with a 'playing' event once play() succeeds.
+// events: false leaves out the event API; announce: false leaves out the 'playing' event.
+function createAudioStub(playImplementation = () => Promise.resolve(), { events = true, announce = true } = {}) {
+    const listeners = new Map();
     const audio = {
         src: '',
         loop: false,
         paused: true,
+        readyState: 4,
         play: jest.fn(() => {
             audio.paused = false;
-            return playImplementation();
+            const result = playImplementation();
+            if (events && announce) result.then(() => audio.emit('playing'), () => { audio.paused = true; });
+            return result;
         }),
         pause: jest.fn(() => { audio.paused = true; }),
         removeAttribute: jest.fn((name) => { if (name === 'src') audio.src = ''; }),
         load: jest.fn(),
     };
+    if (events) {
+        Object.assign(audio, {
+            addEventListener: (type, listener) => listeners.set(type, new Set([...(listeners.get(type) ?? []), listener])),
+            removeEventListener: (type, listener) => listeners.get(type)?.delete(listener),
+            emit: (type) => { for (const listener of [...(listeners.get(type) ?? [])]) listener({ type }); },
+            listenerCount: () => [...listeners.values()].reduce((total, set) => total + set.size, 0),
+        });
+    }
     return audio;
 }
 
@@ -63,11 +80,16 @@ function createMediaSession() {
     };
 }
 
-function setup({ enabled = true, audio = createAudioStub() } = {}) {
+function setup({ enabled = true, audio = createAudioStub(), hidden = false, onActivity } = {}) {
     const documentRef = createDocument();
+    if (hidden) documentRef.visibilityState = 'hidden';
     const storage = createStorage(enabled ? { [BACKGROUND_KEEP_ALIVE_STORAGE_KEY]: 'on' } : {});
     const mediaSession = createMediaSession();
     const statuses = [];
+    const activity = [];
+    const timers = new Map();
+    const clock = { now: 1_000_000 };
+    let nextTimer = 1;
     const controller = createBackgroundKeepAlive({
         documentRef,
         navigatorRef: { mediaSession },
@@ -75,8 +97,13 @@ function setup({ enabled = true, audio = createAudioStub() } = {}) {
         createAudio: () => audio,
         createObjectUrl: () => 'blob:quiet-tone',
         onStatus: status => statuses.push(status),
+        onActivity: onActivity ?? (state => activity.push(state)),
+        setTimer: (fn, ms) => { const id = nextTimer++; timers.set(id, { fn, ms }); return id; },
+        clearTimer: id => timers.delete(id),
+        now: () => clock.now,
     });
-    return { audio, controller, documentRef, mediaSession, statuses, storage };
+    const runTimers = () => { for (const [id, timer] of [...timers]) { timers.delete(id); timer.fn(); } };
+    return { activity, audio, clock, controller, documentRef, mediaSession, runTimers, statuses, storage, timers };
 }
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
@@ -226,6 +253,313 @@ describe('background keep-alive controller', () => {
         expect(documentRef.listenerCount()).toBe(1);
         controller.destroy();
         expect(documentRef.listenerCount()).toBe(0);
+    });
+});
+
+describe('background keep-alive honesty', () => {
+    async function awayAndPlaying(options) {
+        const fixture = setup(options);
+        fixture.documentRef.setVisibility('hidden');
+        await flush();
+        return fixture;
+    }
+
+    test('counts the sound as playing only once the element reports it', async () => {
+        const audio = createAudioStub(() => Promise.resolve(), { announce: false });
+        const { controller, statuses } = await awayAndPlaying({ audio });
+        expect(audio.play).toHaveBeenCalledTimes(1);
+        expect(controller.isPlaying()).toBe(false);
+        expect(statuses).toEqual([]);
+
+        audio.emit('playing');
+        expect(controller.isPlaying()).toBe(true);
+        expect(statuses.at(-1)).toEqual({ enabled: true, playing: true, lastError: '' });
+    });
+
+    test('trusts a play() that succeeds when the element has no events to listen to', async () => {
+        const { controller } = await awayAndPlaying({ audio: createAudioStub(() => Promise.resolve(), { events: false }) });
+        expect(controller.isPlaying()).toBe(true);
+    });
+
+    test('stops listening to the element when it stops, and when it is destroyed', async () => {
+        const { audio, controller, documentRef } = await awayAndPlaying();
+        expect(audio.listenerCount()).toBeGreaterThan(0);
+        documentRef.setVisibility('visible');
+        expect(audio.listenerCount()).toBe(0);
+
+        documentRef.setVisibility('hidden');
+        await flush();
+        expect(audio.listenerCount()).toBeGreaterThan(0);
+        controller.destroy();
+        expect(audio.listenerCount()).toBe(0);
+    });
+
+    test('a pause the page did not cause is an interruption: recorded, reported and not retried', async () => {
+        const { activity, audio, clock, controller, mediaSession, runTimers, statuses, timers } = await awayAndPlaying();
+        clock.now += 312_000;
+        audio.paused = true;
+        audio.emit('pause');
+
+        expect(controller.isPlaying()).toBe(false);
+        expect(statuses.at(-1)).toEqual({ enabled: true, playing: false, lastError: 'interrupted' });
+        expect(activity.at(-1)).toMatchObject({ enabled: true, state: 'interrupted', interruptions: 1, playedSeconds: 312, lastEvent: 'pause' });
+        expect(mediaSession.playbackState).toBe('none');
+        // Another app taking over audio sends a plain pause; playing again would cut off the user's music or call.
+        expect(timers.size).toBe(0);
+        runTimers();
+        expect(audio.play).toHaveBeenCalledTimes(1);
+    });
+
+    test('a fault in the element gets one more try after about two seconds, and no second one', async () => {
+        const { activity, audio, controller, runTimers, statuses, timers } = await awayAndPlaying();
+        audio.emit('error');
+        expect([...timers.values()].map(timer => timer.ms)).toEqual([2000]);
+        expect(statuses.at(-1).lastError).toBe('interrupted');
+        expect(audio.play).toHaveBeenCalledTimes(1);
+
+        runTimers();
+        await flush();
+        expect(audio.play).toHaveBeenCalledTimes(2);
+        expect(controller.isPlaying()).toBe(true);
+        expect(statuses.at(-1)).toEqual({ enabled: true, playing: true, lastError: '' });
+        expect(activity.at(-1)).toMatchObject({ state: 'playing', interruptions: 1, lastEvent: 'error' });
+
+        audio.emit('ended');
+        expect(controller.isPlaying()).toBe(false);
+        expect(timers.size).toBe(0);
+        expect(audio.play).toHaveBeenCalledTimes(2);
+        expect(activity.at(-1)).toMatchObject({ state: 'interrupted', interruptions: 2, lastEvent: 'ended' });
+    });
+
+    test.each(['ended', 'stalled'])('%s is retried once', async (event) => {
+        const { audio, runTimers, timers } = await awayAndPlaying();
+        audio.paused = true;
+        audio.emit(event);
+        expect(timers.size).toBe(1);
+        runTimers();
+        expect(audio.play).toHaveBeenCalledTimes(2);
+    });
+
+    test('a source that reports stalled while it plays on is not an interruption', async () => {
+        const { audio, controller, statuses } = await awayAndPlaying();
+        audio.paused = false;
+        audio.readyState = 4;
+        audio.emit('stalled');
+        expect(controller.isPlaying()).toBe(true);
+        expect(statuses.at(-1).lastError).toBe('');
+    });
+
+    test('the element being emptied is recorded but not retried', async () => {
+        const { activity, audio, controller, timers } = await awayAndPlaying();
+        audio.emit('emptied');
+        expect(controller.isPlaying()).toBe(false);
+        expect(timers.size).toBe(0);
+        expect(activity.at(-1)).toMatchObject({ state: 'interrupted', lastEvent: 'emptied' });
+    });
+
+    test('a retry on an element that never stopped is counted as playing without waiting for an event', async () => {
+        const audio = createAudioStub(() => Promise.resolve(), { announce: false });
+        const { controller, runTimers, statuses } = await awayAndPlaying({ audio });
+        audio.emit('playing');
+        audio.paused = false;
+        audio.emit('error');
+        expect(controller.isPlaying()).toBe(false);
+        runTimers();
+        await flush();
+        expect(controller.isPlaying()).toBe(true);
+        expect(statuses.at(-1)).toEqual({ enabled: true, playing: true, lastError: '' });
+    });
+
+    test('returning to the page cancels a pending retry', async () => {
+        const { audio, documentRef, runTimers, timers } = await awayAndPlaying();
+        audio.emit('error');
+        expect(timers.size).toBe(1);
+        documentRef.setVisibility('visible');
+        expect(timers.size).toBe(0);
+        runTimers();
+        expect(audio.play).toHaveBeenCalledTimes(1);
+    });
+
+    test('a retry that is refused leaves the interruption on record, and a refusal by the browser is reported as blocked', async () => {
+        const first = await awayAndPlaying();
+        first.audio.play.mockImplementationOnce(() => Promise.reject(Object.assign(new Error('failed'), { name: 'AbortError' })));
+        first.audio.emit('error');
+        first.runTimers();
+        await flush();
+        expect(first.controller.getStatus()).toEqual({ enabled: true, playing: false, lastError: 'interrupted' });
+        expect(first.audio.play).toHaveBeenCalledTimes(2);
+        expect(first.timers.size).toBe(0);
+
+        const second = await awayAndPlaying();
+        second.audio.play.mockImplementationOnce(() => Promise.reject(Object.assign(new Error('blocked'), { name: 'NotAllowedError' })));
+        second.audio.emit('error');
+        second.runTimers();
+        await flush();
+        expect(second.controller.getStatus().lastError).toBe('blocked');
+    });
+
+    test('pausing from the media notification is a dismissal, not an interruption', async () => {
+        const { activity, audio, controller, documentRef, mediaSession, statuses } = await awayAndPlaying();
+        mediaSession.handlers.pause();
+        audio.emit('pause');
+        expect(controller.isPlaying()).toBe(false);
+        expect(statuses.at(-1)).toEqual({ enabled: true, playing: false, lastError: '' });
+        expect(activity.at(-1)).toMatchObject({ state: 'dismissed', interruptions: 0 });
+        documentRef.setVisibility('visible');
+        expect(activity.at(-1)).toMatchObject({ state: 'armed', interruptions: 0 });
+    });
+
+    test('stopping on return is normal, and events after it are ignored', async () => {
+        const { activity, audio, controller, documentRef, statuses } = await awayAndPlaying();
+        documentRef.setVisibility('visible');
+        audio.emit('pause');
+        audio.emit('emptied');
+        expect(controller.getStatus()).toEqual({ enabled: true, playing: false, lastError: '' });
+        expect(statuses.at(-1).lastError).toBe('');
+        expect(activity.at(-1)).toMatchObject({ state: 'armed', interruptions: 0 });
+        expect(activity.every(state => state.interruptions === 0)).toBe(true);
+    });
+
+    test('keeps the outcome of the time away until the next one succeeds', async () => {
+        const { audio, controller, documentRef } = await awayAndPlaying();
+        audio.emit('pause');
+        documentRef.setVisibility('visible');
+        expect(controller.getStatus()).toEqual({ enabled: true, playing: false, lastError: 'interrupted' });
+
+        documentRef.setVisibility('hidden');
+        await flush();
+        expect(controller.getStatus()).toEqual({ enabled: true, playing: true, lastError: '' });
+    });
+
+    test('switching the setting clears an old interruption', async () => {
+        const { audio, controller } = await awayAndPlaying();
+        audio.emit('pause');
+        controller.setEnabled(true);
+        expect(controller.getStatus().lastError).toBe('');
+    });
+
+    test('a page that loads while hidden starts the sound once, if the setting is on', async () => {
+        const { audio, controller } = setup({ hidden: true });
+        await flush();
+        expect(audio.play).toHaveBeenCalledTimes(1);
+        expect(controller.isPlaying()).toBe(true);
+
+        const off = setup({ enabled: false, hidden: true });
+        await flush();
+        expect(off.audio.play).not.toHaveBeenCalled();
+
+        const visible = setup();
+        await flush();
+        expect(visible.audio.play).not.toHaveBeenCalled();
+    });
+
+    test('a page that loads hidden and is refused tells the user what to do', async () => {
+        const audio = createAudioStub(() => Promise.reject(Object.assign(new Error('blocked'), { name: 'NotAllowedError' })));
+        const { controller, documentRef } = setup({ audio, hidden: true });
+        await flush();
+        expect(controller.getStatus().lastError).toBe('blocked');
+        documentRef.setVisibility('visible');
+        expect(controller.getStatus().lastError).toBe('blocked');
+    });
+
+    test('reports every state change to the diagnostics, with fixed values only', async () => {
+        const { activity, audio, clock, controller, documentRef } = setup();
+        expect(activity).toEqual([{ enabled: true, state: 'armed', since: 1_000_000, interruptions: 0 }]);
+
+        clock.now += 1000;
+        documentRef.setVisibility('hidden');
+        await flush();
+        expect(activity.at(-1)).toEqual({ enabled: true, state: 'playing', since: 1_001_000, interruptions: 0 });
+
+        clock.now += 60_000;
+        audio.emit('pause');
+        expect(activity.at(-1)).toEqual({ enabled: true, state: 'interrupted', since: 1_061_000, interruptions: 1, playedSeconds: 60, lastEvent: 'pause' });
+
+        const count = activity.length;
+        documentRef.setVisibility('visible');
+        expect(activity).toHaveLength(count);
+
+        controller.setEnabled(false);
+        expect(activity.at(-1)).toMatchObject({ enabled: false, state: 'off' });
+        for (const state of activity) expect(Object.keys(state).every(key => ['enabled', 'state', 'since', 'interruptions', 'playedSeconds', 'lastEvent'].includes(key))).toBe(true);
+    });
+
+    test('reports blocked, failed and unsupported', async () => {
+        const blocked = setup({ audio: createAudioStub(() => Promise.reject(Object.assign(new Error('x'), { name: 'NotAllowedError' }))) });
+        blocked.documentRef.setVisibility('hidden');
+        await flush();
+        expect(blocked.activity.at(-1).state).toBe('blocked');
+
+        const failed = setup({ audio: createAudioStub(() => Promise.reject(Object.assign(new Error('x'), { name: 'AbortError' }))) });
+        failed.documentRef.setVisibility('hidden');
+        await flush();
+        expect(failed.activity.at(-1).state).toBe('failed');
+
+        const unsupported = setup({ audio: createAudioStub(() => Promise.reject(Object.assign(new Error('x'), { name: 'NotSupportedError' }))) });
+        unsupported.documentRef.setVisibility('hidden');
+        await flush();
+        expect(unsupported.activity.at(-1).state).toBe('unsupported');
+        expect(unsupported.controller.getStatus().lastError).toBe('failed');
+    });
+
+    test('an audio element that cannot be created is reported as unsupported', async () => {
+        const documentRef = createDocument();
+        const activity = [];
+        const controller = createBackgroundKeepAlive({
+            documentRef,
+            storage: createStorage({ [BACKGROUND_KEEP_ALIVE_STORAGE_KEY]: 'on' }),
+            createAudio: () => { throw new TypeError('Audio is not available'); },
+            createObjectUrl: () => 'blob:quiet-tone',
+            onActivity: state => activity.push(state),
+        });
+        documentRef.setVisibility('hidden');
+        await flush();
+        expect(controller.getStatus().lastError).toBe('failed');
+        expect(activity.at(-1).state).toBe('unsupported');
+    });
+
+    test('a diagnostics callback that throws never stops the sound', async () => {
+        const { controller } = await awayAndPlaying({ onActivity: () => { throw new Error('storage full'); } });
+        expect(controller.isPlaying()).toBe(true);
+    });
+
+    test('reports to the crash diagnostics when no callback is given', async () => {
+        const updateActivity = jest.fn();
+        globalThis.NeconyanCrashDiagnostics = { updateActivity };
+        try {
+            const documentRef = createDocument();
+            createBackgroundKeepAlive({ documentRef, storage: createStorage({ [BACKGROUND_KEEP_ALIVE_STORAGE_KEY]: 'on' }), createAudio: () => createAudioStub(), createObjectUrl: () => 'blob:quiet-tone' });
+            expect(updateActivity).toHaveBeenCalledWith({ keepAlive: expect.objectContaining({ enabled: true, state: 'armed' }) });
+        } finally {
+            delete globalThis.NeconyanCrashDiagnostics;
+        }
+    });
+});
+
+describe('background keep-alive status text', () => {
+    // The formatter lives in power-user.js, which cannot load under Jest, so its source is run with a stand-in for the translator.
+    const source = fs.readFileSync(new URL('../public/scripts/power-user.js', import.meta.url), 'utf8');
+    const start = source.indexOf('function formatBackgroundKeepAliveStatus(');
+    const body = source.slice(start, source.indexOf('\n}\n', start) + 3);
+    const format = new Function('t', `${body}\nreturn formatBackgroundKeepAliveStatus;`)((strings, ...values) => strings.reduce((text, part, index) => text + part + (values[index] ?? ''), ''));
+
+    test('keeps the existing texts for the existing states', () => {
+        expect(format({ enabled: true, playing: false, lastError: '' })).toBe('On. Starts when you switch to another app or tab.');
+        expect(format({ enabled: true, playing: true, lastError: '' })).toBe('Keeping Neconyan open.');
+        expect(format({ enabled: false, playing: false, lastError: '' })).toBe('Off. Android may reload Neconyan if you stay away for long.');
+        expect(format({ enabled: true, playing: false, lastError: 'blocked' })).toBe('The browser blocked the sound. Tap anywhere in Neconyan once, then switch away again.');
+        expect(format({ enabled: true, playing: false, lastError: 'failed' })).toBe('The sound could not start in this browser.');
+    });
+
+    test('says when the browser or another app stopped the sound while away', () => {
+        expect(format({ enabled: true, playing: false, lastError: 'interrupted' }))
+            .toBe('The browser or another app stopped the sound while you were away, so Android may reload Neconyan.');
+    });
+
+    test('the new text is in the English catalogue', () => {
+        const catalogue = JSON.parse(fs.readFileSync(new URL('../public/locales/neconyan/en.json', import.meta.url), 'utf8'));
+        const text = 'The browser or another app stopped the sound while you were away, so Android may reload Neconyan.';
+        expect(catalogue[text]).toBe(text);
     });
 });
 

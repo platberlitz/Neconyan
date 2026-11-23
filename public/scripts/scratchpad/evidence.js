@@ -5,6 +5,7 @@ export const EVIDENCE_HEADING = '## App evidence';
 
 export const EVIDENCE_CAPS = Object.freeze({
     browserErrors: 5,
+    pageEvents: 8,
     extensions: 8,
     modelFailures: 5,
     requests: 10,
@@ -134,6 +135,61 @@ function browserErrorLines(reports) {
     });
 }
 
+function duration(value) {
+    const seconds = Math.round(Number(value) / 1000);
+    if (!Number.isFinite(seconds) || seconds < 0) return '';
+    if (seconds < 1) return 'under a second';
+    if (seconds < 90) return `${seconds} second${seconds === 1 ? '' : 's'}`;
+    const minutes = Math.round(seconds / 60);
+    return minutes < 120 ? `${minutes} minutes` : `${Math.round(minutes / 6) / 10} hours`;
+}
+
+const KEEP_ALIVE_STATE_TEXT = Object.freeze({
+    off: 'switched off',
+    armed: 'on, not playing',
+    playing: 'playing',
+    blocked: 'blocked by the browser',
+    failed: 'could not start',
+    interrupted: 'stopped while the page was hidden, not by Neconyan',
+    dismissed: 'paused by the user from the media notification',
+    unsupported: 'not supported here',
+});
+
+function keepAliveText(keepAlive) {
+    if (!keepAlive || typeof keepAlive !== 'object') return 'Stay open in the background: no record from that page';
+    const parts = [KEEP_ALIVE_STATE_TEXT[keepAlive.state] || 'unknown'];
+    const count = Math.trunc(Number(keepAlive.interruptions) || 0);
+    if (count > 0) parts.push(`stopped ${count} time${count === 1 ? '' : 's'} on that page`);
+    if (keepAlive.lastEvent && Number.isFinite(keepAlive.playedSeconds)) parts.push(`the sound reported '${oneLine(keepAlive.lastEvent, 20)}' after ${keepAlive.playedSeconds} seconds`);
+    return `Stay open in the background: ${parts.join(', ')}`;
+}
+
+// A reload Neconyan started has a reason. A page that ended without closing has none, only what it was last seen doing.
+function pageEventLines(records) {
+    const known = ['page-reloaded-by-app', 'unclean-previous-page', 'discarded-previous-page'];
+    return newestFirst(records.filter(record => known.includes(record?.kind))).map(record => {
+        if (record.kind === 'page-reloaded-by-app') {
+            const change = record.from && record.to ? ` (${oneLine(record.from, 40)} -> ${oneLine(record.to, 40)})` : '';
+            const away = Number.isFinite(record.awayMs) && duration(record.awayMs) ? `, right after the page had been hidden for ${duration(record.awayMs)}` : '';
+            return [`- ${withTime(record.at, oneLine(`${record.summary || 'Neconyan reloaded this page'}${change}${away}. Started by Neconyan, not a crash.`, 520))}`];
+        }
+        const page = record.previousPage && typeof record.previousPage === 'object' ? record.previousPage : null;
+        const head = record.kind === 'discarded-previous-page' ? 'The browser discarded the previous page' : 'The previous page ended without closing normally';
+        const parts = [];
+        if (page) {
+            const hiddenFor = page.hiddenAtLastSignOfLife && Number.isFinite(page.hiddenForMs) ? duration(page.hiddenForMs) : '';
+            parts.push(page.hiddenAtLastSignOfLife ? `it was hidden at its last sign of life${hiddenFor ? ` (hidden for ${hiddenFor} by then)` : ''}` : 'it was visible at its last sign of life');
+            const age = duration(page.lastSignOfLifeAgeMs);
+            if (age) parts.push(`that was ${age} before this reopening`);
+            if (page.frozenAtLastSignOfLife) parts.push('the browser had frozen it');
+            parts.push(keepAliveText(page.keepAlive));
+        }
+        return [`- ${withTime(record.at, oneLine(`found when the page reopened: ${head}${parts.length ? `; ${parts.join('; ')}` : ''}. The cause was not recorded.`, 520))}`];
+    });
+}
+
+const PAGE_EVENT_NOTE = '- A page that ended without closing leaves no cause; the browser does not say why. A page that is hidden with no keep-alive sound playing is commonly unloaded by phones to free memory, which this record cannot confirm. A reload started by Neconyan always names its reason.';
+
 function serverCrashLines(reports) {
     return newestFirst(reports).map(report => {
         const head = withTime(report.at, `${oneLine(report.kind || 'crash', 60)}: ${oneLine([report.name, report.message].filter(Boolean).join(': ') || 'no message')}${report.version ? ` (Neconyan ${oneLine(report.version, 40)})` : ''}`);
@@ -194,6 +250,11 @@ function section(heading, builder, source, key, cap) {
     return part(heading, entries, cap, Math.max(0, total - items.length));
 }
 
+function pageEventsSection(evidence, caps) {
+    const lines = section('Page reloads and restarts in this browser', pageEventLines, evidence, 'pageEvents', caps.pageEvents ?? EVIDENCE_CAPS.pageEvents);
+    return lines.length ? [...lines, PAGE_EVENT_NOTE] : [];
+}
+
 /**
  * Turns the gathered evidence into the 'App evidence' section of the shared
  * context. Each part appears only when it has something to report, newest
@@ -201,6 +262,7 @@ function section(heading, builder, source, key, cap) {
  * @param {object} evidence
  * @param {object} [evidence.environment] version, build, branch, runtime, platform, client, frontendBuild
  * @param {object|Array} [evidence.browserErrors] Reports from NeconyanCrashDiagnostics.getReports()
+ * @param {object|Array} [evidence.pageEvents] The recoveries and reloads from NeconyanCrashDiagnostics.getReports()
  * @param {string[]} [evidence.extensionErrors] Extensions that failed to load
  * @param {object|Array} [evidence.modelFailures] Recent failed model requests
  * @param {object|Array} [evidence.requests] This account's failed or slow server requests
@@ -215,6 +277,7 @@ export function formatAppEvidence(evidence = {}, caps = EVIDENCE_CAPS) {
     const parts = [
         environmentLines(evidence.environment),
         section('Browser errors and crash reports', browserErrorLines, evidence, 'browserErrors', caps.browserErrors),
+        pageEventsSection(evidence, caps),
         section('Extensions that failed to load', extensionLines, evidence, 'extensionErrors', caps.extensions),
         section('Failed model requests', modelFailureLines, evidence, 'modelFailures', caps.modelFailures),
         section('Failed or slow server requests', requestLines, evidence, 'requests', caps.requests),

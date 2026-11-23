@@ -22254,6 +22254,7 @@
   "Managed by low-memory mode": "Managed by low-memory mode",
   "Low-memory mode currently limits rendered Roleplay messages to ${0}.": "Low-memory mode currently limits rendered Roleplay messages to ${0}.",
   "The browser blocked the sound. Tap anywhere in Neconyan once, then switch away again.": "The browser blocked the sound. Tap anywhere in Neconyan once, then switch away again.",
+  "The browser or another app stopped the sound while you were away, so Android may reload Neconyan.": "The browser or another app stopped the sound while you were away, so Android may reload Neconyan.",
   "The sound could not start in this browser.": "The sound could not start in this browser.",
   "Off. Android may reload Neconyan if you stay away for long.": "Off. Android may reload Neconyan if you stay away for long.",
   "Keeping Neconyan open.": "Keeping Neconyan open.",

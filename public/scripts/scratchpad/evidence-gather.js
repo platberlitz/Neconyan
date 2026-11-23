@@ -16,10 +16,11 @@ function describeClient() {
 
 function browserReports() {
     try {
-        const reports = globalThis.NeconyanCrashDiagnostics?.getReports?.()?.reports;
-        return Array.isArray(reports) ? reports : [];
+        const stored = globalThis.NeconyanCrashDiagnostics?.getReports?.();
+        const list = value => (Array.isArray(value) ? value : []);
+        return { errors: list(stored?.reports), pageEvents: [...list(stored?.recoveries), ...list(stored?.reloads)] };
     } catch {
-        return [];
+        return { errors: [], pageEvents: [] };
     }
 }
 
@@ -41,9 +42,11 @@ export async function gatherAppEvidence() {
     const notes = [];
     const account = await readPart(readAppEvidence, 'The server part of the evidence', notes);
     const admin = isAdmin() ? await readPart(readAdminAppEvidence, 'The admin part of the evidence', notes) : null;
+    const browser = browserReports();
     return formatAppEvidence({
         environment: { ...account?.environment, client: describeClient() },
-        browserErrors: browserReports(),
+        browserErrors: browser.errors,
+        pageEvents: browser.pageEvents,
         extensionErrors: getExtensionLoadErrors(),
         modelFailures: getProviderFailures(),
         requests: account?.requests,

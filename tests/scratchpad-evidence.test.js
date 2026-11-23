@@ -137,6 +137,60 @@ describe('formatAppEvidence', () => {
         expect(lines.slice(head + 1, head + 3)).toEqual(['  JavaScript heap used 1010 MB of a 1014 MB limit.', '  Next step: raise the limit.']);
     });
 
+    describe('page reloads and restarts', () => {
+        const reload = { schema: 1, id: 'reload:a', kind: 'page-reloaded-by-app', at: '2026-11-23T10:00:00.000Z', reason: 'served-code-changed', from: 'a1b2c3d', to: 'd4e5f6a', awayMs: 42 * 60000,
+            summary: 'Neconyan reloaded this page to load an update' };
+        const lost = { schema: 1, id: 'unclean:x', kind: 'unclean-previous-page', at: '2026-11-23T11:00:00.000Z', previousPage: { hiddenAtLastSignOfLife: true, hiddenForMs: 31 * 60000,
+            lastSignOfLifeAgeMs: 20 * 60000, frozenAtLastSignOfLife: false, keepAlive: { enabled: true, state: 'interrupted', interruptions: 1, playedSeconds: 600, lastEvent: 'pause' } } };
+        const discarded = { schema: 1, id: 'discarded:y', kind: 'discarded-previous-page', at: '2026-11-23T09:00:00.000Z' };
+        const sectionOf = text => text.slice(text.indexOf('### Page reloads and restarts in this browser')).split('\n\n')[0];
+
+        test('lists reloads Neconyan started, pages that ended without closing and discards, newest first', () => {
+            const text = formatAppEvidence({ environment, pageEvents: [reload, lost, discarded] });
+            const section = sectionOf(text);
+            expect(section.split('\n')[0]).toBe('### Page reloads and restarts in this browser');
+            expect(section).toContain('2026-11-23T10:00:00.000Z Neconyan reloaded this page to load an update (a1b2c3d -> d4e5f6a), right after the page had been hidden for 42 minutes. Started by Neconyan, not a crash.');
+            expect(section).toContain('2026-11-23T11:00:00.000Z found when the page reopened: The previous page ended without closing normally; it was hidden at its last sign of life (hidden for 31 minutes by then); that was 20 minutes before this reopening; Stay open in the background: stopped while the page was hidden, not by Neconyan, stopped 1 time on that page, the sound reported \'pause\' after 600 seconds. The cause was not recorded.');
+            expect(section).toContain('2026-11-23T09:00:00.000Z found when the page reopened: The browser discarded the previous page. The cause was not recorded.');
+            expect(section.indexOf('11:00:00')).toBeLessThan(section.indexOf('10:00:00'));
+            expect(section.indexOf('10:00:00')).toBeLessThan(section.indexOf('09:00:00'));
+        });
+
+        test('states the limit of what the records show once, and does not name a cause', () => {
+            const section = sectionOf(formatAppEvidence({ environment, pageEvents: [lost, reload] }));
+            expect(section.match(/commonly unloaded by phones to free memory, which this record cannot confirm/g)).toHaveLength(1);
+            expect(section).toContain('A reload started by Neconyan always names its reason.');
+            expect(section).not.toMatch(/because (Android|the browser|the phone)/i);
+        });
+
+        test('says so when a page has no keep-alive record, was visible or was frozen', () => {
+            const section = sectionOf(formatAppEvidence({ environment, pageEvents: [{ ...lost, previousPage: { hiddenAtLastSignOfLife: false, lastSignOfLifeAgeMs: 5000, frozenAtLastSignOfLife: true, keepAlive: null } }] }));
+            expect(section).toContain('it was visible at its last sign of life; that was 5 seconds before this reopening; the browser had frozen it; Stay open in the background: no record from that page');
+        });
+
+        test('is left out when there is nothing, and ignores records of other kinds', () => {
+            expect(formatAppEvidence({ environment, pageEvents: [] })).not.toContain('Page reloads and restarts');
+            expect(formatAppEvidence({ environment, pageEvents: [{ kind: 'retained-page-activity', at: '2026-11-23T10:00:00.000Z' }, null, 'text'] })).not.toContain('Page reloads and restarts');
+        });
+
+        test('respects the cap and says how many older entries were left out', () => {
+            const many = Array.from({ length: EVIDENCE_CAPS.pageEvents + 4 }, (_, index) => ({ ...reload, id: `reload:${index}`, at: new Date(Date.UTC(2026, 10, 1, 10, index)).toISOString() }));
+            const section = sectionOf(formatAppEvidence({ environment, pageEvents: many }));
+            expect(section.match(/^- 2026-/gm)).toHaveLength(EVIDENCE_CAPS.pageEvents);
+            expect(section).toMatch(/4 older items were left out\./);
+            expect(Math.max(...section.split('\n').map(line => line.length))).toBeLessThanOrEqual(600);
+        });
+
+        test('removes anything that looks like a credential, from every field it prints', () => {
+            const dirty = 'Authorization: Bearer sk-PLANTEDsecretKEY1234567890';
+            const text = formatAppEvidence({ environment, pageEvents: [
+                { ...reload, summary: dirty, from: 'sk-PLANTEDsecretKEY1234567890', to: 'https://u:hunter2-planted@h.example/x?token=planted-url-token-abc' },
+                { ...lost, previousPage: { ...lost.previousPage, keepAlive: { state: dirty, interruptions: 1, lastEvent: dirty, playedSeconds: 3 } } },
+            ] });
+            expectNoSecrets(sectionOf(text));
+        });
+    });
+
     test('never prints planted secrets from any part', () => {
         const dirty = 'Authorization: Bearer sk-PLANTEDsecretKEY1234567890 at https://u:hunter2-planted@h.example/x?token=planted-url-token-abc';
         const text = formatAppEvidence({
