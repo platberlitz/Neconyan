@@ -23,7 +23,7 @@ function boundedText(value, name, { required = false } = {}) {
 }
 
 function cssMacros(saved) {
-    return { macroEnhanced: captureEnhancedMacros(saved), names: { user: String(saved.name1 || 'User'), char: '' }, variables: {}, extra: { chat: [], chatMetadata: {} } };
+    return { macroEnhanced: captureEnhancedMacros(saved), names: { user: String(saved.name1 || 'User'), char: '' }, variables: {}, extra: { chat: [], chatMetadata: {}, characterScope: 'none' } };
 }
 
 export async function captureCustomCss(base, account, input = {}) {

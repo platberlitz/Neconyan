@@ -28,10 +28,9 @@ export async function captureQuietGeneration(base, account, input = {}) {
         throw operationError('Background prompts need an open solo chat.', 409);
     }
     const profileId = typeof input.profileId === 'string' ? input.profileId : '';
-    const macros = { names: { user: 'User', char: '' }, variables: {}, extra: { chat: [], chatMetadata: {} } };
-    await captureLabConnection(base, { profileId, acknowledgement: input.acknowledgement, maxTokens }, macros);
     const context = capturePromptingContext(base, account, { characterAvatar: locator.avatar, connectionProfileId: profileId || undefined },
         { maxTokens, locator: { group: false, avatar: locator.avatar, chat: locator.chat } });
+    await captureLabConnection(base, { profileId, acknowledgement: input.acknowledgement, maxTokens }, context.macros);
     return { account, context, prompt, maxTokens };
 }
 

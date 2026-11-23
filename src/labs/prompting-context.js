@@ -57,7 +57,7 @@ export function capturePromptingContext(base, account, pins, { maxTokens = 300, 
     const chat = { locator: selected, records, persona: { ...persona, name: names.user }, macros: {
         macroEnhanced: captureEnhancedMacros(settings, data.extensions, { personaAvatar: persona.evidence?.avatar }),
         names, character: { ...data, persona: persona.description }, variables: { local: records[0].chat_metadata.variables ?? {},
-            global: settings.extension_settings?.variables?.global ?? {} }, extra: { chat: records.slice(1), chatMetadata: records[0].chat_metadata },
+            global: settings.extension_settings?.variables?.global ?? {} }, extra: { chat: records.slice(1), chatMetadata: records[0].chat_metadata, character: data, characterAvatar: avatar },
     } };
     let binding = captureGenerationBinding(base.directories, pins.connectionProfileId
         ? { kind: 'profile', profileId: pins.connectionProfileId } : { kind: 'active' }, { settingsRevision: getSettingsRevision(readLabSettings(base)) });
