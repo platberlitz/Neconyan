@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
+import { load } from 'cheerio';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 
@@ -35,6 +36,8 @@ const allowList = JSON.parse(readFileSync(new URL('./fixtures/adjacent-placehold
 
 test('the checkpoint tooltip is collected under its full multiline key', () => {
     const key = 'Open checkpoint chat\nShift+Click to replace the existing checkpoint with a new one';
+    const $ = load(readFileSync(new URL('../public/index.html', import.meta.url), 'utf8'));
+    assert.equal($('#message_template .mes_bookmark').attr('data-tooltip'), key);
     const keys = collectedKeys();
     assert.ok(keys.includes(key));
     assert.ok(!keys.includes(`[data-tooltip]${key}`));
