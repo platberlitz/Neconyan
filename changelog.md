@@ -137,6 +137,7 @@
 - PR #916 (2026-11-23) `fix(lorebooks): clear every link when a lorebook is deleted or renamed`
 - PR #917 (2026-11-23) `perf(chats): patch large chat saves instead of sending whole chat`
 - PR #918 (2026-11-23) `fix(conversation): load the card's linked lorebooks on character default`
+- PR #919 (2026-11-23) `fix(folders): unblock AI sorting after background jobs end`
 - PR #920 (2026-11-23) `feat(groups): refresh group chats and configure director timeout`
 
 ### Local Commits
