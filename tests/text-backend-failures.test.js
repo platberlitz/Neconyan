@@ -9,6 +9,7 @@ import {
     readBackendFailure,
     watchTextBackend,
     withoutEchoes,
+    withoutRecentRequestText,
     withoutServerAddresses,
 } from '../public/scripts/text-backend-failures.js';
 
@@ -38,6 +39,7 @@ describe('readBackendFailure', () => {
         ['text completion wrapper', { error: true, status: 503, response: 'model is loading' }, 502, 'model is loading', 503],
         ['wrapper holding JSON', { error: true, status: '400', response: '{"error":{"message":"context length exceeded"}}' }, 400, 'context length exceeded', 400],
         ['plain JSON string', '{"error":"no slots available"}', 500, 'no slots available', 500],
+        ['wrapper as text, holding JSON', JSON.stringify({ error: true, status: 400, response: JSON.stringify({ error: { code: 400, message: 'context length exceeded', type: 'x' } }) }), 400, 'context length exceeded', 400],
         ['validation array', { detail: [{ msg: 'a' }, { msg: 'b' }] }, 422, 'a; b', 422],
         ['HTML page', '<html><body><h1>502 Bad Gateway</h1></body></html>', 502, '502 Bad Gateway', 502],
         ['plain text', 'upstream timed out', 504, 'upstream timed out', 504],
@@ -86,7 +88,7 @@ describe('echoed prompt and reply text', () => {
 
     test('a small part of a long prompt is still found', () => {
         const prompt = `${'Filler words that go first. '.repeat(20)}${PROMPT}${' Closing words that go last.'.repeat(20)}`;
-        expect(withoutEchoes(`Invalid input: ...keeper whispered about the marmalade moon to ...`, [prompt]).toLowerCase()).not.toContain('marmalade');
+        expect(withoutEchoes('Invalid input: ...keeper whispered about the marmalade moon to ...', [prompt]).toLowerCase()).not.toContain('marmalade');
     });
 
     test('the backend\'s own wording stays', () => {
@@ -178,7 +180,7 @@ describe('one failed request, one entry', () => {
             yield { text: REPLY };
             throw new Error(`The provider disconnected before completing the reply. Last words: ${REPLY}`);
         });
-        await expect((async () => { for await (const _chunk of stream()) { /* drain */ } })()).rejects.toThrow('disconnected');
+        await expect((async () => { for await (const chunk of stream()) { void chunk; } })()).rejects.toThrow('disconnected');
         expect(getProviderFailures()).toHaveLength(1);
         expect(getProviderFailures()[0].message).toContain('disconnected before completing');
         expectClean();
@@ -192,7 +194,7 @@ describe('one failed request, one entry', () => {
             controller.abort();
             throw new DOMException('aborted', 'AbortError');
         });
-        await expect((async () => { for await (const _chunk of stream()) { /* drain */ } })()).rejects.toThrow();
+        await expect((async () => { for await (const chunk of stream()) { void chunk; } })()).rejects.toThrow();
         expect(getProviderFailures()).toEqual([]);
     });
 
@@ -225,27 +227,83 @@ describe('what the assistant receives', () => {
     });
 });
 
+describe('text that other parts of the evidence quote from a failed request', () => {
+    const failedRequest = () => {
+        const watch = watchTextBackend({ kind: 'text', type: 'llamacpp', data: { prompt: `Story so far. ${PROMPT} More story.` } });
+        watch.rejected({ status: 400, statusText: 'Bad Request' }, { error: { message: 'Context size exceeded' } });
+        return watch;
+    };
+
+    test('an unhandled error that quotes the prompt and the server loses both', () => {
+        failedRequest();
+        const message = `Error: Context size exceeded. Input began with: "${PROMPT}" while calling ${URL_WITH_LOGIN}`;
+        const clean = withoutRecentRequestText(message, { addresses: 'message' }).toLowerCase();
+        for (const secret of ['violet lighthouse', 'marmalade moon', 'hunter2pass', 'llamauser', '192.168.1.5', 'querysecret99']) expect(clean).not.toContain(secret);
+        expect(clean).toContain('context size exceeded');
+    });
+
+    test('a server log line with the prompt escaped inside JSON is cut too', () => {
+        failedRequest();
+        const line = `Streaming request failed with status 400 Bad Request: {"detail":{"msg":"Input began with: \\"${PROMPT}\\" at ${URL_WITH_LOGIN}"}}`;
+        const clean = withoutRecentRequestText(line, { addresses: 'message' }).toLowerCase();
+        expect(clean).not.toContain('marmalade moon');
+        expect(clean).not.toContain('hunter2pass');
+        expect(clean).toContain('streaming request failed with status 400');
+    });
+
+    test('a stack keeps its frames and loses addresses in the other lines', () => {
+        failedRequest();
+        const stack = `Error: failed at ${URL_WITH_LOGIN}\n    at fetchIt (http://127.0.0.1:8000/scripts/textgen-settings.js:10:5)`;
+        const clean = withoutRecentRequestText(stack, { addresses: 'stack' });
+        expect(clean).not.toContain('hunter2pass');
+        expect(clean).toContain('at fetchIt (http://127.0.0.1:8000/scripts/textgen-settings.js:10:5)');
+    });
+
+    test('a reply that arrived before the failure is cut as well', async () => {
+        const watch = watchTextBackend({ kind: 'text', type: 'llamacpp', data: { prompt: 'short' } });
+        const open = watch.observe(async function* () {
+            yield { text: REPLY };
+            throw new Error('The provider disconnected before completing the reply.');
+        });
+        await expect((async () => { for await (const chunk of open()) void chunk; })()).rejects.toThrow('disconnected');
+        expect(withoutRecentRequestText(`Error: stopped after "${REPLY}"`).toLowerCase()).not.toContain('lantern with a secret');
+    });
+
+    test('text is returned untouched when nothing failed, or when it is not text', () => {
+        expect(withoutRecentRequestText(undefined)).toBeUndefined();
+        expect(withoutRecentRequestText(42)).toBe(42);
+        expect(withoutRecentRequestText('', { addresses: 'message' })).toBe('');
+    });
+});
+
 describe('wiring', () => {
     const read = file => readFileSync(new URL(`../public/${file}`, import.meta.url), 'utf8');
 
     test('the helper imports nothing but the recorder', () => {
-        expect(read('scripts/text-backend-failures.js').match(/^import .*$/gm)).toEqual(["import { recordProviderFailure } from './app-evidence-log.js';"]);
+        expect(read('scripts/text-backend-failures.js').match(/^import .*$/gm)).toEqual(['import { recordProviderFailure } from \'./app-evidence-log.js\';']);
     });
 
     test('the recorder still has no dependency on the app', () => {
-        expect(read('scripts/app-evidence-log.js').match(/^import .*$/gm)).toEqual(["import { redactEvidenceText } from './scratchpad/evidence.js';"]);
+        expect(read('scripts/app-evidence-log.js').match(/^import .*$/gm)).toEqual(['import { redactEvidenceText } from \'./scratchpad/evidence.js\';']);
     });
 
     test.each([
-        ['scripts/kai-settings.js', "kind: 'kobold'"],
-        ['scripts/nai-settings.js', "kind: 'novel'"],
-        ['scripts/textgen-settings.js', "kind: 'text'"],
-        ['scripts/custom-request.js', "kind: 'text'"],
+        ['scripts/kai-settings.js', 'kind: \'kobold\''],
+        ['scripts/nai-settings.js', 'kind: \'novel\''],
+        ['scripts/textgen-settings.js', 'kind: \'text\''],
+        ['scripts/custom-request.js', 'kind: \'text\''],
         ['script.js', 'requestBackendJson'],
     ])('%s watches its request', (file, marker) => {
         const source = read(file);
         expect(source).toContain(marker);
         expect(source).toContain('watchTextBackend');
+    });
+
+    test('the evidence gatherer cleans browser errors and server log lines through the helper', () => {
+        const source = read('scripts/scratchpad/evidence-gather.js');
+        expect(source).toContain('from \'../text-backend-failures.js\'');
+        expect(source.match(/withoutRecentRequestText\(/g).length).toBeGreaterThanOrEqual(3);
+        expect(source).toContain('unquotedLogLines(admin?.logLines)');
     });
 
     test('the two non-streaming routes in script.js share one request function', () => {
