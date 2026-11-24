@@ -46,4 +46,26 @@ describe('Deep Swipe navigation guards', () => {
         ui.addSwipeNavigationToMessage(0);
         expect(getContextSpy).toHaveBeenCalled();
     });
+
+    test('addUiToAllMessages schedules no retry timer when no chat rows are rendered', async () => {
+        extensionSettings['Neconyan-Deep-Swipe'].enabled = true;
+        extensionSettings['Neconyan-Deep-Swipe'].swipeNavigation = true;
+        const previousDocument = global.document;
+        const setTimeoutSpy = jest.spyOn(global, 'setTimeout');
+        global.document = { querySelectorAll: jest.fn(() => []) };
+        try {
+            const ui = await import('../public/scripts/extensions/third-party/Neconyan-Deep-Swipe/ui.js');
+            ui.addUiToAllMessages();
+            expect(setTimeoutSpy).not.toHaveBeenCalled();
+        } finally {
+            setTimeoutSpy.mockRestore();
+            global.document = previousDocument;
+        }
+    });
+
+    test('Deep Swipe wires CHAT_CHANGED and boot without delayed addUiToAllMessages timers', async () => {
+        const fs = await import('node:fs');
+        const source = fs.readFileSync(new URL('../public/scripts/extensions/third-party/Neconyan-Deep-Swipe/index.js', import.meta.url), 'utf8');
+        expect(source).not.toMatch(/setTimeout\s*\([^)]*addUiToAllMessages/);
+    });
 });
