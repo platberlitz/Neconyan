@@ -204,6 +204,94 @@
     }
 }
 
+#neconyan-folder-tabs[hidden],
+#neconyan-folder-page[hidden] {
+    display: none;
+}
+
+#neconyan-folder-page {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    margin: 0 0 6px;
+}
+
+#neconyan-folder-page .neconyan-folder-page-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    font-size: 14px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#neconyan-folder-page .menu_button {
+    flex: 0 0 auto;
+    min-height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin: 0;
+    padding: 6px 12px;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+#neconyan-folder-page .neconyan-folder-page-organise {
+    min-width: 36px;
+    padding: 6px;
+}
+
+#neconyan-folder-page .menu_button:focus-visible,
+#neconyan-folders-button:focus-visible {
+    outline: 2px solid var(--neco-ginger);
+    outline-offset: 2px;
+}
+
+body.neconyan #right-nav-panel #rm_buttons_container #neconyan-folders-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: auto;
+    min-width: 44px;
+    min-height: 44px;
+    aspect-ratio: auto;
+    padding: 8px 10px;
+    white-space: nowrap;
+}
+
+#neconyan-folders-button .neconyan-folders-button-label {
+    font-family: var(--mainFontFamily);
+    font-weight: 500;
+    font-size: 12px;
+}
+
+#neconyan-folders-button[aria-pressed='true'] {
+    border-color: var(--neco-ginger);
+    background: color-mix(in srgb, var(--neco-ginger) 22%, var(--neco-surface));
+    color: var(--neco-ink);
+}
+
+.neconyan-folder-page-empty {
+    padding: 16px 8px;
+    text-align: center;
+}
+
+@media (max-width: 768px) {
+    #neconyan-folder-page .menu_button {
+        min-height: 44px;
+    }
+
+    #neconyan-folder-page .neconyan-folder-page-organise {
+        min-width: 44px;
+    }
+}
+
 .neconyan-folder-organiser {
     display: flex;
     flex-direction: column;
@@ -250,7 +338,8 @@
     white-space: pre-wrap;
 }
 
-.neconyan-folder-organiser-field {
+.neconyan-folder-organiser-field,
+.neconyan-folder-organiser-option {
     display: flex;
     flex-direction: column;
     gap: 4px;

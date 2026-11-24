@@ -72,7 +72,8 @@ const PRESET_BY_ID = new Map(AI_SORT_PRESETS.map(preset => [preset.id, preset]))
 /**
  * @typedef {object} CharacterFolderSettings
  * @property {number} version
- * @property {{ collapsed: boolean, hidden: string[] }} tabs
+ * @property {{ enabled: boolean }} folders Show folders on their own page instead of in the character list
+ * @property {{ enabled: boolean, collapsed: boolean, hidden: string[] }} tabs
  * @property {{ enabled: boolean, createFolders: boolean, folderType: 'OPEN'|'CLOSED', sources: Record<string, string> }} autoSort
  * @property {{ promptId: string, customPrompts: { id: string, name: string, prompt: string }[], scope: 'unsorted'|'all', allowNewFolders: boolean, batchSize: number }} ai
  */
@@ -81,7 +82,8 @@ const PRESET_BY_ID = new Map(AI_SORT_PRESETS.map(preset => [preset.id, preset]))
 export function defaultCharacterFolderSettings() {
     return {
         version: CHARACTER_FOLDER_SETTINGS_VERSION,
-        tabs: { collapsed: false, hidden: [] },
+        folders: { enabled: false },
+        tabs: { enabled: false, collapsed: false, hidden: [] },
         autoSort: { enabled: false, createFolders: true, folderType: 'OPEN', sources: {} },
         ai: { promptId: 'genre', customPrompts: [], scope: 'unsorted', allowNewFolders: true, batchSize: AI_SORT_DEFAULT_BATCH },
     };
@@ -109,6 +111,7 @@ function clampInteger(value, min, max, fallback) {
 export function normalizeCharacterFolderSettings(raw) {
     const defaults = defaultCharacterFolderSettings();
     const source = isPlainObject(raw) ? raw : {};
+    const folders = isPlainObject(source.folders) ? source.folders : {};
     const tabs = isPlainObject(source.tabs) ? source.tabs : {};
     const autoSort = isPlainObject(source.autoSort) ? source.autoSort : {};
     const ai = isPlainObject(source.ai) ? source.ai : {};
@@ -146,7 +149,11 @@ export function normalizeCharacterFolderSettings(raw) {
 
     return {
         version: CHARACTER_FOLDER_SETTINGS_VERSION,
+        folders: {
+            enabled: typeof folders.enabled === 'boolean' ? folders.enabled : defaults.folders.enabled,
+        },
         tabs: {
+            enabled: typeof tabs.enabled === 'boolean' ? tabs.enabled : defaults.tabs.enabled,
             collapsed: typeof tabs.collapsed === 'boolean' ? tabs.collapsed : defaults.tabs.collapsed,
             hidden,
         },
@@ -286,6 +293,27 @@ export function planImportFolder({ sourceId, settings, tags }) {
 /** @param {{ folder_type?: string }} tag */
 export function isFolderTag(tag) {
     return AUTO_SORT_FOLDER_TYPES.includes(tag?.folder_type);
+}
+
+/** Page state shared with the character list: whether the Folders page is showing. */
+export const characterFolderView = { pageOpen: false };
+
+/**
+ * Which folder rows the character list shows.
+ * - 'none': no folder rows, and characters in closed folders show in the list
+ * - 'characters': folders are on but the Folders page is closed; rows stay off the list
+ * - 'folders': the Folders page shows only the folder rows
+ * - 'nested': a folder is open, so its rows and characters show as before
+ *
+ * @param {ReturnType<typeof normalizeCharacterFolderSettings>} settings
+ * @param {{ bogusFolders?: boolean, pageOpen?: boolean, folderOpen?: boolean }} state
+ * @returns {'none'|'characters'|'folders'|'nested'}
+ */
+export function characterFolderListMode(settings, { bogusFolders = false, pageOpen = false, folderOpen = false } = {}) {
+    if (!bogusFolders) return 'none';
+    if (folderOpen) return 'nested';
+    if (!settings?.folders?.enabled) return 'none';
+    return pageOpen ? 'folders' : 'characters';
 }
 
 /**
@@ -491,8 +519,15 @@ export function classifyAiSortError(error) {
         message = 'Sorting stopped.';
     } else if (code === 'settings_conflict') {
         message = 'Reload this page to get the settings saved on another device, then try again.';
+    } else if (code === 'empty_model_reply') {
+        return { message: 'The model sent an empty reply. Try again, or choose another model in Connections.', fatal: false, empty: true };
+    } else if (code === 'invalid_model_reply' || error?.name === 'SyntaxError' || /non.json|invalid json|not valid json|\bjson\b.*\b(parse|error|invalid)|unexpected (token|end of)/.test(detail)) {
+        // A reply the model sent but nobody could read is a model failure, never a settings one,
+        // even when the provider's own error text happens to mention a connection.
+        return { message: 'The model sent a reply that could not be read. Try another prompt or fewer characters per request.', fatal: false };
     } else if (['active_settings_ack_required', 'settings_save_failed'].includes(code) || /save the (active connection settings|current active provider)|active connection settings are not acknowledged/.test(detail)) {
-        message = 'Save your settings in Connections, then try again.';
+        // Another save can be in flight between batches; the runner retries before reporting this.
+        return { message: 'Save your settings in Connections, then try again.', fatal: true, settings: true };
     } else if (status === 401 || status === 403 || /api[_ -]?key|unauthori[sz]ed|authentication|invalid token/.test(`${code} ${detail}`)) {
         message = 'Check your API key in Connections, reconnect and try again.';
     } else if (status === 429 || /rate.?limit|quota|too many requests|insufficient (credits|balance)/.test(`${code} ${detail}`)) {
@@ -507,10 +542,8 @@ export function classifyAiSortError(error) {
         message = 'Connect to a model in Connections, then try again.';
     } else if (/offline|network|failed to fetch|load failed|timed? ?out|connection (?:lost|refused|reset)|econnreset|econnrefused/.test(`${code} ${detail}`)) {
         message = 'Check your internet and model connection, then try again.';
-    } else if (code === 'empty_model_reply' || /empty (?:reply|response|output)|(?:reply|response|output) (?:was|is) empty|no (?:reply|text|message generated)/.test(detail)) {
+    } else if (/empty (?:reply|response|output)|(?:reply|response|output) (?:was|is) empty|no (?:reply|text|message generated)/.test(detail)) {
         return { message: 'The model sent an empty reply. Try again, or choose another model in Connections.', fatal: false, empty: true };
-    } else if (code === 'invalid_model_reply' || /non.json|invalid json|unexpected token/.test(detail)) {
-        return { message: 'The model sent a reply that could not be read. Try another prompt or fewer characters per request.', fatal: false };
     } else if (status >= 500 || ['failed', 'interrupted', 'missing'].includes(error?.jobState)
         || /bad gateway|service unavailable|gateway time-?out|internal server error|overloaded|\b50[0-4]\b|job is unavailable|work is (?:failed|interrupted)/.test(detail)) {
         return { message: 'The model\'s provider failed on this batch. Try again in a moment, or choose another model in Connections.', fatal: false, failed: true };

@@ -514,6 +514,8 @@ export const refreshedKnowledgeCases = [
     ['Can my folders show as tabs above the character list?', 'characters.folder-tabs', 'All characters plus one tab per folder tag'],
     ['How do I make JanitorAI cards go into a JanitorAI folder when I import them?', 'characters.folder-tabs', 'Sort imported characters by site'],
     ['Can the AI sort my characters into folders with my own prompt?', 'characters.folder-tabs', 'New prompt saves your own sorting rule'],
+    ['How do I hide the folders at the top of my character list?', 'characters.folder-tabs', 'Folders are off until you turn them on'],
+    ['Can my folders get their own page instead of sitting in the character list?', 'characters.folder-tabs', 'Folders page moves folders out of the list onto their own page'],
     ['How many tracker-derived themes are in the UI Theme gallery?', 'appearance.theme-gallery', '115 full UI themes derived from the Regex Agent tracker themes'],
     ['What do the five swatches on a UI Theme card show?', 'appearance.theme-gallery', 'five-swatch palette preview (surface, chat, text, primary accent and secondary accent)'],
     ['How do I vote in a Chatroom poll or reply to the chatroom?', 'agents.chatroom-companion', 'puts \'I vote <option>\' into that Chatroom\'s Respond to the chatroom box without sending it'],

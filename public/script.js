@@ -300,6 +300,7 @@ import {
     tag_import_setting,
     applyCharacterTagsToMessageDivs,
 } from './scripts/tags.js';
+import { CHARACTER_FOLDER_SETTINGS_KEY, characterFolderListMode, characterFolderView, normalizeCharacterFolderSettings } from './scripts/neconyan-character-folders-policy.js';
 import { checkOpenRouterAuth, initSecrets, readSecretState } from './scripts/secrets.js';
 import { markdownExclusionExt } from './scripts/showdown-exclusion.js';
 import { markdownUnderscoreExt } from './scripts/showdown-underscore.js';
@@ -1986,8 +1987,14 @@ export async function printCharacters(fullRefresh = false) {
                 $(listId).append(getBackBlock());
             }
             const sourceCount = characterMenuEntityView === 'groups' ? groups.length : characters.length;
-            const hasRenderableData = data.some(entity => entity.type !== 'tag');
-            if (!hasRenderableData) {
+            const folderPage = getCharacterFolderListMode() === 'folders';
+            const hasRenderableData = folderPage ? data.length > 0 : data.some(entity => entity.type !== 'tag');
+            if (!hasRenderableData && folderPage) {
+                const empty = document.createElement('div');
+                empty.className = 'text_muted neconyan-folder-page-empty';
+                empty.textContent = t`No folders yet. Use Organise to make one.`;
+                $(listId).append(empty);
+            } else if (!hasRenderableData) {
                 const emptyBlock = await getEmptyBlock({
                     view: characterMenuEntityView,
                     filtered: sourceCount > 0 && entitiesFilter.hasAnyFilter(),
@@ -2012,7 +2019,7 @@ export async function printCharacters(fullRefresh = false) {
             }
 
             const hidden = sourceCount - displayCount;
-            if (hidden > 0 && entitiesFilter.hasAnyFilter()) {
+            if (!folderPage && hidden > 0 && entitiesFilter.hasAnyFilter()) {
                 const hiddenBlock = await getHiddenBlock(hidden);
                 $(listId).append(hiddenBlock);
             }
@@ -2128,11 +2135,21 @@ export function tagToEntity(tag) {
  * @param {boolean} [param0.doSort] - Whether the entity list should be sorted when returned
  * @returns {Entity[]} All entities
  */
+/** How the Characters list shows folder rows; folders sit on their own opt-in page. */
+function getCharacterFolderListMode() {
+    return characterFolderListMode(normalizeCharacterFolderSettings(power_user[CHARACTER_FOLDER_SETTINGS_KEY]), {
+        bogusFolders: Boolean(power_user.bogus_folders),
+        pageOpen: characterFolderView.pageOpen,
+        folderOpen: isBogusFolderOpen(),
+    });
+}
+
 export function getEntitiesList({ doFilter = false, doSort = true } = {}) {
+    const folderMode = getCharacterFolderListMode();
     let entities = [
         ...characters.map((item, index) => characterToEntity(item, index)),
         ...groups.map(item => groupToEntity(item)),
-        ...(power_user.bogus_folders ? tags.filter(isBogusFolder).sort(compareTagsForSort).map(item => tagToEntity(item)) : []),
+        ...(folderMode !== 'none' ? tags.filter(isBogusFolder).sort(compareTagsForSort).map(item => tagToEntity(item)) : []),
     ];
 
     // We need to do multiple filter runs in a specific order, otherwise different settings might override each other
@@ -2177,6 +2194,9 @@ export function getEntitiesList({ doFilter = false, doSort = true } = {}) {
         if (isFilterState(entitiesFilter.getFilterData(FILTER_TYPES.FOLDER), FILTER_STATES.SELECTED) && entities.filter(x => x.type == 'tag').length == 0) {
             entities = entitiesFilter.applyFilters(beforeFinalEntities, { tempOverrides: { [FILTER_TYPES.FOLDER]: FILTER_STATES.UNDEFINED }, clearFuzzySearchCaches: false });
         }
+        // The Folders page lists only folders; the Characters list keeps them off its rows.
+        if (folderMode === 'folders') entities = entities.filter(entity => entity.type === 'tag');
+        else if (folderMode === 'characters') entities = entities.filter(entity => entity.type !== 'tag');
     }
 
     // Final step, updating some properties after the last filter run

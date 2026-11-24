@@ -22,7 +22,7 @@ async function openCharacters(page, phone, { showToasts = false, onboarded = fal
     }
     if (phone) await applyIOSOnlyCss(page);
     await page.addStyleTag({ content: `${showToasts ? '' : '#toast-container, '}#nn-update-toast { display: none !important; }` });
-    await expect(page.locator('#neconyan-folder-tabs')).toBeVisible({ timeout: 30000 });
+    await expect(page.locator('#neconyan-folders-button, #neconyan-folder-tabs:not([hidden])').first()).toBeVisible({ timeout: 30000 });
 }
 
 const screenshotDir = process.env.NECONYAN_AI_SORT_SCREENSHOTS;
@@ -96,7 +96,8 @@ async function aiFixture(browser, testInfo, phone, { batchSize, baseline = false
             await script.saveSettings(0, { returnResult: true });
             document.querySelectorAll('#toast-container .toast').forEach(toast => toast.remove());
         }, count);
-        await page.locator('#neconyan-folder-tabs .neconyan-folder-tabs-organise').click();
+        // The baseline build still shows the tab rail; this build opens Organise from the folder button while folders are off.
+        await page.locator(baseline ? '#neconyan-folder-tabs .neconyan-folder-tabs-organise' : '#neconyan-folders-button').click();
         const organiser = page.locator('.neconyan-folder-organiser');
         await expect(organiser.locator('h3')).toHaveText('Organise folders');
         return { context, page, organiser, saves, rejectNextSave: () => { conflict = true; } };
@@ -347,6 +348,50 @@ test.describe('Sort with AI', () => {
         }
     });
 
+    test('a model reply that is not JSON is reported instead of a settings save after it', async ({ browser }, testInfo) => {
+        const { context, page, organiser } = await aiFixture(browser, testInfo, false, { batchSize: 25, count: 51 });
+        try {
+            let submissions = 0;
+            await page.route('**/api/operations/submit', route => {
+                submissions++;
+                if (submissions === 1) return completeBatchWithText(route, '{"assignments": [{"id": 1, "folder": ');
+                return rejectStaleAcknowledgement(route);
+            });
+            await expect(organiser.getByText('50 characters in 2 batches')).toBeVisible();
+            await organiser.getByRole('button', { name: 'Suggest folders' }).click();
+            const message = 'The model sent a reply that could not be read. Try another prompt or fewer characters per request.';
+            const status = organiser.locator('.neconyan-folder-organiser-status');
+            // The refused batch waits 0.6 s and 1.2 s between its two retries before the run stops.
+            await expect(status).toContainText(message, { timeout: 15_000 });
+            const toast = page.locator('#toast-container .toast-error');
+            await expect(toast).toContainText(message);
+            await expect(toast).not.toContainText('Save your settings');
+            // Each refused batch is asked again twice before the run stops.
+            expect(submissions).toBe(7);
+        } finally {
+            await context.close();
+        }
+    });
+
+    test('a settings save that settles on its own does not stop the run', async ({ browser }, testInfo) => {
+        const { context, page, organiser } = await aiFixture(browser, testInfo, false, { batchSize: 25, count: 26 });
+        try {
+            let submissions = 0;
+            await page.route('**/api/operations/submit', route => {
+                submissions++;
+                if (submissions <= 2) return rejectStaleAcknowledgement(route);
+                return completeBatch(route, [{ id: 1, folder: 'Coastal Towns' }]);
+            });
+            await expect(organiser.getByText('25 characters in 1 batch')).toBeVisible();
+            await organiser.getByRole('button', { name: 'Suggest folders' }).click();
+            await expect(organiser.getByText('1 suggestion for 1 folder')).toBeVisible({ timeout: 10_000 });
+            await expect(organiser.locator('.neconyan-folder-organiser-status')).not.toHaveAttribute('data-tone', 'error');
+            expect(submissions).toBe(3);
+        } finally {
+            await context.close();
+        }
+    });
+
     for (const phone of [false, true]) {
         test(`a batch whose job vanished does not block the next run: ${phone ? 'iPhone emulation after switching model' : 'desktop'}`, async ({ browser }, testInfo) => {
             const { context, page, organiser } = await aiFixture(browser, testInfo, phone, { batchSize: 5, count: 6 });
@@ -444,137 +489,186 @@ test.describe('Sort with AI', () => {
     }
 });
 
-for (const phone of [false, true]) {
-    test(`Folder tabs sort a JanitorAI import into its own folder: ${phone ? 'iPhone emulation' : 'desktop'}`, async ({ browser }, testInfo) => {
-        test.setTimeout(180000);
-        const context = await browser.newContext({
-            ...(phone ? IPHONE_SAFARI_CONTEXT : { viewport: { width: 1280, height: 900 } }),
-            baseURL: testInfo.project.use.baseURL, reducedMotion: 'reduce', serviceWorkers: 'block',
-        });
-        const name = `Folder Tab Check ${phone ? 'Phone' : 'Desktop'} ${Date.now().toString(36)}`;
-        let page;
-        try {
-            if (phone) await installIPhoneSafari(context, { standalone: false });
-            page = await context.newPage();
-            await openCharacters(page, phone);
+// Both imports save the same preview account's settings, so they run one after the other.
+test.describe('Import sorting', () => {
+    test.describe.configure({ mode: 'serial' });
 
-            await page.evaluate(async () => {
-                const { power_user } = await import('/scripts/power-user.js');
-                const tagsModule = await import('/scripts/tags.js');
-                window.__folderTabsRestore = {
-                    settings: power_user.character_folder_sort ? JSON.parse(JSON.stringify(power_user.character_folder_sort)) : undefined,
-                    tagImport: power_user.tag_import_setting,
-                    hadJanitor: tagsModule.tags.some(tag => tag.name === 'JanitorAI'),
-                };
-                power_user.tag_import_setting = tagsModule.tag_import_setting.NONE;
+    for (const phone of [false, true]) {
+        test(`Folder tabs sort a JanitorAI import into its own folder: ${phone ? 'iPhone emulation' : 'desktop'}`, async ({ browser }, testInfo) => {
+            test.setTimeout(180000);
+            const context = await browser.newContext({
+                ...(phone ? IPHONE_SAFARI_CONTEXT : { viewport: { width: 1280, height: 900 } }),
+                baseURL: testInfo.project.use.baseURL, reducedMotion: 'reduce', serviceWorkers: 'block',
             });
+            const name = `Folder Tab Check ${phone ? 'Phone' : 'Desktop'} ${Date.now().toString(36)}`;
+            let page;
+            try {
+                if (phone) await installIPhoneSafari(context, { standalone: false });
+                page = await context.newPage();
+                await openCharacters(page, phone);
 
-            const rail = page.locator('#neconyan-folder-tabs-rail');
-            const toggle = page.locator('#neconyan-folder-tabs .neconyan-folder-tabs-toggle');
-            if (await toggle.getAttribute('aria-expanded') === 'false') await toggle.click();
-            await expect(rail).toBeVisible();
-            const all = rail.locator('.neconyan-folder-tab[data-folder-id=""]');
-            if (await all.getAttribute('aria-pressed') !== 'true') await all.click();
-            await expect(all).toHaveAttribute('aria-pressed', 'true');
-
-            await page.locator('#neconyan-folder-tabs .neconyan-folder-tabs-organise').click();
-            const organiser = page.locator('.neconyan-folder-organiser');
-            await expect(organiser.locator('h3')).toHaveText('Organise folders');
-            const bySite = organiser.locator('label').filter({ hasText: 'Sort imported characters by site' }).locator('input');
-            if (!await bySite.isChecked()) await bySite.check({ force: true });
-            await expect(organiser.locator('label').filter({ hasText: 'Make a folder for a site the first time' })).toBeVisible();
-            await page.locator('dialog[open] .popup-button-ok').click();
-            await expect(organiser).toHaveCount(0);
-
-            await page.evaluate(async (name) => {
-                const script = await import('/script.js');
-                const card = {
-                    spec: 'chara_card_v2', spec_version: '2.0',
-                    data: { name, description: 'A folder tab test card.', first_mes: 'Hello.', personality: '', scenario: '', mes_example: '', creator_notes: '', system_prompt: '', post_history_instructions: '', alternate_greetings: [], tags: [], creator: '', character_version: '', extensions: {} },
-                };
-                const file = new File([JSON.stringify(card)], 'folder-tab-check.json', { type: 'application/json' });
-                window.__folderTabsImport = 'running';
-                script.processDroppedFiles([file], new Map(), { sourceUrl: 'https://janitorai.com/characters/folder-tab-check' })
-                    .then(() => { window.__folderTabsImport = 'done'; }, error => { window.__folderTabsImport = `failed: ${error}`; });
-            }, name);
-            await expect.poll(() => page.evaluate(() => window.__folderTabsImport), { timeout: 60000 }).toBe('done');
-
-            const janitor = rail.locator('.neconyan-folder-tab').filter({ has: page.locator('.neconyan-folder-tab-name', { hasText: /^JanitorAI$/ }) });
-            await expect(janitor).toHaveCount(1);
-            await expect.poll(() => page.evaluate(async (name) => {
-                const script = await import('/script.js');
-                const tagsModule = await import('/scripts/tags.js');
-                const folder = tagsModule.tags.find(tag => tag.name === 'JanitorAI');
-                const character = script.characters.find(item => item.name === name);
-                return Boolean(folder && ['OPEN', 'CLOSED'].includes(folder.folder_type) && character && tagsModule.tag_map[character.avatar]?.includes(folder.id));
-            }, name)).toBe(true);
-
-            // Importing opens the new character, so go back to the list.
-            await page.evaluate(() => window.NeconyanShell.openTab('characters', 'characters'));
-            await expect(page.locator('#neconyan-folder-tabs')).toBeVisible();
-            await janitor.click();
-            await expect(janitor).toHaveAttribute('aria-pressed', 'true');
-            await expect(all).toHaveAttribute('aria-pressed', 'false');
-            await expect(page.locator('#neconyan-folder-tabs .neconyan-folder-tabs-current')).toHaveText('JanitorAI');
-            await expect(page.locator('#rm_characters_block .rm_tag_filter .tag.selected')).toHaveCount(1);
-            await expect(page.locator('#rm_print_characters_block .character_select .ch_name').filter({ hasText: name })).toHaveCount(1);
-            await all.click();
-            await expect(all).toHaveAttribute('aria-pressed', 'true');
-            await expect(page.locator('#rm_characters_block .rm_tag_filter .tag.selected')).toHaveCount(0);
-
-            // The folder's own row in the list is one compact line: name beside the icon, cards at the end.
-            const folderRow = page.locator('#rm_print_characters_block > .bogus_folder_select').filter({ has: page.locator('.ch_name', { hasText: /^JanitorAI$/ }) });
-            await expect(folderRow).toHaveCount(1);
-            await expect.poll(() => folderRow.evaluate(row => {
-                const box = selector => row.querySelector(selector).getBoundingClientRect();
-                const [icon, label, count, cards] = [box(':scope > .avatar'), box('.ch_name'), box('.bogus_folder_counter'), box('.bogus_folder_avatars_block')];
-                return row.getBoundingClientRect().height <= 60
-                    && label.left - icon.right <= 16
-                    && count.left >= label.right && count.top < label.bottom
-                    && cards.left >= count.right && cards.top < label.bottom;
-            })).toBe(true);
-
-            if (phone) {
-                const touch = await rail.evaluate(node => window.getComputedStyle(node).touchAction);
-                expect(touch).toBe('pan-x');
-            }
-            const sizes = await rail.locator('.neconyan-folder-tab').evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().height));
-            for (const height of sizes) expect(height).toBeGreaterThanOrEqual(phone ? 44 : 32);
-
-            await toggle.click();
-            await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-            await expect(rail).toBeHidden();
-            await toggle.click();
-            await expect(rail).toBeVisible();
-        } finally {
-            if (page) {
-                await page.evaluate(async (name) => {
-                    const script = await import('/script.js');
+                await page.evaluate(async () => {
                     const { power_user } = await import('/scripts/power-user.js');
                     const tagsModule = await import('/scripts/tags.js');
-                    const restore = window.__folderTabsRestore;
-                    if (!restore) return;
-                    for (const character of script.characters.filter(item => item.name === name)) {
-                        await fetch('/api/characters/delete', {
-                            method: 'POST',
-                            headers: script.getRequestHeaders(),
-                            body: JSON.stringify({ avatar_url: character.avatar, delete_chats: true }),
-                        });
-                        delete tagsModule.tag_map[character.avatar];
-                    }
-                    if (!restore.hadJanitor) {
-                        const index = tagsModule.tags.findIndex(tag => tag.name === 'JanitorAI');
-                        if (index >= 0) tagsModule.tags.splice(index, 1);
-                    }
-                    if (restore.settings === undefined) delete power_user.character_folder_sort;
-                    else power_user.character_folder_sort = restore.settings;
-                    power_user.tag_import_setting = restore.tagImport;
-                    // No character list refresh here: the deleted card is still open,
-                    // and refreshing would raise the app's 'no longer available' reload prompt.
-                    await script.saveSettings();
-                }, name).catch(() => {});
+                    window.__folderTabsRestore = {
+                        settings: power_user.character_folder_sort ? JSON.parse(JSON.stringify(power_user.character_folder_sort)) : undefined,
+                        tagImport: power_user.tag_import_setting,
+                        hadJanitor: tagsModule.tags.some(tag => tag.name === 'JanitorAI'),
+                    };
+                    power_user.tag_import_setting = tagsModule.tag_import_setting.NONE;
+                    const folders = await import('/scripts/neconyan-character-folders-policy.js');
+                    const fresh = folders.normalizeCharacterFolderSettings(power_user.character_folder_sort);
+                    fresh.folders.enabled = false;
+                    fresh.tabs.enabled = false;
+                    power_user.character_folder_sort = fresh;
+                    (await import('/scripts/neconyan-character-folders.js')).setFolderPageOpen(false);
+                });
+
+                // Folders and folder tabs are off by default: the list keeps its space and only the folder button shows.
+                const entry = page.locator('#neconyan-folders-button');
+                await expect(entry).toBeVisible();
+                await expect(page.locator('#neconyan-folder-tabs')).toBeHidden();
+                await expect(page.locator('#neconyan-folder-page')).toBeHidden();
+                const entrySize = await entry.boundingBox();
+                expect(entrySize.height).toBeGreaterThanOrEqual(phone ? 44 : 32);
+
+                await entry.click();
+                const organiser = page.locator('.neconyan-folder-organiser');
+                await expect(organiser.locator('h3')).toHaveText('Organise folders');
+                const tabsSwitch = organiser.locator('.neconyan-folder-organiser-show label').filter({ hasText: 'Folder tabs' }).locator('input');
+                const pageSwitch = organiser.locator('.neconyan-folder-organiser-show label').filter({ hasText: 'Folders page' }).locator('input');
+                await expect(tabsSwitch).not.toBeChecked();
+                await expect(pageSwitch).not.toBeChecked();
+                await tabsSwitch.check({ force: true });
+                const bySite = organiser.locator('label').filter({ hasText: 'Sort imported characters by site' }).locator('input');
+                if (!await bySite.isChecked()) await bySite.check({ force: true });
+                await expect(organiser.locator('label').filter({ hasText: 'Make a folder for a site the first time' })).toBeVisible();
+                await page.locator('dialog[open] .popup-button-ok').click();
+                await expect(organiser).toHaveCount(0);
+
+                const rail = page.locator('#neconyan-folder-tabs-rail');
+                const toggle = page.locator('#neconyan-folder-tabs .neconyan-folder-tabs-toggle');
+                await expect(page.locator('#neconyan-folder-tabs')).toBeVisible();
+                await expect(page.locator('#neconyan-folder-page')).toBeHidden();
+                if (await toggle.getAttribute('aria-expanded') === 'false') await toggle.click();
+                await expect(rail).toBeVisible();
+                const all = rail.locator('.neconyan-folder-tab[data-folder-id=""]');
+                if (await all.getAttribute('aria-pressed') !== 'true') await all.click();
+                await expect(all).toHaveAttribute('aria-pressed', 'true');
+
+                await page.evaluate(async (name) => {
+                    const script = await import('/script.js');
+                    const card = {
+                        spec: 'chara_card_v2', spec_version: '2.0',
+                        data: { name, description: 'A folder tab test card.', first_mes: 'Hello.', personality: '', scenario: '', mes_example: '', creator_notes: '', system_prompt: '', post_history_instructions: '', alternate_greetings: [], tags: [], creator: '', character_version: '', extensions: {} },
+                    };
+                    const file = new File([JSON.stringify(card)], 'folder-tab-check.json', { type: 'application/json' });
+                    window.__folderTabsImport = 'running';
+                    script.processDroppedFiles([file], new Map(), { sourceUrl: 'https://janitorai.com/characters/folder-tab-check' })
+                        .then(() => { window.__folderTabsImport = 'done'; }, error => { window.__folderTabsImport = `failed: ${error}`; });
+                }, name);
+                await expect.poll(() => page.evaluate(() => window.__folderTabsImport), { timeout: 60000 }).toBe('done');
+
+                const janitor = rail.locator('.neconyan-folder-tab').filter({ has: page.locator('.neconyan-folder-tab-name', { hasText: /^JanitorAI$/ }) });
+                await expect(janitor).toHaveCount(1);
+                await expect.poll(() => page.evaluate(async (name) => {
+                    const script = await import('/script.js');
+                    const tagsModule = await import('/scripts/tags.js');
+                    const folder = tagsModule.tags.find(tag => tag.name === 'JanitorAI');
+                    const character = script.characters.find(item => item.name === name);
+                    return Boolean(folder && ['OPEN', 'CLOSED'].includes(folder.folder_type) && character && tagsModule.tag_map[character.avatar]?.includes(folder.id));
+                }, name)).toBe(true);
+
+                // Importing opens the new character, so go back to the list.
+                await page.evaluate(() => window.NeconyanShell.openTab('characters', 'characters'));
+                await expect(page.locator('#neconyan-folder-tabs')).toBeVisible();
+                await janitor.click();
+                await expect(janitor).toHaveAttribute('aria-pressed', 'true');
+                await expect(all).toHaveAttribute('aria-pressed', 'false');
+                await expect(page.locator('#neconyan-folder-tabs .neconyan-folder-tabs-current')).toHaveText('JanitorAI');
+                await expect(page.locator('#rm_characters_block .rm_tag_filter .tag.selected')).toHaveCount(1);
+                await expect(page.locator('#rm_print_characters_block .character_select .ch_name').filter({ hasText: name })).toHaveCount(1);
+                await all.click();
+                await expect(all).toHaveAttribute('aria-pressed', 'true');
+                await expect(page.locator('#rm_characters_block .rm_tag_filter .tag.selected')).toHaveCount(0);
+
+                // Without the Folders page, folder rows stay out of the character list and the card shows in it.
+                const folderRow = page.locator('#rm_print_characters_block > .bogus_folder_select').filter({ has: page.locator('.ch_name', { hasText: /^JanitorAI$/ }) });
+                await expect(folderRow).toHaveCount(0);
+                await expect(page.locator('#rm_print_characters_block > .bogus_folder_select')).toHaveCount(0);
+
+                // The Folders page lists folders on their own; the folder button opens it and All characters goes back.
+                await entry.click();
+                await page.locator('.neconyan-folder-organiser-show label').filter({ hasText: 'Folders page' }).locator('input').check({ force: true });
+                await page.locator('dialog[open] .popup-button-ok').click();
+                await expect(organiser).toHaveCount(0);
+                await expect(page.locator('#neconyan-folder-page')).toBeHidden();
+                await entry.click();
+                await expect(entry).toHaveAttribute('aria-pressed', 'true');
+                await expect(page.locator('#neconyan-folder-page')).toBeVisible();
+                await expect(folderRow).toHaveCount(1);
+                await expect(page.locator('#rm_print_characters_block > .character_select')).toHaveCount(0);
+                // The folder's own row is one compact line: name beside the icon, cards at the end.
+                await expect.poll(() => folderRow.evaluate(row => {
+                    const box = selector => row.querySelector(selector).getBoundingClientRect();
+                    const [icon, label, count, cards] = [box(':scope > .avatar'), box('.ch_name'), box('.bogus_folder_counter'), box('.bogus_folder_avatars_block')];
+                    return row.getBoundingClientRect().height <= 60
+                        && label.left - icon.right <= 16
+                        && count.left >= label.right && count.top < label.bottom
+                        && cards.left >= count.right && cards.top < label.bottom;
+                })).toBe(true);
+                const back = page.locator('#neconyan-folder-page .neconyan-folder-page-back');
+                const backSize = await back.boundingBox();
+                expect(backSize.height).toBeGreaterThanOrEqual(phone ? 44 : 32);
+                await back.click();
+                await expect(page.locator('#neconyan-folder-page')).toBeHidden();
+                await expect(entry).toHaveAttribute('aria-pressed', 'false');
+                await expect(folderRow).toHaveCount(0);
+                await expect(page.locator('#rm_print_characters_block .character_select .ch_name').filter({ hasText: name })).toHaveCount(1);
+
+                if (phone) {
+                    const touch = await rail.evaluate(node => window.getComputedStyle(node).touchAction);
+                    expect(touch).toBe('pan-x');
+                }
+                const sizes = await rail.locator('.neconyan-folder-tab').evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().height));
+                for (const height of sizes) expect(height).toBeGreaterThanOrEqual(phone ? 44 : 32);
+
+                await toggle.click();
+                await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+                await expect(rail).toBeHidden();
+                await toggle.click();
+                await expect(rail).toBeVisible();
+            } finally {
+                if (page) {
+                    await page.evaluate(async (name) => {
+                        const script = await import('/script.js');
+                        const { power_user } = await import('/scripts/power-user.js');
+                        const tagsModule = await import('/scripts/tags.js');
+                        const restore = window.__folderTabsRestore;
+                        if (!restore) return;
+                        for (const character of script.characters.filter(item => item.name === name)) {
+                            await fetch('/api/characters/delete', {
+                                method: 'POST',
+                                headers: script.getRequestHeaders(),
+                                body: JSON.stringify({ avatar_url: character.avatar, delete_chats: true }),
+                            });
+                            delete tagsModule.tag_map[character.avatar];
+                        }
+                        if (!restore.hadJanitor) {
+                            const index = tagsModule.tags.findIndex(tag => tag.name === 'JanitorAI');
+                            if (index >= 0) tagsModule.tags.splice(index, 1);
+                        }
+                        if (restore.settings === undefined) delete power_user.character_folder_sort;
+                        else power_user.character_folder_sort = restore.settings;
+                        power_user.tag_import_setting = restore.tagImport;
+                        (await import('/scripts/neconyan-character-folders.js')).setFolderPageOpen(false);
+                        // No character list refresh here: the deleted card is still open,
+                        // and refreshing would raise the app's 'no longer available' reload prompt.
+                        await script.saveSettings();
+                    }, name).catch(() => {});
+                }
+                await context.close();
             }
-            await context.close();
-        }
-    });
-}
+        });
+    }
+});
