@@ -1,5 +1,5 @@
 /** Repaint the bundled multi-script cards without changing their display protocol. */
-import { colorToCss, composite, flattenColor, parseColor } from '../color.js';
+import { colorToCss, composite, flattenColor, parseColor, readableColor } from '../color.js';
 import { getStock } from '../stock.js';
 import { accentAt } from '../tokens.js';
 import { part, rootAttrs, safeValue, surfaceBackground } from './parts.js';
@@ -88,9 +88,54 @@ function repaintMap(markup, spec, tokens) {
     return markup.replace(/--vm-tint:oklch\([^)]*\)/g, () => `--vm-tint:${accentAt(tokens, index++ % tokens.accents.length)}`);
 }
 
+function opaqueOver(value, baseCss) {
+    const base = parseColor(baseCss);
+    const flat = base ? flattenColor(value, [base])[0] : null;
+    return flat ? colorToCss(flat) : baseCss;
+}
+
+function repaintPlotCompass(markup, spec, tokens) {
+    const namespace = `ratpc-${tokens.slug}`;
+    const paper = mapPaper(tokens);
+    const raised = opaqueOver(tokens.surface.row, paper);
+    const accent = accentAt(tokens, 0);
+    const accentColor = parseColor(accent);
+    const onAccent = accentColor
+        ? readableColor(tokens.mode === 'light' ? '#ffffff' : '#111318', [accentColor], 4.5)
+        : 'var(--neco-on-accent,#ffffff)';
+    const headInk = safeValue(tokens.on.head);
+    return markup
+        .replaceAll(/\.pc(?=[\w-]|[\s,{:.>#\[])/g, `.${namespace}`)
+        .replaceAll(/class="([^"]*)"/g, (_, classes) => `class="${classes.replace(/\bpc(?=-|\b)/g, namespace)}"`)
+        .replace(`<div class="${namespace}" data-pc-card="1">`, `<div${rootAttrs(spec, tokens, [namespace])}${part('root')} data-pc-card="1">`)
+        .replace(/--pc-accent:[^;]+/, `--pc-accent:${accent}`)
+        .replace(/--pc-on-accent:[^;]+/, `--pc-on-accent:${onAccent}`)
+        .replace(/--pc-ink:[^;]+/, `--pc-ink:${tokens.on.body}`)
+        .replace(/--pc-muted:[^;]+/, `--pc-muted:${tokens.on.muted}`)
+        .replace(/--pc-paper:[^;]+/, `--pc-paper:${paper}`)
+        .replace(/--pc-raised:[^;]+/, `--pc-raised:${raised}`)
+        .replace(/--pc-line:[^;]+/, `--pc-line:${tokens.line.body}`)
+        .replace(/--pc-label:[^;]+/, `--pc-label:${tokens.on.label}`)
+        .replace(/--pc-accent-line:[^;]+/, `--pc-accent-line:${accent}`)
+        .replace(/--pc-head-from:[^;]+/, `--pc-head-from:${tokens.surface.headFrom}`)
+        .replace(/--pc-head-to:[^;]+/, `--pc-head-to:${tokens.surface.headTo}`)
+        .replace(/--pc-head-ink:[^;]+/, `--pc-head-ink:${headInk}`)
+        .replace(/--pc-head-sub:[^;]+/, `--pc-head-sub:${headInk}`)
+        .replace(/--pc-head-pill-bg:[^;]+/, `--pc-head-pill-bg:color-mix(in oklch,${headInk} 14%,transparent)`)
+        .replace(/--pc-head-pill-ink:[^;]+/, `--pc-head-pill-ink:${headInk}`)
+        .replace(/--pc-head-pill-line:[^;]+/, `--pc-head-pill-line:color-mix(in oklch,${headInk} 30%,transparent)`)
+        .replace(/--pc-radius:[^;]+/, `--pc-radius:${safeValue(tokens.radius.body)}`)
+        .replace(/--pc-head-font:[^;]+/, `--pc-head-font:${safeValue(tokens.type.family)}`)
+        .replace(/--pc-head-weight:[^;]+/, '--pc-head-weight:700')
+        .replace(/--pc-body-font:[^;]+/, `--pc-body-font:${safeValue(tokens.type.bodyFamily)}`);
+}
+
 export function renderTrackerCompanion(spec, tokens) {
     const stock = getStock(spec.templateId, spec.scriptId);
     if (!stock) throw new Error(`Missing stock script for ${spec.templateId}/${spec.scriptId}`);
+    if (spec.key === 'plot-compass') {
+        return repaintPlotCompass(protectInheritedInk(stock.replaceString, spec, tokens), spec, tokens);
+    }
     let markup = protectInheritedInk(repaint(stock.replaceString, tokens), spec, tokens);
     if (spec.key === 'visual-map') return repaintMap(markup, spec, tokens);
     if (['position-tracker-map-open', 'clothing-open', 'vitals-open', 'vitals-none'].includes(spec.scriptId)) {

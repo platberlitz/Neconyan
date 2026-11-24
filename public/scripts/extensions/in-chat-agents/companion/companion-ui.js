@@ -214,15 +214,17 @@ export function formatCompanionContent(agentId, result = {}, message = null, sty
         return '<div class="ica--companion-empty">No note returned.</div>';
     }
 
-    const content = applyAgentRegexToCompanionContent(agentId, stripTrackerMandatoryMarkers(rawContent), message);
+    const stripped = stripTrackerMandatoryMarkers(rawContent);
+    const content = applyAgentRegexToCompanionContent(agentId, stripped, message);
     const resolved = resolveCompanionContentMacros(content, message);
+    const resolvedRaw = content === stripped ? resolved : resolveCompanionContentMacros(stripped, message);
     const sanitizeOptions = { prefix: stylePrefix };
     const portraitCharacter = getCompanionPortraitCharacter(message);
     const bindPortraits = html => bindPortraitUrls(html, portraitCharacter);
 
     const decorate = html => {
         const lines = decorateChoiceLines(html);
-        return isPlotCompassAgent(getAgentById(agentId)) ? decoratePlotCompassChoices(lines, agentId, result, message, resolved) : lines;
+        return isPlotCompassAgent(getAgentById(agentId)) ? decoratePlotCompassChoices(lines, agentId, result, message, resolvedRaw) : lines;
     };
 
     if (result.format === 'html') {
@@ -582,7 +584,8 @@ export function decoratePlotCompassChoices(html, agentId, result = {}, message =
     for (const button of container.querySelectorAll('button.ica--choice-line')) {
         const clone = button.cloneNode(true);
         clone.querySelectorAll('.ica--plot-choice-tag').forEach(tag => tag.remove());
-        const number = labels.get(key(clone.textContent));
+        const choiceText = button.dataset.icaChoiceText;
+        const number = (choiceText ? labels.get(key(choiceText)) : undefined) ?? labels.get(key(clone.textContent));
         if (!number || matched.some(entry => entry.number === number)) continue;
         matched.push({ button, number });
     }

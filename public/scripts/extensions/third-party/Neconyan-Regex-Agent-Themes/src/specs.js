@@ -27,6 +27,7 @@ export const ARCHETYPES = Object.freeze({
     CLOTHING: 'clothing',
     VISUAL_MAP: 'visual-map',
     VITALS: 'vitals',
+    PLOT_COMPASS: 'plot-compass',
     BOLD: 'bold',
     CLEANUP: 'cleanup',
     PASSTHROUGH: 'passthrough',
@@ -476,6 +477,10 @@ for (const [templateId, key, archetype, entries] of [
         ['bar-fair', 5], ['bar-good', 5], ['bar-other', 5], ['change-up', 1], ['change-down', 1],
         ['change-steady', 0, true], ['status-bad', 1], ['status-good', 1], ['status-other', 1],
         ['close', 0], ['none', 0],
+    ]],
+    ['tpl-plot-compass-companion', 'plot-compass', ARCHETYPES.PLOT_COMPASS, [
+        ['card', 1], ['direction', 1], ['where', 1], ['developments', 1], ['next', 1],
+        ['choice', 2], ['bold', 1, true], ['italic', 1, true], ['tag-breaks', 0, true], ['line-breaks', 0, true],
     ]],
 ]) {
     for (const [suffix, groups, passthrough] of entries) {
@@ -1139,6 +1144,8 @@ export const PREVIEWABLE_ARCHETYPES = Object.freeze([
     ARCHETYPES.STREAM,
     ARCHETYPES.TRANSCRIPT,
     ARCHETYPES.POSITION,
+    ARCHETYPES.CLOTHING,
     ARCHETYPES.VISUAL_MAP,
     ARCHETYPES.VITALS,
+    ARCHETYPES.PLOT_COMPASS,
 ]);

@@ -145,6 +145,7 @@ describe('bundled tracker contracts', () => {
                 ['tpl-clothing-tracker-companion', 'clothing', ['Scene wardrobe', '{{user}}', 'Rain-darkened navy coat', 'Mira', 'Cream jumper', 'Léa O’Connor', 'Wool waistcoat', 'data-clothing-icon="footwear"', 'data-clothing-icon="other"']],
                 ['tpl-visual-map-companion', 'visual-map', ['Harbour at dusk', 'Tavern', 'Docks', 'Mira', 'Beside the boat', 'Trail']],
                 ['tpl-vitals-companion', 'vitals', ['Tired but safe', 'Health', 'Critical', 'Low', 'Fair', 'Good', 'Bruised ribs', 'Sheltered']],
+                ['tpl-plot-compass-companion', 'plot-compass', ['Recover the sealed harbour ledger before the night watch changes.', 'Rain hammers the pier roof', 'Mira bribes the dock clerk', '<strong>brass token</strong>', '<em>limping courier</em>', '2. Have the courier pause under the bridge lamp', 'data-pc-card="1"', 'data-pc-opts="1"', 'pura-choice']],
             ]) {
                 const built = buildAgentScripts(id, scriptsFor(id), selected);
                 const rendered = applyList(SAMPLES[key].full, built.scripts);
@@ -197,6 +198,21 @@ describe('bundled tracker contracts', () => {
         }
         expect(first).not.toContain(`.ratvm-${THEMES[1].slug}-place`);
         expect(second).not.toContain(`.ratvm-${THEMES[0].slug}-place`);
+    });
+
+    test('plot compass styles are scoped to their theme while preserving choice hooks', () => {
+        const id = 'tpl-plot-compass-companion';
+        const first = applyList(SAMPLES['plot-compass'].full, buildAgentScripts(id, scriptsFor(id), THEMES[0]).scripts);
+        const second = applyList(SAMPLES['plot-compass'].full, buildAgentScripts(id, scriptsFor(id), THEMES[1]).scripts);
+        for (const [html, selected] of [[first, THEMES[0]], [second, THEMES[1]]]) {
+            expect(html).toContain(`.ratpc-${selected.slug} .ratpc-${selected.slug}-opt`);
+            expect(html).toContain('data-pc-card="1"');
+            expect(html).toContain('data-pc-opts="1"');
+            expect(html.match(/class="pura-choice ratpc-/g)).toHaveLength(3);
+            expect(html).not.toContain('\n');
+        }
+        expect(first).not.toContain(`.ratpc-${THEMES[1].slug}-opt`);
+        expect(second).not.toContain(`.ratpc-${THEMES[0].slug}-opt`);
     });
 
     test('every theme keeps each chatroom platform look, scoped to that theme', () => {

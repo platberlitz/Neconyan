@@ -191,6 +191,13 @@ function renderChatroomOutput(source) {
     });
 }
 
+function renderPlotCompassOutput(source) {
+    const plotCompass = readTemplate('plot-compass-companion.json');
+    return applyRegexScriptList(source, plotCompass.regexScripts, AGENT_REGEX_PLACEMENT.AI_OUTPUT, {
+        isMarkdown: true,
+    });
+}
+
 const updatingExistingStatsSection = '## Updating Existing Stats\n\nIf an existing [USER_STATS] block is provided, update it instead of generating a new one.\n\nWhen applying a [LEVEL_UP]:\n- Increase Level by 1.\n- Apply skill increases.\n- Add earned perk, if any.\n- Preserve existing traits, perks, weaknesses, and notes unless changed.\n- Keep stats consistent and setting-specific.\n[/USER_STATS]';
 
 function expectLevelUpStatsDefaults(levelUp, stats) {
@@ -866,6 +873,7 @@ describe('in-chat agent bundled templates', () => {
         expect(companionGroup.agentTemplateIds).toContain('tpl-visual-map-companion');
 
         const plotCompass = findCatalogTemplate(catalog, 'tpl-plot-compass-companion');
+        expect(plotCompass).toEqual(readTemplate('plot-compass-companion.json'));
         expect(plotCompass).toEqual(expect.objectContaining({
             version: 2,
             category: 'companion',
@@ -876,6 +884,7 @@ describe('in-chat agent bundled templates', () => {
         expect(plotCompass.companion).toEqual(expect.objectContaining({
             trigger: 'auto',
             displayMode: 'panel',
+            format: 'markdown',
             rawPrompt: true,
             includeHistory: true,
             historyDepth: 1,
@@ -884,6 +893,8 @@ describe('in-chat agent bundled templates', () => {
         }));
         expect(plotCompass.prompt).toContain('[Plot Compass Objective]');
         expect(plotCompass.prompt).not.toContain('first line of [Your previous notes]');
+        expect(plotCompass.regexScripts).toHaveLength(10);
+        expect(readIndexSetBody('BUNDLED_REGEX_POST_DEFAULT_EXCLUDED_TEMPLATE_IDS')).toContain('PLOT_COMPASS_TEMPLATE_ID');
 
         const { isCompanionAgent, normalizeAgent } = await importAgentStore();
         const saved = normalizeAgent({
@@ -989,6 +1000,80 @@ describe('in-chat agent bundled templates', () => {
         expect(places[1]).not.toContain('Mara');
         expect(html).toContain('>Position map</div>');
         expect(html.match(/<div\b/g).length).toBe(html.match(/<\/div>/g).length);
+    });
+
+    test('renders Plot Compass notes as a styled folio card while tolerating formatting variations', () => {
+        const standard = renderPlotCompassOutput([
+            '**Direction:** Keep the pressure mounting without tipping the secret too early.',
+            '**Where we are:** Rain hammers the harbour warehouse while Mira guards the ledger.',
+            '**Possible developments:**',
+            '1. Mira bribes the watchman to buy ten minutes.',
+            '2. A courier knocks with a sealed letter from the magistrate.',
+            '3. A patrol lantern sweeps across the pier.',
+            '**Next move:** 2. Bring the courier in before the tension settles.',
+        ].join('\n'));
+
+        expect(standard).toContain('data-pc-card="1"');
+        expect(standard).toContain('<svg ');
+        expect(standard).toContain('class="pc-sec pc-dir"');
+        expect(standard).toContain('class="pc-sec pc-now"');
+        expect(standard).toContain('class="pc-sec pc-dev"');
+        expect(standard).toContain('data-pc-opts="1"');
+        expect(standard).toContain('class="pc-sec pc-foot"');
+        expect(standard.match(/class="pura-choice pc-opt"/g)).toHaveLength(3);
+        expect(standard).not.toContain('\n');
+        expect(standard.match(/<div\b/g).length).toBe(standard.match(/<\/div>/g).length);
+
+        const styleMatch = standard.match(/<style>([\s\S]*?)<\/style>/);
+        expect(styleMatch).not.toBeNull();
+        expect(styleMatch[1]).not.toMatch(/:\/\/|\/\/|\$\d|\$<|\{\{|!important/);
+        expect(() => css.parse(styleMatch[1])).not.toThrow();
+
+        const varied = renderPlotCompassOutput([
+            '```markdown',
+            '### Direction:',
+            'Push the **bargain** into the open before *dawn*.',
+            '',
+            '**Where we are**:',
+            'Both crews are stalled at the customs gate.',
+            'No one has drawn steel yet.',
+            '',
+            'Possible developments:',
+            '1) Offer the **forged manifest** first.',
+            '(2) Slip past the sentry by the *west winch*.',
+            '- **3.** Signal the tugboat to cut its lines.',
+            '4: Wait out the watch rotation.',
+            '',
+            'Next move: 1. Test whether the clerk blinks first.',
+            '```',
+        ].join('\n'));
+
+        expect(varied).toContain('data-pc-card="1"');
+        expect(varied).toContain('<strong>bargain</strong>');
+        expect(varied).toContain('<em>dawn</em>');
+        expect(varied).toContain('<strong>forged manifest</strong>');
+        expect(varied).toContain('<em>west winch</em>');
+        expect(varied.match(/class="pura-choice pc-opt"/g)).toHaveLength(4);
+        expect(varied).not.toContain('```');
+        expect(varied).not.toContain('###');
+        expect(varied).not.toContain('\n');
+        expect(varied.match(/<div\b/g).length).toBe(varied.match(/<\/div>/g).length);
+
+        const partial = renderPlotCompassOutput('Direction: Hold the beat.\nNext move: Let the silence linger.');
+        expect(partial).toContain('data-pc-card="1"');
+        expect(partial).toContain('class="pc-sec pc-dir"');
+        expect(partial).toContain('class="pc-sec pc-foot"');
+        expect(partial.match(/<div\b/g).length).toBe(partial.match(/<\/div>/g).length);
+    });
+
+    test('leaves plain or unstructured Plot Compass replies untouched', () => {
+        for (const fallback of [
+            'Bring a sealed letter into the scene.',
+            'Direction: Go north.',
+            '1. Just a numbered line without plot sections.',
+        ]) {
+            expect(renderPlotCompassOutput(fallback)).toBe(fallback);
+        }
     });
 
     test('seeds Vitals by default, switched off, as a Flash-sized companion that feeds the main reply', () => {

@@ -101,6 +101,9 @@ export const SAMPLES = Object.freeze({
     vitals: {
         full: 'vitals|{{user}}|Tired but safe\nbar|Health|23|-12|Bruised ribs\nbar|Satiety|41|-6|Missed lunch\nbar|Hydration|57|+15|Drank water\nbar|Energy|78|0|Steady\nbar|Morale|90|+4|Found a friend\nstatus|Bruised ribs|bad\nstatus|Sheltered|good\nvitals-end',
     },
+    'plot-compass': {
+        full: '**Direction:** Recover the sealed harbour ledger before the night watch changes.\n**Where we are:** Rain hammers the pier roof while {{user}} and Mira wait behind the lantern shed with a borrowed key.\n**Possible developments:**\n1. Mira bribes the dock clerk with the **brass token** while {{user}} slips into the records loft.\n2. Follow the *limping courier* toward the customs gate before he delivers the duplicate manifest.\n3. Wait out the watch bells and risk the patrol spotting fresh footprints in the mud.\n**Next move:** 2. Have the courier pause under the bridge lamp so {{user}} can spot the wax seal on his satchel.',
+    },
     bold: {
         full: 'The seal was **already broken** when you found it.',
     },

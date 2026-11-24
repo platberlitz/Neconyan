@@ -25,6 +25,7 @@ const RENDERERS = Object.freeze({
     [ARCHETYPES.CLOTHING]: renderTrackerCompanion,
     [ARCHETYPES.VISUAL_MAP]: renderTrackerCompanion,
     [ARCHETYPES.VITALS]: renderTrackerCompanion,
+    [ARCHETYPES.PLOT_COMPASS]: renderTrackerCompanion,
     [ARCHETYPES.BOLD]: renderBold,
 });
 

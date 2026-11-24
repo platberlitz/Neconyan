@@ -31,6 +31,7 @@ export const PREVIEW_KEYS = Object.freeze({
     [ARCHETYPES.CLOTHING]: 'clothing',
     [ARCHETYPES.VISUAL_MAP]: 'visual-map',
     [ARCHETYPES.VITALS]: 'vitals',
+    [ARCHETYPES.PLOT_COMPASS]: 'plot-compass',
 });
 
 /** Reconstructs a live-shaped `regexScripts` array from the stock baseline. */
