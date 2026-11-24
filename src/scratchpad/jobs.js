@@ -47,6 +47,7 @@ import { notebookContextLocked, withNotebookPreparation, captureReplyNotebookPro
 import { mewmoryContextLocked } from './mewmory.js';
 import { MAX_HISTORY_BYTES, MAX_HISTORY_MESSAGE_BYTES, MAX_HISTORY_TEXT_BYTES, MAX_SUMMARY_BYTES, SUMMARY_HISTORY_LIMIT, SUMMARY_MAX_TOKENS, SUMMARY_PLACEHOLDER, normaliseSummary, planSummary, summaryContext, summaryFingerprint, summaryMessages } from './summary.js';
 import { sameSourceContext } from '../../public/scripts/scratchpad/source.js';
+import { availableShareItems, canShareDepth, MAX_SHARE_DEPTH } from '../../public/scripts/scratchpad/share-request.js';
 import { captureImageTargetsLocked, capturePersonaTargetLocked, imagePersonaIdLocked, normaliseImageTargets, normalisePersonaTarget } from './image-targets.js';
 import { hasPendingImages } from './image-state.js';
 import { readScratchpadImageAvailability } from './images.js';
@@ -95,7 +96,28 @@ export function normaliseCapabilities(input, sourceKind = 'roleplay', source = {
         ...(sourceKind !== 'notebook' && value.appEvidence === true ? { appEvidence: true } : {}),
         ...(sourceKind !== 'notebook' && value.appSource === true ? { appSource: true } : {}),
         ...((sourceKind === 'roleplay' || sourceKind === 'conversation') && value.lastPrompt === true ? { lastPrompt: true } : {}),
-        ...(value.image !== undefined ? { image: value.image === true } : {}) };
+        ...(value.image !== undefined ? { image: value.image === true } : {}),
+        ...normaliseShareCapabilities(value, sourceKind, source) };
+}
+
+// Checked against the saved settings, so a switch that is already on is never offered.
+export function shareOffer(capabilities, settings) {
+    const include = settings?.include ?? {};
+    const shareable = (capabilities?.shareable ?? []).filter(key => include[key] !== true);
+    const depth = Number(settings?.depth);
+    const picked = Array.isArray(settings?.picked) && settings.picked.length > 0;
+    const shareDepth = capabilities?.shareDepth !== undefined && !picked && Number.isInteger(depth) && depth >= 0 && depth < MAX_SHARE_DEPTH ? depth : undefined;
+    return { ...(shareable.length ? { shareable } : {}), ...(shareDepth !== undefined ? { shareDepth } : {}) };
+}
+
+// Only switches this mode offers can be offered back to the assistant.
+function normaliseShareCapabilities(value, sourceKind, source) {
+    const offered = availableShareItems({ kind: sourceKind, avatar: source?.avatar });
+    const listed = Array.isArray(value.shareable) ? value.shareable.slice(0, offered.length * 2) : [];
+    const shareable = offered.filter(key => listed.includes(key));
+    const depth = value.shareDepth;
+    const shareDepth = canShareDepth({ kind: sourceKind }) && Number.isInteger(depth) && depth >= 0 && depth < MAX_SHARE_DEPTH ? depth : undefined;
+    return { ...(shareable.length ? { shareable } : {}), ...(shareDepth !== undefined ? { shareDepth } : {}) };
 }
 
 function normaliseNames(input) {
@@ -273,7 +295,7 @@ export async function acceptScratchpadReply(request, body = {}) {
         const library = readAssistantsLocked(lease);
         const snapshots = refreshSessionAssistants(session, library);
         writeBucketLocked(lease, bucket);
-        return { ...plan, targets, sharedPersona, sharedPreset, sharedAgents: session.settings.include.agents === true, sharedAuthorsNote: session.settings.include.authorsNote === true, sharedRegex: session.settings.include.regex === true, sharedCssSnippets: session.settings.include.cssSnippets === true, sharedDialogueColors: session.settings.include.dialogueColors === true, sharedLorebook: bucket.source.kind !== 'general' || Boolean(session.settings.lorebook), imagePersonaId: imagePersonaIdLocked(lease, bucket.source), notebook, webSearch, webPages, sourceLookup, revision: hash(canonical(session)), maxTokens: session.settings.maxTokens, stream: session.settings.stream !== false,
+        return { ...plan, targets, sharedPersona, sharedPreset, share: shareOffer(input.capabilities, session.settings), sharedAgents: session.settings.include.agents === true, sharedAuthorsNote: session.settings.include.authorsNote === true, sharedRegex: session.settings.include.regex === true, sharedCssSnippets: session.settings.include.cssSnippets === true, sharedDialogueColors: session.settings.include.dialogueColors === true, sharedLorebook: bucket.source.kind !== 'general' || Boolean(session.settings.lorebook), imagePersonaId: imagePersonaIdLocked(lease, bucket.source), notebook, webSearch, webPages, sourceLookup, revision: hash(canonical(session)), maxTokens: session.settings.maxTokens, stream: session.settings.stream !== false,
             mewmory, pinnedNote: session.pinnedNote, prefill: session.settings.prefill, partialPrefill: session.settings.partialPrefill,
             instructionsRevision: instructions.revision,
             assistantsRevision: library.revision,
@@ -293,7 +315,7 @@ export async function acceptScratchpadReply(request, body = {}) {
         const material = resolveGenerationProfile(directories, binding);
         const system = buildScratchpadSystemPrompt({ ...speaker, assistantNames: planned.assistantNames, userName: input.names.user, participants: planned.participants, randomReply: planned.randomReply,
             characterName: input.names.character, sourceKind: input.source.kind, webSearch: Boolean(planned.webSearch), webPages: Boolean(planned.webPages), imageEditing: imageAvailability.edit === true,
-            capabilities: { ...input.capabilities, appSource: Boolean(planned.sourceLookup), persona: planned.sharedPersona, preset: planned.sharedPreset, agents: input.capabilities.agents === true && planned.sharedAgents, authorsNote: input.capabilities.authorsNote === true && planned.sharedAuthorsNote, regex: input.capabilities.regex === true && planned.sharedRegex, cssSnippets: input.capabilities.cssSnippets === true && planned.sharedCssSnippets, dialogueColors: input.capabilities.dialogueColors === true && planned.sharedDialogueColors, lore: input.capabilities.lore === true && planned.sharedLorebook, image: Boolean(images), avatar: Boolean(images && planned.targets.length), notebook: Boolean(planned.notebook.text), mewmory: planned.mewmory.correctable === true }, help: input.help });
+            capabilities: { ...input.capabilities, appSource: Boolean(planned.sourceLookup), persona: planned.sharedPersona, preset: planned.sharedPreset, agents: input.capabilities.agents === true && planned.sharedAgents, authorsNote: input.capabilities.authorsNote === true && planned.sharedAuthorsNote, regex: input.capabilities.regex === true && planned.sharedRegex, cssSnippets: input.capabilities.cssSnippets === true && planned.sharedCssSnippets, dialogueColors: input.capabilities.dialogueColors === true && planned.sharedDialogueColors, lore: input.capabilities.lore === true && planned.sharedLorebook, image: Boolean(images), avatar: Boolean(images && planned.targets.length), notebook: Boolean(planned.notebook.text), mewmory: planned.mewmory.correctable === true, shareable: undefined, shareDepth: undefined, ...planned.share }, help: input.help });
         if (planned.rehearsal) system.text = [REHEARSAL_INSTRUCTIONS, speaker.userInstructions].filter(Boolean).join('\n\n');
         const buildMessages = history => buildScratchpadMessages({ system: system.text, context: input.context, notebookContext: planned.notebook.text, history, text: planned.prompt, attachments: planned.attachments, assistant: speaker.assistant, assistantNames: planned.assistantNames,
             userMessageId: planned.userMessageId, summary: planned.summary ? summaryContext(SUMMARY_PLACEHOLDER) : '',

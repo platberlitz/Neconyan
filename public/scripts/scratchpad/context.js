@@ -27,6 +27,7 @@ import { formatChecks, formatLorebookDetails, formatPresetValues, MAX_DETAIL_CHA
 import { sameSourceContext } from './source.js';
 import { homePersonaChoice } from './home-persona.js';
 import { shareScenarioNotes } from './scenario-note-references.js';
+import { unsharedShareItems } from './share-request.js';
 
 export { clearHomePersonaChoice, noteHomePersonaChoice } from './home-persona.js';
 
@@ -1154,6 +1155,7 @@ export async function buildContext({ source, settings, pendingText = '', session
     const text = sections.join('\n\n');
 
     const loreBooks = loreShared ? lore.books : [];
+    const unshared = unsharedShareItems(source, settings);
     return {
         text,
         names,
@@ -1181,6 +1183,8 @@ export async function buildContext({ source, settings, pendingText = '', session
             ...(appEvidenceShared ? { appEvidence: true } : {}),
             ...(appSourceShared ? { appSource: true } : {}),
             ...(lastPromptShared ? { lastPrompt: true } : {}),
+            ...(unshared.items.length ? { shareable: unshared.items } : {}),
+            ...(unshared.canIncreaseDepth ? { shareDepth: unshared.currentDepth } : {}),
         },
     };
 }

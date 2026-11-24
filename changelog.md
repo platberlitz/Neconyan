@@ -7,6 +7,7 @@
 - Group chats have scene rules now: whispers, 'Everyone hears this' lines and who heard each message. Mewmory keeps each speaker's memories to the people who were actually there, and group secrets stay out of sharing and lorebooks.
 - **Scratchpad** can check cards, presets and lorebooks for problems, explain why a lorebook entry didn't fire and read Neconyan's own errors when you ask it what went wrong. `/check` and `/why` take you straight there.
 - Turn on **Neconyan source code** in **Scratchpad** and it reads the actual code behind a bug before it answers, cites the files and lines, and can draft a bug report for you to copy. It's off by default and only ever reads, never changes anything.
+- When **Scratchpad** can't answer without something you haven't shared, like your preset or the last prompt sent, it asks with a **Share with the assistant** card. Untick anything you'd rather keep back and press **Share & continue**; nothing turns on until you do.
 - Text fields warn you about unknown or broken macros, and lorebooks tell you when a linked book no longer exists.
 - Character folders and folder tabs, if you want them. They're off until you turn them on.
 - Each writing companion has its own **Stop** button, and you can edit **Memory Shard** by hand.

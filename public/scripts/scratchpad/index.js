@@ -50,6 +50,8 @@ import { integerSettingValue, reflectSavedValue, reflectedSettingValue } from '.
 import { renderWebPages, renderWebSearchSettings, renderWebSearchSources, setWebSearchToggle } from './web-search.js';
 import { splitBugReports } from './bug-report.js';
 import { renderBugReportCard, renderSourceLookup } from './source-findings.js';
+import { shareFollowUp, shareSettingsPatch, splitShareRequests } from './share-request.js';
+import { renderShareRequestCard, shareItemLabels } from './share-request-ui.js';
 import { prepareAttachment } from './attachments.js';
 import { MAX_ATTACHMENTS, normaliseAttachments } from './attachment-data.js';
 import { previewForBlock, previewFromText, previewLanguage } from './preview-source.js';
@@ -67,7 +69,7 @@ import { canRehearse } from './rehearsal.js';
 import { assistantFeedbackTone, DEFAULT_FEEDBACK_TONE, FEEDBACK_TONES, isFeedbackTone, normaliseFeedbackTone } from './feedback-tone.js';
 import { feedbackToneLabel, feedbackToneSlider } from './tone-slider.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261201-scratchpad-source-lookup';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261203-scratchpad-share-request';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -229,6 +231,10 @@ const app = {
     readingFiles: new Set(),
     previews: new Map(),
     foldedThinking: new Set(),
+    // Share cards this client dismissed or partly unticked, keyed by session, reply and card. They reset on reload.
+    shareDismissed: new Set(),
+    shareUnticked: new Map(),
+    sharing: false,
     openLorebooks: new Set(),
     openSwipes: new Set(),
     openMenus: new Set(),
@@ -1227,7 +1233,7 @@ async function resolveShortcut(typed, source, sessionId) {
     };
 }
 
-async function send({ regenerate = '', discuss = false, rehearsal = false } = {}) {
+async function send({ regenerate = '', discuss = false, rehearsal = false, followUp = '' } = {}) {
     if (app.sending || app.swiping || app.readingFiles.has(app.attachments)) return;
     const source = app.source;
     if (!source) return;
@@ -1240,9 +1246,10 @@ async function send({ regenerate = '', discuss = false, rehearsal = false } = {}
     const initialSessionId = activeSession()?.id;
     // A discussion round sends its own request; anything typed in the box rides along as the point to focus on.
     const request = t`Read each other's answers to my last message. Say where you agree, where you disagree and why, and what you would now change in your own answer.`;
-    let typed = draft.trim();
+    // A share card sends its own fixed message and leaves the draft and attachments where they are.
+    let typed = followUp || draft.trim();
     let scan;
-    if (!regenerate && !discuss) {
+    if (!regenerate && !discuss && !followUp) {
         try {
             const expanded = expandTypedTools(typed, { labels: { picked: t`Picked`, from: t`from`, now: t`Now` } });
             if (expanded.help) {
@@ -1265,7 +1272,7 @@ async function send({ regenerate = '', discuss = false, rehearsal = false } = {}
     }
     const text = regenerate ? '' : discuss ? [request, typed].filter(Boolean).join('\n\n') : typed;
     const attachedDraft = app.attachments;
-    const attachments = regenerate || discuss ? [] : [...attachedDraft];
+    const attachments = regenerate || discuss || followUp ? [] : [...attachedDraft];
     const empty = !regenerate && !rehearsal && !text && !attachments.length;
     const replyTo = empty ? activeSession()?.messages.at(-1) : null;
     if (empty && replyTo?.role !== 'user') {
@@ -1327,7 +1334,7 @@ async function send({ regenerate = '', discuss = false, rehearsal = false } = {}
             genders,
             acknowledgement,
         });
-        if (!regenerate) {
+        if (!regenerate && !followUp) {
             attachedDraft.splice(0, attachments.length);
             if ((app.draftKey === draftKey || (sameSourceBucket(source, app.source) && activeSession()?.id === session.id)) && app.el.composer.value === draft) app.el.composer.value = '';
             else if (app.drafts.get(draftKey) === draft) app.drafts.set(draftKey, '');
@@ -1969,13 +1976,67 @@ function installReplySwipeGesture(article, move) {
     }, { passive: true });
 }
 
+function shareCardKey(session, message, index) {
+    return `${session.id}:${message.id}:${index}`;
+}
+
+function shareBusy(session = activeSession()) {
+    return app.sharing || app.sending || app.swiping || Boolean(pendingReply(session));
+}
+
+function renderShareRequest(session, message, part) {
+    const key = shareCardKey(session, message, part.index);
+    if (!app.shareUnticked.has(key)) app.shareUnticked.set(key, new Set());
+    return renderShareRequestCard(part, {
+        source: app.source,
+        settings: session.settings,
+        busy: shareBusy(session),
+        dismissed: app.shareDismissed.has(key),
+        unticked: app.shareUnticked.get(key),
+        onShare: choice => void acceptShareRequest(session, choice, { continueReply: true }),
+        onTurnOn: choice => void acceptShareRequest(session, choice, { continueReply: false }),
+        onDismiss: () => {
+            app.shareDismissed.add(key);
+            renderMessages();
+        },
+    });
+}
+
+/**
+ * Turns on only the switches the user ticked. The message sent afterwards is
+ * built from Scratchpad's own labels, never from the assistant's text.
+ */
+async function acceptShareRequest(session, { keys, depth }, { continueReply }) {
+    if (shareBusy(session) || activeSession()?.id !== session.id) return;
+    const patch = shareSettingsPatch(keys, depth);
+    if (!Object.keys(patch).length) return;
+    app.sharing = true;
+    renderMessages();
+    let saved;
+    try {
+        saved = await updateSettings(patch, { rerenderContext: true });
+    } finally {
+        app.sharing = false;
+        renderMessages();
+    }
+    if (!saved) return;
+    if (continueReply) await send({ followUp: shareFollowUp(keys, depth) });
+    else toastr.success(t`Shared ${shareItemLabels(keys, depth)}. Open Preview to check before sending.`);
+}
+
 function renderReply(session, message) {
     const body = h('div', { class: 'scratchpad-reply' });
+    // A share request becomes a card only once the reply is complete, so nothing can be pressed while it streams.
+    const shareCards = message.role === 'assistant' && (message.state ?? 'done') === 'done';
     for (const part of message.rehearsal ? [{ type: 'text', text: message.text }] : splitReply(message.text)) {
         if (part.type === 'text') {
-            for (const piece of message.rehearsal ? [part] : splitBugReports(part.text)) {
+            for (const piece of message.rehearsal ? [part] : splitBugReports(part.text).flatMap(item => item.type === 'text' && shareCards ? splitShareRequests(item.text) : [item])) {
                 if (piece.type === 'bug-report') {
                     body.append(renderBugReportCard(piece));
+                    continue;
+                }
+                if (piece.type === 'share-request') {
+                    body.append(renderShareRequest(session, message, piece));
                     continue;
                 }
                 if (!piece.text.trim()) continue;
