@@ -185,6 +185,7 @@
 - PR #948 (2026-11-24) `feat(regex-themes): style Memory Shard companion`
 - PR #949 (2026-11-24) `feat(scratchpad): let the assistant ask to share more context`
 - PR #950 (2026-11-24) `fix(companions): stop the panel freezing on open and on button presses`
+- PR #951 (2026-11-24) `feat(scratchpad): rehearse a suggested change before saving it`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
