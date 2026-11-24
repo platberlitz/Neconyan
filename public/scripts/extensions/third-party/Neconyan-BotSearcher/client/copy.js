@@ -288,11 +288,28 @@ export function urlImportReadyMessage(sourceLabel, direct = false) {
         : `Press Enter to review this ${sourceLabel} card before importing.`;
 }
 
-/** Summary of the JannyAI hint shown while JannyAI can supply cards. */
-export const JANNY_CLOUDFLARE_HINT_TITLE = 'JannyAI imports need a security check first';
+/**
+ * Summary of the security check hint for a source behind the server's
+ * JannyAI browser window (JannyAI or JanitorAI).
+ *
+ * @param {string} sourceId
+ */
+export function jannyCloudflareHintTitle(sourceId) {
+    if (sourceId === 'janitorai') {
+        return 'JanitorAI needs a security check first';
+    }
+    return 'JannyAI imports need a security check first';
+}
 
-/** Body of the JannyAI hint: what to do before the first import. */
-export function jannyCloudflareHint() {
+/**
+ * Body of the security check hint: what to do before the first list or import.
+ *
+ * @param {string} sourceId
+ */
+export function jannyCloudflareHint(sourceId) {
+    if (sourceId === 'janitorai') {
+        return 'JanitorAI uses a Cloudflare check (a security check that stops automated visitors) which blocks the Neconyan server until someone passes it. Its lists and card imports both go through a browser window on the Neconyan server. Press "Open JannyAI login window" below, finish the check and sign in to JanitorAI if asked, then press Refresh results.';
+    }
     return 'JannyAI uses a Cloudflare check (a security check that stops automated visitors) which blocks the Neconyan server until someone passes it. Searching works without it. Before importing, press "Open JannyAI login window" below and finish the check in that window on the Neconyan server, then import the card. You can also download the card from JannyAI and open it with "Inspect a card file".';
 }
 
@@ -327,7 +344,7 @@ export function searchUnavailableMessage(urlSourceLabels) {
 export function janitorListErrorMessage(code) {
     switch (code) {
         case 'janny_login_required':
-            return 'JanitorAI\'s lists are not available right now: the server\'s JanitorAI browser window is signed out or waiting for a security check. A Neconyan administrator can open it under Sources and logins with "Open JannyAI login window".';
+            return 'JanitorAI\'s lists are not available right now: the server\'s JanitorAI browser window is signed out or waiting for a security check. A Neconyan administrator can open it with "Open JannyAI login window" in the security check section above.';
         case 'janny_browser_unavailable':
             return 'JanitorAI\'s lists need a browser running on the Neconyan server, and this server does not have one set up. The server owner needs to install Playwright and Chromium (tools that let the server run a web browser).';
         case 'janny_browser_request_failed':

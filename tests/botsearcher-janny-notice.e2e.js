@@ -1,11 +1,12 @@
 // @ts-check
-/* global document, getComputedStyle */
+/* global document, getComputedStyle, Node */
 /* eslint-disable playwright/no-conditional-in-test -- Fixed viewport cases include iPhone emulation. */
 import { test, expect } from '@playwright/test';
 import { mkdir } from 'node:fs/promises';
 import { isolateSettingsSaves } from './chat-scroll-regression-helpers.js';
 import { IPHONE_SAFARI_CONTEXT, installIPhoneSafari, applyIOSOnlyCss } from './ios-safari-emulation.js';
 import { PLUGIN_ID, PROTOCOL_VERSION } from '../public/scripts/extensions/third-party/Neconyan-BotSearcher/shared/schema.js';
+import { janitorai } from '../public/scripts/extensions/third-party/Neconyan-BotSearcher/server/sources/janitorai.js';
 
 const pluginBase = `/api/plugins/${PLUGIN_ID}`;
 const clientBase = '/scripts/extensions/third-party/Neconyan-BotSearcher/client';
@@ -15,7 +16,14 @@ const sources = [
 ].map(source => ({ ...source, capabilities: {
     search: true, query: true, urlImport: true, browserImport: source.id === 'jannyai',
     sorts: ['latest'], filters: [], paging: 'cursor',
-} }));
+} })).concat({
+    id: janitorai.id,
+    label: janitorai.label,
+    tier: janitorai.tier,
+    state: 'up',
+    clientHosts: [...janitorai.allowedHosts, ...janitorai.linkHosts],
+    capabilities: { ...janitorai.capabilities },
+});
 
 async function openBrowser(page, { enabled = true, searchable = true } = {}) {
     const browserRequests = [];
@@ -24,7 +32,9 @@ async function openBrowser(page, { enabled = true, searchable = true } = {}) {
         sources: sources.map(source => ({ ...source, capabilities: { ...source.capabilities, search: searchable } })),
         capabilities: { jannyBrowser: { available: true } },
     } }));
-    await page.route(`**${pluginBase}/search`, route => route.fulfill({ json: { items: [], nextCursor: null, total: 0 } }));
+    await page.route(`**${pluginBase}/search`, route => route.request().postDataJSON()?.source === 'janitorai'
+        ? route.fulfill({ status: 503, json: { error: 'janny_login_required' } })
+        : route.fulfill({ json: { items: [], nextCursor: null, total: 0 } }));
     await page.route(`**${pluginBase}/janny/**`, route => {
         browserRequests.push(route.request().url());
         return route.fulfill({ json: { available: true, ready: false, loggedIn: false } });
@@ -34,7 +44,7 @@ async function openBrowser(page, { enabled = true, searchable = true } = {}) {
     await page.evaluate(() => document.fonts.ready);
     await page.evaluate(async ({ path, enabled }) => {
         const { updateSettings } = await import(`${path}/settings.js`);
-        updateSettings({ defaultSource: 'chub', enabledSources: enabled ? ['chub', 'jannyai'] : ['chub'] });
+        updateSettings({ defaultSource: 'chub', enabledSources: enabled ? ['chub', 'jannyai', 'janitorai'] : ['chub'] });
         const { openBrowser } = await import(`${path}/browser.js`);
         void openBrowser();
     }, { path: clientBase, enabled });
@@ -175,6 +185,56 @@ for (const [name, options] of [
             await expect(notice.locator('.sbbs-setting-account')).toHaveCount(1);
             await expect(notice.locator('.sbbs-setting-account')).toBeVisible();
             await picker.selectOption('__all__');
+            await expect(notice).toBeHidden();
+        });
+
+        test('JanitorAI gets its own security check notice with the login window', async ({ page }) => {
+            const browserRequests = await openBrowser(page);
+            if (name === 'iPhone emulation') await applyIOSOnlyCss(page);
+            const picker = page.locator('#sbbs_source');
+            const query = page.locator('#sbbs_query');
+            const notice = page.locator('.sbbs-janny-notice');
+            const summary = notice.locator('summary');
+            await expect(notice).toBeHidden();
+            await picker.selectOption('janitorai');
+            await expect(notice).toBeVisible();
+            await expect(notice).not.toHaveAttribute('open');
+            await expect(summary).toHaveText('JanitorAI needs a security check first');
+            await expect(page.locator('#sbbs_state')).toContainText('in the security check section above');
+            const order = await notice.evaluate(element => Boolean(
+                element.compareDocumentPosition(document.querySelector('#sbbs_state')) & Node.DOCUMENT_POSITION_FOLLOWING,
+            ));
+            expect(order).toBe(true);
+            const target = await summary.boundingBox();
+            expect(target.height).toBeGreaterThanOrEqual(44);
+            if (process.env.NECONYAN_JANNY_SCREENSHOTS) {
+                await mkdir('../screenshots', { recursive: true });
+                await page.screenshot({ path: `../screenshots/janitor-notice-${name}-${process.env.NECONYAN_JANNY_SCREENSHOTS}.png` });
+            }
+            const requestsBeforeExpansion = browserRequests.length;
+            await summary.press('Enter');
+            await expect(notice).toHaveAttribute('open');
+            await expect(notice.locator('.sbbs-janny-notice-text')).toContainText('JanitorAI uses a Cloudflare check');
+            const account = notice.locator('.sbbs-setting-account');
+            await expect(account).toBeVisible();
+            await expect(account.getByRole('button', { name: 'Open JannyAI login window' })).toBeVisible();
+            await expect.poll(() => browserRequests.length).toBeGreaterThan(requestsBeforeExpansion);
+            if (process.env.NECONYAN_JANNY_SCREENSHOTS) {
+                await account.scrollIntoViewIfNeeded();
+                await page.screenshot({ path: `../screenshots/janitor-expanded-${name}-${process.env.NECONYAN_JANNY_SCREENSHOTS}.png` });
+            }
+
+            await picker.selectOption('jannyai');
+            await expect(notice).toBeVisible();
+            await expect(notice).not.toHaveAttribute('open');
+            await expect(summary).toHaveText('JannyAI imports need a security check first');
+            await expect(page.locator('.sbbs-janny-notice')).toHaveCount(1);
+            await picker.selectOption('chub');
+            await expect(notice).toBeHidden();
+            await query.fill('https://janitorai.com/characters/00000000-0000-4000-8000-000000000001_character-aria');
+            await expect(notice).toBeVisible();
+            await expect(summary).toHaveText('JanitorAI needs a security check first');
+            await query.fill('https://chub.ai/characters/example/card');
             await expect(notice).toBeHidden();
         });
 

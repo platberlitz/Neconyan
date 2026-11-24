@@ -650,6 +650,7 @@ export const refreshedKnowledgeCases = [
     ['Does BotSearcher accept jani.com links?', 'tools.botsearcher-janitor-fallback', 'Paste a jani.com card link directly'],
     ['Why can I not type a search for JanitorAI in BotSearcher?', 'tools.botsearcher-janitor-lists', 'JanitorAI cannot search by text'],
     ['JanitorAI Trending 24h only shows cards with a few chats', 'tools.botsearcher-janitor-lists', 'waits up to 20 seconds'],
+    ['Where is the JanitorAI login window in BotSearcher?', 'tools.botsearcher-janitor-lists', 'JanitorAI needs a security check first above the list'],
     ['How do I jump to the top of the Companion panel?', 'agents.companion-panel', 'Jump to top and Jump to bottom'],
     ['How do I search Tracker overrides in Regex Agent Themes?', 'tools.tracker-override-search', 'Search tracker overrides'],
     ['Does a Regex Agent Theme keep the Chatroom 4chan look?', 'tools.tracker-themes', 'keeps each platform\'s layout'],

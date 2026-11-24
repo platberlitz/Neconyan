@@ -23,7 +23,7 @@ import { el, setText, setImgSafe } from './render.js';
 import {
     getSettings, updateSettings, isSourceEnabled, rememberQuery, simpleModeActive, skipsReview,
     saveNamedSearch, removeNamedSearch, subscribeSettings, MAX_NAMED_SEARCH_NAME,
-    jannyBrowserControl, buildQuickSettings,
+    jannyBrowserControl, buildQuickSettings, JANNY_BROWSER_SOURCES,
 } from './settings.js';
 import { createResultCache } from './cache.js';
 import { showDetail } from './detail.js';
@@ -34,8 +34,8 @@ import {
     emptyResultMessage,
     formatCount,
     formatResultCount,
-    JANNY_CLOUDFLARE_HINT_TITLE,
     jannyCloudflareHint,
+    jannyCloudflareHintTitle,
     listOnlyQueryNote,
     NAMED_SEARCH_COPY,
     searchErrorMessage,
@@ -976,27 +976,29 @@ function wireBrowser(popup, health, options, hooks = {}) {
     }
 
     /**
-     * JannyAI answers searches, but its card downloads sit behind a Cloudflare
-     * check that blocks the server until someone passes it in the browser
-     * bridge. Show the hint only when JannyAI is explicitly picked or an
-     * enabled JannyAI link is pasted, not throughout an all-sources search.
+     * JannyAI answers searches and JanitorAI lists through the server's
+     * browser window, but both sit behind a Cloudflare check that blocks the
+     * server until someone passes it in the browser bridge. Show the hint only
+     * when one of them is explicitly picked or an enabled link to one is
+     * pasted, not throughout an all-sources search.
      *
      * @param {{ source: any, enabled: boolean } | null} [intent] the current
      *     URL intent; resolve the input when only the selected source changed
      */
     function updateJannyNotice(intent = findUrlImport(dom.query.value)) {
-        const janny = sources.find((entry) => entry?.id === 'jannyai');
-        const relevant = intent
-            ? intent.enabled && intent.source?.id === 'jannyai'
-            : state.source?.id === 'jannyai';
-        if (!janny || !relevant) {
+        const id = intent
+            ? (intent.enabled ? intent.source?.id : null)
+            : state.source?.id;
+        const janny = JANNY_BROWSER_SOURCES.has(id) ? sources.find((entry) => entry?.id === id) : null;
+        if (!janny) {
             if (state.jannyNotice) {
                 state.jannyNotice.hidden = true;
                 state.jannyNotice.open = false;
             }
             return;
         }
-        if (!state.jannyNotice) {
+        if (state.jannyNotice?.dataset.source !== janny.id) {
+            state.jannyNotice?.remove();
             state.jannyNotice = buildJannyNotice(janny);
             dom.state.before(state.jannyNotice);
         }
@@ -1005,8 +1007,9 @@ function wireBrowser(popup, health, options, hooks = {}) {
 
     function buildJannyNotice(janny) {
         const notice = el('details', 'sbbs-direct-notice sbbs-janny-notice');
-        const summary = el('summary', undefined, JANNY_CLOUDFLARE_HINT_TITLE);
-        const body = el('p', 'sbbs-janny-notice-text', jannyCloudflareHint());
+        notice.dataset.source = janny.id;
+        const summary = el('summary', undefined, jannyCloudflareHintTitle(janny.id));
+        const body = el('p', 'sbbs-janny-notice-text', jannyCloudflareHint(janny.id));
         notice.append(summary, body);
         // The control asks the server for the bridge status as soon as it is
         // built, so wait until the user opens the hint.
