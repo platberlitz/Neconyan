@@ -1,0 +1,45 @@
+/* Inline notes under macro-capable fields (public/scripts/macro-field-warnings.js). */
+.nn-macro-field-warning {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    margin: 4px 0 6px;
+    padding: 4px 8px;
+    border-left: 3px solid color-mix(in srgb, var(--sb-color-warning, #d98b00) 70%, var(--neco-ink, currentColor));
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--sb-color-warning, #d98b00) 12%, var(--neco-surface, transparent));
+    color: var(--neco-ink, inherit);
+    font-size: 12px;
+    line-height: 1.4;
+    text-align: start;
+    overflow-wrap: anywhere;
+    white-space: normal;
+}
+
+.nn-macro-field-warning-label {
+    font-weight: 600;
+}
+
+.nn-macro-field-warning code {
+    padding: 0 4px;
+    border-radius: 4px;
+    background: var(--neco-raised, transparent);
+    color: var(--neco-ink, inherit);
+    font-family: var(--monoFontFamily, ui-monospace, monospace);
+    font-size: 11px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.nn-macro-field-warning-more,
+.nn-macro-field-warning-hint {
+    color: var(--neco-muted, inherit);
+}
+
+:is(.displayNone, [hidden]) + .nn-macro-field-warning {
+    display: none;
+}

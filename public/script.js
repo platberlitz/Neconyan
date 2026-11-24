@@ -1659,6 +1659,9 @@ async function firstLoadInit() {
         await fixViewport();
         initPromptMediaControls();
         await eventSource.emit(event_types.APP_READY);
+        void import('./scripts/macro-field-warnings.js')
+            .then(module => module.initMacroFieldWarnings({ t }))
+            .catch(error => console.warn('Macro field warnings did not start', error));
         void loadOptionalPushNotifications()
             .then(module => module?.initPushNotifications({
                 owner: getCurrentUserHandle(),

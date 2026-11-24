@@ -106,7 +106,7 @@ export async function renderLore(workspace, main) {
                 textField('Keys, one per line', (entry.key ?? []).join('\n'), value => update(item => { item.key = value.split('\n').map(key => key.trim()).filter(Boolean); }), { rows: 2 }),
             );
             row.append(entryGrid);
-            row.append(textField('Content', entry.content, value => update(item => { item.content = value; }), { rows: 4 }));
+            row.append(textField('Content', entry.content, value => update(item => { item.content = value; }), { rows: 4, macros: true }));
             const entryActions = element('div', 'creator-actions');
             entryActions.append(
                 button(entry.disable ? 'Enable' : 'Disable', () => { update(item => { item.disable = !item.disable; }); workspace.render(); }, false, 'creator-chip-btn'),

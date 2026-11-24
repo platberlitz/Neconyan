@@ -2,7 +2,7 @@ import { cleanMewmoryCountView } from '../../mewmory/prompt-proof.js';
 // Shared by the browser runner and the server Roleplay runner, so keep it free of DOM and app imports.
 
 import { getTrackerMetadataKey } from './tracker-state.js';
-import { CONTINUITY_NOTES_MACRO } from './continuity-link.js';
+import { CONTINUITY_CORRECTIONS_MACRO, CONTINUITY_NOTES_MACRO } from './continuity-link.js';
 
 export const GROUP_CARDS_MACRO = 'group-cards';
 export const ACTIVE_LORE_MACRO = 'active-lore';
@@ -10,6 +10,11 @@ export const ACTIVE_AUTHORS_NOTE_MACRO = 'active-authors-note';
 export const TRACKER_STATE_MACRO = 'tracker-state';
 export const SECRETS_TRACKER_MACRO = 'secrets-tracker';
 export const PRESET_PROMPTS_MACRO = 'preset-prompts';
+/** Reply and run details every Agent prompt can read, filled by both runners. */
+export const AGENT_MESSAGE_MACROS = Object.freeze([
+    'currentMessage', 'lastMessage', 'latestMessage', 'response', 'currentResponse', 'latestResponse',
+    'assistantMessage', 'assistantName', 'agentName', 'generationType', 'lengthTarget', 'targetLanguage',
+]);
 const PRESET_GLOBAL_ORDER_ID = '100001';
 const PRESET_CONTENT_SLOTS = new Set(['chatHistory', 'dialogueExamples', 'worldInfoBefore', 'worldInfoAfter', 'charDescription', 'charPersonality', 'scenario', 'personaDescription']);
 const GROUP_CARD_FIELDS = [['description', 'Description'], ['personality', 'Personality'], ['scenario', 'Scenario']];
@@ -166,6 +171,11 @@ export function buildPresetPromptsText(prompts) {
         .filter(prompt => text(prompt?.content))
         .map(prompt => `<prompt name="${String(prompt.name ?? '').replace(/"/g, '\'')}">\n${text(prompt.content)}\n</prompt>`)
         .join('\n\n');
+}
+
+/** Every macro name an Agent prompt accepts on top of the shared macro registry. */
+export function agentPromptMacroNames() {
+    return [...AGENT_MESSAGE_MACROS, ...Object.keys(buildAgentContextMacros()), CONTINUITY_CORRECTIONS_MACRO];
 }
 
 /**

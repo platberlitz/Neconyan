@@ -45,7 +45,7 @@ export function renderLoreWriter(workspace, panel, book) {
             });
             change.append(textField('Entry title', entry.comment, value => { entry.comment = value; save(); }),
                 textField('Activation keywords, one per line', entry.key.join('\n'), value => { entry.key = value.split('\n').map(key => key.trim()).filter(Boolean); save(); }),
-                textField('Entry content', entry.content, value => { entry.content = value; save(); }, { rows: 8 }));
+                textField('Entry content', entry.content, value => { entry.content = value; save(); }, { rows: 8, macros: true }));
             review.append(change);
         }
         if (proposal.sourceMode !== 'keep') {
