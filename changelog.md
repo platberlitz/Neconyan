@@ -157,6 +157,7 @@
 - PR #937 (2026-11-24) `feat(scratchpad): share the last prompt sent when asked`
 - PR #938 (2026-11-24) `feat(botsearcher): show the security check notice for JanitorAI`
 - PR #939 (2026-11-24) `fix(in-chat-agents): restore Plot Compass tracker scripts on saved agents`
+- PR #940 (2026-11-24) `fix(dialogue-colors): paint new NPC gradients when the reply lands`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
