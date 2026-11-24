@@ -282,6 +282,8 @@ export const refreshedKnowledgeCases = [
     ['How do I blur behind messages?', 'appearance.panels', 'Panel blur'],
     ['How do I put an outline around text?', 'appearance.panels', 'Letter outline'],
     ['How do I change Home layout to Compact Home?', 'start.home-layout', 'Collapse/Expand'],
+    ['Where is the changelog?', 'start.whats-new', 'Every merged change'],
+    ['What is new in this staging build?', 'start.whats-new', 'staging preview, not released yet'],
     ['How do I start the Taro Agents tour?', 'agents.tour', 'without saving changes, running agents'],
     ['How do I hide all tour buttons?', 'navigation.page-tours', 'Settings → Appearance → Page tours'],
     ['How do I turn off Simple Mode?', 'start.simple-mode', 'Show all features in the sidebar'],
