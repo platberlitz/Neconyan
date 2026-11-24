@@ -148,8 +148,11 @@ import { renderTemplateAsync } from '../../templates.js';
 import { registerStartupTask } from '../../startup-readiness.js';
 import { registerSettingsSetupTask } from '../../settings-setup.js';
 import { TARO_GUIDE_MAX_NEW_PICKS, chooseInstalledCopy, copiesForTemplate, getTaroUndoBlockReason } from './agent-recommendations.js';
+import { registerMacroFieldDialect } from '../../macro-field-warnings.js';
+import { agentPromptMacroNames } from './agent-context-macros.js';
 
 const MODULE_NAME = 'in-chat-agents';
+registerMacroFieldDialect('agent', agentPromptMacroNames);
 const renderAgentListDebounced = debounce(renderAgentList, debounce_timeout.short);
 let agentListSearchRenderPending = false;
 

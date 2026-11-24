@@ -25,6 +25,7 @@ export function expandField(input, label) {
     const editor = element('textarea', 'text_pole creator-expanded-input');
     editor.value = input.value;
     editor.readOnly = input.readOnly;
+    if (input.dataset.macros !== undefined) editor.dataset.macros = input.dataset.macros;
     editor.setAttribute('aria-label', label);
     const count = element('output', 'creator-muted');
     const update = () => { count.textContent = `${editor.value.length.toLocaleString()} characters`; };
@@ -87,7 +88,7 @@ export function expandField(input, label) {
 }
 
 /** Every text input except Display name gets the same fullscreen affordance. */
-export function textField(label, value, change, { name = false, rows = 4, hint = '', placeholder = '', className = '' } = {}) {
+export function textField(label, value, change, { name = false, rows = 4, hint = '', placeholder = '', className = '', macros = false } = {}) {
     const wrapper = element('div', ['creator-field', name || rows === 1 ? 'creator-field-compact' : '', className].filter(Boolean).join(' '));
     const heading = element('div', 'creator-field-heading');
     const input = element(name ? 'input' : 'textarea', 'text_pole');
@@ -95,6 +96,7 @@ export function textField(label, value, change, { name = false, rows = 4, hint =
     input.value = value ?? '';
     input.dataset.creatorText = name ? 'name' : 'expandable';
     if (placeholder) input.placeholder = placeholder;
+    if (macros) input.dataset.macros = '';
     if (name) input.type = 'text';
     else input.rows = rows;
     const title = element('label', '', label);

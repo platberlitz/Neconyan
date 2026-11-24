@@ -51,7 +51,7 @@ function macroToken(body) {
  * Finds macro problems in saved text.
  * @param {string} text Saved text, macros unfilled
  * @param {{knownNames?: Iterable<string>}} options Known macro names from the live registry
- * @returns {{rule: string, severity: 'error'|'warning'|'info', target: object, message: string, details?: string}[]}
+ * @returns {{rule: string, severity: 'error'|'warning'|'info', target: object, message: string, details?: string, unclosed?: string[], extraClosers?: number}[]}
  */
 export function scanMacroProblems(text, { knownNames = [] } = {}) {
     // Text inside a {{//}}...{{///}} block is hidden, so braces in it are not problems.
@@ -67,6 +67,8 @@ export function scanMacroProblems(text, { knownNames = [] } = {}) {
             target: {},
             message: 'A macro is missing its closing braces or has an extra closing pair.',
             details: example,
+            unclosed: unclosed.map(start => source.slice(start, start + 40)),
+            extraClosers,
         });
     }
 
