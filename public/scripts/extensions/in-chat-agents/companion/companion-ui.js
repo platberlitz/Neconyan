@@ -10,7 +10,7 @@ import { getAgentResultModelName } from '../model-label.js';
 import { withReadOnlyVariables } from '../../../variable-read-only.js';
 import { stripTrackerMandatoryMarkers } from '../../../tracker-mandatory-marker.js';
 import { captureMessageTargetState, isMessageTargetCurrent } from '../agent-runner.js';
-import { replaceCompanionView, runCompanionViewAction } from './view-state.js';
+import { patchCompanionView, runCompanionViewAction } from './view-state.js';
 import {
     areAgentsGloballyEnabled,
     getAgentById,
@@ -847,7 +847,7 @@ function renderCompanionResultsForRow(message, messageElement, messageIndex, pre
     cards.push(...diceAgents.map(agent => buildDiceCompanionCardHtml(agent, { messageIndex })));
     const target = captureMessageTargetState(message);
     const liveDice = preview ? null : captureDiceCompanionWidget(ledger[0]);
-    replaceCompanionView(ledger, cards.join(''),
+    patchCompanionView(ledger, cards.join(''),
         () => preview ? preview.element.isConnected : isMessageTargetCurrent(message, target, messageIndex, { text: false, revision: false }));
     if (liveDice) {
         restoreDiceCompanionWidget(ledger[0], liveDice);
