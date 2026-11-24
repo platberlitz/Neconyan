@@ -61,8 +61,13 @@ function pad(page, account, app) {
             await expect(toasts).toHaveCount(0);
         },
         async newSession() {
+            // Starting a session waits for earlier saves and then returns to Chat, so wait for it before touching another tab.
+            const created = page.waitForResponse('**/api/scratchpad/session/create');
             await page.locator('.scratchpad-new-session').first().click();
+            expect((await created).ok()).toBe(true);
             await expect(page.locator('.scratchpad-message')).toHaveCount(0);
+            await expect(tab('Chat')).toHaveAttribute('aria-selected', 'true');
+            await page.evaluate(() => new Promise(resolve => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve))));
         },
         async connect(assistants = ['miso']) {
             await tab('Context').click();
