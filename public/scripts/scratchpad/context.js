@@ -28,6 +28,20 @@ import { sameSourceContext } from './source.js';
 import { homePersonaChoice } from './home-persona.js';
 import { shareScenarioNotes } from './scenario-note-references.js';
 import { unsharedShareItems } from './share-request.js';
+import {
+    applyAuthorsNoteChangeToSnapshot,
+    applyCharacterChangeToSnapshot,
+    applyChatChangeToMessages,
+    applyLoreChangeToEntries,
+    applyPersonaChangeToSnapshot,
+    applyPresetChangeToSnapshot,
+    canTryProposalInRehearsal,
+    characterMatchesProposal,
+    formatRehearsalChangeNote,
+    loreChangeKey,
+    rehearsalChangeKind,
+    rehearsalMessageRef,
+} from './rehearsal-preview.js';
 
 export { clearHomePersonaChoice, noteHomePersonaChoice } from './home-persona.js';
 
@@ -265,6 +279,19 @@ function selectMessages(messages, settings, source) {
     return { messages: depth ? pool.slice(-depth) : [], picked: false };
 }
 
+// A message rewritten or added under rehearsal is always shown, unless it is
+// hidden and hidden messages are not shared.
+function keepRehearsalMessage(selection, messages, ref, settings) {
+    if (!ref) return selection;
+    const item = messages.find(entry => entry.ref === ref);
+    if (!item || (item.hidden && !settings?.include?.hidden)) return selection;
+    if (selection.messages.some(entry => (entry.messageRef ?? entry.ref) === ref)) return selection;
+    const at = selection.messages.findIndex(entry => entry.number > item.number);
+    const list = [...selection.messages];
+    list.splice(at < 0 ? list.length : at, 0, item);
+    return { ...selection, messages: list };
+}
+
 function keyMatches(key, haystack, lowerHaystack) {
     const value = String(key ?? '').trim();
     if (!value) return false;
@@ -410,7 +437,7 @@ function bookSettings() {
  * entries, and entries whose keywords appear in the recent chat or the
  * user's new message. Entries marked 'never' are left out.
  */
-export async function collectLore({ source, settings, scanText = '' }) {
+export async function collectLore({ source, settings, scanText = '', rehearsalChange = null }) {
     requireCurrentSource(source);
     const general = source.kind === 'general';
     if (source.kind === 'notebook' || (general && !generalLorebook(source, settings))) return { books: [], entries: [], details: { books: [] } };
@@ -429,7 +456,13 @@ export async function collectLore({ source, settings, scanText = '' }) {
     }));
     requireCurrentSource(source);
     const books = loaded.filter(Boolean).map(book => book.world);
-    const usable = loaded.filter(Boolean).flatMap(book => book.entries)
+    const trial = !general && rehearsalChangeKind(rehearsalChange?.change) === 'lore' && books.includes(String(rehearsalChange.change.book))
+        ? rehearsalChange
+        : null;
+    let flat = loaded.filter(Boolean).flatMap(book => book.entries);
+    if (trial) flat = applyLoreChangeToEntries(flat, trial.change, trial.value);
+    const trialKey = trial ? loreChangeKey(trial.change) : '';
+    const usable = flat
         .filter(entry => entry && !entry.disable && !entry.agentBlacklisted && entry.world !== undefined && entry.uid !== undefined);
     const overrides = settings?.loreOverrides || {};
     const lower = scanText.toLowerCase();
@@ -443,6 +476,7 @@ export async function collectLore({ source, settings, scanText = '' }) {
         else if (entry.constant) reason = 'constant';
         else if (keys.some(item => keyMatches(item, scanText, lower))) reason = 'keyword';
         if (!general && settings?.include?.lore === false) reason = null;
+        if (trial && key === trialKey) reason = 'rehearsal';
         return {
             key,
             world: String(entry.world),
@@ -458,14 +492,14 @@ export async function collectLore({ source, settings, scanText = '' }) {
             ...loreActivation(entry),
         };
     });
-    const rank = { always: 0, constant: 1, keyword: 2 };
+    const rank = { rehearsal: -1, always: 0, constant: 1, keyword: 2 };
     const candidates = listed.filter(item => item.reason).sort((a, b) => rank[a.reason] - rank[b.reason]);
     let used = 0;
     let count = 0;
     for (const item of candidates) {
         if (count >= MAX_LORE_ENTRIES) break;
         const size = item.content.length;
-        if (used + size > MAX_LORE_CHARS && item.reason !== 'always') continue;
+        if (used + size > MAX_LORE_CHARS && item.reason !== 'always' && item.reason !== 'rehearsal') continue;
         item.included = true;
         used += size;
         count += 1;
@@ -819,7 +853,7 @@ export function formatDialogueColors(table) {
  * shared whole or not at all: the head keeps its bytes and the newest messages
  * that fit, and an explicit picked set is refused rather than thinned.
  */
-export async function buildContext({ source, settings, pendingText = '', sessionText = '' }) {
+export async function buildContext({ source, settings, pendingText = '', sessionText = '', rehearsalChange = null }) {
     requireCurrentSource(source);
     if (source.kind === 'notebook') return {
         // No note title here: it reaches the model only inside a note entry the server can still read.
@@ -830,10 +864,27 @@ export async function buildContext({ source, settings, pendingText = '', session
     };
     const include = settings?.include || {};
     const general = source.kind === 'general';
-    const all = sourceMessages(source);
-    const selection = general ? { messages: [], picked: false } : selectMessages(all, settings, source);
+    // A change card tried before saving: its section is shared with the change
+    // in place, whatever the Context switches say, and nothing is written back.
+    const trial = rehearsalChange && canTryProposalInRehearsal(rehearsalChange.change, source) ? rehearsalChange : null;
+    const trialKind = trial ? rehearsalChangeKind(trial.change) : '';
+    let trialTarget = '';
+    let all = sourceMessages(source);
+    let selection = general ? { messages: [], picked: false } : selectMessages(all, settings, source);
     const people = include.card ? await loadSourceCharacters(source) : sourceCharacters(source);
     const names = { user: sourceUserName(source), character: people.map(item => item.name).filter(Boolean).join(', ') };
+    const livePersona = trialKind === 'persona' ? sourcePersona(source) : null;
+    const personaTrial = Boolean(livePersona)
+        && String(livePersona.name ?? '').trim().toLowerCase() === String(trial.change.persona ?? '').trim().toLowerCase();
+    if (personaTrial && trial.change.field === 'name') names.user = applyPersonaChangeToSnapshot({ name: names.user }, trial.change, trial.value).name;
+    if (trialKind === 'chat') {
+        const shown = applyChatChangeToMessages(all, trial.change, trial.value, { userName: names.user, characterName: people[0]?.name || names.character });
+        if (shown !== all) {
+            all = shown;
+            selection = keepRehearsalMessage(selectMessages(shown, settings, source), shown, rehearsalMessageRef(shown, trial.change), settings);
+            trialTarget = 'the chat messages';
+        }
+    }
     const macros = { name1Override: names.user, name2Override: names.character, replaceCharacterCard: false };
     // Conversation and General have no scoped chat macro context. Names are
     // substituted and every other macro stays literal, so a hidden Roleplay
@@ -854,28 +905,47 @@ export async function buildContext({ source, settings, pendingText = '', session
     ].join('\n'));
 
     let sharedPersona;
-    if (include.persona) {
+    if (include.persona || personaTrial) {
         const description = sourcePersonaDescription(source);
-        const raw = String(description ?? '').trim();
+        const liveDescriptor = power_user.persona_descriptions?.[livePersona?.avatar];
+        const shown = personaTrial
+            ? applyPersonaChangeToSnapshot({ name: livePersona.name, description: liveDescriptor?.description || '', title: liveDescriptor?.title || '', text: String(description ?? '') }, trial.change, trial.value)
+            : null;
+        if (shown) trialTarget = `${livePersona.name}'s persona`;
+        const raw = String(shown ? shown.text : description ?? '').trim();
         const persona = substituteSource(raw);
         if (persona) sections.push(`## ${names.user} (the user's persona)\n${persona}`);
         const target = sourcePersona(source);
         if (target) {
             const descriptor = power_user.persona_descriptions?.[target.avatar];
-            sections.push(`## Editable persona fields (base values, exactly as saved)\n${JSON.stringify({ name: target.name, description: descriptor?.description || '', title: descriptor?.title || '' })}\nPersona edits replace only these base fields; chat-specific additions stay separate.`);
+            const fields = shown
+                ? { name: shown.name, description: shown.description, title: shown.title }
+                : { name: target.name, description: descriptor?.description || '', title: descriptor?.title || '' };
+            sections.push(`## Editable persona fields (base values, exactly as saved)\n${JSON.stringify(fields)}\nPersona edits replace only these base fields; chat-specific additions stay separate.`);
             const { notes, noteRefs } = shareScenarioNotes(target.avatar, descriptor?.appendices);
             sharedPersona = { ...target, noteRefs };
             if (notes.length) sections.push(`## Saved Persona Scenario Notes (exact values; activation is not shared)\n${JSON.stringify(notes)}\nCopy the chosen note's ref into noteRef. A note without a ref is read-only. Changes affect every chat using that note; keep its activation unchanged.`);
         }
     }
 
-    if (include.card && people.length) {
+    let cardPeople = include.card ? people : [];
+    if (trialKind === 'character') {
+        const pool = include.card ? people : (await loadSourceCharacters(source)).filter(item => characterMatchesProposal(item, trial.change));
+        if (pool.some(item => characterMatchesProposal(item, trial.change))) {
+            cardPeople = pool.map(item => characterMatchesProposal(item, trial.change) ? applyCharacterChangeToSnapshot(item, trial.change, trial.value) : item);
+            trialTarget = `${trial.change.character}'s character card`;
+        }
+    }
+    if (cardPeople.length) {
         sections.push('Character cards follow in full, exactly as saved. Macros such as {{char}} and {{user}} are left in place; {{char}} means that card\'s character. Field keys are shown in [brackets].');
-        for (const character of people) sections.push(formatCharacter(character, source));
+        for (const character of cardPeople) sections.push(formatCharacter(character, source));
     }
 
-    if (include.authorsNote && source.kind === 'roleplay') {
-        const note = substituteParams(String(chat_metadata?.note_prompt ?? '').trim(), macros);
+    if ((include.authorsNote || trialKind === 'authors_note') && source.kind === 'roleplay') {
+        const live = String(chat_metadata?.note_prompt ?? '');
+        const shown = trialKind === 'authors_note' ? applyAuthorsNoteChangeToSnapshot(live, trial.change, trial.value) : live;
+        if (trialKind === 'authors_note') trialTarget = 'the Author\'s Note';
+        const note = substituteParams(String(shown ?? '').trim(), macros);
         if (note) sections.push(`## Author's Note\n${note}`);
     }
 
@@ -916,11 +986,13 @@ export async function buildContext({ source, settings, pendingText = '', session
 
     let lore = { books: [], entries: [] };
     let loreScan = '';
-    const loreShared = general ? Boolean(generalLorebook(source, settings)) : Boolean(include.lore);
+    const loreTrial = trialKind === 'lore' ? trial : null;
+    const loreShared = general ? Boolean(generalLorebook(source, settings)) : Boolean(include.lore || loreTrial);
     if (loreShared) {
         const scanText = loreScanText({ source, settings, sessionText, pendingText });
         loreScan = scanText;
-        lore = await collectLore({ source, settings, scanText });
+        lore = await collectLore({ source, settings, scanText, ...(loreTrial ? { rehearsalChange: loreTrial } : {}) });
+        if (loreTrial && lore.books.includes(String(loreTrial.change.book))) trialTarget = `the ${loreTrial.change.book} lorebook`;
         const text = formatLore(lore, general ? value => String(value ?? '') : substituteSource, general);
         if (text) sections.push(`## Lorebooks\n${text}`);
     }
@@ -932,10 +1004,20 @@ export async function buildContext({ source, settings, pendingText = '', session
         // General uses the account's prompt order, not the character behind Home.
         const snapshot = readCurrentPreset({ globalOnly: general });
         presetSnapshot = snapshot;
-        sections.push(formatPreset(snapshot, { editable: !general }));
+        const shown = trialKind === 'preset' ? applyPresetChangeToSnapshot(snapshot, trial.change, trial.value) : snapshot;
+        if (shown !== snapshot) trialTarget = `preset '${trial.change.preset}'`;
+        sections.push(formatPreset(shown, { editable: !general }));
         if (!general) presetTargets = (snapshot?.targets ?? []).map(({ api, name }) => ({ api, name }));
         const modules = Array.isArray(snapshot?.modules) ? snapshot.modules : [];
         preset = { name: snapshot?.name || '', on: modules.filter(item => item.enabled).length, off: modules.filter(item => !item.enabled).length };
+    } else if (trialKind === 'preset') {
+        // The preset switch is off: share only the preset under rehearsal.
+        const snapshot = readCurrentPreset({ globalOnly: false });
+        const shown = applyPresetChangeToSnapshot(snapshot, trial.change, trial.value);
+        if (shown !== snapshot) {
+            trialTarget = `preset '${trial.change.preset}'`;
+            sections.push(formatPreset(shown, { editable: false }));
+        }
     }
 
     let problemsShared = false;
@@ -1083,6 +1165,7 @@ export async function buildContext({ source, settings, pendingText = '', session
         ].join('\n'));
     }
 
+    if (trialTarget) sections.splice(1, 0, formatRehearsalChangeNote(trial.label, trialTarget));
     let lastPromptShared = false;
     if (include.lastPrompt === true && (source.kind === 'roleplay' || source.kind === 'conversation')) {
         const [{ gatherLastPrompt }, { formatMissingLastPrompt, LAST_PROMPT_MAX_BYTES }] = await Promise.all([

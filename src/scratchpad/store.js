@@ -19,6 +19,7 @@ import { MAX_PINNED_NOTE_BYTES } from '../../public/scripts/scratchpad/pinned-no
 import { DEFAULT_FEEDBACK_TONE, isFeedbackTone } from '../../public/scripts/scratchpad/feedback-tone.js';
 import { splitReply } from '../../public/scripts/scratchpad/proposals.js';
 import { normaliseScenarioNoteRefs } from '../../public/scripts/scratchpad/scenario-note-references.js';
+import { normaliseRehearsalLabel } from '../../public/scripts/scratchpad/rehearsal.js';
 
 export const SCRATCHPAD_SCHEMA = 1;
 export const ASSISTANT_IDS = BUILTIN_ASSISTANT_IDS;
@@ -337,7 +338,11 @@ function normaliseMessage(input, { allowInternalKeys = false, allowSwipes = true
         created: typeof input.created === 'string' ? input.created.slice(0, 40) : now(),
     };
     if (role === 'user' && input.attachments !== undefined) message.attachments = normaliseAttachments(input.attachments);
-    if (input.rehearsal === true) message.rehearsal = true;
+    if (input.rehearsal === true) {
+        message.rehearsal = true;
+        const label = normaliseRehearsalLabel(input.rehearsalLabel);
+        if (label) message.rehearsalLabel = label;
+    }
     if (role === 'assistant') {
         message.state = ['pending', 'done', 'failed'].includes(input.state) ? input.state : 'done';
         if (typeof input.jobId === 'string' && input.jobId.length <= 128) message.jobId = input.jobId;

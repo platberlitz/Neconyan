@@ -2977,7 +2977,7 @@ function loadMewmoryStyles() {
     if (!style) {
         style = document.createElement('link');
         style.id = 'mewmory-css';
-        style.href = 'css/mewmory.css?v=20261203-scratchpad-share-request';
+        style.href = 'css/mewmory.css?v=20261204-scratchpad-try-change';
         document.head.append(style);
     }
     if (style.rel !== 'stylesheet') {

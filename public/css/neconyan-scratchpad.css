@@ -475,6 +475,32 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     font-weight: 700;
 }
 
+.scratchpad-badge.scratchpad-trial-badge {
+    border-style: dashed;
+    border-color: color-mix(in srgb, var(--neco-ginger) 55%, var(--neco-border));
+    color: var(--neco-ink);
+}
+
+.scratchpad-trial-note {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 6px;
+    margin: 0;
+    color: var(--neco-muted);
+    font-size: 0.85rem;
+    overflow-wrap: anywhere;
+}
+
+.scratchpad-trial-note .fa-solid {
+    color: var(--neco-ginger);
+}
+
+.scratchpad-trial-label {
+    min-width: 0;
+    color: var(--neco-ink);
+}
+
 .scratchpad-badge.scratchpad-tone-badge {
     border-color: color-mix(in srgb, var(--neco-ginger) 45%, var(--neco-border));
     background: color-mix(in srgb, var(--neco-ginger) 16%, var(--neco-surface));
@@ -929,6 +955,14 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     flex-wrap: wrap;
     align-items: center;
     gap: 6px;
+}
+
+.scratchpad-change-actions > .scratchpad-button {
+    max-width: 100%;
+}
+
+#neconyan-scratchpad .scratchpad-change-actions .scratchpad-change-try:is(:hover, :focus-visible):not(:disabled) {
+    border-color: var(--neco-ginger);
 }
 
 .scratchpad-session-tools {
