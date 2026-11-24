@@ -117,6 +117,7 @@ describe('describeChildStop', () => {
         const stop = describeChildStop({ pid: 4242, code: null, signal: 'SIGABRT', fatal: fatal(), memory, heapLimitArgument: '--max-old-space-size=1024' });
         expect(stop.kind).toBe('server-out-of-memory');
         expect(stop.extra.child).toEqual({ pid: 4242, signal: 'SIGABRT', exitCode: null, heapLimitArgument: '--max-old-space-size=1024', fatal: fatal(), memory });
+        expect(stop.extra.nextStep).toContain('Server Memory (Node.js)');
         expect(stop.extra.nextStep).toContain('NODE_OPTIONS=--max-old-space-size=<MB>');
         expect(stop.extra.nextStep).toContain('above 1014');
         expect(stop.extra.limitation).toContain('surviving supervisor');

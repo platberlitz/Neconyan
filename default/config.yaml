@@ -292,6 +292,10 @@ performance:
   memoryCacheCapacity: '100mb'
   # Enables disk caching for character cards. Improves performances with large card libraries.
   useDiskCache: true
+  # Optional Node.js V8 heap cap in MB (e.g. 2048, 4096). Set to null for automatic sizing
+  # (Android auto-scales 1024-2048 MB; desktop uses V8 defaults). Ignored on Bun and when
+  # NODE_OPTIONS or a CLI --max-old-space-size flag is already set.
+  maxOldSpaceSizeMb: null
   streaming:
     # Polls the OS connection table during streaming generation so local backends stop when browser disconnect events are missed.
     enableConnectionPolling: true

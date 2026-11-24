@@ -1,3 +1,4 @@
+/* global globalThis */
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -8,7 +9,13 @@ import { FATAL_REPORT_PRIVATE_TEXT, nodeFatalReport } from './fatal-report-fixtu
 
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
 
+import envPaths from 'env-paths';
 import {
+    EXTERNAL_HEAP_OVERRIDE_ENV,
+    hasExternalHeapFlag,
+    parseMaxOldSpaceSizeMb,
+    readConfiguredMaxOldSpaceSizeMb,
+    resolveSupervisorConfigPath,
     RESTART_EXIT_CODE,
     resolveChildHeapArguments,
     runSupervisor as startSupervisor,
@@ -122,8 +129,12 @@ function supervise(plan, options) {
 }
 
 // Every test in this file starts its supervisor through here, so none can leave one behind.
-function runSupervisor(options) {
-    return supervise({ get children() { return options.spawnFn?.mock?.results?.map(result => result.value) ?? []; } }, options);
+// Default tests isolate from any host config.yaml unless useRealConfig is set.
+function runSupervisor({ useRealConfig = false, ...options }) {
+    const supervisorOptions = !useRealConfig && options.heapArguments === undefined && options.resolveHeapArguments === undefined
+        ? { ...options, resolveHeapArguments: () => resolveChildHeapArguments({ execArgv: options.execArgv }) }
+        : options;
+    return supervise({ get children() { return options.spawnFn?.mock?.results?.map(result => result.value) ?? []; } }, supervisorOptions);
 }
 
 /**
@@ -732,6 +743,170 @@ describe('server supervisor', () => {
             await runSupervisor({ argv: ['node', 'server.js'], execArgv: ['--trace-warnings'], spawnFn, exitFn: jest.fn() });
             expect(spawnFn.mock.calls[0][1]).toEqual([...resolveChildHeapArguments({ execArgv: ['--trace-warnings'] }), '--trace-warnings', 'server.js']);
             expect(resolveChildHeapArguments({ platform: 'linux', execArgv: [] })).toEqual([]);
+        });
+
+        test('applies configured maxOldSpaceSizeMb on desktop and Android while yielding to external flags and Bun', () => {
+            expect(parseMaxOldSpaceSizeMb(512)).toBe(512);
+            expect(parseMaxOldSpaceSizeMb(65536)).toBe(65536);
+            expect(parseMaxOldSpaceSizeMb(511)).toBeNull();
+            expect(parseMaxOldSpaceSizeMb(65537)).toBeNull();
+            expect(parseMaxOldSpaceSizeMb(2048.5)).toBeNull();
+            expect(parseMaxOldSpaceSizeMb('2048')).toBeNull();
+
+            for (const platform of ['linux', 'darwin', 'win32', 'android']) {
+                expect(resolveChildHeapArguments({
+                    platform,
+                    versions: { node: '24.18.0' },
+                    execArgv: [],
+                    env: {},
+                    totalMemoryBytes: 12 * 1024 ** 3,
+                    configuredMaxOldSpaceSizeMb: 4096,
+                })).toEqual(['--max-old-space-size=4096']);
+            }
+
+            expect(resolveChildHeapArguments({
+                platform: 'linux',
+                versions: { node: '24.18.0' },
+                execArgv: ['--max-old-space-size=3072'],
+                env: {},
+                configuredMaxOldSpaceSizeMb: 4096,
+            })).toEqual([]);
+
+            expect(resolveChildHeapArguments({
+                platform: 'linux',
+                versions: { node: '24.18.0' },
+                execArgv: [],
+                env: { NODE_OPTIONS: '--max_old_space_size=3072' },
+                configuredMaxOldSpaceSizeMb: 4096,
+            })).toEqual([]);
+
+            expect(resolveChildHeapArguments({
+                platform: 'linux',
+                versions: { bun: '1.4.0' },
+                execArgv: [],
+                env: {},
+                configuredMaxOldSpaceSizeMb: 4096,
+            })).toEqual([]);
+
+            expect(resolveChildHeapArguments({
+                platform: 'linux',
+                versions: { node: '24.18.0' },
+                execArgv: [],
+                env: {},
+                configuredMaxOldSpaceSizeMb: 100,
+            })).toEqual([]);
+
+            expect(resolveChildHeapArguments({
+                platform: 'android',
+                versions: { node: '24.18.0' },
+                execArgv: [],
+                env: {},
+                totalMemoryBytes: 6 * 1024 ** 3,
+                configuredMaxOldSpaceSizeMb: 'invalid',
+            })).toEqual(['--max-old-space-size=1536']);
+        });
+
+        test('resolves config path flags and reads configured heap caps safely', () => {
+            const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-supervisor-config-'));
+            const previousForceGlobal = globalThis.FORCE_GLOBAL_MODE;
+            try {
+                delete globalThis.FORCE_GLOBAL_MODE;
+                expect(resolveSupervisorConfigPath(['node', 'server.js'], directory)).toBe(path.join(directory, 'config.yaml'));
+                expect(resolveSupervisorConfigPath(['node', 'server.js', '--configPath', 'first.yaml', '--config-path=second.yaml'], directory)).toBe(path.resolve(directory, 'second.yaml'));
+                expect(resolveSupervisorConfigPath(['node', 'server.js', '--configPath=chosen.yaml', '--', '--configPath', 'ignored.yaml'], directory)).toBe(path.resolve(directory, 'chosen.yaml'));
+
+                const expectedGlobalPath = path.join(envPaths('Neconyan', { suffix: '' }).data, 'config.yaml');
+                expect(resolveSupervisorConfigPath(['node', 'server.js', '--global', '--configPath', 'ignored.yaml'], directory)).toBe(expectedGlobalPath);
+                expect(resolveSupervisorConfigPath(['node', 'server.js', '--global', '--no-global', '--configPath', 'local.yaml'], directory)).toBe(path.resolve(directory, 'local.yaml'));
+
+                const validConfig = path.join(directory, 'valid.yaml');
+                fs.writeFileSync(validConfig, 'performance:\n  maxOldSpaceSizeMb: 4096\n');
+                expect(readConfiguredMaxOldSpaceSizeMb(validConfig)).toBe(4096);
+
+                const malformedConfig = path.join(directory, 'broken.yaml');
+                fs.writeFileSync(malformedConfig, 'performance:\n  maxOldSpaceSizeMb: [\n');
+                expect(readConfiguredMaxOldSpaceSizeMb(malformedConfig)).toBeNull();
+                expect(readConfiguredMaxOldSpaceSizeMb(path.join(directory, 'missing.yaml'))).toBeNull();
+                expect(readConfiguredMaxOldSpaceSizeMb(null)).toBeNull();
+                expect(hasExternalHeapFlag({ execArgv: ['--max-old-space-size=2048'], env: {} })).toBe(true);
+                expect(hasExternalHeapFlag({ execArgv: [], env: { NODE_OPTIONS: '--max_old_space_size=2048' } })).toBe(true);
+                expect(hasExternalHeapFlag({ execArgv: ['--trace-warnings'], env: {} })).toBe(false);
+            } finally {
+                if (previousForceGlobal === undefined) {
+                    delete globalThis.FORCE_GLOBAL_MODE;
+                } else {
+                    globalThis.FORCE_GLOBAL_MODE = previousForceGlobal;
+                }
+                fs.rmSync(directory, { recursive: true, force: true });
+            }
+        });
+
+        test('re-reads config.yaml on exit-75 respawn, tracks external override env, and logs again after Auto', async () => {
+            const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-supervisor-respawn-'));
+            const configPath = path.join(directory, 'config.yaml');
+            const info = jest.spyOn(console, 'info').mockImplementation(() => { });
+            const previousNodeOptions = process.env.NODE_OPTIONS;
+            delete process.env.NODE_OPTIONS;
+            try {
+                fs.writeFileSync(configPath, 'performance:\n  maxOldSpaceSizeMb: 2048\n');
+                const { children, spawnFn } = createSpawnPlan(['manual', 'manual', 'manual', 'manual']);
+                const exitFn = jest.fn();
+                const run = runSupervisor({
+                    argv: ['node', 'server.js', '--configPath', configPath],
+                    execArgv: [],
+                    spawnFn,
+                    exitFn,
+                    useRealConfig: true,
+                });
+
+                await waitFor(() => children.length === 1, 'first spawn');
+                expect(spawnFn.mock.calls[0][1]).toEqual(['--max-old-space-size=2048', 'server.js', '--configPath', configPath]);
+                expect(spawnFn.mock.calls[0][2].env[EXTERNAL_HEAP_OVERRIDE_ENV]).toBe('0');
+
+                fs.writeFileSync(configPath, 'performance:\n  maxOldSpaceSizeMb: 4096\n');
+                stopChild(children[0], RESTART_EXIT_CODE, null);
+                await waitFor(() => children.length === 2, 'second spawn');
+                expect(spawnFn.mock.calls[1][1]).toEqual(['--max-old-space-size=4096', 'server.js', '--configPath', configPath]);
+                expect(spawnFn.mock.calls[1][2].env[EXTERNAL_HEAP_OVERRIDE_ENV]).toBe('0');
+
+                fs.writeFileSync(configPath, 'performance:\n  maxOldSpaceSizeMb: null\n');
+                stopChild(children[1], RESTART_EXIT_CODE, null);
+                await waitFor(() => children.length === 3, 'third spawn');
+                expect(spawnFn.mock.calls[2][1]).toEqual(['server.js', '--configPath', configPath]);
+
+                fs.writeFileSync(configPath, 'performance:\n  maxOldSpaceSizeMb: 4096\n');
+                stopChild(children[2], RESTART_EXIT_CODE, null);
+                await waitFor(() => children.length === 4, 'fourth spawn');
+                expect(spawnFn.mock.calls[3][1]).toEqual(['--max-old-space-size=4096', 'server.js', '--configPath', configPath]);
+
+                stopChild(children[3], 0, null);
+                await run;
+                expect(exitFn).toHaveBeenCalledWith(0);
+
+                const heapLogCalls = info.mock.calls.filter(([line]) => String(line).includes('Setting the JavaScript heap limit'));
+                expect(heapLogCalls).toHaveLength(3);
+                expect(heapLogCalls[0][0]).toContain('--max-old-space-size=2048');
+                expect(heapLogCalls[1][0]).toContain('--max-old-space-size=4096');
+                expect(heapLogCalls[2][0]).toContain('--max-old-space-size=4096');
+
+                const { spawnFn: overrideSpawn } = createSpawnPlan([[0, null]]);
+                await runSupervisor({
+                    argv: ['node', 'server.js', '--configPath', configPath],
+                    execArgv: ['--max-old-space-size=3072'],
+                    spawnFn: overrideSpawn,
+                    exitFn: jest.fn(),
+                    useRealConfig: true,
+                });
+                expect(overrideSpawn.mock.calls[0][1]).toEqual(['--max-old-space-size=3072', 'server.js', '--configPath', configPath]);
+                expect(overrideSpawn.mock.calls[0][2].env[EXTERNAL_HEAP_OVERRIDE_ENV]).toBe('1');
+            } finally {
+                if (previousNodeOptions === undefined) {
+                    delete process.env.NODE_OPTIONS;
+                } else {
+                    process.env.NODE_OPTIONS = previousNodeOptions;
+                }
+                fs.rmSync(directory, { recursive: true, force: true });
+            }
         });
     });
 

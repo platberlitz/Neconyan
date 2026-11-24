@@ -59,7 +59,7 @@ const logEntries = [
     { id: 2, timestamp: 1726100001000, stream: 'stderr', message: 'A'.repeat(320) },
 ];
 
-async function installFailClosedRoutes(page, { light = false, delayLogs = false, logsMode = 'entries', serverMode = 'dirty', password = true, folderPaths = {} } = {}) {
+async function installFailClosedRoutes(page, { light = false, delayLogs = false, logsMode = 'entries', serverMode = 'dirty', password = true, folderPaths = {}, memorySupported = true } = {}) {
     let envelopePromise;
     let storedSettings;
     await page.route('**/api/settings/get', async route => {
@@ -102,6 +102,11 @@ async function installFailClosedRoutes(page, { light = false, delayLogs = false,
 
     let logsRequests = 0;
     let failNextStatus = false;
+    let configMtime = 1;
+    let configContent = 'logging:\n  minLogLevel: 1\n';
+    let memoryConfiguredMb = null;
+    let thumbnailSettings = { enabled: true, format: 'png', quality: 100, dimensions: { bg: [240, 135], avatar: [864, 1280], persona: [864, 1280] } };
+    let thumbnailMobileSettings = { enabled: true, format: 'jpg', quality: 82, dimensions: { bg: [240, 135], avatar: [320, 480], persona: [320, 480] } };
     await page.route('**/api/server-admin/**', async route => {
         const endpoint = new URL(route.request().url()).pathname;
         if (endpoint === '/api/server-admin/crash-reports/status') {
@@ -138,18 +143,92 @@ async function installFailClosedRoutes(page, { light = false, delayLogs = false,
         }
         if (endpoint === '/api/server-admin/config/get') {
             if (serverMode === 'initial-503') await new Promise(resolve => setTimeout(resolve, 300));
-            await route.fulfill({ json: { path: '/isolated/config.yaml', content: 'logging:\n  minLogLevel: 1\n', lastModifiedMs: 1 } });
+            await route.fulfill({ json: { path: '/isolated/config.yaml', content: configContent, lastModifiedMs: configMtime } });
+            return;
+        }
+        if (endpoint === '/api/server-admin/config/save') {
+            const payload = route.request().postDataJSON();
+            if (Number.isFinite(Number(payload?.expectedLastModifiedMs)) && Number(payload.expectedLastModifiedMs) !== configMtime) {
+                await route.fulfill({ status: 409, json: { error: 'config.yaml changed on disk. Reload it before saving again.' } });
+                return;
+            }
+            configContent = String(payload?.content ?? configContent);
+            configMtime += 1;
+            await route.fulfill({ json: { ok: true, restarting: false, path: '/isolated/config.yaml', lastModifiedMs: configMtime, message: 'Config saved. Restart the server to apply changes.' } });
             return;
         }
         if (endpoint === '/api/server-admin/config/chat-completions/get') {
-            await route.fulfill({ json: { settings: {}, lastModifiedMs: 1 } });
+            await route.fulfill({ json: { settings: {}, lastModifiedMs: configMtime } });
             return;
         }
         if (endpoint === '/api/server-admin/config/thumbnail-settings/get') {
             await route.fulfill({ json: {
-                settings: { enabled: true, format: 'png', quality: 100, dimensions: { bg: [240, 135], avatar: [864, 1280], persona: [864, 1280] } },
-                mobileSettings: { enabled: true, format: 'jpg', quality: 82, dimensions: { bg: [240, 135], avatar: [320, 480], persona: [320, 480] } },
-                lastModifiedMs: 1,
+                settings: thumbnailSettings,
+                mobileSettings: thumbnailMobileSettings,
+                lastModifiedMs: configMtime,
+            } });
+            return;
+        }
+        if (endpoint === '/api/server-admin/config/thumbnail-settings/save') {
+            const payload = route.request().postDataJSON();
+            if (Number.isFinite(Number(payload?.expectedLastModifiedMs)) && Number(payload.expectedLastModifiedMs) !== configMtime) {
+                await route.fulfill({ status: 409, json: { error: 'config.yaml changed on disk. Reload it before saving again.' } });
+                return;
+            }
+            thumbnailSettings = payload?.settings ?? thumbnailSettings;
+            thumbnailMobileSettings = payload?.mobileSettings ?? thumbnailMobileSettings;
+            configMtime += 1;
+            await route.fulfill({ json: {
+                ok: true,
+                path: '/isolated/config.yaml',
+                lastModifiedMs: configMtime,
+                settings: thumbnailSettings,
+                mobileSettings: thumbnailMobileSettings,
+                cleared: null,
+                message: 'Thumbnail settings saved. New thumbnails will use these values.',
+            } });
+            return;
+        }
+        if (endpoint === '/api/server-admin/config/memory/get') {
+            await route.fulfill({ json: {
+                path: '/isolated/config.yaml',
+                supported: memorySupported,
+                configuredMb: memoryConfiguredMb,
+                heapLimitMb: memorySupported ? 4096 : null,
+                totalMemoryMb: 16384,
+                presetsMb: [1536, 2048, 3072, 4096, 6144, 8192],
+                supervised: true,
+                externalOverride: false,
+                canRestart: true,
+                host: memorySupported ? '' : 'android',
+                lastModifiedMs: configMtime,
+            } });
+            return;
+        }
+        if (endpoint === '/api/server-admin/config/memory/save') {
+            const payload = route.request().postDataJSON();
+            if (Number.isFinite(Number(payload?.expectedLastModifiedMs)) && Number(payload.expectedLastModifiedMs) !== configMtime) {
+                await route.fulfill({ status: 409, json: { error: 'config.yaml changed on disk. Reload it before saving again.' } });
+                return;
+            }
+            memoryConfiguredMb = payload?.maxOldSpaceSizeMb ?? null;
+            configMtime += 1;
+            await route.fulfill({ json: {
+                ok: true,
+                restarting: false,
+                path: '/isolated/config.yaml',
+                lastModifiedMs: configMtime,
+                maxOldSpaceSizeMb: memoryConfiguredMb,
+                supported: memorySupported,
+                configuredMb: memoryConfiguredMb,
+                heapLimitMb: 4096,
+                totalMemoryMb: 16384,
+                presetsMb: [1536, 2048, 3072, 4096, 6144, 8192],
+                supervised: true,
+                externalOverride: false,
+                canRestart: true,
+                host: '',
+                message: 'Server memory limit saved. Restart the server to apply changes.',
             } });
             return;
         }
@@ -175,7 +254,10 @@ async function installFailClosedRoutes(page, { light = false, delayLogs = false,
     });
 
     // The background update check can also ask for status, so the retry test marks the one request that fails.
-    return Object.assign(() => logsRequests, { failNextStatus: () => { failNextStatus = true; } });
+    return Object.assign(() => logsRequests, {
+        failNextStatus: () => { failNextStatus = true; },
+        getConfigState: () => ({ configContent, configMtime, memoryConfiguredMb, thumbnailSettings }),
+    });
 }
 
 async function assertSurfaceGeometry(page, surface, coarse) {
@@ -300,6 +382,67 @@ test('Server keeps dirty update state visible and source details collapsed', asy
     await expect(restart).toBeInViewport();
     const restartBounds = await restart.boundingBox();
     expect(restartBounds.y + restartBounds.height).toBeLessThanOrEqual(900);
+});
+
+test('Server Memory card hides when supported is false', async ({ page }) => {
+    await installFailClosedRoutes(page, { memorySupported: false });
+    await openSettings(page);
+    await openServer(page);
+
+    const panel = page.locator('#sb-shell-panel-right-server');
+    await expect(panel.locator('.sb-server-summary-grid')).toContainText('Runtime');
+    await expect(panel.locator('#sb-server-memory-card')).toBeHidden();
+});
+
+test('Server Memory and Thumbnails allow cross-card saves while preserving Thumbnails 409 after raw edit', async ({ page }) => {
+    const routes = await installFailClosedRoutes(page);
+    await openSettings(page);
+    await openServer(page);
+
+    const panel = page.locator('#sb-shell-panel-right-server');
+    const memoryCard = panel.locator('#sb-server-memory-card');
+    const memorySelect = panel.locator('#sb-server-memory-select');
+    const memorySave = panel.locator('#sb-server-memory-save');
+    const thumbSave = panel.getByRole('button', { name: 'Save thumbnails', exact: true });
+    const configEditor = panel.locator('textarea.sb-server-config-editor');
+    const configSave = panel.getByRole('button', { name: 'Save config', exact: true });
+
+    await expect(memoryCard).toBeVisible();
+
+    // Memory Save -> Thumbnails Save succeeds without false 409
+    await memorySelect.selectOption('2048');
+    await memorySave.click();
+    await expect.poll(() => routes.getConfigState().configMtime).toBe(2);
+    await expect(page.locator('#toast-container')).toContainText('Server memory limit saved.');
+    expect(routes.getConfigState().memoryConfiguredMb).toBe(2048);
+    await expect(thumbSave).toBeEnabled();
+
+    await thumbSave.click();
+    await expect.poll(() => routes.getConfigState().configMtime).toBe(3);
+    await expect(page.locator('#toast-container')).toContainText('Thumbnail settings saved.');
+    await expect(memorySave).toBeEnabled();
+
+    // Reverse: Thumbnails Save -> Memory Save succeeds without false 409
+    await memorySelect.selectOption('4096');
+    await memorySave.click();
+    await expect.poll(() => routes.getConfigState().configMtime).toBe(4);
+    await expect(page.locator('#toast-container')).toContainText('Server memory limit saved.');
+    expect(routes.getConfigState().memoryConfiguredMb).toBe(4096);
+    await expect(configSave).toBeEnabled();
+
+    // Raw edit to thumbnail size -> Thumbnails Save refused with 409, preserving raw edit
+    const rawThumbnailEdit = 'logging:\n  minLogLevel: 1\nthumbnails:\n  dimensions:\n    avatar:\n      - 512\n      - 768\n';
+    await configEditor.fill(rawThumbnailEdit);
+    await configSave.click();
+    await expect.poll(() => routes.getConfigState().configMtime).toBe(5);
+    await expect(page.locator('#toast-container')).toContainText('Config saved.');
+    expect(routes.getConfigState().configContent).toBe(rawThumbnailEdit);
+    await expect(thumbSave).toBeEnabled();
+
+    await thumbSave.click();
+    await expect(panel.locator('.sb-thumbnail-card .sb-server-note')).toContainText('config.yaml changed on disk.');
+    expect(routes.getConfigState().configMtime).toBe(5);
+    expect(routes.getConfigState().configContent).toBe(rawThumbnailEdit);
 });
 
 for (const phone of [true, false]) {
