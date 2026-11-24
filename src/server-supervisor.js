@@ -5,6 +5,10 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 
+import envPaths from 'env-paths';
+import yaml from 'yaml';
+
+import { APP_NAME } from './runtime.js';
 import {
     applyServerPluginRelease,
     discardPreparedServerPluginRelease,
@@ -30,7 +34,10 @@ export const RESTART_EXIT_CODE = 75;
 export const SERVER_PLUGIN_UPDATE_EXIT_CODE = 76;
 export const SUPERVISOR_RELOAD_EXIT_CODE = 77;
 export const SUPERVISED_ENV = 'NECONYAN_SUPERVISED';
+export const EXTERNAL_HEAP_OVERRIDE_ENV = 'NECONYAN_EXTERNAL_HEAP_OVERRIDE';
 export const LAUNCHER_ENV = 'NECONYAN_LAUNCHER';
+export const MAX_OLD_SPACE_SIZE_MIN_MB = 512;
+export const MAX_OLD_SPACE_SIZE_MAX_MB = 65536;
 export const SUPERVISOR_SHUTDOWN_MESSAGE = 'neconyan:shutdown';
 export const SUPERVISOR_FORCE_KILL_TIMEOUT_MS = 5000;
 export const SERVER_PLUGIN_ACTIVATION_TIMEOUT_MS = 150_000;
@@ -45,15 +52,107 @@ const ANDROID_HEAP_DEFAULT_MB = 1024;
 const ANDROID_HEAP_CEILING_MB = 2048;
 
 /**
- * JavaScript heap limit to pass to the server on Android (Termux), where V8's
- * default is about 1 GB regardless of device memory. An explicit setting in the
- * runtime flags or NODE_OPTIONS always wins, and other platforms and Bun are untouched.
+ * Validates an integer V8 old-space size limit in MB.
+ * @param {unknown} value Candidate value from config.yaml
+ * @returns {number|null} Validated integer MB limit, or null for automatic sizing
+ */
+export function parseMaxOldSpaceSizeMb(value) {
+    return typeof value === 'number'
+        && Number.isInteger(value)
+        && value >= MAX_OLD_SPACE_SIZE_MIN_MB
+        && value <= MAX_OLD_SPACE_SIZE_MAX_MB
+        ? value
+        : null;
+}
+
+/**
+ * Checks whether Node.js already receives an explicit heap limit via CLI flags or NODE_OPTIONS.
+ * @param {object} [options]
+ * @param {string[]} [options.execArgv] Runtime flags
+ * @param {NodeJS.ProcessEnv} [options.env] Process environment
+ * @returns {boolean} True when an external heap flag is present
+ */
+export function hasExternalHeapFlag({ execArgv = process.execArgv, env = process.env } = {}) {
+    return (Array.isArray(execArgv) ? execArgv : []).some(argument => HEAP_FLAG.test(String(argument)))
+        || HEAP_FLAG.test(String(env?.NODE_OPTIONS ?? ''));
+}
+
+/**
+ * Resolves the config.yaml path using the same CLI precedence as CommandLineParser.
+ * @param {string[]} [argv] Supervisor process argv
+ * @param {string} [baseDir] Server installation directory
+ * @returns {string} Resolved config.yaml path
+ */
+export function resolveSupervisorConfigPath(argv = process.argv, baseDir = serverDirectory) {
+    const args = Array.isArray(argv) ? argv.slice(2) : [];
+    let cliGlobal;
+    let rawConfigPath = null;
+
+    for (let i = 0; i < args.length; i++) {
+        const arg = String(args[i] ?? '');
+        if (arg === '--') break;
+        if (arg === '--global' || arg === '--global=true') {
+            cliGlobal = true;
+            continue;
+        }
+        if (arg === '--no-global' || arg === '--global=false') {
+            cliGlobal = false;
+            continue;
+        }
+        if (arg === '--configPath' || arg === '--config-path') {
+            if (i + 1 < args.length) {
+                rawConfigPath = String(args[++i]);
+            }
+            continue;
+        }
+        if (arg.startsWith('--configPath=')) {
+            rawConfigPath = arg.slice('--configPath='.length);
+            continue;
+        }
+        if (arg.startsWith('--config-path=')) {
+            rawConfigPath = arg.slice('--config-path='.length);
+            continue;
+        }
+    }
+
+    const isGlobal = globalThis.FORCE_GLOBAL_MODE ?? cliGlobal ?? false;
+    if (isGlobal) {
+        return path.join(envPaths(APP_NAME, { suffix: '' }).data, 'config.yaml');
+    }
+    if (rawConfigPath) {
+        return path.resolve(baseDir, rawConfigPath);
+    }
+    return path.join(baseDir, 'config.yaml');
+}
+
+/**
+ * Reads performance.maxOldSpaceSizeMb from config.yaml, failing open to null on any error.
+ * @param {string|null|undefined} configPath Path to config.yaml
+ * @returns {number|null} Configured MB cap or null
+ */
+export function readConfiguredMaxOldSpaceSizeMb(configPath) {
+    if (!configPath) return null;
+    try {
+        const content = fs.readFileSync(configPath, 'utf8');
+        const parsed = yaml.parse(content);
+        return parseMaxOldSpaceSizeMb(parsed?.performance?.maxOldSpaceSizeMb);
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * JavaScript heap limit to pass to the server. A valid configured cap applies on
+ * all Node.js platforms; otherwise Android (Termux) auto-scales 1024-2048 MB and
+ * desktop uses V8 defaults. An explicit setting in the runtime flags or NODE_OPTIONS
+ * always wins, and Bun is untouched.
  * @param {object} [options]
  * @param {string} [options.platform] Operating system
  * @param {NodeJS.ProcessVersions} [options.versions] Runtime versions
  * @param {string[]} [options.execArgv] Runtime flags forwarded to the child
  * @param {NodeJS.ProcessEnv} [options.env] Environment the child inherits
  * @param {number} [options.totalMemoryBytes] Device memory
+ * @param {number|null} [options.configuredMaxOldSpaceSizeMb] Configured cap from config.yaml
  * @returns {string[]} Nothing, or one --max-old-space-size flag
  */
 export function resolveChildHeapArguments({
@@ -62,9 +161,13 @@ export function resolveChildHeapArguments({
     execArgv = [],
     env = process.env,
     totalMemoryBytes = os.totalmem(),
+    configuredMaxOldSpaceSizeMb = null,
 } = {}) {
-    if (platform !== 'android' || versions?.bun) return [];
-    if (execArgv.some(argument => HEAP_FLAG.test(String(argument))) || HEAP_FLAG.test(String(env?.NODE_OPTIONS ?? ''))) return [];
+    if (versions?.bun) return [];
+    if (hasExternalHeapFlag({ execArgv, env })) return [];
+    const configured = parseMaxOldSpaceSizeMb(configuredMaxOldSpaceSizeMb);
+    if (configured !== null) return [`--max-old-space-size=${configured}`];
+    if (platform !== 'android') return [];
     if (typeof totalMemoryBytes !== 'number' || !Number.isFinite(totalMemoryBytes) || totalMemoryBytes <= 0) return [];
     const quarter = Math.floor(totalMemoryBytes / 4 / 1048576);
     return [`--max-old-space-size=${Math.max(ANDROID_HEAP_DEFAULT_MB, Math.min(ANDROID_HEAP_CEILING_MB, quarter))}`];
@@ -132,7 +235,8 @@ export function shouldSupervise(env = process.env) {
  * @param {string[]} [options.execArgv] Runtime flags to forward to the child
  * @param {typeof spawn} [options.spawnFn] Spawn implementation
  * @param {(code: number) => never} [options.exitFn] Exit implementation
- * @param {string[]} [options.heapArguments] Heap flags added before the forwarded runtime flags
+ * @param {string[]} [options.heapArguments] Static heap flags override for tests
+ * @param {() => string[]} [options.resolveHeapArguments] Per-spawn heap flag resolver
  * @param {number} [options.restartDelayMs] Pause before restarting a server that stopped unexpectedly
  * @param {number} [options.crashLoopLimit] Unexpected stops within the window that end automatic restarts
  * @param {number} [options.crashLoopWindowMs] Length of that window
@@ -146,7 +250,11 @@ export async function runSupervisor({
     execArgv = process.execArgv ?? [],
     spawnFn = spawn,
     exitFn = process.exit,
-    heapArguments = resolveChildHeapArguments({ execArgv }),
+    heapArguments = undefined,
+    resolveHeapArguments = () => resolveChildHeapArguments({
+        execArgv,
+        configuredMaxOldSpaceSizeMb: readConfiguredMaxOldSpaceSizeMb(resolveSupervisorConfigPath(argv)),
+    }),
     restartDelayMs = SERVER_AUTO_RESTART_DELAY_MS,
     crashLoopLimit = SERVER_CRASH_LOOP_LIMIT,
     crashLoopWindowMs = SERVER_CRASH_LOOP_WINDOW_MS,
@@ -279,14 +387,18 @@ export async function runSupervisor({
     });
 
     let isFirstLaunch = true;
+    let previousHeapFlag = null;
     for (;;) {
         if (!isFirstLaunch && !pendingPluginUpdate && !activatingPluginUpdate && !recoverPluginUpdates()) {
             return exitFn(1);
         }
 
+        const currentHeapArguments = heapArguments ?? resolveHeapArguments();
+        const currentHeapFlag = currentHeapArguments.join(' ');
         const env = {
             ...process.env,
             [SUPERVISED_ENV]: '1',
+            [EXTERNAL_HEAP_OVERRIDE_ENV]: hasExternalHeapFlag({ execArgv, env: process.env }) ? '1' : '0',
             [SERVER_PLUGIN_UPDATE_SUPERVISOR_API_ENV]: SERVER_PLUGIN_UPDATE_SUPERVISOR_API_VERSION,
         };
         if (!isFirstLaunch) {
@@ -294,10 +406,11 @@ export async function runSupervisor({
         }
 
         try {
-            if (isFirstLaunch && heapArguments.length) {
-                console.info(`[Neconyan] Setting the JavaScript heap limit for this device (${heapArguments.join(' ')}). Set NODE_OPTIONS=--max-old-space-size=<MB> to choose another.`);
+            if (currentHeapArguments.length && (isFirstLaunch || currentHeapFlag !== previousHeapFlag)) {
+                console.info(`[Neconyan] Setting the JavaScript heap limit (${currentHeapArguments.join(' ')}). Change it in the Server panel (Server Memory), or set NODE_OPTIONS=--max-old-space-size=<MB> to override.`);
             }
-            child = spawnFn(argv[0], [...heapArguments, ...execArgv, ...argv.slice(1)], { stdio: ['inherit', 'inherit', 'inherit', 'ipc'], env });
+            previousHeapFlag = currentHeapFlag;
+            child = spawnFn(argv[0], [...currentHeapArguments, ...execArgv, ...argv.slice(1)], { stdio: ['inherit', 'inherit', 'inherit', 'ipc'], env });
             const activeChild = child;
             let crashDirectory;
             let app = null;
@@ -388,7 +501,7 @@ export async function runSupervisor({
                 const fatal = diagnostics?.consumeFatalReport(crashDirectory, activeChild.pid) ?? null;
                 const needsReport = Boolean(diagnostics) && (Boolean(fatal) || (!expected && (signal || fs.existsSync(path.join(crashDirectory, `running-${activeChild.pid}.json`)))));
                 const stop = needsReport || restartable
-                    ? describeChildStop({ pid: activeChild.pid, code, signal, app, fatal, memory: memoryEvidence.snapshot(), heapLimitArgument: heapArguments[0] ?? null, stoppedAt })
+                    ? describeChildStop({ pid: activeChild.pid, code, signal, app, fatal, memory: memoryEvidence.snapshot(), heapLimitArgument: currentHeapArguments[0] ?? null, stoppedAt })
                     : null;
                 if (restartable) console.error(`[Neconyan] The server stopped unexpectedly: ${stop.headline}.`);
                 const saved = needsReport && diagnostics.writeCrashReport(stop.kind, stop.explanation, stop.extra, crashDirectory);

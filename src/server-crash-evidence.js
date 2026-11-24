@@ -140,7 +140,7 @@ export function describeChildStop({ pid, code, signal, app = null, fatal = null,
         const { kind, explanation, headline } = describeFatalStop(fatal);
         const figures = heapFigures(fatal);
         if (fatal.outOfMemory && figures) {
-            extra.nextStep = `If this device has memory to spare, the limit can be raised by starting the server with NODE_OPTIONS=--max-old-space-size=<MB> set above ${figures.limit}.${memory ? ' The readings taken before it stopped are in child.memory.' : ''}`;
+            extra.nextStep = `If this device has memory to spare, raise the limit above ${figures.limit} MB in the Server panel under Server Memory (Node.js), or start the server with NODE_OPTIONS=--max-old-space-size=<MB>.${memory ? ' The readings taken before it stopped are in child.memory.' : ''}`;
         }
         return { kind, explanation, headline, extra };
     }

@@ -49,6 +49,7 @@ import { getAssistantIconSrc } from './neconyan-assistant-art.js';
 import { isSimpleModeEnabled, setSimpleModeEnabled, SIMPLE_MODE_EVENT, SIMPLE_MODE_HIDDEN_PAGE_TABS } from './neconyan-simple-mode.js';
 import { getSleeperCoat, getSleeperCoatPair, setSleeperCoat, setSleeperCoatPair, SLEEPER_COAT_CHANGE_EVENT, SLEEPER_COAT_GROUPS, SLEEPER_COAT_PAIRS, SLEEPER_COATS, sleeperCoatArt } from './neconyan-sleeper-coats.js';
 import { t, translate } from './i18n.js';
+import { uiText } from './ui-text.js';
 import {
     BOTTOM_CHAT_BAR_BUTTON_LABELS,
     readBottomChatBarLayout,
@@ -1688,6 +1689,9 @@ const nnState = {
         lastModifiedMs: 0,
         thumbnailLastModifiedMs: 0,
         thumbnailSettingsLoaded: false,
+        memoryLastModifiedMs: 0,
+        memorySettingsLoaded: false,
+        memoryState: null,
         lastStatusData: null,
         busy: false,
         restarting: false,
@@ -14363,6 +14367,7 @@ function updateServerAdminInteractivity() {
 
     const locked = state.busy || state.restarting;
     const thumbnailLocked = locked || !state.thumbnailSettingsLoaded;
+    const memoryLocked = locked || !state.memorySettingsLoaded;
     const canUpdate = refs.updateButton?.dataset.sbCanUpdate === 'true';
     const hasConfigContent = Boolean(refs.configEditor?.value.trim());
 
@@ -14372,6 +14377,11 @@ function updateServerAdminInteractivity() {
     setButtonDisabled(refs.restartButton, locked);
     setButtonDisabled(refs.saveConfigButton, locked || !hasConfigContent);
     setButtonDisabled(refs.saveConfigRestartButton, locked || !hasConfigContent);
+    if (refs.memorySelect instanceof HTMLSelectElement) {
+        refs.memorySelect.disabled = memoryLocked;
+    }
+    setButtonDisabled(refs.memorySaveButton, memoryLocked);
+    setButtonDisabled(refs.memorySaveRestartButton, memoryLocked);
     setThumbnailInputsDisabled(thumbnailLocked);
     if (refs.autoStashCheckbox) {
         const data = state.lastStatusData;
@@ -14409,6 +14419,7 @@ function renderServerAdminStatus(data) {
         button.hidden = !canRestart;
         button.style.display = canRestart ? '' : 'none';
     }
+    setElementVisible(refs.memorySaveRestartButton, canRestart && state.memoryState?.supervised !== false);
     const statusGrid = refs.statusGrid;
     const sourceDetailsGrid = refs.sourceDetailsGrid ?? statusGrid;
     statusGrid.replaceChildren();
@@ -14612,6 +14623,143 @@ function renderServerThumbnailSettings(data) {
     setServerAdminMessage(refs.thumbnailNote, 'Thumbnail settings loaded. Saving applies to new thumbnails immediately.', 'neutral');
 }
 
+function setElementVisible(element, visible) {
+    if (!(element instanceof HTMLElement)) {
+        return;
+    }
+
+    element.hidden = !visible;
+    element.style.display = visible ? '' : 'none';
+}
+
+function setMemoryStatValue(element, formattedText) {
+    if (!(element instanceof HTMLElement)) {
+        return;
+    }
+
+    const text = String(formattedText ?? 'Unknown');
+    element.textContent = text;
+    if (text !== 'Unknown') {
+        element.setAttribute('translate', 'no');
+    } else {
+        element.removeAttribute('translate');
+    }
+}
+
+function renderServerMemoryNote(lines, tone = 'neutral') {
+    const refs = getServerAdminRefs();
+
+    if (!(refs?.memoryNote instanceof HTMLElement)) {
+        return;
+    }
+
+    const entries = (Array.isArray(lines) ? lines : [lines])
+        .map(line => String(line ?? '').trim())
+        .filter(Boolean);
+
+    refs.memoryNote.replaceChildren();
+    refs.memoryNote.dataset.tone = tone;
+    refs.memoryNote.hidden = entries.length === 0;
+    for (const line of entries) {
+        refs.memoryNote.appendChild(createElement('div', { text: line }));
+    }
+}
+
+function formatMemoryMb(mb, { preferGb = false } = {}) {
+    if (typeof mb !== 'number' || !Number.isFinite(mb) || mb <= 0) {
+        return 'Unknown';
+    }
+
+    if (preferGb && mb >= 1024) {
+        return `${Number((mb / 1024).toFixed(1))} GB`;
+    }
+
+    return `${mb} MB`;
+}
+
+function getServerMemoryWarnings(memoryState = getServerAdminState().memoryState, selectedValue = getServerAdminRefs()?.memorySelect?.value ?? '') {
+    const warnings = [];
+
+    if (memoryState?.externalOverride) {
+        warnings.push('An external NODE_OPTIONS or --max-old-space-size flag is active and overrides this setting.');
+    }
+
+    if (memoryState?.supervised === false) {
+        warnings.push(uiText('This server\'s supervisor can\'t apply this setting yet. Stop Neconyan completely and start it again. If you start it with NECONYAN_SUPERVISED=1, set NODE_OPTIONS instead.'));
+    }
+
+    const selectedMb = selectedValue === '' ? null : Number(selectedValue);
+    const totalMemoryMb = Number(memoryState?.totalMemoryMb ?? 0);
+    const heapLimitMb = Number(memoryState?.heapLimitMb ?? 0);
+
+    if (selectedMb !== null && Number.isFinite(selectedMb) && totalMemoryMb > 0 && selectedMb > totalMemoryMb * 0.5) {
+        warnings.push('This cap is over half of device RAM. The OS or Android may close Neconyan if memory runs low.');
+    }
+
+    if (selectedMb !== null && Number.isFinite(selectedMb) && heapLimitMb > 0 && selectedMb + 256 < heapLimitMb) {
+        warnings.push('This cap is lower than the current heap limit and will reduce available JavaScript memory after restart.');
+    }
+
+    return warnings;
+}
+
+function updateServerMemoryWarningNote() {
+    const warnings = getServerMemoryWarnings();
+    if (warnings.length > 0) {
+        renderServerMemoryNote(warnings, 'warn');
+    } else {
+        renderServerMemoryNote(['Auto uses Node.js defaults on desktop and scales automatically on Android.'], 'neutral');
+    }
+}
+
+function renderServerMemorySettings(data, { preserveSelection = false } = {}) {
+    const state = getServerAdminState();
+    const refs = getServerAdminRefs();
+
+    if (!refs) {
+        return;
+    }
+
+    if (!data || data.supported === false) {
+        setElementVisible(refs.memoryCard, false);
+        state.memorySettingsLoaded = false;
+        state.memoryState = null;
+        return;
+    }
+
+    const previousSelection = preserveSelection && refs.memorySelect ? refs.memorySelect.value : null;
+    setElementVisible(refs.memoryCard, true);
+    state.memoryState = data;
+    state.memoryLastModifiedMs = Number(data.lastModifiedMs ?? 0) || state.memoryLastModifiedMs;
+    state.memorySettingsLoaded = true;
+
+    setMemoryStatValue(refs.memoryHeapLimit, formatMemoryMb(data.heapLimitMb));
+    setMemoryStatValue(refs.memoryDeviceRam, formatMemoryMb(data.totalMemoryMb, { preferGb: true }));
+
+    const presets = Array.isArray(data.presetsMb) ? data.presetsMb : [];
+    const options = [createElement('option', { text: 'Auto', attrs: { value: '' } })];
+    for (const mb of presets) {
+        options.push(createElement('option', { text: `${mb} MB`, attrs: { value: String(mb) } }));
+    }
+
+    if (typeof data.configuredMb === 'number' && !presets.includes(data.configuredMb)) {
+        options.push(createElement('option', { text: t`${data.configuredMb} MB (custom)`, attrs: { value: String(data.configuredMb) } }));
+    }
+
+    refs.memorySelect.replaceChildren(...options);
+
+    const desiredValue = data.configuredMb === null || data.configuredMb === undefined ? '' : String(data.configuredMb);
+    if (preserveSelection && previousSelection !== null && [...refs.memorySelect.options].some(option => option.value === previousSelection)) {
+        refs.memorySelect.value = previousSelection;
+    } else {
+        refs.memorySelect.value = desiredValue;
+    }
+
+    const canSaveAndRestart = data.canRestart !== false && data.supervised !== false && state.lastStatusData?.canRestart !== false;
+    setElementVisible(refs.memorySaveRestartButton, canSaveAndRestart);
+    updateServerMemoryWarningNote();
+}
+
 async function waitForServerReturn(expectedRevision = '', { clearCacheBeforeReload = false, expectedVersion = '', previousServerBootId = '' } = {}) {
     let sawOffline = false;
 
@@ -14652,6 +14800,7 @@ async function refreshServerAdminPanel({ includeConfig = false, forceConfig = fa
     const refs = getServerAdminRefs();
     const shouldLoadConfig = includeConfig || forceConfig || !state.configLoaded;
     const shouldLoadThumbnails = forceConfig || !state.thumbnailSettingsLoaded;
+    const shouldLoadMemory = forceConfig || !state.memorySettingsLoaded;
 
     if (!refs || state.busy || state.restarting) {
         return;
@@ -14670,9 +14819,12 @@ async function refreshServerAdminPanel({ includeConfig = false, forceConfig = fa
     const thumbnailPromise = shouldLoadThumbnails
         ? requestServerAdmin('/api/server-admin/config/thumbnail-settings/get')
         : null;
+    const memoryPromise = shouldLoadMemory
+        ? requestServerAdmin('/api/server-admin/config/memory/get')
+        : null;
 
     // Handle parallel failures before awaiting each result for its own panel.
-    await Promise.allSettled([statusPromise, configPromise, thumbnailPromise]);
+    await Promise.allSettled([statusPromise, configPromise, thumbnailPromise, memoryPromise]);
 
     if (configPromise) {
         try {
@@ -14708,6 +14860,19 @@ async function refreshServerAdminPanel({ includeConfig = false, forceConfig = fa
             setServerAdminMessage(refs.thumbnailNote, error.message || 'Failed to load thumbnail settings.', tone);
             if (error?.status !== 403) {
                 console.error('Failed to load thumbnail settings.', error);
+            }
+        }
+    }
+
+    if (memoryPromise) {
+        try {
+            renderServerMemorySettings(await memoryPromise);
+        } catch (error) {
+            state.memorySettingsLoaded = false;
+            state.memoryState = null;
+            setElementVisible(refs.memoryCard, false);
+            if (error?.status !== 403) {
+                console.error('Failed to load server memory settings.', error);
             }
         }
     }
@@ -14787,6 +14952,12 @@ async function handleServerAdminSaveConfig({ restart = false } = {}) {
                 setServerAdminMessage(refs.configNote, 'Restart is taking longer than expected. Refresh the page once the server is back.', 'warn');
                 toastr.warning('Restart is taking longer than expected. Reload this page once Neconyan is back online.', 'Restart pending');
             }
+        } else {
+            try {
+                renderServerMemorySettings(await requestServerAdmin('/api/server-admin/config/memory/get'));
+            } catch (memoryError) {
+                console.warn('Saved config.yaml, but could not refresh server memory settings.', memoryError);
+            }
         }
     } catch (error) {
         console.error('Failed to save config.yaml.', error);
@@ -14820,15 +14991,19 @@ async function handleServerThumbnailSave({ clearCache = false } = {}) {
 
     try {
         const { settings, mobileSettings } = getThumbnailSettingsFromRefs(refs);
+        const sentMtime = state.thumbnailLastModifiedMs;
         const result = await requestServerAdmin('/api/server-admin/config/thumbnail-settings/save', {
             settings,
             mobileSettings,
-            expectedLastModifiedMs: state.thumbnailLastModifiedMs || state.lastModifiedMs,
+            expectedLastModifiedMs: sentMtime,
             clearCache,
         });
 
+        const nextMtime = Number(result?.lastModifiedMs ?? 0) || sentMtime;
+        if (sentMtime && state.memoryLastModifiedMs === sentMtime) {
+            state.memoryLastModifiedMs = nextMtime;
+        }
         renderServerThumbnailSettings(result);
-        state.lastModifiedMs = Number(result?.lastModifiedMs ?? 0) || state.lastModifiedMs;
         setServerAdminMessage(refs.thumbnailNote, result?.message || 'Thumbnail settings saved.', 'good');
         toastr.success(result?.message || 'Thumbnail settings saved.', 'Thumbnails');
         renderServerAdminConfig(await requestServerAdmin('/api/server-admin/config/get'), { overwrite: true });
@@ -14839,6 +15014,86 @@ async function handleServerThumbnailSave({ clearCache = false } = {}) {
     } finally {
         state.busy = false;
         updateServerAdminInteractivity();
+    }
+}
+
+async function handleServerMemorySave({ restart = false } = {}) {
+    const state = getServerAdminState();
+    const refs = getServerAdminRefs();
+
+    if (!refs || state.busy || state.restarting) {
+        return;
+    }
+
+    if (updateServerConfigDirtyState()) {
+        renderServerMemoryNote(['Save or reload the config.yaml editor before changing server memory.'], 'warn');
+        toastr.warning('Save or reload the config.yaml editor before changing server memory.', 'Server memory');
+        return;
+    }
+
+    state.busy = true;
+    updateServerAdminInteractivity();
+
+    const sentMtime = state.memoryLastModifiedMs;
+    const selectedValue = refs.memorySelect?.value ?? '';
+    const maxOldSpaceSizeMb = selectedValue === '' ? null : Number(selectedValue);
+
+    try {
+        const result = await requestServerAdmin('/api/server-admin/config/memory/save', {
+            maxOldSpaceSizeMb,
+            expectedLastModifiedMs: sentMtime,
+            restart,
+        });
+
+        const nextMtime = Number(result?.lastModifiedMs ?? 0) || sentMtime;
+        if (sentMtime && state.thumbnailLastModifiedMs === sentMtime) {
+            state.thumbnailLastModifiedMs = nextMtime;
+        }
+
+        renderServerMemorySettings(result);
+        toastr.success(result?.message || 'Server memory limit saved.', 'Server memory');
+
+        if (restart && result?.restarting !== false) {
+            state.busy = false;
+            state.restarting = true;
+            updateServerAdminInteractivity();
+            const restarted = await waitForServerReturn('', { previousServerBootId: result?.serverBootId });
+            if (!restarted) {
+                state.restarting = false;
+                updateServerAdminInteractivity();
+                renderServerMemoryNote(['Restart is taking longer than expected. Refresh the page once the server is back.'], 'warn');
+                toastr.warning('Restart is taking longer than expected. Reload this page once Neconyan is back online.', 'Restart pending');
+            }
+        } else {
+            try {
+                renderServerAdminConfig(await requestServerAdmin('/api/server-admin/config/get'), { overwrite: true });
+            } catch (reloadError) {
+                console.warn('Saved server memory limit, but could not refresh config.yaml editor.', reloadError);
+            }
+        }
+    } catch (error) {
+        if (error?.status === 409) {
+            const conflictNotice = uiText('config.yaml changed on disk. The latest server state was loaded while keeping your selection; save again to apply it.');
+            try {
+                const latest = await requestServerAdmin('/api/server-admin/config/memory/get');
+                renderServerMemorySettings(latest, { preserveSelection: true });
+                const warnings = getServerMemoryWarnings();
+                renderServerMemoryNote([conflictNotice, ...warnings], 'warn');
+                toastr.warning(conflictNotice, 'Server memory');
+            } catch {
+                renderServerMemoryNote([error.message || uiText('config.yaml changed on disk. Reload the Server panel before saving again.')], 'danger');
+                toastr.error(error.message || 'Could not save server memory limit.', 'Server memory');
+            }
+        } else {
+            console.error('Failed to save server memory limit.', error);
+            renderServerMemoryNote([error.message || 'Could not save server memory limit.'], 'danger');
+            toastr.error(error.message || 'Could not save server memory limit.', 'Server memory');
+        }
+    } finally {
+        if (!state.restarting) {
+            state.busy = false;
+            updateServerAdminInteractivity();
+        }
     }
 }
 
@@ -15347,6 +15602,46 @@ function buildServerAdminPanel() {
     updateHeader.append(updateCopy);
     updateCard.append(updateHeader, updateActions, autoStashLabel, updateNote, updateOutput);
 
+    const memoryCard = createElement('section', { id: 'sb-server-memory-card', className: 'sb-admin-card sb-server-card' });
+    setElementVisible(memoryCard, false);
+    const memoryHeader = createElement('div', { className: 'sb-admin-card-header' });
+    const memoryCopy = createElement('div', { className: 'sb-admin-card-copy' });
+    const memoryTitle = createElement('strong', { text: 'Server Memory (Node.js)' });
+    const memoryDescription = createElement('p', { text: 'Set the JavaScript heap cap for Node.js. Takes effect after a restart.' });
+    const memoryBadge = createElement('span', { className: 'sb-server-inline-state', text: 'Experimental', attrs: { 'data-state': 'neutral' } });
+    memoryCopy.append(memoryTitle, memoryDescription);
+    memoryHeader.append(memoryCopy, memoryBadge);
+
+    const memoryGrid = createElement('div', { className: 'sb-server-grid' });
+    const memoryHeapStat = createElement('div', { className: 'sb-server-stat' });
+    const memoryHeapLabel = createElement('small', { className: 'sb-server-stat-label', text: 'Current heap limit' });
+    const memoryHeapLimit = createElement('strong', { id: 'sb-server-memory-heap-limit', className: 'sb-server-stat-value', text: 'Unknown' });
+    memoryHeapStat.append(memoryHeapLabel, memoryHeapLimit);
+
+    const memoryRamStat = createElement('div', { className: 'sb-server-stat' });
+    const memoryRamLabel = createElement('small', { className: 'sb-server-stat-label', text: 'Device RAM' });
+    const memoryDeviceRam = createElement('strong', { id: 'sb-server-memory-device-ram', className: 'sb-server-stat-value', text: 'Unknown' });
+    memoryRamStat.append(memoryRamLabel, memoryDeviceRam);
+
+    const memoryCapStat = createElement('div', { className: 'sb-server-stat' });
+    const memoryCapLabel = createElement('label', { className: 'sb-server-stat-label', text: 'Heap cap', attrs: { for: 'sb-server-memory-select' } });
+    const memoryCapValue = createElement('div', { className: 'sb-server-stat-value' });
+    const memorySelect = createElement('select', {
+        id: 'sb-server-memory-select',
+        className: 'text_pole',
+        attrs: { style: 'width: 100%;', 'aria-label': 'Node.js heap cap' },
+    });
+    memoryCapValue.append(memorySelect);
+    memoryCapStat.append(memoryCapLabel, memoryCapValue);
+    memoryGrid.append(memoryHeapStat, memoryRamStat, memoryCapStat);
+
+    const memoryActions = createElement('div', { className: 'sb-server-actions' });
+    const memorySaveButton = createElement('button', { id: 'sb-server-memory-save', className: 'menu_button menu_button_icon sb-server-action', text: 'Save memory cap', attrs: { type: 'button' } });
+    const memorySaveRestartButton = createElement('button', { id: 'sb-server-memory-save-restart', className: 'menu_button menu_button_icon sb-server-action menu_button_primary', text: 'Save & Restart', attrs: { type: 'button' } });
+    memoryActions.append(memorySaveButton, memorySaveRestartButton);
+    const memoryNote = createElement('div', { id: 'sb-server-memory-note', className: 'sb-server-note' });
+    memoryCard.append(memoryHeader, memoryGrid, memoryActions, memoryNote);
+
     const thumbnailCard = createElement('section', { className: 'sb-admin-card sb-server-card sb-thumbnail-card sb-advanced-only' });
     const thumbnailHeader = createElement('div', { className: 'sb-admin-card-header' });
     const thumbnailCopy = createElement('div', { className: 'sb-admin-card-copy' });
@@ -15466,7 +15761,7 @@ function buildServerAdminPanel() {
     configActions.append(reloadConfigButton, saveConfigButton, saveConfigRestartButton);
     configCard.append(configHeader, configMeta, configEditor, configActions, configNote);
 
-    column.append(statusCard, updateCard, thumbnailCard, configCard);
+    column.append(statusCard, updateCard, memoryCard, thumbnailCard, configCard);
     scroller.appendChild(column);
 
     const state = getServerAdminState();
@@ -15485,6 +15780,13 @@ function buildServerAdminPanel() {
         autoStashCheckbox,
         autoStashLabel,
         changedFiles,
+        memoryCard,
+        memoryHeapLimit,
+        memoryDeviceRam,
+        memorySelect,
+        memorySaveButton,
+        memorySaveRestartButton,
+        memoryNote,
         thumbnailEnabled,
         thumbnailFormat,
         thumbnailQuality,
@@ -15525,6 +15827,9 @@ function buildServerAdminPanel() {
     refreshButton.addEventListener('click', () => refreshServerAdminPanel({ includeConfig: false, forceUpdateCheck: true }));
     updateButton.addEventListener('click', handleServerAdminUpdate);
     restartButton.addEventListener('click', handleServerAdminRestart);
+    memorySelect.addEventListener('change', updateServerMemoryWarningNote);
+    memorySaveButton.addEventListener('click', () => handleServerMemorySave({ restart: false }));
+    memorySaveRestartButton.addEventListener('click', () => handleServerMemorySave({ restart: true }));
     thumbnailUseRecommendedButton.addEventListener('click', handleUseRecommendedThumbnailSettings);
     thumbnailUseRecommendedMobileButton.addEventListener('click', handleUseRecommendedMobileThumbnailSettings);
     thumbnailSaveButton.addEventListener('click', () => handleServerThumbnailSave({ clearCache: false }));
