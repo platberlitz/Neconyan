@@ -50,6 +50,7 @@ const ARCHETYPE_LABELS = Object.freeze({
     [ARCHETYPES.CLOTHING]: 'Clothing Tracker',
     [ARCHETYPES.VISUAL_MAP]: 'Visual Map',
     [ARCHETYPES.VITALS]: 'Vitals',
+    [ARCHETYPES.PLOT_COMPASS]: 'Plot Compass',
 });
 
 const STATUS_LABELS = Object.freeze({

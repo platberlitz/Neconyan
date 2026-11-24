@@ -590,6 +590,48 @@ describe('companion card ui', () => {
         expect(html).not.toContain('mixed|mixed @Rover_Stan/user/18/');
     });
 
+    test('renders Plot Compass regex cards with scoped styles and leaves plain fallbacks intact', async () => {
+        const plotCompassTemplate = readTemplate('plot-compass-companion.json');
+        agents.push({
+            id: 'plot-compass',
+            name: 'Plot Compass',
+            sourceTemplateId: 'tpl-plot-compass-companion',
+            execution: 'companion',
+            companion: { ...plotCompassTemplate.companion },
+            regexScripts: plotCompassTemplate.regexScripts,
+        });
+        const { formatCompanionContent } = await importCompanionUi();
+
+        const note = [
+            '**Direction:** Keep {{user}} on the move.',
+            '**Where we are:** {{char}} waits beneath the gantry.',
+            '**Possible developments:**',
+            '1. {{user}} opens the locker.',
+            '2. {{char}} calls out from the catwalk.',
+            '**Next move:** 2. Have {{char}} speak first.',
+        ].join('\n');
+
+        const html = formatCompanionContent('plot-compass', {
+            content: note,
+            format: 'markdown',
+        }, { name: 'Mira' }, '.ica--tpanel-agent-body ');
+
+        expect(html).toContain('<style data-prefix=".ica--tpanel-agent-body ">');
+        expect(html).toContain('data-pc-card="1"');
+        expect(html).toContain('class="pura-choice pc-opt"');
+        expect(html).toContain('Traveler opens the locker.');
+        expect(html).toContain('Mira calls out from the catwalk.');
+        expect(html).not.toContain('{{user}}');
+        expect(html).not.toContain('{{char}}');
+
+        const plain = formatCompanionContent('plot-compass', {
+            content: 'Bring a sealed letter into the scene.',
+            format: 'markdown',
+        }, { name: 'Mira' });
+        expect(plain).toContain('Bring a sealed letter into the scene.');
+        expect(plain).not.toContain('data-pc-card="1"');
+    });
+
     test('cleans shifted Chatroom labels out of visible posts', async () => {
         const chatroomTemplate = readTemplate('chatroom-companion.json');
         agents.push({
