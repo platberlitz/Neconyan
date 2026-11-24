@@ -154,6 +154,7 @@
 - PR #933 (2026-11-24) `feat(server): add a Node.js heap cap setting to the Server panel`
 - PR #934 (2026-11-24) `feat(authors-note): add full screen note editor button`
 - PR #936 (2026-11-24) `feat(plot-compass): add styled HTML card and Regex Agent Themes support`
+- PR #937 (2026-11-24) `feat(scratchpad): share the last prompt sent when asked`
 - PR #938 (2026-11-24) `feat(botsearcher): show the security check notice for JanitorAI`
 - PR #939 (2026-11-24) `fix(in-chat-agents): restore Plot Compass tracker scripts on saved agents`
 
