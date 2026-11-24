@@ -368,7 +368,8 @@ describe('Scratchpad reviewed saves', () => {
         await expect(plan.commit(plan.after)).rejects.toThrow('changed');
         expect(globalThis.fetch).toHaveBeenCalledTimes(1);
         selectedAvatar = general.avatar;
-        await expect(plan.commit(plan.after)).resolves.toBeUndefined();
+        await expect(plan.commit(plan.after)).resolves.toEqual({ receipt: expect.objectContaining({ type: 'character', undoable: true,
+            undo: { kind: 'character', avatar: general.avatar, field: 'description', before: '', after: 'New.' } }) });
         expect(JSON.parse(globalThis.fetch.mock.calls[1][1].body).avatar).toBe(general.avatar);
     });
     test('creates the reviewed character only on save, including its note and greetings', async () => {
@@ -509,7 +510,8 @@ describe('Scratchpad reviewed saves', () => {
 
     test.each(['edit', 'insert', 'delete', 'hide', 'unhide'])('accepts a saved message %s', async action => {
         const plan = await prepareChange({ type: 'chat', action, message: 0, after: 0, text: 'New message.' }, source);
-        await expect(plan.commit(plan.after)).resolves.toBeUndefined();
+        const { receipt } = await plan.commit(plan.after);
+        expect(receipt).toMatchObject({ type: 'chat', action, undoable: true, undo: { chatKey: 'original' } });
     });
 
     test('does not render or save a message edit into the newly selected chat', async () => {

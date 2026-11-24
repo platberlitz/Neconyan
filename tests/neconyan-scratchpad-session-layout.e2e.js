@@ -13,7 +13,7 @@ for (const phone of [false, true]) {
         await expect(page.locator('.scratchpad-summary')).toContainText('notes');
         await page.getByRole('tab', { name: 'Sessions', exact: true }).click();
         const buttons = page.locator('.scratchpad-session-tools > button');
-        await expect(buttons).toHaveCount(5);
+        await expect(buttons).toHaveCount(6);
         await page.screenshot({ path: `../screenshots/scratchpad-sessions-${phone ? 'phone' : 'desktop'}.png` });
         await checkImageControlContrast(page, ['.scratchpad-session-tools > .menu_button_primary'], phone);
         const settleLayout = async () => {
@@ -39,7 +39,9 @@ for (const phone of [false, true]) {
             expect(boxes[0].y).toBeCloseTo(boxes[1].y, 0);
             expect(boxes[2].y).toBeCloseTo(boxes[3].y, 0);
             expect(boxes[4].x).toBeCloseTo(boxes[0].x, 0);
-            expect(boxes[4].x + boxes[4].width).toBeCloseTo(boxes[1].x + boxes[1].width, 0);
+            expect(boxes[5].x).toBeCloseTo(boxes[1].x, 0);
+            expect(boxes[4].y).toBeCloseTo(boxes[5].y, 0);
+            expect(boxes[4].width).toBeCloseTo(boxes[5].width, 0);
             for (const box of boxes) {
                 expect(box.height).toBeGreaterThanOrEqual(phone ? 44 : 36);
                 expect(box.overflow).toBe(false);

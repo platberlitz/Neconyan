@@ -13,11 +13,13 @@ import {
     deleteMessage,
     deleteSession,
     markProposal,
+    markSavedChangeUndone,
     mutateBucket,
     normaliseSource,
     projectPending,
     publicBucket,
     readBucketLocked,
+    recordSavedChange,
     requireId,
     scratchpadAccountBase,
     swipeMessage,
@@ -342,6 +344,26 @@ router.post('/message/delete', (request, response) => change(request, response, 
 
 router.post('/proposal/mark', (request, response) => change(request, response, (bucket, body) => {
     markProposal(bucket, requireId(body.sessionId, 'session'), requireId(body.messageId, 'message'), body.index, body.state ?? null);
+}));
+
+router.post('/history/record', (request, response) => {
+    try {
+        const base = scratchpadAccountBase(request);
+        const source = normaliseSource(request.body?.source);
+        let entry = null;
+        const bucket = mutateBucket(base, source, bucket => {
+            projectPending(bucket, id => getJob(base.directories, id));
+            entry = recordSavedChange(bucket, request.body?.entry ?? {}, { markApplied: request.body?.markApplied !== false });
+            return bucket;
+        });
+        response.json({ bucket: publicBucket(bucket), entry });
+    } catch (error) {
+        sendError(response, error);
+    }
+});
+
+router.post('/history/undo', (request, response) => change(request, response, (bucket, body) => {
+    markSavedChangeUndone(bucket, body.entryId);
 }));
 
 router.post('/evidence', async (request, response) => {

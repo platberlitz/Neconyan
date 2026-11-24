@@ -53,7 +53,7 @@ function fixture(kind = 'roleplay') {
     const runtime = vm.createContext({ app, structuredClone, DEFAULT_SETTINGS: defaults, ASSISTANTS: [],
         h, append: (element, children) => element.append(children), clear: element => element.replaceChildren(), document: {},
         t: (strings, ...values) => strings.reduce((text, part, index) => text + part + (values[index] ?? ''), ''),
-        renderHeader() {}, renderChat() {}, renderSessions() {}, syncDraft() {}, syncWatchers() {}, announceReplyChange() {},
+        renderHeader() {}, renderChat() {}, renderSessions() {}, renderHistoryView() {}, syncDraft() {}, syncWatchers() {}, announceReplyChange() {},
         sessionInput: () => ({ settings: { assistantConnections: {} } }), connectionProfiles: () => [],
         checkbox: () => h('label'), presetCheckbox: () => h('label', { text: `Current preset: ${preset.name}` }),
         currentPresetName: () => preset.name, renderPicks: () => h('section'), renderLore: () => h('section'), renderPreview: () => h('section'),
@@ -285,7 +285,7 @@ describe('Scratchpad Context refresh lifecycle', () => {
         let live = general;
         const requests = [];
         const runtime = vm.createContext({ app, sameSourceBucket, sameSourceContext, PICK_PAGE: 30,
-            currentSource: () => live, getCurrentUserHandle: () => owner, stopWatchers() {}, syncWatchers() {}, clearJobRecovery() {}, announceReplyChange() {}, closeComposeMenu() {}, warnMissingPersona() {}, reportError: error => { throw error; },
+            currentSource: () => live, getCurrentUserHandle: () => owner, stopWatchers() {}, syncWatchers() {}, clearJobRecovery() {}, announceReplyChange() {}, renderHistoryView() {}, closeComposeMenu() {}, warnMissingPersona() {}, reportError: error => { throw error; },
             t: parts => parts.join(''), api: { readBucket: source => new Promise(resolve => requests.push({ source, resolve })) }, wireSource: value => value,
             render() { runtime.syncDraft(); },
         });
@@ -528,6 +528,8 @@ describe('Scratchpad Context refresh lifecycle', () => {
             renderContext() {},
             renderSessions() {},
             syncDraft() {},
+            renderHistoryView() {},
+            historyCount: () => 0,
             syncWatchers() {},
             announceReplyChange() {},
             stopWatchers() {},

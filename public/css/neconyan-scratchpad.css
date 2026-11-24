@@ -965,6 +965,199 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     border-color: var(--neco-ginger);
 }
 
+.scratchpad-change.is-undone {
+    border-left-color: var(--neco-border);
+    border-left-style: dashed;
+}
+
+#neconyan-scratchpad .scratchpad-change-actions .scratchpad-change-undo:not(:disabled) {
+    border-color: color-mix(in srgb, var(--neco-ginger) 55%, var(--neco-border));
+}
+
+#neconyan-scratchpad .scratchpad-change-actions .scratchpad-change-undo:is(:hover, :focus-visible):not(:disabled) {
+    border-color: var(--neco-ginger);
+}
+
+.scratchpad-change-conflict {
+    display: grid;
+    gap: 4px;
+    padding: 8px 10px;
+    border: 1px solid color-mix(in srgb, var(--neco-ginger) 45%, var(--neco-border));
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--neco-ginger) 8%, var(--neco-raised));
+}
+
+.scratchpad-change-conflict > p {
+    margin: 0;
+    color: var(--neco-ink);
+    font-size: 0.88rem;
+}
+
+.scratchpad-history {
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+    text-align: start;
+    overflow-wrap: anywhere;
+}
+
+.scratchpad-history > h3,
+.scratchpad-history-intro,
+.scratchpad-history-empty {
+    margin: 0;
+}
+
+.scratchpad-history-intro,
+.scratchpad-history-empty {
+    color: var(--neco-muted);
+    font-size: 0.9rem;
+}
+
+.scratchpad-history-empty {
+    padding: 14px;
+    border: 1px dashed var(--neco-border);
+    border-radius: 12px;
+}
+
+.scratchpad-history-list {
+    display: grid;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.scratchpad-history-entry {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+    padding: 10px 12px;
+    border: 1px solid var(--neco-border);
+    border-left: 4px solid var(--neco-ginger);
+    border-radius: 10px;
+    background: var(--neco-raised);
+}
+
+.scratchpad-history-entry:is(.is-undone, .is-recorded) {
+    border-left-color: var(--neco-border);
+}
+
+.scratchpad-history-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+}
+
+.scratchpad-history-badge {
+    padding: 1px 8px;
+    border: 1px solid var(--neco-border);
+    border-radius: 999px;
+    color: var(--neco-ink);
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.scratchpad-history-badge.is-saved {
+    border-color: var(--neco-ginger);
+    background: color-mix(in srgb, var(--neco-ginger) 14%, transparent);
+}
+
+.scratchpad-history-time,
+.scratchpad-history-note {
+    color: var(--neco-muted);
+    font-size: 0.85rem;
+}
+
+.scratchpad-history-title,
+.scratchpad-history-note,
+.scratchpad-history-conflict {
+    margin: 0;
+}
+
+.scratchpad-history-title {
+    font-weight: 700;
+}
+
+.scratchpad-history-meta {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 2px 8px;
+    margin: 0;
+    font-size: 0.88rem;
+}
+
+.scratchpad-history-meta dt {
+    color: var(--neco-muted);
+    font-weight: 700;
+}
+
+.scratchpad-history-meta dd {
+    margin: 0;
+    min-width: 0;
+}
+
+.scratchpad-history-conflict {
+    padding: 6px 8px;
+    border: 1px solid color-mix(in srgb, var(--neco-ginger) 45%, var(--neco-border));
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--neco-ginger) 8%, var(--neco-raised));
+    color: var(--neco-ink);
+    font-size: 0.88rem;
+}
+
+.scratchpad-history-diff > summary {
+    min-height: 32px;
+    display: flex;
+    align-items: center;
+    color: var(--neco-ginger);
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.scratchpad-history-diff[open] {
+    display: grid;
+    gap: 8px;
+}
+
+.scratchpad-history-text {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+}
+
+.scratchpad-history-text-label {
+    color: var(--neco-muted);
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.scratchpad-review .scratchpad-history-text-body {
+    max-height: 24vh;
+    margin: 0;
+    padding: 6px 8px;
+    border: 1px solid var(--neco-border);
+    border-radius: 8px;
+    background: var(--neco-surface);
+    font-size: 0.88rem;
+}
+
+.scratchpad-history-text-empty {
+    margin: 0;
+    color: var(--neco-muted);
+    font-style: italic;
+}
+
+.scratchpad-history-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.scratchpad-history-actions > .scratchpad-button {
+    max-width: 100%;
+}
+
 .scratchpad-session-tools {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -34,7 +34,7 @@ import {
     describeLorebookSettingChanges,
     snapshotLorebookEntry,
 } from './lorebook-fields.js';
-import { DIALOGUE_COLOR, fail, formatEntry, formatField, normaliseChange, parseEntry, parseField } from './proposals.js';
+import { DIALOGUE_COLOR, describeChange, fail, formatEntry, formatField, normaliseChange, parseEntry, parseField } from './proposals.js';
 import { characterField, characterFieldPatch, readCharacterField } from './character-fields.js';
 
 function entryView(entry) {
@@ -74,6 +74,10 @@ async function saveBook(book, data, source) {
     requireSource(source);
     const saved = await saveWorldInfo(book, data, true);
     if (!saved) fail('The lorebook change was not saved. Review it again before retrying.');
+}
+
+function lorebookEditUndo(change, beforeEntry, entry) {
+    return { kind: 'lorebook-edit', book: change.book, uid: change.uid, beforeEntry, afterSnapshot: snapshotLorebookEntry(entry) };
 }
 
 function requireDisabledEntryAllowed(entry, change, disabledEntriesListed) {
@@ -116,6 +120,7 @@ async function lorebookPlan(change, source, { disabledEntriesListed = false, lor
                 if (value.constant) entry.vectorized = false;
                 syncLorebookOriginalEntry(fresh, entry.uid);
                 await saveBook(validated.book, fresh, source);
+                return { undo: { kind: 'lorebook-add', book: validated.book, uid: entry.uid, afterSnapshot: snapshotLorebookEntry(entry) } };
             },
         };
     }
@@ -136,9 +141,12 @@ async function lorebookPlan(change, source, { disabledEntriesListed = false, lor
                 lorebookGuard?.();
                 const fresh = await readBook(validated.book);
                 requireSource(source);
-                if (snapshotLorebookEntry(readEntry(fresh, validated)) !== beforeSnapshot) conflict();
+                const live = readEntry(fresh, validated);
+                if (snapshotLorebookEntry(live) !== beforeSnapshot) conflict();
+                const beforeEntry = structuredClone(live);
                 await deleteWorldInfoEntry(fresh, validated.uid, { silent: true });
                 await saveBook(validated.book, fresh, source);
+                return { undo: { kind: 'lorebook-delete', book: validated.book, uid: validated.uid, beforeEntry } };
             },
         };
     }
@@ -164,10 +172,12 @@ async function lorebookPlan(change, source, { disabledEntriesListed = false, lor
                 const freshEntry = readEntry(fresh, validated);
                 requireDisabledEntryAllowed(freshEntry, validated, disabledEntriesListed);
                 if (snapshotLorebookEntry(freshEntry) !== beforeSnapshot) conflict();
+                const beforeEntry = structuredClone(freshEntry);
                 if (Object.hasOwn(validated, 'title')) freshEntry.comment = validated.title;
                 applyLorebookActivationFields(freshEntry, validated);
                 syncLorebookOriginalEntry(fresh, freshEntry.uid);
                 await saveBook(validated.book, fresh, source);
+                return { undo: lorebookEditUndo(validated, beforeEntry, freshEntry) };
             },
         };
     }
@@ -194,12 +204,14 @@ async function lorebookPlan(change, source, { disabledEntriesListed = false, lor
             const freshEntry = readEntry(fresh, validated);
             requireDisabledEntryAllowed(freshEntry, validated, disabledEntriesListed);
             if (snapshotLorebookEntry(freshEntry) !== beforeSnapshot) conflict();
+            const beforeEntry = structuredClone(freshEntry);
             applyLorebookActivationFields(freshEntry, validated);
             const value = parseEntry(edited, proposed);
             Object.assign(freshEntry, { comment: value.title, key: value.keys, content: value.content, constant: value.constant });
             if (value.constant) freshEntry.vectorized = false;
             syncLorebookOriginalEntry(fresh, freshEntry.uid);
             await saveBook(validated.book, fresh, source);
+            return { undo: lorebookEditUndo(validated, beforeEntry, freshEntry) };
         },
     };
 }
@@ -228,6 +240,7 @@ function authorsNotePlan(change, source) {
             if (!saved) fail(t`The Author's Note was not saved. Review it again before retrying.`);
             const box = globalThis.document?.getElementById('extension_floating_prompt');
             if (box) box.value = value;
+            return { undo: { kind: 'authors-note', chatKey: source.key, before, after: value } };
         },
     };
 }
@@ -248,10 +261,13 @@ async function mewmoryPlan(change, source, sessionId) {
         hint: change.field === 'status' ? t`Use active, background, resolved, uncertain or invalidated.` : t`Saving replaces this memory's text as your own correction. Mewmory keeps the earlier version, so you can undo it there.`,
         async commit(edited) {
             requireSource(source);
-            const value = String(edited ?? '').trim();
-            await api.correctMewmoryRecord(wireSource(source), sessionId, change.record,
-                { field: change.field, value: change.field === 'status' ? value.toLowerCase() : value, expected: before, version: current.version });
+            const text = String(edited ?? '').trim();
+            const value = change.field === 'status' ? text.toLowerCase() : text;
+            const result = await api.correctMewmoryRecord(wireSource(source), sessionId, change.record,
+                { field: change.field, value, expected: before, version: current.version });
             requireSource(source);
+            const postVersion = Number.isInteger(result?.record?.version) ? result.record.version : null;
+            return { undo: { kind: 'mewmory', chatKey: source.key, sessionId, record: change.record, field: change.field, before, after: value, postVersion } };
         },
     };
 }
@@ -289,6 +305,9 @@ async function dialogueColorPlan(change) {
             } catch (error) {
                 console.warn('Scratchpad could not flush the Dialogue Colors save.', error);
             }
+            // A character without a saved colour has nothing to go back to.
+            if (!DIALOGUE_COLOR.test(String(before ?? ''))) return { undoUnavailableReason: t`This character had no saved dialogue colour before, so there is nothing to restore.` };
+            return { undo: { kind: 'dialogue-color', key: live.key, character: change.character, before, after: value } };
         },
     };
 }
@@ -324,6 +343,7 @@ async function cssSnippetPlan(change) {
                 live.modifiedOn = Date.now();
                 runtime.getCtx().saveSettingsDebounced();
             }
+            return { undo: { kind: 'css-snippet', snippet: change.snippet, field: change.field, before, after: value } };
         },
     };
 }
@@ -361,6 +381,7 @@ async function regexPlan(change) {
             } catch (error) {
                 console.warn('Scratchpad could not refresh the Regexes list.', error);
             }
+            return { undo: { kind: 'regex', script: change.script, field: change.field, before, after: value } };
         },
     };
 }
@@ -400,6 +421,7 @@ async function agentPlan(change) {
                 throw error;
             }
             if (stale) conflict();
+            return { undo: { kind: 'agent', agent: change.agent, field: change.field, before, after: value } };
         },
     };
 }
@@ -465,6 +487,7 @@ async function characterPlan(change, source) {
                 await eventSource.emit(event_types.CHARACTER_EDITED, { detail: { id: index, character: characters[index] } });
                 if (String(index) === String(this_chid)) select_selected_character(this_chid, { switchMenu: false });
             }
+            return { undo: { kind: 'character', avatar, field: change.field, before: current, after: value } };
         },
     };
 }
@@ -530,6 +553,7 @@ function chatPlan(change, source) {
                 await saveMessages(source);
                 requireSource(source);
                 await reloadCurrentChat();
+                return { undo: { kind: 'chat-insert', chatKey: source.key, index: change.after + 1, message: structuredClone(message) } };
             },
         };
     }
@@ -546,6 +570,7 @@ function chatPlan(change, source) {
             async commit(edited) {
                 if (!isCurrentSource(source) || messageSnapshot(change.message) !== before) conflict();
                 const live = requireMessage(change.message);
+                const previous = String(live.mes ?? '');
                 live.mes = edited;
                 syncMesToSwipe(change.message);
                 await eventSource.emit(event_types.MESSAGE_EDITED, change.message);
@@ -555,6 +580,7 @@ function chatPlan(change, source) {
                 await eventSource.emit(event_types.MESSAGE_UPDATED, change.message);
                 if (chat[change.message] !== live) conflict();
                 await saveMessages(source);
+                return { undo: { kind: 'chat-edit', chatKey: source.key, index: change.message, name: String(live.name ?? ''), before: previous, after: String(edited ?? '') } };
             },
         };
     }
@@ -571,6 +597,7 @@ function chatPlan(change, source) {
                 if (!await hideChatMessageRange(change.message, change.message, unhide)) {
                     fail('The message visibility change was not saved. Review it again before retrying.');
                 }
+                return { undo: { kind: 'chat-visibility', chatKey: source.key, index: change.message, name: String(message.name ?? ''), mes: String(message.mes ?? ''), hidden: !unhide } };
             },
         };
     }
@@ -583,10 +610,17 @@ function chatPlan(change, source) {
         async commit() {
             if (!isCurrentSource(source) || messageSnapshot(change.message) !== before) conflict();
             const live = requireMessage(change.message);
+            const removed = structuredClone(live);
             await deleteMessage(change.message, undefined, false);
             requireSource(source);
             if (chat.includes(live)) fail('The message deletion was not saved. Review it again before retrying.');
             await saveMessages(source, { allowShrink: true });
+            return {
+                undo: {
+                    kind: 'chat-delete', chatKey: source.key, index: change.message, message: removed, length: chat.length,
+                    previous: messageSnapshot(change.message - 1), next: messageSnapshot(change.message),
+                },
+            };
         },
     };
 }
@@ -620,13 +654,74 @@ export async function addReplyVersion(source, target, text) {
     await reloadCurrentChat();
 }
 
+const NOT_UNDOABLE = {
+    'character:create': 'Scratchpad does not delete characters it created. Remove the card from your library if you no longer want it.',
+    'persona:create': 'Scratchpad does not delete personas it created. Remove it from Personas if you no longer want it.',
+    'persona-note:create': 'Scratchpad does not delete Scenario Notes it created. Remove it from the persona if you no longer want it.',
+    creator: 'This opened a private Catelier draft. Delete the draft in Catelier if you no longer want it.',
+};
+const TARGET_KEYS = ['book', 'uid', 'character', 'preset', 'api', 'module', 'agent', 'script', 'snippet', 'record', 'message', 'after', 'persona', 'note'];
+const receipts = new WeakMap();
+
+function receiptTarget(change, plan) {
+    const target = { kind: change.type, label: String(plan.target ?? '') };
+    for (const key of TARGET_KEYS) {
+        const value = change[key];
+        if (typeof value === 'string' || (typeof value === 'number' && Number.isFinite(value))) target[key] = value;
+    }
+    return target;
+}
+
+function receiptAfter(plan, edited) {
+    if (typeof plan.getAfterText === 'function') return String(plan.getAfterText(edited) ?? '');
+    return String((plan.editable ? edited : plan.after) ?? '');
+}
+
+/** Builds the Change history receipt for a commit that has just been saved. */
+export function changeReceipt(change, plan, edited, result) {
+    const undo = result && typeof result === 'object' && result.undo && typeof result.undo === 'object' ? result.undo : null;
+    const fallback = NOT_UNDOABLE[`${change.type}:${change.action}`] ?? NOT_UNDOABLE[change.type] ?? 'Automatic undo is not available for this change.';
+    return {
+        type: change.type,
+        action: String(change.action ?? ''),
+        description: describeChange(change),
+        target: receiptTarget(change, plan),
+        field: String(plan.field ?? ''),
+        before: String(plan.before ?? ''),
+        after: receiptAfter(plan, edited),
+        undo,
+        undoable: Boolean(undo),
+        undoUnavailableReason: undo ? '' : String(result?.undoUnavailableReason || fallback),
+    };
+}
+
+function withReceipt(change, plan, edited, result) {
+    const cacheable = result !== null && typeof result === 'object';
+    if (cacheable && receipts.has(result)) return receipts.get(result);
+    const rest = cacheable ? { ...result } : {};
+    delete rest.undo;
+    delete rest.undoUnavailableReason;
+    const wrapped = { ...rest, receipt: changeReceipt(change, plan, edited, result) };
+    if (cacheable) receipts.set(result, wrapped);
+    return wrapped;
+}
+
 /**
  * Reads the live value a change would replace and returns everything the
- * review needs. Nothing is written until commit() is called.
+ * review needs. Nothing is written until commit() is called, which resolves
+ * to the saved result plus a Change history receipt.
  */
-export async function prepareChange(change, source, { sharedAvatar = '', sharedPersona, personaGuard, sharedPreset, presetGuard, creationGuard, creatorKey = '', agentsShared = false, authorsNoteShared = false, regexShared = false, cssSnippetsShared = false, dialogueColorsShared = false, mewmoryShared = false, sessionId = '', sharedLorebook = '', disabledEntriesListed = false, lorebookGuard } = {}) {
+export async function prepareChange(change, source, options = {}) {
     if (!isCurrentSource(source)) fail(t`Return to this Scratchpad context before applying changes.`);
-    change = normaliseChange(change);
+    const normalised = normaliseChange(change);
+    const plan = await preparePlan(normalised, source, options);
+    if (!plan || typeof plan.commit !== 'function') return plan;
+    const commit = plan.commit.bind(plan);
+    plan.commit = async edited => withReceipt(normalised, plan, edited, await commit(edited));
+    return plan;
+}
+
+async function preparePlan(change, source, { sharedAvatar = '', sharedPersona, personaGuard, sharedPreset, presetGuard, creationGuard, creatorKey = '', agentsShared = false, authorsNoteShared = false, regexShared = false, cssSnippetsShared = false, dialogueColorsShared = false, mewmoryShared = false, sessionId = '', sharedLorebook = '', disabledEntriesListed = false, lorebookGuard } = {}) {
     if (change.type === 'preset') {
         const { preparePresetChange } = await import('./preset-changes.js');
         return preparePresetChange(change, sharedPreset, () => { requireSource(source); presetGuard?.(); });
