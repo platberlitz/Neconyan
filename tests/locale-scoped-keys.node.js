@@ -11,6 +11,7 @@ import { localizeString } from '../public/scripts/ui-localization.js';
 const readJson = file => JSON.parse(readFileSync(new URL(`../public/locales/${file}`, import.meta.url), 'utf8'));
 const LANGUAGES = ['pt-pt', 'it-it', 'de-de'];
 const NANO_REASONING_SCOPED_KEY = 'scoped.nanogpt.reasoning.unavailable';
+const SCRATCHPAD_HISTORY_SCOPED_KEY = 'scoped.scratchpad.HIS-01';
 const catalogue = readJson('neconyan/en.json');
 const files = Object.fromEntries(LANGUAGES.map(language => [language, { base: readJson(`${language}.json`), supplement: readJson(`neconyan/${language}.json`), catalogue }]));
 
@@ -51,16 +52,17 @@ test('every real scoped key is a catalogued image choice or the Nano reasoning l
         const { base, supplement } = files[language];
         for (const [name, table] of [['base', base], ['supplement', supplement]]) {
             for (const key of Object.keys(table).filter(isScopedKey)) {
-                assert.ok(key.startsWith('scoped.prompt_media.') || key === NANO_REASONING_SCOPED_KEY, `${language} ${name} holds an uncatalogued scoped namespace`);
+                assert.ok(key.startsWith('scoped.prompt_media.') || [NANO_REASONING_SCOPED_KEY, SCRATCHPAD_HISTORY_SCOPED_KEY].includes(key), `${language} ${name} holds an uncatalogued scoped namespace`);
                 assert.ok(Object.hasOwn(catalogue, key), `${language} ${name}: ${key} is not a key of the catalogue`);
             }
         }
     }
-    // The catalogue carries 51 image-choice entries and the explicit Nano reasoning label.
+    // The catalogue carries 51 image-choice entries, the explicit Nano reasoning label and Scratchpad's Change history heading.
     const catalogued = Object.keys(catalogue).filter(isScopedKey);
     assert.equal(catalogued.filter(key => key.startsWith('scoped.prompt_media.')).length, 51);
-    assert.deepEqual(catalogued.filter(key => !key.startsWith('scoped.prompt_media.')), [NANO_REASONING_SCOPED_KEY]);
+    assert.deepEqual(catalogued.filter(key => !key.startsWith('scoped.prompt_media.')), [NANO_REASONING_SCOPED_KEY, SCRATCHPAD_HISTORY_SCOPED_KEY]);
     assert.equal(catalogue[NANO_REASONING_SCOPED_KEY], '${0} (unavailable)');
+    assert.equal(catalogue[SCRATCHPAD_HISTORY_SCOPED_KEY], 'Change history');
 });
 
 test('the assembled dictionary equals today\'s byte for byte for pt-pt, it-it and de-de, and the scoped table is the files\' scoped entries', () => {
