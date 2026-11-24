@@ -143,6 +143,7 @@
 - PR #922 (2026-11-23) `perf(chats): avoid repeated reads and checksums during saves`
 - PR #923 (2026-11-23) `fix(lorebooks): clean persona and Notebook links on delete and rename`
 - PR #924 (2026-11-23) `fix(character-folders): stop Sort with AI replaying a lost request`
+- PR #925 (2026-11-24) `fix(companions): wrap long Memory Shard lines in the panel`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
