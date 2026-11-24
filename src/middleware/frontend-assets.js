@@ -56,6 +56,26 @@ export function setPublicAssetHeaders(res, requestPath, stat) {
     res.setHeader('Cache-Control', 'public, max-age=3600');
 }
 
+export const SERVER_ONLY_FRONTEND_SEGMENTS = Object.freeze(['.sourcemaps']);
+
+/**
+ * The build keeps source maps beside the hashed assets for Scratchpad's server-side
+ * lookup. They are never served, whichever route or encoding asks for them.
+ */
+export function blockServerOnlyFrontendFiles(request, response, next) {
+    let requestPath = String(request.path ?? '');
+    try {
+        requestPath = decodeURIComponent(requestPath);
+    } catch {
+        // A malformed path is rejected by the static handlers further on.
+    }
+    const segments = requestPath.toLowerCase().split(/[\\/]+/);
+    if (segments.some(segment => SERVER_ONLY_FRONTEND_SEGMENTS.includes(segment.trim()))) {
+        return response.sendStatus(404);
+    }
+    return next();
+}
+
 export function getFrontendAssetMiddleware() {
     return {
         immutableAssets: express.static(FRONTEND_DIST_ROOT, {
