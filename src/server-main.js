@@ -54,7 +54,7 @@ import {
 } from './users.js';
 
 import { FRONTEND_ASSET_PREFIX, readRewrittenFrontendHtml, validateBundledFrontend } from './frontend-assets.js';
-import { getFrontendAssetMiddleware, redirectLegacyFrontendAsset, setPublicAssetHeaders, shouldServeFrontendAssets } from './middleware/frontend-assets.js';
+import { blockServerOnlyFrontendFiles, getFrontendAssetMiddleware, redirectLegacyFrontendAsset, setPublicAssetHeaders, shouldServeFrontendAssets } from './middleware/frontend-assets.js';
 import getResponseCompressionMiddleware from './middleware/response-compression.js';
 import basicAuthMiddleware from './middleware/basicAuth.js';
 import { createImageReferenceHandler } from './generation/image-reference-links.js';
@@ -487,6 +487,7 @@ const webpack = bundledMobileFrontend ? null : await import('./middleware/webpac
 const webpackMiddleware = webpack?.default();
 const notesEditorMiddleware = webpack?.default({ bundle: 'notes-editor' });
 const frontendAssetMiddleware = getFrontendAssetMiddleware();
+app.use(blockServerOnlyFrontendFiles);
 app.use(redirectLegacyFrontendAsset);
 app.use(FRONTEND_ASSET_PREFIX, frontendAssetMiddleware.immutableAssets);
 if (webpackMiddleware && notesEditorMiddleware) {
