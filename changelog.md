@@ -150,6 +150,7 @@
 - PR #929 (2026-11-24) `fix: clear the nightly browser check failures`
 - PR #930 (2026-11-24) `feat(companions): add Stop to each writing companion`
 - PR #931 (2026-11-24) `fix(groups): wrap group editor title and label action buttons`
+- PR #932 (2026-11-24) `feat(companions): make Memory Shard human-editable with HTML display`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
