@@ -53,6 +53,45 @@
     color: var(--neco-ink, var(--SmartThemeBodyColor));
 }
 
+/* ---- Group editor header title wrapping ---- */
+#right-nav-panel.openDrawer[data-menu-type="group_edit"] #right-nav-panel-tabs,
+#right-nav-panel[data-menu-type="group_edit"] #right-nav-panel-tabs {
+    align-items: flex-start;
+    flex-wrap: nowrap;
+}
+
+#right-nav-panel.openDrawer[data-menu-type="group_edit"] #right-nav-panel-tabs :is(#sb_character_editor_fullscreen_toggle, #sb_character_editor_exit),
+#right-nav-panel[data-menu-type="group_edit"] #right-nav-panel-tabs :is(#sb_character_editor_fullscreen_toggle, #sb_character_editor_exit) {
+    align-self: flex-start;
+    flex: 0 0 auto;
+}
+
+#right-nav-panel.openDrawer[data-menu-type="group_edit"] #rm_button_selected_ch,
+#right-nav-panel[data-menu-type="group_edit"] #rm_button_selected_ch {
+    flex: 1 1 0%;
+    min-width: 0;
+    min-height: 40px;
+    height: auto;
+    max-height: none;
+    display: flex;
+    align-items: center;
+    overflow: visible;
+    border-radius: 10px;
+    padding: 6px 10px;
+}
+
+#right-nav-panel.openDrawer[data-menu-type="group_edit"] #rm_button_selected_ch h2,
+#right-nav-panel[data-menu-type="group_edit"] #rm_button_selected_ch h2 {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    overflow-wrap: anywhere;
+    word-break: normal;
+    line-height: 1.25;
+    min-width: 0;
+    max-width: 100%;
+}
+
 #right-nav-panel[data-menu-type="group_edit"] #rm_group_chats_block .sb-group-editor-name-row {
     display: flex;
     flex-wrap: wrap;
@@ -60,35 +99,113 @@
     gap: 8px;
 }
 
-#right-nav-panel[data-menu-type="group_edit"] #rm_group_chats_block .sb-group-editor-action-cluster {
+#right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) #rm_group_chats_block .sb-group-editor-action-cluster {
     display: inline-flex;
     flex-wrap: wrap;
     align-items: center;
+    width: auto;
+    max-width: 100%;
     gap: 8px;
 }
 
-#right-nav-panel[data-menu-type="group_edit"] #rm_group_chats_block .sb-group-editor-side-actions {
+#right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) #rm_group_chats_block .sb-group-editor-side-actions {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    margin-inline-start: auto;
+    padding: 0;
+    margin-inline-start: 0;
 }
 
 #right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) #rm_group_chats_block .sb-group-editor-utility-actions {
-    width: fit-content;
+    width: auto;
     max-width: 100%;
-    flex: 0 0 auto;
+    flex: 0 1 auto;
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+}
+
+#right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) #rm_group_chats_block .sb-group-editor-utility-actions > :is(.chat_lorebook_button, #group_open_media_overrides, #rm_group_delete) {
+    width: max-content;
+    min-width: 0;
+    max-width: 100%;
+    height: auto;
+    min-height: var(--sb-mobile-touch-target, 44px);
+    max-height: none;
+    aspect-ratio: auto;
+    flex: 0 1 auto;
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    padding: 3px;
+    justify-content: center;
+    gap: 6px;
+    /* !important: overrides padding: 0 !important on .sb-group-editor-utility-actions .menu_button in neconyan-tabs.css */
+    padding: 0 12px !important;
+    box-sizing: border-box;
+    white-space: nowrap;
+    line-height: 1;
+    transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+#right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) #rm_group_chats_block .sb-group-editor-utility-actions > :is(.chat_lorebook_button, #group_open_media_overrides, #rm_group_delete) > span {
+    font-family: var(--mainFontFamily);
+    font-size: calc(var(--mainFontSize) * 0.82);
+    font-style: normal;
+    font-weight: 600;
+    letter-spacing: normal;
+    text-transform: none;
+    line-height: 1.1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    color: inherit;
+}
+
+#right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) .sb-group-editor-utility-actions > :is(.chat_lorebook_button, .open_media_overrides) {
     border-radius: 10px;
     background: var(--neco-raised, var(--SmartThemeBlurTintColor));
     border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
 }
 
-#right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) #rm_group_chats_block #group_favorite_button,
-#right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) #rm_group_chats_block #rm_group_scenario {
+#right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) .sb-group-editor-utility-actions > :is(.chat_lorebook_button, .open_media_overrides):not(.disabled):not([disabled]):is(:hover, :focus-visible) {
+    border-color: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 50%, var(--neco-border, transparent));
+    background: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 12%, var(--neco-raised, transparent));
+}
+
+#right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) .sb-group-editor-utility-actions > .chat_lorebook_button.world_set {
+    border-color: color-mix(in srgb, var(--active, var(--neco-ginger)) 46%, var(--neco-border, transparent));
+    background: color-mix(in srgb, var(--active, var(--neco-ginger)) 14%, var(--neco-raised, transparent));
+}
+
+#right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) #rm_group_chats_block .sb-group-editor-utility-actions > #rm_group_delete {
+    border-radius: var(--neconyan-control-radius, 10px);
+    color: color-mix(in oklch, var(--color-danger, var(--sb-color-danger)) 45%, var(--neco-ink, var(--SmartThemeBodyColor)));
+    border: 1px solid color-mix(in srgb, var(--color-danger, var(--sb-color-danger)) 44%, var(--neco-border, var(--SmartThemeBorderColor)));
+    background: color-mix(in srgb, var(--color-danger, var(--sb-color-danger)) 12%, var(--neco-raised, var(--SmartThemeBlurTintColor)));
+}
+
+:root[data-sb-surface-tone="light"] #right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) #rm_group_chats_block .sb-group-editor-utility-actions > #rm_group_delete {
+    color: color-mix(in oklch, var(--color-danger, var(--sb-color-danger)) 28%, var(--neco-ink, var(--SmartThemeBodyColor)));
+}
+
+:root[data-sb-theme]:not([data-sb-theme="calico"]) #right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) #rm_group_chats_block .sb-group-editor-utility-actions > #rm_group_delete {
+    border-radius: var(--sb-radius-button, var(--neconyan-control-radius, 10px));
+}
+
+#right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) #rm_group_chats_block .sb-group-editor-utility-actions > #rm_group_delete:is(:hover, :focus-visible) {
+    border-color: color-mix(in srgb, var(--color-danger, var(--sb-color-danger)) 65%, var(--neco-border, var(--SmartThemeBorderColor)));
+    background: color-mix(in srgb, var(--color-danger, var(--sb-color-danger)) 20%, var(--neco-raised, var(--SmartThemeBlurTintColor)));
+}
+
+#right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) .sb-group-editor-side-actions #group_favorite_button,
+#right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) .sb-group-editor-side-actions #rm_group_scenario {
     border-radius: 10px;
     background: var(--neco-raised, var(--SmartThemeBlurTintColor));
     border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
@@ -96,8 +213,8 @@
     transition: background-color 140ms ease, border-color 140ms ease;
 }
 
-#right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) #rm_group_chats_block #group_favorite_button:hover,
-#right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) #rm_group_chats_block #rm_group_scenario:hover {
+#right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) .sb-group-editor-side-actions #group_favorite_button:hover,
+#right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) .sb-group-editor-side-actions #rm_group_scenario:hover {
     border-color: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 50%, var(--neco-border, transparent));
     background: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 12%, var(--neco-raised, transparent));
 }
@@ -1057,6 +1174,12 @@ dialog.popup:has(.group_speaker_memory) .popup-controls .popup-button-cancel {
 
 /* ---- Phone sizing refinements ---- */
 @media screen and (max-width: 768px) {
+    #right-nav-panel.openDrawer[data-menu-type="group_edit"] #rm_button_selected_ch,
+    #right-nav-panel[data-menu-type="group_edit"] #rm_button_selected_ch {
+        min-height: var(--sb-mobile-touch-target, 44px);
+        padding: 6px 8px;
+    }
+
     #right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) #rm_group_chats_block #group-metadata-controls {
         padding: 12px;
     }
@@ -1068,6 +1191,11 @@ dialog.popup:has(.group_speaker_memory) .popup-controls .popup-button-cancel {
     #right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) #rm_group_chats_block .sb-group-editor-side-actions {
         margin-inline-start: 0;
         width: 100%;
+    }
+
+    #right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) #rm_group_chats_block .sb-group-editor-utility-actions {
+        width: 100%;
+        justify-content: flex-start;
     }
 
     #right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) #rm_group_chats_block #group-chat-lorebook-dropdown {
@@ -1099,8 +1227,12 @@ dialog.popup:has(.group_speaker_memory) .popup-controls .popup-button-cancel {
 
 /* ---- Reduced motion guards ---- */
 @media (prefers-reduced-motion: reduce) {
-    #right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) #rm_group_chats_block #group_favorite_button,
-    #right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) #rm_group_chats_block #rm_group_scenario {
+    #right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) #rm_group_chats_block .sb-group-editor-utility-actions > :is(.chat_lorebook_button, #group_open_media_overrides, #rm_group_delete) {
+        transition: none;
+    }
+
+    #right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) .sb-group-editor-side-actions #group_favorite_button,
+    #right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) .sb-group-editor-side-actions #rm_group_scenario {
         transition: none;
     }
 
@@ -1137,8 +1269,9 @@ dialog.popup:has(.group_speaker_memory) .popup-controls .popup-button-cancel {
     }
 }
 
-body.reduced-motion #right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) #rm_group_chats_block #group_favorite_button,
-body.reduced-motion #right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) #rm_group_chats_block #rm_group_scenario,
+body.reduced-motion #right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) #rm_group_chats_block .sb-group-editor-utility-actions > :is(.chat_lorebook_button, #group_open_media_overrides, #rm_group_delete),
+body.reduced-motion #right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) .sb-group-editor-side-actions #group_favorite_button,
+body.reduced-motion #right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) .sb-group-editor-side-actions #rm_group_scenario,
 body.reduced-motion #right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) #rm_group_chats_block #rm_group_quick_create,
 body.reduced-motion #right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) #rm_group_chats_block .rm_tag_controls .tag,
 body.neconyan.reduced-motion #right-nav-panel #rm_group_chats_block #rm_group_members .group_member .group_member_icon [data-action],
