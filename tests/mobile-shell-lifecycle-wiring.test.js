@@ -917,7 +917,13 @@ describe('mobile shell lifecycle wiring', () => {
 
         expect(tabsSource).toContain('function focusUniversalSearchInput(');
         expect(tabsSource).toContain('function bindSearchShortcutPreFocus(');
-        expect(tabsSource).toContain('nnSearchShortcutPreFocusAt = performance.now();');
+        const bindSearchShortcutPreFocusSource = getFunctionSource('bindSearchShortcutPreFocus');
+        const activateShortcutTargetSource = getFunctionSource('activateShortcutTarget');
+        expect(bindSearchShortcutPreFocusSource).toContain('nnSearchShortcutPreFocusPending = true;');
+        expect(bindSearchShortcutPreFocusSource).toContain('button.addEventListener(\'pointercancel\', cancelPreFocus');
+        expect(activateShortcutTargetSource).toContain('if (nnSearchShortcutPreFocusPending) {');
+        expect(activateShortcutTargetSource).not.toContain('nnSearchShortcutPreFocusAt');
+        expect(setUniversalSearchOpenStateSource).toContain('nnSearchShortcutPreFocusPending = false;');
         expect(tabsSource).toContain('bindSearchShortcutPreFocus(leftShortcut, () => getShortcutTarget(\'left\'));');
         expect(tabsSource).toContain('bindSearchShortcutPreFocus(rightShortcut, () => getShortcutTarget(\'right\'));');
         expect(setUniversalSearchOpenStateSource).toContain('focusUniversalSearchInput(input);');

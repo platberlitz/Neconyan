@@ -263,7 +263,7 @@ let nnStorageFlushEventsBound = false;
 let nnMessageActionEventsBound = false;
 let nnMessageActionExtensionSignature = null;
 let nnPendingBottomChatScrollCancel = null;
-let nnSearchShortcutPreFocusAt = 0;
+let nnSearchShortcutPreFocusPending = false;
 const nnStorageCache = new Map();
 const nnStoragePendingWrites = new Map();
 const NN_EXTENSION_ALIASES = {
@@ -319,8 +319,11 @@ function activateShortcutTarget(target) {
         const searchState = getUniversalSearchState();
 
         if (searchState.expanded) {
-            if (performance.now() - nnSearchShortcutPreFocusAt < NN_MOBILE_ACTION_DEBOUNCE_MS * 2) {
-                nnSearchShortcutPreFocusAt = 0;
+            // The press that opened search on pointerdown ends in this click. A slow
+            // finger or busy phone can take well over a debounce window to get here,
+            // so it refocuses the input instead of closing what it just opened.
+            if (nnSearchShortcutPreFocusPending) {
+                nnSearchShortcutPreFocusPending = false;
                 focusUniversalSearchInput(searchState.input);
                 return;
             }
@@ -3777,6 +3780,7 @@ function setUniversalSearchOpenState(isOpen, { focusInput = false } = {}) {
     }
 
     if (!nextOpenState) {
+        nnSearchShortcutPreFocusPending = false;
         cancelSavedSearch();
         searchState.results?.classList.remove('is-visible');
         if (wasOpen) {
@@ -7419,23 +7423,34 @@ function bindSearchShortcutPreFocus(button, targetGetter) {
         return;
     }
 
-    const openAndFocusSearch = () => {
+    const openAndFocusSearch = (event) => {
         if (!isSearchShortcutTarget(targetGetter())) {
             return;
         }
 
         const searchState = getUniversalSearchState();
         if (searchState.expanded) {
+            // A fresh press on open search closes it on click. touchstart belongs to
+            // the same press as the pointerdown before it, so only pointerdown resets.
+            if (event?.type === 'pointerdown') {
+                nnSearchShortcutPreFocusPending = false;
+            }
             return;
         }
 
         closeAllDropdowns({ except: 'search' });
         setUniversalSearchOpenState(true, { focusInput: true });
-        nnSearchShortcutPreFocusAt = performance.now();
+        nnSearchShortcutPreFocusPending = true;
+    };
+
+    const cancelPreFocus = () => {
+        nnSearchShortcutPreFocusPending = false;
     };
 
     button.addEventListener('pointerdown', openAndFocusSearch, { passive: true });
     button.addEventListener('touchstart', openAndFocusSearch, { passive: true });
+    button.addEventListener('pointercancel', cancelPreFocus, { passive: true });
+    button.addEventListener('touchcancel', cancelPreFocus, { passive: true });
 }
 
 function createTopBarIconButton({ id = '', icon, title, className = '', label = '' }, onClick) {
