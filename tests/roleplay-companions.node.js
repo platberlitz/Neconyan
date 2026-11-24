@@ -20,6 +20,7 @@ const { prepareRoleplayAgentContributions } = await import('../src/generation/ro
 const { subscribeRoleplayPreview } = await import('../src/generation/roleplay-preview.js');
 const { createFreshnessGate } = await import('../src/generation/roleplay-freshness-gate.js');
 const { requestRoleplayAgentStop, roleplayAgentsFailed } = await import('../src/generation/roleplay-agent-stop.js');
+const { requestRoleplayCompanionStop } = await import('../src/generation/roleplay-companion-stop.js');
 const { savedRoleplayMacroSnapshot } = await import('../src/generation/roleplay-prompt.js');
 const { getRegexScriptRevision } = await import('../public/scripts/extensions/in-chat-agents/regex-snapshot-store.js');
 const { MEMORY_SHARD_TEMPLATE_ID } = await import('../public/scripts/extensions/in-chat-agents/companion/companion-shared.js');
@@ -963,6 +964,60 @@ test('the owner Stop clears pending Companion cards and still saves the reply', 
     const lastCards = previews.filter(preview => preview.results !== undefined).at(-1);
     assert.ok(lastCards, 'the run published Companion state');
     assert.ok(Object.values(lastCards.results).every(result => result.status !== 'pending'), 'no stopped Companion keeps a pending card');
+});
+
+test('Stop on one Companion cancels only that note and the reply and other notes still save', { timeout: 20000 }, async t => {
+    const f = prepared(t, [companion('slow'), companion('fast')], { global: { companionMode: 'parallel' } });
+    let entered;
+    const started = new Promise(resolve => { entered = resolve; });
+    const running = f.run({ generate: paid('main', 'Main reply'), generateAgent: paid('agent', async options => {
+        if (!JSON.stringify(options.messages).includes('TASK_SLOW')) return { text: 'Fast note' };
+        entered();
+        await new Promise((resolve, reject) => {
+            if (options.signal.aborted) reject(options.signal.reason);
+            options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true });
+        });
+        return { text: 'Must not be kept' };
+    }) });
+    await started;
+    assert.equal(requestRoleplayCompanionStop({ ...f.context(), agentId: 'missing' }), false, 'a Companion that is not running cannot be stopped');
+    assert.equal(requestRoleplayCompanionStop({ ...f.context(), owner: 'someone-else', agentId: 'slow' }), false);
+    assert.equal(requestRoleplayCompanionStop({ ...f.context(), agentId: 'slow' }), true);
+    await running;
+    const results = f.rows().at(-1).extra.inChatAgentCompanionResults;
+    assert.equal(f.rows().at(-1).mes, 'Main reply');
+    assert.equal(results.fast.content, 'Fast note');
+    assert.equal(results.slow.status, 'cancelled');
+    assert.equal(results.slow.content, '');
+    assert.equal(requestRoleplayCompanionStop({ ...f.context(), agentId: 'slow' }), false, 'a finished pass no longer accepts a Stop');
+});
+
+test('Stop on one member of a Companion batch keeps the batch going for the others', { timeout: 20000 }, async t => {
+    for (const stopEveryMember of [false, true]) {
+        const f = prepared(t, [companion('a', { batch: true, batchAgentIds: ['b'] }), companion('b')]);
+        let entered, release;
+        const started = new Promise(resolve => { entered = resolve; });
+        const held = new Promise(resolve => { release = resolve; });
+        let batchAborted = false;
+        const running = f.run({ generate: paid('main', 'Main reply'), generateAgent: paid('agent', async options => {
+            assert.match(JSON.stringify(options.messages), /\[Tasks\]/, 'only the batch is sent');
+            entered();
+            await Promise.race([held, new Promise(resolve => options.signal.addEventListener('abort', resolve, { once: true }))]);
+            if (options.signal.aborted) { batchAborted = true; throw options.signal.reason; }
+            return { text: '<<<companion:a>>>A note<<<end:a>>>\n<<<companion:b>>>B note<<<end:b>>>' };
+        }) });
+        await started;
+        assert.equal(requestRoleplayCompanionStop({ ...f.context(), agentId: 'b' }), true);
+        if (stopEveryMember) assert.equal(requestRoleplayCompanionStop({ ...f.context(), agentId: 'a' }), true);
+        release();
+        await running;
+        const results = f.rows().at(-1).extra.inChatAgentCompanionResults;
+        assert.equal(f.rows().at(-1).mes, 'Main reply');
+        assert.equal(batchAborted, stopEveryMember, 'the shared request stops only once every member is stopped');
+        assert.equal(results.b.status, 'cancelled');
+        assert.equal(results.a.status, stopEveryMember ? 'cancelled' : 'done');
+        if (!stopEveryMember) assert.equal(results.a.content, 'A note');
+    }
 });
 
 test('retry-once republishes pending cards without repeating a completed paid Companion call', { timeout: 20000 }, async t => {

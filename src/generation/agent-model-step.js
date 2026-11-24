@@ -10,6 +10,7 @@ import { prepareHelperPartialPrefill, joinHelperPartialPrefill, stripPrefilledRe
 import { runChatProfile } from './service.js';
 import { beginDiagnosticAgent, endDiagnosticAgent } from '../diagnostic-activity.js';
 import { isRoleplayAgentStop, withRoleplayAgentStop } from './roleplay-agent-stop.js';
+import { isRoleplayCompanionStop } from './roleplay-companion-stop.js';
 
 const fail = message => roleplayError('ROLEPLAY_AGENT_RECOVERY', message, 503);
 const limited = result => ['length', 'max_tokens', 'MAX_TOKENS', 'max_output_tokens'].includes(result.finishReason
@@ -177,7 +178,7 @@ async function runSingleAgentModelStep(context, { base, account, name, identity,
         return completed;
     } catch (error) {
         outcome = context.signal?.aborted || error?.name === 'AbortError' ? 'cancel' : 'error';
-        if (isRoleplayAgentStop(context.signal?.reason)) abandonAttempt(context, lock, name, inputIdentity, error, 'stopped');
+        if (isRoleplayAgentStop(context.signal?.reason) || isRoleplayCompanionStop(context.signal?.reason)) abandonAttempt(context, lock, name, inputIdentity, error, 'stopped');
         throw error;
     } finally { for (const handle of activity) endDiagnosticAgent(handle, outcome); }
 }

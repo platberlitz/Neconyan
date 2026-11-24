@@ -12,6 +12,7 @@ import { decideJobApproval, readJobApproval } from '../generation/job-approvals.
 import { closeUnstartedRoleplayWorkflow } from '../generation/roleplay-workflow-cancellation.js';
 import { preserveRoleplayWorkflowReply, readRoleplayKeptReply, roleplayKeptReplyPending } from '../generation/roleplay-kept-reply.js';
 import { requestRoleplayAgentStop } from '../generation/roleplay-agent-stop.js';
+import { requestRoleplayCompanionStop } from '../generation/roleplay-companion-stop.js';
 import { readRoleplayPreview, subscribeRoleplayPreview } from '../generation/roleplay-preview.js';
 import { readConversationPreview, subscribeConversationPreview } from '../generation/conversation-preview.js';
 import { applyRoleplayPreviewFrame, buildRoleplayPreviewFrame } from '../../public/scripts/neconyan-conversation/roleplay-preview-frames.js';
@@ -385,6 +386,18 @@ router.post('/:id/cancel', async (request, response) => {
         }
         closeUnstartedRoleplayWorkflow({ owner, directories, job: getJob(directories, job.id) });
         return response.json({ job: requested.job });
+    } catch (error) {
+        return fail(response, error);
+    }
+});
+
+router.post('/:id/companions/stop', (request, response) => {
+    try {
+        const { owner, directories } = directoriesFor(request);
+        const job = getJob(directories, request.params.id);
+        if (!job || job.owner !== owner) return response.status(404).json({ error: 'That job could not be found.' });
+        const stopped = requestRoleplayCompanionStop({ owner, directories, job, agentId: request.body?.agentId });
+        return response.json({ stopped });
     } catch (error) {
         return fail(response, error);
     }
