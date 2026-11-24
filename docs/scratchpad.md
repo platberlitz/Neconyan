@@ -232,6 +232,19 @@ Saved-note text and permissions are read again on the server for every send. If 
 
 Context settings belong to the session. A new session keeps the previous session's choices in that list, except that the selected Saved setup takes priority for the choices it stores. Picked messages and temporary note grants aren't carried over. Picked messages stay tied to their original chat. In another chat, Scratchpad shares none of those messages and does not substitute recent messages; clear the picks or choose messages there. Switching between General and a chat restores each list's unsent draft while the page stays open. Drafts don't survive a browser reload. Accepted replies keep running in their original list.
 
+### When the assistant asks for more
+
+When a switch on the **Context** tab is off and the assistant can't answer properly without it, the assistant can ask you to share it. Its finished reply then shows a **Share with the assistant** card with its reason and a ticked box for each item it asked for, using the same names and descriptions as the Context tab. It can ask for **Character cards**, **Your persona and Scenario Notes**, **Author's Note**, **Mewmory**, **Lorebook entries**, **Current preset**, **Problem checks**, **App diagnostics**, **Neconyan source code**, **Last prompt sent**, **Agents**, **Regexes**, **CSS Snippets**, **Dialogue Colors**, hidden messages and, in a chat, more **Recent messages to read** (up to 200).
+
+- Nothing changes until you press a button. Untick anything you'd rather keep private first.
+- **Share & continue** turns on the ticked switches for this session, saves them and sends a short fixed message, such as 'I shared Current preset. Please continue.', so the assistant answers again with the new context. The message is written by Scratchpad from those names, never copied from the assistant's reply.
+- **Turn on only** turns them on without sending anything, so you can check **Show preview** first.
+- **Not now** closes the card and changes nothing.
+- Items that are already on show **Already shared**. Items the current mode can't share are never offered: General has no Author's Note, Mewmory, chat lorebooks, last prompt, hidden messages or message count, and Conversation has no Author's Note, Mewmory or preset. When you have picked messages, a request for more recent messages only explains that your picks are shared instead; your picks are kept.
+- The assistant is only told about switches that are off, and only in a mode where at least one is. With everything on, or in a note discussion, its instructions are exactly what they were before. The card appears once a reply has finished, never while it's streaming, and a request that can't be read shows a short note instead.
+
+You can turn any of these off again on the Context tab.
+
 ## Macros in drafts
 
 When writing reusable cards and greetings, the assistants are instructed to use `{{user}}` for the chatting persona and `{{char}}` for the card's character. Names used to find a character or lorebook stay concrete.
