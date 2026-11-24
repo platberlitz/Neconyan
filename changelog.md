@@ -152,6 +152,7 @@
 - PR #931 (2026-11-24) `fix(groups): wrap group editor title and label action buttons`
 - PR #932 (2026-11-24) `feat(companions): make Memory Shard human-editable with HTML display`
 - PR #933 (2026-11-24) `feat(server): add a Node.js heap cap setting to the Server panel`
+- PR #934 (2026-11-24) `feat(authors-note): add full screen note editor button`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
