@@ -66,6 +66,26 @@ describe('conversation store sync merge', () => {
         expect(Object.keys(merged.characters)).toEqual(['group:G2:A']);
     });
 
+    test('Roleplay group thread keys survive a store merge because Roleplay groups never live in store.groups', () => {
+        const deleted = { id: 'G1', personaId: '', members: ['A', 'B'], conversation_settings: {} };
+        const roleplayThread = thread({ main: branch('main', [], 10) }, { settings: { enabled: true, roleplay_reactions: true } });
+        const groupThread = thread({ main: branch('main', [message('g', 'History')], 12) });
+        const saved = store({}, { groups: [deleted] });
+        const local = store({
+            'persona:user-default.png:group:G1:A': groupThread,
+            'group:roleplay-group-1:A': roleplayThread,
+            'persona:user-default.png:group:roleplay-group-2:A': roleplayThread,
+        }, { groups: [deleted] });
+        const server = store({}, { groups: [] });
+        const merged = mergeConversationStore(server, local, saved);
+        expect(merged.groups).toEqual([]);
+        expect(Object.keys(merged.characters).sort()).toEqual([
+            'group:roleplay-group-1:A',
+            'persona:user-default.png:group:roleplay-group-2:A',
+        ]);
+        expect(merged.characters['group:roleplay-group-1:A'].settings).toEqual({ enabled: true, roleplay_reactions: true });
+    });
+
     test('a repeated server unread count wins over a stale local clear', () => {
         const wrap = (messages, unread, readThrough) => store({ alice: thread({ main: branch('main', messages, 10, { unread, readThrough }) }) });
         const messages = [message('read', 'Seen'), message('a', 'First')];

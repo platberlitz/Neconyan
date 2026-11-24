@@ -155,10 +155,11 @@ export const test = base.extend({
                 const context = await browser.newContext({ baseURL: app.url, serviceWorkers: 'block', reducedMotion: 'reduce',
                     viewport: phone ? { width: 393, height: 852 } : { width: 1280, height: 900 }, hasTouch: phone, isMobile: phone, ...contextOptions });
                 contexts.push(context);
-                const csrf = await (await context.request.get('/csrf-token')).json();
-                const headers = { 'X-CSRF-Token': csrf.token };
-                const post = async (route, data = {}) => {
-                    const response = await context.request.post(route, { headers, data });
+                const csrf = await (await context.request.get('/csrf-token', { headers: { Connection: 'close' } })).json();
+                // Avoid pooling idle keep-alive sockets across Playwright's Node HTTP agent and Node's 5s keepAliveTimeout.
+                const headers = { 'X-CSRF-Token': csrf.token, Connection: 'close' };
+                const post = async (route, data = {}, options = {}) => {
+                    const response = await context.request.post(route, { headers, data, ...options });
                     expect(response.ok(), route + ': ' + await response.text()).toBe(true);
                     return response.json();
                 };
@@ -215,18 +216,18 @@ export const test = base.extend({
                 expect(created.ok()).toBe(true);
                 const avatar = await created.text();
                 const personaId = saved.user_avatar || '';
-                const initial = await post('/api/neconyan-conversation/store/get');
+                const initial = await post('/api/neconyan-conversation/store/get', {}, { maxRetries: 2 });
                 let threadKey;
                 if (seedConversation) {
                     const store = initial.store;
                     Object.assign(store.settings, { connection_profile: 'durable', idle_action: 'disabled', idle_followup: false,
                         idle_spontaneous: false, ...settings });
                     await post('/api/neconyan-conversation/store/save', { store, version: initial.version });
-                    const current = await post('/api/neconyan-conversation/store/get');
+                    const current = await post('/api/neconyan-conversation/store/get', {}, { maxRetries: 2 });
                     const thread = await post('/api/neconyan-conversation/thread/save', { avatar, personaId, version: current.version,
                         messages: [{ id: 'seed-user', role: 'user', name: 'User', mes: 'Original question.', timestamp: 1700000000000 }] });
                     threadKey = thread.threadKey;
-                    const latest = await post('/api/neconyan-conversation/store/get');
+                    const latest = await post('/api/neconyan-conversation/store/get', {}, { maxRetries: 2 });
                     Object.assign(latest.store.characters[threadKey].settings, { enabled: true, availability: 'online', reply_delay_multiplier: 0,
                         connection_profile: activeConnection ? '' : 'durable',
                         auto_message: false, proactive_messaging: false, auto_character_chat: false,
@@ -240,7 +241,7 @@ export const test = base.extend({
                 }
                 const account = {
                     context, post, headers, avatar, personaId, threadKey,
-                    async store() { return (await post('/api/neconyan-conversation/store/get')).store; },
+                    async store() { return (await post('/api/neconyan-conversation/store/get', {}, { maxRetries: 2 })).store; },
                     async effects() {
                         const store = await account.store();
                         const branch = store.characters[threadKey]?.branches.main;
@@ -252,7 +253,7 @@ export const test = base.extend({
                     async changeStore(change) {
                         // The open page may save at the same moment; reread and reapply on a version conflict.
                         for (let attempt = 1; ; attempt++) {
-                            const saved = await post('/api/neconyan-conversation/store/get');
+                            const saved = await post('/api/neconyan-conversation/store/get', {}, { maxRetries: 2 });
                             change(saved.store);
                             const response = await context.request.post('/api/neconyan-conversation/store/save', { headers, data: saved });
                             if (response.ok()) return response.json();
@@ -266,7 +267,7 @@ export const test = base.extend({
                     },
                     async job(id) {
                         // Retry only reset connections on this read; HTTP errors and job failures still reach the assertions.
-                        return (await (await context.request.get('/api/jobs/' + id, { maxRetries: 2 })).json()).job;
+                        return (await (await context.request.get('/api/jobs/' + id, { headers: { Connection: 'close' }, maxRetries: 2 })).json()).job;
                     },
                     async settled(id, state = 'completed') {
                         await expect.poll(async () => terminal.includes((await account.job(id)).state), { timeout: 60000 }).toBe(true);

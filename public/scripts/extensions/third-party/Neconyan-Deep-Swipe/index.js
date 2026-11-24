@@ -84,7 +84,7 @@ function initializeUi() {
     context.eventSource.makeLast(context.eventTypes.MESSAGE_UPDATED, onMessageUpdated);
     context.eventSource.makeLast(context.eventTypes.MESSAGE_SWIPED, onMessageUpdated);
     context.eventSource.on(context.eventTypes.CHAT_CHANGED, () => {
-        setTimeout(() => addUiToAllMessages(), 500);
+        addUiToAllMessages();
     });
 
     // Listen for reasoning deletion to sync to swipe_info
@@ -121,6 +121,7 @@ function initializeUi() {
     setupMutationObservers(context, handleDeleteClick);
 
     setButtonsInitialized();
+    addUiToAllMessages();
 }
 
 /**
@@ -309,16 +310,7 @@ jQuery(async () => {
     try {
         loadSettings();
         await registerSlashCommands(dswipeBack, dswipeForward);
-
-        // Try multiple times to add UI as messages may render at different times
-        setTimeout(() => {
-            initializeUi();
-            addUiToAllMessages();
-        }, 1000);
-
-        // Additional attempts to catch late-rendered messages
-        setTimeout(() => addUiToAllMessages(), 2000);
-        setTimeout(() => addUiToAllMessages(), 3500);
+        initializeUi();
 
         log('Extension initialized successfully');
     } catch (err) {

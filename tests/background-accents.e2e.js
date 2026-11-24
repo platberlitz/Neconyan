@@ -1,8 +1,9 @@
 /* global document, window, getComputedStyle, NeconyanShell, CSSTransition */
 import { test, expect } from '@playwright/test';
+import { isolateSettingsSaves } from './chat-scroll-regression-helpers.js';
 import { IPHONE_SAFARI_CONTEXT, installIPhoneSafari, applyIOSOnlyCss } from './ios-safari-emulation.js';
 
-// These cases share the preview account's saved appearance settings.
+// Keep appearance changes in memory so they do not leak into later suites.
 test.describe.configure({ mode: 'serial' });
 
 // Runs inside the page so mixed colours and translucent text are measured as rendered.
@@ -34,6 +35,7 @@ for (const phone of [false, true]) {
         const context = await browser.newContext(phone ? IPHONE_SAFARI_CONTEXT : { viewport: { width: 1280, height: 900 } });
         if (phone) await installIPhoneSafari(context, { standalone: true });
         const page = await context.newPage();
+        await isolateSettingsSaves(page);
         await page.goto('/');
         // The startup overlay disappears before backgrounds finish initialising.
         await page.waitForFunction(() => window.jQuery?.('#bg_tabs').data('ui-tabs'));
@@ -147,6 +149,7 @@ for (const phone of [false, true]) {
                 await page.screenshot({ path: testInfo.outputPath(`secondary-${theme}-${tone}.png`) });
             }
         }
+        await page.unrouteAll({ behavior: 'ignoreErrors' });
         await context.close();
     });
 }
