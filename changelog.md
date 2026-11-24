@@ -174,6 +174,7 @@
 - PR #942 (2026-11-24) `feat(quick-image-gen): prefill save with the selected configuration name`
 - PR #943 (2026-11-24) `fix(regex-themes): style User-based Stats and Level Up companions`
 - PR #944 (2026-11-24) `feat(scratchpad): check neconyan source code when diagnosing bugs`
+- PR #945 (2026-11-24) `feat(home): add What's new with a staging preview`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
