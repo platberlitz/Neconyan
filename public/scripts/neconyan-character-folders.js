@@ -279,18 +279,13 @@ export function setFolderPageOpen(open) {
 }
 
 function buildEntryButton() {
-    const node = el('div', 'menu_button fa-solid fa-folder-tree interactable');
+    const node = el('button', 'menu_button interactable');
+    node.type = 'button';
     node.id = ENTRY_ID;
-    node.tabIndex = 0;
-    node.setAttribute('role', 'button');
+    node.append(icon('fa-folder-tree'), el('span', 'neconyan-folders-button-label', t`Folders`));
     node.addEventListener('click', () => {
         if (getSettings().folders.enabled) setFolderPageOpen(!characterFolderView.pageOpen);
         else openOrganiser();
-    });
-    node.addEventListener('keydown', (event) => {
-        if (event.key !== 'Enter' && event.key !== ' ') return;
-        event.preventDefault();
-        node.click();
     });
     return node;
 }
@@ -329,7 +324,6 @@ function renderFolderPage() {
         const label = !settings.folders.enabled ? t`Organise folders`
             : characterFolderView.pageOpen ? t`Back to all characters` : t`Folders`;
         entryButton.title = label;
-        entryButton.setAttribute('aria-label', label);
         if (settings.folders.enabled) entryButton.setAttribute('aria-pressed', String(characterFolderView.pageOpen));
         else entryButton.removeAttribute('aria-pressed');
     }

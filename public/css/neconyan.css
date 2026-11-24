@@ -3454,25 +3454,6 @@ body.neconyan #user-settings-block[data-sb-active-tab='included-tool'] .sb-shell
     body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination > .paginationjs { order: 0; flex: 0 0 auto; flex-wrap: nowrap; justify-content: flex-start; }
     body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination :is(.paginationjs-first, .paginationjs-last) { display: none; }
     body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination .paginationjs-nav { white-space: nowrap; }
-    body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination > :is(#charListGridToggle, #bulkEditButton, #bulkSelectAllButton, #bulkDeleteButton) {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        width: auto !important;
-        max-width: none !important;
-        aspect-ratio: auto !important;
-        padding: 0 10px !important;
-        white-space: nowrap;
-    }
-    body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination > :is(#charListGridToggle, #bulkEditButton, #bulkSelectAllButton, #bulkDeleteButton)::after {
-        font-family: var(--mainFontFamily);
-        font-weight: 500;
-        font-size: 12px;
-    }
-    body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination > #charListGridToggle::after { content: 'Grid'; }
-    body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination > #bulkEditButton::after { content: 'Bulk edit'; }
-    body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination > #bulkSelectAllButton::after { content: 'Select all'; }
-    body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination > #bulkDeleteButton::after { content: 'Delete'; }
     body.neconyan #right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"]) > #CharListButtonAndHotSwaps { display: none !important; }
     body.neconyan #right-nav-panel.openDrawer > #CharListButtonAndHotSwaps.has-favorites { min-height: 44px !important; max-height: 44px !important; padding: 2px 12px !important; }
     body.neconyan #right-nav-panel.openDrawer #CharListButtonAndHotSwaps.has-favorites #HotSwapWrapper { flex-wrap: nowrap; margin: 0 !important; min-height: 0; }
@@ -3487,6 +3468,23 @@ body.neconyan #user-settings-block[data-sb-active-tab='included-tool'] .sb-shell
         scrollbar-width: none;
     }
     body.neconyan #left-nav-panel .sb-model-native-nav-wrapper .sb-shell-tab { flex: 0 0 auto; width: auto; white-space: nowrap; }
+}
+/* The list tool buttons carry their names as text at every width; data-label is set (and translated) by the shell. */
+body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination > :is(#charListGridToggle, #bulkEditButton, #bulkSelectAllButton, #bulkDeleteButton) {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    width: auto !important;
+    max-width: none !important;
+    aspect-ratio: auto !important;
+    padding: 0 10px !important;
+    white-space: nowrap;
+}
+body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination > :is(#charListGridToggle, #bulkEditButton, #bulkSelectAllButton, #bulkDeleteButton)::after {
+    content: attr(data-label);
+    font-family: var(--mainFontFamily);
+    font-weight: 500;
+    font-size: 12px;
 }
 
 /* Neconyan: passkey manager in Settings > User Settings. */

@@ -179,7 +179,7 @@ const NN_SHORTCUT_LABELS = Object.freeze({
 });
 const NN_PANEL_STYLESHEETS = Object.freeze({
     'characters:world-info': [
-        { href: 'css/world-info.css?v=20261128-folders-optin', id: 'deferred-world-info-css' },
+        { href: 'css/world-info.css?v=20261128-toolbar-labels', id: 'deferred-world-info-css' },
     ],
     'characters:persona': [
         { href: 'css/personas.css?v=20261117-persona-label-wrap', id: 'deferred-personas-css' },
@@ -544,7 +544,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261128-folders-optin';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261128-toolbar-labels';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -10637,6 +10637,13 @@ function ensureCharacterListToolbarLayout() {
     const paginationHost = footer || fixedTop.parentElement;
     if (pagination instanceof HTMLElement && pagination.parentElement !== paginationHost) {
         paginationHost?.append(pagination);
+    }
+
+    // The list buttons are icon-only in the markup; CSS shows these labels beside the icons.
+    for (const [id, label] of [['charListGridToggle', t`Grid`], ['bulkEditButton', t`Bulk edit`],
+        ['bulkSelectAllButton', t`Select all`], ['bulkDeleteButton', t`Delete`]]) {
+        const node = document.getElementById(id);
+        if (node && node.dataset.label !== label) node.dataset.label = label;
     }
 
     // Phones: Create/Import lead the single scrolling tool row under the search field.
