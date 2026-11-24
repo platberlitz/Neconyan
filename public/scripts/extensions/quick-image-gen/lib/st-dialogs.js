@@ -109,16 +109,26 @@ export function createDialogHost({
 
     /**
      * Asks for a single line of text. Resolves the entered string, "" for a
-     * deliberate empty answer, or null when the user backs out.
+     * deliberate empty answer, or null when the user backs out. With selectText,
+     * the prefilled value starts selected so typing replaces it.
      */
-    async function inputDialog(message, { title = "", defaultValue = "", okButton = "Save", cancelButton = "Cancel", placeholder = "", rows = 1 } = {}) {
+    async function inputDialog(message, { title = "", defaultValue = "", okButton = "Save", cancelButton = "Cancel", placeholder = "", rows = 1, selectText = false } = {}) {
         if (!supportsPopup()) return fallbackPrompt(message, defaultValue);
+        const initialValue = defaultValue == null ? "" : String(defaultValue);
+        const popupOptions = { okButton, cancelButton, placeholder, rows };
+        if (selectText && initialValue) {
+            popupOptions.onOpen = (popup) => {
+                const input = popup?.mainInput;
+                // Leave anything typed during the opening animation alone.
+                if (input && input.value === initialValue && typeof input.select === "function") input.select();
+            };
+        }
         try {
             const result = await callGenericPopup(
                 buildDialogContent(message, title, escape),
                 popupType.INPUT,
-                defaultValue == null ? "" : String(defaultValue),
-                { okButton, cancelButton, placeholder, rows },
+                initialValue,
+                popupOptions,
             );
             return normalizeInputResult(result);
         } catch (error) {
