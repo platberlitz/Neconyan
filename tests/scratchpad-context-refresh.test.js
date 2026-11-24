@@ -515,6 +515,7 @@ describe('Scratchpad Context refresh lifecycle', () => {
             renderReply: (_session, message) => node('div', { class: 'scratchpad-reply', text: message.text }),
             renderWebSearchSources: () => null,
             renderWebPages: () => null,
+            renderSourceLookup: () => null,
             renderReplySwipes: () => null,
             installReplySwipeGesture() {},
             renderAttachments: () => [],

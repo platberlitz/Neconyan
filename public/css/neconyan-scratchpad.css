@@ -1328,6 +1328,96 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     color: var(--neco-muted);
 }
 
+.scratchpad-source-path {
+    overflow-wrap: anywhere;
+    color: var(--neco-ink);
+    font-family: var(--monoFontFamily, monospace);
+    font-size: 0.86rem;
+}
+
+.scratchpad-source-lookup .scratchpad-muted {
+    margin: 6px 0 0;
+}
+
+.scratchpad-bug-report {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+    margin: 8px 0;
+    padding: 10px 12px;
+    border: 1px solid var(--neco-border);
+    border-left: 4px solid var(--neco-ginger);
+    border-radius: 10px;
+    background: var(--neco-raised);
+    color: var(--neco-ink);
+    overflow-wrap: anywhere;
+}
+
+.scratchpad-bug-report.is-invalid {
+    border-left-style: dashed;
+}
+
+.scratchpad-bug-title {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin: 0;
+    font-weight: 700;
+}
+
+.scratchpad-bug-title .fa-solid {
+    color: var(--neco-ginger);
+}
+
+.scratchpad-bug-heading {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+.scratchpad-bug-section {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.scratchpad-bug-label {
+    color: var(--neco-muted);
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.scratchpad-bug-section :is(p, ol, ul) {
+    margin: 0;
+    white-space: pre-wrap;
+}
+
+.scratchpad-bug-section :is(ol, ul) {
+    padding-inline-start: 20px;
+}
+
+.scratchpad-bug-raw {
+    max-width: 100%;
+    margin: 0;
+    overflow-x: auto;
+    white-space: pre-wrap;
+}
+
+.scratchpad-bug-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+}
+
+.scratchpad-bug-note {
+    flex: 1 1 12rem;
+    margin: 0;
+    font-size: 0.85rem;
+}
+
 .scratchpad-web-settings .scratchpad-web-status {
     margin: 0;
 }

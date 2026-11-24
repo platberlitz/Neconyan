@@ -1,5 +1,5 @@
 import { describe, expect, test } from '@jest/globals';
-import { CHECK_TARGETS, findShortcuts, parseShortcut, replaceShortcut } from '../public/scripts/scratchpad/check-shortcuts.js';
+import { CHECK_ALIASES, CHECK_TARGETS, findShortcuts, parseShortcut, replaceShortcut } from '../public/scripts/scratchpad/check-shortcuts.js';
 import { commandLines, expandTypedTools } from '../public/scripts/scratchpad/typed-tools.js';
 
 const parse = text => {
@@ -15,12 +15,22 @@ describe('Scratchpad check shortcuts', () => {
     });
 
     test('each target is read whatever its case, with the words after it kept', () => {
-        expect(CHECK_TARGETS).toEqual(['card', 'preset', 'lorebook', 'app', 'prompt']);
+        expect(CHECK_TARGETS).toEqual(['card', 'preset', 'lorebook', 'app', 'source', 'prompt']);
         expect(parse('/check card')).toEqual([{ kind: 'check', word: 'card', target: 'card', rest: '' }]);
         expect(parse('/CHECK Preset')).toEqual([{ kind: 'check', word: 'Preset', target: 'preset', rest: '' }]);
         expect(parse('/check lorebook   the second book  ')).toEqual([{ kind: 'check', word: 'lorebook', target: 'lorebook', rest: 'the second book' }]);
         expect(parse('/check\tapp')).toEqual([{ kind: 'check', word: 'app', target: 'app', rest: '' }]);
         expect(parse('/check card focus on the greeting')[0].rest).toBe('focus on the greeting');
+    });
+
+    test('/check source and its /check code alias both point at the source check', () => {
+        expect(CHECK_ALIASES).toEqual({ code: 'source' });
+        expect(parse('/check source')).toEqual([{ kind: 'check', word: 'source', target: 'source', rest: '' }]);
+        expect(parse('/check code')).toEqual([{ kind: 'check', word: 'code', target: 'source', rest: '' }]);
+        expect(parse('/CHECK Code why does Send stay grey?')).toEqual([{ kind: 'check', word: 'Code', target: 'source', rest: 'why does Send stay grey?' }]);
+        expect(parse('/check sources')).toEqual([{ kind: 'check', word: 'sources', target: '', rest: '' }]);
+        expect(parse('/check constructor')).toEqual([{ kind: 'check', word: 'constructor', target: '', rest: '' }]);
+        expect(parse('/check toString')).toEqual([{ kind: 'check', word: 'toString', target: '', rest: '' }]);
     });
 
     test('a bare /check and an unknown word are told apart', () => {

@@ -17,8 +17,9 @@ const REQUESTS = {
     lorebook: 'Check the shared lorebook for problems and explain how to fix them.',
     why: 'Check the activation trace and explain why a lorebook entry did not trigger, and offer a fix if needed.',
     app: 'Use the app diagnostics to tell me what went wrong in Neconyan, and what I should try or share next.',
+    source: 'Use the app diagnostics and Neconyan\'s source code to find what causes this bug. Cite the files and lines you used, say what I can do about it for now, and draft a bug report if it is a bug in Neconyan.',
 };
-const LABELS = { card: 'Check my card', preset: 'Check my preset', lorebook: 'Check my lorebook', why: 'Why didn\'t an entry trigger?', app: 'What went wrong in Neconyan?' };
+const LABELS = { card: 'Check my card', preset: 'Check my preset', lorebook: 'Check my lorebook', why: 'Why didn\'t an entry trigger?', app: 'What went wrong in Neconyan?', source: 'Check Neconyan\'s code for this bug' };
 
 async function equipPreset(page, name, prompt) {
     await page.evaluate(async ({ name, prompt }) => {
@@ -183,7 +184,7 @@ for (const phone of [false, true]) {
         await send.click();
         await expect(toasts.filter({ hasText: 'Typed tools' })).toContainText('Tools that work out a value');
         await expect(toasts.filter({ hasText: 'Typed tools' })).toContainText('Shortcuts that run a check');
-        await expect(toasts.filter({ hasText: 'Typed tools' })).toContainText('/check card, /check preset, /check lorebook, /check app, /check prompt, or /why');
+        await expect(toasts.filter({ hasText: 'Typed tools' })).toContainText('/check card, /check preset, /check lorebook, /check app, /check source, /check prompt, or /why');
         await expect(composer).toHaveValue('/tools');
         if (capture) await page.screenshot({ path: shots('tools-list') });
         await pad_.clearToasts();
@@ -214,9 +215,9 @@ for (const phone of [false, true]) {
         refusals.push(await pad_.refuse('/check preset', 'No preset is shared. Turn on Current preset under Also share in the Context tab, then try again.'));
         refusals.push(await pad_.refuse('/check lorebook', 'No lorebook is picked. Pick one under Share a lorebook in the Context tab, then try again.'));
         refusals.push(await pad_.refuse('/why Harbourmaster', 'No lorebook is picked.'));
-        refusals.push(await pad_.refuse('/check carrd', 'Scratchpad can\'t check \'carrd\'. Use /check card, /check preset, /check lorebook, /check app or /check prompt'));
+        refusals.push(await pad_.refuse('/check carrd', 'Scratchpad can\'t check \'carrd\'. Use /check card, /check preset, /check lorebook, /check app, /check source or /check prompt'));
         refusals.push(await pad_.refuse('/check app\n/check card', 'Use one /check or /why shortcut per message'));
-        refusals.push(await pad_.refuse('Look at this\n/check', 'Say what to check after /check: card, preset, lorebook, app or prompt.'));
+        refusals.push(await pad_.refuse('Look at this\n/check', 'Say what to check after /check: card, preset, lorebook, app, source or prompt.'));
         if (capture) {
             await composer.fill('/check preset');
             await send.click();
@@ -240,6 +241,9 @@ for (const phone of [false, true]) {
         // Each shortcut switches on exactly what its quick prompt does, with the same notice, and sends the readable request.
         const pairs = [];
         pairs.push(await compareWithButton(page, account, app, pad_, 'app', '/check app', { expectOn: ['appEvidence'], untouched }));
+        pairs.push(await compareWithButton(page, account, app, pad_, 'source', '/check source', { expectOn: ['appEvidence', 'appSource'], untouched }));
+        pairs.push(await compareWithButton(page, account, app, pad_, 'source', '/check code', { expectOn: ['appEvidence', 'appSource'], untouched }));
+        expect(pairs.find(pair => pair.shortcut === '/check source').notice).toContain('App diagnostics and Neconyan source code');
         pairs.push(await compareWithButton(page, account, app, pad_, 'preset', '/check preset', {
             prepare: () => tabPrepare(pad_, page, 'preset', 'Harbour'),
             expectOn: ['problems'],
@@ -259,7 +263,7 @@ for (const phone of [false, true]) {
 
         expect(refusals).toHaveLength(7);
         expect(sentAsTyped).toHaveLength(3);
-        expect(pairs.map(pair => pair.key)).toEqual(['app', 'preset', 'lorebook', 'why']);
+        expect(pairs.map(pair => pair.shortcut)).toEqual(['/check app', '/check source', '/check code', '/check preset', '/check lorebook', '/why']);
     });
 }
 
@@ -468,7 +472,7 @@ for (const phone of [false, true]) {
     });
 }
 
-const SWITCHES = { problems: /^Problem checks/, appEvidence: /^App diagnostics/, preset: /^Current preset/, lore: /^Lorebook entries/, card: /^Character cards/ };
+const SWITCHES = { problems: /^Problem checks/, appEvidence: /^App diagnostics/, appSource: /^Neconyan source code/, preset: /^Current preset/, lore: /^Lorebook entries/, card: /^Character cards/ };
 
 /** A new session starts from the last session's sharing, so put the switches back to where the first run started. */
 async function restoreSwitches(pad_, page, wanted) {
