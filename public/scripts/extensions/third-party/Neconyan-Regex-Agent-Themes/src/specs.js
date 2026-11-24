@@ -492,6 +492,59 @@ for (const [templateId, key, archetype, entries] of [
     }
 }
 
+// Terminal-styled stat companions: each pairs a framed terminal window with bold markdown.
+SPEC_LIST.push(
+    {
+        templateId: 'tpl-user-based-stats-generator',
+        scriptId: '8141dc6c-fad2-4bd1-807f-8e04713dfd1a',
+        scriptName: 'Replace Persona-Based User Stats',
+        key: 'user-stats',
+        family: 'companion',
+        archetype: ARCHETYPES.TERMINAL,
+        ns: 'user-stats',
+        title: 'USER_STATS.exe',
+        summary: 'FULL STAT BLOCK',
+        prompt: 'cat USER_STATS.log',
+        body: { g: 1 },
+        open: true,
+        groups: 1,
+    },
+    {
+        templateId: 'tpl-user-based-stats-generator',
+        scriptId: '4678436c-2ab7-49fd-bc64-b7e1aa2ff779',
+        scriptName: 'Replace Bold Markdown',
+        key: 'user-stats-bold',
+        family: 'companion',
+        archetype: ARCHETYPES.BOLD,
+        groups: 1,
+    },
+    {
+        templateId: 'tpl-level-up-companion',
+        scriptId: '6d6cb369-3679-4d91-8560-94d869870630',
+        scriptName: 'Replace Level-up Companion',
+        key: 'level-up',
+        family: 'companion',
+        archetype: ARCHETYPES.TERMINAL,
+        ns: 'level-up',
+        title: 'LEVEL_UP.exe',
+        summary: 'LEVEL UP REPORT',
+        prompt: 'run LEVEL_UP.report',
+        badge: '[ LEVEL UP CONFIRMED ]',
+        body: { g: 1 },
+        open: true,
+        groups: 1,
+    },
+    {
+        templateId: 'tpl-level-up-companion',
+        scriptId: '4678436c-2ab7-49fd-bc64-b7e1aa2ff779',
+        scriptName: 'Replace Bold Markdown',
+        key: 'level-up-bold',
+        family: 'companion',
+        archetype: ARCHETYPES.BOLD,
+        groups: 1,
+    },
+);
+
 // The skill-check variant uses the same numbered choices and cleanup contract.
 SPEC_LIST.push(...SPEC_LIST.filter(spec => spec.templateId === 'tpl-cyoa-choices')
     .map(spec => ({ ...spec, templateId: 'tpl-cyoa-choices-skill-checks' })), {
@@ -1148,4 +1201,5 @@ export const PREVIEWABLE_ARCHETYPES = Object.freeze([
     ARCHETYPES.VISUAL_MAP,
     ARCHETYPES.VITALS,
     ARCHETYPES.PLOT_COMPASS,
+    ARCHETYPES.TERMINAL,
 ]);

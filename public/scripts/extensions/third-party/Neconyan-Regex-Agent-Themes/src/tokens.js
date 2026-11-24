@@ -170,11 +170,13 @@ function mergeGroup(base, override) {
  * supplied its own.
  */
 function deriveTerm(tokens) {
-    if (tokens.term) {
-        return { ...tokens.term };
-    }
     const accent = tokens.accents[0];
-    return {
+    const font = tokens.type.bodyFamily && tokens.type.bodyFamily !== 'inherit'
+        ? tokens.type.bodyFamily
+        : tokens.type.family !== 'inherit'
+            ? tokens.type.family
+            : 'ui-monospace, SFMono-Regular, Menlo, monospace';
+    const derived = {
         bg: tokens.surface.bodyFrom,
         panel: tokens.surface.bodyTo,
         accent,
@@ -184,10 +186,9 @@ function deriveTerm(tokens) {
         border: tokens.line.head,
         glow: tokens.mode === 'dark' ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.10)',
         gold: tokens.ink.warm,
-        font: tokens.type.family === 'inherit'
-            ? 'ui-monospace, SFMono-Regular, Menlo, monospace'
-            : tokens.type.family,
+        font,
     };
+    return tokens.term ? { ...derived, ...tokens.term } : derived;
 }
 
 const TYPE_FLOORS = Object.freeze({
@@ -285,6 +286,7 @@ function deriveReadableTokens(tokens, forceSafety = false) {
             text: readableColor(tokens.term.text, termBody),
             prompt: readableColor(tokens.term.accentDim, termBody),
             badge: readableColor(tokens.term.gold, termBody),
+            strong: readableColor(tokens.term.accent, termBody),
             accent: readableColor(tokens.term.accent, termPanel),
             muted: readableColor(tokens.term.muted, termPanel),
         },
@@ -306,6 +308,7 @@ function deriveReadableTokens(tokens, forceSafety = false) {
         { role: 'chip-cool', foreground: chipInk.cool, backgrounds: chip, minimum: 4.5 },
         { role: 'safety', foreground: on.safety, backgrounds: safetySurfaces, minimum: 4.5 },
         { role: 'terminal-text', foreground: on.term.text, backgrounds: termBody, minimum: 4.5 },
+        { role: 'terminal-strong', foreground: on.term.strong, backgrounds: termBody, minimum: 4.5 },
         { role: 'terminal-accent', foreground: on.term.accent, backgrounds: termPanel, minimum: 4.5 },
         { role: 'terminal-prompt', foreground: on.term.prompt, backgrounds: termBody, minimum: 4.5 },
         { role: 'terminal-badge', foreground: on.term.badge, backgrounds: termBody, minimum: 4.5 },
@@ -356,36 +359,51 @@ export function mix(color, base, percent) {
 
 /** Repaints surfaces, ink and lines onto the host theme, keeping accents/geometry/type. */
 function applyAdaptiveNeutrals(tokens) {
+    const surface = {
+        ...tokens.surface,
+        headFrom: mix(HOST.tint, 'transparent', 94),
+        headTo: mix(HOST.quote, HOST.tint, 18),
+        bodyFrom: mix(HOST.tint, 'transparent', 92),
+        bodyTo: mix(HOST.body, HOST.tint, 6),
+        row: mix(HOST.body, 'transparent', 6),
+        rowAlt: mix(HOST.quote, 'transparent', 10),
+        inset: mix(HOST.body, 'transparent', 9),
+        chip: mix(HOST.quote, 'transparent', 20),
+    };
+    const ink = {
+        ...tokens.ink,
+        head: HOST.body,
+        body: HOST.body,
+        label: mix(HOST.quote, HOST.body, 60),
+        muted: mix(HOST.body, 'transparent', 62),
+        strong: HOST.body,
+    };
+    const line = {
+        ...tokens.line,
+        head: mix(HOST.quote, 'transparent', 34),
+        body: mix(HOST.quote, 'transparent', 22),
+    };
+    const term = tokens.term
+        ? {
+            ...tokens.term,
+            bg: surface.bodyFrom,
+            panel: surface.bodyTo,
+            text: ink.body,
+            muted: ink.muted,
+            border: line.head,
+            glow: mix(HOST.shadow, 'transparent', 26),
+        }
+        : tokens.term;
     return {
         ...tokens,
-        surface: {
-            ...tokens.surface,
-            headFrom: mix(HOST.tint, 'transparent', 94),
-            headTo: mix(HOST.quote, HOST.tint, 18),
-            bodyFrom: mix(HOST.tint, 'transparent', 92),
-            bodyTo: mix(HOST.body, HOST.tint, 6),
-            row: mix(HOST.body, 'transparent', 6),
-            rowAlt: mix(HOST.quote, 'transparent', 10),
-            inset: mix(HOST.body, 'transparent', 9),
-            chip: mix(HOST.quote, 'transparent', 20),
-        },
-        ink: {
-            ...tokens.ink,
-            head: HOST.body,
-            body: HOST.body,
-            label: mix(HOST.quote, HOST.body, 60),
-            muted: mix(HOST.body, 'transparent', 62),
-            strong: HOST.body,
-        },
-        line: {
-            ...tokens.line,
-            head: mix(HOST.quote, 'transparent', 34),
-            body: mix(HOST.quote, 'transparent', 22),
-        },
+        surface,
+        ink,
+        line,
         shadow: {
             ...tokens.shadow,
             head: `0 10px 24px ${mix(HOST.shadow, 'transparent', 26)}`,
         },
+        ...(term ? { term } : {}),
     };
 }
 

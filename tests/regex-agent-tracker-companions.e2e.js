@@ -33,10 +33,17 @@ for (const phone of [true, false]) {
             await page.locator('#rat_toggle_browse').click();
             await page.locator('#rat_drawer [data-focus-key="stage-next"]').click();
             const picker = page.locator('#rat_preview_archetype');
-            for (const [value, label] of [['position', 'Position Tracker'], ['visual-map', 'Visual Map'], ['vitals', 'Vitals'], ['clothing', 'Clothing Tracker'], ['plot-compass', 'Plot Compass']]) {
+            for (const [value, label, expectedKey] of [
+                ['position', 'Position Tracker', 'position'],
+                ['visual-map', 'Visual Map', 'visual-map'],
+                ['vitals', 'Vitals', 'vitals'],
+                ['clothing', 'Clothing Tracker', 'clothing'],
+                ['plot-compass', 'Plot Compass', 'plot-compass'],
+                ['terminal', 'Terminal', 'level-up'],
+            ]) {
                 await expect(picker.locator(`option[value="${value}"]`)).toHaveText(label);
                 await picker.selectOption(value);
-                await expect(page.locator(`#rat_drawer [data-rat-key="${value}"]`).first()).toBeVisible();
+                await expect(page.locator(`#rat_drawer [data-rat-key="${expectedKey}"]`).first()).toBeVisible();
             }
             await picker.selectOption('clothing');
             await expect(page.locator('#rat_drawer [data-clothing-outfit]').first()).toBeVisible();
@@ -319,7 +326,7 @@ for (const phone of [true, false]) {
                 chat.id = 'chat';
                 chat.style.cssText = 'display:block;position:relative;width:100%;height:auto;max-height:none;overflow:visible';
                 document.querySelector('#tracker-captures').append(chat);
-                for (const [archetype, slug] of [['position', 'delft-porcelain'], ['visual-map', 'obsidian-ink'], ['vitals', 'delft-porcelain'], ['clothing', 'delft-porcelain'], ['plot-compass', 'obsidian-ink']]) {
+                for (const [archetype, slug] of [['position', 'delft-porcelain'], ['visual-map', 'obsidian-ink'], ['vitals', 'delft-porcelain'], ['clothing', 'delft-porcelain'], ['plot-compass', 'obsidian-ink'], ['terminal', 'obsidian-ink']]) {
                     const message = document.createElement('div');
                     message.className = 'mes';
                     message.dataset.chatCapture = archetype;
@@ -330,7 +337,7 @@ for (const phone of [true, false]) {
                     mountPreview(block, archetype, getTheme(slug));
                 }
             });
-            for (const [archetype, value] of [['position', 'Rain easing'], ['visual-map', 'Docks'], ['vitals', 'Bruised ribs'], ['clothing', 'Wool waistcoat'], ['plot-compass', 'Have the courier pause under the bridge lamp']]) {
+            for (const [archetype, value] of [['position', 'Rain easing'], ['visual-map', 'Docks'], ['vitals', 'Bruised ribs'], ['clothing', 'Wool waistcoat'], ['plot-compass', 'Have the courier pause under the bridge lamp'], ['terminal', 'LEVEL UP CONFIRMED']]) {
                 const message = page.locator(`#chat [data-chat-capture="${archetype}"]`);
                 await expect(message).toContainText(value);
                 await expect(message.locator('[data-rat]').first()).toBeVisible();
@@ -340,16 +347,194 @@ for (const phone of [true, false]) {
                 const weather = chat.querySelector('[data-chat-capture="position"] small');
                 const mapHere = chat.querySelector('[data-chat-capture="visual-map"] [data-vm-d="here"]');
                 const mapEast = chat.querySelector('[data-chat-capture="visual-map"] [data-vm-d="east"]');
+                const terminal = chat.querySelector('[data-chat-capture="terminal"] [data-rat-key="level-up"]');
+                const terminalCursor = terminal?.querySelector('.custom-rat-tw-cursor');
+                const terminalDots = terminal?.querySelector('.custom-rat-tw-dots');
                 return {
                     weather: getComputedStyle(weather).color,
                     weatherParent: getComputedStyle(weather.parentElement).color,
                     hereColumn: getComputedStyle(mapHere).gridColumnStart,
                     eastColumn: getComputedStyle(mapEast).gridColumnStart,
+                    terminalLists: terminal?.querySelectorAll('ul, ol, li, p').length ?? -1,
+                    terminalStrong: terminal?.querySelectorAll('.custom-rat-tw-out strong').length ?? 0,
+                    terminalCursor: terminalCursor ? getComputedStyle(terminalCursor, '::after').content : '',
+                    terminalDotsGap: terminalDots ? parseFloat(getComputedStyle(terminalDots).gap) : 0,
+                    terminalOverflow: terminal ? terminal.scrollWidth - terminal.clientWidth : 999,
                 };
             });
             expect(chatDetails.weather).toBe(chatDetails.weatherParent);
             expect(chatDetails.hereColumn).toBe('2');
             expect(chatDetails.eastColumn).toBe('3');
+            expect(chatDetails.terminalLists).toBe(0);
+            expect(chatDetails.terminalStrong).toBeGreaterThanOrEqual(3);
+            expect(chatDetails.terminalCursor).toContain('\u258e');
+            expect(chatDetails.terminalDotsGap).toBeGreaterThan(2);
+            expect(chatDetails.terminalOverflow).toBeLessThanOrEqual(1);
+
+            // Verify both terminal companion templates end-to-end when installed, reconciled,
+            // themed across dark/light/adaptive modes, rendered in companion notes & panel
+            // containers (plus Echo chat style), and reverted cleanly to stock.
+            await page.route('**/api/in-chat-agents/save', route => route.fulfill({ json: { ok: true } }));
+            await page.route('**/api/in-chat-agents/delete', route => route.fulfill({ json: { ok: true } }));
+            const terminalLifecycle = await page.evaluate(async () => {
+                const base = '/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/';
+                const store = await import('/scripts/extensions/in-chat-agents/agent-store.js');
+                const { formatCompanionContent } = await import('/scripts/extensions/in-chat-agents/companion/companion-ui.js');
+                const { applyAll, reconcile } = await import(`${base}apply.js`);
+                const { updateSettings } = await import(`${base}settings.js`);
+                const { SAMPLES } = await import(`${base}samples.js`);
+                const { STOCK } = await import(`${base}stock.js`);
+                const { getTheme } = await import(`${base}themes/index.js`);
+                const { mountPreview } = await import(`${base}preview.js`);
+
+                const ids = ['tpl-user-based-stats-generator', 'tpl-level-up-companion'];
+                const installed = [];
+                for (const templateId of ids) {
+                    let agent = store.getAgents().find(item => item.sourceTemplateId === templateId);
+                    if (!agent) {
+                        const slug = templateId.slice(4);
+                        const tpl = await (await fetch(`/scripts/extensions/in-chat-agents/templates/${slug}.json`)).json();
+                        agent = {
+                            ...structuredClone(tpl),
+                            id: `test-${templateId}`,
+                            sourceTemplateId: templateId,
+                            sourceTemplateVersion: tpl.version ?? 1,
+                            enabled: false,
+                        };
+                        await store.saveAgent(agent);
+                    }
+                    installed.push(agent.id);
+                }
+
+                updateSettings({
+                    theme: 'obsidian-ink',
+                    autoReapply: true,
+                    options: {
+                        restyleBold: false,
+                        glyphs: 'theme',
+                        openDefaults: 'theme',
+                    },
+                });
+                const rec = await reconcile();
+
+                const host = document.createElement('div');
+                host.style.cssText = 'display:flex;flex-direction:column;gap:12px;width:100%;max-width:100%;margin-top:16px';
+                document.querySelector('#tracker-captures').append(host);
+
+                const renderAndMeasure = (agentId, sample, containerClass, prefix) => {
+                    const box = document.createElement('div');
+                    box.className = containerClass;
+                    box.style.cssText = 'width:100%;max-width:100%;box-sizing:border-box';
+                    box.innerHTML = formatCompanionContent(
+                        agentId,
+                        { content: sample, format: 'markdown', status: 'done' },
+                        undefined,
+                        prefix,
+                    );
+                    host.append(box);
+                    const root = box.querySelector('[data-rat-arch="terminal"]');
+                    const details = root?.querySelector('details');
+                    const summary = details?.querySelector('summary');
+                    const openAfter = summary ? getComputedStyle(summary, '::after').content : '';
+                    if (details) details.open = false;
+                    const closedAfter = summary ? getComputedStyle(summary, '::after').content : '';
+                    if (details) details.open = true;
+                    return {
+                        found: Boolean(root),
+                        key: root?.dataset.ratKey || '',
+                        overflow: root ? root.scrollWidth - root.clientWidth : 999,
+                        lists: root ? root.querySelectorAll('ul, ol, li, p').length : -1,
+                        strongCount: root ? root.querySelectorAll('.custom-rat-tw-out strong').length : 0,
+                        openAfter,
+                        closedAfter,
+                    };
+                };
+
+                const notesStats = renderAndMeasure(installed[0], SAMPLES['user-stats'].full, 'ica--companion-body', '.ica--companion-body ');
+                const panelLevel = renderAndMeasure(installed[1], SAMPLES['level-up'].full, 'ica--tpanel-agent-body', '.ica--tpanel-agent-body ');
+
+                // Switch themes (light + adaptive) and verify live theme changes.
+                updateSettings({ theme: 'delft-porcelain' });
+                await applyAll({ force: true });
+                const lightStats = store.getAgents().find(item => item.id === installed[0]).regexScripts[0].replaceString;
+                updateSettings({ theme: 'adaptive-accent' });
+                await applyAll({ force: true });
+                const adaptiveLevel = store.getAgents().find(item => item.id === installed[1]).regexScripts[0].replaceString;
+
+                // Exercise Echo chat style + options (all-closed, glyphs: none, restyleBold: true).
+                document.body.classList.remove('tidestyle');
+                document.body.classList.add('echostyle');
+                const echoHost = document.createElement('div');
+                echoHost.className = 'mes';
+                const echoBlock = document.createElement('div');
+                echoBlock.className = 'mes_block';
+                echoHost.append(echoBlock);
+                document.querySelector('#chat').append(echoHost);
+                mountPreview(echoBlock, 'terminal', getTheme('obsidian-ink'), {
+                    openDefaults: 'all-closed',
+                    glyphs: 'none',
+                    restyleBold: true,
+                });
+                const echoRoot = echoBlock.querySelector('[data-rat-key="level-up"]');
+                const echoChecks = {
+                    closed: echoRoot?.querySelector('details')?.open === false,
+                    noDots: echoRoot?.querySelector('.custom-rat-tw-dots') === null,
+                    noCursor: echoRoot?.querySelector('.custom-rat-tw-cursor') === null,
+                    styledBold: echoRoot?.querySelectorAll('strong[data-rat-arch="bold"]').length ?? 0,
+                    overflow: echoRoot ? echoRoot.scrollWidth - echoRoot.clientWidth : 999,
+                };
+
+                // Revert back to exact stock replaceStrings via settings.theme = 'stock' + applyAll().
+                updateSettings({ theme: 'stock' });
+                const rev = await applyAll();
+                const revertedExact = ids.every((templateId, idx) => {
+                    const current = store.getAgents().find(item => item.id === installed[idx]);
+                    const stock = STOCK.filter(item => item.templateId === templateId);
+                    return stock.length === 2 && stock.every(s => current.regexScripts.find(r => r.id === s.scriptId)?.replaceString === s.replaceString);
+                });
+                for (const id of installed) {
+                    if (id.startsWith('test-')) await store.deleteAgent(id);
+                }
+                return {
+                    recRepaired: rec.repaired,
+                    notesStats,
+                    panelLevel,
+                    lightHasSlug: lightStats.includes('data-rat="delft-porcelain@'),
+                    adaptiveHasSlug: adaptiveLevel.includes('data-rat="adaptive-accent@'),
+                    echoChecks,
+                    revReverted: rev.reverted,
+                    revertedExact,
+                };
+            });
+
+            expect(terminalLifecycle.recRepaired).toBeGreaterThanOrEqual(2);
+            expect(terminalLifecycle.notesStats.found).toBe(true);
+            expect(terminalLifecycle.notesStats.key).toBe('user-stats');
+            expect(terminalLifecycle.notesStats.overflow).toBeLessThanOrEqual(1);
+            expect(terminalLifecycle.notesStats.lists).toBe(0);
+            expect(terminalLifecycle.notesStats.strongCount).toBeGreaterThanOrEqual(5);
+            expect(terminalLifecycle.notesStats.openAfter).toContain('[open]');
+            expect(terminalLifecycle.notesStats.closedAfter).toContain('[closed]');
+            expect(terminalLifecycle.panelLevel.found).toBe(true);
+            expect(terminalLifecycle.panelLevel.key).toBe('level-up');
+            expect(terminalLifecycle.panelLevel.overflow).toBeLessThanOrEqual(1);
+            expect(terminalLifecycle.panelLevel.lists).toBe(0);
+            expect(terminalLifecycle.panelLevel.strongCount).toBeGreaterThanOrEqual(3);
+            expect(terminalLifecycle.panelLevel.openAfter).toContain('[open]');
+            expect(terminalLifecycle.panelLevel.closedAfter).toContain('[closed]');
+            expect(terminalLifecycle.lightHasSlug).toBe(true);
+            expect(terminalLifecycle.adaptiveHasSlug).toBe(true);
+            expect(terminalLifecycle.echoChecks).toEqual({
+                closed: true,
+                noDots: true,
+                noCursor: true,
+                styledBold: expect.any(Number),
+                overflow: expect.any(Number),
+            });
+            expect(terminalLifecycle.echoChecks.styledBold).toBeGreaterThanOrEqual(3);
+            expect(terminalLifecycle.echoChecks.overflow).toBeLessThanOrEqual(1);
+            expect(terminalLifecycle.revReverted).toBeGreaterThanOrEqual(2);
+            expect(terminalLifecycle.revertedExact).toBe(true);
         } finally {
             await context.close();
         }
