@@ -177,6 +177,7 @@
 - PR #944 (2026-11-24) `feat(scratchpad): check neconyan source code when diagnosing bugs`
 - PR #945 (2026-11-24) `feat(home): add What's new with a staging preview`
 - PR #946 (2026-11-24) `fix(agents): keep the relationship card header horizontal on narrow cards`
+- PR #947 (2026-11-24) `fix(home): keep What's new scrollable on iPhones`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
