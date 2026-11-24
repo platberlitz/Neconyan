@@ -286,6 +286,7 @@ export const refreshedKnowledgeCases = [
     ['I missed update notice, where can I check again?', 'start.simple-updates', 'after an update notice disappears'],
     ['Where is memory in Simple Mode?', 'agents.memory-shard', 'opens Story so far'],
     ['Does Memory Shard hide messages by itself?', 'agents.memory-shard', 'hidden from the model automatically'],
+    ['How do I edit a Memory Shard note?', 'agents.memory-shard', 'section-by-section editor'],
     ['Is Persona still there in Simple Mode?', 'start.simple-mode', 'Persona stays in the sidebar'],
     ['How long is the Simple Mode tour?', 'start.simple-mode', 'three-step tour'],
     ['Where did the Extensions button go? There are too many buttons anyway', 'start.simple-mode', 'Nothing is deleted or disabled'],

@@ -664,9 +664,16 @@ describe('in-chat agent bundled templates', () => {
             includeAllChatHistory: true,
             keepInChatHistoryWhenHostHidden: true,
         }));
+        expect(memoryShard.version).toBeGreaterThanOrEqual(3);
         expect(memoryShard.prompt).toContain('# MEMORY SHARD: [ID]-[NEXT NUM]');
         expect(memoryShard.prompt).toContain('# CONSOLIDATED MEMORY SHARD: [ID]-MASTER');
-        expect(memoryShard.prompt).toContain('## Shard Reference Key');
+        expect(memoryShard.prompt).toContain('## Current Snapshot');
+        expect(memoryShard.prompt).toContain('## Story Events');
+        expect(memoryShard.prompt).toContain('## Callbacks & Loose Threads');
+        expect(memoryShard.prompt).not.toContain('## Shard Reference Key');
+        expect(Array.isArray(memoryShard.regexScripts)).toBe(true);
+        expect(memoryShard.regexScripts.length).toBeGreaterThanOrEqual(15);
+        expect(memoryShard.regexScripts.every(script => script.markdownOnly === true && script.promptOnly === false && script.runOnEdit === true)).toBe(true);
         // Mewmory is optional: the sections are empty when it is off, and the chat stays the source.
         expect(memoryShard.prompt).toContain('<story_memory>\n{{mewmory-facts}}\n</story_memory>');
         expect(memoryShard.prompt).toContain('<character_views>\n{{mewmory-interview}}\n</character_views>');

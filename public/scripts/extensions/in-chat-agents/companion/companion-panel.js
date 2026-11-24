@@ -1898,11 +1898,19 @@ export function initCompanionPanel() {
 
     // Tapping anywhere outside the panel closes it unless the user locks it open.
     // The grace window keeps the click that opened the panel from immediately closing it.
+    // Keep the panel open while a popup dialog or fullscreen textarea overlay is active,
+    // or when the clicked control belonged to a popup or was detached by its own handler.
     $(document).on('click', event => {
         if (!panelOpen || panelLocked || Date.now() - panelOpenedAt < 250) {
             return;
         }
-        if (event.target?.closest?.(`#ica--tracker-panel, #ica--tracker-panel-handle, #ica--cwin-layer, .ica--cwin, #${TOPBAR_LAUNCHER_ID}`)) {
+        if (document?.querySelector?.('dialog.popup[open], .ica--textarea-fullscreen-overlay')) {
+            return;
+        }
+        if (event.target?.isConnected === false) {
+            return;
+        }
+        if (event.target?.closest?.(`#ica--tracker-panel, #ica--tracker-panel-handle, #ica--cwin-layer, .ica--cwin, dialog.popup, .popup, .ica--textarea-fullscreen-overlay, #${TOPBAR_LAUNCHER_ID}`)) {
             return;
         }
         closeCompanionPanel();
