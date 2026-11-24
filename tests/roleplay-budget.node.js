@@ -45,6 +45,64 @@ test('cached budget passes remain exact after message edits, removals and model 
     }
 });
 
+const hiddenDataRoutes = {
+    gemma: { source: 'makersuite', active: {}, profile: { model: 'gemini-2.5-pro' } },
+    'gpt-4o': { source: 'custom', active: {}, profile: { model: 'gpt-4o' } },
+};
+// Fresh objects for every count.
+const toolCall = (args = '{"query":"harbour"}', extra = {}) => ({ id: 'call-1', type: 'function', function: { name: 'lookup', arguments: args }, ...extra });
+const hiddenDataCases = {
+    'a 16,000-character reply signature': hidden => [{ role: 'user', content: 'Where is the lamp?' },
+        { role: 'assistant', content: 'It is on the pier.', ...(hidden ? { signature: 'S'.repeat(16000) } : {}) }],
+    'a 10,000-character tool-call signature': hidden => [{ role: 'user', content: 'Where is the lamp?' },
+        { role: 'assistant', tool_calls: [toolCall(undefined, hidden ? { signature: 'T'.repeat(10000) } : {})] },
+        { role: 'tool', tool_call_id: 'call-1', content: 'On the pier.' }],
+    'large data and signature in reasoning details': hidden => [{ role: 'user', content: 'Where is the lamp?' },
+        { role: 'assistant', content: 'It is on the pier.',
+            reasoning_details: [{ type: 'reasoning.encrypted', id: 'step-1', index: 0, ...(hidden ? { data: 'D'.repeat(12000), signature: 'G'.repeat(12000) } : {}) }] }],
+};
+
+for (const [route, material] of Object.entries(hiddenDataRoutes)) {
+    for (const [name, build] of Object.entries(hiddenDataCases)) {
+        test(`native chat counting on the ${route} route does not price ${name}`, async () => {
+            const count = await createRoleplayChatCounter(material);
+            if (route === 'gemma') assert.match(count.tokenizer.tokenizerKey, /^(gemma|gemini)$/);
+            const without = await count(build(false));
+            const hiddenMessages = build(true);
+            const before = structuredClone(hiddenMessages);
+            const withHidden = await count(hiddenMessages);
+            assert.deepEqual(hiddenMessages, before);
+            assert.equal(withHidden, without);
+            assert.ok(without > 0);
+        });
+    }
+
+    test(`native chat counting on the ${route} route still prices tool-call arguments`, async () => {
+        const count = await createRoleplayChatCounter(hiddenDataRoutes[route]);
+        const call = args => [{ role: 'user', content: 'Where is the lamp?' }, { role: 'assistant', tool_calls: [toolCall(args)] }];
+        const short = await count(call('{"query":"harbour"}'));
+        const long = await count(call('{"query":"' + 'harbour lamp '.repeat(300) + '"}'));
+        assert.ok(long > short + 300, `${long} should clearly exceed ${short}`);
+    });
+}
+
+test('native chat counting on the gpt-4o route still prices visible text in reasoning details', async () => {
+    const count = await createRoleplayChatCounter(hiddenDataRoutes['gpt-4o']);
+    const detail = text => [{ role: 'user', content: 'Where is the lamp?' },
+        { role: 'assistant', content: 'It is on the pier.', reasoning_details: [{ type: 'reasoning.text', id: 'step-1', index: 0, text }] }];
+    assert.ok(await count(detail('The lamp was last seen near the pier. '.repeat(100))) > await count(detail('Short.')) + 300);
+});
+
+test('native chat counting prices tool-call reasoning on the gpt-4o route only', async () => {
+    const withReasoning = reasoning => [{ role: 'user', content: 'Where is the lamp?' },
+        { role: 'assistant', tool_calls: [toolCall()], ...(reasoning ? { reasoning } : {}) }];
+    const gpt = await createRoleplayChatCounter(hiddenDataRoutes['gpt-4o']);
+    assert.ok(await gpt(withReasoning('The lamp was last seen near the pier. '.repeat(100))) > await gpt(withReasoning('')) + 300);
+    const gemma = await createRoleplayChatCounter(hiddenDataRoutes.gemma);
+    assert.match(gemma.tokenizer.tokenizerKey, /^(gemma|gemini)$/);
+    assert.equal(await gemma(withReasoning('The lamp was last seen near the pier. '.repeat(100))), await gemma(withReasoning('')));
+});
+
 test('browser and server tokenizer selection uses the same provider and catalogue rules', () => {
     for (const source of ['openai', 'openai_responses']) assert.equal(resolveChatTokenizerModel({ chat_completion_source: source,
         openai_model: 'gpt-6-astra' }), 'gpt-6-astra');

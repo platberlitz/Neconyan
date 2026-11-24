@@ -139,26 +139,6 @@ test('status labels are translated without changing the state used by the interf
     expect(button.setAttribute).toHaveBeenCalledWith('aria-label', button.title);
 });
 
-test('a prompt over the protected memory budget shows the measured count and sends no validation', async () => {
-    fetch.mockImplementation(async (url) => {
-        if (url.endsWith('/tokens')) return response({ counts: [7100] });
-        throw new Error('An over-budget prompt must not proceed.');
-    });
-    const context = { enabled: true, locator: getMewmoryLocator(), npcText: '', memoryText: 'Saved context',
-        history: { waitingForPreservation: true }, tokenizer: {}, validationFingerprint: 'snapshot' };
-    await expect(validateMewmoryGeneration(context, 'Current chat\nSaved context', 6692)).rejects.toThrow(/7,100 tokens.*6,692/);
-    expect(global.toastr.error).toHaveBeenCalledWith(expect.stringMatching(/7,100 tokens.*6,692.*Older messages have not been fully remembered/), 'Mewmory');
-    expect(fetch.mock.calls.some(([url]) => url.endsWith('/validate'))).toBe(false);
-});
-
-test('a malformed prompt count is visibly rejected instead of passing the budget guard', async () => {
-    fetch.mockResolvedValue(response({ counts: [] }));
-    const context = { enabled: true, locator: getMewmoryLocator(), npcText: '', memoryText: '', tokenizer: {} };
-    await expect(validateMewmoryGeneration(context, 'Current chat', 6692)).rejects.toThrow(/could not count/);
-    expect(global.toastr.error).toHaveBeenCalledWith(expect.stringMatching(/could not count/), 'Mewmory');
-    expect(fetch.mock.calls.some(([url]) => url.endsWith('/validate'))).toBe(false);
-});
-
 test('new chats and branches load even without a listed archive or a mounted panel', async () => {
     for (const name of ['new-chat', 'branch']) {
         chatId = name;
@@ -1282,4 +1262,74 @@ test('explicitly disabled chats, disabled auto-enable and normal sends add no re
     expect(listeners.get('GENERATION_STARTED')()).toEqual([undefined]);
     await Promise.all(listeners.get('MESSAGE_SENT')());
     expect(fetch).not.toHaveBeenCalled();
+});
+
+const memoryBlock = 'Saved context';
+const longReply = 'An invented passage about the harbour lamps. '.repeat(4000);
+const promptShapes = {
+    'a string prompt': () => `Current chat\n${memoryBlock}\n${longReply}`,
+    'a message array with string content': () => [{ role: 'system', content: memoryBlock }, { role: 'user', content: 'Current chat' },
+        { role: 'assistant', content: longReply, signature: 'S'.repeat(5000) }],
+    'a message array with array parts': () => [{ role: 'system', content: [{ type: 'text', text: memoryBlock }] },
+        { role: 'user', content: [{ type: 'text', text: 'Current chat' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,' + 'A'.repeat(5000) } }] },
+        { role: 'assistant', content: [{ type: 'text', text: longReply }] }],
+};
+const validationContext = () => ({ enabled: true, locator: getMewmoryLocator(), scope: getMewmoryScope(), npcText: '', memoryText: memoryBlock,
+    history: { waitingForPreservation: true }, tokenizer: {}, validationFingerprint: 'snapshot', inspection: { retrieval: { selected: ['state:entry'] } } });
+/** Fires the host's reply event for a new assistant message and returns that message. */
+const receiveReply = () => {
+    const reply = { mes: 'New reply' };
+    const before = chat.splice(0, chat.length, reply);
+    listeners.get('MESSAGE_RECEIVED')(0);
+    chat.splice(0, chat.length, ...before);
+    return reply;
+};
+const requested = suffix => fetch.mock.calls.filter(([url]) => url.endsWith(suffix));
+
+for (const [shape, makePrompt] of Object.entries(promptShapes)) {
+    for (const [stub, answer] of [['a count request that must not happen', null], ['a count that would come back malformed', { counts: [] }]]) {
+        test(`${shape} that used to be over budget is validated without a recount (${stub})`, async () => {
+            initMewmory();
+            fetch.mockImplementation(async url => {
+                if (url.endsWith('/tokens')) {
+                    if (!answer) throw new Error('Mewmory must not count the prepared prompt.');
+                    return response(answer);
+                }
+                if (url.endsWith('/validate')) return response({});
+                throw new Error('Unexpected request: ' + url);
+            });
+            await validateMewmoryGeneration(validationContext(), makePrompt());
+            expect(requested('/tokens')).toHaveLength(0);
+            expect(requested('/validate')).toHaveLength(1);
+            expect(global.toastr.error).not.toHaveBeenCalled();
+            expect(receiveReply().extra?.mewmoryRecall?.records).toEqual(['state:entry']);
+        });
+    }
+}
+
+test('a prompt that lost the memory block is refused before anything is requested', async () => {
+    initMewmory();
+    fetch.mockImplementation(async url => { throw new Error('Unexpected request: ' + url); });
+    await expect(validateMewmoryGeneration(validationContext(), 'Current chat without the saved block')).rejects.toThrow(/removed the memories/);
+    expect(global.toastr.error).toHaveBeenCalledWith(expect.stringMatching(/removed the memories/), 'Mewmory');
+    expect(requested('/validate')).toHaveLength(0);
+    expect(receiveReply().extra?.mewmoryRecall).toBeUndefined();
+});
+
+test('a validation the server refuses stops the reply and leaves nothing stamped on the next one', async () => {
+    initMewmory();
+    let accepted = true;
+    fetch.mockImplementation(async url => {
+        // The old recount would ask for this; the new code never does.
+        if (url.endsWith('/tokens')) return response({ counts: [1] });
+        if (!url.endsWith('/validate')) throw new Error('Unexpected request: ' + url);
+        return accepted ? response({}) : { ok: false, status: 409, json: async () => ({ error: 'The archive changed.' }) };
+    });
+    await validateMewmoryGeneration(validationContext(), `Current chat\n${memoryBlock}`);
+    expect(receiveReply().extra?.mewmoryRecall?.records).toEqual(['state:entry']);
+    accepted = false;
+    await expect(validateMewmoryGeneration(validationContext(), `Current chat\n${memoryBlock}`)).rejects.toThrow('The archive changed.');
+    expect(global.toastr.error).toHaveBeenCalledWith('The archive changed.', 'Mewmory');
+    expect(requested('/validate')).toHaveLength(2);
+    expect(receiveReply().extra?.mewmoryRecall).toBeUndefined();
 });

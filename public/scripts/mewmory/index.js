@@ -951,7 +951,7 @@ export async function prepareMewmoryGeneration(messages, { signal, mewmoryCatchU
     }
 }
 
-export async function validateMewmoryGeneration(context, prompt, tokenBudget, { signal } = {}) {
+export async function validateMewmoryGeneration(context, prompt, { signal } = {}) {
     lastRecall = null;
     if (!context?.enabled) return;
     try {
@@ -959,17 +959,6 @@ export async function validateMewmoryGeneration(context, prompt, tokenBudget, { 
             ? message.content : JSON.stringify(message.content)).join('\n');
         for (const block of [context.npcText, context.memoryText].filter(Boolean)) {
             if (!plainText.replace(/\r/g, '').includes(block.replace(/\r/g, ''))) throw new Error('Your prompt settings removed the memories Mewmory added, so nothing was sent. Check that your prompt template keeps the Mewmory block.');
-        }
-        const serialized = typeof prompt === 'string' ? prompt : JSON.stringify(prompt);
-        const counted = await requestMewmory('tokens', { texts: [serialized], tokenizer: context.tokenizer }, { signal });
-        const total = counted?.counts?.[0];
-        if (!Number.isSafeInteger(total) || total < 0) throw new Error('Mewmory could not count the prepared prompt. Check Token counter for replies, then try again.');
-        if (total > tokenBudget) {
-            const waiting = context.history?.waitingForPreservation
-                ? ' Older messages have not been fully remembered, so they remain in the prompt.' : '';
-            throw new Error('Mewmory counted ' + total.toLocaleString('en-GB') + ' tokens in the prepared prompt, but only '
-                + tokenBudget.toLocaleString('en-GB') + ' fit before the reply. ' + waiting.trimStart()
-                + (waiting ? ' ' : '') + 'Increase the context size if your model supports it, reduce ‘Space for recalled memories, tokens’, or update memories for the whole chat.');
         }
         await requestMewmory('validate', { locator: context.locator, fingerprint: context.validationFingerprint }, { signal });
         lastRecall = { scope: context.scope, summary: recallSummary(context.inspection) };
