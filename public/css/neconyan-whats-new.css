@@ -179,6 +179,7 @@ body.neconyan {
         max-width: 100vw;
         height: 100dvh;
         max-height: 100dvh;
+        min-height: 0;
         margin: 0;
         padding: 0;
         border-width: 0;
@@ -195,7 +196,9 @@ body.neconyan {
         padding-inline: max(14px, env(safe-area-inset-left)) max(14px, env(safe-area-inset-right));
     }
 
+    /* iPhones size every popup body to its content (popup-safari-fix.css), which pushed Done off screen. */
     dialog.popup.neconyan-whats-new-dialog :is(.popup-body, .popup-content) {
+        block-size: auto;
         flex: 1 1 auto;
         min-block-size: 0;
         max-block-size: none;
