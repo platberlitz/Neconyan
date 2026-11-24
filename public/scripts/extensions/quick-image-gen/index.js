@@ -69,6 +69,7 @@ import { applyQuickImageStyle, QIG_STYLES as STYLES } from "./lib/styles.js";
 import { NBP_DIRECTOR_PROMPTS, normalizeNbpDirectorPreset, buildNbpDirectorInstruction,
     getNanobananaAspectRatio, getNanobananaImageSize } from "./lib/nanobanana-settings.js";
 import { createDialogHost, DEFAULT_DIALOG_TITLE } from "./lib/st-dialogs.js";
+import { getConfigurationSaveDefaultName, resolveConfigurationSave } from "./lib/configuration-save.js";
 import { createNotifier } from "./lib/notifications.js";
 import { executeCustomBackend, getCustomBackendCapabilities } from "./lib/custom-backend.js";
 import {
@@ -16780,12 +16781,14 @@ function snapshotConfiguration(s = getSettings()) {
 }
 
 async function saveConfigurationAsNow() {
-    const name = (await qigInput("Configuration name:", { okButton: "Save" }) || "").trim();
+    const activeId = getActiveConfigurationId();
+    const defaultValue = getConfigurationSaveDefaultName(configurations, { activeId, provider: getSettings()?.provider });
+    const name = (await qigInput("Configuration name:", { okButton: "Save", defaultValue, selectText: true }) || "").trim();
     if (!name) return;
     ensureFilterPoolsState();
     const s = getSettings();
-    const existingIndex = configurations.findIndex(entry => entry?.name === name && entry?.provider === s.provider);
-    if (existingIndex >= 0 && !await qigConfirm(`Overwrite "${name}"?`, { okButton: "Overwrite" })) return;
+    const { existingIndex, needsConfirm } = resolveConfigurationSave(configurations, { name, activeId, provider: s.provider });
+    if (needsConfirm && !await qigConfirm(`Overwrite "${name}"?`, { okButton: "Overwrite" })) return;
     const record = { id: existingIndex >= 0 ? configurations[existingIndex].id : generateUUID(), name, ...snapshotConfiguration(s) };
     const nextStore = existingIndex >= 0
         ? configurations.map((entry, index) => (index === existingIndex ? record : entry))
