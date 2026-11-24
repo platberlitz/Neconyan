@@ -9,6 +9,7 @@ import { getStringHash } from '../../macro-primitives.js';
 import { getPlotCompassIdentity } from './companion/plot-compass-context.js';
 import { setPlotCompassObjectives } from './companion/companion-shared.js';
 import { buildPlotCompassControls, readPlotCompassControls } from './companion/plot-compass-controls.js';
+import { planMissingPlotCompassScripts } from './companion/plot-compass-regex-migration.js';
 import { activateSendButtons, CLIENT_VERSION, chat, getChatGeneration, getCurrentChatId, getRequestHeaders, is_send_press, normalizeContentText, saveChatDebounced, saveSettings, saveSettingsDebounced, substituteParams } from '../../../script.js';
 import { getCurrentUserHandle } from '../../user.js';
 import { eventSource, event_types } from '../../events.js';
@@ -571,6 +572,7 @@ async function finishAgentLibraryInitialization() {
     noteUpdate(latestBundledAgentMigration.removedCount, 'duplicate built-in agent removed', 'duplicate built-in agents removed');
 
     await migrateBundledRegexScriptsToSavedAgents();
+    noteUpdate(await migratePlotCompassRegexScriptsToSavedAgents(), 'Plot Compass tracker scripts added', 'Plot Compass tracker scripts added');
     noteUpdate(await migrateCyoaChoiceRegexCleanupToSavedAgents(), 'CYOA choice regex rule updated', 'CYOA choice regex rules updated');
     noteUpdate(await migrateRetiredRegexFindPatternsToSavedAgents(), 'agent regex rule updated to read more replies', 'agent regex rules updated to read more replies');
     noteUpdate(await migrateRetiredBundledPromptsToSavedAgents(), 'built-in agent prompt updated', 'built-in agent prompts updated');
@@ -2501,6 +2503,25 @@ async function migrateBundledRegexScriptsToSavedAgents() {
         agent.sourceTemplateId = agent.sourceTemplateId || template.id;
         await saveAgent(agent);
     }
+}
+
+async function migratePlotCompassRegexScriptsToSavedAgents() {
+    let migratedCount = 0;
+
+    for (const agent of getAgents().map(agent => structuredClone(agent))) {
+        const template = findTemplateForAgent(agent);
+        const missing = planMissingPlotCompassScripts(agent, template);
+        if (missing.length === 0) {
+            continue;
+        }
+
+        agent.regexScripts = [...getAgentRegexScripts(agent), ...missing];
+        agent.sourceTemplateId = agent.sourceTemplateId || template.id;
+        await saveAgent(agent);
+        migratedCount++;
+    }
+
+    return migratedCount;
 }
 
 function hasCyoaChoiceEmptyRowCleanup(agent) {
