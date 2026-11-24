@@ -16,6 +16,7 @@
 - When the page reloads itself for an update, it tells you once instead of just quietly doing it.
 - The **Relationship Tracker** card reads left to right on a phone again, whichever theme you use. Its status moves to a second line instead of squashing the name into a column of single letters.
 - **Memory Shard** follows your **Regex Agent Themes** now, with live preview and per-tracker overrides, and switches back to the stock look without touching saved chats.
+- The **Companions** panel opens without freezing the app for a few seconds when you run a lot of themed companions, and its buttons respond straight away.
 
 ### Merged Staging PRs
 - PR #776 (2026-11-20) `fix(settings): keep theme filters in view when pressed`

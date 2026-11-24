@@ -8,7 +8,7 @@ const panelSource = read('../public/scripts/extensions/in-chat-agents/companion/
 const panelDeclarations = parse(panelSource, { ecmaVersion: 'latest', sourceType: 'module' }).body
     .map(node => node.declaration ?? node)
     .filter(node => node.type !== 'ImportDeclaration' && (node.type === 'VariableDeclaration'
-        || ['renderPanel', 'applyPanelSearch', 'applyPanelReorder', 'setupPanelSortable', 'refreshCompanionPanel', 'observePanelJumpSize', 'syncPanelJumpButtons', 'schedulePanelJumpSync'].includes(node.id?.name)))
+        || ['renderPanel', 'applyPanelSearch', 'applyPanelReorder', 'setupPanelSortable', 'armPanelSortable', 'refreshCompanionPanel', 'observePanelJumpSize', 'syncPanelJumpButtons', 'schedulePanelJumpSync'].includes(node.id?.name)))
     .map(node => panelSource.slice(node.start, node.end)).join('\n');
 
 for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 }]) {
@@ -52,7 +52,7 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
                     window.savedOrder = ids;
                     return true;
                 };
-                window.buildPanelHtml = () => `<div class="ica--tpanel-body">${window.savedOrder.map(id => `
+                window.buildPanelHtml = () => `<div class="ica--tpanel-body" id="ica--tpanel-results">${window.savedOrder.map(id => `
                     <section class="ica--tpanel-agent" data-agent-id="${id}">
                         <button class="ica--cdash-action ica--tpanel-drag-handle" aria-label="Move ${id}">Move ${id}</button>
                         <div class="test-content">${window.resultText ?? 'Saved result'}</div>
@@ -90,6 +90,43 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
             await expect(page.locator('.ui-sortable-helper')).toHaveCount(1);
             return release;
         }
+
+        test('creates the sortable only when a grip is pressed', async ({ page }) => {
+            const hasSortable = () => page.evaluate(() => window.$('#ica--tracker-panel .ica--tpanel-body').sortable('instance') !== undefined);
+            expect(await hasSortable()).toBe(false);
+            await page.evaluate(() => renderPanel());
+            expect(await hasSortable()).toBe(false);
+            const release = await startDrag(page);
+            expect(await hasSortable()).toBe(true);
+            await release();
+            await expect.poll(() => page.evaluate(() => window.saveCalls)).toEqual([['b', 'a', 'c']]);
+        });
+
+        test('redraws only the sections whose markup changed', async ({ page }) => {
+            const kept = await page.evaluate(() => {
+                const before = [...window.document.querySelectorAll('.ica--tpanel-agent')];
+                const body = window.document.querySelector('.ica--tpanel-body');
+                window.buildPanelHtml = (build => () => build().replace(
+                    /(data-agent-id="b">[\s\S]*?<div class="test-content">)Saved result/,
+                    '$1Changed result',
+                ))(window.buildPanelHtml);
+                renderPanel();
+                const after = [...window.document.querySelectorAll('.ica--tpanel-agent')];
+                return {
+                    body: window.document.querySelector('.ica--tpanel-body') === body,
+                    sections: after.map((node, index) => node === before[index]),
+                    text: after.map(node => node.querySelector('.test-content').textContent),
+                };
+            });
+            expect(kept).toEqual({
+                body: true,
+                sections: [true, false, true],
+                text: ['Saved result', 'Changed result', 'Saved result'],
+            });
+            const release = await startDrag(page, 'b', 'a');
+            await release();
+            await expect.poll(() => page.evaluate(() => window.saveCalls)).toEqual([['b', 'a', 'c']]);
+        });
 
         test('keeps the dropped order after saving and rendering again', async ({ page }) => {
             const release = await startDrag(page);

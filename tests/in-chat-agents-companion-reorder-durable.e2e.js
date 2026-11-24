@@ -61,13 +61,19 @@ for (const phone of [true, false]) {
         await expect(panel.locator('.ui-sortable-helper')).toHaveCount(1);
         await release();
         await expect.poll(order).toEqual(['reorder-b', 'reorder-a', 'reorder-c']);
-        // The panel renders again only after the complete batch save, including
-        // its recovery-record cleanup, has finished.
-        await expect.poll(() => draggedHandle.evaluate(node => node.isConnected)).toBe(false);
-        await page.waitForFunction(async () => {
+        // The batch save keeps a restore point until every file is written, then deletes it.
+        await expect.poll(() => page.evaluate(async () => {
             const store = await import('/scripts/extensions/in-chat-agents/agent-store.js');
-            return store.getAgentById('reorder-b').injection.order < store.getAgentById('reorder-a').injection.order;
+            return store.getAgentById('reorder-b').injection.order < store.getAgentById('reorder-a').injection.order
+                && !store.getAgentSetupPresets().some(preset => preset.recoveryFor);
+        })).toBe(true);
+        // Once the save is done, a redraw finds the sections already in the saved
+        // order and keeps them, the dragged one included.
+        await page.evaluate(async () => {
+            await (await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js')).refreshCompanionPanel();
         });
+        await expect.poll(order).toEqual(['reorder-b', 'reorder-a', 'reorder-c']);
+        expect(await draggedHandle.evaluate(node => node.isConnected)).toBe(true);
         await page.reload({ waitUntil: 'domcontentloaded' });
         await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'));
         await page.waitForFunction(async () => (await import('/scripts/extensions/in-chat-agents/agent-store.js')).areAgentsLoaded());

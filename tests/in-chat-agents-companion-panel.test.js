@@ -142,7 +142,7 @@ describe('companion tracker panel', () => {
         }));
 
         await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/companion/view-state.js', () => ({
-            replaceCompanionView: jest.fn((root, html) => root.html(html)),
+            patchCompanionView: jest.fn((root, html) => root.html(html)),
             runCompanionViewAction: jest.fn((button, action) => action()),
         }));
 
