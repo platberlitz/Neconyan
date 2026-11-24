@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 import { isolateSettingsSaves, trackNavigationErrors } from './chat-scroll-regression-helpers.js';
 import { searchAgentList, searchAgentTemplates } from './in-chat-agents-e2e-helpers.js';
+import { composeCatalogueRevision } from '../public/scripts/extensions/in-chat-agents/library-startup.js';
 
 test.use({ serviceWorkers: 'block' });
 test.setTimeout(180000);
@@ -159,7 +160,7 @@ for (const width of [1280, 393]) {
                 const { revision } = JSON.parse(readFileSync(new URL('../public/scripts/extensions/in-chat-agents/templates/revision.json', import.meta.url)));
                 await isolateSettingsSaves(page, settings => {
                     openOnManage(settings);
-                    (settings.accountStorage ??= {})['ica--catalogue-revision'] = revision;
+                    (settings.accountStorage ??= {})['ica--catalogue-revision'] = composeCatalogueRevision(revision);
                 });
                 let catalogueRequests = 0;
                 await page.route(/\/in-chat-agents\/templates\/index\.json(?:\?|$)/, route => {
