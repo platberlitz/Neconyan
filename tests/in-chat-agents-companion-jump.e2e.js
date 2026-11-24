@@ -23,7 +23,7 @@ for (const width of [393, 1280]) {
             await page.evaluate(async ({ prefix, note }) => {
                 const store = await import('/scripts/extensions/in-chat-agents/agent-store.js');
                 const results = {};
-                for (const [index, name] of ['Harbour', 'Lantern', 'Orchard', 'Belfry', 'Compass'].entries()) {
+                for (const [index, name] of ['Harbour', 'Lantern', 'Orchard', 'Belfry', 'Compass', 'Quarry', 'Meadow', 'Signal'].entries()) {
                     const id = `${prefix}${index}`;
                     await store.saveAgent({ id, name, enabled: true, execution: 'companion', category: 'companion', injection: { order: index * 10 }, companion: { displayMode: 'panel' } });
                     results[id] = { status: 'done', agentName: name, content: note };
@@ -60,6 +60,15 @@ for (const width of [393, 1280]) {
                 };
             });
 
+            // Cards far below the fold are left unpainted until they scroll near, so a busy panel opens without freezing.
+            const skipped = () => panel.evaluate(element => {
+                // A skipped card still reports itself visible; its contents are what go unpainted.
+                const painted = card => card.firstElementChild.checkVisibility({ contentVisibilityAuto: true });
+                const cards = [...element.querySelectorAll('.ica--tpanel-agent:not(.displayNone)')];
+                return { first: painted(cards[0]), last: painted(cards.at(-1)) };
+            });
+            await expect.poll(skipped).toEqual({ first: true, last: false });
+
             const start = await measure();
             expect(start.maxScroll).toBeGreaterThan(200);
             expect(start.overflowX).toBe(false);
@@ -73,7 +82,12 @@ for (const width of [393, 1280]) {
             }
 
             await down.click();
-            await expect.poll(async () => (await measure()).scrollTop).toBeGreaterThanOrEqual(start.maxScroll - 1);
+            // Unpainted cards only estimate their height, so the panel grows as they appear; it must still end at the real bottom.
+            await expect.poll(async () => {
+                const { scrollTop, maxScroll } = await measure();
+                return maxScroll - scrollTop;
+            }).toBeLessThanOrEqual(1);
+            expect((await skipped()).last).toBe(true);
             await expect(down).toHaveAttribute('aria-disabled', 'true');
             await expect(up).not.toHaveAttribute('aria-disabled', 'true');
             const end = await measure();

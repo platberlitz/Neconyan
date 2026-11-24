@@ -1278,6 +1278,7 @@ export function buildPanelHtml() {
 const PANEL_JUMP_EDGE_SLACK = 4;
 let panelJumpFrame = 0;
 let panelJumpResizeObserver = null;
+let stopPanelBottomFollow = null;
 
 function shouldReducePanelMotion() {
     return Boolean(document.body?.classList?.contains('reduced-motion')
@@ -1332,14 +1333,60 @@ function observePanelJumpSize(panel) {
 function jumpPanel(direction) {
     const panel = document.getElementById?.('ica--tracker-panel');
     if (!panel) return;
-    const top = direction === 'top' ? 0 : panel.scrollHeight;
+    stopPanelBottomFollow?.();
     const behavior = shouldReducePanelMotion() ? 'auto' : 'smooth';
-    if (typeof panel.scrollTo === 'function') {
-        panel.scrollTo({ top, behavior });
+    if (direction !== 'top' && typeof globalThis.requestAnimationFrame === 'function') {
+        followPanelBottom(panel, behavior === 'smooth');
+    } else if (typeof panel.scrollTo === 'function') {
+        panel.scrollTo({ top: direction === 'top' ? 0 : panel.scrollHeight, behavior });
     } else {
-        panel.scrollTop = top;
+        panel.scrollTop = direction === 'top' ? 0 : panel.scrollHeight;
     }
     schedulePanelJumpSync();
+}
+
+// Cards that have not drawn yet only estimate their height, so the bottom moves away as the
+// last ones appear, and a native smooth scroll stops short at the bottom it saw when it began.
+// Aim at the current bottom every frame instead, until it holds still or the reader takes over.
+function followPanelBottom(panel, smooth) {
+    const controller = new AbortController();
+    let frame = 0;
+    stopPanelBottomFollow = () => {
+        globalThis.cancelAnimationFrame?.(frame);
+        controller.abort();
+        stopPanelBottomFollow = null;
+    };
+    for (const type of ['wheel', 'touchstart', 'pointerdown', 'keydown']) {
+        panel.addEventListener(type, () => stopPanelBottomFollow?.(), { passive: true, signal: controller.signal });
+    }
+    let started = 0;
+    let lastTime = 0;
+    let lastHeight = -1;
+    let settled = 0;
+    const step = time => {
+        if (controller.signal.aborted) return;
+        started ||= time;
+        const elapsed = lastTime ? Math.min(time - lastTime, 100) : 16;
+        lastTime = time;
+        if (!panelOpen || !panel.isConnected || time - started > 4000) {
+            stopPanelBottomFollow?.();
+            return;
+        }
+        const remaining = panel.scrollHeight - panel.clientHeight - panel.scrollTop;
+        // Newly reached cards draw a frame or two after the scroll, so the bottom has to stay put a while.
+        settled = remaining <= 1 && panel.scrollHeight === lastHeight ? settled + 1 : 0;
+        lastHeight = panel.scrollHeight;
+        if (settled >= 6) {
+            stopPanelBottomFollow?.();
+            return;
+        }
+        if (remaining > 0) {
+            const distance = smooth ? Math.max(remaining * (1 - Math.pow(0.8, elapsed / 16)), Math.min(remaining, 2)) : remaining;
+            panel.scrollTop += distance;
+        }
+        frame = globalThis.requestAnimationFrame(step);
+    };
+    frame = globalThis.requestAnimationFrame(step);
 }
 
 /** Filter existing sections so private drafts and expanded notes survive each keystroke. */

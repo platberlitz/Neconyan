@@ -1761,6 +1761,12 @@ body.neconyan-companion-resizing {
     border-color: color-mix(in srgb, var(--SmartThemeBorderColor, #555) 48%, transparent);
     background: transparent;
     background: color-mix(in srgb, var(--SmartThemeBlurTintColor, #222) 36%, transparent);
+    /* The panel scroller paints every card, off-screen ones included, and each Catline icon
+       costs a sprite layout to paint, so opening a busy chat's panel froze for most of a second.
+       Off-screen cards skip style, layout and paint until they scroll near; auto keeps the size
+       a card last drew at so the scrollbar stays steady. */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 220px;
 }
 
 .ica--tpanel-agent[data-hidden="true"] {

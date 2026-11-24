@@ -311,6 +311,12 @@ describe('agent workbench state', () => {
             .toContain('<strong id="ica--run-status" role="status">Loading your agents...</strong>');
     });
 
+    test('companion panel cards skip painting while far off-screen', () => {
+        const rule = styleSource.match(/^\.ica--tpanel-agent \{[^}]*\}/m)?.[0] ?? '';
+        expect(rule).toContain('content-visibility: auto;');
+        expect(rule).toMatch(/contain-intrinsic-size: auto \d+px;/);
+    });
+
     test('the master switch persists off even when recovery blocks Agent execution', () => {
         const settings = { enabled: true };
         const messages = [];
