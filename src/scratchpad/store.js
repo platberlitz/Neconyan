@@ -11,6 +11,7 @@ import { hasPendingImages, imagePart, imageChangeHash, normaliseStoredImages } f
 import { normaliseStoredWebSearch } from './web-search-record.js';
 import { normaliseSummary } from './summary.js';
 import { normaliseStoredWebPages } from './web-pages.js';
+import { normaliseStoredSourceLookup } from './source-research.js';
 import { normalisePresetTargets } from '../../public/scripts/scratchpad/preset-fields.js';
 import { normaliseAttachments } from '../../public/scripts/scratchpad/attachment-data.js';
 import { MAX_REPLY_SWIPES, replySwipes, selectReplySwipe } from '../../public/scripts/scratchpad/swipes.js';
@@ -173,7 +174,7 @@ export function defaultSettings() {
         depth: DEFAULT_DEPTH,
         picked: [],
         notes: [],
-        include: { card: true, persona: true, authorsNote: true, lore: true, preset: false, hidden: false, agents: false, regex: false, cssSnippets: false, dialogueColors: false, mewmory: false, problems: false, appEvidence: false, lastPrompt: false },
+        include: { card: true, persona: true, authorsNote: true, lore: true, preset: false, hidden: false, agents: false, regex: false, cssSnippets: false, dialogueColors: false, mewmory: false, problems: false, appEvidence: false, appSource: false, lastPrompt: false },
         loreOverrides: {},
         connection: { kind: 'current' },
         assistantConnections: {},
@@ -359,6 +360,8 @@ function normaliseMessage(input, { allowInternalKeys = false, allowSwipes = true
             if (webSearch) message.webSearch = webSearch;
             const webPages = normaliseStoredWebPages(input.webPages);
             if (webPages) message.webPages = webPages;
+            const sourceLookup = normaliseStoredSourceLookup(input.sourceLookup);
+            if (sourceLookup) message.sourceLookup = sourceLookup;
             if (Array.isArray(input.targets)) message.targets = input.targets.filter(target => target && validRoleplayAvatar(target.avatar)
                 && typeof target.name === 'string' && target.name.trim() && target.name.length <= 200).slice(0, 200).map(target => ({ avatar: target.avatar, name: target.name }));
             if (input.imageNames && typeof input.imageNames.user === 'string') message.imageNames = { user: input.imageNames.user.slice(0, 100), character: boundedString(input.imageNames.character, 200) };
@@ -817,6 +820,7 @@ export function branchSession(bucket, sessionId, messageId) {
             if (source.webSearch) copy.webSearch = structuredClone(source.webSearch);
             else delete copy.webSearch;
             if (source.webPages) copy.webPages = structuredClone(source.webPages);
+            if (source.sourceLookup) copy.sourceLookup = structuredClone(source.sourceLookup);
         });
     }
     return { session, draft: message.role === 'user' ? message.text : '' };
