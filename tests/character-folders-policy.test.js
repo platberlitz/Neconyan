@@ -35,9 +35,14 @@ describe('AI sort planning and error messages', () => {
 
     test.each([
         [{ code: 'settings_conflict' }, /reload/i, true],
-        [{ code: 'active_settings_ack_required' }, /save your settings/i, true],
-        [{ code: 'settings_save_failed' }, /save your settings/i, true],
-        [new Error('Save the active connection settings before generating a reply.'), /in Connections/, true],
+        [{ code: 'active_settings_ack_required' }, /save your settings/i, true, { settings: true }],
+        [{ code: 'settings_save_failed' }, /save your settings/i, true, { settings: true }],
+        [new Error('Save the active connection settings before generating a reply.'), /in Connections/, true, { settings: true }],
+        [new SyntaxError('Unexpected token < in JSON at position 0'), /could not be read/, false],
+        [new Error('Unexpected end of JSON input'), /could not be read/, false],
+        [new Error('The provider sent invalid JSON.'), /could not be read/, false],
+        [{ code: 'invalid_model_reply', message: 'Save the active connection settings before generating a reply.' }, /could not be read/, false],
+        [{ code: 'empty_model_reply', message: 'Save the active connection settings before generating a reply.' }, /empty reply/, false, { empty: true }],
         [{ code: 'no_connection' }, /Connect to a model/, true],
         [{ message: 'The active provider does not have a saved API key.' }, /Check your API key/, true],
         [{ status: 401 }, /Check your API key/, true],

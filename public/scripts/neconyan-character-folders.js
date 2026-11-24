@@ -43,6 +43,22 @@ import {
 const ROOT_ID = 'neconyan-folder-tabs';
 const RAIL_ID = 'neconyan-folder-tabs-rail';
 const ALL_TAB_ID = '';
+const AI_SORT_SETTINGS_RETRIES = 2;
+const AI_SORT_SETTINGS_RETRY_MS = 600;
+
+/** Resolves after `ms`, or as soon as the signal aborts. */
+function waitUnlessAborted(ms, signal) {
+    return new Promise(resolve => {
+        if (signal.aborted) return resolve();
+        const timer = setTimeout(done, ms);
+        function done() {
+            clearTimeout(timer);
+            signal.removeEventListener('abort', done);
+            resolve();
+        }
+        signal.addEventListener('abort', done, { once: true });
+    });
+}
 
 let initialized = false;
 let root = null;
@@ -758,6 +774,7 @@ async function runAiSort({ prompt, job, status, results, runButton, run, setCont
     let consecutiveUnreadable = 0;
     let consecutiveEmpty = 0;
     let consecutiveFailed = 0;
+    let settingsRetries = 0;
 
     try {
         for (let index = 0; index < batches.length; index++) {
@@ -787,6 +804,7 @@ async function runAiSort({ prompt, job, status, results, runButton, run, setCont
                 consecutiveUnreadable = 0;
                 consecutiveEmpty = 0;
                 consecutiveFailed = 0;
+                settingsRetries = 0;
                 for (const item of parsed) {
                     const character = batchItems[item.index];
                     suggestions.push({ avatar: character.avatar, name: character.name, folder: item.folder, isNew: !folders.includes(item.folder) });
@@ -795,10 +813,20 @@ async function runAiSort({ prompt, job, status, results, runButton, run, setCont
                 if (controller.signal.aborted) break;
                 console.warn('[Character folders] AI sort batch failed', error);
                 const classification = classifyAiSortError(error);
+                // A settings save from another part of the page can still be landing between batches,
+                // so the proof that the connection is saved fails for a moment. Wait and ask again.
+                if (classification.settings && settingsRetries < AI_SORT_SETTINGS_RETRIES) {
+                    settingsRetries++;
+                    await waitUnlessAborted(AI_SORT_SETTINGS_RETRY_MS * settingsRetries, controller.signal);
+                    index--;
+                    continue;
+                }
                 if (classification.fatal) {
-                    stopReason = translate(classification.message);
+                    // Keep the model's own failure when the settings proof only failed after it.
+                    stopReason = classification.settings && batchError ? batchError : translate(classification.message);
                     break;
                 }
+                settingsRetries = 0;
                 batchError = translate(classification.message);
                 consecutiveEmpty = classification.empty ? consecutiveEmpty + 1 : 0;
                 consecutiveFailed = classification.failed ? consecutiveFailed + 1 : 0;
