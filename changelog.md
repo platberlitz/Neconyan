@@ -160,6 +160,7 @@
 - PR #940 (2026-11-24) `fix(dialogue-colors): paint new NPC gradients when the reply lands`
 - PR #941 (2026-11-24) `fix(in-chat-agents): restore Plot Compass card scripts on every account`
 - PR #942 (2026-11-24) `feat(quick-image-gen): prefill save with the selected configuration name`
+- PR #944 (2026-11-24) `feat(scratchpad): check neconyan source code when diagnosing bugs`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
