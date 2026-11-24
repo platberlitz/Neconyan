@@ -2717,6 +2717,595 @@ export const STOCK = [
         "promptOnly": false,
         "minDepth": null,
         "maxDepth": null
+    },
+    {
+        "templateId": "tpl-memory-shard-companion",
+        "scriptId": "memory-shard-strip-fences",
+        "scriptName": "Strip Outer Code Fence",
+        "family": "companion",
+        "source": "memory-shard-companion.json",
+        "findRegex": "/^\\s*```(?:markdown|md|text)?\\s*\\r?\\n([\\s\\S]*?)\\r?\\n```\\s*$/",
+        "groups": 1,
+        "flags": "",
+        "delimited": true,
+        "replaceString": "$1",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-memory-shard-companion",
+        "scriptId": "memory-shard-master-hero",
+        "scriptName": "Consolidated Shard Banner",
+        "family": "companion",
+        "source": "memory-shard-companion.json",
+        "findRegex": "/^[ \\t]*#[ \\t]+CONSOLIDATED MEMORY SHARD:[ \\t]*([^\\r\\n]+?)[ \\t]*$/gm",
+        "groups": 1,
+        "flags": "gm",
+        "delimited": true,
+        "replaceString": "<div class=\"ms-hero ms-hero-master\"><div class=\"ms-hero-row\"><span class=\"ms-hero-ico\"><i class=\"fa-solid fa-layer-group\"></i></span><div class=\"ms-hero-copy\"><span class=\"ms-hero-eyebrow\">Consolidated Chronicle</span><span class=\"ms-hero-title\">Master Memory Shard</span></div><span class=\"ms-hero-code\">$1</span></div></div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-memory-shard-companion",
+        "scriptId": "memory-shard-hero",
+        "scriptName": "Memory Shard Banner",
+        "family": "companion",
+        "source": "memory-shard-companion.json",
+        "findRegex": "/^[ \\t]*#[ \\t]+MEMORY SHARD:[ \\t]*([^\\r\\n]+?)[ \\t]*$/gm",
+        "groups": 1,
+        "flags": "gm",
+        "delimited": true,
+        "replaceString": "<div class=\"ms-hero\"><div class=\"ms-hero-row\"><span class=\"ms-hero-ico\"><i class=\"fa-solid fa-book-open\"></i></span><div class=\"ms-hero-copy\"><span class=\"ms-hero-eyebrow\">Story Chronicle</span><span class=\"ms-hero-title\">Memory Shard</span></div><span class=\"ms-hero-code\">$1</span></div></div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-memory-shard-companion",
+        "scriptId": "memory-shard-custom-hero",
+        "scriptName": "Custom Shard Banner",
+        "family": "companion",
+        "source": "memory-shard-companion.json",
+        "findRegex": "/^[ \\t]*#[ \\t]+(?!<)([^\\r\\n]+?)[ \\t]*$/gm",
+        "groups": 1,
+        "flags": "gm",
+        "delimited": true,
+        "replaceString": "<div class=\"ms-hero\"><div class=\"ms-hero-row\"><span class=\"ms-hero-ico\"><i class=\"fa-solid fa-book-open\"></i></span><div class=\"ms-hero-copy\"><span class=\"ms-hero-eyebrow\">Memory Shard</span><span class=\"ms-hero-title\">$1</span></div></div></div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-memory-shard-companion",
+        "scriptId": "memory-shard-sec-snapshot",
+        "scriptName": "Section: Current Snapshot",
+        "family": "companion",
+        "source": "memory-shard-companion.json",
+        "findRegex": "/^[ \\t]*##[ \\t]+(Current Snapshot|Current State)[ \\t]*$/gim",
+        "groups": 1,
+        "flags": "gim",
+        "delimited": true,
+        "replaceString": "<div class=\"ms-sec ms-sec-snapshot\"><span class=\"ms-ico\"><i class=\"fa-solid fa-compass\"></i></span><span class=\"ms-sec-title\">$1</span><span class=\"ms-sec-rule\"></span></div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-memory-shard-companion",
+        "scriptId": "memory-shard-sec-tone",
+        "scriptName": "Section: Tone & Atmosphere",
+        "family": "companion",
+        "source": "memory-shard-companion.json",
+        "findRegex": "/^[ \\t]*##[ \\t]+(Tone(?: & Atmosphere)?)[ \\t]*$/gim",
+        "groups": 1,
+        "flags": "gim",
+        "delimited": true,
+        "replaceString": "<div class=\"ms-sec ms-sec-tone\"><span class=\"ms-ico\"><i class=\"fa-solid fa-feather-pointed\"></i></span><span class=\"ms-sec-title\">$1</span><span class=\"ms-sec-rule\"></span></div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-memory-shard-companion",
+        "scriptId": "memory-shard-sec-chars",
+        "scriptName": "Section: Characters",
+        "family": "companion",
+        "source": "memory-shard-companion.json",
+        "findRegex": "/^[ \\t]*##[ \\t]+(Characters|Character Registry|Developments|States)[ \\t]*$/gim",
+        "groups": 1,
+        "flags": "gim",
+        "delimited": true,
+        "replaceString": "<div class=\"ms-sec ms-sec-chars\"><span class=\"ms-ico\"><i class=\"fa-solid fa-users\"></i></span><span class=\"ms-sec-title\">$1</span><span class=\"ms-sec-rule\"></span></div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-memory-shard-companion",
+        "scriptId": "memory-shard-sec-rels",
+        "scriptName": "Section: Relationships",
+        "family": "companion",
+        "source": "memory-shard-companion.json",
+        "findRegex": "/^[ \\t]*##[ \\t]+(Relationships)[ \\t]*$/gim",
+        "groups": 1,
+        "flags": "gim",
+        "delimited": true,
+        "replaceString": "<div class=\"ms-sec ms-sec-rels\"><span class=\"ms-ico\"><i class=\"fa-solid fa-heart-pulse\"></i></span><span class=\"ms-sec-title\">$1</span><span class=\"ms-sec-rule\"></span></div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-memory-shard-companion",
+        "scriptId": "memory-shard-sec-world",
+        "scriptName": "Section: World & Setting",
+        "family": "companion",
+        "source": "memory-shard-companion.json",
+        "findRegex": "/^[ \\t]*##[ \\t]+(World(?: & Setting| State)?)[ \\t]*$/gim",
+        "groups": 1,
+        "flags": "gim",
+        "delimited": true,
+        "replaceString": "<div class=\"ms-sec ms-sec-world\"><span class=\"ms-ico\"><i class=\"fa-solid fa-globe\"></i></span><span class=\"ms-sec-title\">$1</span><span class=\"ms-sec-rule\"></span></div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-memory-shard-companion",
+        "scriptId": "memory-shard-sec-events",
+        "scriptName": "Section: Story Events",
+        "family": "companion",
+        "source": "memory-shard-companion.json",
+        "findRegex": "/^[ \\t]*##[ \\t]+(Story Events|Events|Timeline)[ \\t]*$/gim",
+        "groups": 1,
+        "flags": "gim",
+        "delimited": true,
+        "replaceString": "<div class=\"ms-sec ms-sec-events\"><span class=\"ms-ico\"><i class=\"fa-solid fa-clock-rotate-left\"></i></span><span class=\"ms-sec-title\">$1</span><span class=\"ms-sec-rule\"></span></div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-memory-shard-companion",
+        "scriptId": "memory-shard-sec-scenes",
+        "scriptName": "Section: Key Scenes",
+        "family": "companion",
+        "source": "memory-shard-companion.json",
+        "findRegex": "/^[ \\t]*##[ \\t]+(Key Scenes|Scenes Expanded)[ \\t]*$/gim",
+        "groups": 1,
+        "flags": "gim",
+        "delimited": true,
+        "replaceString": "<div class=\"ms-sec ms-sec-scenes\"><span class=\"ms-ico\"><i class=\"fa-solid fa-clapperboard\"></i></span><span class=\"ms-sec-title\">$1</span><span class=\"ms-sec-rule\"></span></div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-memory-shard-companion",
+        "scriptId": "memory-shard-sec-quotes",
+        "scriptName": "Section: Memorable Quotes",
+        "family": "companion",
+        "source": "memory-shard-companion.json",
+        "findRegex": "/^[ \\t]*##[ \\t]+(Memorable Quotes(?: & Voices)?|Dialogue Keys|Voice Samples)[ \\t]*$/gim",
+        "groups": 1,
+        "flags": "gim",
+        "delimited": true,
+        "replaceString": "<div class=\"ms-sec ms-sec-quotes\"><span class=\"ms-ico\"><i class=\"fa-solid fa-quote-left\"></i></span><span class=\"ms-sec-title\">$1</span><span class=\"ms-sec-rule\"></span></div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-memory-shard-companion",
+        "scriptId": "memory-shard-sec-sensory",
+        "scriptName": "Section: Sensory Anchors",
+        "family": "companion",
+        "source": "memory-shard-companion.json",
+        "findRegex": "/^[ \\t]*##[ \\t]+(Sensory Anchors)[ \\t]*$/gim",
+        "groups": 1,
+        "flags": "gim",
+        "delimited": true,
+        "replaceString": "<div class=\"ms-sec ms-sec-sensory\"><span class=\"ms-ico\"><i class=\"fa-solid fa-eye\"></i></span><span class=\"ms-sec-title\">$1</span><span class=\"ms-sec-rule\"></span></div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-memory-shard-companion",
+        "scriptId": "memory-shard-sec-threads",
+        "scriptName": "Section: Callbacks & Threads",
+        "family": "companion",
+        "source": "memory-shard-companion.json",
+        "findRegex": "/^[ \\t]*##[ \\t]+(Callbacks(?: & Loose Threads)?|Loose Threads)[ \\t]*$/gim",
+        "groups": 1,
+        "flags": "gim",
+        "delimited": true,
+        "replaceString": "<div class=\"ms-sec ms-sec-threads\"><span class=\"ms-ico\"><i class=\"fa-solid fa-link\"></i></span><span class=\"ms-sec-title\">$1</span><span class=\"ms-sec-rule\"></span></div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-memory-shard-companion",
+        "scriptId": "memory-shard-sec-intimate",
+        "scriptName": "Section: Intimate Moments",
+        "family": "companion",
+        "source": "memory-shard-companion.json",
+        "findRegex": "/^[ \\t]*##[ \\t]+(Intimate Moments|NSFW Registry)[ \\t]*$/gim",
+        "groups": 1,
+        "flags": "gim",
+        "delimited": true,
+        "replaceString": "<div class=\"ms-sec ms-sec-intimate\"><span class=\"ms-ico\"><i class=\"fa-solid fa-fire\"></i></span><span class=\"ms-sec-title\">$1</span><span class=\"ms-sec-rule\"></span></div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-memory-shard-companion",
+        "scriptId": "memory-shard-sec-key",
+        "scriptName": "Section: Reference Key",
+        "family": "companion",
+        "source": "memory-shard-companion.json",
+        "findRegex": "/^[ \\t]*##[ \\t]+(Shard Reference Key)[ \\t]*$/gim",
+        "groups": 1,
+        "flags": "gim",
+        "delimited": true,
+        "replaceString": "<div class=\"ms-sec ms-sec-key\"><span class=\"ms-ico\"><i class=\"fa-solid fa-key\"></i></span><span class=\"ms-sec-title\">$1</span><span class=\"ms-sec-rule\"></span></div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-memory-shard-companion",
+        "scriptId": "memory-shard-sec-custom",
+        "scriptName": "Section: Custom Heading",
+        "family": "companion",
+        "source": "memory-shard-companion.json",
+        "findRegex": "/^[ \\t]*##[ \\t]+(?!<)([^\\r\\n]+?)[ \\t]*$/gm",
+        "groups": 1,
+        "flags": "gm",
+        "delimited": true,
+        "replaceString": "<div class=\"ms-sec ms-sec-custom\"><span class=\"ms-ico\"><i class=\"fa-solid fa-bookmark\"></i></span><span class=\"ms-sec-title\">$1</span><span class=\"ms-sec-rule\"></span></div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-memory-shard-companion",
+        "scriptId": "memory-shard-event-loc",
+        "scriptName": "Event Card (With Location)",
+        "family": "companion",
+        "source": "memory-shard-companion.json",
+        "findRegex": "/^[ \\t]*###[ \\t]+(\\d+)\\.[ \\t]+([^\\r\\n]+?)[ \\t]+\\(([^()\\r\\n]{1,64})\\)[ \\t]*$/gm",
+        "groups": 3,
+        "flags": "gm",
+        "delimited": true,
+        "replaceString": "<div class=\"ms-sub ms-ev\"><span class=\"ms-ev-num\">$1</span><span class=\"ms-ev-title\">$2</span><span class=\"ms-ev-loc\"><span class=\"ms-ico-sm\"><i class=\"fa-solid fa-location-dot\"></i></span>$3</span></div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-memory-shard-companion",
+        "scriptId": "memory-shard-event",
+        "scriptName": "Event Card",
+        "family": "companion",
+        "source": "memory-shard-companion.json",
+        "findRegex": "/^[ \\t]*###[ \\t]+(\\d+)\\.[ \\t]+([^\\r\\n]+?)[ \\t]*$/gm",
+        "groups": 2,
+        "flags": "gm",
+        "delimited": true,
+        "replaceString": "<div class=\"ms-sub ms-ev\"><span class=\"ms-ev-num\">$1</span><span class=\"ms-ev-title\">$2</span></div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-memory-shard-companion",
+        "scriptId": "memory-shard-subheading",
+        "scriptName": "Subcard Heading",
+        "family": "companion",
+        "source": "memory-shard-companion.json",
+        "findRegex": "/^[ \\t]*###[ \\t]+(?!<)([^\\r\\n]+?)[ \\t]*$/gm",
+        "groups": 1,
+        "flags": "gm",
+        "delimited": true,
+        "replaceString": "<div class=\"ms-sub\"><span class=\"ms-sub-dot\"></span><span class=\"ms-sub-title\">$1</span></div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-memory-shard-companion",
+        "scriptId": "memory-shard-tag-critical",
+        "scriptName": "Tag: Critical",
+        "family": "companion",
+        "source": "memory-shard-companion.json",
+        "findRegex": "/\\[Critical\\](?!\\()/gi",
+        "groups": 0,
+        "flags": "gi",
+        "delimited": true,
+        "replaceString": "<span class=\"ms-tag ms-tag-critical\">Critical</span>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-memory-shard-companion",
+        "scriptId": "memory-shard-tag-major",
+        "scriptName": "Tag: Major",
+        "family": "companion",
+        "source": "memory-shard-companion.json",
+        "findRegex": "/\\[Major\\](?!\\()/gi",
+        "groups": 0,
+        "flags": "gi",
+        "delimited": true,
+        "replaceString": "<span class=\"ms-tag ms-tag-major\">Major</span>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-memory-shard-companion",
+        "scriptId": "memory-shard-tag-moderate",
+        "scriptName": "Tag: Moderate",
+        "family": "companion",
+        "source": "memory-shard-companion.json",
+        "findRegex": "/\\[Moderate\\](?!\\()/gi",
+        "groups": 0,
+        "flags": "gi",
+        "delimited": true,
+        "replaceString": "<span class=\"ms-tag ms-tag-moderate\">Moderate</span>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-memory-shard-companion",
+        "scriptId": "memory-shard-tag-minor",
+        "scriptName": "Tag: Minor",
+        "family": "companion",
+        "source": "memory-shard-companion.json",
+        "findRegex": "/\\[(Minor|Trivial)\\](?!\\()/gi",
+        "groups": 1,
+        "flags": "gi",
+        "delimited": true,
+        "replaceString": "<span class=\"ms-tag ms-tag-minor\">$1</span>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-memory-shard-companion",
+        "scriptId": "memory-shard-tag-open",
+        "scriptName": "Tag: Open / Active",
+        "family": "companion",
+        "source": "memory-shard-companion.json",
+        "findRegex": "/\\[(Open|Unresolved|Active)\\](?!\\()/gi",
+        "groups": 1,
+        "flags": "gi",
+        "delimited": true,
+        "replaceString": "<span class=\"ms-tag ms-tag-open\">$1</span>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-memory-shard-companion",
+        "scriptId": "memory-shard-tag-planted",
+        "scriptName": "Tag: Planted / Pending",
+        "family": "companion",
+        "source": "memory-shard-companion.json",
+        "findRegex": "/\\[(Planted|Foreshadowed|Pending)\\](?!\\()/gi",
+        "groups": 1,
+        "flags": "gi",
+        "delimited": true,
+        "replaceString": "<span class=\"ms-tag ms-tag-planted\">$1</span>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-memory-shard-companion",
+        "scriptId": "memory-shard-tag-resolved",
+        "scriptName": "Tag: Resolved",
+        "family": "companion",
+        "source": "memory-shard-companion.json",
+        "findRegex": "/\\[(Resolved|Paid off|Closed)\\](?!\\()/gi",
+        "groups": 1,
+        "flags": "gi",
+        "delimited": true,
+        "replaceString": "<span class=\"ms-tag ms-tag-resolved\">$1</span>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-memory-shard-companion",
+        "scriptId": "memory-shard-rel-row",
+        "scriptName": "Relationship Row",
+        "family": "companion",
+        "source": "memory-shard-companion.json",
+        "findRegex": "/^([ \\t]*-[ \\t]+)(?:\\*\\*)?([^<>\\r\\n:|*]{1,42}?)(?:\\*\\*)?[ \\t]*(?:->|→)[ \\t]*(?:\\*\\*)?([^<>\\r\\n:()|*]{1,42}?)(?:\\*\\*)?(?:[ \\t]*\\(([^()\\r\\n]{1,48})\\))?(?::\\*\\*|\\*\\*:|:)[ \\t]+([^\\r\\n]+)$/gm",
+        "groups": 5,
+        "flags": "gm",
+        "delimited": true,
+        "replaceString": "$1<span class=\"ms-rel-pair\"><span class=\"ms-rel-a\">$2</span><span class=\"ms-rel-arr\"><i class=\"fa-solid fa-arrow-right\"></i></span><span class=\"ms-rel-b\">$3</span></span><span class=\"ms-rel-note\">$4</span><span class=\"ms-rel-body\">$5</span>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-memory-shard-companion",
+        "scriptId": "memory-shard-thread-row",
+        "scriptName": "Tagged Thread Row",
+        "family": "companion",
+        "source": "memory-shard-companion.json",
+        "findRegex": "/^([ \\t]*-[ \\t]+)(<span class=\"ms-tag [^\"]+\">[^<]+<\\/span>)[ \\t]+(?:\\*\\*)?([^:\\r\\n*]{2,64}?)(?::\\*\\*|\\*\\*:|:)[ \\t]+([^\\r\\n]+)$/gm",
+        "groups": 4,
+        "flags": "gm",
+        "delimited": true,
+        "replaceString": "$1<span class=\"ms-thread-head\">$2<span class=\"ms-thread-title\">$3</span></span><span class=\"ms-thread-body\">$4</span>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-memory-shard-companion",
+        "scriptId": "memory-shard-kv-row",
+        "scriptName": "Labelled Field Row",
+        "family": "companion",
+        "source": "memory-shard-companion.json",
+        "findRegex": "/^([ \\t]*-[ \\t]+)(?:\\*\\*)?([A-Za-z][A-Za-z0-9 &/'-]{1,26})(?::\\*\\*|\\*\\*:|:)[ \\t]+([^\\r\\n]+)$/gm",
+        "groups": 3,
+        "flags": "gm",
+        "delimited": true,
+        "replaceString": "$1<span class=\"ms-kv-k\">$2</span> <span class=\"ms-kv-v\">$3</span>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-memory-shard-companion",
+        "scriptId": "memory-shard-styles",
+        "scriptName": "Memory Shard Theme Styles",
+        "family": "companion",
+        "source": "memory-shard-companion.json",
+        "findRegex": "/^(?=[\\s\\S]*\\S)/",
+        "groups": 0,
+        "flags": "",
+        "delimited": true,
+        "replaceString": "<style>.ms-hero{position:relative;overflow:hidden;border-radius:14px;padding:12px 14px;margin:0 0 14px;background:linear-gradient(135deg,color-mix(in srgb,var(--SmartThemeQuoteColor,#e09f6d) 14%,var(--SmartThemeBlurTintColor,rgba(24,22,28,0.82))) 0%,color-mix(in srgb,var(--SmartThemeQuoteColor,#e09f6d) 4%,var(--SmartThemeBlurTintColor,rgba(24,22,28,0.88))) 100%);border:1px solid color-mix(in srgb,var(--SmartThemeQuoteColor,#e09f6d) 32%,transparent);box-shadow:0 4px 14px color-mix(in srgb,var(--SmartThemeShadowColor,rgba(0,0,0,0.35)) 40%,transparent);box-sizing:border-box;max-width:100%;}.ms-hero::before{content:\"\";position:absolute;inset:0 auto 0 0;width:4px;background:var(--SmartThemeQuoteColor,#e09f6d);}.ms-hero-master{border-color:color-mix(in srgb,var(--SmartThemeQuoteColor,#e09f6d) 52%,transparent);background:linear-gradient(135deg,color-mix(in srgb,var(--SmartThemeQuoteColor,#e09f6d) 22%,var(--SmartThemeBlurTintColor,rgba(24,22,28,0.84))) 0%,color-mix(in srgb,var(--SmartThemeQuoteColor,#e09f6d) 7%,var(--SmartThemeBlurTintColor,rgba(24,22,28,0.9))) 100%);}.ms-hero-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-width:0;}.ms-hero-ico{width:34px;height:34px;flex:0 0 auto;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--SmartThemeQuoteColor,#e09f6d) 18%,transparent);border:1px solid color-mix(in srgb,var(--SmartThemeQuoteColor,#e09f6d) 34%,transparent);color:color-mix(in srgb,var(--SmartThemeQuoteColor,#e09f6d) 65%,var(--SmartThemeBodyColor,currentColor));font-size:0.95rem;}.ms-hero-copy{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1 1 140px;}.ms-hero-eyebrow{font-size:0.68rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:color-mix(in srgb,var(--SmartThemeQuoteColor,#e09f6d) 52%,var(--SmartThemeBodyColor,currentColor));opacity:0.9;line-height:1.2;}.ms-hero-title{font-family:var(--font-heading,var(--mainFontFamily,inherit));font-size:1.05rem;font-weight:700;color:var(--SmartThemeBodyColor,inherit);line-height:1.25;overflow-wrap:anywhere;}.ms-hero-code{flex:0 1 auto;max-width:100%;font-family:var(--monoFontFamily,ui-monospace,SFMono-Regular,Menlo,monospace);font-size:0.74rem;font-weight:700;letter-spacing:0.04em;padding:4px 9px;border-radius:999px;background:color-mix(in srgb,var(--SmartThemeQuoteColor,#e09f6d) 16%,var(--SmartThemeBlurTintColor,rgba(20,20,24,0.7)));border:1px solid color-mix(in srgb,var(--SmartThemeQuoteColor,#e09f6d) 36%,transparent);color:color-mix(in srgb,var(--SmartThemeQuoteColor,#e09f6d) 40%,var(--SmartThemeBodyColor,currentColor));overflow-wrap:anywhere;}.ms-sec{--ms-sec-accent:var(--SmartThemeQuoteColor,#e09f6d);display:flex;align-items:center;gap:8px;margin:16px 0 8px;min-width:0;max-width:100%;}.ms-sec-snapshot{--ms-sec-accent:var(--SmartThemeQuoteColor,#e09f6d);margin-top:4px;}.ms-sec-tone{--ms-sec-accent:color-mix(in srgb,#9b72d9 62%,var(--SmartThemeQuoteColor,#e09f6d));}.ms-sec-chars{--ms-sec-accent:color-mix(in srgb,#4d8fe0 62%,var(--SmartThemeQuoteColor,#e09f6d));}.ms-sec-rels{--ms-sec-accent:color-mix(in srgb,#de5b7d 65%,var(--SmartThemeQuoteColor,#e09f6d));}.ms-sec-world{--ms-sec-accent:color-mix(in srgb,#38a684 62%,var(--SmartThemeQuoteColor,#e09f6d));}.ms-sec-events{--ms-sec-accent:var(--SmartThemeQuoteColor,#e09f6d);}.ms-sec-scenes{--ms-sec-accent:color-mix(in srgb,#8d6ee0 62%,var(--SmartThemeQuoteColor,#e09f6d));}.ms-sec-quotes{--ms-sec-accent:color-mix(in srgb,#d99038 66%,var(--SmartThemeQuoteColor,#e09f6d));}.ms-sec-sensory{--ms-sec-accent:color-mix(in srgb,#3ba3b5 62%,var(--SmartThemeQuoteColor,#e09f6d));}.ms-sec-threads{--ms-sec-accent:color-mix(in srgb,#d67d38 64%,var(--SmartThemeQuoteColor,#e09f6d));}.ms-sec-intimate{--ms-sec-accent:color-mix(in srgb,#d44d72 70%,var(--SmartThemeQuoteColor,#e09f6d));}.ms-sec-key{--ms-sec-accent:color-mix(in srgb,var(--SmartThemeBodyColor,#999) 55%,var(--SmartThemeQuoteColor,#e09f6d));}.ms-ico{width:24px;height:24px;flex:0 0 auto;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;font-size:0.74rem;background:color-mix(in srgb,var(--ms-sec-accent) 16%,transparent);border:1px solid color-mix(in srgb,var(--ms-sec-accent) 30%,transparent);color:color-mix(in srgb,var(--ms-sec-accent) 52%,var(--SmartThemeBodyColor,currentColor));}.ms-sec-title{font-family:var(--font-heading,var(--mainFontFamily,inherit));font-size:0.86rem;font-weight:700;letter-spacing:0.02em;color:var(--SmartThemeBodyColor,inherit);line-height:1.25;overflow-wrap:anywhere;}.ms-sec-rule{flex:1 1 24px;height:1px;background:linear-gradient(90deg,color-mix(in srgb,var(--ms-sec-accent) 36%,transparent),transparent);}.ms-sec-snapshot + ul{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px 12px;list-style:none;margin:0 0 6px;padding:11px 12px;border-radius:12px;background:color-mix(in srgb,var(--SmartThemeQuoteColor,#e09f6d) 6%,var(--SmartThemeBlurTintColor,rgba(24,22,28,0.48)));border:1px solid color-mix(in srgb,var(--SmartThemeQuoteColor,#e09f6d) 24%,transparent);box-sizing:border-box;max-width:100%;}.ms-sec-snapshot + ul > li{margin:0;padding:6px 8px;border-radius:8px;background:color-mix(in srgb,var(--SmartThemeBodyColor,#fff) 4%,transparent);border:1px solid color-mix(in srgb,var(--SmartThemeBodyColor,#fff) 8%,transparent);display:flex;flex-direction:column;gap:2px;min-width:0;overflow-wrap:anywhere;}.ms-sec-snapshot + ul > li .ms-kv-k{font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:color-mix(in srgb,var(--SmartThemeQuoteColor,#e09f6d) 46%,var(--SmartThemeBodyColor,currentColor));}.ms-sec-snapshot + ul > li .ms-kv-k::after{content:none;}.ms-sec-snapshot + ul > li .ms-kv-v{font-size:0.88rem;line-height:1.4;color:var(--SmartThemeBodyColor,inherit);}.ms-sec:not(.ms-sec-snapshot) + ul,.ms-sec + ol{list-style:none;margin:0 0 8px;padding:4px 12px;border-radius:11px;background:color-mix(in srgb,var(--SmartThemeBlurTintColor,rgba(24,22,28,0.42)) 78%,transparent);border:1px solid color-mix(in srgb,var(--SmartThemeBodyColor,#fff) 11%,transparent);box-sizing:border-box;max-width:100%;}.ms-sec:not(.ms-sec-snapshot) + ul > li,.ms-sec + ol > li{margin:0;padding:7px 0;border-bottom:1px solid color-mix(in srgb,var(--SmartThemeBodyColor,#fff) 8%,transparent);line-height:1.48;overflow-wrap:anywhere;}.ms-sec:not(.ms-sec-snapshot) + ul > li:last-child,.ms-sec + ol > li:last-child{border-bottom:0;}.ms-sec-quotes + ul > li{padding:7px 10px;border-left:2.5px solid color-mix(in srgb,#d99038 55%,var(--SmartThemeQuoteColor,#e09f6d));margin:6px 0;border-bottom:0;border-radius:0 7px 7px 0;background:color-mix(in srgb,#d99038 6%,transparent);}.ms-sec + p{margin:0 0 8px;padding:10px 12px;border-radius:11px;background:color-mix(in srgb,var(--SmartThemeBlurTintColor,rgba(24,22,28,0.42)) 78%,transparent);border:1px solid color-mix(in srgb,var(--SmartThemeBodyColor,#fff) 11%,transparent);line-height:1.55;overflow-wrap:anywhere;box-sizing:border-box;max-width:100%;}.ms-sub{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;margin:10px 0 0;padding:8px 11px;border-radius:11px 11px 0 0;background:color-mix(in srgb,var(--SmartThemeQuoteColor,#e09f6d) 9%,var(--SmartThemeBlurTintColor,rgba(24,22,28,0.58)));border:1px solid color-mix(in srgb,var(--SmartThemeQuoteColor,#e09f6d) 22%,transparent);box-sizing:border-box;max-width:100%;}.ms-sub-dot{width:7px;height:7px;border-radius:999px;flex:0 0 auto;background:var(--SmartThemeQuoteColor,#e09f6d);box-shadow:0 0 0 3px color-mix(in srgb,var(--SmartThemeQuoteColor,#e09f6d) 18%,transparent);}.ms-sub-title{font-family:var(--font-heading,var(--mainFontFamily,inherit));font-size:0.9rem;font-weight:700;color:var(--SmartThemeBodyColor,inherit);line-height:1.3;overflow-wrap:anywhere;}.ms-ev-num{min-width:22px;height:22px;padding:0 6px;border-radius:999px;flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;font-size:0.72rem;font-weight:700;background:color-mix(in srgb,var(--SmartThemeQuoteColor,#e09f6d) 20%,transparent);border:1px solid color-mix(in srgb,var(--SmartThemeQuoteColor,#e09f6d) 40%,transparent);color:color-mix(in srgb,var(--SmartThemeQuoteColor,#e09f6d) 45%,var(--SmartThemeBodyColor,currentColor));}.ms-ev-title{font-family:var(--font-heading,var(--mainFontFamily,inherit));font-size:0.89rem;font-weight:700;color:var(--SmartThemeBodyColor,inherit);line-height:1.32;flex:1 1 160px;min-width:0;display:inline-flex;align-items:center;flex-wrap:wrap;gap:6px;overflow-wrap:anywhere;}.ms-ev-loc{display:inline-flex;align-items:center;gap:4px;font-size:0.74rem;font-weight:600;padding:2px 8px;border-radius:999px;background:color-mix(in srgb,var(--SmartThemeBodyColor,#fff) 7%,transparent);border:1px solid color-mix(in srgb,var(--SmartThemeBodyColor,#fff) 14%,transparent);color:var(--SmartThemeBodyColor,inherit);opacity:0.86;max-width:100%;overflow-wrap:anywhere;}.ms-ico-sm{display:inline-flex;align-items:center;font-size:0.68rem;color:color-mix(in srgb,var(--SmartThemeQuoteColor,#e09f6d) 55%,var(--SmartThemeBodyColor,currentColor));}.ms-sub + ul,.ms-sub + ol{list-style:none;margin:0 0 8px;padding:6px 12px 8px;border-radius:0 0 11px 11px;background:color-mix(in srgb,var(--SmartThemeBlurTintColor,rgba(24,22,28,0.4)) 78%,transparent);border:1px solid color-mix(in srgb,var(--SmartThemeQuoteColor,#e09f6d) 18%,transparent);border-top:0;box-sizing:border-box;max-width:100%;}.ms-sub + ul > li,.ms-sub + ol > li{margin:0;padding:4px 0;line-height:1.48;overflow-wrap:anywhere;}.ms-sub + p{margin:0 0 8px;padding:10px 12px;border-radius:0 0 11px 11px;background:color-mix(in srgb,var(--SmartThemeBlurTintColor,rgba(24,22,28,0.4)) 78%,transparent);border:1px solid color-mix(in srgb,var(--SmartThemeQuoteColor,#e09f6d) 18%,transparent);border-top:0;line-height:1.58;overflow-wrap:anywhere;box-sizing:border-box;max-width:100%;}.ms-sub + p:has(+ p){border-radius:0;border-bottom:0;margin-bottom:0;padding-bottom:4px;}.ms-sub + p + p{margin:0 0 8px;padding:4px 12px 10px;border-radius:0 0 11px 11px;background:color-mix(in srgb,var(--SmartThemeBlurTintColor,rgba(24,22,28,0.4)) 78%,transparent);border:1px solid color-mix(in srgb,var(--SmartThemeQuoteColor,#e09f6d) 18%,transparent);border-top:0;line-height:1.58;overflow-wrap:anywhere;box-sizing:border-box;max-width:100%;}.ms-kv-k{font-weight:700;color:color-mix(in srgb,var(--SmartThemeQuoteColor,#e09f6d) 36%,var(--SmartThemeBodyColor,currentColor));}.ms-kv-k::after{content:\":\";opacity:0.65;margin-right:4px;}.ms-kv-v{color:var(--SmartThemeBodyColor,inherit);}.ms-rel-pair{display:inline-flex;align-items:center;flex-wrap:wrap;gap:5px;font-weight:700;margin-right:6px;vertical-align:baseline;}.ms-rel-a,.ms-rel-b{color:var(--SmartThemeBodyColor,inherit);}.ms-rel-arr{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:999px;font-size:0.62rem;background:color-mix(in srgb,#de5b7d 16%,var(--SmartThemeBlurTintColor,rgba(20,20,24,0.5)));color:color-mix(in srgb,#de5b7d 45%,var(--SmartThemeBodyColor,currentColor));}.ms-rel-note{display:inline-block;font-size:0.72rem;font-weight:700;padding:1px 7px;margin-right:6px;border-radius:999px;background:color-mix(in srgb,var(--SmartThemeQuoteColor,#e09f6d) 14%,var(--SmartThemeBlurTintColor,rgba(20,20,24,0.5)));border:1px solid color-mix(in srgb,var(--SmartThemeQuoteColor,#e09f6d) 30%,transparent);color:color-mix(in srgb,var(--SmartThemeQuoteColor,#e09f6d) 36%,var(--SmartThemeBodyColor,currentColor));}.ms-rel-note:empty{display:none;}.ms-rel-body{display:block;margin-top:3px;color:var(--SmartThemeBodyColor,inherit);opacity:0.94;}.ms-thread-head{display:inline-flex;align-items:center;flex-wrap:wrap;gap:6px;margin-right:6px;}.ms-thread-title{font-weight:700;color:var(--SmartThemeBodyColor,inherit);}.ms-thread-body{display:block;margin-top:2px;color:var(--SmartThemeBodyColor,inherit);opacity:0.94;}.ms-tag{display:inline-flex;align-items:center;font-size:0.68rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;padding:2px 7px;border-radius:999px;line-height:1.25;vertical-align:middle;border:1px solid transparent;}.ms-tag-critical{background:color-mix(in srgb,#d94c64 16%,var(--SmartThemeBlurTintColor,rgba(24,20,24,0.6)));border-color:color-mix(in srgb,#d94c64 42%,transparent);color:color-mix(in srgb,#d94c64 36%,var(--SmartThemeBodyColor,currentColor));}.ms-tag-major{background:color-mix(in srgb,#d9822b 16%,var(--SmartThemeBlurTintColor,rgba(24,20,24,0.6)));border-color:color-mix(in srgb,#d9822b 42%,transparent);color:color-mix(in srgb,#d9822b 36%,var(--SmartThemeBodyColor,currentColor));}.ms-tag-moderate{background:color-mix(in srgb,#3f88d6 16%,var(--SmartThemeBlurTintColor,rgba(24,20,24,0.6)));border-color:color-mix(in srgb,#3f88d6 42%,transparent);color:color-mix(in srgb,#3f88d6 36%,var(--SmartThemeBodyColor,currentColor));}.ms-tag-minor{background:color-mix(in srgb,var(--SmartThemeBodyColor,#999) 10%,transparent);border-color:color-mix(in srgb,var(--SmartThemeBodyColor,#999) 24%,transparent);color:var(--SmartThemeBodyColor,inherit);opacity:0.86;}.ms-tag-open{background:color-mix(in srgb,#d6822d 16%,var(--SmartThemeBlurTintColor,rgba(24,20,24,0.6)));border-color:color-mix(in srgb,#d6822d 42%,transparent);color:color-mix(in srgb,#d6822d 36%,var(--SmartThemeBodyColor,currentColor));}.ms-tag-planted{background:color-mix(in srgb,#8c66db 16%,var(--SmartThemeBlurTintColor,rgba(24,20,24,0.6)));border-color:color-mix(in srgb,#8c66db 42%,transparent);color:color-mix(in srgb,#8c66db 36%,var(--SmartThemeBodyColor,currentColor));}.ms-tag-resolved{background:color-mix(in srgb,#2e9e6d 16%,var(--SmartThemeBlurTintColor,rgba(24,20,24,0.6)));border-color:color-mix(in srgb,#2e9e6d 42%,transparent);color:color-mix(in srgb,#2e9e6d 36%,var(--SmartThemeBodyColor,currentColor));}@media (max-width: 768px){.ms-hero{padding:10px 11px;}.ms-sec-snapshot + ul{grid-template-columns:1fr;padding:9px 10px;}.ms-sub{padding:7px 10px;}}@media (prefers-reduced-motion: reduce){.ms-hero,.ms-sec,.ms-sub,.ms-tag{transition:none;animation:none;}}</style>\n\n",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
     }
 ];
 

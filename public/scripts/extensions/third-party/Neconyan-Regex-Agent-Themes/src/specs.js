@@ -28,6 +28,7 @@ export const ARCHETYPES = Object.freeze({
     VISUAL_MAP: 'visual-map',
     VITALS: 'vitals',
     PLOT_COMPASS: 'plot-compass',
+    MEMORY_SHARD: 'memory-shard',
     BOLD: 'bold',
     CLEANUP: 'cleanup',
     PASSTHROUGH: 'passthrough',
@@ -481,6 +482,16 @@ for (const [templateId, key, archetype, entries] of [
     ['tpl-plot-compass-companion', 'plot-compass', ARCHETYPES.PLOT_COMPASS, [
         ['card', 1], ['direction', 1], ['where', 1], ['developments', 1], ['next', 1],
         ['choice', 2], ['bold', 1, true], ['italic', 1, true], ['tag-breaks', 0, true], ['line-breaks', 0, true],
+    ]],
+    ['tpl-memory-shard-companion', 'memory-shard', ARCHETYPES.MEMORY_SHARD, [
+        ['strip-fences', 1, true], ['master-hero', 1], ['hero', 1], ['custom-hero', 1],
+        ['sec-snapshot', 1], ['sec-tone', 1], ['sec-chars', 1], ['sec-rels', 1],
+        ['sec-world', 1], ['sec-events', 1], ['sec-scenes', 1], ['sec-quotes', 1],
+        ['sec-sensory', 1], ['sec-threads', 1], ['sec-intimate', 1], ['sec-key', 1],
+        ['sec-custom', 1], ['event-loc', 3], ['event', 2], ['subheading', 1],
+        ['tag-critical', 0], ['tag-major', 0], ['tag-moderate', 0], ['tag-minor', 1],
+        ['tag-open', 1], ['tag-planted', 1], ['tag-resolved', 1],
+        ['rel-row', 5], ['thread-row', 4], ['kv-row', 3], ['styles', 0],
     ]],
 ]) {
     for (const [suffix, groups, passthrough] of entries) {
@@ -1202,4 +1213,5 @@ export const PREVIEWABLE_ARCHETYPES = Object.freeze([
     ARCHETYPES.VITALS,
     ARCHETYPES.PLOT_COMPASS,
     ARCHETYPES.TERMINAL,
+    ARCHETYPES.MEMORY_SHARD,
 ]);

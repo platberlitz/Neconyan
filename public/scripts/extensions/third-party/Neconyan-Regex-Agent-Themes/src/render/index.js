@@ -11,6 +11,7 @@ import { renderChip, renderPanel, renderProfile, renderSlots, renderStatcard } f
 import { censusSection, windSlot } from './ethereality.js';
 import { renderBold, renderStream, renderTerminal, renderTranscript } from './companions.js';
 import { renderTrackerCompanion } from './tracker-companions.js';
+import { renderMemoryShard } from './memory-shard.js';
 
 const RENDERERS = Object.freeze({
     [ARCHETYPES.PANEL]: renderPanel,
@@ -26,6 +27,7 @@ const RENDERERS = Object.freeze({
     [ARCHETYPES.VISUAL_MAP]: renderTrackerCompanion,
     [ARCHETYPES.VITALS]: renderTrackerCompanion,
     [ARCHETYPES.PLOT_COMPASS]: renderTrackerCompanion,
+    [ARCHETYPES.MEMORY_SHARD]: renderMemoryShard,
     [ARCHETYPES.BOLD]: renderBold,
 });
 

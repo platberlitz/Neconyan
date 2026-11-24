@@ -2,31 +2,51 @@
 import { test, expect } from '@playwright/test';
 import { mkdir, readFile } from 'node:fs/promises';
 import { acknowledgeSettingsSave } from './chat-scroll-regression-helpers.js';
+import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+
+async function createCompanionContext(browser, baseURL, phone, { emulateIOS = false } = {}) {
+    const context = await browser.newContext({
+        baseURL,
+        ...(phone && emulateIOS
+            ? IPHONE_SAFARI_CONTEXT
+            : {
+                viewport: phone ? { width: 393, height: 852 } : { width: 1280, height: 900 },
+                ...(phone ? { isMobile: true, hasTouch: true } : {}),
+            }),
+        serviceWorkers: 'block',
+        reducedMotion: 'reduce',
+    });
+    if (phone && emulateIOS) await installIPhoneSafari(context, { standalone: false });
+    return context;
+}
+
+async function configureCompanionRoutes(page) {
+    await page.route('**/api/characters/all', route => route.fulfill({ json: [] }));
+    await page.route('**/api/settings/get', async route => {
+        const response = await route.fetch();
+        const data = await response.json();
+        const settings = JSON.parse(data.settings || await readFile(new URL('../default/content/settings.json', import.meta.url), 'utf8'));
+        settings.firstRun = false;
+        settings.extension_settings ||= {};
+        settings.extension_settings.disabledExtensions = [...new Set([...(settings.extension_settings.disabledExtensions || []), 'third-party/Neconyan-Time-Machine'])];
+        settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped', WelcomePage_PanelMode: 'full' };
+        await route.fulfill({ response, json: { ...data, settings: JSON.stringify(settings) } });
+    });
+    await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
+}
+
+async function applyPhoneStylesIfNeeded(page, phone) {
+    if (phone) await applyIOSOnlyCss(page);
+}
 
 for (const phone of [true, false]) {
     const deviceName = phone ? 'phone' : 'desktop';
     test(`tracker companion previews preserve their layout on ${deviceName}`, async ({ browser }, info) => {
         test.setTimeout(180000);
-        const context = await browser.newContext({
-            baseURL: info.project.use.baseURL,
-            viewport: phone ? { width: 393, height: 852 } : { width: 1280, height: 900 },
-            ...(phone ? { isMobile: true, hasTouch: true } : {}),
-            serviceWorkers: 'block', reducedMotion: 'reduce',
-        });
+        const context = await createCompanionContext(browser, info.project.use.baseURL, phone);
         try {
             const page = await context.newPage();
-            await page.route('**/api/characters/all', route => route.fulfill({ json: [] }));
-            await page.route('**/api/settings/get', async route => {
-                const response = await route.fetch();
-                const data = await response.json();
-                const settings = JSON.parse(data.settings || await readFile(new URL('../default/content/settings.json', import.meta.url), 'utf8'));
-                settings.firstRun = false;
-                settings.extension_settings ||= {};
-                settings.extension_settings.disabledExtensions = [...new Set([...(settings.extension_settings.disabledExtensions || []), 'third-party/Neconyan-Time-Machine'])];
-                settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped', WelcomePage_PanelMode: 'full' };
-                await route.fulfill({ response, json: { ...data, settings: JSON.stringify(settings) } });
-            });
-            await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
+            await configureCompanionRoutes(page);
             await page.goto('/');
             await page.waitForFunction(() => window.NeconyanShell && document.querySelector('#rat_drawer') && !document.querySelector('#preloader'));
             await page.evaluate(() => window.NeconyanShell.openIncludedTool('third-party/Neconyan-Regex-Agent-Themes'));
@@ -40,6 +60,7 @@ for (const phone of [true, false]) {
                 ['clothing', 'Clothing Tracker', 'clothing'],
                 ['plot-compass', 'Plot Compass', 'plot-compass'],
                 ['terminal', 'Terminal', 'level-up'],
+                ['memory-shard', 'Memory Shard', 'memory-shard'],
             ]) {
                 await expect(picker.locator(`option[value="${value}"]`)).toHaveText(label);
                 await picker.selectOption(value);
@@ -49,6 +70,8 @@ for (const phone of [true, false]) {
             await expect(page.locator('#rat_drawer [data-clothing-outfit]').first()).toBeVisible();
             await picker.selectOption('plot-compass');
             await expect(page.locator('#rat_drawer [data-pc-card="1"]').first()).toBeVisible();
+            await picker.selectOption('memory-shard');
+            await expect(page.locator('#rat_drawer [data-rat-arch="memory-shard"]').first()).toBeVisible();
 
             // Verify the installed Clothing Tracker and bundled Plot Compass template through the real formatter.
             await expect.poll(() => page.evaluate(async () => {
@@ -152,7 +175,7 @@ for (const phone of [true, false]) {
                     const { getTheme } = await import(`${base}themes/index.js`);
                     const host = document.querySelector('#tracker-captures');
                     host.textContent = '';
-                    for (const [archetype, label] of [['position', 'Position Tracker'], ['visual-map', 'Visual Map'], ['vitals', 'Vitals'], ['clothing', 'Clothing Tracker'], ['plot-compass', 'Plot Compass']]) {
+                    for (const [archetype, label] of [['position', 'Position Tracker'], ['visual-map', 'Visual Map'], ['vitals', 'Vitals'], ['clothing', 'Clothing Tracker'], ['plot-compass', 'Plot Compass'], ['memory-shard', 'Memory Shard']]) {
                         const section = document.createElement('section');
                         section.dataset.capture = archetype;
                         section.style.cssText = 'min-width:0;align-self:start';
@@ -249,13 +272,47 @@ for (const phone of [true, false]) {
                 expect(plotAppearance.options).toBe(3);
                 expect(plotAppearance.roseDrawn).toBe(true);
                 expect(plotAppearance.fits).toBe(true);
-                appearanceChecks.push({ fontSizes, inheritedInk, clothingAppearance, plotAppearance });
+                const memoryShardAppearance = await page.locator('[data-capture="memory-shard"] .mes_text').evaluate((root, selected) => {
+                    const heroSelector = selected ? `.custom-ratms-${selected}-hero` : '.custom-ms-hero';
+                    const secSelector = selected ? `.custom-ratms-${selected}-sec` : '.custom-ms-sec';
+                    const tagSelector = selected ? `.custom-ratms-${selected}-tag` : '.custom-ms-tag';
+                    const threadSelector = selected ? `.custom-ratms-${selected}-thread-head` : '.custom-ms-thread-head';
+                    const relSelector = selected ? `.custom-ratms-${selected}-rel-pair` : '.custom-ms-rel-pair';
+                    const hero = root.querySelector(heroSelector);
+                    const sections = [...root.querySelectorAll(secSelector)];
+                    const tags = [...root.querySelectorAll(tagSelector)];
+                    const threads = [...root.querySelectorAll(threadSelector)];
+                    const rels = [...root.querySelectorAll(relSelector)];
+                    const heroStyle = hero ? getComputedStyle(hero) : null;
+                    return {
+                        found: Boolean(hero),
+                        background: heroStyle?.backgroundImage !== 'none' ? heroStyle.backgroundImage : heroStyle?.backgroundColor,
+                        color: heroStyle?.color,
+                        sections: sections.length,
+                        tags: tags.length,
+                        threads: threads.length,
+                        rels: rels.length,
+                        rawTokens: /\[(?:CRITICAL|MAJOR|MODERATE|MINOR|OPEN|PLANTED|RESOLVED)\]/i.test(root.textContent || ''),
+                        fits: root.scrollWidth <= root.clientWidth + 1
+                            && sections.every(el => el.scrollWidth <= el.clientWidth + 1),
+                    };
+                }, slug);
+                expect(memoryShardAppearance.found).toBe(true);
+                expect(memoryShardAppearance.sections).toBeGreaterThanOrEqual(8);
+                expect(memoryShardAppearance.tags).toBeGreaterThanOrEqual(7);
+                expect(memoryShardAppearance.threads).toBeGreaterThanOrEqual(5);
+                expect(memoryShardAppearance.rels).toBeGreaterThanOrEqual(1);
+                expect(memoryShardAppearance.rawTokens).toBe(false);
+                expect(memoryShardAppearance.fits).toBe(true);
+                appearanceChecks.push({ fontSizes, inheritedInk, clothingAppearance, plotAppearance, memoryShardAppearance });
             }
             expect(appearanceChecks.map(check => check.fontSizes)).toEqual(Array(3).fill(appearanceChecks[0].fontSizes));
             expect(new Set(appearanceChecks.map(check => check.clothingAppearance.background)).size).toBe(3);
             expect(appearanceChecks[1].clothingAppearance.color).not.toBe(appearanceChecks[2].clothingAppearance.color);
             expect(new Set(appearanceChecks.map(check => check.plotAppearance.backgroundColor)).size).toBe(3);
             expect(appearanceChecks[1].plotAppearance.color).not.toBe(appearanceChecks[2].plotAppearance.color);
+            expect(new Set(appearanceChecks.map(check => check.memoryShardAppearance.background)).size).toBe(3);
+            expect(appearanceChecks[1].memoryShardAppearance.color).not.toBe(appearanceChecks[2].memoryShardAppearance.color);
             for (const { inheritedInk } of appearanceChecks.slice(1)) {
                 expect(inheritedInk.count).toBeGreaterThan(10);
                 expect(inheritedInk.mismatches).toEqual([]);
@@ -313,6 +370,34 @@ for (const phone of [true, false]) {
             });
             expect(await plotStyles()).toEqual(firstPlot);
 
+            const memoryShardStyles = () => page.evaluate(() => {
+                const root = document.querySelector('[data-capture="memory-shard"]');
+                const hero = root.querySelector('.custom-ratms-delft-porcelain-hero');
+                const tag = root.querySelector('.custom-ratms-delft-porcelain-tag-critical');
+                const hs = getComputedStyle(hero);
+                const ts = getComputedStyle(tag);
+                return {
+                    heroBg: hs.backgroundImage,
+                    heroColor: hs.color,
+                    heroBorder: hs.borderTopColor,
+                    tagBg: ts.backgroundColor,
+                    tagColor: ts.color,
+                };
+            });
+            const firstShard = await memoryShardStyles();
+            await page.evaluate(async () => {
+                const base = '/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/';
+                const { mountPreview } = await import(`${base}preview.js`);
+                const { getTheme } = await import(`${base}themes/index.js`);
+                const host = document.createElement('section');
+                document.querySelector('#tracker-captures').append(host);
+                mountPreview(host, 'memory-shard', getTheme('obsidian-ink'));
+                const stockHost = document.createElement('section');
+                document.querySelector('#tracker-captures').append(stockHost);
+                mountPreview(stockHost, 'memory-shard', null);
+            });
+            expect(await memoryShardStyles()).toEqual(firstShard);
+
             // Exercise the additional selectors used by the real chat, including Tide's
             // phone rules, rather than relying on the gallery wrapper alone.
             await page.evaluate(async () => {
@@ -326,7 +411,7 @@ for (const phone of [true, false]) {
                 chat.id = 'chat';
                 chat.style.cssText = 'display:block;position:relative;width:100%;height:auto;max-height:none;overflow:visible';
                 document.querySelector('#tracker-captures').append(chat);
-                for (const [archetype, slug] of [['position', 'delft-porcelain'], ['visual-map', 'obsidian-ink'], ['vitals', 'delft-porcelain'], ['clothing', 'delft-porcelain'], ['plot-compass', 'obsidian-ink'], ['terminal', 'obsidian-ink']]) {
+                for (const [archetype, slug] of [['position', 'delft-porcelain'], ['visual-map', 'obsidian-ink'], ['vitals', 'delft-porcelain'], ['clothing', 'delft-porcelain'], ['plot-compass', 'obsidian-ink'], ['terminal', 'obsidian-ink'], ['memory-shard', 'delft-porcelain']]) {
                     const message = document.createElement('div');
                     message.className = 'mes';
                     message.dataset.chatCapture = archetype;
@@ -337,7 +422,7 @@ for (const phone of [true, false]) {
                     mountPreview(block, archetype, getTheme(slug));
                 }
             });
-            for (const [archetype, value] of [['position', 'Rain easing'], ['visual-map', 'Docks'], ['vitals', 'Bruised ribs'], ['clothing', 'Wool waistcoat'], ['plot-compass', 'Have the courier pause under the bridge lamp'], ['terminal', 'LEVEL UP CONFIRMED']]) {
+            for (const [archetype, value] of [['position', 'Rain easing'], ['visual-map', 'Docks'], ['vitals', 'Bruised ribs'], ['clothing', 'Wool waistcoat'], ['plot-compass', 'Have the courier pause under the bridge lamp'], ['terminal', 'LEVEL UP CONFIRMED'], ['memory-shard', 'Lantern Shed, South Pier']]) {
                 const message = page.locator(`#chat [data-chat-capture="${archetype}"]`);
                 await expect(message).toContainText(value);
                 await expect(message.locator('[data-rat]').first()).toBeVisible();
@@ -535,6 +620,281 @@ for (const phone of [true, false]) {
             expect(terminalLifecycle.echoChecks.overflow).toBeLessThanOrEqual(1);
             expect(terminalLifecycle.revReverted).toBeGreaterThanOrEqual(2);
             expect(terminalLifecycle.revertedExact).toBe(true);
+        } finally {
+            await context.close();
+        }
+    });
+
+    test(`Memory Shard companion theming works across surfaces, Echo chat style, editor tabs, and clean revert on ${deviceName}`, async ({ browser }, info) => {
+        test.setTimeout(180000);
+        const context = await createCompanionContext(browser, info.project.use.baseURL, phone, { emulateIOS: true });
+        try {
+            const page = await context.newPage();
+            await configureCompanionRoutes(page);
+            await page.goto('/');
+            await page.waitForFunction(() => window.NeconyanShell && document.querySelector('#rat_drawer') && !document.querySelector('#preloader'));
+            await applyPhoneStylesIfNeeded(page, phone);
+
+            // Install a real Memory Shard companion agent in the in-memory store, then verify Tracker Overrides lists it
+            await page.evaluate(async () => {
+                const base = '/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/';
+                const entryPath = new URL('../index.js', new URL(base, document.baseURI)).pathname;
+                const loaded = [...document.scripts].find(script => script.src && new URL(script.src).pathname === entryPath);
+                if (loaded) (await import(loaded.src)).deactivate();
+                const { __setHostForTests } = await import(`${base}host.js`);
+                const { mountSettings } = await import(`${base}ui.js`);
+                const scriptsMod = await import('/scripts/extensions/in-chat-agents/regex-scripts.js');
+                const { getAgents, loadAgents } = await import('/scripts/extensions/in-chat-agents/agent-store.js');
+                const template = await fetch('/scripts/extensions/in-chat-agents/templates/memory-shard-companion.json').then(r => r.json());
+                const shardAgent = {
+                    ...structuredClone(template),
+                    id: 'rat-e2e-memory-shard',
+                    sourceTemplateId: template.id,
+                    enabled: true,
+                    postProcess: { promptTransformEnabled: false },
+                };
+                const originalAgents = getAgents();
+                const fixture = window.__msE2eFixture = {
+                    template,
+                    shardAgent,
+                    originalAgents,
+                    stockScriptsSnapshot: structuredClone(shardAgent.regexScripts),
+                    liveAgents: [...originalAgents, shardAgent],
+                };
+                __setHostForTests({
+                    ok: true,
+                    scripts: scriptsMod,
+                    store: {
+                        getAgents: () => fixture.liveAgents,
+                        getAgentById: agentId => fixture.liveAgents.find(a => a.id === agentId),
+                        saveAgent: async updated => {
+                            fixture.liveAgents = fixture.liveAgents.map(a => (a.id === updated.id ? structuredClone(updated) : a));
+                            loadAgents(fixture.liveAgents, { fromServer: false });
+                        },
+                    },
+                });
+                loadAgents(fixture.liveAgents, { fromServer: false });
+                mountSettings();
+            });
+            await page.evaluate(() => window.NeconyanShell.openIncludedTool('third-party/Neconyan-Regex-Agent-Themes'));
+            await page.locator('#rat_toggle_scope').click();
+            await expect(page.locator('[aria-labelledby="rat_scope_title_tpl-memory-shard-companion"]')).toBeVisible();
+            await expect(page.locator('#rat_scope_title_tpl-memory-shard-companion')).toHaveText('Memory Shard');
+
+            const lifecycle = await page.evaluate(async () => {
+                const base = '/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/';
+                const { __setHostForTests } = await import(`${base}host.js`);
+                const { SAMPLES } = await import(`${base}samples.js`);
+                const { getTheme } = await import(`${base}themes/index.js`);
+                const { updateSettings } = await import(`${base}settings.js`);
+                const { applyToAgent, revertAgent } = await import(`${base}apply.js`);
+                const { mountPreview } = await import(`${base}preview.js`);
+                const { loadAgents } = await import('/scripts/extensions/in-chat-agents/agent-store.js');
+                const { formatCompanionContent } = await import('/scripts/extensions/in-chat-agents/companion/companion-ui.js');
+                const { createMemoryShardEditor } = await import('/scripts/extensions/in-chat-agents/companion/memory-shard-editor.js');
+
+                const fixture = window.__msE2eFixture;
+                const { template, shardAgent, stockScriptsSnapshot, originalAgents } = fixture;
+                const getLiveShard = () => fixture.liveAgents.find(a => a.id === shardAgent.id);
+
+                const sample = SAMPLES['memory-shard'].full;
+                const result = { content: sample, format: 'markdown', status: 'done' };
+                const ctx = window.SillyTavern.getContext();
+                const syntheticMessage = {
+                    mes: 'Memory shard host reply',
+                    name: 'Mira',
+                    is_user: false,
+                    extra: { inChatAgentCompanionResults: { [shardAgent.id]: result } },
+                };
+                const initialMessageCopy = structuredClone(syntheticMessage);
+                ctx.chat.push(syntheticMessage);
+
+                // Replace body layout with a clean full-height surface host (inline Echo chat + Companion Notes + Companion Panel)
+                for (const child of document.body.children) child.style.display = 'none';
+                for (const el of [document.documentElement, document.body]) {
+                    for (const [prop, val] of [['height', 'auto'], ['max-height', 'none'], ['overflow', 'visible'], ['position', 'static']]) {
+                        el.style.setProperty(prop, val, 'important');
+                    }
+                }
+                document.querySelector('#chat').id = 'original-chat-ms';
+                document.body.classList.remove('documentstyle', 'tidestyle', 'whisperstyle', 'hushstyle', 'ripplestyle');
+                document.body.classList.add('echostyle');
+
+                const stage = document.createElement('main');
+                stage.id = 'ms-e2e-stage';
+                stage.style.cssText = 'display:grid;gap:16px;padding:12px;box-sizing:border-box;width:100%;background:#1b1d24;color:#eee';
+                document.body.append(stage);
+
+                const renderAllSurfaces = slug => {
+                    stage.textContent = '';
+
+                    // 1. Inline chat under Echo style
+                    const chat = document.createElement('div');
+                    chat.id = 'chat';
+                    chat.style.cssText = 'display:block;position:relative;width:100%;height:auto;max-height:none;overflow:visible';
+                    const mes = document.createElement('div');
+                    mes.className = 'mes';
+                    const block = document.createElement('div');
+                    block.className = 'mes_block';
+                    mes.append(block);
+                    chat.append(mes);
+                    stage.append(chat);
+                    mountPreview(block, 'memory-shard', slug ? getTheme(slug) : null);
+
+                    // 2. Companion Notes (.ica--companion-body)
+                    const notesCard = document.createElement('div');
+                    notesCard.className = 'ica--companion-card';
+                    const notesBody = document.createElement('div');
+                    notesBody.className = 'ica--companion-body';
+                    notesBody.innerHTML = formatCompanionContent(shardAgent.id, result, syntheticMessage, '.ica--companion-body ');
+                    notesCard.append(notesBody);
+                    stage.append(notesCard);
+
+                    // 3. Companion Panel (.ica--tpanel-agent-body)
+                    const panelCard = document.createElement('div');
+                    panelCard.className = 'ica--tpanel-agent';
+                    const panelBody = document.createElement('div');
+                    panelBody.className = 'ica--tpanel-agent-body';
+                    panelBody.innerHTML = formatCompanionContent(shardAgent.id, result, syntheticMessage, '.ica--tpanel-agent-body ');
+                    panelCard.append(panelBody);
+                    stage.append(panelCard);
+
+                    const heroSel = slug ? `.custom-ratms-${slug}-hero` : '.custom-ms-hero';
+                    const subSel = slug ? `.custom-ratms-${slug}-sub` : '.custom-ms-sub';
+                    const tagSel = slug ? `.custom-ratms-${slug}-tag` : '.custom-ms-tag';
+                    const inlineHero = block.querySelector(heroSel);
+                    const inlineSubUl = block.querySelector(`${subSel} + ul`);
+                    const inlineFirstP = block.querySelector(`${subSel} + p`);
+                    const inlineHasNextP = block.querySelector(`${subSel} + p:has(+ p)`);
+                    const notesHero = notesBody.querySelector(heroSel);
+                    const panelHero = panelBody.querySelector(heroSel);
+                    const inheritedIcons = [...stage.querySelectorAll('i')].filter(el => el.style.color === 'inherit');
+                    return {
+                        slug: slug || 'stock',
+                        inlineHeroFound: Boolean(inlineHero),
+                        notesHeroFound: Boolean(notesHero),
+                        panelHeroFound: Boolean(panelHero),
+                        inlineBg: inlineHero ? getComputedStyle(inlineHero).backgroundImage : null,
+                        inlineColor: inlineHero ? getComputedStyle(inlineHero).color : null,
+                        notesBg: notesHero ? getComputedStyle(notesHero).backgroundImage : null,
+                        panelBg: panelHero ? getComputedStyle(panelHero).backgroundImage : null,
+                        inlineTags: block.querySelectorAll(tagSel).length,
+                        notesTags: notesBody.querySelectorAll(tagSel).length,
+                        panelTags: panelBody.querySelectorAll(tagSel).length,
+                        echoSubUlMarginTop: inlineSubUl ? getComputedStyle(inlineSubUl).marginTop : null,
+                        echoSubPMarginTop: inlineFirstP ? getComputedStyle(inlineFirstP).marginTop : null,
+                        echoSubPChainMarginBottom: inlineHasNextP ? getComputedStyle(inlineHasNextP).marginBottom : null,
+                        iconMismatches: inheritedIcons
+                            .filter(el => getComputedStyle(el).color !== getComputedStyle(el.parentElement).color)
+                            .map(el => el.outerHTML),
+                        docOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+                        inlineOverflow: block.scrollWidth - block.clientWidth,
+                        notesOverflow: notesBody.scrollWidth - notesBody.clientWidth,
+                        panelOverflow: panelBody.scrollWidth - panelBody.clientWidth,
+                    };
+                };
+
+                try {
+                    const snapshots = {};
+                    snapshots.stock = renderAllSurfaces(null);
+
+                    for (const slug of ['obsidian-ink', 'delft-porcelain', 'adaptive-native']) {
+                        updateSettings({ overrides: { [template.id]: slug } });
+                        const applyRes = await applyToAgent(getLiveShard());
+                        if (!applyRes.ok) throw new Error(`applyToAgent(${slug}) failed: ${applyRes.reason}`);
+                        snapshots[slug] = renderAllSurfaces(slug);
+                    }
+
+                    // Test Memory Shard editor Sections <-> Raw Markdown tab switching with unmodified markdown
+                    const editorHost = document.createElement('div');
+                    stage.append(editorHost);
+                    const editor = createMemoryShardEditor({ initialContent: sample });
+                    editorHost.append(editor.root);
+                    const sectionsTab = editor.root.querySelector('.ica--ms-editor-mode-btn[role="tab"]:first-child');
+                    const rawTab = editor.root.querySelector('.ica--ms-editor-mode-btn[role="tab"]:last-child');
+                    const initialSectionsSelected = sectionsTab?.getAttribute('aria-selected');
+                    rawTab?.click();
+                    const afterRawSelected = rawTab?.getAttribute('aria-selected');
+                    const rawValue = editor.root.querySelector('.ica--ms-editor-raw-textarea')?.value || '';
+                    sectionsTab?.click();
+                    const afterBackSelected = sectionsTab?.getAttribute('aria-selected');
+                    editorHost.remove();
+
+                    // Revert back to stock and confirm exact restoration + zero message mutation
+                    const revertRes = await revertAgent(getLiveShard());
+                    const reverted = renderAllSurfaces(null);
+                    const scriptsMatchStock = JSON.stringify(getLiveShard().regexScripts) === JSON.stringify(stockScriptsSnapshot);
+                    const messageUntouched = JSON.stringify(syntheticMessage) === JSON.stringify(initialMessageCopy);
+
+                    return {
+                        templateMeta: {
+                            version: template.version,
+                            regexCount: template.regexScripts.length,
+                            format: template.companion?.format,
+                        },
+                        snapshots,
+                        editorTabs: {
+                            initialSectionsSelected,
+                            afterRawSelected,
+                            afterBackSelected,
+                            preservesHeading: rawValue.includes('# MEMORY SHARD:'),
+                        },
+                        revertRes: { ok: revertRes.ok, reverted: revertRes.reverted },
+                        reverted,
+                        scriptsMatchStock,
+                        messageUntouched,
+                    };
+                } finally {
+                    ctx.chat.pop();
+                    stage.remove();
+                    document.body.classList.remove('echostyle');
+                    loadAgents(originalAgents, { fromServer: false });
+                    __setHostForTests(null);
+                    delete window.__msE2eFixture;
+                }
+            });
+
+            expect(lifecycle.templateMeta).toEqual({ version: 3, regexCount: 31, format: 'markdown' });
+            for (const key of ['stock', 'obsidian-ink', 'delft-porcelain', 'adaptive-native']) {
+                const snap = lifecycle.snapshots[key];
+                expect(snap.inlineHeroFound).toBe(true);
+                expect(snap.notesHeroFound).toBe(true);
+                expect(snap.panelHeroFound).toBe(true);
+                expect(snap.inlineTags).toBeGreaterThanOrEqual(7);
+                expect(snap.notesTags).toBeGreaterThanOrEqual(7);
+                expect(snap.panelTags).toBeGreaterThanOrEqual(7);
+                expect(snap.iconMismatches).toEqual([]);
+                expect(snap.docOverflow).toBeLessThanOrEqual(1);
+                expect(snap.inlineOverflow).toBeLessThanOrEqual(1);
+                expect(snap.notesOverflow).toBeLessThanOrEqual(1);
+                expect(snap.panelOverflow).toBeLessThanOrEqual(1);
+            }
+            // Echo chat style & mobile shell list rules must not break welded subcard seams on themed shards
+            for (const key of ['obsidian-ink', 'delft-porcelain', 'adaptive-native']) {
+                expect(lifecycle.snapshots[key].echoSubUlMarginTop).toBe('0px');
+                expect(lifecycle.snapshots[key].echoSubPMarginTop).toBe('0px');
+                expect(lifecycle.snapshots[key].echoSubPChainMarginBottom).toBe('0px');
+            }
+            // Dark vs light hero ink and distinct themed surfaces
+            expect(lifecycle.snapshots['obsidian-ink'].inlineColor).not.toBe(lifecycle.snapshots['delft-porcelain'].inlineColor);
+            expect(new Set([
+                lifecycle.snapshots.stock.inlineBg,
+                lifecycle.snapshots['obsidian-ink'].inlineBg,
+                lifecycle.snapshots['delft-porcelain'].inlineBg,
+                lifecycle.snapshots['adaptive-native'].inlineBg,
+            ]).size).toBe(4);
+            expect(lifecycle.editorTabs).toEqual({
+                initialSectionsSelected: 'true',
+                afterRawSelected: 'true',
+                afterBackSelected: 'true',
+                preservesHeading: true,
+            });
+            expect(lifecycle.revertRes).toEqual({ ok: true, reverted: 30 });
+            expect(lifecycle.reverted.inlineHeroFound).toBe(true);
+            expect(lifecycle.reverted.notesHeroFound).toBe(true);
+            expect(lifecycle.reverted.panelHeroFound).toBe(true);
+            expect(lifecycle.scriptsMatchStock).toBe(true);
+            expect(lifecycle.messageUntouched).toBe(true);
         } finally {
             await context.close();
         }
