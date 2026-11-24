@@ -694,9 +694,21 @@
       "reference": "public/img/neconyan/sleeping-serval-left.webp on chroma green",
       "prompt": "Edit the reference image: fold only the large foreground ear (the ear nearer the viewer, on the left of the head) sideways towards the left by about 25 degrees as a sleepy ear flick, so its tip droops back and down. Keep that ear's own fur colours and markings, its pink inner ear and the thick dark outline.\n\nEverything else stays pixel-identical: the same cat, pose, proportions, position and size in the frame, the same fur colours and markings, the other ear, closed eyes, whiskers, paws and the hanging tail. Do not move, resize or redraw the rest of the cat.\n\nBackground: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, motion lines, shadow, glow or border.",
       "processing": "Chroma green removed; only the folded foreground ear region was composited into the base coat frame. All pixels outside the ear remain from the base. Lossless WebP alternate frame; tap displays it briefly then restores the base."
+    },
+    {
+      "path": "whats-new-kittens-sunburst.png",
+      "sha256": "e1820e63383b891822130bdc79145616a40f9256cd0e18c985421c1857cfa895",
+      "generated_at": "2026-11-24",
+      "image_model": "gpt-image-2.6-sunburst",
+      "reference": "public/img/neconyan/sleeping-calico-left.webp, enlarged 2x on chroma green",
+      "promptSummary": "Sticker sheet of three separate tiny kittens in the reference style, with its thick cocoa outline and flat cel colours: a ginger-and-cream tabby peeking over a ledge with two front paws, a calico sitting with a rolled paper scroll tied with a red ribbon, and a grey-and-white tabby curled asleep in a loaf. Uniform chroma green background, no text.",
+      "processing": "Chroma green and spill removed, the sheet split into three cutouts with 4px padding, each resized to three times its display size with premultiplied Lanczos. Lossless WebP."
     }
   ],
   "outputs": [
+    { "path": "public/img/neconyan/whats-new-peek.webp", "sha256": "50f57956c2dc0b7c58a453b5bf33aebc1ae58781e9ab7e16c954e2cf8688f44f", "size": [192, 146] },
+    { "path": "public/img/neconyan/whats-new-scroll.webp", "sha256": "b66d23fc5eac0aa077298f8d328328bc0d0ebdcc72efc79e7fa20b58064415ca", "size": [144, 217] },
+    { "path": "public/img/neconyan/whats-new-loaf.webp", "sha256": "4d5d4a4cef5ad55b2f530e79f53bf787101013aefd9bea735601493357a606a4", "size": [216, 193] },
     { "path": "public/img/neconyan/sleeping-birman-left.webp", "sha256": "13ad42378c5780016f161fa87beab86e81a8d1ceec42857511072b6afd723213", "size": [384, 308] },
     { "path": "public/img/neconyan/sleeping-birman-left-twitch.webp", "sha256": "05294dac65813dcbeb449a6edfa1b90f5d95678da3e7847e1ef52a0ecce26ea4", "size": [384, 308] },
     { "path": "public/img/neconyan/sleeping-snowshoe-left.webp", "sha256": "12c3d6224c35709d79e98e1bfb6e8eb96c0580bf621d6950e1a083a26d909aff", "size": [384, 308] },

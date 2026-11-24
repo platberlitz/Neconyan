@@ -32,8 +32,55 @@ dialog.popup.neconyan-whats-new-dialog .popup-body {
 }
 
 .neconyan-whats-new h2 {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px;
     margin: 0;
     font-size: 1.25em;
+}
+
+.neconyan-whats-new h2::after,
+.neconyan-whats-new .neconyan-whats-new-changes::before,
+.neconyan-whats-new::after {
+    content: '';
+    flex: none;
+    background: center / contain no-repeat;
+    pointer-events: none;
+}
+
+.neconyan-whats-new h2::after {
+    width: 48px;
+    height: 72px;
+    margin-block-start: -8px;
+    background-image: url('../img/neconyan/whats-new-scroll.webp?v=20261201-whats-new-kitties');
+}
+
+.neconyan-whats-new .neconyan-whats-new-changes::before {
+    position: absolute;
+    inset-block-start: -48px;
+    inset-inline-end: 12px;
+    width: 64px;
+    height: 49px;
+    background-image: url('../img/neconyan/whats-new-peek.webp?v=20261201-whats-new-kitties');
+}
+
+.neconyan-whats-new::after {
+    align-self: flex-start;
+    width: 72px;
+    height: 64px;
+    margin-block-start: 4px;
+    background-image: url('../img/neconyan/whats-new-loaf.webp?v=20261201-whats-new-kitties');
+}
+
+:root[data-sb-kittyless='true'] body.neconyan .neconyan-whats-new h2::after,
+:root[data-sb-kittyless='true'] body.neconyan .neconyan-whats-new .neconyan-whats-new-changes::before,
+:root[data-sb-kittyless='true'] body.neconyan .neconyan-whats-new::after {
+    content: none;
+}
+
+:root[data-sb-kittyless='true'] body.neconyan .neconyan-whats-new .neconyan-whats-new-changes {
+    margin-block-start: 0;
 }
 
 dialog.popup .neconyan-whats-new h3 {
@@ -75,6 +122,8 @@ dialog.popup .neconyan-whats-new h3 {
 }
 
 .neconyan-whats-new .neconyan-whats-new-changes {
+    position: relative;
+    margin-block-start: 36px;
     border-top: 1px solid var(--neco-border);
     padding-top: 8px;
 }

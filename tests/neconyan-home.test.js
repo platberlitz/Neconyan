@@ -1,4 +1,5 @@
 import { describe, expect, jest, test } from '@jest/globals';
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import vm from 'node:vm';
@@ -305,6 +306,19 @@ describe('Neconyan Home', () => {
         expect(css).not.toContain('!important');
         expect(css).not.toMatch(/#[0-9a-f]{3,8}\b/i);
         expect(read('css/neconyan-help.css')).not.toContain('whats-new');
+    });
+
+    test('tucks three recorded kittens into What\'s new and hides them in Kittyless', () => {
+        const css = read('css/neconyan-whats-new.css').replace(/\/\*[\s\S]*?\*\//g, '');
+        for (const name of ['whats-new-peek', 'whats-new-scroll', 'whats-new-loaf']) {
+            const path = `img/neconyan/${name}.webp`;
+            expect(css).toContain(`url('../${path}?v=`);
+            const output = artworkOutput(path);
+            expect(output).toBeDefined();
+            const bytes = readFileSync(new URL('../public/' + path, import.meta.url));
+            expect(createHash('sha256').update(bytes).digest('hex')).toBe(output.sha256);
+        }
+        expect(css).toMatch(/:root\[data-sb-kittyless='true'\] body\.neconyan \.neconyan-whats-new h2::after,[\s\S]*?\{\s*content: none;/);
     });
 
     test('shows Home layout under the welcome box and lets the assistant box collapse', () => {
