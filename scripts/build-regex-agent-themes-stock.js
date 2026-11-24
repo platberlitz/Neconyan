@@ -13,7 +13,7 @@ for (const [groupId, family] of [['grp-pura-trackers', 'pura'], ['grp-pura-ether
 }
 const ids = [...Object.keys(families), 'tpl-chat-only-companion', 'tpl-chatroom-companion', 'tpl-message-inbox-companion',
     'tpl-position-tracker-companion', 'tpl-clothing-tracker-companion', 'tpl-visual-map-companion', 'tpl-vitals-companion',
-    'tpl-plot-compass-companion', 'tpl-user-based-stats-generator', 'tpl-level-up-companion'];
+    'tpl-plot-compass-companion', 'tpl-user-based-stats-generator', 'tpl-level-up-companion', 'tpl-memory-shard-companion'];
 const labels = {};
 const stock = [];
 for (const templateId of ids) {

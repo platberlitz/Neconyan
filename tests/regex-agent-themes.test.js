@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
+import css from '@adobe/css-tools';
 import { readFileSync } from 'node:fs';
 import { ARCHETYPES, PREVIEWABLE_ARCHETYPES, SPECS, THEMABLE_TEMPLATE_IDS, getSpec } from '../public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/specs.js';
 import { STOCK, getStock } from '../public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/stock.js';
@@ -6,12 +7,12 @@ import { TRACKER_FAMILIES, TEMPLATE_LABELS } from '../public/scripts/extensions/
 import { buildAgentScripts } from '../public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/build.js';
 import { buildReplaceString } from '../public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/render/index.js';
 import { applyList, regexFromString } from '../public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/interpolate.js';
-import { PREVIEW_KEYS } from '../public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/preview.js';
+import { PREVIEW_KEYS, renderPreviewHtml } from '../public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/preview.js';
 import { SAMPLES } from '../public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/samples.js';
 import { THEMES, getTheme } from '../public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/themes/index.js';
 import { resolveTheme } from '../public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/tokens.js';
-import { contrastRatio, parseColor } from '../public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/color.js';
-import { applyAll, applyToAgent, inspectAgent, reconcile } from '../public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/apply.js';
+import { composite, contrastRatio, flattenColor, parseColor } from '../public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/color.js';
+import { applyAll, applyToAgent, inspectAgent, reconcile, revertAgent } from '../public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/apply.js';
 import { __setHostForTests } from '../public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/host.js';
 import { DEFAULTS, getSettings, resolveThemeSlug, updateSettings } from '../public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/settings.js';
 import { SETTINGS_KEY, STOCK_THEME } from '../public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/constants.js';
@@ -264,7 +265,7 @@ describe('bundled tracker contracts', () => {
     test('terminal companions are styled across every theme with valid markdown isolation, bold, open defaults, glyphs and adaptive neutrals', () => {
         expect(THEMABLE_TEMPLATE_IDS).toContain('tpl-user-based-stats-generator');
         expect(THEMABLE_TEMPLATE_IDS).toContain('tpl-level-up-companion');
-        expect(THEMABLE_TEMPLATE_IDS).not.toContain('tpl-memory-shard-companion');
+        expect(THEMABLE_TEMPLATE_IDS).toContain('tpl-memory-shard-companion');
         expect(PREVIEWABLE_ARCHETYPES).toContain(ARCHETYPES.TERMINAL);
         expect(PREVIEW_KEYS[ARCHETYPES.TERMINAL]).toBe('level-up');
 
@@ -499,5 +500,323 @@ describe('tracker-family selection through the real apply path', () => {
         // Force-reverting or restoring stock after clearing hand edit returns exact stock.
         agents.find(a => a.id === levelUp.id).regexScripts = structuredClone(originalLevelUp.regexScripts);
         expect(agents.find(a => a.id === levelUp.id)).toEqual(originalLevelUp);
+    });
+});
+
+function resolveLayeredGrounds(background, baseGrounds) {
+    const layers = [];
+    let depth = 0;
+    let start = 0;
+    for (let i = 0; i < background.length; i++) {
+        if (background[i] === '(') depth++;
+        else if (background[i] === ')') depth--;
+        else if (background[i] === ',' && depth === 0) {
+            layers.push(background.slice(start, i).trim());
+            start = i + 1;
+        }
+    }
+    layers.push(background.slice(start).trim());
+    let grounds = baseGrounds;
+    for (let i = layers.length - 1; i >= 0; i--) {
+        const layer = layers[i];
+        if (layer.startsWith('repeating-linear-gradient')) {
+            const stops = layer.match(/rgba?\([^)]+\)/g) || [];
+            const next = [...grounds];
+            for (const stop of stops) {
+                const parsed = parseColor(stop);
+                if (parsed && parsed.a > 0) {
+                    for (const ground of grounds) next.push(composite(parsed, ground));
+                }
+            }
+            grounds = next;
+        } else if (layer.startsWith('linear-gradient')) {
+            const stops = layer.match(/(?:#[0-9a-fA-F]{3,8}|rgba?\([^)]+\))/g) || [];
+            const next = [];
+            for (const stop of stops) {
+                const parsed = parseColor(stop);
+                if (parsed) {
+                    for (const ground of grounds) next.push(composite(parsed, ground));
+                }
+            }
+            if (next.length) grounds = next;
+        } else {
+            const flat = flattenColor(layer, grounds);
+            if (flat.length) grounds = flat;
+        }
+    }
+    return grounds;
+}
+
+describe('Memory Shard companion theming', () => {
+    const id = 'tpl-memory-shard-companion';
+    const sample = SAMPLES['memory-shard'].full;
+
+    test('all 118 themes transform the Memory Shard sample cleanly with isolated CSS and preserved tag chaining', () => {
+        const originals = scriptsFor(id);
+        for (const selected of THEMES) {
+            const built = buildAgentScripts(id, originals, selected, {});
+            expect(built.skipped).toEqual([]);
+            const prefix = `ratms-${selected.slug}`;
+            const styleScript = built.scripts.find(script => script.id === 'memory-shard-styles');
+            expect(styleScript.replaceString).toMatch(/^<style>.*<\/style>$/);
+            expect(styleScript.replaceString).not.toContain('\n');
+            expect(styleScript.replaceString).not.toContain('{{');
+            expect(styleScript.replaceString).not.toMatch(/\.ms-/);
+            expect(styleScript.replaceString).not.toMatch(/--ms-/);
+            expect(styleScript.replaceString).toContain('--mesParagraphSpacingTop');
+            expect(styleScript.replaceString).toContain('--mesParagraphSpacingBottom');
+            expect(styleScript.replaceString).toContain('--messageTextFontSize');
+            expect(styleScript.replaceString).toContain('@media (prefers-reduced-motion: reduce)');
+
+            const rawCss = styleScript.replaceString.slice('<style>'.length, -'</style>'.length);
+            expect(() => css.parse(rawCss)).not.toThrow();
+
+            const rendered = applyList(sample, built.scripts);
+            expect(rendered).not.toContain('style="0:');
+            expect(rendered).toContain(`data-rat="${selected.slug}@`);
+            expect(rendered).toContain('data-rat-arch="memory-shard"');
+            expect(rendered).toContain('data-rat-part="root"');
+            expect(rendered).toContain(`${prefix}-hero`);
+            expect(rendered).toContain(`${prefix}-sec-snapshot`);
+            expect(rendered).toContain(`${prefix}-ev-num`);
+            expect(rendered).toContain(`${prefix}-ev-loc`);
+            expect(rendered).toContain(`${prefix}-rel-pair`);
+            expect(rendered).toContain(`${prefix}-thread-head`);
+            expect(rendered).toContain(`${prefix}-kv-k`);
+            for (const kind of ['critical', 'major', 'moderate', 'minor', 'open', 'planted', 'resolved']) {
+                expect(rendered).toContain(`class="ms-tag ${prefix}-tag ${prefix}-tag-${kind}"`);
+            }
+            expect(rendered).not.toMatch(/\[(?:CRITICAL|MAJOR|MODERATE|MINOR|OPEN|PLANTED|RESOLVED)\]/i);
+            expect(rendered).not.toMatch(/^#{1,3}\s/m);
+            expect(rendered.match(/<style>/g)).toHaveLength(1);
+            for (const icon of rendered.matchAll(/<i\b[^>]*>/g)) {
+                expect(icon[0]).toContain('style="color:inherit"');
+            }
+        }
+    }, 30000);
+
+    test('all 115 fixed themes meet WCAG AA contrast (>= 4.5:1) across Memory Shard surfaces, chips, and tags', () => {
+        const styleSpec = getSpec(id, 'memory-shard-styles');
+        const black = parseColor('#000000');
+        const white = parseColor('#ffffff');
+        const failures = [];
+
+        for (const selected of THEMES) {
+            if (selected.mode === 'adaptive') continue;
+            const tokens = resolveTheme(selected, {});
+            const prefix = `ratms-${tokens.slug}`;
+            const rawCss = buildReplaceString(styleSpec, tokens).slice('<style>'.length, -'</style>'.length);
+            const ast = css.parse(rawCss);
+            const rules = new Map();
+            for (const rule of ast.stylesheet.rules) {
+                if (rule.type !== 'rule') continue;
+                for (const selector of rule.selectors) {
+                    const decls = rules.get(selector) || {};
+                    for (const decl of rule.declarations) {
+                        if (decl.type === 'declaration') decls[decl.property] = decl.value;
+                    }
+                    rules.set(selector, decls);
+                }
+            }
+            const getGrounds = (selector, parentGrounds = [black, white]) => {
+                const bg = rules.get(selector)?.background;
+                return bg ? resolveLayeredGrounds(bg, parentGrounds) : parentGrounds;
+            };
+            const check = (label, selector, grounds) => {
+                const fg = parseColor(rules.get(selector)?.color);
+                if (!fg || !grounds.length) return;
+                const min = Math.min(...grounds.map(ground => contrastRatio(fg, ground)));
+                if (min < 4.5) failures.push(`${selected.slug}:${label}=${min.toFixed(2)}`);
+            };
+
+            const heroG = getGrounds(`.${prefix}-hero`);
+            const secG = getGrounds(`.${prefix}-sec`);
+            const listG = getGrounds(`.${prefix}-sec:not(.${prefix}-sec-snapshot) + ul`);
+            const subG = getGrounds(`.${prefix}-sub`);
+            const quoteG = getGrounds(`.${prefix}-sec.${prefix}-sec-quotes + ul > li`);
+            const tileG = getGrounds(`.${prefix}-sec-snapshot + ul > li`);
+            const relPairG = getGrounds(`.${prefix}-rel-pair`, listG);
+
+            check('hero-title', `.${prefix}-hero-title`, heroG);
+            check('hero-eyebrow', `.${prefix}-hero-eyebrow`, heroG);
+            check('hero-master-eyebrow', `.${prefix}-hero-master .${prefix}-hero-eyebrow`, heroG);
+            check('hero-ico', `.${prefix}-hero-ico`, getGrounds(`.${prefix}-hero-ico`, heroG));
+            check('hero-code', `.${prefix}-hero-code`, getGrounds(`.${prefix}-hero-code`, heroG));
+            check('sec-title', `.${prefix}-sec-title`, secG);
+            check('sub-title', `.${prefix}-sub-title`, subG);
+            check('ev-title', `.${prefix}-ev-title`, subG);
+            check('ev-num', `.${prefix}-ev-num`, getGrounds(`.${prefix}-ev-num`, subG));
+            check('ev-loc', `.${prefix}-ev-loc`, getGrounds(`.${prefix}-ev-loc`, subG));
+            check('list-li', `.${prefix}-sec:not(.${prefix}-sec-snapshot) + ul > li`, listG);
+            check('tile-kv-k', `.${prefix}-sec-snapshot + ul > li .${prefix}-kv-k`, tileG);
+            check('tile-kv-v', `.${prefix}-sec-snapshot + ul > li .${prefix}-kv-v`, tileG);
+            check('quote-li', `.${prefix}-sec.${prefix}-sec-quotes + ul > li`, quoteG);
+            check('kv-k', `.${prefix}-kv-k`, listG);
+            check('kv-v', `.${prefix}-kv-v`, listG);
+            check('rel-pair', `.${prefix}-rel-pair`, relPairG);
+            check('rel-arr', `.${prefix}-rel-arr`, relPairG);
+            check('rel-note', `.${prefix}-rel-note`, getGrounds(`.${prefix}-rel-note`, listG));
+            check('rel-body', `.${prefix}-rel-body`, listG);
+            check('thread-title', `.${prefix}-thread-title`, listG);
+            check('thread-body', `.${prefix}-thread-body`, listG);
+            for (const kind of ['critical', 'major', 'moderate', 'minor', 'open', 'planted', 'resolved']) {
+                const sel = `span.${prefix}-tag-${kind}`;
+                check(`tag-${kind}`, sel, getGrounds(sel, listG));
+            }
+        }
+        expect(failures).toEqual([]);
+    }, 30000);
+
+    test('honours adaptiveNeutrals, adaptive themes, glyphs, density, and motion options', () => {
+        const heroSpec = getSpec(id, 'memory-shard-hero');
+        const styleSpec = getSpec(id, 'memory-shard-styles');
+
+        const lightAdaptive = resolveTheme(getTheme('delft-porcelain'), { adaptiveNeutrals: true });
+        const lightAdaptiveCss = buildReplaceString(styleSpec, lightAdaptive);
+        expect(lightAdaptiveCss).toContain('--SmartThemeBlurTintColor');
+        expect(lightAdaptiveCss).toContain('rgba(255,255,255,0.52)');
+
+        for (const slug of ['adaptive-native', 'adaptive-accent', 'adaptive-ink']) {
+            const adaptiveTokens = resolveTheme(getTheme(slug), {});
+            const adaptiveCss = buildReplaceString(styleSpec, adaptiveTokens);
+            expect(adaptiveCss).toContain('rgba(0,0,0,0.58)');
+            expect(() => css.parse(adaptiveCss.slice('<style>'.length, -'</style>'.length))).not.toThrow();
+        }
+
+        const animatedWithGlyphs = resolveTheme(getTheme('signal-pulse'), { glyphs: 'theme', density: 'roomy' });
+        const animatedNoGlyphs = resolveTheme(getTheme('signal-pulse'), { glyphs: 'none', density: 'compact' });
+        const heroWithGlyphs = buildReplaceString(heroSpec, animatedWithGlyphs);
+        const heroNoGlyphs = buildReplaceString(heroSpec, animatedNoGlyphs);
+        expect(heroWithGlyphs).toContain('data-rat-motion="signal-pulse"');
+        expect(heroWithGlyphs).toContain('border-top:2px solid #66e7ff');
+        expect(heroWithGlyphs).toContain('margin-right:5px');
+        expect(heroNoGlyphs).not.toContain('margin-right:5px');
+        expect(heroWithGlyphs.length).toBeGreaterThan(heroNoGlyphs.length);
+        expect(buildReplaceString(styleSpec, animatedWithGlyphs)).not.toBe(buildReplaceString(styleSpec, animatedNoGlyphs));
+    });
+
+    test('preview renderer produces stock and themed Memory Shard HTML', () => {
+        global.SillyTavern = { getContext: () => ({ name1: 'You', name2: 'Momo', messageFormatting: value => value }) };
+        try {
+            const stockHtml = renderPreviewHtml(ARCHETYPES.MEMORY_SHARD, null, {});
+            expect(stockHtml).toContain('Memory Shard');
+            expect(stockHtml).toContain('<style>');
+            expect(stockHtml).toContain('class="ms-hero"');
+            expect(stockHtml).not.toMatch(/\[(?:CRITICAL|MAJOR|OPEN|PLANTED|RESOLVED)\]/i);
+
+            for (const slug of ['obsidian-ink', 'delft-porcelain', 'adaptive-native']) {
+                const html = renderPreviewHtml(ARCHETYPES.MEMORY_SHARD, getTheme(slug), {});
+                expect(html).toContain('Memory Shard');
+                expect(html).toContain('<style>');
+                expect(html).toContain(`ratms-${slug}-hero`);
+                expect(html).toContain(`data-rat="${slug}@`);
+                expect(html).not.toMatch(/\[(?:CRITICAL|MAJOR|OPEN|PLANTED|RESOLVED)\]/i);
+            }
+        } finally {
+            delete global.SillyTavern;
+        }
+    });
+
+    describe('drift, boot reconcile, switching, manual-edit protection, and revert without message mutation', () => {
+        let agents;
+        let saveAgent;
+        let context;
+
+        beforeEach(() => {
+            agents = [agentFor(id)];
+            saveAgent = jest.fn(async updated => {
+                agents[0] = structuredClone(updated);
+            });
+            context = {
+                extensionSettings: { [SETTINGS_KEY]: { ...structuredClone(DEFAULTS), theme: 'obsidian-ink' } },
+                saveSettingsDebounced: jest.fn(),
+                chat: [
+                    { mes: 'First message', extra: { companion: { [agents[0].id]: { result: sample } } } },
+                ],
+            };
+            global.SillyTavern = { getContext: () => context };
+            __setHostForTests({
+                ok: true,
+                store: {
+                    getAgents: () => agents,
+                    saveAgent,
+                    getAgentById: agentId => agents.find(agent => agent.id === agentId),
+                },
+                scripts: { normalizeRegexScript: value => value },
+            });
+        });
+
+        afterEach(() => {
+            __setHostForTests(null);
+            delete global.SillyTavern;
+        });
+
+        test('reconciles stock install, switches themes via overrides, and reverts cleanly to stock without mutating chat', async () => {
+            const stockScripts = scriptsFor(id);
+            const initialChat = structuredClone(context.chat);
+
+            expect(inspectAgent(agents[0]).status).toBe('stock');
+            expect(await reconcile()).toMatchObject({ repaired: 1, reverted: 0, needsAttention: [] });
+            expect(inspectAgent(agents[0]).status).toBe('pristine');
+            expect(agents[0].regexScripts.find(s => s.id === 'memory-shard-styles').replaceString).toContain('ratms-obsidian-ink-hero');
+            expect(context.chat).toEqual(initialChat);
+
+            // Switch theme via Tracker Override and verify all 30 non-passthrough scripts update cleanly
+            updateSettings({ overrides: { [id]: 'delft-porcelain' } });
+            expect(await applyAll()).toMatchObject({ ok: true, applied: 1, blocked: [], failed: [] });
+            expect(inspectAgent(agents[0]).status).toBe('pristine');
+            expect(agents[0].regexScripts.find(s => s.id === 'memory-shard-styles').replaceString).toContain('ratms-delft-porcelain-hero');
+            expect(context.chat).toEqual(initialChat);
+
+            // Clean revert restores exact stock scripts and removes ledger entry without mutating messages
+            expect(await revertAgent(agents[0])).toMatchObject({ ok: true, reverted: 30 });
+            expect(agents[0].regexScripts).toEqual(stockScripts);
+            expect(getSettings().ledger[agents[0].id]).toBeUndefined();
+            expect(context.chat).toEqual(initialChat);
+        });
+
+        test('protects manual edits to memory-shard-styles across reconcile, switch, and revert, and preserves them as backup on force apply', async () => {
+            const initialChat = structuredClone(context.chat);
+
+            expect(await reconcile()).toMatchObject({ repaired: 1, reverted: 0, needsAttention: [] });
+
+            const customCss = '<style>.my-handcrafted-shard{border:2px solid gold;}</style>';
+            const styleIdx = agents[0].regexScripts.findIndex(s => s.id === 'memory-shard-styles');
+            agents[0].regexScripts[styleIdx].replaceString = customCss;
+
+            const report = inspectAgent(agents[0]);
+            expect(report.status).toBe('foreign');
+            expect(report.perScript.find(entry => entry.scriptId === 'memory-shard-styles').status).toBe('foreign');
+
+            const reconcileBlocked = await reconcile();
+            expect(reconcileBlocked).toMatchObject({ repaired: 0, reverted: 0 });
+            expect(reconcileBlocked.needsAttention).toEqual([
+                expect.objectContaining({
+                    agentId: agents[0].id,
+                    entries: [expect.objectContaining({ scriptId: 'memory-shard-styles', status: 'foreign' })],
+                }),
+            ]);
+            expect(agents[0].regexScripts[styleIdx].replaceString).toBe(customCss);
+
+            updateSettings({ overrides: { [id]: 'adaptive-native' } });
+            const switchRes = await applyAll();
+            expect(switchRes.blocked.map(entry => entry.agentId)).toContain(agents[0].id);
+            expect(agents[0].regexScripts[styleIdx].replaceString).toBe(customCss);
+
+            const blockedRevert = await revertAgent(agents[0]);
+            expect(blockedRevert.ok).toBe(false);
+            expect(agents[0].regexScripts[styleIdx].replaceString).toBe(customCss);
+
+            // Force apply records the hand edit in originals and applies the requested theme
+            expect(await applyToAgent(agents[0], { force: true })).toMatchObject({ ok: true });
+            expect(inspectAgent(agents[0]).status).toBe('pristine');
+            expect(agents[0].regexScripts[styleIdx].replaceString).toContain('ratms-adaptive-native-hero');
+
+            // Reverting after a forced overwrite restores the backed-up manual edit and clears the ledger
+            expect(await revertAgent(agents[0])).toMatchObject({ ok: true, reverted: 30 });
+            expect(agents[0].regexScripts[styleIdx].replaceString).toBe(customCss);
+            expect(getSettings().ledger[agents[0].id]).toBeUndefined();
+            expect(context.chat).toEqual(initialChat);
+        });
     });
 });

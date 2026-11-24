@@ -52,6 +52,7 @@ const ARCHETYPE_LABELS = Object.freeze({
     [ARCHETYPES.VITALS]: 'Vitals',
     [ARCHETYPES.PLOT_COMPASS]: 'Plot Compass',
     [ARCHETYPES.TERMINAL]: 'Terminal',
+    [ARCHETYPES.MEMORY_SHARD]: 'Memory Shard',
 });
 
 const STATUS_LABELS = Object.freeze({
