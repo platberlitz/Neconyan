@@ -138,7 +138,7 @@ test('a failed preparation cannot stamp a new reply with the previous recall', a
     const record = { id: 'entry', recordId: 'entry', kind: 'event', text: 'Saved event' };
     await validateMewmoryGeneration({ enabled: true, scope: getMewmoryScope(), inspection: {
         selections: [{ recordId: 'entry' }], candidates: [record], retrieval: { selected: [record] },
-    } }, '', 20);
+    } }, '');
     await expect(prepareMewmoryGeneration([])).rejects.toThrow('The archive changed.');
     const reply = { mes: 'New reply' };
     chat.push(reply);

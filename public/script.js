@@ -11226,7 +11226,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                 mewmoryContext.inspection.retrieval.alreadyPresentSkipped = prepared.skipped;
                 mewmoryContext.inspection.retrieval.suppressionChoice = prepared.choice;
             }
-            await validateMewmoryGeneration(mewmoryContext, generate_data.prompt ?? finalPrompt, this_max_context, { signal });
+            await validateMewmoryGeneration(mewmoryContext, generate_data.prompt ?? finalPrompt, { signal });
             if (!isCurrent()) return;
         }
 

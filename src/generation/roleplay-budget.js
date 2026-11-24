@@ -22,6 +22,14 @@ export async function createRoleplayTextCounter(context, material, { tokenizer, 
     return Object.assign((await getCounter(tokenizer)).count, { tokenizer: { tokenizerKey: tokenizer } });
 }
 
+/** Copies of list entries without the named fields; signatures and encrypted data are sent but never read as text. */
+const without = (list, ...names) => list.map(entry => {
+    if (!entry || typeof entry !== 'object') return entry;
+    const copy = { ...entry };
+    for (const name of names) delete copy[name];
+    return copy;
+});
+
 /** Count the same provider-specific message representation used by the browser. */
 export async function createRoleplayChatCounter(material, { images = [], models = [], fallbackTokenizer = 'o200k_base' } = {}) {
     const settings = bindChatInputSettings(mergeChatPresetSettings(material.active, material.preset), material.source, material.profile?.model);
@@ -36,7 +44,9 @@ export async function createRoleplayChatCounter(material, { images = [], models 
         let mediaTokens = 0;
         const text = messages.map(message => {
             const result = Object.fromEntries(['role', 'content', 'name', 'tool_call_id', 'tool_calls', 'reasoning',
-                'reasoning_content', 'reasoning_details', 'signature'].filter(key => message[key] != null).map(key => [key, message[key]]));
+                'reasoning_content', 'reasoning_details'].filter(key => message[key] != null).map(key => [key, message[key]]));
+            if (Array.isArray(result.tool_calls)) result.tool_calls = without(result.tool_calls, 'signature');
+            if (Array.isArray(result.reasoning_details)) result.reasoning_details = without(result.reasoning_details, 'data', 'signature');
             for (const key of ['tool_calls', 'reasoning_details']) if (result[key]) result[key] = JSON.stringify(result[key]);
             if (Array.isArray(message.content)) {
                 result.content = message.content.map(part => {
