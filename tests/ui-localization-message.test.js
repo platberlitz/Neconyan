@@ -151,8 +151,8 @@ describe('localizeString', () => {
         }
     });
 
-    test('there are 16 shipped languages besides English', () => {
-        expect(SHIPPED_LANGUAGES).toHaveLength(16);
+    test('there are 17 shipped languages besides English', () => {
+        expect(SHIPPED_LANGUAGES).toHaveLength(17);
     });
 
     test.each(SHIPPED_LANGUAGES)('every shipped language shows the whole missing-settings message: %s', language => {

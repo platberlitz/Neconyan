@@ -22,7 +22,7 @@ const SINGLE_ROWS = [
     // bare codes
     ['de', 'de-de'], ['it', 'it-it'], ['fr', 'fr-fr'], ['es', 'es-es'], ['pt', 'pt-pt'], ['nl', 'nl-nl'], ['ru', 'ru-ru'],
     ['ja', 'ja-jp'], ['ko', 'ko-kr'], ['ar', 'ar-sa'], ['is', 'is-is'], ['uk', 'uk-ua'], ['vi', 'vi-vn'], ['th', 'th-th'],
-    ['zh', 'zh-cn'],
+    ['zh', 'zh-cn'], ['tr', 'tr-tr'],
     // regions
     ['de-AT', 'de-de'], ['de-CH', 'de-de'], ['de-LI', 'de-de'], ['de-LU', 'de-de'], ['it-CH', 'it-it'], ['it-SM', 'it-it'],
     ['fr-CA', 'fr-fr'], ['fr-CH', 'fr-fr'], ['fr-BE', 'fr-fr'], ['es-419', 'es-es'], ['es-MX', 'es-es'], ['es-AR', 'es-es'],
@@ -38,7 +38,7 @@ const SINGLE_ROWS = [
     // Chinese: the region decides only when there is no script (zh-TW and zh-CN are whole-tag rows)
     ['zh-HK', 'zh-tw'], ['zh-MO', 'zh-tw'], ['zh-SG', 'zh-cn'], ['zh-MY', 'zh-cn'], ['zh-US', 'zh-cn'],
     // languages without a dictionary, and special tags
-    ['nb', 'en'], ['nn', 'en'], ['no', 'en'], ['nb-NO', 'en'], ['sv', 'en'], ['da', 'en'], ['pl', 'en'], ['tr', 'en'],
+    ['nb', 'en'], ['nn', 'en'], ['no', 'en'], ['nb-NO', 'en'], ['sv', 'en'], ['da', 'en'], ['pl', 'en'],
     ['ca', 'en'], ['gl', 'en'], ['be', 'en'], ['he', 'en'], ['yue', 'en'], ['yue-Hant-HK', 'en'], ['gsw-CH', 'en'],
     ['*', 'en'], ['', 'en'], ['x-pirate', 'en'], ['i-klingon', 'en'], ['und', 'en'], ['de_DE', 'en'], ['xx-yy', 'en'],
 ];
@@ -105,7 +105,7 @@ const HEADER_ROWS = [
 // C8-U4: input that is not a language tag at all.
 const ODD_INPUT = ['constructor', '__proto__', 'toString', '../de-de', 'de-de/../x', 'a'.repeat(5000), 'zh-hant-hant', '123', null, undefined, 123];
 
-test('C8-U1 pickLocale gives the table\'s result for every single tag, all 15 languages', async () => {
+test('C8-U1 pickLocale gives the table\'s result for every single tag, all 16 languages', async () => {
     const { pickLocale } = await import('../public/scripts/page-locale.js');
     assert.equal(SINGLE_ROWS.length, 82);
     for (const [tag, expected] of SINGLE_ROWS) {
@@ -161,7 +161,7 @@ test('C8-U4 the rule only ever returns a lang.json code or English, whatever it 
         inputs++;
         assert.ok(allowed.has(chooseRequestLocale(requestWith(header), { localesRoot })), header);
     }
-    assert.equal(inputs, 194);
+    assert.equal(inputs, 197);
     for (const input of ODD_INPUT) {
         assert.ok(allowed.has(chooseRequestLocale(requestWith(input), { localesRoot })), `header ${String(input).slice(0, 60)}`);
     }

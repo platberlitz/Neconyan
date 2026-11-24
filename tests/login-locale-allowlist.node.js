@@ -64,7 +64,7 @@ const isAllowed = response => response.status === 200 && response.body === 'pass
 
 test('A1 the sign-in page may fetch its script and the dictionaries without a session', async t => {
     const server = await startServer(t);
-    assert.equal(NEW_ROUTES.length, 34);
+    assert.equal(NEW_ROUTES.length, 36);
     for (const headers of CLIENTS) {
         for (const route of NEW_ROUTES) {
             const response = await send(server, 'GET', route, headers);
@@ -107,7 +107,7 @@ function walkJson(folder, prefix) {
     return fs.readdirSync(folder, { withFileTypes: true }).filter(entry => entry.isFile() && entry.name.endsWith('.json')).map(entry => `${prefix}${entry.name}`);
 }
 
-test('A4 exactly 34 new paths are opened: the script, the language list and two dictionaries for each of 16 languages', async t => {
+test('A4 exactly 36 new paths are opened: the script, the language list and two dictionaries for each of 17 languages', async t => {
     const server = await startServer(t);
     const candidates = [
         '/scripts/page-locale.js', '/scripts/i18n.js', '/scripts/ui-localization.js',
@@ -119,7 +119,7 @@ test('A4 exactly 34 new paths are opened: the script, the language list and two 
         if (isAllowed(await send(server, 'GET', route))) passing.push(route);
     }
     assert.equal(passing.length, 1 + 2 * codes.length + 1);
-    assert.equal(passing.length, 34);
+    assert.equal(passing.length, 36);
     assert.deepEqual([...passing].sort(), [...NEW_ROUTES].sort());
 });
 
