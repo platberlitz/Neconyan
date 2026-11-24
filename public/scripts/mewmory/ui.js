@@ -2977,7 +2977,7 @@ function loadMewmoryStyles() {
     if (!style) {
         style = document.createElement('link');
         style.id = 'mewmory-css';
-        style.href = 'css/mewmory.css?v=20261206-heading-letters';
+        style.href = 'css/mewmory.css?v=20261206-companion-panel-beside';
         document.head.append(style);
     }
     if (style.rel !== 'stylesheet') {
