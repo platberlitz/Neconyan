@@ -1289,6 +1289,99 @@ describe('companion tracker panel', () => {
         }
     });
 
+    test('keeps the panel open when clicking inside an open popup or fullscreen editor overlay', async () => {
+        const panel = await importPanel();
+        const elementStub = () => {
+            const element = {
+                length: 0,
+                on: jest.fn(() => element),
+                append: jest.fn(() => element),
+                html: jest.fn(() => element),
+                toggle: jest.fn(() => element),
+                attr: jest.fn(() => element),
+                addClass: jest.fn(() => element),
+                removeClass: jest.fn(() => element),
+            };
+            return element;
+        };
+        const panelElement = elementStub();
+        const handleElement = elementStub();
+        const documentElement = elementStub();
+        const menuItem = { on: jest.fn(() => menuItem) };
+        let openPopup = null;
+        globalThis.document.querySelector = jest.fn(selector => (selector.includes('dialog.popup[open]') ? openPopup : null));
+        globalThis.$ = jest.fn(arg => {
+            if (arg === globalThis.document.body) {
+                return { append: jest.fn() };
+            }
+            if (arg === globalThis.document) {
+                return documentElement;
+            }
+            if (arg === '#ica--tracker-panel') {
+                return panelElement;
+            }
+            if (arg === '#ica--tracker-panel-handle') {
+                return handleElement;
+            }
+            if (arg === '#ica_tracker_panel_wand_item') {
+                return { length: 1 };
+            }
+            if (typeof arg === 'string' && arg.trim().startsWith('<')) {
+                return menuItem;
+            }
+            return elementStub();
+        });
+        const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(1000);
+
+        try {
+            panel.initCompanionPanel();
+            const outsideClickHandler = documentElement.on.mock.calls.find(([eventName]) => eventName === 'click')[1];
+
+            panel.openCompanionPanel();
+            nowSpy.mockReturnValue(2000);
+
+            // Clicking inside a popup dialog or fullscreen overlay leaves the panel open.
+            outsideClickHandler({
+                target: {
+                    isConnected: true,
+                    closest: jest.fn(selector => (selector.includes('dialog.popup') ? {} : null)),
+                },
+            });
+            expect(panelElement.removeClass).not.toHaveBeenCalled();
+
+            // Clicking a detached control (e.g. a button removed during popup re-render) leaves the panel open.
+            outsideClickHandler({
+                target: {
+                    isConnected: false,
+                    closest: jest.fn(() => null),
+                },
+            });
+            expect(panelElement.removeClass).not.toHaveBeenCalled();
+
+            // Any click while an open modal popup sits above the panel leaves the panel open.
+            openPopup = {};
+            outsideClickHandler({
+                target: {
+                    isConnected: true,
+                    closest: jest.fn(() => null),
+                },
+            });
+            expect(panelElement.removeClass).not.toHaveBeenCalled();
+
+            // Once no popup is open, a normal outside click closes the panel as expected.
+            openPopup = null;
+            outsideClickHandler({
+                target: {
+                    isConnected: true,
+                    closest: jest.fn(() => null),
+                },
+            });
+            expect(panelElement.removeClass).toHaveBeenCalledWith('is-open');
+        } finally {
+            nowSpy.mockRestore();
+        }
+    });
+
     test('restores the saved panel lock state', async () => {
         accountStorageValues.set('ica--tracker-panel-locked', 'true');
         const panel = await importPanel();

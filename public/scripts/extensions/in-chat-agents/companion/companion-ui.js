@@ -28,6 +28,8 @@ import { getPlotCompassIdentity } from './plot-compass-context.js';
 import { CHATROOM_FEED_PROBE_RE, buildChatroomReplyRunOptions, normalizeChatroomField, foldChatroomGreentextLines, normalizeChatroomGeneratedLine } from './chatroom-feed.js';
 import { foldMessageInboxLines } from './message-inbox-feed.js';
 import { isLorebookAgent, sendCompanionResultToLorebook } from './lorebook-sender.js';
+import { isMemoryShardTarget } from './memory-shard-format.js';
+import { createMemoryShardEditor } from './memory-shard-editor.js';
 import {
     COMPANION_RESULTS_UPDATED_EVENT,
     MAX_COMPANION_RESULT_CHARS,
@@ -1094,14 +1096,36 @@ function getCompanionActionContext(element) {
 
 export async function editCompanionResult(messageIndex, agentId, message, result) {
     const isCurrent = captureCompanionResultTarget(messageIndex, agentId);
-    const editor = $(`
-        <div class="ica--companion-edit-popup">
-            <div class="ica--regex-note">Edit only this saved card. Regenerate to ask the model again.</div>
-            <textarea class="text_pole textarea_compact" rows="12" aria-label="Saved companion note">${escapeHtml(result?.content ?? '')}</textarea>
-            <div role="alert" data-role="note-error" hidden></div>
-        </div>
-    `);
-    attachTextareaFullscreen(editor);
+    const agent = getAgentById(agentId);
+    const initialContent = result?.content ?? '';
+    const useMemoryShardEditor = isMemoryShardTarget({ agent, content: initialContent });
+
+    let editor;
+    let memoryShardEditor = null;
+    if (useMemoryShardEditor) {
+        memoryShardEditor = createMemoryShardEditor({
+            initialContent,
+            maxLength: MAX_COMPANION_RESULT_CHARS,
+        });
+        editor = $(`
+            <div class="ica--companion-edit-popup ica--companion-edit-popup-shard">
+                <div class="ica--regex-note">Edit sections below or switch to Raw Markdown. Regenerate to ask the model again.</div>
+                <div data-role="ms-editor-mount"></div>
+                <div role="alert" data-role="note-error" hidden></div>
+            </div>
+        `);
+        editor.find('[data-role="ms-editor-mount"]').append(memoryShardEditor.root);
+    } else {
+        editor = $(`
+            <div class="ica--companion-edit-popup">
+                <div class="ica--regex-note">Edit only this saved card. Regenerate to ask the model again.</div>
+                <textarea class="text_pole textarea_compact" rows="12" aria-label="Saved companion note">${escapeHtml(initialContent)}</textarea>
+                <div role="alert" data-role="note-error" hidden></div>
+            </div>
+        `);
+        attachTextareaFullscreen(editor);
+    }
+
     await new Popup(editor, POPUP_TYPE.CONFIRM, '', {
         okButton: 'Save Note',
         cancelButton: 'Cancel',
@@ -1109,7 +1133,9 @@ export async function editCompanionResult(messageIndex, agentId, message, result
         large: true,
         onClosing: async popup => {
             if (popup.result !== POPUP_RESULT.AFFIRMATIVE) return true;
-            const content = String(editor.find('textarea').val() ?? '');
+            const content = memoryShardEditor
+                ? memoryShardEditor.getValue()
+                : String(editor.find('textarea').val() ?? '');
             const error = !isCurrent()
                 ? 'This note changed while you were editing. Copy your changes, then reopen it.'
                 : content.length > MAX_COMPANION_RESULT_CHARS
