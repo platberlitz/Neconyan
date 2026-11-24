@@ -17,6 +17,7 @@
 - The **Relationship Tracker** card reads left to right on a phone again, whichever theme you use. Its status moves to a second line instead of squashing the name into a column of single letters.
 - **Memory Shard** follows your **Regex Agent Themes** now, with live preview and per-tracker overrides, and switches back to the stock look without touching saved chats.
 - The **Companions** panel opens without freezing the app for a few seconds when you run a lot of themed companions, and its buttons respond straight away.
+- Press **Try first** on a **Scratchpad** change card, or **Try before saving** in its review, to rehearse the next story reply with that change in place. Nothing is saved until you press **Save change**, and the reply is marked **Rehearsal · Unsaved change**.
 
 ### Merged Staging PRs
 - PR #776 (2026-11-20) `fix(settings): keep theme filters in view when pressed`

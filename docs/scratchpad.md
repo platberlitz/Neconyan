@@ -136,7 +136,7 @@ With a Roleplay or Conversation chat open, press **+ → Rehearse next reply** b
 
 The selected Scratchpad assistant drafts the next story reply using the material shared in Context. It uses that assistant's connection, rather than running the story's normal generation. Each result is labelled **Rehearsal** and stays in Scratchpad. Rehearsals offer no change cards or model tools; **Copy**, **Use as draft** and **Add as another version** remain deliberate actions. **Try again** keeps rehearsal mode, and later discussions identify these drafts as possibilities rather than story events. Session exports keep the label.
 
-Rehearsal is available only with a story chat open. Check **Show preview** first if the draft needs a detail that isn't currently shared.
+Rehearsal is available only with a story chat open. Check **Show preview** first if the draft needs a detail that isn't currently shared. To rehearse with a suggested change before saving it, see [Try a change before saving](#try-a-change-before-saving).
 
 ## Automatic summary
 
@@ -275,6 +275,12 @@ Scratchpad can suggest:
 - **Notebook**: creating a note, appending text, replacing a heading section or an explicitly shared selection, updating properties and suggesting publication as lore. Current Notebook read/edit permissions and temporary grants still apply. Publishing needs the separate lore permission.
 
 Press **Review** on a card to see what is there **Now** next to the **Proposed text**. You can edit the proposed text before pressing **Save change**. **Not now** closes the review without saving, and the card stays so you can come back to it. **Dismiss** marks a card you do not want; **Undo** brings it back.
+
+### Try a change before saving
+
+**Try first** sits beside **Review** and **Dismiss** on cards that change the story's material. It rehearses the next story reply with the proposed change already in place, using the same rehearsal as **+ → Rehearse next reply**, and saves nothing. In the review, **Try before saving** does the same with the text as you've edited it and closes the review without saving. The reply is labelled **Rehearsal · Unsaved change** and names the change it tried. The card stays open, so press **Review** and **Save change** once you like the result, or **Dismiss** it.
+
+It works for character card text (description, personality, scenario, first message, example messages, system prompt, post-history instructions, alternate greetings and creator's notes), persona name, description and title, and lorebook entries you add, edit or delete, in Roleplay and Conversation. In Roleplay it also works for the Author's Note, preset fields and message changes. The change is shown in Context only for that one rehearsal, even when its Context switch is off; entries hidden from Agents stay hidden and hidden messages stay out unless you share them. Picture, new character or persona, Agent, regex, CSS Snippet, Dialogue Colors, Mewmory and Notebook cards have no **Try first**, and neither does General. Both buttons wait while a reply is running.
 
 When one reply holds two or more open cards that edit something existing, a **Review all** button appears under them. It opens every change in one list, each with a tick box, its own comparison and **Edit the proposed text**. Untick what you don't want and press **Save ticked changes**. I read each target again just before writing it, so a change that no longer fits is left alone and its card stays open; you get a list of anything that wasn't saved and why. Picture cards, Notebook changes and cards that create something new are left out of the list and keep their own **Review** button.
 
