@@ -259,8 +259,10 @@ export async function acceptScratchpadReply(request, body = {}) {
         // Only links typed in the current message are read, and only when the session asks for it.
         const webPages = session.settings.readLinks && !input.discuss ? planWebPages(plan.prompt) : null;
         // The source lookup is opt-in and reads only the allow-listed app folders when the job runs.
+        const sourceEvidence = input.capabilities.appEvidence === true && session.settings.include.appEvidence === true
+            ? input.context : '';
         const sourceLookup = input.capabilities.appSource === true && session.settings.include.appSource === true && bucket.source.kind !== 'notebook' && !input.discuss && !plan.rehearsal
-            ? planSourceLookup(plan.prompt, input.context) : null;
+            ? planSourceLookup(plan.prompt, sourceEvidence) : null;
         // Target checking only runs when images are available, so a stale or renamed shared card cannot fail a text reply.
         const targets = images && !plan.rehearsal ? captureImageTargetsLocked(lease, bucket.source, input.targets, { shared: session.settings.include.card }) : [];
         const sharedPersona = plan.rehearsal ? null : capturePersonaTargetLocked(lease, bucket.source, input.capabilities.persona, session.settings.include.persona);

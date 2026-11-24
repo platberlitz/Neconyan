@@ -26,7 +26,9 @@ const PLANNER_SOURCE_BYTES = 12 * 1024;
 const MAX_QUERY_CHARS = 120;
 const MAX_STORED_FILES = 24;
 const MAX_NOTE_CHARS = 300;
-const EVIDENCE_HEADING = '## App evidence';
+const EVIDENCE_HEADING = /^## App evidence$/gm;
+const SOURCE_NOTE_HEADING = /^## Neconyan source code$/gm;
+const MESSAGES_HEADING = /^## (?:Latest messages \(|Picked messages$)/gm;
 
 const SOURCE_PLAN_INSTRUCTIONS = [
     'You choose which parts of Neconyan\'s own source code an assistant should read before it answers a question about a problem in Neconyan. The source is read-only. Only public/script.js and the public/scripts and src folders can be read; config, secrets and user data can never be read.',
@@ -47,13 +49,30 @@ function plannerText(value, limit) {
     return String(value ?? '').replaceAll('<', '‹').replaceAll('>', '›').slice(0, limit);
 }
 
-/** The App evidence section of the shared context, or '' when none was shared. */
+/**
+ * The App evidence section of the shared context, or '' when none was shared.
+ * Matches only standalone headings, preferring the section right before
+ * '## Neconyan source code' (and before the chat transcript) so card, lorebook
+ * or chat text mentioning '## App evidence' cannot reach the source planner.
+ */
 export function appEvidenceExcerpt(context) {
-    const text = String(context ?? '');
-    const start = text.indexOf(EVIDENCE_HEADING);
-    if (start < 0) return '';
-    const next = text.indexOf('\n## ', start + EVIDENCE_HEADING.length);
-    return clipBytes(text.slice(start, next < 0 ? undefined : next).trim(), MAX_EVIDENCE_BYTES);
+    const text = String(context ?? '').replace(/\r\n?/g, '\n');
+    const transcript = [...text.matchAll(MESSAGES_HEADING)].map(match => match.index).at(-1);
+    const searchable = transcript === undefined ? text : text.slice(0, transcript);
+    const headings = [...searchable.matchAll(EVIDENCE_HEADING)].map(match => match.index);
+    if (!headings.length) return '';
+    const sliceFrom = start => {
+        const next = searchable.indexOf('\n## ', start + '## App evidence'.length);
+        return { text: searchable.slice(start, next < 0 ? undefined : next).trim(), next };
+    };
+    const sourceHeadings = new Set([...searchable.matchAll(SOURCE_NOTE_HEADING)].map(match => match.index));
+    let chosen = null;
+    for (const start of headings) {
+        const part = sliceFrom(start);
+        if (part.next >= 0 && sourceHeadings.has(part.next + 1)) chosen = part.text;
+    }
+    if (chosen === null) chosen = sliceFrom(headings.at(-1)).text;
+    return clipBytes(chosen, MAX_EVIDENCE_BYTES);
 }
 
 /** What the lookup works from: the user's own message and the app evidence they shared, nothing else. */

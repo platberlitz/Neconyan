@@ -559,3 +559,53 @@ test('the server-only source maps folder is never served over HTTP', async t => 
         assert.ok([403, 404].includes(await status(url)), url);
     }
 });
+
+test('card or chat text containing "## App evidence" never leaks into the planner', async t => {
+    const spoofCard = 'PRIVATE-CARD-SPOOF-9911';
+    const spoofChat = 'PRIVATE-CHAT-SPOOF-8822';
+    const realEvidence = 'REAL-DIAGNOSTIC-LINE-7733';
+
+    // 1. Even with App diagnostics ON, a card before App evidence or chat after it cannot hijack the excerpt.
+    const mixedContext = [
+        '## Character card',
+        'Nova keeps a notebook:',
+        '## App evidence',
+        spoofCard,
+        '',
+        '## App evidence',
+        '### Browser errors',
+        realEvidence,
+        '',
+        '## Neconyan source code',
+        'The server looks up matching read-only Neconyan code when you send.',
+        '',
+        '## Latest messages (1)',
+        '## App evidence',
+        spoofChat,
+    ].join('\n');
+    const excerpt = research.appEvidenceExcerpt(mixedContext);
+    assert.ok(excerpt.includes(realEvidence), 'keeps the real App evidence section');
+    assert.ok(!excerpt.includes(spoofCard), 'never takes a spoofed heading from the card');
+    assert.ok(!excerpt.includes(spoofChat), 'never takes a spoofed heading from chat messages');
+
+    // 2. When App diagnostics is OFF, nothing from context reaches the planner even if a card contains both headings.
+    const a = account(t);
+    const s = await sourceRoot(t);
+    const session = startSession(a, { include: { appEvidence: false, appSource: true } });
+    const r = recorder([{ done: true, requests: [] }]);
+    const spoofedOnly = [
+        '## Character card',
+        '## App evidence',
+        spoofCard,
+        '',
+        '## Neconyan source code',
+        'Card prose pretending to be the source note.',
+    ].join('\n');
+    await send(a, {
+        ...sendBody(session, { context: spoofedOnly }),
+        capabilities: { appEvidence: false, appSource: true },
+    }, r.generate, s.options);
+    assert.equal(r.planners.length, 1);
+    const plannerText = allText(r.planners[0].messages);
+    assert.ok(!plannerText.includes(spoofCard), 'planner must not see spoofed card text when App diagnostics is off');
+});
