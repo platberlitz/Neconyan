@@ -9,6 +9,7 @@ import { encodeGenerationText } from '../endpoints/tokenizers.js';
 import { resolveGenerationProfile } from './profiles.js';
 import { cleanGeneratedText, createRawPrompt, extractMessageFromData, removePartialStops } from '../../public/scripts/generation-format.js';
 import { resolveCustomStoppingStrings } from '../../public/scripts/chat-request-controls.js';
+import { notifyPromptReady } from './prompt-ready.js';
 
 const novelTokenizer = model => model.includes('clio') ? 'nerdstash' : model.includes('kayra') ? 'nerdstash_v2'
     : model.includes('erato') ? 'llama3' : null;
@@ -98,7 +99,7 @@ async function novelTokenControls(settings, model, stops, signal) {
 /** Use the already-selected legacy controls and native handler; no browser-prepared provider request. */
 export async function runLegacyProfile({ context, binding, messages, maxTokens, macroEnvironment,
     ephemeralStops = [], userName = 'User', characterName = 'Character', groupNames = [],
-    signal, fetch: fetchImpl, jobContext, modelOverride = '', overridePayload = {}, rawOptions = {}, beforeDispatch, validatePrompt, stream = false, preparedText, cfgValues, onProviderStep, stepNamespace = '', captureMacroState = false,
+    signal, fetch: fetchImpl, jobContext, modelOverride = '', overridePayload = {}, rawOptions = {}, beforeDispatch, validatePrompt, stream = false, preparedText, cfgValues, onProviderStep, stepNamespace = '', captureMacroState = false, onPromptReady,
 } = {}) {
     signal ||= jobContext?.signal;
     signal?.throwIfAborted();
@@ -185,6 +186,7 @@ export async function runLegacyProfile({ context, binding, messages, maxTokens, 
         const submitted = await providerStep(jobContext, hordeSubmissionKey, async () => {
             resolveGenerationProfile(context.directories, binding);
             try { await beforeDispatch?.(); } catch (error) { throw providerNotDispatched(error); }
+            notifyPromptReady(onPromptReady, { ...params, prompt }, material, binding);
             const response = await runBackendRequest(request, handleHordeSubmit, { prompt, params: { ...params, n: 1,
                 frmtadsnsp: false, frmtrmblln: false, frmtrmspch: false, frmttriminc: false },
             trusted_workers: Boolean(material.horde.trusted_workers_only), models: material.horde.models },
@@ -229,6 +231,7 @@ export async function runLegacyProfile({ context, binding, messages, maxTokens, 
     const call = async () => {
         resolveGenerationProfile(context.directories, binding);
         try { await beforeDispatch?.(); } catch (error) { throw providerNotDispatched(error); }
+        notifyPromptReady(onPromptReady, payload, material, binding);
         const response = await runBackendRequest({ user: { profile: { handle: context.owner }, directories: context.directories }, headers: {} },
             handler, payload, { signal, fetch: fetchImpl, boundProfile: true });
         const rawText = extractMessageFromData(response, material.source, { excludeReasoning: true });

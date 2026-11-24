@@ -158,7 +158,16 @@ function checkAvailability() {
         { key: 'why', command: '/why <entry>', label: t`Why didn't an entry trigger?`, problem: bookProblem, text: whyText, include: { lore: true } },
         { key: 'app', command: '/check app', label: t`What went wrong in Neconyan?`, problem: notebook ? noNotes : '',
             text: t`Use the app diagnostics to tell me what went wrong in Neconyan, and what I should try or share next.`, include: { appEvidence: true } },
+        { key: 'prompt', command: '/check prompt', label: t`Inspect the last prompt sent`, problem: lastPromptProblem(source),
+            text: t`Look at the last prompt sent to the model for this chat. Tell me what reached it, in what order, and anything that looks wrong or missing.`, include: { lastPrompt: true } },
     ];
+}
+
+/** Why the last prompt sent cannot be shared from this source, or '' when it can: only an open Roleplay or Conversation chat has one. */
+function lastPromptProblem(source) {
+    if (source?.kind === 'roleplay' || source?.kind === 'conversation') return '';
+    if (source?.kind === 'notebook') return t`Checks aren't offered in a note discussion. Open General Scratchpad or a chat to run one.`;
+    return t`General Scratchpad has no story chat, so there is no prompt to share. Open Scratchpad from a Roleplay or Conversation chat, then try again.`;
 }
 
 /** The check prompts for items this session can actually inspect. Tapping one also turns on its sharing switches. */
@@ -170,7 +179,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     depth: 15,
     picked: [],
     notes: [],
-    include: { card: true, persona: true, authorsNote: true, lore: true, preset: false, hidden: false, agents: false, regex: false, cssSnippets: false, dialogueColors: false, mewmory: false, problems: false, appEvidence: false },
+    include: { card: true, persona: true, authorsNote: true, lore: true, preset: false, hidden: false, agents: false, regex: false, cssSnippets: false, dialogueColors: false, mewmory: false, problems: false, appEvidence: false, lastPrompt: false },
     loreOverrides: {},
     lorebook: '',
     connection: { kind: 'current' },
@@ -1150,7 +1159,7 @@ function showToolsHelp() {
         h('strong', { text: t`Tools that work out a value` }),
         h('p', { text: t`Start a line with /roll 2d6+1, /calc 12*(3+4), /pick tea | coffee | cocoa or /now. Scratchpad swaps the line for its result before sending.` }),
         h('strong', { text: t`Shortcuts that run a check` }),
-        h('p', { text: t`Start a line with /check card, /check preset, /check lorebook, /check app, or /why and the name or key of an entry. Scratchpad turns on the sharing that check needs and sends it. Send /check on its own to see which are ready now.` }));
+        h('p', { text: t`Start a line with /check card, /check preset, /check lorebook, /check app, /check prompt, or /why and the name or key of an entry. Scratchpad turns on the sharing that check needs and sends it. Send /check on its own to see which are ready now.` }));
     toastr.info(body, t`Typed tools`, { timeOut: 12000, escapeHtml: false });
     app.el.composer.focus();
 }
@@ -1185,11 +1194,11 @@ async function resolveShortcut(typed, source, sessionId) {
     const shortcut = parseShortcut(shortcuts[0]);
     const word = shortcut.word;
     if (shortcut.kind === 'check' && !word) {
-        if (lines.some((line, position) => position !== index && line.trim())) return stop(t`Say what to check after /check: card, preset, lorebook or app. Send /check on its own to see which are ready now.`);
+        if (lines.some((line, position) => position !== index && line.trim())) return stop(t`Say what to check after /check: card, preset, lorebook, app or prompt. Send /check on its own to see which are ready now.`);
         showCheckList();
         return null;
     }
-    if (shortcut.kind === 'check' && !shortcut.target) return stop(t`Scratchpad can't check '${word}'. Use /check card, /check preset, /check lorebook or /check app, or send /check on its own to see which are ready now.`);
+    if (shortcut.kind === 'check' && !shortcut.target) return stop(t`Scratchpad can't check '${word}'. Use /check card, /check preset, /check lorebook, /check app or /check prompt, or send /check on its own to see which are ready now.`);
     const prompt = checkAvailability().find(item => item.key === (shortcut.kind === 'why' ? 'why' : shortcut.target));
     if (!prompt) return stop(t`Scratchpad can't run that check here.`);
     if (prompt.problem) return stop(prompt.problem);
@@ -1437,8 +1446,11 @@ async function applyCheckSwitches(prompt) {
     const before = currentSettings().include || {};
     const changed = [];
     const evidence = prompt.include.appEvidence === true;
+    const lastPrompt = prompt.include.lastPrompt === true;
     if (evidence) {
         if (!before.appEvidence) changed.push(t`App diagnostics`);
+    } else if (lastPrompt) {
+        if (!before.lastPrompt) changed.push(t`Last prompt sent`);
     } else if (!before.problems) {
         changed.push(t`Problem checks`);
     }
@@ -1446,7 +1458,7 @@ async function applyCheckSwitches(prompt) {
     for (const [key, label] of Object.entries(labels)) {
         if (prompt.include[key] && !before[key]) changed.push(label);
     }
-    const saved = await updateSettings(settings => ({ include: { ...settings.include, ...(evidence ? {} : { problems: true }), ...prompt.include } }), { rerenderContext: app.tab === 'context' });
+    const saved = await updateSettings(settings => ({ include: { ...settings.include, ...(evidence || lastPrompt ? {} : { problems: true }), ...prompt.include } }), { rerenderContext: app.tab === 'context' });
     if (saved && changed.length) toastr.info(t`Turned on ${changed.join(' and ')} for this session.`, t`Scratchpad`);
     return saved;
 }
@@ -2955,6 +2967,8 @@ function renderContext({ force = true } = {}) {
                 t`Checks shared cards, presets and lorebooks for likely problems, and shares fuller activation and sampler details.`),
             checkbox(t`App diagnostics`, include.appEvidence === true, value => setInclude('appEvidence', value),
                 t`Shares Neconyan's recent errors, failed model requests and your failed requests and jobs, so the assistant can explain what went wrong. Admins also share server crash reports and error log lines.`),
+            roleplay || app.source.kind === 'conversation' ? checkbox(t`Last prompt sent`, include.lastPrompt === true, value => setInclude('lastPrompt', value),
+                t`Shares the exact prompt last sent to the model for this chat, with keys, passwords and hidden lorebook entries removed.`) : null,
             checkbox(t`Agents`, include.agents === true, value => setInclude('agents', value), t`Shares the name, description and prompt of every saved Agent, so an assistant can suggest edits to them.`),
             checkbox(t`Regexes`, include.regex === true, value => setInclude('regex', value), t`Shares the name, Find pattern and replacement of every global regex script, so an assistant can suggest edits to them.`),
             checkbox(t`CSS Snippets`, include.cssSnippets === true, value => setInclude('cssSnippets', value), t`Shares the name and CSS of every saved snippet, so an assistant can suggest edits to them.`),

@@ -15,6 +15,7 @@ import { noteOwner, registerHandler } from '../jobs/runner.js';
 import { createMacroEnvironment } from '../macros/index.js';
 import { appendConversationJobMessage, applyConversationBookkeeping, captureConversationTarget, prepareConversationTarget, commitConversationEffect, commitConversationJobCommands, commitConversationReplyNotice, isConversationDeliveryStopped, readConversationEffectReceipt, readConversationTarget, retainConversationAutomaticAcceptance, wasConversationAutomaticOccurrenceAccepted, acceptedConversationOccurrenceOwner } from './conversation-effects.js';
 import { runChatProfile } from './service.js';
+import { conversationPromptKey, lastPromptRecorder } from '../scratchpad/last-prompts.js';
 import { generateConversationAssistantReply } from './conversation-assistant-tools.js';
 import { getChatProfileContextLimit } from './profiles.js';
 import { createConversationImageGenerator, conversationReplyWantsImage, lastUserMessageText } from './conversation-images.js';
@@ -914,6 +915,7 @@ async function runConversationParticipantJob(context, deps) {
                 groupNames: snapshot.groupNames || [], rawOptions: separateSystem ? { systemPrompt: snapshot.messages[0].content } : {},
                 macroEnvironment: createMacroEnvironment(snapshot.macros), stream: snapshot.streamPreview === true,
                 stepNamespace: retry ? `conversation-empty-retry:${retry}` : '',
+                onPromptReady: lastPromptRecorder(directories, [conversationPromptKey(snapshot.target)], { mode: 'conversation', speaker: speaker.name }),
                 onStream: value => counter.publish(value) };
             response = snapshot.assistantTools
                 ? await generateConversationAssistantReply(context, snapshot, options, deps.generate)

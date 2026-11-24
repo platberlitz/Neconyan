@@ -11283,6 +11283,9 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                 presetName: getPresetManager()?.getSelectedPresetName() || '',
                 messagesCount: main_api !== 'openai' ? mesSend.length : oaiMessages.length,
                 examplesCount: main_api !== 'openai' ? (pinExmString ? mesExamplesArray.length : count_exm_add) : oaiMessageExamples.length,
+                model: main_api === 'openai' ? (getChatCompletionModel(oai_settings) || '') : '',
+                generationType: type,
+                recordedAt: Date.now(),
             };
             if (!isCurrent()) return;
 

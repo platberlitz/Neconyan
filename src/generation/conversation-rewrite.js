@@ -23,6 +23,7 @@ import { getConversationThreadKey } from '../endpoints/conversation-store.js';
 import { refreshBranchPreview } from '../endpoints/conversation-messages.js';
 import { createMessageTokenCounter, getReplyReasoning } from './message-token-counts.js';
 import { publishConversationPreview } from './conversation-preview.js';
+import { conversationPromptKey, lastPromptRecorder } from '../scratchpad/last-prompts.js';
 import { applyConversationJobCommands, captureConversationTarget, commitConversationEffect, readConversationTarget } from './conversation-effects.js';
 
 const REWRITE_MODES = new Set(['regenerate', 'polish']);
@@ -196,6 +197,8 @@ async function runConversationRewriteJob(context, { generate }) {
         try {
             counter = await createMessageTokenCounter(value => publishConversationPreview(context, snapshot, value), { signal: context.signal });
             const response = await generate({ ...generationOptions(snapshot), context, jobContext: context, beforeDispatch: assertSource,
+                onPromptReady: lastPromptRecorder(directories, [conversationPromptKey(snapshot.target)],
+                    { mode: 'conversation', speaker: snapshot.characterName, generationType: snapshot.mode }),
                 onStream: value => counter.publish(value) });
             const reasoning = getReplyReasoning(response);
             reply = { text: String(response?.text ?? ''), ...(reasoning ? { reasoning } : {}) };

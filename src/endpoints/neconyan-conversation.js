@@ -78,6 +78,7 @@ import { acceptConversationSchedule, acceptConversationSummary } from '../genera
 import { claimConversationPresentations } from '../generation/conversation-effects.js';
 import { acceptConversationRewrite } from '../generation/conversation-rewrite.js';
 import { acceptConversationSelfie } from '../generation/conversation-selfie.js';
+import { conversationPromptKey, recordLastPrompt } from '../scratchpad/last-prompts.js';
 
 const PREFER_REAL_IP_HEADER = getConfigValue('rateLimiting.preferRealIpHeader', false, 'boolean');
 const MESSAGE_SEND_RATE_LIMIT = getConfigValue('rateLimiting.conversationMessageSendPoints', 20, 'number');
@@ -1025,6 +1026,15 @@ router.post('/message/send', asyncRoute(async (request, response) => {
         if (!pendingSave.ok) return response.status(pendingSave.status).send(pendingSave.body);
         const retryState = { version: pendingSave.version, userMessage, reuseLastUser: true };
 
+        recordLastPrompt(request.user?.directories, [conversationPromptKey({ ...storageTarget, branchId: branch.id })], {
+            prompt: Array.isArray(payload.messages) ? payload.messages : payload.prompt,
+            mode: 'conversation',
+            api: backend === 'text' ? 'textgenerationwebui' : 'openai',
+            backend: payload.chat_completion_source || payload.api_type || '',
+            model: payload.model,
+            speaker: character?.name,
+            contextLimit: Number(generationSettings?.max_context ?? generationSettings?.openai_max_context ?? generationSettings?.context_length) || 0,
+        });
         let generationResponse;
         try {
             generationResponse = await runBackendGeneration(request, backend, payload, { signal: cancellationController.signal });

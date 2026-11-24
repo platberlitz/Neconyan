@@ -15,7 +15,7 @@ describe('Scratchpad check shortcuts', () => {
     });
 
     test('each target is read whatever its case, with the words after it kept', () => {
-        expect(CHECK_TARGETS).toEqual(['card', 'preset', 'lorebook', 'app']);
+        expect(CHECK_TARGETS).toEqual(['card', 'preset', 'lorebook', 'app', 'prompt']);
         expect(parse('/check card')).toEqual([{ kind: 'check', word: 'card', target: 'card', rest: '' }]);
         expect(parse('/CHECK Preset')).toEqual([{ kind: 'check', word: 'Preset', target: 'preset', rest: '' }]);
         expect(parse('/check lorebook   the second book  ')).toEqual([{ kind: 'check', word: 'lorebook', target: 'lorebook', rest: 'the second book' }]);

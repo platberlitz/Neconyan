@@ -49,14 +49,21 @@ jest.unstable_mockModule('../public/scripts/personas.js', () => ({ get user_avat
 jest.unstable_mockModule('../public/scripts/i18n.js', () => ({ t: (parts, ...values) => parts.reduce((text, part, index) => text + part + (values[index] ?? ''), '') }));
 jest.unstable_mockModule('../public/scripts/roleplay-save-chain.js', () => ({ getRoleplaySourceId }));
 jest.unstable_mockModule('../public/scripts/tokenizers.js', () => ({ getTokenCountAsync: async () => 1 }));
+const worldNames = ['Roleplay lore', 'Chat lore', 'Nova lore', 'Persona lore', 'Global lore'];
 jest.unstable_mockModule('../public/scripts/world-info.js', () => ({
     loadWorldInfo, selected_world_info: ['Global lore'], world_info: { charLore: [] },
-    world_names: [], world_info_depth: 2, world_info_budget: 25, world_info_budget_cap: 0,
+    world_names: worldNames, world_info_depth: 2, world_info_budget: 25, world_info_budget_cap: 0,
     world_info_recursive: false, world_info_max_recursion_steps: 0,
     world_info_case_sensitive: false, world_info_match_whole_words: false,
 }));
 const EVIDENCE_SECTION = '## App evidence\nRecorded by Neconyan itself.\n\n### Neconyan and this device\n- Neconyan 1.0.0';
 jest.unstable_mockModule('../public/scripts/scratchpad/evidence-gather.js', () => ({ gatherAppEvidence: async () => EVIDENCE_SECTION }));
+const itemizedByChat = new Map();
+const readItemizedPromptsForChat = jest.fn(async id => itemizedByChat.get(id) || []);
+jest.unstable_mockModule('../public/scripts/itemized-prompts.js', () => ({ readItemizedPromptsForChat }));
+let serverPrompt = null;
+const readLastPrompt = jest.fn(async () => ({ prompt: serverPrompt }));
+jest.unstable_mockModule('../public/scripts/scratchpad/api.js', () => ({ readLastPrompt }));
 const presetSnapshot = {
     kind: 'chat', api: 'Chat Completion', name: 'Lantern', targets: [],
     modules: [
@@ -86,6 +93,11 @@ beforeEach(() => {
     groupId = '';
     chatId = 'chat';
     getRoleplaySourceId.mockReset().mockReturnValue(null);
+    itemizedByChat.clear();
+    readItemizedPromptsForChat.mockClear();
+    readLastPrompt.mockClear();
+    serverPrompt = null;
+    loadWorldInfo.mockImplementation(async name => books.get(name));
     characters.splice(0, characters.length, ...structuredClone([
         { avatar: 'Roleplay.png', name: 'Roleplay', data: { extensions: { world: 'Roleplay lore' } } },
         { avatar: 'Nova.png', name: 'Nova', data: { description: '{{char}} talks to {{user}}.', extensions: { world: 'Nova lore' } } },
@@ -94,7 +106,8 @@ beforeEach(() => {
     unshallowCharacter.mockClear();
     chat.length = 0;
     books.clear();
-    for (const name of ['Roleplay lore', 'Chat lore', 'Nova lore', 'Persona lore', 'Global lore']) {
+    worldNames.splice(0, worldNames.length, 'Roleplay lore', 'Chat lore', 'Nova lore', 'Persona lore', 'Global lore');
+    for (const name of worldNames) {
         books.set(name, { entries: { 0: { uid: 0, comment: name, key: ['lighthouse'], content: `${name}: {{char}} and {{user}}.` } } });
     }
 });
@@ -212,5 +225,118 @@ describe('Scratchpad shared context with App diagnostics', () => {
         expect(shared.text.match(/^## App evidence$/gm)).toHaveLength(1);
         expect(shared.text.replace(`\n\n${EVIDENCE_SECTION}`, '')).toBe(plain.text);
         expect(shared.text.indexOf('## App evidence')).toBeLessThan(shared.text.indexOf('A lighthouse.'));
+    });
+});
+
+describe('Scratchpad shared context with Last prompt sent', () => {
+    const HIDDEN = 'The Moonvault key is buried under {{char}}\'s third lantern, and {{user}} must never learn it.';
+    const sentPrompt = [
+        { role: 'system', content: 'Write Roleplay\'s next reply in the lighthouse story.' },
+        { role: 'system', content: 'THE MOONVAULT KEY IS BURIED UNDER ROLEPLAY\'S THIRD LANTERN, AND ROLEPLAY USER MUST NEVER LEARN IT.' },
+        { role: 'user', name: 'Roleplay user', content: 'A lighthouse. My key is sk-proj-Abc123def456ghi789jkl0.' },
+    ];
+    const roleplayChat = () => {
+        conversationState.conversationWorkspaceOpen = false;
+        chat.push({ name: 'Roleplay', mes: 'A lighthouse.', is_user: true });
+        books.get('Global lore').entries[1] = { uid: 1, comment: 'Vault', key: ['vault'], content: HIDDEN, agentBlacklisted: true };
+        itemizedByChat.set('chat', [
+            { mesId: 1, rawPrompt: 'An older prompt.', main_api: 'textgenerationwebui', recordedAt: 2000 },
+            { mesId: 0, rawPrompt: sentPrompt, main_api: 'openai', presetName: 'Lantern', this_max_context: 8192, recordedAt: 3000 },
+        ]);
+    };
+
+    test('the switch off, missing or set to anything but true keeps the exact text and reads no prompt', async () => {
+        roleplayChat();
+        const plain = await buildContext({ source: currentSource(), settings });
+        for (const lastPrompt of [false, undefined, 'yes', 1]) {
+            const other = await buildContext({ source: currentSource(), settings: { ...settings, include: { ...settings.include, lastPrompt } } });
+            expect(other.text).toBe(plain.text);
+            expect(other.capabilities).toEqual(plain.capabilities);
+        }
+        expect(plain.capabilities.lastPrompt).toBeUndefined();
+        expect(plain.text).not.toContain('Last prompt sent');
+        expect(readItemizedPromptsForChat).not.toHaveBeenCalled();
+        expect(readLastPrompt).not.toHaveBeenCalled();
+    });
+
+    test('the switch on shares the newest prompt for this chat with the hidden entry and key removed', async () => {
+        roleplayChat();
+        const plain = await buildContext({ source: currentSource(), settings });
+        const shared = await buildContext({ source: currentSource(), settings: { ...settings, include: { ...settings.include, lastPrompt: true } } });
+        expect(readItemizedPromptsForChat).toHaveBeenCalledWith('chat');
+        expect(shared.capabilities).toEqual({ ...plain.capabilities, lastPrompt: true });
+        const section = shared.text.slice(shared.text.indexOf('## Last prompt sent'), shared.text.indexOf('## Latest messages'));
+        expect(shared.text.match(/^## Last prompt sent$/gm)).toHaveLength(1);
+        expect(section).toContain('Mode: Roleplay, Chat Completion');
+        expect(section).toContain('Preset: Lantern');
+        expect(section).toContain('Write Roleplay\'s next reply in the lighthouse story.');
+        expect(section).toContain('[hidden lorebook entry omitted]');
+        expect(section).toContain('Hidden lorebook entries were omitted.');
+        expect(shared.text.toLowerCase()).not.toContain('moonvault');
+        expect(shared.text).not.toContain('sk-proj-Abc123def456ghi789jkl0');
+        expect(section).not.toContain('An older prompt.');
+        expect(shared.text.replace(/\n\n## Last prompt sent[\s\S]*?(?=\n\n## Latest messages)/, '')).toBe(plain.text);
+    });
+
+    test('a newer server prompt for the same chat wins, and a chat with no prompt says so', async () => {
+        roleplayChat();
+        serverPrompt = { recordedAt: 5000, origin: 'server', mode: 'roleplay', api: 'openai', prompt: [{ role: 'system', content: 'Server durable prompt.' }] };
+        const newer = await buildContext({ source: currentSource(), settings: { ...settings, include: { ...settings.include, lastPrompt: true } } });
+        expect(newer.text).toContain('Server durable prompt.');
+        expect(newer.text).not.toContain('Write Roleplay\'s next reply');
+        chatId = 'other-chat';
+        serverPrompt = null;
+        const empty = await buildContext({ source: currentSource(), settings: { ...settings, include: { ...settings.include, lastPrompt: true } } });
+        expect(readItemizedPromptsForChat).toHaveBeenLastCalledWith('other-chat');
+        expect(empty.text).toContain('## Last prompt sent\nNo prompt has been sent in this chat yet');
+        expect(empty.text).not.toContain('lighthouse story');
+        expect(empty.capabilities.lastPrompt).toBeUndefined();
+    });
+
+    test('a lorebook that cannot be read keeps the prompt out', async () => {
+        roleplayChat();
+        loadWorldInfo.mockImplementation(async name => {
+            if (name === 'Global lore') throw new Error('offline');
+            return books.get(name);
+        });
+        const shared = await buildContext({ source: currentSource(), settings: { ...settings, include: { ...settings.include, lastPrompt: true, lore: false } } });
+        expect(shared.text).toContain('left the last prompt out to keep hidden entries private');
+        expect(shared.text).not.toContain('lighthouse story');
+        expect(shared.capabilities.lastPrompt).toBeUndefined();
+    });
+
+    test('a known lorebook whose load returns null fails closed, while a missing link does not', async () => {
+        roleplayChat();
+        loadWorldInfo.mockImplementation(async name => (name === 'Global lore' ? null : books.get(name)));
+        const failed = await buildContext({ source: currentSource(), settings: { ...settings, include: { ...settings.include, lastPrompt: true, lore: false } } });
+        expect(failed.text).toContain('left the last prompt out to keep hidden entries private');
+        expect(failed.text).not.toContain('lighthouse story');
+        expect(failed.capabilities.lastPrompt).toBeUndefined();
+
+        loadWorldInfo.mockImplementation(async name => books.get(name) ?? null);
+        chatMetadata.world_info = 'Deleted lore';
+        const withDeadLink = await buildContext({ source: currentSource(), settings: { ...settings, include: { ...settings.include, lastPrompt: true, lore: false } } });
+        expect(withDeadLink.text).toContain('lighthouse story');
+        expect(withDeadLink.capabilities.lastPrompt).toBe(true);
+    });
+
+    test('Conversation reads the server prompt for its branch, and General never shares one', async () => {
+        conversationState.conversationSelectedAvatar = 'Nova.png';
+        serverPrompt = { recordedAt: 4000, origin: 'server', mode: 'conversation', api: 'openai', speaker: 'Nova', prompt: [{ role: 'system', content: 'Conversation system prompt.' }, { role: 'user', content: 'Hi Nova.' }] };
+        const conversation = await buildContext({ source: currentSource(), settings: { ...settings, include: { ...settings.include, lastPrompt: true } } });
+        expect(readLastPrompt.mock.calls.at(-1)[0]).toMatchObject({ kind: 'conversation' });
+        expect(readItemizedPromptsForChat).not.toHaveBeenCalled();
+        expect(conversation.text).toContain('Mode: Conversation, Chat Completion');
+        expect(conversation.text).toContain('Conversation system prompt.');
+        expect(conversation.capabilities.lastPrompt).toBe(true);
+        readLastPrompt.mockClear();
+        delete conversationState.conversationSelectedAvatar;
+        home.visible = true;
+        conversationState.conversationWorkspaceOpen = false;
+        chatId = '';
+        const general = await buildContext({ source: currentSource(), settings: { depth: 0, include: { card: false, persona: false, preset: true, lastPrompt: true } } });
+        expect(general.text).not.toContain('Last prompt sent');
+        expect(general.capabilities.lastPrompt).toBeUndefined();
+        expect(readLastPrompt).not.toHaveBeenCalled();
     });
 });

@@ -16,6 +16,7 @@ import { user_avatar } from '../personas.js';
 import { t } from '../i18n.js';
 import { getRoleplaySourceId } from '../roleplay-save-chain.js';
 import { getTokenCountAsync } from '../tokenizers.js';
+import { isKnownLorebook } from '../lorebook-links.js';
 import { loadWorldInfo, selected_world_info, world_info, world_info_budget, world_info_budget_cap, world_info_case_sensitive, world_info_depth, world_info_match_whole_words, world_info_max_recursion_steps, world_info_recursive, world_names } from '../world-info.js';
 import { currentLimits, readCurrentPreset } from './preset.js';
 import { checkCharacterCard } from './checks/card.js';
@@ -30,6 +31,9 @@ import { shareScenarioNotes } from './scenario-note-references.js';
 export { clearHomePersonaChoice, noteHomePersonaChoice } from './home-persona.js';
 
 export const MAX_CONTEXT_BYTES = 1_400_000;
+// Room kept for the chat messages when 'Last prompt sent' is shared, and the least room worth sharing it in.
+const LAST_PROMPT_RESERVE_BYTES = 128 * 1024;
+const LAST_PROMPT_MIN_BYTES = 8 * 1024;
 const MAX_LORE_ENTRIES = 40;
 const MAX_LORE_CHARS = 24_000;
 const LORE_SCAN_MESSAGES = 5;
@@ -297,6 +301,28 @@ function sourceLorebooks(source, settings) {
         books.push(...selected_world_info, power_user.persona_description_lorebook, chat_metadata.world_info);
     }
     return [...new Set(books.filter(book => typeof book === 'string' && book.trim()))];
+}
+
+/**
+ * Every hidden lorebook entry the chat's prompt could hold, so 'Last prompt sent' can scrub it.
+ * Returns null when a lorebook could not be read, so the prompt is left out rather than risk a leak.
+ */
+async function hiddenLoreEntries(source) {
+    const worlds = new Set([...sourceLorebooks(source, {}), ...selected_world_info].filter(book => typeof book === 'string' && book.trim()));
+    const loaded = await Promise.all([...worlds].map(async world => {
+        try {
+            const data = await loadWorldInfo(world);
+            if (!data || typeof data !== 'object' || !data.entries || typeof data.entries !== 'object') {
+                return isKnownLorebook(world_names, world) === false ? [] : null;
+            }
+            return Object.values(data.entries);
+        } catch (error) {
+            console.warn('Scratchpad could not read lorebook', world, error);
+            return null;
+        }
+    }));
+    if (loaded.some(entries => entries === null)) return null;
+    return loaded.flat().filter(entry => entry && typeof entry === 'object' && entry.agentBlacklisted);
 }
 
 /** Lorebooks attached to this source, for the Context tab and quick prompts. */
@@ -1047,6 +1073,30 @@ export async function buildContext({ source, settings, pendingText = '', session
         }
     }
 
+    let lastPromptShared = false;
+    if (include.lastPrompt === true && (source.kind === 'roleplay' || source.kind === 'conversation')) {
+        const [{ gatherLastPrompt }, { formatMissingLastPrompt, LAST_PROMPT_MAX_BYTES }] = await Promise.all([
+            import('./last-prompt-gather.js'), import('./last-prompt.js')]);
+        const hiddenEntries = await hiddenLoreEntries(source);
+        requireCurrentSource(source);
+        const room = MAX_CONTEXT_BYTES - byteLength(sections.join('\n\n')) - LAST_PROMPT_RESERVE_BYTES;
+        if (!hiddenEntries) {
+            sections.push(formatMissingLastPrompt('Scratchpad could not read every lorebook for this chat, so it left the last prompt out to keep hidden entries private. Try again in a moment.'));
+        } else if (room < LAST_PROMPT_MIN_BYTES) {
+            sections.push(formatMissingLastPrompt('The rest of the shared context leaves no room for the last prompt. Turn off something you do not need, then try again.'));
+        } else {
+            const substitutes = [
+                text => substituteSourceNames(text, names),
+                ...people.map(item => item.name).filter(Boolean).map(character => text => substituteSourceNames(text, { user: names.user, character })),
+                substituteSource,
+            ];
+            const lastPrompt = await gatherLastPrompt(source, { wire: wireSource(source), hiddenEntries, substitutes, maxBytes: Math.min(LAST_PROMPT_MAX_BYTES, room) });
+            requireCurrentSource(source);
+            sections.push(lastPrompt.text);
+            lastPromptShared = lastPrompt.shared;
+        }
+    }
+
     // The head is explicit input, so it keeps its bytes and is never trimmed for messages.
     const head = sections.join('\n\n');
     const headBytes = byteLength(head);
@@ -1120,6 +1170,7 @@ export async function buildContext({ source, settings, pendingText = '', session
             ...(include.authorsNote && source.kind === 'roleplay' ? { authorsNote: true } : {}),
             ...(problemsShared ? { problems: true } : {}),
             ...(appEvidenceShared ? { appEvidence: true } : {}),
+            ...(lastPromptShared ? { lastPrompt: true } : {}),
         },
     };
 }
