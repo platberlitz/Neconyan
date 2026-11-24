@@ -4,7 +4,7 @@ import { normalisePresetTargets } from '../../public/scripts/scratchpad/preset-f
 import { appendReplySwipe, MAX_REPLY_SWIPES, replySwipes } from '../../public/scripts/scratchpad/swipes.js';
 import { scratchpadPrefill, joinScratchpadPrefill } from '../../public/scripts/scratchpad/prefill.js';
 import { roundToDiscuss } from '../../public/scripts/scratchpad/discuss.js';
-import { canRehearse, REHEARSAL_INSTRUCTIONS, REHEARSAL_REQUEST } from '../../public/scripts/scratchpad/rehearsal.js';
+import { canRehearse, normaliseRehearsalLabel, REHEARSAL_INSTRUCTIONS, REHEARSAL_REQUEST } from '../../public/scripts/scratchpad/rehearsal.js';
 import { assistantFeedbackTone } from '../../public/scripts/scratchpad/feedback-tone.js';
 import { runChatProfile, validateActiveGenerationContext } from '../generation/service.js';
 import { createMessageTokenCounter } from '../generation/message-token-counts.js';
@@ -143,6 +143,7 @@ export function normaliseReplyRequest(body = {}) {
     const rehearsal = !regenerate && body.rehearsal === true;
     if (rehearsal && (!canRehearse(source) || body.discuss === true)) throw fail('SCRATCHPAD_REHEARSAL_INVALID', 'Open a story chat to rehearse its next reply.');
     const text = rehearsal && !typed.trim() ? REHEARSAL_REQUEST : typed;
+    const rehearsalLabel = rehearsal ? normaliseRehearsalLabel(body.rehearsalLabel) : '';
     if (!regenerate && !replyTo && !text.trim() && !attachments.length) throw fail('SCRATCHPAD_TEXT_REQUIRED', 'Write a message or attach a file first.');
     return {
         submissionKey,
@@ -152,6 +153,7 @@ export function normaliseReplyRequest(body = {}) {
         replyTo,
         discuss: !regenerate && body.discuss === true,
         rehearsal,
+        ...(rehearsalLabel ? { rehearsalLabel } : {}),
         text,
         attachments,
         context: boundedText(body.context, MAX_CONTEXT_BYTES, 'The shared context'),
@@ -215,7 +217,9 @@ export function planReply(session, request, chooseIndex = randomInt) {
             ? [participants[chooseIndex(participants.length)]] : participants;
         if (messages.length + (unanswered ? 0 : 1) + assistants.length > MAX_MESSAGES) throw fail('SCRATCHPAD_SESSION_FULL', 'This session is full. Start a new session to keep talking.', 409);
         const compact = planSummary(session, unanswered ? messages.slice(0, -1) : messages);
-        return { userMessageId: unanswered?.id ?? newScratchpadId(), prompt: unanswered?.text ?? request.text, rehearsal: unanswered ? unanswered.rehearsal === true : request.rehearsal === true,
+        const rehearsal = unanswered ? unanswered.rehearsal === true : request.rehearsal === true;
+        const label = !rehearsal ? '' : normaliseRehearsalLabel(unanswered ? unanswered.rehearsalLabel : request.rehearsalLabel);
+        return { userMessageId: unanswered?.id ?? newScratchpadId(), prompt: unanswered?.text ?? request.text, rehearsal, ...(label ? { rehearsalLabel: label } : {}),
             attachments: unanswered?.attachments ?? request.attachments ?? [], history: historyFrom(compact.messages), summary: compact.summary, replace: null, assistants };
     }
     const replyIndex = messages.findIndex(message => message.id === request.regenerate && message.role === 'assistant');
@@ -226,6 +230,7 @@ export function planReply(session, request, chooseIndex = randomInt) {
     }
     const reply = messages[replyIndex];
     const rehearsal = reply.rehearsal === true;
+    const label = rehearsal ? normaliseRehearsalLabel(reply.rehearsalLabel) : '';
     if (rehearsal && !canRehearse(request.source)) throw fail('SCRATCHPAD_REHEARSAL_INVALID', 'Open the original story chat to rehearse this reply again.');
     if (replySwipes(reply).length >= MAX_REPLY_SWIPES) throw fail('SCRATCHPAD_SWIPE_LIMIT', `This reply has ${MAX_REPLY_SWIPES} versions. Send a new message to keep talking.`, 409);
     if (hasPendingImages(reply)) throw fail('SCRATCHPAD_REGENERATE_INVALID', 'Wait for the image on this reply to finish before trying it again.', 409);
@@ -234,7 +239,7 @@ export function planReply(session, request, chooseIndex = randomInt) {
             ? 'Return to the original Scratchpad context before trying this reply again.' : 'Open the original chat before trying this reply again.', 409);
     }
     const compact = planSummary(session, messages.slice(0, userIndex));
-    return { userMessageId: messages[userIndex].id, prompt: messages[userIndex].text, rehearsal, attachments: messages[userIndex].attachments ?? [], history: historyFrom(compact.messages), summary: compact.summary, replace: reply.id, assistants: [reply.assistant || session.assistant] };
+    return { userMessageId: messages[userIndex].id, prompt: messages[userIndex].text, rehearsal, ...(label ? { rehearsalLabel: label } : {}), attachments: messages[userIndex].attachments ?? [], history: historyFrom(compact.messages), summary: compact.summary, replace: reply.id, assistants: [reply.assistant || session.assistant] };
 }
 
 function existingSubmission(directories, owner, request, requestHash) {
@@ -262,6 +267,7 @@ export async function acceptScratchpadReply(request, body = {}) {
         ...(input.replyTo ? { replyTo: input.replyTo } : {}),
         ...(input.attachments.length ? { attachments: input.attachments } : {}),
         ...(input.rehearsal ? { rehearsal: true } : {}),
+        ...(input.rehearsalLabel ? { rehearsalLabel: input.rehearsalLabel } : {}),
         context: input.context, help: input.help, capabilities: input.capabilities, names: input.names, chatProfileId: input.chatProfileId, genders: input.genders,
         ...(input.targets !== undefined ? { targets: input.targets } : {}) });
     const duplicate = existingSubmission(directories, owner, input, requestHash);
@@ -276,10 +282,10 @@ export async function acceptScratchpadReply(request, body = {}) {
         const plan = planReply(session, input);
         // Web search uses only the current message. Its settings and selected key
         // id are snapshotted here; the key value is read only when the job runs.
-        // A discussion round has no question of its own to search for.
-        const webSearch = session.settings.webSearch && !input.discuss ? planWebSearch(base.directories, readWebSearchLocked(lease), plan.prompt, { history: plan.history }) : null;
+        // A discussion round has no question of its own to search for, and a rehearsal stays inside the story.
+        const webSearch = session.settings.webSearch && !input.discuss && !plan.rehearsal ? planWebSearch(base.directories, readWebSearchLocked(lease), plan.prompt, { history: plan.history }) : null;
         // Only links typed in the current message are read, and only when the session asks for it.
-        const webPages = session.settings.readLinks && !input.discuss ? planWebPages(plan.prompt) : null;
+        const webPages = session.settings.readLinks && !input.discuss && !plan.rehearsal ? planWebPages(plan.prompt) : null;
         // The source lookup is opt-in and reads only the allow-listed app folders when the job runs.
         const sourceEvidence = input.capabilities.appEvidence === true && session.settings.include.appEvidence === true
             ? input.context : '';
@@ -397,7 +403,7 @@ export async function acceptScratchpadReply(request, body = {}) {
             const contextSource = Object.fromEntries(Object.entries(input.source).filter(([key]) => key !== 'scope'));
             const shared = input.source.kind === 'general' && input.capabilities.character ? { sharedAvatar: input.source.avatar } : {};
             if (!input.regenerate && !input.replyTo) nameFromFirstMessage(session, input.text);
-            const mode = planned.rehearsal ? { rehearsal: true } : {};
+            const mode = planned.rehearsal ? { rehearsal: true, ...(planned.rehearsalLabel ? { rehearsalLabel: planned.rehearsalLabel } : {}) } : {};
             if (!input.regenerate && !input.replyTo) session.messages.push({ id: planned.userMessageId, role: 'user', text: input.text, ...mode, ...(input.attachments.length ? { attachments: input.attachments } : {}), created, contextSource });
             const pending = replies.map(reply => ({ id: reply.replyId, role: 'assistant', text: '', created, contextSource, ...shared,
                 targets: planned.targets, sharedPersona: planned.sharedPersona, sharedPreset: planned.sharedPreset, imageNames: input.names, imagePersonaId: planned.imagePersonaId,

@@ -65,11 +65,12 @@ import { canReadAloud, isReadingAloud, stopReadAloud, toggleReadAloud } from './
 import { editQuickPrompts } from './quick-prompts.js';
 import { findShortcuts, parseShortcut, replaceShortcut } from './check-shortcuts.js';
 import { MAX_PINNED_NOTE_BYTES, pinnedNoteContext } from './pinned-note.js';
-import { canRehearse } from './rehearsal.js';
+import { canRehearse, normaliseRehearsalLabel } from './rehearsal.js';
+import { buildTryRehearsalRequest, canTryProposalInRehearsal } from './rehearsal-preview.js';
 import { assistantFeedbackTone, DEFAULT_FEEDBACK_TONE, FEEDBACK_TONES, isFeedbackTone, normaliseFeedbackTone } from './feedback-tone.js';
 import { feedbackToneLabel, feedbackToneSlider } from './tone-slider.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261203-scratchpad-share-request';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261204-scratchpad-try-change';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -1233,11 +1234,12 @@ async function resolveShortcut(typed, source, sessionId) {
     };
 }
 
-async function send({ regenerate = '', discuss = false, rehearsal = false, followUp = '' } = {}) {
+async function send({ regenerate = '', discuss = false, rehearsal = false, followUp = '', rehearsalChange = null } = {}) {
     if (app.sending || app.swiping || app.readingFiles.has(app.attachments)) return;
     const source = app.source;
     if (!source) return;
     if (rehearsal && !canRehearse(source)) return;
+    if (rehearsalChange && (!rehearsal || !canTryProposalInRehearsal(rehearsalChange.change, source))) return;
     if (!isCurrentSource(source)) {
         toastr.warning(t`The Scratchpad context changed. Return to it before sending.`);
         return;
@@ -1292,6 +1294,11 @@ async function send({ regenerate = '', discuss = false, rehearsal = false, follo
         const settings = session.settings;
         const chatProfileId = sourceConnectionProfile(source);
         const retried = regenerate ? session.messages.find(message => message.id === regenerate) : null;
+        // Trying again, or answering, a rehearsal of an unsaved change needs that change again; it lives only in this tab.
+        const earlier = retried || replyTo;
+        const trialFrom = earlier?.rehearsalLabel ? (earlier.role === 'user' ? earlier : session.messages.slice(0, session.messages.indexOf(earlier)).findLast(item => item.role === 'user')) : null;
+        const trial = rehearsalChange || (trialFrom ? trialChanges.get(`${session.id}:${trialFrom.id}`) : null) || null;
+        if (earlier?.rehearsalLabel && !trial) throw new Error(t`That unsaved change is no longer here. Press Try first on its change card again.`);
         if (replyTo && (source.scope || source.kind === 'general') && !sameChat(replyTo.contextSource, source)) {
             throw new Error(source.kind === 'general' ? t`Return to the original Scratchpad context before answering this message.` : t`Open the original chat before answering this message.`);
         }
@@ -1301,7 +1308,7 @@ async function send({ regenerate = '', discuss = false, rehearsal = false, follo
         const assistants = retried ? [retried.assistant || session.assistant] : sessionAssistants(session);
         const genders = Object.fromEntries(ASSISTANTS.map(item => [item.id, getAssistantGender(item.id)]));
         const query = regenerate ? (session.messages.slice(0, session.messages.indexOf(retried)).findLast(item => item.role === 'user')?.text ?? '') : replyTo?.text ?? scan ?? text;
-        const context = await buildContext({ source, settings, pendingText: query, sessionText: sessionText(session) });
+        const context = await buildContext({ source, settings, pendingText: query, sessionText: sessionText(session), ...(trial ? { rehearsalChange: trial } : {}) });
         await refreshImageAvailability();
         const help = [...new Set(await Promise.all(assistants.map(assistant => buildHelp({ assistant, gender: genders[assistant], text: query }))))].filter(Boolean).join('\n\n');
         requireScope(source, session.id);
@@ -1323,6 +1330,7 @@ async function send({ regenerate = '', discuss = false, rehearsal = false, follo
             replyTo: replyTo?.id,
             discuss: discuss || undefined,
             rehearsal: rehearsal || undefined,
+            rehearsalLabel: rehearsal && rehearsalChange ? normaliseRehearsalLabel(rehearsalChange.label) || undefined : undefined,
             text,
             attachments,
             context: context.text,
@@ -1338,6 +1346,10 @@ async function send({ regenerate = '', discuss = false, rehearsal = false, follo
             attachedDraft.splice(0, attachments.length);
             if ((app.draftKey === draftKey || (sameSourceBucket(source, app.source) && activeSession()?.id === session.id)) && app.el.composer.value === draft) app.el.composer.value = '';
             else if (app.drafts.get(draftKey) === draft) app.drafts.set(draftKey, '');
+        }
+        if (rehearsalChange && !regenerate) {
+            const sent = result.bucket?.sessions?.find(item => item.id === session.id)?.messages.findLast(item => item.role === 'user' && item.rehearsalLabel);
+            if (sent) trialChanges.set(`${session.id}:${sent.id}`, rehearsalChange);
         }
         if (sameSourceBucket(source, app.source) && activeSession()?.id === session.id) {
             app.ticket += 1;
@@ -1830,7 +1842,17 @@ function renderMessage(session, message, { latest, retry }) {
         ? h('div', { class: 'scratchpad-author' }, h('img', { src: assistantPortrait(assistant.id), alt: '', width: 24, height: 24 }), h('span', { text: message.assistantName || assistant.name, 'data-i18n-ignore': '' }))
         : h('div', { class: 'scratchpad-author' }, h('span', { text: sourceUserName(app.source) || t`You` }));
     article.append(author);
-    if (message.rehearsal) author.append(h('span', { class: 'scratchpad-badge', text: t`Rehearsal` }));
+    if (message.rehearsal) {
+        const trial = message.rehearsalLabel ? String(message.rehearsalLabel) : '';
+        author.append(h('span', { class: `scratchpad-badge${trial ? ' scratchpad-trial-badge' : ''}`, text: trial ? t`Rehearsal · Unsaved change` : t`Rehearsal` }));
+        if (trial && assistant) {
+            article.append(h('p', { class: 'scratchpad-trial-note' },
+                h('i', { class: 'fa-solid fa-flask', 'aria-hidden': 'true' }),
+                h('span', { text: t`Tried without saving:` }),
+                ' ',
+                h('span', { class: 'scratchpad-trial-label', text: trial, 'data-i18n-ignore': '' })));
+        }
+    }
     if (assistant) updateMessageTokenCounts(author, message.state === 'pending' ? replyPreview(message) : message, { pending: message.state === 'pending' });
 
     if (app.editing === message.id) {
@@ -2104,10 +2126,48 @@ function renderChangeCard(session, message, part) {
     const key = changeKey(session, message, part);
     const busy = busyChanges.has(key);
     card.dataset.changeKey = key;
+    const tryable = message.role === 'assistant' && !message.rehearsal && canTryProposalInRehearsal(part.change, app.source);
     card.append(h('div', { class: 'scratchpad-change-actions' },
         iconButton(busy ? t`Saving…` : t`Review`, () => void reviewChange(session, message, part), { icon: 'fa-eye', primary: true, disabled: busy }),
+        tryable ? iconButton(t`Try first`, () => void tryChange(session, message, part), {
+            icon: 'fa-flask', className: 'scratchpad-change-try', title: t`Rehearse the next story reply with this change, without saving it`,
+            disabled: busy || tryBlocked(),
+        }) : null,
         iconButton(t`Dismiss`, () => void dismissChange(session, message, part), { icon: 'fa-xmark', disabled: busy })));
     return card;
+}
+
+// A trial waits for any running reply, so it never queues behind one or races a save.
+function tryBlocked() {
+    return app.sending || Boolean(pendingReply());
+}
+
+function syncReviewTryButtons() {
+    const blocked = tryBlocked();
+    for (const button of document.querySelectorAll('.scratchpad-review-try')) {
+        button.classList.toggle('disabled', blocked);
+        button.setAttribute('aria-disabled', String(blocked));
+    }
+}
+
+// Rehearses the next story reply with a change card's proposal, or the draft edited in Review, kept in memory only.
+async function tryChange(session, message, part, value) {
+    const source = app.source;
+    if (tryBlocked() || !canTryProposalInRehearsal(part.change, source)) return;
+    const key = changeKey(session, message, part);
+    if (busyChanges.has(key)) return;
+    try {
+        await prepareReviewPlan(source, session, message, part);
+    } catch (error) {
+        reportError(error, t`That change cannot be tried right now.`);
+        return;
+    }
+    const label = describeChange(part.change);
+    await send({
+        rehearsal: true,
+        followUp: buildTryRehearsalRequest(label),
+        rehearsalChange: { change: part.change, ...(typeof value === 'string' ? { value } : {}), label },
+    });
 }
 
 function imageGuard(source, session, message, part) {
@@ -2186,6 +2246,8 @@ async function approveImagePrompt(session, message, part) {
 
 // A suggestion stays busy from Review until it is marked saved, so repeated clicks cannot save it twice.
 const busyChanges = new Set();
+// Unsaved changes behind each change-trial rehearsal, keyed by session and user message, so Try again reuses them.
+const trialChanges = new Map();
 // Saved changes whose 'Saved' mark failed; the next Review only retries the mark.
 const committedChanges = new Set();
 
@@ -2198,7 +2260,9 @@ function setChangeBusy(key, busy) {
     else busyChanges.delete(key);
     for (const card of app.el.messages?.querySelectorAll('.scratchpad-change') ?? []) {
         if (card.dataset.changeKey !== key) continue;
-        const [review, dismiss] = card.querySelectorAll('.scratchpad-change-actions button');
+        const [review, dismiss] = card.querySelectorAll('.scratchpad-change-actions button:not(.scratchpad-change-try)');
+        const trial = card.querySelector('.scratchpad-change-try');
+        if (trial) trial.disabled = busy || tryBlocked();
         if (review) {
             review.disabled = busy;
             const label = review.querySelector('span');
@@ -2217,15 +2281,17 @@ async function reviewChange(session, message, part, picture) {
     const key = changeKey(session, message, part);
     if (busyChanges.has(key)) return;
     setChangeBusy(key, true);
+    let trial;
     try {
         if (committedChanges.has(key)) {
             if (await markChange(session, message, part.index, 'applied', app.source)) committedChanges.delete(key);
             return;
         }
-        await reviewAndSaveChange(session, message, part, key, picture);
+        trial = await reviewAndSaveChange(session, message, part, key, picture);
     } finally {
         setChangeBusy(key, false);
     }
+    if (trial) await tryChange(session, message, part, trial.tryValue);
 }
 
 function settingDiff(settings, heading = true) {
@@ -2335,12 +2401,34 @@ async function reviewAndSaveChange(session, message, part, key, picture) {
         update();
         editor.after(previewButton);
     }
+    const tryable = !picture && message.role === 'assistant' && !message.rehearsal && canTryProposalInRehearsal(part.change, source);
+    let dialog = null;
+    let draft;
     const result = await callGenericPopup(content, POPUP_TYPE.CONFIRM, '', {
         wide: true,
         large: !plan.visual,
         okButton: t`Save change`,
         cancelButton: t`Not now`,
+        ...(tryable ? {
+            customButtons: [{
+                text: t`Try before saving`,
+                icon: 'fa-flask',
+                classes: ['scratchpad-review-try'],
+                tooltip: t`Rehearse the next story reply with this draft, without saving it`,
+                // No result of its own, so a click while a reply runs leaves the dialog open.
+                action: () => {
+                    if (tryBlocked() || !dialog) return;
+                    draft = editor ? editor.value : undefined;
+                    void dialog.complete(POPUP_RESULT.CUSTOM1);
+                },
+            }],
+            onOpen: popup => {
+                dialog = popup;
+                syncReviewTryButtons();
+            },
+        } : {}),
     });
+    if (result === POPUP_RESULT.CUSTOM1) return { tryValue: draft };
     if (result !== POPUP_RESULT.AFFIRMATIVE) return;
     let creatorDraftId = null;
     try {
@@ -2784,6 +2872,10 @@ function renderComposer() {
     el.webSearch.disabled = !app.source || !app.bucket || app.sending || Boolean(pending);
     el.plus.disabled = disabled;
     for (const button of el.messages.querySelectorAll('.scratchpad-discuss')) button.disabled = disabled || Boolean(pending) || Boolean(app.editing);
+    for (const button of el.messages.querySelectorAll('.scratchpad-change-try')) {
+        button.disabled = app.sending || Boolean(pending) || busyChanges.has(button.closest('.scratchpad-change')?.dataset.changeKey);
+    }
+    syncReviewTryButtons();
     const readLinks = currentSettings().readLinks === true;
     el.readLinks.setAttribute('aria-pressed', String(readLinks));
     el.readLinks.classList.toggle('menu_button_primary', readLinks);
