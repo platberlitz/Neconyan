@@ -292,6 +292,14 @@ For new alternate greetings, the assistant only supplies the additions. **Review
 
 Scratchpad checks the target again just before saving. If the entry, field or message changed while the review was open, or if you have switched to a different chat, nothing is saved and you are asked to get a fresh suggestion. A saved card says **Saved**.
 
+### Undo and Change history
+
+A saved card shows **Undo** beside **Saved** when Scratchpad can put the previous text back. Press it and the card says **Undone**; **Review again** reopens the suggestion if you change your mind. Undo works for character card text, lorebook entries you added, edited or deleted, the Author's Note, preset fields, persona and Scenario Note text, Agents, regex scripts, CSS Snippets, Dialogue Colors, message edits, hidden or shown messages, inserted and deleted messages, and Mewmory corrections. Message, Author's Note and Mewmory changes undo only in the chat they were made in.
+
+Before undoing, Scratchpad checks that the target still holds exactly what Scratchpad saved. If you or something else changed it since, Undo stops and says so, your later edit stays as it is, and **Copy previous text** lets you put the old text back by hand.
+
+**Sessions → Change history** lists the last 50 changes saved from Scratchpad in this chat, note or General list, newest first, with a count once there's something in it; the same list opens from **History** in the **Talking with** header. Each entry says what changed and where, when it was saved and whether it's **Saved**, **Undone** or **Recorded**. **View before & after** shows the comparison plus the full previous and new text, **Copy previous text** copies the old text and **Undo** works as it does on the card. New characters, personas and Scenario Notes, Catelier drafts, pictures and Notebook changes are listed as **Recorded** with a note saying how to reverse them yourself. A very large change is listed without an automatic undo. Change history stays with the list across reloads and devices, and session exports never include it.
+
 Conversation mode does not offer message or preset changes. Lorebook and character changes work in both modes.
 
 ## Sessions
