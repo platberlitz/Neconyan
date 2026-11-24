@@ -689,4 +689,6 @@ export const refreshedKnowledgeCases = [
     ['Do steps and sampler work with Tsubaki?', 'images.pixai', 'apply to Haruka v2 and Hoshino v2 only'],
     ['How do I use PixAI LoRAs in Quick Image Gen?', 'images.pixai-loras', 'copy the version link or its last number'],
     ['Where do I set the PixAI negative prompt?', 'images.pixai-loras', 'Advanced Prompt Options → Negative Prompt'],
+    ['Why is there an Unknown macro warning under my character description?', 'tools.macro-field-warnings', 'Neconyan sends it as plain text'],
+    ['What does Unclosed macro mean under a text box?', 'tools.macro-field-warnings', 'add the closing braces'],
 ];
