@@ -171,7 +171,9 @@ for (const phone of [false, true]) {
             }
             await page.screenshot({ path: `../screenshots/first-send-connection-feedback/${viewport}-${streaming ? 'streaming' : 'non-streaming'}-${process.env.NECONYAN_SCREENSHOT_PHASE || 'after'}.png`, scale: 'css' });
             expect(stopped).toBe(true);
-            expect(errors).toContain(lost);
+            expect(errors).toEqual([]);
+            const failures = await page.evaluate(async () => (await import('/scripts/app-evidence-log.js')).getProviderFailures());
+            expect(failures.map(entry => entry.message)).toContain(lost);
             expect(app.provider.calls.filter(call => call.model === MODEL)).toHaveLength(0);
             await expect(page.locator('#send_textarea')).toHaveValue('A fresh draft.');
             const rows = await page.locator('#chat .mes[mesid]').allTextContents();

@@ -170,18 +170,24 @@ for (const phone of [false, true]) {
         await expect.poll(() => contentOf(message.locator('.w98-installed'))).toContain('win98/portrait-miso-neutral.webp');
 
         // Custom accents recolour the caption strip instead of the navy default.
+        await page.locator('#themes').evaluate((el, name) => window.jQuery(el).val(name).trigger('change'), 'Neconyan Calico Dark');
+        await expect(page.locator('html')).toHaveAttribute('data-neconyan-accent', 'theme');
         const captions = [];
         captions.push(await intro.evaluate(el => getComputedStyle(el).backgroundImage));
-        await page.evaluate(() => {
-            document.documentElement.dataset.neconyanAccent = 'custom';
-            document.body.style.setProperty('--neco-ginger', 'rgb(40, 160, 90)');
-            document.body.style.setProperty('--neco-accent-secondary', 'rgb(200, 60, 160)');
-        });
+        const pickAccents = (primary, secondary) => page.evaluate(([p, s]) => {
+            document.querySelector('#sb-accent-primary-picker').dispatchEvent(new CustomEvent('change', { bubbles: true, detail: { rgba: p } }));
+            document.querySelector('#sb-accent-secondary-picker').dispatchEvent(new CustomEvent('change', { bubbles: true, detail: { rgba: s } }));
+        }, [primary, secondary]);
+        await pickAccents('rgba(40, 160, 90, 1)', 'rgba(200, 60, 160, 1)');
+        await expect(page.locator('html')).toHaveAttribute('data-neconyan-accent', 'custom');
         captions.push(await intro.evaluate(el => getComputedStyle(el).backgroundImage));
         expect(captions[1]).not.toBe(captions[0]);
+        await pickAccents('rgba(32, 140, 210, 1)', 'rgba(210, 120, 40, 1)');
+        captions.push(await intro.evaluate(el => getComputedStyle(el).backgroundImage));
+        expect(captions[2]).not.toBe(captions[1]);
+        await page.locator('#themes').evaluate((el, name) => window.jQuery(el).val(name).trigger('change'), 'Neconyan Calico Dark');
+        await expect(page.locator('html')).toHaveAttribute('data-neconyan-accent', 'theme');
         await page.evaluate(() => {
-            delete document.documentElement.dataset.neconyanAccent;
-            for (const token of ['--neco-ginger', '--neco-accent-secondary']) document.body.style.removeProperty(token);
             document.querySelector('#w98-test-message').remove();
         });
 

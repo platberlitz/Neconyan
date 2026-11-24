@@ -708,9 +708,26 @@ async function touchSwipe(cdp, at) {
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 }
 
+/** Picks a swipe starting point inside both the picker box and the visible viewport. */
+async function pickerSwipeStart(page, reading) {
+    const inside = rect => Boolean(rect && rect.top >= reading.picker.top && rect.bottom <= reading.picker.bottom && rect.top >= 0 && rect.bottom <= reading.innerHeight);
+    if (inside(reading.description)) return reading.description;
+    return page.evaluate(() => {
+        const picker = document.getElementById('sb_conversation_add_dm_picker').getBoundingClientRect();
+        const count = document.querySelector('#sb_conversation_add_dm_picker .sb-conversation-group-picker-actions .sb-conversation-group-selected-count')?.getBoundingClientRect();
+        if (count && count.top >= picker.top && count.bottom <= picker.bottom && count.top >= 0 && count.bottom <= window.innerHeight) {
+            return { x: count.left + count.width / 2, y: count.top + count.height / 2 };
+        }
+        const top = Math.max(picker.top, 0);
+        const bottom = Math.min(picker.bottom, window.innerHeight);
+        return { x: picker.left + picker.width / 2, y: top + (bottom - top) * 0.75 };
+    });
+}
+
 async function reachScene(account, page, { size, scale, state, pals, reopen = null }) {
     await page.setViewportSize({ width: size[0], height: size[1] });
-    // Each scene starts from a fresh page, so each reading is a first opening (E9b covers closing Pals and reopening the editor with no reload).
+    // Each viewport size starts from a fresh page reload so first opening at every size is covered;
+    // subsequent scale/state scenes at the same size close Pals and reopen the editor from the header.
     if (reopen) await reopen();
     await page.evaluate(value => document.documentElement.style.setProperty('--fontScale', value), String(scale));
     await openEditorFromHeader(page);
@@ -732,18 +749,23 @@ async function reachScene(account, page, { size, scale, state, pals, reopen = nu
     check(await page.evaluate(() => document.activeElement?.id === 'sb_conversation_group_search'), 'a tap focuses the search field');
     await page.evaluate(() => document.activeElement?.blur());
     const cdp = await page.context().newCDPSession(page);
-    await page.evaluate(() => {
-        window.__moves = [];
-        window.__moveHandler = event => window.__moves.push(event.defaultPrevented);
-        window.addEventListener('touchmove', window.__moveHandler, { capture: true, passive: true });
-    });
     let reading = first;
-    for (let swipe = 0; swipe < 6 && reading.scrollHeight - reading.clientHeight > 1 && reading.scrollTop < reading.scrollHeight - reading.clientHeight - 1; swipe++) {
-        const start = reading.description && reading.description.top >= reading.picker.top && reading.description.bottom <= reading.picker.bottom ? reading.description
-            : await page.evaluate(() => { const rect = document.querySelector('#sb_conversation_add_dm_picker .sb-conversation-group-picker-actions .sb-conversation-group-selected-count').getBoundingClientRect(); return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }; });
-        await touchSwipe(cdp, start);
-        await delay(250);
-        reading = await readEditorReach(page);
+    try {
+        await page.evaluate(() => {
+            window.__moves = [];
+            window.__moveHandler = event => window.__moves.push(event.defaultPrevented);
+            window.addEventListener('touchmove', window.__moveHandler, { capture: true, passive: true });
+        });
+        for (let swipe = 0; swipe < 6 && reading.scrollHeight - reading.clientHeight > 1 && reading.scrollTop < reading.scrollHeight - reading.clientHeight - 1; swipe++) {
+            const beforeTop = reading.scrollTop;
+            const start = await pickerSwipeStart(page, reading);
+            await touchSwipe(cdp, start);
+            await delay(250);
+            reading = await readEditorReach(page);
+            if (reading.scrollTop <= beforeTop) break;
+        }
+    } finally {
+        await cdp.detach().catch(() => {});
     }
     if (first.scrollHeight - first.clientHeight > 1) check(reading.scrollTop >= reading.scrollHeight - reading.clientHeight - 1, 'the touch scroll reached the end');
     check(!(await page.evaluate(() => window.__moves)).some(Boolean), 'no touchmove was prevented');
@@ -776,16 +798,29 @@ test('E9 every control of the editor can be reached with a finger on a short pho
     const { A, B, C, D, E } = await addPals(account);
     const extras = [];
     for (const name of ['Scratch Fig', 'Scratch Gus', 'Scratch Hal']) extras.push(await addPal(account, name, { solo: false }));
-    const page = await openRecorded(account, A.avatar);
-    const G = await makeGroup(account, page, [A.avatar, B.avatar, C.avatar]);
+    const current = await account.post(`${CONFIG}/store/get`);
+    const { group: G } = await account.post(`${CONFIG}/group/create`, {
+        version: current.version,
+        personaId: account.personaId,
+        members: [A.avatar, B.avatar, C.avatar],
+        name: 'Short Phone Crew',
+        settings: { enabled: true, availability: 'online' },
+    });
+    const latest = await account.post(`${CONFIG}/store/get`);
+    await account.post(`${CONFIG}/message/append`, { avatar: A.avatar, groupId: G.id, personaId: account.personaId, version: latest.version, text: 'Hello crew.' });
+    const holder = await holderOf(account, G.id);
+    const page = await openRecorded(account, holder.avatar, G.id);
     const pals = { members: [A.avatar, B.avatar, C.avatar], extra: D, all: [D, E, ...extras] };
     const sizes = [[375, 667], [393, 659], [393, 745], [393, 852], [667, 375]];
-    const holder = await holderOf(account, G.id);
     const reopen = () => reloadToWorkspace(page, holder.avatar, G.id);
     const results = [];
-    for (const size of sizes) for (const scale of [1, 1.2, 1.5]) for (const state of ['fresh', 'changed', 'too-few']) {
-        await closePals(page);
-        results.push(await reachScene(account, page, { size, scale, state, pals, reopen }));
+    for (const size of sizes) {
+        let firstForSize = true;
+        for (const scale of [1, 1.2, 1.5]) for (const state of ['fresh', 'changed', 'too-few']) {
+            await closePals(page);
+            results.push(await reachScene(account, page, { size, scale, state, pals, reopen: firstForSize ? reopen : null }));
+            firstForSize = false;
+        }
     }
     await info.attach('reach-readings', { body: JSON.stringify(results, null, 2), contentType: 'application/json' });
     const failures = results.filter(result => result.size[0] !== 667).flatMap(result => result.failures);
@@ -816,14 +851,18 @@ test('E9 every control of the editor can be reached with a finger on a short pho
 async function swipeEditorToEnd(page) {
     const cdp = await page.context().newCDPSession(page);
     let reading = await readEditorReach(page);
-    for (let swipe = 0; swipe < 6 && reading.scrollHeight - reading.clientHeight > 1 && reading.scrollTop < reading.scrollHeight - reading.clientHeight - 1; swipe++) {
-        const start = reading.description && reading.description.top >= reading.picker.top && reading.description.bottom <= reading.picker.bottom ? reading.description
-            : await page.evaluate(() => { const rect = document.querySelector('#sb_conversation_add_dm_picker .sb-conversation-group-picker-actions .sb-conversation-group-selected-count').getBoundingClientRect(); return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }; });
-        await touchSwipe(cdp, start);
-        await delay(250);
-        reading = await readEditorReach(page);
+    try {
+        for (let swipe = 0; swipe < 6 && reading.scrollHeight - reading.clientHeight > 1 && reading.scrollTop < reading.scrollHeight - reading.clientHeight - 1; swipe++) {
+            const beforeTop = reading.scrollTop;
+            const start = await pickerSwipeStart(page, reading);
+            await touchSwipe(cdp, start);
+            await delay(250);
+            reading = await readEditorReach(page);
+            if (reading.scrollTop <= beforeTop) break;
+        }
+    } finally {
+        await cdp.detach().catch(() => {});
     }
-    await cdp.detach();
     return reading;
 }
 
