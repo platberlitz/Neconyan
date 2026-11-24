@@ -181,6 +181,7 @@
 - PR #946 (2026-11-24) `fix(agents): keep the relationship card header horizontal on narrow cards`
 - PR #947 (2026-11-24) `fix(home): keep What's new scrollable on iPhones`
 - PR #948 (2026-11-24) `feat(regex-themes): style Memory Shard companion`
+- PR #949 (2026-11-24) `feat(scratchpad): let the assistant ask to share more context`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
