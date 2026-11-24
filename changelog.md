@@ -147,6 +147,7 @@
 - PR #926 (2026-11-24) `fix(topbar): stop slow taps closing the search they just opened`
 - PR #927 (2026-11-24) `feat(characters): make folders and folder tabs opt-in`
 - PR #928 (2026-11-24) `feat(macros): warn under text fields about unknown or broken macros`
+- PR #929 (2026-11-24) `fix: clear the nightly browser check failures`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
