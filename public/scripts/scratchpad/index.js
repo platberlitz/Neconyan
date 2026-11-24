@@ -71,7 +71,7 @@ import { buildTryRehearsalRequest, canTryProposalInRehearsal } from './rehearsal
 import { assistantFeedbackTone, DEFAULT_FEEDBACK_TONE, FEEDBACK_TONES, isFeedbackTone, normaliseFeedbackTone } from './feedback-tone.js';
 import { feedbackToneLabel, feedbackToneSlider } from './tone-slider.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261205-scratchpad-change-history';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261206-heading-letters';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
