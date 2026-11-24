@@ -2,7 +2,7 @@
  * The entire deep-import surface into Neconyan's bundled In-Chat Agents extension.
  *
  * Everything else in this extension goes through `SillyTavern.getContext()`, which is the
- * fork's supported API. The agent store is not on it, so these three modules have to be
+ * fork's supported API. The agent store is not on it, so these modules have to be
  * imported by path, and that coupling is kept here on purpose.
  *
  * Four rules make that survivable:
@@ -15,6 +15,10 @@
 
 const STORE_URL = '/scripts/extensions/in-chat-agents/agent-store.js';
 const SCRIPTS_URL = '/scripts/extensions/in-chat-agents/regex-scripts.js';
+// Optional: older In-Chat Agents builds have no startup signal, so a failed import is fine.
+const STARTUP_URL = '/scripts/extensions/in-chat-agents/library-startup.js';
+// In-Chat Agents normally settles in a few seconds; this only bounds a broken startup.
+const STARTUP_WAIT_MS = 60_000;
 
 const REQUIRED_STORE = ['getAgents', 'saveAgent'];
 
@@ -42,7 +46,11 @@ export async function loadHost() {
     if (!loading) {
         loading = (async () => {
             try {
-                const [store, scripts] = await Promise.all([import(STORE_URL), import(SCRIPTS_URL)]);
+                const [store, scripts, startup] = await Promise.all([
+                    import(STORE_URL),
+                    import(SCRIPTS_URL),
+                    import(STARTUP_URL).catch(() => null),
+                ]);
 
                 const missing = [
                     ...missingExports(store, REQUIRED_STORE),
@@ -52,7 +60,7 @@ export async function loadHost() {
                     return { ok: false, reason: `In-Chat Agents is missing: ${missing.join(', ')}` };
                 }
 
-                state = { ok: true, store, scripts };
+                state = { ok: true, store, scripts, startup };
                 return state;
             } catch (error) {
                 console.error('Regex Agent Themes could not load the bundled In-Chat Agents scripts it needs.', error);
@@ -90,15 +98,38 @@ function sleep(delayMs, signal) {
     });
 }
 
+function waitForLibraryStartup(startup, signal) {
+    if (typeof startup?.whenAgentLibraryStartupSettled !== 'function') {
+        return Promise.resolve(true);
+    }
+    if (signal?.aborted) {
+        return Promise.resolve(false);
+    }
+    const controller = new AbortController();
+    const stop = () => controller.abort();
+    signal?.addEventListener?.('abort', stop, { once: true });
+    const timer = setTimeout(stop, STARTUP_WAIT_MS);
+    return Promise.resolve(startup.whenAgentLibraryStartupSettled({ signal: controller.signal }))
+        .catch(() => false)
+        .finally(() => {
+            clearTimeout(timer);
+            signal?.removeEventListener?.('abort', stop);
+        });
+}
+
 /**
- * Waits until the agent store has actually loaded its agents. The extension's own boot
- * order does not guarantee In-Chat Agents has finished reading settings.
+ * Waits until In-Chat Agents has loaded its agents and finished its startup migrations,
+ * which can add or repair the tracker scripts this extension themes. Reconciling before
+ * then reports freshly repaired trackers as missing. The extension's own boot order does
+ * not guarantee In-Chat Agents has finished reading settings.
  */
 export async function waitForAgents({ attempts = 20, delayMs = 250, signal } = {}) {
     const host = await loadHost();
     if (!host.ok) {
         return host;
     }
+
+    await waitForLibraryStartup(host.startup, signal);
 
     for (let attempt = 0; attempt < attempts; attempt++) {
         if (signal?.aborted) {
@@ -113,9 +144,9 @@ export async function waitForAgents({ attempts = 20, delayMs = 250, signal } = {
         }
     }
 
-    // There is no authoritative ready signal in the current dependency. Empty-before-load
-    // and legitimately empty are indistinguishable, so callers must not prune persisted
-    // ownership metadata or run boot writes after this timeout.
+    // Without the startup signal (an older In-Chat Agents, or one whose startup never
+    // finished) empty-before-load and legitimately empty are indistinguishable, so callers
+    // must not prune persisted ownership metadata or run boot writes after this timeout.
     return { ...host, ready: false, timedOut: true };
 }
 

@@ -10,6 +10,7 @@ import { getPlotCompassIdentity } from './companion/plot-compass-context.js';
 import { setPlotCompassObjectives } from './companion/companion-shared.js';
 import { buildPlotCompassControls, readPlotCompassControls } from './companion/plot-compass-controls.js';
 import { planMissingPlotCompassScripts } from './companion/plot-compass-regex-migration.js';
+import { composeCatalogueRevision, markAgentLibraryStartupSettled } from './library-startup.js';
 import { activateSendButtons, CLIENT_VERSION, chat, getChatGeneration, getCurrentChatId, getRequestHeaders, is_send_press, normalizeContentText, saveChatDebounced, saveSettings, saveSettingsDebounced, substituteParams } from '../../../script.js';
 import { getCurrentUserHandle } from '../../user.js';
 import { eventSource, event_types } from '../../events.js';
@@ -572,7 +573,7 @@ async function finishAgentLibraryInitialization() {
     noteUpdate(latestBundledAgentMigration.removedCount, 'duplicate built-in agent removed', 'duplicate built-in agents removed');
 
     await migrateBundledRegexScriptsToSavedAgents();
-    noteUpdate(await migratePlotCompassRegexScriptsToSavedAgents(), 'Plot Compass tracker scripts added', 'Plot Compass tracker scripts added');
+    noteUpdate(await migratePlotCompassRegexScriptsToSavedAgents(), 'Plot Compass agent had its card scripts restored', 'Plot Compass agents had their card scripts restored');
     noteUpdate(await migrateCyoaChoiceRegexCleanupToSavedAgents(), 'CYOA choice regex rule updated', 'CYOA choice regex rules updated');
     noteUpdate(await migrateRetiredRegexFindPatternsToSavedAgents(), 'agent regex rule updated to read more replies', 'agent regex rules updated to read more replies');
     noteUpdate(await migrateRetiredBundledPromptsToSavedAgents(), 'built-in agent prompt updated', 'built-in agent prompts updated');
@@ -592,7 +593,7 @@ async function finishAgentLibraryInitialization() {
     noteUpdate(await migrateTrackerCompanionsToAutoLoop(), 'tracker companion now runs automatically and shows in the Companion panel', 'tracker companions now run automatically and show in the Companion panel');
     startupCounts.forEach(({ count, plural }, singular) => startupUpdates.push(`${count} ${count === 1 ? singular : plural}`));
     if (startupUpdates.length) {
-        toastr.success(startupUpdates.map(item => escapeHtml(item)).join('<br>'), 'Agents updated');
+        toastr.success(startupUpdates.map(item => escapeHtml(item)).join('<br>'), 'Agents updated', { escapeHtml: false });
     }
 
     await migrateLevelUpStatsContextLinks();
@@ -7192,12 +7193,14 @@ registerSettingsSetupTask('in-chat-agents first start', new Promise(resolve => {
     const settingsHtml = await renderAgentSettingsTemplate();
     if (!settingsHtml) {
         console.warn('[InChatAgents] Could not load the settings template.');
+        markAgentLibraryStartupSettled();
         return;
     }
     // The stylesheet started downloading alongside this script, so this wait rarely adds time.
     const [container] = await Promise.all([waitForAgentPanelContainer(), waitForAgentStylesheet()]);
     if (!container) {
         console.warn('[InChatAgents] The Agents panel container never appeared.');
+        markAgentLibraryStartupSettled();
         return;
     }
 
@@ -7314,7 +7317,7 @@ registerSettingsSetupTask('in-chat-agents first start', new Promise(resolve => {
 
     const storageAccount = getCurrentUserHandle();
     bindAgentStorageAccount(storageAccount, () => storageAccount === getCurrentUserHandle());
-    const catalogueRevision = await readBundledCatalogueRevision();
+    const catalogueRevision = composeCatalogueRevision(await readBundledCatalogueRevision());
     const catalogueReady = Boolean(catalogueRevision)
         && accountStorage.getItem(BUNDLED_CATALOGUE_REVISION_KEY) === catalogueRevision;
     const initResults = await Promise.allSettled([
@@ -7355,6 +7358,7 @@ registerSettingsSetupTask('in-chat-agents first start', new Promise(resolve => {
     } finally {
         agentLibraryLoading = false;
         renderAgentSetupControls();
+        markAgentLibraryStartupSettled();
         notifyTaroGuide();
     }
 
