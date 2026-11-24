@@ -149,6 +149,7 @@
 - PR #928 (2026-11-24) `feat(macros): warn under text fields about unknown or broken macros`
 - PR #929 (2026-11-24) `fix: clear the nightly browser check failures`
 - PR #930 (2026-11-24) `feat(companions): add Stop to each writing companion`
+- PR #931 (2026-11-24) `fix(groups): wrap group editor title and label action buttons`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
