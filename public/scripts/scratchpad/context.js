@@ -16,6 +16,7 @@ import { user_avatar } from '../personas.js';
 import { t } from '../i18n.js';
 import { getRoleplaySourceId } from '../roleplay-save-chain.js';
 import { getTokenCountAsync } from '../tokenizers.js';
+import { isKnownLorebook } from '../lorebook-links.js';
 import { loadWorldInfo, selected_world_info, world_info, world_info_budget, world_info_budget_cap, world_info_case_sensitive, world_info_depth, world_info_match_whole_words, world_info_max_recursion_steps, world_info_recursive, world_names } from '../world-info.js';
 import { currentLimits, readCurrentPreset } from './preset.js';
 import { checkCharacterCard } from './checks/card.js';
@@ -311,7 +312,10 @@ async function hiddenLoreEntries(source) {
     const loaded = await Promise.all([...worlds].map(async world => {
         try {
             const data = await loadWorldInfo(world);
-            return data?.entries && typeof data.entries === 'object' ? Object.values(data.entries) : [];
+            if (!data || typeof data !== 'object' || !data.entries || typeof data.entries !== 'object') {
+                return isKnownLorebook(world_names, world) === false ? [] : null;
+            }
+            return Object.values(data.entries);
         } catch (error) {
             console.warn('Scratchpad could not read lorebook', world, error);
             return null;

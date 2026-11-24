@@ -49,9 +49,10 @@ jest.unstable_mockModule('../public/scripts/personas.js', () => ({ get user_avat
 jest.unstable_mockModule('../public/scripts/i18n.js', () => ({ t: (parts, ...values) => parts.reduce((text, part, index) => text + part + (values[index] ?? ''), '') }));
 jest.unstable_mockModule('../public/scripts/roleplay-save-chain.js', () => ({ getRoleplaySourceId }));
 jest.unstable_mockModule('../public/scripts/tokenizers.js', () => ({ getTokenCountAsync: async () => 1 }));
+const worldNames = ['Roleplay lore', 'Chat lore', 'Nova lore', 'Persona lore', 'Global lore'];
 jest.unstable_mockModule('../public/scripts/world-info.js', () => ({
     loadWorldInfo, selected_world_info: ['Global lore'], world_info: { charLore: [] },
-    world_names: [], world_info_depth: 2, world_info_budget: 25, world_info_budget_cap: 0,
+    world_names: worldNames, world_info_depth: 2, world_info_budget: 25, world_info_budget_cap: 0,
     world_info_recursive: false, world_info_max_recursion_steps: 0,
     world_info_case_sensitive: false, world_info_match_whole_words: false,
 }));
@@ -105,7 +106,8 @@ beforeEach(() => {
     unshallowCharacter.mockClear();
     chat.length = 0;
     books.clear();
-    for (const name of ['Roleplay lore', 'Chat lore', 'Nova lore', 'Persona lore', 'Global lore']) {
+    worldNames.splice(0, worldNames.length, 'Roleplay lore', 'Chat lore', 'Nova lore', 'Persona lore', 'Global lore');
+    for (const name of worldNames) {
         books.set(name, { entries: { 0: { uid: 0, comment: name, key: ['lighthouse'], content: `${name}: {{char}} and {{user}}.` } } });
     }
 });
@@ -301,6 +303,21 @@ describe('Scratchpad shared context with Last prompt sent', () => {
         expect(shared.text).toContain('left the last prompt out to keep hidden entries private');
         expect(shared.text).not.toContain('lighthouse story');
         expect(shared.capabilities.lastPrompt).toBeUndefined();
+    });
+
+    test('a known lorebook whose load returns null fails closed, while a missing link does not', async () => {
+        roleplayChat();
+        loadWorldInfo.mockImplementation(async name => (name === 'Global lore' ? null : books.get(name)));
+        const failed = await buildContext({ source: currentSource(), settings: { ...settings, include: { ...settings.include, lastPrompt: true, lore: false } } });
+        expect(failed.text).toContain('left the last prompt out to keep hidden entries private');
+        expect(failed.text).not.toContain('lighthouse story');
+        expect(failed.capabilities.lastPrompt).toBeUndefined();
+
+        loadWorldInfo.mockImplementation(async name => books.get(name) ?? null);
+        chatMetadata.world_info = 'Deleted lore';
+        const withDeadLink = await buildContext({ source: currentSource(), settings: { ...settings, include: { ...settings.include, lastPrompt: true, lore: false } } });
+        expect(withDeadLink.text).toContain('lighthouse story');
+        expect(withDeadLink.capabilities.lastPrompt).toBe(true);
     });
 
     test('Conversation reads the server prompt for its branch, and General never shares one', async () => {

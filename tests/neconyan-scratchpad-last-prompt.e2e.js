@@ -478,6 +478,23 @@ for (const phone of [false, true]) {
             expect(section).toMatch(/Credentials were redacted \(\d+\)\./);
             expect(section).toContain('KEYLINE');
         }
+
+        // Real loadWorldInfo returns null on HTTP 500 rather than throwing; fail closed so hidden entries never leak.
+        await page.evaluate(async () => (await import('/scripts/world-info.js')).invalidateWorldInfoCache('Hidden Vault'));
+        const failLore = route => route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"unavailable"}' });
+        await page.route('**/api/worldinfo/get', failLore);
+        try {
+            const blockedPreview = await preview(page);
+            const blockedSent = await askScratchpad(app, account, page, 'Try again while lorebook read fails.');
+            for (const text of [blockedPreview, blockedSent]) {
+                expect(text.toLowerCase()).not.toContain(SECRET_MARKER.toLowerCase());
+                expect(text.toLowerCase()).not.toContain('moonvault cipher');
+                expect(sectionOf(text)).toContain('left the last prompt out to keep hidden entries private');
+            }
+            expect(blockedSent).not.toContain('Last prompt sent for this message:');
+        } finally {
+            await page.unroute('**/api/worldinfo/get', failLore);
+        }
         await hideScratchpad(page);
     });
 }
