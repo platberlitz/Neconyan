@@ -192,6 +192,7 @@
 - PR #951 (2026-11-24) `feat(scratchpad): rehearse a suggested change before saving it`
 - PR #952 (2026-11-24) `docs(changelog): add Turkish to the v1.6.0 highlights`
 - PR #953 (2026-11-24) `feat(scratchpad): undo saved changes and keep a change history`
+- PR #954 (2026-11-24) `fix(mewmory): stop counting hidden reply data as prompt text`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
