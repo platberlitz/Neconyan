@@ -107,6 +107,23 @@ describe('bundled tracker contracts', () => {
         expect(rendered).not.toMatch(/\$\d+/);
     });
 
+    test('relationship card header wraps its status pill instead of squeezing the name on any theme', () => {
+        const id = 'tpl-relationship-tracker';
+        const stock = getStock(id, 'c81e4b95-2d7a-4a60-8f3c-7b9e0d6a4c22');
+        const outputs = [['stock', applyList(SAMPLES['relationship-bond'].full, [stock])]];
+        for (const selected of THEMES) {
+            outputs.push([selected.slug, applyList(SAMPLES['relationship-bond'].full, buildAgentScripts(id, scriptsFor(id), selected).scripts)]);
+        }
+        for (const [slug, rendered] of outputs) {
+            const summary = rendered.match(/<summary[^>]* style="[^"]*"[\s\S]*?<\/summary>/)?.[0] ?? '';
+            const summaryStyle = summary.match(/^<summary[^>]* style="([^"]*)"/)?.[1] ?? '';
+            expect({ slug, wraps: /flex-wrap:\s*wrap/.test(summaryStyle) }).toEqual({ slug, wraps: true });
+            expect({ slug, nameFloor: /flex:\s*1 1 0;\s*min-width:\s*min\(7em,\s*100%\)/.test(summary) }).toEqual({ slug, nameFloor: true });
+            expect({ slug, nowrap: summary.includes('nowrap') }).toEqual({ slug, nowrap: false });
+            expect(summary).toContain('Mira');
+        }
+    });
+
     for (const [id, text, values, parts] of [
         ['tpl-the-ledger', '[LEDGER|Mira|A lost hour|Before dawn]\ncontext: The clerk is waiting\n[/LEDGER]', ['Mira', 'A lost hour', 'Before dawn', 'The clerk is waiting', 'OWED TO THE STRANGE', 'What Is Owed', 'audit'], { row: 2 }],
         ['tpl-the-census', '[CENSUS:LODGER|Mira]\nb: Archivist\n[/CENSUS]', ['Mira', 'Archivist', 'LODGER', 'filed, provisionally'], { section: 1 }],

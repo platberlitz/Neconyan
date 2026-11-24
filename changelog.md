@@ -13,6 +13,7 @@
 - **Author's Note** has a full screen editor, and **Plot Compass** lets you pick the next direction straight from the note.
 - The **Server** panel has a Node.js memory cap setting, for when the server keeps running out on a small box.
 - When the page reloads itself for an update, it tells you once instead of just quietly doing it.
+- The **Relationship Tracker** card reads left to right on a phone again, whichever theme you use. Its status moves to a second line instead of squashing the name into a column of single letters.
 
 ### Merged Staging PRs
 - PR #776 (2026-11-20) `fix(settings): keep theme filters in view when pressed`

@@ -102,6 +102,7 @@ export function renderRelationshipBond(spec, tokens, options = {}) {
     // 1. Summary bar: 30x30 ring portrait + name/stage stack + right status pill & chevron
     const summaryStyle = withExtra(decl({
         display: 'flex',
+        'flex-wrap': 'wrap',
         'align-items': 'center',
         gap: '10px',
         padding: `${tokens.space.headPadY} ${tokens.space.headPadX}`,
@@ -124,7 +125,8 @@ export function renderRelationshipBond(spec, tokens, options = {}) {
 
     const summaryInner = ornament(tokens, 'headerBefore')
         + ringPortrait(1, 2, tokens, { size: '30px', ringPadding: '2px', fontSize: '12px' })
-        + `<span${decl({ flex: '1', 'min-width': '0', 'line-height': '1.25' })}>`
+        // The name keeps at least 7em; on a narrow card the status pill moves to its own line
+        + `<span${decl({ flex: '1 1 0', 'min-width': 'min(7em, 100%)', 'line-height': '1.25' })}>`
         + `<b${decl({ color: tokens.on.head, 'font-weight': tokens.type.headWeight })}>${heartIcon ? `${heartIcon} ` : ''}$2</b>`
         + `<span${decl({ display: 'block', color: tokens.on.muted, 'font-size': tokens.type.labelSize })}>$3 · $4</span>`
         + '</span>'
@@ -133,7 +135,6 @@ export function renderRelationshipBond(spec, tokens, options = {}) {
             'font-size': tokens.type.labelSize,
             'font-weight': tokens.type.labelWeight,
             'margin-left': 'auto',
-            'white-space': 'nowrap',
         })}>$5${chevronGlyph}</span>`
         + ornament(tokens, 'headerAfter');
 
