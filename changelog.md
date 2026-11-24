@@ -153,6 +153,7 @@
 - PR #932 (2026-11-24) `feat(companions): make Memory Shard human-editable with HTML display`
 - PR #933 (2026-11-24) `feat(server): add a Node.js heap cap setting to the Server panel`
 - PR #934 (2026-11-24) `feat(authors-note): add full screen note editor button`
+- PR #936 (2026-11-24) `feat(plot-compass): add styled HTML card and Regex Agent Themes support`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
