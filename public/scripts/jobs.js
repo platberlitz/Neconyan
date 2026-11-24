@@ -141,6 +141,10 @@ export async function cancelJob(id, { base = '', reason = null, account = getCur
     return requestJson(endpoint(base, `/${encodeURIComponent(id)}/cancel`), { account, method: 'POST', body: JSON.stringify({ reason }) });
 }
 
+export async function stopJobCompanion(id, agentId, { base = '', account = getCurrentUserHandle() } = {}) {
+    return requestJson(endpoint(base, `/${encodeURIComponent(id)}/companions/stop`), { account, method: 'POST', body: JSON.stringify({ agentId }) });
+}
+
 export async function dismissJob(id, { base = '', account = getCurrentUserHandle() } = {}) {
     return requestJson(endpoint(base, `/${encodeURIComponent(id)}/dismiss`), { account, method: 'POST', body: JSON.stringify({}) });
 }

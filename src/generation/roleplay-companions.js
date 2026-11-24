@@ -17,6 +17,7 @@ import { isLikelyCompanionNoteRefusal } from '../../public/scripts/extensions/in
 import { getCompanionTrackerAutoRepairPayload, inspectCompanionTrackerOutput, normalizeCompanionTrackerRepairPayload } from '../../public/scripts/extensions/in-chat-agents/tracker-state.js';
 import { captureCompanionCapacity, MAX_COMPANION_RESULT_BYTES } from './companion-capacity.js';
 import { isRoleplayAgentStop, roleplayAgentsStopped } from './roleplay-agent-stop.js';
+import { isRoleplayCompanionStop, openRoleplayCompanionStops } from './roleplay-companion-stop.js';
 
 const clean = value => String(value ?? '').replace(/\r\n?/g, '\n').trim();
 const content = value => clean(value).replace(/^```[^\n]*\n([\s\S]*?)\n?```$/, '$1').trim().slice(0, 65536);
@@ -288,6 +289,33 @@ export async function runRoleplayCompanions(context, options) {
             : { ...baseRecord(agent, model), status: 'error', content: '', error: reason, failureKind, tokenUsage: null, updatedAt: Date.now() };
         return storeResult(agent, runIdentity, record, false);
     };
+    // A Companion the user stopped keeps its earlier note, as a browser Stop does.
+    const cancelledResult = (agent, runIdentity) => {
+        const cached = saved(context, snapshot.account, `roleplay-companion:${agent.id}`, runIdentity);
+        if (cached) return remember(cached);
+        const prior = Object.hasOwn(hostResults, agent.id) ? hostResults[agent.id] : null;
+        const reason = COMPANION_FAILURE_MESSAGES.cancelled;
+        const record = prior?.status === 'done' ? { ...prior, lastRunError: reason, lastRunFailureKind: 'cancelled' }
+            : { ...baseRecord(agent, null), status: 'cancelled', content: '', error: reason, failureKind: 'cancelled', tokenUsage: null, updatedAt: Date.now() };
+        return storeResult(agent, runIdentity, record, false);
+    };
+    let stops = null;
+    // Runs work that ends early once every listed Companion is stopped.
+    const stoppable = async (agentIds, run) => {
+        const watch = stops.watch(agentIds);
+        try {
+            return await run({ ...shared, signal: AbortSignal.any([shared.signal, watch.signal]) });
+        } catch (error) {
+            if (watch.signal.aborted && !shared.signal.aborted) throw watch.signal.reason;
+            throw error;
+        } finally { watch.release(); }
+    };
+    const withStopResult = async (agent, runIdentity, run) => {
+        try { return await run(); } catch (error) {
+            if (!isRoleplayCompanionStop(error)) throw error;
+            return cancelledResult(agent, runIdentity);
+        }
+    };
     const withRefusalResult = async (agent, runIdentity, run) => {
         try { return await run(); } catch (error) {
             // Provider-level refusals belong on this note, just like a refusal in its text.
@@ -310,14 +338,14 @@ export async function runRoleplayCompanions(context, options) {
             substituteParamsExtendedFn: (text, _extra, postProcess) => evaluate(text, postProcess) };
     };
     // Automatic tracker runs keep only the tracker block: story prose is regenerated once, a broken block gets one repair pass.
-    const cleanTrackerOutput = async (agent, text, sections, stepName) => {
+    const cleanTrackerOutput = async (agent, text, sections, stepName, ctx = shared) => {
         const usage = [];
         let model = null;
         const ask = async (repair, extra, suffix) => {
             const prompt = singleCompanionPrompt({ ...input, repair }, agent, extra);
             model = await runModel(agent, `${stepName}:${suffix}`, prompt, agent.companion.maxTokens, [agent], text => repair
                 ? !!getCompanionTrackerAutoRepairPayload(agent, content(text), { ...displayOptions, previousText: broken })
-                : inspectCompanionTrackerOutput(agent, content(text), displayOptions).action === 'keep');
+                : inspectCompanionTrackerOutput(agent, content(text), displayOptions).action === 'keep', ctx);
             usage.push(await usageOf(prompt, model.text));
             return model.lengthLimited ? null : content(model.text);
         };
@@ -341,7 +369,7 @@ export async function runRoleplayCompanions(context, options) {
         const payload = getCompanionTrackerAutoRepairPayload(agent, repaired, { ...displayOptions, previousText: broken });
         return payload ? done(payload) : failed('Tracker repair returned invalid output.');
     };
-    const finishResult = async (agent, raw, model, prompt, runIdentity, tokenUsage, coverage, sections = [], stepName = `companion:${agent.id}`) => {
+    const finishResult = async (agent, raw, model, prompt, runIdentity, tokenUsage, coverage, sections = [], stepName = `companion:${agent.id}`, ctx = shared) => {
         const cached = saved(context, snapshot.account, `roleplay-companion:${agent.id}`, runIdentity);
         if (cached) return remember(cached);
         if (model.lengthLimited) return failedResult(agent, runIdentity, 'The reply reached its output limit.', model);
@@ -350,14 +378,14 @@ export async function runRoleplayCompanions(context, options) {
         if (isCompanionRefusal(text)) return failedResult(agent, runIdentity, COMPANION_FAILURE_MESSAGES.refusal, model);
         let usage = tokenUsage ?? await usageOf(prompt, raw);
         if (!isRepairTarget(agent) && agent.category === 'tracker') {
-            const cleaned = await cleanTrackerOutput(agent, text, sections, stepName);
+            const cleaned = await cleanTrackerOutput(agent, text, sections, stepName, ctx);
             usage = cleaned.usage.reduce((total, next) => ({ inputTokens: total.inputTokens + next.inputTokens,
                 outputTokens: total.outputTokens + next.outputTokens }), usage);
             if (cleaned.error) return failedResult(agent, runIdentity, cleaned.error, cleaned.model ?? model);
             text = cleaned.text;
             model = cleaned.model ?? model;
         }
-        const post = await runRoleplayAgentPostprocessing(shared, { ...options, companionAgent: agent, generationType: 'companion_output',
+        const post = await runRoleplayAgentPostprocessing(ctx, { ...options, companionAgent: agent, generationType: 'companion_output',
             namespace: `companion:${agent.id}`, value: text, records: preparedRecords,
             metadataRecords: companionHostRecords(records, value, effect, assistantName), assertCurrent, generate });
         text = content(post.text);
@@ -373,7 +401,7 @@ export async function runRoleplayCompanions(context, options) {
         if (references(agent).includes(MEMORY_SHARD_TEMPLATE_ID) && coverage) record.contextCoverage = coverage;
         return storeResult(agent, runIdentity, record, true);
     };
-    const runModel = (agent, name, prompt, maxTokens, diagnosticAgents = [agent], acceptOutput) => runAgentModelStep(shared, { base, account: snapshot.account, name,
+    const runModel = (agent, name, prompt, maxTokens, diagnosticAgents = [agent], acceptOutput, ctx = shared) => runAgentModelStep(ctx, { base, account: snapshot.account, name,
         diagnostic: diagnosticAgents.map(item => ({ id: item.id, sourceTemplateId: item.sourceTemplateId, phase: 'companions' })),
         identity: roleplayHash({ identity, agents: name, messages: prompt.messages }), binding: agent.binding ?? binding,
         modelOverride: agent.binding ? agent.modelOverride : '', fallbacks: agent.fallbacks, maxTokens, macros: options.macros, tokenizer: snapshot.tokenizer,
@@ -382,6 +410,7 @@ export async function runRoleplayCompanions(context, options) {
         const runIdentity = roleplayHash({ identity, agent: agent.id, sections, suffix });
         const cached = saved(context, snapshot.account, `roleplay-companion:${agent.id}`, runIdentity);
         if (cached) return remember(cached);
+        if (stops.isStopped(agent.id)) return cancelledResult(agent, runIdentity);
         const prior = Object.hasOwn(hostResults, agent.id) ? hostResults[agent.id] : null;
         if (isRepairTarget(agent) && agent.category === 'tracker' && prior?.content) {
             const normalised = normalizeCompanionTrackerRepairPayload(agent, prior.content, trackerDisplayOptions(agent)).payload;
@@ -403,10 +432,10 @@ export async function runRoleplayCompanions(context, options) {
                 ? !!normalizeCompanionTrackerRepairPayload(agent, value, { ...trackerDisplayOptions(agent), previousText: prior?.content }).payload
                 : inspectCompanionTrackerOutput(agent, value, trackerDisplayOptions(agent)).action === 'keep';
         };
-        return withRefusalResult(agent, runIdentity, async () => {
-            const model = await runModel(agent, stepName, prompt, agent.companion.maxTokens, [agent], acceptOutput);
-            return finishResult(agent, model.text, model, prompt, runIdentity, null, prompt.coverage, sections, stepName);
-        });
+        return withStopResult(agent, runIdentity, () => withRefusalResult(agent, runIdentity, () => stoppable([agent.id], async ctx => {
+            const model = await runModel(agent, stepName, prompt, agent.companion.maxTokens, [agent], acceptOutput, ctx);
+            return finishResult(agent, model.text, model, prompt, runIdentity, null, prompt.coverage, sections, stepName, ctx);
+        })));
     };
     const runUnit = async (group, sections) => {
         if (group.length === 1 || group.some(isRepairTarget)) {
@@ -417,65 +446,80 @@ export async function runRoleplayCompanions(context, options) {
         if (group[0].companion.includeWorldInfo) input.worldInfo = await worldInfoText();
         const linked = sections.get(group[0].id), prompt = batchCompanionPrompt(input, group, linked);
         const name = `companion-batch:${roleplayHash(group.map(agent => agent.id))}`;
+        const batchIdentity = agent => roleplayHash({ identity, agent: agent.id, batch: name, sections: sections.get(agent.id) });
+        const stoppedMember = agent => {
+            const cached = saved(context, snapshot.account, `roleplay-companion:${agent.id}`, batchIdentity(agent));
+            return cached ? remember(cached) : stops.isStopped(agent.id) ? cancelledResult(agent, batchIdentity(agent)) : null;
+        };
+        // The batch keeps its members so a resumed job asks the same request;
+        // it is only skipped or cut short when every member was stopped.
+        if (group.every(agent => stops.isStopped(agent.id))) return group.map(agent => stoppedMember(agent));
         let model;
         try {
-            model = await runModel(group[0], name, prompt, Math.min(64000, group.reduce((total, agent) => total + agent.companion.maxTokens, 0)), group);
+            model = await stoppable(group.map(agent => agent.id), ctx => runModel(group[0], name, prompt,
+                Math.min(64000, group.reduce((total, agent) => total + agent.companion.maxTokens, 0)), group, undefined, ctx));
         } catch (error) {
+            if (isRoleplayCompanionStop(error)) return group.map(agent => cancelledResult(agent, batchIdentity(agent)));
             if (error?.code !== 'GENERATION_BLOCKED') throw error;
-            return group.map(agent => failedResult(agent,
-                roleplayHash({ identity, agent: agent.id, batch: name, sections: sections.get(agent.id) }), COMPANION_FAILURE_MESSAGES.refusal));
+            return group.map(agent => failedResult(agent, batchIdentity(agent), COMPANION_FAILURE_MESSAGES.refusal));
         }
         const parsed = parseBatch(model.text);
         const taskCounts = await Promise.all(prompt.tasks.map(task => count(task.content)));
         const total = await count(JSON.stringify(prompt.messages)), sharedTokens = Math.max(0, total - taskCounts.reduce((sum, value) => sum + value, 0)) / group.length;
         const outputs = [];
         for (let offset = 0; offset < group.length; offset++) {
-            const agent = group[offset], runIdentity = roleplayHash({ identity, agent: agent.id, batch: name, sections: sections.get(agent.id) });
-            if (model.lengthLimited) outputs.push(failedResult(agent, runIdentity, 'The reply reached its output limit.', model));
+            const agent = group[offset], runIdentity = batchIdentity(agent);
+            const stoppedResult = stoppedMember(agent);
+            if (stoppedResult) outputs.push(stoppedResult);
+            else if (model.lengthLimited) outputs.push(failedResult(agent, runIdentity, 'The reply reached its output limit.', model));
             else if (!parsed.get(agent.id)) outputs.push(await runSingle(agent, sections.get(agent.id), ':missing-batch-result'));
-            else outputs.push(await withRefusalResult(agent, runIdentity, async () => finishResult(agent, parsed.get(agent.id), model, prompt, runIdentity, {
-                inputTokens: Math.round(taskCounts[offset] + sharedTokens), outputTokens: await count(JSON.stringify({ role: 'assistant', content: parsed.get(agent.id) })) },
-            prompt.coverage, sections.get(agent.id), `${name}:${agent.id}`)));
+            else outputs.push(await withStopResult(agent, runIdentity, () => withRefusalResult(agent, runIdentity, () => stoppable([agent.id], async ctx => finishResult(agent,
+                parsed.get(agent.id), model, prompt, runIdentity, {
+                    inputTokens: Math.round(taskCounts[offset] + sharedTokens), outputTokens: await count(JSON.stringify({ role: 'assistant', content: parsed.get(agent.id) })) },
+                prompt.coverage, sections.get(agent.id), `${name}:${agent.id}`, ctx)))));
         }
         return outputs;
     };
 
-    while (pending.length) {
-        publishProgress();
-        const remaining = new Set(pending.map(agent => agent.id));
-        const blocked = pending.filter(agent => agent.companion.waitForDependencies && dependencies(agent, index).some(dependency => completed.has(dependency.id) && !completed.get(dependency.id).success));
-        const ready = pending.filter(agent => !blocked.includes(agent) && (!agent.companion.waitForDependencies || dependencies(agent, index).every(dependency => !remaining.has(dependency.id))));
-        const cyclic = ready.length || blocked.length ? [] : pending;
-        for (const agent of [...blocked, ...cyclic]) {
-            const runIdentity = roleplayHash({ identity, agent: agent.id, dependencyFailure: true });
-            const result = saved(context, snapshot.account, `roleplay-companion:${agent.id}`, runIdentity)
+    stops = openRoleplayCompanionStops(context.job.id, { isActive: id => visited.has(id) && !completed.has(id) });
+    try {
+        while (pending.length) {
+            publishProgress();
+            const remaining = new Set(pending.map(agent => agent.id));
+            const blocked = pending.filter(agent => agent.companion.waitForDependencies && dependencies(agent, index).some(dependency => completed.has(dependency.id) && !completed.get(dependency.id).success));
+            const ready = pending.filter(agent => !blocked.includes(agent) && (!agent.companion.waitForDependencies || dependencies(agent, index).every(dependency => !remaining.has(dependency.id))));
+            const cyclic = ready.length || blocked.length ? [] : pending;
+            for (const agent of [...blocked, ...cyclic]) {
+                const runIdentity = roleplayHash({ identity, agent: agent.id, dependencyFailure: true });
+                const result = saved(context, snapshot.account, `roleplay-companion:${agent.id}`, runIdentity)
                 ?? failedResult(agent, runIdentity, cyclic.length ? 'Companion dependencies form a cycle.' : 'A required companion did not complete.');
-            remember(result);
+                remember(result);
+            }
+            const sections = new Map(ready.map(agent => [agent.id, linkedContext(input, agent, sources, index, completed)]));
+            const groups = units(ready, sections, binding);
+            const runRemaining = group => runUnit(group, sections).catch(error => {
+                if (!isRoleplayAgentStop(error)) throw error;
+                return [];
+            });
+            let results = [];
+            if (snapshot.agents.companionMode === 'parallel') {
+                const settled = await Promise.allSettled(groups.map(runRemaining));
+                const failure = settled.find(item => item.status === 'rejected');
+                if (failure) throw failure.reason;
+                results = settled.flatMap(item => item.value);
+            } else for (const group of groups) results.push(...await runRemaining(group));
+            for (const result of results) {
+                completed.set(result.agentId, result);
+                if (result.changed) changed.add(result.agentId);
+            }
+            pending = pending.filter(agent => !completed.has(agent.id));
+            if (roleplayAgentsStopped(context)) break;
+            if (!pending.length) {
+                pending = sources.filter(agent => !visited.has(agent.id) && dependencies(agent, index).some(dependency => changed.has(dependency.id)));
+                for (const agent of pending) visited.add(agent.id);
+            }
         }
-        const sections = new Map(ready.map(agent => [agent.id, linkedContext(input, agent, sources, index, completed)]));
-        const groups = units(ready, sections, binding);
-        const runRemaining = group => runUnit(group, sections).catch(error => {
-            if (!isRoleplayAgentStop(error)) throw error;
-            return [];
-        });
-        let results = [];
-        if (snapshot.agents.companionMode === 'parallel') {
-            const settled = await Promise.allSettled(groups.map(runRemaining));
-            const failure = settled.find(item => item.status === 'rejected');
-            if (failure) throw failure.reason;
-            results = settled.flatMap(item => item.value);
-        } else for (const group of groups) results.push(...await runRemaining(group));
-        for (const result of results) {
-            completed.set(result.agentId, result);
-            if (result.changed) changed.add(result.agentId);
-        }
-        pending = pending.filter(agent => !completed.has(agent.id));
-        if (roleplayAgentsStopped(context)) break;
-        if (!pending.length) {
-            pending = sources.filter(agent => !visited.has(agent.id) && dependencies(agent, index).some(dependency => changed.has(dependency.id)));
-            for (const agent of pending) visited.add(agent.id);
-        }
-    }
+    } finally { stops.close(); }
     const resultEntries = new Map(Object.entries(hostResults));
     for (const [id, result] of completed) resultEntries.set(id, result.record);
     const finalResults = Object.fromEntries(resultEntries);

@@ -22,6 +22,7 @@ const { publishRoleplayPreview, subscribeRoleplayPreview } = await import('../sr
 const { publishConversationPreview } = await import('../src/generation/conversation-preview.js');
 const { registerHandler, setDirectoriesResolver, abortJob, testExports: runner } = await import('../src/jobs/runner.js');
 const { writeArtifact } = await import('../src/jobs/artifacts.js');
+const { openRoleplayCompanionStops } = await import('../src/generation/roleplay-companion-stop.js');
 const { pcmWave } = await import('../src/jobs/audio-artifacts.js');
 const { notifyJobsChanged } = await import('../src/jobs/notifications.js');
 const { beginDiagnosticAgent, endDiagnosticAgent } = await import('../src/diagnostic-activity.js');
@@ -201,6 +202,24 @@ test('job reads, cancels and capacity are isolated between two accounts', async 
 
     const aliceList = await (await request('GET', '/api/jobs/list', { account: 'alice' })).json();
     assert.ok(aliceList.jobs.every(job => job.owner === 'alice'));
+});
+
+test('Stop for one Companion is owner-scoped and reaches only a Companion that is still running', async () => {
+    const { job } = await (await submit('alice', { key: 'companion-stop' })).json();
+    const stops = openRoleplayCompanionStops(job.id, { isActive: id => id === 'tracker' });
+    try {
+        const stop = (agentId, who = 'alice') => request('POST', `/api/jobs/${job.id}/companions/stop`, { account: who, body: { agentId } });
+        assert.equal((await stop('tracker', 'bob')).status, 404);
+        assert.deepEqual(await (await stop('other')).json(), { stopped: false });
+        assert.deepEqual(await (await stop('')).json(), { stopped: false });
+        assert.equal(stops.isStopped('tracker'), false);
+        assert.deepEqual(await (await stop('tracker')).json(), { stopped: true });
+        assert.equal(stops.isStopped('tracker'), true);
+        assert.equal(getJob(aliceDirs, job.id).cancellation.requested, false, 'stopping one Companion never cancels the job');
+    } finally {
+        stops.close();
+    }
+    assert.deepEqual(await (await request('POST', `/api/jobs/${job.id}/companions/stop`, { body: { agentId: 'tracker' } })).json(), { stopped: false });
 });
 
 test('prepared audio artifacts are owner-scoped and served as bytes', async () => {

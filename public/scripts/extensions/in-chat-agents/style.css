@@ -398,6 +398,21 @@ button.ica--card-pill--version-update {
         }
     }
 
+    /* While a note is writing, Stop takes its own line above the usual five buttons,
+       so that row keeps its normal size and place. */
+    .ica--companion-card--pending .ica--companion-summary .ica--companion-actions,
+    #chat .ica--companion-card--pending .ica--companion-summary .ica--companion-actions {
+        position: relative;
+        padding-top: 44px;
+    }
+
+    .ica--companion-summary .ica--companion-actions .ica--companion-action.ica--companion-stop,
+    #chat .ica--companion-summary .ica--companion-actions .ica--companion-action.ica--companion-stop {
+        position: absolute;
+        top: 0;
+        left: calc(50% - 18px);
+    }
+
     .ica--companion-summary .ica--companion-actions .ica--companion-action,
     #chat .ica--companion-summary .ica--companion-actions .ica--companion-action {
         position: relative;
@@ -1000,6 +1015,19 @@ button.ica--card-pill--version-update {
 #chat .ica--companion-actions .ica--companion-action.caution:hover,
 #chat .ica--companion-actions .ica--companion-action.caution:focus-visible {
     color: var(--fullred, #a33);
+}
+
+.ica--companion-action:disabled,
+#chat .ica--companion-actions .ica--companion-action:disabled {
+    opacity: 0.3;
+    cursor: default;
+    background: transparent;
+}
+
+.ica--companion-action.ica--companion-stop:not(:disabled),
+#chat .ica--companion-actions .ica--companion-action.ica--companion-stop:not(:disabled),
+.ica--cdash-action.ica--tpanel-stop:not(:disabled) {
+    opacity: 1;
 }
 
 .ica--companion-body {

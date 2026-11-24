@@ -1378,8 +1378,10 @@ async function adoptSavedAgentResult(locator, account, messageIndex) {
  * without protected storage) or the server declines the action before accepting
  * it, so the caller runs it in the page as before. Otherwise resolves with the
  * finished job's state; `current` is false when another chat was opened meanwhile.
+ * `onAccepted` receives the job id as soon as the server takes the action, so
+ * the page can show it as running and stop single Companions in it.
  */
-export async function runRoleplayAgentAction({ mode, agentIds = [], companionId = '', messageIndex, account = getCurrentUserHandle() }) {
+export async function runRoleplayAgentAction({ mode, agentIds = [], companionId = '', messageIndex, account = getCurrentUserHandle(), onAccepted = null }) {
     if (selected_group || !isNativeRoleplayWorkflowReady() || !chat[messageIndex]) return null;
     const locator = currentLocator();
     let payload;
@@ -1416,6 +1418,9 @@ export async function runRoleplayAgentAction({ mode, agentIds = [], companionId 
         if (error?.message === 'account_changed' || !refused) throw error;
         console.debug('Server Agent action declined; running it in the page.', { mode, reason: error?.body?.code ?? error?.message });
         return null;
+    }
+    if (accepted?.jobId) {
+        try { onAccepted?.(accepted.jobId); } catch (error) { console.warn('Server Agent action listener failed.', error); }
     }
     const job = accepted?.jobId ? await waitForAgentJob(accepted.jobId, account) : null;
     const current = await adoptSavedAgentResult(locator, account, messageIndex);

@@ -36,9 +36,14 @@ import {
     deleteCompanionResult,
     emitCompanionResultsUpdated,
     getCompanionResults,
+    getDisplayedCompanionResults,
     getLatestAssistantCompanionMessageIndex,
+    isCompanionRunStoppable,
+    isServerReplyCompanionStopping,
     runCompanionAgentOnMessage,
     runCompanionsOnMessage,
+    stopCompanionRun,
+    stopServerReplyCompanion,
     updateCompanionResult,
 } from './companion-runner.js';
 import {
@@ -265,7 +270,7 @@ export function isSilentCompanionAgent(agent = {}) {
 export { isSuppressedCompanionResult };
 
 function getRenderableCompanionEntries(message) {
-    return Object.entries(getCompanionResults(message))
+    return Object.entries(getDisplayedCompanionResults(message))
         .filter(([agentId, result]) => result && typeof result === 'object' && !isHiddenCompanionResult(agentId, result))
         .sort(([, left], [, right]) => getResultSortValue(left) - getResultSortValue(right));
 }
@@ -672,10 +677,20 @@ export function insertChoiceIntoMessageInput(rawText) {
     return true;
 }
 
-function buildCompanionCard(agentId, result, message, isPreview = false) {
+function buildCompanionStopButton(stoppable) {
+    return `<button type="button" class="ica--companion-action ica--companion-stop" data-action="stop" title="Stop this companion" aria-label="Stop this companion"${stoppable ? '' : ' disabled'}><i class="fa-solid fa-stop"></i></button>`;
+}
+
+function buildCompanionCard(agentId, result, message, isPreview = false, { stoppable = false } = {}) {
     const status = getResultStatus(result);
-    const runnable = !isPreview && Boolean(getAgentById(agentId)) && isValidCompanionMessage(message);
-    const runDisabled = !areAgentsGloballyEnabled() || status === 'pending' ? ' disabled' : '';
+    const agent = getAgentById(agentId);
+    const runnable = !isPreview && Boolean(agent) && isValidCompanionMessage(message);
+    // While a note is being written, and while the reply it belongs to is still
+    // a preview, every action stays in place but only Stop can be pressed.
+    const locked = isPreview || status === 'pending';
+    const lockedAttribute = locked ? ' disabled' : '';
+    const runDisabled = !areAgentsGloballyEnabled() || locked ? ' disabled' : '';
+    const showRun = runnable || (isPreview && Boolean(agent));
     const agentName = cleanCompanionAgentName(result.agentName);
     const icon = String(result.icon ?? '').trim() || 'fa-user-astronaut';
     const profileLabel = String(result.profileLabel ?? '').trim();
@@ -687,8 +702,8 @@ function buildCompanionCard(agentId, result, message, isPreview = false) {
     const fullModelName = modelName ? String(result.model || result.modelLabel || '').trim() : '';
     const metaTitle = [fullModelName, shownProfileLabel].filter(isReadableLabel).join(' / ');
     const openAttribute = result.collapsed ? '' : ' open';
-    const lorebookButton = isLorebookAgent(getAgentById(agentId)) && status === 'done'
-        ? '<button type="button" class="ica--companion-action" data-action="send-to-lorebook" title="Send companion note to lorebook" aria-label="Send companion note to lorebook"><i class="fa-solid fa-book-medical"></i></button>'
+    const lorebookButton = isLorebookAgent(agent) && (status === 'done' || status === 'pending')
+        ? `<button type="button" class="ica--companion-action" data-action="send-to-lorebook" title="Send companion note to lorebook" aria-label="Send companion note to lorebook"${lockedAttribute}><i class="fa-solid fa-book-medical"></i></button>`
         : '';
 
     return `
@@ -701,14 +716,15 @@ function buildCompanionCard(agentId, result, message, isPreview = false) {
                 <span class="ica--companion-summary-spacer"></span>
                 ${meta ? `<span class="ica--companion-meta" title="${escapeHtml(metaTitle || meta)}">${escapeHtml(meta)}</span>` : ''}
                 <span class="ica--companion-status">${escapeHtml(getStatusLabel(status))}</span>
-                ${isPreview ? '' : `<span class="ica--companion-actions">
-                    ${runnable ? `<button type="button" class="ica--companion-action" data-action="regenerate" title="Regenerate companion note" aria-label="Regenerate companion note"${runDisabled}><i class="fa-solid fa-rotate-right"></i></button>` : ''}
-                    ${runnable ? `<button type="button" class="ica--companion-action" data-action="fix" title="Fix this companion note with strict output enforcement" aria-label="Fix companion note"${runDisabled}><i class="fa-solid fa-wrench"></i></button>` : ''}
-                    <button type="button" class="ica--companion-action" data-action="edit" title="Edit companion note" aria-label="Edit companion note"><i class="fa-solid fa-pen-to-square"></i></button>
+                <span class="ica--companion-actions">
+                    ${status === 'pending' ? buildCompanionStopButton(stoppable) : ''}
+                    ${showRun ? `<button type="button" class="ica--companion-action" data-action="regenerate" title="Regenerate companion note" aria-label="Regenerate companion note"${runDisabled}><i class="fa-solid fa-rotate-right"></i></button>` : ''}
+                    ${showRun ? `<button type="button" class="ica--companion-action" data-action="fix" title="Fix this companion note with strict output enforcement" aria-label="Fix companion note"${runDisabled}><i class="fa-solid fa-wrench"></i></button>` : ''}
+                    <button type="button" class="ica--companion-action" data-action="edit" title="Edit companion note" aria-label="Edit companion note"${lockedAttribute}><i class="fa-solid fa-pen-to-square"></i></button>
                     ${lorebookButton}
-                    <button type="button" class="ica--companion-action" data-action="copy" title="Copy companion note" aria-label="Copy companion note"><i class="fa-solid fa-copy"></i></button>
-                    <button type="button" class="ica--companion-action caution" data-action="delete" title="Delete companion note" aria-label="Delete companion note"><i class="fa-solid fa-trash"></i></button>
-                </span>`}
+                    <button type="button" class="ica--companion-action" data-action="copy" title="Copy companion note" aria-label="Copy companion note"${lockedAttribute}><i class="fa-solid fa-copy"></i></button>
+                    <button type="button" class="ica--companion-action caution" data-action="delete" title="Delete companion note" aria-label="Delete companion note"${lockedAttribute}><i class="fa-solid fa-trash"></i></button>
+                </span>
             </summary>
             <div class="ica--companion-body">${buildCompanionBody(agentId, result, message)}</div>
             ${runnable ? buildCompanionCardControls(agentId) : ''}
@@ -784,7 +800,12 @@ function renderCompanionResultsForRow(message, messageElement, messageIndex, pre
         }
     }
 
-    const cards = entries.map(([agentId, result]) => buildCompanionCard(agentId, result, message, Boolean(preview)));
+    const previewJob = preview ? String(preview.jobId ?? preview.element?.dataset?.roleplayJob ?? '') : '';
+    const cards = entries.map(([agentId, result]) => buildCompanionCard(agentId, result, message, Boolean(preview), {
+        stoppable: getResultStatus(result) === 'pending' && (preview
+            ? Boolean(previewJob) && !isServerReplyCompanionStopping(previewJob, agentId)
+            : isCompanionRunStoppable(message, agentId)),
+    }));
     cards.push(...diceAgents.map(agent => buildDiceCompanionCardHtml(agent, { messageIndex })));
     const target = captureMessageTargetState(message);
     const liveDice = preview ? null : captureDiceCompanionWidget(ledger[0]);
@@ -1122,11 +1143,34 @@ async function deleteCompanionCard(messageIndex, agentId, message) {
     renderCompanionResultsForMessage(messageIndex);
 }
 
+const latestPreviewDetails = new WeakMap();
+
+async function stopCompanionCard(button) {
+    const agentId = $(button).closest('.ica--companion-card').attr('data-agent-id') || '';
+    if (!agentId) return;
+    const previewElement = $(button).closest('[data-roleplay-job]')[0] ?? null;
+    let stopped;
+    if (previewElement) {
+        stopped = await stopServerReplyCompanion(previewElement.dataset.roleplayJob, agentId);
+        const detail = latestPreviewDetails.get(previewElement);
+        if (detail?.element?.isConnected) renderCompanionResultsForMessage(null, detail);
+    } else {
+        const messageIndex = getMessageIndexFromElement(button);
+        stopped = await stopCompanionRun(messageIndex, agentId);
+        renderCompanionResultsForMessage(messageIndex);
+    }
+    if (!stopped) toastr.info('This companion cannot be stopped yet. Try again in a moment.');
+}
+
 async function handleCompanionAction(event) {
     event.preventDefault();
     event.stopPropagation();
 
     const action = $(event.currentTarget).attr('data-action');
+    if (action === 'stop') {
+        await stopCompanionCard(event.currentTarget);
+        return;
+    }
     const { messageIndex, agentId, message, result } = getCompanionActionContext(event.currentTarget);
     if (!holdsReadableCompanionResults(message) || !agentId) {
         toastr.warning('Invalid companion note.');
@@ -1250,6 +1294,7 @@ export function initCompanionCardUi() {
     companionUiInitialized = true;
     const previewResults = new WeakMap();
     document.addEventListener('neconyan:roleplay-preview-rendered', ({ detail }) => {
+        latestPreviewDetails.set(detail.element, detail);
         const signature = JSON.stringify(detail.message.extra?.inChatAgentCompanionResults ?? {});
         if (previewResults.get(detail.element) === signature) return;
         previewResults.set(detail.element, signature);
