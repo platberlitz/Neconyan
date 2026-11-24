@@ -78,6 +78,7 @@ describe('companion card ui', () => {
         await jest.unstable_mockModule('../public/scripts/chats.js', () => ({
             encodeStyleTags,
             decodeStyleTags,
+            isExternalMediaAllowed: () => true,
         }));
 
         await jest.unstable_mockModule('../public/script.js', () => ({

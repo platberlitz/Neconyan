@@ -9,7 +9,7 @@ import { accountStorage } from '../../../util/AccountStorage.js';
 import { escapeHtml } from '../../../utils.js';
 import { captureMessageTargetState, isMessageTargetCurrent } from '../agent-runner.js';
 import { getAgentResultModelName } from '../model-label.js';
-import { replaceCompanionView, runCompanionViewAction } from './view-state.js';
+import { patchCompanionView, runCompanionViewAction } from './view-state.js';
 import { initCompanionWindows, openCompanionWindow, refreshCompanionWindows } from './companion-windows.js';
 import {
     areAgentsGloballyEnabled,
@@ -1099,10 +1099,15 @@ function applyPanelSearch({ rendering = false } = {}) {
     notifyDiceCompanionHostsChanged();
 }
 
-function renderPanel() {
+// Every forced style pass over the freshly inserted panel restyles most of the app, which costs
+// whole seconds with large themed companions. renderPanel therefore does all of its writes first,
+// reads layout once (the anchor restore), leaves the jump buttons to the next frame and creates
+// the drag sortable only when a grip is pressed.
+function renderPanel({ applyOpenState } = {}) {
     // Replacing the sortable DOM cancels a live drag. Until its saves finish, the
     // store also still contains the previous order, so keep the dropped rows visible.
     if (panelDragActive || pendingPanelReorders > 0) {
+        applyOpenState?.();
         return;
     }
 
@@ -1114,10 +1119,16 @@ function renderPanel() {
         section.getBoundingClientRect().height,
     ]));
 
+    // Before the new content, so an opening slide's visibility check meets the old, settled markup.
+    applyOpenState?.();
+
     const scope = {};
     const target = captureMessageTargetState(scope);
     const liveDice = captureDiceCompanionWidget(panel);
-    replaceCompanionView(panelElement, buildPanelHtml(), () => isMessageTargetCurrent(scope, target));
+    patchCompanionView(panelElement, buildPanelHtml(), () => isMessageTargetCurrent(scope, target), {
+        listSelector: '#ica--tpanel-results',
+        itemKey: 'agentId',
+    });
     if (liveDice) restoreDiceCompanionWidget(panel, liveDice);
     applyPanelSearch({ rendering: true });
 
@@ -1129,9 +1140,27 @@ function renderPanel() {
     }
 
     restoreVisibleMessageAnchor(panel, anchor, PANEL_ANCHOR_OPTIONS);
-    setupPanelSortable();
+    armPanelSortable(panel);
     observePanelJumpSize(panel);
-    syncPanelJumpButtons();
+    schedulePanelJumpSync();
+}
+
+const armedSortablePanels = new WeakSet();
+
+// pointerdown arrives before the mousedown and touchstart that jQuery UI (and touch-punch)
+// listen for, so a sortable created here still receives the same gesture.
+function armPanelSortable(panel) {
+    if (!panel?.addEventListener || armedSortablePanels.has(panel)) {
+        return;
+    }
+
+    armedSortablePanels.add(panel);
+    panel.addEventListener('pointerdown', event => {
+        const body = event.target?.closest?.('.ica--tpanel-drag-handle')?.closest('.ica--tpanel-body');
+        if (body && panel.contains(body) && $(body).sortable?.('instance') === undefined) {
+            setupPanelSortable();
+        }
+    }, true);
 }
 
 /** Persists the panel's visual order onto injection.order so the agents page stays in step. */
@@ -1287,12 +1316,16 @@ export function openCompanionPanel() {
     }
     panelOpen = true;
     panelOpenedAt = Date.now();
-    renderPanel();
-    const panel = $('#ica--tracker-panel').attr('data-edge', getPanelEdge()).attr('data-launcher', panelLauncher);
-    setUiVisibility(panel[0], true, () => panel.addClass('is-open'), { edge: getPanelEdge() });
-    panel.attr('aria-hidden', 'false');
-    $('#ica--tracker-panel-handle').attr('aria-expanded', 'true');
-    globalThis.document?.getElementById?.(TOPBAR_LAUNCHER_ID)?.setAttribute('aria-expanded', 'true');
+    // The open state goes in with the new content, so the browser restyles the page once.
+    renderPanel({
+        applyOpenState: () => {
+            const panel = $('#ica--tracker-panel').attr('data-edge', getPanelEdge()).attr('data-launcher', panelLauncher);
+            setUiVisibility(panel[0], true, () => panel.addClass('is-open'), { edge: getPanelEdge() });
+            panel.attr('aria-hidden', 'false');
+            $('#ica--tracker-panel-handle').attr('aria-expanded', 'true');
+            globalThis.document?.getElementById?.(TOPBAR_LAUNCHER_ID)?.setAttribute('aria-expanded', 'true');
+        },
+    });
     notifyDiceCompanionHostsChanged();
     // The panel only gains its height once it is shown, so measure again on the next frame.
     schedulePanelJumpSync();

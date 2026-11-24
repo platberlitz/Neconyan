@@ -1,6 +1,6 @@
 import { DOMPurify, showdown } from '../../../../lib.js';
 import { chat, chat_metadata, characters, this_chid, changeMessageBelowReader, changeMessagesBelowReader, runWhenChatScrollSettles, saveChatDebounced, substituteParams, substituteParamsExtended } from '../../../../script.js';
-import { encodeStyleTags, decodeStyleTags } from '../../../chats.js';
+import { encodeStyleTags, decodeStyleTags, isExternalMediaAllowed } from '../../../chats.js';
 import { bindPortraitUrls } from '../../../portrait-urls.js';
 import { eventSource, event_types } from '../../../events.js';
 import { Popup, POPUP_RESULT, POPUP_TYPE } from '../../../popup.js';
@@ -156,8 +156,41 @@ function getMessageIndexFromElement(element) {
     return Number.isFinite(messageIndex) ? messageIndex : -1;
 }
 
+// Panel and card redraws sanitise the same notes again; themed notes carry large stylesheets
+// whose rewrite takes most of that time, so reuse the result while the inputs are unchanged.
+const SANITIZED_HTML_CACHE_LIMIT = 200;
+const SANITIZED_HTML_CACHE_MAX_INPUT = 256 * 1024;
+const SANITIZED_HTML_CACHE_MAX_CHARACTERS = 4 * 1024 * 1024;
+const sanitizedHtmlCache = new Map();
+let sanitizedHtmlCacheCharacters = 0;
+
 export function sanitizeCompanionHtml(html = '', { prefix = '.ica--companion-body ' } = {}) {
-    const encoded = encodeStyleTags(String(html ?? ''));
+    const source = String(html ?? '');
+    const cacheKey = source.length <= SANITIZED_HTML_CACHE_MAX_INPUT
+        ? `${isExternalMediaAllowed() ? 1 : 0}\u0000${prefix}\u0000${source}`
+        : null;
+    const cached = cacheKey === null ? undefined : sanitizedHtmlCache.get(cacheKey);
+    if (cached !== undefined) {
+        sanitizedHtmlCache.delete(cacheKey);
+        sanitizedHtmlCache.set(cacheKey, cached);
+        return cached;
+    }
+
+    const result = sanitizeCompanionHtmlUncached(source, prefix);
+    if (cacheKey !== null) {
+        sanitizedHtmlCache.set(cacheKey, result);
+        sanitizedHtmlCacheCharacters += cacheKey.length + result.length;
+        while (sanitizedHtmlCache.size > SANITIZED_HTML_CACHE_LIMIT || sanitizedHtmlCacheCharacters > SANITIZED_HTML_CACHE_MAX_CHARACTERS) {
+            const [oldestKey, oldestResult] = sanitizedHtmlCache.entries().next().value;
+            sanitizedHtmlCache.delete(oldestKey);
+            sanitizedHtmlCacheCharacters -= oldestKey.length + oldestResult.length;
+        }
+    }
+    return result;
+}
+
+function sanitizeCompanionHtmlUncached(html, prefix) {
+    const encoded = encodeStyleTags(html);
     const sanitized = DOMPurify.sanitize(encoded, {
         MESSAGE_SANITIZE: true,
         ADD_TAGS: ['custom-style'],

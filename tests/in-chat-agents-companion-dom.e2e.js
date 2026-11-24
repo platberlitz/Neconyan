@@ -34,7 +34,7 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
             await page.addScriptTag({ content: [
                 declarations('../public/scripts/utils.js', ['escapeHtml']),
                 declarations('../public/scripts/chats.js', ['isExternalMediaUrl', 'stripCssCommentsQuoteAware', 'unescapeCssText', 'extractCssUrls', 'hasExternalCssUrl', 'sanitizeInlineStyleExternalMedia', 'encodeStyleTags', 'decodeStyleTags', 'addDOMPurifyHooks']),
-                declarations(`${companionPath}companion-ui.js`, ['sanitizeCompanionHtml', 'CHOICE_PREFIX_RE', 'CHOICE_LINE_RE', 'extractChoiceText', 'buildChoiceButtonHtml', 'wrapChoiceSegment', 'decorateStyledChoiceRows', 'decorateChoiceLines']),
+                declarations(`${companionPath}companion-ui.js`, ['SANITIZED_HTML_CACHE_LIMIT', 'SANITIZED_HTML_CACHE_MAX_INPUT', 'SANITIZED_HTML_CACHE_MAX_CHARACTERS', 'sanitizedHtmlCache', 'sanitizedHtmlCacheCharacters', 'sanitizeCompanionHtml', 'sanitizeCompanionHtmlUncached', 'CHOICE_PREFIX_RE', 'CHOICE_LINE_RE', 'extractChoiceText', 'buildChoiceButtonHtml', 'wrapChoiceSegment', 'decorateStyledChoiceRows', 'decorateChoiceLines']),
             ].join('\n') });
         });
 
@@ -262,7 +262,7 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
                 declarations(`${companionPath}../model-label.js`, ['MAIN_MODEL_LABEL', 'PLAIN_MODEL_ID_RE', 'formatAgentModelName', 'getAgentResultModelName']),
                 declarations(`${companionPath}companion-ui.js`, [
                     'getResultStatus', 'getStatusLabel', 'RAW_ID_LABEL_RE', 'TRAILING_ID_IN_NAME_RE', 'cleanCompanionAgentName', 'isReadableLabel',
-                    'buildCompanionCard', 'getMessageIndexFromElement', 'getCompanionActionContext', 'handleCompanionAction',
+                    'buildCompanionStopButton', 'buildCompanionCard', 'getMessageIndexFromElement', 'getCompanionActionContext', 'handleCompanionAction',
                 ]),
             ].join('\n') });
             await page.evaluate(() => {
