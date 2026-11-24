@@ -1,4 +1,5 @@
 import { describe, expect, jest, test } from '@jest/globals';
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import vm from 'node:vm';
@@ -289,9 +290,35 @@ describe('Neconyan Home', () => {
         for (const mode of ['full', 'compact', 'list']) {
             const html = render({ welcomePanelMode: mode, welcomePanelCompact: mode === 'compact', welcomePanelListOnly: mode === 'list', tutorialHidden: true });
             expect(html).toContain('data-action="replay-tutorial">Replay First paws tour</button>');
+            expect(html).toContain('data-action="whats-new">What\'s new</button>');
             expect(html).not.toContain('welcomeTourPanel');
             expect(html).not.toContain('welcomeAdvancedHome');
         }
+    });
+
+    test('loads the What\'s new styles from their own deferred sheet', () => {
+        const indexHtml = read('index.html');
+        const cacheVersion = read('sw.js').match(/NN_SW_CACHE_VERSION = 'neconyan-cache-v([^']+)'/)[1];
+        expect(indexHtml).toContain(`<link href="css/neconyan-whats-new.css?v=${cacheVersion}" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">`);
+        const css = read('css/neconyan-whats-new.css').replace(/\/\*[\s\S]*?\*\//g, '');
+        expect(css).toContain('.neconyan-home-layout .neconyan-home-whats-new[data-unseen=\'true\']::after');
+        expect(css).toContain('--sb-popup-fills-screen: 1');
+        expect(css).not.toContain('!important');
+        expect(css).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+        expect(read('css/neconyan-help.css')).not.toContain('whats-new');
+    });
+
+    test('tucks three recorded kittens into What\'s new and hides them in Kittyless', () => {
+        const css = read('css/neconyan-whats-new.css').replace(/\/\*[\s\S]*?\*\//g, '');
+        for (const name of ['whats-new-peek', 'whats-new-scroll', 'whats-new-loaf']) {
+            const path = `img/neconyan/${name}.webp`;
+            expect(css).toContain(`url('../${path}?v=`);
+            const output = artworkOutput(path);
+            expect(output).toBeDefined();
+            const bytes = readFileSync(new URL('../public/' + path, import.meta.url));
+            expect(createHash('sha256').update(bytes).digest('hex')).toBe(output.sha256);
+        }
+        expect(css).toMatch(/:root\[data-sb-kittyless='true'\] body\.neconyan \.neconyan-whats-new h2::after,[\s\S]*?\{\s*content: none;/);
     });
 
     test('shows Home layout under the welcome box and lets the assistant box collapse', () => {
