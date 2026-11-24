@@ -8,7 +8,7 @@ const { cancelAutoSaves } = await import('../src/endpoints/settings.js');
 const { normaliseCapabilities, shareOffer } = await import('../src/scratchpad/jobs.js');
 const { buildScratchpadSystemPrompt, shareRequestInstructions } = await import('../src/scratchpad/prompt.js');
 
-const ALL = ['card', 'persona', 'authorsNote', 'mewmory', 'lore', 'preset', 'problems', 'appEvidence', 'appSource', 'lastPrompt', 'agents', 'regex', 'cssSnippets', 'dialogueColors', 'hidden'];
+const ALL = ['card', 'persona', 'authorsNote', 'mewmory', 'lore', 'preset', 'problems', 'appEvidence', 'appSource', 'lastPrompt', 'agents', 'companionNotes', 'regex', 'cssSnippets', 'dialogueColors', 'hidden'];
 after(() => cancelAutoSaves());
 
 const HOSTILE = [...ALL, 'webSearch', 'prefill', 'config', 'hiddenLore', 'assistantConnections', 'autoSummary', '__proto__', 'constructor', 42, null];

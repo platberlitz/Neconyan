@@ -28,6 +28,7 @@ import { sameSourceContext } from './source.js';
 import { homePersonaChoice } from './home-persona.js';
 import { shareScenarioNotes } from './scenario-note-references.js';
 import { unsharedShareItems } from './share-request.js';
+import { collectCompanionNotes, formatCompanionNotes } from './companion-notes.js';
 import {
     applyAuthorsNoteChangeToSnapshot,
     applyCharacterChangeToSnapshot,
@@ -1235,6 +1236,15 @@ export async function buildContext({ source, settings, pendingText = '', session
     const swipeCount = kept.filter(item => item.swipe).length;
     const heading = messageHeading(kept, selection.picked, all.length);
     if (!general) sections.push([heading, ...(swipeCount ? [swipeNote(kept)] : []), ...kept.map(messageLine)].join('\n\n'));
+    let companionNotesShared = false;
+    if (source.kind === 'roleplay' && include.companionNotes === true) {
+        const room = MAX_CONTEXT_BYTES - byteLength(sections.join('\n\n')) - 2;
+        const notes = formatCompanionNotes(collectCompanionNotes(chat, kept, { includeHidden: include.hidden === true, picked: selection.picked }), room);
+        if (notes.text) {
+            sections.push(notes.text);
+            companionNotesShared = true;
+        }
+    }
     const text = sections.join('\n\n');
 
     const loreBooks = loreShared ? lore.books : [];
@@ -1266,6 +1276,7 @@ export async function buildContext({ source, settings, pendingText = '', session
             ...(appEvidenceShared ? { appEvidence: true } : {}),
             ...(appSourceShared ? { appSource: true } : {}),
             ...(lastPromptShared ? { lastPrompt: true } : {}),
+            ...(companionNotesShared ? { companionNotes: true } : {}),
             ...(unshared.items.length ? { shareable: unshared.items } : {}),
             ...(unshared.canIncreaseDepth ? { shareDepth: unshared.currentDepth } : {}),
         },
