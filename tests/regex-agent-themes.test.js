@@ -1,13 +1,16 @@
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
 import { readFileSync } from 'node:fs';
-import { ARCHETYPES, SPECS, THEMABLE_TEMPLATE_IDS, getSpec } from '../public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/specs.js';
+import { ARCHETYPES, PREVIEWABLE_ARCHETYPES, SPECS, THEMABLE_TEMPLATE_IDS, getSpec } from '../public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/specs.js';
 import { STOCK, getStock } from '../public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/stock.js';
 import { TRACKER_FAMILIES, TEMPLATE_LABELS } from '../public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/template-catalog.js';
 import { buildAgentScripts } from '../public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/build.js';
 import { buildReplaceString } from '../public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/render/index.js';
 import { applyList, regexFromString } from '../public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/interpolate.js';
+import { PREVIEW_KEYS } from '../public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/preview.js';
 import { SAMPLES } from '../public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/samples.js';
-import { THEMES } from '../public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/themes/index.js';
+import { THEMES, getTheme } from '../public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/themes/index.js';
+import { resolveTheme } from '../public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/tokens.js';
+import { contrastRatio, parseColor } from '../public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/color.js';
 import { applyAll, applyToAgent, inspectAgent, reconcile } from '../public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/apply.js';
 import { __setHostForTests } from '../public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/host.js';
 import { DEFAULTS, getSettings, resolveThemeSlug, updateSettings } from '../public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/settings.js';
@@ -240,6 +243,96 @@ describe('bundled tracker contracts', () => {
             expect(html.split('\n').filter(line => line.includes('<style>'))).toHaveLength(1);
         }
     }, 30000);
+
+    test('terminal companions are styled across every theme with valid markdown isolation, bold, open defaults, glyphs and adaptive neutrals', () => {
+        expect(THEMABLE_TEMPLATE_IDS).toContain('tpl-user-based-stats-generator');
+        expect(THEMABLE_TEMPLATE_IDS).toContain('tpl-level-up-companion');
+        expect(THEMABLE_TEMPLATE_IDS).not.toContain('tpl-memory-shard-companion');
+        expect(PREVIEWABLE_ARCHETYPES).toContain(ARCHETYPES.TERMINAL);
+        expect(PREVIEW_KEYS[ARCHETYPES.TERMINAL]).toBe('level-up');
+
+        for (const selected of THEMES) {
+            const statsScripts = buildAgentScripts('tpl-user-based-stats-generator', scriptsFor('tpl-user-based-stats-generator'), selected).scripts;
+            const statsHtml = applyList(SAMPLES['user-stats'].full, statsScripts);
+            expect(statsHtml).toContain(`</style>\n<div data-rat="${selected.slug}@4" data-rat-arch="terminal" data-rat-key="user-stats"`);
+            expect(statsHtml).toContain(`rat-tw-user-stats-${selected.slug}`);
+            expect(statsHtml).toContain('USER_STATS.exe');
+            expect(statsHtml).toContain('FULL STAT BLOCK');
+            expect(statsHtml).toContain('{{user}}@st:~$ cat USER_STATS.log');
+            expect(statsHtml).toContain('<details open>');
+            expect(statsHtml).toContain('<strong>Strength</strong>: 6/10');
+            expect(statsHtml).toContain('<strong>Keen Eye</strong>: Spots exits and tells in a crowded room.');
+            expect(statsHtml).not.toContain('[USER_STATS]');
+            expect(statsHtml).not.toContain('[/USER_STATS]');
+            expect(statsHtml).not.toContain('**Strength**');
+            expect(statsHtml).not.toContain('data-rat-arch="bold"');
+
+            const levelScripts = buildAgentScripts('tpl-level-up-companion', scriptsFor('tpl-level-up-companion'), selected).scripts;
+            const levelHtml = applyList(SAMPLES['level-up'].full, levelScripts);
+            expect(levelHtml).toContain(`</style>\n<div data-rat="${selected.slug}@4" data-rat-arch="terminal" data-rat-key="level-up"`);
+            expect(levelHtml).toContain(`rat-tw-level-up-${selected.slug}`);
+            expect(levelHtml).toContain('LEVEL_UP.exe');
+            expect(levelHtml).toContain('LEVEL UP REPORT');
+            expect(levelHtml).toContain('{{user}}@st:~$ run LEVEL_UP.report');
+            expect(levelHtml).toContain('[ LEVEL UP CONFIRMED ]');
+            expect(levelHtml).toContain('<strong>Swordplay</strong>: +4, now 46/100');
+            expect(levelHtml).toContain('<strong>Night Watch</strong>: Faster recovery after long shifts.');
+            expect(levelHtml).not.toContain('[LEVEL_UP]');
+            expect(levelHtml).not.toContain('[/LEVEL_UP]');
+            expect(levelHtml).not.toContain('**Swordplay**');
+        }
+
+        const sampleTheme = getTheme('phosphor-green');
+        const closed = applyList(
+            SAMPLES['user-stats'].full,
+            buildAgentScripts('tpl-user-based-stats-generator', scriptsFor('tpl-user-based-stats-generator'), sampleTheme, {
+                openDefaults: 'all-closed',
+                glyphs: 'none',
+                restyleBold: true,
+            }).scripts,
+        );
+        expect(closed).toContain('<details>');
+        expect(closed).not.toContain('<details open>');
+        expect(closed).not.toContain('class="rat-tw-dots"');
+        expect(closed).not.toContain('class="rat-tw-cursor"');
+        expect(closed).not.toContain('\u258e');
+        expect(closed).toContain('data-rat-arch="bold"');
+        expect(closed).toContain('>Strength</strong>');
+
+        const gameboy = resolveTheme(getTheme('gameboy-dmg'));
+        expect(gameboy.term.font).toBe('ui-monospace, Menlo, monospace');
+        expect(gameboy.a11y.checks.some(check => check.role === 'terminal-strong')).toBe(true);
+
+        const customWithTerm = {
+            ...structuredClone(getTheme('obsidian-ink')),
+            slug: 'custom-term-check',
+            term: {
+                bg: '#08100a',
+                panel: '#0e1a12',
+                accent: '#42ff9e',
+                accentDim: '#24c475',
+                text: '#d8ffe7',
+                muted: '#7eb695',
+                border: '#1d4d32',
+                glow: 'rgba(66,255,158,0.18)',
+                gold: '#ffe17d',
+                font: 'ui-monospace, monospace',
+            },
+        };
+        const adapted = resolveTheme(customWithTerm, { adaptiveNeutrals: true });
+        expect(adapted.term.bg).toContain('var(--SmartTheme');
+        expect(adapted.term.panel).toContain('var(--SmartTheme');
+        expect(adapted.term.border).toContain('var(--SmartTheme');
+        expect(adapted.term.accent).toBe('#42ff9e');
+        expect(adapted.term.font).toBe('ui-monospace, monospace');
+        for (const check of adapted.a11y.checks) {
+            const fg = parseColor(check.foreground);
+            expect(fg).not.toBeNull();
+            for (const bg of check.backgrounds) {
+                expect(contrastRatio(fg, bg)).toBeGreaterThanOrEqual(check.minimum);
+            }
+        }
+    }, 30000);
 });
 
 describe('tracker-family selection through the real apply path', () => {
@@ -330,5 +423,64 @@ describe('tracker-family selection through the real apply path', () => {
         ledger.regexScripts[0].findRegex = '/custom (pattern)/g';
         expect(await applyToAgent(ledger, { force: true })).toMatchObject({ ok: false });
         expect(ledger.regexScripts[0].findRegex).toBe('/custom (pattern)/g');
+    });
+
+    test('reconciles, switches, protects manual edits and reverts terminal companions without mutating messages', async () => {
+        const stats = agents.find(agent => agent.sourceTemplateId === 'tpl-user-based-stats-generator');
+        const levelUp = agents.find(agent => agent.sourceTemplateId === 'tpl-level-up-companion');
+        const originalStats = structuredClone(stats);
+        const originalLevelUp = structuredClone(levelUp);
+        const emit = jest.fn();
+        const updateMessageBlock = jest.fn();
+        const storedMessage = {
+            mes: 'You feel steadier after the climb.',
+            extra: {
+                inChatAgentCompanionResults: {
+                    [stats.id]: { content: SAMPLES['user-stats'].full, format: 'markdown', status: 'done' },
+                    [levelUp.id]: { content: SAMPLES['level-up'].full, format: 'markdown', status: 'done' },
+                },
+            },
+        };
+        const messageSnapshot = structuredClone(storedMessage);
+        context.chat = [storedMessage];
+        context.eventSource = { emit };
+        context.updateMessageBlock = updateMessageBlock;
+
+        // Boot reconcile picks up already-installed stock terminal companions.
+        const initialReconcile = await reconcile();
+        expect(initialReconcile.needsAttention).toEqual([]);
+        expect(inspectAgent(agents.find(a => a.id === stats.id)).status).toBe('pristine');
+        expect(inspectAgent(agents.find(a => a.id === levelUp.id)).status).toBe('pristine');
+        expect(emit).toHaveBeenCalledWith('in_chat_agent_companion_results_updated', { messageIndex: 0 });
+        expect(storedMessage).toEqual(messageSnapshot);
+
+        // Switching themes repaints and updates terminal companions cleanly.
+        emit.mockClear();
+        updateSettings({ theme: THEMES[1].slug });
+        const switched = await applyAll();
+        expect(switched).toMatchObject({ ok: true, blocked: [], failed: [] });
+        expect(agents.find(a => a.id === stats.id).regexScripts[0].replaceString).toContain(`rat-tw-user-stats-${THEMES[1].slug}`);
+        expect(agents.find(a => a.id === levelUp.id).regexScripts[0].replaceString).toContain(`rat-tw-level-up-${THEMES[1].slug}`);
+        expect(emit).toHaveBeenCalledWith('in_chat_agent_companion_results_updated', { messageIndex: 0 });
+        expect(storedMessage).toEqual(messageSnapshot);
+
+        // Hand-edited terminal script is protected during boot reconcile and revert.
+        const customHtml = '<div class="my-custom-levelup">$1</div>';
+        agents.find(a => a.id === levelUp.id).regexScripts[0].replaceString = customHtml;
+        expect(inspectAgent(agents.find(a => a.id === levelUp.id)).status).toBe('foreign');
+        const guarded = await reconcile();
+        expect(guarded.needsAttention.map(entry => entry.agentId)).toContain(levelUp.id);
+        expect(agents.find(a => a.id === levelUp.id).regexScripts[0].replaceString).toBe(customHtml);
+
+        // Reverting to stock restores untouched terminal companion byte-for-byte while protecting the edited one.
+        updateSettings({ theme: STOCK_THEME });
+        const reverted = await applyAll();
+        expect(reverted.blocked.map(entry => entry.agentId)).toContain(levelUp.id);
+        expect(agents.find(a => a.id === stats.id)).toEqual(originalStats);
+        expect(agents.find(a => a.id === levelUp.id).regexScripts[0].replaceString).toBe(customHtml);
+
+        // Force-reverting or restoring stock after clearing hand edit returns exact stock.
+        agents.find(a => a.id === levelUp.id).regexScripts = structuredClone(originalLevelUp.regexScripts);
+        expect(agents.find(a => a.id === levelUp.id)).toEqual(originalLevelUp);
     });
 });

@@ -51,6 +51,7 @@ const ARCHETYPE_LABELS = Object.freeze({
     [ARCHETYPES.VISUAL_MAP]: 'Visual Map',
     [ARCHETYPES.VITALS]: 'Vitals',
     [ARCHETYPES.PLOT_COMPASS]: 'Plot Compass',
+    [ARCHETYPES.TERMINAL]: 'Terminal',
 });
 
 const STATUS_LABELS = Object.freeze({
