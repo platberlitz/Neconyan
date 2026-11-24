@@ -2164,7 +2164,12 @@ export function onNewMessage(indexArg = null, messageArg = null, chatArg = null,
         const hasActualColorSpans = collectFontColorsFromText(text).size > 0;
         const hadRemapping = colorStats.hadRemapping;
         const remappedAssignments = colorStats.remappedAssignments;
-        if (registryBeforeIngest !== null && registryBeforeIngest !== getPersistentRegistryFingerprint()) saveData();
+        if (registryBeforeIngest !== null && registryBeforeIngest !== getPersistentRegistryFingerprint()) {
+            saveData();
+            // The render-time font pass ran before this ingest registered any new
+            // speaker, so their gradient, font and style would wait for a later repaint.
+            scheduleCustomFontRefresh(0);
+        }
         scheduleDialogueCountSync(chat, { refreshCharList: true }); injectPrompt();
 
         let latestRemapChanged = false;
