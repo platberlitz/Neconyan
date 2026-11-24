@@ -221,7 +221,8 @@ describe('Scratchpad shared context with App diagnostics', () => {
         chat.push({ name: 'Roleplay', mes: 'A lighthouse.', is_user: true });
         const plain = await buildContext({ source: currentSource(), settings });
         const shared = await buildContext({ source: currentSource(), settings: { ...settings, include: { ...settings.include, appEvidence: true } } });
-        expect(shared.capabilities).toEqual({ ...plain.capabilities, appEvidence: true });
+        expect(plain.capabilities.shareable).toContain('appEvidence');
+        expect(shared.capabilities).toEqual({ ...plain.capabilities, appEvidence: true, shareable: plain.capabilities.shareable.filter(key => key !== 'appEvidence') });
         expect(shared.text.match(/^## App evidence$/gm)).toHaveLength(1);
         expect(shared.text.replace(`\n\n${EVIDENCE_SECTION}`, '')).toBe(plain.text);
         expect(shared.text.indexOf('## App evidence')).toBeLessThan(shared.text.indexOf('A lighthouse.'));
@@ -264,7 +265,8 @@ describe('Scratchpad shared context with Last prompt sent', () => {
         const plain = await buildContext({ source: currentSource(), settings });
         const shared = await buildContext({ source: currentSource(), settings: { ...settings, include: { ...settings.include, lastPrompt: true } } });
         expect(readItemizedPromptsForChat).toHaveBeenCalledWith('chat');
-        expect(shared.capabilities).toEqual({ ...plain.capabilities, lastPrompt: true });
+        expect(plain.capabilities.shareable).toContain('lastPrompt');
+        expect(shared.capabilities).toEqual({ ...plain.capabilities, lastPrompt: true, shareable: plain.capabilities.shareable.filter(key => key !== 'lastPrompt') });
         const section = shared.text.slice(shared.text.indexOf('## Last prompt sent'), shared.text.indexOf('## Latest messages'));
         expect(shared.text.match(/^## Last prompt sent$/gm)).toHaveLength(1);
         expect(section).toContain('Mode: Roleplay, Chat Completion');

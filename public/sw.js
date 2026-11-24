@@ -1,4 +1,4 @@
-const NN_SW_CACHE_VERSION = 'neconyan-cache-v20261202-whats-new-ios-scroll';
+const NN_SW_CACHE_VERSION = 'neconyan-cache-v20261203-scratchpad-share-request';
 // Storage revision for the service worker caches. It is separate from the
 // stylesheet query version so old entries can be evicted without touching CSS.
 const NN_SW_CACHE_EPOCH = '20261018a-native-startup';

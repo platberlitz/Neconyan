@@ -1418,6 +1418,111 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     font-size: 0.85rem;
 }
 
+.scratchpad-share-request {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+    margin: 8px 0;
+    padding: 10px 12px;
+    border: 1px solid var(--neco-border);
+    border-left: 4px solid var(--neco-ginger);
+    border-radius: 10px;
+    background: var(--neco-raised);
+    color: var(--neco-ink);
+    overflow-wrap: anywhere;
+}
+
+.scratchpad-share-request.is-invalid {
+    border-left-style: dashed;
+}
+
+.scratchpad-share-request.is-dismissed {
+    border-left-color: var(--neco-border);
+}
+
+.scratchpad-share-title {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-weight: 700;
+}
+
+.scratchpad-share-title .fa-solid {
+    color: var(--neco-ginger);
+}
+
+.scratchpad-share-request :is(.scratchpad-share-reason, .scratchpad-share-intro, .scratchpad-share-note, .scratchpad-change-state) {
+    margin: 0;
+}
+
+.scratchpad-share-reason {
+    white-space: pre-wrap;
+}
+
+.scratchpad-share-intro,
+.scratchpad-share-note {
+    font-size: 0.85rem;
+}
+
+.scratchpad-share-items {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.scratchpad-share-item {
+    min-width: 0;
+}
+
+.scratchpad-share-item .scratchpad-share-name {
+    font-weight: 600;
+}
+
+.scratchpad-share-item.is-shared {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    min-height: 36px;
+}
+
+.scratchpad-share-badge {
+    padding: 1px 8px;
+    border: 1px solid var(--neco-border);
+    border-radius: 999px;
+    color: var(--neco-muted);
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.scratchpad-share-raw {
+    max-width: 100%;
+    margin: 0;
+    overflow-x: auto;
+    white-space: pre-wrap;
+}
+
+.scratchpad-share-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+}
+
+#neconyan-scratchpad .scratchpad-share-actions .scratchpad-share-accept {
+    background: var(--neco-ginger);
+    border-color: var(--neco-ginger);
+    color: var(--neco-on-accent);
+}
+
+#neconyan-scratchpad .scratchpad-share-actions .scratchpad-share-accept:hover:not(:disabled) {
+    background: var(--neco-ginger-hover);
+    border-color: var(--neco-ginger-hover);
+    color: var(--neco-on-accent);
+}
+
 .scratchpad-web-settings .scratchpad-web-status {
     margin: 0;
 }
@@ -2134,5 +2239,9 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
 
     body:not(.reduced-motion) .scratchpad-tone-stop {
         transition: color 120ms ease-out;
+    }
+
+    body:not(.reduced-motion) #neconyan-scratchpad .scratchpad-share-actions .scratchpad-share-accept {
+        transition: background-color 120ms ease-out, border-color 120ms ease-out;
     }
 }

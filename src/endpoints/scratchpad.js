@@ -266,7 +266,8 @@ router.post('/prompt', (request, response) => {
         const prompt = buildScratchpadSystemPrompt({ assistant: body.assistant, gender: body.gender,
             persona: profiles[body.assistant], assistantNames: Object.fromEntries(Object.entries(profiles).map(([id, profile]) => [id, profile?.name])),
             sourceKind: source?.kind, userName: body.names?.user, characterName: body.names?.character,
-            capabilities: { ...normaliseCapabilities(body.capabilities, source?.kind, source ?? {}), notebook: body.capabilities?.notebook === true,
+            // The share list follows the live switches, so it is added at send time and never saved into a custom prompt.
+            capabilities: { ...normaliseCapabilities(body.capabilities, source?.kind, source ?? {}), shareable: undefined, shareDepth: undefined, notebook: body.capabilities?.notebook === true,
                 lore: body.capabilities?.lore === true && source?.kind !== 'notebook' && sharedLorebook,
                 persona,
                 image: imageAvailability.image && body.capabilities?.image === true, avatar: imageAvailability.image && body.capabilities?.image === true && targets.length > 0 },
