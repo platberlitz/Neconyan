@@ -10,7 +10,7 @@ await jest.unstable_mockModule('../public/scripts/utils.js', () => ({
 }));
 
 const { AGENT_REGEX_PLACEMENT, applyRegexScriptList } = await import('../public/scripts/extensions/in-chat-agents/regex-scripts.js');
-const { updateRetiredFindPatterns } = await import('../public/scripts/extensions/in-chat-agents/retired-regex-patterns.js');
+const { updateRetiredFindPatterns, updateRetiredReplacements } = await import('../public/scripts/extensions/in-chat-agents/retired-regex-patterns.js');
 
 const CERTIFICATE_ID = 'fb09f6d3-e5bf-4aec-8166-07f3f33aaeaa';
 const bundles = JSON.parse(fs.readFileSync(new URL('../public/scripts/extensions/in-chat-agents/templates/regex-bundles.json', import.meta.url), 'utf8'));
@@ -74,5 +74,57 @@ describe('updateRetiredFindPatterns', () => {
         expect(body).toContain('await saveAgentBatch(changes, \'Retired regex patterns\');');
         expect(body).not.toContain('shouldSkipBundledTemplateMigrations');
         expect(initialisation).toContain('await migrateRetiredRegexFindPatternsToSavedAgents()');
+    });
+});
+
+describe('updateRetiredReplacements', () => {
+    const BOND_ID = 'c81e4b95-2d7a-4a60-8f3c-7b9e0d6a4c22';
+    const bond = bundles['tpl-relationship-tracker'].find(script => script.id === BOND_ID);
+    // The Relationship Bond card before its header wrapped the status pill on narrow cards.
+    const retiredBond = bond.replaceString
+        .replace('display:flex;flex-wrap:wrap;align-items:center', 'display:flex;align-items:center')
+        .replace('flex:1 1 0;min-width:min(7em,100%);line-height:1.4', 'flex:1;min-width:0;line-height:1.4')
+        .replace('color:#d6b8ff;margin-left:auto', 'color:#d6b8ff;white-space:nowrap');
+
+    test('the bundled bond header wraps instead of squeezing the name', () => {
+        const summary = bond.replaceString.match(/<summary[\s\S]*?<\/summary>/)[0];
+        expect(summary).toContain('flex-wrap:wrap');
+        expect(summary).toContain('min-width:min(7em,100%)');
+        expect(summary).not.toContain('nowrap');
+        expect(retiredBond).not.toBe(bond.replaceString);
+    });
+
+    test('gives an unedited retired bond card the bundled markup, whatever the saved script id', () => {
+        const saved = [
+            { id: 'saved-copy', scriptName: 'Replace Relationship Bond', findRegex: bond.findRegex, replaceString: retiredBond },
+            { id: 'other', findRegex: '/x/g', replaceString: 'y' },
+        ];
+
+        const updated = updateRetiredReplacements(saved, findBundledScript);
+
+        expect(updated[0]).toEqual({ ...saved[0], replaceString: bond.replaceString });
+        expect(updated[1]).toBe(saved[1]);
+        expect(saved[0].replaceString).toBe(retiredBond);
+    });
+
+    test('leaves restyled, themed and current replacements alone', () => {
+        expect(updateRetiredReplacements([{ id: BOND_ID, replaceString: `${retiredBond} ` }], findBundledScript)).toBeNull();
+        expect(updateRetiredReplacements([{ id: BOND_ID, replaceString: '<details data-rat="x@1">$2</details>' }], findBundledScript)).toBeNull();
+        expect(updateRetiredReplacements([{ ...bond }], findBundledScript)).toBeNull();
+        expect(updateRetiredReplacements([{ id: BOND_ID }], findBundledScript)).toBeNull();
+        expect(updateRetiredReplacements(undefined, findBundledScript)).toBeNull();
+        expect(updateRetiredReplacements([{ replaceString: retiredBond }], () => null)).toBeNull();
+    });
+
+    test('runs for every saved agent at start-up, locked or not, in one library write', () => {
+        const start = indexSource.indexOf('async function migrateRetiredRegexReplacementsToSavedAgents()');
+        const body = indexSource.slice(start, indexSource.indexOf('\n}\n', start));
+        const initialisation = indexSource.slice(indexSource.indexOf('async function finishAgentLibraryInitialization()'), indexSource.indexOf('async function retryAgentSetupLoading'));
+
+        expect(start).toBeGreaterThan(-1);
+        expect(body).toContain('updateRetiredReplacements(agent.regexScripts, findBundledScript)');
+        expect(body).toContain('await saveAgentBatch(changes, \'Retired regex replacements\');');
+        expect(body).not.toContain('shouldSkipBundledTemplateMigrations');
+        expect(initialisation).toContain('await migrateRetiredRegexReplacementsToSavedAgents()');
     });
 });
