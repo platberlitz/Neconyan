@@ -1073,6 +1073,15 @@ export async function buildContext({ source, settings, pendingText = '', session
         }
     }
 
+    const appSourceShared = include.appSource === true && source.kind !== 'notebook';
+    if (appSourceShared) {
+        sections.push([
+            '## Neconyan source code',
+            'When this message is sent, the server looks up the parts of Neconyan\'s own code that match the question and the app diagnostics, and adds them read-only before the reply.',
+            'It reads only public/scripts, public/script.js and src. Config, secrets and user data are never readable, and the assistant cannot change Neconyan\'s code.',
+        ].join('\n'));
+    }
+
     let lastPromptShared = false;
     if (include.lastPrompt === true && (source.kind === 'roleplay' || source.kind === 'conversation')) {
         const [{ gatherLastPrompt }, { formatMissingLastPrompt, LAST_PROMPT_MAX_BYTES }] = await Promise.all([
@@ -1170,6 +1179,7 @@ export async function buildContext({ source, settings, pendingText = '', session
             ...(include.authorsNote && source.kind === 'roleplay' ? { authorsNote: true } : {}),
             ...(problemsShared ? { problems: true } : {}),
             ...(appEvidenceShared ? { appEvidence: true } : {}),
+            ...(appSourceShared ? { appSource: true } : {}),
             ...(lastPromptShared ? { lastPrompt: true } : {}),
         },
     };

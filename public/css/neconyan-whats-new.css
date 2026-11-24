@@ -1,0 +1,207 @@
+/* Home 'What's new' button dot and popup. */
+.neconyan-home-layout .neconyan-home-whats-new {
+    position: relative;
+}
+
+.neconyan-home-layout .neconyan-home-whats-new[data-unseen='true']::after {
+    content: '';
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--neco-ginger);
+    box-shadow: 0 0 0 2px var(--neco-surface);
+    pointer-events: none;
+}
+
+dialog.popup.neconyan-whats-new-dialog .popup-body {
+    background: var(--neco-surface);
+}
+
+.neconyan-whats-new {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-width: 68ch;
+    margin: 0 auto;
+    color: var(--neco-ink);
+    text-align: start;
+    line-height: 1.5;
+}
+
+.neconyan-whats-new h2 {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0;
+    font-size: 1.25em;
+}
+
+.neconyan-whats-new h2::after,
+.neconyan-whats-new .neconyan-whats-new-changes::before,
+.neconyan-whats-new::after {
+    content: '';
+    flex: none;
+    background: center / contain no-repeat;
+    pointer-events: none;
+}
+
+.neconyan-whats-new h2::after {
+    width: 48px;
+    height: 72px;
+    margin-block-start: -8px;
+    background-image: url('../img/neconyan/whats-new-scroll.webp?v=20261201-whats-new-kitties');
+}
+
+.neconyan-whats-new .neconyan-whats-new-changes::before {
+    position: absolute;
+    inset-block-start: -48px;
+    inset-inline-end: 12px;
+    width: 64px;
+    height: 49px;
+    background-image: url('../img/neconyan/whats-new-peek.webp?v=20261201-whats-new-kitties');
+}
+
+.neconyan-whats-new::after {
+    align-self: flex-start;
+    width: 72px;
+    height: 64px;
+    margin-block-start: 4px;
+    background-image: url('../img/neconyan/whats-new-loaf.webp?v=20261201-whats-new-kitties');
+}
+
+:root[data-sb-kittyless='true'] body.neconyan .neconyan-whats-new h2::after,
+:root[data-sb-kittyless='true'] body.neconyan .neconyan-whats-new .neconyan-whats-new-changes::before,
+:root[data-sb-kittyless='true'] body.neconyan .neconyan-whats-new::after {
+    content: none;
+}
+
+:root[data-sb-kittyless='true'] body.neconyan .neconyan-whats-new .neconyan-whats-new-changes {
+    margin-block-start: 0;
+}
+
+dialog.popup .neconyan-whats-new h3 {
+    margin: 8px 0 0;
+    font-size: 1em;
+    color: var(--neco-muted);
+}
+
+.neconyan-whats-new .neconyan-whats-new-preview {
+    margin: 0;
+    padding: 10px 12px;
+    border: 1px solid color-mix(in oklch, var(--neco-border) 60%, var(--neco-ginger));
+    border-radius: 12px;
+    background: color-mix(in oklch, var(--neco-raised) 88%, var(--neco-ginger));
+}
+
+.neconyan-whats-new .neconyan-whats-new-empty {
+    margin: 0;
+    color: var(--neco-muted);
+}
+
+.neconyan-whats-new .neconyan-whats-new-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+    padding-inline-start: 1.25em;
+}
+
+.neconyan-whats-new .neconyan-whats-new-list li::marker {
+    color: var(--neco-ginger);
+}
+
+.neconyan-whats-new code {
+    padding: 0 4px;
+    border-radius: 6px;
+    background: var(--neco-raised);
+    font-size: 0.92em;
+}
+
+.neconyan-whats-new .neconyan-whats-new-changes {
+    position: relative;
+    margin-block-start: 36px;
+    border-top: 1px solid var(--neco-border);
+    padding-top: 8px;
+}
+
+.neconyan-whats-new .neconyan-whats-new-changes summary {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+    cursor: pointer;
+    color: var(--neco-muted);
+    font-weight: 600;
+}
+
+.neconyan-whats-new .neconyan-whats-new-changes ol {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 4px 0 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.92em;
+}
+
+.neconyan-whats-new .neconyan-whats-new-changes li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 8px;
+}
+
+.neconyan-whats-new .neconyan-whats-new-change-title {
+    flex: 1 1 18em;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.neconyan-whats-new .neconyan-whats-new-changes a,
+.neconyan-whats-new .neconyan-whats-new-changes time {
+    color: var(--neco-muted);
+    white-space: nowrap;
+}
+
+body.neconyan {
+    --neconyan-whats-new-control-radius: var(--neconyan-control-radius, 14px);
+}
+
+@media (max-width: 600px) {
+    /* The paper theme rounds every .popup through this variable with !important. */
+    dialog.popup.neconyan-whats-new-dialog {
+        --neconyan-control-radius: 0;
+        box-sizing: border-box;
+        width: 100vw;
+        max-width: 100vw;
+        height: 100dvh;
+        max-height: 100dvh;
+        margin: 0;
+        padding: 0;
+        border-width: 0;
+        border-radius: 0;
+        --sb-popup-fills-screen: 1;
+    }
+
+    dialog.popup.neconyan-whats-new-dialog > * {
+        --neconyan-control-radius: var(--neconyan-whats-new-control-radius, 14px);
+    }
+
+    dialog.popup.neconyan-whats-new-dialog .popup-body {
+        padding-block: max(16px, env(safe-area-inset-top)) max(12px, var(--sb-popup-safe-area-bottom, env(safe-area-inset-bottom)));
+        padding-inline: max(14px, env(safe-area-inset-left)) max(14px, env(safe-area-inset-right));
+    }
+
+    dialog.popup.neconyan-whats-new-dialog :is(.popup-body, .popup-content) {
+        flex: 1 1 auto;
+        min-block-size: 0;
+        max-block-size: none;
+    }
+
+    dialog.popup.neconyan-whats-new-dialog .popup-controls .menu_button {
+        flex: 1 1 auto;
+    }
+}

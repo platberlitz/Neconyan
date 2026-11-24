@@ -24,6 +24,7 @@ import { APP_NAME, isBunRuntime } from './runtime.js';
 import { serverDirectory } from './server-directory.js';
 import { createRequestTrace } from './request-trace.js';
 import { getServerBootId } from './server-boot-marker.js';
+import { buildWhatsNew, readChangelog } from './whats-new.js';
 import { AGENT_STORAGE_LIMITS } from '../public/scripts/extensions/in-chat-agents/setup-presets.js';
 import { JOB_INTENT_LIMIT_BYTES } from './jobs/store.js';
 import { pairingRouter as deviceSyncPairingRouter } from './endpoints/device-sync.js';
@@ -54,7 +55,7 @@ import {
 } from './users.js';
 
 import { FRONTEND_ASSET_PREFIX, readRewrittenFrontendHtml, validateBundledFrontend } from './frontend-assets.js';
-import { getFrontendAssetMiddleware, redirectLegacyFrontendAsset, setPublicAssetHeaders, shouldServeFrontendAssets } from './middleware/frontend-assets.js';
+import { blockServerOnlyFrontendFiles, getFrontendAssetMiddleware, redirectLegacyFrontendAsset, setPublicAssetHeaders, shouldServeFrontendAssets } from './middleware/frontend-assets.js';
 import getResponseCompressionMiddleware from './middleware/response-compression.js';
 import basicAuthMiddleware from './middleware/basicAuth.js';
 import { createImageReferenceHandler } from './generation/image-reference-links.js';
@@ -487,6 +488,7 @@ const webpack = bundledMobileFrontend ? null : await import('./middleware/webpac
 const webpackMiddleware = webpack?.default();
 const notesEditorMiddleware = webpack?.default({ bundle: 'notes-editor' });
 const frontendAssetMiddleware = getFrontendAssetMiddleware();
+app.use(blockServerOnlyFrontendFiles);
 app.use(redirectLegacyFrontendAsset);
 app.use(FRONTEND_ASSET_PREFIX, frontendAssetMiddleware.immutableAssets);
 if (webpackMiddleware && notesEditorMiddleware) {
@@ -590,6 +592,17 @@ app.get('/version', async function (_, response) {
         ...data,
         serverBootId: getServerBootId(),
     });
+});
+
+app.get('/api/whats-new', async function (_, response) {
+    try {
+        const { pkgVersion, gitBranch } = await getVersion();
+        response.set('Cache-Control', 'no-store');
+        response.send(buildWhatsNew(readChangelog(serverDirectory), { version: pkgVersion, branch: gitBranch }));
+    } catch (error) {
+        console.warn('Could not read the changelog for What\'s new:', error);
+        response.sendStatus(500);
+    }
 });
 
 setupPrivateEndpoints(app);

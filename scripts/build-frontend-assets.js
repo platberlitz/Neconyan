@@ -12,6 +12,9 @@ const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const publicRoot = path.join(repoRoot, 'public');
 const distRoot = path.join(repoRoot, 'dist', 'frontend');
 const manifestFile = 'asset-manifest.json';
+// Source maps stay on the server: Scratchpad uses them to turn a minified stack
+// position back into a source line. The static asset routes never serve them.
+const sourceMapDirectory = '.sourcemaps';
 
 const hashedExtensions = new Set([
     '.css',
@@ -139,7 +142,7 @@ function shouldMinifyAsModule(relativePath, ext) {
     return ext === '.mjs' || moduleAssets.has(toPosix(relativePath));
 }
 
-function getMinifyOptions(module) {
+function getMinifyOptions(module, sourceMap = null) {
     return {
         module,
         compress: {
@@ -149,18 +152,27 @@ function getMinifyOptions(module) {
         format: {
             comments: false,
         },
+        ...(sourceMap ? { sourceMap } : {}),
     };
 }
 
-async function optimizeAsset(inputPath, relativePath, ext, warnings, sourceBuffer = null) {
+/**
+ * Minifies one asset. With `sourceMap: true`, JavaScript also returns a source
+ * map whose only source is the file's path under public/, written without a
+ * sourceMappingURL comment so browsers never ask for it.
+ */
+async function optimizeAssetWithMap(inputPath, relativePath, ext, warnings, sourceBuffer = null, { sourceMap = false } = {}) {
     const buffer = sourceBuffer ?? await fs.readFile(inputPath);
 
     if (ext === '.js' || ext === '.mjs') {
         const source = buffer.toString('utf8');
         const module = shouldMinifyAsModule(relativePath, ext);
+        const sourceName = `public/${toPosix(relativePath)}`;
+        const input = sourceMap ? { [sourceName]: source } : source;
+        const mapOptions = sourceMap ? { filename: path.basename(relativePath), url: false, includeSources: false } : null;
         let result;
         try {
-            result = await minify(source, getMinifyOptions(module));
+            result = await minify(input, getMinifyOptions(module, mapOptions));
         } catch (error) {
             if (module) {
                 warnings.push(`Skipped JS minification for ${toPosix(relativePath)}: ${error.message}`);
@@ -169,7 +181,7 @@ async function optimizeAsset(inputPath, relativePath, ext, warnings, sourceBuffe
                 // await only parses as a module. Retry so such files are still
                 // minified without classifying every scripts/ file as a module.
                 try {
-                    result = await minify(source, getMinifyOptions(true));
+                    result = await minify(input, getMinifyOptions(true, mapOptions));
                 } catch (moduleError) {
                     warnings.push(`Skipped JS minification for ${toPosix(relativePath)}: ${moduleError.message}`);
                 }
@@ -177,15 +189,20 @@ async function optimizeAsset(inputPath, relativePath, ext, warnings, sourceBuffe
         }
 
         if (result?.code) {
-            return Buffer.from(result.code, 'utf8');
+            const map = sourceMap && result.map ? (typeof result.map === 'string' ? JSON.parse(result.map) : result.map) : null;
+            return { buffer: Buffer.from(result.code, 'utf8'), map };
         }
     }
 
     if (ext === '.css') {
-        return Buffer.from(minifyCss(buffer.toString('utf8')), 'utf8');
+        return { buffer: Buffer.from(minifyCss(buffer.toString('utf8')), 'utf8'), map: null };
     }
 
-    return buffer;
+    return { buffer, map: null };
+}
+
+async function optimizeAsset(inputPath, relativePath, ext, warnings, sourceBuffer = null) {
+    return (await optimizeAssetWithMap(inputPath, relativePath, ext, warnings, sourceBuffer)).buffer;
 }
 
 async function walk(directory, files = []) {
@@ -229,16 +246,24 @@ async function build() {
 
         if (hashedExtensions.has(ext)) {
             const sourceBuffer = assetSourceBuffers.get(source) ?? null;
-            const buffer = await optimizeAsset(inputPath, relativePath, ext, warnings, sourceBuffer);
+            // The webpack bundles have no single source file under public/, so they get no map.
+            const { buffer, map } = await optimizeAssetWithMap(inputPath, relativePath, ext, warnings, sourceBuffer, { sourceMap: !sourceBuffer });
             const hash = getHash(buffer);
             const output = getOutputName(relativePath, hash);
             await writeFile(inputPath, relativePath, sourceBuffer ? buffer : null);
             await fs.mkdir(path.dirname(path.join(distRoot, output)), { recursive: true });
             await fs.writeFile(path.join(distRoot, output), buffer);
+            const mapOutput = map ? `${sourceMapDirectory}/${toPosix(output)}.map` : '';
+            if (map) {
+                map.file = path.basename(output);
+                await fs.mkdir(path.dirname(path.join(distRoot, mapOutput)), { recursive: true });
+                await fs.writeFile(path.join(distRoot, mapOutput), JSON.stringify(map));
+            }
             assets[source] = {
                 hash,
                 output: toPosix(output),
                 bytes: buffer.length,
+                ...(mapOutput ? { map: mapOutput } : {}),
             };
             continue;
         }
@@ -271,7 +296,7 @@ async function build() {
     warnings.forEach(warning => console.warn(warning));
 }
 
-export { optimizeAsset };
+export { optimizeAsset, optimizeAssetWithMap };
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
     build().catch((error) => {

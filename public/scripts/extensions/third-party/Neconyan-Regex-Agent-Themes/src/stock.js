@@ -2641,6 +2641,82 @@ export const STOCK = [
         "promptOnly": false,
         "minDepth": null,
         "maxDepth": null
+    },
+    {
+        "templateId": "tpl-user-based-stats-generator",
+        "scriptId": "8141dc6c-fad2-4bd1-807f-8e04713dfd1a",
+        "scriptName": "Replace Persona-Based User Stats",
+        "family": "companion",
+        "source": "user-based-stats-generator.json",
+        "findRegex": "/\\[USER_STATS\\]\\s*((?:(?!\\[\\/?(?:REP|SECRET|STATUS|EVENT|SCENE|ACH|ITEM|TIME|METER|NPC|CHOICES|WORLD|PARALLEL|DIRECTIONS|USER_STATS|LEVEL_UP)\\b)[\\s\\S])*)(?:\\s*\\[\\/USER_STATS\\])?/g",
+        "groups": 1,
+        "flags": "g",
+        "delimited": true,
+        "replaceString": "<style>\n.terminal-stats {\n  --term-bg: #050807;\n  --term-panel: #09110d;\n  --term-green: #73ff9b;\n  --term-green-dim: #2fbf63;\n  --term-text: #d8ffe4;\n  --term-muted: #7fa88c;\n  --term-border: rgba(115, 255, 155, 0.35);\n  --term-glow: rgba(115, 255, 155, 0.18);\n\n  max-width: 760px;\n  margin: 1em auto;\n  border: 1px solid var(--term-border);\n  border-radius: 12px;\n  background:\n    linear-gradient(rgba(255,255,255,0.025) 50%, rgba(0,0,0,0.035) 50%),\n    radial-gradient(circle at top left, rgba(115,255,155,0.08), transparent 36%),\n    var(--term-bg);\n  background-size: 100% 4px, 100% 100%, 100% 100%;\n  color: var(--term-text);\n  font-family: \"Courier New\", Courier, monospace;\n  box-shadow:\n    0 0 22px var(--term-glow),\n    inset 0 0 30px rgba(0,0,0,0.55);\n  overflow: hidden;\n}\n\n.terminal-stats-header {\n  display: flex;\n  align-items: center;\n  gap: 0.5em;\n  padding: 0.65em 0.85em;\n  background: #07100b;\n  border-bottom: 1px solid var(--term-border);\n  color: var(--term-green);\n  text-shadow: 0 0 8px var(--term-glow);\n  letter-spacing: 0.04em;\n  font-weight: 700;\n}\n\n.terminal-dot {\n  width: 0.72em;\n  height: 0.72em;\n  border-radius: 50%;\n  display: inline-block;\n  opacity: 0.9;\n}\n\n.terminal-dot.red { background: #ff5f56; }\n.terminal-dot.yellow { background: #ffbd2e; }\n.terminal-dot.green { background: #27c93f; }\n\n.terminal-title {\n  margin-left: 0.35em;\n}\n\n.terminal-stats-body {\n  padding: 0.9em;\n}\n\n.terminal-stats details {\n  border: 1px solid rgba(115,255,155,0.22);\n  background: rgba(3, 10, 7, 0.72);\n  border-radius: 8px;\n  margin: 0.65em 0;\n  overflow: hidden;\n}\n\n.terminal-stats details[open] {\n  border-color: rgba(115,255,155,0.45);\n  box-shadow: inset 0 0 18px rgba(115,255,155,0.045);\n}\n\n.terminal-stats summary {\n  cursor: pointer;\n  list-style: none;\n  padding: 0.65em 0.75em;\n  color: var(--term-green);\n  background: rgba(115,255,155,0.045);\n  border-bottom: 1px solid rgba(115,255,155,0.12);\n  font-weight: 700;\n  text-shadow: 0 0 8px rgba(115,255,155,0.2);\n  user-select: none;\n}\n\n.terminal-stats summary::-webkit-details-marker {\n  display: none;\n}\n\n.terminal-stats summary::before {\n  content: \"> \";\n  color: var(--term-green-dim);\n}\n\n.terminal-stats details:not([open]) summary::after {\n  content: \" [closed]\";\n  color: var(--term-muted);\n  font-weight: 400;\n}\n\n.terminal-stats details[open] summary::after {\n  content: \" [open]\";\n  color: var(--term-muted);\n  font-weight: 400;\n}\n\n.terminal-output {\n  margin: 0;\n  padding: 0.85em;\n  white-space: pre-wrap;\n  word-break: break-word;\n  color: var(--term-text);\n  line-height: 1.45;\n  font-size: 0.94em;\n  font-family: \"Courier New\", Courier, monospace;\n}\n\n.terminal-output strong,\n.terminal-output b {\n  color: #b8ffce;\n  font-weight: 900;\n  text-shadow: 0 0 7px rgba(115,255,155,0.25);\n}\n\n.terminal-prompt {\n  color: var(--term-green);\n  text-shadow: 0 0 8px rgba(115,255,155,0.22);\n}\n\n.terminal-cursor::after {\n  content: \"█\";\n  display: inline-block;\n  color: var(--term-green);\n  animation: terminal-blink 1s steps(2, start) infinite;\n}\n\n@keyframes terminal-blink {\n  0%, 45% { opacity: 1; }\n  46%, 100% { opacity: 0; }\n}\n</style>\n\n<div class=\"terminal-stats\">\n  <div class=\"terminal-stats-header\">\n    <span class=\"terminal-dot red\"></span>\n    <span class=\"terminal-dot yellow\"></span>\n    <span class=\"terminal-dot green\"></span>\n    <span class=\"terminal-title\">USER_STATS.exe</span>\n  </div>\n\n  <div class=\"terminal-stats-body\">\n    <details open>\n      <summary>FULL STAT BLOCK</summary>\n      <div class=\"terminal-output\"><span class=\"terminal-prompt\">{{user}}@st:~$ cat USER_STATS.log</span>\n\n$1\n\n<span class=\"terminal-prompt terminal-cursor\">{{user}}@st:~$ </span></div>\n    </details>\n  </div>\n</div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-user-based-stats-generator",
+        "scriptId": "4678436c-2ab7-49fd-bc64-b7e1aa2ff779",
+        "scriptName": "Replace Bold Markdown",
+        "family": "companion",
+        "source": "user-based-stats-generator.json",
+        "findRegex": "/\\*\\*([^\\n\\r*][^\\n\\r]*?)\\*\\*/g",
+        "groups": 1,
+        "flags": "g",
+        "delimited": true,
+        "replaceString": "<strong>$1</strong>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-level-up-companion",
+        "scriptId": "6d6cb369-3679-4d91-8560-94d869870630",
+        "scriptName": "Replace Level-up Companion",
+        "family": "companion",
+        "source": "level-up-companion.json",
+        "findRegex": "/\\[LEVEL_UP\\]\\s*((?:(?!\\[\\/?(?:REP|SECRET|STATUS|EVENT|SCENE|ACH|ITEM|TIME|METER|NPC|CHOICES|WORLD|PARALLEL|DIRECTIONS|USER_STATS|LEVEL_UP)\\b)[\\s\\S])*)(?:\\s*\\[\\/LEVEL_UP\\])?/g",
+        "groups": 1,
+        "flags": "g",
+        "delimited": true,
+        "replaceString": "<style>\n.levelup-terminal {\n  --term-bg: #050807;\n  --term-green: #73ff9b;\n  --term-green-dim: #2fbf63;\n  --term-text: #d8ffe4;\n  --term-muted: #7fa88c;\n  --term-border: rgba(115, 255, 155, 0.35);\n  --term-glow: rgba(115, 255, 155, 0.18);\n  --term-gold: #ffe082;\n\n  max-width: 760px;\n  margin: 1em auto;\n  border: 1px solid var(--term-border);\n  border-radius: 12px;\n  background:\n    linear-gradient(rgba(255,255,255,0.025) 50%, rgba(0,0,0,0.035) 50%),\n    radial-gradient(circle at top left, rgba(255,224,130,0.10), transparent 34%),\n    radial-gradient(circle at bottom right, rgba(115,255,155,0.08), transparent 36%),\n    var(--term-bg);\n  background-size: 100% 4px, 100% 100%, 100% 100%, 100% 100%;\n  color: var(--term-text);\n  font-family: \"Courier New\", Courier, monospace;\n  box-shadow:\n    0 0 22px var(--term-glow),\n    inset 0 0 30px rgba(0,0,0,0.55);\n  overflow: hidden;\n}\n\n.levelup-terminal-header {\n  display: flex;\n  align-items: center;\n  gap: 0.5em;\n  padding: 0.65em 0.85em;\n  background: #07100b;\n  border-bottom: 1px solid var(--term-border);\n  color: var(--term-green);\n  text-shadow: 0 0 8px var(--term-glow);\n  letter-spacing: 0.04em;\n  font-weight: 700;\n}\n\n.levelup-dot {\n  width: 0.72em;\n  height: 0.72em;\n  border-radius: 50%;\n  display: inline-block;\n  opacity: 0.9;\n}\n\n.levelup-dot.red { background: #ff5f56; }\n.levelup-dot.yellow { background: #ffbd2e; }\n.levelup-dot.green { background: #27c93f; }\n\n.levelup-title {\n  margin-left: 0.35em;\n}\n\n.levelup-terminal-body {\n  padding: 0.9em;\n}\n\n.levelup-terminal details {\n  border: 1px solid rgba(115,255,155,0.22);\n  background: rgba(3, 10, 7, 0.72);\n  border-radius: 8px;\n  margin: 0.65em 0;\n  overflow: hidden;\n}\n\n.levelup-terminal details[open] {\n  border-color: rgba(255,224,130,0.45);\n  box-shadow:\n    inset 0 0 18px rgba(115,255,155,0.045),\n    0 0 18px rgba(255,224,130,0.08);\n}\n\n.levelup-terminal summary {\n  cursor: pointer;\n  list-style: none;\n  padding: 0.65em 0.75em;\n  color: var(--term-gold);\n  background: rgba(255,224,130,0.055);\n  border-bottom: 1px solid rgba(255,224,130,0.16);\n  font-weight: 700;\n  text-shadow: 0 0 8px rgba(255,224,130,0.22);\n  user-select: none;\n}\n\n.levelup-terminal summary::-webkit-details-marker {\n  display: none;\n}\n\n.levelup-terminal summary::before {\n  content: \"> \";\n  color: var(--term-green-dim);\n}\n\n.levelup-terminal details:not([open]) summary::after {\n  content: \" [closed]\";\n  color: var(--term-muted);\n  font-weight: 400;\n}\n\n.levelup-terminal details[open] summary::after {\n  content: \" [open]\";\n  color: var(--term-muted);\n  font-weight: 400;\n}\n\n.levelup-output {\n  margin: 0;\n  padding: 0.85em;\n  white-space: pre-wrap;\n  word-break: break-word;\n  color: var(--term-text);\n  line-height: 1.45;\n  font-size: 0.94em;\n  font-family: \"Courier New\", Courier, monospace;\n}\n\n.levelup-output strong,\n.levelup-output b {\n  color: #b8ffce;\n  font-weight: 900;\n  text-shadow: 0 0 7px rgba(115,255,155,0.25);\n}\n\n.levelup-prompt {\n  color: var(--term-green);\n  text-shadow: 0 0 8px rgba(115,255,155,0.22);\n}\n\n.levelup-badge {\n  display: inline-block;\n  color: var(--term-gold);\n  text-shadow: 0 0 8px rgba(255,224,130,0.25);\n}\n\n.levelup-cursor::after {\n  content: \"█\";\n  display: inline-block;\n  color: var(--term-green);\n  animation: levelup-blink 1s steps(2, start) infinite;\n}\n\n@keyframes levelup-blink {\n  0%, 45% { opacity: 1; }\n  46%, 100% { opacity: 0; }\n}\n</style>\n\n<div class=\"levelup-terminal\">\n  <div class=\"levelup-terminal-header\">\n    <span class=\"levelup-dot red\"></span>\n    <span class=\"levelup-dot yellow\"></span>\n    <span class=\"levelup-dot green\"></span>\n    <span class=\"levelup-title\">LEVEL_UP.exe</span>\n  </div>\n\n  <div class=\"levelup-terminal-body\">\n    <details open>\n      <summary>LEVEL UP REPORT</summary>\n      <div class=\"levelup-output\"><span class=\"levelup-prompt\">{{user}}@st:~$ run LEVEL_UP.report</span>\n<span class=\"levelup-badge\">[ LEVEL UP CONFIRMED ]</span>\n\n$1\n\n<span class=\"levelup-prompt levelup-cursor\">{{user}}@st:~$ </span></div>\n    </details>\n  </div>\n</div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-level-up-companion",
+        "scriptId": "4678436c-2ab7-49fd-bc64-b7e1aa2ff779",
+        "scriptName": "Replace Bold Markdown",
+        "family": "companion",
+        "source": "level-up-companion.json",
+        "findRegex": "/\\*\\*([^\\n\\r*][^\\n\\r]*?)\\*\\*/g",
+        "groups": 1,
+        "flags": "g",
+        "delimited": true,
+        "replaceString": "<strong>$1</strong>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
     }
 ];
 

@@ -104,6 +104,12 @@ export const SAMPLES = Object.freeze({
     'plot-compass': {
         full: '**Direction:** Recover the sealed harbour ledger before the night watch changes.\n**Where we are:** Rain hammers the pier roof while {{user}} and Mira wait behind the lantern shed with a borrowed key.\n**Possible developments:**\n1. Mira bribes the dock clerk with the **brass token** while {{user}} slips into the records loft.\n2. Follow the *limping courier* toward the customs gate before he delivers the duplicate manifest.\n3. Wait out the watch bells and risk the patrol spotting fresh footprints in the mud.\n**Next move:** 2. Have the courier pause under the bridge lamp so {{user}} can spot the wax seal on his satchel.',
     },
+    'user-stats': {
+        full: '[USER_STATS]\nName: {{user}}\nLevel: 4\n\nCORE ATTRIBUTES\n**Strength**: 6/10\n**Wits**: 8/10\n\nCOMBAT\n**Swordplay**: 42/100\n\nTraits:\n- **Keen Eye**: Spots exits and tells in a crowded room.\n\nPerks:\n- **Steady Hand**: Keeps composure when a negotiation turns sour.\n[/USER_STATS]',
+    },
+    'level-up': {
+        full: '[LEVEL_UP]\nLevel: 5\nReason: Held the east gate through the night watch.\n\nSkill Growth:\n- **Swordplay**: +4, now 46/100\n- **Tactics**: +3, now 31/100\n\nNew Perk:\n- **Night Watch**: Faster recovery after long shifts.\nEarned By: Staying on post without relief.\n\nOther Changes:\n- **Reputation**: Ward captains treat you as a veteran.\n[/LEVEL_UP]',
+    },
     bold: {
         full: 'The seal was **already broken** when you found it.',
     },

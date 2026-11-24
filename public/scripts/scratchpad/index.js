@@ -48,6 +48,8 @@ import { observeJob, TERMINAL } from '../jobs.js';
 import * as images from './images.js';
 import { integerSettingValue, reflectSavedValue, reflectedSettingValue } from './setting-input.js';
 import { renderWebPages, renderWebSearchSettings, renderWebSearchSources, setWebSearchToggle } from './web-search.js';
+import { splitBugReports } from './bug-report.js';
+import { renderBugReportCard, renderSourceLookup } from './source-findings.js';
 import { prepareAttachment } from './attachments.js';
 import { MAX_ATTACHMENTS, normaliseAttachments } from './attachment-data.js';
 import { previewForBlock, previewFromText, previewLanguage } from './preview-source.js';
@@ -65,7 +67,7 @@ import { canRehearse } from './rehearsal.js';
 import { assistantFeedbackTone, DEFAULT_FEEDBACK_TONE, FEEDBACK_TONES, isFeedbackTone, normaliseFeedbackTone } from './feedback-tone.js';
 import { feedbackToneLabel, feedbackToneSlider } from './tone-slider.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261126-lorebook-editor';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261201-scratchpad-source-lookup';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -158,6 +160,8 @@ function checkAvailability() {
         { key: 'why', command: '/why <entry>', label: t`Why didn't an entry trigger?`, problem: bookProblem, text: whyText, include: { lore: true } },
         { key: 'app', command: '/check app', label: t`What went wrong in Neconyan?`, problem: notebook ? noNotes : '',
             text: t`Use the app diagnostics to tell me what went wrong in Neconyan, and what I should try or share next.`, include: { appEvidence: true } },
+        { key: 'source', command: '/check source', label: t`Check Neconyan's code for this bug`, problem: notebook ? noNotes : '',
+            text: t`Use the app diagnostics and Neconyan's source code to find what causes this bug. Cite the files and lines you used, say what I can do about it for now, and draft a bug report if it is a bug in Neconyan.`, include: { appEvidence: true, appSource: true } },
         { key: 'prompt', command: '/check prompt', label: t`Inspect the last prompt sent`, problem: lastPromptProblem(source),
             text: t`Look at the last prompt sent to the model for this chat. Tell me what reached it, in what order, and anything that looks wrong or missing.`, include: { lastPrompt: true } },
     ];
@@ -179,7 +183,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     depth: 15,
     picked: [],
     notes: [],
-    include: { card: true, persona: true, authorsNote: true, lore: true, preset: false, hidden: false, agents: false, regex: false, cssSnippets: false, dialogueColors: false, mewmory: false, problems: false, appEvidence: false, lastPrompt: false },
+    include: { card: true, persona: true, authorsNote: true, lore: true, preset: false, hidden: false, agents: false, regex: false, cssSnippets: false, dialogueColors: false, mewmory: false, problems: false, appEvidence: false, appSource: false, lastPrompt: false },
     loreOverrides: {},
     lorebook: '',
     connection: { kind: 'current' },
@@ -1159,7 +1163,7 @@ function showToolsHelp() {
         h('strong', { text: t`Tools that work out a value` }),
         h('p', { text: t`Start a line with /roll 2d6+1, /calc 12*(3+4), /pick tea | coffee | cocoa or /now. Scratchpad swaps the line for its result before sending.` }),
         h('strong', { text: t`Shortcuts that run a check` }),
-        h('p', { text: t`Start a line with /check card, /check preset, /check lorebook, /check app, /check prompt, or /why and the name or key of an entry. Scratchpad turns on the sharing that check needs and sends it. Send /check on its own to see which are ready now.` }));
+        h('p', { text: t`Start a line with /check card, /check preset, /check lorebook, /check app, /check source, /check prompt, or /why and the name or key of an entry. Scratchpad turns on the sharing that check needs and sends it. Send /check on its own to see which are ready now.` }));
     toastr.info(body, t`Typed tools`, { timeOut: 12000, escapeHtml: false });
     app.el.composer.focus();
 }
@@ -1194,11 +1198,11 @@ async function resolveShortcut(typed, source, sessionId) {
     const shortcut = parseShortcut(shortcuts[0]);
     const word = shortcut.word;
     if (shortcut.kind === 'check' && !word) {
-        if (lines.some((line, position) => position !== index && line.trim())) return stop(t`Say what to check after /check: card, preset, lorebook, app or prompt. Send /check on its own to see which are ready now.`);
+        if (lines.some((line, position) => position !== index && line.trim())) return stop(t`Say what to check after /check: card, preset, lorebook, app, source or prompt. Send /check on its own to see which are ready now.`);
         showCheckList();
         return null;
     }
-    if (shortcut.kind === 'check' && !shortcut.target) return stop(t`Scratchpad can't check '${word}'. Use /check card, /check preset, /check lorebook, /check app or /check prompt, or send /check on its own to see which are ready now.`);
+    if (shortcut.kind === 'check' && !shortcut.target) return stop(t`Scratchpad can't check '${word}'. Use /check card, /check preset, /check lorebook, /check app, /check source or /check prompt, or send /check on its own to see which are ready now.`);
     const prompt = checkAvailability().find(item => item.key === (shortcut.kind === 'why' ? 'why' : shortcut.target));
     if (!prompt) return stop(t`Scratchpad can't run that check here.`);
     if (prompt.problem) return stop(prompt.problem);
@@ -1449,6 +1453,7 @@ async function applyCheckSwitches(prompt) {
     const lastPrompt = prompt.include.lastPrompt === true;
     if (evidence) {
         if (!before.appEvidence) changed.push(t`App diagnostics`);
+        if (prompt.include.appSource === true && !before.appSource) changed.push(t`Neconyan source code`);
     } else if (lastPrompt) {
         if (!before.lastPrompt) changed.push(t`Last prompt sent`);
     } else if (!before.problems) {
@@ -1756,6 +1761,7 @@ function stageLabel(preview) {
     if (preview?.stage === 'failed') return preview.error || t`This reply did not finish.`;
     if (preview?.stage === 'searching') return t`Searching the web…`;
     if (preview?.stage === 'reading') return t`Reading the linked pages…`;
+    if (preview?.stage === 'inspecting-source') return t`Checking Neconyan source code…`;
     if (preview?.stage === 'summarising') return t`Summarising earlier discussion…`;
     if (!preview || preview.stage === 'queued') return t`Waiting for the model...`;
     if (!preview.text && preview.reasoning) return t`Thinking...`;
@@ -1854,6 +1860,8 @@ function renderMessage(session, message, { latest, retry }) {
         if (sources) article.append(sources);
         const pages = message.role === 'assistant' ? renderWebPages(message) : null;
         if (pages) article.append(pages);
+        const sourceFiles = message.role === 'assistant' ? renderSourceLookup(message) : null;
+        if (sourceFiles) article.append(sourceFiles);
         if (message.state === 'failed') {
             article.append(h('p', { class: 'scratchpad-error', text: message.error || t`This reply did not finish.` }));
         }
@@ -1965,10 +1973,16 @@ function renderReply(session, message) {
     const body = h('div', { class: 'scratchpad-reply' });
     for (const part of message.rehearsal ? [{ type: 'text', text: message.text }] : splitReply(message.text)) {
         if (part.type === 'text') {
-            if (!part.text.trim()) continue;
-            const block = h('div', { class: 'scratchpad-text mes_text' });
-            block.innerHTML = messageFormatting(part.text, '', false, false, -1, {}, false);
-            body.append(block);
+            for (const piece of message.rehearsal ? [part] : splitBugReports(part.text)) {
+                if (piece.type === 'bug-report') {
+                    body.append(renderBugReportCard(piece));
+                    continue;
+                }
+                if (!piece.text.trim()) continue;
+                const block = h('div', { class: 'scratchpad-text mes_text' });
+                block.innerHTML = messageFormatting(piece.text, '', false, false, -1, {}, false);
+                body.append(block);
+            }
         } else {
             body.append(renderChangeCard(session, message, part));
         }
@@ -2967,6 +2981,8 @@ function renderContext({ force = true } = {}) {
                 t`Checks shared cards, presets and lorebooks for likely problems, and shares fuller activation and sampler details.`),
             checkbox(t`App diagnostics`, include.appEvidence === true, value => setInclude('appEvidence', value),
                 t`Shares Neconyan's recent errors, failed model requests and your failed requests and jobs, so the assistant can explain what went wrong. Admins also share server crash reports and error log lines.`),
+            checkbox(t`Neconyan source code`, include.appSource === true, value => setInclude('appSource', value),
+                t`Before replying, the server looks up the parts of Neconyan's own code (public/scripts, public/script.js and src) that match your question and the app diagnostics, read-only. Your config, secrets and data folder are never read, and the assistant can't change Neconyan's code.`),
             roleplay || app.source.kind === 'conversation' ? checkbox(t`Last prompt sent`, include.lastPrompt === true, value => setInclude('lastPrompt', value),
                 t`Shares the exact prompt last sent to the model for this chat, with keys, passwords and hidden lorebook entries removed.`) : null,
             checkbox(t`Agents`, include.agents === true, value => setInclude('agents', value), t`Shares the name, description and prompt of every saved Agent, so an assistant can suggest edits to them.`),
@@ -3367,6 +3383,7 @@ function renderPreview() {
                 context.preset ? h('p', { text: t`Preset modules on: ${context.preset.on}. Off: ${context.preset.off}.` }) : null,
                 h('p', { text: t`Saved notes or sections: ${notes.notes.filter(note => !note.unavailable).length}.` }),
                 mewmory?.enabled ? h('p', { text: t`Mewmory records shared: ${mewmory.count}. Left out to fit: ${mewmory.omitted}.` }) : null,
+                context.capabilities?.appSource ? h('p', { class: 'scratchpad-source-preview-note', text: t`Neconyan source code: when you send, the server looks up matching read-only code in public/scripts, public/script.js and src. Config, secrets and user data are never readable.` }) : null,
                 h('pre', { class: 'scratchpad-preview-text', text: preview }),
             ]);
         } catch (error) {

@@ -54,6 +54,7 @@ import { generatedImageFallback, generatedImageReceipts, isImageRefusal, isUnsup
 import { WEB_PAGES_PLACEHOLDER, buildWebPagesPrompt, planWebPages, readWebPages, webPagesAcknowledgement, webPagesHistoryLine, webPagesMetadata } from './web-pages.js';
 import { MAX_WEB_SEARCH_QUERIES, MAX_WEB_SEARCH_RESULTS, WEB_SEARCH_PLACEHOLDER, buildWebSearchPrompt, performWebSearch, planWebSearch, readWebSearchLocked, webSearchAcknowledgement, webSearchFailure, webSearchHistoryLine, webSearchMetadata } from './web-search.js';
 import { MAX_RESEARCH_ROUNDS, RESEARCH_PLAN_MAX_TOKENS, mergeResearchResults, nextResearchQueries, parseResearchPlan, researchPlannerMessages } from './web-research.js';
+import { MAX_SOURCE_LOOKUP_ROUNDS, SOURCE_LOOKUP_PLACEHOLDER, SOURCE_PLAN_MAX_TOKENS, applySourceRequests, buildSourceLookupPrompt, finishSourceLookup, nextSourceRequests, parseSourcePlan, planSourceLookup, sourceLookupAcknowledgement, sourceLookupHistoryLine, sourceLookupMetadata, sourcePlannerMessages, startSourceLookup } from './source-research.js';
 
 export const SCRATCHPAD_JOB_TYPE = 'scratchpad.reply';
 const MAX_CONTEXT_BYTES = 1536 * 1024;
@@ -92,6 +93,7 @@ export function normaliseCapabilities(input, sourceKind = 'roleplay', source = {
         ...(sourceKind === 'roleplay' && value.authorsNote === true ? { authorsNote: true } : {}),
         ...(sourceKind !== 'notebook' && value.problems === true ? { problems: true } : {}),
         ...(sourceKind !== 'notebook' && value.appEvidence === true ? { appEvidence: true } : {}),
+        ...(sourceKind !== 'notebook' && value.appSource === true ? { appSource: true } : {}),
         ...((sourceKind === 'roleplay' || sourceKind === 'conversation') && value.lastPrompt === true ? { lastPrompt: true } : {}),
         ...(value.image !== undefined ? { image: value.image === true } : {}) };
 }
@@ -161,8 +163,9 @@ function historyFrom(messages) {
                 ? usable[index].proposals?.[proposal] === 'applied' ? 'image saved and avatar replacement approved' : 'image saved; no avatar replacement performed' : image.state}.]`).join('\n');
         const webSources = usable[index].role === 'assistant' && usable[index].state === 'done' ? webSearchHistoryLine(usable[index].webSearch) : '';
         const webPages = usable[index].role === 'assistant' && usable[index].state === 'done' ? webPagesHistoryLine(usable[index].webPages) : '';
+        const sourceFiles = usable[index].role === 'assistant' && usable[index].state === 'done' ? sourceLookupHistoryLine(usable[index].sourceLookup) : '';
         const generatedImages = generatedImageReceipts(usable[index]);
-        history.unshift({ id: usable[index].id, role: usable[index].role, text: [usable[index].rehearsal ? '[Rehearsal only, not an event in the story.]' : '', text, webSources, webPages, images].filter(Boolean).join('\n'), ...(attachments.length ? { attachments } : {}), ...(generatedImages.length ? { generatedImages } : {}), ...(usable[index].assistant ? { assistant: usable[index].assistant, assistantName: usable[index].assistantName } : {}) });
+        history.unshift({ id: usable[index].id, role: usable[index].role, text: [usable[index].rehearsal ? '[Rehearsal only, not an event in the story.]' : '', text, webSources, webPages, sourceFiles, images].filter(Boolean).join('\n'), ...(attachments.length ? { attachments } : {}), ...(generatedImages.length ? { generatedImages } : {}), ...(usable[index].assistant ? { assistant: usable[index].assistant, assistantName: usable[index].assistantName } : {}) });
     }
     while (history.length && history[0].role !== 'user') history.shift();
     return history;
@@ -255,6 +258,11 @@ export async function acceptScratchpadReply(request, body = {}) {
         const webSearch = session.settings.webSearch && !input.discuss ? planWebSearch(base.directories, readWebSearchLocked(lease), plan.prompt, { history: plan.history }) : null;
         // Only links typed in the current message are read, and only when the session asks for it.
         const webPages = session.settings.readLinks && !input.discuss ? planWebPages(plan.prompt) : null;
+        // The source lookup is opt-in and reads only the allow-listed app folders when the job runs.
+        const sourceEvidence = input.capabilities.appEvidence === true && session.settings.include.appEvidence === true
+            ? input.context : '';
+        const sourceLookup = input.capabilities.appSource === true && session.settings.include.appSource === true && bucket.source.kind !== 'notebook' && !input.discuss && !plan.rehearsal
+            ? planSourceLookup(plan.prompt, sourceEvidence) : null;
         // Target checking only runs when images are available, so a stale or renamed shared card cannot fail a text reply.
         const targets = images && !plan.rehearsal ? captureImageTargetsLocked(lease, bucket.source, input.targets, { shared: session.settings.include.card }) : [];
         const sharedPersona = plan.rehearsal ? null : capturePersonaTargetLocked(lease, bucket.source, input.capabilities.persona, session.settings.include.persona);
@@ -265,7 +273,7 @@ export async function acceptScratchpadReply(request, body = {}) {
         const library = readAssistantsLocked(lease);
         const snapshots = refreshSessionAssistants(session, library);
         writeBucketLocked(lease, bucket);
-        return { ...plan, targets, sharedPersona, sharedPreset, sharedAgents: session.settings.include.agents === true, sharedAuthorsNote: session.settings.include.authorsNote === true, sharedRegex: session.settings.include.regex === true, sharedCssSnippets: session.settings.include.cssSnippets === true, sharedDialogueColors: session.settings.include.dialogueColors === true, sharedLorebook: bucket.source.kind !== 'general' || Boolean(session.settings.lorebook), imagePersonaId: imagePersonaIdLocked(lease, bucket.source), notebook, webSearch, webPages, revision: hash(canonical(session)), maxTokens: session.settings.maxTokens, stream: session.settings.stream !== false,
+        return { ...plan, targets, sharedPersona, sharedPreset, sharedAgents: session.settings.include.agents === true, sharedAuthorsNote: session.settings.include.authorsNote === true, sharedRegex: session.settings.include.regex === true, sharedCssSnippets: session.settings.include.cssSnippets === true, sharedDialogueColors: session.settings.include.dialogueColors === true, sharedLorebook: bucket.source.kind !== 'general' || Boolean(session.settings.lorebook), imagePersonaId: imagePersonaIdLocked(lease, bucket.source), notebook, webSearch, webPages, sourceLookup, revision: hash(canonical(session)), maxTokens: session.settings.maxTokens, stream: session.settings.stream !== false,
             mewmory, pinnedNote: session.pinnedNote, prefill: session.settings.prefill, partialPrefill: session.settings.partialPrefill,
             instructionsRevision: instructions.revision,
             assistantsRevision: library.revision,
@@ -285,11 +293,12 @@ export async function acceptScratchpadReply(request, body = {}) {
         const material = resolveGenerationProfile(directories, binding);
         const system = buildScratchpadSystemPrompt({ ...speaker, assistantNames: planned.assistantNames, userName: input.names.user, participants: planned.participants, randomReply: planned.randomReply,
             characterName: input.names.character, sourceKind: input.source.kind, webSearch: Boolean(planned.webSearch), webPages: Boolean(planned.webPages), imageEditing: imageAvailability.edit === true,
-            capabilities: { ...input.capabilities, persona: planned.sharedPersona, preset: planned.sharedPreset, agents: input.capabilities.agents === true && planned.sharedAgents, authorsNote: input.capabilities.authorsNote === true && planned.sharedAuthorsNote, regex: input.capabilities.regex === true && planned.sharedRegex, cssSnippets: input.capabilities.cssSnippets === true && planned.sharedCssSnippets, dialogueColors: input.capabilities.dialogueColors === true && planned.sharedDialogueColors, lore: input.capabilities.lore === true && planned.sharedLorebook, image: Boolean(images), avatar: Boolean(images && planned.targets.length), notebook: Boolean(planned.notebook.text), mewmory: planned.mewmory.correctable === true }, help: input.help });
+            capabilities: { ...input.capabilities, appSource: Boolean(planned.sourceLookup), persona: planned.sharedPersona, preset: planned.sharedPreset, agents: input.capabilities.agents === true && planned.sharedAgents, authorsNote: input.capabilities.authorsNote === true && planned.sharedAuthorsNote, regex: input.capabilities.regex === true && planned.sharedRegex, cssSnippets: input.capabilities.cssSnippets === true && planned.sharedCssSnippets, dialogueColors: input.capabilities.dialogueColors === true && planned.sharedDialogueColors, lore: input.capabilities.lore === true && planned.sharedLorebook, image: Boolean(images), avatar: Boolean(images && planned.targets.length), notebook: Boolean(planned.notebook.text), mewmory: planned.mewmory.correctable === true }, help: input.help });
         if (planned.rehearsal) system.text = [REHEARSAL_INSTRUCTIONS, speaker.userInstructions].filter(Boolean).join('\n\n');
         const buildMessages = history => buildScratchpadMessages({ system: system.text, context: input.context, notebookContext: planned.notebook.text, history, text: planned.prompt, attachments: planned.attachments, assistant: speaker.assistant, assistantNames: planned.assistantNames,
             userMessageId: planned.userMessageId, summary: planned.summary ? summaryContext(SUMMARY_PLACEHOLDER) : '',
-            pinnedNote: planned.pinnedNote, mewmoryContext: planned.mewmory.text, webSearchPlaceholder: planned.webSearch ? WEB_SEARCH_PLACEHOLDER : '', webPagesPlaceholder: planned.webPages ? WEB_PAGES_PLACEHOLDER : '' });
+            pinnedNote: planned.pinnedNote, mewmoryContext: planned.mewmory.text, webSearchPlaceholder: planned.webSearch ? WEB_SEARCH_PLACEHOLDER : '', webPagesPlaceholder: planned.webPages ? WEB_PAGES_PLACEHOLDER : '',
+            sourceLookupPlaceholder: planned.sourceLookup ? SOURCE_LOOKUP_PLACEHOLDER : '' });
         let messages = buildMessages(planned.history);
         // Reserve each speaker's share of the request limit before adding optional pictures.
         const imageHistory = await prepareGeneratedImageHistory({ context: { directories, owner }, material, history: planned.history, cache: imageHistoryCache,
@@ -297,8 +306,10 @@ export async function acceptScratchpadReply(request, body = {}) {
         if (imageHistory !== planned.history) messages = buildMessages(imageHistory);
         const imageFallback = imageHistory !== planned.history ? generatedImageFallback(messages, imageHistory) : [];
         const summaryIndex = planned.summary ? messages.findIndex(message => message.content === summaryContext(SUMMARY_PLACEHOLDER)) : -1;
-        const pagesIndex = planned.webPages ? messages.length - 2 : -1;
-        const searchIndex = planned.webSearch ? messages.length - (planned.webPages ? 3 : 2) : -1;
+        // The reservations sit in order (search, pages, source) right before the user's message.
+        const sourceIndex = planned.sourceLookup ? messages.length - 2 : -1;
+        const pagesIndex = planned.webPages ? messages.length - (planned.sourceLookup ? 3 : 2) : -1;
+        const searchIndex = planned.webSearch ? messages.length - (2 + (planned.webPages ? 1 : 0) + (planned.sourceLookup ? 1 : 0)) : -1;
         const rawOptions = binding.kind === 'active' ? { trimNames: false } : {};
         const preparedMessages = !binding.backend || binding.backend === 'chat';
         if (!preparedMessages && messages.some(message => Array.isArray(message.content))) {
@@ -316,7 +327,8 @@ export async function acceptScratchpadReply(request, body = {}) {
             messages, rawOptions, { maxTokens: planned.maxTokens, preparedMessages });
         return { replyId: newScratchpadId(), assistant: speaker.assistant, gender: speaker.gender, binding, messages, maxTokens: planned.maxTokens,
             userName: names.user, characterName: names.char, rawOptions, preparedMessages, stream: planned.stream, webSearch: planned.webSearch,
-            summaryIndex, searchIndex, webPages: planned.webPages, pagesIndex, prefillReply: prefill.reply,
+            summaryIndex, searchIndex, webPages: planned.webPages, pagesIndex,
+            ...(planned.sourceLookup ? { sourceLookup: planned.sourceLookup, sourceIndex } : {}), prefillReply: prefill.reply,
             ...(planned.rehearsal ? { rehearsal: true } : {}), ...(imageFallback.length ? { imageFallback } : {}), functionTools: preparedMessages && !planned.rehearsal ? scratchpadCharacterTools() : [] };
     }));
     const savedRequest = { source: input.source, sessionId: input.sessionId, summary: planned.summary, ...(replies.length === 1 ? replies[0] : { replies }) };
@@ -544,6 +556,81 @@ async function resolveWebPages(context, request, { pageFetch, pageLookup } = {})
     return result;
 }
 
+/** Ask the reply's model which source to read next. Each round's answer is saved, so a restart repeats nothing. */
+async function planSourceRound(context, request, generate, plan, state, sourceOptions) {
+    const { directories, job } = context;
+    const artifact = `source-lookup-plan:${state.round}`;
+    const saved = readArtifact(directories, job.id, artifact);
+    if (saved !== undefined) return saved;
+    const speaker = request.replies?.[0] ?? request;
+    let planned;
+    try {
+        if (typeof generate !== 'function') throw fail('SCRATCHPAD_SOURCE_PLAN', 'No model is available to plan the source lookup.', 409);
+        const messages = sourcePlannerMessages(plan, state, sourceOptions);
+        const environment = scratchpadMacroEnvironment({ user: speaker.userName, char: speaker.characterName }, messages);
+        const rawOptions = speaker.binding.kind === 'active' ? { trimNames: false } : {};
+        await validateActiveGenerationContext(resolveGenerationProfile(directories, speaker.binding), environment,
+            messages, rawOptions, { maxTokens: SOURCE_PLAN_MAX_TOKENS, preparedMessages: speaker.preparedMessages });
+        const response = await generate({ binding: speaker.binding, generationType: 'quiet', messages, maxTokens: SOURCE_PLAN_MAX_TOKENS,
+            macroEnvironment: environment, userName: speaker.userName, characterName: speaker.characterName, groupNames: [],
+            rawOptions, preparedMessages: speaker.preparedMessages, functionTools: [], stream: false,
+            stepNamespace: `scratchpad-source-plan:${state.round}`, context, jobContext: context });
+        planned = parseSourcePlan(characterToolReply(response, []).text) ?? { done: true, requests: [], unreadable: true };
+    } catch (error) {
+        // An unknown provider outcome or a stop must not turn into a fresh lookup plan.
+        if (error?.code === 'PROVIDER_OUTCOME_UNKNOWN' || context.signal?.aborted || getJob(directories, job.id)?.cancellation?.requested) throw error;
+        planned = { done: true, requests: [], failed: true };
+    }
+    writeArtifact(directories, job.id, artifact, planned);
+    return planned;
+}
+
+/**
+ * One read-only source lookup per job, shared by every round-table
+ * participant. The files named in the error are read first without any model
+ * call, then the model may ask for up to two rounds of extra reads, searches
+ * or file lists. Only allow-listed Neconyan source folders can be read.
+ */
+async function resolveSourceLookup(context, request, { generate, sourceOptions = {} } = {}) {
+    const plan = request.sourceLookup ?? request.replies?.find(reply => reply.sourceLookup)?.sourceLookup;
+    if (!plan) return null;
+    const { directories, job } = context;
+    const saved = readArtifact(directories, job.id, 'source-lookup');
+    if (saved !== undefined) return saved;
+    const running = () => {
+        context.signal?.throwIfAborted();
+        if (getJob(directories, job.id)?.cancellation?.requested) throw fail('SCRATCHPAD_STOPPED', 'Stopped before it finished.', 409);
+    };
+    if (unresolvedProviderStep(directories, job.id, { scope: context.providerScope })) {
+        throw Object.assign(new Error('The earlier request to the AI service has an unknown result, so Neconyan will not send it again automatically.'),
+            { code: 'PROVIDER_OUTCOME_UNKNOWN', status: 503 });
+    }
+    const update = { stage: 'inspecting-source', text: '', reasoning: '' };
+    if (request.replies) {
+        for (const reply of request.replies) publishScratchpadPreview(job.owner, job.id, { ...update, replyId: reply.replyId });
+    } else {
+        publishScratchpadPreview(job.owner, job.id, update);
+    }
+    let state = startSourceLookup(plan, sourceOptions);
+    while (state.round < MAX_SOURCE_LOOKUP_ROUNDS && !state.done) {
+        running();
+        const planned = await planSourceRound(context, request, generate, plan, state, sourceOptions);
+        const requests = nextSourceRequests(planned, state);
+        state = { ...state, round: state.round + 1,
+            ...(planned.failed ? { failed: true } : {}), ...(planned.unreadable ? { unreadable: true } : {}) };
+        if (!requests.length) {
+            state.done = true;
+            break;
+        }
+        state = applySourceRequests(state, requests, sourceOptions);
+        if (planned.done) state.done = true;
+    }
+    running();
+    const result = finishSourceLookup(state, sourceOptions);
+    writeArtifact(directories, job.id, 'source-lookup', result);
+    return result;
+}
+
 async function resolveSummary(context, request, generate) {
     const plan = request.summary;
     if (!plan) return '';
@@ -599,14 +686,14 @@ async function resolveSummary(context, request, generate) {
     return summaryContext(text);
 }
 
-async function runScratchpadReply(context, { generate, searchFetch, pageFetch, pageLookup }) {
+async function runScratchpadReply(context, { generate, searchFetch, pageFetch, pageLookup, sourceOptions }) {
     const { directories, job } = context;
     const request = readArtifact(directories, job.id, 'request');
     if (!request) throw fail('SCRATCHPAD_REQUEST_MISSING', 'The saved Scratchpad request is missing.', 409);
     const saved = readArtifact(directories, job.id, 'result');
     if (saved) return { artifact: true };
     try {
-        const scoped = request.replies || request.webSearch || request.summary ? { ...context, providerScope: createProviderScope(context) } : context;
+        const scoped = request.replies || request.webSearch || request.summary || request.sourceLookup ? { ...context, providerScope: createProviderScope(context) } : context;
         const summary = await resolveSummary(scoped, request, generate);
         if (summary) {
             for (const reply of request.replies ?? [request]) {
@@ -616,12 +703,13 @@ async function runScratchpadReply(context, { generate, searchFetch, pageFetch, p
         }
         const webSearchResult = await resolveWebSearch(scoped, request, { searchFetch, generate });
         const webPagesResult = await resolveWebPages(scoped, request, { pageFetch, pageLookup });
+        const sourceLookupResult = await resolveSourceLookup(scoped, request, { generate, sourceOptions });
         if (!request.replies) {
-            await runParticipant(scoped, request, { generate, webSearchResult, webPagesResult });
+            await runParticipant(scoped, request, { generate, webSearchResult, webPagesResult, sourceLookupResult });
             writeArtifact(directories, job.id, 'result', { replyId: request.replyId, sessionId: request.sessionId });
         } else {
             const results = await Promise.allSettled(request.replies.map(reply => runParticipant(scoped,
-                { source: request.source, sessionId: request.sessionId, ...reply }, { generate, grouped: true, webSearchResult, webPagesResult })));
+                { source: request.source, sessionId: request.sessionId, ...reply }, { generate, grouped: true, webSearchResult, webPagesResult, sourceLookupResult })));
             const failed = results.find(result => result.status === 'rejected');
             if (failed) throw failed.reason;
             writeArtifact(directories, job.id, 'result', { replyIds: request.replies.map(reply => reply.replyId), sessionId: request.sessionId });
@@ -639,7 +727,7 @@ async function runScratchpadReply(context, { generate, searchFetch, pageFetch, p
     }
 }
 
-async function runParticipant(context, request, { generate, grouped = false, webSearchResult = null, webPagesResult = null }) {
+async function runParticipant(context, request, { generate, grouped = false, webSearchResult = null, webPagesResult = null, sourceLookupResult = null }) {
     const { directories, job, signal } = context;
     const artifact = grouped ? `reply:${request.replyId}` : 'reply';
     const outcome = grouped ? `outcome:${request.replyId}` : 'outcome';
@@ -652,15 +740,22 @@ async function runParticipant(context, request, { generate, grouped = false, web
     if (request.webPages && !(Number.isInteger(request.pagesIndex) && request.pagesIndex >= 0)) {
         throw fail('SCRATCHPAD_REQUEST_MISSING', 'The saved position of the linked pages is missing. Send the message again.', 409);
     }
+    if (request.sourceLookup && !(Number.isInteger(request.sourceIndex) && request.sourceIndex >= 0)) {
+        throw fail('SCRATCHPAD_REQUEST_MISSING', 'The saved position of the Neconyan source code is missing. Send the message again.', 409);
+    }
     const counter = await createMessageTokenCounter(publish, { signal });
     let streamedReasoning = '';
     const stopped = () => signal?.aborted || getJob(directories, job.id)?.cancellation?.requested;
     const requireRunning = () => {
         if (stopped()) throw fail('SCRATCHPAD_STOPPED', 'Stopped before it finished.', 409);
     };
-    const withWebResults = base => request.webSearch || request.webPages ? (() => {
+    const withWebResults = base => request.webSearch || request.webPages || request.sourceLookup ? (() => {
         const value = [...base];
-        // The pages sit after the search results, so they are replaced first and the search position stays valid.
+        // The source code sits after the pages, and the pages after the search results, so they are
+        // replaced from the end and the earlier positions stay valid.
+        if (request.sourceLookup) value.splice(request.sourceIndex, 1,
+            { role: 'user', content: buildSourceLookupPrompt(sourceLookupResult) },
+            { role: 'assistant', content: sourceLookupAcknowledgement(sourceLookupResult) });
         if (request.webPages) value.splice(request.pagesIndex, 1,
             { role: 'user', content: buildWebPagesPrompt(request.webPages, webPagesResult) },
             { role: 'assistant', content: webPagesAcknowledgement(webPagesResult) });
@@ -672,6 +767,7 @@ async function runParticipant(context, request, { generate, grouped = false, web
     const messages = withWebResults(request.messages);
     const webMetadata = request.webSearch ? webSearchMetadata(request.webSearch, webSearchResult ?? { ok: false, error: 'No web results are available.' }) : null;
     const pagesMetadata = request.webPages ? webPagesMetadata(request.webPages, webPagesResult) : null;
+    const sourceMetadata = request.sourceLookup ? sourceLookupMetadata(sourceLookupResult) : null;
     try {
         requireRunning();
         const failure = readArtifact(directories, job.id, outcome);
@@ -727,7 +823,7 @@ async function runParticipant(context, request, { generate, grouped = false, web
         requireRunning();
         counter.stop();
         const counts = counter.counts(reply.text, reply.reasoning);
-        if (!await settleReply(context, request, { state: 'done', text: reply.text, reasoning: reply.reasoning, ...counts, ...(webMetadata ? { webSearch: webMetadata } : {}), ...(pagesMetadata ? { webPages: pagesMetadata } : {}) })) {
+        if (!await settleReply(context, request, { state: 'done', text: reply.text, reasoning: reply.reasoning, ...counts, ...(webMetadata ? { webSearch: webMetadata } : {}), ...(pagesMetadata ? { webPages: pagesMetadata } : {}), ...(sourceMetadata ? { sourceLookup: sourceMetadata } : {}) })) {
             throw fail('SCRATCHPAD_CHANGED', 'The saved reply changed before this result could be saved.', 409);
         }
         publish({ stage: 'done', text: reply.text, reasoning: reply.reasoning, ...counts });
@@ -735,7 +831,7 @@ async function runParticipant(context, request, { generate, grouped = false, web
         const cancelled = stopped();
         const message = cancelled ? 'Stopped before it finished.' : (error?.message || 'The reply failed.');
         try {
-            await settleReply(context, request, { state: 'failed', error: message, ...(webMetadata ? { webSearch: webMetadata } : {}), ...(pagesMetadata ? { webPages: pagesMetadata } : {}) });
+            await settleReply(context, request, { state: 'failed', error: message, ...(webMetadata ? { webSearch: webMetadata } : {}), ...(pagesMetadata ? { webPages: pagesMetadata } : {}), ...(sourceMetadata ? { sourceLookup: sourceMetadata } : {}) });
             writeArtifact(directories, job.id, outcome, { error: message });
         } catch {
             // The job state still reports the failure if the session file cannot be updated.
@@ -763,10 +859,10 @@ export function finalizeScratchpadSubmission(context) {
     return true;
 }
 
-export function registerScratchpadJobs({ generate = runChatProfile, searchFetch, pageFetch, pageLookup } = {}) {
-    registerHandler(SCRATCHPAD_JOB_TYPE, context => runScratchpadReply(context, { generate, searchFetch, pageFetch, pageLookup }));
+export function registerScratchpadJobs({ generate = runChatProfile, searchFetch, pageFetch, pageLookup, sourceOptions } = {}) {
+    registerHandler(SCRATCHPAD_JOB_TYPE, context => runScratchpadReply(context, { generate, searchFetch, pageFetch, pageLookup, sourceOptions }));
 }
 
 registerScratchpadJobs();
 
-export const testExports = { historyFrom, planReply, normaliseReplyRequest, runScratchpadReply, resolveWebSearch, settleReply, reasoningFrom };
+export const testExports = { historyFrom, planReply, normaliseReplyRequest, runScratchpadReply, resolveWebSearch, resolveSourceLookup, settleReply, reasoningFrom };

@@ -45,7 +45,9 @@ export const TEMPLATE_LABELS = Object.freeze({
     "tpl-clothing-tracker-companion": "Clothing Tracker",
     "tpl-visual-map-companion": "Visual Map",
     "tpl-vitals-companion": "Vitals",
-    "tpl-plot-compass-companion": "Plot Compass"
+    "tpl-plot-compass-companion": "Plot Compass",
+    "tpl-user-based-stats-generator": "User-based Stats Generator",
+    "tpl-level-up-companion": "Level Up Companion"
 });
 
 export const TRACKER_FAMILIES = Object.freeze({

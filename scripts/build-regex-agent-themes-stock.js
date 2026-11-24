@@ -12,7 +12,8 @@ for (const [groupId, family] of [['grp-pura-trackers', 'pura'], ['grp-pura-ether
     for (const id of groups.find(group => group.id === groupId).agentTemplateIds) families[id] = family;
 }
 const ids = [...Object.keys(families), 'tpl-chat-only-companion', 'tpl-chatroom-companion', 'tpl-message-inbox-companion',
-    'tpl-position-tracker-companion', 'tpl-clothing-tracker-companion', 'tpl-visual-map-companion', 'tpl-vitals-companion', 'tpl-plot-compass-companion'];
+    'tpl-position-tracker-companion', 'tpl-clothing-tracker-companion', 'tpl-visual-map-companion', 'tpl-vitals-companion',
+    'tpl-plot-compass-companion', 'tpl-user-based-stats-generator', 'tpl-level-up-companion'];
 const labels = {};
 const stock = [];
 for (const templateId of ids) {

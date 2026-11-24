@@ -2,6 +2,18 @@
 
 ## v1.6.0
 
+### Highlights
+- Press **What's new** on Home to see what changed in this version. On staging it shows what's landed so far, marked as a preview, and a small dot tells you when there's something you haven't read yet.
+- Group chats have scene rules now: whispers, 'Everyone hears this' lines and who heard each message. Mewmory keeps each speaker's memories to the people who were actually there, and group secrets stay out of sharing and lorebooks.
+- **Scratchpad** can check cards, presets and lorebooks for problems, explain why a lorebook entry didn't fire and read Neconyan's own errors when you ask it what went wrong. `/check` and `/why` take you straight there.
+- Turn on **Neconyan source code** in **Scratchpad** and it reads the actual code behind a bug before it answers, cites the files and lines, and can draft a bug report for you to copy. It's off by default and only ever reads, never changes anything.
+- Text fields warn you about unknown or broken macros, and lorebooks tell you when a linked book no longer exists.
+- Character folders and folder tabs, if you want them. They're off until you turn them on.
+- Each writing companion has its own **Stop** button, and you can edit **Memory Shard** by hand.
+- **Author's Note** has a full screen editor, and **Plot Compass** lets you pick the next direction straight from the note.
+- The **Server** panel has a Node.js memory cap setting, for when the server keeps running out on a small box.
+- When the page reloads itself for an update, it tells you once instead of just quietly doing it.
+
 ### Merged Staging PRs
 - PR #776 (2026-11-20) `fix(settings): keep theme filters in view when pressed`
 - PR #778 (2026-11-20) `fix(deps): upgrade simple-git to patch security advisories`
@@ -160,6 +172,9 @@
 - PR #940 (2026-11-24) `fix(dialogue-colors): paint new NPC gradients when the reply lands`
 - PR #941 (2026-11-24) `fix(in-chat-agents): restore Plot Compass card scripts on every account`
 - PR #942 (2026-11-24) `feat(quick-image-gen): prefill save with the selected configuration name`
+- PR #943 (2026-11-24) `fix(regex-themes): style User-based Stats and Level Up companions`
+- PR #944 (2026-11-24) `feat(scratchpad): check neconyan source code when diagnosing bugs`
+- PR #945 (2026-11-24) `feat(home): add What's new with a staging preview`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`

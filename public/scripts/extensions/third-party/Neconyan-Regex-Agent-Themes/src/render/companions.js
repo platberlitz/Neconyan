@@ -29,17 +29,22 @@ export function renderTerminal(spec, tokens, options) {
     const scope = `.${scopeClass}`;
     const scanline = tokens.scan
         ? `repeating-linear-gradient(0deg,${tokens.scan.color} 0,${tokens.scan.color} 1px,transparent 1px,transparent ${tokens.scan.size})`
-        : 'linear-gradient(rgba(255,255,255,0.025) 50%,rgba(0,0,0,0.035) 50%)';
+        : tokens.mode === 'light'
+            ? ''
+            : 'repeating-linear-gradient(0deg,rgba(255,255,255,0.025) 0,rgba(255,255,255,0.025) 2px,rgba(0,0,0,0.035) 2px,rgba(0,0,0,0.035) 4px)';
     const background = layeredBackground(tokens, [scanline, term.bg], { canvas: true });
     const panel = layeredBackground(tokens, [term.panel], { canvas: true });
+    const insetShadow = tokens.mode === 'light' ? 'rgba(0,0,0,0.06)' : 'rgba(0,0,0,0.35)';
     const cursorCss = tokens.glyphMode === 'none'
         ? ''
-        : `${scope} .rat-tw-cursor::after { content: "\\258e"; opacity: 0.8; }`;
+        : `${scope} .rat-tw-cursor::after { content: "\u258e"; opacity: 0.85; }`;
 
     const css = `
 ${scope}.rat-tw {
-  max-width: 760px;
-  margin: 1em auto;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: min(760px, 100%);
+  margin: 0.85em auto;
   border: 1px solid ${term.border};
   border-radius: ${tokens.radius.body};
   background: ${background};
@@ -47,13 +52,17 @@ ${scope}.rat-tw {
   font-family: ${term.font};
   font-size: ${tokens.type.bodySize};
   line-height: ${tokens.type.lineHeight};
-  box-shadow: 0 0 22px ${term.glow}, inset 0 0 30px rgba(0,0,0,0.35);
+  --messageTextFontSize: ${tokens.type.bodySize};
+  --messageLineHeight: ${tokens.type.lineHeight};
+  box-shadow: 0 0 22px ${term.glow}, inset 0 0 30px ${insetShadow};
   overflow: hidden;
 }
+${scope}.rat-tw *, ${scope}.rat-tw *::before, ${scope}.rat-tw *::after { box-sizing: border-box; }
 ${scope} .rat-tw-head {
   display: flex;
   align-items: center;
-  gap: 0.5em;
+  flex-wrap: wrap;
+  gap: 0.55em;
   padding: 0.65em 0.85em;
   background: ${panel};
   border-bottom: 1px solid ${term.border};
@@ -64,6 +73,13 @@ ${scope} .rat-tw-head {
   list-style: none;
 }
 ${scope} summary.rat-tw-head { cursor: pointer; }
+${scope} summary.rat-tw-head::-webkit-details-marker { display: none; }
+${scope} .rat-tw-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  flex-shrink: 0;
+}
 ${scope} .rat-tw-dot {
   width: 0.72em;
   height: 0.72em;
@@ -74,7 +90,10 @@ ${scope} .rat-tw-dot {
 ${scope} .rat-tw-dot-r { background: #ff5f56; }
 ${scope} .rat-tw-dot-y { background: #ffbd2e; }
 ${scope} .rat-tw-dot-g { background: #27c93f; }
-${scope} .rat-tw-title { margin-left: 0.35em; }
+${scope} .rat-tw-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 ${scope} .rat-tw-status {
   margin-left: auto;
   font-weight: 400;
@@ -82,23 +101,60 @@ ${scope} .rat-tw-status {
   color: ${tokens.on.term.muted};
 }
 ${scope} .rat-tw-body { padding: 0.85em; }
+${scope} .rat-tw-body > details {
+  border: 1px solid ${term.border};
+  border-radius: ${tokens.radius.slot};
+  padding: 0.65em 0.8em;
+}
 ${scope} .rat-tw-body > details > summary {
   cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
   color: ${tokens.on.term.prompt};
   font-size: ${tokens.type.headSize};
+  font-weight: 700;
   letter-spacing: 0.04em;
-  margin-bottom: 0.6em;
+  user-select: none;
+}
+${scope} .rat-tw-body > details[open] > summary {
+  margin-bottom: 0.65em;
+  padding-bottom: 0.45em;
+  border-bottom: 1px solid ${term.border};
+}
+${scope} .rat-tw-body > details > summary::-webkit-details-marker { display: none; }
+${scope} .rat-tw-body > details > summary::before { content: "> "; flex-shrink: 0; }
+${scope} .rat-tw-body > details:not([open]) > summary::after {
+  content: "[closed]";
+  font-size: ${tokens.type.labelSize};
+  font-weight: 400;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+${scope} .rat-tw-body > details[open] > summary::after {
+  content: "[open]";
+  font-size: ${tokens.type.labelSize};
+  font-weight: 400;
+  margin-left: auto;
+  flex-shrink: 0;
 }
 ${scope} .rat-tw-out {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  word-break: break-word;
   margin: 0;
   color: ${tokens.on.term.text};
+}
+${scope} .rat-tw-out strong, ${scope} .rat-tw-out b {
+  color: ${tokens.on.term.strong};
+  font-weight: ${tokens.type.valueWeight};
 }
 ${scope} .rat-tw-prompt { color: ${tokens.on.term.prompt}; }
 ${scope} .rat-tw-badge {
   display: inline-block;
   padding: 0.15em 0.6em;
+  margin: 0.35em 0 0;
   border: 1px solid ${term.border};
   border-radius: ${tokens.radius.slot};
   color: ${tokens.on.term.badge};
@@ -106,7 +162,7 @@ ${scope} .rat-tw-badge {
 }
 ${cursorCss}`;
 
-    const dots = tokens.glyphMode === 'none' ? '' : '<span aria-hidden="true">'
+    const dots = tokens.glyphMode === 'none' ? '' : '<span class="rat-tw-dots" aria-hidden="true">'
         + '<span class="rat-tw-dot rat-tw-dot-r"></span>'
         + '<span class="rat-tw-dot rat-tw-dot-y"></span>'
         + '<span class="rat-tw-dot rat-tw-dot-g"></span></span>';
@@ -134,7 +190,7 @@ ${cursorCss}`;
         : `<details${open}><summary class="rat-tw-head"${part('header')}>${titleRow}</summary>`
             + `<div class="rat-tw-body">${output}</div></details>`;
 
-    return `<style>${css}\n</style><div${rootAttrs(spec, tokens, ['rat-tw', scopeClass])}${part('root')}>${inner}</div>`;
+    return `<style>${css}\n</style>\n<div${rootAttrs(spec, tokens, ['rat-tw', scopeClass])}${part('root')}>${inner}</div>`;
 }
 
 /** Archetype H: shell / row / close triples that bracket a run of message rows. */

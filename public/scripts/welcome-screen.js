@@ -1201,6 +1201,29 @@ async function handleWelcomeAction(button) {
             showTutorialCoachmark();
             activeTutorialPanel.querySelector('[data-tour-coach-next]')?.focus();
             break;
+        case 'whats-new': {
+            const { openWhatsNew } = await import('./neconyan-whats-new.js');
+            await openWhatsNew();
+            break;
+        }
+    }
+}
+
+/**
+ * Marks the Home 'What's new' button once the browser is idle, so Home never waits on the changelog.
+ * @param {HTMLElement} root Home panel
+ */
+function scheduleWhatsNewDot(root) {
+    if (!root.querySelector('[data-action="whats-new"]')) return;
+    const run = () => {
+        import('./neconyan-whats-new.js')
+            .then(({ syncWhatsNewButtons }) => syncWhatsNewButtons(root))
+            .catch((error) => console.debug('What\'s new check skipped:', error));
+    };
+    if (typeof globalThis.requestIdleCallback === 'function') {
+        globalThis.requestIdleCallback(run, { timeout: 4000 });
+    } else {
+        setTimeout(run, 1500);
     }
 }
 
@@ -1530,7 +1553,7 @@ async function sendWelcomePanel(chats, expand, requestId, assistantPersonalities
             return;
         }
         const templateData = buildWelcomeTemplateData(chats, assistantPersonalities);
-        const template = await renderTemplateAsync('/scripts/templates/welcomePanelOnboarding.html?v=20261003-homebar2', templateData, true, true, true);
+        const template = await renderTemplateAsync('/scripts/templates/welcomePanelOnboarding.html?v=20261201-whats-new', templateData, true, true, true);
         if (requestId !== welcomeRequestId) {
             return;
         }
@@ -1576,6 +1599,7 @@ async function sendWelcomePanel(chats, expand, requestId, assistantPersonalities
             });
 
             setWelcomePanelMode(root, root.dataset.homePanelMode || getWelcomePanelMode(), { persist: false });
+            scheduleWhatsNewDot(root);
         });
         fragment.querySelectorAll('.welcomeActionButton').forEach((button) => {
             if (button.dataset.action === 'open-global-search') button.dataset.sbUniversalSearchTrigger = 'true';
