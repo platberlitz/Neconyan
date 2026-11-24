@@ -95,6 +95,7 @@ test('A3 the sign-in routes of before still pass, and a private route is still r
         for (const route of GET_ROUTES) assert.ok(isAllowed(await send(server, 'GET', route, headers)), `GET ${route}`);
         for (const route of POST_ROUTES) assert.ok(isAllowed(await send(server, 'POST', route, headers)), `POST ${route}`);
         assert.ok(isAllowed(await send(server, 'GET', '/webfonts/Nunito/stylesheet.css', headers)));
+        assert.ok(isAllowed(await send(server, 'GET', '/webfonts/FredokaOne/heading-letters/NeconyanHeadingLetters-Regular.woff2', headers)));
         assert.equal((await send(server, 'GET', '/api/chats/get', headers)).status, 401);
         assert.equal((await send(server, 'GET', '/script.js', headers)).status, 401);
     }
