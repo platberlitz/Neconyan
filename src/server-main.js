@@ -24,6 +24,7 @@ import { APP_NAME, isBunRuntime } from './runtime.js';
 import { serverDirectory } from './server-directory.js';
 import { createRequestTrace } from './request-trace.js';
 import { getServerBootId } from './server-boot-marker.js';
+import { buildWhatsNew, readChangelog } from './whats-new.js';
 import { AGENT_STORAGE_LIMITS } from '../public/scripts/extensions/in-chat-agents/setup-presets.js';
 import { JOB_INTENT_LIMIT_BYTES } from './jobs/store.js';
 import { pairingRouter as deviceSyncPairingRouter } from './endpoints/device-sync.js';
@@ -591,6 +592,17 @@ app.get('/version', async function (_, response) {
         ...data,
         serverBootId: getServerBootId(),
     });
+});
+
+app.get('/api/whats-new', async function (_, response) {
+    try {
+        const { pkgVersion, gitBranch } = await getVersion();
+        response.set('Cache-Control', 'no-store');
+        response.send(buildWhatsNew(readChangelog(serverDirectory), { version: pkgVersion, branch: gitBranch }));
+    } catch (error) {
+        console.warn('Could not read the changelog for What\'s new:', error);
+        response.sendStatus(500);
+    }
 });
 
 setupPrivateEndpoints(app);

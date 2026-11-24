@@ -2977,7 +2977,7 @@ function loadMewmoryStyles() {
     if (!style) {
         style = document.createElement('link');
         style.id = 'mewmory-css';
-        style.href = 'css/mewmory.css?v=20261201-scratchpad-source-lookup';
+        style.href = 'css/mewmory.css?v=20261201-whats-new';
         document.head.append(style);
     }
     if (style.rel !== 'stylesheet') {

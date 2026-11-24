@@ -27,6 +27,33 @@ describe('update changelog merged PR entries', () => {
         mergedAt: '2026-06-04T12:34:56Z',
     };
 
+    test('keeps hand-written highlights when it rewrites the merged PR list', () => {
+        const changelog = [
+            '# Changelog',
+            '',
+            '## v1.6.4',
+            '',
+            '### Highlights',
+            '- Open **What\'s new** from Home.',
+            '  It carries on here.',
+            '',
+            '### Merged Staging PRs',
+            '- PR #320 (2026-06-03) `fix: older change`',
+            '',
+            '## v1.6.2',
+            '',
+            '### Highlights',
+            '- Older highlight.',
+            '',
+        ].join('\n');
+
+        const updated = updateChangelog(changelog, 'v1.6.4', [mergedPr]);
+
+        expect(updated).toContain('### Highlights\n- Open **What\'s new** from Home.\n  It carries on here.\n\n### Merged Staging PRs\n');
+        expect(updated).toContain('- PR #321 (2026-06-04) `fix: unblock changelog sync`');
+        expect(updated).toContain('## v1.6.2\n\n### Highlights\n- Older highlight.\n');
+    });
+
     test('creates a missing package version section at the top of the changelog', () => {
         const changelog = '# Changelog\n\n## v1.6.2\n\n### Fixed\n- Existing entry.\n';
 

@@ -289,9 +289,22 @@ describe('Neconyan Home', () => {
         for (const mode of ['full', 'compact', 'list']) {
             const html = render({ welcomePanelMode: mode, welcomePanelCompact: mode === 'compact', welcomePanelListOnly: mode === 'list', tutorialHidden: true });
             expect(html).toContain('data-action="replay-tutorial">Replay First paws tour</button>');
+            expect(html).toContain('data-action="whats-new">What\'s new</button>');
             expect(html).not.toContain('welcomeTourPanel');
             expect(html).not.toContain('welcomeAdvancedHome');
         }
+    });
+
+    test('loads the What\'s new styles from their own deferred sheet', () => {
+        const indexHtml = read('index.html');
+        const cacheVersion = read('sw.js').match(/NN_SW_CACHE_VERSION = 'neconyan-cache-v([^']+)'/)[1];
+        expect(indexHtml).toContain(`<link href="css/neconyan-whats-new.css?v=${cacheVersion}" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">`);
+        const css = read('css/neconyan-whats-new.css').replace(/\/\*[\s\S]*?\*\//g, '');
+        expect(css).toContain('.neconyan-home-layout .neconyan-home-whats-new[data-unseen=\'true\']::after');
+        expect(css).toContain('--sb-popup-fills-screen: 1');
+        expect(css).not.toContain('!important');
+        expect(css).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+        expect(read('css/neconyan-help.css')).not.toContain('whats-new');
     });
 
     test('shows Home layout under the welcome box and lets the assistant box collapse', () => {
