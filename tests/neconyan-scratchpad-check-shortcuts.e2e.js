@@ -178,7 +178,7 @@ for (const phone of [false, true]) {
         await send.click();
         await expect(toasts.filter({ hasText: 'Typed tools' })).toContainText('Tools that work out a value');
         await expect(toasts.filter({ hasText: 'Typed tools' })).toContainText('Shortcuts that run a check');
-        await expect(toasts.filter({ hasText: 'Typed tools' })).toContainText('/check card, /check preset, /check lorebook, /check app, or /why');
+        await expect(toasts.filter({ hasText: 'Typed tools' })).toContainText('/check card, /check preset, /check lorebook, /check app, /check prompt, or /why');
         await expect(composer).toHaveValue('/tools');
         if (capture) await page.screenshot({ path: shots('tools-list') });
         await pad_.clearToasts();
@@ -209,9 +209,9 @@ for (const phone of [false, true]) {
         refusals.push(await pad_.refuse('/check preset', 'No preset is shared. Turn on Current preset under Also share in the Context tab, then try again.'));
         refusals.push(await pad_.refuse('/check lorebook', 'No lorebook is picked. Pick one under Share a lorebook in the Context tab, then try again.'));
         refusals.push(await pad_.refuse('/why Harbourmaster', 'No lorebook is picked.'));
-        refusals.push(await pad_.refuse('/check carrd', 'Scratchpad can\'t check \'carrd\'. Use /check card, /check preset, /check lorebook or /check app'));
+        refusals.push(await pad_.refuse('/check carrd', 'Scratchpad can\'t check \'carrd\'. Use /check card, /check preset, /check lorebook, /check app or /check prompt'));
         refusals.push(await pad_.refuse('/check app\n/check card', 'Use one /check or /why shortcut per message'));
-        refusals.push(await pad_.refuse('Look at this\n/check', 'Say what to check after /check: card, preset, lorebook or app.'));
+        refusals.push(await pad_.refuse('Look at this\n/check', 'Say what to check after /check: card, preset, lorebook, app or prompt.'));
         if (capture) {
             await composer.fill('/check preset');
             await send.click();

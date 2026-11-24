@@ -40,6 +40,29 @@ export async function loadItemizedPrompts(chatId) {
 }
 
 /**
+ * Reads the itemized prompts kept for one chat without touching another chat's list.
+ * The open chat's list is loaded into memory when it has not been loaded yet.
+ * @param {string} chatId Chat ID to read
+ * @returns {Promise<object[]>} The chat's itemized prompts
+ */
+export async function readItemizedPromptsForChat(chatId) {
+    if (!chatId) return [];
+    if (getCurrentChatId() === chatId && itemizedPrompts.length) return itemizedPrompts;
+    let stored;
+    try {
+        stored = await promptStorage.getItem(chatId);
+    } catch {
+        return [];
+    }
+    const list = Array.isArray(stored) ? stored : [];
+    if (list.length && getCurrentChatId() === chatId && !itemizedPrompts.length) {
+        itemizedPrompts = list;
+        await eventSource.emit(event_types.ITEMIZED_PROMPTS_LOADED, { chatId: chatId });
+    }
+    return list;
+}
+
+/**
  * Saves the itemized prompts for a chat.
  * @param {string} chatId Chat ID to save itemized prompts for
  * @param {object} [options] Save error handling

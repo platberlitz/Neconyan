@@ -62,6 +62,7 @@ import { preserveInterruptedRoleplayReply, recordRoleplayMainReplyComplete } fro
 import { reasoningOnlyResult } from './reasoning-only-result.js';
 import { groupViewerMissedLines, roleplayGroupViewer } from './roleplay-group-scene.js';
 import { sameGroupViewers } from '../../public/scripts/group-chat-visibility.js';
+import { lastPromptRecorder, roleplayPromptKeys } from '../scratchpad/last-prompts.js';
 
 const MAX_REPLY_BYTES = 256 * 1024;
 const REQUEST_OVERRIDES = new Set(['temperature', 'top_p', 'top_k', 'min_p', 'seed', 'frequency_penalty',
@@ -1320,6 +1321,8 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
     const preview = createRoleplayStreamPreview(context, countPreview);
     const result = await Promise.resolve().then(() => generate({ context: base, jobContext: context, binding: request.binding, messages, parseInlineReasoning: true,
         onStream: preview.publish,
+        onPromptReady: lastPromptRecorder(directories, roleplayPromptKeys(source), { mode: 'roleplay',
+            speaker: request.characterName, generationType: request.serverPrompt ? request.worldInfo?.global?.trigger : '' }),
         maxTokens: request.maxTokens, userName, characterName: request.characterName,
         generationType: request.serverPrompt ? request.worldInfo.global.trigger : 'quiet',
         lastAssistant: request.serverPrompt ? initialRecords.findLast(record => !record.is_user && !record.is_system && typeof record.mes === 'string')?.mes ?? null : null,

@@ -1251,7 +1251,7 @@ test('saved context setups keep only portable choices, are account-owned and pro
         name: '  Lean   read ',
         extra: 'dropped',
         settings: {
-            depth: 4, include: { card: false, preset: true, unknown: true }, maxTokens: 512, stream: false, webSearch: true, readLinks: true, prefill: 'Ideas:',
+            depth: 4, include: { card: false, preset: true, lastPrompt: true, unknown: true }, maxTokens: 512, stream: false, webSearch: true, readLinks: true, prefill: 'Ideas:',
             picked: ['m1'], loreOverrides: { 'Book:1': 'always' }, connection: { kind: 'profile', profileId: 'saved' }, roundTable: true, notes: [],
             feedbackTone: 'harsher', assistantTones: { taro: 'critical' },
         },
@@ -1259,7 +1259,7 @@ test('saved context setups keep only portable choices, are account-owned and pro
     assert.deepEqual(saved.setups, [{
         name: 'Lean read',
         settings: {
-            depth: 4, include: { card: false, persona: true, authorsNote: true, lore: true, preset: true, hidden: false, agents: false, regex: false, cssSnippets: false, dialogueColors: false, mewmory: false, problems: false, appEvidence: false },
+            depth: 4, include: { card: false, persona: true, authorsNote: true, lore: true, preset: true, hidden: false, agents: false, regex: false, cssSnippets: false, dialogueColors: false, mewmory: false, problems: false, appEvidence: false, lastPrompt: true },
             maxTokens: 512, stream: false, webSearch: true, readLinks: true, prefill: 'Ideas:', partialPrefill: '', feedbackTone: 'harsher',
         },
     }], 'the shared feedback tone travels, and per-assistant tones stay with their session');

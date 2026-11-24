@@ -26,6 +26,7 @@ import { buildChatCompletionSamplerMetadata } from '../../public/scripts/openai-
 import { getNanoGptServiceTiers, isNanoGptPayg } from '../../public/scripts/service-tiers.js';
 import { createMacroEnvironment } from '../macros/index.js';
 import { runLegacyProfile } from './legacy-request.js';
+import { notifyPromptReady } from './prompt-ready.js';
 import { validFunctionTools } from '../../public/scripts/chat-input-capabilities.js';
 import { reasoningOnlyResult, separateConfiguredReasoning } from './reasoning-only-result.js';
 
@@ -170,7 +171,7 @@ export async function fetchChatProfileModels({ context, material, signal, fetch:
 /** Execute a bound Chat Completion profile without browser globals or credential persistence. */
 export async function runChatProfile({ context, binding, messages, maxTokens, macroEnvironment,
     ephemeralStops = [], userName = 'User', characterName = 'Character', groupNames = [],
-    signal, fetch: fetchImpl, jobContext, modelOverride = '', overridePayload = {}, rawOptions = {}, beforeDispatch, validatePrompt, stream = false, preparedText, cfgValues, preparedMessages = false, onProviderStep, onStream, functionTools = [], generationType = 'quiet', lastAssistant = null, stepNamespace = '', captureMacroState = false, parseInlineReasoning = false,
+    signal, fetch: fetchImpl, jobContext, modelOverride = '', overridePayload = {}, rawOptions = {}, beforeDispatch, validatePrompt, stream = false, preparedText, cfgValues, preparedMessages = false, onProviderStep, onStream, functionTools = [], generationType = 'quiet', lastAssistant = null, stepNamespace = '', captureMacroState = false, parseInlineReasoning = false, onPromptReady,
 } = {}) {
     if (!context?.directories) fail('A generation context is required.', 400);
     if (typeof stepNamespace !== 'string' || stepNamespace.length > 512) fail('The saved generation step identity is invalid.', 400);
@@ -193,7 +194,7 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
     const raw = binding?.kind === 'active';
     if (['kobold', 'novel', 'horde'].includes(binding?.backend)) return runLegacyProfile({ context, binding, messages, maxTokens, macroEnvironment,
         ephemeralStops, userName, characterName, groupNames, signal, fetch: fetchImpl, jobContext,
-        modelOverride, overridePayload, rawOptions, beforeDispatch, validatePrompt, stream, preparedText, cfgValues, onProviderStep, stepNamespace, captureMacroState });
+        modelOverride, overridePayload, rawOptions, beforeDispatch, validatePrompt, stream, preparedText, cfgValues, onProviderStep, stepNamespace, captureMacroState, onPromptReady });
     if (!raw && Object.keys(rawOptions).some(option => !['jsonSchema', 'cacheScope', 'includePreset', 'includeInstruct', 'resolvedStoppingStrings'].includes(option))) {
         fail('This request option requires the acknowledged active connection.', 409);
     }
@@ -285,6 +286,7 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
                 try { await beforeDispatch?.(); } catch (error) { throw providerNotDispatched(error); }
             }
             const requestPayload = payload;
+            notifyPromptReady(onPromptReady, requestPayload, current, binding);
             const result = separateConfiguredReasoning(await runTextGeneration({ context, backend: binding.backend, payload: requestPayload, signal, fetch: fetchImpl, validatePrompt,
                 beforeDispatch: dispatchValidation ? beforeDispatch : undefined,
                 onStream: onStream && (value => onStream({ ...separateConfiguredReasoning(value, reasoningSettings, material.source), generation })),
@@ -336,6 +338,7 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
         if (!dispatchValidation) {
             try { await beforeDispatch?.(); } catch (error) { throw providerNotDispatched(error); }
         }
+        notifyPromptReady(onPromptReady, payload, material, binding);
         return runTextGeneration({ context, backend: 'chat', payload, signal, fetch: fetchImpl, validatePrompt,
             beforeDispatch: dispatchValidation ? beforeDispatch : undefined,
             onStream: onStream && (value => onStream({ ...separateConfiguredReasoning(value, reasoningSettings, material.source), generation })),

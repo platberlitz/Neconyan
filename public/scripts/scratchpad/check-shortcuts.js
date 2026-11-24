@@ -1,9 +1,9 @@
 // Shortcuts typed at the start of a line that run one of the quick-prompt checks in a single step: /check card, /check preset,
-// /check lorebook, /check app and /why <entry>. This file only reads the message; index.js decides what can be checked and sends it.
+// /check lorebook, /check app, /check prompt and /why <entry>. This file only reads the message; index.js decides what can be checked and sends it.
 
 import { commandLines } from './typed-tools.js';
 
-export const CHECK_TARGETS = Object.freeze(['card', 'preset', 'lorebook', 'app']);
+export const CHECK_TARGETS = Object.freeze(['card', 'preset', 'lorebook', 'app', 'prompt']);
 export const SHORTCUT_COMMANDS = Object.freeze(['check', 'why']);
 
 /**

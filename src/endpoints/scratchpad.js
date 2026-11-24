@@ -3,6 +3,7 @@ import { mewmoryContextLocked, mewmoryRecordLocked, saveMewmoryCorrection } from
 import { getJob } from '../jobs/store.js';
 import { requireAdminMiddleware } from '../users.js';
 import { collectAccountEvidence, collectAdminEvidence } from '../scratchpad/evidence.js';
+import { readLastPrompt } from '../scratchpad/last-prompts.js';
 import {
     activateSession,
     branchSession,
@@ -345,6 +346,17 @@ router.post('/proposal/mark', (request, response) => change(request, response, (
 router.post('/evidence', async (request, response) => {
     try {
         response.json(await collectAccountEvidence(scratchpadAccountBase(request)));
+    } catch (error) { sendError(response, error); }
+});
+
+router.post('/last-prompt', (request, response) => {
+    try {
+        const base = scratchpadAccountBase(request);
+        const source = normaliseSource(request.body?.source);
+        const story = source.kind === 'conversation' ? source.key.startsWith('conversation:')
+            : source.kind === 'roleplay' && !source.key.startsWith('conversation:');
+        const keys = story ? [source.key, source.legacyKey].filter(Boolean) : [];
+        response.json({ prompt: keys.length ? readLastPrompt(base.directories, keys) : null });
     } catch (error) { sendError(response, error); }
 });
 
