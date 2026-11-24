@@ -90,7 +90,7 @@ for (const channel of ['chromium', 'msedge']) {
                 if (entry.prompt) {
                     await expect(page.locator('#language-choice-prompt')).toBeVisible();
                     await expect(page.locator('#language-choice-select')).toHaveValue('de-de');
-                    await expect(page.locator('#language-choice-select option')).toHaveCount(18);
+                    await expect(page.locator('#language-choice-select option')).toHaveCount(19);
                     await expect(page.locator('.popup-button-ok').filter({ hasText: 'Use Deutsch' })).toBeVisible();
                     if (entry.name === 'existing') {
                         await page.keyboard.press('Escape');
@@ -138,7 +138,7 @@ for (const channel of ['chromium', 'msedge']) {
                 await post('/api/users/create', { handle: 'second', name: 'Second account', password: '', admin: false });
                 await context.clearCookies();
                 await page.goto(app.url + '/login');
-                await expect(page.locator('#loginLanguage option')).toHaveCount(18);
+                await expect(page.locator('#loginLanguage option')).toHaveCount(19);
                 await expect(page.locator('html')).toHaveAttribute('lang', 'de-de');
                 await page.locator('.userSelect').filter({ hasText: 'default-user' }).click();
                 await page.locator('#userPassword').fill('language-fixture');
@@ -190,7 +190,7 @@ test('sign-in remains usable when storage is blocked and a dictionary response i
         await expect.poll(() => listRequests).toBeGreaterThan(0);
         await page.locator('#loginLanguage').selectOption('en');
         release();
-        await expect(page.locator('#loginLanguage option')).toHaveCount(18);
+        await expect(page.locator('#loginLanguage option')).toHaveCount(19);
         await expect(page.locator('#loginLanguage')).toHaveValue('en');
         await expect(page.locator('html')).toHaveAttribute('lang', 'en');
         await expect(page.locator('h1')).toHaveText('Meowlcome back');

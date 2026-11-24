@@ -4,7 +4,7 @@
 
 최신 버전은 [1.5.5](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.5)이에요.
 
-**내 언어로 읽기:** [English](../README.md) · [Deutsch](readme-de_de.md) · [Español](readme-es_es.md) · [Français](readme-fr_fr.md) · [Italiano](readme-it_it.md) · [Nederlands](readme-nl_nl.md) · [Português](readme-pt_pt.md) · [Íslenska](readme-is_is.md) · [Русский](readme-ru_ru.md) · [Українська](readme-uk_ua.md) · [العربية](readme-ar_sa.md) · [ไทย](readme-th_th.md) · [Tiếng Việt](readme-vi_vn.md) · [日本語](readme-ja_jp.md) · [简体中文](readme-zh_cn.md) · [繁體中文](readme-zh_tw.md)
+**내 언어로 읽기:** [English](../README.md) · [Deutsch](readme-de_de.md) · [Español](readme-es_es.md) · [Français](readme-fr_fr.md) · [Italiano](readme-it_it.md) · [Nederlands](readme-nl_nl.md) · [Português](readme-pt_pt.md) · [Íslenska](readme-is_is.md) · [Türkçe](readme-tr_tr.md) · [Русский](readme-ru_ru.md) · [Українська](readme-uk_ua.md) · [العربية](readme-ar_sa.md) · [ไทย](readme-th_th.md) · [Tiếng Việt](readme-vi_vn.md) · [日本語](readme-ja_jp.md) · [简体中文](readme-zh_cn.md) · [繁體中文](readme-zh_tw.md)
 
 이 번역은 최신 내용을 따라가지 못할 수 있어요. [영어 README](../README.md)가 최신이에요.
 
