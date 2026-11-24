@@ -452,13 +452,21 @@ export function mergeConversationStore(serverStore, localStore, savedStore) {
         }
     }
     // A stale page can hold a group thread key its baseline never recorded. Once
-    // the reconciled group records no longer name that group, the key is orphaned.
+    // a Conversation-owned group record is removed by the merge, its keys are
+    // orphaned; Roleplay groups never live in store.groups and must stay intact.
+    const knownConversationGroupIds = new Set([
+        ...(Array.isArray(savedStore.groups) ? savedStore.groups : []),
+        ...(Array.isArray(localStore.groups) ? localStore.groups : []),
+        ...(Array.isArray(serverStore.groups) ? serverStore.groups : []),
+    ].map(group => String(group?.id || '')).filter(Boolean));
     const survivingGroupIds = new Set((Array.isArray(merged.groups) ? merged.groups : [])
         .map(group => String(group?.id || '')).filter(Boolean));
     if (isPlainConversationObject(merged.characters)) {
         for (const key of Object.keys(merged.characters)) {
             const groupId = groupIdFromThreadKey(key);
-            if (groupId && !survivingGroupIds.has(groupId)) delete merged.characters[key];
+            if (groupId && knownConversationGroupIds.has(groupId) && !survivingGroupIds.has(groupId)) {
+                delete merged.characters[key];
+            }
         }
     }
     return merged;
